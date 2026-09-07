@@ -6,6 +6,7 @@
 //! ranks to execute every trunk layer. It is a correctness/engagement gate,
 //! not a throughput benchmark and has no PP comparison arm.
 
+use memra_engine::dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS;
 use memra_engine::dsv4_gpu::{Dsv4Gpu, TP_EP_RANK_ORDER_NUMERIC_CLASS};
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
@@ -28,6 +29,8 @@ struct Receipt {
     ep_calls: u64,
     ar_dispatches: u64,
     ar_refusals: [i32; 2],
+    attention_rank_calls: [u64; 2],
+    attention_ar_calls: u64,
 }
 
 fn sha256_bytes(bytes: &[u8]) -> String {
@@ -50,12 +53,61 @@ fn drain(gpu: &Dsv4Gpu) {
     }
 }
 
+fn verify_attention_join(gpu: &Dsv4Gpu, state: &memra_engine::dsv4_gpu::DecodeState) {
+    let Some(plan) = gpu.attention_tp_geometry() else {
+        return;
+    };
+    let snapshot = gpu
+        .attention_tp_last_join_for_gate(state)
+        .expect("actual attention TP2 join snapshot");
+    let mut partial_hashes = [String::new(), String::new()];
+    let mut joined_hashes = [String::new(), String::new()];
+    for rank in 0..2 {
+        assert_eq!(snapshot.partials[rank].len(), plan.hidden);
+        assert_eq!(snapshot.joined[rank].len(), plan.hidden);
+        let mut partial_hash = Sha256::new();
+        update_f32(&mut partial_hash, &snapshot.partials[rank]);
+        partial_hashes[rank] = sha256_bytes(&partial_hash.finalize());
+        let mut joined_hash = Sha256::new();
+        update_f32(&mut joined_hash, &snapshot.joined[rank]);
+        joined_hashes[rank] = sha256_bytes(&joined_hash.finalize());
+    }
+    for (column, (&rank0, &rank1)) in snapshot.partials[0]
+        .iter()
+        .zip(&snapshot.partials[1])
+        .enumerate()
+    {
+        let expected = rank0 + rank1;
+        assert!(
+            expected.is_finite(),
+            "attention TP2 canonical sum must be finite"
+        );
+        for rank in 0..2 {
+            assert_eq!(
+                snapshot.joined[rank][column].to_bits(),
+                expected.to_bits(),
+                "attention TP2 GPU join vs CPU f32 rank sum: rank={rank} column={column}"
+            );
+        }
+    }
+    println!(
+        "ATTENTION_JOIN position={} layer={} columns={} partial_hashes={partial_hashes:?} joined_hashes={joined_hashes:?} canonical_f32_sum=true full_width_equivalence=false",
+        state.pos,
+        gpu.topology().layers - 1,
+        plan.hidden
+    );
+}
+
 fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     assert!(tokens.len() > CONTINUATION_TOKENS);
     let trunk_layers = gpu.topology().layers as u64;
     let rank_layer_before = gpu.tp_ep_rank_layer_calls();
     let ar_before = gpu.tp_ep_ar_dispatches();
     let ep_before = gpu.ep_calls();
+    let attention_before = gpu.attention_tp_rank_calls();
+    let attention_ar_before = gpu.attention_tp_ar_calls();
+    let attention_mode = gpu.attention_tp_geometry().is_some();
+    let grouped_wo_a_before = gpu.dense_wo_a_grouped_dispatches();
     let steps = CONTINUATION_TOKENS + 1;
     let mut state = gpu
         .alloc_decode_state_for_transient(steps + 8, 1)
@@ -74,6 +126,7 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     assert_eq!(state.pos, 1, "TP/EP prime must commit one token");
     positions.push(state.pos);
     update_f32(&mut output_hash, &row);
+    verify_attention_join(gpu, &state);
     let digest = gpu
         .tp_ep_cache_digest_for_gate(&state)
         .expect("TP/EP prime cache digest");
@@ -95,6 +148,7 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
         );
         positions.push(state.pos);
         update_f32(&mut output_hash, &row);
+        verify_attention_join(gpu, &state);
         let digest = gpu
             .tp_ep_cache_digest_for_gate(&state)
             .expect("TP/EP continuation cache digest");
@@ -137,9 +191,23 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     let ar_dispatches = gpu.tp_ep_ar_dispatches() - ar_before;
     assert_eq!(
         ar_dispatches,
-        steps * trunk_layers,
-        "one named rank-order reduction per layer/token"
+        steps * trunk_layers * (1 + u64::from(attention_mode)),
+        "expert join plus the selected attention join per layer/token"
     );
+    let attention_after = gpu.attention_tp_rank_calls();
+    let attention_rank_calls =
+        std::array::from_fn(|rank| attention_after[rank] - attention_before[rank]);
+    let attention_ar_calls = gpu.attention_tp_ar_calls() - attention_ar_before;
+    let expected_attention = u64::from(attention_mode) * steps * trunk_layers;
+    assert_eq!(attention_rank_calls, [expected_attention; 2]);
+    assert_eq!(attention_ar_calls, expected_attention);
+    if attention_mode {
+        assert_eq!(
+            gpu.dense_wo_a_grouped_dispatches(),
+            grouped_wo_a_before,
+            "attention TP2 uses the qualified per-group GEMV, not unqualified grouped-4"
+        );
+    }
     let ar_refusals = gpu
         .tp_ep_ar_refusal_words()
         .expect("TP/EP AR refusal words");
@@ -159,6 +227,8 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
         ep_calls,
         ar_dispatches,
         ar_refusals,
+        attention_rank_calls,
+        attention_ar_calls,
     }
 }
 
@@ -181,8 +251,13 @@ fn verify_refusal_boundary(gpu: &Dsv4Gpu, tokens: &[u32]) {
                 .expect("refusal gate initial cache");
             let mut words = [0, 0];
             words[rank] = code;
-            gpu.set_tp_ep_ar_refusal_words_for_gate(words)
-                .expect("inject sticky refusal");
+            if gpu.attention_tp_geometry().is_some() {
+                gpu.arm_attention_tp_join_refusal_for_gate(gpu.topology().layers - 1, rank, code)
+                    .expect("inject refusal after actual attention join");
+            } else {
+                gpu.set_tp_ep_ar_refusal_words_for_gate(words)
+                    .expect("inject sticky refusal");
+            }
             let error = gpu
                 .decode_step(tokens[prime_tokens], &mut state)
                 .map(|_| ())
@@ -231,6 +306,16 @@ fn main() {
         3,
         "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt>"
     );
+    let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => false,
+        Ok("1") => true,
+        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
+    };
+    let numeric_class = if attention_mode {
+        ATTENTION_TP_NUMERIC_CLASS
+    } else {
+        TP_EP_RANK_ORDER_NUMERIC_CLASS
+    };
     for (name, expected) in [
         ("MEMRA_DSV4_DECODE_PATH", "device"),
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
@@ -273,12 +358,18 @@ fn main() {
     );
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
+    Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
     println!(
-        "PROTOCOL {{\"plain_only\":true,\"topology\":\"tp_ep_all_layers\",\"numeric_class\":\"{TP_EP_RANK_ORDER_NUMERIC_CLASS}\",\"prime_tokens\":1,\"continuation_tokens\":{CONTINUATION_TOKENS},\"source_sha256\":\"{source_sha256}\",\"dspark\":false}}"
+        "PROTOCOL {{\"plain_only\":true,\"topology\":\"tp_ep_all_layers\",\"numeric_class\":\"{numeric_class}\",\"attention_tp\":{attention_mode},\"prime_tokens\":1,\"continuation_tokens\":{CONTINUATION_TOKENS},\"source_sha256\":\"{source_sha256}\",\"dspark\":false}}"
     );
     let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 256)
         .expect("plain-only TP/EP load");
     assert!(gpu.topology().is_tp_ep(), "no silent PP fallback");
+    assert_eq!(
+        gpu.attention_tp_geometry().is_some(),
+        attention_mode,
+        "no silent replicated-attention fallback"
+    );
     assert!(
         gpu.dspark.is_none(),
         "DSpark must not be resident in this gate"
@@ -305,7 +396,8 @@ fn main() {
         "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false",
         gpu.topology().world,
         gpu.topology().layers,
-        TP_EP_RANK_ORDER_NUMERIC_CLASS
+        numeric_class
     );
+    Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }

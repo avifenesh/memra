@@ -6,7 +6,10 @@
 //! decode are timed separately. No speculative path, PP arm, cache digest, or
 //! hidden-state hash is inside either timed interval.
 
-use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4Phase, Dsv4SampleCfg, dsv4_prof_on, dsv4_sample_row};
+use memra_engine::dsv4_gpu::{
+    Dsv4Gpu, Dsv4Phase, Dsv4SampleCfg, Dsv4SamplerOrder, dsv4_prof_on, dsv4_sample_row,
+    dsv4_sampler_order,
+};
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -18,6 +21,7 @@ use std::{
 const PROMPT_TOKENS: usize = 256;
 const OUTPUT_TOKENS: usize = 256;
 const REPEATS: usize = 2;
+const ATTENTION_REPEATS: usize = 5;
 const SOURCE_SHA256: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -25,6 +29,8 @@ struct Counters {
     rank_layer: [u64; 2],
     ep: u64,
     ar: u64,
+    attention_rank: [u64; 2],
+    attention_ar: u64,
     gu_m1: u64,
     gu_half2: u64,
     down_half2: u64,
@@ -37,6 +43,8 @@ fn counters(gpu: &Dsv4Gpu) -> Counters {
         rank_layer: gpu.tp_ep_rank_layer_calls(),
         ep: gpu.ep_calls(),
         ar: gpu.tp_ep_ar_dispatches(),
+        attention_rank: gpu.attention_tp_rank_calls(),
+        attention_ar: gpu.attention_tp_ar_calls(),
         gu_m1: memra_engine::moe_f16g_gu_m1_tc_dispatches(),
         gu_half2: memra_engine::moe_f16g_gu_half2_dispatches(),
         down_half2: memra_engine::moe_f16g_down_m1_half2_dispatches(),
@@ -53,6 +61,10 @@ fn delta(after: Counters, before: Counters) -> Counters {
         ],
         ep: after.ep - before.ep,
         ar: after.ar - before.ar,
+        attention_rank: std::array::from_fn(|rank| {
+            after.attention_rank[rank] - before.attention_rank[rank]
+        }),
+        attention_ar: after.attention_ar - before.attention_ar,
         gu_m1: after.gu_m1 - before.gu_m1,
         gu_half2: after.gu_half2 - before.gu_half2,
         down_half2: after.down_half2 - before.down_half2,
@@ -155,6 +167,8 @@ mod timing_contract_tests {
 
 fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
     let layers = gpu.topology().layers as u64;
+    let attention_mode = gpu.attention_tp_geometry().is_some();
+    let attention_steps = u64::from(attention_mode) * (prime + decode) as u64 * layers;
     for (rank, &calls) in c.rank_layer.iter().enumerate() {
         assert_eq!(
             calls,
@@ -169,14 +183,26 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
     );
     assert_eq!(
         c.ar,
-        (prime + decode) as u64 * layers,
+        (prime + decode) as u64 * layers + attention_steps,
         "one-shot AR engagement"
+    );
+    assert_eq!(
+        c.attention_rank, [attention_steps; 2],
+        "actual attention rank producers"
+    );
+    assert_eq!(
+        c.attention_ar, attention_steps,
+        "actual attention reductions"
     );
     let local_steps = 2 * (prime + decode) as u64 * layers;
     assert_eq!(c.gu_m1, local_steps, "GU-M1 actual enqueues");
     assert_eq!(c.gu_half2, local_steps, "GU-half2 actual enqueues");
     assert_eq!(c.down_half2, local_steps, "down-half2 actual enqueues");
-    assert_eq!(c.wo_a, local_steps, "grouped wo_a actual enqueues");
+    assert_eq!(
+        c.wo_a,
+        if attention_mode { 0 } else { local_steps },
+        "attention TP uses per-group wo_a; replicated attention uses qualified grouped wo_a"
+    );
     // At prompt+output <= 512, the radix selector's N=2048 eligibility is
     // intentionally inert. The arm is still reported and checked as zero.
     assert_eq!(
@@ -200,6 +226,7 @@ struct RunReceipt {
     final_logits_sha256: String,
     final_cache_digest: [u64; 2],
     final_hidden_digest: [u64; 2],
+    attention_join_sha256: Option<String>,
     ar_refusals: [i32; 2],
     looped: bool,
     counters_prime: Counters,
@@ -244,6 +271,8 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
     let mut eos = false;
     let profiled = dsv4_prof_on();
     let mut decode_phase = None;
+    // The headline clock includes CPU sampling, every forward, and the final drain.
+    // A sum of decode_step durations would be forward-only and is not this metric.
     let (decode_wall, forward_calls) = timed_sampled_decode(
         OUTPUT_TOKENS,
         |_| {
@@ -313,6 +342,38 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
         final_hidden_digest[0], final_hidden_digest[1],
         "final hidden rank symmetry"
     );
+    let attention_mode = gpu.attention_tp_geometry().is_some();
+    let attention_join_sha256 = if attention_mode {
+        let snapshot = gpu
+            .attention_tp_last_join_for_gate(&state)
+            .expect("actual final attention join");
+        let hidden = gpu.attention_tp_geometry().unwrap().hidden;
+        for plane in snapshot.partials.iter().chain(snapshot.joined.iter()) {
+            assert_eq!(plane.len(), hidden);
+            assert!(plane.iter().all(|value| value.is_finite()));
+        }
+        for (column, (&rank0, &rank1)) in snapshot.partials[0]
+            .iter()
+            .zip(&snapshot.partials[1])
+            .enumerate()
+        {
+            let expected = rank0 + rank1;
+            assert!(expected.is_finite());
+            for joined in &snapshot.joined {
+                assert_eq!(
+                    joined[column].to_bits(),
+                    expected.to_bits(),
+                    "actual attention GPU sum vs CPU f32 at {column}"
+                );
+            }
+        }
+        Some(sha256_f32(&snapshot.joined[0]))
+    } else {
+        None
+    };
+    let attention_join_json = attention_join_sha256
+        .as_ref()
+        .map_or("null".to_string(), |value| format!("\"{value}\""));
     println!("TOKENS {{\"repeat\":{repeat},\"ids\":{generated:?}}}");
     println!(
         "OUTPUT_TEXT repeat={repeat} text={:?}",
@@ -320,7 +381,7 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
     );
     println!("PROFILE repeat={repeat} enabled={profiled} window_start=32 window_end=64");
     println!(
-        "MEASURE {{\"repeat\":{repeat},\"prompt_tokens\":{PROMPT_TOKENS},\"requested_output_tokens\":{OUTPUT_TOKENS},\"generated_tokens\":{},\"forward_calls\":{},\"eos\":{eos},\"state_alloc_ns\":{},\"prime_wall_ns\":{},\"decode_wall_ns\":{},\"prime_tok_s\":{prime_tok_s:.6},\"decode_tok_s\":{decode_tok_s:.6},\"headline_decode_tok_s\":{headline_decode_tok_s},\"eligible\":{eligible},\"looped\":{is_looped},\"state_pos\":{},\"generated_sha256\":\"{generated_sha256}\",\"final_logits_sha256\":\"{final_logits_sha256}\",\"final_cache_digest\":[{},{}],\"final_hidden_digest\":[{},{}],\"ar_refusals\":[{},{}],\"rank_layer_calls\":[{},{}],\"ep_calls\":{},\"ar_dispatches\":{},\"gu_m1_calls\":{},\"gu_half2_calls\":{},\"down_half2_calls\":{},\"wo_a_calls\":{},\"index_radix_calls\":{},\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false,\"hidden_hash_in_timing\":false}}",
+        "MEASURE {{\"repeat\":{repeat},\"prompt_tokens\":{PROMPT_TOKENS},\"requested_output_tokens\":{OUTPUT_TOKENS},\"generated_tokens\":{},\"forward_calls\":{},\"eos\":{eos},\"state_alloc_ns\":{},\"prime_wall_ns\":{},\"decode_wall_ns\":{},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"prime_tok_s\":{prime_tok_s:.6},\"decode_tok_s\":{decode_tok_s:.6},\"headline_decode_tok_s\":{headline_decode_tok_s},\"eligible\":{eligible},\"looped\":{is_looped},\"state_pos\":{},\"generated_sha256\":\"{generated_sha256}\",\"final_logits_sha256\":\"{final_logits_sha256}\",\"final_cache_digest\":[{},{}],\"final_hidden_digest\":[{},{}],\"attention_tp\":{attention_mode},\"attention_join_sha256\":{attention_join_json},\"attention_rank_calls\":[{},{}],\"attention_ar_calls\":{},\"ar_refusals\":[{},{}],\"rank_layer_calls\":[{},{}],\"ep_calls\":{},\"ar_dispatches\":{},\"gu_m1_calls\":{},\"gu_half2_calls\":{},\"down_half2_calls\":{},\"wo_a_calls\":{},\"index_radix_calls\":{},\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false,\"hidden_hash_in_timing\":false}}",
         generated.len(),
         generated.len(),
         state_alloc.as_nanos(),
@@ -331,6 +392,9 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
         final_cache_digest[1],
         final_hidden_digest[0],
         final_hidden_digest[1],
+        counters_decode.attention_rank[0],
+        counters_decode.attention_rank[1],
+        counters_decode.attention_ar,
         ar_refusals[0],
         ar_refusals[1],
         counters_decode.rank_layer[0],
@@ -357,6 +421,7 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
         final_logits_sha256,
         final_cache_digest,
         final_hidden_digest,
+        attention_join_sha256,
         ar_refusals,
         looped: is_looped,
         counters_prime,
@@ -371,6 +436,37 @@ fn main() {
         3,
         "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt>"
     );
+    let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => false,
+        Ok("1") => true,
+        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
+    };
+    let sampler = dsv4_sampler_order().expect("explicit sampler configuration");
+    if attention_mode {
+        assert_eq!(
+            sampler,
+            Dsv4SamplerOrder::Comparison,
+            "first attention-TP performance receipt pins Comparison sampling"
+        );
+        assert!(
+            !dsv4_prof_on(),
+            "attention TP performance refuses profiled timing"
+        );
+    }
+    let sampler_name = match sampler {
+        Dsv4SamplerOrder::Comparison => "comparison",
+        Dsv4SamplerOrder::Radix => "radix",
+    };
+    let repeats = if attention_mode {
+        ATTENTION_REPEATS
+    } else {
+        REPEATS
+    };
+    let numeric_class = if attention_mode {
+        memra_engine::dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS
+    } else {
+        memra_engine::dsv4_gpu::TP_EP_RANK_ORDER_NUMERIC_CLASS
+    };
     assert_ne!(
         std::env::var("MEMRA_DSV4_ROUND_PROFILE").as_deref(),
         Ok("1"),
@@ -414,12 +510,10 @@ fn main() {
     assert!(prompt.len() >= PROMPT_TOKENS);
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
+    Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
+    println!("NUMERIC_CLASS {numeric_class}");
     println!(
-        "NUMERIC_CLASS {}",
-        memra_engine::dsv4_gpu::TP_EP_RANK_ORDER_NUMERIC_CLASS
-    );
-    println!(
-        "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{REPEATS},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
+        "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
     );
     let gpu = Dsv4Gpu::load(
         dir,
@@ -429,6 +523,11 @@ fn main() {
     )
     .expect("TP/EP model");
     assert!(gpu.topology().is_tp_ep(), "no PP fallback");
+    assert_eq!(
+        gpu.attention_tp_geometry().is_some(),
+        attention_mode,
+        "no attention fallback"
+    );
     gpu.set_grouped_route_validation_for_gate(false);
     gpu.set_grouped_mirror_validation_for_gate(false);
     gpu.set_grouped_gu_fuse_for_gate(true);
@@ -436,25 +535,27 @@ fn main() {
     memra_engine::set_moe_f16g_gu_m1_tc_for_gate(true);
     memra_engine::set_moe_f16g_gu_half2_for_gate(true);
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
-    gpu.set_dense_wo_a_grouped_for_gate(true);
+    gpu.set_dense_wo_a_grouped_for_gate(!attention_mode);
     gpu.set_index_topk_radix_for_gate(true);
 
-    let first = run_once(&gpu, &prompt, &tokenizer, 0);
-    let second = run_once(&gpu, &prompt, &tokenizer, 1);
-    assert_eq!(
-        first.generated_sha256, second.generated_sha256,
-        "same-TP sampled repeat stream"
-    );
-    assert_eq!(first.state_pos, second.state_pos);
-    assert_eq!(first.generated_tokens, second.generated_tokens);
-    assert_eq!(first.forward_calls, second.forward_calls);
-    assert_eq!(first.eos, second.eos);
-    assert_eq!(first.final_logits_sha256, second.final_logits_sha256);
-    assert_eq!(first.final_cache_digest, second.final_cache_digest);
-    assert_eq!(first.final_hidden_digest, second.final_hidden_digest);
-    assert_eq!(first.ar_refusals, [0, 0]);
-    assert_eq!(second.ar_refusals, [0, 0]);
-    for receipt in [&first, &second] {
+    let receipts: Vec<_> = (0..repeats)
+        .map(|repeat| run_once(&gpu, &prompt, &tokenizer, repeat))
+        .collect();
+    let first = &receipts[0];
+    for receipt in &receipts {
+        assert_eq!(
+            first.generated_sha256, receipt.generated_sha256,
+            "same-program sampled repeat stream"
+        );
+        assert_eq!(first.state_pos, receipt.state_pos);
+        assert_eq!(first.generated_tokens, receipt.generated_tokens);
+        assert_eq!(first.forward_calls, receipt.forward_calls);
+        assert_eq!(first.eos, receipt.eos);
+        assert_eq!(first.final_logits_sha256, receipt.final_logits_sha256);
+        assert_eq!(first.final_cache_digest, receipt.final_cache_digest);
+        assert_eq!(first.final_hidden_digest, receipt.final_hidden_digest);
+        assert_eq!(first.attention_join_sha256, receipt.attention_join_sha256);
+        assert_eq!(receipt.ar_refusals, [0, 0]);
         println!(
             "REPEAT repeat={} state_alloc_ns={} prime_wall_ns={} decode_wall_ns={} state_pos={} generated_tokens={} forward_calls={} eos={} looped={} eligible={} prime_counters={:?} decode_counters={:?}",
             receipt.repeat,
@@ -471,9 +572,34 @@ fn main() {
             receipt.counters_decode,
         );
     }
-    println!(
-        "PASS sampled TP/EP internal repeat; eligible_first={} eligible_second={} loop exclusion remains per-row eligibility",
-        first.eligible, second.eligible
-    );
+    if attention_mode {
+        assert!(
+            receipts.iter().all(|receipt| receipt.eligible),
+            "all five sampled attention rows must be eligible; no reroll or forward-only substitute"
+        );
+        let total_tokens: usize = receipts
+            .iter()
+            .map(|receipt| receipt.generated_tokens)
+            .sum();
+        let total_wall_ns: u128 = receipts
+            .iter()
+            .map(|receipt| receipt.decode_wall.as_nanos())
+            .sum();
+        let pooled_tok_s = total_tokens as f64 * 1e9 / total_wall_ns as f64;
+        println!(
+            "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"comparison\",\"paired_control\":false,\"speculative\":false}}"
+        );
+    }
+    if attention_mode {
+        println!(
+            "PASS sampled attention TP2; repeats={repeats} eligible={repeats} timing_scope=sample_plus_forward_envelope sampler=comparison"
+        );
+    } else {
+        println!(
+            "PASS sampled TP/EP internal repeat; eligible_first={} eligible_second={} loop exclusion remains per-row eligibility",
+            first.eligible, receipts[1].eligible
+        );
+    }
+    Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }

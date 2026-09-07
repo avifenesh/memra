@@ -766,6 +766,7 @@ mod cpu_experts;
 #[cfg(memra_cutlass)]
 pub mod cutlass_ffi;
 pub mod dsv4_attention_split;
+pub mod dsv4_attention_tp;
 mod dsv4_c4;
 mod dsv4_ep;
 mod dsv4_ep_graph;
