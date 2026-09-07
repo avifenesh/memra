@@ -1249,6 +1249,78 @@ impl GpuTensor {
         Self::load_opt_from_source(e, &GgufSource(g), name)
     }
 
+    /// A ROW or COLUMN range of an NVFP4-native 2-D weight, resident in the split-plane layout
+    /// the A1 direct import builds for the whole tensor (the glm5-TP shared-expert halves:
+    /// gate/up row halves, down column halves; a column range lands on the 64-element block).
+    /// `None` when the source does not expose the tensor NVFP4-native or the A1 arm's own
+    /// conditions do not hold, so the caller declines by name instead of guessing a layout.
+    pub fn load_nvfp4_native_range_from_source(
+        e: &Engine,
+        src: &dyn TensorSource,
+        name: &str,
+        rows: Option<std::ops::Range<usize>>,
+        cols: Option<std::ops::Range<usize>>,
+    ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
+        let st_direct = std::env::var("MEMRA_ST_DIRECT")
+            .map(|v| v != "0")
+            .unwrap_or(true);
+        if !rp_enabled() || !st_direct {
+            return Ok(None);
+        }
+        let Some(nv) = src.find_nvfp4_native(name) else {
+            return Ok(None);
+        };
+        if nv.in_f % 64 != 0 || nv.out_f == 0 {
+            return Ok(None);
+        }
+        let (r0, r1) = rows.map(|r| (r.start, r.end)).unwrap_or((0, nv.out_f));
+        let (k0, k1) = cols.map(|c| (c.start, c.end)).unwrap_or((0, nv.in_f));
+        if r0 >= r1
+            || r1 > nv.out_f
+            || k0 >= k1
+            || k1 > nv.in_f
+            || k0 % 64 != 0
+            || (k1 - k0) % 64 != 0
+        {
+            return Err(format!(
+                "{name}: NVFP4 range rows {r0}..{r1} of {} / cols {k0}..{k1} of {} (columns on 64)",
+                nv.out_f, nv.in_f
+            )
+            .into());
+        }
+        let in_bytes = nv.in_f / 2;
+        let scl = nv.in_f / 16;
+        let (out_f, in_f) = (r1 - r0, k1 - k0);
+        let mut wb = Vec::with_capacity(out_f * in_f / 2);
+        let mut ws = Vec::with_capacity(out_f * in_f / 16);
+        for r in r0..r1 {
+            wb.extend_from_slice(&nv.wbytes[r * in_bytes + k0 / 2..r * in_bytes + k1 / 2]);
+            ws.extend_from_slice(&nv.wscale[r * scl + k0 / 16..r * scl + k1 / 16]);
+        }
+        let stem = name.strip_suffix(".weight").unwrap_or(name);
+        let scale = match src.find(&format!("{stem}.scale")) {
+            Some(sv) => f32::from_le_bytes(sv.bytes[..4].try_into().unwrap()),
+            None => 1.0,
+        };
+        let bytes = e.htod_bytes(&memra_gguf::nvfp4_repack::repack_modelopt_to_split(
+            &wb, &ws, out_f, in_f,
+        ))?;
+        Ok(Some(GpuTensor::Quant {
+            bytes,
+            qtype: QT_NVFP4,
+            row_bytes: in_f / 64 * 36,
+            ne: vec![in_f as u64, out_f as u64],
+            scale,
+            rp: true,
+            #[cfg(memra_cutlass)]
+            cutlass: None,
+            fp8: None,
+            blk: None,
+            f16: None,
+            rp4: None,
+        }))
+    }
+
     pub fn load_opt_from_source(
         e: &Engine,
         src: &dyn TensorSource,

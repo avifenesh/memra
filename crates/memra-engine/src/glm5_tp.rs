@@ -1960,6 +1960,20 @@ pub struct Glm5TpGlue {
     /// kernels on the same input give the same bytes, it costs zero crossings, and it is what
     /// lets the layer sit inside a captured graph piece (a fan-out cannot). `None` on MoE.
     pub dense: Option<Glm5TpPeerDense>,
+    /// The shared expert split across the ranks like the routed experts: gate/up ROW halves,
+    /// down COLUMN halves, each rank's half output a partial sum the one-shot carries. Root's
+    /// half sits here too (the layer's full tensors stay for prime and every other walk).
+    /// `None` keeps the shared expert on the root, which tptrace5 (2026-09-07) measured as
+    /// ~0.8 ms of root-only work per token and the same amount of peer spin at the crossings.
+    pub shexp_root: Option<Glm5TpShexpHalf>,
+    pub shexp_peer: Option<Glm5TpShexpHalf>,
+}
+
+/// One rank's half of the shared expert.
+pub struct Glm5TpShexpHalf {
+    pub gate: GpuTensor,
+    pub up: GpuTensor,
+    pub down: GpuTensor,
 }
 
 /// The peer's copy of a dense FFN: gate, up, down and the AWQ pre-quant scale when present.
@@ -2053,6 +2067,8 @@ pub(crate) fn replicate_layer_glue(
             },
             router,
             dense,
+            shexp_root: None,
+            shexp_peer: None,
         });
     }
     Ok(out)

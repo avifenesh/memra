@@ -796,6 +796,8 @@ fn hyper_decode_ws_on() -> bool {
 /// Symmetric TP walk engagements (`MEMRA_GLM5_TP_SYMMETRIC`; gate non-vacuity, box receipt).
 pub static GLM5_TP_SYM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+pub static GLM5_TP_SHEXP_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 /// Set once the symmetric walk has announced its decline, so the root walk is taken quietly
 /// afterwards but never silently the first time.
 pub static GLM5_TP_SYM_DECLINED: std::sync::atomic::AtomicBool =
@@ -3162,6 +3164,7 @@ impl HybridModel {
                     &[&ws.z, &ws_peer.z],
                     zq8.as_ref(),
                     peer_router,
+                    glue.shexp_root.as_ref().zip(glue.shexp_peer.as_ref()),
                     1,
                     &self.cfg,
                     il as u16,
@@ -14789,6 +14792,10 @@ impl HybridModel {
         z_by_rank: &[&CudaSlice<f32>],
         zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
         peer_router: &crate::glm5_tp::Glm5TpPeerRouter,
+        shexp_halves: Option<(
+            &crate::glm5_tp::Glm5TpShexpHalf,
+            &crate::glm5_tp::Glm5TpShexpHalf,
+        )>,
         t: usize,
         cfg: &ModelConfig,
         il: u16,
@@ -14879,9 +14886,49 @@ impl HybridModel {
                 &mut out1,
             )?;
         }
-        // Shared expert on root, folded into root's partial BEFORE the reduce, so the sum carries
-        // it to both ranks without replicating the shared-expert weights.
-        Self::moe_shexp_add(e, m, z_by_rank[0], zq8, t, cfg, lim_shexp, &mut out0)?;
+        // The shared expert: split across the ranks when the glue carries the halves (gate/up
+        // row halves, down column halves; each half output is a partial the reduce sums), else
+        // on root, folded into root's partial BEFORE the reduce.
+        match shexp_halves {
+            Some((r, p)) => {
+                Self::moe_shexp_add_with(
+                    e,
+                    &r.gate,
+                    &r.up,
+                    &r.down,
+                    m.gate_inp_shexp.as_ref(),
+                    z_by_rank[0],
+                    zq8,
+                    t,
+                    cfg,
+                    lim_shexp,
+                    &mut out0,
+                )?;
+                Self::moe_shexp_add_with(
+                    peer,
+                    &p.gate,
+                    &p.up,
+                    &p.down,
+                    None,
+                    z_by_rank[1],
+                    None,
+                    t,
+                    cfg,
+                    lim_shexp,
+                    &mut out1,
+                )?;
+                if GLM5_TP_SHEXP_SPLIT_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    == 0
+                {
+                    eprintln!(
+                        "[glm5-tp-shexp] engaged: the shared expert is split across the ranks \
+                         (gate/up row halves, down column halves); each half's output is a \
+                         partial the one-shot sums"
+                    );
+                }
+            }
+            None => Self::moe_shexp_add(e, m, z_by_rank[0], zq8, t, cfg, lim_shexp, &mut out0)?,
+        }
         // Out of place: the partials are the inputs, two fresh buffers the outputs (no staging copy).
         let mut red0 = e.zeros(t * n_embd)?;
         let mut red1 = peer.zeros(t * n_embd)?;
@@ -15482,6 +15529,40 @@ impl HybridModel {
         if let (Some(gate_shexp), Some(up_shexp), Some(down_shexp)) =
             (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
         {
+            Self::moe_shexp_add_with(
+                e,
+                gate_shexp,
+                up_shexp,
+                down_shexp,
+                m.gate_inp_shexp.as_ref(),
+                z,
+                zq8,
+                t,
+                cfg,
+                lim_shexp,
+                moe_out,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// The shared expert over explicit tensors (the layer's own, or one rank's half of them in
+    /// the symmetric TP walk), accumulated into `moe_out`.
+    #[allow(clippy::too_many_arguments)] // allow: the three tensors are the operand set
+    fn moe_shexp_add_with(
+        e: &Engine,
+        gate_shexp: &crate::model::GpuTensor,
+        up_shexp: &crate::model::GpuTensor,
+        down_shexp: &crate::model::GpuTensor,
+        gate_inp_shexp: Option<&crate::model::GpuTensor>,
+        z: &CudaSlice<f32>,
+        zq8: Option<&(CudaSlice<i8>, CudaSlice<f32>)>,
+        t: usize,
+        cfg: &ModelConfig,
+        lim_shexp: Option<memra_gguf::config::SwigluClamp>,
+        moe_out: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        {
             let n_embd = cfg.n_embd as usize;
             let n_ff_sh = gate_shexp.out_features(); // 512
             // Q8 TRUNK-FUSION (decode t=1): gate_shexp+up_shexp are Q8_0 same-shape on the 35B —
@@ -15576,7 +15657,7 @@ impl HybridModel {
             // 156). The resident ones buffer feeds the SAME `add_scaled_rows_f32` kernel the
             // same 1.0 values, so the arms are bit-identical.
             // moe_out[r, :] += sh[r, :] * g[r]   (per-token scalar gate; g=1 ungated)
-            match &m.gate_inp_shexp {
+            match gate_inp_shexp {
                 Some(gate_inp_shexp) => {
                     let g = e.sigmoid_dot_rows(z, gate_inp_shexp.float_data(), n_embd, t)?;
                     e.add_scaled_rows(&sh, &g, moe_out, n_embd, t)?;
