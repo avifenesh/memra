@@ -48,6 +48,18 @@ type Res<T> = Result<T, String>;
 static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
 static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
+// Gate-only exact radix-cut selector for plain t=1, K=512 indexer rows. Default OFF and
+// process-local: there is no production environment knob or serving default. The scratch is
+// preallocated with the decode workspace, and the actual enqueue count is incremented only after
+// the CUDA launcher accepts the dispatch.
+static DSV4_INDEX_TOPK_RADIX: AtomicBool = AtomicBool::new(false);
+static DSV4_INDEX_TOPK_RADIX_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+fn index_topk_radix_eligible(t: usize, nb: usize, kk: usize) -> bool {
+    t == 1 && kk == 512 && (2048..=4096).contains(&nb)
+}
+
 /// Copyable report for the gate-only one-layer CUDA graph probe.  The retained
 /// graph itself stays private to the verifier; callers only need the node and
 /// kernel census to decide whether the captured shape is worth a replay arm.
@@ -1533,6 +1545,32 @@ impl Dsv4Gpu {
     pub fn device_verify_topk_calls(&self) -> u64 {
         self.device_verify_topk_calls
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Gate-only exact radix-cut selector for plain t=1, K=512 indexer rows. This drains every
+    /// stage before changing the process-local policy; it is not a serving/request option.
+    pub fn set_index_topk_radix_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain index top-k radix gate");
+        }
+        DSV4_INDEX_TOPK_RADIX.swap(enabled, Ordering::SeqCst)
+    }
+
+    pub fn clear_index_topk_radix_for_gate(&self) {
+        self.set_index_topk_radix_for_gate(false);
+    }
+
+    pub fn index_topk_radix_for_gate(&self) -> bool {
+        DSV4_INDEX_TOPK_RADIX.load(Ordering::Acquire)
+    }
+
+    /// Successful CUDA enqueues through the gate-only radix selector.
+    pub fn index_topk_radix_dispatches(&self) -> u64 {
+        DSV4_INDEX_TOPK_RADIX_DISPATCHES.load(Ordering::Relaxed)
     }
 
     /// Exclusive gate seam, not a request option. Graph executables must key this
@@ -10595,6 +10633,10 @@ pub struct VerifyWs {
     topk_a: CudaSlice<u64>,
     topk_b: CudaSlice<u64>,
     topk_stride: usize,
+    // Plain t=1 radix-selector scratch; stable across rounds and never read back to host.
+    topk_radix_keys: CudaSlice<u64>,
+    topk_radix_candidates: CudaSlice<u64>,
+    topk_radix_cap: usize,
     idx: CudaSlice<i32>,
     idx_stride: usize,
     o: CudaSlice<f32>,
@@ -11524,6 +11566,7 @@ impl Dsv4Gpu {
         assert!(min_index_ratio != usize::MAX, "no indexer layers?");
         let score_cap = self.max_seq / min_index_ratio + 1;
         let topk_stride = score_cap.div_ceil(4096) * 512;
+        let topk_radix_cap = 4096usize;
         let idx_tail = itopk.max(self.max_seq / 128 + 1);
         let idx_stride = win + idx_tail;
         let max_gemm_k = (o_groups * o_lora).max(hidden).max(q_lora).max(sh_inter);
@@ -11609,6 +11652,9 @@ impl Dsv4Gpu {
                 topk_a: u(tmax * topk_stride)?,
                 topk_b: u(tmax * topk_stride)?,
                 topk_stride,
+                topk_radix_keys: u(topk_radix_cap)?,
+                topk_radix_candidates: u(topk_radix_cap)?,
+                topk_radix_cap,
                 idx: i(tmax * idx_stride)?,
                 idx_stride,
                 o: f(tmax * heads * hd)?,
@@ -12716,20 +12762,47 @@ impl Dsv4Gpu {
                             continue;
                         }
                         if !host_math && self.verify_topk == Dsv4VerifyTopk::Device {
+                            let use_radix = DSV4_INDEX_TOPK_RADIX.load(Ordering::Acquire)
+                                && index_topk_radix_eligible(t, nb, kk)
+                                && vws.topk_radix_cap >= nb;
                             unsafe {
+                                let idx_tail = (vws.idx.device_ptr_mut(&stream).0 as usize
+                                    + (idx_off + win) * 4)
+                                    as *mut i32;
                                 ck(
-                                    "numeric top-k narrow verify",
-                                    k::memra_dsv4_topk_idx_numeric(
-                                        dpf!(vws.score, &stream),
-                                        nb as i32,
-                                        kk as i32,
-                                        win as i32,
-                                        (vws.idx.device_ptr_mut(&stream).0 as usize
-                                            + (idx_off + win) * 4)
-                                            as *mut i32,
-                                        sp(&stream),
-                                    ),
+                                    if use_radix {
+                                        "radix top-k narrow verify"
+                                    } else {
+                                        "numeric top-k narrow verify"
+                                    },
+                                    if use_radix {
+                                        k::memra_dsv4_topk_idx_radix_m1(
+                                            dpf!(vws.score, &stream),
+                                            nb as i32,
+                                            kk as i32,
+                                            win as i32,
+                                            idx_tail,
+                                            vws.topk_radix_keys.device_ptr_mut(&stream).0
+                                                as *mut u64,
+                                            vws.topk_radix_candidates.device_ptr_mut(&stream).0
+                                                as *mut u64,
+                                            sp(&stream),
+                                        )
+                                    } else {
+                                        k::memra_dsv4_topk_idx_numeric(
+                                            dpf!(vws.score, &stream),
+                                            nb as i32,
+                                            kk as i32,
+                                            win as i32,
+                                            idx_tail,
+                                            sp(&stream),
+                                        )
+                                    },
                                 )?;
+                                if use_radix {
+                                    DSV4_INDEX_TOPK_RADIX_DISPATCHES
+                                        .fetch_add(1, Ordering::Relaxed);
+                                }
                             }
                             self.device_verify_topk_calls
                                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -15856,6 +15929,49 @@ mod verify_topk_tests {
         println!(
             "PASS numeric top-k: 45 host-oracle cells, signed-zero control, duplicate/infinite scores, power-of-two boundaries, input/output guards"
         );
+    }
+}
+
+#[cfg(test)]
+mod index_topk_radix_tests {
+    use super::{
+        DSV4_INDEX_TOPK_RADIX, DSV4_INDEX_TOPK_RADIX_DISPATCHES, index_topk_radix_eligible,
+    };
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn radix_gate_is_narrow_to_k512_and_the_4096_control_boundary() {
+        for nb in [2048, 2056, 2064, 2112, 4096] {
+            assert!(index_topk_radix_eligible(1, nb, 512), "nb={nb}");
+        }
+        for (t, nb, kk) in [
+            (1, 2047, 512),
+            (1, 4097, 512),
+            (1, 2056, 511),
+            (1, 2056, 513),
+            (2, 2056, 512),
+        ] {
+            assert!(
+                !index_topk_radix_eligible(t, nb, kk),
+                "unexpected admission t={t} nb={nb} kk={kk}"
+            );
+        }
+    }
+
+    #[test]
+    fn radix_gate_state_and_counter_are_reversible() {
+        let previous = DSV4_INDEX_TOPK_RADIX.swap(false, Ordering::SeqCst);
+        assert!(!DSV4_INDEX_TOPK_RADIX.load(Ordering::Acquire));
+        DSV4_INDEX_TOPK_RADIX.store(true, Ordering::Release);
+        assert!(DSV4_INDEX_TOPK_RADIX.load(Ordering::Acquire));
+        let before = DSV4_INDEX_TOPK_RADIX_DISPATCHES.load(Ordering::Relaxed);
+        DSV4_INDEX_TOPK_RADIX_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(
+            DSV4_INDEX_TOPK_RADIX_DISPATCHES.load(Ordering::Relaxed),
+            before + 1
+        );
+        DSV4_INDEX_TOPK_RADIX.store(previous, Ordering::SeqCst);
+        DSV4_INDEX_TOPK_RADIX_DISPATCHES.fetch_sub(1, Ordering::Relaxed);
     }
 }
 

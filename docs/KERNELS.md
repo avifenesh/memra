@@ -317,6 +317,17 @@ CUDA gate covers ties, both zero signs, infinities, power-of-two boundaries,
 input preservation and output guards. The composed C4/full-model gate passes;
 performance remains pending. This selector is a graph-capture prerequisite.
 
+The gate-only `dsv4_topk_idx_radix_m1_kernel` /
+`memra_dsv4_topk_idx_radix_m1` is a separate exact candidate for plain t=1,
+`K=512`, `2048<=N<=4096`: three MSD bytes cut the exact order-key prefix, then the
+retained prefix uses the same integer bitonic order. It normalizes signed zeros
+and preserves ascending original-index ties, with an all-equal primary-key
+index-order fast path. Scratch is persistent in `VerifyWs`; no host score/index
+copy is introduced. `set_index_topk_radix_for_gate` is process-local and
+default-OFF, and `index_topk_radix_dispatches` counts successful accepted
+launches. N>4096 and all non-t=1/K!=512/batched paths retain their existing
+selectors. This is an attribution candidate, not a production qualification.
+
 Whole-expert EP: `dsv4_fp4_gemm_sel_kernel<WarpReduce,true>` /
 `memra_dsv4_fp4_gemm_sel_ep` applies an ownership mask before the existing GEMV
 arithmetic, addresses code/scale slabs with local ids and keeps global macro-scale

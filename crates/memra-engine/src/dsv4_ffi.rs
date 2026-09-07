@@ -105,6 +105,18 @@ unsafe extern "C" {
         idx_out: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    /// Gate-only exact radix-cut twin for the common t=1, K=512 path. The scratch planes are
+    /// persistent workspace owned by the decode state; no score/index host round trip exists.
+    pub fn memra_dsv4_topk_idx_radix_m1(
+        score: *const f32,
+        nb: i32,
+        kk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        radix_keys: *mut u64,
+        radix_candidates: *mut u64,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_c4_gather(
         device: *const f32,
         host: *const f32,

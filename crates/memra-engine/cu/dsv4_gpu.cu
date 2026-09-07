@@ -2115,6 +2115,163 @@ extern "C" __global__ void dsv4_topk_idx_numeric_kernel(const float* score, int 
     dsv4_topk_idx_body<true>(score, nb, kk, win, idx_out, npow2, keys);
 }
 
+template<bool NumericZero>
+__device__ __forceinline__ unsigned long long dsv4_topk_key(float value, unsigned index) {
+    unsigned b = __float_as_uint(value);
+    if constexpr (NumericZero) if ((b & 0x7FFFFFFFu) == 0) b = 0;
+    const unsigned ord = b ^ ((b >> 31) ? 0xFFFFFFFFu : 0x80000000u);
+    return (((unsigned long long)(~ord)) << 32) | (unsigned long long)index;
+}
+
+// Gate-only radix-cut twin for the common t=1, K=512 selector. The order key and numerical-zero
+// normalization are exactly the numeric bitonic body above. Three MSD bytes choose the complete
+// prefix containing the first K keys; only that prefix is sorted. All-equal primary keys take the
+// exact index-ascending fast path. The global scratch is preallocated by Rust and no host score
+// or index D2H boundary is introduced.
+extern "C" __global__ void dsv4_topk_idx_radix_m1_kernel(
+    const float* __restrict__ score, int nb, int kk, int win, int* __restrict__ idx_out,
+    unsigned long long* __restrict__ keys, unsigned long long* __restrict__ candidates,
+    int npow2) {
+    extern __shared__ unsigned long long sort_keys[];
+    __shared__ unsigned histogram[256];
+    __shared__ unsigned long long primary_key;
+    __shared__ int all_primary_equal;
+    __shared__ int cut0, cut1, cut2;
+    __shared__ int prefix0, prefix1;
+    __shared__ int candidate_count;
+    __shared__ int sort_count;
+    const int tid = threadIdx.x;
+
+    for (int i = tid; i < nb; i += blockDim.x)
+        keys[i] = dsv4_topk_key<true>(score[i], (unsigned)i);
+    if (tid == 0) {
+        primary_key = keys[0] & 0xFFFFFFFF00000000ull;
+        all_primary_equal = 1;
+    }
+    __syncthreads();
+    for (int i = tid; i < nb; i += blockDim.x) {
+        if ((keys[i] & 0xFFFFFFFF00000000ull) != primary_key)
+            atomicExch(&all_primary_equal, 0);
+    }
+    __syncthreads();
+    if (all_primary_equal) {
+        for (int i = tid; i < kk; i += blockDim.x) idx_out[i] = i + win;
+        return;
+    }
+
+    for (int i = tid; i < 256; i += blockDim.x) histogram[i] = 0;
+    __syncthreads();
+    for (int i = tid; i < nb; i += blockDim.x)
+        atomicAdd(&histogram[(keys[i] >> 56) & 0xFFu], 1u);
+    __syncthreads();
+    if (tid == 0) {
+        int prefix = 0;
+        cut0 = 255;
+        prefix0 = 0;
+        for (int bucket = 0; bucket < 256; ++bucket) {
+            const int count = (int)histogram[bucket];
+            if (prefix + count >= kk) {
+                cut0 = bucket;
+                prefix0 = prefix;
+                break;
+            }
+            prefix += count;
+        }
+    }
+    __syncthreads();
+
+    for (int i = tid; i < 256; i += blockDim.x) histogram[i] = 0;
+    __syncthreads();
+    for (int i = tid; i < nb; i += blockDim.x) {
+        if (((keys[i] >> 56) & 0xFFu) == (unsigned)cut0)
+            atomicAdd(&histogram[(keys[i] >> 48) & 0xFFu], 1u);
+    }
+    __syncthreads();
+    if (tid == 0) {
+        int prefix = 0;
+        cut1 = 255;
+        prefix1 = 0;
+        const int need = kk - prefix0;
+        for (int bucket = 0; bucket < 256; ++bucket) {
+            const int count = (int)histogram[bucket];
+            if (prefix + count >= need) {
+                cut1 = bucket;
+                prefix1 = prefix;
+                break;
+            }
+            prefix += count;
+        }
+    }
+    __syncthreads();
+
+    for (int i = tid; i < 256; i += blockDim.x) histogram[i] = 0;
+    __syncthreads();
+    for (int i = tid; i < nb; i += blockDim.x) {
+        if (((keys[i] >> 56) & 0xFFu) == (unsigned)cut0
+            && ((keys[i] >> 48) & 0xFFu) == (unsigned)cut1)
+            atomicAdd(&histogram[(keys[i] >> 40) & 0xFFu], 1u);
+    }
+    __syncthreads();
+    if (tid == 0) {
+        int prefix = 0;
+        cut2 = 255;
+        const int need = kk - prefix0 - prefix1;
+        for (int bucket = 0; bucket < 256; ++bucket) {
+            const int count = (int)histogram[bucket];
+            if (prefix + count >= need) {
+                cut2 = bucket;
+                break;
+            }
+            prefix += count;
+        }
+    }
+    __syncthreads();
+
+    if (tid == 0) candidate_count = 0;
+    __syncthreads();
+    for (int i = tid; i < nb; i += blockDim.x) {
+        const unsigned high = (keys[i] >> 56) & 0xFFu;
+        const unsigned middle = (keys[i] >> 48) & 0xFFu;
+        const unsigned low = (keys[i] >> 40) & 0xFFu;
+        const bool keep = high < (unsigned)cut0
+            || (high == (unsigned)cut0
+                && (middle < (unsigned)cut1
+                    || (middle == (unsigned)cut1 && low <= (unsigned)cut2)));
+        if (keep) {
+            const int slot = atomicAdd(&candidate_count, 1);
+            candidates[slot] = keys[i];
+        }
+    }
+    __syncthreads();
+    if (tid == 0) {
+        sort_count = 1;
+        while (sort_count < candidate_count) sort_count <<= 1;
+    }
+    __syncthreads();
+    for (int i = tid; i < sort_count; i += blockDim.x)
+        sort_keys[i] = (i < candidate_count) ? candidates[i] : 0xFFFFFFFFFFFFFFFFull;
+    __syncthreads();
+    for (int span = 2; span <= sort_count; span <<= 1) {
+        for (int stride = span >> 1; stride > 0; stride >>= 1) {
+            for (int i = tid; i < sort_count; i += blockDim.x) {
+                const int peer = i ^ stride;
+                if (peer > i) {
+                    const bool ascending = ((i & span) == 0);
+                    const unsigned long long a = sort_keys[i];
+                    const unsigned long long b = sort_keys[peer];
+                    if ((a > b) == ascending) {
+                        sort_keys[i] = b;
+                        sort_keys[peer] = a;
+                    }
+                }
+            }
+            __syncthreads();
+        }
+    }
+    for (int i = tid; i < kk; i += blockDim.x)
+        idx_out[i] = (int)(sort_keys[i] & 0xFFFFFFFFull) + win;
+}
+
 extern "C" int memra_dsv4_topk_idx_numeric(const float* score, int nb, int kk, int win,
     int* idx_out, void* stream_v) {
     if (!score || !idx_out || nb <= 0 || nb > 4096 || kk < 0 || kk > nb) return 40008;
@@ -2122,6 +2279,21 @@ extern "C" int memra_dsv4_topk_idx_numeric(const float* score, int nb, int kk, i
     while (npow2 < nb) npow2 <<= 1;
     dsv4_topk_idx_numeric_kernel<<<1, 512, (size_t)npow2 * sizeof(unsigned long long),
         (cudaStream_t)stream_v>>>(score, nb, kk, win, idx_out, npow2);
+    DSV4_ERR();
+    return 0;
+}
+
+extern "C" int memra_dsv4_topk_idx_radix_m1(
+    const float* score, int nb, int kk, int win, int* idx_out,
+    unsigned long long* radix_keys, unsigned long long* radix_candidates, void* stream_v) {
+    if (!score || !idx_out || !radix_keys || !radix_candidates
+        || nb < 2048 || nb > 4096 || kk != 512 || kk > nb)
+        return 40008;
+    int npow2 = 1;
+    while (npow2 < nb) npow2 <<= 1;
+    dsv4_topk_idx_radix_m1_kernel<<<1, 512, (size_t)npow2 * sizeof(unsigned long long),
+        (cudaStream_t)stream_v>>>(score, nb, kk, win, idx_out, radix_keys,
+                                    radix_candidates, npow2);
     DSV4_ERR();
     return 0;
 }
