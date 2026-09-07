@@ -4579,6 +4579,22 @@ impl HybridModel {
             None => None,
         };
         let mut layers = Vec::with_capacity(n_trunk);
+        // MEMRA_LOAD_TRACE=1: one line per layer with the wall each phase took, so a slow boot
+        // is attributed from its own log (the pair's boots ran 12 minutes with ptrace blocked).
+        let load_trace = std::env::var("MEMRA_LOAD_TRACE").as_deref() == Ok("1");
+        let load_t0 = std::time::Instant::now();
+        let mut load_prev = load_t0;
+        let mut load_mark = |what: &str, il: u32| {
+            if load_trace {
+                let now = std::time::Instant::now();
+                eprintln!(
+                    "[load-trace] blk.{il} {what} +{:.2}s (t={:.1}s)",
+                    (now - load_prev).as_secs_f64(),
+                    (now - load_t0).as_secs_f64()
+                );
+                load_prev = now;
+            }
+        };
         for il in 0..n_trunk as u32 {
             let p = |s: &str| format!("blk.{il}.{s}");
             let layer_plan = plan
@@ -4718,6 +4734,7 @@ impl HybridModel {
                 },
                 tp_glue: Vec::new(),
             });
+            load_mark("loaded", il);
             // glm5 TP-2 arming: shard the just-loaded layer in place. Transient VRAM is one
             // layer's full weights (the shards replace them before the next layer loads).
             if let Some(tp_plan) = &glm5_tp
@@ -4776,6 +4793,7 @@ impl HybridModel {
                     crate::glm5_tp::arm_moe_ep(e, &tp_plan.rt, m, placement)?;
                 }
                 layers.push(layer);
+                load_mark("tp-armed", il);
             }
         }
 
