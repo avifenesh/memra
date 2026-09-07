@@ -250,6 +250,11 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
         final_hidden_digest[0], final_hidden_digest[1],
         "final hidden rank symmetry"
     );
+    println!("TOKENS {{\"repeat\":{repeat},\"ids\":{generated:?}}}");
+    println!(
+        "OUTPUT_TEXT repeat={repeat} text={:?}",
+        tokenizer.decode(&generated)
+    );
     println!("PROFILE repeat={repeat} enabled={profiled} window_start=32 window_end=64");
     println!(
         "MEASURE {{\"repeat\":{repeat},\"prompt_tokens\":{PROMPT_TOKENS},\"requested_output_tokens\":{OUTPUT_TOKENS},\"generated_tokens\":{},\"forward_calls\":{},\"eos\":{eos},\"state_alloc_ns\":{},\"prime_wall_ns\":{},\"decode_wall_ns\":{},\"prime_tok_s\":{prime_tok_s:.6},\"decode_tok_s\":{decode_tok_s:.6},\"headline_decode_tok_s\":{headline_decode_tok_s},\"eligible\":{eligible},\"looped\":{is_looped},\"state_pos\":{},\"generated_sha256\":\"{generated_sha256}\",\"final_logits_sha256\":\"{final_logits_sha256}\",\"final_cache_digest\":[{},{}],\"final_hidden_digest\":[{},{}],\"ar_refusals\":[{},{}],\"rank_layer_calls\":[{},{}],\"ep_calls\":{},\"ar_dispatches\":{},\"gu_m1_calls\":{},\"gu_half2_calls\":{},\"down_half2_calls\":{},\"wo_a_calls\":{},\"index_radix_calls\":{},\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false,\"hidden_hash_in_timing\":false}}",
