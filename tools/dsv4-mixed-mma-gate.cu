@@ -217,14 +217,13 @@ extern "C" __global__ void dsv4_mixed_m1_k16_scaled(
 //   first K16; the second K16 uses B1 instead.
 // This is a correctness prototype.  It deliberately accepts the redundant
 // replicated B loads so the shared staging, ldmatrix, and barriers disappear.
-extern "C" __global__ void dsv4_mixed_m1_k16_scaled_reg(
+static __device__ __forceinline__ void dsv4_mixed_m1_k16_scaled_reg_body(
         float* out, const unsigned char* weight_nibbles,
         const unsigned char* act_e4m3, const float* act_scales,
-        const unsigned char* scale_e4m3, int k) {
+        const unsigned char* scale_e4m3, int k, int row_base) {
     const int lane = static_cast<int>(threadIdx.x & 31u);
     const int row = lane / 4;
     const int chunk = lane & 3;
-    const int row_base = static_cast<int>(blockIdx.x) * 16;
     const int weight_row_bytes = (k + 1) >> 1;
     const int scale_groups = (k + 15) >> 4;
     float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -281,6 +280,47 @@ extern "C" __global__ void dsv4_mixed_m1_k16_scaled_reg(
         const int col = (lane % 4) * 2 + (l & 1);
         out[static_cast<size_t>(row_base + output_row) * 8 + col] = acc[l];
     }
+}
+
+extern "C" __global__ void dsv4_mixed_m1_k16_scaled_reg(
+        float* out, const unsigned char* weight_nibbles,
+        const unsigned char* act_e4m3, const float* act_scales,
+        const unsigned char* scale_e4m3, int k) {
+    dsv4_mixed_m1_k16_scaled_reg_body(
+        out, weight_nibbles, act_e4m3, act_scales, scale_e4m3, k,
+        static_cast<int>(blockIdx.x) * 16);
+}
+
+// Packed sequential/grouped entry points share the exact register-fed body.
+// Their only difference is expert pointer arithmetic: the first is launched
+// once per expert, the second uses grid.y to select all experts in one launch.
+extern "C" __global__ void dsv4_mixed_m1_k16_scaled_reg_packed(
+        float* out, const unsigned char* weight_nibbles,
+        const unsigned char* act_e4m3, const float* act_scales,
+        const unsigned char* scale_e4m3, int k, int expert,
+        int out_stride, int weight_stride, int act_stride,
+        int act_scale_stride, int scale_stride) {
+    const size_t e = static_cast<size_t>(expert);
+    dsv4_mixed_m1_k16_scaled_reg_body(
+        out + e * out_stride, weight_nibbles + e * weight_stride,
+        act_e4m3 + e * act_stride, act_scales + e * act_scale_stride,
+        scale_e4m3 + e * scale_stride, k,
+        static_cast<int>(blockIdx.x) * 16);
+}
+
+extern "C" __global__ void dsv4_mixed_m1_k16_scaled_reg_grouped(
+        float* out, const unsigned char* weight_nibbles,
+        const unsigned char* act_e4m3, const float* act_scales,
+        const unsigned char* scale_e4m3, int k, int out_stride,
+        int weight_stride, int act_stride, int act_scale_stride,
+        int scale_stride) {
+    const int expert = static_cast<int>(blockIdx.y);
+    const size_t e = static_cast<size_t>(expert);
+    dsv4_mixed_m1_k16_scaled_reg_body(
+        out + e * out_stride, weight_nibbles + e * weight_stride,
+        act_e4m3 + e * act_stride, act_scales + e * act_scale_stride,
+        scale_e4m3 + e * scale_stride, k,
+        static_cast<int>(blockIdx.x) * 16);
 }
 
 #if defined(DSV4_MIXED_MMA_HOST_TEST) || defined(DSV4_MIXED_MMA_GPU_TEST)
@@ -848,7 +888,359 @@ static bool run_gpu_top6(const char* label, const std::vector<Expert>& experts,
     return true;
 }
 
-static bool run_gpu_case(const char* label, const int m, const int k, const int seed) {
+struct GroupedFixture {
+    int experts = 0;
+    int m = 0;
+    int k = 0;
+    int row_bytes = 0;
+    int scale_groups = 0;
+    int act_scale_groups = 0;
+    int out_stride = 0;
+    int weight_stride = 0;
+    int act_stride = 0;
+    int act_scale_stride = 0;
+    int scale_stride = 0;
+    std::vector<Expert> weights;
+    std::vector<std::vector<std::uint8_t>> acts;
+    std::vector<std::vector<float>> act_scales;
+};
+
+static GroupedFixture make_grouped_fixture(const int m, const int k, const int seed) {
+    GroupedFixture f;
+    f.experts = 6;
+    f.m = m;
+    f.k = k;
+    f.row_bytes = (k + 1) >> 1;
+    f.scale_groups = (k + 15) >> 4;
+    f.act_scale_groups = (k + 127) >> 7;
+    f.out_stride = m * 8;
+    f.weight_stride = m * f.row_bytes;
+    f.act_stride = k;
+    f.act_scale_stride = f.act_scale_groups;
+    f.scale_stride = m * f.scale_groups;
+    f.weights.reserve(f.experts);
+    f.acts.reserve(f.experts);
+    f.act_scales.reserve(f.experts);
+    for (int expert = 0; expert < f.experts; ++expert) {
+        const int expert_seed = seed + expert * 17;
+        f.weights.push_back(make_expert(m, k, expert_seed + 3));
+        f.acts.emplace_back(k);
+        for (int i = 0; i < k; ++i) {
+            f.acts.back()[i] = activation_pattern(i, expert_seed + 5);
+        }
+        f.act_scales.push_back(activation_scales(k, expert_seed + 7));
+
+        // The generic fixture generators are intentionally periodic.  Anchor
+        // the first K16/output row with an expert-specific, non-periodic
+        // record so a full-K expert swap cannot be hidden by cancellation.
+#if !defined(DSV4_MIXED_NO_GROUPED_ANCHOR)
+        static constexpr std::uint8_t kAnchorScales[6] =
+            {0x40, 0x44, 0xC4, 0x4C, 0xB4, 0x34};
+        for (int j = 0; j < 16; ++j) {
+            const std::uint8_t code = static_cast<std::uint8_t>(
+                (expert * 7 + j * 5 + 1) & 0xf);
+            std::uint8_t& packed = f.weights.back().packed_codes[j >> 1];
+            if (j & 1) packed = static_cast<std::uint8_t>((packed & 0x0f) | (code << 4));
+            else packed = static_cast<std::uint8_t>((packed & 0xf0) | code);
+        }
+        f.weights.back().scales[0] = kAnchorScales[expert];
+        f.acts.back()[0] = static_cast<std::uint8_t>(0x31 + expert * 7);
+        f.act_scales.back()[0] = (expert & 1) ? 0.5f : 1.0f + static_cast<float>(expert) * 0.25f;
+#endif
+    }
+    return f;
+}
+
+static void flatten_grouped_fixture(
+        const GroupedFixture& f, std::vector<std::uint8_t>& weights,
+        std::vector<std::uint8_t>& acts, std::vector<float>& act_scales,
+        std::vector<std::uint8_t>& scales) {
+    weights.resize(static_cast<std::size_t>(f.experts) * f.weight_stride);
+    acts.resize(static_cast<std::size_t>(f.experts) * f.act_stride);
+    act_scales.resize(static_cast<std::size_t>(f.experts) * f.act_scale_stride);
+    scales.resize(static_cast<std::size_t>(f.experts) * f.scale_stride);
+    for (int expert = 0; expert < f.experts; ++expert) {
+        const std::size_t e = static_cast<std::size_t>(expert);
+        std::memcpy(weights.data() + e * f.weight_stride,
+                    f.weights[expert].packed_codes.data(), f.weight_stride);
+        std::memcpy(acts.data() + e * f.act_stride,
+                    f.acts[expert].data(), f.act_stride);
+        std::memcpy(act_scales.data() + e * f.act_scale_stride,
+                    f.act_scales[expert].data(),
+                    static_cast<std::size_t>(f.act_scale_stride) * sizeof(float));
+        std::memcpy(scales.data() + e * f.scale_stride,
+                    f.weights[expert].scales.data(), f.scale_stride);
+    }
+}
+
+static std::vector<float> cpu_grouped_expected(const GroupedFixture& f) {
+    std::vector<float> result(static_cast<std::size_t>(f.experts) * f.out_stride, 0.0f);
+    for (int expert = 0; expert < f.experts; ++expert) {
+        std::vector<float> one;
+        mixed_k16_zero_padded_f32_scale(
+            f.weights[expert], f.acts[expert], f.act_scales[expert], 8, one);
+        std::memcpy(result.data() + static_cast<std::size_t>(expert) * f.out_stride,
+                    one.data(), static_cast<std::size_t>(f.out_stride) * sizeof(float));
+    }
+    return result;
+}
+
+static bool compare_grouped_per_expert(
+        const char* label, const GroupedFixture& f,
+        const std::vector<float>& got, const std::vector<float>& expected,
+        const bool exact, float* worst_abs, float* worst_rel) {
+    *worst_abs = 0.0f;
+    *worst_rel = 0.0f;
+    bool pass = got.size() == expected.size();
+    if (!pass) {
+        std::fprintf(stderr, "FAIL GPU %s: grouped output size mismatch\n", label);
+        return false;
+    }
+    for (int expert = 0; expert < f.experts; ++expert) {
+        const std::size_t off = static_cast<std::size_t>(expert) * f.out_stride;
+        std::vector<float> g(got.begin() + off, got.begin() + off + f.out_stride);
+        std::vector<float> e(expected.begin() + off, expected.begin() + off + f.out_stride);
+        float abs = 0.0f, rel = 0.0f;
+        const bool one_pass = exact
+            ? std::memcmp(g.data(), e.data(), static_cast<std::size_t>(f.out_stride) * sizeof(float)) == 0
+            : within_gpu_tolerance(g, e, &abs, &rel);
+        *worst_abs = std::max(*worst_abs, abs);
+        *worst_rel = std::max(*worst_rel, rel);
+        if (!one_pass) {
+            std::fprintf(stderr, "FAIL GPU %s expert=%d abs=%.9g rel=%.9g exact=%d\n",
+                         label, expert, abs, rel, exact ? 1 : 0);
+            pass = false;
+        }
+    }
+    if (pass) {
+        std::printf("gpu %s per-expert %s PASS n=%d worst_abs=%.9g worst_rel=%.9g\n",
+                    label, exact ? "bit-exact" : "oracle", f.experts, *worst_abs, *worst_rel);
+    }
+    return pass;
+}
+
+static bool grouped_cpu_control_preflight(
+        const char* label, const GroupedFixture& base,
+        std::vector<float>& cpu_expected, GroupedFixture& expert_swap,
+        GroupedFixture& scale_swap, std::vector<float>& swap_expected,
+        std::vector<float>& scale_expected) {
+    cpu_expected = cpu_grouped_expected(base);
+    expert_swap = base;
+    std::swap(expert_swap.weights[0], expert_swap.weights[1]);
+    std::swap(expert_swap.acts[0], expert_swap.acts[1]);
+    std::swap(expert_swap.act_scales[0], expert_swap.act_scales[1]);
+    swap_expected = cpu_grouped_expected(expert_swap);
+    float pre_swap_abs = 0.0f, pre_swap_rel = 0.0f;
+    const bool swap_preflight_rejected = !within_gpu_tolerance(
+        std::vector<float>(swap_expected.begin(), swap_expected.begin() + base.out_stride),
+        std::vector<float>(cpu_expected.begin(), cpu_expected.begin() + base.out_stride),
+        &pre_swap_abs, &pre_swap_rel);
+
+    scale_swap = base;
+    for (int row = 0; row < base.m; ++row) {
+        std::swap(scale_swap.weights[0].scales[static_cast<std::size_t>(row) * scale_swap.scale_groups + 0],
+                  scale_swap.weights[0].scales[static_cast<std::size_t>(row) * scale_swap.scale_groups + 1]);
+    }
+    scale_expected = cpu_grouped_expected(scale_swap);
+    float pre_scale_abs = 0.0f, pre_scale_rel = 0.0f;
+    const bool scale_preflight_rejected = !within_gpu_tolerance(
+        std::vector<float>(scale_expected.begin(), scale_expected.begin() + base.out_stride),
+        std::vector<float>(cpu_expected.begin(), cpu_expected.begin() + base.out_stride),
+        &pre_scale_abs, &pre_scale_rel);
+    std::printf("cpu %s control preflight: expert-swap-rejected=%d abs=%.9g rel=%.9g "
+                "scale-swap-rejected=%d abs=%.9g rel=%.9g\n",
+                label, swap_preflight_rejected ? 1 : 0, pre_swap_abs, pre_swap_rel,
+                scale_preflight_rejected ? 1 : 0, pre_scale_abs, pre_scale_rel);
+    return swap_preflight_rejected && scale_preflight_rejected;
+}
+
+struct GroupedDeviceBuffers {
+    unsigned char* d_weights = nullptr;
+    unsigned char* d_acts = nullptr;
+    float* d_act_scales = nullptr;
+    unsigned char* d_scales = nullptr;
+    float* d_out = nullptr;
+    GroupedFixture shape;
+
+    bool init(const GroupedFixture& f) {
+        shape = f;
+        std::vector<std::uint8_t> weights, acts, scales;
+        std::vector<float> act_scales;
+        flatten_grouped_fixture(f, weights, acts, act_scales, scales);
+        const std::size_t out_bytes = static_cast<std::size_t>(f.experts) * f.out_stride * sizeof(float);
+        if (!cuda_ok(cudaMalloc(reinterpret_cast<void**>(&d_weights), weights.size()), "grouped malloc weights")
+            || !cuda_ok(cudaMalloc(reinterpret_cast<void**>(&d_acts), acts.size()), "grouped malloc acts")
+            || !cuda_ok(cudaMalloc(reinterpret_cast<void**>(&d_act_scales),
+                                   act_scales.size() * sizeof(float)), "grouped malloc act scales")
+            || !cuda_ok(cudaMalloc(reinterpret_cast<void**>(&d_scales), scales.size()), "grouped malloc scales")
+            || !cuda_ok(cudaMalloc(reinterpret_cast<void**>(&d_out), out_bytes), "grouped malloc out")) {
+            release();
+            return false;
+        }
+        if (!cuda_ok(cudaMemcpy(d_weights, weights.data(), weights.size(), cudaMemcpyHostToDevice),
+                     "grouped copy weights")
+            || !cuda_ok(cudaMemcpy(d_acts, acts.data(), acts.size(), cudaMemcpyHostToDevice),
+                        "grouped copy acts")
+            || !cuda_ok(cudaMemcpy(d_act_scales, act_scales.data(),
+                                   act_scales.size() * sizeof(float), cudaMemcpyHostToDevice),
+                        "grouped copy act scales")
+            || !cuda_ok(cudaMemcpy(d_scales, scales.data(), scales.size(), cudaMemcpyHostToDevice),
+                        "grouped copy scales")) {
+            release();
+            return false;
+        }
+        return true;
+    }
+
+    void release() {
+        if (d_weights) cudaFree(d_weights);
+        if (d_acts) cudaFree(d_acts);
+        if (d_act_scales) cudaFree(d_act_scales);
+        if (d_scales) cudaFree(d_scales);
+        if (d_out) cudaFree(d_out);
+        d_weights = nullptr;
+        d_acts = nullptr;
+        d_act_scales = nullptr;
+        d_scales = nullptr;
+        d_out = nullptr;
+    }
+
+    bool run(const bool grouped, std::vector<float>& out, float* kernel_ms) {
+        const std::size_t out_count = static_cast<std::size_t>(shape.experts) * shape.out_stride;
+        const std::size_t out_bytes = out_count * sizeof(float);
+        out.assign(out_count, 0.0f);
+        cudaEvent_t start = nullptr;
+        cudaEvent_t stop = nullptr;
+        if (!cuda_ok(cudaMemset(d_out, 0, out_bytes), "grouped clear out")
+            || !cuda_ok(cudaEventCreate(&start), "grouped event start")
+            || !cuda_ok(cudaEventCreate(&stop), "grouped event stop")) {
+            if (start) cudaEventDestroy(start);
+            if (stop) cudaEventDestroy(stop);
+            return false;
+        }
+        cudaEventRecord(start);
+        if (grouped) {
+            dsv4_mixed_m1_k16_scaled_reg_grouped<<<
+                dim3(static_cast<unsigned>(shape.m / 16), static_cast<unsigned>(shape.experts), 1), 32>>>(
+                d_out, d_weights, d_acts, d_act_scales, d_scales, shape.k,
+                shape.out_stride, shape.weight_stride, shape.act_stride,
+                shape.act_scale_stride, shape.scale_stride);
+        } else {
+            for (int expert = 0; expert < shape.experts; ++expert) {
+                dsv4_mixed_m1_k16_scaled_reg_packed<<<static_cast<unsigned>(shape.m / 16), 32>>>(
+                    d_out, d_weights, d_acts, d_act_scales, d_scales, shape.k,
+                    expert, shape.out_stride, shape.weight_stride, shape.act_stride,
+                    shape.act_scale_stride, shape.scale_stride);
+            }
+        }
+        if (!cuda_ok(cudaGetLastError(), grouped ? "grouped launch" : "sequential packed launches")
+            || !cuda_ok(cudaEventRecord(stop), "grouped event record")
+            || !cuda_ok(cudaEventSynchronize(stop), "grouped event synchronize")
+            || !cuda_ok(cudaEventElapsedTime(kernel_ms, start, stop), "grouped event elapsed")
+            || !cuda_ok(cudaMemcpy(out.data(), d_out, out_bytes, cudaMemcpyDeviceToHost),
+                        "grouped copy out")) {
+            cudaEventDestroy(start);
+            cudaEventDestroy(stop);
+            return false;
+        }
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+        return true;
+    }
+};
+
+static bool run_grouped_case(const char* label, const int m, const int k, const int seed) {
+    const GroupedFixture base = make_grouped_fixture(m, k, seed);
+    std::vector<float> cpu_expected, swap_expected, scale_expected;
+    GroupedFixture expert_swap, scale_swap;
+    if (!grouped_cpu_control_preflight(
+            label, base, cpu_expected, expert_swap, scale_swap, swap_expected, scale_expected)) {
+        std::fprintf(stderr, "FAIL CPU %s control preflight; fixture is not discriminating\n", label);
+        return false;
+    }
+
+    GroupedDeviceBuffers buffers;
+    if (!buffers.init(base)) return false;
+
+    std::vector<float> sequential_warm, grouped_warm;
+    float sequential_warm_ms = 0.0f, grouped_warm_ms = 0.0f;
+    if (!buffers.run(false, sequential_warm, &sequential_warm_ms)
+        || !buffers.run(true, grouped_warm, &grouped_warm_ms)) {
+        buffers.release();
+        return false;
+    }
+    std::vector<float> sequential, grouped;
+    float sequential_ms = 0.0f, grouped_ms = 0.0f;
+    if (!buffers.run(false, sequential, &sequential_ms)
+        || !buffers.run(true, grouped, &grouped_ms)) {
+        buffers.release();
+        return false;
+    }
+    buffers.release();
+    float seq_abs = 0.0f, seq_rel = 0.0f, grp_abs = 0.0f, grp_rel = 0.0f;
+    const bool seq_cpu = compare_grouped_per_expert(
+        "grouped-sequential-cpu", base, sequential, cpu_expected, false, &seq_abs, &seq_rel);
+    const bool grp_cpu = compare_grouped_per_expert(
+        "grouped-cpu", base, grouped, cpu_expected, false, &grp_abs, &grp_rel);
+    const bool warm_exact = sequential_warm.size() == sequential.size()
+        && grouped_warm.size() == grouped.size()
+        && std::memcmp(sequential_warm.data(), sequential.data(), sequential.size() * sizeof(float)) == 0
+        && std::memcmp(grouped_warm.data(), grouped.data(), grouped.size() * sizeof(float)) == 0;
+    const bool grouped_exact = grouped.size() == sequential.size()
+        && std::memcmp(grouped.data(), sequential.data(), sequential.size() * sizeof(float)) == 0;
+    std::printf("gpu %s warm grouped_ms=%.3f sequential6_ms=%.3f; measured grouped_ms=%.3f sequential6_ms=%.3f (CUDA kernel events only)\n",
+                label, grouped_warm_ms, sequential_warm_ms, grouped_ms, sequential_ms);
+    if (!seq_cpu || !grp_cpu || !warm_exact || !grouped_exact) {
+        std::fprintf(stderr, "FAIL GPU %s grouped/sequential or CPU comparison\n", label);
+        return false;
+    }
+
+    // Expert swap control: swapping complete expert records must swap output
+    // slots, and the old per-slot oracle must reject the mutation.
+    GroupedDeviceBuffers swap_buffers;
+    if (!swap_buffers.init(expert_swap)) return false;
+    std::vector<float> swap_out;
+    float swap_ms = 0.0f;
+    const bool swap_run = swap_buffers.run(true, swap_out, &swap_ms);
+    swap_buffers.release();
+    float swap_abs = 0.0f, swap_rel = 0.0f;
+    const bool swap_cpu = swap_run && compare_grouped_per_expert(
+        "expert-swap-cpu", expert_swap, swap_out, swap_expected, false, &swap_abs, &swap_rel);
+    const bool swap_rejected = swap_run && swap_out.size() == cpu_expected.size()
+        && !within_gpu_tolerance(
+            std::vector<float>(swap_out.begin(), swap_out.begin() + base.out_stride),
+            std::vector<float>(cpu_expected.begin(), cpu_expected.begin() + base.out_stride),
+            &swap_abs, &swap_rel);
+    if (!swap_cpu || !swap_rejected) {
+        std::fprintf(stderr, "FAIL GPU %s expert-swap control\n", label);
+        return false;
+    }
+
+    // Scale swap control: only expert 0's adjacent K16 scale bytes move.
+    GroupedDeviceBuffers scale_buffers;
+    if (!scale_buffers.init(scale_swap)) return false;
+    std::vector<float> scale_out;
+    float scale_ms = 0.0f;
+    const bool scale_run = scale_buffers.run(true, scale_out, &scale_ms);
+    scale_buffers.release();
+    float scale_abs = 0.0f, scale_rel = 0.0f;
+    const bool scale_cpu = scale_run && compare_grouped_per_expert(
+        "scale-swap-cpu", scale_swap, scale_out, scale_expected, false, &scale_abs, &scale_rel);
+    const bool scale_rejected = scale_run && scale_out.size() == cpu_expected.size()
+        && !within_gpu_tolerance(
+            std::vector<float>(scale_out.begin(), scale_out.begin() + base.out_stride),
+            std::vector<float>(cpu_expected.begin(), cpu_expected.begin() + base.out_stride),
+            &scale_abs, &scale_rel);
+    if (!scale_cpu || !scale_rejected) {
+        std::fprintf(stderr, "FAIL GPU %s scale-swap control\n", label);
+        return false;
+    }
+    std::printf("gpu %s grouped controls PASS: expert-swap and scale-swap rejected original slot oracle\n",
+                label);
+    return true;
+}
+
+[[maybe_unused]] static bool run_gpu_case(const char* label, const int m, const int k, const int seed) {
     constexpr int top6 = 6;
     std::vector<std::uint8_t> act(k);
     for (int i = 0; i < k; ++i) act[i] = activation_pattern(i, seed);
@@ -985,9 +1377,18 @@ static bool run_gpu_case(const char* label, const int m, const int k, const int 
 } // namespace dsv4_mixed_host
 
 #if defined(DSV4_MIXED_MMA_GPU_TEST)
-int main() {
-    if (!dsv4_mixed_host::run_gpu_case("small", 16, 64, 17)) return 1;
-    if (!dsv4_mixed_host::run_gpu_case("full", 4096, 2048, 29)) return 1;
+int main(int argc, char** argv) {
+    if (argc > 1 && std::strcmp(argv[1], "--cpu-preflight") == 0) {
+        const dsv4_mixed_host::GroupedFixture base =
+            dsv4_mixed_host::make_grouped_fixture(4096, 2048, 29);
+        std::vector<float> expected, swap_expected, scale_expected;
+        dsv4_mixed_host::GroupedFixture expert_swap, scale_swap;
+        return dsv4_mixed_host::grouped_cpu_control_preflight(
+                   "full", base, expected, expert_swap, scale_swap,
+                   swap_expected, scale_expected) ? 0 : 1;
+    }
+    if (!dsv4_mixed_host::run_grouped_case("grouped-small", 16, 64, 17)) return 1;
+    if (!dsv4_mixed_host::run_grouped_case("grouped-full", 4096, 2048, 29)) return 1;
     return 0;
 }
 #else
