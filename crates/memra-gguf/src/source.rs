@@ -1330,6 +1330,55 @@ fn validated_manifest_file(raw: &str) -> Result<PathBuf, &'static str> {
     Ok(path.to_path_buf())
 }
 
+/// Encode a BF16 byte plane with a block-local quantizer (`enc` over f32 values, block size
+/// `block` elements) in parallel chunks aligned to the block. Because every block is encoded
+/// from its own values only, the concatenation of the chunk encodings is byte-for-byte the
+/// single-threaded encoding of the whole plane.
+fn par_encode_bf16(bytes: &[u8], block: usize, enc: impl Fn(&[f32]) -> Vec<u8> + Sync) -> Vec<u8> {
+    let n_el = bytes.len() / 2;
+    assert!(
+        n_el.is_multiple_of(block),
+        "par_encode_bf16: {n_el} elements, block {block}"
+    );
+    let n_blocks = n_el / block;
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .clamp(1, 64)
+        .min(n_blocks.max(1));
+    let blocks_per = n_blocks.div_ceil(workers).max(1);
+    let to_f32 = |chunk: &[u8]| -> Vec<f32> {
+        chunk
+            .chunks_exact(2)
+            .map(|c| f32::from_bits((u16::from_le_bytes([c[0], c[1]]) as u32) << 16))
+            .collect()
+    };
+    if workers == 1 {
+        return enc(&to_f32(bytes));
+    }
+    let chunk_bytes = blocks_per * block * 2;
+    let parts: Vec<Vec<u8>> = std::thread::scope(|s| {
+        let handles: Vec<_> = bytes
+            .chunks(chunk_bytes)
+            .map(|c| {
+                let enc = &enc;
+                let to_f32 = &to_f32;
+                s.spawn(move || enc(&to_f32(c)))
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("encode worker panicked"))
+            .collect()
+    });
+    let total: usize = parts.iter().map(Vec::len).sum();
+    let mut out = Vec::with_capacity(total);
+    for p in parts {
+        out.extend_from_slice(&p);
+    }
+    out
+}
+
 fn repack_trusted_roots(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     let mut roots = vec![std::fs::canonicalize(dir)?];
     let Some(raw) = std::env::var_os("MEMRA_REPACK_EXTERNAL_ROOTS") else {
@@ -2549,25 +2598,26 @@ impl TensorSource for SafetensorsSource {
                     {
                         let ne = info.ne();
                         if (bytes.len() / 2) % 32 == 0 {
-                            let data: Vec<f32> = bytes
-                                .chunks_exact(2)
-                                .map(|c| {
-                                    f32::from_bits((u16::from_le_bytes([c[0], c[1]]) as u32) << 16)
-                                })
-                                .collect();
+                            let n_el = bytes.len() / 2;
                             // lm_head -> Q5_K (parity with the GGUF mint's head class): on the
                             // 248,320-token Qwen3.8 vocab the Q8_0 fallback reads 1.27 GB/token
                             // vs Q5_K's 833 MB — measured ~+2 ms/token on the head. Q5_K needs
                             // in_f % 256 == 0; everything else keeps the finer Q8_0 law.
-                            if ggml_name == "output.weight" && data.len().is_multiple_of(256) {
-                                let out = crate::nvfp4_repack::f32_to_q5_k(&data);
+                            // Both encodes are block-local (32 for Q8_0, 256 for Q5_K), so the
+                            // rows are encoded in parallel chunks aligned to the block: the same
+                            // bytes as the single-threaded pass. The GLM-5.3-Flash head
+                            // (154,880 x 4096 BF16) took 156 s of every boot on one core
+                            // (2x B200 pair, 2026-09-07, `[load-trace] blk.0 output-head`).
+                            if ggml_name == "output.weight" && n_el.is_multiple_of(256) {
+                                let out =
+                                    par_encode_bf16(bytes, 256, crate::nvfp4_repack::f32_to_q5_k);
                                 return Some(TensorView {
                                     bytes: Cow::Owned(out),
                                     ggml_type: GgmlType::Q5_K,
                                     ne,
                                 });
                             }
-                            let out = crate::nvfp4_repack::f32_to_q8_0(&data);
+                            let out = par_encode_bf16(bytes, 32, crate::nvfp4_repack::f32_to_q8_0);
                             return Some(TensorView {
                                 bytes: Cow::Owned(out),
                                 ggml_type: GgmlType::Q8_0,
