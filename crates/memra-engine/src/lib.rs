@@ -13243,8 +13243,10 @@ impl Engine {
         }
         let staged = arena.take(v)?;
         let s = self.gpu.stream();
-        let (dptr, _r) = dst.device_ptr_mut(&s);
-        unsafe { cudarc::driver::result::memcpy_htod_async(dptr, staged, s.cu_stream())? };
+        {
+            let (dptr, _r) = dst.device_ptr_mut(&s);
+            unsafe { cudarc::driver::result::memcpy_htod_async(dptr, staged, s.cu_stream())? };
+        }
         Ok(dst)
     }
     /// The f32 twin of [`Engine::htod_i32_staged`].
@@ -13260,8 +13262,10 @@ impl Engine {
         }
         let staged = arena.take(v)?;
         let s = self.gpu.stream();
-        let (dptr, _r) = dst.device_ptr_mut(&s);
-        unsafe { cudarc::driver::result::memcpy_htod_async(dptr, staged, s.cu_stream())? };
+        {
+            let (dptr, _r) = dst.device_ptr_mut(&s);
+            unsafe { cudarc::driver::result::memcpy_htod_async(dptr, staged, s.cu_stream())? };
+        }
         Ok(dst)
     }
     #[track_caller]
