@@ -2035,6 +2035,40 @@ impl HybridModel {
         Ok(())
     }
 
+    /// The dense FFN on whichever engine holds these tensors (root's own, or the peer's
+    /// replica the symmetric TP walk carries in its glue).
+    #[allow(clippy::too_many_arguments)] // allow: the four tensors are the operand set
+    pub(crate) fn dense_ffn_with(
+        &self,
+        e: &Engine,
+        ffn_gate: &crate::model::GpuTensor,
+        ffn_up: &crate::model::GpuTensor,
+        ffn_down: &crate::model::GpuTensor,
+        ffn_down_pqs: Option<&crate::model::GpuTensor>,
+        z: &CudaSlice<f32>,
+        t: usize,
+        il: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let n_ff = ffn_gate.out_features();
+        let mut g2 = e.matmul_group(&[ffn_gate, ffn_up], z, t)?;
+        let up = g2.pop().unwrap();
+        let gate = g2.pop().unwrap();
+        let mut act = e.uninit(t * n_ff)?;
+        Self::ffn_act_lim(
+            e,
+            &self.cfg,
+            &gate,
+            &up,
+            1.0,
+            1.0,
+            self.cfg.clamp_shexp_at(il as u32),
+            &mut act,
+            t * n_ff,
+        )?;
+        let __pqs = e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), t)?;
+        e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), t)
+    }
+
     /// The FFN branch of one hc site, from an already-normed `[t, hidden]` input.
     ///
     /// Split out because under hyper-connections the FFN's input is `rms_norm(hc_pre(x))`, not
@@ -2061,30 +2095,16 @@ impl HybridModel {
                 ffn_up,
                 ffn_down,
                 ffn_down_pqs,
-            } => {
-                let n_ff = ffn_gate.out_features();
-                let mut g2 = e.matmul_group(&[ffn_gate, ffn_up], z, t)?;
-                let up = g2.pop().unwrap();
-                let gate = g2.pop().unwrap();
-                let mut act = e.uninit(t * n_ff)?;
-                // A dense FFN reads the SHEXP clamp array — see forward()'s note.
-                Self::ffn_act_lim(
-                    e,
-                    &self.cfg,
-                    &gate,
-                    &up,
-                    1.0,
-                    1.0,
-                    self.cfg.clamp_shexp_at(il as u32),
-                    &mut act,
-                    t * n_ff,
-                )?;
-                // AWQ (memra#253): the down projection's input must carry the per-input-channel
-                // scale when the artifact was calibrated; None leaves the buffer untouched.
-                let __pqs =
-                    e.pre_quant_scaled(&act, ffn_down_pqs.as_ref(), ffn_down.in_features(), t)?;
-                e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), t)
-            }
+            } => self.dense_ffn_with(
+                e,
+                ffn_gate,
+                ffn_up,
+                ffn_down,
+                ffn_down_pqs.as_ref(),
+                z,
+                t,
+                il,
+            ),
             crate::hybrid::Ffn::Moe(m) => {
                 if prefill {
                     self.moe_ffn_il_prefill(e, m, z, t, il as u16)
@@ -3148,14 +3168,29 @@ impl HybridModel {
                 )?
             }
             crate::hybrid::Ffn::Dense { .. } => {
-                // The leading dense layer(s) (first_k_dense_replace): root runs the dense FFN it
-                // holds, the peer receives the result over the fabric. One extra crossing on one
-                // layer of 46; dense layers stay outside graph runs.
+                // The leading dense layers (first_k_dense_replace): root runs the dense FFN it
+                // holds; the peer runs its REPLICA from its own copy of the input (same kernels,
+                // same bytes, zero crossings, and a captured piece can hold the layer). Without
+                // a replica in the glue the peer receives root's result over the fabric.
                 let out = self.hyper_ffn_branch(e, layer, &ws.z, 1, il, false, zq8.as_ref())?;
-                let hop = rt.hop(e);
-                let out_peer = crate::tp_transport::fanout_f32(&hop, &out, n_embd)?
-                    .pop()
-                    .ok_or("symmetric walk: dense FFN fan-out returned no peer copy")?;
+                let out_peer = match glue.dense.as_ref() {
+                    Some(d) => self.dense_ffn_with(
+                        peer,
+                        &d.ffn_gate,
+                        &d.ffn_up,
+                        &d.ffn_down,
+                        d.ffn_down_pqs.as_ref(),
+                        &ws_peer.z,
+                        1,
+                        il,
+                    )?,
+                    None => {
+                        let hop = rt.hop(e);
+                        crate::tp_transport::fanout_f32(&hop, &out, n_embd)?
+                            .pop()
+                            .ok_or("symmetric walk: dense FFN fan-out returned no peer copy")?
+                    }
+                };
                 vec![out, out_peer]
             }
         };

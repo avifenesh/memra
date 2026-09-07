@@ -120,8 +120,15 @@ fn plan_items(m: &HybridModel, lo: usize, hi: usize) -> Vec<Item> {
     let mut out = Vec::with_capacity(hi.saturating_sub(lo) * 3);
     for il in lo..hi {
         let moe = matches!(&m.layers[il].ffn, crate::hybrid::Ffn::Moe(_));
+        // a dense-FFN layer is capturable once the peer holds the FFN replica (no fan-out)
+        let dense_local = m.layers[il]
+            .tp_glue
+            .first()
+            .is_some_and(|g| g.dense.is_some());
         match &m.layers[il].mixer {
-            Mixer::Kda(la) if la.tp.is_some() && moe => out.push(Item::Seg(Seg::Kda(il))),
+            Mixer::Kda(la) if la.tp.is_some() && (moe || dense_local) => {
+                out.push(Item::Seg(Seg::Kda(il)))
+            }
             Mixer::Mla(mla) if mla.tp.is_some() && moe && mla_split => {
                 out.push(Item::Seg(Seg::MlaPre(il)));
                 out.push(Item::MlaMid(il));
