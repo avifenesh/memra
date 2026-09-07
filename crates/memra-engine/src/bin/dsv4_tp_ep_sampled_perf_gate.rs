@@ -513,9 +513,16 @@ fn main() {
     let device = dsv4_sampler().expect("sampler door") == Dsv4Sampler::Device;
     let sampler = dsv4_sampler_order().expect("explicit sampler configuration");
     let profiled = dsv4_prof_on();
-    let sampler_name = match sampler {
+    let host_sampler_name = match sampler {
         Dsv4SamplerOrder::Comparison => "comparison",
         Dsv4SamplerOrder::Radix => "radix",
+    };
+    let sampler_name = if abba {
+        "host-radix/device"
+    } else if device {
+        "device"
+    } else {
+        host_sampler_name
     };
     let repeats = if abba {
         40
@@ -639,7 +646,7 @@ fn main() {
                 &prompt,
                 &tokenizer,
                 repeat,
-                if arm { "device" } else { sampler_name },
+                if arm { "device" } else { host_sampler_name },
                 arm,
             )
         })
