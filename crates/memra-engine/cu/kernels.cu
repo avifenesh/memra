@@ -2122,6 +2122,27 @@ extern "C" __global__ void silu_mul_scaled_f32(const float* __restrict__ gate, c
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) { float g = gate[i] * gs; dst[i] = (g / (1.0f + expf(-g))) * (up[i] * us); }
 }
+// ---- Spark-X2.5 (step35 dense sibling): EXACT-erf GELU(gate) * up. torch `nn.GELU()` default,
+// `0.5 * x * (1 + erf(x / sqrt 2))` — NOT gelu_tanh (they differ by up to ~1e-3 in |x| in 1..3,
+// which a 36-layer trunk compounds). erff is the CUDA libdevice erf, the same function torch's
+// GELU kernel calls. gs/us fold the NVFP4 per-tensor macro-scales like silu_mul_scaled_f32
+// (gs==us==1.0 for non-NVFP4). ----
+extern "C" __global__ void gelu_erf_mul_f32(const float* __restrict__ gate, const float* __restrict__ up,
+                                            float* __restrict__ dst, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        float x = gate[i];
+        dst[i] = 0.5f * x * (1.0f + erff(x * 0.70710678118654752440f)) * up[i];
+    }
+}
+extern "C" __global__ void gelu_erf_mul_scaled_f32(const float* __restrict__ gate, const float* __restrict__ up,
+                                                   float gs, float us, float* __restrict__ dst, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        float x = gate[i] * gs;
+        dst[i] = 0.5f * x * (1.0f + erff(x * 0.70710678118654752440f)) * (up[i] * us);
+    }
+}
 // swigluoai (MiniMax-M3 / GPT-OSS): clamped SwiGLU. Math 1:1 vs llama.cpp
 // ggml_cuda_op_swiglu_oai_single (unary.cuh:107): gate clamps ABOVE only, up clamps both sides,
 // swish uses alpha inside the sigmoid, and the linear term is (1 + up). gs/us fold the NVFP4
