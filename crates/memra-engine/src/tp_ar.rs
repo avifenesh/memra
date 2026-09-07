@@ -568,7 +568,9 @@ impl ArLink {
                 return Err("tp all-reduce (hc post): the output aliases an operand".into());
             }
         }
-        let blocks = ar_blocks_for(d);
+        // the post spreads over the grid (one column per thread at d = 4096); block 0 alone
+        // crosses the fabric, so this count is the post's shape, not the barrier's
+        let blocks = (d.div_ceil(256) as i32).clamp(1, AR_BLOCKS);
         for r in 0..2 {
             let e = engines[r];
             let _main = e.gpu.enter_main()?;

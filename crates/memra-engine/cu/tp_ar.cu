@@ -149,6 +149,12 @@ struct MemraArSignal {
     alignas(128) unsigned start[MEMRA_AR_MAX_BLOCKS][MEMRA_AR_RANKS];
     alignas(128) unsigned end[MEMRA_AR_MAX_BLOCKS][MEMRA_AR_RANKS];
     alignas(128) unsigned seq[MEMRA_AR_MAX_BLOCKS];
+    // The fused reduce+post kernel: block 0 alone crosses the fabric; these two words carry its
+    // verdict to the other blocks (grid_go) and their completion back to it (grid_done), both
+    // device-local. hp_seq counts the fused rounds so grid_done's target is known.
+    alignas(128) unsigned grid_go;
+    alignas(128) unsigned grid_done;
+    alignas(128) unsigned hp_seq;
 };
 
 extern "C" int memra_tp_ar_signal_bytes(void) { return (int)sizeof(MemraArSignal); }
@@ -232,37 +238,86 @@ extern "C" int memra_tp_ar_1stage(const float* in_rank0, const float* in_rank1, 
 
 // One-shot + hc post in ONE launch, t = 1 only: f = in_rank0 + in_rank1 (the reduce), then the
 // hyper-connection post-branch for every stream k, out[k, i] = post[k] * f[i] + sum_j
-// comb[j*hc + k] * residual[j*d + i]. The same association as memra_tp_ar_1stage followed by
-// dsv4_hc_post_kernel (t = 0 row), so bitwise that pair; the reduce output never lands in
-// memory and the crossing is one launch instead of two. One block covers d = 4096 at 8 floats
-// per thread, one flag round trip per barrier (tp-ar-bench 2026-09-07: blocks are the cost).
-__global__ void __launch_bounds__(512, 1) memra_tp_ar_1stage_hcpost_kernel(
+// comb[j*hc + k] * residual[j*d + i]. BITWISE the pair memra_tp_ar_1stage + dsv4_hc_post_kernel:
+// dsv4_gpu.cu is compiled -fmad=false, so the post arithmetic here is written with the
+// non-contracting intrinsics (the 2026-09-07 tpwalk9 tape moved on exactly that). Block 0 alone
+// runs the two fabric barriers (tp-ar-bench: every barrier block is a flag round trip); it
+// publishes the start verdict to the other blocks through grid_go and gathers their completion
+// through grid_done before the end barrier, so the post spreads over the grid the way the
+// stand-alone hc_post did (64 blocks) while the crossing pays one block's round trips.
+__device__ __forceinline__ void memra_ar_st_release_gpu(unsigned* addr, unsigned v) {
+    asm volatile("st.release.gpu.global.u32 [%1], %0;" ::"r"(v), "l"(addr));
+}
+__device__ __forceinline__ unsigned memra_ar_ld_acquire_gpu(const unsigned* addr) {
+    unsigned v;
+    asm volatile("ld.acquire.gpu.global.u32 %0, [%1];" : "=r"(v) : "l"(addr));
+    return v;
+}
+__global__ void __launch_bounds__(256) memra_tp_ar_1stage_hcpost_kernel(
         const float* __restrict__ in_rank0, const float* __restrict__ in_rank1,
         const float* __restrict__ residual, const float* __restrict__ post,
         const float* __restrict__ comb, float* __restrict__ out, int hc, int d,
         MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, int* __restrict__ err,
         long long spin_limit) {
-    unsigned flag = self_sg->seq[blockIdx.x] + 1;
-    if (memra_ar_barrier(peer_sg->start, self_sg->start, flag, rank, spin_limit)) {
+    __shared__ int ok;
+    const unsigned flag = self_sg->seq[0] + 1;
+    const unsigned round = self_sg->hp_seq + 1;
+    if (blockIdx.x == 0) {
+        int expired = memra_ar_barrier(peer_sg->start, self_sg->start, flag, rank, spin_limit);
         if (threadIdx.x == 0) {
-            *(volatile int*)err = 40043;
-            self_sg->seq[blockIdx.x] = flag;
-        }
-        return;
-    }
-    for (int i = (int)blockIdx.x * blockDim.x + threadIdx.x; i < d;
-         i += (int)gridDim.x * blockDim.x) {
-        float f = in_rank0[i] + in_rank1[i];
-        for (int k = 0; k < hc; k++) {
-            float acc = post[k] * f;
-            for (int j = 0; j < hc; j++) acc += comb[j * hc + k] * residual[(long)j * d + i];
-            out[(long)k * d + i] = acc;
+            if (expired) *(volatile int*)err = 40043;
+            memra_ar_st_release_gpu(&self_sg->grid_go, expired ? (flag | 0x80000000u) : flag);
         }
     }
-    if (memra_ar_barrier(peer_sg->end, self_sg->end, flag, rank, spin_limit)) {
-        if (threadIdx.x == 0) *(volatile int*)err = 40044;
+    if (threadIdx.x == 0) {
+        long long t0 = clock64();
+        unsigned v;
+        while (((v = memra_ar_ld_acquire_gpu(&self_sg->grid_go)) & 0x7fffffffu) != flag) {
+            if (clock64() - t0 > spin_limit) {
+                v = flag | 0x80000000u;
+                break;
+            }
+        }
+        ok = (v & 0x80000000u) ? 0 : 1;
     }
-    if (threadIdx.x == 0) self_sg->seq[blockIdx.x] = flag;
+    __syncthreads();
+    if (ok) {
+        for (int i = (int)blockIdx.x * blockDim.x + threadIdx.x; i < d;
+             i += (int)gridDim.x * blockDim.x) {
+            float f = __fadd_rn(in_rank0[i], in_rank1[i]);
+            for (int k = 0; k < hc; k++) {
+                float acc = __fmul_rn(post[k], f);
+                for (int j = 0; j < hc; j++)
+                    acc = __fadd_rn(acc, __fmul_rn(comb[j * hc + k], residual[(long)j * d + i]));
+                out[(long)k * d + i] = acc;
+            }
+        }
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        __threadfence();
+        atomicAdd(&self_sg->grid_done, 1u);
+    }
+    if (blockIdx.x == 0) {
+        if (threadIdx.x == 0) {
+            const unsigned target = round * gridDim.x;
+            long long t0 = clock64();
+            while (memra_ar_ld_acquire_gpu(&self_sg->grid_done) < target) {
+                if (clock64() - t0 > spin_limit) {
+                    *(volatile int*)err = 40044;
+                    break;
+                }
+            }
+        }
+        __syncthreads();
+        if (memra_ar_barrier(peer_sg->end, self_sg->end, flag, rank, spin_limit)) {
+            if (threadIdx.x == 0) *(volatile int*)err = 40044;
+        }
+        if (threadIdx.x == 0) {
+            self_sg->seq[0] = flag;
+            self_sg->hp_seq = round;
+        }
+    }
 }
 
 extern "C" int memra_tp_ar_1stage_hcpost(const float* in_rank0, const float* in_rank1,
@@ -275,7 +330,7 @@ extern "C" int memra_tp_ar_1stage_hcpost(const float* in_rank0, const float* in_
     if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
     if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
     cudaStream_t stream = (cudaStream_t)stream_v;
-    memra_tp_ar_1stage_hcpost_kernel<<<(unsigned)blocks, 512u, 0, stream>>>(
+    memra_tp_ar_1stage_hcpost_kernel<<<(unsigned)blocks, 256u, 0, stream>>>(
         in_rank0, in_rank1, residual, post, comb, out, hc, d, (MemraArSignal*)self_sg,
         (MemraArSignal*)peer_sg, rank, err, spin_limit);
     TP_AR_ERR();
