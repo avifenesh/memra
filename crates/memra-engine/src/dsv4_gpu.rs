@@ -9558,7 +9558,6 @@ impl Dsv4Gpu {
                     true,
                     Some(&ar_outputs[1]),
                 )?;
-                drop(ar_outputs);
             }
             let pos0 = state.pos;
             self.commit_verify_dev_plane(
@@ -9584,7 +9583,6 @@ impl Dsv4Gpu {
                 1,
                 1,
             )?;
-            drop(rank1_layers);
             state.pos = pos0 + 1;
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
@@ -15650,7 +15648,7 @@ impl Dsv4Gpu {
     /// TP/EP passes `Some(0)` or `Some(1)` so every layer uses that rank's stream and its own
     /// persistent ring/checkpoint plane.  The caller must commit all planes before exposing the
     /// new position.
-    pub(crate) fn commit_verify_dev_plane(
+    fn commit_verify_dev_plane(
         &self,
         caches: &mut [LayerCache],
         checkpoints: &mut [LayerCkptDev],
