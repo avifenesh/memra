@@ -16284,7 +16284,7 @@ impl HybridModel {
                 0,
                 n_expert,
                 &exi,
-                &ex_off,
+                ex_off,
                 &exo,
                 &z16,
                 &zs,
@@ -16304,7 +16304,7 @@ impl HybridModel {
                 1,
                 n_expert,
                 &exi,
-                &ex_off,
+                ex_off,
                 &exo,
                 &z16,
                 &zs,
@@ -16346,7 +16346,7 @@ impl HybridModel {
                 2,
                 n_expert,
                 &exi,
-                &ex_off,
+                ex_off,
                 &exo,
                 &a16,
                 &a_s,
@@ -16361,7 +16361,7 @@ impl HybridModel {
             let pw = up_f32(dev, &mut arena, &csr.local_wd)?;
             let toff_d = up_i32(dev, &mut arena, &csr.toff)?;
             let tids_d = up_i32(dev, &mut arena, &csr.tids)?;
-            if let Some(a) = arena.as_deref_mut() {
+            if let Some(a) = arena {
                 a.end(&dev.stream())?;
             }
             let mut partial = dev.uninit(t * n_embd)?; // scatter fully overwrites
