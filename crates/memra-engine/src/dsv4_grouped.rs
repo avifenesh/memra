@@ -2,11 +2,6 @@
 //! Both arms retain ascending original slot order inside each expert group.
 use crate::dsv4_ep::EpCompute;
 use crate::dsv4_ffi;
-use crate::dsv4_graph::{
-    Dsv4GroupedGraph, Dsv4GroupedGraphKey, capture_layer, grouped_graph_capture_recorded,
-    grouped_graph_eager_prepare_recorded, grouped_graph_epoch, grouped_graph_fallback_recorded,
-    grouped_graph_gate,
-};
 use crate::mmq_ffi::{
     memra_bind_device, memra_moe_kq_gemm_sk, memra_moe_kq_gemm_sk_gu,
     memra_moe_kq_gemm_sk_gu_half2, memra_moe_kq_gemm_sk_gu_m1, memra_moe_kq_gemm_sk_m1,
@@ -14,7 +9,6 @@ use crate::mmq_ffi::{
 };
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use memra_runtime::Gpu;
-use std::collections::BTreeMap;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -176,7 +170,6 @@ pub(crate) struct GroupedWork {
     plain_single: bool,
     gu_fuse: bool,
     phase: MatrixPhase,
-    graphs: BTreeMap<usize, Dsv4GroupedGraph>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -311,7 +304,6 @@ impl GroupedWork {
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
-            graphs: BTreeMap::new(),
         })
     }
 
@@ -327,54 +319,6 @@ impl GroupedWork {
         rows: usize,
         topk: usize,
         device_routes: bool,
-    ) -> Res<bool> {
-        grouped_graph_eager_prepare_recorded();
-        self.prepare_inner(
-            gpu,
-            source,
-            scale2,
-            scale2_host,
-            rows,
-            topk,
-            device_routes,
-            true,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn prepare_graph(
-        &mut self,
-        gpu: &Gpu,
-        source: &EpCompute<'_>,
-        scale2: &CudaSlice<f32>,
-        scale2_host: &[f32],
-        rows: usize,
-        topk: usize,
-        device_routes: bool,
-    ) -> Res<bool> {
-        self.prepare_inner(
-            gpu,
-            source,
-            scale2,
-            scale2_host,
-            rows,
-            topk,
-            device_routes,
-            false,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn prepare_inner(
-        &mut self,
-        gpu: &Gpu,
-        source: &EpCompute<'_>,
-        scale2: &CudaSlice<f32>,
-        scale2_host: &[f32],
-        rows: usize,
-        topk: usize,
-        device_routes: bool,
-        bind: bool,
     ) -> Res<bool> {
         if !matches!(self.phase, MatrixPhase::Idle | MatrixPhase::Failed) {
             return Err("matrix preparation would overwrite an unfinished chain".into());
@@ -398,9 +342,7 @@ impl GroupedWork {
         {
             return Err("matrix chain input/workspace shape mismatch".into());
         }
-        if bind {
-            bind_matrix(gpu)?;
-        }
+        bind_matrix(gpu)?;
         let s = gpu.stream();
         let used_device = self.routes.prepare(
             &s,
@@ -429,10 +371,6 @@ impl GroupedWork {
         self.gu_fuse = enabled && self.plain_single;
     }
 
-    pub(crate) fn set_plain_shape_for_graph(&mut self, rows: usize) {
-        self.plain_single = rows == 1;
-    }
-
     /// No host readback in this stage: both ranks can queue gate/up before down.
     pub fn gate_up(
         &mut self,
@@ -441,34 +379,11 @@ impl GroupedWork {
         out: &mut EpCompute<'_>,
         limit: f32,
     ) -> Res<()> {
-        self.gate_up_inner(gpu, table, out, limit, true)
-    }
-
-    pub(crate) fn gate_up_graph(
-        &mut self,
-        gpu: &Gpu,
-        table: &CudaSlice<u64>,
-        out: &mut EpCompute<'_>,
-        limit: f32,
-    ) -> Res<()> {
-        self.gate_up_inner(gpu, table, out, limit, false)
-    }
-
-    fn gate_up_inner(
-        &mut self,
-        gpu: &Gpu,
-        table: &CudaSlice<u64>,
-        out: &mut EpCompute<'_>,
-        limit: f32,
-        bind: bool,
-    ) -> Res<()> {
         if self.phase != MatrixPhase::Prepared {
             return Err("matrix gate/up requires prepared input".into());
         }
         self.phase = MatrixPhase::Failed;
-        if bind {
-            bind_matrix(gpu)?;
-        }
+        bind_matrix(gpu)?;
         let s = gpu.stream();
         let live = self.routes.live_slots;
         if !route_validation_enabled() {
@@ -586,32 +501,11 @@ impl GroupedWork {
     }
 
     pub fn down(&mut self, gpu: &Gpu, table: &CudaSlice<u64>, out: &mut EpCompute<'_>) -> Res<()> {
-        self.down_inner(gpu, table, out, true)
-    }
-
-    pub(crate) fn down_graph(
-        &mut self,
-        gpu: &Gpu,
-        table: &CudaSlice<u64>,
-        out: &mut EpCompute<'_>,
-    ) -> Res<()> {
-        self.down_inner(gpu, table, out, false)
-    }
-
-    fn down_inner(
-        &mut self,
-        gpu: &Gpu,
-        table: &CudaSlice<u64>,
-        out: &mut EpCompute<'_>,
-        bind: bool,
-    ) -> Res<()> {
         if self.phase != MatrixPhase::UpQueued {
             return Err("matrix down requires queued gate/up".into());
         }
         self.phase = MatrixPhase::Failed;
-        if bind {
-            bind_matrix(gpu)?;
-        }
+        bind_matrix(gpu)?;
         let s = gpu.stream();
         let live = self.routes.live_slots;
         if live > 0 {
@@ -665,173 +559,6 @@ impl GroupedWork {
         self.phase = MatrixPhase::Idle;
         Ok(())
     }
-
-    #[allow(clippy::too_many_arguments)]
-    fn graph_key(
-        &self,
-        stream: &Arc<CudaStream>,
-        table: &CudaSlice<u64>,
-        scale2: &CudaSlice<f32>,
-        source: &EpCompute<'_>,
-        rows: usize,
-        topk: usize,
-        limit: f32,
-        device_routes: bool,
-    ) -> Dsv4GroupedGraphKey {
-        let ptr = |slice: &CudaSlice<u8>| slice.device_ptr(stream).0;
-        let p32 = |slice: &CudaSlice<f32>| slice.device_ptr(stream).0;
-        let pi = |slice: &CudaSlice<i32>| slice.device_ptr(stream).0;
-        let mut flags = 0u64;
-        flags |= u64::from(device_routes);
-        flags |= u64::from(route_validation_enabled()) << 1;
-        flags |= u64::from(mirror_validation_enabled()) << 2;
-        flags |= u64::from(self.gu_fuse) << 3;
-        flags |= u64::from(crate::moe_f16g_gu_m1_tc_on()) << 4;
-        flags |= u64::from(crate::moe_f16g_tail_on()) << 5;
-        flags |= u64::from(crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)) << 6;
-        flags |= u64::from(crate::moe_f16g_gu_half2_on()) << 7;
-        flags |= u64::from(crate::moe_f16g_down_m1_half2_on()) << 8;
-        flags |= u64::from(crate::moe_f16g_m1_tc_on()) << 9;
-        flags |= (crate::moe_f16g_mode() as u64) << 10;
-        flags ^= (crate::moe_f16g_sk_params().1 as u32 as u64) << 16;
-        flags ^= (limit.to_bits() as u64) << 32;
-        Dsv4GroupedGraphKey {
-            epoch: grouped_graph_epoch(),
-            shape: [rows, topk, self.input.cols, self.intermediate.cols],
-            partition: [
-                self.routes.global_experts,
-                self.routes.first,
-                self.routes.experts,
-            ],
-            flags,
-            pointers: vec![
-                table.device_ptr(stream).0,
-                scale2.device_ptr(stream).0,
-                ptr(source.xq),
-                p32(source.xs),
-                pi(source.ids),
-                p32(source.weights),
-                p32(source.g1),
-                p32(source.g3),
-                p32(source.h),
-                ptr(source.hq),
-                p32(source.hs),
-                p32(source.contribution),
-                pi(&self.routes.ids),
-                pi(&self.routes.offsets),
-                pi(&self.routes.pairs),
-                pi(&self.routes.tokens),
-                pi(&self.routes.counts),
-                pi(&self.routes.status),
-                p32(&self.routes.weights),
-                p32(&self.routes.macro1),
-                p32(&self.routes.macro2),
-                p32(&self.routes.macro3),
-                ptr(&self.input.half),
-                p32(&self.input.scale),
-                pi(&self.input.status),
-                ptr(&self.intermediate.half),
-                p32(&self.intermediate.scale),
-                pi(&self.intermediate.status),
-                p32(&self.contribution),
-            ],
-        }
-    }
-
-    /// Run or retain one rank-local matrix expert island graph. The graph owns
-    /// route preparation, both mirrors, gate/up, and down; cross-rank copies,
-    /// events and merge stay in `execute_matrix`.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn graph_run_or_capture(
-        &mut self,
-        gpu: &Gpu,
-        table: &CudaSlice<u64>,
-        source: &mut EpCompute<'_>,
-        scale2: &CudaSlice<f32>,
-        scale2_host: &[f32],
-        rows: usize,
-        topk: usize,
-        limit: f32,
-        device_routes: bool,
-        graph_layer: usize,
-    ) -> Res<bool> {
-        if !grouped_graph_gate()
-            || !device_routes
-            || route_validation_enabled()
-            || mirror_validation_enabled()
-            || rows != 1
-            || !self.gu_fuse
-        {
-            return Ok(false);
-        }
-        if self.phase != MatrixPhase::Idle {
-            return Err("grouped graph capture/replay requires an idle work phase".into());
-        }
-        if rows == 0
-            || rows > 512
-            || !slots_for(rows, topk).is_some_and(|s| s <= self.routes.capacity)
-        {
-            return Err("grouped graph shape is outside preallocated workspace".into());
-        }
-        let stream = gpu.stream();
-        // Graph launch and every raw grouped kernel require the owning runtime
-        // device to be current on this host thread, including replay.
-        bind_matrix(gpu)?;
-        let key = self.graph_key(
-            &stream,
-            table,
-            scale2,
-            source,
-            rows,
-            topk,
-            limit,
-            device_routes,
-        );
-        if let Some(graph) = self.graphs.get(&graph_layer) {
-            if graph.key == key {
-                graph.replay(&key)?;
-                self.phase = MatrixPhase::Idle;
-                self.routes.live_slots = rows * topk;
-                return Ok(true);
-            }
-            grouped_graph_fallback_recorded();
-            self.graphs.remove(&graph_layer);
-        }
-        let captured = capture_layer(stream.clone(), graph_layer, || {
-            self.prepare_graph(gpu, source, scale2, scale2_host, rows, topk, device_routes)?;
-            self.gate_up_graph(gpu, table, source, limit)?;
-            self.down_graph(gpu, table, source)
-        })?;
-        grouped_graph_capture_recorded();
-        self.graphs.insert(
-            graph_layer,
-            Dsv4GroupedGraph {
-                capture: captured,
-                key,
-                stream,
-            },
-        );
-        Ok(true)
-    }
-
-    pub(crate) fn clear_graph_for_gate(&mut self) {
-        self.graphs.clear();
-    }
-
-    pub(crate) fn graph_count(&self) -> usize {
-        self.graphs.len()
-    }
-
-    pub(crate) fn graph_node_counts(&self) -> Vec<(usize, usize, usize)> {
-        self.graphs
-            .iter()
-            .map(|(layer, graph)| (*layer, graph.node_count(), graph.kernel_count()))
-            .collect()
-    }
-}
-
-fn slots_for(rows: usize, topk: usize) -> Option<usize> {
-    rows.checked_mul(topk)
 }
 
 pub(crate) struct GroupedRoutes {

@@ -3,7 +3,8 @@
 2026-09-07, native ST DSV4 matrix EP on two SM120 target devices.
 No serving default changes. The 120 plain tok/s objective remains unmet.
 
-The candidates are factorized, not stacked:
+Frozen candidate CLI at source checkpoint `c95742723`, factorized rather than
+stacked (the rejected graph mode is subsequently removed):
 
 - `dsv4_plain_perf_gate half2`: scalar eager GU/M1-down versus packed-half2
   dequant stores. Both rank enqueue counters must equal 86 per decode step.
@@ -43,8 +44,31 @@ The kernel full-bank and partition H checks had passed. Correcting the fixture
 to use `part_a.ids` made the same arithmetic pass on both target devices;
 the original failed run is retained in the private operator receipts.
 
-Full-model performance is in progress, not yet a qualification or speed claim.
-The attribution profile now accepts explicit `baseline`, `half2`, and
-`expert-graph` arms. Its 32..64 sampled-step range is for Nsight attribution,
-not throughput. Host enqueue counters run during capture, not every replay;
-half2 and graph arms remain disjoint to avoid that accounting ambiguity.
+Full-model comparison completed: all 56 rows pass token/final-logit/KV
+identity and actual engagement, with no loop exclusions. Six timed rows per
+arm in every cell:
+
+| candidate | prompt | baseline tok/s | candidate tok/s | wall change |
+|---|---:|---:|---:|---:|
+| packed half2 | 256 | 31.41518 | 31.61820 | +0.646% |
+| packed half2 | 8192 | 27.33107 | 27.60817 | +1.014% |
+| expert graphs | 256 | 31.51095 | 31.36738 | -0.456% |
+| expert graphs | 8192 | 27.12690 | 27.16817 | +0.152% |
+
+Every expert-graph candidate row retained 86 entries and 860 kernels, captured
+86 times, replayed 21,844 times, and recorded zero stale fallback or eager
+prepare. Post-capture changes remained -0.254%/+0.314%. This is a flat result:
+the rank-local graph performance API/maps/dispatch are removed, preserving
+only the original layer/head/stage0 capture instruments. The old 2026-09-05
+0.995x MoE-graph result was chunk-32 prefill, not this plain EP experiment.
+
+Half2 is a small, exact measured gain, not a route to 120 tok/s by itself.
+All three ABBA cycles were positive in both contexts. Its process gates stay
+OFF outside controlled experiments; production admission has not been run.
+
+Raw model log SHA:
+`c9dac294d29b79764d6c2e8de8fa8d72e82fdb975a7c7da562f28023baddff9c`.
+Matched plain-baseline Nsight profiling is running separately. The profile
+binary above contains the now-rejected graph arm as historical evidence; it
+is running `baseline`, not graphs. Host enqueue counters advance on capture,
+not replay. No profiled throughput is promoted as an unprofiled rate.

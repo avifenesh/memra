@@ -1708,98 +1708,6 @@ impl Dsv4Gpu {
         crate::dsv4_grouped::mirror_validation_enabled()
     }
 
-    /// Gate-only per-rank matrix expert-island graph control. Route and mirror
-    /// validation must already be OFF because their host readbacks/syncs are
-    /// outside the captured island; P2P copies/events and merge remain eager.
-    pub fn set_grouped_graph_for_gate(&self, enabled: bool) -> Res<bool> {
-        if enabled
-            && (crate::dsv4_grouped::route_validation_enabled()
-                || crate::dsv4_grouped::mirror_validation_enabled())
-        {
-            return Err(
-                "grouped expert graph requires route and mirror validation disabled".into(),
-            );
-        }
-        for stage in &self.stages {
-            stage
-                .gpu
-                .stream()
-                .synchronize()
-                .map_err(e("drain grouped expert graph gate"))?;
-        }
-        Ok(crate::dsv4_graph::set_grouped_graph_gate(enabled))
-    }
-
-    /// (captures, replays, stale-key fallbacks) for rank-local grouped expert
-    /// graphs in this process. Gate harnesses use this to prove the replay
-    /// path actually bypassed the host prepare/gate/up/down functions.
-    pub fn grouped_graph_counts_for_gate(&self) -> (u64, u64, u64) {
-        crate::dsv4_graph::grouped_graph_counters()
-    }
-
-    pub fn grouped_graph_eager_prepare_count_for_gate(&self) -> u64 {
-        crate::dsv4_graph::grouped_graph_eager_prepare_count()
-    }
-
-    /// Retained rank-local graph counts grouped by verifier workspace, plus
-    /// the total. With EP this counts local + peer graph maps per workspace;
-    /// a 43-layer, two-rank capture must therefore report 86 retained graphs,
-    /// not one reusable slot recaptured on every layer.
-    pub fn grouped_graph_retained_for_gate(&self, state: &DecodeState) -> Res<(Vec<usize>, usize)> {
-        let step = state
-            .matrix_step
-            .as_ref()
-            .ok_or("grouped graph retention requires matrix decode state")?;
-        let mut per_workspace = Vec::with_capacity(step.verify.ws.len());
-        for workspace in &step.verify.ws {
-            let local = workspace
-                .grouped_work
-                .as_ref()
-                .map_or(0, crate::dsv4_grouped::GroupedWork::graph_count);
-            let peer = workspace
-                .ep
-                .as_ref()
-                .map_or(0, crate::dsv4_ep::EpScratch::grouped_graph_count);
-            per_workspace.push(local + peer);
-        }
-        let total = per_workspace.iter().sum();
-        Ok((per_workspace, total))
-    }
-
-    /// Captured graph node counts as `(workspace, layer, nodes, kernels)`.
-    /// The list is intentionally per rank-local graph entry so a gate can
-    /// prove all 86 EP entries are retained, not merely replayed through one
-    /// mutable slot.
-    pub fn grouped_graph_nodes_for_gate(
-        &self,
-        state: &DecodeState,
-    ) -> Res<Vec<(usize, usize, usize, usize)>> {
-        let step = state
-            .matrix_step
-            .as_ref()
-            .ok_or("grouped graph node census requires matrix decode state")?;
-        let mut out = Vec::new();
-        for (workspace, verify_ws) in step.verify.ws.iter().enumerate() {
-            if let Some(local) = &verify_ws.grouped_work {
-                out.extend(
-                    local
-                        .graph_node_counts()
-                        .into_iter()
-                        .map(|(layer, nodes, kernels)| (workspace, layer, nodes, kernels)),
-                );
-            }
-            out.extend(
-                verify_ws
-                    .ep
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(|ep| ep.grouped_graph_node_counts())
-                    .map(|(layer, nodes, kernels)| (workspace, layer, nodes, kernels)),
-            );
-        }
-        Ok(out)
-    }
-
     /// Gate-only control for DSV4 matrix gate/up + SwiGLU fusion.  Drain every
     /// stage before changing the process-local override so no in-flight grouped
     /// call observes a policy transition.  This is deliberately not exposed as
@@ -13250,7 +13158,6 @@ impl Dsv4Gpu {
         } else {
             None
         };
-        let fresh_storage = fresh.is_some();
         let work = fresh
             .as_mut()
             .or(vws.grouped_work.as_mut())
@@ -13267,34 +13174,16 @@ impl Dsv4Gpu {
             hs: &mut vws.hs,
             contribution: &mut vws.contrib,
         };
-        work.set_plain_shape_for_graph(t);
+        let used_device = work.prepare(
+            &st.gpu,
+            &compute,
+            &layer.experts_s2_dev,
+            &layer.experts_s2,
+            t,
+            topk,
+            self.grouped_route_device,
+        )?;
         work.set_gu_fuse_for_plain(allow_gu_fuse);
-        let graph_used = !fresh_storage
-            && work.graph_run_or_capture(
-                &st.gpu,
-                table,
-                &mut compute,
-                &layer.experts_s2_dev,
-                &layer.experts_s2,
-                t,
-                topk,
-                limit,
-                self.grouped_route_device,
-                layer.il as usize,
-            )?;
-        let used_device = if graph_used {
-            true
-        } else {
-            work.prepare(
-                &st.gpu,
-                &compute,
-                &layer.experts_s2_dev,
-                &layer.experts_s2,
-                t,
-                topk,
-                self.grouped_route_device,
-            )?
-        };
         if work.routes.live_slots != slots {
             return Err("full-bank grouped routing lost a selected slot".into());
         }
@@ -13302,10 +13191,8 @@ impl Dsv4Gpu {
             self.grouped_device_route_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        if !graph_used {
-            work.gate_up(&st.gpu, table, &mut compute, limit)?;
-            work.down(&st.gpu, table, &mut compute)?;
-        }
+        work.gate_up(&st.gpu, table, &mut compute, limit)?;
+        work.down(&st.gpu, table, &mut compute)?;
         static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
             let max_m = work.routes.max_m;
@@ -13474,7 +13361,6 @@ impl Dsv4Gpu {
                     limit,
                     allow_gu_fuse,
                     self.ep_serial_control,
-                    layer.il as usize,
                 )?;
                 self.grouped_device_route_calls
                     .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
@@ -14126,7 +14012,7 @@ impl Dsv4Gpu {
                 )
             };
             if capture_this_layer {
-                let captured = crate::dsv4_graph::capture_layer(st.gpu.stream(), il, || body())?;
+                let captured = crate::dsv4_graph::capture_layer(st.gpu.stream(), il, &mut body)?;
                 vstate.layer_captures.push(captured);
             } else if replay_this_layer {
                 let capture = vstate

@@ -24,7 +24,6 @@ enum ProfileArm {
     Current,
     Baseline,
     Half2,
-    ExpertGraph,
 }
 
 impl ProfileArm {
@@ -33,9 +32,8 @@ impl ProfileArm {
             None => Self::Current,
             Some("baseline") => Self::Baseline,
             Some("half2") => Self::Half2,
-            Some("expert-graph") => Self::ExpertGraph,
             Some(other) => {
-                panic!("unknown profile arm '{other}' (expected baseline | half2 | expert-graph)")
+                panic!("unknown profile arm '{other}' (expected baseline | half2)")
             }
         }
     }
@@ -45,7 +43,6 @@ impl ProfileArm {
             Self::Current => "current",
             Self::Baseline => "baseline",
             Self::Half2 => "half2",
-            Self::ExpertGraph => "expert-graph",
         }
     }
 
@@ -60,23 +57,14 @@ struct Receipt {
     gu_m1: u64,
     gu_half2: u64,
     down_half2: u64,
-    captures: u64,
-    replays: u64,
-    fallbacks: u64,
-    eager_prepares: u64,
 }
 
 fn receipt(gpu: &Dsv4Gpu) -> Receipt {
-    let (captures, replays, fallbacks) = gpu.grouped_graph_counts_for_gate();
     Receipt {
         ep_calls: gpu.ep_calls(),
         gu_m1: memra_engine::moe_f16g_gu_m1_tc_dispatches(),
         gu_half2: memra_engine::moe_f16g_gu_half2_dispatches(),
         down_half2: memra_engine::moe_f16g_down_m1_half2_dispatches(),
-        captures,
-        replays,
-        fallbacks,
-        eager_prepares: gpu.grouped_graph_eager_prepare_count_for_gate(),
     }
 }
 
@@ -86,10 +74,6 @@ fn receipt_delta(after: Receipt, before: Receipt) -> Receipt {
         gu_m1: after.gu_m1 - before.gu_m1,
         gu_half2: after.gu_half2 - before.gu_half2,
         down_half2: after.down_half2 - before.down_half2,
-        captures: after.captures - before.captures,
-        replays: after.replays - before.replays,
-        fallbacks: after.fallbacks - before.fallbacks,
-        eager_prepares: after.eager_prepares - before.eager_prepares,
     }
 }
 
@@ -97,7 +81,7 @@ fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert!(
         (3..=4).contains(&args.len()),
-        "usage: dsv4_decode_profile <model-dir> <source.txt> [baseline|half2|expert-graph]"
+        "usage: dsv4_decode_profile <model-dir> <source.txt> [baseline|half2]"
     );
     let arm = ProfileArm::parse(&args);
     let controlled_arm = arm.controlled();
@@ -187,13 +171,10 @@ fn main() {
         let half2 = matches!(arm, ProfileArm::Half2);
         memra_engine::set_moe_f16g_gu_half2_for_gate(half2);
         memra_engine::set_moe_f16g_down_m1_half2_for_gate(half2);
-        gpu.set_grouped_graph_for_gate(matches!(arm, ProfileArm::ExpertGraph))
-            .expect("select fixed profile arm");
         println!(
-            "PROFILE_ARM arm={} gu_fuse=true m1_down=true gu_m1=false half2={} expert_graph={} route_validate=false mirror_validate=false c4_host_copy_elide=false",
+            "PROFILE_ARM arm={} gu_fuse=true m1_down=true gu_m1=false half2={} route_validate=false mirror_validate=false c4_host_copy_elide=false",
             arm.name(),
             half2,
-            matches!(arm, ProfileArm::ExpertGraph),
         );
     }
     if c4_elide {
@@ -245,14 +226,8 @@ fn main() {
             let profile_after = receipt(&gpu);
             let profile_delta = receipt_delta(profile_after, profile_before.unwrap());
             println!(
-                "PROFILE_COMPLETE steps=32..64 absolute_positions=8224..8256 seconds={seconds:.6} both_stages_drained=true ep_calls={} gu_half2={} down_half2={} graph_captures={} graph_replays={} graph_fallbacks={} graph_eager_prepares={}",
-                profile_delta.ep_calls,
-                profile_delta.gu_half2,
-                profile_delta.down_half2,
-                profile_delta.captures,
-                profile_delta.replays,
-                profile_delta.fallbacks,
-                profile_delta.eager_prepares,
+                "PROFILE_COMPLETE steps=32..64 absolute_positions=8224..8256 seconds={seconds:.6} both_stages_drained=true ep_calls={} gu_half2={} down_half2={}",
+                profile_delta.ep_calls, profile_delta.gu_half2, profile_delta.down_half2,
             );
         }
     }
@@ -264,17 +239,13 @@ fn main() {
     let total_receipt = receipt(&gpu);
     let total_delta = receipt_delta(total_receipt, initial_receipt);
     println!(
-        "PROFILE_RECEIPT arm={} ep_calls={} trunk_layers={} gu_m1={} gu_half2={} down_half2={} graph_captures={} graph_replays={} graph_fallbacks={} graph_eager_prepares={}",
+        "PROFILE_RECEIPT arm={} ep_calls={} trunk_layers={} gu_m1={} gu_half2={} down_half2={}",
         arm.name(),
         total_delta.ep_calls,
         trunk_layers,
         total_delta.gu_m1,
         total_delta.gu_half2,
         total_delta.down_half2,
-        total_delta.captures,
-        total_delta.replays,
-        total_delta.fallbacks,
-        total_delta.eager_prepares,
     );
     if controlled_arm {
         assert_eq!(
@@ -287,14 +258,6 @@ fn main() {
                 assert_eq!(total_delta.gu_m1, 0, "baseline GU-M1 must be off");
                 assert_eq!(total_delta.gu_half2, 0, "baseline GU half2 must be off");
                 assert_eq!(total_delta.down_half2, 0, "baseline down half2 must be off");
-                assert_eq!(total_delta.captures, 0, "baseline graph captures");
-                assert_eq!(total_delta.replays, 0, "baseline graph replays");
-                assert_eq!(total_delta.fallbacks, 0, "baseline graph fallbacks");
-                assert_eq!(
-                    total_delta.eager_prepares,
-                    2 * total_delta.ep_calls,
-                    "baseline eager rank preparations"
-                );
             }
             ProfileArm::Half2 => {
                 assert_eq!(total_delta.gu_m1, 0, "half2 GU-M1 must be off");
@@ -308,67 +271,8 @@ fn main() {
                     2 * total_delta.ep_calls,
                     "half2 down launches on both EP ranks"
                 );
-                assert_eq!(total_delta.captures, 0, "half2 graph captures");
-                assert_eq!(total_delta.replays, 0, "half2 graph replays");
-                assert_eq!(total_delta.fallbacks, 0, "half2 graph fallbacks");
-                assert_eq!(
-                    total_delta.eager_prepares,
-                    2 * total_delta.ep_calls,
-                    "half2 eager rank preparations"
-                );
-            }
-            ProfileArm::ExpertGraph => {
-                assert_eq!(total_delta.gu_m1, 0, "expert graph GU-M1 must be off");
-                assert_eq!(total_delta.gu_half2, 0, "expert graph GU half2 must be off");
-                assert_eq!(
-                    total_delta.down_half2, 0,
-                    "expert graph down half2 must be off"
-                );
-                assert_eq!(
-                    total_delta.captures,
-                    2 * trunk_layers,
-                    "two retained graph captures per trunk layer"
-                );
-                assert_eq!(
-                    total_delta.replays,
-                    2 * trunk_layers * 95,
-                    "two-rank graph replays after first capture step"
-                );
-                assert_eq!(total_delta.fallbacks, 0, "expert graph fallbacks");
-                assert_eq!(total_delta.eager_prepares, 0, "expert graph eager prepares");
             }
             ProfileArm::Current => unreachable!("current arm is not controlled"),
-        }
-
-        let (graph_workspaces, graph_retained) = gpu
-            .grouped_graph_retained_for_gate(&state)
-            .expect("profile graph retention");
-        let graph_entries = gpu
-            .grouped_graph_nodes_for_gate(&state)
-            .expect("profile graph nodes");
-        let expected_retained = if matches!(arm, ProfileArm::ExpertGraph) {
-            2 * trunk_layers as usize
-        } else {
-            0
-        };
-        assert_eq!(graph_retained, expected_retained, "retained graph entries");
-        assert_eq!(graph_entries.len(), expected_retained, "graph entry census");
-        assert_eq!(
-            graph_workspaces.iter().sum::<usize>(),
-            expected_retained,
-            "retained graph workspace census"
-        );
-        if matches!(arm, ProfileArm::ExpertGraph) {
-            let mut per_layer = vec![0usize; trunk_layers as usize];
-            for &(_workspace, layer, nodes, kernels) in &graph_entries {
-                assert!(layer < per_layer.len(), "graph layer outside trunk");
-                assert!(nodes >= kernels && kernels >= 8, "non-empty expert graph");
-                per_layer[layer] += 1;
-            }
-            assert!(
-                per_layer.iter().all(|&count| count == 2),
-                "two retained ranks per layer"
-            );
         }
     }
     let mut hash = Sha256::new();
