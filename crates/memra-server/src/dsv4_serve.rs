@@ -456,6 +456,7 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
         // A dsv4 artifact is never a glm5 one (disjoint dialect markers); stated rather than
         // left to `..Default::default()`, which this literal does not use.
         glm5: false,
+        glm_tool_wire: false,
         chat_temperature_default: None,
         chat_top_p_default: None,
         n_vocab: m.tok.vocab_size(),

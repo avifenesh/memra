@@ -7897,12 +7897,14 @@ fn build_chat_request_with_trace(
     // splitter — the qwen scanner's `<function=` body grammar never matches this wire, so
     // before this branch a glm5 tool call would have surfaced VERBATIM as content.
     let glm5 = caps.map(|c| c.glm5).unwrap_or(false);
+    // Spark-X2.5 renders GLM's tool wire under its own turn dialect: same parser, own renderer.
+    let glm_tool_wire = caps.map(|c| c.glm_tool_wire).unwrap_or(false);
     // Tencent HY3 dialect: reasoning closes with `</think:opensource>` and calls use the
     // suffixed `<tool_calls:opensource>` protocol. Armed on think-open or tools, like dsv4.
     let is_hy3 = caps.map(|c| c.hy3).unwrap_or(false);
     let hy3_think_open = is_hy3 && think == ThinkMode::Think;
     let hy3_tools = is_hy3 && !tools_json.is_empty();
-    let parser = if glm5 {
+    let parser = if glm5 || (glm_tool_wire && !tools_json.is_empty()) {
         Some(ToolStreamParser::glm5(think_open, schemas))
     } else if is_hy3 && (hy3_tools || hy3_think_open) {
         Some(ToolStreamParser::hy3(schemas, hy3_think_open))
@@ -11535,6 +11537,7 @@ mod tests {
             instruct_type: Some("glm".into()),
             effort_levels: true,
             glm5: true,
+            glm_tool_wire: false,
             ..Default::default()
         }
     }
@@ -20871,6 +20874,7 @@ temperature = 0.6
             gemma_think: false,
             dsv4: false,
             glm5: false,
+            glm_tool_wire: false,
             chat_temperature_default: None,
             chat_top_p_default: None,
             n_vocab: 151_936,

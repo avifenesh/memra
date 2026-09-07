@@ -1275,6 +1275,15 @@ pub fn template_is_glm5(t: &str) -> bool {
     t.contains("[gMASK]<sop>") && t.contains("<|observation|>")
 }
 
+/// The GLM tool-call WIRE (`<tool_call>NAME<arg_key>K</arg_key><arg_value>V</arg_value>`)
+/// rendered by a template that is not the GLM turn dialect. Spark-X2.5 (XHToken, 2026-09-07)
+/// keeps DeepSeek-style `<|User|>`/`<|Bot|>` turns and renders its tool calls on this wire,
+/// so the parser choice keys on the wire and the renderer keeps its own arm. `<arg_key>` is
+/// the marker: no ChatML/qwen `<function=` template renders it.
+pub fn template_uses_glm_tool_wire(t: &str) -> bool {
+    t.contains("<tool_call>") && t.contains("<arg_key>")
+}
+
 /// The GLM-5.3-Flash REASONING-EFFORT ladder, resolved exactly as the template resolves it:
 ///
 /// ```jinja
@@ -2686,6 +2695,18 @@ fn apply_dsv4_template(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn glm_tool_wire_is_keyed_on_arg_key_not_on_the_glm_turn_dialect() {
+        let spark = "<|User|>{{ m }}<|Bot|><think>{{ '<tool_call>' + tool_call.function.name }}\
+{{ '<arg_key>' ~ k ~ '</arg_key><arg_value>' ~ v ~ '</arg_value>' }}{{ '</tool_call>' }}";
+        assert!(template_uses_glm_tool_wire(spark));
+        assert!(!template_is_glm5(spark));
+        let qwen = "<tool_call>\n<function={{ name }}>\n<parameter={{ k }}>\n{{ v }}\n</parameter>";
+        assert!(!template_uses_glm_tool_wire(qwen));
+        let glm = "[gMASK]<sop><|observation|><tool_call>{{ name }}<arg_key>k</arg_key>";
+        assert!(template_is_glm5(glm) && template_uses_glm_tool_wire(glm));
+    }
+
     use super::*;
 
     /// ds4f rung-3 regression (the first real serve 400): the REAL dsv4 artifacts

@@ -1801,6 +1801,10 @@ pub struct ModelCaps {
     /// before this cap existed: every glm5 marker is ALSO a qwen marker, so the ChatML arm
     /// answered for it (research/glm53-flash-bringup-20260827/SURFACE-AUDIT).
     pub glm5: bool,
+    /// The template renders tool calls on the GLM `<tool_call>NAME<arg_key>` wire without
+    /// being the GLM turn dialect (Spark-X2.5). Arms the glm5 TOOL PARSER only; rendering,
+    /// effort ladder and think handling stay on the template's own arm.
+    pub glm_tool_wire: bool,
     /// Model-provider sampling defaults for OMITTED chat fields. `None` keeps the generic
     /// OpenAI-compatible defaults in the HTTP layer. Step35 uses StepFun's published API
     /// defaults (temperature 0.5, top_p 0.9); explicit client values always win.
@@ -12510,6 +12514,10 @@ pub fn run(
                 // other cap — a glm5 checkpoint that shipped without its template would fall
                 // back to ChatML rendering, where arming this dialect would be guessing.
                 glm5: t.is_some_and(memra_tokenizer::chat::template_is_glm5),
+                glm_tool_wire: t.is_some_and(|t| {
+                    !memra_tokenizer::chat::template_is_glm5(t)
+                        && memra_tokenizer::chat::template_uses_glm_tool_wire(t)
+                }),
                 chat_temperature_default: lm
                     .model
                     .plan
@@ -12525,7 +12533,7 @@ pub fn run(
             };
             eprintln!(
                 "[worker] {n}: template caps tools={} think={} think_switch={} chat_ok={} \
-                   effort_levels={} qwen_effort={} gemma_think={} dsv4={} glm5={} ctx={} \
+                   effort_levels={} qwen_effort={} gemma_think={} dsv4={} glm5={} glm_tool_wire={} ctx={} \
                    tok={:?} instruct={:?} chat_defaults={:?}/{:?}",
                 caps.tools_branch,
                 caps.qwen_think,
@@ -12536,6 +12544,7 @@ pub fn run(
                 caps.gemma_think,
                 caps.dsv4,
                 caps.glm5,
+                caps.glm_tool_wire,
                 caps.context_length,
                 caps.tokenizer,
                 caps.instruct_type,
