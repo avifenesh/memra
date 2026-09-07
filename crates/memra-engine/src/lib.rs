@@ -1954,6 +1954,69 @@ impl Drop for PinnedStage {
     }
 }
 
+/// A reusable page-locked HtoD staging arena for the small per-layer tables a prime uploads
+/// (lane/glm5-tp-prime-router-20260907). WHY: cudarc's `memcpy_htod` from a `&[T]` source is
+/// the PAGEABLE path, and on the 2x B200 pair a 256k composed TP prime spent 85% of its
+/// 16 s root-side gap in `cuMemcpyHtoDAsync` from pageable memory: 13 table uploads per MoE
+/// layer per chunk at 378 us each. A copy out of page-locked memory returns to the host in a
+/// few microseconds and rides the stream. The arena is bump-allocated per layer-call; the
+/// host waits on the previous call's event before rewriting it (by then the copies are long
+/// done), so one arena per device serves every layer.
+pub struct PinnedHtodArena {
+    buf: PinnedHostBuf,
+    used: usize,
+    pending: Option<cudarc::driver::CudaEvent>,
+}
+impl PinnedHtodArena {
+    pub fn new(bytes: usize) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(PinnedHtodArena {
+            buf: PinnedHostBuf::new(bytes)?,
+            used: 0,
+            pending: None,
+        })
+    }
+    pub fn capacity(&self) -> usize {
+        self.buf.len()
+    }
+    /// Start a new layer-call: wait (host side) for the previous call's copies out of this
+    /// arena, then rewind.
+    pub fn begin(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ev) = self.pending.take() {
+            ev.synchronize()?;
+        }
+        self.used = 0;
+        Ok(())
+    }
+    /// Record the end of this layer-call's copies on `stream`; the next `begin` waits on it.
+    pub fn end(
+        &mut self,
+        stream: &cudarc::driver::CudaStream,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.pending = Some(stream.record_event(None)?);
+        Ok(())
+    }
+    fn take<T: Copy>(&mut self, v: &[T]) -> Result<&[T], Box<dyn std::error::Error>> {
+        let bytes = std::mem::size_of_val(v);
+        let align = std::mem::align_of::<T>().max(16);
+        let off = self.used.div_ceil(align) * align;
+        if off + bytes > self.buf.len() {
+            return Err(format!(
+                "PinnedHtodArena: {} B requested at {off} of {} B",
+                bytes,
+                self.buf.len()
+            )
+            .into());
+        }
+        let dst = &mut self.buf.as_mut_slice()[off..off + bytes];
+        // Safety: T: Copy, plain data; the arena is page-locked host memory.
+        unsafe {
+            std::ptr::copy_nonoverlapping(v.as_ptr() as *const u8, dst.as_mut_ptr(), bytes);
+        }
+        self.used = off + bytes;
+        Ok(unsafe { std::slice::from_raw_parts(dst.as_ptr() as *const T, v.len()) })
+    }
+}
+
 /// Owned page-locked CACHEABLE host buffer (flags=0, deliberately NOT write-combined) for the
 /// prefix-cache host tier (lane/kv-host-spill-20260830). Same allocation class as `PinnedStage`
 /// above and for the same reason: `ctx().alloc_pinned` is CU_MEMHOSTALLOC_WRITECOMBINED, which
@@ -13164,6 +13227,42 @@ impl Engine {
         crate::last_site_set("htod");
         crate::alloc_trace_hit(v.len() * 4);
         Ok(self.gpu.stream().clone_htod(v)?)
+    }
+    /// `htod_i32` through a page-locked staging arena: the copy is asynchronous on this
+    /// engine's stream (see [`PinnedHtodArena`]); the arena's `end` must be recorded on the
+    /// same stream before its next `begin`.
+    pub fn htod_i32_staged(
+        &self,
+        arena: &mut PinnedHtodArena,
+        v: &[i32],
+    ) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(v.len() * 4);
+        let mut dst = self.alloc_uninit::<i32>(v.len().max(1))?;
+        if v.is_empty() {
+            return Ok(dst);
+        }
+        let staged = arena.take(v)?;
+        let s = self.gpu.stream();
+        let (dptr, _r) = dst.device_ptr_mut(&s);
+        unsafe { cudarc::driver::result::memcpy_htod_async(dptr, staged, s.cu_stream())? };
+        Ok(dst)
+    }
+    /// The f32 twin of [`Engine::htod_i32_staged`].
+    pub fn htod_f32_staged(
+        &self,
+        arena: &mut PinnedHtodArena,
+        v: &[f32],
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(v.len() * 4);
+        let mut dst = self.alloc_uninit::<f32>(v.len().max(1))?;
+        if v.is_empty() {
+            return Ok(dst);
+        }
+        let staged = arena.take(v)?;
+        let s = self.gpu.stream();
+        let (dptr, _r) = dst.device_ptr_mut(&s);
+        unsafe { cudarc::driver::result::memcpy_htod_async(dptr, staged, s.cu_stream())? };
+        Ok(dst)
     }
     #[track_caller]
     pub fn htod_i32(&self, v: &[i32]) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {

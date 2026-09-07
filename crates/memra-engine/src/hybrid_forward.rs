@@ -16209,6 +16209,14 @@ impl HybridModel {
             }))
         };
         let shared_csr = if host_diet > 0 { build_csr()? } else { None };
+        // Page-locked staging for the table uploads (the measured gap: 85% pageable HtoD).
+        // One arena per device ordinal, sized for the largest chunk (t x n_used pairs, nine
+        // tables), rewound per layer-call after a host wait on the previous call's copies.
+        static ARENAS: std::sync::Mutex<Vec<Option<crate::PinnedHtodArena>>> =
+            std::sync::Mutex::new(Vec::new());
+        // six pair-length tables (three i32, three f32) + the (t + 1) token offsets + the
+        // expert lists, plus alignment slack per table
+        let arena_bytes = 24usize * (t * n_used) + 4 * (t + 1) + 8 * 1024 + (1 << 20);
 
         let rank_pass = |dev: &Engine,
                          _rank: u8,
@@ -16229,10 +16237,45 @@ impl HybridModel {
             let n_owned = csr.n_owned;
             let n_active = csr.n_active;
             let ex_off = &csr.ex_off;
-            let exi = dev.htod_i32(&csr.ex_ids)?;
-            let exo = dev.htod_i32(ex_off)?;
-            let exp_d = dev.htod_i32(&csr.ex_pairs)?;
-            let csr_tok_d = dev.htod_i32(&csr.csr_tok)?;
+            let mut arenas = ARENAS.lock().unwrap();
+            let ord = dev.ctx().ordinal();
+            if arenas.len() <= ord {
+                arenas.resize_with(ord + 1, || None);
+            }
+            let mut arena = if host_diet > 0 {
+                let slot = &mut arenas[ord];
+                let need = slot.as_ref().is_none_or(|a| a.capacity() < arena_bytes);
+                if need {
+                    *slot = Some(crate::PinnedHtodArena::new(arena_bytes)?);
+                }
+                let a = slot.as_mut().expect("just filled");
+                a.begin()?;
+                Some(a)
+            } else {
+                None
+            };
+            let up_i32 = |dev: &Engine,
+                          arena: &mut Option<&mut crate::PinnedHtodArena>,
+                          v: &[i32]|
+             -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+                match arena.as_deref_mut() {
+                    Some(a) => dev.htod_i32_staged(a, v),
+                    None => dev.htod_i32(v),
+                }
+            };
+            let up_f32 = |dev: &Engine,
+                          arena: &mut Option<&mut crate::PinnedHtodArena>,
+                          v: &[f32]|
+             -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+                match arena.as_deref_mut() {
+                    Some(a) => dev.htod_f32_staged(a, v),
+                    None => dev.htod(v),
+                }
+            };
+            let exi = up_i32(dev, &mut arena, &csr.ex_ids)?;
+            let exo = up_i32(dev, &mut arena, ex_off)?;
+            let exp_d = up_i32(dev, &mut arena, &csr.ex_pairs)?;
+            let csr_tok_d = up_i32(dev, &mut arena, &csr.csr_tok)?;
 
             // GATE/UP grouped GEMMs over the rank slab, CSR order end to end.
             let (z16, zs) = dev.moe_f16g_act(z_dev, Some(&csr_tok_d), n_embd, n_owned)?;
@@ -16253,7 +16296,7 @@ impl HybridModel {
                 m.gate_exps.row_bytes,
             )?;
             if let Some(mg) = csr.mg.as_ref() {
-                let mg_d = dev.htod(mg)?;
+                let mg_d = up_f32(dev, &mut arena, mg)?;
                 dev.scale_rows(&mut g, &mg_d, half_ff, n_owned)?;
             }
             let mut u = dev.moe_f16_grouped(
@@ -16273,7 +16316,7 @@ impl HybridModel {
                 m.up_exps.row_bytes,
             )?;
             if let Some(mu) = csr.mu.as_ref() {
-                let mu_d = dev.htod(mu)?;
+                let mu_d = up_f32(dev, &mut arena, mu)?;
                 dev.scale_rows(&mut u, &mu_d, half_ff, n_owned)?;
             }
 
@@ -16315,9 +16358,12 @@ impl HybridModel {
                 xs.down_row_bytes,
             )?;
             let y_local = dev.rows_permute(&d_csr, &exp_d, n_owned, n_embd)?;
-            let pw = dev.htod(&csr.local_wd)?;
-            let toff_d = dev.htod_i32(&csr.toff)?;
-            let tids_d = dev.htod_i32(&csr.tids)?;
+            let pw = up_f32(dev, &mut arena, &csr.local_wd)?;
+            let toff_d = up_i32(dev, &mut arena, &csr.toff)?;
+            let tids_d = up_i32(dev, &mut arena, &csr.tids)?;
+            if let Some(a) = arena.as_deref_mut() {
+                a.end(&dev.stream())?;
+            }
             let mut partial = dev.uninit(t * n_embd)?; // scatter fully overwrites
             dev.moe_pairs_scatter(&y_local, &pw, &toff_d, &tids_d, &mut partial, t, n_embd)?;
             Ok(Some(partial))
