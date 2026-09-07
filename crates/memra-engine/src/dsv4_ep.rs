@@ -172,6 +172,171 @@ pub(crate) struct EpLayer {
     pub local_only: bool,
 }
 
+/// Stable state for the PRO two-rank one-shot reduction.  The signal and
+/// refusal words are device-resident and survive every layer/token launch;
+/// there is no host event or staging buffer in the hot path.  A gate may read
+/// the refusal words after a drained run, while serving keeps them on device.
+pub(crate) struct TpEpArState {
+    signal: [CudaSlice<u8>; 2],
+    error: [CudaSlice<i32>; 2],
+    launches: u64,
+}
+
+impl TpEpArState {
+    pub(crate) fn new(owner: &Gpu, peer: &Gpu) -> Res<Self> {
+        if owner.ctx.ordinal() == peer.ctx.ordinal() {
+            return Err("TP/EP one-shot reduction requires two distinct devices".into());
+        }
+        let bytes = unsafe { crate::tp_ar::memra_tp_ar_signal_bytes() };
+        if bytes <= 0 {
+            return Err(format!(
+                "TP/EP one-shot reduction returned invalid signal size {bytes}"
+            ));
+        }
+        let owner_stream = owner.stream();
+        let peer_stream = peer.stream();
+        let signal0 = owner_stream
+            .alloc_zeros::<u8>(bytes as usize)
+            .map_err(|e| format!("TP/EP AR rank-0 signal: {e}"))?;
+        let signal1 = peer_stream
+            .alloc_zeros::<u8>(bytes as usize)
+            .map_err(|e| format!("TP/EP AR rank-1 signal: {e}"))?;
+        let error0 = owner_stream
+            .alloc_zeros::<i32>(1)
+            .map_err(|e| format!("TP/EP AR rank-0 refusal: {e}"))?;
+        let error1 = peer_stream
+            .alloc_zeros::<i32>(1)
+            .map_err(|e| format!("TP/EP AR rank-1 refusal: {e}"))?;
+        owner_stream
+            .synchronize()
+            .map_err(|e| format!("TP/EP AR rank-0 state init: {e}"))?;
+        peer_stream
+            .synchronize()
+            .map_err(|e| format!("TP/EP AR rank-1 state init: {e}"))?;
+        Ok(Self {
+            signal: [signal0, signal1],
+            error: [error0, error1],
+            launches: 0,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn all_reduce_into(
+        &mut self,
+        owner: &Gpu,
+        peer: &Gpu,
+        owner_input: &CudaSlice<f32>,
+        peer_input: &CudaSlice<f32>,
+        owner_output: &mut CudaSlice<f32>,
+        peer_output: &mut CudaSlice<f32>,
+        n: usize,
+    ) -> Res<()> {
+        if n == 0
+            || owner_input.len() < n
+            || peer_input.len() < n
+            || owner_output.len() < n
+            || peer_output.len() < n
+        {
+            return Err("TP/EP one-shot reduction buffer shape mismatch".into());
+        }
+        let owner_input_ptr;
+        let owner_output_ptr;
+        let owner_signal_ptr;
+        let owner_error_ptr;
+        {
+            owner.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = owner.stream();
+            owner_input_ptr = owner_input.device_ptr(&stream).0 as *const f32;
+            owner_output_ptr = owner_output.device_ptr_mut(&stream).0 as *mut f32;
+            owner_signal_ptr = self.signal[0].device_ptr_mut(&stream).0 as *mut c_void;
+            owner_error_ptr = self.error[0].device_ptr_mut(&stream).0 as *mut i32;
+        }
+        let peer_input_ptr;
+        let peer_output_ptr;
+        let peer_signal_ptr;
+        let peer_error_ptr;
+        {
+            peer.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = peer.stream();
+            peer_input_ptr = peer_input.device_ptr(&stream).0 as *const f32;
+            peer_output_ptr = peer_output.device_ptr_mut(&stream).0 as *mut f32;
+            peer_signal_ptr = self.signal[1].device_ptr_mut(&stream).0 as *mut c_void;
+            peer_error_ptr = self.error[1].device_ptr_mut(&stream).0 as *mut i32;
+        }
+        if owner_input_ptr as usize == owner_output_ptr as usize
+            || peer_input_ptr as usize == peer_output_ptr as usize
+        {
+            return Err("TP/EP one-shot reduction output aliases an input".into());
+        }
+        let blocks = crate::tp_ar::ar_blocks_for(n);
+        for (rank, gpu, in0, in1, out, self_signal, peer_signal, error) in [
+            (
+                0,
+                owner,
+                owner_input_ptr,
+                peer_input_ptr,
+                owner_output_ptr,
+                owner_signal_ptr,
+                peer_signal_ptr,
+                owner_error_ptr,
+            ),
+            (
+                1,
+                peer,
+                owner_input_ptr,
+                peer_input_ptr,
+                peer_output_ptr,
+                peer_signal_ptr,
+                owner_signal_ptr,
+                peer_error_ptr,
+            ),
+        ] {
+            let stream = gpu.stream();
+            let rc = unsafe {
+                crate::tp_ar::memra_tp_ar_1stage(
+                    in0,
+                    in1,
+                    out,
+                    self_signal,
+                    peer_signal,
+                    rank,
+                    n as i64,
+                    error,
+                    crate::tp_ar::AR_SPIN_LIMIT,
+                    blocks,
+                    stream.cu_stream().cast(),
+                )
+            };
+            if rc != 0 {
+                return Err(format!(
+                    "TP/EP one-shot reduction launch rc {rc} rank {rank}"
+                ));
+            }
+        }
+        self.launches += 1;
+        Ok(())
+    }
+
+    pub(crate) fn launches(&self) -> u64 {
+        self.launches
+    }
+
+    pub(crate) fn refusal_words(&self, owner: &Gpu, peer: &Gpu) -> Res<[i32; 2]> {
+        let mut out = [0i32; 2];
+        for (i, gpu) in [owner, peer].into_iter().enumerate() {
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = gpu.stream();
+            stream
+                .memcpy_dtoh(&self.error[i], std::slice::from_mut(&mut out[i]))
+                .map_err(|e| format!("TP/EP AR refusal read rank {i}: {e}"))?;
+            stream
+                .synchronize()
+                .map_err(|e| format!("TP/EP AR refusal sync rank {i}: {e}"))?;
+        }
+        Ok(out)
+    }
+}
+
 pub(crate) struct EpScratch {
     pub xq: CudaSlice<u8>,
     pub xs: CudaSlice<f32>,
@@ -747,9 +912,9 @@ pub(crate) fn execute_matrix(
 }
 
 /// Numeric class for the first TP/EP vertical slice. Each rank computes its
-/// owned expert partition, then rank 0's partial is added before rank 1's
-/// partial and the full result is copied back to rank 1. This is deliberately
-/// named separately from the old slot-overwrite EP combine.
+/// owned expert partition, then the PRO one-shot primitive evaluates the same
+/// global-rank-ordered f32 sum on both ranks. This is deliberately named
+/// separately from the old slot-overwrite EP combine.
 pub(crate) const TP_EP_RANK_ORDER_NUMERIC_CLASS: &str =
     "dsv4_expert_id_ep_slot_order_f32_rank_reduce";
 
@@ -782,65 +947,6 @@ pub(crate) fn execute_matrix_local(
     work.gate_up(gpu, table, local, limit)?;
     work.down(gpu, table, local)?;
     Ok(calls)
-}
-
-/// Reference rank-order join for the replicated all-layer TP/EP slice. The
-/// future parent graph replaces these drains with explicit fork/join nodes,
-/// while retaining this exact operand order and slot layout. The peer partial
-/// buffer is also the joined-output buffer: it is read before the owner add,
-/// then overwritten with the owner result.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn reduce_rank_order_f32(
-    owner: &Gpu,
-    peer: &Gpu,
-    owner_partial: &mut CudaSlice<f32>,
-    peer_partial_and_output: &mut CudaSlice<f32>,
-    owner_tmp: &mut CudaSlice<f32>,
-    n: usize,
-) -> Res<()> {
-    if n == 0 || owner_partial.len() < n || peer_partial_and_output.len() < n || owner_tmp.len() < n
-    {
-        return Err("TP/EP rank-order reduce buffer shape mismatch".into());
-    }
-    peer_copy(
-        &peer.stream(),
-        &owner.stream(),
-        peer_partial_and_output,
-        &mut owner_tmp.slice_mut(..n),
-        n,
-    )?;
-    peer.stream()
-        .synchronize()
-        .map_err(|e| format!("TP/EP peer partial drain: {e}"))?;
-    owner.ctx.bind_to_thread().map_err(|e| e.to_string())?;
-    let os = owner.stream();
-    unsafe {
-        k::ck(
-            "TP/EP rank-order partial add",
-            k::memra_dsv4_add_inplace(
-                owner_partial.device_ptr_mut(&os).0 as *mut f32,
-                owner_tmp.device_ptr(&os).0 as *const f32,
-                n as i64,
-                os.cu_stream().cast(),
-            ),
-        )?;
-    }
-    owner
-        .stream()
-        .synchronize()
-        .map_err(|e| format!("TP/EP owner partial drain: {e}"))?;
-    peer_copy(
-        &owner.stream(),
-        &peer.stream(),
-        owner_partial,
-        &mut peer_partial_and_output.slice_mut(..n),
-        n,
-    )?;
-    owner
-        .stream()
-        .synchronize()
-        .map_err(|e| format!("TP/EP joined output drain: {e}"))?;
-    Ok(())
 }
 
 #[cfg(test)]

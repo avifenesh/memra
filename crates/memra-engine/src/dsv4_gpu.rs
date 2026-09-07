@@ -34,7 +34,7 @@ use memra_gguf::dsv4_forward::{
 };
 
 use crate::dsv4_c4::{C4Gather, C4HostStore};
-use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch};
+use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch, TpEpArState};
 use crate::dsv4_ep_graph::{self, MatrixEpGraphSlot};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
@@ -54,6 +54,9 @@ static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 // the CUDA launcher accepts the dispatch.
 static DSV4_INDEX_TOPK_RADIX: AtomicBool = AtomicBool::new(false);
 static DSV4_INDEX_TOPK_RADIX_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
+/// Numeric class of the gate-only replicated TP/EP expert partial join.
+pub const TP_EP_RANK_ORDER_NUMERIC_CLASS: &str = crate::dsv4_ep::TP_EP_RANK_ORDER_NUMERIC_CLASS;
 
 #[inline]
 fn index_topk_radix_eligible(t: usize, nb: usize, kk: usize) -> bool {
@@ -718,6 +721,7 @@ pub struct Dsv4Gpu {
     ep_serial_control: bool,
     ep_calls: std::sync::atomic::AtomicU64,
     tp_ep_rank_layer_calls: [std::sync::atomic::AtomicU64; 2],
+    tp_ep_ar: Option<TpEpArState>,
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -1907,6 +1911,22 @@ impl Dsv4Gpu {
         ]
     }
 
+    /// Successful one-shot TP/EP reductions. This is a launch receipt only;
+    /// device-side refusal words are exposed separately for a drained gate.
+    pub fn tp_ep_ar_dispatches(&self) -> u64 {
+        self.tp_ep_ar.as_ref().map_or(0, TpEpArState::launches)
+    }
+
+    /// Read the bounded device-side refusal words after the caller has finished
+    /// its narrow gate run. The serving walk never performs this D2H read.
+    pub fn tp_ep_ar_refusal_words(&self) -> Res<[i32; 2]> {
+        let ar = self
+            .tp_ep_ar
+            .as_ref()
+            .ok_or("TP/EP one-shot reduction state is not armed")?;
+        ar.refusal_words(&self.stages[0].gpu, &self.stages[1].gpu)
+    }
+
     fn ensure_walk_topology_ready(&self) -> Res<()> {
         if self.topology.is_tp_ep() {
             return Err(
@@ -2934,6 +2954,7 @@ impl Dsv4Gpu {
             ep_serial_control: false,
             ep_calls: std::sync::atomic::AtomicU64::new(0),
             tp_ep_rank_layer_calls: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
+            tp_ep_ar: None,
             model,
             stages,
             layer_stage: if topology.is_tp_ep() {
@@ -3426,6 +3447,7 @@ impl Dsv4Gpu {
                 .synchronize()
                 .map_err(e("TP/EP local bank finalize"))?;
         }
+        self.tp_ep_ar = Some(TpEpArState::new(&self.stages[0].gpu, &self.stages[1].gpu)?);
         self.ep_enabled = true;
         eprintln!(
             "[TP/EP load] local expert banks resident by ID: rank0=0..{}, rank1={}..{}; peer dispatch disabled",
@@ -9177,21 +9199,28 @@ impl Dsv4Gpu {
                 let (rank0_ws, rank1_ws) = work.verify.ws.split_at_mut(1);
                 let owner_ws = &mut rank0_ws[0];
                 let peer_ws = &mut rank1_ws[0];
-                let (owner_partial, owner_tmp) = {
-                    let owner_ep = owner_ws
-                        .ep
+                let ar_outputs = work
+                    .verify
+                    .tp_ep_ar_outputs
+                    .as_mut()
+                    .ok_or("TP/EP one-shot output buffers missing")?;
+                let owner_gpu = &self.stages[0].gpu;
+                let peer_gpu = &self.stages[1].gpu;
+                {
+                    let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
+                    self.tp_ep_ar
                         .as_mut()
-                        .ok_or("TP/EP owner join scratch missing")?;
-                    (&mut owner_ws.contrib, &mut owner_ep.returned)
-                };
-                crate::dsv4_ep::reduce_rank_order_f32(
-                    &self.stages[0].gpu,
-                    &self.stages[1].gpu,
-                    owner_partial,
-                    &mut peer_ws.contrib,
-                    owner_tmp,
-                    topk * hidden,
-                )?;
+                        .ok_or("TP/EP one-shot reduction state missing")?
+                        .all_reduce_into(
+                            owner_gpu,
+                            peer_gpu,
+                            &owner_ws.contrib,
+                            &peer_ws.contrib,
+                            &mut owner_output[0],
+                            &mut peer_output[0],
+                            topk * hidden,
+                        )?;
+                }
                 let layer0 = self.stages[0]
                     .layers
                     .iter()
@@ -9211,6 +9240,7 @@ impl Dsv4Gpu {
                     hidden,
                     d.swiglu_limit,
                     true,
+                    Some(&ar_outputs[0]),
                 )?;
                 self.moe_verify_common_tail(
                     &self.stages[1],
@@ -9221,8 +9251,12 @@ impl Dsv4Gpu {
                     hidden,
                     d.swiglu_limit,
                     true,
+                    Some(&ar_outputs[1]),
                 )?;
+                drop(ar_outputs);
             }
+            work.verify.open = Some((state.pos, 1));
+            self.commit_verify_dev(state, &mut work.verify, 1)?;
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
             let stream = self.stages[1].gpu.stream();
@@ -9233,7 +9267,6 @@ impl Dsv4Gpu {
                     best = i;
                 }
             }
-            state.pos += 1;
             Ok((want_logits.then_some(logits), best as u32))
         })();
         if result.is_err() {
@@ -11352,6 +11385,7 @@ pub struct VerifyState {
     ws: Vec<VerifyWs>,
     layers: Vec<LayerCkptDev>,
     tp_ep_layers: Option<Vec<LayerCkptDev>>,
+    tp_ep_ar_outputs: Option<[CudaSlice<f32>; 2]>,
     pub tmax: usize,
     /// Decode-cache capacity this verify layout was planned against. The transient
     /// rows live immediately after each layer's capacity-sized compressed store, so
@@ -12421,6 +12455,29 @@ impl Dsv4Gpu {
         } else {
             None
         };
+        let tp_ep_ar_outputs = if self.topology.is_tp_ep() {
+            let mut outputs = Vec::with_capacity(2);
+            for st in &self.stages {
+                st.gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind TP/EP AR output"))?;
+                let output = st
+                    .gpu
+                    .stream()
+                    .alloc_zeros::<f32>(tmax * topk * hidden)
+                    .map_err(e("TP/EP AR output"))?;
+                bytes[st.dev] += (tmax * topk * hidden * 4) as u64;
+                outputs.push(output);
+            }
+            Some(
+                outputs
+                    .try_into()
+                    .map_err(|_| "TP/EP AR output rank count mismatch".to_string())?,
+            )
+        } else {
+            None
+        };
         for st in &self.stages {
             st.gpu.stream().synchronize().map_err(e("vws sync"))?;
         }
@@ -12440,6 +12497,7 @@ impl Dsv4Gpu {
             ws,
             layers,
             tp_ep_layers,
+            tp_ep_ar_outputs,
             tmax,
             capacity,
             open: None,
@@ -14036,13 +14094,15 @@ impl Dsv4Gpu {
         hidden: usize,
         limit: f32,
         include_hc_post: bool,
+        joined_contribution: Option<&CudaSlice<f32>>,
     ) -> Res<()> {
         let stream = st.gpu.stream();
+        let contribution = joined_contribution.unwrap_or(&vws.contrib);
         unsafe {
             ck(
                 "combine_rows_m",
                 k::memra_dsv4_combine_rows_m(
-                    dpf!(vws.contrib, &stream),
+                    dpf!(contribution, &stream),
                     vws.order.device_ptr(&stream).0 as *const i32,
                     topk as i32,
                     dpm!(vws.y, &stream),
@@ -14400,7 +14460,7 @@ impl Dsv4Gpu {
                                         return Ok(());
                                     }
                                     self.moe_verify_common_tail(
-                                        st, layer, vws, t, topk, hidden, limit, true,
+                                        st, layer, vws, t, topk, hidden, limit, true, None,
                                     )
                                 })
                             }) {
@@ -14604,7 +14664,17 @@ impl Dsv4Gpu {
                 )?;
             }
         }
-        self.moe_verify_common_tail(st, layer, vws, t, topk, hidden, limit, include_hc_post)?;
+        self.moe_verify_common_tail(
+            st,
+            layer,
+            vws,
+            t,
+            topk,
+            hidden,
+            limit,
+            include_hc_post,
+            None,
+        )?;
         Ok(())
     }
 
@@ -15219,6 +15289,9 @@ impl Dsv4Gpu {
         vstate: &mut VerifyState,
         n_commit: usize,
     ) -> Res<()> {
+        if self.topology.is_tp_ep() {
+            return self.commit_tp_ep_verify_dev(state, vstate, n_commit);
+        }
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
         let (pos0, t) = vstate
@@ -15314,6 +15387,164 @@ impl Dsv4Gpu {
             st.gpu.stream().synchronize().map_err(e("commit sync"))?;
         }
         state.pos = pos0 + n_commit;
+        Ok(())
+    }
+
+    /// Commit both replicated TP/EP cache planes.  The ordinary commit path
+    /// owns only `state.caches`; routing TP/EP through it would leave rank 1's
+    /// transient compressor/indexer rows stale and make the next token read an
+    /// old state.  This helper keeps the same ring/scatter and compressor
+    /// rollback order for each rank, then advances the shared position once.
+    fn commit_tp_ep_verify_dev(
+        &self,
+        state: &mut DecodeState,
+        vstate: &mut VerifyState,
+        n_commit: usize,
+    ) -> Res<()> {
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
+        let (pos0, t) = vstate
+            .open
+            .take()
+            .ok_or_else(|| "TP/EP commit without an open round".to_string())?;
+        assert!(
+            n_commit >= 1 && n_commit <= t,
+            "TP/EP commit {n_commit} outside round width {t}"
+        );
+        let d = self.model.cfg();
+        let hd = d.head_dim as usize;
+        let win = d.sliding_window as usize;
+        let (ring_start, slot_rows) = ring_commit_plan(pos0, n_commit, win);
+        let ring_keep = slot_rows.len();
+        let mut rank1_caches = state
+            .tp_ep_caches
+            .as_mut()
+            .ok_or("TP/EP rank-1 caches missing")?;
+        let mut rank1_layers = vstate
+            .tp_ep_layers
+            .as_mut()
+            .ok_or("TP/EP rank-1 checkpoints missing")?;
+        let (rank0_ws, rank1_ws) = vstate.ws.split_at_mut(1);
+        let rank0_ws = &mut rank0_ws[0];
+        let rank1_ws = &mut rank1_ws[0];
+        for il in 0..self.topology.layers {
+            let il = il as usize;
+            self.commit_tp_ep_rank_layer(
+                0,
+                pos0,
+                t,
+                n_commit,
+                ring_start,
+                ring_keep,
+                &slot_rows,
+                &mut state.caches[il],
+                &mut vstate.layers[il],
+                rank0_ws,
+            )?;
+            self.commit_tp_ep_rank_layer(
+                1,
+                pos0,
+                t,
+                n_commit,
+                ring_start,
+                ring_keep,
+                &slot_rows,
+                &mut rank1_caches[il],
+                &mut rank1_layers[il],
+                rank1_ws,
+            )?;
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("TP/EP commit sync context"))?;
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("TP/EP commit sync"))?;
+        }
+        state.pos = pos0 + n_commit;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn commit_tp_ep_rank_layer(
+        &self,
+        rank: usize,
+        pos0: usize,
+        t: usize,
+        n_commit: usize,
+        ring_start: usize,
+        ring_keep: usize,
+        slot_rows: &[i32],
+        cache: &mut LayerCache,
+        lck: &mut LayerCkptDev,
+        vws: &mut VerifyWs,
+    ) -> Res<()> {
+        let st = &self.stages[rank];
+        st.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("TP/EP commit context"))?;
+        let stream = st.gpu.stream();
+        let hd = self.model.cfg().head_dim as usize;
+        let win = self.model.cfg().sliding_window as usize;
+        let trans_base = if cache.c4_host.is_some() {
+            win
+        } else {
+            lck.trans_base
+        };
+        let src = cache
+            .kvc
+            .slice((trans_base + ring_start) * hd..(trans_base + n_commit) * hd);
+        stream
+            .memcpy_dtod(&src, &mut vws.bounce.slice_mut(0..ring_keep * hd))
+            .map_err(e("TP/EP commit bounce"))?;
+        stream
+            .memcpy_htod(slot_rows, &mut vws.slot_rows.slice_mut(0..ring_keep))
+            .map_err(e("TP/EP commit slot rows"))?;
+        unsafe {
+            ck(
+                "TP/EP scatter rows commit",
+                k::memra_dsv4_scatter_rows(
+                    dpf!(vws.bounce, &stream),
+                    dpm!(cache.kvc, &stream),
+                    vws.slot_rows.device_ptr(&stream).0 as *const i32,
+                    ring_keep as i32,
+                    hd as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        if let Some(ckd) = &lck.cmp {
+            self.cmp_rollback_replay_dev(
+                st,
+                ckd,
+                n_commit,
+                t,
+                pos0,
+                &mut vws.cmp_shift,
+                cache.pend_kv.as_mut().expect("TP/EP pend kv"),
+                cache.pend_score.as_mut().expect("TP/EP pend score"),
+                &mut cache.n_blocks,
+            )?;
+        }
+        if let Some(ckd) = &lck.idx {
+            self.cmp_rollback_replay_dev(
+                st,
+                ckd,
+                n_commit,
+                t,
+                pos0,
+                &mut vws.cmp_shift,
+                cache.ipend_kv.as_mut().expect("TP/EP index pend kv"),
+                cache.ipend_score.as_mut().expect("TP/EP index pend score"),
+                &mut cache.i_blocks,
+            )?;
+        }
         Ok(())
     }
 
@@ -15972,6 +16203,114 @@ impl Dsv4Gpu {
 }
 
 impl Dsv4Gpu {
+    /// Gate-only digest of the two replicated live cache planes.  It includes
+    /// persistent rings, compressed/indexer stores, and pending rows after the
+    /// TP/EP commit; no transient verifier tail is used as evidence.  Equal
+    /// digests are the rank-symmetry check for the replicated attention/cache
+    /// numeric class, not a performance measurement.
+    pub fn tp_ep_cache_digest_for_gate(&self, state: &DecodeState) -> Res<[u64; 2]> {
+        if !self.topology.is_tp_ep() {
+            return Err("TP/EP cache digest requires the all-layer topology".into());
+        }
+        let rank1 = state
+            .tp_ep_caches
+            .as_ref()
+            .ok_or("TP/EP rank-1 cache plane missing")?;
+        if rank1.len() != state.caches.len() {
+            return Err("TP/EP cache plane layer count mismatch".into());
+        }
+        let mut digests = [0xcbf29ce484222325u64; 2];
+        let mix = |hash: &mut u64, value: u64| {
+            *hash ^= value;
+            *hash = hash.wrapping_mul(0x100000001b3);
+        };
+        for rank in 0..2usize {
+            for il in 0..state.caches.len() {
+                let cache = if rank == 0 {
+                    &state.caches[il]
+                } else {
+                    &rank1[il]
+                };
+                if cache.c4_host.is_some() {
+                    return Err("TP/EP cache digest does not admit host-C4 residency".into());
+                }
+                mix(&mut digests[rank], cache.n_blocks as u64);
+                mix(&mut digests[rank], cache.i_blocks as u64);
+                let stage = &self.stages[rank];
+                stage
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("TP/EP cache digest context"))?;
+                let stream = stage.gpu.stream();
+                let mut read = |plane: &CudaSlice<f32>| -> Res<()> {
+                    let mut values = vec![0f32; plane.len()];
+                    stream
+                        .memcpy_dtoh(plane, &mut values)
+                        .map_err(e("TP/EP cache digest copy"))?;
+                    stream.synchronize().map_err(e("TP/EP cache digest sync"))?;
+                    for value in values {
+                        mix(&mut digests[rank], value.to_bits() as u64);
+                    }
+                    Ok(())
+                };
+                read(&cache.kvc)?;
+                if let Some(plane) = &cache.pend_kv {
+                    read(plane)?;
+                }
+                if let Some(plane) = &cache.pend_score {
+                    read(plane)?;
+                }
+                if let Some(plane) = &cache.ikvc {
+                    read(plane)?;
+                }
+                if let Some(plane) = &cache.ipend_kv {
+                    read(plane)?;
+                }
+                if let Some(plane) = &cache.ipend_score {
+                    read(plane)?;
+                }
+            }
+        }
+        Ok(digests)
+    }
+
+    /// Gate-only digest of the replicated post-layer hidden state on both
+    /// ranks. This is sampled after each committed single-token step and is
+    /// paired with [`Self::tp_ep_cache_digest_for_gate`].
+    pub fn tp_ep_hidden_digest_for_gate(&self, state: &DecodeState) -> Res<[u64; 2]> {
+        if !self.topology.is_tp_ep() {
+            return Err("TP/EP hidden digest requires the all-layer topology".into());
+        }
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("TP/EP matrix workspace missing")?;
+        let mut digests = [0xcbf29ce484222325u64; 2];
+        for rank in 0..2usize {
+            let stage = &self.stages[rank];
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("TP/EP hidden digest context"))?;
+            let stream = stage.gpu.stream();
+            let hidden = &step.verify.ws[rank].h_a;
+            let mut values = vec![0f32; hidden.len()];
+            stream
+                .memcpy_dtoh(hidden, &mut values)
+                .map_err(e("TP/EP hidden digest copy"))?;
+            stream
+                .synchronize()
+                .map_err(e("TP/EP hidden digest sync"))?;
+            for value in values {
+                digests[rank] ^= value.to_bits() as u64;
+                digests[rank] = digests[rank].wrapping_mul(0x100000001b3);
+            }
+        }
+        Ok(digests)
+    }
+
     /// Every LIVE trunk cache class, per layer, as host f32 arrays — the instrument for
     /// the §3.1 device state gate (batched round + commit vs plain sequential decode of
     /// the committed tokens, bit for bit). "Live" is load-bearing: bytes past `n_blocks`
