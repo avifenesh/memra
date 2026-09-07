@@ -263,8 +263,8 @@ impl TpEpArState {
             peer_signal_ptr = self.signal[1].device_ptr_mut(&stream).0 as *mut c_void;
             peer_error_ptr = self.error[1].device_ptr_mut(&stream).0 as *mut i32;
         }
-        if owner_input_ptr as usize == owner_output_ptr as usize
-            || peer_input_ptr as usize == peer_output_ptr as usize
+        if std::ptr::eq(owner_input_ptr, owner_output_ptr)
+            || std::ptr::eq(peer_input_ptr, peer_output_ptr)
         {
             return Err("TP/EP one-shot reduction output aliases an input".into());
         }
@@ -1289,6 +1289,8 @@ mod tests {
                 .memcpy_htod(&poisoned, &mut scratch.contribution)
                 .unwrap();
         }
+        // Keep the independently poisoned buffers and ownership fixture explicit.
+        #[allow(clippy::too_many_arguments)]
         fn run_local(
             gpu: &Gpu,
             stream: &Arc<CudaStream>,

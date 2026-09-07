@@ -262,6 +262,8 @@ pub(crate) struct MatrixEpGraphBuilder {
 }
 
 impl MatrixEpGraphBuilder {
+    // Capture borrows the existing two-rank workspaces and their exact kernel dimensions.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn capture_expert(
         owner: &Gpu,
         peer: &Gpu,

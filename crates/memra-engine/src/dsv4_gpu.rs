@@ -6071,7 +6071,7 @@ impl Dsv4Gpu {
                 let layer = st
                     .layers
                     .iter()
-                    .find(|l| l.il == il as u32)
+                    .find(|l| l.il == il)
                     .unwrap_or_else(|| panic!("layer {il} not on TP rank 1"));
                 let ratio = layer.ratio;
                 let cap_blocks = dsv4_cache_cap_blocks(capacity, ratio);
@@ -9124,6 +9124,9 @@ impl Dsv4Gpu {
             let hc = d.hc_mult as usize;
             let topk = self.model.mc.moe.as_ref().expect("moe").expert_used_count as usize;
             let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
+            if state.caches.len() != n_trunk || rank1_caches.len() != n_trunk {
+                return Err("TP/EP decode cache plane layer count mismatch".into());
+            }
             if state.pos >= state.capacity {
                 return Err(format!(
                     "TP/EP decode position {} exceeds capacity {}",
@@ -9172,7 +9175,7 @@ impl Dsv4Gpu {
                     )?;
                 }
             }
-            for il in 0..n_trunk {
+            for (il, rank1_cache) in rank1_caches.iter_mut().enumerate() {
                 for rank in 0..2usize {
                     let st = &self.stages[rank];
                     let layer = st
@@ -9194,7 +9197,7 @@ impl Dsv4Gpu {
                     let cache = if rank == 0 {
                         &mut state.caches[il]
                     } else {
-                        &mut rank1_caches[il]
+                        &mut *rank1_cache
                     };
                     self.block_verify_dev(
                         st,
@@ -12446,7 +12449,7 @@ impl Dsv4Gpu {
         }
         let tp_ep_layers = if self.topology.is_tp_ep() {
             let rank = 1usize;
-            let mut rank_layers = Vec::with_capacity(n_trunk as usize);
+            let mut rank_layers = Vec::with_capacity(n_trunk);
             for il in 0..n_trunk {
                 let st = &self.stages[rank];
                 st.gpu.ctx.bind_to_thread().map_err(e("bind tp ckpt"))?;
@@ -14285,7 +14288,7 @@ impl Dsv4Gpu {
         host_math: bool,
         allow_gu_fuse: bool,
         include_hc_post: bool,
-        mut matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
+        matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
         defer_tp_ep_tail: bool,
     ) -> Res<()> {
         let mc = &self.model.mc;
@@ -14450,7 +14453,7 @@ impl Dsv4Gpu {
                     && !vws.is_prefill
                     && matrix_ep_graph.is_some();
                 if graph_eligible {
-                    let slot = matrix_ep_graph.as_deref_mut().expect("checked above");
+                    let slot = matrix_ep_graph.expect("checked above");
                     match slot {
                         MatrixEpGraphSlot::Ready(graph) => {
                             graph.launch(&st.gpu)?;
@@ -15156,7 +15159,6 @@ impl Dsv4Gpu {
             } else {
                 body()?;
             }
-            drop(body);
             input_rx = false;
             // DSpark trunk tap for all T rows (capture only)
             if let (Some(tp), Some(tg)) = (taps.as_mut(), targets.as_ref())
@@ -15364,6 +15366,7 @@ impl Dsv4Gpu {
     /// TP/EP passes `Some(0)` or `Some(1)` so every layer uses that rank's stream and its own
     /// persistent ring/checkpoint plane.  The caller must commit all planes before exposing the
     /// new position.
+    #[allow(clippy::too_many_arguments)] // Explicit plane borrows and transaction coordinates.
     fn commit_verify_dev_plane(
         &self,
         caches: &mut [LayerCache],
@@ -16165,13 +16168,9 @@ impl Dsv4Gpu {
             *hash ^= value;
             *hash = hash.wrapping_mul(0x100000001b3);
         };
-        for rank in 0..2usize {
-            for il in 0..state.caches.len() {
-                let cache = if rank == 0 {
-                    &state.caches[il]
-                } else {
-                    &rank1[il]
-                };
+        let planes = [state.caches.as_slice(), rank1.as_slice()];
+        for (rank, digest) in digests.iter_mut().enumerate() {
+            for (il, cache) in planes[rank].iter().enumerate() {
                 if cache.c4_host.is_some() {
                     return Err("TP/EP cache digest does not admit host-C4 residency".into());
                 }
@@ -16194,7 +16193,7 @@ impl Dsv4Gpu {
                         .map_err(e("TP/EP cache digest copy"))?;
                     stream.synchronize().map_err(e("TP/EP cache digest sync"))?;
                     for value in values {
-                        mix(&mut digests[rank], value.to_bits() as u64);
+                        mix(digest, value.to_bits() as u64);
                     }
                     Ok(())
                 };
@@ -16268,7 +16267,7 @@ impl Dsv4Gpu {
             .as_ref()
             .ok_or("TP/EP matrix workspace missing")?;
         let mut digests = [0xcbf29ce484222325u64; 2];
-        for rank in 0..2usize {
+        for (rank, digest) in digests.iter_mut().enumerate() {
             let stage = &self.stages[rank];
             stage
                 .gpu
@@ -16285,8 +16284,8 @@ impl Dsv4Gpu {
                 .synchronize()
                 .map_err(e("TP/EP hidden digest sync"))?;
             for value in values {
-                digests[rank] ^= value.to_bits() as u64;
-                digests[rank] = digests[rank].wrapping_mul(0x100000001b3);
+                *digest ^= value.to_bits() as u64;
+                *digest = digest.wrapping_mul(0x100000001b3);
             }
         }
         Ok(digests)
