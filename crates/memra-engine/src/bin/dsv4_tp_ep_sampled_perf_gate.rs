@@ -233,7 +233,13 @@ struct RunReceipt {
     counters_decode: Counters,
 }
 
-fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize) -> RunReceipt {
+fn run_once(
+    gpu: &Dsv4Gpu,
+    prompt: &[u32],
+    tokenizer: &Tokenizer,
+    repeat: usize,
+    sampler_name: &str,
+) -> RunReceipt {
     let alloc_start = Instant::now();
     let mut state = gpu
         .alloc_decode_state_for_transient(PROMPT_TOKENS + OUTPUT_TOKENS + 8, 1)
@@ -381,7 +387,7 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
     );
     println!("PROFILE repeat={repeat} enabled={profiled} window_start=32 window_end=64");
     println!(
-        "MEASURE {{\"repeat\":{repeat},\"prompt_tokens\":{PROMPT_TOKENS},\"requested_output_tokens\":{OUTPUT_TOKENS},\"generated_tokens\":{},\"forward_calls\":{},\"eos\":{eos},\"state_alloc_ns\":{},\"prime_wall_ns\":{},\"decode_wall_ns\":{},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"prime_tok_s\":{prime_tok_s:.6},\"decode_tok_s\":{decode_tok_s:.6},\"headline_decode_tok_s\":{headline_decode_tok_s},\"eligible\":{eligible},\"looped\":{is_looped},\"state_pos\":{},\"generated_sha256\":\"{generated_sha256}\",\"final_logits_sha256\":\"{final_logits_sha256}\",\"final_cache_digest\":[{},{}],\"final_hidden_digest\":[{},{}],\"attention_tp\":{attention_mode},\"attention_join_sha256\":{attention_join_json},\"attention_rank_calls\":[{},{}],\"attention_ar_calls\":{},\"ar_refusals\":[{},{}],\"rank_layer_calls\":[{},{}],\"ep_calls\":{},\"ar_dispatches\":{},\"gu_m1_calls\":{},\"gu_half2_calls\":{},\"down_half2_calls\":{},\"wo_a_calls\":{},\"index_radix_calls\":{},\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false,\"hidden_hash_in_timing\":false}}",
+        "MEASURE {{\"repeat\":{repeat},\"sampler_order\":\"{sampler_name}\",\"prompt_tokens\":{PROMPT_TOKENS},\"requested_output_tokens\":{OUTPUT_TOKENS},\"generated_tokens\":{},\"forward_calls\":{},\"eos\":{eos},\"state_alloc_ns\":{},\"prime_wall_ns\":{},\"decode_wall_ns\":{},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"prime_tok_s\":{prime_tok_s:.6},\"decode_tok_s\":{decode_tok_s:.6},\"headline_decode_tok_s\":{headline_decode_tok_s},\"eligible\":{eligible},\"looped\":{is_looped},\"state_pos\":{},\"generated_sha256\":\"{generated_sha256}\",\"final_logits_sha256\":\"{final_logits_sha256}\",\"final_cache_digest\":[{},{}],\"final_hidden_digest\":[{},{}],\"attention_tp\":{attention_mode},\"attention_join_sha256\":{attention_join_json},\"attention_rank_calls\":[{},{}],\"attention_ar_calls\":{},\"ar_refusals\":[{},{}],\"rank_layer_calls\":[{},{}],\"ep_calls\":{},\"ar_dispatches\":{},\"gu_m1_calls\":{},\"gu_half2_calls\":{},\"down_half2_calls\":{},\"wo_a_calls\":{},\"index_radix_calls\":{},\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false,\"hidden_hash_in_timing\":false}}",
         generated.len(),
         generated.len(),
         state_alloc.as_nanos(),
@@ -443,11 +449,6 @@ fn main() {
     };
     let sampler = dsv4_sampler_order().expect("explicit sampler configuration");
     if attention_mode {
-        assert_eq!(
-            sampler,
-            Dsv4SamplerOrder::Comparison,
-            "first attention-TP performance receipt pins Comparison sampling"
-        );
         assert!(
             !dsv4_prof_on(),
             "attention TP performance refuses profiled timing"
@@ -539,7 +540,7 @@ fn main() {
     gpu.set_index_topk_radix_for_gate(true);
 
     let receipts: Vec<_> = (0..repeats)
-        .map(|repeat| run_once(&gpu, &prompt, &tokenizer, repeat))
+        .map(|repeat| run_once(&gpu, &prompt, &tokenizer, repeat, sampler_name))
         .collect();
     let first = &receipts[0];
     for receipt in &receipts {
@@ -587,12 +588,12 @@ fn main() {
             .sum();
         let pooled_tok_s = total_tokens as f64 * 1e9 / total_wall_ns as f64;
         println!(
-            "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"comparison\",\"paired_control\":false,\"speculative\":false}}"
+            "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"{sampler_name}\",\"paired_control\":false,\"speculative\":false}}"
         );
     }
     if attention_mode {
         println!(
-            "PASS sampled attention TP2; repeats={repeats} eligible={repeats} timing_scope=sample_plus_forward_envelope sampler=comparison"
+            "PASS sampled attention TP2; repeats={repeats} eligible={repeats} timing_scope=sample_plus_forward_envelope sampler={sampler_name}"
         );
     } else {
         println!(

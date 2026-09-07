@@ -1,6 +1,8 @@
 # Attention TP2 sampled performance protocol
 
-One model load, five eligible single-stream repeats. Each fresh state primes 256 frozen source tokens through the supported tokenwise path, then samples and forwards 256 tokens with temperature 1, top-p 1, top-k 0 and seed 20260907. Comparison sampling is pinned and reported; no speculative decoding, PP arm or concurrency substitute.
+One model load, five eligible single-stream repeats. Each fresh state primes 256 frozen source tokens through the supported tokenwise path, then samples and forwards 256 tokens with temperature 1, top-p 1, top-k 0 and seed 20260907. Sampling order is reported; no speculative decoding, PP arm or concurrency substitute.
+
+The Comparison pin applied to the first receipt only. From this commit the gate reports the configured sampler, radix by default since #333. Comparison remains selectable with `MEMRA_DSV4_SAMPLE_SORT=comparison` for byte-identity oracle rows.
 
 The headline `decode_wall_ns` is one `Instant` envelope starting before the entire sample-plus-forward loop and ending after its final drain. CPU `dsv4_sample_row` time is included. Summed forward durations are not a headline metric. Prompt prime is reported separately. Allocation, transcript printing, final cache/hidden digests and the canonical attention-join oracle are outside the decode envelope.
 
@@ -10,7 +12,7 @@ EOS, short output, detected looping or profiling makes a row ineligible. All fiv
 
 This is an attention-arm rate measurement, not a paired comparison. Prior forward-only rates are not comparable sampled throughput. The earlier full-loop sampled EP receipt may be stated as historical context only, not as a causal speedup denominator. No performance result has been produced yet.
 
-Run the existing `dsv4_tp_ep_sampled_perf_gate` with `MEMRA_DSV4_ATTENTION_TP_GATE=1` and `MEMRA_DSV4_SAMPLE_SORT=comparison`, retaining the ordinary plain matrix-EP gate settings. Source remains gate-only and default OFF. No local CI or GPU work is permitted; use the owned remote dev pair and exact shared GPU lock.
+Run the existing `dsv4_tp_ep_sampled_perf_gate` with `MEMRA_DSV4_ATTENTION_TP_GATE=1`, retaining the ordinary plain matrix-EP gate settings. Source remains gate-only and default OFF. No local CI or GPU work is permitted; use the owned remote dev pair and exact shared GPU lock.
 
 ## Result (2026-09-07, dev pair, source `2383e3b9163728bd4e1ccc7919a0a8d185a80703`)
 
