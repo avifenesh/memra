@@ -45,6 +45,9 @@ use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
 type Res<T> = Result<T, String>;
 
+#[path = "dsv4_small_kernel_gate.rs"]
+mod small_kernel_gate;
+
 // Gate-only dense wo_a launch fusion. It is process-local and deliberately
 // default OFF; no environment variable or serving default selects this arm.
 static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
@@ -782,6 +785,12 @@ pub struct Dsv4Gpu {
     /// untouched). hc_sinkhorn is NOT in f32x (never authorized). Legacy path and
     /// prefill NEVER consult this.
     pub chains_f32: bool,
+    /// Process-local, default OFF; fixed at load, never toggled during a walk.
+    small_kernel_diet: bool,
+    /// Successful enqueues for HC finish and Q norm/pack, respectively.
+    /// Counts launches, not tokens, expected savings, or graph nodes.
+    small_kernel_launches: [AtomicU64; 2],
+    small_kernel_component_mask: AtomicU64,
     /// iteration-3 rung 4c MEASURED FORK (`MEMRA_DSV4_DSPARK_HEAD_ARM=f32x`, default
     /// f64 = the lane-10-gated bytes): the DSpark drafter's shared-trunk-head projection
     /// over block_size rows uses the f32-accumulation hoisted kernel instead of the f64
@@ -3112,6 +3121,14 @@ impl Dsv4Gpu {
             on_device,
         )?;
 
+        let small_kernel_diet = match std::env::var("MEMRA_DSV4_SMALL_KERNEL_DIET").as_deref() {
+            Err(std::env::VarError::NotPresent) | Ok("0") => false,
+            Ok("1") => true,
+            _ => return Err("MEMRA_DSV4_SMALL_KERNEL_DIET requires 0 or 1".into()),
+        };
+        if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
+            return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
+        }
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -3145,6 +3162,9 @@ impl Dsv4Gpu {
             decode_path,
             dots_f32,
             chains_f32,
+            small_kernel_diet,
+            small_kernel_launches: std::array::from_fn(|_| AtomicU64::new(0)),
+            small_kernel_component_mask: AtomicU64::new(u64::MAX),
             dspark_head_f32,
             dspark_fused_moe,
             indexer_score,
@@ -13158,6 +13178,25 @@ impl Dsv4Gpu {
 }
 
 impl Dsv4Gpu {
+    pub fn small_kernel_diet_enabled(&self) -> bool {
+        self.small_kernel_diet
+    }
+
+    /// Same-loaded-model ABBA seam. Exclusive borrow prevents a concurrent walk.
+    pub fn set_small_kernel_diet_for_gate(&mut self, enabled: bool) -> Res<()> {
+        if !self.topology.is_tp_ep() || !self.chains_f32 {
+            return Err("small-kernel gate requires TP/EP f32x".into());
+        }
+        self.small_kernel_diet = enabled;
+        Ok(())
+    }
+
+    /// Actual successful HC-finish and Q-norm/pack launch counts across ranks.
+    /// Other kernel families are outside this counter's scope.
+    pub fn small_kernel_launches(&self) -> [u64; 2] {
+        std::array::from_fn(|i| self.small_kernel_launches[i].load(Ordering::Relaxed))
+    }
+
     /// hc_pre for T rows: the `hc_pre_dev` program with every kernel taking the row
     /// count (Sinkhorn either the host closure per row — byte-identity arm — or the
     /// one-block-per-position device twin).
@@ -13192,6 +13231,36 @@ impl Dsv4Gpu {
             rows,
             vws.mixes.device_ptr_mut(&stream).0 as *mut f32,
         )?;
+        if t == 1 && !host_math && self.small_component_claim(st.dev, 0) {
+            self.small_component_hc(
+                st, h_ptr, &vws.mixes, scale_dev, base_dev, hidden, iters, hc_eps,
+            )?;
+        }
+        if self.small_kernel_diet && t == 1 && !host_math {
+            unsafe {
+                ck(
+                    "small HC f32 fixed order",
+                    k::memra_dsv4_small_hc_f32_fixed_order(
+                        h_ptr,
+                        dpm!(vws.mixes, &stream),
+                        dpf!(scale_dev, &stream),
+                        dpf!(base_dev, &stream),
+                        dpm!(vws.pre, &stream),
+                        dpm!(vws.post, &stream),
+                        dpm!(vws.comb, &stream),
+                        dpm!(vws.y_hc, &stream),
+                        t as i32,
+                        hc as i32,
+                        hidden as i32,
+                        iters as i32,
+                        hc_eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
         unsafe {
             ck(
                 "rowsq_scale batch",
@@ -13205,6 +13274,7 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
+            self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
         }
         if host_math {
             let mut mixes_h = vec![0f32; t * rows];
@@ -13245,6 +13315,7 @@ impl Dsv4Gpu {
                         sp(&stream),
                     ),
                 )?;
+                self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
             }
         }
         unsafe {
@@ -13260,6 +13331,7 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
+            self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -13684,28 +13756,50 @@ impl Dsv4Gpu {
             hidden,
             vws.qr.device_ptr_mut(&stream).0 as *mut f32,
         )?;
-        unsafe {
-            ck(
-                "rmsnorm q batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.qr, &stream),
-                    dpf!(layer.q_norm, &stream),
-                    dpm!(vws.qr, &stream),
-                    t as i32,
-                    q_lora as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt qr batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.qr, &stream),
-                    vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * q_lora) as i64,
-                    sp(&stream),
-                ),
-            )?;
+        if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
+            self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
+        }
+        if self.small_kernel_diet && t == 1 && !host_math {
+            unsafe {
+                ck(
+                    "small Q norm pack f32 fixed order",
+                    k::memra_dsv4_small_norm_pack_f32_fixed_order(
+                        dpm!(vws.qr, &stream),
+                        dpf!(layer.q_norm, &stream),
+                        vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
+                        t as i32,
+                        q_lora as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            self.small_kernel_launches[1].fetch_add(1, Ordering::Relaxed);
+        } else {
+            unsafe {
+                ck(
+                    "rmsnorm q batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.qr, &stream),
+                        dpf!(layer.q_norm, &stream),
+                        dpm!(vws.qr, &stream),
+                        t as i32,
+                        q_lora as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "cvt qr batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.qr, &stream),
+                        vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * q_lora) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            self.small_kernel_launches[1].fetch_add(2, Ordering::Relaxed);
         }
         Self::gemv_m_dev(
             st,
