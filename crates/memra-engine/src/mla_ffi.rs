@@ -192,11 +192,24 @@ pub fn mla_b200_arm_table_split(kernel: MlaB200Kernel, t_q: usize) -> i32 {
 /// kernel rather than clamping to a split the box never measured. The tables were measured on
 /// the glm5 geometry (kv_rank=512, d_v=256); `None` here means "shipped path", and the caller
 /// falls through in order to the generic split door, then the unsplit launcher.
-fn mla_b200_split_for(kernel: MlaB200Kernel, t_q: usize, out_dim: usize) -> Option<i32> {
+/// The head count the split tables were measured at (the glm5 geometry, 64 heads). A layer
+/// with fewer heads (a glm5-TP head shard holds 32) launches proportionally fewer blocks at the
+/// table's split, so the cell is scaled by the head ratio to keep the measured grid: on the 2x
+/// B200 pair the shard ran `decompress_v_wp` at 62 us against 34 us unsharded (tptrace4,
+/// 2026-09-07) with half the blocks. Output-range splits do not change any output's arithmetic.
+pub const MLA_B200_ARM_HEADS: usize = 64;
+
+fn mla_b200_split_for(
+    kernel: MlaB200Kernel,
+    t_q: usize,
+    n_head: usize,
+    out_dim: usize,
+) -> Option<i32> {
     if !mla_b200_decode_arm_on() {
         return None;
     }
-    let split = mla_b200_arm_table_split(kernel, t_q);
+    let scale = (MLA_B200_ARM_HEADS / n_head.max(1)).max(1) as i32;
+    let split = mla_b200_arm_table_split(kernel, t_q).saturating_mul(scale);
     let cap = (out_dim / 32).max(1) as i32;
     if split <= 1 || split > cap {
         None
@@ -397,7 +410,14 @@ pub(crate) fn mla_gathered_live_arm(t_q: usize, kv_rank: usize) -> Option<usize>
     if dsa_arm == 1 {
         return None;
     }
-    if mla_b200_split_for(MlaB200Kernel::AttnGathered, t_q, kv_rank).is_some() {
+    if mla_b200_split_for(
+        MlaB200Kernel::AttnGathered,
+        t_q,
+        MLA_B200_ARM_HEADS,
+        kv_rank,
+    )
+    .is_some()
+    {
         return None;
     }
     Some(0)
@@ -1388,7 +1408,7 @@ impl Engine {
         if !mla_coalesce_on() {
             return Ok(false);
         }
-        let split = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, kv_rank)
+        let split = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, n_head, kv_rank)
             .or_else(|| mla_decode_split_for(t_q * n_head, kv_rank))
             .unwrap_or(1);
         if split <= 1 {
@@ -1429,7 +1449,7 @@ impl Engine {
         if !mla_coalesce_on() {
             return Ok(false);
         }
-        let split = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v)
+        let split = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, n_head, d_v)
             .or_else(|| mla_decode_split_for(t_q * n_head, d_v))
             .unwrap_or(1);
         if split <= 1 {
@@ -1480,7 +1500,7 @@ impl Engine {
         // top of the split. So the door only engages when a split door gave it a grid to spend
         // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
         let coalesce_split = if mla_coalesce_on() {
-            mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, kv_rank)
+            mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, n_head, kv_rank)
                 .or_else(|| mla_decode_split_for(t_q * n_head, kv_rank))
                 .unwrap_or(1)
         } else {
@@ -1509,7 +1529,7 @@ impl Engine {
         // MEMRA_B200_MLA_DECODE_ARM door (checked first; split from the t_q-keyed table
         // MLA_B200_ABSORB_Q_SPLIT, a 1 cell falls through to the doors below; the split twin is
         // the same kernel the generic door launches, so this is only a policy pick).
-        if let Some(split) = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, kv_rank) {
+        if let Some(split) = mla_b200_split_for(MlaB200Kernel::AbsorbQ, t_q, n_head, kv_rank) {
             mla_b200_split_announce("absorb_q", t_q, n_head, split);
             return unsafe {
                 ck(
@@ -1591,7 +1611,7 @@ impl Engine {
         // top of the split. So the door only engages when a split door gave it a grid to spend
         // the coalescing on; at split 1 it falls through to the dispatch below, unchanged.
         let coalesce_split = if mla_coalesce_on() {
-            mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v)
+            mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, n_head, d_v)
                 .or_else(|| mla_decode_split_for(t_q * n_head, d_v))
                 .unwrap_or(1)
         } else {
@@ -1619,7 +1639,7 @@ impl Engine {
         }
         // MEMRA_B200_MLA_DECODE_ARM door (checked first, table MLA_B200_DECOMPRESS_V_SPLIT; see
         // mla_absorb_q above).
-        if let Some(split) = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, d_v) {
+        if let Some(split) = mla_b200_split_for(MlaB200Kernel::DecompressV, t_q, n_head, d_v) {
             mla_b200_split_announce("decompress_v", t_q, n_head, split);
             return unsafe {
                 ck(
@@ -2710,7 +2730,7 @@ impl Engine {
         // MLA_B200_ATTN_GATHERED_SPLIT. This twin repeats the score/softmax walk per split
         // block, unlike the absorb/decompress splits, which is why the B200 run found it a win
         // at t_q=1 only (see the table comment); every other cell is the shipped kernel.
-        if let Some(split) = mla_b200_split_for(MlaB200Kernel::AttnGathered, t_q, kv_rank) {
+        if let Some(split) = mla_b200_split_for(MlaB200Kernel::AttnGathered, t_q, n_head, kv_rank) {
             mla_b200_split_announce("attn_gathered", t_q, n_head, split);
             return unsafe {
                 ck(
