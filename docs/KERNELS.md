@@ -599,3 +599,9 @@ Per-variant dispatch flags inside the four giant fatbin TUs (kernels/qmatvec/fla
 hybrid) are family-level here; per-variant selection lives across ~411 `MEMRA_` read
 sites in src/lib.rs and was not traced symbol-by-symbol. Rows say UNKNOWN where the
 specific gate was not found. FLAGS.md is the authoritative flag catalog.
+
+## DSV4 device sampler, 2026-09-07
+
+| Translation unit | Kernels | Contract / gate |
+| --- | --- | --- |
+| `cu/dsv4_sampler.cu` | `dsv4_sample_prepare`, `dsv4_sample_merge`, `dsv4_sample_exp_scan`, `dsv4_sample_offsets`, `dsv4_sample_draw` | Head-stream f32 penalty/key preparation; stable unique-key merge chain; f64 exp and block prefix sums; block offsets; top-k/top-p inverse CDF. Request-owned scratch, one token u32 D2H. Numeric class `device-f64-exp-tree-cdf-v1`; finite inputs required. `MEMRA_DSV4_SAMPLER=device`, default OFF. Component tape and sampled ABBA: `dsv4_tp_ep_sampled_perf_gate --sampler-component` / `<model> <source> --sampler-abba`. Receipt: `research/dsv4f-gpu-sampler-20260907/RESULTS.md`. |

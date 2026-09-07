@@ -801,6 +801,7 @@ mod dsv4_ep;
 mod dsv4_ep_graph;
 pub mod dsv4_ffi;
 pub mod dsv4_gpu;
+pub mod dsv4_sampler;
 mod dsv4_graph;
 mod dsv4_grouped;
 pub mod dsv4_topology;

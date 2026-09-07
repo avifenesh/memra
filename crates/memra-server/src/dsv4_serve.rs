@@ -1190,8 +1190,14 @@ fn serve_one(
                 }
                 dsv4_sample_row(row, pos, &cfg)
             };
+            let mut device_sampler = if memra_engine::dsv4_sampler::dsv4_sampler()
+                .map_err(EngineError::engine)? == memra_engine::dsv4_sampler::Dsv4Sampler::Device {
+                Some(m.gpu.device_sampler().map_err(EngineError::engine)?)
+            } else { None };
             let mut row0 = pre_logits;
-            let mut t = draw(&mut row0, p0, &window).map_err(EngineError::engine)?;
+            let mut t = if let Some(sampler) = &mut device_sampler {
+                sampler.sample_host_row(&row0, p0, &cfg, &window, pen_cfg.as_ref())
+            } else { draw(&mut row0, p0, &window) }.map_err(EngineError::engine)?;
             let mut step = 0usize;
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
@@ -1201,11 +1207,13 @@ fn serve_one(
                 if step >= budget {
                     break;
                 }
-                let mut row = m
-                    .gpu
-                    .decode_step(t, &mut state)
-                    .map_err(EngineError::engine)?;
-                t = draw(&mut row, p0 + step, &window).map_err(EngineError::engine)?;
+                t = if let Some(sampler) = &mut device_sampler {
+                    m.gpu.decode_step_device_logits(t, &mut state).map_err(EngineError::engine)?;
+                    m.gpu.sample_device_logits(&state, sampler, &cfg, &window, pen_cfg.as_ref())
+                } else {
+                    let mut row = m.gpu.decode_step(t, &mut state).map_err(EngineError::engine)?;
+                    draw(&mut row, p0 + step, &window)
+                }.map_err(EngineError::engine)?;
             }
         }
         state_to_park = state;

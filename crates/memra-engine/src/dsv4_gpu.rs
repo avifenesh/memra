@@ -648,6 +648,7 @@ impl Dsv4PrefillHead {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum VerifyOutput {
+    Device,
     Full,
     Argmax,
     None,
@@ -2761,6 +2762,8 @@ impl Dsv4Gpu {
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
         let sampler_order = dsv4_sampler_order()?;
+        let sampler = crate::dsv4_sampler::dsv4_sampler()?;
+        eprintln!("[load] plain sampler: {sampler:?}");
         eprintln!("[load] sampled candidate order: {sampler_order:?}");
         let grouped_env = match std::env::var("MEMRA_DSV4_PREFILL_MOE") {
             Ok(value) => Some(value),
@@ -7700,6 +7703,47 @@ impl Dsv4Gpu {
         self.decode_step_impl(tok, state, None)
     }
 
+    /// Forward a plain token while retaining the logits on the head stream.
+    pub fn decode_step_device_logits(&self, tok: u32, state: &mut DecodeState) -> Res<()> {
+        let DecodePath::Device { host_math: false } = self.decode_path else {
+            return Err("device sampler requires native device decode".into());
+        };
+        self.decode_step_fast_tap(tok, state, false, true, false, None)?;
+        Ok(())
+    }
+
+    pub fn device_sampler(&self) -> Res<crate::dsv4_sampler::Dsv4DeviceSampler> {
+        crate::dsv4_sampler::Dsv4DeviceSampler::new(
+            self.stages.last().expect("head rank").gpu.stream(), self.model.st.raw("head.weight").ok_or("head weight missing")?.0.shape[0] as usize,
+        )
+    }
+
+    fn decode_logits_device<'a>(&self, state: &'a DecodeState) -> Res<&'a CudaSlice<f32>> {
+        if let Some(work) = &state.matrix_step {
+            if work.failed || work.verify.open.is_some() {
+                return Err("sampler cannot read an unfinished matrix transaction".into());
+            }
+            Ok(&work.verify.ws.last().ok_or("head workspace missing")?.logits)
+        } else {
+            Ok(&state.ws.as_ref().ok_or("device workspace missing")?.last().ok_or("head workspace missing")?.logits)
+        }
+    }
+
+    /// Sample the latest committed forward row, with one u32 readback.
+    pub fn sample_device_logits(&self, state: &DecodeState,
+        sampler: &mut crate::dsv4_sampler::Dsv4DeviceSampler, cfg: &Dsv4SampleCfg,
+        window: &[u32], penalty: Option<&Dsv4PenaltyCfg>) -> Res<u32> {
+        let stream = self.stages.last().expect("head rank").gpu.stream();
+        let row = self.decode_logits_device(state)?;
+        // The head workspace belongs to this model and its producer uses this stream.
+        unsafe { sampler.sample_ptr(row.device_ptr(&stream).0 as *const f32, state.pos, cfg, window, penalty) }
+    }
+
+    /// Gate-only final identity read, outside the sampled envelope.
+    pub fn read_decode_logits_for_gate(&self, state: &DecodeState) -> Res<Vec<f32>> {
+        dtoh_f32(&self.stages.last().expect("head rank").gpu.stream(), self.decode_logits_device(state)?)
+    }
+
     /// Diagnostic twin: returns (logits, named per-layer intermediates).
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_probe(
@@ -9305,6 +9349,7 @@ impl Dsv4Gpu {
         tok: u32,
         state: &mut DecodeState,
         want_logits: bool,
+        device_logits: bool,
         taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
         let mut work = state
@@ -9324,7 +9369,9 @@ impl Dsv4Gpu {
                     return Err("matrix tap destination outside allocation".into());
                 }
             }
-            let output = if want_logits {
+            let output = if device_logits {
+                VerifyOutput::Device
+            } else if want_logits {
                 VerifyOutput::Full
             } else {
                 VerifyOutput::Argmax
@@ -9367,6 +9414,7 @@ impl Dsv4Gpu {
         tok: u32,
         state: &mut DecodeState,
         want_logits: bool,
+        device_logits: bool,
         taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
         if taps.is_some() {
@@ -9696,6 +9744,10 @@ impl Dsv4Gpu {
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
             let stream = self.stages[1].gpu.stream();
+            if device_logits {
+                state.pos = pos0 + 1;
+                return Ok((None, 0));
+            }
             let logits = dtoh_f32(&stream, &head_ws.logits)?;
             let mut best = 0usize;
             for i in 1..logits.len() {
@@ -9734,7 +9786,7 @@ impl Dsv4Gpu {
         want_logits: bool,
         host_math: bool,
     ) -> Res<(Option<Vec<f32>>, u32)> {
-        self.decode_step_fast_tap(tok, state, want_logits, host_math, None)
+        self.decode_step_fast_tap(tok, state, want_logits, false, host_math, None)
     }
 
     /// [`Self::decode_step_fast`] with the iteration-3 DSpark trunk tap: when `taps`
@@ -9747,16 +9799,17 @@ impl Dsv4Gpu {
         tok: u32,
         state: &mut DecodeState,
         want_logits: bool,
+        device_logits: bool,
         host_math: bool,
         mut taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
         if self.topology.is_tp_ep() {
-            return self.decode_step_tp_ep(tok, state, want_logits, taps);
+            return self.decode_step_tp_ep(tok, state, want_logits, device_logits, taps);
         }
         self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         if self.matrix_moe {
-            return self.decode_matrix_step(tok, state, want_logits, taps);
+            return self.decode_matrix_step(tok, state, want_logits, device_logits, taps);
         }
         let mc = &self.model.mc;
         let d = self.model.cfg();
@@ -9904,6 +9957,9 @@ impl Dsv4Gpu {
         self.head_logits_dev(&mut ws_all[last], host_math)?;
         let stream_last = self.stages[last].gpu.stream();
         state.pos += 1;
+        if device_logits {
+            return Ok((None, 0));
+        }
         if want_logits {
             let logits = dtoh_f32(&stream_last, &ws_all[last].logits)?;
             let mut best = 0usize;
@@ -11602,6 +11658,7 @@ impl Dsv4Gpu {
             tok,
             state,
             true,
+            false,
             host_math,
             Some((&mut dspark_state.taps, tap_row * n_t * hidden)),
         )?;
@@ -11626,6 +11683,7 @@ impl Dsv4Gpu {
         let (_, tok_next) = self.decode_step_fast_tap(
             tok,
             state,
+            false,
             false,
             host_math,
             Some((&mut dspark_state.taps, tap_row * n_t * hidden)),
@@ -15821,6 +15879,10 @@ impl Dsv4Gpu {
         } else {
             None
         };
+        if output == VerifyOutput::Device {
+            vstate.open = Some((pos0, t));
+            return Ok((None, vec![0; t]));
+        }
         let mut am = vec![0i32; t];
         if let Some(lg) = &logits {
             for (i, slot) in am.iter_mut().enumerate() {
