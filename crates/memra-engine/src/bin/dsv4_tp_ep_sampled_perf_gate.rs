@@ -69,6 +69,14 @@ fn sha256_tokens(tokens: &[u32]) -> String {
     format!("{:x}", h.finalize())
 }
 
+fn sha256_f32(values: &[f32]) -> String {
+    let mut h = Sha256::new();
+    for &value in values {
+        h.update(value.to_bits().to_le_bytes());
+    }
+    format!("{:x}", h.finalize())
+}
+
 fn looped(tokens: &[u32]) -> bool {
     (1usize..=32).any(|width| {
         let length = width * 4usize.max(32usize.div_ceil(width));
@@ -125,12 +133,20 @@ struct RunReceipt {
     decode_wall: Duration,
     state_pos: usize,
     generated_sha256: String,
+    generated_tokens: usize,
+    forward_calls: usize,
+    eos: bool,
+    eligible: bool,
+    final_logits_sha256: String,
+    final_cache_digest: [u64; 2],
+    final_hidden_digest: [u64; 2],
+    ar_refusals: [i32; 2],
     looped: bool,
     counters_prime: Counters,
     counters_decode: Counters,
 }
 
-fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], repeat: usize) -> RunReceipt {
+fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize) -> RunReceipt {
     let alloc_start = Instant::now();
     let mut state = gpu
         .alloc_decode_state_for_transient(PROMPT_TOKENS + OUTPUT_TOKENS + 8, 1)
@@ -153,6 +169,10 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], repeat: usize) -> RunReceipt {
     let after_prime = counters(gpu);
     let counters_prime = delta(after_prime, before);
     assert_engagement(gpu, counters_prime, PROMPT_TOKENS, 0);
+    let prime_ar_refusals = gpu
+        .tp_ep_ar_refusal_words()
+        .expect("prime AR refusal words");
+    assert_eq!(prime_ar_refusals, [0, 0], "prime AR refusal");
 
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
@@ -161,9 +181,14 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], repeat: usize) -> RunReceipt {
         seed: 20260907,
     };
     let mut generated = Vec::with_capacity(OUTPUT_TOKENS);
+    let mut eos = false;
     let decode_start = Instant::now();
     for _ in 0..OUTPUT_TOKENS {
         let token = dsv4_sample_row(&row, state.pos, &cfg).expect("sample");
+        if token == tokenizer.eos_id() {
+            eos = true;
+            break;
+        }
         generated.push(token);
         row = gpu
             .decode_step(token, &mut state)
@@ -173,23 +198,49 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], repeat: usize) -> RunReceipt {
     let decode_wall = decode_start.elapsed();
     assert_eq!(
         state.pos,
-        PROMPT_TOKENS + OUTPUT_TOKENS,
+        PROMPT_TOKENS + generated.len(),
         "sampled decode position"
     );
     let counters_decode = delta(counters(gpu), after_prime);
-    assert_engagement(gpu, counters_decode, 0, OUTPUT_TOKENS);
+    assert_engagement(gpu, counters_decode, 0, generated.len());
+    let ar_refusals = gpu
+        .tp_ep_ar_refusal_words()
+        .expect("decode AR refusal words");
+    assert_eq!(ar_refusals, [0, 0], "decode AR refusal");
 
     let generated_sha256 = sha256_tokens(&generated);
     let is_looped = looped(&generated);
-    let decode_tok_s = OUTPUT_TOKENS as f64 / decode_wall.as_secs_f64();
+    let decode_tok_s = generated.len() as f64 / decode_wall.as_secs_f64();
     let prime_tok_s = PROMPT_TOKENS as f64 / prime_wall.as_secs_f64();
-    let eligible = !is_looped;
+    let eligible = !eos && generated.len() == OUTPUT_TOKENS && !is_looped;
+    let headline_decode_tok_s = if eligible {
+        format!("{decode_tok_s:.6}")
+    } else {
+        "null".to_string()
+    };
+    // All identity material is collected after timing and after the refusal
+    // checks. These are consistency receipts, not an oracle-equivalence gate.
+    let final_logits_sha256 = sha256_f32(&row);
+    let final_cache_digest = gpu
+        .tp_ep_cache_digest_for_gate(&state)
+        .expect("final cache digest");
+    let final_hidden_digest = gpu
+        .tp_ep_hidden_digest_for_gate(&state)
+        .expect("final hidden digest");
     println!(
-        "MEASURE {{\"repeat\":{repeat},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"state_alloc_ns\":{},\"prime_wall_ns\":{},\"decode_wall_ns\":{},\"prime_tok_s\":{prime_tok_s:.6},\"decode_tok_s\":{decode_tok_s:.6},\"eligible\":{eligible},\"looped\":{is_looped},\"state_pos\":{},\"generated_sha256\":\"{generated_sha256}\",\"rank_layer_calls\":[{},{}],\"ep_calls\":{},\"ar_dispatches\":{},\"gu_m1_calls\":{},\"gu_half2_calls\":{},\"down_half2_calls\":{},\"wo_a_calls\":{},\"index_radix_calls\":{},\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false,\"hidden_hash_in_timing\":false}}",
+        "MEASURE {{\"repeat\":{repeat},\"prompt_tokens\":{PROMPT_TOKENS},\"requested_output_tokens\":{OUTPUT_TOKENS},\"generated_tokens\":{},\"forward_calls\":{},\"eos\":{eos},\"state_alloc_ns\":{},\"prime_wall_ns\":{},\"decode_wall_ns\":{},\"prime_tok_s\":{prime_tok_s:.6},\"decode_tok_s\":{decode_tok_s:.6},\"headline_decode_tok_s\":{headline_decode_tok_s},\"eligible\":{eligible},\"looped\":{is_looped},\"state_pos\":{},\"generated_sha256\":\"{generated_sha256}\",\"final_logits_sha256\":\"{final_logits_sha256}\",\"final_cache_digest\":[{},{}],\"final_hidden_digest\":[{},{}],\"ar_refusals\":[{},{}],\"rank_layer_calls\":[{},{}],\"ep_calls\":{},\"ar_dispatches\":{},\"gu_m1_calls\":{},\"gu_half2_calls\":{},\"down_half2_calls\":{},\"wo_a_calls\":{},\"index_radix_calls\":{},\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false,\"hidden_hash_in_timing\":false}}",
+        generated.len(),
+        generated.len(),
         state_alloc.as_nanos(),
         prime_wall.as_nanos(),
         decode_wall.as_nanos(),
         state.pos,
+        final_cache_digest[0],
+        final_cache_digest[1],
+        final_hidden_digest[0],
+        final_hidden_digest[1],
+        ar_refusals[0],
+        ar_refusals[1],
         counters_decode.rank_layer[0],
         counters_decode.rank_layer[1],
         counters_decode.ep,
@@ -212,6 +263,14 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], repeat: usize) -> RunReceipt {
         decode_wall,
         state_pos: state.pos,
         generated_sha256,
+        generated_tokens: generated.len(),
+        forward_calls: generated.len(),
+        eos,
+        eligible,
+        final_logits_sha256,
+        final_cache_digest,
+        final_hidden_digest,
+        ar_refusals,
         looped: is_looped,
         counters_prime,
         counters_decode,
@@ -278,6 +337,7 @@ fn main() {
     gpu.set_grouped_mirror_validation_for_gate(false);
     gpu.set_grouped_gu_fuse_for_gate(true);
     gpu.set_grouped_m1_tc_for_gate(true);
+    memra_engine::set_moe_f16g_gu_m1_tc_for_gate(true);
     memra_engine::set_moe_f16g_gu_half2_for_gate(true);
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(true);
@@ -290,6 +350,34 @@ fn main() {
         "same-TP sampled repeat stream"
     );
     assert_eq!(first.state_pos, second.state_pos);
-    println!("PASS sampled TP/EP internal repeat; loop exclusion remains per-row eligibility");
+    assert_eq!(first.generated_tokens, second.generated_tokens);
+    assert_eq!(first.forward_calls, second.forward_calls);
+    assert_eq!(first.eos, second.eos);
+    assert_eq!(first.final_logits_sha256, second.final_logits_sha256);
+    assert_eq!(first.final_cache_digest, second.final_cache_digest);
+    assert_eq!(first.final_hidden_digest, second.final_hidden_digest);
+    assert_eq!(first.ar_refusals, [0, 0]);
+    assert_eq!(second.ar_refusals, [0, 0]);
+    for receipt in [&first, &second] {
+        println!(
+            "REPEAT repeat={} state_alloc_ns={} prime_wall_ns={} decode_wall_ns={} state_pos={} generated_tokens={} forward_calls={} eos={} looped={} eligible={} prime_counters={:?} decode_counters={:?}",
+            receipt.repeat,
+            receipt.state_alloc.as_nanos(),
+            receipt.prime_wall.as_nanos(),
+            receipt.decode_wall.as_nanos(),
+            receipt.state_pos,
+            receipt.generated_tokens,
+            receipt.forward_calls,
+            receipt.eos,
+            receipt.looped,
+            receipt.eligible,
+            receipt.counters_prime,
+            receipt.counters_decode,
+        );
+    }
+    println!(
+        "PASS sampled TP/EP internal repeat; eligible_first={} eligible_second={} loop exclusion remains per-row eligibility",
+        first.eligible, second.eligible
+    );
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }

@@ -4,6 +4,9 @@ Source gate commit: \`296ae3f380f1de908c995dd694800d03a09c922b\`
 Gate binary: \`dsv4_tp_ep_sampled_perf_gate\`  
 Source tape SHA256: \`f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded\`
 
+Hardware runs must compose the down_fusion stale non-owned-slot fix before
+building this gate; this source commit alone is not a qualification receipt.
+
 ## Protocol
 
 The gate arms the all-layer TP/EP topology before model load and requires:
@@ -12,8 +15,9 @@ The gate arms the all-layer TP/EP topology before model load and requires:
 - DSpark/MTP disabled;
 - 256 real source tokens, primed through one-token steps because batched TP/EP
   cache hydration is not implemented;
-- 256 vendor-shape sampled tokens: \`temperature=1\`, \`top_p=1\`, \`top_k=0\`,
-  fixed seed \`20260907\`;
+- up to 256 vendor-shape sampled tokens: \`temperature=1\`, \`top_p=1\`,
+  \`top_k=0\`, fixed seed \`20260907\`; stop at EOS and report the actual
+  generated-token and forward-call counts (one forward per generated token);
 - two same-topology repeats, with identical generated-token SHA256 required;
 - separate prime/prefill wall and sampled decode wall;
 - actual per-rank layer, expert, one-shot AR, GU-M1, GU-half2, down-half2,
@@ -25,14 +29,18 @@ expected to remain inert at this short context because its eligibility starts
 at compressed \`N=2048\`; its actual count is reported and required to remain
 zero.
 
-Looped sampled output is reported with \`eligible=false\` and is excluded from
-any performance interpretation. No speculative, PP, cache-hash, or
-hidden-state-hash timing rows are emitted.
+Insufficient, EOS-terminated, or looped output is reported with
+\`eligible=false\` and has no headline rate. No speculative, PP, cache-hash,
+or hidden-state-hash timing rows are emitted. The final logits/cache/hidden
+identities are collected only after timing for the two-repeat consistency
+check.
 
 ## Limits
 
 This is an internal sampled-path consistency/performance smoke, not a serving
 qualification or oracle-equivalence receipt. Prime is serial single-token
-continuation, so its wall is not a batched-prefill claim. The two repeats are
-only a small same-TP stability check; no ABBA, concurrency, thermal, or
-production admission claim is made here.
+continuation, so its wall is not a batched-prefill claim. Each sampled token
+is forwarded through one decode call, including the final token when no EOS is
+seen; this is not directly matched to an old PP comparison protocol. The two
+repeats are only a small same-TP stability check; no ABBA, concurrency,
+thermal, or production admission claim is made here.
