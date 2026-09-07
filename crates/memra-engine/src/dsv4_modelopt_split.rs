@@ -230,7 +230,7 @@ impl ModelOptSplitPlan {
         }
         if !hidden.is_multiple_of(MODEL_OPT_SPLIT_WORLD)
             || !inter.is_multiple_of(MODEL_OPT_SPLIT_WORLD)
-            || (inter / MODEL_OPT_SPLIT_WORLD) % 64 != 0
+            || !(inter / MODEL_OPT_SPLIT_WORLD).is_multiple_of(64)
         {
             return Err(format!(
                 "ModelOpt TP2 split hidden={hidden} inter={inter} is not packed-byte/kernel aligned"

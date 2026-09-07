@@ -3868,8 +3868,8 @@ impl Dsv4Gpu {
                     .map_err(e("zeroing readback"))?;
                 stream.synchronize().map_err(e("zeroing drain"))?;
                 if let Some(expected) = &expected {
-                    for slot in 0..6 {
-                        let owned = (first as i32..(first + 128) as i32).contains(&ids[slot]);
+                    for (slot, id) in ids.iter().enumerate() {
+                        let owned = (first as i32..(first + 128) as i32).contains(id);
                         for col in 0..4096 {
                             let index = slot * 4096 + col;
                             let want = if owned { expected[index] } else { 0.0 };
