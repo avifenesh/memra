@@ -53,6 +53,32 @@ static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 static DSV4_INDEX_TOPK_RADIX: AtomicBool = AtomicBool::new(false);
 static DSV4_INDEX_TOPK_RADIX_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
+// Gate-only exact HC-pre v4 schedule.  The CUDA entry point owns the f64 rowsq reduction
+// and is therefore only byte-compatible with the oracle-truth (`chains_f32 == false`)
+// device chain.  It is deliberately process-local and default OFF: no environment variable
+// or serving default can select this arm.
+const DSV4_HC_PRE_V4_BLOCK: i32 = 1024;
+static DSV4_HC_PRE_V4: AtomicBool = AtomicBool::new(false);
+static DSV4_HC_PRE_V4_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+fn dsv4_hc_pre_v4_shape_eligible(
+    enabled: bool,
+    device_math: bool,
+    chains_f32: bool,
+    t: usize,
+    hc: usize,
+    hidden: usize,
+) -> bool {
+    enabled
+        && device_math
+        && !chains_f32
+        && t == 1
+        && hc == 4
+        && hidden == 4096
+        && DSV4_HC_PRE_V4_BLOCK == 1024
+}
+
 #[inline]
 fn index_topk_radix_eligible(t: usize, nb: usize, kk: usize) -> bool {
     t == 1 && kk == 512 && (2048..=4096).contains(&nb)
@@ -1569,6 +1595,35 @@ impl Dsv4Gpu {
     /// Successful CUDA enqueues through the gate-only radix selector.
     pub fn index_topk_radix_dispatches(&self) -> u64 {
         DSV4_INDEX_TOPK_RADIX_DISPATCHES.load(Ordering::Relaxed)
+    }
+
+    /// Gate-only exact HC-pre v4 schedule for the matrix plain t=1 path. The setter drains
+    /// both stage streams before changing the process-local policy; it is not a serving or
+    /// request option and has no environment/default selection. The arm refuses itself at
+    /// dispatch when the f32 chain is active because the v4 kernel's rowsq reduction is f64.
+    pub fn set_hc_pre_v4_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain HC-pre v4 gate");
+        }
+        DSV4_HC_PRE_V4.swap(enabled, Ordering::SeqCst)
+    }
+
+    pub fn hc_pre_v4_for_gate(&self) -> bool {
+        DSV4_HC_PRE_V4.load(Ordering::Acquire)
+    }
+
+    pub fn clear_hc_pre_v4_for_gate(&self) {
+        self.set_hc_pre_v4_for_gate(false);
+    }
+
+    /// Successful CUDA enqueues through the exact HC-pre v4 DSV4 gate. This is incremented
+    /// only after the FFI launcher accepts a shape-valid enqueue, never for a refused fallback.
+    pub fn hc_pre_v4_dispatches(&self) -> u64 {
+        DSV4_HC_PRE_V4_DISPATCHES.load(Ordering::Relaxed)
     }
 
     /// Exclusive gate seam, not a request option. Graph executables must key this
@@ -7338,6 +7393,40 @@ impl Dsv4Gpu {
         let w = hc * hidden;
         let rows = (2 + hc) * hc;
         self.dots_dev(st, h, fn_w, 1, w, rows, mixes)?;
+        if dsv4_hc_pre_v4_shape_eligible(
+            DSV4_HC_PRE_V4.load(Ordering::Acquire),
+            !host_math,
+            self.chains_f32,
+            1,
+            hc,
+            hidden,
+        ) {
+            unsafe {
+                ck(
+                    "hc_pre_v4",
+                    k::memra_dsv4_hc_pre_v4(
+                        dpf!(h, &stream),
+                        dpf!(*mixes, &stream),
+                        dpf!(scale_dev, &stream),
+                        dpf!(base_dev, &stream),
+                        dpm!(*pre, &stream),
+                        dpm!(*post, &stream),
+                        dpm!(*comb, &stream),
+                        dpm!(*y_hc, &stream),
+                        1,
+                        hc as i32,
+                        hidden as i32,
+                        iters as i32,
+                        hc_eps,
+                        std::ptr::null_mut(),
+                        DSV4_HC_PRE_V4_BLOCK,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            DSV4_HC_PRE_V4_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
         unsafe {
             ck(
                 "rowsq_scale dev",
@@ -12066,6 +12155,40 @@ impl Dsv4Gpu {
             rows,
             vws.mixes.device_ptr_mut(&stream).0 as *mut f32,
         )?;
+        if dsv4_hc_pre_v4_shape_eligible(
+            DSV4_HC_PRE_V4.load(Ordering::Acquire),
+            !host_math,
+            self.chains_f32,
+            t,
+            hc,
+            hidden,
+        ) {
+            unsafe {
+                ck(
+                    "hc_pre_v4 batch",
+                    k::memra_dsv4_hc_pre_v4(
+                        h_ptr,
+                        dpf!(vws.mixes, &stream),
+                        dpf!(scale_dev, &stream),
+                        dpf!(base_dev, &stream),
+                        dpm!(vws.pre, &stream),
+                        dpm!(vws.post, &stream),
+                        dpm!(vws.comb, &stream),
+                        dpm!(vws.y_hc, &stream),
+                        1,
+                        hc as i32,
+                        hidden as i32,
+                        iters as i32,
+                        hc_eps,
+                        std::ptr::null_mut(),
+                        DSV4_HC_PRE_V4_BLOCK,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            DSV4_HC_PRE_V4_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
         unsafe {
             ck(
                 "rowsq_scale batch",

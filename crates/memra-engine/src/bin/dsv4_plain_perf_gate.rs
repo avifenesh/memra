@@ -18,6 +18,7 @@ enum Change {
     Half2,
     WoA,
     IndexTopk,
+    HcPreV4,
 }
 impl Change {
     fn name(self) -> &'static str {
@@ -27,20 +28,28 @@ impl Change {
             Self::Half2 => "half2",
             Self::WoA => "wo-a",
             Self::IndexTopk => "index-topk",
+            Self::HcPreV4 => "hc-pre-v4",
         }
     }
     fn gu_m1(self, tuned: bool) -> bool {
-        tuned && matches!(self, Self::GuM1 | Self::GuM1Half2)
+        matches!(self, Self::HcPreV4) || (tuned && matches!(self, Self::GuM1 | Self::GuM1Half2))
     }
     fn half2(self, tuned: bool) -> bool {
-        matches!(self, Self::WoA | Self::IndexTopk | Self::GuM1Half2)
-            || (tuned && matches!(self, Self::Half2))
+        matches!(
+            self,
+            Self::WoA | Self::IndexTopk | Self::GuM1Half2 | Self::HcPreV4
+        ) || (tuned && matches!(self, Self::Half2))
     }
     fn wo_a(self, tuned: bool) -> bool {
-        matches!(self, Self::IndexTopk | Self::GuM1Half2) || (tuned && matches!(self, Self::WoA))
+        matches!(self, Self::IndexTopk | Self::GuM1Half2 | Self::HcPreV4)
+            || (tuned && matches!(self, Self::WoA))
     }
     fn index_topk(self, tuned: bool) -> bool {
-        matches!(self, Self::GuM1Half2) || (tuned && matches!(self, Self::IndexTopk))
+        matches!(self, Self::GuM1Half2 | Self::HcPreV4)
+            || (tuned && matches!(self, Self::IndexTopk))
+    }
+    fn hc_pre_v4(self, tuned: bool) -> bool {
+        matches!(self, Self::HcPreV4) && tuned
     }
 }
 
