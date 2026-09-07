@@ -1681,22 +1681,13 @@ impl Engine {
         if std::env::var("MEMRA_KDA_FUSED_PROJ").as_deref() != Ok("1") {
             return Ok(None);
         }
-        // glm5 TP composition guard (#82 review): the load preflight refuses this door at
-        // ARM time, but the flag is read PER CALL — a post-load `set` would otherwise
-        // engage the fused six-projection group on head shards inside the TP walk, an
-        // unproven composition (the door's gate ran on full-width projections). A shard
-        // declines here and takes the caller's unchanged arm, announced once.
-        if la.tp.is_some() {
-            static TP_F6_DECLINE: std::sync::Once = std::sync::Once::new();
-            TP_F6_DECLINE.call_once(|| {
-                eprintln!(
-                    "[kda-fused-proj] DECLINED on a glm5-TP head shard: the door is gated \
-                     on full-width projections (the load preflight refuses the pair; this \
-                     is the per-call twin for a post-load flag set)"
-                );
-            });
-            return Ok(None);
-        }
+        // glm5 TP composition (2026-09-07): a head shard's six projections are ROW SUBSETS
+        // of the full-width six (`shard_kda_layer` takes `shard_rows` on wq/wk/wv/b_proj and
+        // replicates f_a/g_a; same in_f, same row_bytes), and this kernel's per-row dot is
+        // the same program whichever rows it is handed, so the fused group engages on the
+        // shards too. Until then the TP walk ran the six as five separate matvecs per layer
+        // per rank (3 e4m3 + ~2.3 q8_0 launches, tptrace3). Receipt: the pair's tape with the
+        // door on equals the tape with it off (tpwalk4 `symgraphPF`).
         if !(1..=15).contains(&t) {
             return Ok(None);
         }

@@ -4764,18 +4764,91 @@ impl HybridModel {
                 if crate::glm5_tp::glm5_tp_symmetric_on()
                     && let Some(hyper) = layer.hyper.as_ref()
                 {
-                    let moe = match &layer.ffn {
-                        Ffn::Moe(m) => Some(m),
-                        _ => None,
-                    };
                     layer.tp_glue = crate::glm5_tp::replicate_layer_glue(
                         e,
                         &tp_plan.rt,
                         &layer.attn_norm,
                         &layer.post_attn_norm,
                         hyper,
-                        moe,
+                        &layer.ffn,
                     )?;
+                    // A dense-FFN layer's peer copy comes straight from the source on the peer
+                    // engine: the same loader builds the same resident layout (rp split-plane
+                    // mirror included), which a device-to-device replicate refuses by name.
+                    if matches!(layer.ffn, Ffn::Dense { .. }) {
+                        for (gi, peer) in tp_plan.rt.peers.iter().enumerate() {
+                            layer.tp_glue[gi].dense = Some(crate::glm5_tp::Glm5TpPeerDense {
+                                ffn_gate: load_t(peer, src, &p("ffn_gate.weight"))?,
+                                ffn_up: load_t(peer, src, &p("ffn_up.weight"))?,
+                                ffn_down: load_t(peer, src, &p("ffn_down.weight"))?,
+                                ffn_down_pqs: load_opt(peer, src, &p("ffn_down.pre_quant_scale"))?,
+                            });
+                        }
+                    }
+                }
+                // The shared expert's halves for the symmetric walk (see Glm5TpGlue::shexp_*).
+                if crate::glm5_tp::glm5_tp_symmetric_on()
+                    && crate::glm5_tp::glm5_tp_expert_split_on()
+                    && tp_plan.rt.ranks() == 2
+                    && let Ffn::Moe(m) = &layer.ffn
+                    && let Some(g) = m.gate_shexp.as_ref()
+                    && !layer.tp_glue.is_empty()
+                {
+                    let n_sh = g.out_features();
+                    if n_sh.is_multiple_of(128) {
+                        let h = n_sh / 2;
+                        let half = |dev: &Engine,
+                                    r: usize|
+                         -> Result<
+                            Option<crate::glm5_tp::Glm5TpShexpHalf>,
+                            Box<dyn std::error::Error>,
+                        > {
+                            let rows = r * h..(r + 1) * h;
+                            let gate = GpuTensor::load_nvfp4_native_range_from_source(
+                                dev,
+                                src,
+                                &p("ffn_gate_shexp.weight"),
+                                Some(rows.clone()),
+                                None,
+                            )?;
+                            let up = GpuTensor::load_nvfp4_native_range_from_source(
+                                dev,
+                                src,
+                                &p("ffn_up_shexp.weight"),
+                                Some(rows.clone()),
+                                None,
+                            )?;
+                            let down = GpuTensor::load_nvfp4_native_range_from_source(
+                                dev,
+                                src,
+                                &p("ffn_down_shexp.weight"),
+                                None,
+                                Some(rows),
+                            )?;
+                            Ok(match (gate, up, down) {
+                                (Some(gate), Some(up), Some(down)) => {
+                                    Some(crate::glm5_tp::Glm5TpShexpHalf { gate, up, down })
+                                }
+                                _ => None,
+                            })
+                        };
+                        match (half(e, 0)?, half(&tp_plan.rt.peers[0], 1)?) {
+                            (Some(r0), Some(r1)) => {
+                                layer.tp_glue[0].shexp_root = Some(r0);
+                                layer.tp_glue[0].shexp_peer = Some(r1);
+                            }
+                            _ => {
+                                static ONCE: std::sync::Once = std::sync::Once::new();
+                                ONCE.call_once(|| {
+                                    eprintln!(
+                                        "[glm5-tp-shexp] the shared expert stays on the root: the \
+                                         source does not expose it NVFP4-native (or MEMRA_RP / \
+                                         MEMRA_ST_DIRECT is off)"
+                                    )
+                                });
+                            }
+                        }
+                    }
                 }
                 if let Ffn::Moe(m) = &mut layer.ffn {
                     // The measured placement row for this layer, when MEMRA_EP_MAP (or
