@@ -758,6 +758,69 @@ pub(crate) struct RunSnap {
     mla_lens: Vec<(usize, usize, usize)>,
 }
 
+/// The PROCESS-level reasons no glm5 decode graph may be recorded, shared by the plain door
+/// and the symmetric TP door: host-visible observers, the host-oracle MoE arms, the pageable
+/// shared-expert upload (`MEMRA_HTOD_DIET` off: a capture bakes the host pointer and replays
+/// stale bytes: the 2026-09-07 00:56Z bare TP arm decoded garbage from token 2 with the tape
+/// silently different), event tracking. Per-layer and per-stage reasons stay with each door.
+pub(crate) fn glm5_graph_process_refusal(e: &Engine) -> Option<String> {
+    if crate::glm5_graph_no_capture() {
+        return Some(
+            "MEMRA_GLM5_GRAPH_NO_CAPTURE: capture disabled while the door's device-table MoE \
+             arm stays engaged (the half of the bisect MEMRA_GLM5_GRAPH_HOST_MOE could not \
+             supply, since that one turns off both enablers at once)"
+                .into(),
+        );
+    }
+    if crate::glm5_graph_host_moe() {
+        return Some(
+            "MEMRA_GLM5_GRAPH_HOST_MOE forces the host-oracle MoE: its per-layer readback and \
+             stream drain cannot live inside a capture region (bisect arm)"
+                .into(),
+        );
+    }
+    if !crate::htod_diet_on() {
+        return Some(
+            "MEMRA_HTOD_DIET is off: the shared expert still uploads a pageable constant \
+             per MoE layer, which a capture region refuses"
+                .into(),
+        );
+    }
+    if !crate::hybrid_forward::sigmoid_router_enabled() {
+        return Some(
+            "MEMRA_SIG_ROUTER=0 selects the host oracle (no device selection to capture)".into(),
+        );
+    }
+    if crate::moesd::capture_active() || memra_reference::hidden_trace::enabled() {
+        return Some("a host-visible route/hidden observer is armed".into());
+    }
+    for env in [
+        "MEMRA_MOE_STATS",
+        "MEMRA_MOE_TRACE",
+        "MEMRA_MOE_WEIGHT_TRACE",
+        "MEMRA_MOE_INPUT_TRACE_DIR",
+        "MEMRA_SIG_ROUTER_LOGIT_TRACE",
+        // `MEMRA_MOE_SEL_DUMP` (main #113, met this lane in a rebase 2026-09-03) is the one
+        // that reads the selection back on the DEVICE arm rather than the host arm, which is
+        // precisely the arm a captured body runs. Its DtoH pair would be RECORDED and not
+        // executed inside a capture region, so the dump would write stale rows and the door
+        // would look fine. Refused by name like every other observer.
+        "MEMRA_MOE_SEL_DUMP",
+    ] {
+        if std::env::var_os(env).is_some() {
+            return Some(format!(
+                "{env} is armed (its consumer reads the selection on the host)"
+            ));
+        }
+    }
+    if e.ctx().is_event_tracking() {
+        return Some(
+            "cudarc event tracking is on (MEMRA_EVT); capture refuses cross-stream waits".into(),
+        );
+    }
+    None
+}
+
 impl HybridModel {
     /// Everything this door needs that is NOT a property of one layer. Returns the refusal
     /// reason so the once-note can name it instead of failing silently.
@@ -776,61 +839,8 @@ impl HybridModel {
                 "this trunk has no sigmoid router (the device-table MoE arm needs one)".into(),
             );
         }
-        if crate::glm5_graph_no_capture() {
-            return Some(
-                "MEMRA_GLM5_GRAPH_NO_CAPTURE: capture disabled while the door's device-table MoE \
-                 arm stays engaged (the half of the bisect MEMRA_GLM5_GRAPH_HOST_MOE could not \
-                 supply, since that one turns off both enablers at once)"
-                    .into(),
-            );
-        }
-        if crate::glm5_graph_host_moe() {
-            return Some(
-                "MEMRA_GLM5_GRAPH_HOST_MOE forces the host-oracle MoE: its per-layer readback and \
-                 stream drain cannot live inside a capture region (bisect arm)"
-                    .into(),
-            );
-        }
-        if !crate::htod_diet_on() {
-            return Some(
-                "MEMRA_HTOD_DIET is off: the shared expert still uploads a pageable constant \
-                 per MoE layer, which a capture region refuses"
-                    .into(),
-            );
-        }
-        if !crate::hybrid_forward::sigmoid_router_enabled() {
-            return Some(
-                "MEMRA_SIG_ROUTER=0 selects the host oracle (no device selection to capture)"
-                    .into(),
-            );
-        }
-        if crate::moesd::capture_active() || memra_reference::hidden_trace::enabled() {
-            return Some("a host-visible route/hidden observer is armed".into());
-        }
-        for env in [
-            "MEMRA_MOE_STATS",
-            "MEMRA_MOE_TRACE",
-            "MEMRA_MOE_WEIGHT_TRACE",
-            "MEMRA_MOE_INPUT_TRACE_DIR",
-            "MEMRA_SIG_ROUTER_LOGIT_TRACE",
-            // `MEMRA_MOE_SEL_DUMP` (main #113, met this lane in a rebase 2026-09-03) is the one
-            // that reads the selection back on the DEVICE arm rather than the host arm, which is
-            // precisely the arm a captured body runs. Its DtoH pair would be RECORDED and not
-            // executed inside a capture region, so the dump would write stale rows and the door
-            // would look fine. Refused by name like every other observer.
-            "MEMRA_MOE_SEL_DUMP",
-        ] {
-            if std::env::var_os(env).is_some() {
-                return Some(format!(
-                    "{env} is armed (its consumer reads the selection on the host)"
-                ));
-            }
-        }
-        if e.ctx().is_event_tracking() {
-            return Some(
-                "cudarc event tracking is on (MEMRA_EVT); capture refuses cross-stream waits"
-                    .into(),
-            );
+        if let Some(reason) = glm5_graph_process_refusal(e) {
+            return Some(reason);
         }
         for il in lo..hi {
             if let Mixer::Kda(la) = &self.layers[il].mixer
