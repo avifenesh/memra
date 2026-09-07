@@ -233,9 +233,13 @@ fn mla_b200_split_announce(kind: &str, t_q: usize, n_head: usize, split: i32) {
 pub static MLA_DSA_DECODE_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
-/// `MEMRA_B200_DSA_DECODE` (default OFF = 0, read per call: the rollback seam), compile-time
-/// gated to sm_100a builds exactly like its sibling `MEMRA_B200_MLA_DECODE_ARM`, so a
-/// 120a/90a/89 build sees no behavior change from a var it cannot engage.
+/// `MEMRA_B200_DSA_DECODE` (DEFAULT 2 since 2026-09-07 on sm_100a builds; `=0` is the
+/// rollback seam and `=1` the bit-identical level, both read per call), compile-time gated to
+/// sm_100a builds exactly like its sibling `MEMRA_B200_MLA_DECODE_ARM`, so a 120a/90a/89 build
+/// sees no behavior change from a var it cannot engage. The flip's receipts: level 2 served
+/// on the 2x B200 pair since 2026-09-03 (256k sampled 30.07 -> 43.04 tok/s; 1M 22.7 -> 34.9,
+/// 41.07 with the select door) and every B200 posture cell since carries it
+/// (darklanes research/glm5-b200-20260902, research/glm5-b200-mint-20260904).
 ///
 /// THE DOOR IS A LEVEL, not a boolean, and the level is the numeric-class boundary:
 ///
@@ -285,9 +289,9 @@ fn mla_dsa_decode_level() -> u32 {
         return 0;
     }
     match std::env::var("MEMRA_B200_DSA_DECODE").as_deref() {
+        Ok("0") => 0,
         Ok("1") => 1,
-        Ok("2") => 2,
-        _ => 0,
+        _ => 2,
     }
 }
 
