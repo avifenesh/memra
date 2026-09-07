@@ -349,6 +349,7 @@ impl GroupedWork {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn splitk(
         &mut self,
         gpu: &Gpu,
@@ -365,6 +366,16 @@ impl GroupedWork {
             (&self.intermediate, self.input.cols)
         };
         let live = self.routes.live_slots;
+        if table.len() != self.routes.experts * 6
+            || crate::moe_f16g_mode() < 2
+            || crate::moe_f16g_sk_params().0 < 0
+            || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
+        {
+            return Err(
+                "split-K requires a complete local ModelOpt table and direct grouped visitor"
+                    .into(),
+            );
+        }
         let needed = live
             .checked_mul(out_f)
             .and_then(|v| v.checked_mul(if gu { 32 } else { 16 }))
@@ -375,10 +386,12 @@ impl GroupedWork {
                 .as_ref()
                 .is_none_or(|p| p.len() < needed)
         {
+            let old_bytes = self.splitk_scratch.as_ref().map_or(0, |p| p.len() * 4);
             self.splitk_scratch = Some(
                 s.alloc_zeros::<f32>(needed)
                     .map_err(|e| format!("split-K scratch: {e}"))?,
             );
+            self.bytes = self.bytes - old_bytes as u64 + (needed * 4) as u64;
         }
         let partial = self
             .splitk_scratch
@@ -643,12 +656,12 @@ impl GroupedWork {
             self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
             let component = self.plain_single && splitk_component_claim(gpu, false);
             let splitk = self.plain_single && crate::moe_m1_splitk_on();
-            if component || splitk {
-                let output = self.contribution.device_ptr_mut(&s).0;
-                self.splitk(gpu, table, output, 0.0, false, component)?;
+            let output = self.contribution.device_ptr_mut(&s).0;
+            if component {
+                self.splitk(gpu, table, output, 0.0, false, true)?;
             }
-            if splitk && !component {
-                // The two-pass projection above produced contribution.
+            if splitk {
+                self.splitk(gpu, table, output, 0.0, false, false)?;
             } else if self.plain_single
                 && crate::moe_f16g_tail_on()
                 && (crate::moe_f16g_m1_tc_on() || crate::moe_f16g_down_m1_half2_on())
