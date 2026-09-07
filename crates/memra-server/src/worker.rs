@@ -16004,6 +16004,18 @@ pub fn run(
             for (i, cap) in dspark_phase_captures {
                 publish_dspark_prefix_capture(&engine, &mut px, &mut hpx, &mut active[i], cap);
             }
+            // memra#298: a capture minted by THIS tick's prime or resume (phase b / c, the
+            // restored session's boundary from memra#257) used to wait for the pre-step sweep
+            // of the NEXT tick, which runs after that tick's admission pass, so a client that
+            // sends the next turn the moment the response returns (an agent loop) restored
+            // from the entry before last and primed a whole extra turn of suffix (observed on
+            // Texas at v0.128.0: turn 3 restored turn 1's 12,160-token entry while turn 2's
+            // 12,192-token capture published one line later). Drain it here: still the
+            // lowest-priority serving work, still before retirement, and visible to the next
+            // admission pass.
+            for s in active.iter_mut() {
+                drain_dspark_prefix_capture(&engine, &mut px, &mut hpx, s);
+            }
         }
         // retire finished sessions (reverse order so indices stay valid). Long-enough sessions
         // park their (fed, cache, last_logits) in the reuse pool instead of dropping the cache.
