@@ -179,50 +179,7 @@ pub(crate) struct EpLayer {
 pub(crate) struct TpEpArState {
     signal: [CudaSlice<u8>; 2],
     error: [CudaSlice<i32>; 2],
-    launches: [AtomicU64; 2],
-}
-
-/// A borrowed signal plane plus validated addresses for one token's scoped rank worker.
-/// The enclosing caller retains both input/output allocations and drains both rank streams
-/// before these addresses or the signal-plane borrow can escape its transaction.
-pub(crate) struct TpEpArEndpoint<'a> {
-    state: &'a TpEpArState,
-    input: [u64; 2],
-    output: u64,
-    signal: [u64; 2],
-    error: u64,
-    rank: usize,
-    n: usize,
-}
-
-impl TpEpArEndpoint<'_> {
-    /// SAFETY: the caller must retain the exact buffers used to prepare this endpoint,
-    /// enqueue its producer and consumer on this rank's stream, and drain both ranks on
-    /// success or failure. The peer input is read only after the device start barrier.
-    pub(crate) unsafe fn enqueue(&self, gpu: &Gpu) -> Res<()> {
-        crate::dsv4_grouped::bind_matrix(gpu)?;
-        let stream = gpu.stream();
-        let rc = unsafe {
-            crate::tp_ar::memra_tp_ar_1stage(
-                self.input[0] as *const f32,
-                self.input[1] as *const f32,
-                self.output as *mut f32,
-                self.signal[self.rank] as *mut c_void,
-                self.signal[1 - self.rank] as *mut c_void,
-                self.rank as i32,
-                self.n as i64,
-                self.error as *mut i32,
-                crate::tp_ar::AR_SPIN_LIMIT,
-                crate::tp_ar::ar_blocks_for(self.n),
-                stream.cu_stream().cast(),
-            )
-        };
-        if rc != 0 {
-            return Err(format!("TP/EP rank {} endpoint enqueue rc={rc}", self.rank));
-        }
-        self.state.launches[self.rank].fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    }
+    launches: u64,
 }
 
 impl TpEpArState {
@@ -259,35 +216,7 @@ impl TpEpArState {
         Ok(Self {
             signal: [signal0, signal1],
             error: [error0, error1],
-            launches: std::array::from_fn(|_| AtomicU64::new(0)),
-        })
-    }
-
-    pub(crate) fn rank_endpoint(
-        &self,
-        rank: usize,
-        gpus: [&Gpu; 2],
-        inputs: [&CudaSlice<f32>; 2],
-        output: &CudaSlice<f32>,
-        n: usize,
-    ) -> Res<TpEpArEndpoint<'_>> {
-        if rank >= 2 || n == 0 || inputs.iter().any(|x| x.len() < n) || output.len() < n {
-            return Err("TP/EP endpoint buffer shape mismatch".into());
-        }
-        let input = std::array::from_fn(|r| inputs[r].device_ptr(&gpus[r].stream()).0);
-        let signal = std::array::from_fn(|r| self.signal[r].device_ptr(&gpus[r].stream()).0);
-        let output = output.device_ptr(&gpus[rank].stream()).0;
-        if input.contains(&output) {
-            return Err("TP/EP endpoint requires out-of-place output".into());
-        }
-        Ok(TpEpArEndpoint {
-            state: self,
-            input,
-            output,
-            signal,
-            error: self.error[rank].device_ptr(&gpus[rank].stream()).0,
-            rank,
-            n,
+            launches: 0,
         })
     }
 
@@ -383,15 +312,13 @@ impl TpEpArState {
                     "TP/EP one-shot reduction launch rc {rc} rank {rank}"
                 ));
             }
-            self.launches[rank as usize].fetch_add(1, Ordering::Relaxed);
         }
+        self.launches += 1;
         Ok(())
     }
 
     pub(crate) fn launches(&self) -> u64 {
-        self.launches[0]
-            .load(Ordering::Relaxed)
-            .min(self.launches[1].load(Ordering::Relaxed))
+        self.launches
     }
 
     pub(crate) fn refusal_words(&self, owner: &Gpu, peer: &Gpu) -> Res<[i32; 2]> {
