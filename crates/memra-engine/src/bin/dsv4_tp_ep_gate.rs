@@ -169,8 +169,12 @@ fn verify_refusal_boundary(gpu: &Dsv4Gpu, tokens: &[u32]) {
             let mut state = gpu
                 .alloc_decode_state_for_transient(prime_tokens + 8, 1)
                 .expect("refusal gate state");
-            gpu.prefill_with_cache_chunked(&tokens[..prime_tokens], &mut state, 1)
+            gpu.prefill_with_cache_chunked(&tokens[..1], &mut state, 1)
                 .expect("refusal gate prime");
+            for &token in &tokens[1..prime_tokens] {
+                gpu.decode_step(token, &mut state)
+                    .expect("refusal gate teacher-forced prime continuation");
+            }
             let position = state.pos;
             let cache_before = gpu
                 .tp_ep_cache_digest_for_gate(&state)
