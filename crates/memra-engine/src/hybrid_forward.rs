@@ -3516,6 +3516,9 @@ impl HybridModel {
         // On a glm5-TP head shard the pair goes unused (the shard's projections quantize their
         // own input), but asking for it still folds the norm INTO the hc-pre launch, which is the
         // launch the shard walk was paying separately (tptrace4: rms_norm 112/token per rank).
+        // When the fold does not take, a shard runs the PLAIN norm like its peer (the symmetric
+        // walk's premise is identical glue on both ranks), not the zq8 twin.
+        let shard = matches!(&layer.mixer, Mixer::Kda(la) if la.tp.is_some());
         let want_q8 = crate::glm5_q8_fuse_attn_on() && matches!(&layer.mixer, Mixer::Kda(_));
         let fused_pair = crate::hyper::pre_t1_ws_norm(
             e,
@@ -3534,7 +3537,7 @@ impl HybridModel {
                 );
             }
             Some(pair)
-        } else if want_q8 {
+        } else if want_q8 && !shard {
             let pair = e.rms_norm_zq8_f32(
                 &ws.y,
                 layer.attn_norm.float_data(),
