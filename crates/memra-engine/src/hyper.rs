@@ -949,6 +949,41 @@ pub fn post_t1_ws(
     Ok(())
 }
 
+/// The post-branch of both ranks with the one-shot reduce folded in: `f0` / `f1` are the two
+/// ranks' PARTIAL branch outputs (global rank order), each rank's `ws.xb` receives the full post
+/// over `f0 + f1` against its own residual. Bitwise `all_reduce_1stage_into` + `post_t1_ws` on
+/// each rank; one launch per rank per crossing instead of two, no reduce buffer.
+#[allow(clippy::too_many_arguments)] // allow: both ranks' operand sets
+pub fn post_t1_ws_ar(
+    e: &Engine,
+    rt: &crate::glm5_tp::Glm5TpRt,
+    topology: &HyperTopology,
+    f0: &CudaSlice<f32>,
+    f1: &CudaSlice<f32>,
+    x0: &CudaSlice<f32>,
+    x1: &CudaSlice<f32>,
+    ws0: &mut HyperDecodeWs,
+    ws1: &mut HyperDecodeWs,
+    hidden: usize,
+) -> Res<()> {
+    let ws0 = &mut *ws0;
+    let ws1 = &mut *ws1;
+    let ok = rt.ar_1stage_hcpost(
+        e,
+        &[f0, f1],
+        &[x0, x1],
+        &[&ws0.post, &ws1.post],
+        &[&ws0.comb, &ws1.comb],
+        &mut [&mut ws0.xb, &mut ws1.xb],
+        topology.streams,
+        hidden,
+    )?;
+    if !ok {
+        return Err("post_t1_ws_ar: the one-shot declined after availability said yes".into());
+    }
+    Ok(())
+}
+
 /// One site's post-branch half (`hc_post`): `out[t, k, :] = post[t, k]·f[t, :] + Σ_j
 /// comb[t, j, k]·residual[t, j, :]`. `residual` is the site's INPUT stream state, not the
 /// layer's — the MLP site's residual is the attention site's output.

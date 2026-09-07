@@ -798,6 +798,13 @@ pub static GLM5_TP_SYM_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 pub static GLM5_TP_SHEXP_SPLIT_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
+
+/// A symmetric site's branch outputs as they reach the post: already REDUCED on both ranks, or the
+/// two ranks' PARTIALS that the post-branch launch reduces itself (`post_t1_ws_ar`).
+pub(crate) enum SymMixed<'a> {
+    Reduced(&'a [CudaSlice<f32>]),
+    Partials(&'a CudaSlice<f32>, &'a CudaSlice<f32>),
+}
 /// Set once the symmetric walk has announced its decline, so the root walk is taken quietly
 /// afterwards but never silently the first time.
 pub static GLM5_TP_SYM_DECLINED: std::sync::atomic::AtomicBool =
@@ -3020,26 +3027,33 @@ impl HybridModel {
         self.sym_attn_glue(e, peer, topology, il, x, x_peer, ws, ws_peer)?;
         let _ = (hyper, glue, eps, n_embd);
         // ---- mixer: both inputs in, both outputs out ----
-        let mixed = match &layer.mixer {
-            Mixer::Kda(la) => crate::glm5_tp::kda_tp_cached_sym(
-                e,
-                la,
-                &[&ws.h, &ws_peer.h],
-                1,
-                eps,
-                cache,
-                il,
-                crate::kda::ConvArm::Decode,
-            )?,
-            Mixer::Mla(mla) => self.mla_tp_attn_cached_sym(
-                e,
-                mla,
-                &[&ws.h, &ws_peer.h],
-                &[pos_d, pos_peer],
-                1,
-                il,
-                cache,
-            )?,
+        let (mixed, partial) = match &layer.mixer {
+            // the KDA partials go to the post-branch launch unreduced
+            Mixer::Kda(la) => (
+                crate::glm5_tp::kda_tp_partials_sym(
+                    e,
+                    la,
+                    &[&ws.h, &ws_peer.h],
+                    1,
+                    eps,
+                    cache,
+                    il,
+                    crate::kda::ConvArm::Decode,
+                )?,
+                true,
+            ),
+            Mixer::Mla(mla) => (
+                self.mla_tp_attn_cached_sym(
+                    e,
+                    mla,
+                    &[&ws.h, &ws_peer.h],
+                    &[pos_d, pos_peer],
+                    1,
+                    il,
+                    cache,
+                )?,
+                false,
+            ),
             _ => {
                 return Err(format!(
                     "layer {il}: the symmetric walk covers KDA and MLA mixers only"
@@ -3047,7 +3061,43 @@ impl HybridModel {
                 .into());
             }
         };
-        self.sym_post_ffn(e, peer, rt, topology, il, &mixed, x, x_peer, ws, ws_peer)
+        let mixed_in = if partial {
+            SymMixed::Partials(&mixed[0], &mixed[1])
+        } else {
+            SymMixed::Reduced(&mixed)
+        };
+        self.sym_post_ffn(e, peer, rt, topology, il, mixed_in, x, x_peer, ws, ws_peer)
+    }
+
+    /// One site's post on both ranks: the branch outputs into the residual (`post_t1_ws`), from
+    /// reduced outputs or from the two partials through the fused reduce+post launch.
+    #[allow(clippy::too_many_arguments)] // allow: both ranks' operand sets
+    fn sym_site_post(
+        e: &Engine,
+        peer: &Engine,
+        rt: &crate::glm5_tp::Glm5TpRt,
+        topology: &crate::hyper::HyperTopology,
+        mixed: SymMixed<'_>,
+        x: &mut CudaSlice<f32>,
+        x_peer: &mut CudaSlice<f32>,
+        ws: &mut crate::hyper::HyperDecodeWs,
+        ws_peer: &mut crate::hyper::HyperDecodeWs,
+        n_embd: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match mixed {
+            SymMixed::Reduced(v) => {
+                crate::hyper::post_t1_ws(e, topology, &v[0], x, ws, n_embd)?;
+                crate::hyper::post_t1_ws(peer, topology, &v[1], x_peer, ws_peer, n_embd)?;
+            }
+            SymMixed::Partials(p0, p1) => {
+                crate::hyper::post_t1_ws_ar(
+                    e, rt, topology, p0, p1, x, x_peer, ws, ws_peer, n_embd,
+                )?;
+            }
+        }
+        std::mem::swap(x, &mut ws.xb);
+        std::mem::swap(x_peer, &mut ws_peer.xb);
+        Ok(())
     }
 
     /// Attention-site glue on both ranks: the root's hc pre + attn norm into `ws.h`, the peer's
@@ -3097,7 +3147,7 @@ impl HybridModel {
         rt: &crate::glm5_tp::Glm5TpRt,
         topology: &crate::hyper::HyperTopology,
         il: usize,
-        mixed: &[CudaSlice<f32>],
+        mixed: SymMixed<'_>,
         x: &mut CudaSlice<f32>,
         x_peer: &mut CudaSlice<f32>,
         ws: &mut crate::hyper::HyperDecodeWs,
@@ -3111,10 +3161,7 @@ impl HybridModel {
             .first()
             .ok_or_else(|| format!("layer {il}: no symmetric glue for the peer"))?;
         let _ = hyper;
-        crate::hyper::post_t1_ws(e, topology, &mixed[0], x, ws, n_embd)?;
-        std::mem::swap(x, &mut ws.xb);
-        crate::hyper::post_t1_ws(peer, topology, &mixed[1], x_peer, ws_peer, n_embd)?;
-        std::mem::swap(x_peer, &mut ws_peer.xb);
+        Self::sym_site_post(e, peer, rt, topology, mixed, x, x_peer, ws, ws_peer, n_embd)?;
 
         // ---- FFN-site glue, both ranks ----
         crate::hyper::pre_t1_ws(e, topology, &hyper.mlp, x, ws, n_embd)?;
@@ -3149,8 +3196,11 @@ impl HybridModel {
         )?;
 
         // ---- MoE: both inputs in, both outputs out ----
+        let mut ffn_partial = false;
         let ffn_out = match &layer.ffn {
             crate::hybrid::Ffn::Moe(m) => {
+                // the split MoE hands back the two ranks' PARTIALS (shared expert folded in)
+                ffn_partial = true;
                 let xs = m.glm5_tp_split.as_ref().ok_or_else(|| {
                     format!("layer {il}: the symmetric walk needs the expert split armed")
                 })?;
@@ -3197,11 +3247,14 @@ impl HybridModel {
                 vec![out, out_peer]
             }
         };
-        crate::hyper::post_t1_ws(e, topology, &ffn_out[0], x, ws, n_embd)?;
-        std::mem::swap(x, &mut ws.xb);
-        crate::hyper::post_t1_ws(peer, topology, &ffn_out[1], x_peer, ws_peer, n_embd)?;
-        std::mem::swap(x_peer, &mut ws_peer.xb);
-        Ok(())
+        let ffn_in = if ffn_partial {
+            SymMixed::Partials(&ffn_out[0], &ffn_out[1])
+        } else {
+            SymMixed::Reduced(&ffn_out)
+        };
+        Self::sym_site_post(
+            e, peer, rt, topology, ffn_in, x, x_peer, ws, ws_peer, n_embd,
+        )
     }
 
     /// The PRE piece of a symmetric MLA layer, recordable in a graph: the attention glue on both
@@ -3335,21 +3388,14 @@ impl HybridModel {
             .ok_or_else(|| format!("layer {il}: sym MLA FFN piece on an unsharded layer"))?;
         let p0 = e.matmul(&mla.wo, a_root, 1)?;
         let p1 = peer.matmul(&tp.peers[0].wo, a_peer, 1)?;
-        let mut red0 = e.zeros(n_embd)?;
-        let mut red1 = peer.zeros(n_embd)?;
-        if !rt.ar_1stage_into(e, &[&p0, &p1], &mut [&mut red0, &mut red1], n_embd)? {
-            return Err(format!(
-                "layer {il}: the one-shot declined inside the sym MLA FFN piece after availability said yes"
-            )
-            .into());
-        }
+        let _ = n_embd;
         self.sym_post_ffn(
             e,
             peer,
             rt,
             topology,
             il,
-            &[red0, red1],
+            SymMixed::Partials(&p0, &p1),
             x,
             x_peer,
             ws,
@@ -14930,17 +14976,9 @@ impl HybridModel {
             None => Self::moe_shexp_add(e, m, z_by_rank[0], zq8, t, cfg, lim_shexp, &mut out0)?,
         }
         // Out of place: the partials are the inputs, two fresh buffers the outputs (no staging copy).
-        let mut red0 = e.zeros(t * n_embd)?;
-        let mut red1 = peer.zeros(t * n_embd)?;
-        let reduced =
-            rt.ar_1stage_into(e, &[&out0, &out1], &mut [&mut red0, &mut red1], t * n_embd)?;
-        if !reduced {
-            return Err(
-                "moe_ffn_glm5_tp_split_sym: the one-shot declined after availability said yes"
-                    .into(),
-            );
-        }
-        Ok(vec![red0, red1])
+        // The two ranks' PARTIALS, global rank order: the caller's post-branch launch reduces
+        // them (`post_t1_ws_ar`), so the sum never lands in memory.
+        Ok(vec![out0, out1])
     }
 
     /// The DIETED glm5 EP walk (`MEMRA_GLM5_EP_DIET`, lane/glm5-ep-diet): the v1 walk's

@@ -320,6 +320,36 @@ impl Glm5TpRt {
         Ok(true)
     }
 
+    /// The one-shot fused with the hc post-branch (see `ArLink::all_reduce_1stage_hcpost`).
+    #[allow(clippy::too_many_arguments)] // allow: the reduce's operands plus the post-branch's
+    pub fn ar_1stage_hcpost(
+        &self,
+        root: &Engine,
+        inputs: &[&CudaSlice<f32>],
+        residuals: &[&CudaSlice<f32>],
+        posts: &[&CudaSlice<f32>],
+        combs: &[&CudaSlice<f32>],
+        outs: &mut [&mut CudaSlice<f32>],
+        hc: usize,
+        d: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if !self.ar_1stage_available() {
+            return Ok(false);
+        }
+        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
+        let mut guard = self
+            .ar
+            .lock()
+            .map_err(|_| "glm5-tp one-shot all-reduce: the link mutex is poisoned")?;
+        if guard.is_none() {
+            *guard = Some(crate::tp_ar::ArLink::new(&engines)?);
+        }
+        guard
+            .as_mut()
+            .expect("built above")
+            .all_reduce_1stage_hcpost(&engines, inputs, residuals, posts, combs, outs, hc, d)?;
+        Ok(true)
+    }
     /// Rank count of this runtime (root + peers).
     pub fn ranks(&self) -> usize {
         self.peers.len() + 1
@@ -1283,7 +1313,7 @@ fn kda_tp_core(
 /// Requires the symmetric door (so `wo` was K-sliced at load) and a real two-device group (the
 /// one-shot needs a kernel peer store). Named class: not byte-identical to the unsharded walk.
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
-pub(crate) fn kda_tp_cached_sym(
+pub(crate) fn kda_tp_partials_sym(
     e: &Engine,
     la_root: &KdaAttnLayer,
     x_by_rank: &[&CudaSlice<f32>],
@@ -1307,7 +1337,6 @@ pub(crate) fn kda_tp_cached_sym(
             "kda_tp_cached_sym: needs MEMRA_GLM5_TP_SYMMETRIC and a real two-device group".into(),
         );
     }
-    let n_embd = tp.n_embd;
     let states = ensure_kda_tp_state(e, rt, la_root, cache, il)?;
     let mut partials: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
     for r in 0..ranks {
@@ -1338,19 +1367,7 @@ pub(crate) fn kda_tp_cached_sym(
         partials.push(dev.matmul(&la.wo, &gated, t)?);
     }
     // Out of place: the partials are the inputs, two fresh buffers the outputs (no staging copy).
-    let peer = &rt.peers[0];
-    let mut red0 = e.zeros(t * n_embd)?;
-    let mut red1 = peer.zeros(t * n_embd)?;
-    let reduced = rt.ar_1stage_into(
-        e,
-        &[&partials[0], &partials[1]],
-        &mut [&mut red0, &mut red1],
-        t * n_embd,
-    )?;
-    if !reduced {
-        return Err("kda_tp_cached_sym: the one-shot declined after availability said yes".into());
-    }
-    Ok(vec![red0, red1])
+    Ok(partials)
 }
 
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape

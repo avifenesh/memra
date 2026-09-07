@@ -229,3 +229,55 @@ extern "C" int memra_tp_ar_1stage(const float* in_rank0, const float* in_rank1, 
     TP_AR_ERR();
     return 0;
 }
+
+// One-shot + hc post in ONE launch, t = 1 only: f = in_rank0 + in_rank1 (the reduce), then the
+// hyper-connection post-branch for every stream k, out[k, i] = post[k] * f[i] + sum_j
+// comb[j*hc + k] * residual[j*d + i]. The same association as memra_tp_ar_1stage followed by
+// dsv4_hc_post_kernel (t = 0 row), so bitwise that pair; the reduce output never lands in
+// memory and the crossing is one launch instead of two. One block covers d = 4096 at 8 floats
+// per thread, one flag round trip per barrier (tp-ar-bench 2026-09-07: blocks are the cost).
+__global__ void __launch_bounds__(512, 1) memra_tp_ar_1stage_hcpost_kernel(
+        const float* __restrict__ in_rank0, const float* __restrict__ in_rank1,
+        const float* __restrict__ residual, const float* __restrict__ post,
+        const float* __restrict__ comb, float* __restrict__ out, int hc, int d,
+        MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, int* __restrict__ err,
+        long long spin_limit) {
+    unsigned flag = self_sg->seq[blockIdx.x] + 1;
+    if (memra_ar_barrier(peer_sg->start, self_sg->start, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) {
+            *(volatile int*)err = 40043;
+            self_sg->seq[blockIdx.x] = flag;
+        }
+        return;
+    }
+    for (int i = (int)blockIdx.x * blockDim.x + threadIdx.x; i < d;
+         i += (int)gridDim.x * blockDim.x) {
+        float f = in_rank0[i] + in_rank1[i];
+        for (int k = 0; k < hc; k++) {
+            float acc = post[k] * f;
+            for (int j = 0; j < hc; j++) acc += comb[j * hc + k] * residual[(long)j * d + i];
+            out[(long)k * d + i] = acc;
+        }
+    }
+    if (memra_ar_barrier(peer_sg->end, self_sg->end, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) *(volatile int*)err = 40044;
+    }
+    if (threadIdx.x == 0) self_sg->seq[blockIdx.x] = flag;
+}
+
+extern "C" int memra_tp_ar_1stage_hcpost(const float* in_rank0, const float* in_rank1,
+                                         const float* residual, const float* post,
+                                         const float* comb, float* out, int hc, int d,
+                                         void* self_sg, void* peer_sg, int rank, int* err,
+                                         long long spin_limit, int blocks, void* stream_v) {
+    if (d <= 0 || hc <= 0) return 40041;
+    if (spin_limit <= 0) return 40042;
+    if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
+    if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    memra_tp_ar_1stage_hcpost_kernel<<<(unsigned)blocks, 512u, 0, stream>>>(
+        in_rank0, in_rank1, residual, post, comb, out, hc, d, (MemraArSignal*)self_sg,
+        (MemraArSignal*)peer_sg, rank, err, spin_limit);
+    TP_AR_ERR();
+    return 0;
+}

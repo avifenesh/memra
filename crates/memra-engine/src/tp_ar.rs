@@ -62,6 +62,27 @@ unsafe extern "C" {
         blocks: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// The one-shot with the hc post-branch epilogue (`memra_tp_ar_1stage_hcpost_kernel`):
+    /// `out[k, :] = post[k] * (in_rank0 + in_rank1) + sum_j comb[j*hc+k] * residual[j, :]`.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the reduce's operands plus the post-branch's ARE the call
+    pub fn memra_tp_ar_1stage_hcpost(
+        in_rank0: *const f32,
+        in_rank1: *const f32,
+        residual: *const f32,
+        post: *const f32,
+        comb: *const f32,
+        out: *mut f32,
+        hc: i32,
+        d: i32,
+        self_sg: *mut c_void,
+        peer_sg: *mut c_void,
+        rank: i32,
+        err: *mut i32,
+        spin_limit: i64,
+        blocks: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// `dst += stage`, `n` f32. Enqueued on the caller's stream, which must already be ordered
     /// after the peer's push.
     pub fn memra_tp_ar_fold(dst: *mut f32, stage: *const f32, n: i64, stream: *mut c_void) -> i32;
@@ -486,6 +507,97 @@ impl ArLink {
         Ok(())
     }
 
+    /// The one-shot fused with the hyper-connection post-branch, t = 1: on each rank
+    /// `outs[r][k, :] = posts[r][k] * (inputs[0] + inputs[1]) + sum_j combs[r][j*hc+k] *
+    /// residuals[r][j, :]`, the reduce never written to memory. Bitwise the pair
+    /// `all_reduce_1stage_into` + `hc_post` (same adds, same order). `inputs` in GLOBAL rank order,
+    /// the rest per rank.
+    #[allow(clippy::too_many_arguments)] // allow: the reduce's operands plus the post-branch's
+    pub fn all_reduce_1stage_hcpost(
+        &mut self,
+        engines: &[&Engine],
+        inputs: &[&CudaSlice<f32>],
+        residuals: &[&CudaSlice<f32>],
+        posts: &[&CudaSlice<f32>],
+        combs: &[&CudaSlice<f32>],
+        outs: &mut [&mut CudaSlice<f32>],
+        hc: usize,
+        d: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if engines.len() != 2
+            || inputs.len() != 2
+            || residuals.len() != 2
+            || posts.len() != 2
+            || combs.len() != 2
+            || outs.len() != 2
+        {
+            return Err("tp all-reduce (hc post): two ranks, two of every operand".into());
+        }
+        if d == 0 || hc == 0 {
+            return Err("tp all-reduce (hc post) needs a non-zero shape".into());
+        }
+        if inputs.iter().any(|b| b.len() < d)
+            || residuals.iter().any(|b| b.len() < hc * d)
+            || outs.iter().any(|b| b.len() < hc * d)
+            || posts.iter().any(|b| b.len() < hc)
+            || combs.iter().any(|b| b.len() < hc * hc)
+        {
+            return Err(
+                format!("tp all-reduce (hc post): operands too short for hc={hc} d={d}").into(),
+            );
+        }
+        let mut inp = [std::ptr::null::<f32>(); 2];
+        let mut resp = [std::ptr::null::<f32>(); 2];
+        let mut postp = [std::ptr::null::<f32>(); 2];
+        let mut combp = [std::ptr::null::<f32>(); 2];
+        let mut outp = [std::ptr::null_mut::<f32>(); 2];
+        let mut sig = [std::ptr::null_mut::<std::ffi::c_void>(); 2];
+        let mut errp = [std::ptr::null_mut::<i32>(); 2];
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let s = e.stream();
+            inp[r] = inputs[r].device_ptr(&s).0 as *const f32;
+            resp[r] = residuals[r].device_ptr(&s).0 as *const f32;
+            postp[r] = posts[r].device_ptr(&s).0 as *const f32;
+            combp[r] = combs[r].device_ptr(&s).0 as *const f32;
+            outp[r] = outs[r].device_ptr(&s).0 as *mut f32;
+            sig[r] = self.sig[r].device_ptr(&s).0 as *mut std::ffi::c_void;
+            errp[r] = self.err[r].device_ptr(&s).0 as *mut i32;
+            if std::ptr::eq(inp[r], outp[r]) || std::ptr::eq(resp[r], outp[r]) {
+                return Err("tp all-reduce (hc post): the output aliases an operand".into());
+            }
+        }
+        let blocks = ar_blocks_for(d);
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let st = e.stream();
+            let rc = unsafe {
+                memra_tp_ar_1stage_hcpost(
+                    inp[0],
+                    inp[1],
+                    resp[r],
+                    postp[r],
+                    combp[r],
+                    outp[r],
+                    hc as i32,
+                    d as i32,
+                    sig[r],
+                    sig[1 - r],
+                    r as i32,
+                    errp[r],
+                    AR_SPIN_LIMIT,
+                    blocks,
+                    st.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(format!("memra_tp_ar_1stage_hcpost rc {rc} on rank {r}").into());
+            }
+        }
+        Ok(())
+    }
     /// Per-rank refusal words from the one-shot arm's bounded wait: 0 is clean, 40043 is the entry
     /// barrier expiring and 40044 the exit barrier. Costs a drain, so it belongs in gates and
     /// after a failure, never on the walk.
