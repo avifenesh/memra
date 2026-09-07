@@ -3602,9 +3602,9 @@ impl HybridModel {
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
-        if !self.uses_sliding_gated_moe_program() {
+        if !self.uses_step35_attention() {
             return Err(
-                "sliding-gated-MoE batch rewrite requires its canonical operation class".into(),
+                "the step35 batch walk requires the separate-head-gate attention class".into(),
             );
         }
         if b_n == 0 || x.len() != b_n * n_embd || positions.len() != b_n || pos_d.len() != b_n {

@@ -2665,7 +2665,7 @@ impl HybridModel {
         // (SWA layers read a token-OFFSET view, which the dc kernels' len_d-derived t_kv cannot
         // express) plus a per-layer-n_head capture. Refuse loudly instead of silently running
         // the generic geometry. The eager arm (`step35_decode_attn`) is the supported decode.
-        if self.uses_sliding_gated_moe_program() {
+        if self.uses_step35_attention() {
             return Err(
                 "step35 has no device-counter/graph decode arm (SWA needs an offset KV \
                         view the dc kernels cannot express) — use the eager decode"
@@ -3493,7 +3493,7 @@ impl HybridModel {
         cache: &mut Cache,
         il: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if self.uses_sliding_gated_moe_program() {
+        if self.uses_step35_attention() {
             return self.step35_decode_attn(e, fa, il, h, pre_q, pos_d, cache);
         }
         let cfg = &self.cfg;
