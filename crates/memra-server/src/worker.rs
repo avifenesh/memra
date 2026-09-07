@@ -818,12 +818,14 @@ fn dspark_penalised_greedy_flipped_the_route_with(
 /// carrying a non-identity penalty (qwen's non-thinking profile pins presence_penalty 1.5, so
 /// every temperature-0 request on it) takes the DFlash route and is verified by penalised
 /// argmax (`dspark_accept_greedy_penalized`), the program the plain host sampler runs token by
-/// token. Default OFF until its own byte-identity gate on the 5090 lane box is green; `0` is
-/// the pre-lane program exactly (plain path, with the `[dspark] declined: greedy-penalised`
-/// receipt naming it).
+/// token. Default ON since 2026-09-07 on the 5090 lane receipt (memra#310: 15 of 15 turns
+/// byte-identical to the plain host sampler over three boots of a five-turn restore chain on
+/// the non-thinking profile, decode 75 -> 107 tok/s at 400-700 tokens). `0` is the rollback
+/// seam: the pre-lane program exactly (plain path, with the `[dspark] declined:
+/// greedy-penalised` receipt naming it).
 fn dspark_greedy_penalty_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_GREEDY_PENALTY").as_deref() == Ok("1"))
+    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_GREEDY_PENALTY").as_deref() != Ok("0"))
 }
 
 fn dspark_prefers_cold_over_prefix(a: DsparkColdPrefixAdmission) -> bool {
@@ -12377,7 +12379,7 @@ pub fn run(
                     if dspark_greedy_penalty_on() {
                         "verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)"
                     } else {
-                        "served PLAIN (MEMRA_DSPARK_GREEDY_PENALTY unset)"
+                        "served PLAIN (MEMRA_DSPARK_GREEDY_PENALTY=0)"
                     }
                 );
                 // DRAFT-HEAD TRIM receipt (lane/dflash2-head-trim, 2026-08-25): the DFlash2
