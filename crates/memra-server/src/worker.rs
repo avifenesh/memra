@@ -20938,7 +20938,20 @@ fn admit(
         && s.cache.is_some()
     {
         match lm.model.prefix_restore_fence(engine) {
-            Ok(()) => retire_prefix_pin(px, &mut s.prefix_pin),
+            Ok(()) => {
+                let entry_tokens = s.prefix_pin.as_ref().and_then(|pin| {
+                    let i = px.id_index(pin)?;
+                    let entry = &px.entries[&pin.key][i];
+                    (entry.pins > 0).then_some(entry.toks.len())
+                });
+                retire_prefix_pin(px, &mut s.prefix_pin);
+                if let Some(entry_tokens) = entry_tokens {
+                    eprintln!(
+                        "[prefix-cache] source lease released after restore fence (entry {entry_tokens} tokens, model {})",
+                        s.model,
+                    );
+                }
+            }
             Err(err) => {
                 // Keep the source leased when completion is uncertain. Publication is optional.
                 s.snapshot_at = None;
