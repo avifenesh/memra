@@ -35,6 +35,7 @@ use memra_gguf::dsv4_forward::{
 
 use crate::dsv4_c4::{C4Gather, C4HostStore};
 use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch};
+use crate::dsv4_ep_graph::{self, MatrixEpGraphSlot};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
@@ -10815,6 +10816,9 @@ pub struct VerifyState {
     stage0_embed_capture: Option<Dsv4LayerCapture>,
     /// Diagnostic captures only, not persistent replay executables.
     pub layer_captures: Vec<Dsv4LayerCapture>,
+    /// Gate-only matrix EP parent graphs. Each slot owns the two rank child
+    /// graphs, explicit P2P copy nodes, the slot merge, and the owner FFN tail.
+    matrix_ep_graphs: Vec<MatrixEpGraphSlot>,
     ws: Vec<VerifyWs>,
     layers: Vec<LayerCkptDev>,
     pub tmax: usize,
@@ -10840,6 +10844,18 @@ impl Dsv4Gpu {
     /// then no transient rows are reserved anywhere — today's exact allocation).
     pub fn verify_tmax(&self) -> usize {
         self.dspark.as_ref().map(|d| d.block_size + 1).unwrap_or(0)
+    }
+
+    /// Gate-only matrix-EP full-tail graph switch.  This is process-local and
+    /// deliberately has no environment reader or serving default.
+    pub fn set_matrix_ep_graph_for_gate(&self, enabled: bool) -> bool {
+        dsv4_ep_graph::set_for_gate(enabled)
+    }
+
+    /// Actual successful matrix-EP graph launches, for a non-vacuous gate
+    /// receipt.  Captures and eager fallbacks are not counted.
+    pub fn matrix_ep_graph_dispatches(&self) -> u64 {
+        dsv4_ep_graph::dispatches()
     }
 
     /// Capture and execute each complete trunk layer of the next verify round
@@ -11835,6 +11851,7 @@ impl Dsv4Gpu {
             replay_stage0_embed_next_round: false,
             stage0_embed_capture: None,
             layer_captures: Vec::new(),
+            matrix_ep_graphs: (0..n_trunk).map(|_| MatrixEpGraphSlot::empty()).collect(),
             ws,
             layers,
             tmax,
@@ -12420,6 +12437,7 @@ impl Dsv4Gpu {
         toks: &[u32],
         host_math: bool,
         allow_gu_fuse: bool,
+        matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
     ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
@@ -13246,23 +13264,17 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        self.moe_verify_dev(st, layer, vws, t, toks, host_math, allow_gu_fuse)?;
-        unsafe {
-            ck(
-                "hc_post ffn batch",
-                k::memra_dsv4_hc_post(
-                    dpf!(vws.y, &stream),
-                    dpf!(vws.h_b, &stream),
-                    dpf!(vws.post, &stream),
-                    dpf!(vws.comb, &stream),
-                    dpm!(vws.h_a, &stream),
-                    t as i32,
-                    hc as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
+        self.moe_verify_dev(
+            st,
+            layer,
+            vws,
+            t,
+            toks,
+            host_math,
+            allow_gu_fuse,
+            true,
+            matrix_ep_graph,
+        )?;
         Ok(())
     }
 
@@ -13297,7 +13309,7 @@ impl Dsv4Gpu {
         stream
             .memcpy_htod(&ids, &mut ws.tok)
             .map_err(e("MoE gate tokens"))?;
-        self.moe_verify_dev(st, layer, ws, t, tokens, false, false)?;
+        self.moe_verify_dev(st, layer, ws, t, tokens, false, false, false, None)?;
         let contributions = dtoh_f32(&stream, &ws.contrib)?;
         let shared = dtoh_f32(&stream, &ws.sh_out)?;
         let total = dtoh_f32(&stream, &ws.y)?;
@@ -13421,6 +13433,152 @@ impl Dsv4Gpu {
         Ok(())
     }
 
+    /// Common routed+shared-expert tail after either the matrix EP graph or
+    /// the eager routed program.  Keeping this tail in one function makes the
+    /// graph arm include the actual FFN join instead of only the two expert
+    /// rank bodies.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_verify_common_tail(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        t: usize,
+        topk: usize,
+        hidden: usize,
+        limit: f32,
+        include_hc_post: bool,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        unsafe {
+            ck(
+                "combine_rows_m",
+                k::memra_dsv4_combine_rows_m(
+                    dpf!(vws.contrib, &stream),
+                    vws.order.device_ptr(&stream).0 as *const i32,
+                    topk as i32,
+                    dpm!(vws.y, &stream),
+                    hidden as i64,
+                    t as i32,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "cvt xb batch",
+                k::memra_dsv4_cvt_bf16(
+                    dpf!(vws.xf, &stream),
+                    vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                    (t * hidden) as i64,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        let sh_inter = vws.sg1.len() / vws.tmax;
+        Self::gemv_m_dev(
+            st,
+            dwsel(
+                self.dense_fp8,
+                &stream,
+                &layer.shared_w[0],
+                &layer.shared_fp8[0],
+            ),
+            vws.xb.device_ptr(&stream).0 as *const c_void,
+            vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
+            t,
+            sh_inter,
+            hidden,
+            0,
+            0,
+        )?;
+        Self::gemv_m_dev(
+            st,
+            dwsel(
+                self.dense_fp8,
+                &stream,
+                &layer.shared_w[2],
+                &layer.shared_fp8[2],
+            ),
+            vws.xb.device_ptr(&stream).0 as *const c_void,
+            vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
+            t,
+            sh_inter,
+            hidden,
+            0,
+            0,
+        )?;
+        unsafe {
+            ck(
+                "swiglu sh batch",
+                k::memra_dsv4_swiglu(
+                    dpf!(vws.sg1, &stream),
+                    dpf!(vws.sg3, &stream),
+                    dpm!(vws.shbuf, &stream),
+                    t as i32,
+                    sh_inter as i32,
+                    limit,
+                    std::ptr::null(),
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "cvt sh batch",
+                k::memra_dsv4_cvt_bf16(
+                    dpf!(vws.shbuf, &stream),
+                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                    (t * sh_inter) as i64,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        Self::gemv_m_dev(
+            st,
+            dwsel(
+                self.dense_fp8,
+                &stream,
+                &layer.shared_w[1],
+                &layer.shared_fp8[1],
+            ),
+            vws.shb16.device_ptr(&stream).0 as *const c_void,
+            vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
+            t,
+            hidden,
+            sh_inter,
+            0,
+            0,
+        )?;
+        unsafe {
+            ck(
+                "add shared batch",
+                k::memra_dsv4_add_inplace(
+                    dpm!(vws.y, &stream),
+                    dpf!(vws.sh_out, &stream),
+                    (t * hidden) as i64,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        if include_hc_post {
+            let hc = self.model.cfg().hc_mult as usize;
+            unsafe {
+                ck(
+                    "hc_post ffn batch",
+                    k::memra_dsv4_hc_post(
+                        dpf!(vws.y, &stream),
+                        dpf!(vws.h_b, &stream),
+                        dpf!(vws.post, &stream),
+                        dpf!(vws.comb, &stream),
+                        dpm!(vws.h_a, &stream),
+                        t as i32,
+                        hc as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// MoE for T rows: per-position routing (the hash layers need the per-position TOKEN,
     /// which is why a round carries a token array), then ONE launch per projection over
     /// the whole T x topk slot set — routed-expert weight traffic scales with T (each
@@ -13435,6 +13593,8 @@ impl Dsv4Gpu {
         toks: &[u32],
         host_math: bool,
         allow_gu_fuse: bool,
+        include_hc_post: bool,
+        mut matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
     ) -> Res<()> {
         let mc = &self.model.mc;
         let d = self.model.cfg();
@@ -13541,48 +13701,152 @@ impl Dsv4Gpu {
                     ),
                 )?;
             }
-            let mut compute = EpCompute {
-                xq: &vws.xq,
-                xs: &vws.xs,
-                ids: &vws.sel,
-                weights: &vws.selw,
-                g1: &mut vws.g1,
-                g3: &mut vws.g3,
-                h: &mut vws.hbuf,
-                hq: &mut vws.hq,
-                hs: &mut vws.hs,
-                contribution: &mut vws.contrib,
-            };
-            let remote = vws.ep.as_mut().ok_or("EP verify workspace missing")?;
             if self.matrix_moe {
                 if !self.grouped_route_device || self.grouped_fresh_storage_control {
                     return Err("EP matrix requires device routing and reused storage".into());
                 }
-                let calls = crate::dsv4_ep::execute_matrix(
-                    &st.gpu,
-                    &self.stages[ep.peer_stage].gpu,
-                    ep,
-                    layer
-                        .experts_modelopt_table
-                        .as_ref()
-                        .ok_or("EP matrix local table missing")?,
-                    &layer.experts_s2_dev,
-                    &layer.experts_s2,
-                    &mut compute,
-                    vws.grouped_work
-                        .as_mut()
-                        .ok_or("EP matrix local workspace missing")?,
-                    remote,
-                    t,
-                    topk,
-                    hidden,
-                    limit,
-                    allow_gu_fuse,
-                    self.ep_serial_control,
-                )?;
-                self.grouped_device_route_calls
-                    .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
+                let mut graph_used = false;
+                let graph_eligible = dsv4_ep_graph::enabled()
+                    && include_hc_post
+                    && !host_math
+                    && !self.ep_serial_control
+                    && t == 1
+                    && vws.tmax == 1
+                    && !vws.is_prefill
+                    && matrix_ep_graph.is_some();
+                if graph_eligible {
+                    let slot = matrix_ep_graph.as_deref_mut().expect("checked above");
+                    match slot {
+                        MatrixEpGraphSlot::Ready(graph) => {
+                            graph.launch(&st.gpu)?;
+                            graph_used = true;
+                        }
+                        MatrixEpGraphSlot::Empty => {
+                            let table = layer
+                                .experts_modelopt_table
+                                .as_ref()
+                                .ok_or("EP matrix local table missing")?;
+                            let builder = {
+                                let mut compute = EpCompute {
+                                    xq: &vws.xq,
+                                    xs: &vws.xs,
+                                    ids: &vws.sel,
+                                    weights: &vws.selw,
+                                    g1: &mut vws.g1,
+                                    g3: &mut vws.g3,
+                                    h: &mut vws.hbuf,
+                                    hq: &mut vws.hq,
+                                    hs: &mut vws.hs,
+                                    contribution: &mut vws.contrib,
+                                };
+                                let remote =
+                                    vws.ep.as_mut().ok_or("EP verify workspace missing")?;
+                                let local_work = vws
+                                    .grouped_work
+                                    .as_mut()
+                                    .ok_or("EP matrix local workspace missing")?;
+                                dsv4_ep_graph::MatrixEpGraphBuilder::capture_expert(
+                                    &st.gpu,
+                                    &self.stages[ep.peer_stage].gpu,
+                                    ep,
+                                    table,
+                                    &layer.experts_s2_dev,
+                                    &layer.experts_s2,
+                                    &mut compute,
+                                    local_work,
+                                    remote,
+                                    t,
+                                    topk,
+                                    hidden,
+                                    limit,
+                                    allow_gu_fuse,
+                                )
+                            };
+                            match builder.and_then(|builder| {
+                                builder.finish(|| {
+                                    self.moe_verify_common_tail(
+                                        st, layer, vws, t, topk, hidden, limit, true,
+                                    )
+                                })
+                            }) {
+                                Ok(graph) => {
+                                    graph.launch(&st.gpu)?;
+                                    *slot = MatrixEpGraphSlot::Ready(graph);
+                                    graph_used = true;
+                                }
+                                Err(err) => {
+                                    eprintln!(
+                                        "[dsv4-matrix-ep-graph] refused layer {}: {err}; eager fallback",
+                                        layer.il
+                                    );
+                                    *slot = MatrixEpGraphSlot::Refused;
+                                }
+                            }
+                        }
+                        MatrixEpGraphSlot::Refused => {}
+                    }
+                }
+                if !graph_used {
+                    let mut compute = EpCompute {
+                        xq: &vws.xq,
+                        xs: &vws.xs,
+                        ids: &vws.sel,
+                        weights: &vws.selw,
+                        g1: &mut vws.g1,
+                        g3: &mut vws.g3,
+                        h: &mut vws.hbuf,
+                        hq: &mut vws.hq,
+                        hs: &mut vws.hs,
+                        contribution: &mut vws.contrib,
+                    };
+                    let remote = vws.ep.as_mut().ok_or("EP verify workspace missing")?;
+                    let calls = crate::dsv4_ep::execute_matrix(
+                        &st.gpu,
+                        &self.stages[ep.peer_stage].gpu,
+                        ep,
+                        layer
+                            .experts_modelopt_table
+                            .as_ref()
+                            .ok_or("EP matrix local table missing")?,
+                        &layer.experts_s2_dev,
+                        &layer.experts_s2,
+                        &mut compute,
+                        vws.grouped_work
+                            .as_mut()
+                            .ok_or("EP matrix local workspace missing")?,
+                        remote,
+                        t,
+                        topk,
+                        hidden,
+                        limit,
+                        allow_gu_fuse,
+                        self.ep_serial_control,
+                    )?;
+                    self.grouped_device_route_calls
+                        .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
+                } else {
+                    // The graph contains both rank prepares, the expert FFN,
+                    // the return/slot merge, and the owner shared-FFN tail.
+                    self.grouped_device_route_calls
+                        .fetch_add(2, std::sync::atomic::Ordering::Relaxed);
+                    self.ep_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return Ok(());
+                }
             } else {
+                let mut compute = EpCompute {
+                    xq: &vws.xq,
+                    xs: &vws.xs,
+                    ids: &vws.sel,
+                    weights: &vws.selw,
+                    g1: &mut vws.g1,
+                    g3: &mut vws.g3,
+                    h: &mut vws.hbuf,
+                    hq: &mut vws.hq,
+                    hs: &mut vws.hs,
+                    contribution: &mut vws.contrib,
+                };
+                let remote = vws.ep.as_mut().ok_or("EP verify workspace missing")?;
                 crate::dsv4_ep::execute(
                     &st.gpu,
                     &self.stages[ep.peer_stage].gpu,
@@ -13705,115 +13969,7 @@ impl Dsv4Gpu {
                 )?;
             }
         }
-        // Both routed arms produce slot-aligned contributions. The combine and
-        // entire shared expert are mandatory common work, never an early return.
-        unsafe {
-            ck(
-                "combine_rows_m",
-                k::memra_dsv4_combine_rows_m(
-                    dpf!(vws.contrib, &stream),
-                    vws.order.device_ptr(&stream).0 as *const i32,
-                    topk as i32,
-                    dpm!(vws.y, &stream),
-                    hidden as i64,
-                    t as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt xb batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.xf, &stream),
-                    vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        let sh_inter = vws.sg1.len() / vws.tmax;
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[0],
-                &layer.shared_fp8[0],
-            ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            sh_inter,
-            hidden,
-            0,
-            0,
-        )?;
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[2],
-                &layer.shared_fp8[2],
-            ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            sh_inter,
-            hidden,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "swiglu sh batch",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.sg1, &stream),
-                    dpf!(vws.sg3, &stream),
-                    dpm!(vws.shbuf, &stream),
-                    t as i32,
-                    sh_inter as i32,
-                    limit,
-                    std::ptr::null(),
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt sh batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.shbuf, &stream),
-                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * sh_inter) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[1],
-                &layer.shared_fp8[1],
-            ),
-            vws.shb16.device_ptr(&stream).0 as *const c_void,
-            vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            hidden,
-            sh_inter,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "add shared batch",
-                k::memra_dsv4_add_inplace(
-                    dpm!(vws.y, &stream),
-                    dpf!(vws.sh_out, &stream),
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
+        self.moe_verify_common_tail(st, layer, vws, t, topk, hidden, limit, include_hc_post)?;
         Ok(())
     }
 
@@ -14214,19 +14370,27 @@ impl Dsv4Gpu {
                 && vstate.tmax == 1
                 && !vstate.ws[stage].is_prefill
                 && taps.is_none();
+            let mut matrix_ep_graph_slot = if self.matrix_moe {
+                Some(&mut vstate.matrix_ep_graphs[il])
+            } else {
+                None
+            };
+            let layer_ckpt = &mut vstate.layers[il];
+            let verify_ws = &mut vstate.ws[stage];
             let mut body = || {
                 self.block_verify_dev(
                     st,
                     &st.layers[lidx],
                     &mut state.caches[il],
-                    &mut vstate.layers[il],
-                    &mut vstate.ws[stage],
+                    layer_ckpt,
+                    verify_ws,
                     input_rx,
                     pos0,
                     t,
                     toks,
                     host_math,
                     allow_gu_fuse,
+                    matrix_ep_graph_slot.as_deref_mut(),
                 )
             };
             if capture_this_layer {
@@ -14242,6 +14406,7 @@ impl Dsv4Gpu {
             } else {
                 body()?;
             }
+            drop(body);
             input_rx = false;
             // DSpark trunk tap for all T rows (capture only)
             if let (Some(tp), Some(tg)) = (taps.as_mut(), targets.as_ref())
