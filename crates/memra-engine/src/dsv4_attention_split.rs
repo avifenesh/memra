@@ -579,7 +579,11 @@ fn validate_partition(rank: usize, rows: usize, cols: usize, partition: Partitio
 
 #[cfg(test)]
 mod tests {
-    use super::{DeviceFp8Plane, FP8_BLOCK, Gpu, PackedFp8Host, Partition, copy_2d_device};
+    use super::{
+        DeviceFp8Plane, ExistingGemvHalfPlan, FP8_BLOCK, Gpu, PackedFp8Host, Partition,
+        WO_B_PARTIAL_SUM_NUMERIC_CLASS, WoBPartialSumPlan, copy_2d_device, wo_b_rank_order_sum_f32,
+    };
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
     use std::ffi::c_void;
 
     fn mix(mut x: u64) -> u64 {
