@@ -303,13 +303,17 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-component]"
+        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-component|--moe-m1-splitk-pair]"
     );
     let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
     let component = args
         .get(3)
         .is_some_and(|a| a == "--moe-m1-splitk-component");
-    assert!(args.len() == 3 || splitk || component, "unknown gate arm");
+    let paired = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-pair");
+    assert!(
+        args.len() == 3 || splitk || component || paired,
+        "unknown gate arm"
+    );
     memra_engine::set_moe_m1_splitk_for_gate(splitk);
     memra_engine::set_moe_m1_splitk_component_for_gate(component);
     println!(
@@ -407,20 +411,33 @@ fn main() {
         println!("PASS real routed M1 split-K component");
         return;
     }
-    let first = run_once(&gpu, &prompt, &source_sha256);
-    let second = run_once(&gpu, &prompt, &source_sha256);
-    assert_eq!(
-        first, second,
-        "repeated plain TP/EP tape must be deterministic"
-    );
-    println!("RECEIPT {first:?}");
-    verify_refusal_boundary(&gpu, &prompt);
-    println!(
-        "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false",
-        gpu.topology().world,
-        gpu.topology().layers,
-        numeric_class
-    );
+    let arms: &[bool] = if paired { &[false, true] } else { &[splitk] };
+    for &armed in arms {
+        gpu.set_grouped_m1_splitk_for_gate(armed);
+        println!("CORRECTNESS_ARM splitk={armed} fresh_request_state=true");
+        println!(
+            "MOE_NUMERIC_CLASS {}",
+            if armed {
+                memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
+            } else {
+                "existing_m1_f16_mma"
+            }
+        );
+        let first = run_once(&gpu, &prompt, &source_sha256);
+        let second = run_once(&gpu, &prompt, &source_sha256);
+        assert_eq!(
+            first, second,
+            "repeated plain TP/EP tape must be deterministic"
+        );
+        println!("RECEIPT {first:?}");
+        verify_refusal_boundary(&gpu, &prompt);
+        println!(
+            "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false",
+            gpu.topology().world,
+            gpu.topology().layers,
+            numeric_class
+        );
+    }
     Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }
