@@ -563,6 +563,8 @@ that queueing can recover a 3K tok/s target. Receipts:
 [`research/serve-ready-20260808/`](../research/serve-ready-20260808/) and
 [`research/concprefill-20260808/`](../research/concprefill-20260808/).
 
+Plain prefix-hit leases end after final carrier selection and root/TP-peer restore stream completion, before deeper publication; other consumers retain their leases, and snapshot preflight reclaims only eligible entries before allocation.
+
 Exact Q27/Q35 entry sizes come from `prefix_cache_bytes` deltas in
 [`research/cachesize-20260813/`](../research/cachesize-20260813/):
 
