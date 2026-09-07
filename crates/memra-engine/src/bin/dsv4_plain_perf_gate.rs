@@ -15,6 +15,7 @@ const REPEATS: usize = 3;
 enum Change {
     GuM1,
     Half2,
+    WoA,
 }
 
 impl Change {
@@ -22,13 +23,17 @@ impl Change {
         match self {
             Self::GuM1 => "gu-m1",
             Self::Half2 => "half2",
+            Self::WoA => "wo-a",
         }
     }
     fn gu_m1(self, tuned: bool) -> bool {
         tuned && matches!(self, Self::GuM1)
     }
     fn half2(self, tuned: bool) -> bool {
-        tuned && matches!(self, Self::Half2)
+        matches!(self, Self::WoA) || (tuned && matches!(self, Self::Half2))
+    }
+    fn wo_a(self, tuned: bool) -> bool {
+        tuned && matches!(self, Self::WoA)
     }
 }
 
@@ -84,6 +89,8 @@ impl Ready<'_> {
         drain(self.gpu);
         let gu_m1 = change.gu_m1(tuned);
         let half2 = change.half2(tuned);
+        let wo_a_grouped = change.wo_a(tuned);
+        self.gpu.clear_dense_wo_a_grouped_for_gate();
         memra_engine::set_moe_f16g_gu_m1_tc_for_gate(gu_m1);
         memra_engine::set_moe_f16g_gu_half2_for_gate(half2);
         memra_engine::set_moe_f16g_down_m1_half2_for_gate(half2);
@@ -91,6 +98,7 @@ impl Ready<'_> {
             .gpu
             .restore_decode_state_host_c4(self.snapshot, self.prompt_len + OUTPUT + 96, 512)
             .expect("same host C4 snapshot restore");
+        self.gpu.set_dense_wo_a_grouped_for_gate(wo_a_grouped);
         let mut row = self.logits.to_vec();
         let mut tokens = Vec::with_capacity(OUTPUT);
         let mut commits = Vec::with_capacity(OUTPUT);
@@ -106,6 +114,7 @@ impl Ready<'_> {
         let ep_before = self.gpu.ep_calls();
         let gu_half2_before = memra_engine::moe_f16g_gu_half2_dispatches();
         let down_half2_before = memra_engine::moe_f16g_down_m1_half2_dispatches();
+        let wo_a_before = self.gpu.dense_wo_a_grouped_dispatches();
         let start_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -144,6 +153,12 @@ impl Ready<'_> {
             (self.gpu.model.mc.n_layer - self.gpu.model.mc.nextn_predict_layers) as u64;
         let steps = tokens.len().saturating_sub(1) as u64;
         assert_eq!(ep_calls, steps * trunk_layers, "whole trunk EP engagement");
+        let wo_a_calls = self.gpu.dense_wo_a_grouped_dispatches() - wo_a_before;
+        assert_eq!(
+            wo_a_calls,
+            if wo_a_grouped { ep_calls } else { 0 },
+            "one grouped wo_a submission per trunk layer"
+        );
         assert_eq!(
             gu_m1_calls,
             if gu_m1 { ep_calls * 2 } else { 0 },
@@ -188,7 +203,7 @@ impl Ready<'_> {
         let text_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
         let state_pos = state.pos;
         println!(
-            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":false,\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_calls\":{gu_m1_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"prefix_graph\":false,\"expert_graph\":false,\"graph_captures\":0,\"graph_replays\":0,\"graph_kernel_nodes\":0,\"graph_fallbacks\":0,\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
+            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":false,\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_calls\":{gu_m1_calls},\"wo_a_grouped\":{wo_a_grouped},\"wo_a_calls\":{wo_a_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"prefix_graph\":false,\"expert_graph\":false,\"graph_captures\":0,\"graph_replays\":0,\"graph_kernel_nodes\":0,\"graph_fallbacks\":0,\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
         );
         Identity {
             tokens,
@@ -204,12 +219,13 @@ fn main() {
     assert_eq!(
         args.len(),
         4,
-        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|half2|all"
+        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|half2|wo-a|all"
     );
     let modes = match args[3].as_str() {
         "gu-m1" => vec![Change::GuM1],
         "half2" => vec![Change::Half2],
-        "all" => vec![Change::Half2],
+        "wo-a" => vec![Change::WoA],
+        "all" => vec![Change::WoA],
         _ => panic!("unknown plain gate mode"),
     };
     for (name, expected) in [
@@ -314,6 +330,7 @@ fn main() {
             memra_engine::clear_moe_f16g_gu_m1_tc_for_gate();
             memra_engine::clear_moe_f16g_gu_half2_for_gate();
             memra_engine::clear_moe_f16g_down_m1_half2_for_gate();
+            gpu.clear_dense_wo_a_grouped_for_gate();
             println!(
                 "PASS mode={} prompt={count} both_arms=engaged outputs=exact logits=exact cache=exact",
                 mode.name()

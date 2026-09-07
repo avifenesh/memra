@@ -327,6 +327,17 @@ contribution bits into original slots, without a reassociated partial sum.
 both reductions, 1/6/32 rows and real 4096/2048 dimensions against the original
 full-bank launcher. Full-model and serving/performance gates are pending.
 
+Gate-only dense wo_a grouping: `dsv4_gemv_fp8_m_kernel<1,true>` shares the
+original FP8 GEMV dot/reduction body, using global grouped weight/scale rows
+and separate activation/output strides. `memra_dsv4_gemv_fp8_grouped_m1`
+replaces eight t=1 FP8 wo_a launches with one; BF16, prefill and wider verify
+rows keep the old loop. The process-local grouped gate defaults OFF and
+counts successful submissions. The ignored
+`cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue` test
+compares the real 8x1024x4096 shape and padded two-group case bitwise and
+checks invalid-stride refusals. Full-model gate: `dsv4_plain_perf_gate wo-a`,
+holding half2 ON in both arms. No timing or serving qualification yet.
+
 `dsv4_graph::capture_layer` retains an explicitly armed graph and executes the
 recorded operations once, with event tracking disabled before allocation.
 Window-only layers, the head and the embedding prefix have separate probe

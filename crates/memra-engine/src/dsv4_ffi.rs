@@ -787,6 +787,23 @@ unsafe extern "C" {
         ystride: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// FP8 dense t=1 grouped output projection. The weight rows are grouped
+    /// contiguously; each group reads its own activation/output slice while
+    /// retaining the ordinary m=1 accumulation and reduction body.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_grouped_m1(
+        w_codes: *const c_void,
+        sc_f32: *const f32,
+        sc_cols: i32,
+        x_bf16: *const c_void,
+        y: *mut f32,
+        groups: i32,
+        rows_per_group: i32,
+        k: i32,
+        x_group_stride: i32,
+        y_group_stride: i32,
+        stream: *mut c_void,
+    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_dots_f32_mrow(
         x: *const f32,

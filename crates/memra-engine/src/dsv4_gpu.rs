@@ -27,6 +27,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::os::raw::c_void;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use memra_gguf::dsv4_forward::{
@@ -41,6 +42,11 @@ use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
 
 type Res<T> = Result<T, String>;
+
+// Gate-only dense wo_a launch fusion. It is process-local and deliberately
+// default OFF; no environment variable or serving default selects this arm.
+static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
+static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
 /// Copyable report for the gate-only one-layer CUDA graph probe.  The retained
 /// graph itself stays private to the verifier; callers only need the node and
@@ -1765,6 +1771,34 @@ impl Dsv4Gpu {
                 .expect("drain grouped m1-tc reset");
         }
         crate::clear_moe_f16g_m1_tc_for_gate();
+    }
+
+    /// Gate-only FP8 wo_a grouped launch. This replaces the eight t=1
+    /// per-group launches with one grouped launch while retaining the same
+    /// per-output accumulation/reduction body. It is process-local, default
+    /// OFF, and has no environment or serving default.
+    pub fn set_dense_wo_a_grouped_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain dense wo_a grouped gate");
+        }
+        DSV4_DENSE_WO_A_GROUPED.swap(enabled, Ordering::SeqCst)
+    }
+
+    pub fn dense_wo_a_grouped_for_gate(&self) -> bool {
+        DSV4_DENSE_WO_A_GROUPED.load(Ordering::Acquire)
+    }
+
+    pub fn clear_dense_wo_a_grouped_for_gate(&self) {
+        self.set_dense_wo_a_grouped_for_gate(false);
+    }
+
+    /// Successful CUDA enqueues through the grouped FP8 wo_a entry point.
+    pub fn dense_wo_a_grouped_dispatches(&self) -> u64 {
+        DSV4_DENSE_WO_A_GROUPED_DISPATCHES.load(Ordering::Relaxed)
     }
 
     /// Gate-only active-C4 profile control. Host publication may be elided only
@@ -11720,6 +11754,52 @@ impl Dsv4Gpu {
     /// `xstride`/`ystride` in elements (0 == packed) — the grouped output projection is
     /// the only caller that needs them.
     #[allow(clippy::too_many_arguments)]
+    fn gemv_wo_a_grouped_fp8_m1_dev(
+        st: &Stage,
+        w: DW,
+        x_ptr: *const c_void,
+        y_ptr: *mut f32,
+        groups: usize,
+        rows_per_group: usize,
+        kdim: usize,
+        x_group_stride: usize,
+        y_group_stride: usize,
+    ) -> Res<bool> {
+        let DW::Fp8 {
+            codes,
+            scales,
+            sc_cols,
+        } = w
+        else {
+            return Ok(false);
+        };
+        if !DSV4_DENSE_WO_A_GROUPED.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        let stream = st.gpu.stream();
+        unsafe {
+            ck(
+                "gemv_fp8 grouped wo_a m1",
+                k::memra_dsv4_gemv_fp8_grouped_m1(
+                    codes,
+                    scales,
+                    sc_cols,
+                    x_ptr,
+                    y_ptr,
+                    groups as i32,
+                    rows_per_group as i32,
+                    kdim as i32,
+                    x_group_stride as i32,
+                    y_group_stride as i32,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        DSV4_DENSE_WO_A_GROUPED_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+        Ok(true)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn gemv_m_dev(
         st: &Stage,
         w: DW,
@@ -12954,18 +13034,35 @@ impl Dsv4Gpu {
             )?;
         }
         let wo_a_dw = dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8);
-        for g in 0..o_groups {
-            Self::gemv_m_dev(
+        let grouped_wo_a = if t == 1 && !vws.is_prefill {
+            Self::gemv_wo_a_grouped_fp8_m1_dev(
                 st,
-                wo_a_dw.offset_rows(g * o_lora, gw),
-                (vws.o_b.device_ptr(&stream).0 as usize + g * gw * 2) as *const c_void,
-                (vws.og.device_ptr_mut(&stream).0 as usize + g * o_lora * 4) as *mut f32,
-                t,
+                wo_a_dw,
+                vws.o_b.device_ptr(&stream).0 as *const c_void,
+                vws.og.device_ptr_mut(&stream).0 as *mut f32,
+                o_groups,
                 o_lora,
                 gw,
-                heads * hd,
-                o_groups * o_lora,
-            )?;
+                gw,
+                o_lora,
+            )?
+        } else {
+            false
+        };
+        if !grouped_wo_a {
+            for g in 0..o_groups {
+                Self::gemv_m_dev(
+                    st,
+                    wo_a_dw.offset_rows(g * o_lora, gw),
+                    (vws.o_b.device_ptr(&stream).0 as usize + g * gw * 2) as *const c_void,
+                    (vws.og.device_ptr_mut(&stream).0 as usize + g * o_lora * 4) as *mut f32,
+                    t,
+                    o_lora,
+                    gw,
+                    heads * hd,
+                    o_groups * o_lora,
+                )?;
+            }
         }
         Self::gemm_m_dev(
             st,
@@ -16173,5 +16270,287 @@ mod sampled_path_tests {
         assert_eq!(counts[3], 0, "outside top-k must never be drawn");
         assert!(counts[0] > 2600, "p(tok0) ~ 0.84, got {}/4096", counts[0]);
         assert!(counts[1] > 100, "tail token starved: {}", counts[1]);
+    }
+}
+
+#[cfg(test)]
+mod dense_wo_a_grouped_fp8_component_tests {
+    use super::{DSV4_DENSE_WO_A_GROUPED, DSV4_DENSE_WO_A_GROUPED_DISPATCHES, DW, Dsv4Gpu, Stage};
+    use crate::dsv4_ffi as k;
+    use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
+    use std::ffi::c_void;
+    use std::sync::Arc;
+
+    fn bf16_bits(value: f32) -> u16 {
+        (value.to_bits() >> 16) as u16
+    }
+
+    fn finite_e4m3(code: usize) -> u8 {
+        let mut value = (code % 255 + 1) as u8;
+        if value == 0x7f || value == 0xff {
+            value = value.wrapping_sub(1);
+        }
+        value
+    }
+
+    fn empty_stage(gpu: memra_runtime::Gpu, stream: &Arc<CudaStream>) -> Stage {
+        Stage {
+            dev: 0,
+            gpu,
+            layers: Vec::new(),
+            embed: None,
+            head: None,
+            trunk_norm: None,
+            hc_head_fn: None,
+            fc_yarn: stream.alloc_zeros::<f32>(1).unwrap(),
+            fc_plain: stream.alloc_zeros::<f32>(1).unwrap(),
+            ws: stream.alloc_zeros::<u8>(1).unwrap(),
+            deq: [
+                stream.alloc_zeros::<u8>(1).unwrap(),
+                stream.alloc_zeros::<u8>(1).unwrap(),
+                stream.alloc_zeros::<u8>(1).unwrap(),
+            ],
+            loaded_bytes: 0,
+            hc_head_base_dev: None,
+            hc_head_scale_dev: None,
+        }
+    }
+
+    struct GroupedFixture {
+        codes: CudaSlice<u8>,
+        scales: CudaSlice<f32>,
+        x: CudaSlice<u16>,
+        old_y: CudaSlice<f32>,
+        new_y: CudaSlice<f32>,
+        groups: usize,
+        rows: usize,
+        k: usize,
+        sc_cols: usize,
+        x_group_stride: usize,
+        y_group_stride: usize,
+        sentinel: u32,
+    }
+
+    fn make_fixture(
+        stream: &Arc<CudaStream>,
+        groups: usize,
+        rows: usize,
+        kdim: usize,
+    ) -> GroupedFixture {
+        assert!(rows > 0 && rows % 128 == 0);
+        assert!(kdim > 0 && kdim % 128 == 0);
+        let sc_cols = kdim / 128;
+        let scale_rows = rows / 128;
+        let x_group_stride = kdim + 16;
+        let y_group_stride = rows + 8;
+        let codes_host: Vec<u8> = (0..groups * rows * kdim)
+            .map(|index| finite_e4m3(index * 37 + index / (rows * kdim) * 19))
+            .collect();
+        let scales_host: Vec<f32> = (0..groups * scale_rows * sc_cols)
+            .map(|index| {
+                let group = index / (scale_rows * sc_cols);
+                let row = (index / sc_cols) % scale_rows;
+                let col = index % sc_cols;
+                let sign = if (group + row + col) % 5 == 0 {
+                    -1.0
+                } else {
+                    1.0
+                };
+                sign * (0.125 + ((group * 11 + row * 7 + col * 3) % 23) as f32 / 32.0)
+            })
+            .collect();
+        let x_host: Vec<u16> = (0..groups * x_group_stride)
+            .map(|index| {
+                let group = index / x_group_stride;
+                let col = index % x_group_stride;
+                if col >= kdim {
+                    0x7fc1
+                } else {
+                    bf16_bits(
+                        (group as f32 + 1.0) * 0.125 + ((col * 17 + group * 13) % 61) as f32 / 64.0
+                            - 0.5,
+                    )
+                }
+            })
+            .collect();
+        let sentinel = 0x7fc01234u32;
+        let output_len = groups * y_group_stride;
+        let output_host = vec![f32::from_bits(sentinel); output_len];
+        GroupedFixture {
+            codes: stream.clone_htod(&codes_host).unwrap(),
+            scales: stream.clone_htod(&scales_host).unwrap(),
+            x: stream.clone_htod(&x_host).unwrap(),
+            old_y: stream.clone_htod(&output_host).unwrap(),
+            new_y: stream.clone_htod(&output_host).unwrap(),
+            groups,
+            rows,
+            k: kdim,
+            sc_cols,
+            x_group_stride,
+            y_group_stride,
+            sentinel,
+        }
+    }
+
+    unsafe fn launch_old_grouped_slices(stream: &Arc<CudaStream>, f: &mut GroupedFixture) {
+        let weight_group_bytes = f.rows * f.k;
+        let scale_group_elems = (f.rows / 128) * f.sc_cols;
+        for group in 0..f.groups {
+            let weight = (f.codes.device_ptr(stream).0 as usize + group * weight_group_bytes)
+                as *const c_void;
+            let scales = (f.scales.device_ptr(stream).0 as usize
+                + group * scale_group_elems * std::mem::size_of::<f32>())
+                as *const f32;
+            let x = (f.x.device_ptr(stream).0 as usize
+                + group * f.x_group_stride * std::mem::size_of::<u16>())
+                as *const c_void;
+            let y = (f.old_y.device_ptr_mut(stream).0 as usize
+                + group * f.y_group_stride * std::mem::size_of::<f32>())
+                as *mut f32;
+            k::ck("wo_a scalar control", unsafe {
+                k::memra_dsv4_gemv_fp8_m(
+                    weight,
+                    scales,
+                    f.sc_cols as i32,
+                    x,
+                    y,
+                    1,
+                    f.rows as i32,
+                    f.k as i32,
+                    f.k as i32,
+                    f.rows as i32,
+                    stream.cu_stream().cast(),
+                )
+            })
+            .unwrap();
+        }
+    }
+
+    unsafe fn launch_new_grouped(stream: &Arc<CudaStream>, f: &mut GroupedFixture) {
+        k::ck("wo_a grouped candidate", unsafe {
+            k::memra_dsv4_gemv_fp8_grouped_m1(
+                f.codes.device_ptr(stream).0 as *const c_void,
+                f.scales.device_ptr(stream).0 as *const f32,
+                f.sc_cols as i32,
+                f.x.device_ptr(stream).0 as *const c_void,
+                f.new_y.device_ptr_mut(stream).0 as *mut f32,
+                f.groups as i32,
+                f.rows as i32,
+                f.k as i32,
+                f.x_group_stride as i32,
+                f.y_group_stride as i32,
+                stream.cu_stream().cast(),
+            )
+        })
+        .unwrap();
+    }
+
+    fn assert_fixture_bit_identity(stream: &Arc<CudaStream>, f: &GroupedFixture) {
+        stream.synchronize().unwrap();
+        let old = stream.clone_dtoh(&f.old_y).unwrap();
+        let new = stream.clone_dtoh(&f.new_y).unwrap();
+        for group in 0..f.groups {
+            let old_rows = &old[group * f.y_group_stride..group * f.y_group_stride + f.rows];
+            let new_rows = &new[group * f.y_group_stride..group * f.y_group_stride + f.rows];
+            for (row, (a, b)) in old_rows.iter().zip(new_rows).enumerate() {
+                assert_eq!(
+                    a.to_bits(),
+                    b.to_bits(),
+                    "grouped wo_a bit mismatch group={group} row={row}"
+                );
+            }
+            assert!(
+                old[group * f.y_group_stride + f.rows..(group + 1) * f.y_group_stride]
+                    .iter()
+                    .all(|value| value.to_bits() == f.sentinel)
+            );
+            assert!(
+                new[group * f.y_group_stride + f.rows..(group + 1) * f.y_group_stride]
+                    .iter()
+                    .all(|value| value.to_bits() == f.sentinel)
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires an exclusively locked CUDA device; grouped wo_a FP8 component identity"]
+    fn cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue() {
+        let gpu = memra_runtime::Gpu::new(0).expect("GPU");
+        let stream = gpu.stream();
+        let mut fixture = make_fixture(&stream, 8, 1024, 4096);
+        unsafe { launch_old_grouped_slices(&stream, &mut fixture) };
+
+        let stage = empty_stage(gpu, &stream);
+        let before = DSV4_DENSE_WO_A_GROUPED_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed);
+        let previous_gate = DSV4_DENSE_WO_A_GROUPED.swap(true, std::sync::atomic::Ordering::SeqCst);
+        let dw = DW::Fp8 {
+            codes: fixture.codes.device_ptr(&stream).0 as *const c_void,
+            scales: fixture.scales.device_ptr(&stream).0 as *const f32,
+            sc_cols: fixture.sc_cols as i32,
+        };
+        let grouped_result = Dsv4Gpu::gemv_wo_a_grouped_fp8_m1_dev(
+            &stage,
+            dw,
+            fixture.x.device_ptr(&stream).0 as *const c_void,
+            fixture.new_y.device_ptr_mut(&stream).0 as *mut f32,
+            fixture.groups,
+            fixture.rows,
+            fixture.k,
+            fixture.x_group_stride,
+            fixture.y_group_stride,
+        );
+        DSV4_DENSE_WO_A_GROUPED.store(previous_gate, std::sync::atomic::Ordering::SeqCst);
+        let grouped = grouped_result.expect("grouped launch");
+        assert!(grouped, "FP8 grouped launcher must engage for DW::Fp8");
+        assert_eq!(
+            DSV4_DENSE_WO_A_GROUPED_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed) - before,
+            1,
+            "one grouped CUDA enqueue for all eight groups"
+        );
+        assert_fixture_bit_identity(&stream, &fixture);
+
+        let mut small = make_fixture(&stream, 2, 128, 4096);
+        unsafe { launch_old_grouped_slices(&stream, &mut small) };
+        unsafe { launch_new_grouped(&stream, &mut small) };
+        assert_fixture_bit_identity(&stream, &small);
+
+        let bad_stride_rc = unsafe {
+            k::memra_dsv4_gemv_fp8_grouped_m1(
+                small.codes.device_ptr(&stream).0 as *const c_void,
+                small.scales.device_ptr(&stream).0 as *const f32,
+                small.sc_cols as i32,
+                small.x.device_ptr(&stream).0 as *const c_void,
+                small.new_y.device_ptr_mut(&stream).0 as *mut f32,
+                small.groups as i32,
+                small.rows as i32,
+                small.k as i32,
+                (small.x_group_stride + 1) as i32,
+                small.y_group_stride as i32,
+                stream.cu_stream().cast(),
+            )
+        };
+        assert_eq!(bad_stride_rc, 40011, "unaligned group stride must refuse");
+        let bad_output_rc = unsafe {
+            k::memra_dsv4_gemv_fp8_grouped_m1(
+                small.codes.device_ptr(&stream).0 as *const c_void,
+                small.scales.device_ptr(&stream).0 as *const f32,
+                small.sc_cols as i32,
+                small.x.device_ptr(&stream).0 as *const c_void,
+                small.new_y.device_ptr_mut(&stream).0 as *mut f32,
+                small.groups as i32,
+                small.rows as i32,
+                small.k as i32,
+                small.x_group_stride as i32,
+                (small.rows - 1) as i32,
+                stream.cu_stream().cast(),
+            )
+        };
+        assert_eq!(
+            bad_output_rc, 40020,
+            "short output group stride must refuse"
+        );
+        println!(
+            "PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused"
+        );
     }
 }

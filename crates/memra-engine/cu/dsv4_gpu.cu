@@ -3495,19 +3495,25 @@ extern "C" int memra_dsv4_gemv_bf16_m(const void* w_bf16, const void* x_bf16, fl
 // VERBATIM (weight chunk hoisted across the t rows, per-(t,j) order unchanged); the only
 // delta is the weight decode — e4m3 code x exact pow2 block scale, the same exact value
 // the bf16 slab holds. See dsv4_gemv_fp8_kernel's header note for the bit-identity law.
-template <int M>
+template <int M, bool GROUPED = false>
 __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
                                        const float* __restrict__ sc, int sc_cols,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
-                                       int n, int k, int xstride, int ystride) {
-    int row = blockIdx.x;
+                                       int n, int k, int xstride, int ystride,
+                                       int group_xstride, int group_ystride) {
+    int flat = blockIdx.x;
+    int row = GROUPED ? flat % n : flat;
     if (row >= n) return;
+    int group = GROUPED ? flat / n : 0;
+    int weight_row = GROUPED ? group * n + row : row;
+    const uint16_t* x_group = x + (long)group * group_xstride;
+    float* y_group = y + (long)group * group_ystride;
     // smem e4m3 LUT — see dsv4_gemv_fp8_kernel's note (bit-inert decode transport).
     __shared__ float e4m3_tab[256];
     for (int i = threadIdx.x; i < 256; i += blockDim.x) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
     __syncthreads();
-    const uint8_t* wr = w + (long)row * k;
-    const float* srow = sc + (long)(row >> 7) * sc_cols;
+    const uint8_t* wr = w + (long)weight_row * k;
+    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
     float part[M];
 #pragma unroll
     for (int t = 0; t < M; t++) part[t] = 0.0f;
@@ -3533,7 +3539,7 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
         }
 #pragma unroll
         for (int t = 0; t < M; t++) {
-            uint4 xv = *(const uint4*)(x + (long)t * xstride + i0);
+            uint4 xv = *(const uint4*)(x_group + (long)t * xstride + i0);
             unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
             float acc = part[t];
 #pragma unroll
@@ -3547,7 +3553,7 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
         }
 #pragma unroll
         for (int t = 0; t < M; t++) {
-            uint4 xv = *(const uint4*)(x + (long)t * xstride + i1);
+            uint4 xv = *(const uint4*)(x_group + (long)t * xstride + i1);
             unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
             float acc = part[t];
 #pragma unroll
@@ -3572,7 +3578,7 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
         }
 #pragma unroll
         for (int t = 0; t < M; t++) {
-            uint4 xv = *(const uint4*)(x + (long)t * xstride + i0);
+            uint4 xv = *(const uint4*)(x_group + (long)t * xstride + i0);
             unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
             float acc = part[t];
 #pragma unroll
@@ -3596,15 +3602,15 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
             if (tid < off) red[tid] += red[tid + off];
             __syncthreads();
         }
-        if (tid == 0) y[(long)t * ystride + row] = red[0];
+        if (tid == 0) y_group[(long)t * ystride + row] = red[0];
     }
 }
 
 #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \
     case MM:                                                                         \
-        dsv4_gemv_fp8_m_kernel<MM><<<(unsigned)n, 128, 0, stream>>>(                 \
+        dsv4_gemv_fp8_m_kernel<MM, false><<<(unsigned)n, 128, 0, stream>>>(           \
             (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, n, \
-            k, xstride, ystride);                                                    \
+            k, xstride, ystride, 0, 0);                                               \
         break;
 
 extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, int sc_cols,
@@ -3664,6 +3670,31 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
         default:
             return 40020;
     }
+    DSV4_ERR();
+    return 0;
+}
+
+// Plain t=1 grouped output-projection twin. Each group owns one contiguous slice of
+// the activation and output planes, while the weight rows remain contiguous across groups.
+// The arithmetic body is the same dsv4_gemv_fp8_m_kernel<1> body above; only the row/group
+// address calculation changes. This removes the eight host launches around wo_a without
+// changing any per-output accumulation or reduction order.
+extern "C" int memra_dsv4_gemv_fp8_grouped_m1(
+        const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16,
+        float* y, int groups, int rows_per_group, int k, int x_group_stride,
+        int y_group_stride, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (groups <= 0 || rows_per_group <= 0 || k <= 0 || k % 8 != 0 ||
+        sc_cols < (k / 128 + (k % 128 != 0)) ||
+        x_group_stride < k || y_group_stride < rows_per_group ||
+        rows_per_group % 128 != 0) {
+        return 40020;
+    }
+    long total = (long)groups * rows_per_group;
+    if (total > 2147483647L || x_group_stride % 8 != 0) return 40011;
+    dsv4_gemv_fp8_m_kernel<1, true><<<(unsigned)total, 128, 0, stream>>>(
+        (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y,
+        rows_per_group, k, 0, 0, x_group_stride, y_group_stride);
     DSV4_ERR();
     return 0;
 }
