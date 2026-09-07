@@ -393,7 +393,7 @@ pub fn mla_dsa_attn_arm_effective(t_q: usize) -> i32 {
 /// accumulation order is per thread and unchanged); RP=1 doubles the working grid. Receipts on
 /// the 2x B200 pair, TP-2 decode, ids identical: 128k context 79.05 / 78.18 vs 77.57 / 77.02
 /// (+1.7%, tpwalk15), 1M context 65.10 vs 64.15 (+1.5%, tpwalk16). Latched once per process.
-pub(crate) fn dsa_score_rp() -> i32 {
+pub fn dsa_score_rp() -> i32 {
     static RP: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
     *RP.get_or_init(|| {
         if std::env::var("MEMRA_DSA_SCORE_RP").as_deref() == Ok("2") {
