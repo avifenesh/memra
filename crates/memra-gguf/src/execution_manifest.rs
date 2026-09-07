@@ -516,6 +516,10 @@ fn carried_prime_support(operation: OperationKind) -> OperationSupport {
         OperationKind::Embedding
             | OperationKind::RmsNorm
             | OperationKind::FullAttention
+            | OperationKind::SlidingWindowAttention
+            | OperationKind::SeparateAttentionGate
+            | OperationKind::SlidingKvState
+            | OperationKind::GeluErfActivation
             | OperationKind::GatedDeltaNet
             | OperationKind::FusedAttentionGate
             | OperationKind::DenseMlp
@@ -718,6 +722,10 @@ fn native_eager_support(operation: OperationKind) -> OperationSupport {
         OperationKind::Embedding
             | OperationKind::RmsNorm
             | OperationKind::FullAttention
+            | OperationKind::SlidingWindowAttention
+            | OperationKind::SeparateAttentionGate
+            | OperationKind::SlidingKvState
+            | OperationKind::GeluErfActivation
             | OperationKind::DenseMlp
             | OperationKind::SiluActivation
             | OperationKind::SerialResidual
@@ -854,12 +862,14 @@ mod tests {
         );
         let capability = CARRIED_PRIME.trunk_capabilities(&gemma).batch;
         assert!(!capability.supported);
+        // The blocker is an operation the walker lacks (gemma's residual), never the model
+        // name; sliding attention itself is carried since the Spark-X2.5 receipts (2026-09-07).
+        assert!(capability.blockers.contains(&OperationKind::GemmaResidual));
         assert!(
-            capability
+            !capability
                 .blockers
                 .contains(&OperationKind::SlidingWindowAttention)
         );
-        assert!(capability.blockers.contains(&OperationKind::GemmaResidual));
         assert_eq!(decode_batch_program(&gemma), DecodeBatchProgram::Gemma);
         assert!(!DECODE_GRAPH.trunk_capabilities(&gemma).cuda_graph.supported);
 
