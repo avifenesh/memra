@@ -165,6 +165,11 @@ pub(crate) struct EpLayer {
     /// Tiny global-id metadata, replicated; expert code/scale banks are not replicated.
     pub peer_s2: CudaSlice<f32>,
     pub peer_table: Option<CudaSlice<u64>>,
+    /// True for the all-layer TP/EP loader, where each rank owns its expert-ID
+    /// half from the outset.  The peer byte planes are intentionally empty in
+    /// that topology; the paired rank computes its own local partial and the
+    /// join happens in `reduce_rank_order_f32`.
+    pub local_only: bool,
 }
 
 pub(crate) struct EpScratch {
@@ -619,6 +624,9 @@ pub(crate) fn execute_matrix(
     allow_gu_fuse: bool,
     serial_control: bool,
 ) -> Res<u64> {
+    if bank.local_only {
+        return Err("TP/EP local-only bank cannot enter peer-dispatch EP".into());
+    }
     let peer_table = bank
         .peer_table
         .as_ref()
@@ -766,7 +774,7 @@ pub(crate) fn execute_matrix_local(
     if rows == 0 || topk == 0 {
         return Err("TP/EP local expert execution requires nonzero rows/topk".into());
     }
-    if bank.peer_table.is_none() {
+    if !bank.local_only || bank.peer_table.is_none() {
         return Err("TP/EP local expert execution requires a complete local matrix table".into());
     }
     let calls = u64::from(work.prepare(gpu, local, scale2, scale2_host, rows, topk, true)?);
@@ -778,29 +786,26 @@ pub(crate) fn execute_matrix_local(
 
 /// Reference rank-order join for the replicated all-layer TP/EP slice. The
 /// future parent graph replaces these drains with explicit fork/join nodes,
-/// while retaining this exact operand order and slot layout.
+/// while retaining this exact operand order and slot layout. The peer partial
+/// buffer is also the joined-output buffer: it is read before the owner add,
+/// then overwritten with the owner result.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn reduce_rank_order_f32(
     owner: &Gpu,
     peer: &Gpu,
     owner_partial: &mut CudaSlice<f32>,
-    peer_partial: &CudaSlice<f32>,
+    peer_partial_and_output: &mut CudaSlice<f32>,
     owner_tmp: &mut CudaSlice<f32>,
-    peer_output: &mut CudaSlice<f32>,
     n: usize,
 ) -> Res<()> {
-    if n == 0
-        || owner_partial.len() < n
-        || peer_partial.len() < n
-        || owner_tmp.len() < n
-        || peer_output.len() < n
+    if n == 0 || owner_partial.len() < n || peer_partial_and_output.len() < n || owner_tmp.len() < n
     {
         return Err("TP/EP rank-order reduce buffer shape mismatch".into());
     }
     peer_copy(
         &peer.stream(),
         &owner.stream(),
-        peer_partial,
+        peer_partial_and_output,
         &mut owner_tmp.slice_mut(..n),
         n,
     )?;
@@ -828,7 +833,7 @@ pub(crate) fn reduce_rank_order_f32(
         &owner.stream(),
         &peer.stream(),
         owner_partial,
-        &mut peer_output.slice_mut(..n),
+        &mut peer_partial_and_output.slice_mut(..n),
         n,
     )?;
     owner
