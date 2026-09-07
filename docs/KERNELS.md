@@ -3,8 +3,8 @@
 ## DSV4 small-kernel diet, 2026-09-07
 
 Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use
-`MEMRA_DSV4_SMALL_KERNEL_DIET` (default OFF). Target receipts are pending in
-private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`.
+`MEMRA_DSV4_SMALL_KERNEL_DIET` (default OFF). Gate status and receipt routing:
+`research/dsv4f-small-kernel-diet-20260907/README.md`.
 
 | Kernel | Replaced launches and numeric contract | Geometry |
 | --- | --- | --- |
