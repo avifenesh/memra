@@ -14,6 +14,7 @@ const REPEATS: usize = 3;
 #[derive(Clone, Copy, Debug)]
 enum Change {
     GuM1,
+    GuM1Half2,
     Half2,
     WoA,
     IndexTopk,
@@ -22,22 +23,24 @@ impl Change {
     fn name(self) -> &'static str {
         match self {
             Self::GuM1 => "gu-m1",
+            Self::GuM1Half2 => "gu-m1-half2",
             Self::Half2 => "half2",
             Self::WoA => "wo-a",
             Self::IndexTopk => "index-topk",
         }
     }
     fn gu_m1(self, tuned: bool) -> bool {
-        tuned && matches!(self, Self::GuM1)
+        tuned && matches!(self, Self::GuM1 | Self::GuM1Half2)
     }
     fn half2(self, tuned: bool) -> bool {
-        matches!(self, Self::WoA | Self::IndexTopk) || (tuned && matches!(self, Self::Half2))
+        matches!(self, Self::WoA | Self::IndexTopk | Self::GuM1Half2)
+            || (tuned && matches!(self, Self::Half2))
     }
     fn wo_a(self, tuned: bool) -> bool {
-        matches!(self, Self::IndexTopk) || (tuned && matches!(self, Self::WoA))
+        matches!(self, Self::IndexTopk | Self::GuM1Half2) || (tuned && matches!(self, Self::WoA))
     }
     fn index_topk(self, tuned: bool) -> bool {
-        tuned && matches!(self, Self::IndexTopk)
+        matches!(self, Self::GuM1Half2) || (tuned && matches!(self, Self::IndexTopk))
     }
 }
 
@@ -92,6 +95,7 @@ impl Ready<'_> {
     fn run(&self, change: Change, tuned: bool, warmup: bool, ordinal: usize) -> Identity {
         drain(self.gpu);
         let gu_m1 = change.gu_m1(tuned);
+        let gu_m1_half2_composed = tuned && matches!(change, Change::GuM1Half2);
         let half2 = change.half2(tuned);
         let wo_a_grouped = change.wo_a(tuned);
         let index_topk_radix = change.index_topk(tuned);
@@ -224,7 +228,7 @@ impl Ready<'_> {
         let text_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
         let state_pos = state.pos;
         println!(
-            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":false,\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_calls\":{gu_m1_calls},\"wo_a_grouped\":{wo_a_grouped},\"wo_a_calls\":{wo_a_calls},\"index_topk_radix\":{index_topk_radix},\"index_topk_calls\":{index_topk_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"prefix_graph\":false,\"expert_graph\":false,\"graph_captures\":0,\"graph_replays\":0,\"graph_kernel_nodes\":0,\"graph_fallbacks\":0,\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
+            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":false,\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_half2_composed\":{gu_m1_half2_composed},\"gu_m1_calls\":{gu_m1_calls},\"wo_a_grouped\":{wo_a_grouped},\"wo_a_calls\":{wo_a_calls},\"index_topk_radix\":{index_topk_radix},\"index_topk_calls\":{index_topk_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"prefix_graph\":false,\"expert_graph\":false,\"graph_captures\":0,\"graph_replays\":0,\"graph_kernel_nodes\":0,\"graph_fallbacks\":0,\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
         );
         Identity {
             tokens,
@@ -240,10 +244,11 @@ fn main() {
     assert_eq!(
         args.len(),
         4,
-        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|half2|wo-a|index-topk|all"
+        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|gu-m1-half2|half2|wo-a|index-topk|all"
     );
     let modes = match args[3].as_str() {
         "gu-m1" => vec![Change::GuM1],
+        "gu-m1-half2" => vec![Change::GuM1Half2],
         "half2" => vec![Change::Half2],
         "wo-a" => vec![Change::WoA],
         "index-topk" => vec![Change::IndexTopk],

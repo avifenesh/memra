@@ -4,8 +4,8 @@ use crate::dsv4_ep::EpCompute;
 use crate::dsv4_ffi;
 use crate::mmq_ffi::{
     memra_bind_device, memra_moe_kq_gemm_sk, memra_moe_kq_gemm_sk_gu,
-    memra_moe_kq_gemm_sk_gu_half2, memra_moe_kq_gemm_sk_gu_m1, memra_moe_kq_gemm_sk_m1,
-    memra_moe_kq_gemm_sk_m1_half2,
+    memra_moe_kq_gemm_sk_gu_half2, memra_moe_kq_gemm_sk_gu_m1, memra_moe_kq_gemm_sk_gu_m1_half2,
+    memra_moe_kq_gemm_sk_m1, memra_moe_kq_gemm_sk_m1_half2,
 };
 use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
 use memra_runtime::Gpu;
@@ -15,6 +15,37 @@ use std::sync::{
 };
 
 type Res<T> = Result<T, String>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GuLaunchKind {
+    Scalar,
+    M1,
+    Half2,
+    M1Half2,
+}
+
+/// Select the already-gated GU visitor. The conjunction is deliberately a
+/// process-local composition of existing doors: it does not create a new
+/// environment/default arm, and callers pass `fuse_gu=false` for every
+/// batched or non-plain transaction.
+fn select_gu_launch(fuse_gu: bool, m1: bool, half2: bool) -> Option<GuLaunchKind> {
+    if !fuse_gu {
+        return None;
+    }
+    Some(match (m1, half2) {
+        (true, true) => GuLaunchKind::M1Half2,
+        (true, false) => GuLaunchKind::M1,
+        (false, true) => GuLaunchKind::Half2,
+        (false, false) => GuLaunchKind::Scalar,
+    })
+}
+
+fn gu_receipt_features(kind: GuLaunchKind) -> (bool, bool) {
+    (
+        matches!(kind, GuLaunchKind::M1 | GuLaunchKind::M1Half2),
+        matches!(kind, GuLaunchKind::Half2 | GuLaunchKind::M1Half2),
+    )
+}
 
 static MIRROR_VALIDATE: AtomicBool = AtomicBool::new(true);
 static ROUTE_VALIDATE: AtomicBool = AtomicBool::new(true);
@@ -392,16 +423,18 @@ impl GroupedWork {
         }
         if live > 0 {
             let fuse_gu = self.gu_fuse && crate::moe_f16g_gu_fuse_on() && crate::moe_f16g_tail_on();
-            let fuse_gu_half2 = fuse_gu && crate::moe_f16g_gu_half2_on();
-            let fuse_gu_m1 = fuse_gu && !fuse_gu_half2 && crate::moe_f16g_gu_m1_tc_on();
-            if fuse_gu {
+            let gu_kind = select_gu_launch(
+                fuse_gu,
+                crate::moe_f16g_gu_m1_tc_on(),
+                crate::moe_f16g_gu_half2_on(),
+            );
+            if let Some(gu_kind) = gu_kind {
                 let rc = unsafe {
-                    let launch = if fuse_gu_half2 {
-                        memra_moe_kq_gemm_sk_gu_half2
-                    } else if fuse_gu_m1 {
-                        memra_moe_kq_gemm_sk_gu_m1
-                    } else {
-                        memra_moe_kq_gemm_sk_gu
+                    let launch = match gu_kind {
+                        GuLaunchKind::M1Half2 => memra_moe_kq_gemm_sk_gu_m1_half2,
+                        GuLaunchKind::Half2 => memra_moe_kq_gemm_sk_gu_half2,
+                        GuLaunchKind::M1 => memra_moe_kq_gemm_sk_gu_m1,
+                        GuLaunchKind::Scalar => memra_moe_kq_gemm_sk_gu,
                     };
                     launch(
                         table.device_ptr(&s).0 as *const u64,
@@ -425,16 +458,17 @@ impl GroupedWork {
                 if rc != 0 {
                     return Err(format!(
                         "{} rc={rc}",
-                        if fuse_gu_half2 {
-                            "memra_moe_kq_gemm_sk_gu_half2"
-                        } else if fuse_gu_m1 {
-                            "memra_moe_kq_gemm_sk_gu_m1"
-                        } else {
-                            "memra_moe_kq_gemm_sk_gu"
+                        match gu_kind {
+                            GuLaunchKind::M1Half2 => "memra_moe_kq_gemm_sk_gu_m1_half2",
+                            GuLaunchKind::Half2 => "memra_moe_kq_gemm_sk_gu_half2",
+                            GuLaunchKind::M1 => "memra_moe_kq_gemm_sk_gu_m1",
+                            GuLaunchKind::Scalar => "memra_moe_kq_gemm_sk_gu",
                         }
                     ));
                 }
-                if fuse_gu_m1 {
+                if gu_receipt_features(gu_kind).0 {
+                    // The combined M1+half2 enqueue is one CUDA launch, but it
+                    // legitimately advances both existing feature receipts.
                     crate::MOE_F16G_GU_M1_TC_DISPATCHES
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
@@ -907,6 +941,43 @@ impl GroupedRoutes {
         self.host_offsets = Some(offsets);
         self.live_slots = live;
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod gu_dispatch_selection_tests {
+    use super::{GuLaunchKind, gu_receipt_features, select_gu_launch};
+
+    #[test]
+    fn existing_doors_compose_only_on_plain_single_path() {
+        assert_eq!(select_gu_launch(false, false, false), None);
+        assert_eq!(select_gu_launch(false, true, true), None);
+        assert_eq!(
+            select_gu_launch(true, false, false),
+            Some(GuLaunchKind::Scalar)
+        );
+        assert_eq!(select_gu_launch(true, true, false), Some(GuLaunchKind::M1));
+        assert_eq!(
+            select_gu_launch(true, false, true),
+            Some(GuLaunchKind::Half2)
+        );
+        assert_eq!(
+            select_gu_launch(true, true, true),
+            Some(GuLaunchKind::M1Half2)
+        );
+    }
+
+    #[test]
+    fn combined_kind_is_distinct_from_each_single_feature() {
+        assert_ne!(
+            select_gu_launch(true, true, true),
+            select_gu_launch(true, true, false)
+        );
+        assert_ne!(
+            select_gu_launch(true, true, true),
+            select_gu_launch(true, false, true)
+        );
+        assert_eq!(gu_receipt_features(GuLaunchKind::M1Half2), (true, true));
     }
 }
 

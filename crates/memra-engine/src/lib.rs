@@ -312,7 +312,9 @@ pub fn clear_moe_f16g_gu_m1_tc_for_gate() {
 }
 
 /// Engagement receipt for the actual direct GU-M1 CUDA launcher, incremented
-/// only after that launcher returns success.
+/// only after that launcher returns success. When GU-M1 and GU-half2 are both
+/// enabled, one composed `<108,true,true>` enqueue intentionally advances this
+/// receipt once alongside the GU-half2 CUDA receipt.
 pub static MOE_F16G_GU_M1_TC_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 

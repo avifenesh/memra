@@ -1264,6 +1264,27 @@ unsafe extern "C" {
         row_bytes: i64,
         stream: *mut core::ffi::c_void,
     ) -> i32;
+    // Composition of the existing GU-M1 and packed-half2 gate doors. This is
+    // one successful <108,true,true> CUDA enqueue; the caller intentionally
+    // advances both feature receipts for that same enqueue.
+    pub fn memra_moe_kq_gemm_sk_gu_m1_half2(
+        table: *const u64,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        h_f32: *mut f32,
+        row_scale: *const f32,
+        macro_g: *const f32,
+        macro_u: *const f32,
+        route_w: *const f32,
+        ex_off_dev: *const i32,
+        n_active: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        row_bytes: i64,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
     pub fn memra_moe_kq_gemm_sk_m1_half2(
         table: *const u64,
         n_expert: i32,

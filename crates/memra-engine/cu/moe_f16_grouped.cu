@@ -2284,6 +2284,40 @@ int memra_moe_kq_gemm_sk_gu_half2(
     return e ? 1000 + (int)e : 0;
 }
 
+// Composition of the existing GU-M1 work-elision and packed-half2 stores. This
+// is the same one-row numeric program as the two gate launchers, instantiated
+// as <QT_NVFP4_MODELOPT,true,true>; the caller advances both feature receipts
+// for this one successful CUDA enqueue.
+int memra_moe_kq_gemm_sk_gu_m1_half2(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* h, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off_dev, int n_active, int in_f, int out_f,
+        float limit, long row_bytes, void* stream){
+    if(!table || !ex_ids || !act_f16 || !h || !row_scale || !macro_g || !macro_u
+       || !route_w || !ex_off_dev || n_expert <= 0 || n_active <= 0
+       || n_active > SK_MAX_G || in_f <= 0 || out_f <= 0 || in_f % SKT_BK
+       || out_f % SK_BN || row_bytes != in_f / 2)
+        return 40004;
+    int dev = 0, sms = 1, occ = 1;
+    cudaGetDevice(&dev);
+    if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess
+       || sms < 1) sms = 1;
+    constexpr size_t H2_SMEM_BYTES = 256 * sizeof(uint32_t);
+    if(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+           &occ, moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT, true, true>, 128,
+           H2_SMEM_BYTES) != cudaSuccess || occ < 1) occ = 1;
+    const int grid = sms * occ;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT, true, true>
+        <<<grid, dim3(32,4,1), H2_SMEM_BYTES, st>>>(
+            table, n_expert, ex_ids, row_bytes, (const __half*)act_f16, h, row_scale,
+            macro_g, macro_u, route_w, ex_off_dev, n_active, in_f, out_f, -1, limit);
+    cudaError_t e = cudaGetLastError();
+    if(!e) g_moe_kq_gu_h2_dispatches.fetch_add(1, std::memory_order_relaxed);
+    return e ? 1000 + (int)e : 0;
+}
+
 // Packed ModelOpt store twin for the tensor-core m_e=1 down-tail candidate.  It is intentionally
 // separate from memra_moe_kq_gemm_sk_m1 so the latter's static shared allocation and scalar
 // dequant path remain untouched while the gate can compare both complete chains.
