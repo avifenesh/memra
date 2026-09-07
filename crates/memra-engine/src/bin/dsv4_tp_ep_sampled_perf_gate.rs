@@ -93,6 +93,66 @@ fn drain(gpu: &Dsv4Gpu) {
     }
 }
 
+/// The sampled decode wall includes both the sampler and the following forward.
+/// Keep this boundary in one helper so a future timing edit cannot silently turn
+/// the headline into a forward-only number.
+fn timed_sampled_decode<F, G>(steps: usize, mut step: F, finish: G) -> (Duration, usize)
+where
+    F: FnMut(usize) -> bool,
+    G: FnOnce(),
+{
+    let start = Instant::now();
+    let mut completed = 0usize;
+    for index in 0..steps {
+        if !step(index) {
+            break;
+        }
+        completed += 1;
+    }
+    finish();
+    (start.elapsed(), completed)
+}
+
+#[cfg(test)]
+mod timing_contract_tests {
+    use super::timed_sampled_decode;
+    use std::time::Duration;
+
+    #[test]
+    fn sampled_wall_includes_injected_sampler_delay() {
+        let (elapsed, completed) = timed_sampled_decode(
+            1,
+            |_| {
+                std::thread::sleep(Duration::from_millis(5));
+                true
+            },
+            || {},
+        );
+        assert_eq!(completed, 1);
+        assert!(elapsed >= Duration::from_millis(4));
+    }
+
+    #[test]
+    fn sampled_wall_includes_injected_finish_drain_delay() {
+        let (elapsed, completed) = timed_sampled_decode(
+            1,
+            |_| true,
+            || {
+                std::thread::sleep(Duration::from_millis(5));
+            },
+        );
+        assert_eq!(completed, 1);
+        assert!(elapsed >= Duration::from_millis(4));
+    }
+
+    #[test]
+    fn sampled_wall_preserves_early_eos_count() {
+        let (elapsed, completed) = timed_sampled_decode(4, |index| index < 2, || {});
+        assert_eq!(completed, 2);
+        assert!(elapsed < Duration::from_millis(100));
+    }
+}
+
 fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
     let layers = gpu.topology().layers as u64;
     for (rank, &calls) in c.rank_layer.iter().enumerate() {
@@ -184,34 +244,37 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
     let mut eos = false;
     let profiled = dsv4_prof_on();
     let mut decode_phase = None;
-    let decode_start = Instant::now();
-    for _ in 0..OUTPUT_TOKENS {
-        if profiled && generated.len() == 32 {
-            drain(gpu);
-            decode_phase = Dsv4Phase::new("TP_EP_DECODE\0", None);
-        }
-        let token = dsv4_sample_row(&row, state.pos, &cfg).expect("sample");
-        if token == tokenizer.eos_id() {
-            eos = true;
-            break;
-        }
-        generated.push(token);
-        row = gpu
-            .decode_step(token, &mut state)
-            .expect("TP/EP sampled decode");
-        if profiled && generated.len() == 64 {
-            drain(gpu);
-            drop(decode_phase.take());
-        }
-    }
-    drain(gpu);
+    let (decode_wall, forward_calls) = timed_sampled_decode(
+        OUTPUT_TOKENS,
+        |_| {
+            if profiled && generated.len() == 32 {
+                drain(gpu);
+                decode_phase = Dsv4Phase::new("TP_EP_DECODE\0", None);
+            }
+            let token = dsv4_sample_row(&row, state.pos, &cfg).expect("sample");
+            if token == tokenizer.eos_id() {
+                eos = true;
+                return false;
+            }
+            generated.push(token);
+            row = gpu
+                .decode_step(token, &mut state)
+                .expect("TP/EP sampled decode");
+            if profiled && generated.len() == 64 {
+                drain(gpu);
+                drop(decode_phase.take());
+            }
+            true
+        },
+        || drain(gpu),
+    );
     drop(decode_phase);
-    let decode_wall = decode_start.elapsed();
     assert_eq!(
         state.pos,
         PROMPT_TOKENS + generated.len(),
         "sampled decode position"
     );
+    assert_eq!(forward_calls, generated.len(), "sampled forward count");
     let counters_decode = delta(counters(gpu), after_prime);
     assert_engagement(gpu, counters_decode, 0, generated.len());
     let ar_refusals = gpu
