@@ -793,18 +793,52 @@ fn dspark_cold_prime_repays_prefill(prompt_len: usize, decode_budget: usize) -> 
 /// cleared would have taken the route, so the receipt names the penalty only when it is the
 /// reason (the same discipline as the shape-veto receipt above it).
 fn dspark_penalised_greedy_flipped_the_route(a: DsparkColdPrefixAdmission) -> bool {
-    a.greedy
+    dspark_penalised_greedy_flipped_the_route_with(a, dspark_greedy_penalty_on())
+}
+
+/// Pure half: with the greedy-penalty arm ON the class takes the route and the receipt is
+/// silent; with it OFF the receipt fires exactly when the penalty was the flipping input.
+fn dspark_penalised_greedy_flipped_the_route_with(
+    a: DsparkColdPrefixAdmission,
+    greedy_penalty_arm: bool,
+) -> bool {
+    !greedy_penalty_arm
+        && a.greedy
         && a.greedy_penalized
-        && dspark_prefers_cold_over_prefix(DsparkColdPrefixAdmission {
-            greedy_penalized: false,
-            ..a
-        })
+        && dspark_prefers_cold_over_prefix_with(
+            DsparkColdPrefixAdmission {
+                greedy_penalized: false,
+                ..a
+            },
+            greedy_penalty_arm,
+        )
+}
+
+/// `MEMRA_DSPARK_GREEDY_PENALTY` (lane/dspark-greedy-penalised, 2026-09-07): a greedy request
+/// carrying a non-identity penalty (qwen's non-thinking profile pins presence_penalty 1.5, so
+/// every temperature-0 request on it) takes the DFlash route and is verified by penalised
+/// argmax (`dspark_accept_greedy_penalized`), the program the plain host sampler runs token by
+/// token. Default ON since 2026-09-07 on the 5090 lane receipt (memra#310: 15 of 15 turns
+/// byte-identical to the plain host sampler over three boots of a five-turn restore chain on
+/// the non-thinking profile, decode 75 -> 107 tok/s at 400-700 tokens). `0` is the rollback
+/// seam: the pre-lane program exactly (plain path, with the `[dspark] declined:
+/// greedy-penalised` receipt naming it).
+fn dspark_greedy_penalty_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_DSPARK_GREEDY_PENALTY").as_deref() != Ok("0"))
 }
 
 fn dspark_prefers_cold_over_prefix(a: DsparkColdPrefixAdmission) -> bool {
+    dspark_prefers_cold_over_prefix_with(a, dspark_greedy_penalty_on())
+}
+
+fn dspark_prefers_cold_over_prefix_with(
+    a: DsparkColdPrefixAdmission,
+    greedy_penalty_arm: bool,
+) -> bool {
     a.route_ready
         && a.prime_feasible
-        && ((a.greedy && !a.greedy_penalized) || a.sampled)
+        && ((a.greedy && (!a.greedy_penalized || greedy_penalty_arm)) || a.sampled)
         && !a.constrained
         && !a.vision
         && a.cold
@@ -1030,6 +1064,32 @@ fn glm5_spec_sampling_for(sampler: &Sampler) -> Option<memra_engine::spec::SpecS
             || sampler.penalty_present() != 0.0);
     (sampler.temperature() > 0.0 || penalized).then(|| memra_engine::spec::SpecSampling {
         temp: sampler.temperature(),
+        seed: sampler.seed(),
+        top_k: sampler.top_k() as i32,
+        top_p: sampler.top_p(),
+        min_p: sampler.min_p(),
+        penalty_last_n: sampler.penalty_last_n(),
+        penalty_repeat: sampler.penalty_repeat(),
+        penalty_freq: sampler.penalty_freq(),
+        penalty_present: sampler.penalty_present(),
+    })
+}
+
+/// The dspark session's sampling config: `spec_sampling_for` PLUS the greedy-with-penalties
+/// shape under `MEMRA_DSPARK_GREEDY_PENALTY=1` (lane/dspark-greedy-penalised). `Some` with
+/// `temp: 0.0` and a non-identity window is the engine's `greedy_penalized()` arm (penalised
+/// argmax verify); with the door shut admission never lets that class reach the session, so
+/// the config stays `None` = the byte-identical greedy route.
+fn dspark_spec_sampling_for(sampler: &Sampler) -> Option<memra_engine::spec::SpecSampling> {
+    let penalized = sampler.penalty_last_n() > 0
+        && (sampler.penalty_repeat() != 1.0
+            || sampler.penalty_freq() != 0.0
+            || sampler.penalty_present() != 0.0);
+    if sampler.temperature() > 0.0 || !(penalized && dspark_greedy_penalty_on()) {
+        return spec_sampling_for(sampler);
+    }
+    Some(memra_engine::spec::SpecSampling {
+        temp: 0.0,
         seed: sampler.seed(),
         top_k: sampler.top_k() as i32,
         top_p: sampler.top_p(),
@@ -12311,10 +12371,16 @@ pub fn run(
                         });
                 eprintln!(
                     "[worker] {n}: DSPARK SPEC route armed (drafter attached ({dpath}); greedy+sampled \
-                     [T>0 rejection verify, sampled penalties included]/unconstrained/text-only; \
+                     [T>0 rejection verify, sampled penalties included; greedy penalties {}]\
+                     /unconstrained/text-only; \
                      greedy LOW-wave admission + HIGH demotion, sampled solo admission; \
                      MTP spec DISABLED for this model — refuse-on-ambiguity; \
-                     MEMRA_DSPARK_SPEC unset = off)"
+                     MEMRA_DSPARK_SPEC unset = off)",
+                    if dspark_greedy_penalty_on() {
+                        "verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)"
+                    } else {
+                        "served PLAIN (MEMRA_DSPARK_GREEDY_PENALTY=0)"
+                    }
                 );
                 // DRAFT-HEAD TRIM receipt (lane/dflash2-head-trim, 2026-08-25): the DFlash2
                 // round reuses the FR-Spec self-trim the load path builds on the MTP struct.
@@ -18888,7 +18954,8 @@ fn admit(
         // served on the plain path by admission). Anything else keeps the plain hit.
         let shape_ok = !vision_req
             && constraint.is_none()
-            && ((sampler.is_greedy() && !greedy_penalized) || sampler.temperature() > 0.0)
+            && ((sampler.is_greedy() && (!greedy_penalized || dspark_greedy_penalty_on()))
+                || sampler.temperature() > 0.0)
             && memra_engine::plan_backend::gdn_dspark_compatible(&lm.model.plan)
             && serve_spec;
         if (full_cover || partial_ok) && entry_tail_present && shape_ok {
@@ -18914,7 +18981,7 @@ fn admit(
                         &fed,
                         dkv,
                         &logits,
-                        spec_sampling_for(&sampler),
+                        dspark_spec_sampling_for(&sampler),
                         cap,
                     ) {
                         Ok(sess) => {
@@ -22746,7 +22813,7 @@ fn step_dspark_spec(
             d,
             &prompt,
             s.gspec_ctx,
-            spec_sampling_for(&s.sampler),
+            dspark_spec_sampling_for(&s.sampler),
             // The two admission-time decisions ride one argument: whether to keep a capture,
             // and where to cut it. `dspark_capture_at` is Some only under its own door.
             match (s.dspark_capture_prefix, s.dspark_capture_at) {
@@ -26896,30 +26963,48 @@ mod tests {
             hit_available: false,
             hit_restorable: false,
         };
-        // RED ARM: the shipped decline, and the penalty is the only reason.
-        assert!(!super::dspark_prefers_cold_over_prefix(base));
-        assert!(super::dspark_penalised_greedy_flipped_the_route(base));
+        // RED ARM (door shut): the shipped decline, and the penalty is the only reason.
+        assert!(!super::dspark_prefers_cold_over_prefix_with(base, false));
+        assert!(super::dspark_penalised_greedy_flipped_the_route_with(
+            base, false
+        ));
         // Clearing the penalty admits: the receipt's premise.
-        assert!(super::dspark_prefers_cold_over_prefix(
+        assert!(super::dspark_prefers_cold_over_prefix_with(
             super::DsparkColdPrefixAdmission {
                 greedy_penalized: false,
                 ..base
-            }
+            },
+            false
         ));
         // Declined for load as well: the penalty did not flip it, so no receipt.
-        assert!(!super::dspark_penalised_greedy_flipped_the_route(
+        assert!(!super::dspark_penalised_greedy_flipped_the_route_with(
             super::DsparkColdPrefixAdmission {
                 projected_wave: 3,
                 ..base
-            }
+            },
+            false
         ));
         // A sampled request is never "greedy-penalised" (sampled penalties ride the route).
-        assert!(!super::dspark_penalised_greedy_flipped_the_route(
+        assert!(!super::dspark_penalised_greedy_flipped_the_route_with(
             super::DsparkColdPrefixAdmission {
                 greedy: false,
                 sampled: true,
                 ..base
-            }
+            },
+            false
+        ));
+        // GREEDY-PENALTY ARM (MEMRA_DSPARK_GREEDY_PENALTY=1): the class takes the route and
+        // the receipt is silent; every other veto (load) still holds.
+        assert!(super::dspark_prefers_cold_over_prefix_with(base, true));
+        assert!(!super::dspark_penalised_greedy_flipped_the_route_with(
+            base, true
+        ));
+        assert!(!super::dspark_prefers_cold_over_prefix_with(
+            super::DsparkColdPrefixAdmission {
+                projected_wave: 3,
+                ..base
+            },
+            true
         ));
     }
 
@@ -27297,7 +27382,12 @@ mod tests {
             hit_available: true,
             hit_restorable: false,
         };
-        let prefers = super::dspark_prefers_cold_over_prefix;
+        // Pure half with the greedy-penalty arm SHUT: this test is the pre-lane refusal
+        // set (its penalised-greedy row is a refusal only at door 0; the arm's own test is
+        // `the_penalised_receipt_fires_only_when_the_penalty_flipped_the_route`).
+        let prefers = |a: super::DsparkColdPrefixAdmission| {
+            super::dspark_prefers_cold_over_prefix_with(a, false)
+        };
 
         // Positive K and gate-off retain their solo decision. K=0 and LOW=0 retain plain.
         assert!(prefers(super::DsparkColdPrefixAdmission {
