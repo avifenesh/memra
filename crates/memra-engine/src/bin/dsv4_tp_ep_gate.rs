@@ -301,10 +301,24 @@ fn verify_refusal_boundary(gpu: &Dsv4Gpu, tokens: &[u32]) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    assert_eq!(
-        args.len(),
-        3,
-        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt>"
+    assert!(
+        args.len() == 3 || args.len() == 4,
+        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-component]"
+    );
+    let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
+    let component = args
+        .get(3)
+        .is_some_and(|a| a == "--moe-m1-splitk-component");
+    assert!(args.len() == 3 || splitk || component, "unknown gate arm");
+    memra_engine::set_moe_m1_splitk_for_gate(splitk);
+    memra_engine::set_moe_m1_splitk_component_for_gate(component);
+    println!(
+        "MOE_PROGRAM splitk={splitk} component={component} numeric_class={}",
+        if splitk {
+            memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
+        } else {
+            "existing_m1_f16_mma"
+        }
     );
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
@@ -384,6 +398,15 @@ fn main() {
         [0, 0]
     );
 
+    if component {
+        let mut state = gpu
+            .alloc_decode_state_for_transient(16, 1)
+            .expect("component state");
+        gpu.prefill_with_cache_chunked(&prompt[..1], &mut state, 1)
+            .expect("real-token component");
+        println!("PASS real routed M1 split-K component");
+        return;
+    }
     let first = run_once(&gpu, &prompt, &source_sha256);
     let second = run_once(&gpu, &prompt, &source_sha256);
     assert_eq!(

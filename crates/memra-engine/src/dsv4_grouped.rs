@@ -47,6 +47,15 @@ fn gu_receipt_features(kind: GuLaunchKind) -> (bool, bool) {
     )
 }
 
+fn splitk_component_claim(gpu: &Gpu, gu: bool) -> bool {
+    static SEEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    if crate::MOE_M1_SPLITK_COMPONENT.load(Ordering::Acquire) == 0 {
+        return false;
+    }
+    let bit = 1u64 << (gpu.ctx.ordinal() * 2 + usize::from(gu));
+    SEEN.fetch_or(bit, Ordering::AcqRel) & bit == 0
+}
+
 static MIRROR_VALIDATE: AtomicBool = AtomicBool::new(true);
 static ROUTE_VALIDATE: AtomicBool = AtomicBool::new(true);
 
@@ -201,6 +210,7 @@ pub(crate) struct GroupedWork {
     plain_single: bool,
     gu_fuse: bool,
     phase: MatrixPhase,
+    splitk_scratch: Option<CudaSlice<f32>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -335,7 +345,86 @@ impl GroupedWork {
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
+            splitk_scratch: None,
         })
+    }
+
+    fn splitk(
+        &mut self,
+        gpu: &Gpu,
+        table: &CudaSlice<u64>,
+        output: u64,
+        limit: f32,
+        gu: bool,
+        component: bool,
+    ) -> Res<()> {
+        let s = gpu.stream();
+        let (input, out_f) = if gu {
+            (&self.input, self.intermediate.cols)
+        } else {
+            (&self.intermediate, self.input.cols)
+        };
+        let live = self.routes.live_slots;
+        let needed = live
+            .checked_mul(out_f)
+            .and_then(|v| v.checked_mul(if gu { 32 } else { 16 }))
+            .ok_or("split-K scratch overflow")?;
+        if !component
+            && self
+                .splitk_scratch
+                .as_ref()
+                .is_none_or(|p| p.len() < needed)
+        {
+            self.splitk_scratch = Some(
+                s.alloc_zeros::<f32>(needed)
+                    .map_err(|e| format!("split-K scratch: {e}"))?,
+            );
+        }
+        let partial = self
+            .splitk_scratch
+            .as_mut()
+            .map_or(std::ptr::null_mut(), |p| p.device_ptr_mut(&s).0 as *mut f32);
+        let launch = if component {
+            crate::mmq_ffi::memra_moe_m1_splitk_component
+        } else {
+            crate::mmq_ffi::memra_moe_m1_splitk
+        };
+        let rc = unsafe {
+            launch(
+                table.device_ptr(&s).0 as *const u64,
+                self.routes.experts as i32,
+                self.routes.ids.device_ptr(&s).0 as *const i32,
+                input.half.device_ptr(&s).0 as *const std::ffi::c_void,
+                output as *mut f32,
+                input.scale.device_ptr(&s).0 as *const f32,
+                self.routes.macro1.device_ptr(&s).0 as *const f32,
+                self.routes.macro3.device_ptr(&s).0 as *const f32,
+                self.routes.weights.device_ptr(&s).0 as *const f32,
+                self.routes.offsets.device_ptr(&s).0 as *const i32,
+                self.routes.experts as i32,
+                input.cols as i32,
+                out_f as i32,
+                limit,
+                live as i32,
+                gu as i32,
+                partial,
+                s.cu_stream().cast(),
+            )
+        };
+        if rc != 0 {
+            return Err(format!(
+                "moe_m1_splitk gu={gu} component={component} rc={rc}"
+            ));
+        }
+        if !component {
+            let counter = if gu {
+                &crate::MOE_M1_SPLITK_GU_DISPATCHES
+            } else {
+                &crate::MOE_M1_SPLITK_DOWN_DISPATCHES
+            };
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(())
     }
 
     /// Source FP8 codes/scales are already produced on the token's owner.
@@ -428,7 +517,15 @@ impl GroupedWork {
                 crate::moe_f16g_gu_m1_tc_on(),
                 crate::moe_f16g_gu_half2_on(),
             );
-            if let Some(gu_kind) = gu_kind {
+            if self.plain_single && splitk_component_claim(gpu, true) {
+                self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, true)?;
+            }
+            if self.plain_single && crate::moe_m1_splitk_on() {
+                if !fuse_gu {
+                    return Err("split-K requires plain fused GU".into());
+                }
+                self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, false)?;
+            } else if let Some(gu_kind) = gu_kind {
                 let rc = unsafe {
                     let launch = match gu_kind {
                         GuLaunchKind::M1Half2 => memra_moe_kq_gemm_sk_gu_m1_half2,
@@ -544,7 +641,15 @@ impl GroupedWork {
         let live = self.routes.live_slots;
         if live > 0 {
             self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
-            if self.plain_single
+            let component = self.plain_single && splitk_component_claim(gpu, false);
+            let splitk = self.plain_single && crate::moe_m1_splitk_on();
+            if component || splitk {
+                let output = self.contribution.device_ptr_mut(&s).0;
+                self.splitk(gpu, table, output, 0.0, false, component)?;
+            }
+            if splitk && !component {
+                // The two-pass projection above produced contribution.
+            } else if self.plain_single
                 && crate::moe_f16g_tail_on()
                 && (crate::moe_f16g_m1_tc_on() || crate::moe_f16g_down_m1_half2_on())
             {
@@ -645,7 +750,7 @@ impl GroupedRoutes {
         projection: i32,
         input: &HalfMirror,
         out_f: usize,
-        output: &mut CudaSlice<f32>,
+        output: u64,
     ) -> Res<()> {
         if table.len() != self.experts * 6
             || output.len() < self.live_slots * out_f
@@ -694,7 +799,7 @@ impl GroupedRoutes {
         s: &Arc<CudaStream>,
         table: &CudaSlice<u64>,
         input: &HalfMirror,
-        output: &mut CudaSlice<f32>,
+        output: u64,
         out_f: usize,
         half2: bool,
     ) -> Res<()> {

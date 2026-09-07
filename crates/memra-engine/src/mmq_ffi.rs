@@ -1177,6 +1177,46 @@ unsafe extern "C" {
         row_bytes: i64,
         stream: *mut core::ffi::c_void,
     ) -> i32;
+    pub fn memra_moe_m1_splitk(
+        table: *const u64,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        out: *mut f32,
+        row_scale: *const f32,
+        macro_g: *const f32,
+        macro_u: *const f32,
+        route_w: *const f32,
+        ex_off: *const i32,
+        n_active: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        slots: i32,
+        gu: i32,
+        partial: *mut f32,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    pub fn memra_moe_m1_splitk_component(
+        table: *const u64,
+        n_expert: i32,
+        ex_ids: *const i32,
+        act_f16: *const core::ffi::c_void,
+        out: *mut f32,
+        row_scale: *const f32,
+        macro_g: *const f32,
+        macro_u: *const f32,
+        route_w: *const f32,
+        ex_off: *const i32,
+        n_active: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        slots: i32,
+        gu: i32,
+        partial: *mut f32,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
     // Gate-only DSV4 m_e=1 tensor-core tail. The grouped caller selects it only
     // through the process-local m1 gate after the exactness/perf receipts; it
     // is not a serving default.

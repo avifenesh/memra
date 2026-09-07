@@ -26,6 +26,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <atomic>
+#include <vector>
+#include <cmath>
+#include <algorithm>
+#include <cstring>
 
 #define QT_IQ4_XS 5
 #define QT_IQ3_S  6
@@ -1800,6 +1804,157 @@ moe_kq_sktail_gu_kernel(
     }
 }
 
+// Numeric class moe_m1_splitk_f32_fixed_order. Sixteen contiguous K slices.
+// Each slice uses the original ModelOpt half operands and ascending m16n8k16
+// chain. The second pass adds slices 0..15 with explicit f32 round-to-nearest,
+// then applies the original epilogue. No atomic operations or cross-CTA races.
+template<int Projections>
+static __global__ void __launch_bounds__(128)
+moe_m1_splitk_partial_kernel(
+        const unsigned long long* __restrict__ table, int proj, int n_expert,
+        const int* __restrict__ ex_ids, long row_bytes,
+        const __half* __restrict__ A,
+        float* __restrict__ partial,
+        const int* __restrict__ ex_off, int n_active,
+        int in_f, int out_f){
+    constexpr int QT = QT_NVFP4_MODELOPT;
+    constexpr bool M1 = true, PackedStore = true;
+    __shared__ int s_pre[SK_MAX_G + 1];
+    __shared__ __align__(16) __half As[SKT_STAGES][SK_BM][SKT_STRIDE];
+    __shared__ __align__(16) __half Bs[SK_BN][SKT_STRIDE];   // single buffer
+    __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
+    __shared__ uint32_t packed_h2[256];
+    const int ntx = (out_f + SK_BN - 1) / SK_BN;
+    kq_stage_codebook<QT>(s_cb);
+    kq_stage_half2_lut<PackedStore>(packed_h2);
+    sk_tile_prefix(s_pre, ex_off, n_active, ntx, SK_BM, 1, 2);
+    const int total_tiles = s_pre[n_active];
+    const int split = blockIdx.x % 16;
+    const int t = blockIdx.x / 16;
+    if(t >= total_tiles) return;
+
+    const int lane = threadIdx.x, warp = threadIdx.y;
+    const int tid  = warp * 32 + lane;                        // 0..127
+    const int nkb = in_f / (16 * SKT_BK);
+    const int kbase = split * nkb * SKT_BK;
+    const int wm = (warp & 1) * 16, wn = (warp >> 1) * 32;
+    const int brow = tid >> 1, bc0 = (tid & 1) * 32;          // 2 threads/row, 32 values each
+
+    {
+        const int g  = sk_tile_group(s_pre, n_active, t);
+        const int lo = ex_off[g], m_e = ex_off[g+1] - lo;
+        const int local = t - s_pre[g];
+        const int m0 = (local / ntx) * SK_BM;
+        const int n0 = (local % ntx) * SK_BN;
+
+        const __half* Ag = A + (size_t)lo * in_f + kbase;
+        const int eid = ex_ids[g];
+        for(int p = 0; p < Projections; ++p){
+        const int qplane = Projections == 2 ? p * 4 : 2 * proj;
+        const uint8_t* Wq = (const uint8_t*)table[(size_t)qplane*n_expert + eid];
+        const uint8_t* Wsc = (QT == QT_NVFP4_MODELOPT)
+            ? (const uint8_t*)table[(size_t)(qplane + 1)*n_expert + eid] : nullptr;
+        const int bn = min(n0 + brow, out_f - 1);
+        const uint8_t* wrow = Wq + (size_t)bn * row_bytes + kbase / 2;
+        const uint8_t* scrow = Wsc ? Wsc + (size_t)bn * (in_f / 16) + kbase / 16 : nullptr;
+
+        const __half* agp[2]; int asr[2], asc[2];
+        #pragma unroll
+        for(int i = 0; i < 2; i++){
+            const int c = tid + i * 128;
+            asr[i] = c >> 3; asc[i] = (c & 7) * 8;
+            const int am = min(m0 + asr[i], m_e - 1);
+            agp[i] = Ag + (size_t)am * in_f + asc[i];
+        }
+        #define KQT_LOAD_A(st, k0) do { \
+            _Pragma("unroll") \
+            for(int i = 0; i < 2; i++) if(!M1 || i == 0) \
+                sk_cp16(&As[st][asr[i]][asc[i]], agp[i] + (k0)); \
+            asm volatile("cp.async.commit_group;"); \
+        } while(0)
+
+        KQT_LOAD_A(0, 0);
+        if(nkb > 1) KQT_LOAD_A(1, SKT_BK);
+        KqRaw braw0 = kq_fetch<QT>(wrow, scrow, bc0, s_cb, in_f);        // kb=0 windows
+        KqRaw braw1 = kq_fetch<QT>(wrow, scrow, bc0 + 16, s_cb, in_f);
+
+        float acc[4][4] = {};
+        for(int kb = 0; kb < nkb; kb++){
+            const int cur = kb % SKT_STAGES;
+            if(kb + 2 < nkb) KQT_LOAD_A((kb + 2) % SKT_STAGES, (kb + 2) * SKT_BK);
+            // B tile for THIS kb from the pre-fetched registers (previous kb's trailing
+            // __syncthreads fences the overwrite), then issue kb+1's raw fetches so those
+            // global reads fly behind this kb's mma.
+            kq_store_variant<QT, PackedStore>(braw0, &Bs[brow][bc0], s_cb, packed_h2);
+            kq_store_variant<QT, PackedStore>(braw1, &Bs[brow][bc0 + 16], s_cb, packed_h2);
+            if(kb + 1 < nkb){
+                braw0 = kq_fetch<QT>(wrow, scrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
+                braw1 = kq_fetch<QT>(wrow, scrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
+            }
+            if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
+            else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
+            else                  asm volatile("cp.async.wait_group 0;");
+            __syncthreads();
+            if(!M1 || ((warp & 1) == 0)) {
+                #pragma unroll
+                for(int kk = 0; kk < 4; kk++){
+                    unsigned a[4], b0[4], b1[4];
+                    sk_ldm16x16(a,  &As[cur][wm][kk*16],  SKT_STRIDE);
+                    sk_ldm16x16(b0, &Bs[wn][kk*16],       SKT_STRIDE);
+                    sk_ldm16x16(b1, &Bs[wn + 16][kk*16],  SKT_STRIDE);
+                    sk_mma(acc[0], a, b0[0], b0[2]);
+                    sk_mma(acc[1], a, b0[1], b0[3]);
+                    sk_mma(acc[2], a, b1[0], b1[2]);
+                    sk_mma(acc[3], a, b1[1], b1[3]);
+                }
+            }
+            __syncthreads();
+        }
+        #undef KQT_LOAD_A
+
+        const int r0 = m0 + wm + lane / 4;
+        const int cb = n0 + wn + (lane % 4) * 2;
+        if(r0 == 0){
+            float* dst = partial + ((size_t(lo) * Projections + p) * 16 + split) * out_f;
+            #pragma unroll
+            for(int nb = 0; nb < 4; ++nb){
+                const int c = cb + nb * 8;
+                dst[c] = acc[nb][0];
+                dst[c + 1] = acc[nb][1];
+            }
+        }
+        __syncthreads();
+        } // projection
+
+    }
+}
+
+
+template<int Projections>
+static __global__ void moe_m1_splitk_reduce_kernel(
+        const float* partial, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        int slots, int out_f, float limit){
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if(c >= slots * out_f) return;
+    const int row = c / out_f, col = c % out_f;
+    float v[Projections] = {};
+    #pragma unroll
+    for(int p = 0; p < Projections; ++p){
+        #pragma unroll
+        for(int split = 0; split < 16; ++split)
+            v[p] = __fadd_rn(v[p], partial[((size_t(row) * Projections + p) * 16 + split) * out_f + col]);
+    }
+    if(Projections == 1){ out[c] = __fmul_rn(v[0], row_scale[row]); }
+    else {
+        float g = __fmul_rn(__fmul_rn(v[0], row_scale[row]), macro_g[row]);
+        float u = __fmul_rn(__fmul_rn(v[1], row_scale[row]), macro_u[row]);
+        u = fminf(fmaxf(u, -limit), limit);
+        g = fminf(g, limit);
+        out[c] = __fmul_rn(__fmul_rn(__fmul_rn(g, kq_gu_sigmoid(g)), u), route_w[row]);
+    }
+}
+
 // Per-QT direct-from-quant launch (lane/iq-direct-loaders: the Q4_K/Q6_K if/else ladder
 // became a template — each instantiation keeps its OWN occupancy/attribute statics, since
 // the bodies register-differ per quant class). Guards live in memra_moe_kq_gemm_sk.
@@ -2348,6 +2503,136 @@ int memra_moe_kq_gemm_sk_m1_half2(
     cudaError_t e = cudaGetLastError();
     if(!e) g_moe_kq_m1_h2_dispatches.fetch_add(1, std::memory_order_relaxed);
     return e ? 1000 + (int)e : 0;
+}
+
+// Scratch has slots * out_f * 16 * (gu ? 2 : 1) floats. The Rust caller
+// admits only unique top-k M=1 routes; slots is the compact live-slot count.
+int memra_moe_m1_splitk(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off, int n_active, int in_f, int out_f,
+        float limit, int slots, int gu, float* partial, void* stream){
+    if(!table || !ex_ids || !act_f16 || !out || !row_scale || !ex_off || !partial
+       || n_expert < 1 || n_active < 1 || n_active > SK_MAX_G
+       || slots < 1 || slots > n_active || (gu != 0 && gu != 1)
+       || (gu && (!macro_g || !macro_u || !route_w))
+       || (in_f != 4096 && in_f != 2048) || (out_f != 4096 && out_f != 2048))
+        return 40004;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    const int grid = slots * (out_f / SK_BN) * 16;
+    if(gu){
+        moe_m1_splitk_partial_kernel<2><<<grid, dim3(32,4), 0, st>>>(
+            table, 0, n_expert, ex_ids, in_f/2, (const __half*)act_f16,
+            partial, ex_off, n_active, in_f, out_f);
+    } else {
+        moe_m1_splitk_partial_kernel<1><<<grid, dim3(32,4), 0, st>>>(
+            table, 1, n_expert, ex_ids, in_f/2, (const __half*)act_f16,
+            partial, ex_off, n_active, in_f, out_f);
+    }
+    cudaError_t e = cudaGetLastError();
+    if(e) return 1000 + (int)e;
+    if(gu) moe_m1_splitk_reduce_kernel<2><<<(slots*out_f+255)/256,256,0,st>>>(
+        partial,out,row_scale,macro_g,macro_u,route_w,slots,out_f,limit);
+    else moe_m1_splitk_reduce_kernel<1><<<(slots*out_f+255)/256,256,0,st>>>(
+        partial,out,row_scale,macro_g,macro_u,route_w,slots,out_f,limit);
+    e = cudaGetLastError();
+    return e ? 1000 + (int)e : 0;
+}
+
+// Diagnostic only: called once per projection and rank on actual routed inputs.
+// Output and scratch allocations have 64-word canaries at both ends. Event
+// intervals bracket the whole candidate (partial + reduction), one launch per
+// arm per ABBA position, 10 cycles, 20 measurements per arm.
+int memra_moe_m1_splitk_component(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* ignored, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off, int n_active, int in_f, int out_f,
+        float limit, int slots, int gu, float* ignored_partial, void* stream){
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    const size_t n = size_t(slots) * out_f, scratch_n = n * 16 * (gu ? 2 : 1);
+    struct Buffers {
+        float *a=nullptr, *b=nullptr, *p=nullptr;
+        cudaEvent_t begin=nullptr, end=nullptr;
+        ~Buffers(){ if(begin) cudaEventDestroy(begin); if(end) cudaEventDestroy(end);
+            if(a) cudaFree(a); if(b) cudaFree(b); if(p) cudaFree(p); }
+    } b;
+    #define SK_CHECK(call) do { cudaError_t e = (call); if(e) return 1000 + int(e); } while(0)
+    SK_CHECK(cudaMalloc(&b.a,(n+128)*4));
+    SK_CHECK(cudaMalloc(&b.b,(n+128)*4));
+    SK_CHECK(cudaMalloc(&b.p,(scratch_n+128)*4));
+    SK_CHECK(cudaMemsetAsync(b.a,0x7f,(n+128)*4,st));
+    SK_CHECK(cudaMemsetAsync(b.b,0x7f,(n+128)*4,st));
+    SK_CHECK(cudaMemsetAsync(b.p,0x7f,(scratch_n+128)*4,st));
+    SK_CHECK(cudaEventCreate(&b.begin)); SK_CHECK(cudaEventCreate(&b.end));
+    std::vector<int> offsets(n_active+1), ids(n_active);
+    SK_CHECK(cudaMemcpyAsync(offsets.data(),ex_off,offsets.size()*4,cudaMemcpyDeviceToHost,st));
+    SK_CHECK(cudaMemcpyAsync(ids.data(),ex_ids,ids.size()*4,cudaMemcpyDeviceToHost,st));
+    SK_CHECK(cudaStreamSynchronize(st));
+    int device=0; SK_CHECK(cudaGetDevice(&device));
+    int live=0;
+    for(int g=0;g<n_active;++g){
+        if(offsets[g+1]-offsets[g] < 0 || offsets[g+1]-offsets[g] > 1) return 40005;
+        if(offsets[g+1]!=offsets[g]){ ++live;
+            printf("SPLITK_EXPERT device=%d gu=%d slot=%d expert=%d\n",device,gu,offsets[g],ids[g]); }
+    }
+    if(live != slots || offsets[0]!=0 || offsets[n_active]!=slots) return 40005;
+    auto launch = [&](int arm){
+        if(arm) return memra_moe_m1_splitk(table,n_expert,ex_ids,act_f16,b.b+64,row_scale,
+            macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,slots,gu,b.p+64,stream);
+        if(gu) return memra_moe_kq_gemm_sk_gu_m1_half2(table,n_expert,ex_ids,act_f16,
+            b.a+64,row_scale,macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,in_f/2,stream);
+        return memra_moe_kq_gemm_sk_m1_half2(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+            ex_off,n_active,in_f,out_f,in_f/2,stream);
+    };
+    std::vector<float> reference(n), candidate(n), first(n);
+    double totals[2]={}; float max_abs=0, max_rel=0, peak=0; bool have_first=false;
+    for(int cycle=-2;cycle<10;++cycle){
+        const int order[4]={0,1,1,0};
+        for(int arm:order){
+            SK_CHECK(cudaEventRecord(b.begin,st));
+            int rc=launch(arm); if(rc) return rc;
+            SK_CHECK(cudaEventRecord(b.end,st)); SK_CHECK(cudaEventSynchronize(b.end));
+            float ms=0; SK_CHECK(cudaEventElapsedTime(&ms,b.begin,b.end));
+            if(cycle>=0){ totals[arm]+=ms;
+                printf("SPLITK_TIMING device=%d gu=%d cycle=%d arm=%d us=%.6f\n",device,gu,cycle,arm,ms*1000); }
+            auto& host = arm ? candidate : reference;
+            SK_CHECK(cudaMemcpyAsync(host.data(),(arm?b.b:b.a)+64,n*4,cudaMemcpyDeviceToHost,st));
+            SK_CHECK(cudaStreamSynchronize(st));
+            for(float v:host) if(!std::isfinite(v)) return 40006;
+            if(arm){
+                if(!have_first){ first=host; have_first=true; }
+                else if(std::memcmp(first.data(),host.data(),n*4)) return 40007;
+            }
+        }
+    }
+    for(float v:reference) peak=std::max(peak,std::abs(v));
+    // K<=4096 has gamma_K ~= 2.45e-4 in f32. The mixed threshold allows
+    // cancellation near zero while requiring 0.02% relative agreement for
+    // large outputs. The 0.002% plane-scale floor is stricter than gamma_K;
+    // this is an empirical component admission bound, not a bit-identity claim.
+    bool numeric_ok=true;
+    for(size_t i=0;i<n;++i){
+        float d=std::abs(candidate[i]-reference[i]);
+        float r=d/std::max(std::abs(reference[i]),1e-30f);
+        max_abs=std::max(max_abs,d); max_rel=std::max(max_rel,r);
+        if(d > 2e-5f*peak + 2e-4f*std::abs(reference[i])) numeric_ok=false;
+    }
+    for(int which=0;which<3;++which){
+        float* base=which==0?b.a:which==1?b.b:b.p;
+        size_t len=which==2?scratch_n:n;
+        uint32_t guard[128];
+        SK_CHECK(cudaMemcpyAsync(guard,base,256,cudaMemcpyDeviceToHost,st));
+        SK_CHECK(cudaMemcpyAsync(guard+64,base+64+len,256,cudaMemcpyDeviceToHost,st));
+        SK_CHECK(cudaStreamSynchronize(st));
+        for(uint32_t v:guard) if(v!=0x7f7f7f7f) return 40008;
+    }
+    printf("SPLITK_COMPONENT device=%d gu=%d slots=%d blocks=%d max_abs=%.9g max_rel=%.9g peak=%.9g oracle_us=%.6f candidate_us=%.6f speedup=%.6f numeric_ok=%d finite=1 deterministic=1 canaries=1 launches_per_arm=20 numeric_class=moe_m1_splitk_f32_fixed_order\n",
+        device,gu,slots,slots*(out_f/64)*16,max_abs,max_rel,peak,totals[0]*50,totals[1]*50,totals[0]/totals[1],numeric_ok);
+    fflush(stdout);
+    #undef SK_CHECK
+    return numeric_ok ? 0 : 40009;
 }
 
 unsigned long long memra_moe_kq_gemm_sk_gu_half2_dispatches(){
