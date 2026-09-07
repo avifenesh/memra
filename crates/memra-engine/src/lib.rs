@@ -32967,7 +32967,7 @@ impl Engine {
         use cudarc::driver::DevicePtr;
         let f = self.func("ssm_conv1d_fused_decode_tloop_f32");
         let cfg = LaunchConfig {
-            grid_dim: (((conv_dim + 255) / 256) as u32, 1, 1),
+            grid_dim: (conv_dim.div_ceil(256) as u32, 1, 1),
             block_dim: (256, 1, 1),
             shared_mem_bytes: 0,
         };
@@ -33052,6 +33052,7 @@ impl Engine {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn gdn_scan_s128_batched_view(
         &self,
         q: &CudaSlice<f32>,
