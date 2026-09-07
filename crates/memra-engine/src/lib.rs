@@ -2728,13 +2728,18 @@ pub fn glm5_tp_split_grouped_prime_on() -> bool {
     std::env::var("MEMRA_GLM5_TP_SPLIT_GROUPED_PRIME").as_deref() == Ok("1")
 }
 
-/// `MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET=1` (lane/glm5-tp-prime-router-20260907, default OFF,
-/// decide-by 2026-09-21): the TP split grouped prime builds its expert CSR ONCE (counting sort)
-/// instead of once per rank, issues root's pass before the peers', and launches the shared
-/// expert before the routing table is built so the host time hides behind device work.
-/// Byte-identical: launch order and host work only.
-pub fn glm5_tp_split_prime_hostdiet_on() -> bool {
-    std::env::var("MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET").as_deref() == Ok("1")
+/// `MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET=1|2` (lane/glm5-tp-prime-router-20260907, default OFF,
+/// decide-by 2026-09-21): `1` = the TP split grouped prime builds its expert CSR ONCE (counting
+/// sort) instead of once per rank and launches the shared expert before the routing table is
+/// built so the host time hides behind device work; `2` = additionally issues root's pass before
+/// the peers' (measured 9.6% slower at 256k, kept as the explanatory arm). Byte-identical:
+/// launch order and host work only.
+pub fn glm5_tp_split_prime_hostdiet_level() -> u8 {
+    match std::env::var("MEMRA_GLM5_TP_SPLIT_PRIME_HOSTDIET").as_deref() {
+        Ok("1") => 1,
+        Ok("2") => 2,
+        _ => 0,
+    }
 }
 
 /// `MEMRA_GLM5_TP_INDEXER_SPLIT=1` (lane/glm5-tp-indexer-split-20260907, default OFF, decide-by

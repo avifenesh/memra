@@ -15188,8 +15188,8 @@ impl HybridModel {
             // counting sort and uploaded to each rank, and root's pass is issued first (root is
             // the critical path; the peer has slack). Byte-identical: the same kernels see the
             // same operands in the same per-device order; only host work and launch order move.
-            let host_diet = crate::glm5_tp_split_prime_hostdiet_on();
-            let shexp_early = if host_diet {
+            let host_diet = crate::glm5_tp_split_prime_hostdiet_level();
+            let shexp_early = if host_diet > 0 {
                 Self::moe_shexp_compute(e, m, z, zq8, t, cfg, lim_shexp)?
             } else {
                 None
@@ -16059,6 +16059,7 @@ impl HybridModel {
     /// tpprime2): the split walk primed at ~520 tok/s flat (3,766 tokens 7.08 s; 29,961 tokens
     /// 57.7 s) against PP-2's 2,178 -> 4,069 tok/s, because it ran its per-token slot walk at
     /// every t. Admission mirrors the plain grouped arm's and falls closed to that slot walk.
+    #[allow(clippy::too_many_arguments)]
     fn moe_ffn_glm5_tp_split_grouped_prime(
         e: &Engine,
         m: &MoeWeights,
@@ -16069,7 +16070,7 @@ impl HybridModel {
         t: usize,
         cfg: &ModelConfig,
         il: u16,
-        host_diet: bool,
+        host_diet: u8,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
         use std::sync::atomic::Ordering;
         let moe = cfg
@@ -16207,7 +16208,7 @@ impl HybridModel {
                 n_active,
             }))
         };
-        let shared_csr = if host_diet { build_csr()? } else { None };
+        let shared_csr = if host_diet > 0 { build_csr()? } else { None };
 
         let rank_pass = |dev: &Engine,
                          _rank: u8,
@@ -16329,10 +16330,10 @@ impl HybridModel {
         let ranks = xs.ranks();
         let hop = xs.rt.hop(e);
         let mut peer_partials: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        // Host-diet order: root FIRST. Root's stream is the critical path (the peer idles
-        // waiting on root's attention between MoE layers); issuing root's pass before the
-        // peers' means root's GPU starts while the host still uploads and launches the peers.
-        let root_first = if host_diet {
+        // Host-diet LEVEL 2: root FIRST. Measured at 256k on the pair (tpwalk27): root first
+        // is 9.6% SLOWER (80.65 vs 73.56 s) because the peer's pass then starts after root's
+        // launches and the combine waits on it; level 1 keeps the peer-first order.
+        let root_first = if host_diet >= 2 {
             Some(rank_pass(e, 0, &xs.ptr_rows[0], z)?)
         } else {
             None
