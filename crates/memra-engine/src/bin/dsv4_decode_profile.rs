@@ -24,6 +24,7 @@ enum ProfileArm {
     Current,
     Baseline,
     Half2,
+    Composed,
 }
 
 impl ProfileArm {
@@ -32,8 +33,9 @@ impl ProfileArm {
             None => Self::Current,
             Some("baseline") => Self::Baseline,
             Some("half2") => Self::Half2,
+            Some("composed") => Self::Composed,
             Some(other) => {
-                panic!("unknown profile arm '{other}' (expected baseline | half2)")
+                panic!("unknown profile arm '{other}' (expected baseline | half2 | composed)")
             }
         }
     }
@@ -43,6 +45,7 @@ impl ProfileArm {
             Self::Current => "current",
             Self::Baseline => "baseline",
             Self::Half2 => "half2",
+            Self::Composed => "composed",
         }
     }
 
@@ -57,6 +60,8 @@ struct Receipt {
     gu_m1: u64,
     gu_half2: u64,
     down_half2: u64,
+    wo_a: u64,
+    index_topk: u64,
 }
 
 fn receipt(gpu: &Dsv4Gpu) -> Receipt {
@@ -65,6 +70,8 @@ fn receipt(gpu: &Dsv4Gpu) -> Receipt {
         gu_m1: memra_engine::moe_f16g_gu_m1_tc_dispatches(),
         gu_half2: memra_engine::moe_f16g_gu_half2_dispatches(),
         down_half2: memra_engine::moe_f16g_down_m1_half2_dispatches(),
+        wo_a: gpu.dense_wo_a_grouped_dispatches(),
+        index_topk: gpu.index_topk_radix_dispatches(),
     }
 }
 
@@ -74,6 +81,8 @@ fn receipt_delta(after: Receipt, before: Receipt) -> Receipt {
         gu_m1: after.gu_m1 - before.gu_m1,
         gu_half2: after.gu_half2 - before.gu_half2,
         down_half2: after.down_half2 - before.down_half2,
+        wo_a: after.wo_a - before.wo_a,
+        index_topk: after.index_topk - before.index_topk,
     }
 }
 
@@ -81,7 +90,7 @@ fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert!(
         (3..=4).contains(&args.len()),
-        "usage: dsv4_decode_profile <model-dir> <source.txt> [baseline|half2]"
+        "usage: dsv4_decode_profile <model-dir> <source.txt> [baseline|half2|composed]"
     );
     let arm = ProfileArm::parse(&args);
     let controlled_arm = arm.controlled();
@@ -167,12 +176,15 @@ fn main() {
         gpu.set_grouped_gu_fuse_for_gate(true);
         gpu.set_grouped_m1_tc_for_gate(true);
         gpu.set_c4_host_copy_elision_for_gate(false);
-        memra_engine::set_moe_f16g_gu_m1_tc_for_gate(false);
-        let half2 = matches!(arm, ProfileArm::Half2);
+        let composed = arm == ProfileArm::Composed;
+        memra_engine::set_moe_f16g_gu_m1_tc_for_gate(composed);
+        let half2 = matches!(arm, ProfileArm::Half2 | ProfileArm::Composed);
         memra_engine::set_moe_f16g_gu_half2_for_gate(half2);
         memra_engine::set_moe_f16g_down_m1_half2_for_gate(half2);
+        gpu.set_dense_wo_a_grouped_for_gate(composed);
+        gpu.set_index_topk_radix_for_gate(composed);
         println!(
-            "PROFILE_ARM arm={} gu_fuse=true m1_down=true gu_m1=false half2={} route_validate=false mirror_validate=false c4_host_copy_elide=false",
+            "PROFILE_ARM arm={} gu_fuse=true m1_down=true gu_m1={composed} half2={} wo_a_grouped={composed} index_topk_radix={composed} route_validate=false mirror_validate=false c4_host_copy_elide=false",
             arm.name(),
             half2,
         );
@@ -226,8 +238,13 @@ fn main() {
             let profile_after = receipt(&gpu);
             let profile_delta = receipt_delta(profile_after, profile_before.unwrap());
             println!(
-                "PROFILE_COMPLETE steps=32..64 absolute_positions=8224..8256 seconds={seconds:.6} both_stages_drained=true ep_calls={} gu_half2={} down_half2={}",
-                profile_delta.ep_calls, profile_delta.gu_half2, profile_delta.down_half2,
+                "PROFILE_COMPLETE steps=32..64 absolute_positions=8224..8256 seconds={seconds:.6} both_stages_drained=true ep_calls={} gu_m1={} gu_half2={} down_half2={} wo_a={} index_topk={}",
+                profile_delta.ep_calls,
+                profile_delta.gu_m1,
+                profile_delta.gu_half2,
+                profile_delta.down_half2,
+                profile_delta.wo_a,
+                profile_delta.index_topk,
             );
         }
     }
@@ -239,13 +256,15 @@ fn main() {
     let total_receipt = receipt(&gpu);
     let total_delta = receipt_delta(total_receipt, initial_receipt);
     println!(
-        "PROFILE_RECEIPT arm={} ep_calls={} trunk_layers={} gu_m1={} gu_half2={} down_half2={}",
+        "PROFILE_RECEIPT arm={} ep_calls={} trunk_layers={} gu_m1={} gu_half2={} down_half2={} wo_a={} index_topk={}",
         arm.name(),
         total_delta.ep_calls,
         trunk_layers,
         total_delta.gu_m1,
         total_delta.gu_half2,
         total_delta.down_half2,
+        total_delta.wo_a,
+        total_delta.index_topk,
     );
     if controlled_arm {
         assert_eq!(
@@ -259,8 +278,16 @@ fn main() {
                 assert_eq!(total_delta.gu_half2, 0, "baseline GU half2 must be off");
                 assert_eq!(total_delta.down_half2, 0, "baseline down half2 must be off");
             }
-            ProfileArm::Half2 => {
-                assert_eq!(total_delta.gu_m1, 0, "half2 GU-M1 must be off");
+            ProfileArm::Half2 | ProfileArm::Composed => {
+                assert_eq!(
+                    total_delta.gu_m1,
+                    if arm == ProfileArm::Composed {
+                        2 * total_delta.ep_calls
+                    } else {
+                        0
+                    },
+                    "actual composed GU-M1 launches only in composed arm"
+                );
                 assert_eq!(
                     total_delta.gu_half2,
                     2 * total_delta.ep_calls,
@@ -274,6 +301,25 @@ fn main() {
             }
             ProfileArm::Current => unreachable!("current arm is not controlled"),
         }
+        let indexed_layers = (0..trunk_layers as u32)
+            .filter(|&layer| gpu.model.cfg().compress_ratio(layer) == 4)
+            .count() as u64;
+        assert_eq!(
+            total_delta.wo_a,
+            if arm == ProfileArm::Composed {
+                total_delta.ep_calls
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            total_delta.index_topk,
+            if arm == ProfileArm::Composed {
+                96 * indexed_layers
+            } else {
+                0
+            }
+        );
     }
     let mut hash = Sha256::new();
     for token in &tokens {
@@ -288,4 +334,57 @@ fn main() {
     println!(
         "PASS radix sampled plain profile with frozen 96-token stream; not a throughput measurement"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ProfileArm, Receipt, receipt_delta};
+
+    #[test]
+    fn explicit_arms_preserve_default_and_select_composition() {
+        let mut args = vec!["profile".into(), "model".into(), "source".into()];
+        assert_eq!(ProfileArm::parse(&args), ProfileArm::Current);
+        for (name, expected) in [
+            ("baseline", ProfileArm::Baseline),
+            ("half2", ProfileArm::Half2),
+            ("composed", ProfileArm::Composed),
+        ] {
+            args.truncate(3);
+            args.push(name.into());
+            assert_eq!(ProfileArm::parse(&args), expected);
+            assert!(expected.controlled());
+        }
+    }
+
+    #[test]
+    fn receipt_delta_includes_each_composed_kernel_family() {
+        let before = Receipt {
+            ep_calls: 1,
+            gu_m1: 2,
+            gu_half2: 3,
+            down_half2: 4,
+            wo_a: 5,
+            index_topk: 6,
+        };
+        let after = Receipt {
+            ep_calls: 11,
+            gu_m1: 22,
+            gu_half2: 33,
+            down_half2: 44,
+            wo_a: 55,
+            index_topk: 66,
+        };
+        let delta = receipt_delta(after, before);
+        assert_eq!(
+            (
+                delta.ep_calls,
+                delta.gu_m1,
+                delta.gu_half2,
+                delta.down_half2,
+                delta.wo_a,
+                delta.index_topk
+            ),
+            (10, 20, 30, 40, 50, 60)
+        );
+    }
 }
