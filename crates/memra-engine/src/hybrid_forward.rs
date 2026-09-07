@@ -10992,7 +10992,7 @@ impl HybridModel {
         let root_layer = cache.latent[il]
             .as_mut()
             .ok_or_else(|| format!("layer {il}: indexer split found no canonical latent plane"))?;
-        let mut layers: [&mut memra_kv::LatentKvLayer; 2] = [root_layer, &mut peer_layers[0]];
+        let layers: [&mut memra_kv::LatentKvLayer; 2] = [root_layer, &mut peer_layers[0]];
         let devs: [&Engine; 2] = [e, &rt.peers[0]];
         let shards: [&crate::hybrid::MlaAttnLayer; 2] = [mla, &tp.peers[0]];
 
