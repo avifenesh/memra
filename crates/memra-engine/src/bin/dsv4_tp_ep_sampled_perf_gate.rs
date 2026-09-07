@@ -740,6 +740,117 @@ fn main() {
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }
 
+/// Invert the position-keyed SplitMix64 map to place a draw on a chosen
+/// 53-bit uniform value. This constructs boundaries, rather than hoping a seed
+/// happens to land near one. The production RNG is unchanged.
+fn sampler_boundary_seed(numerator: u64, pos: usize) -> u64 {
+    fn undo_xor(y: u64, shift: u32) -> u64 {
+        let mut x = y;
+        for _ in 0..64u32.div_ceil(shift) {
+            x = y ^ (x >> shift);
+        }
+        x
+    }
+    fn inverse_odd(a: u64) -> u64 {
+        let mut x = 1u64;
+        for _ in 0..6 {
+            x = x.wrapping_mul(2u64.wrapping_sub(a.wrapping_mul(x)));
+        }
+        x
+    }
+    assert!(numerator < (1u64 << 53));
+    let z = undo_xor(numerator << 11, 31).wrapping_mul(inverse_odd(0x94d049bb133111eb));
+    let z = undo_xor(z, 27).wrapping_mul(inverse_odd(0xbf58476d1ce4e5b9));
+    let input = undo_xor(z, 30).wrapping_sub(0x9e3779b97f4a7c15);
+    let seed = input ^ (pos as u64).wrapping_mul(0xa24baed4963ee407);
+    assert_eq!(
+        memra_engine::dsv4_gpu::dsv4_pos_uniform(seed, pos),
+        numerator as f64 / (1u64 << 53) as f64,
+        "constructed position-keyed draw"
+    );
+    seed
+}
+
+fn sampler_boundary_case(
+    n: usize,
+    ordinal: usize,
+    index: usize,
+    pos: usize,
+) -> (Vec<f32>, Dsv4SampleCfg, &'static str) {
+    let k = 1usize << (3 + (index / 4 + ordinal) % 7);
+    let cut = 2 + (index * 7 + ordinal * 11) % (k - 3);
+    let start = ordinal * (n / 2) + index * 512;
+    let cdf_case = index % 4 == 3;
+    let nonuniform = !cdf_case && index & 4 != 0;
+    let mut row = vec![-64.0; n];
+    for (i, value) in row[start..start + k].iter_mut().enumerate() {
+        *value = if nonuniform { -(i as f32) / k as f32 } else { 0.0 };
+    }
+    let mut cfg = Dsv4SampleCfg {
+        temperature: 0.75,
+        top_p: 1.0,
+        top_k: k,
+        seed: 20260907 + pos as u64,
+    };
+    if cdf_case {
+        // Exact dyadic probabilities: draw below, at, and above a CDF edge,
+        // separated by one RNG quantum (2^-53). Strict u < acc is exercised.
+        let numerator = (cut as u64) * ((1u64 << 53) / k as u64)
+            - 1 + ((index / 4) % 3) as u64;
+        cfg.seed = sampler_boundary_seed(numerator, pos);
+        (row, cfg, "cdf")
+    } else {
+        // Mirror the oracle's normalization to construct a cumulative mass.
+        // top_p is f32: nearest and its two neighbours are within two f32
+        // ulps of that f64 mass, and all retain multiple tokens at full vocab.
+        let mut probs: Vec<f64> = row[start..start + k]
+            .iter()
+            .map(|&v| ((v as f64) / cfg.temperature as f64).exp())
+            .collect();
+        let z: f64 = probs.iter().sum();
+        for p in &mut probs {
+            *p /= z;
+        }
+        let boundary: f64 = probs[..cut].iter().sum();
+        let nearest = boundary as f32;
+        cfg.top_p = match index % 4 {
+            0 => nearest.next_down(),
+            1 => nearest,
+            _ => nearest.next_up(),
+        };
+        let ulp = (nearest.next_up() as f64 - nearest as f64)
+            .max(nearest as f64 - nearest.next_down() as f64);
+        assert!((cfg.top_p as f64 - boundary).abs() <= 2.0 * ulp);
+        assert!(cfg.top_p as f64 > probs[0], "nucleus must retain more than one token");
+        (row, cfg, if nonuniform { "nucleus-exp" } else { "nucleus-dyadic" })
+    }
+}
+
+#[cfg(test)]
+mod sampler_boundary_tests {
+    #[test]
+    fn constructed_draws_cover_both_sides_and_equality() {
+        for pos in [256, 575, 831, 895] {
+            for numerator in [(1u64 << 51) - 1, 1u64 << 51, (1u64 << 51) + 1] {
+                super::sampler_boundary_seed(numerator, pos);
+            }
+        }
+    }
+
+    #[test]
+    fn boundary_cases_have_distinct_gpu_inputs_and_valid_multi_token_nuclei() {
+        for index in 0..64 {
+            let (row0, cfg0, _) = super::sampler_boundary_case(129280, 0, index, 512 + index);
+            let (row1, cfg1, _) = super::sampler_boundary_case(129280, 1, index, 832 + index);
+            assert_ne!(row0, row1);
+            for cfg in [cfg0, cfg1] {
+                assert!(cfg.top_p > 0.0 && cfg.top_p <= 1.0);
+                assert!(cfg.top_k > 1);
+            }
+        }
+    }
+}
+
 /// Deterministic full-vocabulary tape, regenerated from row and token IDs.
 fn sampler_component() {
     use memra_engine::dsv4_gpu::{Dsv4PenaltyCfg, dsv4_penalize_row, dsv4_sample_row_ordered};
@@ -749,11 +860,13 @@ fn sampler_component() {
         let ctx = cudarc::driver::CudaContext::new(ordinal).expect("component CUDA context");
         let stream = ctx.default_stream();
         let mut sampler = Dsv4DeviceSampler::new(stream, n).expect("component scratch");
-        for r in 0..256usize {
+        for r in 0..320usize {
+            let case_id = ordinal * 320 + r;
+            let pos = 256 + case_id;
             let row: Vec<f32> = (0..n)
                 .map(|i| {
                     let x = (i as u64).wrapping_mul(0x9e3779b97f4a7c15)
-                        ^ (r as u64).wrapping_mul(0xbf58476d1ce4e5b9);
+                        ^ (case_id as u64).wrapping_mul(0xbf58476d1ce4e5b9);
                     match r % 8 {
                         0 => 0.0,
                         1 => {
@@ -781,7 +894,12 @@ fn sampler_component() {
                 temperature: [1.0, 0.01, 10.0, f32::MIN_POSITIVE][(r / 8) % 4],
                 top_p: [1.0, 0.9, 1e-7, f32::MIN_POSITIVE][(r / 32) % 4],
                 top_k: [0, 1, 37, n + 1][(r / 64) % 4],
-                seed: 20260907 + r as u64,
+                seed: 20260907 + case_id as u64,
+            };
+            let (row, cfg, boundary) = if r >= 256 {
+                sampler_boundary_case(n, ordinal, r - 256, pos)
+            } else {
+                (row, cfg, "none")
             };
             let penalty = Dsv4PenaltyCfg {
                 last_n: 17,
@@ -790,19 +908,19 @@ fn sampler_component() {
                 present: -0.1,
             };
             let window = [0, 1, 1, 3, 3, 3, r as u32, n as u32 + 9];
-            let pc = (r % 3 == 0).then_some(&penalty);
+            let pc = (r < 256 && r % 3 == 0).then_some(&penalty);
             let mut oracle = row.clone();
             if let Some(pc) = pc {
                 dsv4_penalize_row(&mut oracle, &window, pc);
             }
-            let host = dsv4_sample_row_ordered(&oracle, r + 256, &cfg, Dsv4SamplerOrder::Radix)
+            let host = dsv4_sample_row_ordered(&oracle, pos, &cfg, Dsv4SamplerOrder::Radix)
                 .expect("host radix");
             let device = sampler
-                .sample_host_row(&row, r + 256, &cfg, &window, pc)
+                .sample_host_row(&row, pos, &cfg, &window, pc)
                 .expect("device");
             sampler.check_canary_for_gate().expect("component canary");
             println!(
-                "COMPONENT gpu={ordinal} row={r} host={host} device={device} identical={} finite=true canary=true",
+                "COMPONENT gpu={ordinal} row={r} case_id={case_id} boundary={boundary} host={host} device={device} identical={} finite=true canary=true",
                 host == device
             );
             assert_eq!(
@@ -811,10 +929,10 @@ fn sampler_component() {
             );
             total += 1;
         }
-        assert_eq!(sampler.engagements(), 256, "component engagement");
+        assert_eq!(sampler.engagements(), 320, "component engagement");
     }
     println!(
-        "PASS component rows_per_gpu=256 rows={total} identical_tokens=true finite=true canaries=true numeric_class={}",
+        "PASS component rows_per_gpu=320 rows={total} identical_tokens=true finite=true canaries=true numeric_class={}",
         memra_engine::dsv4_sampler::NUMERIC_CLASS
     );
 }
