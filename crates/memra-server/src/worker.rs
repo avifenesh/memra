@@ -4757,9 +4757,26 @@ fn glm5_tp_serve_boot_verdict(
     glm5_spec: bool,
     dspark_spec: bool,
     serve_spec_env: Option<&str>,
+    hyper_batch_env: Option<&str>,
 ) -> Result<Option<String>, String> {
     if !glm5_tp {
         return Ok(None);
+    }
+    // The batched hc decode walk (`decode_step_batch_*`, MEMRA_HYPER_BATCH=1) has no TP
+    // mixer branches: the engine's KDA choke point refuses a sharded layer on it by name,
+    // which is exactly how every request of the first serving smoke (tpwalk25, 2026-09-07)
+    // died ("the plain mixer path is unwired for a head shard ... arm decode"). Under TP the
+    // sessions step one at a time through the TP walk (`decode_step`, the symmetric per-rank
+    // graphs); several sessions still admit and interleave per token. Refused at boot rather
+    // than overridden so the operator's env says what the box runs.
+    if matches!(hyper_batch_env.map(str::trim), Some("1")) {
+        return Err(
+            "MEMRA_GLM5_TP with MEMRA_HYPER_BATCH=1: the batched hc decode walk carries no \
+             TP mixer branches (the KDA choke point refuses a sharded layer on it); the TP \
+             walk serves sessions one at a time through decode_step; set MEMRA_HYPER_BATCH=0 \
+             or unset MEMRA_GLM5_TP"
+                .to_string(),
+        );
     }
     if glm5_spec {
         return Err(
@@ -4778,8 +4795,9 @@ fn glm5_tp_serve_boot_verdict(
     match serve_spec_env.map(str::trim) {
         Some("0") => Ok(Some(
             "glm5 TP-2 walk ARMED on a serving worker (MEMRA_GLM5_TP): serves PLAIN decode \
-             by explicit choice (MEMRA_SERVE_SPEC=0); spec programs refused by name; \
-             per-session TP state rides the session cache; snapshot consumers \
+             by explicit choice (MEMRA_SERVE_SPEC=0); spec programs refused by name; eager \
+             per-session decode through the TP walk (the batched hc walk is refused by \
+             name); per-session TP state rides the session cache; snapshot consumers \
              (plain-affinity checkpoint, park-compact, grow) decline by name; admission \
              accounts the owning device"
                 .to_string(),
@@ -12402,6 +12420,7 @@ pub fn run(
         memra_engine::glm_spec::glm5_spec_on(),
         std::env::var("MEMRA_DSPARK_SPEC").as_deref() == Ok("1"),
         std::env::var("MEMRA_SERVE_SPEC").ok().as_deref(),
+        std::env::var("MEMRA_HYPER_BATCH").ok().as_deref(),
     ) {
         Ok(Some(line)) => eprintln!("[worker] {line}"),
         Ok(None) => {}
@@ -21389,8 +21408,12 @@ fn gemma4_batched_decode_model(lm: &LoadedModel) -> bool {
 /// gemma4 carve-out, ONLY the two decode scheduling sites consume this: prime batching,
 /// graph promotion, and every speculative entry point stay eager-only for this topology.
 fn hyper_batched_decode_model(lm: &LoadedModel) -> bool {
+    // The glm5 TP walk is eager per session by contract (`glm5_tp_serve_boot_verdict`
+    // refuses MEMRA_HYPER_BATCH=1 at boot); this is the second lock on the same door so a
+    // future env read cannot route a sharded model onto the batched walk.
     memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
         && HybridModel::hyper_batch_on()
+        && !memra_engine::glm5_tp::glm5_tp_armed()
 }
 
 fn stage_grammar_mask(engine: &Engine, s: &mut Session) -> Result<(), String> {
@@ -32932,27 +32955,43 @@ mod glm5_tp_serve_boot_verdict_tests {
     #[test]
     fn tp_off_is_silent() {
         assert_eq!(
-            glm5_tp_serve_boot_verdict(false, true, true, None),
+            glm5_tp_serve_boot_verdict(false, true, true, None, Some("1")),
             Ok(None)
         );
     }
 
     #[test]
     fn tp_serves_plain_only_by_explicit_choice() {
-        let ok = glm5_tp_serve_boot_verdict(true, false, false, Some("0")).unwrap();
+        let ok = glm5_tp_serve_boot_verdict(true, false, false, Some("0"), Some("0")).unwrap();
         assert!(ok.is_some_and(|l| l.contains("PLAIN") && l.contains("MEMRA_SERVE_SPEC=0")));
         // Unset, blank and an explicit non-zero all refuse and name the missing intent.
         for env in [None, Some(""), Some("1"), Some(" 1 ")] {
-            let err = glm5_tp_serve_boot_verdict(true, false, false, env).unwrap_err();
+            let err = glm5_tp_serve_boot_verdict(true, false, false, env, None).unwrap_err();
             assert!(err.contains("MEMRA_SERVE_SPEC=0"), "{err}");
         }
     }
 
     #[test]
+    fn tp_refuses_the_batched_hc_walk_by_name() {
+        // The dispatch choice: under TP the sessions decode eagerly through the TP walk;
+        // MEMRA_HYPER_BATCH=1 (the batched hc walk, no TP mixer branches) refuses at boot.
+        let err = glm5_tp_serve_boot_verdict(true, false, false, Some("0"), Some("1")).unwrap_err();
+        assert!(err.contains("MEMRA_HYPER_BATCH=1"), "{err}");
+        assert!(err.contains("decode_step"), "{err}");
+        for env in [None, Some("0"), Some("")] {
+            let ok = glm5_tp_serve_boot_verdict(true, false, false, Some("0"), env).unwrap();
+            assert!(
+                ok.is_some_and(|l| l.contains("eager per-session decode")),
+                "{env:?}"
+            );
+        }
+    }
+
+    #[test]
     fn tp_refuses_every_spec_program_by_name() {
-        let err = glm5_tp_serve_boot_verdict(true, true, false, Some("0")).unwrap_err();
+        let err = glm5_tp_serve_boot_verdict(true, true, false, Some("0"), None).unwrap_err();
         assert!(err.contains("MEMRA_GLM5_SPEC=1"), "{err}");
-        let err = glm5_tp_serve_boot_verdict(true, false, true, Some("0")).unwrap_err();
+        let err = glm5_tp_serve_boot_verdict(true, false, true, Some("0"), None).unwrap_err();
         assert!(err.contains("MEMRA_DSPARK_SPEC=1"), "{err}");
     }
 }
