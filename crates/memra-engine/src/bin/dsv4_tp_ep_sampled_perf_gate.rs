@@ -303,11 +303,15 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    assert_eq!(
-        args.len(),
-        3,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt>"
+    assert!(
+        (3..=4).contains(&args.len()),
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [serial|workers]"
     );
+    let workers = match args.get(3).map(String::as_str) {
+        None | Some("serial") => false,
+        Some("workers") => true,
+        Some(other) => panic!("unknown submission arm {other}"),
+    };
     assert_ne!(
         std::env::var("MEMRA_DSV4_ROUND_PROFILE").as_deref(),
         Ok("1"),
@@ -366,6 +370,8 @@ fn main() {
     )
     .expect("TP/EP model");
     assert!(gpu.topology().is_tp_ep(), "no PP fallback");
+    gpu.set_tp_ep_worker_submission_for_gate(workers);
+    println!("SUBMISSION workers={workers} per_layer_host_rendezvous=false");
     gpu.set_grouped_route_validation_for_gate(false);
     gpu.set_grouped_mirror_validation_for_gate(false);
     gpu.set_grouped_gu_fuse_for_gate(true);

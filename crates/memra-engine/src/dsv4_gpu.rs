@@ -9112,168 +9112,129 @@ impl Dsv4Gpu {
         self.decode_step_tp_ep_serial(tok, state, want_logits, taps)
     }
 
-    /// Gate-only host submission worker for one TP/EP rank. The workers own
-    /// only their rank's workspace/cache/checkpoint mutexes; the coordinator
-    /// launches the AR after both local producers rendezvous at each layer.
+    /// A scoped rank owns its mutable state and submits producer -> its own
+    /// device-barrier AR endpoint -> common tail without per-layer host rendezvous.
     #[allow(clippy::too_many_arguments)]
     fn tp_ep_worker_rank(
         &self,
         rank: usize,
         tok: u32,
         pos: usize,
-        n_trunk: usize,
-        topk: usize,
-        hidden: usize,
-        limit: f32,
-        ws: std::sync::Arc<std::sync::Mutex<VerifyWs>>,
-        caches: std::sync::Arc<std::sync::Mutex<Vec<LayerCache>>>,
-        checkpoints: std::sync::Arc<std::sync::Mutex<Vec<LayerCkptDev>>>,
-        ready: std::sync::Arc<std::sync::Barrier>,
-        local: std::sync::Arc<std::sync::Barrier>,
-        tail: std::sync::Arc<std::sync::Barrier>,
-        errors: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+        ws: &mut VerifyWs,
+        caches: &mut [LayerCache],
+        checkpoints: &mut [LayerCkptDev],
+        output: &CudaSlice<f32>,
+        endpoint: &crate::dsv4_ep::TpEpArEndpoint<'_>,
+        abort: &AtomicBool,
     ) -> Res<()> {
-        let record_error = |error: String| {
-            if let Ok(mut slot) = errors.lock() {
-                if slot.is_none() {
-                    *slot = Some(error);
-                }
-            }
-        };
-        let has_error = || errors.lock().map(|slot| slot.is_some()).unwrap_or(true);
         let st = &self.stages[rank];
-        let mut failed = false;
-        if let Err(error) = st.gpu.ctx.bind_to_thread().map_err(|e| e.to_string()) {
-            record_error(format!("TP/EP rank {rank} bind: {error}"));
-            failed = true;
-        }
-        if !failed {
-            let result = (|| -> Res<()> {
-                let mut workspace = ws
-                    .lock()
-                    .map_err(|_| format!("TP/EP rank {rank} workspace mutex poisoned"))?;
-                let stream = st.gpu.stream();
-                let d = self.model.cfg();
-                let hidden = self.model.mc.n_embd as usize;
-                let hc = d.hc_mult as usize;
-                let tok_i32 = [tok as i32];
-                let pos_i32 = [pos as i32];
-                stream
-                    .memcpy_htod(&tok_i32, &mut workspace.tok)
-                    .map_err(e("TP/EP worker token upload"))?;
-                stream
-                    .memcpy_htod(&pos_i32, &mut workspace.pos_dev)
-                    .map_err(e("TP/EP worker position upload"))?;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Res<()> {
+            crate::dsv4_grouped::bind_matrix(&st.gpu)?;
+            let stream = st.gpu.stream();
+            let d = self.model.cfg();
+            let hidden = self.model.mc.n_embd as usize;
+            let hc = d.hc_mult as usize;
+            let topk = self.model.mc.moe.as_ref().expect("moe").expert_used_count as usize;
+            let tok_i32 = [tok as i32];
+            let pos_i32 = [pos as i32];
+            stream
+                .memcpy_htod(&tok_i32, &mut ws.tok)
+                .map_err(e("worker token"))?;
+            stream
+                .memcpy_htod(&pos_i32, &mut ws.pos_dev)
+                .map_err(e("worker position"))?;
+            unsafe {
+                ck(
+                    "worker embed",
+                    k::memra_dsv4_embed_rows(
+                        st.embed
+                            .as_ref()
+                            .ok_or("worker embed missing")?
+                            .device_ptr(&stream)
+                            .0 as *const c_void,
+                        ws.tok.device_ptr(&stream).0 as *const i32,
+                        dpm!(ws.emb, &stream),
+                        1,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "worker repeat hc",
+                    k::memra_dsv4_repeat_hc(
+                        dpf!(ws.emb, &stream),
+                        dpm!(ws.h_a, &stream),
+                        1,
+                        hc as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            for (il, (cache, checkpoint)) in
+                caches.iter_mut().zip(checkpoints.iter_mut()).enumerate()
+            {
+                if abort.load(Ordering::Acquire) {
+                    return Err(format!("TP/EP rank {rank} stopped after peer failure"));
+                }
+                let layer = st
+                    .layers
+                    .iter()
+                    .find(|l| l.il == il as u32)
+                    .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
+                self.block_verify_dev(
+                    st,
+                    layer,
+                    cache,
+                    checkpoint,
+                    ws,
+                    false,
+                    pos,
+                    1,
+                    &[tok],
+                    false,
+                    true,
+                    None,
+                    true,
+                )?;
+                // SAFETY: both workspaces, both output buffers and the borrowed signal
+                // plane remain alive until both scoped workers have drained and joined.
+                // This rank's producer, endpoint and consumer use the same ordered stream.
                 unsafe {
-                    ck(
-                        "TP/EP worker embed",
-                        k::memra_dsv4_embed_rows(
-                            st.embed
-                                .as_ref()
-                                .ok_or("TP/EP worker rank embed missing")?
-                                .device_ptr(&stream)
-                                .0 as *const c_void,
-                            workspace.tok.device_ptr(&stream).0 as *const i32,
-                            dpm!(workspace.emb, &stream),
-                            1,
-                            hidden as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                    ck(
-                        "TP/EP worker repeat hc",
-                        k::memra_dsv4_repeat_hc(
-                            dpf!(workspace.emb, &stream),
-                            dpm!(workspace.h_a, &stream),
-                            1,
-                            hc as i32,
-                            hidden as i32,
-                            sp(&stream),
-                        ),
-                    )?;
+                    endpoint.enqueue(&st.gpu)?;
                 }
-                Ok(())
-            })();
-            if let Err(error) = result {
-                record_error(format!("TP/EP rank {rank} embed: {error}"));
-                failed = true;
+                self.moe_verify_common_tail(
+                    st,
+                    layer,
+                    ws,
+                    1,
+                    topk,
+                    hidden,
+                    d.swiglu_limit,
+                    true,
+                    Some(output),
+                )?;
+                self.tp_ep_rank_layer_calls[rank].fetch_add(1, Ordering::Relaxed);
             }
+            Ok(())
+        }))
+        .unwrap_or_else(|_| Err(format!("TP/EP rank {rank} worker panicked")));
+        if result.is_err() {
+            abort.store(true, Ordering::Release);
         }
-        ready.wait();
-        for il in 0..n_trunk {
-            if !failed && !has_error() {
-                let result = (|| -> Res<()> {
-                    let mut workspace = ws
-                        .lock()
-                        .map_err(|_| format!("TP/EP rank {rank} workspace mutex poisoned"))?;
-                    let mut cache = caches
-                        .lock()
-                        .map_err(|_| format!("TP/EP rank {rank} cache mutex poisoned"))?;
-                    let mut checkpoint = checkpoints
-                        .lock()
-                        .map_err(|_| format!("TP/EP rank {rank} checkpoint mutex poisoned"))?;
-                    let layer = st
-                        .layers
-                        .iter()
-                        .find(|layer| layer.il == il as u32)
-                        .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
-                    self.block_verify_dev(
-                        st,
-                        layer,
-                        &mut cache[il],
-                        &mut checkpoint[il],
-                        &mut workspace,
-                        false,
-                        pos,
-                        1,
-                        &[tok],
-                        false,
-                        true,
-                        None,
-                        true,
-                    )?;
-                    Ok(())
-                })();
-                if let Err(error) = result {
-                    record_error(format!("TP/EP rank {rank} layer {il}: {error}"));
-                    failed = true;
-                }
-            }
-            local.wait();
-            if !failed && !has_error() {
-                let result = (|| -> Res<()> {
-                    let mut workspace = ws
-                        .lock()
-                        .map_err(|_| format!("TP/EP rank {rank} workspace mutex poisoned"))?;
-                    let layer = st
-                        .layers
-                        .iter()
-                        .find(|layer| layer.il == il as u32)
-                        .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
-                    self.moe_verify_common_tail(
-                        st,
-                        layer,
-                        &mut workspace,
-                        1,
-                        topk,
-                        hidden,
-                        limit,
-                        true,
-                        None,
-                    )?;
-                    Ok(())
-                })();
-                if let Err(error) = result {
-                    record_error(format!("TP/EP rank {rank} tail {il}: {error}"));
-                    failed = true;
-                }
-            }
-            tail.wait();
+        // Always drain before scoped borrows end, even on a partial launch or panic.
+        // A missing peer is bounded by the AR kernel's timeout; no unbounded CPU barrier.
+        let drained = st
+            .gpu
+            .stream()
+            .synchronize()
+            .map_err(e("TP/EP worker final drain"));
+        if drained.is_err() {
+            abort.store(true, Ordering::Release);
         }
-        Ok(())
+        result.and(drained)
     }
 
-    #[allow(clippy::too_many_lines)]
     fn decode_step_tp_ep_workers(
         &self,
         tok: u32,
@@ -9288,226 +9249,93 @@ impl Dsv4Gpu {
             .tp_ep_walk_lock
             .lock()
             .map_err(|_| "TP/EP walk mutex poisoned".to_string())?;
-        let mut rank1_caches = state
-            .tp_ep_caches
-            .take()
-            .ok_or("TP/EP rank-1 cache plane missing")?;
-        let mut work = state
-            .matrix_step
-            .take()
-            .ok_or("TP/EP matrix workspace missing")?;
+        if state.matrix_step.is_none() || state.tp_ep_caches.is_none() {
+            return Err("TP/EP worker state missing".into());
+        }
+        let mut rank1_caches = state.tp_ep_caches.take().expect("checked cache plane");
+        let mut work = state.matrix_step.take().expect("checked workspace");
         let result = (|| -> Res<(Option<Vec<f32>>, u32)> {
             if work.failed || work.verify.open.is_some() {
                 return Err("TP/EP workspace has an unfinished transaction".into());
             }
-            let DecodePath::Device { host_math: false } = self.decode_path else {
-                return Err("TP/EP worker submission requires device math".into());
-            };
-            let d = self.model.cfg();
+            if !matches!(self.decode_path, DecodePath::Device { host_math: false }) {
+                return Err("TP/EP workers require device math".into());
+            }
+            let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
             let hidden = self.model.mc.n_embd as usize;
             let topk = self.model.mc.moe.as_ref().expect("moe").expert_used_count as usize;
-            let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
-            if state.pos >= state.capacity {
-                return Err(format!(
-                    "TP/EP decode position {} exceeds capacity {}",
-                    state.pos, state.capacity
-                ));
-            }
-            let pos = state.pos;
-            let mut workspaces = std::mem::take(&mut work.verify.ws);
-            if workspaces.len() != 2 {
-                return Err("TP/EP worker submission requires two rank workspaces".into());
-            }
-            let ws0 = std::sync::Arc::new(std::sync::Mutex::new(workspaces.remove(0)));
-            let ws1 = std::sync::Arc::new(std::sync::Mutex::new(workspaces.remove(0)));
-            let caches0 =
-                std::sync::Arc::new(std::sync::Mutex::new(std::mem::take(&mut state.caches)));
-            let caches1 = std::sync::Arc::new(std::sync::Mutex::new(rank1_caches));
-            let layers0 = std::sync::Arc::new(std::sync::Mutex::new(std::mem::take(
-                &mut work.verify.layers,
-            )));
-            let layers1_vec = work
+            let rank1_layers = work
                 .verify
                 .tp_ep_layers
-                .take()
-                .ok_or("TP/EP rank-1 checkpoints missing")?;
-            let layers1 = std::sync::Arc::new(std::sync::Mutex::new(layers1_vec));
-            let mut ar_outputs = work
+                .as_mut()
+                .ok_or("rank-1 checkpoints missing")?;
+            if state.pos >= state.capacity
+                || work.verify.ws.len() != 2
+                || state.caches.len() != n_trunk
+                || rank1_caches.len() != n_trunk
+                || work.verify.layers.len() != n_trunk
+                || rank1_layers.len() != n_trunk
+            {
+                return Err("TP/EP worker state geometry mismatch".into());
+            }
+            let outputs = work
                 .verify
                 .tp_ep_ar_outputs
-                .take()
-                .ok_or("TP/EP one-shot output buffers missing")?;
-            let ready = std::sync::Arc::new(std::sync::Barrier::new(3));
-            let local = std::sync::Arc::new(std::sync::Barrier::new(3));
-            let tail = std::sync::Arc::new(std::sync::Barrier::new(3));
-            let errors = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
-            let worker_errors = errors.clone();
-            let scope_result = std::thread::scope(|scope| -> Res<()> {
-                let h0 = scope.spawn({
-                    let ws = ws0.clone();
-                    let caches = caches0.clone();
-                    let checkpoints = layers0.clone();
-                    let ready = ready.clone();
-                    let local = local.clone();
-                    let tail = tail.clone();
-                    let errors = errors.clone();
-                    move || {
-                        self.tp_ep_worker_rank(
-                            0,
-                            tok,
-                            pos,
-                            n_trunk,
-                            topk,
-                            hidden,
-                            d.swiglu_limit,
-                            ws,
-                            caches,
-                            checkpoints,
-                            ready,
-                            local,
-                            tail,
-                            errors,
-                        )
-                    }
-                });
-                let h1 = scope.spawn({
-                    let ws = ws1.clone();
-                    let caches = caches1.clone();
-                    let checkpoints = layers1.clone();
-                    let ready = ready.clone();
-                    let local = local.clone();
-                    let tail = tail.clone();
-                    let errors = worker_errors.clone();
-                    move || {
-                        self.tp_ep_worker_rank(
-                            1,
-                            tok,
-                            pos,
-                            n_trunk,
-                            topk,
-                            hidden,
-                            d.swiglu_limit,
-                            ws,
-                            caches,
-                            checkpoints,
-                            ready,
-                            local,
-                            tail,
-                            errors,
-                        )
-                    }
-                });
-                ready.wait();
-                for _ in 0..n_trunk {
-                    local.wait();
-                    let has_error = errors.lock().map(|slot| slot.is_some()).unwrap_or(true);
-                    if !has_error {
-                        let coordinator_result = (|| -> Res<()> {
-                            let mut ws0_guard = ws0
-                                .lock()
-                                .map_err(|_| "TP/EP rank-0 workspace mutex poisoned".to_string())?;
-                            let mut ws1_guard = ws1
-                                .lock()
-                                .map_err(|_| "TP/EP rank-1 workspace mutex poisoned".to_string())?;
-                            let (out0, out1) = ar_outputs.split_at_mut(1);
-                            let owner_gpu = &self.stages[0].gpu;
-                            let peer_gpu = &self.stages[1].gpu;
-                            {
-                                let mut ar = self.tp_ep_ar.lock().map_err(|_| {
-                                    "TP/EP one-shot reduction state mutex poisoned".to_string()
-                                })?;
-                                ar.as_mut()
-                                    .ok_or("TP/EP one-shot reduction state missing")?
-                                    .all_reduce_into(
-                                        owner_gpu,
-                                        peer_gpu,
-                                        &ws0_guard.contrib,
-                                        &ws1_guard.contrib,
-                                        &mut out0[0],
-                                        &mut out1[0],
-                                        topk * hidden,
-                                    )?;
-                            }
-                            owner_gpu
-                                .ctx
-                                .bind_to_thread()
-                                .map_err(e("worker AR rank0 bind"))?;
-                            owner_gpu
-                                .stream()
-                                .memcpy_dtod(
-                                    &out0[0].slice(..topk * hidden),
-                                    &mut ws0_guard.contrib.slice_mut(..topk * hidden),
-                                )
-                                .map_err(e("worker AR rank0 output"))?;
-                            peer_gpu
-                                .ctx
-                                .bind_to_thread()
-                                .map_err(e("worker AR rank1 bind"))?;
-                            peer_gpu
-                                .stream()
-                                .memcpy_dtod(
-                                    &out1[0].slice(..topk * hidden),
-                                    &mut ws1_guard.contrib.slice_mut(..topk * hidden),
-                                )
-                                .map_err(e("worker AR rank1 output"))?;
-                            Ok(())
-                        })();
-                        if let Err(error) = coordinator_result {
-                            if let Ok(mut slot) = errors.lock() {
-                                if slot.is_none() {
-                                    *slot = Some(error);
-                                }
-                            }
-                        }
-                    }
-                    tail.wait();
-                }
-                h0.join()
-                    .map_err(|_| "TP/EP rank-0 worker panicked".to_string())??;
-                h1.join()
-                    .map_err(|_| "TP/EP rank-1 worker panicked".to_string())??;
-                Ok(())
-            });
-            // All scoped workers have joined; return every owned plane before
-            // exposing a worker error or continuing into the normal commit.
-            state.caches = std::sync::Arc::try_unwrap(caches0)
-                .map_err(|_| "TP/EP rank-0 cache ownership leaked".to_string())?
-                .into_inner()
-                .map_err(|_| "TP/EP rank-0 cache mutex poisoned".to_string())?;
-            rank1_caches = std::sync::Arc::try_unwrap(caches1)
-                .map_err(|_| "TP/EP rank-1 cache ownership leaked".to_string())?
-                .into_inner()
-                .map_err(|_| "TP/EP rank-1 cache mutex poisoned".to_string())?;
-            work.verify.layers = std::sync::Arc::try_unwrap(layers0)
-                .map_err(|_| "TP/EP rank-0 checkpoint ownership leaked".to_string())?
-                .into_inner()
-                .map_err(|_| "TP/EP rank-0 checkpoint mutex poisoned".to_string())?;
-            work.verify.tp_ep_layers = Some(
-                std::sync::Arc::try_unwrap(layers1)
-                    .map_err(|_| "TP/EP rank-1 checkpoint ownership leaked".to_string())?
-                    .into_inner()
-                    .map_err(|_| "TP/EP rank-1 checkpoint mutex poisoned".to_string())?,
-            );
-            work.verify.ws = vec![
-                std::sync::Arc::try_unwrap(ws0)
-                    .map_err(|_| "TP/EP rank-0 workspace ownership leaked".to_string())?
-                    .into_inner()
-                    .map_err(|_| "TP/EP rank-0 workspace mutex poisoned".to_string())?,
-                std::sync::Arc::try_unwrap(ws1)
-                    .map_err(|_| "TP/EP rank-1 workspace ownership leaked".to_string())?
-                    .into_inner()
-                    .map_err(|_| "TP/EP rank-1 workspace mutex poisoned".to_string())?,
-            ];
-            work.verify.tp_ep_ar_outputs = Some(ar_outputs);
-            scope_result?;
-            if let Some(error) = errors
+                .as_ref()
+                .ok_or("TP/EP AR outputs missing")?;
+            let ar_guard = self
+                .tp_ep_ar
                 .lock()
-                .map_err(|_| "TP/EP worker error mutex poisoned".to_string())?
-                .clone()
-            {
-                return Err(error);
-            }
+                .map_err(|_| "TP/EP AR mutex poisoned")?;
+            let ar = ar_guard.as_ref().ok_or("TP/EP AR state missing")?;
+            let gpus = [&self.stages[0].gpu, &self.stages[1].gpu];
+            let inputs = [&work.verify.ws[0].contrib, &work.verify.ws[1].contrib];
+            let endpoint0 = ar.rank_endpoint(0, gpus, inputs, &outputs[0], topk * hidden)?;
+            let endpoint1 = ar.rank_endpoint(1, gpus, inputs, &outputs[1], topk * hidden)?;
+            let (ws0, ws1) = work.verify.ws.split_at_mut(1);
+            let abort = AtomicBool::new(false);
             let pos0 = state.pos;
+            let rank0_caches = &mut state.caches;
+            let rank0_layers = &mut work.verify.layers;
+            let pair = std::thread::scope(|scope| {
+                let h0 = scope.spawn(|| {
+                    self.tp_ep_worker_rank(
+                        0,
+                        tok,
+                        pos0,
+                        &mut ws0[0],
+                        rank0_caches,
+                        rank0_layers,
+                        &outputs[0],
+                        &endpoint0,
+                        &abort,
+                    )
+                });
+                let h1 = scope.spawn(|| {
+                    self.tp_ep_worker_rank(
+                        1,
+                        tok,
+                        pos0,
+                        &mut ws1[0],
+                        &mut rank1_caches,
+                        rank1_layers,
+                        &outputs[1],
+                        &endpoint1,
+                        &abort,
+                    )
+                });
+                // Join both handles before propagating either failure.
+                (h0.join(), h1.join())
+            });
+            pair.0.map_err(|_| "TP/EP rank0 join panic")??;
+            pair.1.map_err(|_| "TP/EP rank1 join panic")??;
+            // Gate-only failure admission. Refusal is sticky; never commit a refused round.
+            // This read occurs once per token after both ranks drain, never per layer.
+            let refused = ar.refusal_words(gpus[0], gpus[1])?;
+            if refused != [0, 0] {
+                return Err(format!("TP/EP worker AR refused: {refused:?}"));
+            }
+            drop(ar_guard);
             self.commit_verify_dev_plane(
                 &mut state.caches,
                 &mut work.verify.layers,
@@ -9517,27 +9345,20 @@ impl Dsv4Gpu {
                 1,
                 1,
             )?;
-            let rank1_layers = work
-                .verify
-                .tp_ep_layers
-                .as_mut()
-                .ok_or("TP/EP rank-1 checkpoints missing")?;
             self.commit_verify_dev_plane(
                 &mut rank1_caches,
-                rank1_layers,
+                work.verify.tp_ep_layers.as_mut().expect("checked"),
                 &mut work.verify.ws,
                 Some(1),
                 pos0,
                 1,
                 1,
             )?;
-            drop(rank1_layers);
             state.pos = pos0 + 1;
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
-            let stream = self.stages[1].gpu.stream();
-            let logits = dtoh_f32(&stream, &head_ws.logits)?;
-            let mut best = 0usize;
+            let logits = dtoh_f32(&self.stages[1].gpu.stream(), &head_ws.logits)?;
+            let mut best = 0;
             for i in 1..logits.len() {
                 if logits[i] > logits[best] {
                     best = i;
