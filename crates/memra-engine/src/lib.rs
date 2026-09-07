@@ -773,6 +773,7 @@ pub mod dsv4_ffi;
 pub mod dsv4_gpu;
 mod dsv4_graph;
 mod dsv4_grouped;
+pub(crate) mod dsv4_modelopt_split;
 pub mod dsv4_topology;
 pub mod f16_ffi;
 pub mod fp8_ffi;

@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 type Res<T> = Result<T, String>;
 
 static TP_EP_FOR_GATE: AtomicBool = AtomicBool::new(false);
+static INTERMEDIATE_TP_FOR_GATE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Dsv4Topology {
@@ -19,6 +20,10 @@ pub enum Dsv4Topology {
     /// All trunk layers are resident on both ranks. Attention/router state is
     /// replicated; ModelOpt experts are split by the separate adapter contract.
     TpEpAllLayers,
+    /// All trunk layers are resident on both ranks. Attention/router state and
+    /// the complete route domain are replicated; every expert's gate/up output
+    /// rows and down input columns are split across ranks.
+    TpEpIntermediate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,10 +66,43 @@ impl Dsv4TopologyPlan {
         hidden: usize,
         inter: usize,
     ) -> Res<Self> {
+        Self::tp_ep_shape(
+            world,
+            layers,
+            experts,
+            hidden,
+            inter,
+            Dsv4Topology::TpEpAllLayers,
+        )
+    }
+
+    pub fn tp_ep_intermediate(
+        world: usize,
+        layers: usize,
+        experts: usize,
+        hidden: usize,
+        inter: usize,
+    ) -> Res<Self> {
+        Self::tp_ep_shape(
+            world,
+            layers,
+            experts,
+            hidden,
+            inter,
+            Dsv4Topology::TpEpIntermediate,
+        )
+    }
+
+    fn tp_ep_shape(
+        world: usize,
+        layers: usize,
+        experts: usize,
+        hidden: usize,
+        inter: usize,
+        topology: Dsv4Topology,
+    ) -> Res<Self> {
         if world != 2 {
-            return Err(format!(
-                "DSV4 TP/EP all-layer topology requires world=2, got {world}"
-            ));
+            return Err(format!("DSV4 TP/EP topology requires world=2, got {world}"));
         }
         if layers == 0 || experts == 0 || !experts.is_multiple_of(world) {
             return Err(format!(
@@ -83,7 +121,7 @@ impl Dsv4TopologyPlan {
             ));
         }
         Ok(Self {
-            topology: Dsv4Topology::TpEpAllLayers,
+            topology,
             world,
             layers,
             experts,
@@ -93,6 +131,17 @@ impl Dsv4TopologyPlan {
     }
 
     pub const fn is_tp_ep(self) -> bool {
+        matches!(
+            self.topology,
+            Dsv4Topology::TpEpAllLayers | Dsv4Topology::TpEpIntermediate
+        )
+    }
+
+    pub const fn is_intermediate_tp(self) -> bool {
+        matches!(self.topology, Dsv4Topology::TpEpIntermediate)
+    }
+
+    pub const fn is_expert_id_tp(self) -> bool {
         matches!(self.topology, Dsv4Topology::TpEpAllLayers)
     }
 }
@@ -107,6 +156,16 @@ pub fn tp_ep_for_gate() -> bool {
     TP_EP_FOR_GATE.load(Ordering::Acquire)
 }
 
+/// Gate-only process switch for the intermediate expert TP candidate. It is
+/// intentionally separate from the existing whole-expert-ID TP/EP program.
+pub fn set_intermediate_tp_for_gate(enabled: bool) -> bool {
+    INTERMEDIATE_TP_FOR_GATE.swap(enabled, Ordering::SeqCst)
+}
+
+pub fn intermediate_tp_for_gate() -> bool {
+    INTERMEDIATE_TP_FOR_GATE.load(Ordering::Acquire)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Dsv4Topology, Dsv4TopologyPlan};
@@ -115,10 +174,14 @@ mod tests {
     fn pp_and_tp_ep_are_distinct_programs() {
         let pp = Dsv4TopologyPlan::pp_ep(2, 43, 256, 4096, 2048).unwrap();
         let tp = Dsv4TopologyPlan::tp_ep_all_layers(2, 43, 256, 4096, 2048).unwrap();
+        let intermediate = Dsv4TopologyPlan::tp_ep_intermediate(2, 43, 256, 4096, 2048).unwrap();
         assert_eq!(pp.topology, Dsv4Topology::PpEp);
         assert_eq!(tp.topology, Dsv4Topology::TpEpAllLayers);
         assert!(!pp.is_tp_ep());
         assert!(tp.is_tp_ep());
+        assert!(intermediate.is_tp_ep());
+        assert!(intermediate.is_intermediate_tp());
+        assert!(!intermediate.is_expert_id_tp());
     }
 
     #[test]
@@ -126,5 +189,6 @@ mod tests {
         assert!(Dsv4TopologyPlan::tp_ep_all_layers(1, 43, 256, 4096, 2048).is_err());
         assert!(Dsv4TopologyPlan::tp_ep_all_layers(2, 43, 255, 4096, 2048).is_err());
         assert!(Dsv4TopologyPlan::tp_ep_all_layers(2, 43, 256, 4096, 2050).is_err());
+        assert!(Dsv4TopologyPlan::tp_ep_intermediate(2, 43, 256, 4096, 2050).is_err());
     }
 }
