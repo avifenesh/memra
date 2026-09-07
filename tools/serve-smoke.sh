@@ -9,6 +9,25 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+# No producer pipeline: grep -q may close after its first match, making echo
+# fail with SIGPIPE under pipefail even when the complete SSE body is valid.
+stream_has_frames() {
+  grep -q '^data: ' <<<"$1" && grep -q 'data: \[DONE\]' <<<"$1"
+}
+if [ "${1:-}" = "--test-stream" ]; then
+  sample=$(printf 'data: {"choices":[{"delta":{"content":"hello"}}]}\n%.0s' {1..500}; printf 'data: [DONE]\n')
+  for _ in {1..10}; do
+    stream_has_frames "$sample" || { echo 'FAIL valid large SSE body'; exit 1; }
+  done
+  for sample in '' 'data: {"choices":[]}' 'not an SSE response'; do
+    if stream_has_frames "$sample"; then
+      echo 'FAIL missing SSE sentinel accepted'; exit 1
+    fi
+  done
+  echo 'PASS streaming assertion: 10 large valid bodies; 3 malformed bodies rejected'
+  exit 0
+fi
+
 # Default = the 9B NVFP4 + its regime draft (full serving support; E4B's serve path is
 # first-light only — dc/graph/spec unwired — and gemma assistant drafts use MEMRA_DRAFT,
 # not the '+draft' NextN attach).
@@ -91,7 +110,7 @@ assert r["choices"][0]["finish_reason"] in ("stop","length"), "bad finish_reason
 
 # 3. streaming: data: chunks then [DONE]
 S=$(chat "Count from one to five in words." 48 true)
-echo "$S" | grep -q '^data: ' && echo "$S" | grep -q 'data: \[DONE\]' \
+stream_has_frames "$S" \
   && PASS "chat stream (SSE chunks + [DONE])" || FAIL "chat stream"
 
 # 4. plain /v1/completions

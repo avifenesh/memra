@@ -7,6 +7,157 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_dsv4_sink_scores_tiled_init() -> i32;
+    pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        sink: *const f32,
+        scores: *mut f32,
+        evals: *mut f32,
+        den: *mut f32,
+        o: *mut f32,
+        nq: i32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        idx_stride: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_grouped_routes_partition(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        global_experts: i32,
+        first: i32,
+        expert_count: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_grouped_routes(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        experts: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_fp4_gemm_sel_ep(
+        a: *const c_void,
+        a_scales: *const f32,
+        weights: *const c_void,
+        scales: *const c_void,
+        scale2: *const f32,
+        selected: *const i32,
+        projection: i32,
+        per_slot: i32,
+        kind: i32,
+        out: *mut f32,
+        slots: i32,
+        n: i32,
+        k: i32,
+        weight_stride: i64,
+        scale_stride: i64,
+        a_group: i32,
+        reduction: i32,
+        expert_first: i32,
+        expert_count: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_ep_merge_slots(
+        local: *mut f32,
+        peer: *const f32,
+        selected: *const i32,
+        slots: i32,
+        width: i32,
+        peer_first: i32,
+        peer_count: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_topk_idx_numeric(
+        score: *const f32,
+        nb: i32,
+        kk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Gate-only exact radix-cut twin for the common t=1, K=512 path. The scratch planes are
+    /// persistent workspace owned by the decode state; no score/index host round trip exists.
+    pub fn memra_dsv4_topk_idx_radix_m1(
+        score: *const f32,
+        nb: i32,
+        kk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        radix_keys: *mut u64,
+        radix_candidates: *mut u64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_c4_gather(
+        device: *const f32,
+        host: *const f32,
+        indices: *const i32,
+        out: *mut f32,
+        out_indices: *mut i32,
+        nq: i32,
+        slots: i32,
+        stride: i32,
+        live_rows: i32,
+        logical_transient: i32,
+        transient_rows: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_c4_recent_write(
+        source: *const f32,
+        recent: *mut f32,
+        tags: *mut i32,
+        first_row: i32,
+        rows: i32,
+        cache_rows: i32,
+        reset: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_c4_gather_recent(
+        device: *const f32,
+        host: *const f32,
+        indices: *const i32,
+        out: *mut f32,
+        out_indices: *mut i32,
+        nq: i32,
+        slots: i32,
+        stride: i32,
+        live_rows: i32,
+        logical_transient: i32,
+        transient_rows: i32,
+        recent: *const f32,
+        tags: *const i32,
+        cache_rows: i32,
+        stream: *mut c_void,
+    ) -> i32;
     // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
     pub fn memra_dsv4_nvtx_push(name: *const std::os::raw::c_char) -> i32;
     pub fn memra_dsv4_nvtx_pop() -> i32;
@@ -53,6 +204,25 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_add_inplace(y: *mut f32, x: *const f32, n: i64, stream: *mut c_void) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp8_gather_half(
+        codes: *const c_void,
+        scales: *const f32,
+        row_ids: *const i32,
+        out: *mut c_void,
+        row_scale: *mut f32,
+        row_status: *mut i32,
+        rows: i32,
+        cols: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_scale_rows(
+        y: *mut f32,
+        scale: *const f32,
+        rows: i32,
+        cols: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_take_cols(
         src: *const f32,
         dst: *mut f32,
@@ -419,6 +589,33 @@ unsafe extern "C" {
         idx_out: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_topk_idx_m(
+        score: *const f32,
+        s: i32,
+        nb: i32,
+        topk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        idx_stride: i32,
+        pos0: i32,
+        ratio: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_topk_idx_stream_m(
+        score: *const f32,
+        s: i32,
+        nb: i32,
+        topk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        idx_stride: i32,
+        work_a: *mut u64,
+        work_b: *mut u64,
+        work_stride: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
     /// iteration-5: `dst[0..cols) = src[idx[slot] * cols ..]`, the index read on the
     /// DEVICE so the DSpark markov chain needs no host round trip between steps.
@@ -514,6 +711,37 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_indexer_score_tiled(
+        q: *const f32,
+        ckv: *const f32,
+        w: *const f32,
+        wscale: f32,
+        score: *mut f32,
+        s: i32,
+        heads: i32,
+        hd: i32,
+        nb: i32,
+        ratio: i32,
+        lim0: i32,
+        pos0: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_indexer_score_f32acc_pos_m(
+        q: *const f32,
+        ckv: *const f32,
+        w: *const f32,
+        wscale: f32,
+        score: *mut f32,
+        s: i32,
+        heads: i32,
+        hd: i32,
+        nb: i32,
+        ratio: i32,
+        pos0: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_sink_attn_dec_f32acc(
         q: *const f32,
         kv: *const f32,
@@ -559,6 +787,42 @@ unsafe extern "C" {
         trans_base: i32,
         stream: *mut c_void,
     ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_build_idx_redirect_m(
+        idx: *mut i32,
+        pos0: i32,
+        s: i32,
+        win: i32,
+        ratio: i32,
+        cap: i32,
+        stride: i32,
+        trans_base: i32,
+        fine: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Window-only redirect builder reading the absolute query position from a
+    /// stable device scalar. This is the graph-safe twin for the first one-layer
+    /// probe; ratio/compressor layers retain the original host-scalar ABI.
+    pub fn memra_dsv4_build_idx_redirect_window_pos(
+        idx: *mut i32,
+        pos_dev: *const i32,
+        win: i32,
+        cap: i32,
+        trans_base: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Fine-indexer redirect component twin for the gate-only scalar probe.
+    /// Both `pos_dev` and `nb_dev` are persistent device scalars; the full
+    /// compressor/indexer layer still retains the host-state-machine refusal.
+    pub fn memra_dsv4_build_idx_redirect_fine_pos(
+        idx: *mut i32,
+        pos_dev: *const i32,
+        nb_dev: *const i32,
+        win: i32,
+        cap: i32,
+        trans_base: i32,
+        stream: *mut c_void,
+    ) -> i32;
 
     // ---- iteration 3, rung 4: batched T=k+1 verify twins. Every entry is BIT-EXACT
     // against `m`/`nq` sequential single-position calls of its pinned twin (the design
@@ -589,6 +853,23 @@ unsafe extern "C" {
         k: i32,
         xstride: i32,
         ystride: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// FP8 dense t=1 grouped output projection. The weight rows are grouped
+    /// contiguously; each group reads its own activation/output slice while
+    /// retaining the ordinary m=1 accumulation and reduction body.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_grouped_m1(
+        w_codes: *const c_void,
+        sc_f32: *const f32,
+        sc_cols: i32,
+        x_bf16: *const c_void,
+        y: *mut f32,
+        groups: i32,
+        rows_per_group: i32,
+        k: i32,
+        x_group_stride: i32,
+        y_group_stride: i32,
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]
@@ -816,6 +1097,27 @@ unsafe extern "C" {
         wstride: i64,
         sstride: i64,
         a_group: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Explicit per-model reduction: 0 = original block tree, 1 = exact warp tree.
+    pub fn memra_dsv4_fp4_gemm_sel_g_arm(
+        a_codes: *const c_void,
+        a_scales: *const f32,
+        w_base: *const c_void,
+        sc_base: *const c_void,
+        s2: *const f32,
+        sel: *const i32,
+        proj: i32,
+        a_stride_rows: i32,
+        kind: i32,
+        out: *mut f32,
+        slots: i32,
+        n: i32,
+        kdim: i32,
+        wstride: i64,
+        sstride: i64,
+        a_group: i32,
+        reduce_arm: i32,
         stream: *mut c_void,
     ) -> i32;
     #[allow(clippy::too_many_arguments)]

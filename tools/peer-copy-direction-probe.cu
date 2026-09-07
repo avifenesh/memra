@@ -21,6 +21,7 @@
 //
 // Build: nvcc -O2 -o peer-copy-direction-probe tools/peer-copy-direction-probe.cu -lcuda
 // Run:   ./peer-copy-direction-probe [device-a device-b]
+// Diagnostic old-input-order control: ./peer-copy-direction-probe 0 1 --unsafe-init
 // Exit:  0 = all programs preserve bytes; 2 = one or more byte mismatches; 3 = CUDA error;
 //        4 = fewer than two devices; 5 = no peer-capable pair.
 
@@ -28,7 +29,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
+
+static bool ordered_initialization = true;
 
 static int driver_error(CUresult rc, const char *call, int line) {
     const char *name = "unknown";
@@ -110,11 +114,17 @@ static int run_copy(const DeviceState &src, const DeviceState &dst, int src_ordi
     if (rc != 0) return rc;
     DRV(cuMemAlloc_v2(&src_ptr, bytes));
     DRV(cuMemcpyHtoD_v2(src_ptr, expected.data(), bytes));
+    // Pageable H2D may return after staging, before DMA has finished. Our test
+    // streams are NON_BLOCKING and do not wait for the legacy/default stream.
+    // Finish initialization before testing a peer-copy program, otherwise the
+    // probe races its own source upload (and destination poison below).
+    if (ordered_initialization) DRV(cuCtxSynchronize());
 
     rc = bind(dst);
     if (rc != 0) return rc;
     DRV(cuMemAlloc_v2(&dst_ptr, bytes));
     DRV(cuMemcpyHtoD_v2(dst_ptr, poison.data(), bytes));
+    if (ordered_initialization) DRV(cuCtxSynchronize());
 
     CUevent publication = nullptr;
     rc = bind(src);
@@ -169,6 +179,11 @@ static int run_copy(const DeviceState &src, const DeviceState &dst, int src_ordi
 }
 
 int main(int argc, char **argv) {
+    if (argc == 4 && std::strcmp(argv[3], "--unsafe-init") == 0) {
+        ordered_initialization = false;
+        argc = 3;
+    }
+    std::printf("initialization=%s\n", ordered_initialization ? "DMA-complete" : "UNSAFE legacy control");
     DRV(cuInit(0));
     int device_count = 0;
     DRV(cuDeviceGetCount(&device_count));

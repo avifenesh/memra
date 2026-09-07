@@ -1,0 +1,25 @@
+INPUT tokens=16416 sha256=192d84faf04dbfd98056edf8eb8b2d37224bd418cdbc3915d1215c034d59340e source_sha256=a8ab08ed39dbc1ae891c1c4a52336bf6b27c98e788d2739ff5c0bae59b5c4dda
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] selected FP4 reduction: Warp
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 334.7ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=10s
+[load] layer 7 -> dev0 done t=20s
+[load] layer 11 -> dev0 done t=30s
+[load] layer 15 -> dev0 done t=40s
+[load] layer 19 -> dev0 done t=50s
+[load] layer 23 -> dev1 done t=60s
+[load] layer 27 -> dev1 done t=70s
+[load] layer 31 -> dev1 done t=80s
+[load] layer 35 -> dev1 done t=90s
+[load] layer 39 -> dev1 done t=100s
+[load] layer 42 -> dev1 done t=108s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+CHECK real-source prefill tokens=16416 chunk=32
+CHECK plain decode beyond 4096 compressed candidates
+CHECK narrow DSpark verify beyond 4096 compressed candidates
+PASS real prompt=16416 sampled_tokens=16 plain/spec identical rounds=5

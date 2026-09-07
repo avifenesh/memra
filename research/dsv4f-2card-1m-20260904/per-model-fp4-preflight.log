@@ -1,0 +1,6 @@
+
+thread 'main' (2845864) panicked at crates/memra-engine/src/bin/dsv4_fp4_reduce_gate.rs:123:9:
+assertion `left == right` failed: requires MEMRA_DSV4_DECODE_PATH=device
+  left: Err(NotPresent)
+ right: Ok("device")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
