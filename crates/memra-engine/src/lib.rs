@@ -765,6 +765,7 @@ pub fn router_batch_on() -> bool {
 mod cpu_experts;
 #[cfg(memra_cutlass)]
 pub mod cutlass_ffi;
+pub mod dsv4_attention_split;
 mod dsv4_c4;
 mod dsv4_ep;
 mod dsv4_ep_graph;
