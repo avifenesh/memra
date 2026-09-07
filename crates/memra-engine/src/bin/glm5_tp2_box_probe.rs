@@ -180,7 +180,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let load_t0 = Instant::now();
     let e = Engine::new(0)?;
     eprintln!("[tp2-probe] GPU0: {}", e.ctx().name()?);
+    eprintln!(
+        "[tp2-probe] engine up at {:.1}s",
+        load_t0.elapsed().as_secs_f64()
+    );
     let src = SafetensorsSource::open(std::path::Path::new(&model_dir))?;
+    eprintln!(
+        "[tp2-probe] source open at {:.1}s",
+        load_t0.elapsed().as_secs_f64()
+    );
     let model = HybridModel::load_from_source(&e, &src)?;
     let load_s = load_t0.elapsed().as_secs_f64();
     eprintln!(

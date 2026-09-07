@@ -595,7 +595,7 @@ fn expert_activation_precision_from_quant_algo(
 }
 
 /// A weight source the engine can load from. GGUF and safetensors both implement it.
-pub trait TensorSource {
+pub trait TensorSource: Sync {
     /// The model configuration (from GGUF metadata or config.json).
     fn config(&self) -> ModelConfig;
     /// Fallible configuration boundary for untrusted model artifacts. Legacy callers retain the

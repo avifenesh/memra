@@ -117,6 +117,29 @@ fn ensure_repack_cache_dir(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// A memcpy fanned out over the host's cores. One thread moves a few GB/s; the pinned copies of
+/// a 171 GB expert bank (one per layer, 4 GB each) are load-time wall on their own, and memcpy
+/// scales with threads until the memory system saturates. Chunks are at least 16 MiB so small
+/// copies stay on the calling thread.
+pub(crate) fn par_copy_bytes(dst: &mut [u8], src: &[u8]) {
+    assert_eq!(dst.len(), src.len(), "par_copy_bytes: length mismatch");
+    const MIN_CHUNK: usize = 16 << 20;
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .clamp(1, 32);
+    let chunk = dst.len().div_ceil(workers).max(MIN_CHUNK);
+    if dst.len() <= chunk {
+        dst.copy_from_slice(src);
+        return;
+    }
+    std::thread::scope(|s| {
+        for (d, sc) in dst.chunks_mut(chunk).zip(src.chunks(chunk)) {
+            s.spawn(move || d.copy_from_slice(sc));
+        }
+    });
+}
+
 fn repack_cache_is_fresh(path: &Path, expected_len: usize) -> bool {
     std::fs::symlink_metadata(path)
         .is_ok_and(|meta| meta.file_type().is_file() && meta.len() == expected_len as u64)
@@ -2533,32 +2556,62 @@ impl HostExps {
                         len: total,
                     }
                 } else {
-                    let mut buf: Vec<u8> = Vec::with_capacity(total);
-                    for ex in 0..n_expert {
-                        let name = format!("blk.{il}.ffn_{proj}_exps.{ex}.weight");
-                        let nv = src.find_nvfp4_native(&name).unwrap_or_else(|| {
-                            panic!("expert {name} lost NVFP4-native mid-gather")
+                    // THE IN-RAM GATHER IS PARALLEL (2026-09-07). The sequential form ran every
+                    // expert of every layer through ONE core: on GLM-5.3-Flash (42 MoE layers x
+                    // 288 experts, 171 GB of NVFP4) that was ~13 minutes of every boot on the 2x
+                    // B200 pair with `MEMRA_ST_REPACK_DISK=0` (loader thread at 100%, zero disk
+                    // reads, both GPUs idle), and the served PP-2 boot's 576 s. Experts are
+                    // independent and land at disjoint offsets of one pre-sized buffer, so the
+                    // repack fans out over the host's cores: same bytes at the same offsets.
+                    let mut buf: Vec<u8> = vec![0u8; total];
+                    {
+                        let workers = std::thread::available_parallelism()
+                            .map(|n| n.get())
+                            .unwrap_or(1)
+                            .clamp(1, n_expert.max(1));
+                        let per = n_expert.div_ceil(workers).max(1);
+                        std::thread::scope(|s| {
+                            for (w, slab) in buf.chunks_mut(per * expert_stride).enumerate() {
+                                s.spawn(move || {
+                                    for (k, dst) in slab.chunks_mut(expert_stride).enumerate() {
+                                        let ex = w * per + k;
+                                        let name = format!("blk.{il}.ffn_{proj}_exps.{ex}.weight");
+                                        let nv =
+                                            src.find_nvfp4_native(&name).unwrap_or_else(|| {
+                                                panic!("expert {name} lost NVFP4-native mid-gather")
+                                            });
+                                        assert_eq!(
+                                            (nv.in_f, nv.out_f),
+                                            (in_f, out_f),
+                                            "expert {ex} dims ({},{}) != expert 0 ({in_f},{out_f})",
+                                            nv.in_f,
+                                            nv.out_f
+                                        );
+                                        let packed =
+                                            memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
+                                                nv.wbytes, &nv.wscale, out_f, in_f,
+                                            );
+                                        dst.copy_from_slice(&packed);
+                                    }
+                                });
+                            }
                         });
-                        assert_eq!(
-                            (nv.in_f, nv.out_f),
-                            (in_f, out_f),
-                            "expert {ex} dims ({},{}) != expert 0 ({in_f},{out_f})",
-                            nv.in_f,
-                            nv.out_f
-                        );
-                        buf.extend_from_slice(&memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
-                            nv.wbytes, &nv.wscale, out_f, in_f,
-                        ));
                     }
                     assert_eq!(buf.len(), total);
                     read_macros(&mut macros);
-                    let pinned = std::env::var("MEMRA_MOE_PINNED").is_ok()
-                        || std::env::var("MEMRA_MOE_CACHE").as_deref() != Ok("0");
+                    // MEMRA_MOE_HOST_PINNED=0 keeps the gathered bank PAGED: the pin is a
+                    // cudaHostAlloc of every layer's 4 GB (GLM-5.3-Flash), seconds per layer
+                    // on the load thread, and a bank the resident decision uploads once and
+                    // never stages from again does not need it. Default 1 = pinned, as before.
+                    let host_pinned = std::env::var("MEMRA_MOE_HOST_PINNED").as_deref() != Ok("0");
+                    let pinned = host_pinned
+                        && (std::env::var("MEMRA_MOE_PINNED").is_ok()
+                            || std::env::var("MEMRA_MOE_CACHE").as_deref() != Ok("0"));
                     if pinned {
                         let mut p = unsafe { e.ctx().alloc_pinned::<u8>(buf.len())? };
                         {
                             let dst = p.as_mut_slice()?;
-                            dst.copy_from_slice(&buf);
+                            par_copy_bytes(dst, &buf);
                         }
                         let base = p.as_ptr()?;
                         let len = buf.len();
