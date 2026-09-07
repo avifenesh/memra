@@ -34,10 +34,12 @@ use memra_gguf::dsv4_forward::{
 };
 
 use crate::dsv4_c4::{C4Gather, C4HostStore};
-use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch};
+use crate::dsv4_ep::{EpCompute, EpLayer, EpScratch, TpEpArState};
+use crate::dsv4_ep_graph::{self, MatrixEpGraphSlot};
 use crate::dsv4_ffi as k;
 use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
+use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
 type Res<T> = Result<T, String>;
 
@@ -52,6 +54,9 @@ static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 // the CUDA launcher accepts the dispatch.
 static DSV4_INDEX_TOPK_RADIX: AtomicBool = AtomicBool::new(false);
 static DSV4_INDEX_TOPK_RADIX_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
+/// Numeric class of the gate-only replicated TP/EP expert partial join.
+pub const TP_EP_RANK_ORDER_NUMERIC_CLASS: &str = crate::dsv4_ep::TP_EP_RANK_ORDER_NUMERIC_CLASS;
 
 #[inline]
 fn index_topk_radix_eligible(t: usize, nb: usize, kk: usize) -> bool {
@@ -395,6 +400,12 @@ impl LayerDev {
             return Err("expert pointer outside global tensor contract".into());
         }
         let (weights, scales, local) = match &self.ep {
+            Some(ep) if ep.local_only => {
+                if !(ep.local_first..ep.local_first + ep.count).contains(&expert) {
+                    return Err("local-only TP/EP bank cannot address a peer expert".into());
+                }
+                (&self.experts_w, &self.experts_sc, expert - ep.local_first)
+            }
             Some(ep) if (ep.peer_first..ep.peer_first + ep.count).contains(&expert) => {
                 (&ep.peer_w, &ep.peer_sc, expert - ep.peer_first)
             }
@@ -705,9 +716,17 @@ struct PrefillHeadCounters {
 }
 
 pub struct Dsv4Gpu {
+    pub topology: Dsv4TopologyPlan,
     ep_enabled: bool,
     ep_serial_control: bool,
     ep_calls: std::sync::atomic::AtomicU64,
+    tp_ep_rank_layer_calls: [std::sync::atomic::AtomicU64; 2],
+    tp_ep_ar: std::sync::Mutex<Option<TpEpArState>>,
+    /// The one-shot AR signal sequence is model-global. Serialize the whole
+    /// TP/EP token transaction so concurrent requests cannot interleave layers
+    /// between the two rank launches; this is a correctness lock, not a timing
+    /// drain or a concurrency qualification.
+    tp_ep_walk_lock: std::sync::Mutex<()>,
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -888,6 +907,10 @@ pub struct DecodeState {
     /// prefill and verification. Never crosses into the scalar expert program.
     matrix_step: Option<Box<MatrixStep>>,
     pub caches: Vec<LayerCache>,
+    /// Replicated rank-1 semantic cache for the gate-only all-layer TP/EP
+    /// topology.  The walk is not admitted until both rank cache planes are
+    /// consumed by the same-layer executor.
+    tp_ep_caches: Option<Vec<LayerCache>>,
     pub pos: usize,
     /// Token capacity of this session's cache allocation. This is independently planned
     /// below the model-wide `Dsv4Gpu::max_seq`, so a 1M-capable server does not charge every
@@ -1870,6 +1893,81 @@ impl Dsv4Gpu {
         self.matrix_moe
     }
 
+    pub fn topology(&self) -> Dsv4TopologyPlan {
+        self.topology
+    }
+
+    /// Gate-only topology admission.  Must be set before `load`; an armed
+    /// request currently refuses before allocating the PP loader.
+    pub fn set_tp_ep_topology_for_gate(enabled: bool) -> bool {
+        dsv4_topology::set_tp_ep_for_gate(enabled)
+    }
+
+    pub fn tp_ep_topology_for_gate() -> bool {
+        dsv4_topology::tp_ep_for_gate()
+    }
+
+    /// Actual per-rank all-layer calls.  No PP call is folded into these
+    /// counters; the future TP/EP walk must increment them per rank/layer.
+    pub fn tp_ep_rank_layer_calls(&self) -> [u64; 2] {
+        [
+            self.tp_ep_rank_layer_calls[0].load(std::sync::atomic::Ordering::Relaxed),
+            self.tp_ep_rank_layer_calls[1].load(std::sync::atomic::Ordering::Relaxed),
+        ]
+    }
+
+    /// Successful one-shot TP/EP reductions. This is a launch receipt only;
+    /// device-side refusal words are exposed separately for a drained gate.
+    pub fn tp_ep_ar_dispatches(&self) -> u64 {
+        self.tp_ep_ar
+            .lock()
+            .ok()
+            .and_then(|ar| ar.as_ref().map(TpEpArState::launches))
+            .unwrap_or(0)
+    }
+
+    /// Drain both ranks and read the sticky device-side refusal words. The walk
+    /// requires zero words before publishing any token or committing its caches.
+    pub fn tp_ep_ar_refusal_words(&self) -> Res<[i32; 2]> {
+        let ar = self
+            .tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP one-shot reduction state mutex poisoned".to_string())?;
+        let ar = ar
+            .as_ref()
+            .ok_or("TP/EP one-shot reduction state is not armed")?;
+        ar.refusal_words(&self.stages[0].gpu, &self.stages[1].gpu)
+    }
+
+    /// Exclusive red-arm control for the token-boundary refusal gate. This is
+    /// not a serving switch; resetting words never recovers a failed request.
+    pub fn set_tp_ep_ar_refusal_words_for_gate(&self, words: [i32; 2]) -> Res<()> {
+        if !self.topology.is_tp_ep() {
+            return Err("TP/EP refusal injection requires the all-layer topology".into());
+        }
+        let _walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned".to_string())?;
+        let mut ar = self
+            .tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP one-shot reduction state mutex poisoned".to_string())?;
+        ar.as_mut()
+            .ok_or("TP/EP one-shot reduction state is not armed")?
+            .set_refusal_words_for_gate(&self.stages[0].gpu, &self.stages[1].gpu, words)
+    }
+
+    fn ensure_walk_topology_ready(&self) -> Res<()> {
+        if self.topology.is_tp_ep() {
+            return Err(
+                "DSV4 TP/EP all-layer state is resident on both ranks, but the paired attention/expert walk is not connected; refusing instead of falling back to PP"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
     /// Exclusive storage-only control. Fresh zeroed buffers are the comparison
     /// arm for persistent-buffer correctness, never a serving environment flag.
     pub fn set_grouped_fresh_storage_for_gate(&mut self, enabled: bool) -> Res<bool> {
@@ -1946,7 +2044,10 @@ impl Dsv4Gpu {
                     l.expert_kind != ExpertKind::Nvfp4
                         || l.experts_modelopt_table.is_none()
                         || (self.ep_enabled
-                            && l.ep.as_ref().is_none_or(|ep| ep.peer_table.is_none()))
+                            && l.ep.as_ref().is_none_or(|ep| {
+                                ep.peer_table.is_none()
+                                    || (self.topology.is_tp_ep() && !ep.local_only)
+                            }))
                 }))
         {
             return Err("matrix request program requires native NVFP4 trunk, device math, grouped visitor/direct loader, complete expert tables, no prefill-only probe, and device routing/reused storage for EP".into());
@@ -2227,6 +2328,19 @@ impl Dsv4Gpu {
     /// Load one block's device weights. `prefix` is "layers.N" for trunk, "mtp.0" for
     /// the MTP block (whose layer id is n_trunk — ratio 0, score-routed, MXFP4 experts).
     fn load_layer(&mut self, stage: usize, il: u32, prefix: &str) -> Res<LayerDev> {
+        self.load_layer_partitioned(stage, il, prefix, None)
+    }
+
+    /// Load a layer while retaining only one expert-ID partition when the
+    /// all-layer TP/EP topology is active.  Attention and routing metadata are
+    /// still replicated; the large quantized expert bytes are not.
+    fn load_layer_partitioned(
+        &mut self,
+        stage: usize,
+        il: u32,
+        prefix: &str,
+        expert_partition: Option<(usize, usize)>,
+    ) -> Res<LayerDev> {
         let d = self.model.cfg().clone();
         let moe = self.model.mc.moe.clone().expect("moe block");
         let ratio = d.compress_ratio(il) as usize;
@@ -2236,6 +2350,12 @@ impl Dsv4Gpu {
         let ne = moe.expert_count as usize;
         let inter = moe.expert_ff_length as usize;
         let hidden = self.model.mc.n_embd as usize;
+        let (expert_first, resident_experts) = expert_partition.unwrap_or((0, ne));
+        if resident_experts == 0 || expert_first >= ne || resident_experts > ne - expert_first {
+            return Err(format!(
+                "{p}: invalid resident expert partition {expert_first}+{resident_experts} of {ne}"
+            ));
+        }
 
         // hc host params
         let hc_load = |m: &Dsv4Model, fam: &str| -> (Vec<f32>, Vec<f32>, Vec<f32>) {
@@ -2270,10 +2390,10 @@ impl Dsv4Gpu {
             ExpertKind::Mxfp4 => inter * hidden / 32,
         };
         let mut experts_w = stream
-            .alloc_zeros::<u8>(ne * 3 * wbytes)
+            .alloc_zeros::<u8>(resident_experts * 3 * wbytes)
             .map_err(e("alloc expert slab"))?;
         let mut experts_sc = stream
-            .alloc_zeros::<u8>(ne * 3 * sbytes)
+            .alloc_zeros::<u8>(resident_experts * 3 * sbytes)
             .map_err(e("alloc expert scale slab"))?;
         let mut experts_s2 = Vec::with_capacity(ne * 3);
         for ex in 0..ne {
@@ -2326,20 +2446,23 @@ impl Dsv4Gpu {
                     }
                 };
                 assert_eq!(sb.len(), sbytes, "{base}: scale bytes");
-                let off = (ex * 3 + pi) * wbytes;
-                let mut view = experts_w.slice_mut(off..off + wbytes);
-                stream
-                    .memcpy_htod(wb, &mut view)
-                    .map_err(e("htod expert w"))?;
-                let soff = (ex * 3 + pi) * sbytes;
-                let mut sview = experts_sc.slice_mut(soff..soff + sbytes);
-                stream
-                    .memcpy_htod(sb, &mut sview)
-                    .map_err(e("htod expert sc"))?;
+                if (expert_first..expert_first + resident_experts).contains(&ex) {
+                    let local_ex = ex - expert_first;
+                    let off = (local_ex * 3 + pi) * wbytes;
+                    let mut view = experts_w.slice_mut(off..off + wbytes);
+                    stream
+                        .memcpy_htod(wb, &mut view)
+                        .map_err(e("htod expert w"))?;
+                    let soff = (local_ex * 3 + pi) * sbytes;
+                    let mut sview = experts_sc.slice_mut(soff..soff + sbytes);
+                    stream
+                        .memcpy_htod(sb, &mut sview)
+                        .map_err(e("htod expert sc"))?;
+                }
             }
         }
         self.stages[stage].loaded_bytes +=
-            (ne * 3 * (wbytes + sbytes)) as u64 + (ne * 3 * 4) as u64;
+            (resident_experts * 3 * (wbytes + sbytes)) as u64 + (ne * 3 * 4) as u64;
 
         let cmp = if ratio != 0 {
             Some(self.load_cmp(stage, &format!("{p}.attn.compressor"), ratio, hd, false)?)
@@ -2427,7 +2550,7 @@ impl Dsv4Gpu {
                 &stream,
                 &experts_w,
                 &experts_sc,
-                ne,
+                resident_experts,
                 hidden,
                 inter,
             )?)
@@ -2583,6 +2706,35 @@ impl Dsv4Gpu {
         let mc = model.mc.clone();
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
         let rd = d.qk_rope_head_dim as usize;
+        let topology = if dsv4_topology::tp_ep_for_gate() {
+            Dsv4TopologyPlan::tp_ep_all_layers(
+                devices.len(),
+                n_trunk as usize,
+                mc.moe.as_ref().expect("moe").expert_count as usize,
+                mc.n_embd as usize,
+                mc.moe.as_ref().expect("moe").expert_ff_length as usize,
+            )?
+        } else {
+            Dsv4TopologyPlan::pp_ep(
+                devices.len(),
+                n_trunk as usize,
+                mc.moe.as_ref().expect("moe").expert_count as usize,
+                mc.n_embd as usize,
+                mc.moe.as_ref().expect("moe").expert_ff_length as usize,
+            )?
+        };
+        if topology.is_tp_ep() && std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark") {
+            return Err(
+                "DSV4 TP/EP all-layer topology currently refuses MTP/DSpark state because the drafter is not replicated per rank"
+                    .into(),
+            );
+        }
+        if topology.is_tp_ep() && (!matrix_moe || !ep_requested) {
+            return Err(
+                "DSV4 TP/EP all-layer topology requires the matrix ModelOpt program and MEMRA_DSV4_EP=pair"
+                    .into(),
+            );
+        }
 
         // split point: balance per-layer resident bytes (experts uniform; fine layers
         // carry the indexer). Computed from config, not hardcoded.
@@ -2825,12 +2977,20 @@ impl Dsv4Gpu {
         )?;
 
         let mut me = Dsv4Gpu {
+            topology,
             ep_enabled: false,
             ep_serial_control: false,
             ep_calls: std::sync::atomic::AtomicU64::new(0),
+            tp_ep_rank_layer_calls: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
+            tp_ep_ar: std::sync::Mutex::new(None),
+            tp_ep_walk_lock: std::sync::Mutex::new(()),
             model,
             stages,
-            layer_stage: (0..n_trunk).map(|il| usize::from(il >= split_at)).collect(),
+            layer_stage: if topology.is_tp_ep() {
+                vec![0; n_trunk as usize]
+            } else {
+                (0..n_trunk).map(|il| usize::from(il >= split_at)).collect()
+            },
             split_at,
             max_seq,
             variant,
@@ -2880,6 +3040,16 @@ impl Dsv4Gpu {
             } else {
                 "f64"
             }
+        );
+        eprintln!(
+            "[load] topology: {:?} | layers={} per-rank-resident={}",
+            me.topology.topology,
+            me.topology.layers,
+            if me.topology.is_tp_ep() {
+                "all"
+            } else {
+                "PP-owned"
+            },
         );
         eprintln!("[load] indexer score: {:?}", me.indexer_score);
         eprintln!("[load] prefill head: {:?}", me.prefill_head);
@@ -3028,41 +3198,57 @@ impl Dsv4Gpu {
             );
         }
 
-        // stage 0: embed; last stage: head + trunk hc_head/norm
-        me.stages[0].embed = Some({
-            let (_, raw) = me.model.st.raw("embed.weight").expect("embed.weight");
-            let stream = me.stages[0].gpu.stream();
-            me.stages[0].loaded_bytes += raw.len() as u64;
-            upload_u8(&stream, raw)?
-        });
-        let last = me.stages.len() - 1;
-        me.stages[last].head = Some({
-            let (_, raw) = me.model.st.raw("head.weight").expect("head.weight");
-            let stream = me.stages[last].gpu.stream();
-            me.stages[last].loaded_bytes += raw.len() as u64;
-            upload_u8(&stream, raw)?
-        });
-        me.stages[last].trunk_norm = Some(me.tensor_f32_dev(last, "norm.weight")?);
-        me.stages[last].hc_head_fn = Some(me.tensor_f32_dev(last, "hc_head_fn")?);
+        // PP owns embed/head on the endpoint stages.  TP/EP replicates the
+        // complete input/output state on both ranks; no stage endpoint is
+        // allowed to become an implicit owner in that topology.
         me.hc_head_base = me.model.tensor_f32("hc_head_base").1;
         me.hc_head_scale = me.model.tensor_f32("hc_head_scale").1;
-        {
-            let stream = me.stages[last].gpu.stream();
-            let base_dev = upload_f32(&stream, &me.hc_head_base)?;
-            let scale_dev = upload_f32(&stream, &me.hc_head_scale)?;
-            me.stages[last].hc_head_base_dev = Some(base_dev);
-            me.stages[last].hc_head_scale_dev = Some(scale_dev);
+        let last = me.stages.len() - 1;
+        let endpoint_stages: Vec<usize> = if topology.is_tp_ep() {
+            (0..me.stages.len()).collect()
+        } else {
+            vec![0, me.stages.len() - 1]
+        };
+        for stage in endpoint_stages.iter().copied() {
+            let (_, raw) = me.model.st.raw("embed.weight").expect("embed.weight");
+            let stream = me.stages[stage].gpu.stream();
+            me.stages[stage].loaded_bytes += raw.len() as u64;
+            me.stages[stage].embed = Some(upload_u8(&stream, raw)?);
+            let (_, raw) = me.model.st.raw("head.weight").expect("head.weight");
+            me.stages[stage].loaded_bytes += raw.len() as u64;
+            me.stages[stage].head = Some(upload_u8(&stream, raw)?);
+            me.stages[stage].trunk_norm = Some(me.tensor_f32_dev(stage, "norm.weight")?);
+            me.stages[stage].hc_head_fn = Some(me.tensor_f32_dev(stage, "hc_head_fn")?);
+            if topology.is_tp_ep() || stage == last {
+                let stream = me.stages[stage].gpu.stream();
+                me.stages[stage].hc_head_base_dev = Some(upload_f32(&stream, &me.hc_head_base)?);
+                me.stages[stage].hc_head_scale_dev = Some(upload_f32(&stream, &me.hc_head_scale)?);
+            }
         }
 
+        let tp_expert_count = topology
+            .is_tp_ep()
+            .then(|| mc.moe.as_ref().expect("moe").expert_count as usize / 2);
         let t0 = std::time::Instant::now();
         for il in 0..n_trunk {
-            let stage = me.layer_stage[il as usize];
-            let l = me.load_layer(stage, il, &format!("layers.{il}"))?;
-            me.stages[stage].layers.push(l);
+            let owners: Vec<usize> = if topology.is_tp_ep() {
+                (0..me.stages.len()).collect()
+            } else {
+                vec![me.layer_stage[il as usize]]
+            };
+            for stage in owners {
+                let partition = tp_expert_count.map(|count| (stage * count, count));
+                let l = me.load_layer_partitioned(stage, il, &format!("layers.{il}"), partition)?;
+                me.stages[stage].layers.push(l);
+            }
             if il % 4 == 3 || il + 1 == n_trunk {
                 eprintln!(
-                    "[load] layer {il} -> dev{} done t={:.0}s",
-                    me.stages[stage].dev,
+                    "[load] layer {il} -> {} rank copies done t={:.0}s",
+                    if topology.is_tp_ep() {
+                        me.stages.len()
+                    } else {
+                        1
+                    },
                     t0.elapsed().as_secs_f64()
                 );
             }
@@ -3078,7 +3264,7 @@ impl Dsv4Gpu {
         // name — measured on both artifacts: preview has e_proj.weight+.scale, 0731 has
         // no e_proj keys; the stem alone misses because `has` is raw-exact).
         let nextn = me.model.mc.nextn_predict_layers;
-        if nextn > 0 && me.model.has("mtp.0.e_proj.weight") {
+        if !topology.is_tp_ep() && nextn > 0 && me.model.has("mtp.0.e_proj.weight") {
             assert_eq!(
                 nextn, 1,
                 "multi-NextN chains not wired (single MTP layer expected)"
@@ -3102,7 +3288,7 @@ impl Dsv4Gpu {
                 hc_head_scale: me.model.tensor_f32(&format!("{p}.hc_head_scale")).1,
             };
             me.mtp = Some(mtp);
-        } else if nextn > 0 {
+        } else if !topology.is_tp_ep() && nextn > 0 {
             if std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark") {
                 // iteration 3: the DSpark drafter, whole module on the LAST stage
                 // (tap layers 40/41/42 + shared head locality — VRAM plan in the
@@ -3194,7 +3380,11 @@ impl Dsv4Gpu {
         }
         eprintln!("[load] sink score: {:?}", me.sink_score);
         if ep_requested {
-            me.enable_ep_pair_for_gate()?;
+            if topology.is_tp_ep() {
+                me.enable_tp_ep_local_banks_for_gate()?;
+            } else {
+                me.enable_ep_pair_for_gate()?;
+            }
         }
         me.validate_matrix_program()?;
         Ok(me)
@@ -3203,7 +3393,106 @@ impl Dsv4Gpu {
     /// Load-time residency transition and one-load gate seam. Existing decode
     /// states/graphs must be discarded before calling. The normal EP entry is
     /// MEMRA_DSV4_EP=pair, resolved once by the loader.
+    fn enable_tp_ep_local_banks_for_gate(&mut self) -> Res<()> {
+        if self.ep_enabled {
+            return Ok(());
+        }
+        if !self.topology.is_tp_ep()
+            || self.stages.len() != 2
+            || !self.dense_fp8
+            || self.prefill_grouped
+            || !self.matrix_moe
+            || !self.grouped_route_device
+            || self.grouped_fresh_storage_control
+            || self.expert_arm != ExpertArm::Native
+            || !matches!(self.decode_path, DecodePath::Device { host_math: false })
+        {
+            return Err(
+                "TP/EP local banks require replicated matrix layers, native device math, and device routing with reused storage".into(),
+            );
+        }
+        let moe = self.model.mc.moe.as_ref().expect("moe");
+        let ne = moe.expert_count as usize;
+        if ne == 0 || !ne.is_multiple_of(2) {
+            return Err("TP/EP local banks require an even expert count".into());
+        }
+        let count = ne / 2;
+        let hidden = self.model.mc.n_embd as usize;
+        let inter = moe.expert_ff_length as usize;
+        let wbytes = inter * hidden / 2;
+        let sbytes = inter * hidden / 16;
+        for owner_index in 0..2usize {
+            let stage = &mut self.stages[owner_index];
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind TP/EP local bank"))?;
+            let stream = stage.gpu.stream();
+            let mut table_bytes = 0u64;
+            for layer in &mut stage.layers {
+                if layer.experts_w.len() != count * 3 * wbytes
+                    || layer.experts_sc.len() != count * 3 * sbytes
+                    || layer.experts_modelopt_table.is_none()
+                {
+                    return Err(format!(
+                        "TP/EP layer {} was not loaded as one local expert partition",
+                        layer.il
+                    ));
+                }
+                let peer_table = crate::dsv4_grouped::modelopt_table(
+                    &stream,
+                    &layer.experts_w,
+                    &layer.experts_sc,
+                    count,
+                    hidden,
+                    inter,
+                )?;
+                table_bytes += (peer_table.len() * 8) as u64;
+                layer.ep = Some(crate::dsv4_ep::EpLayer {
+                    peer_stage: 1 - owner_index,
+                    local_first: owner_index * count,
+                    count,
+                    peer_first: (1 - owner_index) * count,
+                    peer_w: stream
+                        .alloc_zeros::<u8>(0)
+                        .map_err(e("TP/EP empty peer weights"))?,
+                    peer_sc: stream
+                        .alloc_zeros::<u8>(0)
+                        .map_err(e("TP/EP empty peer scales"))?,
+                    peer_s2: stream
+                        .alloc_zeros::<f32>(0)
+                        .map_err(e("TP/EP empty peer scales2"))?,
+                    peer_table: Some(peer_table),
+                    local_only: true,
+                });
+            }
+            stage.loaded_bytes += table_bytes;
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("TP/EP local bank finalize"))?;
+        }
+        *self
+            .tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP one-shot reduction state mutex poisoned".to_string())? =
+            Some(TpEpArState::new(&self.stages[0].gpu, &self.stages[1].gpu)?);
+        self.ep_enabled = true;
+        eprintln!(
+            "[TP/EP load] local expert banks resident by ID: rank0=0..{}, rank1={}..{}; peer dispatch disabled",
+            count, count, ne
+        );
+        Ok(())
+    }
+
     pub fn enable_ep_pair_for_gate(&mut self) -> Res<()> {
+        if self.topology.is_tp_ep() {
+            return self.enable_tp_ep_local_banks_for_gate();
+        }
         if self.ep_enabled {
             return Ok(());
         }
@@ -3317,6 +3606,7 @@ impl Dsv4Gpu {
                     peer_sc,
                     peer_s2,
                     peer_table,
+                    local_only: false,
                 });
                 let moved = (count * (ws + ss)) as u64;
                 owner.loaded_bytes =
@@ -5070,12 +5360,14 @@ impl Dsv4Gpu {
         capture: Option<&mut GpuCapture>,
         early_exit_after: Option<u32>,
     ) -> Res<Option<ForwardOut>> {
+        self.ensure_walk_topology_ready()?;
         self.forward_impl(ids, capture, early_exit_after, None)
     }
 
     /// Lane 6: prefill the prompt with the lane-4 path while POPULATING the decode
     /// caches, so decode_step can continue incrementally from ids.len().
     pub fn prefill_with_cache(&self, ids: &[u32], state: &mut DecodeState) -> Res<ForwardOut> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         assert_eq!(state.pos, 0, "prefill_with_cache needs a fresh DecodeState");
         assert!(!ids.is_empty(), "empty prompt");
@@ -5106,6 +5398,15 @@ impl Dsv4Gpu {
         assert_eq!(state.pos, 0, "chunked prefill needs a fresh DecodeState");
         if ids.is_empty() {
             return Err("empty dsv4 chunked prefill".into());
+        }
+        if self.topology.is_tp_ep() {
+            if ids.len() != 1 {
+                return Err(
+                    "DSV4 TP/EP vertical slice currently admits only a single-token prime; batched replicated cache hydration is not wired"
+                        .into(),
+                );
+            }
+            return self.decode_step(ids[0], state);
         }
         if chunk == 0 || chunk > DSV4_BATCH_WIDTH_MAX || chunk > state.transient_rows {
             return Err(format!(
@@ -5693,6 +5994,7 @@ impl Dsv4Gpu {
         }
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
         let mut caches = Vec::with_capacity(n_trunk as usize);
+        let mut tp_ep_caches = None;
         let mut cache_bytes = vec![0u64; self.stages.len()];
         let mut host_cache_bytes = vec![0u64; self.stages.len()];
         // iteration 3, rung 4: reserve T_max TRANSIENT window-kv rows per layer at
@@ -5775,6 +6077,87 @@ impl Dsv4Gpu {
                 ipend_score,
             });
         }
+        if self.topology.is_tp_ep() {
+            let stage_i = 1usize;
+            let st = &self.stages[stage_i];
+            let mut rank1 = Vec::with_capacity(n_trunk as usize);
+            for il in 0..n_trunk {
+                st.gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind ctx tp cache"))?;
+                let stream = st.gpu.stream();
+                let layer = st
+                    .layers
+                    .iter()
+                    .find(|l| l.il == il)
+                    .unwrap_or_else(|| panic!("layer {il} not on TP rank 1"));
+                let ratio = layer.ratio;
+                let cap_blocks = dsv4_cache_cap_blocks(capacity, ratio);
+                let c4_host = if host_c4 && ratio == 4 && layer.idx.is_some() && cap_blocks > 0 {
+                    let store = C4HostStore::with_recent(stream.clone(), cap_blocks, recent_rows)?;
+                    host_cache_bytes[stage_i] += store.bytes() as u64;
+                    Some(store)
+                } else {
+                    None
+                };
+                let kvc_rows = win + if c4_host.is_some() { 0 } else { cap_blocks } + trans_rows;
+                let mut bytes = (kvc_rows * hd * 4) as u64
+                    + c4_host.as_ref().map_or(0, C4HostStore::device_bytes);
+                let kvc = stream
+                    .alloc_zeros::<f32>(kvc_rows * hd)
+                    .map_err(e("tp kvc alloc"))?;
+                let mk_pend =
+                    |latent: usize, slots: usize| -> Res<(CudaSlice<f32>, CudaSlice<f32>)> {
+                        let kv = stream
+                            .alloc_zeros::<f32>(slots * latent)
+                            .map_err(e("tp pend kv alloc"))?;
+                        let sc = upload_f32(&stream, &vec![f32::NEG_INFINITY; slots * latent])?;
+                        Ok((kv, sc))
+                    };
+                let (pend_kv, pend_score) = if let Some(cmp) = &layer.cmp {
+                    let slots = if cmp.overlap {
+                        2 * cmp.ratio
+                    } else {
+                        cmp.ratio
+                    };
+                    bytes += (2 * slots * cmp.latent * 4) as u64;
+                    let (a, b) = mk_pend(cmp.latent, slots)?;
+                    (Some(a), Some(b))
+                } else {
+                    (None, None)
+                };
+                let (ikvc, ipend_kv, ipend_score) = if let Some(ix) = &layer.idx {
+                    bytes += (cap_blocks * ix.cmp.d * 4) as u64;
+                    let store = stream
+                        .alloc_zeros::<f32>(cap_blocks * ix.cmp.d)
+                        .map_err(e("tp ikvc alloc"))?;
+                    let slots = if ix.cmp.overlap {
+                        2 * ix.cmp.ratio
+                    } else {
+                        ix.cmp.ratio
+                    };
+                    bytes += (2 * slots * ix.cmp.latent * 4) as u64;
+                    let (a, b) = mk_pend(ix.cmp.latent, slots)?;
+                    (Some(store), Some(a), Some(b))
+                } else {
+                    (None, None, None)
+                };
+                cache_bytes[stage_i] += bytes;
+                rank1.push(LayerCache {
+                    kvc,
+                    c4_host,
+                    n_blocks: 0,
+                    pend_kv,
+                    pend_score,
+                    ikvc,
+                    i_blocks: 0,
+                    ipend_kv,
+                    ipend_score,
+                });
+            }
+            tp_ep_caches = Some(rank1);
+        }
         let ws = if matches!(self.decode_path, DecodePath::Device { .. }) && !self.matrix_moe {
             Some(self.alloc_step_ws()?)
         } else {
@@ -5812,6 +6195,7 @@ impl Dsv4Gpu {
             matrix_moe: self.matrix_moe,
             matrix_step,
             caches,
+            tp_ep_caches,
             pos: 0,
             capacity,
             cache_bytes,
@@ -5831,6 +6215,7 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         verify: &VerifyState,
     ) -> Res<Vec<u64>> {
+        self.ensure_walk_topology_ready()?;
         if !matches!(self.decode_path, DecodePath::Device { .. })
             || state.pos == 0
             || verify.open.is_some()
@@ -5902,6 +6287,7 @@ impl Dsv4Gpu {
     /// append-only compressed rows through each high-water mark, and the compressor/indexer
     /// pending state. Copy commands are queued per stage and synchronized once per stage.
     pub fn snapshot_decode_state(&self, state: &DecodeState) -> Res<Dsv4HostDecodeState> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         if crate::dsv4_c4::host_copy_elision_enabled() {
             return Err(
@@ -6110,6 +6496,7 @@ impl Dsv4Gpu {
         host_c4: bool,
         recent_rows: usize,
     ) -> Res<DecodeState> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, host.matrix_moe)?;
         if host.pos == 0 || capacity < host.pos || capacity > self.max_seq {
             return Err(format!(
@@ -8717,6 +9104,298 @@ impl Dsv4Gpu {
         result
     }
 
+    /// First executable all-layer TP/EP vertical slice: t=1 only, replicated
+    /// attention/cache state on both ranks, local expert partitions, then the
+    /// explicit owner-first rank reduction and common FFN tail on both ranks.
+    /// The prompt/transaction path remains fail-closed until its batched twin
+    /// consumes the same two cache/checkpoint planes.
+    fn decode_step_tp_ep(
+        &self,
+        tok: u32,
+        state: &mut DecodeState,
+        want_logits: bool,
+        taps: Option<(&mut CudaSlice<f32>, usize)>,
+    ) -> Res<(Option<Vec<f32>>, u32)> {
+        if taps.is_some() {
+            return Err("TP/EP vertical slice does not admit DSpark taps yet".into());
+        }
+        let _walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned".to_string())?;
+        let mut rank1_caches = state
+            .tp_ep_caches
+            .take()
+            .ok_or("TP/EP rank-1 cache plane missing")?;
+        let mut work = state
+            .matrix_step
+            .take()
+            .ok_or("TP/EP matrix workspace missing")?;
+        let mut result = (|| -> Res<(Option<Vec<f32>>, u32)> {
+            if work.failed || work.verify.open.is_some() {
+                return Err("TP/EP workspace has an unfinished transaction".into());
+            }
+            let DecodePath::Device { host_math: false } = self.decode_path else {
+                return Err("TP/EP vertical slice requires device math".into());
+            };
+            let d = self.model.cfg();
+            let hidden = self.model.mc.n_embd as usize;
+            let hc = d.hc_mult as usize;
+            let topk = self.model.mc.moe.as_ref().expect("moe").expert_used_count as usize;
+            let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
+            if state.caches.len() != n_trunk || rank1_caches.len() != n_trunk {
+                return Err("TP/EP decode cache plane layer count mismatch".into());
+            }
+            if state.pos >= state.capacity {
+                return Err(format!(
+                    "TP/EP decode position {} exceeds capacity {}",
+                    state.pos, state.capacity
+                ));
+            }
+            let pos_i32 = [state.pos as i32];
+            let tok_i32 = [tok as i32];
+            for rank in 0..2usize {
+                let st = &self.stages[rank];
+                let vws = &mut work.verify.ws[rank];
+                st.gpu.ctx.bind_to_thread().map_err(e("TP/EP bind rank"))?;
+                let stream = st.gpu.stream();
+                stream
+                    .memcpy_htod(&tok_i32, &mut vws.tok)
+                    .map_err(e("TP/EP token upload"))?;
+                stream
+                    .memcpy_htod(&pos_i32, &mut vws.pos_dev)
+                    .map_err(e("TP/EP position upload"))?;
+                unsafe {
+                    ck(
+                        "TP/EP embed",
+                        k::memra_dsv4_embed_rows(
+                            st.embed
+                                .as_ref()
+                                .ok_or("TP/EP rank embed missing")?
+                                .device_ptr(&stream)
+                                .0 as *const c_void,
+                            vws.tok.device_ptr(&stream).0 as *const i32,
+                            dpm!(vws.emb, &stream),
+                            1,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                    ck(
+                        "TP/EP repeat hc",
+                        k::memra_dsv4_repeat_hc(
+                            dpf!(vws.emb, &stream),
+                            dpm!(vws.h_a, &stream),
+                            1,
+                            hc as i32,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+            }
+            for (il, rank1_cache) in rank1_caches.iter_mut().enumerate() {
+                for rank in 0..2usize {
+                    let st = &self.stages[rank];
+                    let layer = st
+                        .layers
+                        .iter()
+                        .find(|l| l.il == il as u32)
+                        .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
+                    let vws = &mut work.verify.ws[rank];
+                    let lck = if rank == 0 {
+                        &mut work.verify.layers[il]
+                    } else {
+                        work.verify
+                            .tp_ep_layers
+                            .as_mut()
+                            .ok_or("TP/EP rank-1 checkpoints missing")?
+                            .get_mut(il)
+                            .ok_or("TP/EP rank-1 checkpoint layer missing")?
+                    };
+                    let cache = if rank == 0 {
+                        &mut state.caches[il]
+                    } else {
+                        &mut *rank1_cache
+                    };
+                    self.block_verify_dev(
+                        st,
+                        layer,
+                        cache,
+                        lck,
+                        vws,
+                        false,
+                        state.pos,
+                        1,
+                        &[tok],
+                        false,
+                        true,
+                        None,
+                        true,
+                    )?;
+                    self.tp_ep_rank_layer_calls[rank]
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                let (rank0_ws, rank1_ws) = work.verify.ws.split_at_mut(1);
+                let owner_ws = &mut rank0_ws[0];
+                let peer_ws = &mut rank1_ws[0];
+                let ar_outputs = work
+                    .verify
+                    .tp_ep_ar_outputs
+                    .as_mut()
+                    .ok_or("TP/EP one-shot output buffers missing")?;
+                let owner_gpu = &self.stages[0].gpu;
+                let peer_gpu = &self.stages[1].gpu;
+                {
+                    let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
+                    let mut ar = self
+                        .tp_ep_ar
+                        .lock()
+                        .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
+                    ar.as_mut()
+                        .ok_or("TP/EP one-shot reduction state missing")?
+                        .all_reduce_into(
+                            owner_gpu,
+                            peer_gpu,
+                            &owner_ws.contrib,
+                            &peer_ws.contrib,
+                            &mut owner_output[0],
+                            &mut peer_output[0],
+                            topk * hidden,
+                        )?;
+                }
+                let layer0 = self.stages[0]
+                    .layers
+                    .iter()
+                    .find(|l| l.il == il as u32)
+                    .ok_or("TP/EP rank-0 layer missing for tail")?;
+                let layer1 = self.stages[1]
+                    .layers
+                    .iter()
+                    .find(|l| l.il == il as u32)
+                    .ok_or("TP/EP rank-1 layer missing for tail")?;
+                self.moe_verify_common_tail(
+                    &self.stages[0],
+                    layer0,
+                    owner_ws,
+                    1,
+                    topk,
+                    hidden,
+                    d.swiglu_limit,
+                    true,
+                    Some(&ar_outputs[0]),
+                )?;
+                self.moe_verify_common_tail(
+                    &self.stages[1],
+                    layer1,
+                    peer_ws,
+                    1,
+                    topk,
+                    hidden,
+                    d.swiglu_limit,
+                    true,
+                    Some(&ar_outputs[1]),
+                )?;
+            }
+            // A successful enqueue does not prove a successful one-shot join:
+            // bounded peer waits report 40043/40044 through sticky device words.
+            // Read both ranks only after all layer work is submitted, before
+            // either persistent plane or the public token position can advance.
+            let refusals = self.tp_ep_ar_refusal_words()?;
+            if refusals != [0, 0] {
+                // All layers completed their snapshots, but compressors already
+                // mutated pending rows/high-water marks speculatively. Restore
+                // both planes with zero committed rows before quarantining the
+                // failed request. The persistent ring has not been written.
+                let rank1_layers = work
+                    .verify
+                    .tp_ep_layers
+                    .as_mut()
+                    .ok_or("TP/EP rank-1 checkpoints missing during refusal rollback")?;
+                let rollback0 = self.commit_verify_dev_plane(
+                    &mut state.caches,
+                    &mut work.verify.layers,
+                    &mut work.verify.ws,
+                    Some(0),
+                    state.pos,
+                    1,
+                    0,
+                );
+                let rollback1 = self.commit_verify_dev_plane(
+                    &mut rank1_caches,
+                    rank1_layers,
+                    &mut work.verify.ws,
+                    Some(1),
+                    state.pos,
+                    1,
+                    0,
+                );
+                let mut error = format!("TP/EP one-shot reduction refused: {refusals:?}");
+                for (rank, rollback) in [rollback0, rollback1].into_iter().enumerate() {
+                    if let Err(rollback_error) = rollback {
+                        error.push_str(&format!("; rank {rank} rollback: {rollback_error}"));
+                    }
+                }
+                return Err(error);
+            }
+            let pos0 = state.pos;
+            self.commit_verify_dev_plane(
+                &mut state.caches,
+                &mut work.verify.layers,
+                &mut work.verify.ws,
+                Some(0),
+                pos0,
+                1,
+                1,
+            )?;
+            let rank1_layers = work
+                .verify
+                .tp_ep_layers
+                .as_mut()
+                .ok_or("TP/EP rank-1 checkpoints missing")?;
+            self.commit_verify_dev_plane(
+                &mut rank1_caches,
+                rank1_layers,
+                &mut work.verify.ws,
+                Some(1),
+                pos0,
+                1,
+                1,
+            )?;
+            let head_ws = &mut work.verify.ws[1];
+            self.head_logits_batch_dev(head_ws, 1, false)?;
+            let stream = self.stages[1].gpu.stream();
+            let logits = dtoh_f32(&stream, &head_ws.logits)?;
+            let mut best = 0usize;
+            for i in 1..logits.len() {
+                if logits[i] > logits[best] {
+                    best = i;
+                }
+            }
+            state.pos = pos0 + 1;
+            Ok((want_logits.then_some(logits), best as u32))
+        })();
+        if let Err(error) = &mut result {
+            work.failed = true;
+            // If submission failed after only one rank enqueued its peer wait,
+            // do not return/drop its buffers while it can still access the peer.
+            // Attempt both drains even if the first context or stream failed.
+            for (rank, stage) in self.stages.iter().enumerate() {
+                let drained = stage
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .and_then(|()| stage.gpu.stream().synchronize());
+                if let Err(drain_error) = drained {
+                    error.push_str(&format!("; TP/EP rank {rank} drain: {drain_error}"));
+                }
+            }
+        }
+        state.tp_ep_caches = Some(rank1_caches);
+        state.matrix_step = Some(work);
+        result
+    }
+
     fn decode_step_fast(
         &self,
         tok: u32,
@@ -8740,6 +9419,10 @@ impl Dsv4Gpu {
         host_math: bool,
         mut taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
+        if self.topology.is_tp_ep() {
+            return self.decode_step_tp_ep(tok, state, want_logits, taps);
+        }
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         if self.matrix_moe {
             return self.decode_matrix_step(tok, state, want_logits, taps);
@@ -10815,8 +11498,13 @@ pub struct VerifyState {
     stage0_embed_capture: Option<Dsv4LayerCapture>,
     /// Diagnostic captures only, not persistent replay executables.
     pub layer_captures: Vec<Dsv4LayerCapture>,
+    /// Gate-only matrix EP parent graphs. Each slot owns the two rank child
+    /// graphs, explicit P2P copy nodes, the slot merge, and the owner FFN tail.
+    matrix_ep_graphs: Vec<MatrixEpGraphSlot>,
     ws: Vec<VerifyWs>,
     layers: Vec<LayerCkptDev>,
+    tp_ep_layers: Option<Vec<LayerCkptDev>>,
+    tp_ep_ar_outputs: Option<[CudaSlice<f32>; 2]>,
     pub tmax: usize,
     /// Decode-cache capacity this verify layout was planned against. The transient
     /// rows live immediately after each layer's capacity-sized compressed store, so
@@ -10840,6 +11528,18 @@ impl Dsv4Gpu {
     /// then no transient rows are reserved anywhere — today's exact allocation).
     pub fn verify_tmax(&self) -> usize {
         self.dspark.as_ref().map(|d| d.block_size + 1).unwrap_or(0)
+    }
+
+    /// Gate-only matrix-EP full-tail graph switch.  This is process-local and
+    /// deliberately has no environment reader or serving default.
+    pub fn set_matrix_ep_graph_for_gate(&self, enabled: bool) -> bool {
+        dsv4_ep_graph::set_for_gate(enabled)
+    }
+
+    /// Actual successful matrix-EP graph launches, for a non-vacuous gate
+    /// receipt.  Captures and eager fallbacks are not counted.
+    pub fn matrix_ep_graph_dispatches(&self) -> u64 {
+        dsv4_ep_graph::dispatches()
     }
 
     /// Capture and execute each complete trunk layer of the next verify round
@@ -11820,6 +12520,83 @@ impl Dsv4Gpu {
                 trans_base: d.sliding_window as usize + cap_blocks,
             });
         }
+        let tp_ep_layers = if self.topology.is_tp_ep() {
+            let rank = 1usize;
+            let mut rank_layers = Vec::with_capacity(n_trunk);
+            for il in 0..n_trunk {
+                let st = &self.stages[rank];
+                st.gpu.ctx.bind_to_thread().map_err(e("bind tp ckpt"))?;
+                let stream = st.gpu.stream();
+                let layer = st
+                    .layers
+                    .iter()
+                    .find(|l| l.il == il as u32)
+                    .unwrap_or_else(|| panic!("layer {il} not on TP rank 1"));
+                let cap_blocks = dsv4_cache_cap_blocks(capacity, layer.ratio);
+                let mk = |cmp: &CmpDev| -> Res<CmpCkptDev> {
+                    let slots = if cmp.overlap {
+                        2 * cmp.ratio
+                    } else {
+                        cmp.ratio
+                    };
+                    Ok(CmpCkptDev {
+                        kv_snap: stream
+                            .alloc_zeros::<f32>(slots * cmp.latent)
+                            .map_err(e("tp ckpt kv snap"))?,
+                        sc_snap: stream
+                            .alloc_zeros::<f32>(slots * cmp.latent)
+                            .map_err(e("tp ckpt sc snap"))?,
+                        rows_kv: stream
+                            .alloc_zeros::<f32>(tmax * cmp.latent)
+                            .map_err(e("tp ckpt rows kv"))?,
+                        rows_sc: stream
+                            .alloc_zeros::<f32>(tmax * cmp.latent)
+                            .map_err(e("tp ckpt rows sc"))?,
+                        latent: cmp.latent,
+                        ratio: cmp.ratio,
+                        overlap: cmp.overlap,
+                        n_blocks0: 0,
+                    })
+                };
+                let cmp = layer.cmp.as_ref().map(mk).transpose()?;
+                let idx = layer.idx.as_ref().map(|ix| mk(&ix.cmp)).transpose()?;
+                for c in cmp.iter().chain(idx.iter()) {
+                    let slots = if c.overlap { 2 * c.ratio } else { c.ratio };
+                    bytes[rank] += ((2 * slots * c.latent + 2 * tmax * c.latent) * 4) as u64;
+                }
+                rank_layers.push(LayerCkptDev {
+                    cmp,
+                    idx,
+                    trans_base: d.sliding_window as usize + cap_blocks,
+                });
+            }
+            Some(rank_layers)
+        } else {
+            None
+        };
+        let tp_ep_ar_outputs = if self.topology.is_tp_ep() {
+            let mut outputs = Vec::with_capacity(2);
+            for st in &self.stages {
+                st.gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind TP/EP AR output"))?;
+                let output = st
+                    .gpu
+                    .stream()
+                    .alloc_zeros::<f32>(tmax * topk * hidden)
+                    .map_err(e("TP/EP AR output"))?;
+                bytes[st.dev] += (tmax * topk * hidden * 4) as u64;
+                outputs.push(output);
+            }
+            Some(
+                outputs
+                    .try_into()
+                    .map_err(|_| "TP/EP AR output rank count mismatch".to_string())?,
+            )
+        } else {
+            None
+        };
         for st in &self.stages {
             st.gpu.stream().synchronize().map_err(e("vws sync"))?;
         }
@@ -11835,8 +12612,11 @@ impl Dsv4Gpu {
             replay_stage0_embed_next_round: false,
             stage0_embed_capture: None,
             layer_captures: Vec::new(),
+            matrix_ep_graphs: (0..n_trunk).map(|_| MatrixEpGraphSlot::empty()).collect(),
             ws,
             layers,
+            tp_ep_layers,
+            tp_ep_ar_outputs,
             tmax,
             capacity,
             open: None,
@@ -12420,6 +13200,8 @@ impl Dsv4Gpu {
         toks: &[u32],
         host_math: bool,
         allow_gu_fuse: bool,
+        matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
+        defer_tp_ep_tail: bool,
     ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
@@ -13246,23 +14028,18 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        self.moe_verify_dev(st, layer, vws, t, toks, host_math, allow_gu_fuse)?;
-        unsafe {
-            ck(
-                "hc_post ffn batch",
-                k::memra_dsv4_hc_post(
-                    dpf!(vws.y, &stream),
-                    dpf!(vws.h_b, &stream),
-                    dpf!(vws.post, &stream),
-                    dpf!(vws.comb, &stream),
-                    dpm!(vws.h_a, &stream),
-                    t as i32,
-                    hc as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
+        self.moe_verify_dev(
+            st,
+            layer,
+            vws,
+            t,
+            toks,
+            host_math,
+            allow_gu_fuse,
+            true,
+            matrix_ep_graph,
+            defer_tp_ep_tail,
+        )?;
         Ok(())
     }
 
@@ -13297,7 +14074,7 @@ impl Dsv4Gpu {
         stream
             .memcpy_htod(&ids, &mut ws.tok)
             .map_err(e("MoE gate tokens"))?;
-        self.moe_verify_dev(st, layer, ws, t, tokens, false, false)?;
+        self.moe_verify_dev(st, layer, ws, t, tokens, false, false, false, None, false)?;
         let contributions = dtoh_f32(&stream, &ws.contrib)?;
         let shared = dtoh_f32(&stream, &ws.sh_out)?;
         let total = dtoh_f32(&stream, &ws.y)?;
@@ -13421,6 +14198,154 @@ impl Dsv4Gpu {
         Ok(())
     }
 
+    /// Common routed+shared-expert tail after either the matrix EP graph or
+    /// the eager routed program.  Keeping this tail in one function makes the
+    /// graph arm include the actual FFN join instead of only the two expert
+    /// rank bodies.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_verify_common_tail(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        t: usize,
+        topk: usize,
+        hidden: usize,
+        limit: f32,
+        include_hc_post: bool,
+        joined_contribution: Option<&CudaSlice<f32>>,
+    ) -> Res<()> {
+        let stream = st.gpu.stream();
+        let contribution = joined_contribution.unwrap_or(&vws.contrib);
+        unsafe {
+            ck(
+                "combine_rows_m",
+                k::memra_dsv4_combine_rows_m(
+                    dpf!(contribution, &stream),
+                    vws.order.device_ptr(&stream).0 as *const i32,
+                    topk as i32,
+                    dpm!(vws.y, &stream),
+                    hidden as i64,
+                    t as i32,
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "cvt xb batch",
+                k::memra_dsv4_cvt_bf16(
+                    dpf!(vws.xf, &stream),
+                    vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                    (t * hidden) as i64,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        let sh_inter = vws.sg1.len() / vws.tmax;
+        Self::gemv_m_dev(
+            st,
+            dwsel(
+                self.dense_fp8,
+                &stream,
+                &layer.shared_w[0],
+                &layer.shared_fp8[0],
+            ),
+            vws.xb.device_ptr(&stream).0 as *const c_void,
+            vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
+            t,
+            sh_inter,
+            hidden,
+            0,
+            0,
+        )?;
+        Self::gemv_m_dev(
+            st,
+            dwsel(
+                self.dense_fp8,
+                &stream,
+                &layer.shared_w[2],
+                &layer.shared_fp8[2],
+            ),
+            vws.xb.device_ptr(&stream).0 as *const c_void,
+            vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
+            t,
+            sh_inter,
+            hidden,
+            0,
+            0,
+        )?;
+        unsafe {
+            ck(
+                "swiglu sh batch",
+                k::memra_dsv4_swiglu(
+                    dpf!(vws.sg1, &stream),
+                    dpf!(vws.sg3, &stream),
+                    dpm!(vws.shbuf, &stream),
+                    t as i32,
+                    sh_inter as i32,
+                    limit,
+                    std::ptr::null(),
+                    sp(&stream),
+                ),
+            )?;
+            ck(
+                "cvt sh batch",
+                k::memra_dsv4_cvt_bf16(
+                    dpf!(vws.shbuf, &stream),
+                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                    (t * sh_inter) as i64,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        Self::gemv_m_dev(
+            st,
+            dwsel(
+                self.dense_fp8,
+                &stream,
+                &layer.shared_w[1],
+                &layer.shared_fp8[1],
+            ),
+            vws.shb16.device_ptr(&stream).0 as *const c_void,
+            vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
+            t,
+            hidden,
+            sh_inter,
+            0,
+            0,
+        )?;
+        unsafe {
+            ck(
+                "add shared batch",
+                k::memra_dsv4_add_inplace(
+                    dpm!(vws.y, &stream),
+                    dpf!(vws.sh_out, &stream),
+                    (t * hidden) as i64,
+                    sp(&stream),
+                ),
+            )?;
+        }
+        if include_hc_post {
+            let hc = self.model.cfg().hc_mult as usize;
+            unsafe {
+                ck(
+                    "hc_post ffn batch",
+                    k::memra_dsv4_hc_post(
+                        dpf!(vws.y, &stream),
+                        dpf!(vws.h_b, &stream),
+                        dpf!(vws.post, &stream),
+                        dpf!(vws.comb, &stream),
+                        dpm!(vws.h_a, &stream),
+                        t as i32,
+                        hc as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// MoE for T rows: per-position routing (the hash layers need the per-position TOKEN,
     /// which is why a round carries a token array), then ONE launch per projection over
     /// the whole T x topk slot set — routed-expert weight traffic scales with T (each
@@ -13435,6 +14360,9 @@ impl Dsv4Gpu {
         toks: &[u32],
         host_math: bool,
         allow_gu_fuse: bool,
+        include_hc_post: bool,
+        matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
+        defer_tp_ep_tail: bool,
     ) -> Res<()> {
         let mc = &self.model.mc;
         let d = self.model.cfg();
@@ -13541,48 +14469,198 @@ impl Dsv4Gpu {
                     ),
                 )?;
             }
-            let mut compute = EpCompute {
-                xq: &vws.xq,
-                xs: &vws.xs,
-                ids: &vws.sel,
-                weights: &vws.selw,
-                g1: &mut vws.g1,
-                g3: &mut vws.g3,
-                h: &mut vws.hbuf,
-                hq: &mut vws.hq,
-                hs: &mut vws.hs,
-                contribution: &mut vws.contrib,
-            };
-            let remote = vws.ep.as_mut().ok_or("EP verify workspace missing")?;
             if self.matrix_moe {
                 if !self.grouped_route_device || self.grouped_fresh_storage_control {
                     return Err("EP matrix requires device routing and reused storage".into());
                 }
-                let calls = crate::dsv4_ep::execute_matrix(
-                    &st.gpu,
-                    &self.stages[ep.peer_stage].gpu,
-                    ep,
-                    layer
-                        .experts_modelopt_table
-                        .as_ref()
-                        .ok_or("EP matrix local table missing")?,
-                    &layer.experts_s2_dev,
-                    &layer.experts_s2,
-                    &mut compute,
-                    vws.grouped_work
-                        .as_mut()
-                        .ok_or("EP matrix local workspace missing")?,
-                    remote,
-                    t,
-                    topk,
-                    hidden,
-                    limit,
-                    allow_gu_fuse,
-                    self.ep_serial_control,
-                )?;
-                self.grouped_device_route_calls
-                    .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
+                if self.topology.is_tp_ep() {
+                    if !defer_tp_ep_tail {
+                        return Err(
+                            "DSV4 TP/EP rank-local expert execution requires a paired rank-order join"
+                                .into(),
+                        );
+                    }
+                    let mut compute = EpCompute {
+                        xq: &vws.xq,
+                        xs: &vws.xs,
+                        ids: &vws.sel,
+                        weights: &vws.selw,
+                        g1: &mut vws.g1,
+                        g3: &mut vws.g3,
+                        h: &mut vws.hbuf,
+                        hq: &mut vws.hq,
+                        hs: &mut vws.hs,
+                        contribution: &mut vws.contrib,
+                    };
+                    let calls = crate::dsv4_ep::execute_matrix_local(
+                        &st.gpu,
+                        ep,
+                        layer
+                            .experts_modelopt_table
+                            .as_ref()
+                            .ok_or("TP/EP local matrix table missing")?,
+                        &layer.experts_s2_dev,
+                        &layer.experts_s2,
+                        &mut compute,
+                        vws.grouped_work
+                            .as_mut()
+                            .ok_or("TP/EP local grouped workspace missing")?,
+                        t,
+                        topk,
+                        limit,
+                        allow_gu_fuse,
+                    )?;
+                    self.grouped_device_route_calls
+                        .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
+                    self.ep_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return Ok(());
+                }
+                let mut graph_used = false;
+                let graph_eligible = dsv4_ep_graph::enabled()
+                    && include_hc_post
+                    && !host_math
+                    && !self.ep_serial_control
+                    && t == 1
+                    && vws.tmax == 1
+                    && !vws.is_prefill
+                    && matrix_ep_graph.is_some();
+                if graph_eligible {
+                    let slot = matrix_ep_graph.expect("checked above");
+                    match slot {
+                        MatrixEpGraphSlot::Ready(graph) => {
+                            graph.launch(&st.gpu)?;
+                            graph_used = true;
+                        }
+                        MatrixEpGraphSlot::Empty => {
+                            let table = layer
+                                .experts_modelopt_table
+                                .as_ref()
+                                .ok_or("EP matrix local table missing")?;
+                            let builder = {
+                                let mut compute = EpCompute {
+                                    xq: &vws.xq,
+                                    xs: &vws.xs,
+                                    ids: &vws.sel,
+                                    weights: &vws.selw,
+                                    g1: &mut vws.g1,
+                                    g3: &mut vws.g3,
+                                    h: &mut vws.hbuf,
+                                    hq: &mut vws.hq,
+                                    hs: &mut vws.hs,
+                                    contribution: &mut vws.contrib,
+                                };
+                                let remote =
+                                    vws.ep.as_mut().ok_or("EP verify workspace missing")?;
+                                let local_work = vws
+                                    .grouped_work
+                                    .as_mut()
+                                    .ok_or("EP matrix local workspace missing")?;
+                                dsv4_ep_graph::MatrixEpGraphBuilder::capture_expert(
+                                    &st.gpu,
+                                    &self.stages[ep.peer_stage].gpu,
+                                    ep,
+                                    table,
+                                    &layer.experts_s2_dev,
+                                    &layer.experts_s2,
+                                    &mut compute,
+                                    local_work,
+                                    remote,
+                                    t,
+                                    topk,
+                                    hidden,
+                                    limit,
+                                    allow_gu_fuse,
+                                )
+                            };
+                            match builder.and_then(|builder| {
+                                builder.finish(|| {
+                                    if defer_tp_ep_tail {
+                                        return Ok(());
+                                    }
+                                    self.moe_verify_common_tail(
+                                        st, layer, vws, t, topk, hidden, limit, true, None,
+                                    )
+                                })
+                            }) {
+                                Ok(graph) => {
+                                    graph.launch(&st.gpu)?;
+                                    *slot = MatrixEpGraphSlot::Ready(graph);
+                                    graph_used = true;
+                                }
+                                Err(err) => {
+                                    eprintln!(
+                                        "[dsv4-matrix-ep-graph] refused layer {}: {err}; eager fallback",
+                                        layer.il
+                                    );
+                                    *slot = MatrixEpGraphSlot::Refused;
+                                }
+                            }
+                        }
+                        MatrixEpGraphSlot::Refused => {}
+                    }
+                }
+                if !graph_used {
+                    let mut compute = EpCompute {
+                        xq: &vws.xq,
+                        xs: &vws.xs,
+                        ids: &vws.sel,
+                        weights: &vws.selw,
+                        g1: &mut vws.g1,
+                        g3: &mut vws.g3,
+                        h: &mut vws.hbuf,
+                        hq: &mut vws.hq,
+                        hs: &mut vws.hs,
+                        contribution: &mut vws.contrib,
+                    };
+                    let remote = vws.ep.as_mut().ok_or("EP verify workspace missing")?;
+                    let calls = crate::dsv4_ep::execute_matrix(
+                        &st.gpu,
+                        &self.stages[ep.peer_stage].gpu,
+                        ep,
+                        layer
+                            .experts_modelopt_table
+                            .as_ref()
+                            .ok_or("EP matrix local table missing")?,
+                        &layer.experts_s2_dev,
+                        &layer.experts_s2,
+                        &mut compute,
+                        vws.grouped_work
+                            .as_mut()
+                            .ok_or("EP matrix local workspace missing")?,
+                        remote,
+                        t,
+                        topk,
+                        hidden,
+                        limit,
+                        allow_gu_fuse,
+                        self.ep_serial_control,
+                    )?;
+                    self.grouped_device_route_calls
+                        .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
+                } else {
+                    // The graph contains both rank prepares, the expert FFN,
+                    // the return/slot merge, and the owner shared-FFN tail.
+                    self.grouped_device_route_calls
+                        .fetch_add(2, std::sync::atomic::Ordering::Relaxed);
+                    self.ep_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return Ok(());
+                }
             } else {
+                let mut compute = EpCompute {
+                    xq: &vws.xq,
+                    xs: &vws.xs,
+                    ids: &vws.sel,
+                    weights: &vws.selw,
+                    g1: &mut vws.g1,
+                    g3: &mut vws.g3,
+                    h: &mut vws.hbuf,
+                    hq: &mut vws.hq,
+                    hs: &mut vws.hs,
+                    contribution: &mut vws.contrib,
+                };
+                let remote = vws.ep.as_mut().ok_or("EP verify workspace missing")?;
                 crate::dsv4_ep::execute(
                     &st.gpu,
                     &self.stages[ep.peer_stage].gpu,
@@ -13705,115 +14783,17 @@ impl Dsv4Gpu {
                 )?;
             }
         }
-        // Both routed arms produce slot-aligned contributions. The combine and
-        // entire shared expert are mandatory common work, never an early return.
-        unsafe {
-            ck(
-                "combine_rows_m",
-                k::memra_dsv4_combine_rows_m(
-                    dpf!(vws.contrib, &stream),
-                    vws.order.device_ptr(&stream).0 as *const i32,
-                    topk as i32,
-                    dpm!(vws.y, &stream),
-                    hidden as i64,
-                    t as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt xb batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.xf, &stream),
-                    vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        let sh_inter = vws.sg1.len() / vws.tmax;
-        Self::gemv_m_dev(
+        self.moe_verify_common_tail(
             st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[0],
-                &layer.shared_fp8[0],
-            ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
+            layer,
+            vws,
             t,
-            sh_inter,
+            topk,
             hidden,
-            0,
-            0,
+            limit,
+            include_hc_post,
+            None,
         )?;
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[2],
-                &layer.shared_fp8[2],
-            ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            sh_inter,
-            hidden,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "swiglu sh batch",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.sg1, &stream),
-                    dpf!(vws.sg3, &stream),
-                    dpm!(vws.shbuf, &stream),
-                    t as i32,
-                    sh_inter as i32,
-                    limit,
-                    std::ptr::null(),
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt sh batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.shbuf, &stream),
-                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * sh_inter) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[1],
-                &layer.shared_fp8[1],
-            ),
-            vws.shb16.device_ptr(&stream).0 as *const c_void,
-            vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            hidden,
-            sh_inter,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "add shared batch",
-                k::memra_dsv4_add_inplace(
-                    dpm!(vws.y, &stream),
-                    dpf!(vws.sh_out, &stream),
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
         Ok(())
     }
 
@@ -14011,6 +14991,7 @@ impl Dsv4Gpu {
         taps: Option<&mut CudaSlice<f32>>,
         output: VerifyOutput,
     ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
         let DecodePath::Device { host_math } = self.decode_path else {
@@ -14214,19 +15195,28 @@ impl Dsv4Gpu {
                 && vstate.tmax == 1
                 && !vstate.ws[stage].is_prefill
                 && taps.is_none();
+            let mut matrix_ep_graph_slot = if self.matrix_moe {
+                Some(&mut vstate.matrix_ep_graphs[il])
+            } else {
+                None
+            };
+            let layer_ckpt = &mut vstate.layers[il];
+            let verify_ws = &mut vstate.ws[stage];
             let mut body = || {
                 self.block_verify_dev(
                     st,
                     &st.layers[lidx],
                     &mut state.caches[il],
-                    &mut vstate.layers[il],
-                    &mut vstate.ws[stage],
+                    layer_ckpt,
+                    verify_ws,
                     input_rx,
                     pos0,
                     t,
                     toks,
                     host_math,
                     allow_gu_fuse,
+                    matrix_ep_graph_slot.as_deref_mut(),
+                    false,
                 )
             };
             if capture_this_layer {
@@ -14411,6 +15401,10 @@ impl Dsv4Gpu {
     /// (§3.1 invariant: every trunk cache class ends bit-identical to plain sequential
     /// decode of exactly the committed positions). Ring slots take their transient rows;
     /// the compressors replay; the append-only stores fall back to their high-water mark.
+    ///
+    /// The all-layer TP/EP walk has a second cache/checkpoint plane.  Its caller must invoke
+    /// [`Self::commit_verify_dev_plane`] once for each rank and advance `state.pos` only after
+    /// both planes commit.  This method remains the single-plane PP/spec caller.
     pub fn commit_verify_dev(
         &self,
         state: &mut DecodeState,
@@ -14427,21 +15421,74 @@ impl Dsv4Gpu {
             n_commit >= 1 && n_commit <= t,
             "commit {n_commit} outside round width {t}"
         );
+        self.commit_verify_dev_plane(
+            &mut state.caches,
+            &mut vstate.layers,
+            &mut vstate.ws,
+            None,
+            pos0,
+            t,
+            n_commit,
+        )?;
+        state.pos = pos0 + n_commit;
+        Ok(())
+    }
+
+    /// Commit one explicit cache/checkpoint/workspace plane without changing the shared
+    /// [`DecodeState::pos`].  `stage_override` is `None` for the ordinary PP ownership map;
+    /// TP/EP passes `Some(0)` or `Some(1)` so every layer uses that rank's stream and its own
+    /// persistent ring/checkpoint plane.  The caller must commit all planes before exposing the
+    /// new position. Zero rows with an explicit TP rank restores the pending
+    /// compressor snapshots/high-water marks without writing the persistent ring.
+    #[allow(clippy::too_many_arguments)] // Explicit plane borrows and transaction coordinates.
+    fn commit_verify_dev_plane(
+        &self,
+        caches: &mut [LayerCache],
+        checkpoints: &mut [LayerCkptDev],
+        ws: &mut [VerifyWs],
+        stage_override: Option<usize>,
+        pos0: usize,
+        t: usize,
+        n_commit: usize,
+    ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
         let hd = d.head_dim as usize;
         let win = d.sliding_window as usize;
         let n_trunk = (mc.n_layer - mc.nextn_predict_layers) as usize;
-        let (ring_start, slot_rows) = ring_commit_plan(pos0, n_commit, win);
+        if caches.len() != n_trunk || checkpoints.len() != n_trunk || ws.len() != self.stages.len()
+        {
+            return Err(format!(
+                "TP/EP commit plane shape mismatch: caches={} checkpoints={} ws={} expected layers={} stages={}",
+                caches.len(),
+                checkpoints.len(),
+                ws.len(),
+                n_trunk,
+                self.stages.len()
+            ));
+        }
+        if t == 0 || n_commit > t || (n_commit == 0 && stage_override.is_none()) {
+            return Err(format!(
+                "commit plane width {n_commit} outside transaction width {t}"
+            ));
+        }
+        let (ring_start, slot_rows) = if n_commit == 0 {
+            (0, Vec::new())
+        } else {
+            ring_commit_plan(pos0, n_commit, win)
+        };
         let ring_keep = slot_rows.len();
         for il in 0..n_trunk {
-            let stage = self.layer_stage[il];
+            let stage = stage_override.unwrap_or(self.layer_stage[il]);
+            if stage >= self.stages.len() {
+                return Err(format!("commit plane stage {stage} outside runtime stages"));
+            }
             let st = &self.stages[stage];
             st.gpu.ctx.bind_to_thread().map_err(e("bind ctx commit"))?;
             let stream = st.gpu.stream();
-            let lck = &mut vstate.layers[il];
-            let vws = &mut vstate.ws[stage];
-            let cache = &mut state.caches[il];
+            let lck = &mut checkpoints[il];
+            let vws = &mut ws[stage];
+            let cache = &mut caches[il];
             let trans_base = if cache.c4_host.is_some() {
                 win
             } else {
@@ -14449,33 +15496,35 @@ impl Dsv4Gpu {
             };
             // Only the newest window survives. Scattering every committed row
             // when n_commit>win races multiple writers to the same ring slot.
-            {
-                let src = cache
-                    .kvc
-                    .slice((trans_base + ring_start) * hd..(trans_base + n_commit) * hd);
-                let mut dst = vws.bounce.slice_mut(0..ring_keep * hd);
-                stream
-                    .memcpy_dtod(&src, &mut dst)
-                    .map_err(e("commit bounce"))?;
-            }
-            {
-                let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
-                stream
-                    .memcpy_htod(&slot_rows, &mut dst)
-                    .map_err(e("htod slot rows"))?;
-            }
-            unsafe {
-                ck(
-                    "scatter_rows commit",
-                    k::memra_dsv4_scatter_rows(
-                        dpf!(vws.bounce, &stream),
-                        dpm!(cache.kvc, &stream),
-                        vws.slot_rows.device_ptr(&stream).0 as *const i32,
-                        ring_keep as i32,
-                        hd as i32,
-                        sp(&stream),
-                    ),
-                )?;
+            if ring_keep != 0 {
+                {
+                    let src = cache
+                        .kvc
+                        .slice((trans_base + ring_start) * hd..(trans_base + n_commit) * hd);
+                    let mut dst = vws.bounce.slice_mut(0..ring_keep * hd);
+                    stream
+                        .memcpy_dtod(&src, &mut dst)
+                        .map_err(e("commit bounce"))?;
+                }
+                {
+                    let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
+                    stream
+                        .memcpy_htod(&slot_rows, &mut dst)
+                        .map_err(e("htod slot rows"))?;
+                }
+                unsafe {
+                    ck(
+                        "scatter_rows commit",
+                        k::memra_dsv4_scatter_rows(
+                            dpf!(vws.bounce, &stream),
+                            dpm!(cache.kvc, &stream),
+                            vws.slot_rows.device_ptr(&stream).0 as *const i32,
+                            ring_keep as i32,
+                            hd as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
             }
             if let Some(ckd) = &lck.cmp {
                 self.cmp_rollback_replay_dev(
@@ -14504,14 +15553,22 @@ impl Dsv4Gpu {
                 )?;
             }
         }
-        for st in &self.stages {
-            st.gpu
+        let sync_stages: Vec<usize> = match stage_override {
+            Some(stage) => vec![stage],
+            None => (0..self.stages.len()).collect(),
+        };
+        for stage in sync_stages {
+            self.stages[stage]
+                .gpu
                 .ctx
                 .bind_to_thread()
                 .map_err(e("bind ctx commit sync"))?;
-            st.gpu.stream().synchronize().map_err(e("commit sync"))?;
+            self.stages[stage]
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("commit sync"))?;
         }
-        state.pos = pos0 + n_commit;
         Ok(())
     }
 
@@ -15170,6 +16227,150 @@ impl Dsv4Gpu {
 }
 
 impl Dsv4Gpu {
+    /// Gate-only digest of the two replicated live cache planes.  It includes
+    /// persistent rings, compressed/indexer stores, and pending rows after the
+    /// TP/EP commit; no transient verifier tail is used as evidence.  Equal
+    /// digests are the rank-symmetry check for the replicated attention/cache
+    /// numeric class, not a performance measurement.
+    pub fn tp_ep_cache_digest_for_gate(&self, state: &DecodeState) -> Res<[u64; 2]> {
+        if !self.topology.is_tp_ep() {
+            return Err("TP/EP cache digest requires the all-layer topology".into());
+        }
+        let rank1 = state
+            .tp_ep_caches
+            .as_ref()
+            .ok_or("TP/EP rank-1 cache plane missing")?;
+        if rank1.len() != state.caches.len() {
+            return Err("TP/EP cache plane layer count mismatch".into());
+        }
+        let mut digests = [0xcbf29ce484222325u64; 2];
+        let mix = |hash: &mut u64, value: u64| {
+            *hash ^= value;
+            *hash = hash.wrapping_mul(0x100000001b3);
+        };
+        let planes = [state.caches.as_slice(), rank1.as_slice()];
+        for (rank, digest) in digests.iter_mut().enumerate() {
+            for (il, cache) in planes[rank].iter().enumerate() {
+                if cache.c4_host.is_some() {
+                    return Err("TP/EP cache digest does not admit host-C4 residency".into());
+                }
+                let stage = &self.stages[rank];
+                stage
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("TP/EP cache digest context"))?;
+                let stream = stage.gpu.stream();
+                let layer = stage
+                    .layers
+                    .iter()
+                    .find(|layer| layer.il == il as u32)
+                    .ok_or_else(|| format!("TP/EP cache digest missing rank {rank} layer {il}"))?;
+                let mut read = |plane: cudarc::driver::CudaView<'_, f32>| -> Res<()> {
+                    let mut values = vec![0f32; plane.len()];
+                    stream
+                        .memcpy_dtoh(&plane, &mut values)
+                        .map_err(e("TP/EP cache digest copy"))?;
+                    stream.synchronize().map_err(e("TP/EP cache digest sync"))?;
+                    for value in values {
+                        mix(digest, value.to_bits() as u64);
+                    }
+                    Ok(())
+                };
+                // Only persistent data participates. In particular, exclude
+                // transient verifier rows and n_blocks/i_blocks metadata so a
+                // stale pair cannot pass merely because counters advanced.
+                let win = self.model.cfg().sliding_window as usize;
+                let hd = self.model.cfg().head_dim as usize;
+                read(cache.kvc.slice(..win * hd))?;
+                if let Some(cmp) = &layer.cmp {
+                    let end = win
+                        .checked_mul(hd)
+                        .and_then(|start| {
+                            cache
+                                .n_blocks
+                                .checked_mul(cmp.d)
+                                .and_then(|rows| start.checked_add(rows))
+                        })
+                        .ok_or("TP/EP cache digest compressed range overflow")?;
+                    if end > cache.kvc.len() {
+                        return Err(format!(
+                            "TP/EP cache digest compressed range {end} exceeds {}",
+                            cache.kvc.len()
+                        ));
+                    }
+                    read(cache.kvc.slice(win * hd..end))?;
+                }
+                if let Some(plane) = &cache.pend_kv {
+                    read(plane.slice(..))?;
+                }
+                if let Some(plane) = &cache.pend_score {
+                    read(plane.slice(..))?;
+                }
+                if let Some(plane) = &cache.ikvc {
+                    let ix = layer
+                        .idx
+                        .as_ref()
+                        .ok_or("TP/EP index cache metadata missing")?;
+                    let end = cache
+                        .i_blocks
+                        .checked_mul(ix.cmp.d)
+                        .ok_or("TP/EP cache digest index range overflow")?;
+                    if end > plane.len() {
+                        return Err(format!(
+                            "TP/EP cache digest index range {end} exceeds {}",
+                            plane.len()
+                        ));
+                    }
+                    read(plane.slice(..end))?;
+                }
+                if let Some(plane) = &cache.ipend_kv {
+                    read(plane.slice(..))?;
+                }
+                if let Some(plane) = &cache.ipend_score {
+                    read(plane.slice(..))?;
+                }
+            }
+        }
+        Ok(digests)
+    }
+
+    /// Gate-only digest of the replicated post-layer hidden state on both
+    /// ranks. This is sampled after each committed single-token step and is
+    /// paired with [`Self::tp_ep_cache_digest_for_gate`].
+    pub fn tp_ep_hidden_digest_for_gate(&self, state: &DecodeState) -> Res<[u64; 2]> {
+        if !self.topology.is_tp_ep() {
+            return Err("TP/EP hidden digest requires the all-layer topology".into());
+        }
+        let step = state
+            .matrix_step
+            .as_ref()
+            .ok_or("TP/EP matrix workspace missing")?;
+        let mut digests = [0xcbf29ce484222325u64; 2];
+        for (rank, digest) in digests.iter_mut().enumerate() {
+            let stage = &self.stages[rank];
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("TP/EP hidden digest context"))?;
+            let stream = stage.gpu.stream();
+            let hidden = &step.verify.ws[rank].h_a;
+            let mut values = vec![0f32; hidden.len()];
+            stream
+                .memcpy_dtoh(hidden, &mut values)
+                .map_err(e("TP/EP hidden digest copy"))?;
+            stream
+                .synchronize()
+                .map_err(e("TP/EP hidden digest sync"))?;
+            for value in values {
+                *digest ^= value.to_bits() as u64;
+                *digest = digest.wrapping_mul(0x100000001b3);
+            }
+        }
+        Ok(digests)
+    }
+
     /// Every LIVE trunk cache class, per layer, as host f32 arrays — the instrument for
     /// the §3.1 device state gate (batched round + commit vs plain sequential decode of
     /// the committed tokens, bit for bit). "Live" is load-bearing: bytes past `n_blocks`
