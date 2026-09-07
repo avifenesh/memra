@@ -7666,6 +7666,7 @@ fn activate_pair(
     Ok(match activation {
         ActivationPlan::Silu => silu(gate) * up,
         ActivationPlan::GeluTanh => gelu_tanh(gate) * up,
+        ActivationPlan::GeluErf => gelu_erf(gate) * up,
         ActivationPlan::SwiGluOai { alpha, limit } => {
             (gate * sigmoid(*alpha * gate)).min(*limit) * up.clamp(-*limit, *limit)
         }
@@ -9817,5 +9818,66 @@ mod tests {
                 ..
             }
         ));
+    }
+}
+
+#[cfg(test)]
+mod gelu_erf_activation_tests {
+    use super::*;
+
+    /// erf via its Maclaurin series in f64 (converges to machine precision for |x| < 3; the
+    /// tail is covered by the complementary-error bound). Independent of the A&S 7.1.26
+    /// approximation `gelu_erf` uses, so the two can disagree.
+    fn erf_series(x: f64) -> f64 {
+        let mut term = x;
+        let mut sum = x;
+        let x2 = x * x;
+        for n in 1..200 {
+            term *= -x2 / n as f64;
+            let add = term / (2 * n + 1) as f64;
+            sum += add;
+            if add.abs() < 1e-17 {
+                break;
+            }
+        }
+        sum * 2.0 / std::f64::consts::PI.sqrt()
+    }
+
+    #[test]
+    fn gelu_erf_matches_the_closed_form_to_f32_tolerance() {
+        for i in -60..=60 {
+            let x = i as f32 * 0.1;
+            let want = 0.5 * x as f64 * (1.0 + erf_series(x as f64 / std::f64::consts::SQRT_2));
+            let got = gelu_erf(x) as f64;
+            assert!(
+                (got - want).abs() <= 2e-6 * (1.0 + want.abs()),
+                "x={x}: gelu_erf={got} closed-form={want}"
+            );
+        }
+    }
+
+    /// RED ARM: the tanh approximation is NOT the erf GELU. If a refactor ever aliases the two
+    /// plans onto one function, this fails.
+    #[test]
+    fn gelu_tanh_and_gelu_erf_are_different_functions() {
+        let mut max_diff = 0f32;
+        for i in -40..=40 {
+            let x = i as f32 * 0.1;
+            max_diff = max_diff.max((gelu_tanh(x) - gelu_erf(x)).abs());
+        }
+        assert!(
+            max_diff > 1e-4,
+            "gelu_tanh and gelu_erf agree to {max_diff}: the red arm no longer discriminates"
+        );
+        assert!(max_diff < 1e-2, "sanity: both are still GELUs ({max_diff})");
+    }
+
+    #[test]
+    fn activate_pair_routes_gelu_erf_to_the_erf_program() {
+        let (gate, up) = (1.5f32, 2.0f32);
+        let erf = activate_pair(&ActivationPlan::GeluErf, gate, up, 0).unwrap();
+        let tanh = activate_pair(&ActivationPlan::GeluTanh, gate, up, 0).unwrap();
+        assert_eq!(erf, gelu_erf(gate) * up);
+        assert_ne!(erf, tanh);
     }
 }

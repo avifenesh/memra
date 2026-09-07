@@ -505,6 +505,10 @@ pub enum RouterScorePlan {
 pub enum ActivationPlan {
     Silu,
     GeluTanh,
+    /// Exact-erf GELU on the gate (`0.5 * g * (1 + erf(g / sqrt 2)) * up`), torch `nn.GELU()`
+    /// default and the Spark-X2.5 dense FFN. NOT interchangeable with `GeluTanh`: the two differ
+    /// by up to ~1e-3 in the |x| in 1..3 band, which a 36-layer trunk compounds.
+    GeluErf,
     SwiGluOai {
         alpha: f32,
         limit: f32,
@@ -1455,6 +1459,7 @@ fn push_activation(activation: &ActivationPlan, operations: &mut Vec<OperationKi
     operations.push(match activation {
         ActivationPlan::Silu => OperationKind::SiluActivation,
         ActivationPlan::GeluTanh => OperationKind::GeluTanhActivation,
+        ActivationPlan::GeluErf => OperationKind::GeluErfActivation,
         ActivationPlan::SwiGluOai { .. } => OperationKind::SwiGluOaiActivation,
         ActivationPlan::SwiGluClamped { .. } => OperationKind::SwiGluClampedActivation,
         ActivationPlan::SwiGluPreClamped { .. } => OperationKind::SwiGluPreClampedActivation,
@@ -1862,13 +1867,21 @@ fn attention_geometry(
             rope: RopePlan {
                 dimensions: step.n_rot(index),
                 base: step.rope_base(index),
-                factors: if swa {
+                // Step ships llama3-style factors for its full-attention layers; Spark has
+                // plain rope everywhere (`Step35Config::rope_factors`).
+                factors: if swa || !step.rope_factors {
                     RopeFactors::None
                 } else {
                     RopeFactors::Checkpoint
                 },
             },
-            qk_norm: TensorPresence::Required,
+            // Step has per-head QK RMSNorm on every layer; Spark has none. Absent (not
+            // Optional): an all-ones norm is not the identity, so the presence must be exact.
+            qk_norm: if step.qk_norm {
+                TensorPresence::Required
+            } else {
+                TensorPresence::Absent
+            },
             output_gate: AttentionGateKind::SeparateHead,
             scale: AttentionScale::InverseSqrtKeyDim,
             value_projection: ValueProjection::Separate,
@@ -2090,6 +2103,13 @@ fn activation(cfg: &ModelConfig, index: u32, routed: bool) -> ActivationPlan {
         if let Some(limit) = limit {
             return ActivationPlan::SwiGluClamped { limit };
         }
+        // Unclamped step35-family layers: the config's own activation. Step-3.5/3.7 is SwiGLU
+        // (`silu`); Spark-X2.5 is exact-erf `gelu`. Anything else is named, not guessed.
+        return match step.hidden_act.as_str() {
+            "silu" | "swiglu" => ActivationPlan::Silu,
+            "gelu" => ActivationPlan::GeluErf,
+            other => ActivationPlan::Named(other.to_string()),
+        };
     }
     if cfg.gemma4.is_some() {
         return ActivationPlan::GeluTanh;
@@ -2210,6 +2230,7 @@ pub enum OperationKind {
     SharedMlp,
     SiluActivation,
     GeluTanhActivation,
+    GeluErfActivation,
     SwiGluOaiActivation,
     SwiGluClampedActivation,
     SwiGluPreClampedActivation,

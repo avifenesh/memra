@@ -18,7 +18,9 @@ pub static PACK: ModelPack = ModelPack {
         Gate::Serve,
     ],
     checkpoint_parity: None,
-    matches_config: |config| config.step35.is_some(),
+    // The dense Spark-X2.5 sibling shares `Arch::Step35` and `Step35Config` but is its own
+    // pack (`spark25`): no MoE, no QK-norm, verbatim norms, erf GELU, fused qkv, tied head.
+    matches_config: |config| config.step35.as_ref().is_some_and(|s| !s.is_spark()),
     plan_builder,
     tensor_schema: canonical_tensor_schema,
     tiny_plan: None,

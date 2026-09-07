@@ -89,6 +89,12 @@ impl Arch {
             // official HF checkpoint (the outer VLM wrapper is `step3p7`). Both are the same
             // `step35` execution architecture used by the GGUF path.
             "step3p5" | "step3p7" => "step35",
+            // XHToken Spark-X2.5 (`Spark2_5ForCausalLM`): the DENSE sibling of the Step-3.5
+            // block. Same attention program (SWA 512 on a 3:1 pattern, dual rope base, partial
+            // rotary on the full layers only, one sigmoid gate scalar per head through a
+            // separate `g_proj`), but no MoE, no QK-norm, no norm +1, exact-erf GELU, a fused
+            // `q_k_v_proj`, and tied embeddings. `Step35Config::variant` carries the split.
+            "spark2_5" => "step35",
             // GLM-5/5.2 (HF `GlmMoeDsaForCausalLM`, model_type `glm_moe_dsa`)
             "glm_moe_dsa" => "glm-dsa",
             // DeepSeek-V4-Flash (HF `DeepseekV4ForCausalLM`, model_type `deepseek_v4`)
@@ -649,9 +655,42 @@ pub struct Step35Config {
     pub routed_scaling_factor: f32, // expert_weights_scale = 3.0
     pub route_norm: bool,      // expert_weights_norm = true
     pub first_k_dense_replace: u32, // leading_dense_block_count = 3
+    // ---- which member of the family this is, and the behaviours that differ between them ----
+    /// StepFun Step-3.5/3.7-Flash (MoE trunk) or XHToken Spark-X2.5 (dense sibling). The plan
+    /// and the loader read the flags below, never the variant, so a third sibling declares its
+    /// own flags instead of inheriting one of these.
+    pub variant: Step35Variant,
+    /// RMSNorm weights are stored as `w - 1` and the loader folds `+1` (Step3p7RMSNorm). Spark's
+    /// `Spark2_5RMSNorm` is a plain `w * normed`, so its weights are used verbatim.
+    pub norm_plus_one: bool,
+    /// Per-head QK RMSNorm tensors are required (Step) or absent (Spark has none).
+    pub qk_norm: bool,
+    /// Full-attention layers consume llama3-style per-frequency rope factors (Step ships them
+    /// as `rope_freqs.weight` / `rope_scaling`); Spark has plain rope on every layer.
+    pub rope_factors: bool,
+    /// The checkpoint stores q|k|v as ONE fused `self_attn.q_k_v_proj.weight` (rows q, then k,
+    /// then v). The HF mapping slices it into the contract's separate `attn_q/k/v`.
+    pub fused_qkv: bool,
+    /// Dense-FFN gate activation: `"silu"` (Step SwiGLU, clamped where the arrays say so) or
+    /// `"gelu"` (Spark: exact erf GELU, the vendor modeling refuses any other value).
+    pub hidden_act: String,
+}
+
+/// Which member of the `step35` execution family a config describes. See `Step35Config::variant`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step35Variant {
+    /// StepFun Step-3.5 / Step-3.7-Flash: MoE trunk, QK-norm, `+1` norms, SwiGLU (clamped).
+    StepFlash,
+    /// XHToken Spark-X2.5-4B: dense trunk, no QK-norm, verbatim norms, exact-erf GELU, fused
+    /// q_k_v_proj, tied embeddings.
+    SparkX25,
 }
 
 impl Step35Config {
+    /// True for the Spark-X2.5 dense sibling (drives the pack match and the HF name arm).
+    pub fn is_spark(&self) -> bool {
+        self.variant == Step35Variant::SparkX25
+    }
     /// True when layer `il` is a sliding-window layer. Out-of-range indices (the MTP blocks of a
     /// trunk-only GGUF) fall back to `true`: upstream's `is_swa_impl` array covers n_layer_all and
     /// every 3.7 MTP block is SWA-type (blocks 45/46/47, none at il%4==0).
@@ -1424,6 +1463,14 @@ impl ModelConfig {
                 routed_scaling_factor: f("expert_weights_scale").unwrap_or(1.0),
                 route_norm: u("expert_weights_norm").map(|v| v != 0).unwrap_or(false),
                 first_k_dense_replace: u("leading_dense_block_count").unwrap_or(0),
+                // Every public `step35` GGUF is a StepFun mint; a Spark GGUF would need its own
+                // metadata keys (none exist yet), so this source class is StepFlash by name.
+                variant: Step35Variant::StepFlash,
+                norm_plus_one: true,
+                qk_norm: true,
+                rope_factors: true,
+                fused_qkv: false,
+                hidden_act: "silu".to_string(),
             })
         } else {
             None
@@ -1701,7 +1748,90 @@ impl ModelConfig {
             None
         };
 
-        let step35 = if arch.is_step35() {
+        let step35 = if c.model_type == "spark2_5" {
+            // Spark-X2.5 spells the family's geometry the transformers-5 way: a `layer_types`
+            // array (parsed generically into `gemma4_swa_pattern`), `rope_parameters` nested per
+            // layer TYPE (not per layer), `num_key_value_heads`, and a scalar head count. Every
+            // field the forward pass needs is REQUIRED here: a silently defaulted value would be
+            // a different model, and the vendor modeling itself refuses the same things
+            // (`hidden_act != "gelu"` raises).
+            let swa_pattern = c.gemma4_swa_pattern.clone().unwrap_or_else(|| {
+                panic!("spark2_5 config.json missing required field layer_types")
+            });
+            assert_eq!(
+                swa_pattern.len(),
+                n_layer as usize,
+                "spark2_5 layer_types length {} != num_hidden_layers {n_layer}",
+                swa_pattern.len()
+            );
+            assert!(
+                swa_pattern.iter().any(|&swa| swa) && swa_pattern.iter().any(|&swa| !swa),
+                "spark2_5 layer_types must carry both sliding_attention and full_attention layers"
+            );
+            let sliding_window = c.sliding_window.unwrap_or_else(|| {
+                panic!("spark2_5 config.json missing required field sliding_window")
+            });
+            let rope_base_global = c.gemma4_rope_theta_global.unwrap_or_else(|| {
+                panic!("spark2_5 config.json missing rope_parameters.full_attention.rope_theta")
+            });
+            let rope_base_swa = c.gemma4_rope_theta_swa.unwrap_or_else(|| {
+                panic!("spark2_5 config.json missing rope_parameters.sliding_attention.rope_theta")
+            });
+            let partial_full = c.gemma4_partial_rotary_global.unwrap_or_else(|| {
+                panic!(
+                    "spark2_5 config.json missing rope_parameters.full_attention.partial_rotary_factor"
+                )
+            });
+            let partial_swa = c.spark_partial_rotary_swa.unwrap_or_else(|| {
+                panic!(
+                    "spark2_5 config.json missing rope_parameters.sliding_attention.partial_rotary_factor"
+                )
+            });
+            let hidden_act = c.hidden_act.clone().unwrap_or_else(|| {
+                panic!("spark2_5 config.json missing required field hidden_act")
+            });
+            // The head-wise output gate is STRUCTURAL (a `g_proj` tensor the attention output is
+            // multiplied by); a config that turns it off or changes its activation describes a
+            // model this arm does not compile. Refuse loudly rather than run without the gate.
+            assert_eq!(
+                c.headwise_attn_output_gate,
+                Some(true),
+                "spark2_5: headwise_attn_output_gate must be true (the g_proj gate is part of the program)"
+            );
+            assert_eq!(
+                c.gate_attn_act_mode.as_deref(),
+                Some("sigmoid"),
+                "spark2_5: gate_attn_act_mode must be \"sigmoid\" (the only gate activation the program implements)"
+            );
+            assert_eq!(
+                expert_count, 0,
+                "spark2_5 is the dense member of the family; a MoE config is a different program"
+            );
+            Some(Step35Config {
+                head_count: vec![base_n_head; n_layer as usize],
+                head_count_kv: vec![base_n_head_kv; n_layer as usize],
+                swa_pattern,
+                sliding_window,
+                rope_base_global,
+                rope_base_swa,
+                rope_dims_full: (partial_full * head_dim_k as f32).round() as u32,
+                rope_dims_swa: (partial_swa * head_dim_k as f32).round() as u32,
+                rope_freq_factors: None,
+                swiglu_clamp_exp: vec![0.0; n_layer as usize],
+                swiglu_clamp_shexp: vec![0.0; n_layer as usize],
+                sigmoid_routing: false,
+                routed_scaling_factor: 1.0,
+                route_norm: false,
+                // No routed layer anywhere: every block is the dense FFN.
+                first_k_dense_replace: n_layer,
+                variant: Step35Variant::SparkX25,
+                norm_plus_one: false,
+                qk_norm: false,
+                rope_factors: false,
+                fused_qkv: true,
+                hidden_act,
+            })
+        } else if arch.is_step35() {
             let layer_types = c
                 .layer_types
                 .as_ref()
@@ -1809,6 +1939,12 @@ impl ModelConfig {
                 routed_scaling_factor: c.router_scaling_factor.unwrap_or(1.0),
                 route_norm: c.route_norm.unwrap_or(false),
                 first_k_dense_replace,
+                variant: Step35Variant::StepFlash,
+                norm_plus_one: true,
+                qk_norm: true,
+                rope_factors: true,
+                fused_qkv: false,
+                hidden_act: c.hidden_act.clone().unwrap_or_else(|| "silu".to_string()),
             })
         } else {
             None
@@ -2645,6 +2781,15 @@ impl ModelConfig {
     /// Per-layer SHARED/DENSE-MLP SwiGLU clamp (step35 `swiglu_clamp_shexp`; glm5_next applies
     /// its single `swiglu_limit` to the dense MLP and the shared expert alike, both being
     /// `Glm5NextTextMLP` in the reference module).
+    /// The dense FFN gate activation is exact-erf GELU (Spark-X2.5). Every other family memra
+    /// carries runs SiLU (plain, scaled, or clamped) or gelu_tanh (gemma4); the engine's
+    /// `ffn_act_lim` dispatch and its fused f16-out SiLU twins read this before choosing a kernel.
+    pub fn dense_act_gelu_erf(&self) -> bool {
+        self.step35
+            .as_ref()
+            .is_some_and(|step| step.hidden_act == "gelu")
+    }
+
     pub fn clamp_shexp_at(&self, il: u32) -> Option<SwigluClamp> {
         if let Some(g5) = self.glm5.as_ref() {
             return SwigluClamp::pre_if_live(g5.swiglu_limit);
@@ -2885,6 +3030,13 @@ pub struct HfConfig {
     // ---- Step-3.5 / Step-3.7-Flash (`step3p5` text config) ----
     pub attention_other_num_heads: Option<u32>,
     pub attention_other_num_groups: Option<u32>,
+    // ---- Spark-X2.5 (`spark2_5`) ----
+    /// rope_parameters.sliding_attention.partial_rotary_factor (1.0 on Spark-X2.5-4B; the
+    /// full-attention twin rides `gemma4_partial_rotary_global`).
+    pub spark_partial_rotary_swa: Option<f32>,
+    /// `headwise_attn_output_gate` / `gate_attn_act_mode`: the per-head sigmoid output gate.
+    pub headwise_attn_output_gate: Option<bool>,
+    pub gate_attn_act_mode: Option<String>,
     pub layer_types: Option<Vec<String>>,
     pub rope_theta_layers: Option<Vec<f32>>,
     pub partial_rotary_factors: Option<Vec<f32>>,
@@ -3037,6 +3189,9 @@ impl Default for HfConfig {
             qwen4exp_mtp_rope_theta: None,
             qwen4exp_vision: None,
             attention_other_num_heads: None,
+            spark_partial_rotary_swa: None,
+            headwise_attn_output_gate: None,
+            gate_attn_act_mode: None,
             attention_other_num_groups: None,
             layer_types: None,
             rope_theta_layers: None,
@@ -3354,11 +3509,20 @@ impl HfConfig {
                     self.gemma4_partial_rotary_global = Some(p);
                 }
             }
-            if let Some(sa) = rp.object("sliding_attention")
-                && let Some(t) = sa.f32("rope_theta")
-            {
-                self.gemma4_rope_theta_swa = Some(t);
+            if let Some(sa) = rp.object("sliding_attention") {
+                if let Some(t) = sa.f32("rope_theta") {
+                    self.gemma4_rope_theta_swa = Some(t);
+                }
+                if let Some(p) = sa.f32("partial_rotary_factor") {
+                    self.spark_partial_rotary_swa = Some(p);
+                }
             }
+        }
+        if let Some(v) = o.boolean("headwise_attn_output_gate") {
+            self.headwise_attn_output_gate = Some(v);
+        }
+        if let Some(v) = o.string("gate_attn_act_mode") {
+            self.gate_attn_act_mode = Some(v);
         }
         if let Some(v) = o.f32("rope_theta") {
             self.rope_theta = v;

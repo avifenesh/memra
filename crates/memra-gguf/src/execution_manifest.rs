@@ -694,6 +694,7 @@ fn decode_batch_support(operation: OperationKind) -> OperationSupport {
             | OperationKind::SigmoidRouter
             | OperationKind::SiluActivation
             | OperationKind::GeluTanhActivation
+            | OperationKind::GeluErfActivation
             | OperationKind::SwiGluClampedActivation
             | OperationKind::SerialResidual
             | OperationKind::GemmaResidual
