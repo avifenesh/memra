@@ -1,0 +1,11 @@
+RUNTIME_SWITCH block
+EXACT kind=0 n=7 k=8192 rows=3 topk=2 compared=1134
+EXACT kind=1 n=7 k=8192 rows=3 topk=2 compared=1134
+PASS selected FP4 reduction: 2268 bit comparisons; host witnesses and tail canaries checked
+RUNTIME_SWITCH
+EXACT kind=0 n=7 k=8192 rows=3 topk=2 compared=1134
+EXACT kind=1 n=7 k=8192 rows=3 topk=2 compared=1134
+PASS selected FP4 reduction: 2268 bit comparisons; host witnesses and tail canaries checked
+PASS invalid switch rejected by both launchers
+FAIL bit mismatch kind=0 arm=1 index=0
+FAIL non-finite comparison operand

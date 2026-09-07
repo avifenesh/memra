@@ -1,0 +1,38 @@
+SOURCE sha256=f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded tokens=1025
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] selected FP4 reduction: Block
+[load] indexer score: Scalar
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 324.0ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=10s
+[load] layer 7 -> dev0 done t=20s
+[load] layer 11 -> dev0 done t=29s
+[load] layer 15 -> dev0 done t=39s
+[load] layer 19 -> dev0 done t=49s
+[load] layer 23 -> dev1 done t=59s
+[load] layer 27 -> dev1 done t=69s
+[load] layer 31 -> dev1 done t=79s
+[load] layer 35 -> dev1 done t=88s
+[load] layer 39 -> dev1 done t=98s
+[load] layer 42 -> dev1 done t=106s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+CHECK grouped=false widths=32/128/512
+PREFILL width=32 tokens=1025 seconds=8.835038
+PREFILL width=128 tokens=1025 seconds=10.037346
+EXACT grouped=false width=128 logits/live-cache/DSpark/sampled
+PREFILL width=512 tokens=1025 seconds=10.003692
+EXACT grouped=false width=512 logits/live-cache/DSpark/sampled
+CHECK grouped=true widths=32/128/512
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=127 max_m=5
+[dsv4-prefill-f16g] ENGAGED: t=32 pairs=192 active_experts=127 max_rows_per_expert=5 FP8-QAT-mirrored half, split-plane ModelOpt NVFP4
+PREFILL width=32 tokens=1025 seconds=8.898866
+PREFILL width=128 tokens=1025 seconds=7.529029
+EXACT grouped=true width=128 logits/live-cache/DSpark/sampled
+PREFILL width=512 tokens=1025 seconds=6.818843
+EXACT grouped=true width=512 logits/live-cache/DSpark/sampled
+PASS wide transaction identity; 1M and serving qualification remain separate

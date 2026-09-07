@@ -1,0 +1,24 @@
+# Extracted from Vast dev instance 48400600 before teardown.
+
+[dsv4-prefill-f16g] ENGAGED: t=512 pairs=3072 active_experts=235 max_rows_per_expert=71 split-plane ModelOpt NVFP4
+[dsv4-prefill-f16g-gate] disagreement step=0 exact=2408 grouped=223 margin=17.595894 band=179.361763 class=IN-BAND
+[dsv4-prefill-f16g-gate] disagreement step=1 exact=55407 grouped=29769 margin=26.379164 band=180.612272 class=IN-BAND
+[dsv4-prefill-f16g-gate] disagreement step=2 exact=18392 grouped=4798 margin=25.921291 band=179.155459 class=IN-BAND
+[dsv4-prefill-f16g-gate] disagreement step=6 exact=45706 grouped=14 margin=12.722767 band=174.427734 class=IN-BAND
+[dsv4-prefill-f16g-gate] disagreement step=8 exact=5221 grouped=1840 margin=17.775866 band=179.437291 class=IN-BAND
+[dsv4-prefill-f16g-gate] disagreement step=9 exact=9517 grouped=1699 margin=22.976574 band=194.591607 class=IN-BAND
+[dsv4-prefill-f16g-gate] disagreement step=12 exact=4031 grouped=4521 margin=18.426487 band=189.143107 class=IN-BAND
+[dsv4-prefill-f16g-gate] disagreement step=13 exact=20754 grouped=15363 margin=13.047647 band=185.142830 class=IN-BAND
+[dsv4-prefill-f16g-gate] disagreement step=15 exact=11305 grouped=16 margin=9.817039 band=176.689366 class=IN-BAND
+[dsv4-prefill-f16g-gate] teacher_forced16=7_agree,9_in_band,0_out_of_band stream_maxabs=31.32595444
+{"turn":4,"prompt_tokens":524,"cached_tokens":510,"completion_tokens":32,"warm_wall_s":0.924027,"cold_wall_s":2.6784,"warm_spec":{"rounds":10,"drafted":42,"accepted":21,"acceptance_rate":0.5},"cold_spec":{"rounds":1,"drafted":5,"accepted":0,"acceptance_rate":0.0},"output_sha256":"fd60d9676eb9f7e399eb32814d07e0f1f1c873f772e3edb631559e4d30526f99","identity":false,"gate":"grouped-only-on-full-512"}
+{"turn":3,"prompt_tokens":447,"cached_tokens":432,"completion_tokens":32,"warm_wall_s":1.751256,"cold_wall_s":4.495547,"warm_spec":{"rounds":25,"drafted":110,"accepted":6,"acceptance_rate":0.05454545454545454},"cold_spec":{"rounds":24,"drafted":114,"accepted":7,"acceptance_rate":0.06140350877192982},"output_sha256":"fffe0434cee1c0d1260394965bbe97cfb0466748b4a666e27ec81ad70d1b9b3b","identity":false,"gate":"one-grouped-prefill-class-but-exact-decode-history"}
+{"binary_sha256":"8cbe83afc3f3303c56a31a9b4dc088f9871329a549253d8793469dee6cd5d419","cell":"frozen-source-f16g512","source_bytes":32000,"source_sha256":"84b570f82425c0e8984c96580d3c6a521244166453714c49dad4ed9839ef2d1b","status":200,"ttft_s":46.485697507858276,"wall_s":46.61943173408508,"prompt_tokens":9909,"completion_tokens":8}
+[dsv4-dspark-fused-moe-gate] PASS component_bits=true ids=true confidence_bits=true reps=10 reference_s=0.069750 fused_s=0.059587 speedup=1.171x
+[dsv4-dspark-fused-moe-e2e] PASS tokens=96 x3_interleaved reference_median_s=2.911980 fused_median_s=2.882511 reference_tps=32.9673 fused_tps=33.3043 speedup=1.010x
+[dsv4-prefill-expert-sort-gate] PASS logits_bits=true cache_bits=true tokens=160 x3_interleaved reference_median_s=1.768474 sorted_median_s=1.769360 speedup=0.999x
+[dsv4-ep2-expert-probe] PASS layer=3 selected=[0,1,2,128,129,130] outputs_compared=24576 reps=21 baseline_median_ms=0.095111 parallel_median_ms=0.074281 speedup=1.280x
+[dsv4-ep2-expert-id-probe] PASS layer=3 selected=[0,1,2,128,129,130] outputs_compared=24576 reps=21 baseline_median_ms=0.101703 parallel_median_ms=0.074511 speedup=1.365x
+[dsv4-ep2-expert-tp-probe] PASS layer=3 selected=[0,1,2,128,129,130] outputs_compared=24576 reps=21 max_abs_drift=0.00000012 max_rel_drift=0.00000006 baseline_median_ms=0.095751 parallel_median_ms=0.095090 speedup=1.007x
+[dsv4-moe-graph] ENGAGED: per-session layer/width graphs, first layer=0 t=32
+[dsv4-moe-graph-gate] PASS logits_bits=true cache_bits=true tokens=1025 x3_interleaved eager_median_s=7.296527 graph_median_s=7.330332 speedup=0.995x

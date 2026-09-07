@@ -1,0 +1,29 @@
+========= COMPUTE-SANITIZER
+EXACT s=1 nb=1 pos0=-1 lim0=1 zero=0 values=1
+EXACT s=5 nb=1 pos0=0 lim0=-1 zero=0 values=5
+EXACT s=1 nb=127 pos0=-1 lim0=127 zero=0 values=127
+EXACT s=5 nb=127 pos0=501 lim0=-1 zero=0 values=635
+EXACT s=1 nb=128 pos0=-1 lim0=128 zero=0 values=128
+EXACT s=5 nb=128 pos0=505 lim0=-1 zero=0 values=640
+EXACT s=1 nb=129 pos0=-1 lim0=129 zero=0 values=129
+EXACT s=5 nb=129 pos0=509 lim0=-1 zero=0 values=645
+EXACT s=1 nb=4096 pos0=-1 lim0=4096 zero=0 values=4096
+EXACT s=5 nb=4096 pos0=16377 lim0=-1 zero=0 values=20480
+EXACT s=1 nb=4103 pos0=-1 lim0=4103 zero=0 values=4103
+EXACT s=5 nb=4103 pos0=16405 lim0=-1 zero=0 values=20515
+EXACT s=1 nb=65536 pos0=-1 lim0=65536 zero=0 values=65536
+EXACT s=5 nb=65536 pos0=262137 lim0=-1 zero=0 values=327680
+EXACT s=1 nb=262147 pos0=-1 lim0=262147 zero=0 values=262147
+EXACT s=5 nb=262147 pos0=1048576 lim0=-1 zero=0 values=1310735
+EXACT s=1 nb=129 pos0=0 lim0=-1 zero=0 values=129
+EXACT s=1 nb=129 pos0=-1 lim0=127 zero=1 values=129
+EXACT s=5 nb=129 pos0=0 lim0=-1 zero=0 values=645
+EXACT s=5 nb=129 pos0=-1 lim0=127 zero=1 values=645
+EXACT s=8 nb=129 pos0=0 lim0=-1 zero=0 values=1032
+EXACT s=8 nb=129 pos0=-1 lim0=127 zero=1 values=1032
+EXACT s=32 nb=129 pos0=0 lim0=-1 zero=0 values=4128
+EXACT s=32 nb=129 pos0=-1 lim0=127 zero=1 values=4128
+EXACT s=64 nb=129 pos0=0 lim0=-1 zero=0 values=8256
+EXACT s=64 nb=129 pos0=-1 lim0=127 zero=1 values=8256
+PASS comparisons=2045982
+========= ERROR SUMMARY: 0 errors

@@ -1,0 +1,12 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 45.08s
+     Running unittests src/bin/dsv4_fp4_reduce_gate.rs (target/release/deps/dsv4_fp4_reduce_gate-06a774f8a84dfac7)
+
+running 3 tests
+test tests::empty_cache_census_refuses - should panic ... ok
+test tests::float_digest_preserves_bits ... ok
+test tests::poisoned_equal_bits_refuse - should panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

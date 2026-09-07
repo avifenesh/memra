@@ -42,7 +42,7 @@ question from what is supported:
 | Gemma-4 31B | **GGUF** (QAT Q4_0), supported and tuned | NVFP4 safetensors |
 | Step-3.7-Flash 196B-A11B | **GGUF** (IQ4_XS + Q8_0 MTP head, two-card PP-2) since v0.73.1 | FP8 — not Q8 |
 | Gemma, rest of the family | GGUF | NVFP4 safetensors rework in progress |
-| DeepSeek-V4-Flash | **safetensors** checkpoint dir through its own two-card door — **experimental engine support**, functional and gated, **not serving-grade** (see its section below) | performance ([#32](https://github.com/avifenesh/memra/issues/32)) |
+| DeepSeek-V4-Flash | **safetensors** checkpoint dir through its own two-card door — **experimental engine support**, functional and gated, **not serving-grade** (see its section below) | performance ([#4](https://github.com/avifenesh/memra/issues/4)) |
 | GLM-5.3-Flash | **safetensors** (FP8 e4m3, MIT) on the hand-written `glm5_next` path — **NativeReference**; multi-card TP serving, vision, and MTP spec gated (see [its card](models/glm53-flash.md)) | — |
 | Qwen3.8-Flash-Next | **bring-up only** — hand-written `qwen4_exp` gate path on the minted NVFP4 artifact, real-checkpoint eager gate green; ModelPlan loader not wired, no serving surface (see [its card](models/qwen38-flash-next.md)) | — |
 | Hy3 | **safetensors** — canonical BF16 plan **NativeReference**; the exact all-expert ModelOpt W4A16 artifact is **NativeQualified** on four-card Blackwell receipts (see [its card](models/hy3.md)) | — |
@@ -407,5 +407,5 @@ aggregate **26.7 tok/s** through the honest bs=1 FIFO (S7 cell — queueing meas
 hidden, which is why aggregate lands *below* plain single-stream). Compare the served
 flagship at ~259 tok/s single / 238–245 aggregate on one card. The tuning path to
 serving-grade — batched decode, PP-2 placement, round-cost work, prefix cache — is
-tracked in [#32](https://github.com/avifenesh/memra/issues/32); until those rows exist,
+tracked in [#4](https://github.com/avifenesh/memra/issues/4); until those rows exist,
 do not read this section as a serving recommendation.

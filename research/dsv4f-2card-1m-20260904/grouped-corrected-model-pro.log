@@ -1,0 +1,65 @@
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] selected FP4 reduction: Block
+[load] indexer score: Scalar
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 339.5ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=10s
+[load] layer 7 -> dev0 done t=20s
+[load] layer 11 -> dev0 done t=30s
+[load] layer 15 -> dev0 done t=41s
+[load] layer 19 -> dev0 done t=52s
+[load] layer 23 -> dev1 done t=63s
+[load] layer 27 -> dev1 done t=73s
+[load] layer 31 -> dev1 done t=83s
+[load] layer 35 -> dev1 done t=93s
+[load] layer 39 -> dev1 done t=103s
+[load] layer 42 -> dev1 done t=110s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=2048 n_active=6 max_m=1
+[dsv4-prefill-f16g] ENGAGED: t=1 pairs=6 active_experts=6 max_rows_per_expert=1 FP8-QAT-mirrored half, split-plane ModelOpt NVFP4
+COMPOSE layer=3 rows=1 shared identical; total=routed+shared max_total_delta=0.00000023841858
+COMPOSE layer=3 rows=32 shared identical; total=routed+shared max_total_delta=0.00000047683716
+COMPOSE layer=3 rows=64 shared identical; total=routed+shared max_total_delta=0.00000047683716
+COMPOSE layer=42 rows=1 shared identical; total=routed+shared max_total_delta=0.0000019073486
+COMPOSE layer=42 rows=32 shared identical; total=routed+shared max_total_delta=0.0000076293945
+COMPOSE layer=42 rows=64 shared identical; total=routed+shared max_total_delta=0.000011444092
+CHARACTERIZE width=32 step=0 max_logit_delta=1.9484205 tv=0.003361526 sampled_match=true
+CHARACTERIZE width=32 step=1 max_logit_delta=0.8957443 tv=0.001961018 sampled_match=true
+CHARACTERIZE width=32 step=2 max_logit_delta=0.73227787 tv=0.039711218 sampled_match=true
+CHARACTERIZE width=32 step=3 max_logit_delta=0.7309203 tv=0.027744106 sampled_match=true
+CHARACTERIZE width=32 step=4 max_logit_delta=2.2482214 tv=0.028639745 sampled_match=true
+CHARACTERIZE width=32 step=5 max_logit_delta=0.99510956 tv=0.003796321 sampled_match=true
+CHARACTERIZE width=32 step=6 max_logit_delta=1.4162903 tv=0.030688425 sampled_match=true
+CHARACTERIZE width=32 step=7 max_logit_delta=1.6784954 tv=0.019730745 sampled_match=true
+CHARACTERIZE width=32 step=8 max_logit_delta=1.480135 tv=0.030513139 sampled_match=true
+CHARACTERIZE width=32 step=9 max_logit_delta=0.9381447 tv=0.047744132 sampled_match=true
+CHARACTERIZE width=32 step=10 max_logit_delta=1.7794361 tv=0.164978765 sampled_match=true
+CHARACTERIZE width=32 step=11 max_logit_delta=1.9562111 tv=0.023851747 sampled_match=true
+CHARACTERIZE width=32 step=12 max_logit_delta=1.2064629 tv=0.000006432 sampled_match=true
+CHARACTERIZE width=32 step=13 max_logit_delta=1.791193 tv=0.000039135 sampled_match=true
+CHARACTERIZE width=32 step=14 max_logit_delta=2.4461422 tv=0.014020037 sampled_match=false
+CHARACTERIZE width=32 step=15 max_logit_delta=1.4384017 tv=0.006589076 sampled_match=true
+CHARACTERIZE width=32 sampled_mismatches=1/16; not an admission threshold
+CHARACTERIZE width=64 step=0 max_logit_delta=1.9484205 tv=0.003361526 sampled_match=true
+CHARACTERIZE width=64 step=1 max_logit_delta=0.8957443 tv=0.001961018 sampled_match=true
+CHARACTERIZE width=64 step=2 max_logit_delta=0.73227787 tv=0.039711218 sampled_match=true
+CHARACTERIZE width=64 step=3 max_logit_delta=0.7309203 tv=0.027744106 sampled_match=true
+CHARACTERIZE width=64 step=4 max_logit_delta=2.2482214 tv=0.028639745 sampled_match=true
+CHARACTERIZE width=64 step=5 max_logit_delta=0.99510956 tv=0.003796321 sampled_match=true
+CHARACTERIZE width=64 step=6 max_logit_delta=1.4162903 tv=0.030688425 sampled_match=true
+CHARACTERIZE width=64 step=7 max_logit_delta=1.6784954 tv=0.019730745 sampled_match=true
+CHARACTERIZE width=64 step=8 max_logit_delta=1.480135 tv=0.030513139 sampled_match=true
+CHARACTERIZE width=64 step=9 max_logit_delta=0.9381447 tv=0.047744132 sampled_match=true
+CHARACTERIZE width=64 step=10 max_logit_delta=1.7794361 tv=0.164978765 sampled_match=true
+CHARACTERIZE width=64 step=11 max_logit_delta=1.9562111 tv=0.023851747 sampled_match=true
+CHARACTERIZE width=64 step=12 max_logit_delta=1.2064629 tv=0.000006432 sampled_match=true
+CHARACTERIZE width=64 step=13 max_logit_delta=1.791193 tv=0.000039135 sampled_match=true
+CHARACTERIZE width=64 step=14 max_logit_delta=2.4461422 tv=0.014020037 sampled_match=false
+CHARACTERIZE width=64 step=15 max_logit_delta=1.4384017 tv=0.006589076 sampled_match=true
+CHARACTERIZE width=64 sampled_mismatches=1/16; not an admission threshold
+PASS complete MoE composition and finite teacher-forcing characterization; serving qualification not claimed

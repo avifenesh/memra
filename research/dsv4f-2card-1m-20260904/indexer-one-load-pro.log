@@ -1,0 +1,43 @@
+AXIS indexer scalar/tiled
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] selected FP4 reduction: Block
+[load] indexer score: Scalar
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 334.1ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=10s
+[load] layer 7 -> dev0 done t=20s
+[load] layer 11 -> dev0 done t=30s
+[load] layer 15 -> dev0 done t=39s
+[load] layer 19 -> dev0 done t=50s
+[load] layer 23 -> dev1 done t=59s
+[load] layer 27 -> dev1 done t=69s
+[load] layer 31 -> dev1 done t=79s
+[load] layer 35 -> dev1 done t=89s
+[load] layer 39 -> dev1 done t=99s
+[load] layer 42 -> dev1 done t=106s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+CHECK plain prompt=32 width=1 indexer scalar/tiled reference/candidate/reference
+EXACT plain prompt=32 width=1 indexer scalar/tiled reference/candidate/reference
+CHECK plain prompt=32 width=32 indexer scalar/tiled reference/candidate/reference
+EXACT plain prompt=32 width=32 indexer scalar/tiled reference/candidate/reference
+CHECK plain prompt=32 width=64 indexer scalar/tiled reference/candidate/reference
+EXACT plain prompt=32 width=64 indexer scalar/tiled reference/candidate/reference
+CHECK DSpark prompt=32 fused=false indexer scalar/tiled
+EXACT DSpark prompt=32 fused=false tokens/rounds/confidence/cache
+CHECK DSpark prompt=32 fused=true indexer scalar/tiled
+EXACT DSpark prompt=32 fused=true tokens/rounds/confidence/cache
+CHECK plain prompt=160 width=1 indexer scalar/tiled reference/candidate/reference
+EXACT plain prompt=160 width=1 indexer scalar/tiled reference/candidate/reference
+CHECK plain prompt=160 width=32 indexer scalar/tiled reference/candidate/reference
+EXACT plain prompt=160 width=32 indexer scalar/tiled reference/candidate/reference
+CHECK plain prompt=160 width=64 indexer scalar/tiled reference/candidate/reference
+EXACT plain prompt=160 width=64 indexer scalar/tiled reference/candidate/reference
+CHECK DSpark prompt=160 fused=false indexer scalar/tiled
+EXACT DSpark prompt=160 fused=false tokens/rounds/confidence/cache
+CHECK DSpark prompt=160 fused=true indexer scalar/tiled
+EXACT DSpark prompt=160 fused=true tokens/rounds/confidence/cache
+PASS indexer scalar/tiled rewrite one-load exactness; serving/performance not claimed

@@ -1,0 +1,70 @@
+TIME s=1 nb=1 repeat=0 scalar_us=8.013 tiled_us=23.181
+TIME s=1 nb=1 repeat=1 scalar_us=7.187 tiled_us=22.848
+TIME s=1 nb=1 repeat=2 scalar_us=7.245 tiled_us=23.174
+TIME s=1 nb=1 repeat=3 scalar_us=7.405 tiled_us=23.098
+TIME s=1 nb=1 repeat=4 scalar_us=7.462 tiled_us=23.174
+EXACT s=1 nb=1 pos0=-1 lim0=1 zero=0 values=1
+EXACT s=5 nb=1 pos0=0 lim0=-1 zero=0 values=5
+TIME s=1 nb=127 repeat=0 scalar_us=7.898 tiled_us=27.174
+TIME s=1 nb=127 repeat=1 scalar_us=8.019 tiled_us=27.021
+TIME s=1 nb=127 repeat=2 scalar_us=7.904 tiled_us=27.219
+TIME s=1 nb=127 repeat=3 scalar_us=7.610 tiled_us=27.206
+TIME s=1 nb=127 repeat=4 scalar_us=7.942 tiled_us=27.232
+EXACT s=1 nb=127 pos0=-1 lim0=127 zero=0 values=127
+EXACT s=5 nb=127 pos0=501 lim0=-1 zero=0 values=635
+TIME s=1 nb=128 repeat=0 scalar_us=7.712 tiled_us=27.219
+TIME s=1 nb=128 repeat=1 scalar_us=7.974 tiled_us=27.027
+TIME s=1 nb=128 repeat=2 scalar_us=7.955 tiled_us=27.277
+TIME s=1 nb=128 repeat=3 scalar_us=7.974 tiled_us=27.155
+TIME s=1 nb=128 repeat=4 scalar_us=7.955 tiled_us=26.861
+EXACT s=1 nb=128 pos0=-1 lim0=128 zero=0 values=128
+EXACT s=5 nb=128 pos0=505 lim0=-1 zero=0 values=640
+ENGAGED tiled kernel, grid 2x1, block 128
+TIME s=1 nb=129 repeat=0 scalar_us=8.006 tiled_us=26.970
+TIME s=1 nb=129 repeat=1 scalar_us=8.269 tiled_us=26.835
+TIME s=1 nb=129 repeat=2 scalar_us=8.032 tiled_us=27.155
+TIME s=1 nb=129 repeat=3 scalar_us=8.000 tiled_us=27.130
+TIME s=1 nb=129 repeat=4 scalar_us=7.923 tiled_us=27.277
+EXACT s=1 nb=129 pos0=-1 lim0=129 zero=0 values=129
+EXACT s=5 nb=129 pos0=509 lim0=-1 zero=0 values=645
+TIME s=1 nb=4096 repeat=0 scalar_us=85.658 tiled_us=27.642
+TIME s=1 nb=4096 repeat=1 scalar_us=85.011 tiled_us=27.443
+TIME s=1 nb=4096 repeat=2 scalar_us=85.504 tiled_us=27.898
+TIME s=1 nb=4096 repeat=3 scalar_us=85.414 tiled_us=27.590
+TIME s=1 nb=4096 repeat=4 scalar_us=85.709 tiled_us=27.686
+EXACT s=1 nb=4096 pos0=-1 lim0=4096 zero=0 values=4096
+EXACT s=5 nb=4096 pos0=16377 lim0=-1 zero=0 values=20480
+TIME s=1 nb=4103 repeat=0 scalar_us=85.626 tiled_us=27.597
+TIME s=1 nb=4103 repeat=1 scalar_us=85.837 tiled_us=27.232
+TIME s=1 nb=4103 repeat=2 scalar_us=85.702 tiled_us=27.693
+TIME s=1 nb=4103 repeat=3 scalar_us=85.850 tiled_us=27.194
+TIME s=1 nb=4103 repeat=4 scalar_us=85.722 tiled_us=27.686
+EXACT s=1 nb=4103 pos0=-1 lim0=4103 zero=0 values=4103
+EXACT s=5 nb=4103 pos0=16405 lim0=-1 zero=0 values=20515
+TIME s=1 nb=65536 repeat=0 scalar_us=1305.594 tiled_us=53.690
+TIME s=1 nb=65536 repeat=1 scalar_us=1298.643 tiled_us=53.606
+TIME s=1 nb=65536 repeat=2 scalar_us=1297.350 tiled_us=53.901
+TIME s=1 nb=65536 repeat=3 scalar_us=1302.349 tiled_us=53.402
+TIME s=1 nb=65536 repeat=4 scalar_us=1298.874 tiled_us=53.856
+EXACT s=1 nb=65536 pos0=-1 lim0=65536 zero=0 values=65536
+EXACT s=5 nb=65536 pos0=262137 lim0=-1 zero=0 values=327680
+TIME s=1 nb=262147 repeat=0 scalar_us=5153.197 tiled_us=180.403
+TIME s=1 nb=262147 repeat=1 scalar_us=5056.838 tiled_us=180.602
+TIME s=1 nb=262147 repeat=2 scalar_us=4917.152 tiled_us=171.347
+TIME s=1 nb=262147 repeat=3 scalar_us=4918.022 tiled_us=170.720
+TIME s=1 nb=262147 repeat=4 scalar_us=4918.381 tiled_us=170.630
+EXACT s=1 nb=262147 pos0=-1 lim0=262147 zero=0 values=262147
+EXACT s=5 nb=262147 pos0=1048576 lim0=-1 zero=0 values=1310735
+ENGAGED tiled kernel, grid 2x1, block 128
+EXACT s=1 nb=129 pos0=0 lim0=-1 zero=0 values=129
+ENGAGED tiled kernel, grid 2x1, block 128
+EXACT s=1 nb=129 pos0=-1 lim0=127 zero=1 values=129
+EXACT s=5 nb=129 pos0=0 lim0=-1 zero=0 values=645
+EXACT s=5 nb=129 pos0=-1 lim0=127 zero=1 values=645
+EXACT s=8 nb=129 pos0=0 lim0=-1 zero=0 values=1032
+EXACT s=8 nb=129 pos0=-1 lim0=127 zero=1 values=1032
+EXACT s=32 nb=129 pos0=0 lim0=-1 zero=0 values=4128
+EXACT s=32 nb=129 pos0=-1 lim0=127 zero=1 values=4128
+EXACT s=64 nb=129 pos0=0 lim0=-1 zero=0 values=8256
+EXACT s=64 nb=129 pos0=-1 lim0=127 zero=1 values=8256
+PASS comparisons=2045982
