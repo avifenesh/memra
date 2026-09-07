@@ -1355,7 +1355,8 @@ extern "C" int memra_mla_kpool_score_f32(const float* q, const float* pool_keys,
 // 32 MB x (n_pools / 128) from L2, score written once. Causal early-out per stage, per CTA.
 //
 // REFUSALS (40030-40039): `heads % 16`, `d != 128` (the register-resident B fragments are sized
-// for it), `t_q < 8`. The caller falls back to the f32 dispatch on any of them.
+// for it), `t_q < 8`, no current device, the smem opt-in declined. The caller falls back to the
+// f32 dispatch on any of them.
 
 #define MLA_SCORE_TC_BP 128
 #define MLA_SCORE_TC_BT 8
@@ -1585,11 +1586,21 @@ extern "C" int memra_mla_kpool_score_tc_f32(const unsigned short* q_bf16, const 
                         (MLA_SCORE_TC_D + MLA_SCORE_TC_PAD) * sizeof(unsigned short);
     if (smem > 200u * 1024u) return 40034;
     cudaStream_t stream = (cudaStream_t)stream_v;
-    static bool attr_set = false; // benign race: idempotent
-    if (!attr_set) {
-        cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel,
-                             cudaFuncAttributeMaxDynamicSharedMemorySize, 200 * 1024);
-        attr_set = true;
+    // The opt-in is PER DEVICE (function attributes live in each device's context), and the
+    // glm5 TP walk drives two ranks on two cards from one process. A process-wide once-flag
+    // here let rank 1 launch 139 KB of dynamic smem against the 48 KB default and fail with
+    // cudaErrorInvalidValue on its first MLA layer (tpwalk18, 2026-09-07). Keyed on the device.
+    static bool attr_set[64] = {false}; // benign race: idempotent per device
+    int dev = 0;
+    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) return 40035;
+    if (!attr_set[dev]) {
+        if (cudaFuncSetAttribute(memra_mla_kpool_score_tc_kernel,
+                                 cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                 200 * 1024) != cudaSuccess) {
+            (void)cudaGetLastError();
+            return 40036;
+        }
+        attr_set[dev] = true;
     }
     dim3 grid((unsigned)((n_pools + MLA_SCORE_TC_BP - 1) / MLA_SCORE_TC_BP),
               (unsigned)((t_q + MLA_SCORE_TC_QSPLIT - 1) / MLA_SCORE_TC_QSPLIT));
