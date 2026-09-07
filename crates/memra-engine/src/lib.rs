@@ -32948,6 +32948,111 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// PACKED conv twin (lane/dspark-gdn-packed): T rows of ONE sequence through the per-row
+    /// conv program in one launch; `snap` (optional) receives the post-row ring for rows 0..T-2
+    /// in the checkpoint slab layout (`[T-1, conv_dim, pad]`). Bit-identical to T chained
+    /// `ssm_conv1d_fused_decode_b` rows (see the kernel header).
+    #[allow(clippy::too_many_arguments)]
+    pub fn ssm_conv1d_fused_decode_tloop(
+        &self,
+        qkv_cols: &CudaSlice<f32>,
+        conv_state: &mut CudaSlice<f32>,
+        w: &CudaSlice<f32>,
+        conv_outs: &mut CudaSlice<f32>,
+        snap: Option<&mut CudaSlice<f32>>,
+        conv_dim: usize,
+        d_conv: usize,
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        let f = self.func("ssm_conv1d_fused_decode_tloop_f32");
+        let cfg = LaunchConfig {
+            grid_dim: (conv_dim.div_ceil(256) as u32, 1, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (cd, dc, ti) = (conv_dim as i32, d_conv as i32, t as i32);
+        let __s_b = self.gpu.stream();
+        let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
+        let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(qkv_cols)
+            .arg(conv_state)
+            .arg(w)
+            .arg(conv_outs)
+            .arg(&snap_ptr)
+            .arg(&cd)
+            .arg(&dc)
+            .arg(&ti);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        drop(snap_guard);
+        Ok(())
+    }
+
+    /// PACKED scan twin (lane/dspark-gdn-packed): `gdn_scan_s128` over T rows of ONE sequence
+    /// (state resident across the rows, the template's own t-loop) that also writes the state
+    /// after each row < T-1 to `snap` (`[T-1, H, S_v, S_v]`, the checkpoint slab layout).
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_scan_s128_tsnap(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        state_in: &mut CudaSlice<f32>,
+        state_out: Option<&mut CudaSlice<f32>>,
+        o: &mut CudaSlice<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        snap: Option<&mut CudaSlice<f32>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // `state_out` None = IN PLACE on `state_in` (the even-T parity of the per-row
+        // ping-pong); the kernel reads each shard before it writes it.
+        use cudarc::driver::DevicePtr;
+        let f = self.func("gdn_scan_s128_tsnap");
+        const S_V: u32 = 128;
+        const WARP: u32 = 32;
+        const COLS_PER_BLOCK: u32 = 4;
+        let cfg = LaunchConfig {
+            grid_dim: (n_head as u32, 1, S_V / COLS_PER_BLOCK),
+            block_dim: (WARP, COLS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let (h, ti) = (n_head as i32, t as i32);
+        let __s_b = self.gpu.stream();
+        let in_guard = state_in.device_ptr(&__s_b);
+        let in_ptr: u64 = in_guard.0;
+        let out_guard = state_out.map(|so| so.device_ptr(&__s_b));
+        let out_ptr: u64 = out_guard.as_ref().map(|(p, _)| *p).unwrap_or(in_ptr);
+        let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
+        let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(q)
+            .arg(k)
+            .arg(v)
+            .arg(g)
+            .arg(beta)
+            .arg(&in_ptr)
+            .arg(&out_ptr)
+            .arg(o)
+            .arg(&h)
+            .arg(&ti)
+            .arg(&scale)
+            .arg(&snap_ptr);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        drop(snap_guard);
+        drop(out_guard);
+        drop(in_guard);
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn gdn_scan_s128_batched_view(
         &self,
         q: &CudaSlice<f32>,

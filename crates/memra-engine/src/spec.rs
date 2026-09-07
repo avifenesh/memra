@@ -265,6 +265,18 @@ pub(crate) fn spec_lean() -> bool {
 /// (b) the MoE dev-rows twins run the serial loop's per-token warp program with tok-offset
 ///     pointers (same sel/w/aq/ad bytes, same dot order, same slot-ordered FMA chain).
 /// Gates arbitrate: run-spec K=1..8 self-consistency (35B+9B), kernel-check, run-gen argmax.
+/// `MEMRA_SPEC_GDN_PACKED` (lane/dspark-gdn-packed, 2026-09-08): the batched-class linear verify
+/// (`qwen35_tparallel_linear_layer`) runs its three per-row state kernels as one packed launch
+/// each (T rows, state resident, the same per-row program), instead of 3 launches per draft
+/// row per layer. Default ON since 2026-09-08 on the 5090 receipt (memra#341: bin oracle ALL
+/// EXACT at vt 3/5/8 and the ladder, served chain 15 of 15 turns byte-identical over three
+/// boots, served ladder 140.6 -> 153.2 tok/s sampled and 147.4 -> 160.7 greedy; verify at 8
+/// rows 23.1 -> 19.5 ms/round). `0` is the rollback seam: the per-row program exactly.
+pub(crate) fn spec_gdn_packed() -> bool {
+    static P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *P.get_or_init(|| std::env::var("MEMRA_SPEC_GDN_PACKED").as_deref() != Ok("0"))
+}
+
 pub(crate) fn spec_m2() -> bool {
     static M: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // DEFAULT ON since 2026-07-09 (MEMRA_SPEC_M2=0 reverts): launch-structure only — t=2
@@ -7225,95 +7237,192 @@ impl HybridModel {
                 None
             };
         let mut stash = stash;
-        // Per-row scratch reused across rows (uninit is cheap but not free at
-        // 48 layers x T rows); row inputs/outputs pass as VIEWS into the packed
-        // [T, ...] buffers — zero arithmetic-free copies in this loop.
-        let mut conv_out = e.uninit(conv_dim)?;
-        let mut q_l2 = e.uninit(value_dim)?;
-        let mut k_l2 = e.uninit(value_dim)?;
-        let mut v_gd = e.uninit(value_dim)?;
-        let mut beta_b = e.uninit(num_v)?;
-        let mut g_log = e.uninit(num_v)?;
-        for r in 0..t {
-            let base = toff + if r % 2 == 0 { 0 } else { 3 };
-            let conv_view = table.slice(base..base + 1);
-            let in_view = table.slice(base + 1..base + 2);
-            let out_view = table.slice(base + 2..base + 3);
-            e.ssm_conv1d_fused_decode_b_view(
-                &qkv_mixed.slice(r * qkv_w..(r + 1) * qkv_w),
-                &conv_view,
-                la.ssm_conv1d.float_data(),
-                &mut conv_out,
-                conv_dim,
-                d_conv,
-                1,
-            )?;
-            e.gdn_prep_decode_b_view(
-                &conv_out,
-                &beta_raw.slice(r * beta_w..(r + 1) * beta_w),
-                &alpha.slice(r * alpha_w..(r + 1) * alpha_w),
-                la.ssm_dt.float_data(),
-                la.ssm_a.float_data(),
-                &mut q_l2,
-                &mut k_l2,
-                &mut v_gd,
-                &mut beta_b,
-                &mut g_log,
-                d_state,
-                num_v,
-                num_k,
-                key_dim,
-                eps,
-                conv_dim,
-                1,
-            )?;
-            let mut o_row = o_all.slice_mut(r * value_dim..(r + 1) * value_dim);
-            e.gdn_scan_s128_batched_view(
-                &q_l2, &k_l2, &v_gd, &g_log, &beta_b, &in_view, &out_view, &mut o_row, num_v, 1,
-                gdn_scale,
-            )?;
-            if r + 1 < t {
-                // Row r's out buffer: even rows write s1 (the alt handle — no swaps ran),
-                // odd rows write s0 — the same physical state the legacy post-swap
-                // canonical clone read.
+        if spec_gdn_packed() && t >= 2 {
+            // PACKED (lane/dspark-gdn-packed): one launch per state kernel over all T rows, the
+            // per-row program iterated in-kernel with the state resident. Parity matches the
+            // per-row ping-pong exactly (odd T lands in the alt buffer and the shared tail swap
+            // below normalises the handles, even T runs the scan in place), so the graph path's
+            // per-replay handle swap stays correct. The post-row snapshots the checkpoint needs
+            // land in the caller's slabs (stash) or in temporaries split into the per-column
+            // clones the rollback reads; the same bytes either way.
+            debug_assert_eq!(
+                qkv_w, conv_dim,
+                "packed conv reads qkv_mixed as [t, conv_dim]"
+            );
+            debug_assert_eq!(beta_w, num_v);
+            debug_assert_eq!(alpha_w, num_v);
+            let conv_words = conv_dim * (d_conv - 1);
+            let ssm_words = d_state * d_state * num_v;
+            let want_snap = ckpt.is_some();
+            let (mut conv_tmp, mut ssm_tmp) = (None, None);
+            if want_snap && stash.is_none() {
+                conv_tmp = Some(e.uninit((t - 1) * conv_words)?);
+                ssm_tmp = Some(e.uninit((t - 1) * ssm_words)?);
+            }
+            let mut conv_outs = e.uninit(t * conv_dim)?;
+            let mut q_l2 = e.uninit(t * value_dim)?;
+            let mut k_l2 = e.uninit(t * value_dim)?;
+            let mut v_gd = e.uninit(t * value_dim)?;
+            let mut beta_b = e.uninit(t * num_v)?;
+            let mut g_log = e.uninit(t * num_v)?;
+            {
                 let rl = cache.recur[il]
-                    .as_ref()
+                    .as_mut()
                     .ok_or("qwen35 linear verify layer has no recurrent state")?;
-                let ssm_src = if r % 2 == 0 {
-                    &rl.ssm_state_alt
-                } else {
-                    &rl.ssm_state
+                let (conv_snap, ssm_snap): (
+                    Option<&mut CudaSlice<f32>>,
+                    Option<&mut CudaSlice<f32>>,
+                ) = match stash.as_mut() {
+                    Some((c, s)) if want_snap => (Some(&mut **c), Some(&mut **s)),
+                    _ => (conv_tmp.as_mut(), ssm_tmp.as_mut()),
                 };
-                match stash.as_mut() {
-                    Some((conv_slab, ssm_slab)) => {
-                        // BOTH stash reads go through the pointer table at run time: the
-                        // ssm handles ping-pong between rounds, and the ctx (with its
-                        // captured graphs) outlives the Cache — a fresh generation's
-                        // conv/ssm buffers land at new addresses that only the per-round
-                        // table refresh knows. A baked direct copy would read freed
-                        // memory (parity was the slice-3 smoke divergence; cache
-                        // lifetime is the cross-generation twin).
-                        e.copy_indirect_src_f32(
-                            &conv_view,
-                            conv_slab,
-                            r * conv_dim * (d_conv - 1),
-                            conv_dim * (d_conv - 1),
-                        )?;
-                        // The ssm handles PING-PONG between rounds: a captured direct
-                        // copy would bake the capture-time physical buffer and read the
-                        // wrong parity after any odd-vt round (the slice-3 smoke
-                        // divergence). Read the src address from row r's OUT table
-                        // entry at run time — the same entry the scan just wrote.
-                        e.copy_indirect_src_f32(
-                            &out_view,
-                            ssm_slab,
-                            r * d_state * d_state * num_v,
-                            d_state * d_state * num_v,
-                        )?;
-                    }
-                    None => {
-                        if let Some(states) = col_states.as_mut() {
-                            states.push((e.clone_dtod(&rl.conv_state)?, e.clone_dtod(ssm_src)?));
+                e.ssm_conv1d_fused_decode_tloop(
+                    &qkv_mixed,
+                    &mut rl.conv_state,
+                    la.ssm_conv1d.float_data(),
+                    &mut conv_outs,
+                    conv_snap,
+                    conv_dim,
+                    d_conv,
+                    t,
+                )?;
+                e.gdn_prep_decode_b(
+                    &conv_outs,
+                    &beta_raw,
+                    &alpha,
+                    la.ssm_dt.float_data(),
+                    la.ssm_a.float_data(),
+                    &mut q_l2,
+                    &mut k_l2,
+                    &mut v_gd,
+                    &mut beta_b,
+                    &mut g_log,
+                    d_state,
+                    num_v,
+                    num_k,
+                    key_dim,
+                    eps,
+                    conv_dim,
+                    t,
+                )?;
+                let crate::cache::RecurLayer {
+                    ssm_state,
+                    ssm_state_alt,
+                    ..
+                } = rl;
+                let out = if t % 2 == 1 {
+                    Some(ssm_state_alt)
+                } else {
+                    None
+                };
+                e.gdn_scan_s128_tsnap(
+                    &q_l2, &k_l2, &v_gd, &g_log, &beta_b, ssm_state, out, &mut o_all, num_v, t,
+                    gdn_scale, ssm_snap,
+                )?;
+            }
+            if let (Some(ct), Some(st)) = (conv_tmp.as_ref(), ssm_tmp.as_ref()) {
+                let mut states = Vec::with_capacity(t - 1);
+                for r in 0..t - 1 {
+                    let mut c = e.uninit(conv_words)?;
+                    e.dtod_copy_view(&ct.slice(r * conv_words..(r + 1) * conv_words), &mut c)?;
+                    let mut sst = e.uninit(ssm_words)?;
+                    e.dtod_copy_view(&st.slice(r * ssm_words..(r + 1) * ssm_words), &mut sst)?;
+                    states.push((c, sst));
+                }
+                col_states = Some(states);
+            }
+        } else {
+            // Per-row scratch reused across rows (uninit is cheap but not free at
+            // 48 layers x T rows); row inputs/outputs pass as VIEWS into the packed
+            // [T, ...] buffers — zero arithmetic-free copies in this loop.
+            let mut conv_out = e.uninit(conv_dim)?;
+            let mut q_l2 = e.uninit(value_dim)?;
+            let mut k_l2 = e.uninit(value_dim)?;
+            let mut v_gd = e.uninit(value_dim)?;
+            let mut beta_b = e.uninit(num_v)?;
+            let mut g_log = e.uninit(num_v)?;
+            for r in 0..t {
+                let base = toff + if r % 2 == 0 { 0 } else { 3 };
+                let conv_view = table.slice(base..base + 1);
+                let in_view = table.slice(base + 1..base + 2);
+                let out_view = table.slice(base + 2..base + 3);
+                e.ssm_conv1d_fused_decode_b_view(
+                    &qkv_mixed.slice(r * qkv_w..(r + 1) * qkv_w),
+                    &conv_view,
+                    la.ssm_conv1d.float_data(),
+                    &mut conv_out,
+                    conv_dim,
+                    d_conv,
+                    1,
+                )?;
+                e.gdn_prep_decode_b_view(
+                    &conv_out,
+                    &beta_raw.slice(r * beta_w..(r + 1) * beta_w),
+                    &alpha.slice(r * alpha_w..(r + 1) * alpha_w),
+                    la.ssm_dt.float_data(),
+                    la.ssm_a.float_data(),
+                    &mut q_l2,
+                    &mut k_l2,
+                    &mut v_gd,
+                    &mut beta_b,
+                    &mut g_log,
+                    d_state,
+                    num_v,
+                    num_k,
+                    key_dim,
+                    eps,
+                    conv_dim,
+                    1,
+                )?;
+                let mut o_row = o_all.slice_mut(r * value_dim..(r + 1) * value_dim);
+                e.gdn_scan_s128_batched_view(
+                    &q_l2, &k_l2, &v_gd, &g_log, &beta_b, &in_view, &out_view, &mut o_row, num_v,
+                    1, gdn_scale,
+                )?;
+                if r + 1 < t {
+                    // Row r's out buffer: even rows write s1 (the alt handle — no swaps ran),
+                    // odd rows write s0 — the same physical state the legacy post-swap
+                    // canonical clone read.
+                    let rl = cache.recur[il]
+                        .as_ref()
+                        .ok_or("qwen35 linear verify layer has no recurrent state")?;
+                    let ssm_src = if r % 2 == 0 {
+                        &rl.ssm_state_alt
+                    } else {
+                        &rl.ssm_state
+                    };
+                    match stash.as_mut() {
+                        Some((conv_slab, ssm_slab)) => {
+                            // BOTH stash reads go through the pointer table at run time: the
+                            // ssm handles ping-pong between rounds, and the ctx (with its
+                            // captured graphs) outlives the Cache — a fresh generation's
+                            // conv/ssm buffers land at new addresses that only the per-round
+                            // table refresh knows. A baked direct copy would read freed
+                            // memory (parity was the slice-3 smoke divergence; cache
+                            // lifetime is the cross-generation twin).
+                            e.copy_indirect_src_f32(
+                                &conv_view,
+                                conv_slab,
+                                r * conv_dim * (d_conv - 1),
+                                conv_dim * (d_conv - 1),
+                            )?;
+                            // The ssm handles PING-PONG between rounds: a captured direct
+                            // copy would bake the capture-time physical buffer and read the
+                            // wrong parity after any odd-vt round (the slice-3 smoke
+                            // divergence). Read the src address from row r's OUT table
+                            // entry at run time — the same entry the scan just wrote.
+                            e.copy_indirect_src_f32(
+                                &out_view,
+                                ssm_slab,
+                                r * d_state * d_state * num_v,
+                                d_state * d_state * num_v,
+                            )?;
+                        }
+                        None => {
+                            if let Some(states) = col_states.as_mut() {
+                                states
+                                    .push((e.clone_dtod(&rl.conv_state)?, e.clone_dtod(ssm_src)?));
+                            }
                         }
                     }
                 }

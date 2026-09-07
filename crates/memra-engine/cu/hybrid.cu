@@ -1496,6 +1496,116 @@ extern "C" __global__ void gdn_scan_s128_b(
                              state_ins[b], state_outs[b], o + row, H, 1, scale);
 }
 
+// ---- PACKED T-ROW twins (lane/dspark-gdn-packed, 2026-09-08) ----
+// The batched-class spec verify ran the three per-row state kernels once PER DRAFT ROW (48
+// layers x vt rows x 3 launches per round; measured 2026-09-07 on the 5090: verify 14.1 ms at
+// vt=3 -> 23.1 ms at vt=8, ~1.8 ms per extra row, mostly launch gaps and state HBM round trips).
+// These twins run the UNCHANGED per-row program T times inside one launch with the recurrent
+// state resident in registers, and write the same post-row snapshots the per-row path cloned
+// for the verify checkpoint (rows 0..T-2). Bodies are the T=1 kernels VERBATIM per row: same
+// taps, same FMA order, same warp reductions, so every value is bit-identical.
+extern "C" __global__ void ssm_conv1d_fused_decode_tloop_f32(
+        const float* __restrict__ qkv_cols,     // [T, conv_dim]
+        float* __restrict__ conv_state,         // [conv_dim, pad] in/out, this sequence
+        const float* __restrict__ w,            // [conv_dim, d_conv]
+        float* __restrict__ conv_outs,          // [T, conv_dim]
+        float* __restrict__ snap,               // [T-1, conv_dim, pad] post-row ring, or null
+        int conv_dim, int d_conv, int T) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= conv_dim) return;
+    int pad = d_conv - 1;
+    float* st = conv_state + (size_t)c * pad;
+    const float* wc = w + (size_t)c * d_conv;
+    float win[8];
+    #pragma unroll
+    for (int j = 0; j < 8; j++) win[j] = (j < pad) ? st[j] : 0.0f;
+    float wreg[8];
+    #pragma unroll
+    for (int j = 0; j < 8; j++) wreg[j] = (j < d_conv) ? wc[j] : 0.0f;
+    for (int t = 0; t < T; t++) {
+        win[pad] = qkv_cols[(size_t)t * conv_dim + c];
+        float acc = 0.0f;
+        #pragma unroll
+        for (int j = 0; j < 8; j++) acc += win[j] * wreg[j];
+        conv_outs[(size_t)t * conv_dim + c] = silu(acc);
+        // the per-row kernel's `st[j] = win[1 + j]`, kept in registers
+        #pragma unroll
+        for (int j = 0; j < 8; j++) if (j < pad) win[j] = win[1 + j];
+        if (snap != nullptr && t + 1 < T) {
+            float* sr = snap + ((size_t)t * conv_dim + c) * pad;
+            #pragma unroll
+            for (int j = 0; j < 8; j++) if (j < pad) sr[j] = win[j];
+        }
+    }
+    #pragma unroll
+    for (int j = 0; j < 8; j++) if (j < pad) st[j] = win[j];
+}
+
+// gdn_scan_kernel's body with one addition: after step t < T-1 the resident state shard is
+// also written to `snap[t]` (the state the per-row path's clone-after-row captured).
+template <int S_v, int WARP>
+// `state_in` / `state_out` are NOT restrict: the even-T verify runs the scan IN PLACE (the
+// per-row ping-pong's net parity), each thread reading its own shard before it writes it.
+__device__ void gdn_scan_kernel_snap(
+        const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
+        const float* __restrict__ g, const float* __restrict__ beta,
+        const float* state_in, float* state_out,
+        float* __restrict__ o, int H, int T, float scale, float* __restrict__ snap) {
+    const int h = blockIdx.x;
+    const int lane = threadIdx.x;
+    const int col = blockIdx.z * blockDim.y + threadIdx.y;
+    if (col >= S_v) return;
+    constexpr int rows_per_lane = S_v / WARP;
+
+    const float* st = state_in + ((size_t)h * S_v + col) * S_v;
+    float s_shard[rows_per_lane];
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) s_shard[r] = st[r * WARP + lane];
+
+    for (int t = 0; t < T; t++) {
+        const float* q_t = q + ((size_t)t * H + h) * S_v;
+        const float* k_t = k + ((size_t)t * H + h) * S_v;
+        const float* v_t = v + ((size_t)t * H + h) * S_v;
+        float g_val = expf(g[(size_t)t * H + h]);
+        float beta_val = beta[(size_t)t * H + h];
+
+        float k_reg[rows_per_lane], q_reg[rows_per_lane];
+        #pragma unroll
+        for (int r = 0; r < rows_per_lane; r++) {
+            int i = r * WARP + lane;
+            k_reg[r] = k_t[i]; q_reg[r] = q_t[i];
+        }
+        float kv_shard = 0.0f;
+        #pragma unroll
+        for (int r = 0; r < rows_per_lane; r++) kv_shard += s_shard[r] * k_reg[r];
+        float kv_col = warp_reduce_sum<WARP>(kv_shard);
+        float delta_col = (v_t[col] - g_val * kv_col) * beta_val;
+        float attn_partial = 0.0f;
+        #pragma unroll
+        for (int r = 0; r < rows_per_lane; r++) {
+            s_shard[r] = g_val * s_shard[r] + k_reg[r] * delta_col;
+            attn_partial += s_shard[r] * q_reg[r];
+        }
+        float attn_col = warp_sum_down<WARP>(attn_partial);
+        if (lane == 0) o[((size_t)t * H + h) * S_v + col] = attn_col * scale;
+        if (snap != nullptr && t + 1 < T) {
+            float* sr = snap + (size_t)t * H * S_v * S_v + ((size_t)h * S_v + col) * S_v;
+            #pragma unroll
+            for (int r = 0; r < rows_per_lane; r++) sr[r * WARP + lane] = s_shard[r];
+        }
+    }
+    float* so = state_out + ((size_t)h * S_v + col) * S_v;
+    #pragma unroll
+    for (int r = 0; r < rows_per_lane; r++) so[r * WARP + lane] = s_shard[r];
+}
+
+extern "C" __global__ void gdn_scan_s128_tsnap(
+        const float* q, const float* k, const float* v, const float* g, const float* beta,
+        const float* state_in, float* state_out, float* o, int H, int T, float scale,
+        float* snap) {
+    gdn_scan_kernel_snap<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale, snap);
+}
+
 // MoE grouped-prefill gather/scatter kernels (A2 prototype — RESIDENT case).
 // These are appended to hybrid.cu (same fatbin).
 
