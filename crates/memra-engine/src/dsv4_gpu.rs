@@ -9197,6 +9197,11 @@ impl Dsv4Gpu {
                     None,
                     true,
                 )?;
+                if abort.load(Ordering::Acquire) {
+                    return Err(format!(
+                        "TP/EP rank {rank} stopped before reduction after peer failure"
+                    ));
+                }
                 // SAFETY: both workspaces, both output buffers and the borrowed signal
                 // plane remain alive until both scoped workers have drained and joined.
                 // This rank's producer, endpoint and consumer use the same ordered stream.
