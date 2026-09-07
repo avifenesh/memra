@@ -747,6 +747,7 @@ pub struct Dsv4Gpu {
     attention_tp_rank_calls: [AtomicU64; 2],
     attention_tp_ar_calls: AtomicU64,
     attention_tp_refusal_injection: std::sync::Mutex<Option<AttentionTpRefusalInjection>>,
+    intermediate_tp_audit: std::sync::Mutex<Option<Vec<crate::dsv4_modelopt_split::JoinSnapshot>>>,
     ep_enabled: bool,
     ep_serial_control: bool,
     ep_calls: std::sync::atomic::AtomicU64,
@@ -2053,6 +2054,30 @@ impl Dsv4Gpu {
         dsv4_topology::set_intermediate_tp_for_gate(enabled)
     }
 
+    /// Explicit correctness-only capture. No environment or request reads this switch.
+    pub fn set_intermediate_tp_audit_for_gate(&self, enabled: bool) -> Res<()> {
+        if !self.topology.is_intermediate_tp() {
+            return Err("intermediate audit requires intermediate topology".into());
+        }
+        *self
+            .intermediate_tp_audit
+            .lock()
+            .map_err(|_| "intermediate audit mutex")? = enabled.then(Vec::new);
+        Ok(())
+    }
+
+    pub fn take_intermediate_tp_audit_for_gate(
+        &self,
+    ) -> Res<Vec<crate::dsv4_modelopt_split::JoinSnapshot>> {
+        let mut audit = self
+            .intermediate_tp_audit
+            .lock()
+            .map_err(|_| "intermediate audit mutex")?;
+        Ok(std::mem::take(
+            audit.as_mut().ok_or("intermediate audit not enabled")?,
+        ))
+    }
+
     pub fn intermediate_tp_topology_for_gate() -> bool {
         dsv4_topology::intermediate_tp_for_gate()
     }
@@ -2888,11 +2913,21 @@ impl Dsv4Gpu {
                 mc.moe.as_ref().expect("moe").expert_ff_length as usize,
             )?
         };
+        if topology.is_intermediate_tp()
+            && (n_trunk != 43
+                || topology.hidden != 4096
+                || topology.inter != 2048
+                || topology.experts != 256
+                || !ep_requested)
+        {
+            return Err(
+                "intermediate TP requires pinned 43-layer 4096/2048/256 geometry and EP pair"
+                    .into(),
+            );
+        }
         let attention_tp = if dsv4_attention_tp::enabled_for_gate() {
             if !topology.is_tp_ep() {
-                return Err(
-                    "attention TP2 requires the explicit all-layer expert-ID EP topology".into(),
-                );
+                return Err("attention TP2 requires an explicit all-layer TP/EP topology".into());
             }
             Some(AttentionTpGeometry::new(
                 mc.n_head as usize,
@@ -3164,6 +3199,7 @@ impl Dsv4Gpu {
             attention_tp_rank_calls: std::array::from_fn(|_| AtomicU64::new(0)),
             attention_tp_ar_calls: AtomicU64::new(0),
             attention_tp_refusal_injection: std::sync::Mutex::new(None),
+            intermediate_tp_audit: std::sync::Mutex::new(None),
             ep_enabled: false,
             ep_serial_control: false,
             ep_calls: std::sync::atomic::AtomicU64::new(0),
@@ -3730,6 +3766,8 @@ impl Dsv4Gpu {
                 .map_or(0, |table| (table.len() * 8) as u64);
         let stream = self.stages[stage_index].gpu.stream();
         let split = plan.pack_device(&stream, &layer.experts_w, &layer.experts_sc)?;
+        // Check packed bytes independently against safetensors, not a reconstructed full GPU bank.
+        self.validate_intermediate_bank_for_gate(layer, &split)?;
         let new_bytes =
             split.weights.len() as u64 + split.scales.len() as u64 + (split.table.len() * 8) as u64;
         layer.experts_w = split.weights;
@@ -3741,6 +3779,221 @@ impl Dsv4Gpu {
             .ok_or("intermediate TP full-bank byte counter underflow")?
             .checked_add(new_bytes)
             .ok_or("intermediate TP split-bank byte counter overflow")?;
+        Ok(())
+    }
+
+    /// Poisoned-buffer ownership control using the actual half-bank weights and local executor.
+    /// Intermediate TP owns every production slot. This separate restricted-domain cell checks
+    /// that the reused executor still clears slots outside an expert-ID partition.
+    pub fn intermediate_tp_zeroing_for_gate(&self) -> Res<()> {
+        use crate::dsv4_grouped::{GroupedRoutes, GroupedWork};
+        if !self.topology.is_intermediate_tp() {
+            return Err("zeroing gate requires intermediate TP".into());
+        }
+        let ids = [0i32, 127, 128, 255, 1, 254];
+        for rank in 0..2 {
+            let stage = &self.stages[rank];
+            let stream = stage.gpu.stream();
+            let layer = &stage.layers[0];
+            let bank = layer.ep.as_ref().ok_or("zeroing local bank missing")?;
+            let table = layer
+                .experts_modelopt_table
+                .as_ref()
+                .ok_or("zeroing table missing")?;
+            let full_table = stream.clone_dtoh(table).map_err(e("zeroing table read"))?;
+            let first = rank * 128;
+            let restricted: Vec<u64> = (0..6)
+                .flat_map(|plane| {
+                    full_table[plane * 256 + first..plane * 256 + first + 128]
+                        .iter()
+                        .copied()
+                })
+                .collect();
+            let restricted = stream
+                .clone_htod(&restricted)
+                .map_err(e("zeroing table upload"))?;
+            let mut scratch = EpScratch::new(&stage.gpu, &stage.gpu, 1, 6, 4096, 1024, None)?;
+            stream
+                .memcpy_htod(&vec![0x38u8; 4096], &mut scratch.xq)
+                .map_err(e("zeroing input"))?;
+            stream
+                .memcpy_htod(&vec![1.0f32; 32], &mut scratch.xs)
+                .map_err(e("zeroing scales"))?;
+            stream
+                .memcpy_htod(&ids, &mut scratch.ids)
+                .map_err(e("zeroing ids"))?;
+            stream
+                .memcpy_htod(&[1.0f32; 6], &mut scratch.weights)
+                .map_err(e("zeroing weights"))?;
+            let mut expected: Option<Vec<f32>> = None;
+            for restricted_arm in [false, true, true] {
+                let mut work = GroupedWork::new_split(&stream, 256, 6, 4096, 1024)?;
+                if restricted_arm {
+                    work.routes = GroupedRoutes::new_partition(&stream, 256, first, 128, 6)?;
+                }
+                stream
+                    .memcpy_htod(&vec![f32::NAN; 6 * 4096], &mut scratch.contribution)
+                    .map_err(e("zeroing poison"))?;
+                let mut compute = EpCompute {
+                    xq: &scratch.xq,
+                    xs: &scratch.xs,
+                    ids: &scratch.ids,
+                    weights: &scratch.weights,
+                    g1: &mut scratch.g1,
+                    g3: &mut scratch.g3,
+                    h: &mut scratch.h,
+                    hq: &mut scratch.hq,
+                    hs: &mut scratch.hs,
+                    contribution: &mut scratch.contribution,
+                };
+                crate::dsv4_ep::execute_matrix_local(
+                    &stage.gpu,
+                    bank,
+                    if restricted_arm { &restricted } else { table },
+                    &layer.experts_s2_dev,
+                    &layer.experts_s2,
+                    &mut compute,
+                    &mut work,
+                    1,
+                    6,
+                    self.model.cfg().swiglu_limit,
+                    true,
+                )?;
+                let got = stream
+                    .clone_dtoh(&scratch.contribution)
+                    .map_err(e("zeroing readback"))?;
+                stream.synchronize().map_err(e("zeroing drain"))?;
+                if let Some(expected) = &expected {
+                    for slot in 0..6 {
+                        let owned = (first as i32..(first + 128) as i32).contains(&ids[slot]);
+                        for col in 0..4096 {
+                            let index = slot * 4096 + col;
+                            let want = if owned { expected[index] } else { 0.0 };
+                            if !got[index].is_finite() || got[index].to_bits() != want.to_bits() {
+                                return Err(format!(
+                                    "zeroing mismatch rank={rank} slot={slot} column={col} owned={owned}"
+                                ));
+                            }
+                        }
+                    }
+                } else {
+                    if got.iter().any(|x| !x.is_finite()) {
+                        return Err("zeroing full-bank control nonfinite".into());
+                    }
+                    expected = Some(got);
+                }
+            }
+            println!(
+                "NONOWNED_ZERO rank={rank} owned_slots=3 nonowned_slots=3 columns=4096 repeats=2 poison=nan owned_identity=true nonowned_positive_zero=true"
+            );
+        }
+        Ok(())
+    }
+
+    fn validate_intermediate_bank_for_gate(
+        &self,
+        layer: &LayerDev,
+        split: &crate::dsv4_modelopt_split::DeviceSplitBank,
+    ) -> Res<()> {
+        use crate::dsv4_modelopt_split::Projection;
+        let plan = split.plan;
+        let stream = self.stages[plan.rank].gpu.stream();
+        let table = stream
+            .clone_dtoh(&split.table)
+            .map_err(e("split table readback"))?;
+        let offsets = plan.pointer_offsets();
+        let bases = [
+            split.weights.device_ptr(&stream).0,
+            split.scales.device_ptr(&stream).0,
+        ];
+        for i in 0..table.len() {
+            if table[i] != bases[(i / plan.experts) % 2] + offsets[i] {
+                return Err(format!(
+                    "split table mismatch rank={} layer={} entry={i}",
+                    plan.rank, layer.il
+                ));
+            }
+        }
+        for expert in 0..plan.experts {
+            for projection in Projection::ALL {
+                let plane = projection.plane();
+                let name = format!("layers.{}.ffn.experts.{expert}.w{}", layer.il, plane + 1);
+                let full_rows = if projection.is_row_split() {
+                    plan.inter
+                } else {
+                    plan.hidden
+                };
+                for (scales, suffix, source_stride, local_stride, bank) in [
+                    (
+                        false,
+                        "weight",
+                        plan.full_weight_row_bytes(projection),
+                        plan.local_weight_row_bytes(projection),
+                        &split.weights,
+                    ),
+                    (
+                        true,
+                        "weight_scale",
+                        plan.full_scale_row_bytes(projection),
+                        plan.local_scale_row_bytes(projection),
+                        &split.scales,
+                    ),
+                ] {
+                    let (info, bytes) = self
+                        .model
+                        .st
+                        .raw(&format!("{name}.{suffix}"))
+                        .ok_or("split manifest tensor missing")?;
+                    if info.shape != [full_rows as u64, source_stride as u64]
+                        || bytes.len() != full_rows * source_stride
+                    {
+                        return Err(format!(
+                            "split manifest geometry {name}.{suffix}: {:?}",
+                            info.shape
+                        ));
+                    }
+                    // Boundary experts straddle the old expert-ID ownership cut.
+                    if ![0, 1, 127, 128, 254, 255].contains(&expert) {
+                        continue;
+                    }
+                    let rows = plan.local_output(projection);
+                    let offset = (expert * 3 + plane) * rows * local_stride;
+                    let packed = stream
+                        .clone_dtoh(&bank.slice(offset..offset + rows * local_stride))
+                        .map_err(e("split packed readback"))?;
+                    stream.synchronize().map_err(e("split packed drain"))?;
+                    for row in 0..rows {
+                        let source = if projection.is_row_split() {
+                            (plan.rank * rows + row) * source_stride
+                        } else {
+                            row * source_stride + plan.rank * local_stride
+                        };
+                        if packed[row * local_stride..(row + 1) * local_stride]
+                            != bytes[source..source + local_stride]
+                        {
+                            return Err(format!(
+                                "split packed identity rank={} layer={} expert={expert} projection={projection:?} scales={scales} row={row}",
+                                plan.rank, layer.il
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        let scale2 = stream
+            .clone_dtoh(&layer.experts_s2_dev)
+            .map_err(e("split scale2 readback"))?;
+        if scale2
+            .iter()
+            .map(|x| x.to_bits())
+            .ne(layer.experts_s2.iter().map(|x| x.to_bits()))
+        {
+            return Err("split replicated scale2 differs".into());
+        }
+        eprintln!(
+            "PACKED_IDENTITY rank={} layer={} experts=256 sampled_experts=[0,1,127,128,254,255] gu=1024x4096 down=4096x1024 table_entries=1536 codes=true scales=true scale2=true",
+            plan.rank, layer.il
+        );
         Ok(())
     }
 
@@ -9805,6 +10058,42 @@ impl Dsv4Gpu {
                             &mut peer_output[0],
                             topk * hidden,
                         )?;
+                }
+                if let Some(audit) = self
+                    .intermediate_tp_audit
+                    .lock()
+                    .map_err(|_| "intermediate audit mutex")?
+                    .as_mut()
+                {
+                    let mut snapshot =
+                        crate::dsv4_modelopt_split::JoinSnapshot::new(il, state.pos + 1);
+                    for (rank, ws) in [(0, &*owner_ws), (1, &*peer_ws)] {
+                        let stream = self.stages[rank].gpu.stream();
+                        let routes = &ws
+                            .grouped_work
+                            .as_ref()
+                            .ok_or("intermediate routes missing")?
+                            .routes;
+                        snapshot.selected[rank] = stream
+                            .clone_dtoh(&ws.sel.slice(..topk))
+                            .map_err(e("audit selected"))?;
+                        snapshot.ids[rank] =
+                            stream.clone_dtoh(&routes.ids).map_err(e("audit ids"))?;
+                        snapshot.offsets[rank] = stream
+                            .clone_dtoh(&routes.offsets)
+                            .map_err(e("audit offsets"))?;
+                        snapshot.pairs[rank] = stream
+                            .clone_dtoh(&routes.pairs.slice(..topk))
+                            .map_err(e("audit pairs"))?;
+                        snapshot.partials[rank] = stream
+                            .clone_dtoh(&ws.contrib.slice(..topk * hidden))
+                            .map_err(e("audit partial"))?;
+                        snapshot.joined[rank] = stream
+                            .clone_dtoh(&ar_outputs[rank].slice(..topk * hidden))
+                            .map_err(e("audit joined"))?;
+                        stream.synchronize().map_err(e("audit drain"))?;
+                    }
+                    audit.push(snapshot);
                 }
                 let layer0 = self.stages[0]
                     .layers

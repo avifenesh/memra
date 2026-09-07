@@ -3,7 +3,7 @@
 //! This module owns the load-time bank adapter, while leaving the serving walk/topology to the
 //! compose lane.  The byte geometry is explicit so a loader cannot claim a split bank without
 //! packing the down K halves.  The intended full-layer topology is replicated attention/router state on
-//! both ranks, every rank owning both halves of every expert, gate/up split by output rows, and
+//! both ranks, each rank owning one half of every expert, gate/up split by output rows, and
 //! down split by input columns.  Down produces a named rank-order f32 partial-sum class.
 //!
 //! ModelOpt's stored planes are row-major NVFP4 codes plus one E4M3 scale byte per 16 input
@@ -120,6 +120,32 @@ pub struct DeviceSplitBank {
     pub weights: CudaSlice<u8>,
     pub scales: CudaSlice<u8>,
     pub table: CudaSlice<u64>,
+}
+
+/// Actual full-model device readbacks, collected only by the correctness gate.
+pub struct JoinSnapshot {
+    pub layer: usize,
+    pub position: usize,
+    pub selected: [Vec<i32>; 2],
+    pub ids: [Vec<i32>; 2],
+    pub offsets: [Vec<i32>; 2],
+    pub pairs: [Vec<i32>; 2],
+    pub partials: [Vec<f32>; 2],
+    pub joined: [Vec<f32>; 2],
+}
+impl JoinSnapshot {
+    pub fn new(layer: usize, position: usize) -> Self {
+        Self {
+            layer,
+            position,
+            selected: Default::default(),
+            ids: Default::default(),
+            offsets: Default::default(),
+            pairs: Default::default(),
+            partials: Default::default(),
+            joined: Default::default(),
+        }
+    }
 }
 
 fn copy_2d(

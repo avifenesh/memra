@@ -98,6 +98,68 @@ fn verify_attention_join(gpu: &Dsv4Gpu, state: &memra_engine::dsv4_gpu::DecodeSt
     );
 }
 
+fn verify_intermediate_joins(gpu: &Dsv4Gpu, hash: &mut Sha256, position: usize) {
+    if !gpu.topology().is_intermediate_tp() {
+        return;
+    }
+    let snapshots = gpu
+        .take_intermediate_tp_audit_for_gate()
+        .expect("intermediate readbacks");
+    assert_eq!(snapshots.len(), 43);
+    for (layer, snapshot) in snapshots.into_iter().enumerate() {
+        assert_eq!((snapshot.layer, snapshot.position), (layer, position));
+        assert_eq!(
+            snapshot.selected[0], snapshot.selected[1],
+            "replicated route decisions"
+        );
+        for rank in 0..2 {
+            assert_eq!(snapshot.selected[rank].len(), 6);
+            assert_eq!(snapshot.ids[rank], (0..256).collect::<Vec<i32>>());
+            assert_eq!(snapshot.offsets[rank].len(), 257);
+            let mut expected_pairs: Vec<usize> = (0..6).collect();
+            expected_pairs.sort_by_key(|&slot| (snapshot.selected[rank][slot], slot));
+            assert_eq!(
+                snapshot.pairs[rank],
+                expected_pairs.iter().map(|&x| x as i32).collect::<Vec<_>>()
+            );
+            for expert in 0..=256 {
+                let count = snapshot.selected[rank]
+                    .iter()
+                    .filter(|&&id| id < expert)
+                    .count();
+                assert_eq!(snapshot.offsets[rank][expert as usize], count as i32);
+            }
+            assert!(
+                snapshot.selected[rank]
+                    .iter()
+                    .all(|id| (0..256).contains(id))
+            );
+            assert_eq!(snapshot.partials[rank].len(), 6 * 4096);
+            assert_eq!(snapshot.joined[rank].len(), 6 * 4096);
+            for id in &snapshot.selected[rank] {
+                hash.update(id.to_le_bytes());
+            }
+            update_f32(hash, &snapshot.partials[rank]);
+            update_f32(hash, &snapshot.joined[rank]);
+        }
+        for column in 0..6 * 4096 {
+            let expected = snapshot.partials[0][column] + snapshot.partials[1][column];
+            assert!(expected.is_finite());
+            for rank in 0..2 {
+                assert_eq!(
+                    snapshot.joined[rank][column].to_bits(),
+                    expected.to_bits(),
+                    "intermediate GPU join vs CPU f32 rank0+rank1 layer={layer} rank={rank} column={column}"
+                );
+            }
+        }
+        println!(
+            "INTERMEDIATE_JOIN position={position} layer={layer} selected={:?} rank_slots=[6,6] columns=24576 canonical_f32_sum=true",
+            snapshot.selected[0]
+        );
+    }
+}
+
 fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     assert!(tokens.len() > CONTINUATION_TOKENS);
     let trunk_layers = gpu.topology().layers as u64;
@@ -127,6 +189,7 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     positions.push(state.pos);
     update_f32(&mut output_hash, &row);
     verify_attention_join(gpu, &state);
+    verify_intermediate_joins(gpu, &mut output_hash, state.pos);
     let digest = gpu
         .tp_ep_cache_digest_for_gate(&state)
         .expect("TP/EP prime cache digest");
@@ -149,6 +212,7 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
         positions.push(state.pos);
         update_f32(&mut output_hash, &row);
         verify_attention_join(gpu, &state);
+        verify_intermediate_joins(gpu, &mut output_hash, state.pos);
         let digest = gpu
             .tp_ep_cache_digest_for_gate(&state)
             .expect("TP/EP continuation cache digest");
@@ -324,12 +388,20 @@ fn main() {
             "existing_m1_f16_mma"
         }
     );
+    let intermediate_mode = match std::env::var("MEMRA_DSV4_INTERMEDIATE_TP_GATE").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => false,
+        Ok("1") => true,
+        _ => panic!("MEMRA_DSV4_INTERMEDIATE_TP_GATE requires 0 or 1"),
+    };
+    assert!(!intermediate_mode || !(splitk || component || paired), "initial intermediate TP gate requires split-K OFF");
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
         Ok("1") => true,
         _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
     };
-    let numeric_class = if attention_mode {
+    let numeric_class = if intermediate_mode {
+        memra_engine::dsv4_modelopt_split::MODEL_OPT_SPLIT_NUMERIC_CLASS
+    } else if attention_mode {
         ATTENTION_TP_NUMERIC_CLASS
     } else {
         TP_EP_RANK_ORDER_NUMERIC_CLASS
@@ -375,14 +447,21 @@ fn main() {
         "source must provide enough real tokens"
     );
 
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
+    Dsv4Gpu::set_tp_ep_topology_for_gate(!intermediate_mode);
+    Dsv4Gpu::set_intermediate_tp_topology_for_gate(intermediate_mode);
     Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
+    let topology = if intermediate_mode {
+        "tp_ep_intermediate"
+    } else {
+        "tp_ep_all_layers"
+    };
     println!(
-        "PROTOCOL {{\"plain_only\":true,\"topology\":\"tp_ep_all_layers\",\"numeric_class\":\"{numeric_class}\",\"attention_tp\":{attention_mode},\"prime_tokens\":1,\"continuation_tokens\":{CONTINUATION_TOKENS},\"source_sha256\":\"{source_sha256}\",\"dspark\":false}}"
+        "PROTOCOL {{\"plain_only\":true,\"topology\":\"{topology}\",\"intermediate_tp\":{intermediate_mode},\"numeric_class\":\"{numeric_class}\",\"attention_tp\":{attention_mode},\"prime_tokens\":1,\"continuation_tokens\":{CONTINUATION_TOKENS},\"source_sha256\":\"{source_sha256}\",\"dspark\":false}}"
     );
     let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 256)
         .expect("plain-only TP/EP load");
     assert!(gpu.topology().is_tp_ep(), "no silent PP fallback");
+    assert_eq!(gpu.topology().is_intermediate_tp(), intermediate_mode);
     assert_eq!(
         gpu.attention_tp_geometry().is_some(),
         attention_mode,
@@ -431,6 +510,10 @@ fn main() {
                 "existing_m1_f16_mma"
             }
         );
+        if intermediate_mode {
+            gpu.intermediate_tp_zeroing_for_gate().expect("non-owned slot zeroing");
+            gpu.set_intermediate_tp_audit_for_gate(true).expect("enable intermediate audit");
+        }
         let first = run_once(&gpu, &prompt, &source_sha256);
         let second = run_once(&gpu, &prompt, &source_sha256);
         assert_eq!(
@@ -438,6 +521,7 @@ fn main() {
             "repeated plain TP/EP tape must be deterministic"
         );
         println!("RECEIPT {first:?}");
+        if intermediate_mode { gpu.set_intermediate_tp_audit_for_gate(false).expect("disable intermediate audit"); }
         verify_refusal_boundary(&gpu, &prompt);
         println!(
             "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false",
@@ -448,4 +532,5 @@ fn main() {
     }
     Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
+    Dsv4Gpu::set_intermediate_tp_topology_for_gate(false);
 }

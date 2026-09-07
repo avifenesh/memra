@@ -465,11 +465,18 @@ fn main() {
     let abba = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-abba");
     assert!(args.len() == 3 || splitk || abba, "unknown gate arm");
     memra_engine::set_moe_m1_splitk_for_gate(splitk);
+    let intermediate_mode = match std::env::var("MEMRA_DSV4_INTERMEDIATE_TP_GATE").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => false,
+        Ok("1") => true,
+        _ => panic!("MEMRA_DSV4_INTERMEDIATE_TP_GATE requires 0 or 1"),
+    };
+    assert!(!intermediate_mode || !(splitk || abba), "initial intermediate TP gate requires split-K OFF");
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
         Ok("1") => true,
         _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
     };
+    assert!(!intermediate_mode || attention_mode, "intermediate sampled envelope requires attention TP2");
     let sampler = dsv4_sampler_order().expect("explicit sampler configuration");
     let profiled = dsv4_prof_on();
     let sampler_name = match sampler {
@@ -481,7 +488,9 @@ fn main() {
     } else {
         REPEATS
     };
-    let numeric_class = if attention_mode {
+    let numeric_class = if intermediate_mode {
+        memra_engine::dsv4_modelopt_split::MODEL_OPT_SPLIT_NUMERIC_CLASS
+    } else if attention_mode {
         memra_engine::dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS
     } else {
         memra_engine::dsv4_gpu::TP_EP_RANK_ORDER_NUMERIC_CLASS
@@ -528,11 +537,17 @@ fn main() {
     );
     assert!(prompt.len() >= PROMPT_TOKENS);
 
-    Dsv4Gpu::set_tp_ep_topology_for_gate(true);
+    Dsv4Gpu::set_tp_ep_topology_for_gate(!intermediate_mode);
+    Dsv4Gpu::set_intermediate_tp_topology_for_gate(intermediate_mode);
     Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
     println!("NUMERIC_CLASS {numeric_class}");
+    let topology = if intermediate_mode {
+        "tp_ep_intermediate"
+    } else {
+        "tp_ep_all_layers"
+    };
     println!(
-        "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
+        "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"{topology}\",\"intermediate_tp\":{intermediate_mode},\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
     );
     let gpu = Dsv4Gpu::load(
         dir,
@@ -643,4 +658,5 @@ fn main() {
     }
     Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
+    Dsv4Gpu::set_intermediate_tp_topology_for_gate(false);
 }

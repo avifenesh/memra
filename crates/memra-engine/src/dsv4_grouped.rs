@@ -416,7 +416,6 @@ impl GroupedWork {
                 .alloc_zeros::<f32>(contribution_len)
                 .map_err(|e| format!("split grouped contribution allocation: {e}"))?,
             bytes,
-            splitk_scratch: None,
             split_scratch: Some(SplitScratch {
                 h: s.alloc_zeros::<f32>(split_h_len)
                     .map_err(|e| format!("split grouped h allocation: {e}"))?,
@@ -651,13 +650,13 @@ impl GroupedWork {
                 crate::moe_f16g_gu_half2_on(),
             );
             if self.plain_single && splitk_component_claim(gpu, true) {
-                self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, true)?;
+                self.splitk(gpu, table, h_ptr as u64, limit, true, true)?;
             }
             if self.plain_single && crate::moe_m1_splitk_on() {
                 if !fuse_gu {
                     return Err("split-K requires plain fused GU".into());
                 }
-                self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, false)?;
+                self.splitk(gpu, table, h_ptr as u64, limit, true, false)?;
             } else if let Some(gu_kind) = gu_kind {
                 let rc = unsafe {
                     let launch = match gu_kind {

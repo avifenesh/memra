@@ -44,3 +44,40 @@ performance claim was made for this candidate. The next gate must prove, on both
 route coverage, packed code/scale identity against the complete manifest, per-expert GU/down
 geometry, non-owned-slot zeroing, rank-order reduction identity for the named class, and AR
 engagement before any rate measurement.
+
+## Gate binding (2026-09-08)
+
+The stacked gate lane rebases source candidate `61bda2afe4f9375e6cd23d9ea6052d1230cc01fc`
+on main `698d59239`. The candidate's stale finalization byte accounting referenced three
+undefined variables; accounting now happens only in the per-layer pack. Attention TP2's
+separate packed projections and join remain intact.
+
+Both existing gate binaries accept `MEMRA_DSV4_INTERMEDIATE_TP_GATE=1` before loading.
+Only these executables read the selector; serving cannot select the candidate through an
+environment variable or request. OFF selects the existing expert-ID EP program. Initial
+qualification uses attention TP2, radix sampling and split-K OFF. PR #337 was still open
+when this lane rebased, so its split-K implementation is absent from this binding.
+
+Per rank/layer: 256 experts, 1024x4096 GU and 4096x1024 down, 1.5 GiB code bank,
+192 MiB scale bank, and 1536 pointer entries. Shared experts remain full width and are
+added once after the routed rank join on each replicated rank.
+
+Load checks validate all expert projection shapes and pointer entries and compare packed
+code/scale bytes for experts 0, 1, 127, 128, 254 and 255 against the complete manifest on
+every layer/rank. Correctness captures every layer's real route prefix, original-slot
+mapping, both GPU down partials and both GPU AR outputs for four teacher-forced positions,
+repeated twice. CPU f32 rank0+rank1 must match every joined bit. A separate poisoned-buffer
+restricted-domain control uses the real half banks to verify non-owned positive zero and
+owned-slot identity. Production intermediate TP has no non-owned selected slots.
+
+The existing six sticky-refusal cells cover 40043/40044 at positions 1, 3 and 127 with
+attention TP2 engaged, unchanged cache/position and refused retries. Sampled timing excludes
+all correctness capture and includes sampling plus forward. Five rows per fresh process;
+ABBA order is intermediate/current/current/intermediate on the same binary, with per-arm
+repeatability, pooled tokens divided by pooled wall time, and no cross-class token-identity
+requirement.
+
+Status: implementation pending remote build and full-model correctness. No GPU or Cargo
+work ran on the local rig. Pushes use `MEMRA_SKIP_PERF_CI=1` with normal hooks; hosted CI
+and the exclusively locked development pair provide validation. Raw receipts stay outside
+this public repository under private namespaces `intermediate-tp-<sha7>-r<N>`.
