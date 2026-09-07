@@ -1,5 +1,8 @@
 # Graph-B all-43 design, fixed 8K sampled plain
 
+Historical design: the implemented attention-tail performance door was
+removed after the flat R2 result in `graph-b-verdict-20260907.md`.
+
 Status: design only. No `dsv4_gpu.rs` edit, build, or GPU run in this lane.
 
 Source checkpoint audited: DSV4 worktree `86efe899ac631be869f4d74b592377c738f4ec16`

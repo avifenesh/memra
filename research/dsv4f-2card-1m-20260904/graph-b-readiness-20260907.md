@@ -1,5 +1,8 @@
 # Retained attention-tail graph readiness
 
+Historical readiness record. The runtime performance door was removed after
+the exact but flat R2 gate; see `graph-b-verdict-20260907.md`.
+
 Implemented, default OFF, not GPU-qualified. The existing full-layer capture
 instrument remains separate. Graph-B captures the post-C4 sink-attention,
 output projection, attention HC-post, FFN HC-pre and FFN normalization body.

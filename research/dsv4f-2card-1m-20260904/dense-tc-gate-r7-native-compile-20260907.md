@@ -1,5 +1,9 @@
 # Dense FP8 to BF16 native full projection R7, compile-only, 2026-09-07
 
+> SUPERSEDED semantic note: R7's normalizer also treated `mag==0` as `+0`.
+> Current `dsv4_e4m3` preserves negative zero and only maps `mag==0x7f` NaNs
+> to `+0`; use R9 for the corrected engine contract.
+
 ## Candidate
 
 R7 keeps R4's four-warp/64-row, K=128 staging geometry, BF16 input contract,

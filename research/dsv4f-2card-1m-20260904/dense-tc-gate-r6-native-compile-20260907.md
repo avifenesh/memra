@@ -1,5 +1,10 @@
 # Dense FP8 to BF16 native packed conversion R6, 2026-09-07
 
+> SUPERSEDED semantic note: the former R6 engine-normalized arm mapped
+> `mag==0` signed-zero bytes to `+0`. Current `dsv4_e4m3` preserves negative
+> zero and only maps `mag==0x7f` NaNs to `+0`. R9 is the corrective engine arm;
+> R6 raw characterization and cubin provenance remain valid.
+
 ## Split semantics
 
 R5's raw native conversion is retained as a characterization arm, but it is
