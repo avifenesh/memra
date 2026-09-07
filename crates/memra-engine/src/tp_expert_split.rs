@@ -96,6 +96,42 @@ fn refuse_unsplittable(h: &HostExps, what: &str) -> Result<(), Box<dyn std::erro
 /// `[r*out_f/ranks, (r+1)*out_f/ranks)` of every expert. Contiguous inside each expert, so this
 /// is a byte range and nothing is rewritten. BIT-IDENTICAL: each kept row is the row the
 /// unsharded bank holds, and every output element remains one full-K dot.
+/// Runs `f(expert, its slab)` over a pre-sized `[n_expert * stride]` buffer, fanned out over the
+/// host's cores (one contiguous run of experts per worker). The sharder is load-time wall on the
+/// pair: both halves of a 171 GB bank pass through here once per boot, and the column split is
+/// 288 x 4096 short copies per layer; on one core that was minutes with the GPUs idle. Expert
+/// order in the buffer is unchanged, so the bytes are the sequential form's bytes.
+fn for_each_expert_slab<F>(bytes: &mut [u8], stride: usize, f: F)
+where
+    F: Fn(usize, &mut [u8]) + Sync,
+{
+    if stride == 0 || bytes.is_empty() {
+        return;
+    }
+    let n_expert = bytes.len() / stride;
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .clamp(1, n_expert.max(1));
+    let per = n_expert.div_ceil(workers).max(1);
+    if workers == 1 {
+        for (ex, dst) in bytes.chunks_mut(stride).enumerate() {
+            f(ex, dst);
+        }
+        return;
+    }
+    let f = &f;
+    std::thread::scope(|s| {
+        for (w, slab) in bytes.chunks_mut(per * stride).enumerate() {
+            s.spawn(move || {
+                for (k, dst) in slab.chunks_mut(stride).enumerate() {
+                    f(w * per + k, dst);
+                }
+            });
+        }
+    });
+}
+
 pub fn split_rows(
     h: &HostExps,
     ranks: usize,
@@ -118,10 +154,10 @@ pub fn split_rows(
     // One contiguous run per expert, so this half is cheap either way; sized up front to match
     // the column split's shape.
     let mut bytes = vec![0u8; h.n_expert * stride];
-    for ex in 0..h.n_expert {
+    for_each_expert_slab(&mut bytes, stride, |ex, dst| {
         let base = ex * h.expert_stride + rank * stride;
-        bytes[ex * stride..(ex + 1) * stride].copy_from_slice(&src[base..base + stride]);
-    }
+        dst.copy_from_slice(&src[base..base + stride]);
+    });
     Ok(ExpertShard {
         bytes,
         in_f: h.in_f,
@@ -190,15 +226,13 @@ pub fn split_cols(
     // time per boot on the pair with the GPUs idle throughout. `copy_from_slice` into a
     // pre-sized buffer is the same bytes with the bookkeeping removed.
     let mut bytes = vec![0u8; h.n_expert * stride];
-    for ex in 0..h.n_expert {
+    for_each_expert_slab(&mut bytes, stride, |ex, dst| {
         let ebase = ex * h.expert_stride;
-        let dbase = ex * stride;
-        for row in 0..h.out_f {
+        for (row, d) in dst.chunks_exact_mut(keep).enumerate() {
             let sb = ebase + row * h.row_bytes + rank * keep;
-            let db = dbase + row * keep;
-            bytes[db..db + keep].copy_from_slice(&src[sb..sb + keep]);
+            d.copy_from_slice(&src[sb..sb + keep]);
         }
-    }
+    });
     Ok(ExpertShard {
         bytes,
         in_f: half,
