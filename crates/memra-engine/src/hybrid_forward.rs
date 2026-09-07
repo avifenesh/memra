@@ -10956,6 +10956,7 @@ impl HybridModel {
     ///   3. the exchange: each rank pushes its `idx` rows to the peer and both assemble the
     ///      full `[t, width]` plane in query order, pure movement; then POST on both ranks
     ///      over the assembled plane.
+    ///
     /// Byte-identical to the replicated walk by construction: per (query, pool) the scorer's
     /// arithmetic does not depend on which tile computes it and the selector is per query, so
     /// each half is the same bytes the full plane would hold at those rows. The CHECK door
@@ -11193,10 +11194,11 @@ impl HybridModel {
             let pool = shards[r].index.as_ref().map(|ix| ix.geom.pool).unwrap_or(0);
             layer.index_pools_ready = if out.is_ok() {
                 s.pools_ready
-            } else if pool > 0 {
-                s.pools_ready.min(layer.len / pool)
             } else {
-                s.pools_ready
+                match layer.len.checked_div(pool) {
+                    Some(complete) => s.pools_ready.min(complete),
+                    None => s.pools_ready,
+                }
             };
             if out.is_ok() {
                 if pool > 0 {
