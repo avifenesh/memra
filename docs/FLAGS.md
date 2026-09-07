@@ -1230,6 +1230,16 @@ so this file does reach HTTP traffic when that door is armed.
 
 ---
 
+### DSV4 all-layer topology and graph gate controls (2026-09-07)
+
+These are explicit in-process gate APIs, not environment or serving defaults.
+
+| Control | Default | Scope, rollback and evidence |
+| --- | --- | --- |
+| `set_tp_ep_topology_for_gate` | **OFF**; decide-by: 2026-09-21 | Before load only. ON selects all-layer expert-ID EP with replicated attention/cache planes and a named rank-order FP32 slot sum; it does not select attention TP. Plain t=1 only, with unsupported drafter, batch and host-cache paths refusing. OFF plus a fresh load restores the ordinary topology. Gate: `dsv4_tp_ep_gate`; sampled scope: `research/dsv4f-2card-1m-20260904/tp-ep-sampled-perf-gate-20260907.md`. Internal consistency is not checkpoint-oracle or serving qualification. |
+| `set_matrix_ep_graph_for_gate` | **OFF**; decide-by: 2026-09-21 | Older matrix-EP expert/shared-tail graph primitive under layer ownership. ON requires fixed t=1 device workspaces and route/mirror host validation disabled; successful replays increment `matrix_ep_graph_dispatches`. OFF stops replay selection. This is not the all-layer TP/EP graph path and is unqualified; no PP-shell performance run is queued. Source: `dsv4_ep_graph.rs`; scope: `research/dsv4f-2card-1m-20260904/TP-EP-PR.md`. |
+| `set_tp_ep_ar_refusal_words_for_gate` | **No injection** (red-arm diagnostic) | Exclusive walk-lock control for the sticky reduction error words. The gate injects rank-0 40043 and rank-1 40044, then requires no cache/position commit and no retry enqueue. Setting `[0, 0]` clears the diagnostic words after draining, never the failed-request state. Gate: `dsv4_tp_ep_gate`; target fault-injection receipt pending. |
+
 ## 6. Research platform (MTP-heal, dual-shape)
 
 memra's second shape is a research platform. The first protocol (MTP-heal) measures MTP draft-head

@@ -6,11 +6,12 @@ Add a gate-only all-layer expert-parallel DSV4 decode program as the foundation 
 - Preserve independent rank cache/checkpoint commit and actual position/counter receipts. Plain-only: DSpark/MTP, generic host-cache serving and unsupported batched paths refuse explicitly.
 - Use the already-gated native one-shot out-of-place primitive. Fix stale non-owned contribution slots, including poisoned-reuse regression on both target GPUs.
 - Add bounded internal-consistency and sampled performance gates with actual counters, raw tokens, final state identity and loop/EOS exclusion.
+- Check both sticky one-shot refusal words before either cache commits; drain both ranks on submission errors and publish position only after logits succeed. A per-rank 40043/40044 red arm checks unchanged persistent cache/position and a refused retry after clearing the diagnostic word.
 - The scoped worker candidate preserved exact identity but did not win: 23.7555 versus the prior 24.3093 tok/s same-protocol serial-TP receipt. Its runtime dispatch, endpoint API and CLI seam were removed in this branch. No PP comparison was rerun.
 
 ## Evidence and limits
 
-The sampled gate uses a 256-token real-source prime and 256 sampled forward calls, two repeats, T=1/top_p=1/top_k=0, fixed seed. Both corrected serial-TP rows are eligible and agree in tokens/final logits/cache/hidden data. Pooled rate is 24.3093 tok/s, not the 120 objective. This is internal consistency and target execution evidence, not a full model-oracle or public serving claim.
+The sampled gate uses a 256-token real-source prime and 256 sampled forward calls, two repeats, T=1/top_p=1/top_k=0, fixed seed. Both corrected serial-TP rows are eligible and agree in tokens/final logits/cache/hidden data. The earlier pooled rate is 24.3093 tok/s, not the 120 objective. That timing predates the token-boundary refusal fix; the new boundary needs fresh target evidence. This is internal consistency and target execution evidence, not a full model-oracle or public serving claim.
 
 Target binary pins and no-go worker receipts are in the lane documents. The delivered one-shot component gate is already on main via #319. The later current-main rebase changes upstream release/server/DSpark code, not the pinned DSV4 arithmetic; hosted checks on this exact head remain required. Native CPU/build tests are being rechecked remotely, never on the user's local machine.
 

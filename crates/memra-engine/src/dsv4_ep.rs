@@ -174,8 +174,8 @@ pub(crate) struct EpLayer {
 
 /// Stable state for the PRO two-rank one-shot reduction.  The signal and
 /// refusal words are device-resident and survive every layer/token launch;
-/// there is no host event or staging buffer in the hot path.  A gate may read
-/// the refusal words after a drained run, while serving keeps them on device.
+/// there is no per-layer host event or staging buffer. The walk reads both
+/// refusal words at the drained token boundary before committing either cache.
 pub(crate) struct TpEpArState {
     signal: [CudaSlice<u8>; 2],
     error: [CudaSlice<i32>; 2],
@@ -334,6 +334,30 @@ impl TpEpArState {
                 .map_err(|e| format!("TP/EP AR refusal sync rank {i}: {e}"))?;
         }
         Ok(out)
+    }
+
+    /// Fault-injection only. The caller holds the model walk lock; both streams
+    /// are drained before replacing the sticky words, including when clearing a
+    /// completed red arm so another independent gate state can run.
+    pub(crate) fn set_refusal_words_for_gate(
+        &mut self,
+        owner: &Gpu,
+        peer: &Gpu,
+        words: [i32; 2],
+    ) -> Res<()> {
+        for gpu in [owner, peer] {
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            gpu.stream().synchronize().map_err(|e| e.to_string())?;
+        }
+        for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = gpu.stream();
+            stream
+                .memcpy_htod(&words[rank..rank + 1], &mut self.error[rank])
+                .map_err(|e| format!("TP/EP AR inject refusal rank {rank}: {e}"))?;
+            stream.synchronize().map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 }
 

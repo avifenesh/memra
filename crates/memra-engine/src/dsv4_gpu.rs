@@ -1926,8 +1926,8 @@ impl Dsv4Gpu {
             .unwrap_or(0)
     }
 
-    /// Read the bounded device-side refusal words after the caller has finished
-    /// its narrow gate run. The serving walk never performs this D2H read.
+    /// Drain both ranks and read the sticky device-side refusal words. The walk
+    /// requires zero words before publishing any token or committing its caches.
     pub fn tp_ep_ar_refusal_words(&self) -> Res<[i32; 2]> {
         let ar = self
             .tp_ep_ar
@@ -1937,6 +1937,25 @@ impl Dsv4Gpu {
             .as_ref()
             .ok_or("TP/EP one-shot reduction state is not armed")?;
         ar.refusal_words(&self.stages[0].gpu, &self.stages[1].gpu)
+    }
+
+    /// Exclusive red-arm control for the token-boundary refusal gate. This is
+    /// not a serving switch; resetting words never recovers a failed request.
+    pub fn set_tp_ep_ar_refusal_words_for_gate(&self, words: [i32; 2]) -> Res<()> {
+        if !self.topology.is_tp_ep() {
+            return Err("TP/EP refusal injection requires the all-layer topology".into());
+        }
+        let _walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned".to_string())?;
+        let mut ar = self
+            .tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP one-shot reduction state mutex poisoned".to_string())?;
+        ar.as_mut()
+            .ok_or("TP/EP one-shot reduction state is not armed")?
+            .set_refusal_words_for_gate(&self.stages[0].gpu, &self.stages[1].gpu, words)
     }
 
     fn ensure_walk_topology_ready(&self) -> Res<()> {
@@ -9112,7 +9131,7 @@ impl Dsv4Gpu {
             .matrix_step
             .take()
             .ok_or("TP/EP matrix workspace missing")?;
-        let result = (|| -> Res<(Option<Vec<f32>>, u32)> {
+        let mut result = (|| -> Res<(Option<Vec<f32>>, u32)> {
             if work.failed || work.verify.open.is_some() {
                 return Err("TP/EP workspace has an unfinished transaction".into());
             }
@@ -9278,6 +9297,14 @@ impl Dsv4Gpu {
                     Some(&ar_outputs[1]),
                 )?;
             }
+            // A successful enqueue does not prove a successful one-shot join:
+            // bounded peer waits report 40043/40044 through sticky device words.
+            // Read both ranks only after all layer work is submitted, before
+            // either persistent plane or the public token position can advance.
+            let refusals = self.tp_ep_ar_refusal_words()?;
+            if refusals != [0, 0] {
+                return Err(format!("TP/EP one-shot reduction refused: {refusals:?}"));
+            }
             let pos0 = state.pos;
             self.commit_verify_dev_plane(
                 &mut state.caches,
@@ -9302,7 +9329,6 @@ impl Dsv4Gpu {
                 1,
                 1,
             )?;
-            state.pos = pos0 + 1;
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
             let stream = self.stages[1].gpu.stream();
@@ -9313,10 +9339,24 @@ impl Dsv4Gpu {
                     best = i;
                 }
             }
+            state.pos = pos0 + 1;
             Ok((want_logits.then_some(logits), best as u32))
         })();
-        if result.is_err() {
+        if let Err(error) = &mut result {
             work.failed = true;
+            // If submission failed after only one rank enqueued its peer wait,
+            // do not return/drop its buffers while it can still access the peer.
+            // Attempt both drains even if the first context or stream failed.
+            for (rank, stage) in self.stages.iter().enumerate() {
+                let drained = stage
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .and_then(|()| stage.gpu.stream().synchronize());
+                if let Err(drain_error) = drained {
+                    error.push_str(&format!("; TP/EP rank {rank} drain: {drain_error}"));
+                }
+            }
         }
         state.tp_ep_caches = Some(rank1_caches);
         state.matrix_step = Some(work);
