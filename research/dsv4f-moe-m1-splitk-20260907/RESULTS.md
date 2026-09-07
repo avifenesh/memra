@@ -1,7 +1,9 @@
 # M=1 expert split-K
 
-The r4 adaptive shape is accepted for full-model testing. It has no regression
-in any of the 32 observed token/rank/projection cells. Pooled GU speedup is
+The r4 adaptive shape passes full-model correctness and sampled ABBA.
+Split-K reaches **38.8228 tok/s versus 35.5695 tok/s, +9.146%**, pooled
+across ten sampled rows per arm with radix sampling and attention TP2.
+There is no regression in any of the 32 observed token/rank/projection cells. Pooled GU speedup is
 3.46x at one local expert and 2.07x at two. Down improves 1.23-1.74x by slot
 count; the owner accepted this gain as sufficient for this lane on 2026-09-08.
 The original fixed-16 prototype was rejected for regressing the heavier rank.
@@ -59,11 +61,13 @@ Inactive compact slots are zeroed without reading stale scratch.
 With route validation disabled, Rust `live_slots` is six on both ranks, a
 launch upper bound. The device CSR count is authoritative. The component
 reads the observed count for its guarded allocations and launch; full-model
-runs retain the six-slot upper bound. Full-model receipts determine the
+runs retain the six-slot upper bound. The full-model results below include the
 runtime effect of that difference. The owner explicitly accepted the r4
 binary for those runs; no kernel change was made after that decision.
 
-Component receipt: `moe-m1-splitk-r4-20260907`, raw files in `raw/r4/`.
+Private ops receipt: `moe-m1-splitk-r4-20260907`, under
+`research/dsv4f-devpair-20260905/receipts/ondemand/`. Raw logs, hardware and
+process inventories, and validator snapshots stay in the private ops repo.
 The first eight routed prompt tokens are captured at the first layer on both
 ranks, GU and down independently. Each cell has two warmup ABBA cycles and
 ten scored ABBA cycles, 20 event timings per arm. These are warm-plane
@@ -94,22 +98,60 @@ after the kernel gate passed. The owner removed that down requirement.
 no cell may exceed 1.02x oracle time, and pooled per-slot GU speedup must be
 at least 2x at slots 1 and 2. Pooled slot-2 GU passes even though individual
 cells range from 1.93x to 2.39x. Unobserved slot counts remain explicit.
-The original controller exit and parser are preserved.
+The original controller exit and parser are preserved in the private receipt.
 
-R3 receipt: `moe-m1-splitk-r3-20260907`, raw files in `raw/r3/`.
+The earlier fixed-16 prototype was rejected:
 Fixed 16 slices gave GU 100.8480 -> 25.6768 us at one slot, but only
 101.6016 -> 83.4880 us at five. Down was 38.0976 -> 24.5504 us at one slot
 and regressed 48.3888 -> 76.4688 us at five. Numeric, finite, repeat and canary
 checks passed, but full-model ABBA was not run on this rejected shape.
 The monitor has 624 entries, all for the expected gate PID and the assigned pair.
 
-Full-model receipt pending: `moe-m1-splitk-full-abba-r8-20260908`.
-The armed correctness/refusal gate runs first. Sampled ABBA then uses four
-fresh-process loads in new/current/current/new order, five rows each, attention
-TP enabled and the default radix sampler. The same r4 binary runs both arms.
-Timing scope is `sample_plus_forward_envelope`. Tokens must be identical within
-each arm; cross-arm identity is not required for the new numeric class.
-The controller waits with `flock -w 7200` and does not kill competing processes.
+Private full-model receipt: `moe-m1-splitk-full-abba-r8-20260908`, under the
+same private ops receipt directory. Armed correctness passed for both ranks
+and all 43 layers, including deterministic repeats and all six refusal cells.
+Refused steps preserve committed cache contents and reject retries.
+
+Sampled ABBA uses four fresh-process loads in new/current/current/new order,
+five eligible rows each, with 256 prompt tokens and 256 output tokens per row.
+Attention TP2 is ON, radix is the default sampler, and
+`timing_scope=sample_plus_forward_envelope`. Both arms use the same binary.
+
+| Load | Arm | Pooled tok/s | Eligible rows |
+| --- | --- | --- | --- |
+| 1 | split-K | 38.744490 | 5/5 |
+| 2 | current | 36.188693 | 5/5 |
+| 3 | current | 34.971091 | 5/5 |
+| 4 | split-K | 38.901424 | 5/5 |
+
+Pooled over 2,560 generated tokens per arm: split-K **38.822799 tok/s**,
+current **35.569475 tok/s**, **+9.146392%**. Pooling sums token counts and
+decode wall time, not rates. All 20 rows are eligible, non-looped, non-EOS,
+and reach position 512. Tokens and final logits are identical within each arm
+across its ten rows and both fresh loads. Cross-arm tokens differ because the
+numeric class changed; this is recorded and is not an admission failure.
+Each new-arm prime/decode row records 22,016 GU and 22,016 down split-K
+submissions, while current-arm split-K counters remain zero.
+
+Measured source commit: `e05360e7fa98a4e2a497727ee5c28b627098f3d9`.
+Correctness binary SHA256: `f7f56edc6d24c82a9cb98b66b185101c8150353ed2bd52f7a0c3d7b6399a1e14`.
+Sampled binary SHA256: `42dea6efa5d92c6f2e1fe8860e5643aaa27d1933a0c14c4d2134d0dce4cb42f4`.
+The controller exited 0 at 2026-09-07T22:58:39Z. Later changes affect the
+validator and documentation only; the engine sources and measured binaries
+remain unchanged. The controller waited with `flock -w 7200`; monitor shutdown
+used a stop file and normal exit, with no process kill.
+
+Source-file SHA256s for the measured implementation:
+
+```text
+d034320fb62091cc83c27a515642ba52b66171eadc49f1306e01a88f00d8aad6  crates/memra-engine/cu/moe_f16_grouped.cu
+6e44a1a24d885f5262458720aa9155697f896fa92b9cdb01e83714789c27af4a  crates/memra-engine/src/dsv4_grouped.rs
+a009ecdccadd0fab1b8d552fe280a5d313605c68ad0d262670402e67fd38b6b5  crates/memra-engine/src/lib.rs
+673e48d8029da407517310144f4720b5a6d5ad45a25fbe08daa5efdaa75ec0d2  crates/memra-engine/src/mmq_ffi.rs
+222ce6cec3ab5137b2f481a9d5b2046159e3b6e0d807d2c3d675bc9344f6d07f  crates/memra-engine/src/dsv4_gpu.rs
+bb0783f6c69a05381184707104c04ac9e882f6268c7f902bf034e37631e94621  crates/memra-engine/src/bin/dsv4_tp_ep_gate.rs
+5024d75d9463401a7986567bba24146127fc7ff01bbfeec60cf53b592ad01274  crates/memra-engine/src/bin/dsv4_tp_ep_sampled_perf_gate.rs
+```
 
 No local build, test, CI or GPU run. Pushes export `MEMRA_SKIP_PERF_CI=1` with
 normal hooks, as required by the owner. Hosted CI is green for the r4 source.
