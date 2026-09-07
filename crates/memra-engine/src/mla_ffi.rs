@@ -388,17 +388,18 @@ pub fn mla_dsa_attn_arm_effective(t_q: usize) -> i32 {
 /// Geometry refusals from the DSA launchers: the door has nothing for this shape, so the
 /// caller falls through to the shipped kernel instead of failing the request. Every other
 /// non-zero rc (a real cudaError included) still goes through `ck` and surfaces.
-/// `MEMRA_DSA_SCORE_RP` (default 2, the shipped shape; `=1` is the only other spelling): pools
-/// per thread of the sm_100a decode scorer. Bit-identical either way (each dot's accumulation
-/// order is per thread and unchanged); RP=1 doubles the working grid for mid-context pools
-/// (tptrace9 2026-09-07: 57 us for 32k pools with 128 working blocks). Latched once per process.
+/// `MEMRA_DSA_SCORE_RP` (DEFAULT 1 since 2026-09-07; `=2` is the rollback seam, the shape shipped
+/// before): pools per thread of the sm_100a decode scorer. Bit-identical either way (each dot's
+/// accumulation order is per thread and unchanged); RP=1 doubles the working grid. Receipts on
+/// the 2x B200 pair, TP-2 decode, ids identical: 128k context 79.05 / 78.18 vs 77.57 / 77.02
+/// (+1.7%, tpwalk15), 1M context 65.10 vs 64.15 (+1.5%, tpwalk16). Latched once per process.
 pub(crate) fn dsa_score_rp() -> i32 {
     static RP: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
     *RP.get_or_init(|| {
-        if std::env::var("MEMRA_DSA_SCORE_RP").as_deref() == Ok("1") {
-            1
-        } else {
+        if std::env::var("MEMRA_DSA_SCORE_RP").as_deref() == Ok("2") {
             2
+        } else {
+            1
         }
     })
 }
