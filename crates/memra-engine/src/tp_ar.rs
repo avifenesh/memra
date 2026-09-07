@@ -86,6 +86,19 @@ pub const AR_SPIN_LIMIT: i64 = 2_000_000_000;
 /// and both ranks MUST agree on it: the barrier pairs block `i` with the peer's block `i`.
 pub const AR_BLOCKS: i32 = 72;
 
+/// `MEMRA_TP_AR_BLOCKS` (default `AR_BLOCKS`): the block cap of the one-shot kernel. Every block
+/// pays its own start and end flag round trips over the fabric, and at the decode width
+/// (n = 4096 floats) the default cap gives 8 blocks for 16 KiB of adds; `tp-ar-bench` prices the
+/// cap (2026-09-07: the one-shot is flat in bytes, 15-18 us at 4-16 KiB, so the barriers and
+/// the launch are the cost). Clamped to 1..=AR_BLOCKS.
+pub fn ar_blocks_cap() -> i32 {
+    std::env::var("MEMRA_TP_AR_BLOCKS")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .map(|b| b.clamp(1, AR_BLOCKS))
+        .unwrap_or(AR_BLOCKS)
+}
+
 pub struct ArLink {
     /// Per-rank barrier signal block for the one-shot arm, peer-visible and zeroed once.
     sig: Vec<CudaSlice<u8>>,
@@ -370,7 +383,7 @@ impl ArLink {
             sig[r] = self.sig[r].device_ptr(&s).0 as *mut std::ffi::c_void;
             errp[r] = self.err[r].device_ptr(&s).0 as *mut i32;
         }
-        let blocks = AR_BLOCKS.min(n.div_ceil(512).max(1) as i32);
+        let blocks = ar_blocks_cap().min(n.div_ceil(512).max(1) as i32);
         for r in 0..2 {
             let e = engines[r];
             let _main = e.gpu.enter_main()?;
@@ -440,7 +453,7 @@ impl ArLink {
                 return Err("tp all-reduce (into): the output aliases an input".into());
             }
         }
-        let blocks = AR_BLOCKS.min(n.div_ceil(512).max(1) as i32);
+        let blocks = ar_blocks_cap().min(n.div_ceil(512).max(1) as i32);
         for r in 0..2 {
             let e = engines[r];
             let _main = e.gpu.enter_main()?;
