@@ -268,10 +268,13 @@ pub(crate) fn spec_lean() -> bool {
 /// `MEMRA_SPEC_GDN_PACKED` (lane/dspark-gdn-packed, 2026-09-08): the batched-class linear verify
 /// (`qwen35_tparallel_linear_layer`) runs its three per-row state kernels as one packed launch
 /// each (T rows, state resident, the same per-row program), instead of 3 launches per draft
-/// row per layer. Default OFF until the 5090 gate is green; `0` is the per-row program.
+/// row per layer. Default ON since 2026-09-08 on the 5090 receipt (memra#341: bin oracle ALL
+/// EXACT at vt 3/5/8 and the ladder, served chain 15 of 15 turns byte-identical over three
+/// boots, served ladder 140.6 -> 153.2 tok/s sampled and 147.4 -> 160.7 greedy; verify at 8
+/// rows 23.1 -> 19.5 ms/round). `0` is the rollback seam: the per-row program exactly.
 pub(crate) fn spec_gdn_packed() -> bool {
     static P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *P.get_or_init(|| std::env::var("MEMRA_SPEC_GDN_PACKED").as_deref() == Ok("1"))
+    *P.get_or_init(|| std::env::var("MEMRA_SPEC_GDN_PACKED").as_deref() != Ok("0"))
 }
 
 pub(crate) fn spec_m2() -> bool {
