@@ -2955,10 +2955,19 @@ static int memra_kpool_score_dsa_live_launch(const float* q, const float* pool_k
 /// then falls through to `memra_mla_kpool_score_f32`, the shipped dispatch, unchanged). The
 /// head count is a TEMPLATE parameter because `dot[H][RP]` must live in registers: a runtime
 /// bound would put it in local memory and lose the whole point.
+// MEMRA_DSA_SCORE_RP (host seam, default 2 = the shipped shape): pools per thread of the decode
+// scorer. Each thread's dot[h][r] accumulates over c in the same order whatever RP is, so RP=1
+// is bit-identical to RP=2 and doubles the working grid: at 128k context (32,212 pools) RP=2
+// leaves 128 working blocks of 4 warps on 148 SMs (57 us on the 2x B200 pair, tptrace9
+// 2026-09-07, ~10x the bandwidth time of the 16 MB of keys).
+#define MEMRA_DSA_SCORE_DISPATCH(LAUNCH, H, ...) \
+    ((rp == 1) ? LAUNCH<H, 1, KC>(__VA_ARGS__) : LAUNCH<H, 2, KC>(__VA_ARGS__))
 extern "C" int memra_mla_kpool_score_dsa_f32(const float* q, const float* pool_keys,
                                              const float* hw, float* score, int t_q, int heads,
                                              int d, int n_pools, int pool, int first_pos,
-                                             float qk_scale, float head_scale, void* stream_v) {
+                                             float qk_scale, float head_scale, int rp,
+                                             void* stream_v) {
+    if (rp != 1 && rp != 2) return 40023;
     if (pool <= 0) return 40010;
     if (d <= 0) return 40017;
     if (t_q <= 0 || n_pools <= 0) return 0;
@@ -2968,17 +2977,17 @@ extern "C" int memra_mla_kpool_score_dsa_f32(const float* q, const float* pool_k
     int rc;
     switch (heads) {
         case 16:
-            rc = memra_kpool_score_dsa_launch<16, 2, KC>(q, pool_keys, hw, score, t_q, d, n_pools,
+            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_launch, 16, q, pool_keys, hw, score, t_q, d, n_pools,
                                                          pool, first_pos, qk_scale, head_scale,
                                                          stream);
             break;
         case 32:
-            rc = memra_kpool_score_dsa_launch<32, 2, KC>(q, pool_keys, hw, score, t_q, d, n_pools,
+            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_launch, 32, q, pool_keys, hw, score, t_q, d, n_pools,
                                                          pool, first_pos, qk_scale, head_scale,
                                                          stream);
             break;
         case 64:
-            rc = memra_kpool_score_dsa_launch<64, 2, KC>(q, pool_keys, hw, score, t_q, d, n_pools,
+            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_launch, 64, q, pool_keys, hw, score, t_q, d, n_pools,
                                                          pool, first_pos, qk_scale, head_scale,
                                                          stream);
             break;
@@ -2993,7 +3002,9 @@ extern "C" int memra_mla_kpool_score_dsa_f32(const float* q, const float* pool_k
 extern "C" int memra_mla_kpool_score_dsa_live_f32(const float* q, const float* pool_keys,
                                              const float* hw, float* score, int t_q, int heads,
                                              int d, const int* pos_d, int n_pools_cap, int pool,
-                                             float qk_scale, float head_scale, void* stream_v) {
+                                             float qk_scale, float head_scale, int rp,
+                                             void* stream_v) {
+    if (rp != 1 && rp != 2) return 40023;
     if (pool <= 0) return 40010;
     if (d <= 0) return 40017;
     if (t_q <= 0) return 40030; // live twin: t_q rows at the capacity stride
@@ -3004,17 +3015,17 @@ extern "C" int memra_mla_kpool_score_dsa_live_f32(const float* q, const float* p
     int rc;
     switch (heads) {
         case 16:
-            rc = memra_kpool_score_dsa_live_launch<16, 2, KC>(q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
+            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_live_launch, 16, q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
                                                          pool, qk_scale, head_scale,
                                                          stream);
             break;
         case 32:
-            rc = memra_kpool_score_dsa_live_launch<32, 2, KC>(q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
+            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_live_launch, 32, q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
                                                          pool, qk_scale, head_scale,
                                                          stream);
             break;
         case 64:
-            rc = memra_kpool_score_dsa_live_launch<64, 2, KC>(q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
+            rc = MEMRA_DSA_SCORE_DISPATCH(memra_kpool_score_dsa_live_launch, 64, q, pool_keys, hw, score, t_q, d, pos_d, n_pools_cap,
                                                          pool, qk_scale, head_scale,
                                                          stream);
             break;

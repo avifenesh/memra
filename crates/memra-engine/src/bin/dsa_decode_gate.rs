@@ -46,9 +46,9 @@ use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use memra_engine::Engine;
 use memra_engine::mla_ffi::{
     MLA_DSA_ATTN_CHUNK_SWEEP, MLA_DSA_NAMED_CLASS_T_MAX, MLA_DSA_REGRESSION_MARGIN,
-    MLA_DSA_SCORE_MIN_POOLS, memra_mla_attn_gathered_dsa_f32, memra_mla_attn_gathered_f32,
-    memra_mla_dsa_attn_split_f32, memra_mla_kpool_score_dsa_f32, memra_mla_kpool_score_f32,
-    mla_dsa_attn_arm, mla_dsa_attn_arm_effective,
+    MLA_DSA_SCORE_MIN_POOLS, dsa_score_rp, memra_mla_attn_gathered_dsa_f32,
+    memra_mla_attn_gathered_f32, memra_mla_dsa_attn_split_f32, memra_mla_kpool_score_dsa_f32,
+    memra_mla_kpool_score_f32, mla_dsa_attn_arm, mla_dsa_attn_arm_effective,
 };
 use std::os::raw::c_void;
 use std::sync::Arc;
@@ -525,7 +525,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cu,
                 )
             };
-            let sdsa = || unsafe {
+            let sdsa_rp = |rp: i32| unsafe {
                 memra_mla_kpool_score_dsa_f32(
                     q_index_p,
                     pool_keys_p,
@@ -539,28 +539,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     first_pos as i32,
                     qk_scale,
                     head_scale,
+                    rp,
                     cu,
                 )
             };
+            let served_rp = dsa_score_rp();
+            let sdsa = || sdsa_rp(served_rp);
             assert_eq!(sship(), 0, "kpool_score shipped launch");
             stream.synchronize()?;
             let sref = e.dtoh(&score_ship)?[..t * n_pools].to_vec();
-            let rc = sdsa();
-            if rc != 0 {
-                println!("  t_q={t} kpool_score dsa: REFUSED geometry (rc {rc}), shipped path");
-                continue;
+            // Both rows-per-thread arms must match the shipped scorer bit for bit: the served
+            // default and its rollback twin (`MEMRA_DSA_SCORE_RP=2`).
+            let mut refused = false;
+            for rp in [1i32, 2] {
+                let rc = sdsa_rp(rp);
+                if rc != 0 {
+                    println!(
+                        "  t_q={t} kpool_score dsa rp={rp}: REFUSED geometry (rc {rc}), shipped path"
+                    );
+                    refused = true;
+                    break;
+                }
+                stream.synchronize()?;
+                let sarm = e.dtoh(&score_arm)?[..t * n_pools].to_vec();
+                let sid = bits_equal(&sref, &sarm);
+                println!(
+                    "  t_q={t} kpool_score head-blocked rp={rp}: {}",
+                    if sid { "BIT-IDENTICAL" } else { "MISMATCH" }
+                );
+                if !sid {
+                    failures.push(Failure(format!(
+                        "MISMATCH kpool_score head-blocked rp={rp} kv={kv} t_q={t}: claims bit identity"
+                    )));
+                }
             }
-            stream.synchronize()?;
-            let sarm = e.dtoh(&score_arm)?[..t * n_pools].to_vec();
-            let sid = bits_equal(&sref, &sarm);
-            println!(
-                "  t_q={t} kpool_score head-blocked: {}",
-                if sid { "BIT-IDENTICAL" } else { "MISMATCH" }
-            );
-            if !sid {
-                failures.push(Failure(format!(
-                    "MISMATCH kpool_score head-blocked kv={kv} t_q={t}: claims bit identity"
-                )));
+            if refused {
+                continue;
             }
             let mut sship_m = sship;
             let mut sdsa_m = sdsa;

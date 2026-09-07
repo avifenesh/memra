@@ -388,6 +388,22 @@ pub fn mla_dsa_attn_arm_effective(t_q: usize) -> i32 {
 /// Geometry refusals from the DSA launchers: the door has nothing for this shape, so the
 /// caller falls through to the shipped kernel instead of failing the request. Every other
 /// non-zero rc (a real cudaError included) still goes through `ck` and surfaces.
+/// `MEMRA_DSA_SCORE_RP` (DEFAULT 1 since 2026-09-07; `=2` is the rollback seam, the shape shipped
+/// before): pools per thread of the sm_100a decode scorer. Bit-identical either way (each dot's
+/// accumulation order is per thread and unchanged); RP=1 doubles the working grid. Receipts on
+/// the 2x B200 pair, TP-2 decode, ids identical: 128k context 79.05 / 78.18 vs 77.57 / 77.02
+/// (+1.7%, tpwalk15), 1M context 65.10 vs 64.15 (+1.5%, tpwalk16). Latched once per process.
+pub fn dsa_score_rp() -> i32 {
+    static RP: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *RP.get_or_init(|| {
+        if std::env::var("MEMRA_DSA_SCORE_RP").as_deref() == Ok("2") {
+            2
+        } else {
+            1
+        }
+    })
+}
+
 /// Engagement counter for the k-pool SELECT door (`MEMRA_B200_DSA_SELECT`), announced once per
 /// boot: the receipt a B200 A/B has to show.
 /// The gathered-attention arm `Engine::mla_attn_gathered` dispatches at t_q = 1 for this
@@ -846,6 +862,7 @@ unsafe extern "C" {
         pool: i32,
         qk_scale: f32,
         head_scale: f32,
+        rp: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_kpool_select_v2_f32(
@@ -1077,6 +1094,7 @@ unsafe extern "C" {
         first_pos: i32,
         qk_scale: f32,
         head_scale: f32,
+        rp: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_mla_attn_gathered_split_f32(
@@ -1943,6 +1961,7 @@ impl Engine {
                     first_pos as i32,
                     qk_scale,
                     head_scale,
+                    dsa_score_rp(),
                     s.cu_stream() as *mut c_void,
                 )
             };
@@ -2122,6 +2141,7 @@ impl Engine {
                     pool as i32,
                     qk_scale,
                     head_scale,
+                    dsa_score_rp(),
                     s.cu_stream() as *mut c_void,
                 ),
             )
