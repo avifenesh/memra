@@ -721,7 +721,7 @@ pub struct Dsv4Gpu {
     ep_serial_control: bool,
     ep_calls: std::sync::atomic::AtomicU64,
     tp_ep_rank_layer_calls: [std::sync::atomic::AtomicU64; 2],
-    tp_ep_ar: Option<TpEpArState>,
+    tp_ep_ar: std::sync::Mutex<Option<TpEpArState>>,
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -1914,7 +1914,11 @@ impl Dsv4Gpu {
     /// Successful one-shot TP/EP reductions. This is a launch receipt only;
     /// device-side refusal words are exposed separately for a drained gate.
     pub fn tp_ep_ar_dispatches(&self) -> u64 {
-        self.tp_ep_ar.as_ref().map_or(0, TpEpArState::launches)
+        self.tp_ep_ar
+            .lock()
+            .ok()
+            .and_then(|ar| ar.as_ref().map(TpEpArState::launches))
+            .unwrap_or(0)
     }
 
     /// Read the bounded device-side refusal words after the caller has finished
@@ -1922,6 +1926,9 @@ impl Dsv4Gpu {
     pub fn tp_ep_ar_refusal_words(&self) -> Res<[i32; 2]> {
         let ar = self
             .tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP one-shot reduction state mutex poisoned".to_string())?;
+        let ar = ar
             .as_ref()
             .ok_or("TP/EP one-shot reduction state is not armed")?;
         ar.refusal_words(&self.stages[0].gpu, &self.stages[1].gpu)
@@ -2954,7 +2961,7 @@ impl Dsv4Gpu {
             ep_serial_control: false,
             ep_calls: std::sync::atomic::AtomicU64::new(0),
             tp_ep_rank_layer_calls: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
-            tp_ep_ar: None,
+            tp_ep_ar: std::sync::Mutex::new(None),
             model,
             stages,
             layer_stage: if topology.is_tp_ep() {
@@ -3447,7 +3454,11 @@ impl Dsv4Gpu {
                 .synchronize()
                 .map_err(e("TP/EP local bank finalize"))?;
         }
-        self.tp_ep_ar = Some(TpEpArState::new(&self.stages[0].gpu, &self.stages[1].gpu)?);
+        *self
+            .tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP one-shot reduction state mutex poisoned".to_string())? =
+            Some(TpEpArState::new(&self.stages[0].gpu, &self.stages[1].gpu)?);
         self.ep_enabled = true;
         eprintln!(
             "[TP/EP load] local expert banks resident by ID: rank0=0..{}, rank1={}..{}; peer dispatch disabled",
@@ -6057,7 +6068,7 @@ impl Dsv4Gpu {
                 let layer = st
                     .layers
                     .iter()
-                    .find(|l| l.il == il)
+                    .find(|l| l.il == il as u32)
                     .unwrap_or_else(|| panic!("layer {il} not on TP rank 1"));
                 let ratio = layer.ratio;
                 let cap_blocks = dsv4_cache_cap_blocks(capacity, ratio);
@@ -9208,8 +9219,11 @@ impl Dsv4Gpu {
                 let peer_gpu = &self.stages[1].gpu;
                 {
                     let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
-                    self.tp_ep_ar
-                        .as_mut()
+                    let mut ar = self
+                        .tp_ep_ar
+                        .lock()
+                        .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
+                    ar.as_mut()
                         .ok_or("TP/EP one-shot reduction state missing")?
                         .all_reduce_into(
                             owner_gpu,
@@ -16171,7 +16185,7 @@ impl Dsv4Gpu {
                 let mut read = |plane: cudarc::driver::CudaView<'_, f32>| -> Res<()> {
                     let mut values = vec![0f32; plane.len()];
                     stream
-                        .memcpy_dtoh(plane, &mut values)
+                        .memcpy_dtoh(&plane, &mut values)
                         .map_err(e("TP/EP cache digest copy"))?;
                     stream.synchronize().map_err(e("TP/EP cache digest sync"))?;
                     for value in values {
