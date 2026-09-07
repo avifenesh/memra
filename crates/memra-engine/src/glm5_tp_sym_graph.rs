@@ -203,6 +203,8 @@ fn take_state(
     hi: usize,
 ) -> Res<Box<SymGraphState>> {
     let n_embd = m.cfg.n_embd as usize;
+    // the residual carries every hyper-connection stream: `streams * n_embd` per token
+    let width = topology.streams * n_embd;
     if let Some(b) = cache.glm5_tp_sym_graph.take() {
         match b.downcast::<SymGraphState>() {
             Ok(st) if st.lo == lo && st.hi == hi => return Ok(st),
@@ -212,8 +214,8 @@ fn take_state(
     Ok(Box::new(SymGraphState {
         lo,
         hi,
-        x_io: e.zeros(n_embd)?,
-        x_peer_io: peer.zeros(n_embd)?,
+        x_io: e.zeros(width)?,
+        x_peer_io: peer.zeros(width)?,
         pos_peer_io: {
             let _m = peer.gpu.enter_main()?;
             peer.htod_i32(&[0])?
@@ -249,7 +251,8 @@ pub(crate) fn walk_graphed(
     cache: &mut Cache,
 ) -> Res<bool> {
     let n_embd = m.cfg.n_embd as usize;
-    if x.len() != n_embd || pos_d.len() != 1 {
+    let width = topology.streams * n_embd;
+    if x.len() != width || x_peer.len() != width || pos_d.len() != 1 {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
             eprintln!(
@@ -295,20 +298,20 @@ fn walk_token(
     runs: &[(usize, usize)],
     st: &mut SymGraphState,
 ) -> Res<bool> {
-    let n_embd = m.cfg.n_embd as usize;
+    let width = topology.streams * m.cfg.n_embd as usize;
     if st.failed {
         return Ok(false);
     }
-    // stable entry buffers: residual in, peer residual in, peer position in
+    // stable entry buffers: residual in (all hc streams), peer residual in, peer position in
     {
-        let src = x.slice(0..n_embd);
-        let mut dst = st.x_io.slice_mut(0..n_embd);
+        let src = x.slice(0..width);
+        let mut dst = st.x_io.slice_mut(0..width);
         e.stream().memcpy_dtod(&src, &mut dst)?;
     }
     {
         let _m = peer.gpu.enter_main()?;
-        let src = x_peer.slice(0..n_embd);
-        let mut dst = st.x_peer_io.slice_mut(0..n_embd);
+        let src = x_peer.slice(0..width);
+        let mut dst = st.x_peer_io.slice_mut(0..width);
         peer.stream().memcpy_dtod(&src, &mut dst)?;
         let ps = pos_peer.slice(0..1);
         let mut pd = st.pos_peer_io.slice_mut(0..1);
@@ -434,8 +437,8 @@ fn walk_token(
     GLM5_TP_SYM_GRAPH_TOKENS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // residual out
     {
-        let src = st.x_io.slice(0..n_embd);
-        let mut dst = x.slice_mut(0..n_embd);
+        let src = st.x_io.slice(0..width);
+        let mut dst = x.slice_mut(0..width);
         e.stream().memcpy_dtod(&src, &mut dst)?;
     }
     Ok(true)
