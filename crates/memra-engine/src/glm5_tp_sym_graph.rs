@@ -34,6 +34,12 @@
 //! range is inside a run (MLA layers stay eager and own no host swap), so the phase is the token
 //! parity of this state.
 //!
+//! PRECONDITIONS are the plain door's process-level ones (`glm5_graph_process_refusal`): with
+//! `MEMRA_HTOD_DIET` off the shared expert uploads a pageable constant per MoE layer, which a
+//! capture records as a host pointer and replays as stale bytes; the bare arm of tpwalk4 v2
+//! (2026-09-07 00:56Z) decoded garbage from token 2 that way, tape silently different while the
+//! posture arm (diet on) was byte-identical. The door declines by name instead.
+//!
 //! ALLOCATIONS INSIDE THE RECORDED RUN become graph memory nodes (the per-layer temporaries drop
 //! before the run ends); the one-shot's stage buffers are pre-sized before the first capture so
 //! nothing allocated inside outlives it. If a capture or instantiate refuses, the state latches
@@ -337,6 +343,17 @@ pub(crate) fn walk_graphed(
                 "[glm5-tp-sym-graph] declined: t=1 walks only (x.len()={} pos.len()={})",
                 x.len(),
                 pos_d.len()
+            )
+        });
+        return Ok(false);
+    }
+    // the plain door's process-level preconditions hold here too (the bare arm of tpwalk4 v2
+    // captured a pageable shared-expert upload and decoded garbage from token 2)
+    if let Some(reason) = crate::glm5_decode_graph::glm5_graph_process_refusal(e) {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            eprintln!(
+                "[glm5-tp-sym-graph] declined: {reason}; this session's symmetric walk stays EAGER"
             )
         });
         return Ok(false);
