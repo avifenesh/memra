@@ -21,6 +21,7 @@ struct Receipt {
     source_sha256: String,
     output_sha256: String,
     position: usize,
+    positions: Vec<usize>,
     rank_layer_calls: [u64; 2],
     cache_digests: Vec<[u64; 2]>,
     hidden_digests: Vec<[u64; 2]>,
@@ -52,14 +53,17 @@ fn drain(gpu: &Dsv4Gpu) {
 fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     assert!(tokens.len() >= CONTINUATION_TOKENS + 1);
     let trunk_layers = gpu.topology().layers as u64;
+    let rank_layer_before = gpu.tp_ep_rank_layer_calls();
     let ar_before = gpu.tp_ep_ar_dispatches();
     let ep_before = gpu.ep_calls();
+    let steps = CONTINUATION_TOKENS + 1;
     let mut state = gpu
-        .alloc_decode_state_for_transient(tokens.len() + 8, 1)
+        .alloc_decode_state_for_transient(steps + 8, 1)
         .expect("TP/EP decode state");
     let mut output_hash = Sha256::new();
     let mut cache_digests = Vec::with_capacity(CONTINUATION_TOKENS + 1);
     let mut hidden_digests = Vec::with_capacity(CONTINUATION_TOKENS + 1);
+    let mut positions = Vec::with_capacity(steps);
 
     // The supported prefill shape is deliberately one token. The following
     // source tokens exercise the actual continuation API, not a synthetic
@@ -67,6 +71,8 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     let row = gpu
         .prefill_with_cache_chunked(&tokens[..1], &mut state, 1)
         .expect("TP/EP one-token prime");
+    assert_eq!(state.pos, 1, "TP/EP prime must commit one token");
+    positions.push(state.pos);
     update_f32(&mut output_hash, &row);
     let digest = gpu
         .tp_ep_cache_digest_for_gate(&state)
@@ -82,6 +88,12 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
         let row = gpu
             .decode_step(token, &mut state)
             .expect("TP/EP continuation");
+        let expected_position = positions.len() + 1;
+        assert_eq!(
+            state.pos, expected_position,
+            "TP/EP continuation position must advance after commit"
+        );
+        positions.push(state.pos);
         update_f32(&mut output_hash, &row);
         let digest = gpu
             .tp_ep_cache_digest_for_gate(&state)
@@ -94,11 +106,23 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
         assert_eq!(hidden[0], hidden[1], "continuation hidden rank symmetry");
         hidden_digests.push(hidden);
     }
+    assert!(
+        cache_digests
+            .windows(2)
+            .all(|pair| pair[0][0] != pair[1][0] && pair[0][1] != pair[1][1]),
+        "persistent cache data must progress on both ranks after every token"
+    );
+    let final_position = state.pos;
     drop(state);
     drain(gpu);
 
-    let steps = (CONTINUATION_TOKENS + 1) as u64;
-    let rank_layer_calls = gpu.tp_ep_rank_layer_calls();
+    assert_eq!(positions.len(), steps);
+    let rank_layer_after = gpu.tp_ep_rank_layer_calls();
+    let rank_layer_calls = [
+        rank_layer_after[0] - rank_layer_before[0],
+        rank_layer_after[1] - rank_layer_before[1],
+    ];
+    let steps = steps as u64;
     assert_eq!(
         rank_layer_calls,
         [steps * trunk_layers, steps * trunk_layers],
@@ -127,7 +151,8 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     Receipt {
         source_sha256: source_sha256.to_owned(),
         output_sha256: sha256_bytes(&output_hash.finalize()),
-        position: steps as usize,
+        position: final_position,
+        positions,
         rank_layer_calls,
         cache_digests,
         hidden_digests,
@@ -214,7 +239,7 @@ fn main() {
     );
     println!("RECEIPT {first:?}");
     println!(
-        "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true",
+        "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true oracle_equivalence=false",
         gpu.topology().world,
         gpu.topology().layers,
         TP_EP_RANK_ORDER_NUMERIC_CLASS
