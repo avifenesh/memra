@@ -2030,23 +2030,9 @@ pub(crate) fn replicate_layer_glue(
     };
     let mut out = Vec::with_capacity(rt.peers.len());
     for peer in &rt.peers {
-        let dense = match ffn {
-            crate::hybrid::Ffn::Dense {
-                ffn_gate,
-                ffn_up,
-                ffn_down,
-                ffn_down_pqs,
-            } => Some(Glm5TpPeerDense {
-                ffn_gate: replicate_tensor(e, peer, ffn_gate)?,
-                ffn_up: replicate_tensor(e, peer, ffn_up)?,
-                ffn_down: replicate_tensor(e, peer, ffn_down)?,
-                ffn_down_pqs: match ffn_down_pqs {
-                    Some(t) => Some(replicate_tensor(e, peer, t)?),
-                    None => None,
-                },
-            }),
-            crate::hybrid::Ffn::Moe(_) => None,
-        };
+        // the dense-FFN replica is loaded from the source on the peer engine by the caller
+        // (a device replicate refuses the rp split-plane mirror layout by name)
+        let dense = None;
         let router = match moe {
             Some(m) => Some(Glm5TpPeerRouter {
                 gate_inp: replicate_tensor(e, peer, &m.gate_inp)?,

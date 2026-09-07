@@ -4772,6 +4772,19 @@ impl HybridModel {
                         hyper,
                         &layer.ffn,
                     )?;
+                    // A dense-FFN layer's peer copy comes straight from the source on the peer
+                    // engine: the same loader builds the same resident layout (rp split-plane
+                    // mirror included), which a device-to-device replicate refuses by name.
+                    if matches!(layer.ffn, Ffn::Dense { .. }) {
+                        for (gi, peer) in tp_plan.rt.peers.iter().enumerate() {
+                            layer.tp_glue[gi].dense = Some(crate::glm5_tp::Glm5TpPeerDense {
+                                ffn_gate: load_t(peer, src, &p("ffn_gate.weight"))?,
+                                ffn_up: load_t(peer, src, &p("ffn_up.weight"))?,
+                                ffn_down: load_t(peer, src, &p("ffn_down.weight"))?,
+                                ffn_down_pqs: load_opt(peer, src, &p("ffn_down.pre_quant_scale"))?,
+                            });
+                        }
+                    }
                 }
                 if let Ffn::Moe(m) = &mut layer.ffn {
                     // The measured placement row for this layer, when MEMRA_EP_MAP (or
