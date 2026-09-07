@@ -738,6 +738,106 @@ pub(crate) fn execute_matrix(
     Ok(route_calls)
 }
 
+/// Numeric class for the first TP/EP vertical slice. Each rank computes its
+/// owned expert partition, then rank 0's partial is added before rank 1's
+/// partial and the full result is copied back to rank 1. This is deliberately
+/// named separately from the old slot-overwrite EP combine.
+pub(crate) const TP_EP_RANK_ORDER_NUMERIC_CLASS: &str =
+    "dsv4_expert_id_ep_slot_order_f32_rank_reduce";
+
+/// Run only the local expert half for an all-layer TP/EP rank. The caller owns
+/// the replicated attention/router state and supplies the rank-local grouped
+/// partition. There is no peer dispatch and therefore no PP owner hidden in
+/// this function.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_matrix_local(
+    gpu: &Gpu,
+    bank: &EpLayer,
+    table: &CudaSlice<u64>,
+    scale2: &CudaSlice<f32>,
+    scale2_host: &[f32],
+    local: &mut EpCompute<'_>,
+    work: &mut crate::dsv4_grouped::GroupedWork,
+    rows: usize,
+    topk: usize,
+    limit: f32,
+    allow_gu_fuse: bool,
+) -> Res<u64> {
+    if rows == 0 || topk == 0 {
+        return Err("TP/EP local expert execution requires nonzero rows/topk".into());
+    }
+    if bank.peer_table.is_none() {
+        return Err("TP/EP local expert execution requires a complete local matrix table".into());
+    }
+    let calls = u64::from(work.prepare(gpu, local, scale2, scale2_host, rows, topk, true)?);
+    work.set_gu_fuse_for_plain(allow_gu_fuse);
+    work.gate_up(gpu, table, local, limit)?;
+    work.down(gpu, table, local)?;
+    Ok(calls)
+}
+
+/// Reference rank-order join for the replicated all-layer TP/EP slice. The
+/// future parent graph replaces these drains with explicit fork/join nodes,
+/// while retaining this exact operand order and slot layout.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn reduce_rank_order_f32(
+    owner: &Gpu,
+    peer: &Gpu,
+    owner_partial: &mut CudaSlice<f32>,
+    peer_partial: &CudaSlice<f32>,
+    owner_tmp: &mut CudaSlice<f32>,
+    peer_output: &mut CudaSlice<f32>,
+    n: usize,
+) -> Res<()> {
+    if n == 0
+        || owner_partial.len() < n
+        || peer_partial.len() < n
+        || owner_tmp.len() < n
+        || peer_output.len() < n
+    {
+        return Err("TP/EP rank-order reduce buffer shape mismatch".into());
+    }
+    peer_copy(
+        &peer.stream(),
+        &owner.stream(),
+        peer_partial,
+        &mut owner_tmp.slice_mut(..n),
+        n,
+    )?;
+    peer.stream()
+        .synchronize()
+        .map_err(|e| format!("TP/EP peer partial drain: {e}"))?;
+    owner.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+    let os = owner.stream();
+    unsafe {
+        k::ck(
+            "TP/EP rank-order partial add",
+            k::memra_dsv4_add_inplace(
+                owner_partial.device_ptr_mut(&os).0 as *mut f32,
+                owner_tmp.device_ptr(&os).0 as *const f32,
+                n as i64,
+                os.cu_stream().cast(),
+            ),
+        )?;
+    }
+    owner
+        .stream()
+        .synchronize()
+        .map_err(|e| format!("TP/EP owner partial drain: {e}"))?;
+    peer_copy(
+        &owner.stream(),
+        &peer.stream(),
+        owner_partial,
+        &mut peer_output.slice_mut(..n),
+        n,
+    )?;
+    owner
+        .stream()
+        .synchronize()
+        .map_err(|e| format!("TP/EP joined output drain: {e}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
