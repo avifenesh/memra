@@ -470,13 +470,19 @@ fn main() {
         Ok("1") => true,
         _ => panic!("MEMRA_DSV4_INTERMEDIATE_TP_GATE requires 0 or 1"),
     };
-    assert!(!intermediate_mode || !(splitk || abba), "initial intermediate TP gate requires split-K OFF");
+    assert!(
+        !intermediate_mode || !(splitk || abba),
+        "initial intermediate TP gate requires split-K OFF"
+    );
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
         Ok("1") => true,
         _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0 or 1"),
     };
-    assert!(!intermediate_mode || attention_mode, "intermediate sampled envelope requires attention TP2");
+    assert!(
+        !intermediate_mode || attention_mode,
+        "intermediate sampled envelope requires attention TP2"
+    );
     let sampler = dsv4_sampler_order().expect("explicit sampler configuration");
     let profiled = dsv4_prof_on();
     let sampler_name = match sampler {

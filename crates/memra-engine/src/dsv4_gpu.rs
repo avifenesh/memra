@@ -2201,6 +2201,9 @@ impl Dsv4Gpu {
     }
 
     fn validate_matrix_program(&self) -> Res<()> {
+        if self.topology.is_intermediate_tp() && !self.matrix_moe {
+            return Err("intermediate TP split banks require the matrix executor".into());
+        }
         if self.matrix_moe
             && (self.prefill_grouped
                 || !Self::matrix_ep_storage_valid(

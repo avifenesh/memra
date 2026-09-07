@@ -393,7 +393,10 @@ fn main() {
         Ok("1") => true,
         _ => panic!("MEMRA_DSV4_INTERMEDIATE_TP_GATE requires 0 or 1"),
     };
-    assert!(!intermediate_mode || !(splitk || component || paired), "initial intermediate TP gate requires split-K OFF");
+    assert!(
+        !intermediate_mode || !(splitk || component || paired),
+        "initial intermediate TP gate requires split-K OFF"
+    );
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
         Ok("1") => true,
@@ -511,8 +514,10 @@ fn main() {
             }
         );
         if intermediate_mode {
-            gpu.intermediate_tp_zeroing_for_gate().expect("non-owned slot zeroing");
-            gpu.set_intermediate_tp_audit_for_gate(true).expect("enable intermediate audit");
+            gpu.intermediate_tp_zeroing_for_gate()
+                .expect("non-owned slot zeroing");
+            gpu.set_intermediate_tp_audit_for_gate(true)
+                .expect("enable intermediate audit");
         }
         let first = run_once(&gpu, &prompt, &source_sha256);
         let second = run_once(&gpu, &prompt, &source_sha256);
@@ -521,7 +526,10 @@ fn main() {
             "repeated plain TP/EP tape must be deterministic"
         );
         println!("RECEIPT {first:?}");
-        if intermediate_mode { gpu.set_intermediate_tp_audit_for_gate(false).expect("disable intermediate audit"); }
+        if intermediate_mode {
+            gpu.set_intermediate_tp_audit_for_gate(false)
+                .expect("disable intermediate audit");
+        }
         verify_refusal_boundary(&gpu, &prompt);
         println!(
             "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false",

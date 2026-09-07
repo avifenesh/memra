@@ -48,15 +48,16 @@ engagement before any rate measurement.
 ## Gate binding (2026-09-08)
 
 The stacked gate lane rebases source candidate `61bda2afe4f9375e6cd23d9ea6052d1230cc01fc`
-on main `698d59239`. The candidate's stale finalization byte accounting referenced three
+on main `99c2c4e4d` (including #337). The candidate's stale finalization byte accounting referenced three
 undefined variables; accounting now happens only in the per-layer pack. Attention TP2's
 separate packed projections and join remain intact.
 
 Both existing gate binaries accept `MEMRA_DSV4_INTERMEDIATE_TP_GATE=1` before loading.
 Only these executables read the selector; serving cannot select the candidate through an
 environment variable or request. OFF selects the existing expert-ID EP program. Initial
-qualification uses attention TP2, radix sampling and split-K OFF. PR #337 was still open
-when this lane rebased, so its split-K implementation is absent from this binding.
+qualification uses attention TP2, radix sampling and split-K OFF. PR #337 merged during implementation. The second rebase retains its split-K dispatch and
+uses half-width GU scratch for intermediate banks. Initial intermediate gate selectors
+refuse split-K CLI arms, and the standard arm explicitly sets split-K OFF.
 
 Per rank/layer: 256 experts, 1024x4096 GU and 4096x1024 down, 1.5 GiB code bank,
 192 MiB scale bank, and 1536 pointer entries. Shared experts remain full width and are
