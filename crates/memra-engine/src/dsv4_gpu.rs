@@ -892,6 +892,10 @@ pub struct DecodeState {
     /// prefill and verification. Never crosses into the scalar expert program.
     matrix_step: Option<Box<MatrixStep>>,
     pub caches: Vec<LayerCache>,
+    /// Replicated rank-1 semantic cache for the gate-only all-layer TP/EP
+    /// topology.  The walk is not admitted until both rank cache planes are
+    /// consumed by the same-layer executor.
+    tp_ep_caches: Option<Vec<LayerCache>>,
     pub pos: usize,
     /// Token capacity of this session's cache allocation. This is independently planned
     /// below the model-wide `Dsv4Gpu::max_seq`, so a 1M-capable server does not charge every
@@ -1897,6 +1901,16 @@ impl Dsv4Gpu {
         ]
     }
 
+    fn ensure_walk_topology_ready(&self) -> Res<()> {
+        if self.topology.is_tp_ep() {
+            return Err(
+                "DSV4 TP/EP all-layer state is resident on both ranks, but the paired attention/expert walk is not connected; refusing instead of falling back to PP"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
     /// Exclusive storage-only control. Fresh zeroed buffers are the comparison
     /// arm for persistent-buffer correctness, never a serving environment flag.
     pub fn set_grouped_fresh_storage_for_gate(&mut self, enabled: bool) -> Res<bool> {
@@ -2611,16 +2625,13 @@ impl Dsv4Gpu {
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
         let rd = d.qk_rope_head_dim as usize;
         let topology = if dsv4_topology::tp_ep_for_gate() {
-            let plan = Dsv4TopologyPlan::tp_ep_all_layers(
+            Dsv4TopologyPlan::tp_ep_all_layers(
                 devices.len(),
                 n_trunk as usize,
                 mc.moe.as_ref().expect("moe").expert_count as usize,
                 mc.n_embd as usize,
                 mc.moe.as_ref().expect("moe").expert_ff_length as usize,
-            )?;
-            return Err(format!(
-                "DSV4 TP/EP all-layer topology requested ({plan:?}) but its replicated attention/cache walk is not wired in this binary; refusing instead of falling back to PP/EP"
-            ));
+            )?
         } else {
             Dsv4TopologyPlan::pp_ep(
                 devices.len(),
@@ -2630,6 +2641,21 @@ impl Dsv4Gpu {
                 mc.moe.as_ref().expect("moe").expert_ff_length as usize,
             )?
         };
+        if topology.is_tp_ep()
+            && (mc.nextn_predict_layers > 0
+                || std::env::var("MEMRA_DSV4_DRAFTER").as_deref() == Ok("dspark"))
+        {
+            return Err(
+                "DSV4 TP/EP all-layer topology currently refuses MTP/DSpark state because the drafter is not replicated per rank"
+                    .into(),
+            );
+        }
+        if topology.is_tp_ep() && (!matrix_moe || !ep_requested) {
+            return Err(
+                "DSV4 TP/EP all-layer topology requires the matrix ModelOpt program and MEMRA_DSV4_EP=pair"
+                    .into(),
+            );
+        }
 
         // split point: balance per-layer resident bytes (experts uniform; fine layers
         // carry the indexer). Computed from config, not hardcoded.
@@ -2879,7 +2905,11 @@ impl Dsv4Gpu {
             tp_ep_rank_layer_calls: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
             model,
             stages,
-            layer_stage: (0..n_trunk).map(|il| usize::from(il >= split_at)).collect(),
+            layer_stage: if topology.is_tp_ep() {
+                vec![0; n_trunk as usize]
+            } else {
+                (0..n_trunk).map(|il| usize::from(il >= split_at)).collect()
+            },
             split_at,
             max_seq,
             variant,
@@ -2929,6 +2959,16 @@ impl Dsv4Gpu {
             } else {
                 "f64"
             }
+        );
+        eprintln!(
+            "[load] topology: {:?} | layers={} per-rank-resident={}",
+            me.topology.topology,
+            me.topology.layers,
+            if me.topology.is_tp_ep() {
+                "all"
+            } else {
+                "PP-owned"
+            },
         );
         eprintln!("[load] indexer score: {:?}", me.indexer_score);
         eprintln!("[load] prefill head: {:?}", me.prefill_head);
@@ -3077,41 +3117,53 @@ impl Dsv4Gpu {
             );
         }
 
-        // stage 0: embed; last stage: head + trunk hc_head/norm
-        me.stages[0].embed = Some({
-            let (_, raw) = me.model.st.raw("embed.weight").expect("embed.weight");
-            let stream = me.stages[0].gpu.stream();
-            me.stages[0].loaded_bytes += raw.len() as u64;
-            upload_u8(&stream, raw)?
-        });
-        let last = me.stages.len() - 1;
-        me.stages[last].head = Some({
-            let (_, raw) = me.model.st.raw("head.weight").expect("head.weight");
-            let stream = me.stages[last].gpu.stream();
-            me.stages[last].loaded_bytes += raw.len() as u64;
-            upload_u8(&stream, raw)?
-        });
-        me.stages[last].trunk_norm = Some(me.tensor_f32_dev(last, "norm.weight")?);
-        me.stages[last].hc_head_fn = Some(me.tensor_f32_dev(last, "hc_head_fn")?);
+        // PP owns embed/head on the endpoint stages.  TP/EP replicates the
+        // complete input/output state on both ranks; no stage endpoint is
+        // allowed to become an implicit owner in that topology.
         me.hc_head_base = me.model.tensor_f32("hc_head_base").1;
         me.hc_head_scale = me.model.tensor_f32("hc_head_scale").1;
-        {
-            let stream = me.stages[last].gpu.stream();
-            let base_dev = upload_f32(&stream, &me.hc_head_base)?;
-            let scale_dev = upload_f32(&stream, &me.hc_head_scale)?;
-            me.stages[last].hc_head_base_dev = Some(base_dev);
-            me.stages[last].hc_head_scale_dev = Some(scale_dev);
+        let last = me.stages.len() - 1;
+        let endpoint_stages: Vec<usize> = if topology.is_tp_ep() {
+            (0..me.stages.len()).collect()
+        } else {
+            vec![0, me.stages.len() - 1]
+        };
+        for stage in endpoint_stages.iter().copied() {
+            let (_, raw) = me.model.st.raw("embed.weight").expect("embed.weight");
+            let stream = me.stages[stage].gpu.stream();
+            me.stages[stage].loaded_bytes += raw.len() as u64;
+            me.stages[stage].embed = Some(upload_u8(&stream, raw)?);
+            let (_, raw) = me.model.st.raw("head.weight").expect("head.weight");
+            me.stages[stage].loaded_bytes += raw.len() as u64;
+            me.stages[stage].head = Some(upload_u8(&stream, raw)?);
+            me.stages[stage].trunk_norm = Some(me.tensor_f32_dev(stage, "norm.weight")?);
+            me.stages[stage].hc_head_fn = Some(me.tensor_f32_dev(stage, "hc_head_fn")?);
+            if topology.is_tp_ep() || stage == last {
+                let stream = me.stages[stage].gpu.stream();
+                me.stages[stage].hc_head_base_dev = Some(upload_f32(&stream, &me.hc_head_base)?);
+                me.stages[stage].hc_head_scale_dev = Some(upload_f32(&stream, &me.hc_head_scale)?);
+            }
         }
 
         let t0 = std::time::Instant::now();
         for il in 0..n_trunk {
-            let stage = me.layer_stage[il as usize];
-            let l = me.load_layer(stage, il, &format!("layers.{il}"))?;
-            me.stages[stage].layers.push(l);
+            let owners: Vec<usize> = if topology.is_tp_ep() {
+                (0..me.stages.len()).collect()
+            } else {
+                vec![me.layer_stage[il as usize]]
+            };
+            for stage in owners {
+                let l = me.load_layer(stage, il, &format!("layers.{il}"))?;
+                me.stages[stage].layers.push(l);
+            }
             if il % 4 == 3 || il + 1 == n_trunk {
                 eprintln!(
-                    "[load] layer {il} -> dev{} done t={:.0}s",
-                    me.stages[stage].dev,
+                    "[load] layer {il} -> {} rank copies done t={:.0}s",
+                    if topology.is_tp_ep() {
+                        me.stages.len()
+                    } else {
+                        1
+                    },
                     t0.elapsed().as_secs_f64()
                 );
             }
@@ -5119,12 +5171,14 @@ impl Dsv4Gpu {
         capture: Option<&mut GpuCapture>,
         early_exit_after: Option<u32>,
     ) -> Res<Option<ForwardOut>> {
+        self.ensure_walk_topology_ready()?;
         self.forward_impl(ids, capture, early_exit_after, None)
     }
 
     /// Lane 6: prefill the prompt with the lane-4 path while POPULATING the decode
     /// caches, so decode_step can continue incrementally from ids.len().
     pub fn prefill_with_cache(&self, ids: &[u32], state: &mut DecodeState) -> Res<ForwardOut> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         assert_eq!(state.pos, 0, "prefill_with_cache needs a fresh DecodeState");
         assert!(!ids.is_empty(), "empty prompt");
@@ -5152,6 +5206,7 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         chunk: usize,
     ) -> Res<Vec<f32>> {
+        self.ensure_walk_topology_ready()?;
         assert_eq!(state.pos, 0, "chunked prefill needs a fresh DecodeState");
         if ids.is_empty() {
             return Err("empty dsv4 chunked prefill".into());
@@ -5742,6 +5797,7 @@ impl Dsv4Gpu {
         }
         let n_trunk = mc.n_layer - mc.nextn_predict_layers;
         let mut caches = Vec::with_capacity(n_trunk as usize);
+        let mut tp_ep_caches = None;
         let mut cache_bytes = vec![0u64; self.stages.len()];
         let mut host_cache_bytes = vec![0u64; self.stages.len()];
         // iteration 3, rung 4: reserve T_max TRANSIENT window-kv rows per layer at
@@ -5824,6 +5880,87 @@ impl Dsv4Gpu {
                 ipend_score,
             });
         }
+        if self.topology.is_tp_ep() {
+            let stage_i = 1usize;
+            let st = &self.stages[stage_i];
+            let mut rank1 = Vec::with_capacity(n_trunk as usize);
+            for il in 0..n_trunk {
+                st.gpu
+                    .ctx
+                    .bind_to_thread()
+                    .map_err(e("bind ctx tp cache"))?;
+                let stream = st.gpu.stream();
+                let layer = st
+                    .layers
+                    .iter()
+                    .find(|l| l.il == il)
+                    .unwrap_or_else(|| panic!("layer {il} not on TP rank 1"));
+                let ratio = layer.ratio;
+                let cap_blocks = dsv4_cache_cap_blocks(capacity, ratio);
+                let c4_host = if host_c4 && ratio == 4 && layer.idx.is_some() && cap_blocks > 0 {
+                    let store = C4HostStore::with_recent(stream.clone(), cap_blocks, recent_rows)?;
+                    host_cache_bytes[stage_i] += store.bytes() as u64;
+                    Some(store)
+                } else {
+                    None
+                };
+                let kvc_rows = win + if c4_host.is_some() { 0 } else { cap_blocks } + trans_rows;
+                let mut bytes = (kvc_rows * hd * 4) as u64
+                    + c4_host.as_ref().map_or(0, C4HostStore::device_bytes);
+                let kvc = stream
+                    .alloc_zeros::<f32>(kvc_rows * hd)
+                    .map_err(e("tp kvc alloc"))?;
+                let mk_pend =
+                    |latent: usize, slots: usize| -> Res<(CudaSlice<f32>, CudaSlice<f32>)> {
+                        let kv = stream
+                            .alloc_zeros::<f32>(slots * latent)
+                            .map_err(e("tp pend kv alloc"))?;
+                        let sc = upload_f32(&stream, &vec![f32::NEG_INFINITY; slots * latent])?;
+                        Ok((kv, sc))
+                    };
+                let (pend_kv, pend_score) = if let Some(cmp) = &layer.cmp {
+                    let slots = if cmp.overlap {
+                        2 * cmp.ratio
+                    } else {
+                        cmp.ratio
+                    };
+                    bytes += (2 * slots * cmp.latent * 4) as u64;
+                    let (a, b) = mk_pend(cmp.latent, slots)?;
+                    (Some(a), Some(b))
+                } else {
+                    (None, None)
+                };
+                let (ikvc, ipend_kv, ipend_score) = if let Some(ix) = &layer.idx {
+                    bytes += (cap_blocks * ix.cmp.d * 4) as u64;
+                    let store = stream
+                        .alloc_zeros::<f32>(cap_blocks * ix.cmp.d)
+                        .map_err(e("tp ikvc alloc"))?;
+                    let slots = if ix.cmp.overlap {
+                        2 * ix.cmp.ratio
+                    } else {
+                        ix.cmp.ratio
+                    };
+                    bytes += (2 * slots * ix.cmp.latent * 4) as u64;
+                    let (a, b) = mk_pend(ix.cmp.latent, slots)?;
+                    (Some(store), Some(a), Some(b))
+                } else {
+                    (None, None, None)
+                };
+                cache_bytes[stage_i] += bytes;
+                rank1.push(LayerCache {
+                    kvc,
+                    c4_host,
+                    n_blocks: 0,
+                    pend_kv,
+                    pend_score,
+                    ikvc,
+                    i_blocks: 0,
+                    ipend_kv,
+                    ipend_score,
+                });
+            }
+            tp_ep_caches = Some(rank1);
+        }
         let ws = if matches!(self.decode_path, DecodePath::Device { .. }) && !self.matrix_moe {
             Some(self.alloc_step_ws()?)
         } else {
@@ -5861,6 +5998,7 @@ impl Dsv4Gpu {
             matrix_moe: self.matrix_moe,
             matrix_step,
             caches,
+            tp_ep_caches,
             pos: 0,
             capacity,
             cache_bytes,
@@ -5880,6 +6018,7 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         verify: &VerifyState,
     ) -> Res<Vec<u64>> {
+        self.ensure_walk_topology_ready()?;
         if !matches!(self.decode_path, DecodePath::Device { .. })
             || state.pos == 0
             || verify.open.is_some()
@@ -5951,6 +6090,7 @@ impl Dsv4Gpu {
     /// append-only compressed rows through each high-water mark, and the compressor/indexer
     /// pending state. Copy commands are queued per stage and synchronized once per stage.
     pub fn snapshot_decode_state(&self, state: &DecodeState) -> Res<Dsv4HostDecodeState> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         if crate::dsv4_c4::host_copy_elision_enabled() {
             return Err(
@@ -6159,6 +6299,7 @@ impl Dsv4Gpu {
         host_c4: bool,
         recent_rows: usize,
     ) -> Res<DecodeState> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, host.matrix_moe)?;
         if host.pos == 0 || capacity < host.pos || capacity > self.max_seq {
             return Err(format!(
@@ -7106,6 +7247,7 @@ impl Dsv4Gpu {
     /// by host bounce, one copy per step). Returns the full logits row predicting
     /// position state.pos + 1.
     pub fn decode_step(&self, tok: u32, state: &mut DecodeState) -> Res<Vec<f32>> {
+        self.ensure_walk_topology_ready()?;
         self.decode_step_impl(tok, state, None)
     }
 
@@ -8789,6 +8931,7 @@ impl Dsv4Gpu {
         host_math: bool,
         mut taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         if self.matrix_moe {
             return self.decode_matrix_step(tok, state, want_logits, taps);
@@ -14215,6 +14358,7 @@ impl Dsv4Gpu {
         taps: Option<&mut CudaSlice<f32>>,
         output: VerifyOutput,
     ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, vstate.matrix_moe)?;
         let DecodePath::Device { host_math } = self.decode_path else {
