@@ -56,9 +56,9 @@ fn gpu_gdn_packed_matches_per_row_bitwise() {
             .expect("alpha");
 
         // ---- reference: the per-row program, T chained launches, snapshots by clone ----
-        let mut conv_state = e.htod(&conv0).expect("conv0");
-        let mut s0 = e.htod(&ssm0).expect("ssm0");
-        let mut s1 = e.zeros(state_words).expect("alt");
+        let conv_state = e.htod(&conv0).expect("conv0");
+        let s0 = e.htod(&ssm0).expect("ssm0");
+        let s1 = e.zeros(state_words).expect("alt");
         let mut ref_conv_out = Vec::new();
         let mut ref_o = Vec::new();
         let mut ref_snap_conv = Vec::new();
