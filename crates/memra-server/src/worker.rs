@@ -788,6 +788,19 @@ fn dspark_cold_prime_repays_prefill(prompt_len: usize, decode_budget: usize) -> 
 /// take that trade without looking at either side's size. It now declines when the request's
 /// own decode budget is too short to repay the prompt's prefill
 /// (`dspark_cold_prime_repays_prefill`), which is the measured 30k-prompt/86-token shape.
+/// Was the penalty the ONE input that flipped a cold DFlash admission to the plain path?
+/// True only when the request is greedy AND penalised AND the same inputs with the penalty
+/// cleared would have taken the route, so the receipt names the penalty only when it is the
+/// reason (the same discipline as the shape-veto receipt above it).
+fn dspark_penalised_greedy_flipped_the_route(a: DsparkColdPrefixAdmission) -> bool {
+    a.greedy
+        && a.greedy_penalized
+        && dspark_prefers_cold_over_prefix(DsparkColdPrefixAdmission {
+            greedy_penalized: false,
+            ..a
+        })
+}
+
 fn dspark_prefers_cold_over_prefix(a: DsparkColdPrefixAdmission) -> bool {
     a.route_ready
         && a.prime_feasible
@@ -18264,6 +18277,20 @@ fn admit(
                 budget,
                 budget,
             );
+        } else if dspark_penalised_greedy_flipped_the_route(cold_prefix_inputs) {
+            // The other silent decline (darklanes research/dflash-kv-ring-20260907): a
+            // temperature-0 request on a sampling profile that carries a non-zero penalty
+            // (qwen's non-thinking presence_penalty 1.5) is greedy-penalised, which the route
+            // refuses by design because a penalised argmax is not the drafter's argmax. Until
+            // this line the plain path it took was indistinguishable from load shed or a
+            // constrained request; the ledger cannot size what it cannot see.
+            eprintln!(
+                "[dspark] declined: greedy-penalised (temperature 0 with a non-zero \
+                 repeat/frequency/presence penalty from the request or the sampling \
+                 profile); serving PLAIN (prompt={} decode_budget={})",
+                prompt.len(),
+                budget,
+            );
         }
     }
 
@@ -26841,6 +26868,58 @@ mod tests {
         assert!(super::dspark_cold_prime_repays_prefill(
             super::PREFIX_CACHE_MIN_TOKENS - 1,
             1
+        ));
+    }
+
+    /// The greedy-penalised receipt names the penalty only when the penalty is what flipped
+    /// the route: the same inputs with the penalty cleared must admit, and a request that
+    /// would have been declined anyway (here: load above LOW) stays silent.
+    #[test]
+    fn the_penalised_receipt_fires_only_when_the_penalty_flipped_the_route() {
+        let base = super::DsparkColdPrefixAdmission {
+            route_ready: true,
+            prime_feasible: true,
+            greedy: true,
+            greedy_penalized: true,
+            sampled: false,
+            constrained: false,
+            vision: false,
+            cold: true,
+            gate_on: true,
+            pin: None,
+            projected_wave: 1,
+            low: 2,
+            n_active: 0,
+            has_live_non_demotable: false,
+            prompt_len: 22_890,
+            decode_budget: 2_600,
+            hit_available: false,
+            hit_restorable: false,
+        };
+        // RED ARM: the shipped decline, and the penalty is the only reason.
+        assert!(!super::dspark_prefers_cold_over_prefix(base));
+        assert!(super::dspark_penalised_greedy_flipped_the_route(base));
+        // Clearing the penalty admits: the receipt's premise.
+        assert!(super::dspark_prefers_cold_over_prefix(
+            super::DsparkColdPrefixAdmission {
+                greedy_penalized: false,
+                ..base
+            }
+        ));
+        // Declined for load as well: the penalty did not flip it, so no receipt.
+        assert!(!super::dspark_penalised_greedy_flipped_the_route(
+            super::DsparkColdPrefixAdmission {
+                projected_wave: 3,
+                ..base
+            }
+        ));
+        // A sampled request is never "greedy-penalised" (sampled penalties ride the route).
+        assert!(!super::dspark_penalised_greedy_flipped_the_route(
+            super::DsparkColdPrefixAdmission {
+                greedy: false,
+                sampled: true,
+                ..base
+            }
         ));
     }
 
