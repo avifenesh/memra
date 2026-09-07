@@ -9303,7 +9303,40 @@ impl Dsv4Gpu {
             // either persistent plane or the public token position can advance.
             let refusals = self.tp_ep_ar_refusal_words()?;
             if refusals != [0, 0] {
-                return Err(format!("TP/EP one-shot reduction refused: {refusals:?}"));
+                // All layers completed their snapshots, but compressors already
+                // mutated pending rows/high-water marks speculatively. Restore
+                // both planes with zero committed rows before quarantining the
+                // failed request. The persistent ring has not been written.
+                let rank1_layers = work
+                    .verify
+                    .tp_ep_layers
+                    .as_mut()
+                    .ok_or("TP/EP rank-1 checkpoints missing during refusal rollback")?;
+                let rollback0 = self.commit_verify_dev_plane(
+                    &mut state.caches,
+                    &mut work.verify.layers,
+                    &mut work.verify.ws,
+                    Some(0),
+                    state.pos,
+                    1,
+                    0,
+                );
+                let rollback1 = self.commit_verify_dev_plane(
+                    &mut rank1_caches,
+                    rank1_layers,
+                    &mut work.verify.ws,
+                    Some(1),
+                    state.pos,
+                    1,
+                    0,
+                );
+                let mut error = format!("TP/EP one-shot reduction refused: {refusals:?}");
+                for (rank, rollback) in [rollback0, rollback1].into_iter().enumerate() {
+                    if let Err(rollback_error) = rollback {
+                        error.push_str(&format!("; rank {rank} rollback: {rollback_error}"));
+                    }
+                }
+                return Err(error);
             }
             let pos0 = state.pos;
             self.commit_verify_dev_plane(
@@ -15405,7 +15438,8 @@ impl Dsv4Gpu {
     /// [`DecodeState::pos`].  `stage_override` is `None` for the ordinary PP ownership map;
     /// TP/EP passes `Some(0)` or `Some(1)` so every layer uses that rank's stream and its own
     /// persistent ring/checkpoint plane.  The caller must commit all planes before exposing the
-    /// new position.
+    /// new position. Zero rows with an explicit TP rank restores the pending
+    /// compressor snapshots/high-water marks without writing the persistent ring.
     #[allow(clippy::too_many_arguments)] // Explicit plane borrows and transaction coordinates.
     fn commit_verify_dev_plane(
         &self,
@@ -15433,12 +15467,16 @@ impl Dsv4Gpu {
                 self.stages.len()
             ));
         }
-        if n_commit == 0 || n_commit > t {
+        if t == 0 || n_commit > t || (n_commit == 0 && stage_override.is_none()) {
             return Err(format!(
                 "commit plane width {n_commit} outside transaction width {t}"
             ));
         }
-        let (ring_start, slot_rows) = ring_commit_plan(pos0, n_commit, win);
+        let (ring_start, slot_rows) = if n_commit == 0 {
+            (0, Vec::new())
+        } else {
+            ring_commit_plan(pos0, n_commit, win)
+        };
         let ring_keep = slot_rows.len();
         for il in 0..n_trunk {
             let stage = stage_override.unwrap_or(self.layer_stage[il]);
@@ -15458,33 +15496,35 @@ impl Dsv4Gpu {
             };
             // Only the newest window survives. Scattering every committed row
             // when n_commit>win races multiple writers to the same ring slot.
-            {
-                let src = cache
-                    .kvc
-                    .slice((trans_base + ring_start) * hd..(trans_base + n_commit) * hd);
-                let mut dst = vws.bounce.slice_mut(0..ring_keep * hd);
-                stream
-                    .memcpy_dtod(&src, &mut dst)
-                    .map_err(e("commit bounce"))?;
-            }
-            {
-                let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
-                stream
-                    .memcpy_htod(&slot_rows, &mut dst)
-                    .map_err(e("htod slot rows"))?;
-            }
-            unsafe {
-                ck(
-                    "scatter_rows commit",
-                    k::memra_dsv4_scatter_rows(
-                        dpf!(vws.bounce, &stream),
-                        dpm!(cache.kvc, &stream),
-                        vws.slot_rows.device_ptr(&stream).0 as *const i32,
-                        ring_keep as i32,
-                        hd as i32,
-                        sp(&stream),
-                    ),
-                )?;
+            if ring_keep != 0 {
+                {
+                    let src = cache
+                        .kvc
+                        .slice((trans_base + ring_start) * hd..(trans_base + n_commit) * hd);
+                    let mut dst = vws.bounce.slice_mut(0..ring_keep * hd);
+                    stream
+                        .memcpy_dtod(&src, &mut dst)
+                        .map_err(e("commit bounce"))?;
+                }
+                {
+                    let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
+                    stream
+                        .memcpy_htod(&slot_rows, &mut dst)
+                        .map_err(e("htod slot rows"))?;
+                }
+                unsafe {
+                    ck(
+                        "scatter_rows commit",
+                        k::memra_dsv4_scatter_rows(
+                            dpf!(vws.bounce, &stream),
+                            dpm!(cache.kvc, &stream),
+                            vws.slot_rows.device_ptr(&stream).0 as *const i32,
+                            ring_keep as i32,
+                            hd as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
             }
             if let Some(ckd) = &lck.cmp {
                 self.cmp_rollback_replay_dev(

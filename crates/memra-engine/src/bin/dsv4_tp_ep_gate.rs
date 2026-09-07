@@ -163,57 +163,60 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
 }
 
 fn verify_refusal_boundary(gpu: &Dsv4Gpu, tokens: &[u32]) {
+    assert!(tokens.len() >= 128, "refusal gate needs the C128 boundary");
     for (rank, code) in [(0usize, 40043), (1usize, 40044)] {
-        let mut state = gpu
-            .alloc_decode_state_for_transient(12, 1)
-            .expect("refusal gate state");
-        gpu.prefill_with_cache_chunked(&tokens[..1], &mut state, 1)
-            .expect("refusal gate prime");
-        let position = state.pos;
-        let cache_before = gpu
-            .tp_ep_cache_digest_for_gate(&state)
-            .expect("refusal gate initial cache");
-        let mut words = [0, 0];
-        words[rank] = code;
-        gpu.set_tp_ep_ar_refusal_words_for_gate(words)
-            .expect("inject sticky refusal");
-        let error = gpu
-            .decode_step(tokens[1], &mut state)
-            .err()
-            .expect("sticky device refusal must reject token");
-        assert!(error.contains("one-shot reduction refused"), "{error}");
-        assert!(error.contains(&code.to_string()), "{error}");
-        assert_eq!(
-            state.pos, position,
-            "refused token must not advance position"
-        );
-        assert_eq!(
-            gpu.tp_ep_cache_digest_for_gate(&state)
-                .expect("refusal gate final cache"),
-            cache_before,
-            "refusal must be observed before either persistent cache commits"
-        );
-        // Clearing the diagnostic word does not rehabilitate a failed request.
-        gpu.set_tp_ep_ar_refusal_words_for_gate([0, 0])
-            .expect("clear completed red arm");
-        let calls = gpu.tp_ep_rank_layer_calls();
-        let retry = gpu
-            .decode_step(tokens[1], &mut state)
-            .err()
-            .expect("failed request must remain unusable");
-        assert!(retry.contains("unfinished transaction"), "{retry}");
-        assert_eq!(
-            gpu.tp_ep_rank_layer_calls(),
-            calls,
-            "retry must not enqueue layers"
-        );
-        assert_eq!(
-            state.pos, position,
-            "failed retry must not advance position"
-        );
-        println!(
-            "REFUSAL_GATE rank={rank} code={code} position={position} cache_unchanged=true retry_refused=true"
-        );
+        for prime_tokens in [1usize, 3, 127] {
+            let mut state = gpu
+                .alloc_decode_state_for_transient(prime_tokens + 8, 1)
+                .expect("refusal gate state");
+            gpu.prefill_with_cache_chunked(&tokens[..prime_tokens], &mut state, 1)
+                .expect("refusal gate prime");
+            let position = state.pos;
+            let cache_before = gpu
+                .tp_ep_cache_digest_for_gate(&state)
+                .expect("refusal gate initial cache");
+            let mut words = [0, 0];
+            words[rank] = code;
+            gpu.set_tp_ep_ar_refusal_words_for_gate(words)
+                .expect("inject sticky refusal");
+            let error = gpu
+                .decode_step(tokens[prime_tokens], &mut state)
+                .err()
+                .expect("sticky device refusal must reject token");
+            assert!(error.contains("one-shot reduction refused"), "{error}");
+            assert!(error.contains(&code.to_string()), "{error}");
+            assert_eq!(
+                state.pos, position,
+                "refused token must not advance position"
+            );
+            assert_eq!(
+                gpu.tp_ep_cache_digest_for_gate(&state)
+                    .expect("refusal gate final cache"),
+                cache_before,
+                "refusal must be observed before either persistent cache commits"
+            );
+            // Clearing the diagnostic word does not rehabilitate a failed request.
+            gpu.set_tp_ep_ar_refusal_words_for_gate([0, 0])
+                .expect("clear completed red arm");
+            let calls = gpu.tp_ep_rank_layer_calls();
+            let retry = gpu
+                .decode_step(tokens[prime_tokens], &mut state)
+                .err()
+                .expect("failed request must remain unusable");
+            assert!(retry.contains("unfinished transaction"), "{retry}");
+            assert_eq!(
+                gpu.tp_ep_rank_layer_calls(),
+                calls,
+                "retry must not enqueue layers"
+            );
+            assert_eq!(
+                state.pos, position,
+                "failed retry must not advance position"
+            );
+            println!(
+                "REFUSAL_GATE rank={rank} code={code} position={position} cache_unchanged=true retry_refused=true"
+            );
+        }
     }
 }
 
