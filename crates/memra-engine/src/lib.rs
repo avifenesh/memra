@@ -17330,6 +17330,49 @@ impl Engine {
     }
 
     /// gemma4 R1: dst = GELU_tanh(gate) * up.
+    /// Exact-erf GELU(gate) * up (Spark-X2.5 dense FFN). See `gelu_erf_mul_f32`.
+    pub fn gelu_erf_mul(
+        &self,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let f = self.func("gelu_erf_mul_f32");
+        let cfg = LaunchConfig::for_num_elems(n as u32);
+        let ni = n as i32;
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(gate).arg(up).arg(dst).arg(&ni);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// `gelu_erf_mul` with the NVFP4 per-tensor macro-scales folded in (gs == us == 1.0 is
+    /// float-identical to `gelu_erf_mul`).
+    pub fn gelu_erf_mul_scaled(
+        &self,
+        gate: &CudaSlice<f32>,
+        up: &CudaSlice<f32>,
+        gs: f32,
+        us: f32,
+        dst: &mut CudaSlice<f32>,
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let f = self.func("gelu_erf_mul_scaled_f32");
+        let cfg = LaunchConfig::for_num_elems(n as u32);
+        let ni = n as i32;
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(gate).arg(up).arg(&gs).arg(&us).arg(dst).arg(&ni);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     pub fn gelu_tanh_mul(
         &self,
         gate: &CudaSlice<f32>,

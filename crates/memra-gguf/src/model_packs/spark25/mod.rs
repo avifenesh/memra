@@ -24,9 +24,13 @@ pub static PACK: ModelPack = ModelPack {
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     template: TemplateContract::ArtifactRequired,
-    // Inspect-only until the tiny parity fixture runs on the reference executor; flipped by the
-    // bring-up lane with its receipt, never by default.
-    support: None,
+    // NativeReference: the reference executor runs this program. Receipt: the family's
+    // streamed checkpoint runner self-test (`spark25_checkpoint_runner --self-test`, run by
+    // `cargo test -p memra-reference --bin spark25_checkpoint_runner`) executes the tiny plan
+    // (a sliding layer, a full layer, the separate head gate, erf GELU) through both
+    // `execute()` and the streamed trunk and matches bit-for-bit (2026-09-07). Not a
+    // production claim: qualification is the checkpoint-parity and serve gates.
+    support: Some(NativeSupport::NativeReference),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
@@ -36,10 +40,13 @@ pub static PACK: ModelPack = ModelPack {
         Gate::RewriteParity,
         Gate::Serve,
     ],
-    // Set together with `support` once the tiny fixture has run on the reference executor
-    // (the pack invariant: no parity gate without a native support state). The threshold to
-    // use then is llama_dense's (0.005 abs/rel, argmax required): the same bf16-from-HF class.
-    checkpoint_parity: None,
+    // llama_dense's threshold (0.005 abs/rel, argmax required): the same bf16-from-HF class,
+    // f32 oracle against the native runner under MEMRA_FULL_PREC=1.
+    checkpoint_parity: Some(CheckpointParityGate {
+        max_abs: 0.005,
+        max_rel: 0.005,
+        require_argmax: true,
+    }),
     matches_config: |config| {
         config
             .step35

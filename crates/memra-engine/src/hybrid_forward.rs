@@ -6866,6 +6866,7 @@ impl HybridModel {
                     let act16 = if Self::f16out_on(e, t)
                         && self.cfg.m3.is_none()
                         && d_lim.is_none()
+                        && !self.cfg.dense_act_gelu_erf()
                         && ffn_down_pqs.is_none()
                     {
                         let mut a16 = e.alloc_u8_uninit(t * n_ff * 2)?;
@@ -7605,7 +7606,11 @@ impl HybridModel {
                     let gate = g2.pop().unwrap();
                     let mut act = e.uninit(total * n_ff)?;
                     let d_lim = cfg.clamp_shexp_at(il as u32);
-                    if Self::f16out_on(e, total) && cfg.m3.is_none() && d_lim.is_none() {
+                    if Self::f16out_on(e, total)
+                        && cfg.m3.is_none()
+                        && d_lim.is_none()
+                        && !cfg.dense_act_gelu_erf()
+                    {
                         let mut a16 = e.alloc_u8_uninit(total * n_ff * 2)?;
                         e.silu_mul_f16out(&gate, &up, &mut act, &mut a16, total * n_ff)?;
                         // AWQ (memra#253): the f16 epilogue emits the down projection's input
@@ -8452,7 +8457,11 @@ impl HybridModel {
                     // in-epilogue (nsys round-26: this trunk still paid 32 cvt passes).
                     // A clamped layer must skip the plain-SiLU twin (see prime_chunk's note).
                     let d_lim = self.cfg.clamp_shexp_at(il as u32);
-                    if Self::f16out_on(e, total) && self.cfg.m3.is_none() && d_lim.is_none() {
+                    if Self::f16out_on(e, total)
+                        && self.cfg.m3.is_none()
+                        && d_lim.is_none()
+                        && !self.cfg.dense_act_gelu_erf()
+                    {
                         let mut a16 = e.alloc_u8_uninit(total * n_ff * 2)?;
                         e.silu_mul_f16out(&gate, &up, &mut act, &mut a16, total * n_ff)?;
                         // AWQ (memra#253): the f16 epilogue emits the down projection's input
@@ -17145,6 +17154,16 @@ impl HybridModel {
                 return e.swiglu_preclamped_mul_scaled(gate, up, gs, us, l, act, n);
             }
             None => {}
+        }
+        // Spark-X2.5: exact-erf GELU on the gate (the only non-SiLU dense activation this
+        // dispatch serves; gemma4's gelu_tanh rides its own program). Checked AFTER the clamp
+        // arms so a future clamped-GELU sibling fails loudly here instead of silently taking
+        // the SiLU clamp.
+        if cfg.dense_act_gelu_erf() {
+            if gs == 1.0 && us == 1.0 {
+                return e.gelu_erf_mul(gate, up, act, n);
+            }
+            return e.gelu_erf_mul_scaled(gate, up, gs, us, act, n);
         }
         if gs == 1.0 && us == 1.0 {
             return e.silu_mul(gate, up, act, n);

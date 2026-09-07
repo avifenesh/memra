@@ -633,13 +633,20 @@ TOKENS = [1, 2, 3, 4]
 
 parser = argparse.ArgumentParser(description="Offline HF correctness oracle for Memra onboarding")
 parser.add_argument("--out", default="hf-oracle.tsv")
+parser.add_argument(
+    "--trust-remote-code",
+    action="store_true",
+    help="run the checkpoint's own modeling code (families transformers has no class for, "
+    "e.g. spark2_5). Off by default: an oracle that executes downloaded code is a choice "
+    "the operator makes by name.",
+)
 args = parser.parse_args()
 
 model = AutoModelForCausalLM.from_pretrained(
     MODEL,
     revision=REVISION,
     dtype=torch.float32,
-    trust_remote_code=False,
+    trust_remote_code=args.trust_remote_code,
 )
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = model.to(device).eval()
@@ -2314,7 +2321,12 @@ mod tests {
         let script = std::fs::read_to_string(root.join("capture-hf-oracle.py")).unwrap();
         assert!(request.contains(&format!("revision\t{sha}")));
         assert!(script.contains(&format!("REVISION = \"{sha}\"")));
-        assert!(script.contains("trust_remote_code=False"));
+        // Remote code stays OFF unless the operator asks for it by name on the command line
+        // (families with their own modeling code, e.g. spark2_5).
+        assert!(script.contains("\"--trust-remote-code\""));
+        assert!(script.contains("action=\"store_true\""));
+        assert!(script.contains("trust_remote_code=args.trust_remote_code"));
+        assert!(!script.contains("trust_remote_code=True"));
         assert!(script.contains("dtype=torch.float32"));
         assert!(script.contains("source-weights-float32-accumulation"));
 
