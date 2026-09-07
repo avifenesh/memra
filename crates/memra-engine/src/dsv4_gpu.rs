@@ -7717,7 +7717,13 @@ impl Dsv4Gpu {
             return Err("device sampler requires native device decode".into());
         }
         crate::dsv4_sampler::Dsv4DeviceSampler::new(
-            self.stages.last().expect("head rank").gpu.stream(), self.model.st.raw("head.weight").ok_or("head weight missing")?.0.shape[0] as usize,
+            self.stages.last().expect("head rank").gpu.stream(),
+            self.model
+                .st
+                .raw("head.weight")
+                .ok_or("head weight missing")?
+                .0
+                .shape[0] as usize,
         )
     }
 
@@ -7726,26 +7732,53 @@ impl Dsv4Gpu {
             if work.failed || work.verify.open.is_some() {
                 return Err("sampler cannot read an unfinished matrix transaction".into());
             }
-            Ok(&work.verify.ws.last().ok_or("head workspace missing")?.logits)
+            Ok(&work
+                .verify
+                .ws
+                .last()
+                .ok_or("head workspace missing")?
+                .logits)
         } else {
-            Ok(&state.ws.as_ref().ok_or("device workspace missing")?.last().ok_or("head workspace missing")?.logits)
+            Ok(&state
+                .ws
+                .as_ref()
+                .ok_or("device workspace missing")?
+                .last()
+                .ok_or("head workspace missing")?
+                .logits)
         }
     }
 
     /// Sample the latest committed forward row, with one u32 readback.
-    pub fn sample_device_logits(&self, state: &DecodeState,
-        sampler: &mut crate::dsv4_sampler::Dsv4DeviceSampler, cfg: &Dsv4SampleCfg,
-        window: &[u32], penalty: Option<&Dsv4PenaltyCfg>) -> Res<u32> {
+    pub fn sample_device_logits(
+        &self,
+        state: &DecodeState,
+        sampler: &mut crate::dsv4_sampler::Dsv4DeviceSampler,
+        cfg: &Dsv4SampleCfg,
+        window: &[u32],
+        penalty: Option<&Dsv4PenaltyCfg>,
+    ) -> Res<u32> {
         let stream = self.stages.last().expect("head rank").gpu.stream();
         let row = self.decode_logits_device(state)?;
         sampler.validate_source(&stream, row.len())?;
         // The head workspace belongs to this model and its producer uses this stream.
-        unsafe { sampler.sample_ptr(row.device_ptr(&stream).0 as *const f32, state.pos, cfg, window, penalty) }
+        unsafe {
+            sampler.sample_ptr(
+                row.device_ptr(&stream).0 as *const f32,
+                state.pos,
+                cfg,
+                window,
+                penalty,
+            )
+        }
     }
 
     /// Gate-only final identity read, outside the sampled envelope.
     pub fn read_decode_logits_for_gate(&self, state: &DecodeState) -> Res<Vec<f32>> {
-        dtoh_f32(&self.stages.last().expect("head rank").gpu.stream(), self.decode_logits_device(state)?)
+        dtoh_f32(
+            &self.stages.last().expect("head rank").gpu.stream(),
+            self.decode_logits_device(state)?,
+        )
     }
 
     /// Diagnostic twin: returns (logits, named per-layer intermediates).

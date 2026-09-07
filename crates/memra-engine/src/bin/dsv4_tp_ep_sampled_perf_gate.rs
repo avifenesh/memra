@@ -11,7 +11,7 @@ use memra_engine::dsv4_gpu::{
     Dsv4Gpu, Dsv4Phase, Dsv4SampleCfg, Dsv4SamplerOrder, dsv4_prof_on, dsv4_sample_row,
     dsv4_sampler_order,
 };
-use memra_engine::dsv4_sampler::{Dsv4Sampler, Dsv4DeviceSampler, dsv4_sampler};
+use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -312,16 +312,22 @@ fn run_once(
             }
             let token = if let Some(sampler) = &mut sampler {
                 gpu.sample_device_logits(&state, sampler, &cfg, &[], None)
-            } else { dsv4_sample_row(&row, state.pos, &cfg) }.expect("sample");
+            } else {
+                dsv4_sample_row(&row, state.pos, &cfg)
+            }
+            .expect("sample");
             if token == tokenizer.eos_id() {
                 eos = true;
                 return false;
             }
             generated.push(token);
             if device {
-                gpu.decode_step_device_logits(token, &mut state).expect("TP/EP device sampled decode");
+                gpu.decode_step_device_logits(token, &mut state)
+                    .expect("TP/EP device sampled decode");
             } else {
-                row = gpu.decode_step(token, &mut state).expect("TP/EP sampled decode");
+                row = gpu
+                    .decode_step(token, &mut state)
+                    .expect("TP/EP sampled decode");
             }
             if profiled && generated.len() == 64 {
                 drain(gpu);
@@ -334,12 +340,25 @@ fn run_once(
     drop(decode_phase);
     let engagements = sampler.as_ref().map_or(0, |s| s.engagements());
     if device {
-        assert_eq!(engagements as usize, generated.len() + usize::from(eos), "device sampler must engage on every draw");
+        assert_eq!(
+            engagements as usize,
+            generated.len() + usize::from(eos),
+            "device sampler must engage on every draw"
+        );
         assert!(engagements > 0);
-        sampler.as_ref().unwrap().check_canary_for_gate().expect("sampler canary");
-        row = gpu.read_decode_logits_for_gate(&state).expect("final identity row outside timing");
+        sampler
+            .as_ref()
+            .unwrap()
+            .check_canary_for_gate()
+            .expect("sampler canary");
+        row = gpu
+            .read_decode_logits_for_gate(&state)
+            .expect("final identity row outside timing");
     }
-    println!("SAMPLER repeat={repeat} sampler={sampler_name} device_engagements={engagements} logits_d2h_in_decode={}", if device { 0 } else { generated.len() });
+    println!(
+        "SAMPLER repeat={repeat} sampler={sampler_name} device_engagements={engagements} logits_d2h_in_decode={}",
+        if device { 0 } else { generated.len() }
+    );
     assert_eq!(
         state.pos,
         PROMPT_TOKENS + generated.len(),
@@ -498,7 +517,9 @@ fn main() {
         Dsv4SamplerOrder::Comparison => "comparison",
         Dsv4SamplerOrder::Radix => "radix",
     };
-    let repeats = if abba { 40 } else if attention_mode {
+    let repeats = if abba {
+        40
+    } else if attention_mode {
         ATTENTION_REPEATS
     } else {
         REPEATS
@@ -580,8 +601,15 @@ fn main() {
     gpu.set_index_topk_radix_for_gate(true);
 
     if abba {
-        assert!(!profiled && attention_mode, "ABBA requires unprofiled attention TP2");
-        assert_eq!(sampler, Dsv4SamplerOrder::Radix, "CPU radix oracle required");
+        assert!(
+            !profiled && attention_mode,
+            "ABBA requires unprofiled attention TP2"
+        );
+        assert_eq!(
+            sampler,
+            Dsv4SamplerOrder::Radix,
+            "CPU radix oracle required"
+        );
     }
     let arms: &[bool] = if splitk_abba {
         &[false, true, true, false]
@@ -601,9 +629,21 @@ fn main() {
         );
     let receipts: Vec<_> = (0..repeats)
         .map(|repeat| {
-            let arm = if abba { matches!(repeat % 4, 1 | 2) } else { device };
-            run_once(&gpu, &prompt, &tokenizer, repeat, if arm { "device" } else { sampler_name }, arm)
-        }).collect();
+            let arm = if abba {
+                matches!(repeat % 4, 1 | 2)
+            } else {
+                device
+            };
+            run_once(
+                &gpu,
+                &prompt,
+                &tokenizer,
+                repeat,
+                if arm { "device" } else { sampler_name },
+                arm,
+            )
+        })
+        .collect();
     let first = &receipts[0];
     for receipt in &receipts {
         assert_eq!(
@@ -636,14 +676,24 @@ fn main() {
         );
     }
     if abba {
-        assert!(receipts.iter().all(|r| r.eligible), "all ABBA rows must be eligible");
+        assert!(
+            receipts.iter().all(|r| r.eligible),
+            "all ABBA rows must be eligible"
+        );
         let rate = |arm: bool| {
-            let rows: Vec<_> = receipts.iter().filter(|r| matches!(r.repeat % 4, 1 | 2) == arm).collect();
-            rows.iter().map(|r| r.generated_tokens).sum::<usize>() as f64 * 1e9 /
-                rows.iter().map(|r| r.decode_wall.as_nanos()).sum::<u128>() as f64
+            let rows: Vec<_> = receipts
+                .iter()
+                .filter(|r| matches!(r.repeat % 4, 1 | 2) == arm)
+                .collect();
+            rows.iter().map(|r| r.generated_tokens).sum::<usize>() as f64 * 1e9
+                / rows.iter().map(|r| r.decode_wall.as_nanos()).sum::<u128>() as f64
         };
-        let host = rate(false); let device = rate(true);
-        println!("ABBA cycles=10 rows_per_arm=20 host_tok_s={host:.6} device_tok_s={device:.6} delta_pct={:.6} tokens_logits_cache_hidden_identical=true timing_scope=sample_plus_forward_envelope", (device / host - 1.0) * 100.0);
+        let host = rate(false);
+        let device = rate(true);
+        println!(
+            "ABBA cycles=10 rows_per_arm=20 host_tok_s={host:.6} device_tok_s={device:.6} delta_pct={:.6} tokens_logits_cache_hidden_identical=true timing_scope=sample_plus_forward_envelope",
+            (device / host - 1.0) * 100.0
+        );
     }
     if attention_mode && !profiled && !abba {
         assert!(
@@ -683,7 +733,6 @@ fn main() {
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
 }
 
-
 /// Deterministic full-vocabulary tape, regenerated from row and token IDs.
 fn sampler_component() {
     use memra_engine::dsv4_gpu::{Dsv4PenaltyCfg, dsv4_penalize_row, dsv4_sample_row_ordered};
@@ -694,36 +743,71 @@ fn sampler_component() {
         let stream = ctx.default_stream();
         let mut sampler = Dsv4DeviceSampler::new(stream, n).expect("component scratch");
         for r in 0..256usize {
-            let row: Vec<f32> = (0..n).map(|i| {
-                let x = (i as u64).wrapping_mul(0x9e3779b97f4a7c15) ^ (r as u64).wrapping_mul(0xbf58476d1ce4e5b9);
-                match r % 8 {
-                    0 => 0.0,
-                    1 => if i % 2 == 0 { -0.0 } else { 0.0 },
-                    2 => (i % 7) as f32,
-                    3 => if i == r { 100.0 } else { -100.0 },
-                    4 => f32::from_bits(1 + (i % 1024) as u32),
-                    _ => ((x ^ (x >> 29)) % 32768) as f32 / 1024.0 - 16.0,
-                }
-            }).collect();
+            let row: Vec<f32> = (0..n)
+                .map(|i| {
+                    let x = (i as u64).wrapping_mul(0x9e3779b97f4a7c15)
+                        ^ (r as u64).wrapping_mul(0xbf58476d1ce4e5b9);
+                    match r % 8 {
+                        0 => 0.0,
+                        1 => {
+                            if i % 2 == 0 {
+                                -0.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        2 => (i % 7) as f32,
+                        3 => {
+                            if i == r {
+                                100.0
+                            } else {
+                                -100.0
+                            }
+                        }
+                        4 => f32::from_bits(1 + (i % 1024) as u32),
+                        _ => ((x ^ (x >> 29)) % 32768) as f32 / 1024.0 - 16.0,
+                    }
+                })
+                .collect();
             assert!(row.iter().all(|x| x.is_finite()));
             let cfg = Dsv4SampleCfg {
                 temperature: [1.0, 0.01, 10.0, f32::MIN_POSITIVE][(r / 8) % 4],
                 top_p: [1.0, 0.9, 1e-7, f32::MIN_POSITIVE][(r / 32) % 4],
-                top_k: [0, 1, 37, n + 1][(r / 64) % 4], seed: 20260907 + r as u64,
+                top_k: [0, 1, 37, n + 1][(r / 64) % 4],
+                seed: 20260907 + r as u64,
             };
-            let penalty = Dsv4PenaltyCfg { last_n: 17, repeat: 1.1, freq: 0.2, present: -0.1 };
+            let penalty = Dsv4PenaltyCfg {
+                last_n: 17,
+                repeat: 1.1,
+                freq: 0.2,
+                present: -0.1,
+            };
             let window = [0, 1, 1, 3, 3, 3, r as u32, n as u32 + 9];
             let pc = (r % 3 == 0).then_some(&penalty);
             let mut oracle = row.clone();
-            if let Some(pc) = pc { dsv4_penalize_row(&mut oracle, &window, pc); }
-            let host = dsv4_sample_row_ordered(&oracle, r + 256, &cfg, Dsv4SamplerOrder::Radix).expect("host radix");
-            let device = sampler.sample_host_row(&row, r + 256, &cfg, &window, pc).expect("device");
+            if let Some(pc) = pc {
+                dsv4_penalize_row(&mut oracle, &window, pc);
+            }
+            let host = dsv4_sample_row_ordered(&oracle, r + 256, &cfg, Dsv4SamplerOrder::Radix)
+                .expect("host radix");
+            let device = sampler
+                .sample_host_row(&row, r + 256, &cfg, &window, pc)
+                .expect("device");
             sampler.check_canary_for_gate().expect("component canary");
-            println!("COMPONENT gpu={ordinal} row={r} host={host} device={device} identical={} finite=true canary=true", host == device);
-            assert_eq!(host, device, "component token identity GPU {ordinal} row {r}");
+            println!(
+                "COMPONENT gpu={ordinal} row={r} host={host} device={device} identical={} finite=true canary=true",
+                host == device
+            );
+            assert_eq!(
+                host, device,
+                "component token identity GPU {ordinal} row {r}"
+            );
             total += 1;
         }
         assert_eq!(sampler.engagements(), 256, "component engagement");
     }
-    println!("PASS component rows_per_gpu=256 rows={total} identical_tokens=true finite=true canaries=true numeric_class={}", memra_engine::dsv4_sampler::NUMERIC_CLASS);
+    println!(
+        "PASS component rows_per_gpu=256 rows={total} identical_tokens=true finite=true canaries=true numeric_class={}",
+        memra_engine::dsv4_sampler::NUMERIC_CLASS
+    );
 }
