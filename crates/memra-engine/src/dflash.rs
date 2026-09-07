@@ -5096,12 +5096,8 @@ impl crate::hybrid::HybridModel {
             !self.uses_gemma_program(),
             "gemma4 targets use the assistant-drafter route; dspark is the qwen-hybrid arm"
         );
-        if let Some(sp) = sampling.as_ref()
-            && sp.temp <= 0.0
-            && sp.pen_on()
-        {
-            return Err("penalized greedy is served on the plain path".into());
-        }
+        // Greedy-penalised configs are in scope (lane/dspark-greedy-penalised): the restored
+        // boundary token and every verify row take the penalised argmax.
         let c = &draft.cfg;
         let b = c.block_size;
         let is_dflash2 = draft.dflash2.is_some();
