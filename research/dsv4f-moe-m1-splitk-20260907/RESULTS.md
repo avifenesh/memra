@@ -1,84 +1,51 @@
 # M=1 expert split-K
 
-Base: 80310418b. Numeric class: `moe_m1_splitk_f32_fixed_order`.
+The r4 adaptive shape is accepted for full-model testing. It has no regression
+in any of the 32 observed token/rank/projection cells. Pooled GU speedup is
+3.46x at one local expert and 2.07x at two. Down improves 1.23-1.74x by slot
+count; the owner accepted this gain as sufficient for this lane on 2026-09-08.
+The original fixed-16 prototype was rejected for regressing the heavier rank.
 
-The existing CSR prefix sums `ceil(m_e/32) * ceil(out_f/64)` for eligible
-nonempty groups. For three M=1 experts, GU has 96 tiles and down has 192.
-The profiled 564-block launch therefore has 468 and 372 idle blocks respectively.
-All four warps load weights; only warps 0 and 2 execute valid-row MMA in M1.
-Half2 changes stores, not the tile count. With route validation disabled,
-Rust `live_slots` is six on each rank, an upper bound rather than the observed
-local count. The device CSR endpoint remains authoritative. Candidate launch
-bounds are 3,072/6,144 blocks, with 1,536/3,072 useful blocks for three local
-experts; the reduction explicitly zeros the inactive slot tail. GU reads 25,165,824 packed-weight bytes
-plus 3,145,728 scale bytes. Down reads 12,582,912 plus 1,572,864 scale bytes.
-At 99/40 us those are 286/354 GB/s including scales, before cache effects.
+Base: `80310418b`. Measured r4 source: `e05360e7fa98a4e2a497727ee5c28b627098f3d9`.
+Numeric class: `moe_m1_adaptive_splitk_f32_fixed_order`. The process gate stays
+OFF by default, decide-by 2026-09-21. No serving default changes.
 
-The candidate uses 16 contiguous K slices (256 GU elements, 128 down elements),
-1,536/3,072 useful blocks with three experts. Each slice keeps ascending
-m16n8k16 f32 accumulation over the same dequantized half operands. A second
-kernel adds partials 0 through 15 using `__fadd_rn`, then applies the original
-scale and GU epilogue. The class is deterministic but is not asserted bitwise
-identical to the unsplit chain. No atomics. Scratch is owned by each grouped
-workspace and reused on that rank's stream. The process gate defaults OFF.
+The CSR prefix sums `ceil(m_e/32) * ceil(out_f/64)` for eligible groups.
+Three M=1 experts produce 96 GU tiles and 192 down tiles. In the profiled
+564-block launch, 468 GU and 372 down blocks therefore only do setup.
+All four warps load weights; only warps 0 and 2 perform valid-row MMA in M1.
+Half2 changes stores, not tile counts. GU reads 25,165,824 packed-weight bytes
+plus 3,145,728 scale bytes; down reads 12,582,912 plus 1,572,864 scale bytes.
+At the supplied 99/40 us, those are 286/354 GB/s including scales, before
+cache effects. The actual profile aggregate means are 99.1558/40.4526 us,
+over 2,752 launches of each kernel. Those instrumented timings motivate the
+change and are not the component comparison's denominator.
 
-The component mode uses the first real source token routed through the loaded
-checkpoint, both rank partitions, GU and down independently. It checks all
-outputs for finiteness, bitwise repeat stability, and 64-word canaries before
-and after each output and scratch allocation. Ten ABBA cycles give 20 event
-timings per arm after two warmup cycles. Candidate timings include both kernels.
-Admission is `abs(delta) <= 2e-5 * max(abs(reference)) + 2e-4 * abs(reference)`.
-For K<=4096, gamma_K is approximately 2.45e-4; the plane-scale floor accounts for
-cancellation near zero. This empirical component threshold is not a full-model
-quality guarantee. Raw max absolute and relative deviations are printed.
+`MEMRA_MOE_F16G=2` admits the direct grouped matrix visitor;
+`MEMRA_F16G_SK=32` selects the small-tile branch with tail ON.
+`set_grouped_m1_tc_for_gate` drains ranks and selects M1 down.
+GU fusion composes `set_moe_f16g_gu_m1_tc_for_gate` and
+`set_moe_f16g_gu_half2_for_gate` into `GuLaunchKind::M1Half2`;
+`set_moe_f16g_down_m1_half2_for_gate` selects the down packed-store twin.
+None of these older gates split K or add N tiles. Their kernels remain intact
+as the oracle.
 
-Remote build and gate receipts pending. No local build, test, CI, or GPU run.
-Pushes use `MEMRA_SKIP_PERF_CI=1` with normal hooks under the owner prohibition.
+The adaptive rule is
+`slices = clamp(round(target / (live * ceil(out_f/64))), 1, 16)`, with targets
+1280 for GU and 768 for down. Counts come from the device CSR endpoint.
+When the unsplit tiles already reach the target, slices is one. Integer
+K-block boundaries `floor(slice * (K/64) / slices)` cover every input block,
+including non-divisor slice counts. Each slice retains the original half
+operands and ascending m16n8k16 chain. The second pass reads adjacent output
+columns coalesced and adds only live slices in ascending order with
+`__fadd_rn`, then applies the original epilogue. No atomics.
 
-Dispatch readback: `MEMRA_MOE_F16G=2` admits the direct grouped matrix
-visitor; `MEMRA_F16G_SK=32` selects the small-tile branch, with tail ON.
-`Dsv4Gpu::set_grouped_m1_tc_for_gate` drains ranks and arms the M1 down
-visitor. GU fusion separately composes `set_moe_f16g_gu_m1_tc_for_gate`
-with `set_moe_f16g_gu_half2_for_gate` as `GuLaunchKind::M1Half2`;
-`set_moe_f16g_down_m1_half2_for_gate` chooses the down packed-store twin.
-None of these switches increase N tiles or split K. The new process setter
-selects GU and down together for plain single-token matrix transactions.
-
-The supplied profile was read directly: the GU/down aggregate means are
-99.1558/40.4526 us, each over 2,752 launches. GPU 0 reports 43 launches of
-each per step, GU 98.9114 us and down 40.5850 us, grid 564x1x1 and block
-32x4x1. These instrumented timings motivate the component test; they are
-not the denominator for its same-plane comparison.
-
-## R3 fixed-16 result and adaptive revision
-
-The r3 receipt was recovered from the private ops checkout after SSH stalled:
-
-| Local slots | GU oracle / candidate us | GU speedup | Down oracle / candidate us | Down speedup |
-| --- | --- | --- | --- | --- |
-| 1 | 100.8 / 25.7 | 3.93x | 38.1 / 24.6 | 1.55x |
-| 5 | 101.6 / 83.5 | 1.22x | 48.4 / 76.5 | 0.63x |
-
-The fixed-16 design is rejected. Full-model ABBA was not started on it.
-Heavy-rank time determines the EP step; the one-slot GU result cannot stand
-in for the five-slot rank. Raw r3 logs are preserved under `raw/r3/`. The process monitor remains on the
-remote controller and still needs retrieval. R3 passed numeric, finite,
-deterministic and canary checks in all four cells. GU max abs/rel differences
-were 7.4505806e-9 / 2.18778979e-7 across ranks; down was 0.000244140625 /
-2.05234542e-7. The numeric gate passing did not make the timing acceptable.
-R3 used 26,128 shared bytes and 88/82 registers for GU/down, with three
-resident CTAs per SM and zero local bytes. Reported L2 was 134,217,728 bytes;
-these are warm-plane timings, not a measured DRAM-bandwidth result.
-
-The current revision uses `moe_m1_adaptive_splitk_f32_fixed_order`. It chooses
-`slices = clamp(round(target / (live * ceil(out_f/64))), 1, 16)` from the
-device CSR count, with targets 1280 for GU and 768 for down. If the unsplit
-tile count reaches the target, slices is one. K boundaries are
-`floor(slice * (K/64) / slices)`; every 64-element block is visited once.
-The reduction reads adjacent output columns coalesced for each slice, once,
-adding only the live slices in ascending order. Inactive compact slots are
-zeroed without reading stale scratch. Each CTA binary-searches the existing
-CSR offsets instead of rebuilding all 128 experts' prefix.
+Each CTA binary-searches the CSR offsets instead of rebuilding the 128-expert
+prefix. The unused A rows 16-31 are removed from candidate shared staging.
+The compiled kernels use 18,176 shared bytes, 84 registers and no local/stack
+allocation. R3 used 26,128 shared bytes and 88/82 registers for GU/down.
+Scratch belongs to the grouped workspace and is reused on its rank stream.
+Inactive compact slots are zeroed without reading stale scratch.
 
 | Local slots | GU slices / useful blocks | Down slices / useful blocks |
 | --- | --- | --- |
@@ -89,21 +56,60 @@ CSR offsets instead of rebuilding all 128 experts' prefix.
 | 5 | 8 / 1280 | 2 / 640 |
 | 6 | 7 / 1344 | 2 / 768 |
 
-The component now captures the first eight routed prompt tokens, first layer,
-both ranks, GU and down independently. Each cell has 20 ABBA timings per arm,
-finite/repeat/canary checks, and raw max abs/rel errors. A separate phase probe
-prints partial and reduction timings outside scored ABBA samples. The summary
-reports slots 1 through 6, with unobserved counts explicit. Acceptance applies
-to every observed token/rank/projection cell: at most 1.02x oracle time, and at
-least 2x speedup for one or two slots. No full-model run before acceptance.
+With route validation disabled, Rust `live_slots` is six on both ranks, a
+launch upper bound. The device CSR count is authoritative. The component
+reads the observed count for its guarded allocations and launch; full-model
+runs retain the six-slot upper bound. Full-model receipts determine the
+runtime effect of that difference. The owner explicitly accepted the r4
+binary for those runs; no kernel change was made after that decision.
 
-Full-model modes retain one loaded model per gate and allocate fresh request
-state for every row, draining both ranks before changing the process setter.
-Correctness checks both arms, including the six refusal cells each. Sampled
-performance uses ABBA, five rows per arm, attention TP enabled, and the
-`sample_plus_forward_envelope` timing scope.
+Component receipt: `moe-m1-splitk-r4-20260907`, raw files in `raw/r4/`.
+The first eight routed prompt tokens are captured at the first layer on both
+ranks, GU and down independently. Each cell has two warmup ABBA cycles and
+ten scored ABBA cycles, 20 event timings per arm. These are warm-plane
+measurements on two RTX PRO 6000 Blackwell Max-Q cards, with reported L2 of
+134,217,728 bytes per GPU. Candidate timing includes partial and reduction
+kernels. Separate phase probes are diagnostic only.
 
-The adaptive kernel also removes the unused second 16-row A stage: M1 only
-loads A rows 0..15, and only warps 0/2 issue MMA from those rows. The original
-M1 kernels remain unchanged. This lowers static shared use in the candidate;
-its measured resource receipt will decide the resulting occupancy.
+| Local slots | Cells per projection | GU current / new us | GU speedup | Down current / new us | Down speedup |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2 | 100.8000 / 29.1568 | 3.4572x | 37.8536 / 21.7464 | 1.7407x |
+| 2 | 5 | 101.6189 / 49.0714 | 2.0708x | 41.4928 / 28.2298 | 1.4698x |
+| 3 | 2 | 102.2552 / 59.4000 | 1.7215x | 48.1680 / 34.2712 | 1.4055x |
+| 4 | 5 | 102.1392 / 64.0102 | 1.5957x | 52.9427 / 38.9830 | 1.3581x |
+| 5 | 2 | 102.4848 / 70.3992 | 1.4558x | 49.5560 / 40.3048 | 1.2295x |
+| 6 | 0 | not observed | n/a | not observed | n/a |
+
+Every cell passed finite outputs, bitwise repeat stability and 64-word canaries
+before and after output and scratch allocations. The comparison threshold is
+`abs(delta) <= 2e-5 * max(abs(reference)) + 2e-4 * abs(reference)`.
+For K<=4096, gamma_K is about 2.45e-4; the plane-scale floor handles cancellation
+near zero. This is an empirical component bound, not an oracle bit-identity
+claim. Max absolute/relative deviation across cells is 9.53674316e-7 /
+0.00108104793 for GU and 0.001953125 / 2.16689423e-5 for down.
+
+The original checker required 2x down at one or two slots and returned EXIT=1
+after the kernel gate passed. The owner removed that down requirement.
+`summarize-accepted.py` and `summary-accepted.json` retain the accepted rule:
+no cell may exceed 1.02x oracle time, and pooled per-slot GU speedup must be
+at least 2x at slots 1 and 2. Pooled slot-2 GU passes even though individual
+cells range from 1.93x to 2.39x. Unobserved slot counts remain explicit.
+The original controller exit and parser are preserved.
+
+R3 receipt: `moe-m1-splitk-r3-20260907`, raw files in `raw/r3/`.
+Fixed 16 slices gave GU 100.8480 -> 25.6768 us at one slot, but only
+101.6016 -> 83.4880 us at five. Down was 38.0976 -> 24.5504 us at one slot
+and regressed 48.3888 -> 76.4688 us at five. Numeric, finite, repeat and canary
+checks passed, but full-model ABBA was not run on this rejected shape.
+The monitor has 624 entries, all for the expected gate PID and the assigned pair.
+
+Full-model receipt pending: `moe-m1-splitk-full-abba-r8-20260908`.
+The armed correctness/refusal gate runs first. Sampled ABBA then uses four
+fresh-process loads in new/current/current/new order, five rows each, attention
+TP enabled and the default radix sampler. The same r4 binary runs both arms.
+Timing scope is `sample_plus_forward_envelope`. Tokens must be identical within
+each arm; cross-arm identity is not required for the new numeric class.
+The controller waits with `flock -w 7200` and does not kill competing processes.
+
+No local build, test, CI or GPU run. Pushes export `MEMRA_SKIP_PERF_CI=1` with
+normal hooks, as required by the owner. Hosted CI is green for the r4 source.

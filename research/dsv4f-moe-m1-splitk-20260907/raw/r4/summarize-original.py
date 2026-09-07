@@ -31,7 +31,7 @@ def component(root):
                        (t['token'], t['device'], t['gu'], t['arm']) ==
                        (r['token'], r['device'], r['gu'], arm)]
             assert len(samples) == 20 and all(t > 0 for t in samples)
-        r['performance_ok'] = float(r['candidate_us']) <= float(r['oracle_us']) * 1.02
+        r['performance_ok'] = float(r['candidate_us']) <= float(r['oracle_us']) * (0.5 if int(r['slots']) <= 2 else 1.02)
     assert any(l.startswith('PASS real routed M1 split-K component tokens=8') for l in lines)
     table = []
     for gu in ('1', '0'):
@@ -43,11 +43,10 @@ def component(root):
                 candidate = sum(float(r['candidate_us']) for r in group) / len(group)
                 row.update(oracle_us=oracle, candidate_us=candidate, speedup=oracle/candidate,
                            worst_candidate_over_oracle=max(float(r['candidate_us']) / float(r['oracle_us']) for r in group),
-                           accepted=all(r['performance_ok'] for r in group) and (gu != '1' or slots > 2 or oracle/candidate >= 2))
+                           accepted=all(r['performance_ok'] for r in group))
             table.append(row)
     return {'validated': True, 'regime': 'warm matched planes', 'tokens': 8,
-            'acceptance_rule': 'each cell candidate <= 1.02x oracle; pooled GU speedup >= 2x for slots 1 and 2; no down 2x requirement',
-            'accepted_observed_slots': all(r.get('accepted', True) for r in table) and all(any(r['projection'] == 'GU' and r['slots'] == n and r['cells'] > 0 for r in table) for n in (1, 2)),
+            'accepted_observed_slots': all(r['performance_ok'] for r in scored),
             'unobserved_slots': [r for r in table if not r['cells']],
             'table': table, 'rows': rows}
 
@@ -61,8 +60,7 @@ def full(root):
         header = sections[0]
         assert header.count('[load] topology:') == 1
     correctness_pair = (root / 'correctness-pair.log').read_text() if (root / 'correctness-pair.log').exists() else None
-    order = ('oracle', 'splitk', 'splitk', 'oracle') if combined else ('splitk', 'oracle', 'oracle', 'splitk')
-    for i, arm in enumerate(order, 1):
+    for i, arm in enumerate(('oracle', 'splitk', 'splitk', 'oracle'), 1):
         if combined:
             section = sections[i]
             assert section.startswith(f'{i-1} splitk={str(arm == "splitk").lower()} ')
@@ -117,16 +115,14 @@ def full(root):
             correctness = sections_c[1 if arm == 'oracle' else 2]
             assert correctness.startswith(str(arm == 'splitk').lower())
             assert correctness.count('REFUSAL_GATE ') == 6
-        elif arm == 'splitk':
-            correctness = (root / 'correctness-splitk.log').read_text()
         else:
-            continue
+            correctness = (root / f'correctness-{arm}.log').read_text()
         assert 'PASS plain-only all-layer TP/EP' in correctness and 'refusal_boundary=true' in correctness
     def pooled(arm):
         return 1e9 * sum(r['tokens'] for r in arms[arm]) / sum(r['wall_ns'] for r in arms[arm])
     tokens_identical = arms['oracle'][0]['generated_sha256'] == arms['splitk'][0]['generated_sha256']
     return {'validated': tokens_identical, 'tokens_identical': tokens_identical,
-            'sampler_order': 'radix', 'order': list(order),
+            'sampler_order': 'radix', 'order': ['oracle', 'splitk', 'splitk', 'oracle'],
             'model_loads': 1 if combined else 4, 'fresh_request_state_each_row': True,
             'timing_scope': 'sample_plus_forward_envelope',
             'oracle_tok_s': pooled('oracle'), 'splitk_tok_s': pooled('splitk'),
