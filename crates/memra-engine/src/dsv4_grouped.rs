@@ -198,9 +198,19 @@ pub(crate) struct GroupedWork {
     pub intermediate: HalfMirror,
     pub contribution: CudaSlice<f32>,
     pub bytes: u64,
+    /// Split-bank TP/EP work keeps the half-intermediate layout private to the grouped
+    /// consumer. The surrounding EpCompute remains full-inter sized so the existing
+    /// rank-local walk and reduction ABI do not change.
+    split_scratch: Option<SplitScratch>,
     plain_single: bool,
     gu_fuse: bool,
     phase: MatrixPhase,
+}
+
+struct SplitScratch {
+    h: CudaSlice<f32>,
+    hq: CudaSlice<u8>,
+    hs: CudaSlice<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -332,6 +342,77 @@ impl GroupedWork {
                 .alloc_zeros::<f32>(contribution_len)
                 .map_err(|e| format!("grouped contribution allocation: {e}"))?,
             bytes,
+            split_scratch: None,
+            plain_single: false,
+            gu_fuse: false,
+            phase: MatrixPhase::Idle,
+        })
+    }
+
+    /// Rank-local all-layer TP/EP work. Every rank receives the full global route domain and
+    /// every selected expert id remains unchanged; only the ModelOpt bank's intermediate width
+    /// is local (`inter/2`). The down projection still emits `hidden` values, which are the
+    /// rank partials consumed by the caller's named rank-order reduction.
+    pub fn new_split(
+        s: &Arc<CudaStream>,
+        global: usize,
+        slots: usize,
+        hidden: usize,
+        local_inter: usize,
+    ) -> Res<Self> {
+        if global == 0 || global > 512 || slots == 0 || local_inter == 0 {
+            return Err("invalid split grouped dimensions".into());
+        }
+        let input_bytes = mirror_bytes(slots, hidden)?;
+        let intermediate_bytes = mirror_bytes(slots, local_inter)?;
+        let contribution_len = slots
+            .checked_mul(hidden)
+            .ok_or("split grouped contribution size overflow")?;
+        let split_h_len = slots
+            .checked_mul(local_inter)
+            .ok_or("split grouped intermediate size overflow")?;
+        let split_hs_len = split_h_len
+            .checked_div(128)
+            .ok_or("split grouped scale size overflow")?;
+        let split_extra_bytes = split_h_len
+            .checked_mul(4)
+            .and_then(|n| n.checked_add(split_h_len))
+            .and_then(|n| {
+                split_hs_len
+                    .checked_mul(4)
+                    .and_then(|scale| n.checked_add(scale))
+            })
+            .and_then(|n| n.checked_add(input_bytes))
+            .and_then(|n| n.checked_add(intermediate_bytes))
+            .and_then(|n| {
+                contribution_len
+                    .checked_mul(4)
+                    .and_then(|bytes| n.checked_add(bytes))
+            })
+            .ok_or("split grouped workspace byte overflow")?;
+        let routes = GroupedRoutes::new_partition(s, global, 0, global, slots)?;
+        let bytes = routes
+            .bytes
+            .checked_add(split_extra_bytes as u64)
+            .ok_or("split grouped workspace byte overflow")?;
+        Ok(Self {
+            routes,
+            input: HalfMirror::new(s, slots, hidden)?,
+            intermediate: HalfMirror::new(s, slots, local_inter)?,
+            contribution: s
+                .alloc_zeros::<f32>(contribution_len)
+                .map_err(|e| format!("split grouped contribution allocation: {e}"))?,
+            bytes,
+            split_scratch: Some(SplitScratch {
+                h: s.alloc_zeros::<f32>(split_h_len)
+                    .map_err(|e| format!("split grouped h allocation: {e}"))?,
+                hq: s
+                    .alloc_zeros::<u8>(split_h_len)
+                    .map_err(|e| format!("split grouped hq allocation: {e}"))?,
+                hs: s
+                    .alloc_zeros::<f32>(split_hs_len)
+                    .map_err(|e| format!("split grouped hs allocation: {e}"))?,
+            }),
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
@@ -402,6 +483,40 @@ impl GroupedWork {
         self.gu_fuse = enabled && self.plain_single;
     }
 
+    fn output_ptrs(
+        &mut self,
+        out: &mut EpCompute<'_>,
+        stream: &Arc<CudaStream>,
+    ) -> (*mut f32, *mut u8, *mut f32) {
+        if let Some(split) = self.split_scratch.as_mut() {
+            (
+                split.h.device_ptr_mut(stream).0 as *mut f32,
+                split.hq.device_ptr_mut(stream).0 as *mut u8,
+                split.hs.device_ptr_mut(stream).0 as *mut f32,
+            )
+        } else {
+            (
+                out.h.device_ptr_mut(stream).0 as *mut f32,
+                out.hq.device_ptr_mut(stream).0 as *mut u8,
+                out.hs.device_ptr_mut(stream).0 as *mut f32,
+            )
+        }
+    }
+
+    fn gather_intermediate(
+        &mut self,
+        stream: &Arc<CudaStream>,
+        out: &EpCompute<'_>,
+        live: usize,
+    ) -> Res<()> {
+        if let Some(split) = self.split_scratch.as_mut() {
+            self.intermediate
+                .gather(stream, &split.hq, &split.hs, None, live)
+        } else {
+            self.intermediate.gather(stream, out.hq, out.hs, None, live)
+        }
+    }
+
     /// No host readback in this stage: both ranks can queue gate/up before down.
     pub fn gate_up(
         &mut self,
@@ -417,6 +532,7 @@ impl GroupedWork {
         bind_matrix(gpu)?;
         let s = gpu.stream();
         let live = self.routes.live_slots;
+        let (h_ptr, hq_ptr, hs_ptr) = self.output_ptrs(out, &s);
         if !route_validation_enabled() {
             s.memset_zeros(&mut self.contribution)
                 .map_err(|e| format!("grouped contribution clear: {e}"))?;
@@ -441,7 +557,7 @@ impl GroupedWork {
                         self.routes.experts as i32,
                         self.routes.ids.device_ptr(&s).0 as *const i32,
                         self.input.half.device_ptr(&s).0 as *const std::ffi::c_void,
-                        out.h.device_ptr_mut(&s).0 as *mut f32,
+                        h_ptr,
                         self.input.scale.device_ptr(&s).0 as *const f32,
                         self.routes.macro1.device_ptr(&s).0 as *const f32,
                         self.routes.macro3.device_ptr(&s).0 as *const f32,
@@ -506,7 +622,7 @@ impl GroupedWork {
                         dsv4_ffi::memra_dsv4_swiglu(
                             out.g1.device_ptr(&s).0 as *const f32,
                             out.g3.device_ptr(&s).0 as *const f32,
-                            out.h.device_ptr_mut(&s).0 as *mut f32,
+                            h_ptr,
                             live as i32,
                             self.intermediate.cols as i32,
                             limit,
@@ -520,9 +636,9 @@ impl GroupedWork {
                 dsv4_ffi::ck(
                     "matrix intermediate FP8",
                     dsv4_ffi::memra_dsv4_act_quant_fp8(
-                        out.h.device_ptr(&s).0 as *const f32,
-                        out.hq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
-                        out.hs.device_ptr_mut(&s).0 as *mut f32,
+                        h_ptr as *const f32,
+                        hq_ptr as *mut std::ffi::c_void,
+                        hs_ptr,
                         live as i32,
                         self.intermediate.cols as i32,
                         s.cu_stream().cast(),
@@ -543,7 +659,7 @@ impl GroupedWork {
         let s = gpu.stream();
         let live = self.routes.live_slots;
         if live > 0 {
-            self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
+            self.gather_intermediate(&s, out, live)?;
             if self.plain_single
                 && crate::moe_f16g_tail_on()
                 && (crate::moe_f16g_m1_tc_on() || crate::moe_f16g_down_m1_half2_on())

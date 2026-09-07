@@ -567,7 +567,7 @@ impl ModelOptSplitPlan {
 
 #[cfg(test)]
 mod tests {
-    use super::{DownReduction, ModelOptSplitPlan, Projection, SplitAxis};
+    use super::{DownReduction, ModelOptSplitPlan, Projection, SplitAxis, StridedCopy, copy_2d};
 
     #[test]
     fn dsv4_shape_matches_modelopt_4096x2048_geometry() {
