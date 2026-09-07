@@ -1095,20 +1095,33 @@ mod tests {
                     ));
                 }
                 for rank in 0..2usize {
+                    let rank_plane = DeviceFp8Plane::from_device(
+                        &gpu,
+                        rank,
+                        rows,
+                        cols,
+                        Partition::Rows {
+                            start: rank * (rows / 2),
+                            len: rows / 2,
+                        },
+                        &full_plane.codes,
+                        &full_plane.scales,
+                    )
+                    .unwrap();
                     for local_group in 0..4usize {
                         let group = rank * 4 + local_group;
                         let input = bf16_input(cols, seed + group as u64 + 2);
                         let group_plane = DeviceFp8Plane::from_device(
                             &gpu,
                             rank,
-                            rows,
+                            rows / 2,
                             cols,
                             Partition::Rows {
-                                start: group * 1024,
+                                start: local_group * 1024,
                                 len: 1024,
                             },
-                            &full_plane.codes,
-                            &full_plane.scales,
+                            &rank_plane.codes,
+                            &rank_plane.scales,
                         )
                         .unwrap();
                         let local = launch_existing_fp8_gemv(

@@ -6,7 +6,7 @@ runtime integration, throughput result, or full-model TP qualification.
 The gate calls the existing `memra_dsv4_gemv_fp8_m` FFI for the real DSV4 shapes:
 
 - `Q_b`: 32768 x 1024, with each logical rank taking one exact 16384-row half;
-- `wo_a`: 8192 x 4096, with eight distinct 1024-row groups, four per logical rank;
+- `wo_a`: 8192 x 4096, with eight distinct 1024-row per-group GEMV calls, four per logical rank;
 - `wo_b`: 4096 x 8192, with each logical rank taking and repacking one 4096-column half to
   the physical stride expected by the existing GEMV.
 
@@ -15,6 +15,9 @@ signed zero. The `wo_b` host-packed and device-packed rank halves also compare b
 finite outputs, immutable input/weight planes, and output canaries. The host rank-order FP32
 sum is exposed under the named numeric class
 `dsv4_attention_wo_b_input_split_f32_rank_reduce`.
+
+The `wo_a` check compares each rank's four groups after first packing the rank's 4096-row half;
+it does not claim the separate fused grouped-`wo_a` kernel.
 
 The full-width `wo_b` diagnostic was `false`, as expected for the changed input-split reduction
 class. This component does not claim native GPU rank join, tolerance-based equivalence, or a
