@@ -740,6 +740,50 @@ pub fn fanout_i32(
     Ok(out)
 }
 
+/// MOVE one rank's i32 buffer to one other rank (any ordered pair): the indexer split's
+/// exchange of `idx` rows (lane/glm5-tp-indexer-split-20260907). The three arms mirror
+/// [`fanout_i32`] byte for byte; the consumer's stream is ordered after the bytes landed.
+pub fn move_i32(
+    hop: &Hop<'_>,
+    from: usize,
+    src: &CudaSlice<i32>,
+    to: usize,
+    n: usize,
+) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+    if from == to || from >= hop.ranks() || to >= hop.ranks() {
+        return Err("glm5-tp move (i32): ranks must be two distinct members of the group".into());
+    }
+    let bytes = n * std::mem::size_of::<i32>();
+    match hop.transport {
+        TpTransport::HostCanonical => {
+            let host = hop.engine(from).dtoh_i32(src)?;
+            charge_host_leg(bytes, true);
+            let out = hop.engine(to).htod_i32(&host[..n])?;
+            charge_host_leg(bytes, false);
+            Ok(out)
+        }
+        TpTransport::PeerPull => {
+            let mut buf = hop.engine(to).uninit_i32(n)?;
+            hop.publish(from, to)?;
+            {
+                let consumer = hop.engine(to);
+                let _main = consumer.gpu.enter_main()?;
+                let mut view = buf.slice_mut(0..n);
+                consumer.stream().memcpy_dtod(&src.slice(0..n), &mut view)?;
+            }
+            hop.release(from, to)?;
+            charge_peer_pull(bytes);
+            Ok(buf)
+        }
+        TpTransport::DevicePush => {
+            let mut buf = hop.engine(to).uninit_i32(n)?;
+            hop.push_2d_i32(from, src, to, &mut buf, n)?;
+            hop.publish(from, to)?;
+            Ok(buf)
+        }
+    }
+}
+
 /// GATHER: reconstruct the FULL token-major `[t, ranks * part]` tensor on EVERY rank from
 /// each rank's dense `[t, part]` shard (`parts[r]` resident on rank r, laid at columns
 /// `r*part..(r+1)*part`). Returns the full tensors indexed by rank.
