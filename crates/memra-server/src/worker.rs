@@ -27382,7 +27382,12 @@ mod tests {
             hit_available: true,
             hit_restorable: false,
         };
-        let prefers = super::dspark_prefers_cold_over_prefix;
+        // Pure half with the greedy-penalty arm SHUT: this test is the pre-lane refusal
+        // set (its penalised-greedy row is a refusal only at door 0; the arm's own test is
+        // `the_penalised_receipt_fires_only_when_the_penalty_flipped_the_route`).
+        let prefers = |a: super::DsparkColdPrefixAdmission| {
+            super::dspark_prefers_cold_over_prefix_with(a, false)
+        };
 
         // Positive K and gate-off retain their solo decision. K=0 and LOW=0 retain plain.
         assert!(prefers(super::DsparkColdPrefixAdmission {
