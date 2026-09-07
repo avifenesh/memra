@@ -96,9 +96,10 @@ fn drain(gpu: &Dsv4Gpu) {
 /// The sampled decode wall includes both the sampler and the following forward.
 /// Keep this boundary in one helper so a future timing edit cannot silently turn
 /// the headline into a forward-only number.
-fn timed_sampled_decode<F>(steps: usize, mut step: F) -> (Duration, usize)
+fn timed_sampled_decode<F, G>(steps: usize, mut step: F, finish: G) -> (Duration, usize)
 where
     F: FnMut(usize) -> bool,
+    G: FnOnce(),
 {
     let start = Instant::now();
     let mut completed = 0usize;
@@ -108,6 +109,7 @@ where
         }
         completed += 1;
     }
+    finish();
     (start.elapsed(), completed)
 }
 
@@ -118,12 +120,36 @@ mod timing_contract_tests {
 
     #[test]
     fn sampled_wall_includes_injected_sampler_delay() {
-        let (elapsed, completed) = timed_sampled_decode(1, |_| {
-            std::thread::sleep(Duration::from_millis(5));
-            true
-        });
+        let (elapsed, completed) = timed_sampled_decode(
+            1,
+            |_| {
+                std::thread::sleep(Duration::from_millis(5));
+                true
+            },
+            || {},
+        );
         assert_eq!(completed, 1);
         assert!(elapsed >= Duration::from_millis(4));
+    }
+
+    #[test]
+    fn sampled_wall_includes_injected_finish_drain_delay() {
+        let (elapsed, completed) = timed_sampled_decode(
+            1,
+            |_| true,
+            || {
+                std::thread::sleep(Duration::from_millis(5));
+            },
+        );
+        assert_eq!(completed, 1);
+        assert!(elapsed >= Duration::from_millis(4));
+    }
+
+    #[test]
+    fn sampled_wall_preserves_early_eos_count() {
+        let (elapsed, completed) = timed_sampled_decode(4, |index| index < 2, || {});
+        assert_eq!(completed, 2);
+        assert!(elapsed < Duration::from_millis(100));
     }
 }
 
@@ -218,29 +244,31 @@ fn run_once(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, repeat: usize)
     let mut eos = false;
     let profiled = dsv4_prof_on();
     let mut decode_phase = None;
-    let (decode_wall, forward_calls) = timed_sampled_decode(OUTPUT_TOKENS, |_| {
-        if profiled && generated.len() == 32 {
-            drain(gpu);
-            decode_phase = Dsv4Phase::new("TP_EP_DECODE\0", None);
-        }
-        let token = dsv4_sample_row(&row, state.pos, &cfg).expect("sample");
-        if token == tokenizer.eos_id() {
-            eos = true;
-            return false;
-        }
-        generated.push(token);
-        row = gpu
-            .decode_step(token, &mut state)
-            .expect("TP/EP sampled decode");
-        if profiled && generated.len() == 64 {
-            drain(gpu);
-            drop(decode_phase.take());
-        }
-        true
-    });
-    drain(gpu);
+    let (decode_wall, forward_calls) = timed_sampled_decode(
+        OUTPUT_TOKENS,
+        |_| {
+            if profiled && generated.len() == 32 {
+                drain(gpu);
+                decode_phase = Dsv4Phase::new("TP_EP_DECODE\0", None);
+            }
+            let token = dsv4_sample_row(&row, state.pos, &cfg).expect("sample");
+            if token == tokenizer.eos_id() {
+                eos = true;
+                return false;
+            }
+            generated.push(token);
+            row = gpu
+                .decode_step(token, &mut state)
+                .expect("TP/EP sampled decode");
+            if profiled && generated.len() == 64 {
+                drain(gpu);
+                drop(decode_phase.take());
+            }
+            true
+        },
+        || drain(gpu),
+    );
     drop(decode_phase);
-    let decode_wall = decode_start.elapsed();
     assert_eq!(
         state.pos,
         PROMPT_TOKENS + generated.len(),
