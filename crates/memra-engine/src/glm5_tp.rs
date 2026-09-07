@@ -62,7 +62,7 @@ use cudarc::driver::CudaSlice;
 use crate::Engine;
 use crate::kda::{ConvArm, KdaAttnLayer};
 use crate::model::GpuTensor;
-use memra_kv::{Cache, LatentKvLayer, RecurLayer};
+use memra_kv::{Cache, LatentKvLayer, LatentPlaneSnapshot, RecurLayer};
 
 /// The qualified rank envelope: TP-2 (the v1 seam, box-battery-gated) and TP-4.
 ///
@@ -1103,7 +1103,7 @@ pub(crate) fn shard_kda_layer(
 /// geometry — the canonical `cache.recur[il]` planes are full-width and stay untouched
 /// as allocated; the TP walk never reads them). Index 0 = root's plane on `e`, index r =
 /// rank r's plane on its peer engine.
-fn ensure_kda_tp_state<'c>(
+pub(crate) fn ensure_kda_tp_state<'c>(
     e: &Engine,
     rt: &Glm5TpRt,
     la_root: &KdaAttnLayer,
@@ -2413,4 +2413,24 @@ mod tests {
         refuse_glm5_tp_door_composition(|f| f == "MEMRA_GLM5_VERIFY_BATCH")
             .expect("verify-batch is refused via the spec co-refusal, not here");
     }
+}
+
+// ------------------------------------------------------------------------------------------
+// Prefix entries on the TP walk (lane/glm5-tp-prefix, 2026-09-07, `MEMRA_GLM5_TP_PREFIX`)
+// ------------------------------------------------------------------------------------------
+
+/// The per-rank state a prefix entry must carry for a glm5 session on the TP-2 walk, over and
+/// above the root planes the server already captures. Under TP the KDA state of EVERY rank
+/// lives in `cache.glm5_tp_recur[il]` (index 0 = the root's shard on the model engine, index
+/// r = rank r's shard on its peer engine; the canonical `cache.recur[il]` stays untouched),
+/// and the replicated MLA latent plane has a per-peer copy in `cache.glm5_tp_latent_peer[il]`
+/// (index r-1, on the peer engine). Every buffer here is resident on the device of the rank
+/// it belongs to, so a restore is one on-device copy per rank and no bytes cross the fabric.
+pub struct Glm5TpPrefixShards {
+    /// Per layer, per rank (index 0 = root): the KDA shard's `(conv_state, ssm_state)`.
+    pub recur: Vec<Option<Vec<(CudaSlice<f32>, CudaSlice<f32>)>>>,
+    /// Per layer, per PEER rank (index r-1): the latent plane snapshot on that peer.
+    pub latent_peer: Vec<Option<Vec<LatentPlaneSnapshot>>>,
+    /// Device bytes held across all ranks (counted against the prefix budget).
+    pub bytes: usize,
 }

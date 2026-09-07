@@ -3566,7 +3566,7 @@ const DEFAULT_PREFIX_CACHE_PROTECTED_PCT: usize = 80;
 /// v4 (lane/spec-exclusions-20260902): the drafter tail carries its exporter's context
 /// `floor` (`DflashKvTail::floor`, 0 for every pre-lane tail) so a floor-bearing tail from a
 /// cold-drafter session survives the host tier and the handoff field for field.
-const PREFIX_ENTRY_LAYOUT_VERSION: u32 = 4;
+const PREFIX_ENTRY_LAYOUT_VERSION: u32 = 5;
 
 /// Max distinct per-tenant metering rows in `Metrics::ns_tokens` (lane/cache-metering).
 /// Past the cap, new tenants/salts aggregate under "(other)" — the totals stay exact,
@@ -4598,6 +4598,62 @@ impl KvFlex {
 /// `cached_tokens` counter, so it ships dark until the box battery banks restored-vs-cold byte
 /// identity on real hardware. OFF is bit-exact the parent lane's guard (capture refuses,
 /// restore refuses, plain-affinity declines); unsetting the flag is the rollback seam.
+/// `MEMRA_GLM5_TP_PREFIX=1` (lane/glm5-tp-prefix, 2026-09-07, default OFF, decide-by
+/// 2026-09-21) arms per-rank capture + restore of glm5 TP-2 sessions in prefix entries: every
+/// rank's KDA shard and every peer's latent plane ride the entry on their own devices. With it
+/// off a TP-class cache refuses capture and restore by name (a root-only entry would restore
+/// rank 0 and leave rank 1 at zero state: the same silent-fabrication class the latent gate
+/// closed). Composes with `MEMRA_PREFIX_LATENT=1`, which the root planes still require.
+fn glm5_tp_prefix_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_PREFIX").as_deref() == Ok("1"))
+}
+
+/// Capture-side TP gate: a cache with per-rank planes needs the door and the model handle
+/// (the peer engines live behind it); a single-device cache is untouched.
+fn unsupported_prefix_tp_capture(
+    tp_cache: bool,
+    tp_prefix_on: bool,
+    have_model: bool,
+) -> Option<&'static str> {
+    if !tp_cache {
+        return None;
+    }
+    if !tp_prefix_on {
+        return Some(
+            "TP rank shards are not carried by prefix entries (MEMRA_GLM5_TP_PREFIX=1 arms them)",
+        );
+    }
+    if !have_model {
+        return Some(
+            "TP rank shards need the model handle at capture (publish site cannot reach it)",
+        );
+    }
+    None
+}
+
+/// Restore-side TP gate: a TP-class model admits only an entry that carries every rank's
+/// shards, and only while the door is armed; a single-device model never sees TP shards.
+fn unsupported_prefix_tp_restore(
+    tp_model: bool,
+    tp_prefix_on: bool,
+    entry_carries_tp: bool,
+) -> Option<&'static str> {
+    if !tp_model {
+        return entry_carries_tp
+            .then_some("entry carries TP rank shards this single-device cache cannot hold");
+    }
+    if !tp_prefix_on {
+        return Some("TP rank shards are not restored (MEMRA_GLM5_TP_PREFIX=1 arms them)");
+    }
+    if !entry_carries_tp {
+        return Some(
+            "entry does not carry the TP rank shards this cache requires (minted before or without TP capture)",
+        );
+    }
+    None
+}
+
 fn prefix_latent_planes_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_PREFIX_LATENT").as_deref() == Ok("1"))
@@ -5891,6 +5947,10 @@ struct PrefixEntry {
     /// cache ONLY for entries whose slots here are populated, so entries minted before the
     /// flag flip (or by a publish site that cannot capture latent state) keep refusing.
     latent: Vec<Option<memra_engine::cache::LatentPlaneSnapshot>>,
+    /// glm5 TP-2 walk (lane/glm5-tp-prefix, 2026-09-07, `MEMRA_GLM5_TP_PREFIX`): every rank's
+    /// KDA shard and every peer's latent plane, each resident on its own rank's device. `None`
+    /// on a single-device cache; a TP-class cache admits only an entry that carries it.
+    tp: Option<memra_engine::glm5_tp::Glm5TpPrefixShards>,
     pos: usize,
     last_logits: Vec<f32>,
     /// MTP draft-scratch rows `[0..pos)` (lane/spec-on-cache-hit): present only on entries
@@ -7505,6 +7565,16 @@ fn host_demote_prefix_ref(
     // pause-demote caller (fail closed), and the SLRU sink's dying entry drops exactly as it
     // did before the tier existed. Silently demoting would strip the planes and the restore
     // guard (`unsupported_prefix_restore`) would then refuse every promote-hit anyway.
+    if dead.tp.is_some() {
+        eprintln!(
+            "[prefix-host] demote refused: entry carries glm5 TP rank shards the host tier \
+             cannot hold ({} tokens, model {}{})",
+            dead.toks.len(),
+            dead.pool_key.0,
+            ns_suffix(&dead.pool_key.1)
+        );
+        return HostDemoteOutcome::Failed;
+    }
     if dead.latent.iter().any(Option::is_some) {
         eprintln!(
             "[prefix-host] demote refused: entry carries latent (MLA/DSA) planes the host \
@@ -7850,6 +7920,7 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         // Latent-bearing entries refuse demotion at `host_demote_prefix_ref`, so every host
         // entry is latent-free by construction and each promoted slot is legitimately absent.
         latent: (0..src.kv.len()).map(|_| None).collect(),
+        tp: None,
         pos: src.pos,
         last_logits: src.last_logits.clone(),
         draft,
@@ -9248,9 +9319,16 @@ fn prefix_snapshot(
     pool_key: &PoolKey,
     toks: &[u32],
     last_logits: &[f32],
+    model: Option<&HybridModel>,
 ) -> Result<PrefixEntry, Box<dyn std::error::Error>> {
     if cache.has_swa_ring() {
         return Err("SWA ring sessions do not support flat-history prefix snapshots".into());
+    }
+    let tp_cache = cache.glm5_tp_recur.iter().any(Option::is_some)
+        || cache.glm5_tp_latent_peer.iter().any(Option::is_some);
+    if let Some(why) = unsupported_prefix_tp_capture(tp_cache, glm5_tp_prefix_on(), model.is_some())
+    {
+        return Err(why.into());
     }
     if let Some(why) = unsupported_prefix_capture(
         cache.latent.iter().any(Option::is_some),
@@ -9352,6 +9430,19 @@ fn prefix_snapshot(
             }
         }
     }
+    // glm5 TP-2: every rank's shards, on their own devices (gated above).
+    let tp = if tp_cache {
+        let shards = model
+            .expect("gated above")
+            .glm5_tp_prefix_snapshot(engine, cache, cache.pos)
+            .map_err(|err| format!("prefix snapshot TP shards: {err}"))?;
+        if let Some(sh) = &shards {
+            bytes += sh.bytes;
+        }
+        shards
+    } else {
+        None
+    };
     Ok(PrefixEntry {
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
         pool_key: pool_key.clone(),
@@ -9360,6 +9451,7 @@ fn prefix_snapshot(
         conv,
         ssm,
         latent,
+        tp,
         pos: cache.pos,
         last_logits: last_logits.to_vec(),
         draft: None,        // plain-session snapshot: no draft plane to publish
@@ -9384,9 +9476,23 @@ fn prefix_restore_at(
     e: &PrefixEntry,
     expected_key: &PoolKey,
     restore_len: usize,
+    model: Option<&HybridModel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if cache.has_swa_ring() {
         return Err("SWA ring sessions do not support flat-history prefix restores".into());
+    }
+    let tp_model = model.is_some_and(HybridModel::glm5_tp_prefix_class);
+    if let Some(why) = unsupported_prefix_tp_restore(tp_model, glm5_tp_prefix_on(), e.tp.is_some())
+    {
+        return Err(why.into());
+    }
+    if e.tp.is_some() && restore_len != e.pos {
+        return Err(format!(
+            "TP mid-entry prefix restore refused at {restore_len} of {}: rank shards exist only \
+             at the captured endpoint",
+            e.pos,
+        )
+        .into());
     }
     // Defence in depth for the capture-side gate in `prefix_snapshot`: an entry that does not
     // carry latent planes (minted before the flag flip, or by the spec-boundary publisher) must
@@ -9563,6 +9669,13 @@ fn prefix_restore_at(
                 .map_err(|err| format!("prefix entry latent {il}: {err}"))?;
         }
     }
+    // glm5 TP-2: the peer ranks' shards, after the root planes they are sized from.
+    if let Some(shards) = &e.tp {
+        model
+            .expect("gated above")
+            .glm5_tp_prefix_restore(engine, cache, shards)
+            .map_err(|err| format!("prefix entry TP shards: {err}"))?;
+    }
     cache.pos = restore_len;
     Ok(())
 }
@@ -9572,8 +9685,9 @@ fn prefix_restore(
     cache: &mut Cache,
     e: &PrefixEntry,
     expected_key: &PoolKey,
+    model: Option<&HybridModel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    prefix_restore_at(engine, cache, e, expected_key, e.pos)
+    prefix_restore_at(engine, cache, e, expected_key, e.pos, model)
 }
 
 fn digest_usize(hasher: &mut Sha256, value: usize) {
@@ -10209,6 +10323,7 @@ fn prefix_insert_from_spec_boundary(
         // Latent planes: boundary-tail capture + live append-only slices (the latent arm
         // above); every slot absent on two-plane models, byte-identical to the pre-arm entry.
         latent,
+        tp: None,
         pos,
         last_logits: cap.logits,
         draft,
@@ -10230,6 +10345,7 @@ fn prefix_insert_from_session(
     hpx: &mut HostPrefixCache,
     s: &Session,
     why: &str,
+    model: Option<&HybridModel>,
 ) {
     if memra_engine::pp::pp_host_bounce_active() {
         return;
@@ -10241,7 +10357,7 @@ fn prefix_insert_from_session(
         return;
     }
     let pool_key = s.pool_key();
-    match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits) {
+    match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
         Ok(e) => {
             trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
             px.insert_demoting(&pool_key, e, why, engine, hpx);
@@ -10348,6 +10464,7 @@ fn maybe_prefix_seed(
     px: &mut PrefixCache,
     hpx: &mut HostPrefixCache,
     s: &mut Session,
+    model: Option<&HybridModel>,
 ) {
     if !s.seed_prefix || s.vision.is_some() {
         return;
@@ -10373,7 +10490,7 @@ fn maybe_prefix_seed(
     if !prefix_seed_deepens(px.deepest_covering(&key, &s.fed), s.fed.len()) {
         return; // an entry of (near-)equal depth already serves this prefix class
     }
-    prefix_insert_from_session(engine, px, hpx, s, "seed");
+    prefix_insert_from_session(engine, px, hpx, s, "seed", model);
 }
 
 /// Minimum extra depth (tokens) a seed must add over the deepest covering entry before it is
@@ -15414,7 +15531,13 @@ pub fn run(
                                     }
                                     // prefix-cache seed: batch-primed bytes are the concat
                                     // config — the entry stores whatever config ran (contract).
-                                    maybe_prefix_seed(&engine, &mut px, &mut hpx, s);
+                                    maybe_prefix_seed(
+                                        &engine,
+                                        &mut px,
+                                        &mut hpx,
+                                        s,
+                                        loaded.get(&s.model).map(|l| &l.model),
+                                    );
                                 }
                                 batch_advanced.insert(i);
                             }
@@ -16473,6 +16596,7 @@ pub fn run(
                         &cand.pool_key,
                         &park.fed,
                         &park.last_logits,
+                        loaded.get(&cand.pool_key.0).map(|l| &l.model),
                     ) {
                         Ok(entry) => match host_demote_prefix_ref(&engine, &mut hpx, &entry) {
                             HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
@@ -18529,25 +18653,27 @@ fn admit(
                     &lm.model.plan,
                     ctx_cap,
                 ) {
-                    Ok(mut c) => match prefix_restore(engine, &mut c, e, &pool_key) {
-                        // A prefix-cache restore is a transient carrier consumed straight into a
-                        // fresh session below (never re-parked from here), so the plain-affinity
-                        // fields are inert defaults — a new checkpoint is armed at Session build.
-                        Ok(()) => Ok({
-                            kvprobe(engine, &c, &e.last_logits, "prefix-restored");
-                            ReuseEntry {
-                                fed: e.toks.clone(),
-                                cache: c,
-                                last_logits: e.last_logits.clone(),
-                                cap: ctx_cap,
-                                ckpt: None,
-                                affinity: None,
-                                fingerprint: Vec::new(),
-                                parked_at: Instant::now(),
-                            }
-                        }),
-                        Err(err) => Err(format!("restore failed: {err}")),
-                    },
+                    Ok(mut c) => {
+                        match prefix_restore(engine, &mut c, e, &pool_key, Some(&lm.model)) {
+                            // A prefix-cache restore is a transient carrier consumed straight into a
+                            // fresh session below (never re-parked from here), so the plain-affinity
+                            // fields are inert defaults — a new checkpoint is armed at Session build.
+                            Ok(()) => Ok({
+                                kvprobe(engine, &c, &e.last_logits, "prefix-restored");
+                                ReuseEntry {
+                                    fed: e.toks.clone(),
+                                    cache: c,
+                                    last_logits: e.last_logits.clone(),
+                                    cap: ctx_cap,
+                                    ckpt: None,
+                                    affinity: None,
+                                    fingerprint: Vec::new(),
+                                    parked_at: Instant::now(),
+                                }
+                            }),
+                            Err(err) => Err(format!("restore failed: {err}")),
+                        }
+                    }
                     Err(err) => Err(format!("session cache alloc failed: {err}")),
                 }
             };
@@ -18672,8 +18798,14 @@ fn admit(
                             &lm.model.plan,
                             ctx_cap,
                         ) {
-                            Ok(mut c) => match prefix_restore_at(engine, &mut c, e, &pool_key, lcp)
-                            {
+                            Ok(mut c) => match prefix_restore_at(
+                                engine,
+                                &mut c,
+                                e,
+                                &pool_key,
+                                lcp,
+                                Some(&lm.model),
+                            ) {
                                 Ok(()) => {
                                     trace_prefix_cache_state(
                                         engine,
@@ -20970,6 +21102,7 @@ fn dedup_interactive_prefixes(
             &key,
             &prefix,
             &leader_logits,
+            loaded.get(&key.0).map(|l| &l.model),
         );
         {
             let s = &mut active[leader_i];
@@ -20998,7 +21131,13 @@ fn dedup_interactive_prefixes(
             if finished.contains(&i) {
                 continue;
             }
-            let restored = prefix_restore(engine, active[i].cache.as_mut().unwrap(), &entry, &key);
+            let restored = prefix_restore(
+                engine,
+                active[i].cache.as_mut().unwrap(),
+                &entry,
+                &key,
+                loaded.get(&key.0).map(|l| &l.model),
+            );
             if let Err(err) = restored {
                 let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                     "prefix fanout restore failed: {err}"
@@ -21139,7 +21278,7 @@ fn prefill_tick(
     let q = s.prefill_queue.len();
     if q == 0 {
         s.prefill_done = true;
-        maybe_prefix_seed(engine, px, hpx, s);
+        maybe_prefix_seed(engine, px, hpx, s, loaded.get(&s.model).map(|l| &l.model));
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
@@ -21366,7 +21505,14 @@ fn prefill_tick(
                 s.model
             );
         } else {
-            prefix_insert_from_session(engine, px, hpx, s, "lcp-split");
+            prefix_insert_from_session(
+                engine,
+                px,
+                hpx,
+                s,
+                "lcp-split",
+                loaded.get(&s.model).map(|l| &l.model),
+            );
         }
     }
     // PLAIN-AFFINITY: capture the pre-generation checkpoint the instant the prime reaches its
@@ -21377,7 +21523,7 @@ fn prefill_tick(
         if let Some(c) = s.cache.as_ref() {
             kvprobe(engine, c, &s.last_logits, "prefill-done");
         }
-        maybe_prefix_seed(engine, px, hpx, s);
+        maybe_prefix_seed(engine, px, hpx, s, loaded.get(&s.model).map(|l| &l.model));
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
@@ -28717,6 +28863,7 @@ mod tests {
             conv: Vec::new(),
             ssm: Vec::new(),
             latent: Vec::new(),
+            tp: None,
             pos: 0,
             last_logits: vec![0.0],
             draft: None,
@@ -28786,6 +28933,28 @@ mod tests {
         );
         // Latent cache, flag on: the admit exists ONLY for carrying entries.
         assert_eq!(super::unsupported_prefix_restore(true, true, true), None);
+    }
+
+    /// lane/glm5-tp-prefix: the TP gates, every arm (capture: a single-device cache is
+    /// untouched, a TP cache needs the door AND the model handle; restore: a TP model admits
+    /// only a shard-bearing entry under the door, a single-device model refuses shards).
+    #[test]
+    fn tp_prefix_gates_cover_every_arm() {
+        assert_eq!(
+            super::unsupported_prefix_tp_capture(false, false, false),
+            None
+        );
+        assert!(super::unsupported_prefix_tp_capture(true, false, true).is_some());
+        assert!(super::unsupported_prefix_tp_capture(true, true, false).is_some());
+        assert_eq!(super::unsupported_prefix_tp_capture(true, true, true), None);
+        assert_eq!(
+            super::unsupported_prefix_tp_restore(false, false, false),
+            None
+        );
+        assert!(super::unsupported_prefix_tp_restore(false, true, true).is_some());
+        assert!(super::unsupported_prefix_tp_restore(true, false, true).is_some());
+        assert!(super::unsupported_prefix_tp_restore(true, true, false).is_some());
+        assert_eq!(super::unsupported_prefix_tp_restore(true, true, true), None);
         assert_eq!(
             super::unsupported_prefix_restore(true, true, false),
             Some(
@@ -30546,6 +30715,7 @@ mod tests {
             conv: Vec::new(),
             ssm: Vec::new(),
             latent: Vec::new(),
+            tp: None,
             pos: 0,
             last_logits: vec![0.0],
             draft: None,

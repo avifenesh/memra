@@ -2993,6 +2993,189 @@ impl HybridModel {
     /// The TP runtime the layers in `lo..hi` were sharded with, if every one of them carries
     /// symmetric glue; `None` means the range is plain or only partly armed, and the symmetric
     /// walk must not be attempted over it.
+    /// True when this model runs the glm5 TP walk (any layer carries a TP sidecar): the
+    /// prefix-cache seams key their per-rank capture on it (`MEMRA_GLM5_TP_PREFIX`).
+    pub fn glm5_tp_prefix_class(&self) -> bool {
+        self.glm5_tp_rt_for(0, self.layers.len()).is_some()
+    }
+
+    /// Capture the per-rank state of a glm5 TP session for a prefix entry: every rank's KDA
+    /// shard and every peer's latent plane, each cloned ON ITS OWN DEVICE (lane/glm5-tp-prefix,
+    /// 2026-09-07). `Ok(None)` when the model is not TP-sharded. `pos` is the cache boundary the
+    /// entry represents; a peer latent plane at a different length is a torn capture and errors.
+    pub fn glm5_tp_prefix_snapshot(
+        &self,
+        e: &Engine,
+        cache: &Cache,
+        pos: usize,
+    ) -> Result<Option<crate::glm5_tp::Glm5TpPrefixShards>, Box<dyn std::error::Error>> {
+        let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) else {
+            return Ok(None);
+        };
+        let n = self.layers.len();
+        if cache.glm5_tp_recur.len() < n || cache.glm5_tp_latent_peer.len() < n {
+            return Err("glm5-tp prefix: cache carries no TP slots".into());
+        }
+        let mut recur = Vec::with_capacity(n);
+        let mut latent_peer = Vec::with_capacity(n);
+        let mut bytes = 0usize;
+        // The peers' streams may still hold the last token's tail; the clones below are
+        // stream-ordered on each peer's own stream, and the walk issues every rank's state
+        // write on that stream, so no explicit sync is needed (the root path is the same).
+        for il in 0..n {
+            match &cache.glm5_tp_recur[il] {
+                Some(planes) => {
+                    let mut out = Vec::with_capacity(planes.len());
+                    for (r, plane) in planes.iter().enumerate() {
+                        let dev = crate::glm5_tp::rank_engine(e, &rt, r);
+                        let _m = if r > 0 {
+                            Some(dev.gpu.enter_main()?)
+                        } else {
+                            None
+                        };
+                        let conv = dev.clone_dtod(&plane.conv_state)?;
+                        let ssm = dev.clone_dtod(&plane.ssm_state)?;
+                        bytes += (conv.len() + ssm.len()) * 4;
+                        out.push((conv, ssm));
+                    }
+                    recur.push(Some(out));
+                }
+                None => recur.push(None),
+            }
+            match &cache.glm5_tp_latent_peer[il] {
+                Some(planes) => {
+                    let mut out = Vec::with_capacity(planes.len());
+                    let mut absent = false;
+                    for (i, plane) in planes.iter().enumerate() {
+                        let dev = &rt.peers[i];
+                        if plane.len == 0 && pos > 0 {
+                            absent = true;
+                            break;
+                        }
+                        if plane.len != pos {
+                            return Err(format!(
+                                "glm5-tp prefix: layer {il} peer {} latent len {} != boundary {pos}",
+                                i + 1,
+                                plane.len,
+                            )
+                            .into());
+                        }
+                        let _m = dev.gpu.enter_main()?;
+                        let snap = plane.snapshot_plane(dev)?;
+                        bytes += snap.bytes();
+                        out.push(snap);
+                    }
+                    latent_peer.push(if absent { None } else { Some(out) });
+                }
+                None => latent_peer.push(None),
+            }
+        }
+        Ok(Some(crate::glm5_tp::Glm5TpPrefixShards {
+            recur,
+            latent_peer,
+            bytes,
+        }))
+    }
+
+    /// Restore the per-rank state captured by [`Self::glm5_tp_prefix_snapshot`] into a fresh
+    /// session cache whose ROOT planes the caller has already restored (the peer latent planes
+    /// are sized from the canonical plane, which must therefore exist and stand at the entry's
+    /// boundary). Every copy lands on the device of the rank it belongs to.
+    pub fn glm5_tp_prefix_restore(
+        &self,
+        e: &Engine,
+        cache: &mut Cache,
+        shards: &crate::glm5_tp::Glm5TpPrefixShards,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) else {
+            return Err("glm5-tp prefix restore on a model that is not TP-sharded".into());
+        };
+        let n = self.layers.len();
+        if shards.recur.len() != n || shards.latent_peer.len() != n {
+            return Err(format!(
+                "glm5-tp prefix: entry carries {}/{} layers, model has {n}",
+                shards.recur.len(),
+                shards.latent_peer.len(),
+            )
+            .into());
+        }
+        let max_ctx = cache.max_ctx;
+        for il in 0..n {
+            if let Some(src) = &shards.recur[il] {
+                let Mixer::Kda(la) = &self.layers[il].mixer else {
+                    return Err(format!(
+                        "glm5-tp prefix: layer {il} recur shard on a non-KDA layer"
+                    )
+                    .into());
+                };
+                let planes = crate::glm5_tp::ensure_kda_tp_state(e, &rt, la, cache, il)?;
+                if planes.len() != src.len() {
+                    return Err(format!(
+                        "glm5-tp prefix: layer {il} entry has {} ranks, runtime {}",
+                        src.len(),
+                        planes.len(),
+                    )
+                    .into());
+                }
+                for (r, (conv, ssm)) in src.iter().enumerate() {
+                    let dev = crate::glm5_tp::rank_engine(e, &rt, r);
+                    let dst = &mut planes[r];
+                    if conv.len() != dst.conv_state.len() || ssm.len() != dst.ssm_state.len() {
+                        return Err(format!(
+                            "glm5-tp prefix: layer {il} rank {r} shard shape conv/ssm {}/{} != {}/{}",
+                            conv.len(),
+                            ssm.len(),
+                            dst.conv_state.len(),
+                            dst.ssm_state.len(),
+                        )
+                        .into());
+                    }
+                    let _m = if r > 0 {
+                        Some(dev.gpu.enter_main()?)
+                    } else {
+                        None
+                    };
+                    dev.copy_into(&mut dst.conv_state, 0, conv, conv.len())?;
+                    dev.copy_into(&mut dst.ssm_state, 0, ssm, ssm.len())?;
+                }
+            }
+            if let Some(src) = &shards.latent_peer[il] {
+                {
+                    let canonical = cache.latent[il].as_ref().ok_or_else(|| {
+                        format!("glm5-tp prefix: layer {il} has peer latent shards but no canonical plane")
+                    })?;
+                    if src.iter().any(|snap| snap.len != canonical.len) {
+                        return Err(format!(
+                            "glm5-tp prefix: layer {il} peer latent boundary != canonical len {} (restore the root planes first)",
+                            canonical.len
+                        )
+                        .into());
+                    }
+                    crate::glm5_tp::ensure_mla_peer_latent(
+                        &rt,
+                        canonical,
+                        &mut cache.glm5_tp_latent_peer[il],
+                    )?;
+                }
+                let planes = cache.glm5_tp_latent_peer[il].as_mut().unwrap();
+                if planes.len() != src.len() {
+                    return Err(format!(
+                        "glm5-tp prefix: layer {il} entry has {} peer latent planes, runtime {}",
+                        src.len(),
+                        planes.len(),
+                    )
+                    .into());
+                }
+                for (i, snap) in src.iter().enumerate() {
+                    let dev = &rt.peers[i];
+                    let _m = dev.gpu.enter_main()?;
+                    planes[i].restore_plane(dev, snap, max_ctx)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn glm5_tp_rt_for(
         &self,
         lo: usize,
