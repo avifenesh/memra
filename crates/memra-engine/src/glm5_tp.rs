@@ -2272,6 +2272,29 @@ pub(crate) fn shard_moe_layer_split(
     })
 }
 
+// ------------------------------------------------------------------------------------------
+// Prefix entries on the TP walk (lane/glm5-tp-prefix, 2026-09-07, `MEMRA_GLM5_TP_PREFIX`)
+// ------------------------------------------------------------------------------------------
+
+/// The per-rank state a prefix entry must carry for a glm5 session on the TP-2 walk, over and
+/// above the root planes the server already captures. Under TP the KDA state of EVERY rank
+/// lives in `cache.glm5_tp_recur[il]` (index 0 = the root's shard on the model engine, index
+/// r = rank r's shard on its peer engine; the canonical `cache.recur[il]` stays untouched),
+/// and the replicated MLA latent plane has a per-peer copy in `cache.glm5_tp_latent_peer[il]`
+/// (index r-1, on the peer engine). Every buffer here is resident on the device of the rank
+/// it belongs to, so a restore is one on-device copy per rank and no bytes cross the fabric.
+/// One rank's KDA shard state as a prefix entry holds it: `(conv_state, ssm_state)`.
+pub type KdaShardState = (CudaSlice<f32>, CudaSlice<f32>);
+
+pub struct Glm5TpPrefixShards {
+    /// Per layer, per rank (index 0 = root): the KDA shard's `(conv_state, ssm_state)`.
+    pub recur: Vec<Option<Vec<KdaShardState>>>,
+    /// Per layer, per PEER rank (index r-1): the latent plane snapshot on that peer.
+    pub latent_peer: Vec<Option<Vec<LatentPlaneSnapshot>>>,
+    /// Device bytes held across all ranks (counted against the prefix budget).
+    pub bytes: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2413,24 +2436,4 @@ mod tests {
         refuse_glm5_tp_door_composition(|f| f == "MEMRA_GLM5_VERIFY_BATCH")
             .expect("verify-batch is refused via the spec co-refusal, not here");
     }
-}
-
-// ------------------------------------------------------------------------------------------
-// Prefix entries on the TP walk (lane/glm5-tp-prefix, 2026-09-07, `MEMRA_GLM5_TP_PREFIX`)
-// ------------------------------------------------------------------------------------------
-
-/// The per-rank state a prefix entry must carry for a glm5 session on the TP-2 walk, over and
-/// above the root planes the server already captures. Under TP the KDA state of EVERY rank
-/// lives in `cache.glm5_tp_recur[il]` (index 0 = the root's shard on the model engine, index
-/// r = rank r's shard on its peer engine; the canonical `cache.recur[il]` stays untouched),
-/// and the replicated MLA latent plane has a per-peer copy in `cache.glm5_tp_latent_peer[il]`
-/// (index r-1, on the peer engine). Every buffer here is resident on the device of the rank
-/// it belongs to, so a restore is one on-device copy per rank and no bytes cross the fabric.
-pub struct Glm5TpPrefixShards {
-    /// Per layer, per rank (index 0 = root): the KDA shard's `(conv_state, ssm_state)`.
-    pub recur: Vec<Option<Vec<(CudaSlice<f32>, CudaSlice<f32>)>>>,
-    /// Per layer, per PEER rank (index r-1): the latent plane snapshot on that peer.
-    pub latent_peer: Vec<Option<Vec<LatentPlaneSnapshot>>>,
-    /// Device bytes held across all ranks (counted against the prefix budget).
-    pub bytes: usize,
 }
