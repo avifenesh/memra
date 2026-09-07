@@ -255,6 +255,20 @@ impl Glm5TpRt {
         tp_ar_1stage_on() && self.ranks() == 2 && !self.same_device_gate
     }
 
+    /// Size the one-shot's stage buffers for `n` floats BEFORE a graph capture records a walk
+    /// (an allocation that outlives a capture makes instantiate refuse). No-op when sized.
+    pub fn ar_prepare(&self, root: &Engine, n: usize) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.ar_1stage_available() {
+            return Ok(());
+        }
+        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
+        let mut guard = self.ar.lock().map_err(|_| "tp ar link poisoned")?;
+        match guard.as_mut() {
+            Some(link) => link.ensure_stage(&engines, n),
+            None => Ok(()),
+        }
+    }
+
     pub fn ar_1stage(
         &self,
         root: &Engine,
@@ -276,6 +290,33 @@ impl Glm5TpRt {
             .as_mut()
             .expect("built above")
             .all_reduce_1stage(&engines, x, n)?;
+        Ok(true)
+    }
+
+    /// The out-of-place one-shot (`ArLink::all_reduce_1stage_into`): no staging copies. Same
+    /// availability contract as `ar_1stage`; Ok(false) when the one-shot cannot serve.
+    pub fn ar_1stage_into(
+        &self,
+        root: &Engine,
+        inputs: &[&CudaSlice<f32>],
+        outs: &mut [&mut CudaSlice<f32>],
+        n: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if !self.ar_1stage_available() {
+            return Ok(false);
+        }
+        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
+        let mut guard = self
+            .ar
+            .lock()
+            .map_err(|_| "glm5-tp one-shot all-reduce: the link mutex is poisoned")?;
+        if guard.is_none() {
+            *guard = Some(crate::tp_ar::ArLink::new(&engines)?);
+        }
+        guard
+            .as_mut()
+            .expect("built above")
+            .all_reduce_1stage_into(&engines, inputs, outs, n)?;
         Ok(true)
     }
 
@@ -450,7 +491,7 @@ fn load_glm5_ep_map(
 /// a sharded model unless `MEMRA_GLM5_SPEC_TP=1` arms the GATED composition
 /// (lane/glm5-composition; the spec x TP pair HAS its composition gate, `glm5-tp-gate`
 /// arms S2/Q-S4), whose admission REQUIRES the batched walk by name.
-pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 4] = [
+pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 3] = [
     (
         "MEMRA_HC_FUSED_PRE",
         "the fused mHC pre-chain is gated on the unsharded walk only",
@@ -458,11 +499,6 @@ pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 4] = [
     (
         "MEMRA_HC_DECODE_WS",
         "the workspace decode walk carries no TP mixer branches",
-    ),
-    (
-        "MEMRA_KDA_FUSED_PROJ",
-        "the fused six-projection door (either operand arm) is gated on full-width \
-         projections, never head shards",
     ),
     (
         "MEMRA_MLA_DECODE_SPLIT",
@@ -1301,12 +1337,20 @@ pub(crate) fn kda_tp_cached_sym(
         // Row-parallel wo: this rank's channels in, the FULL hidden width out, as a partial sum.
         partials.push(dev.matmul(&la.wo, &gated, t)?);
     }
-    let (a, b) = partials.split_at_mut(1);
-    let reduced = rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n_embd)?;
+    // Out of place: the partials are the inputs, two fresh buffers the outputs (no staging copy).
+    let peer = &rt.peers[0];
+    let mut red0 = e.zeros(t * n_embd)?;
+    let mut red1 = peer.zeros(t * n_embd)?;
+    let reduced = rt.ar_1stage_into(
+        e,
+        &[&partials[0], &partials[1]],
+        &mut [&mut red0, &mut red1],
+        t * n_embd,
+    )?;
     if !reduced {
         return Err("kda_tp_cached_sym: the one-shot declined after availability said yes".into());
     }
-    Ok(partials)
+    Ok(vec![red0, red1])
 }
 
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
@@ -1910,6 +1954,20 @@ pub struct Glm5TpGlue {
     /// picks the same experts, and it costs zero crossings where a push of `sel`/`w` would cost
     /// two per layer. `None` on a dense-FFN layer.
     pub router: Option<Glm5TpPeerRouter>,
+    /// The dense FFN of a dense-FFN layer (the three leading layers of GLM-5.3-Flash),
+    /// replicated so the peer computes it REDUNDANTLY from its own copy of the FFN input
+    /// instead of receiving root's output over the event-published transport: the same
+    /// kernels on the same input give the same bytes, it costs zero crossings, and it is what
+    /// lets the layer sit inside a captured graph piece (a fan-out cannot). `None` on MoE.
+    pub dense: Option<Glm5TpPeerDense>,
+}
+
+/// The peer's copy of a dense FFN: gate, up, down and the AWQ pre-quant scale when present.
+pub struct Glm5TpPeerDense {
+    pub ffn_gate: GpuTensor,
+    pub ffn_up: GpuTensor,
+    pub ffn_down: GpuTensor,
+    pub ffn_down_pqs: Option<GpuTensor>,
 }
 
 /// The peer's router operands: the gate projection and the two per-expert planes the sigmoid
@@ -1964,10 +2022,17 @@ pub(crate) fn replicate_layer_glue(
     attn_norm: &GpuTensor,
     post_attn_norm: &GpuTensor,
     hyper: &crate::hyper::HyperLayer,
-    moe: Option<&crate::hybrid::MoeWeights>,
+    ffn: &crate::hybrid::Ffn,
 ) -> Result<Vec<Glm5TpGlue>, Box<dyn std::error::Error>> {
+    let moe = match ffn {
+        crate::hybrid::Ffn::Moe(m) => Some(m),
+        crate::hybrid::Ffn::Dense { .. } => None,
+    };
     let mut out = Vec::with_capacity(rt.peers.len());
     for peer in &rt.peers {
+        // the dense-FFN replica is loaded from the source on the peer engine by the caller
+        // (a device replicate refuses the rp split-plane mirror layout by name)
+        let dense = None;
         let router = match moe {
             Some(m) => Some(Glm5TpPeerRouter {
                 gate_inp: replicate_tensor(e, peer, &m.gate_inp)?,
@@ -1987,6 +2052,7 @@ pub(crate) fn replicate_layer_glue(
                 mlp: replicate_site(e, peer, &hyper.mlp)?,
             },
             router,
+            dense,
         });
     }
     Ok(out)

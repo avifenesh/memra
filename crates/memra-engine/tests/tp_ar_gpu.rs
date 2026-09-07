@@ -229,3 +229,54 @@ fn one_shot_all_reduce_matches_the_host_sum_bitwise() {
         eb.stream().synchronize().unwrap();
     }
 }
+
+#[test]
+fn one_shot_into_matches_the_in_place_form_bitwise() {
+    let Some((ea, eb)) = pair() else {
+        eprintln!("needs two CUDA devices; skipping");
+        return;
+    };
+    let engines = [&ea, &eb];
+    for &n in &[1usize, 1024, 16384] {
+        let ha = vecf(n, 5 + n as u64);
+        let hb = vecf(n, 9 + n as u64);
+        let mut link = ArLink::new(&engines).unwrap();
+        // in place
+        let mut xa = ea.htod(&ha).unwrap();
+        let mut xb = eb.htod(&hb).unwrap();
+        link.all_reduce_1stage(&engines, &mut [&mut xa, &mut xb], n)
+            .unwrap();
+        assert_eq!(link.barrier_errors(&engines).unwrap(), [0, 0]);
+        // out of place
+        let ia = ea.htod(&ha).unwrap();
+        let ib = eb.htod(&hb).unwrap();
+        let mut oa = ea.zeros(n).unwrap();
+        let mut ob = eb.zeros(n).unwrap();
+        link.all_reduce_1stage_into(&engines, &[&ia, &ib], &mut [&mut oa, &mut ob], n)
+            .unwrap();
+        assert_eq!(
+            link.barrier_errors(&engines).unwrap(),
+            [0, 0],
+            "into barrier expired at n={n}"
+        );
+        let (ga, gb) = (
+            ea.dtoh_view(&xa.slice(0..n)).unwrap(),
+            eb.dtoh_view(&xb.slice(0..n)).unwrap(),
+        );
+        let (fa, fb) = (
+            ea.dtoh_view(&oa.slice(0..n)).unwrap(),
+            eb.dtoh_view(&ob.slice(0..n)).unwrap(),
+        );
+        for i in 0..n {
+            assert_eq!(ga[i].to_bits(), fa[i].to_bits(), "rank 0 n={n} i={i}");
+            assert_eq!(gb[i].to_bits(), fb[i].to_bits(), "rank 1 n={n} i={i}");
+        }
+        // the inputs are untouched
+        assert_eq!(
+            ea.dtoh_view(&ia.slice(0..n)).unwrap()[0].to_bits(),
+            ha[0].to_bits()
+        );
+        // (an aliased output cannot be expressed in safe Rust; the launcher still refuses it by
+        // pointer for the FFI path)
+    }
+}
