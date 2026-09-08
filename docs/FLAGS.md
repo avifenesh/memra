@@ -1723,6 +1723,32 @@ ones — filed under their own heading so a flag audit scanning the live section
 
 ## DSV4 full-token replay prerequisite, 2026-09-08
 
+| Control | Default / arms | Rollback / evidence |
+| --- | --- | --- |
+| `MEMRA_DSV4_REPLAY_CADENCE` | **ON** within explicitly armed, admitted full-token replay: unset or any value other than exact `0` selects ordinary/C4/C4+C128 forward variants and shared commit. Exact `0` selects original full replay. Existing pos<512/device-cache/TP2+EP admission and refusal/paired-completion protections are unchanged. No automatic arming of eager or serving requests. | Set `0` before arming a fresh request; retained graph functions do not change in place. Explicit gate mode overrides preserve original full replay, cadence-only and composition A/B instruments. decide-by: 2026-09-22 for rollback-seam removal review. Cadence +1.007107%/+1.074545%, first captures included, private Darklanes #508 `research/dsv4f-replay-cadence-20260908/COMBINED-RESULT.md`; [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509) composition +1.87%/+2.11% with identity; default engagement protocol: `research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`. |
+
+Composition evidence for this cadence default is directly banked in
+[Darklanes #509](https://github.com/avifenesh/darklanes/pull/509): +1.87% forward /
++2.11% reverse, identity in both orders, in addition to standalone #508. Cadence
+arms only through explicit replay arming; it does not change ordinary eager calls.
+
+The standalone cadence component and CLI measurement selectors remain explicit
+instruments. Their A/B definitions do not inherit the new runtime defaults.
+`MEMRA_TEST_DSV4_DEFAULT_CHILD` is a cfg(test)-only subprocess marker carrying
+expected cadence/dense booleans; it tests real environment initialization and
+thread-local overrides without CUDA allocation. It is never read by production
+code and is not a performance door.
+
+The composition instrument's `--defaults` mode admits either both cadence/dense
+environment variables unset or both exact `0`, records the actual policies before
+overrides, and arms the environment-selected path. After the eager oracle uses
+dense OFF, `restore_dense_exact_tail_default_for_gate` re-reads that same actual
+environment policy before first capture. Each process requires 256-step identity,
+census/epochs and eight refusals before five sanity-only rows; unset and zero
+processes form ten rows total. It is explicit, OFF unless invoked, and adds no
+serving dispatch or performance claim. Protocol/receipts are in
+`research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`.
+
 Follow-on gate selectors: `--full-token-replay-baab` reverses the single 20-row
 order to B×5/A×5/A×5/B×5 with the same correctness/refusal gates and first-capture
 timing. `--full-token-replay-profile` is a separate profile-only load, never a
@@ -1782,3 +1808,16 @@ qualification, serving promotion or wall-saving claim. The measured source remai
 in this PR's history. Raw evidence is private in Darklanes:
 `research/dsv4f-devpair-20260905/compressor-paired-copy-20260908.md`, receipt namespace
 `compressor-paired-copy-3d011dc-r1`.
+
+## Dense M=1 exact-tree transport experiment, 2026-09-08
+
+| Control | Default | Both arms, rollback and evidence |
+| --- | --- | --- |
+| `MEMRA_DSV4_DENSE_EXACT_TAIL` plus explicit `memra_dsv4_dense_exact_tail_set_for_gate` | **ON**, decide-by: 2026-09-22 for rollback-seam removal review | Unset or any value except exact `0` selects the M=1 exact-tree twins for admitted aligned operands; exact `0` retains original FP8 GEMV/F32-dot kernels. The per-leaf arithmetic, decode/unroll, 128-thread geometry and reduction tree are unchanged. Grouped/M>1 recursive tails and unsupported shapes retain control. The environment is read once per host thread before its first enqueue; set `0` before starting workers and create fresh graphs for rollback. Captures freeze functions and never read a live device selector. Explicit thread-local gate overrides take precedence, preserving composition A=(both OFF), B=(both ON) and separate legacy controls. Enqueue counters are not device replay proof. Dense independent +0.459578%/+0.397451% receipts: private Darklanes #507 `research/dsv4f-dense-exact-tail-20260908/MODEL-RESULT.md`, namespaces `dense-tail-model-5b66fe9-r2/r3`. Cadence #508 and [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509) composition +1.87%/+2.11% with identity; default engagement protocol: `research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`. No serving admission is inferred from the diagnostic receipt. |
+
+Dense ON changes both admitted **eager DSV4 M=1 calls** and new graph captures,
+including admitted calls reached by serving; it is not restricted to replay.
+Shape/alignment/M>1 guards remain intact. This dispatch exposure is separate from
+serving admission. Direct composition evidence is
+[Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
+with identity, in addition to dense #507 and cadence #508.

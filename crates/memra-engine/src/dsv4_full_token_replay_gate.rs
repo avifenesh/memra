@@ -52,10 +52,10 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
         }
     }
 }
-fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState) {
+fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
     assert_eq!(
         gpu.full_token_replay_captures_for_gate(state).unwrap(),
-        [1, 1],
+        [if cadence { 3 } else { 1 }, 1],
         "recapture"
     );
     let census = gpu.full_token_replay_census_for_gate(state).unwrap();
@@ -69,9 +69,68 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState) {
         assert_eq!(rank[0][6], 0, "unsupported forward node");
         assert_eq!(rank[1][6], 0, "unsupported commit node");
     }
+    if cadence {
+        for rank in gpu
+            .full_token_replay_variant_census_for_gate(state)
+            .unwrap()
+        {
+            for (slot, kernels) in [(0, 2741), (2, 3140), (3, 3240)] {
+                assert_eq!(rank[slot][1], kernels, "cadence kernel census slot {slot}");
+                assert_eq!(
+                    [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
+                    [86, 1, 86, 0]
+                );
+            }
+        }
+    }
 }
 
 pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool) {
+    run_impl(gpu, prompt, tokenizer, reverse, false);
+}
+
+pub(super) fn cadence(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool) {
+    run_impl(gpu, prompt, tokenizer, reverse, true);
+}
+
+fn arm(gpu: &Dsv4Gpu, state: &mut DecodeState, cfg: Dsv4SampleCfg, cadence: bool) {
+    // All armed states drop before the immutable model/weights/configuration.
+    unsafe {
+        if cadence {
+            gpu.arm_full_token_replay_cadence_for_gate(state, cfg)
+        } else {
+            gpu.arm_full_token_replay_mode_for_gate(state, cfg, false)
+        }
+    }
+    .expect("arm replay");
+}
+
+fn variant_counts(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool, start: usize, end: usize) {
+    let mut expected = [0u64; 4];
+    for pos in start..end {
+        let slot = if !cadence || !(pos + 1).is_multiple_of(4) {
+            0
+        } else if (pos + 1).is_multiple_of(128) {
+            3
+        } else {
+            2
+        };
+        expected[slot] += 1;
+        expected[1] += 1;
+    }
+    assert_eq!(
+        gpu.full_token_replay_variant_counts_for_gate(state)
+            .unwrap(),
+        [expected; 2]
+    );
+}
+
+fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool, cadence: bool) {
+    if cadence {
+        println!(
+            r#"CADENCE_PROTOCOL {{"comparison":"full_replay_vs_cadence","variant_slots":["ordinary","commit","c4","c4_c128"],"all_first_captures_inside_first_arm_row":true,"positions_below":512,"minimum_gain_threshold":null}}"#
+        );
+    }
     let schedule = if reverse {
         "BBBBB AAAAA AAAAA BBBBB"
     } else {
@@ -111,7 +170,10 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
         .expect("control prefix");
     gpu.restore_full_token_prefix_for_gate(&mut graph, &prefix)
         .expect("graph prefix");
-    unsafe { gpu.arm_full_token_replay_for_gate(&mut graph, cfg) }.expect("arm replay");
+    arm(gpu, &mut graph, cfg, cadence);
+    if cadence {
+        arm(gpu, &mut control, cfg, false);
+    }
     let mut control_sampler = gpu.device_sampler().unwrap();
     let mut inputs = Vec::with_capacity(OUTPUT);
     let mut carry = first;
@@ -123,7 +185,12 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
         );
         inputs.push(carry);
         let before = gpu.full_token_ar_epochs_for_gate().unwrap();
-        let expected = eager_step(gpu, &mut control, &mut control_sampler, &cfg, carry);
+        let expected = if cadence {
+            gpu.decode_sample_full_token_for_gate(carry, &mut control)
+                .expect("full replay oracle")
+        } else {
+            eager_step(gpu, &mut control, &mut control_sampler, &cfg, carry)
+        };
         let actual = gpu
             .decode_sample_full_token_for_gate(carry, &mut graph)
             .expect("full replay");
@@ -139,7 +206,12 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
             gpu.full_token_replay_counts_for_gate(&graph).unwrap(),
             [[step as u64 + 1; 2]; 2]
         );
-        capture_once(gpu, &graph);
+        capture_once(gpu, &graph, cadence);
+        variant_counts(gpu, &graph, cadence, PRIME, PRIME + step + 1);
+        if cadence {
+            capture_once(gpu, &control, false);
+            variant_counts(gpu, &control, false, PRIME, PRIME + step + 1);
+        }
         if graph.pos.is_multiple_of(4) || step == 0 {
             println!(
                 r#"REPLAY_EXACT {{"position":{},"both_rank_cache_hidden_logits":true,"token":{actual},"device_replays":{:?},"captures":{:?}}}"#,
@@ -167,12 +239,17 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
 
     // Each fault is armed AFTER a successful graph capture/replay, proving its
     // rank/layer control is live. C4/C128 and ring-wrap boundaries are included.
+    let fault_sites: &[(usize, usize)] = if cadence {
+        &[(258, 0), (259, 0), (383, 21), (511, 42)]
+    } else {
+        &[(259, 0), (383, 21), (511, 42)]
+    };
     for rank in 0..2 {
-        for (position, layer) in [(259usize, 0usize), (383, 21), (511, 42)] {
+        for &(position, layer) in fault_sites {
             let mut failed = state(gpu);
             gpu.restore_full_token_prefix_for_gate(&mut failed, &prefix)
                 .unwrap();
-            unsafe { gpu.arm_full_token_replay_for_gate(&mut failed, cfg) }.unwrap();
+            arm(gpu, &mut failed, cfg, cadence);
             for &token in &inputs[..position - PRIME] {
                 gpu.decode_sample_full_token_for_gate(token, &mut failed)
                     .expect("fault setup");
@@ -218,21 +295,35 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
                 after,
                 "retry executed"
             );
-            capture_once(gpu, &failed);
+            capture_once(gpu, &failed, cadence);
             println!(
                 r#"REPLAY_REFUSAL {{"rank":{rank},"layer":{layer},"position":{position},"words":{words:?},"cache_unchanged":true,"commit_delta":[0,0],"retry_quarantined":true}}"#
             );
             gpu.set_tp_ep_ar_refusal_words_for_gate([0, 0]).unwrap();
         }
     }
-    println!("PASS replay correctness and six live refusal cells; beginning bounded 20-row ABBA");
+    println!(
+        "PASS replay correctness and {} live refusal cells; beginning bounded 20-row comparison cadence={cadence}",
+        2 * fault_sites.len()
+    );
 
     // The scored graph state is new: first B captures within the measured wall.
     // Subsequent rows restore buffers in place and must retain exactly four graphs.
     let mut candidate = state(gpu);
     gpu.restore_full_token_prefix_for_gate(&mut candidate, &prefix)
         .unwrap();
-    unsafe { gpu.arm_full_token_replay_for_gate(&mut candidate, cfg) }.unwrap();
+    arm(gpu, &mut candidate, cfg, cadence);
+    // Both measured graph arms pay their complete first capture in their first row.
+    let mut control = if cadence {
+        drop(control);
+        let mut fresh = state(gpu);
+        gpu.restore_full_token_prefix_for_gate(&mut fresh, &prefix)
+            .unwrap();
+        arm(gpu, &mut fresh, cfg, false);
+        fresh
+    } else {
+        control
+    };
     let mut walls = [0u128; 2];
     for row in 0..20 {
         let graph_arm = (row / 5 == 1 || row / 5 == 2) != reverse;
@@ -245,14 +336,18 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
             .expect("row restore");
         let before_epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
         let before_counts =
-            graph_arm.then(|| gpu.full_token_replay_counts_for_gate(active).unwrap());
+            (graph_arm || cadence).then(|| gpu.full_token_replay_counts_for_gate(active).unwrap());
+        let before_variants = (graph_arm || cadence).then(|| {
+            gpu.full_token_replay_variant_counts_for_gate(active)
+                .unwrap()
+        });
         let mut carry = first;
         let mut tokens = Vec::with_capacity(OUTPUT);
         let start = Instant::now();
         for _ in 0..OUTPUT {
             assert_ne!(carry, tokenizer.eos_id(), "early EOS row is not eligible");
             tokens.push(carry);
-            carry = if graph_arm {
+            carry = if graph_arm || cadence {
                 gpu.decode_sample_full_token_for_gate(carry, active)
                     .expect("scored replay")
             } else {
@@ -284,14 +379,27 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
             );
             control_hash.update(0u64.to_le_bytes());
         }
-        let counts = if graph_arm {
+        let counts = if graph_arm || cadence {
             let after = gpu.full_token_replay_counts_for_gate(active).unwrap();
             for (rank_after, rank_before) in after.iter().zip(before_counts.unwrap()) {
                 for (&count_after, count_before) in rank_after.iter().zip(rank_before) {
                     assert_eq!(count_after - count_before, OUTPUT as u64);
                 }
             }
-            capture_once(gpu, active);
+            capture_once(gpu, active, graph_arm && cadence);
+            let variants = gpu
+                .full_token_replay_variant_counts_for_gate(active)
+                .unwrap();
+            let expected = if graph_arm && cadence {
+                [192, 256, 62, 2]
+            } else {
+                [256, 256, 0, 0]
+            };
+            for (after, before) in variants.iter().zip(before_variants.unwrap()) {
+                for slot in 0..4 {
+                    assert_eq!(after[slot] - before[slot], expected[slot]);
+                }
+            }
             after
         } else {
             [[0; 2]; 2]
@@ -299,15 +407,36 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
         walls[usize::from(graph_arm)] += elapsed;
         println!(
             r#"MEASURE {{"row":{row},"arm":"{}","generated_tokens":{OUTPUT},"decode_wall_ns":{elapsed},"decode_tok_s":{},"timing_scope":"sample_plus_forward_envelope","eligible":true,"looped":false,"generated_sha256":"{}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"captures":{:?},"control_sha256":"{:x}","speculative":false,"split_k":false}}"#,
-            if graph_arm { "graph" } else { "eager" },
+            if cadence {
+                if graph_arm { "cadence" } else { "full_graph" }
+            } else if graph_arm {
+                "graph"
+            } else {
+                "eager"
+            },
             OUTPUT as f64 * 1e9 / elapsed as f64,
             expected_tokens,
             expected_identity.0,
             expected_identity.1,
             expected_identity.2,
-            if graph_arm { [1, 1] } else { [0, 0] },
+            if graph_arm && cadence {
+                [3, 1]
+            } else if graph_arm || cadence {
+                [1, 1]
+            } else {
+                [0, 0]
+            },
             control_hash.finalize()
         );
+        if cadence {
+            println!(
+                r#"CADENCE_ROW {{"row":{row},"variant_device_counts":{:?},"variant_census":{:?},"first_capture_included_both_arms":true}}"#,
+                gpu.full_token_replay_variant_counts_for_gate(active)
+                    .unwrap(),
+                gpu.full_token_replay_variant_census_for_gate(active)
+                    .unwrap()
+            );
+        }
         if row == if reverse { 0 } else { 5 } {
             std::fs::create_dir_all("perf-graphs").unwrap();
             gpu.dump_full_token_replay_for_gate(active, Path::new("perf-graphs"))
@@ -320,6 +449,13 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse:
     }
     let eager = 10.0 * OUTPUT as f64 * 1e9 / walls[0] as f64;
     let graph = 10.0 * OUTPUT as f64 * 1e9 / walls[1] as f64;
+    if cadence {
+        println!(
+            r#"CADENCE_SUMMARY {{"rows":20,"rows_per_arm":10,"blocks":"{schedule}","full_replay_tok_s":{eager},"cadence_tok_s":{graph},"delta_pct":{},"same_load":true,"recapture":false,"first_capture_both_arms":true}}"#,
+            100.0 * (graph / eager - 1.0)
+        );
+        return;
+    }
     println!(
         r#"REPLAY_SUMMARY {{"rows":20,"rows_per_arm":10,"blocks":"{schedule}","eager_tok_s":{eager},"graph_tok_s":{graph},"delta_pct":{},"speculative":false,"same_load":true,"recapture":false,"decision":"return to root; no automatic qualification or merge"}}"#,
         100.0 * (graph / eager - 1.0)
@@ -371,14 +507,14 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     gpu.restore_full_token_prefix_for_gate(&mut candidate, &prefix)
         .unwrap();
     // Safety: gpu/weights/config remain borrowed and unchanged until both states drop.
-    unsafe { gpu.arm_full_token_replay_for_gate(&mut candidate, cfg) }.unwrap();
+    unsafe { gpu.arm_full_token_replay_mode_for_gate(&mut candidate, cfg, false) }.unwrap();
     let expected = eager_step(gpu, &mut control, &mut sampler, &cfg, first);
     let actual = gpu
         .decode_sample_full_token_for_gate(first, &mut candidate)
         .unwrap();
     assert_eq!(actual, expected);
     assert_eq!(identity(gpu, &candidate), identity(gpu, &control));
-    capture_once(gpu, &candidate);
+    capture_once(gpu, &candidate, false);
     let mut oracle = None;
     for graph_arm in [false, true] {
         let active = if graph_arm {
@@ -422,7 +558,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
         let result = (tokens.clone(), carry, identity(gpu, active));
         if graph_arm {
             assert_eq!(Some(result), oracle, "profile arms differ");
-            capture_once(gpu, active);
+            capture_once(gpu, active, false);
             assert_eq!(
                 gpu.full_token_replay_counts_for_gate(active).unwrap(),
                 [[33, 33], [33, 33]]
