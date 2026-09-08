@@ -523,3 +523,31 @@ and latency gates are all pending the seam and tune-pair handoff. The branch is
 kept for the stacked phase-2 continuation. The pre-commit hook invokes
 `cargo fmt --all -- --check` (`tools/hooks/pre-commit:6`), so the authorized
 doc-only commit uses `git commit --no-verify`. Nothing is pushed, released or deployed.
+
+## Phase 2: seam integration checkpoint
+
+2026-09-09. Rebased the design commit onto seam head
+`f604518ca`, containing shared utility `534040262`. Static template reads:
+`crates/memra-engine/src/prime_walker.rs`, `spec/prime.rs`, `dflash.rs`,
+`crates/memra-server/src/prime_fairness.rs` and their production worker call sites.
+No shared utility or policy changes are owned by this lane.
+
+Section-9 answers from that code:
+
+| Question | Answer at f604518ca | Remaining dependency |
+|---|---|---|
+| Lifetimes and ownership | PrimeWalker has associated Output; advance/remaining borrow, finish consumes. DsparkPrimeWalker and MtpPrimeWalker bind borrowed engines to owned pending state only during a call. | None for GLM5 state ownership. |
+| Multiple phases/full cover | advance_prime requires remaining to decrease by exactly one. finish_prime permits zero chunks and forbids incomplete finish. MTP counts trunk and draft fill together. | Route must precompute all preparation chunks and preserve the anchor position. |
+| Rank watermark | No rank assumptions in PrimeChunk, only phase/rows. Adapter must fence before return. | Route owns logical/physical frontiers, PP lookahead and completion acknowledgments. |
+| Scratch/cancel | Trait requires no shared-scratch borrow across advance. PrimeService keeps pending true through a failed advance/finalize; worker skips pending demotion and retirement reuse. | PP runtime slots need route-owned copied payloads; no generic reservation API exists. |
+| Admission | MTP restore can defer its suffix to the walker. GLM5 already carries restored cache/dkv to its first tick, so that tick must construct its walker. | Plain hyper admission is outside spec_order; generic scheduling of plain pending primes requires seam-owner design, not a local scheduler fork. |
+| Receipts/tests | trace_chunk records phase/rows/wall; PrimeService counts yields. Shared fake tests exercise drain/advance, errors and finish; policy tests rotate peers. | Request/boot identity, rank frontier and phase-specific capture diagnostics are not in shared trace. Route receipts must correlate them; request correlation in the generic trace is an orchestrator request. |
+
+Additional code fact: `glm5_spec_session_from_restored` still explicitly refuses
+TP-sharded models. Preserve that admission rule in the adapter. The queued TP
+restored gate cannot be reported passing without the separately owned TP spec
+restore support; record it as a prerequisite, never silently test plain instead.
+
+Builds/tests use a lane-owned directory and target on the assigned single B200 tune
+host, nice 19, at most 16 jobs, serialized with other lanes via
+`/tmp/memra-gpu.lock`. Pair gates are queued, not executed on this single-card host.
