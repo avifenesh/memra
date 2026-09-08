@@ -12,6 +12,7 @@ key=secrets.token_hex(24);(run/'key').write_text(key);(run/'key').chmod(0o600);(
 (run/'models.toml').write_bytes((source/'models.toml').read_bytes())
 with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
 profile.update(MEMRA_ADDR=f'127.0.0.1:{port}',MEMRA_MODEL_METADATA=str(run/'models.toml'),MEMRA_API_KEYS=str(run/'keys.toml'),MEMRA_REQUEST_LEDGER=str(run/'ledger.jsonl'))
+profile.pop('MEMRA_REQUEST_LEDGER',None)  # public engine binary has no deployment ledger
 if a.sessions is not None:profile['MEMRA_MAX_SESSIONS']=str(a.sessions)
 profile.update(MEMRA_PRIME_YIELD='1' if a.arm=='on' else '0',MEMRA_PRIME_CHUNK=str(a.chunk),MEMRA_TICK_TRACE='1',MEMRA_TTFT_TRACE='1')
 (run/'profile.json').write_text(json.dumps(profile,indent=2));(run/'controller.py').write_bytes(pathlib.Path(__file__).read_bytes());(run/'identity.json').write_text(json.dumps({'binary':str(binary),'sha256':sha,'source_profile':str(source),'args':vars(a),'boot_nonce':boot_nonce,'workload_id':workload_id},indent=2))
