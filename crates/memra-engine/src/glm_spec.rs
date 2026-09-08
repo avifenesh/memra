@@ -184,6 +184,9 @@
 //! a SEALED production bundle still fails closed until it banks a `glm5-spec.v1` rewrite
 //! receipt (the real-artifact qualification lane's job).
 
+mod prime;
+pub use prime::{Glm5PlainPrimeState, Glm5PlainPrimeWalker, Glm5PrimeState, Glm5PrimeWalker};
+
 use crate::Engine;
 use crate::cache::{Cache, HcTapSink};
 use crate::dflash::{DflashDraft, DflashKv, DsparkDraftSample};
@@ -2384,12 +2387,15 @@ impl HybridModel {
     /// layers warm through; its attention output is discarded — the plane rows are the
     /// product). The MoE FFN, final norm and lm-head of the per-token chain are never
     /// run: they fed nothing but the (discarded) draft logits of prompt positions.
-    fn glm5_mtp_plane_fill(
+    #[allow(clippy::too_many_arguments)]
+    fn glm5_mtp_plane_fill_chunk(
         &self,
         e: &Engine,
         tokens_next: &[u32],
         hiddens: &CudaSlice<f32>,
         t: usize,
+        done: usize,
+        tc: usize,
         cache: &mut Cache,
     ) -> Res<()> {
         let mtp = self
@@ -2418,55 +2424,49 @@ impl HybridModel {
         // Chunk bound: the trunk prime's workspace discipline — bounds the t>1 attention
         // workspace and the transient buffers below without changing the append semantics
         // (`mla_attn_cached` appends at the plane's running length either way).
-        const CHUNK: usize = 512;
-        let mut done = 0usize;
-        while done < t {
-            let tc = (t - done).min(CHUNK);
-            let e_emb = e.htod(
-                &self
-                    .embd
-                    .try_gather(n_embd, &tokens_next[done..done + tc])?,
-            )?;
-            let mut e_norm = e.uninit(tc * n_embd)?;
-            e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, tc, eps)?;
-            // hnorm over the chunk's hidden rows (one contiguous view copy — rms_norm
-            // takes an owned-slice operand).
-            let hv = e.view(hiddens, (done + tc) * n_embd);
-            let mut h_rows = e.uninit(tc * n_embd)?;
-            e.copy_view_into(
-                &mut h_rows,
-                0,
-                &hv.slice(done * n_embd..(done + tc) * n_embd),
-                tc * n_embd,
-            )?;
-            let mut h_norm = e.uninit(tc * n_embd)?;
-            e.rms_norm(
-                &h_rows,
-                mtp.hnorm.float_data(),
-                &mut h_norm,
-                n_embd,
-                tc,
-                eps,
-            )?;
-            // concat rows [tc, 2*n_embd] = [enorm ; hnorm] — two strided placements.
-            let mut concat = e.uninit(tc * 2 * n_embd)?;
-            e.place_rows_strided(&e_norm, &mut concat, n_embd, tc, 2 * n_embd, 0)?;
-            e.place_rows_strided(&h_norm, &mut concat, n_embd, tc, 2 * n_embd, n_embd)?;
-            let inp_sa = e.matmul(&mtp.eh_proj, &concat, tc)?;
-            let mut a_norm = e.uninit(tc * n_embd)?;
-            e.rms_norm(
-                &inp_sa,
-                mtp.attn_norm.float_data(),
-                &mut a_norm,
-                n_embd,
-                tc,
-                eps,
-            )?;
-            let pos: Vec<i32> = (done as i32..(done + tc) as i32).collect();
-            let pos_d = e.htod_i32(&pos)?;
-            let _ = self.mla_attn_cached(e, mla, &a_norm, &pos_d, tc, il, cache)?;
-            done += tc;
-        }
+        let e_emb = e.htod(
+            &self
+                .embd
+                .try_gather(n_embd, &tokens_next[done..done + tc])?,
+        )?;
+        let mut e_norm = e.uninit(tc * n_embd)?;
+        e.rms_norm(&e_emb, mtp.enorm.float_data(), &mut e_norm, n_embd, tc, eps)?;
+        // hnorm over the chunk's hidden rows (one contiguous view copy — rms_norm
+        // takes an owned-slice operand).
+        let hv = e.view(hiddens, (done + tc) * n_embd);
+        let mut h_rows = e.uninit(tc * n_embd)?;
+        e.copy_view_into(
+            &mut h_rows,
+            0,
+            &hv.slice(done * n_embd..(done + tc) * n_embd),
+            tc * n_embd,
+        )?;
+        let mut h_norm = e.uninit(tc * n_embd)?;
+        e.rms_norm(
+            &h_rows,
+            mtp.hnorm.float_data(),
+            &mut h_norm,
+            n_embd,
+            tc,
+            eps,
+        )?;
+        // concat rows [tc, 2*n_embd] = [enorm ; hnorm] — two strided placements.
+        let mut concat = e.uninit(tc * 2 * n_embd)?;
+        e.place_rows_strided(&e_norm, &mut concat, n_embd, tc, 2 * n_embd, 0)?;
+        e.place_rows_strided(&h_norm, &mut concat, n_embd, tc, 2 * n_embd, n_embd)?;
+        let inp_sa = e.matmul(&mtp.eh_proj, &concat, tc)?;
+        let mut a_norm = e.uninit(tc * n_embd)?;
+        e.rms_norm(
+            &inp_sa,
+            mtp.attn_norm.float_data(),
+            &mut a_norm,
+            n_embd,
+            tc,
+            eps,
+        )?;
+        let pos: Vec<i32> = (done as i32..(done + tc) as i32).collect();
+        let pos_d = e.htod_i32(&pos)?;
+        let _ = self.mla_attn_cached(e, mla, &a_norm, &pos_d, tc, il, cache)?;
         Ok(())
     }
 
@@ -2505,6 +2505,19 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5SpecSession> {
+        let mut state = Some(self.glm5_prime_start(e, prompt, ctx_cap, sampling)?);
+        let mut walker = self.glm5_prime_walker(e, &mut state);
+        crate::prime_walker::advance_prime(&mut walker, false, crate::prime_walker::trace_chunk)?;
+        crate::prime_walker::finish_prime(walker)
+    }
+
+    pub fn glm5_prime_start(
+        &self,
+        e: &Engine,
+        prompt: &[u32],
+        ctx_cap: usize,
+        sampling: Option<SpecSampling>,
+    ) -> Res<Glm5PrimeState> {
         if self.hyper.is_none() {
             return Err("generate_spec_glm5 requires a HyperConnections trunk".into());
         }
@@ -2664,282 +2677,24 @@ impl HybridModel {
         }
         // Stage-owned allocation under a split (each layer's planes on its stage's device,
         // trailing MTP plane on the last stage); door shut = plain `Cache::new_planned`.
-        let mut cache = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, ctx_cap)?;
+        let cache = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, ctx_cap)?;
         if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
             pf.cache_alloc_ms = ck.lap(e, eh);
         }
 
-        // ---- prime, boundary token, draft-source warm over the prompt ----
-        // `prime_cache` routes to its own ppN twin under the split; `hiddens` is owned by
-        // the LAST stage's engine (its published contract) — exactly where the MTP chain
-        // below runs, so the warm consumes it with no device bounce. DFlash2 source: the
-        // prime walk fills the armed HcTapSink with every prompt row's contracted tap
-        // features (the drafter's context; round 1 ingests them into its own KV).
-        let plen = prompt.len();
-        let n_embd = self.cfg.n_embd as usize;
-        let tap_layers = match dflash_src {
-            Some(dr) => Some(glm5_dflash_tap_layers(&dr.draft, self.layers.len())?),
-            None => None,
-        };
-        // DRAFTER PRIME ARM (lane/spec-route-depth-20260902): the device-resident arm ingests
-        // taps inside the prime at every range boundary; the eager arm (the pre-lane literal)
-        // primes once over a whole-prompt host sink and leaves the ingest to round 1. (The
-        // chunked host-tap arm, MEMRA_GLM5_DRAFT_PRIME_V2, was REJECTED on the pair and removed
-        // 2026-09-05.) `hidden_rows` is the row count of the returned `hiddens` stack (the whole
-        // prompt on the eager arm, the LAST chunk on the chunked arm) — the boundary
-        // capture indexes its last row through it.
-        let mut v2_kv: Option<DflashKv> = None;
-        let (logits0, hiddens, hidden_rows) = match (dflash_src, tap_layers.as_ref()) {
-            (Some(dr), Some(taps)) if glm5_draft_taps_device_on() => {
-                // DEVICE-RESIDENT ARM (doc on `glm5_draft_taps_device_on`): ONE whole-prompt
-                // prime; the ingest happens inside it at every range boundary.
-                let kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
-                if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-                    pf.draft_alloc_ms = ck.lap(e, eh);
-                    pf.draft_kv_mb = dflash_kv_bytes(&dr.draft.cfg, ctx_cap) as f64 / 1e6;
-                }
-                let ring = crate::hybrid_forward::hyper_prime_call_rows(
-                    plen,
-                    self.layers.len(),
-                    self.gdn_prime_grid_on(),
-                );
-                let mut sink = HcTapSink::new_device_staged_at(taps.clone(), n_embd, ring, 0);
-                sink.ingest_state = Some(Box::new(Glm5DraftPrimeInflight {
-                    kv,
-                    taps: taps.clone(),
-                    n_embd,
-                    ring,
-                    stage: (0..taps.len()).map(|_| None).collect(),
-                    rows_dev: None,
-                    prof_on: prof.is_some(),
-                    copy_ms: 0.0,
-                    feat_ms: 0.0,
-                    kv_ms: 0.0,
-                    chunks: 0,
-                }));
-                cache.hc_taps = Some(sink);
-                let (l, _seed, h) = self.prime_cache(e, prompt, &mut cache, 0)?;
-                let walk_ms = pclk.as_mut().map(|ck| ck.lap(e, eh));
-                let mut sink = cache
-                    .hc_taps
-                    .take()
-                    .ok_or("device-resident drafter prime: tap sink vanished")?;
-                let st = sink
-                    .ingest_state
-                    .take()
-                    .ok_or("device-resident drafter prime: ingest state vanished")?
-                    .downcast::<Glm5DraftPrimeInflight>()
-                    .map_err(|_| "device-resident drafter prime: ingest state of the wrong type")?;
-                let st = *st;
-                if st.kv.len != plen {
-                    return Err(format!(
-                        "device-resident drafter prime covered {} of {plen} prompt rows \
-                         (the prime's range loop must hand every range to the ingest)",
-                        st.kv.len
-                    )
-                    .into());
-                }
-                if let (Some(pf), Some(walk)) = (prof.as_mut(), walk_ms) {
-                    // The ingest ran INSIDE the prime walk: split it back out so `prime`
-                    // stays the trunk's share and `draft_prime` the drafter's.
-                    let ingest = st.copy_ms + st.feat_ms + st.kv_ms;
-                    pf.prime_ms = (walk - ingest).max(0.0);
-                    pf.draft_prime_ms = ingest;
-                    pf.draft_prime_h2d_ms = st.copy_ms;
-                    pf.draft_prime_feat_ms = st.feat_ms;
-                    pf.draft_prime_kv_ms = st.kv_ms;
-                    pf.draft_prime_rows = plen;
-                    pf.draft_prime_chunks = st.chunks;
-                    pf.draft_prime_arm = "device";
-                }
-                v2_kv = Some(st.kv);
-                (l, h, plen)
-            }
-            _ => {
-                if let Some(taps) = tap_layers.as_ref() {
-                    let t_sink = std::time::Instant::now();
-                    cache.hc_taps = Some(HcTapSink::new(taps.clone(), n_embd, plen));
-                    if let Some(pf) = prof.as_mut() {
-                        pf.sink_alloc_ms = t_sink.elapsed().as_secs_f64() * 1e3;
-                    }
-                }
-                let (l, _seed, h) = self.prime_cache(e, prompt, &mut cache, 0)?;
-                if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-                    pf.prime_ms = ck.lap(e, eh);
-                    pf.prime_tap_dtoh_ms = cache
-                        .hc_taps
-                        .as_ref()
-                        .map(|sk| sk.dtoh_ns as f64 / 1e6)
-                        .unwrap_or(0.0);
-                }
-                (l, h, plen)
-            }
-        };
-        // Prompt-boundary capture (lane/glm5-prefix-latent2): taken NOW — after the prime
-        // filled every plane to the boundary, before the anchor/draft machinery below and
-        // before any burst mutates the conv/ssm state or laps the tail ring. DFlash2-only:
-        // the native arm's plane fill moves the MTP latent layer past the boundary before a
-        // capture could be taken, and restore refuses the native source anyway. A refusal
-        // drops the capture loudly and the session serves regardless.
-        let prefix_capture = if glm5_spec_prefix_on() && dflash_src.is_some() {
-            self.glm5_prefix_boundary_capture(e, eh, &cache, &logits0, &hiddens, plen, hidden_rows)
-        } else {
-            None
-        };
-        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-            pf.capture_ms = ck.lap(e, eh);
-        }
-        // The penalty window spans the SESSION (`pen_window_seed`): the prompt now, every
-        // committed token from here. Empty with penalties off — the anchor rule below is
-        // then the pre-lane literal in both regimes.
-        let pen_hist = glm5_pen_window_seed(pen.as_ref(), prompt);
-        let mut sctr = 0u32;
-        let anchor = glm5_anchor(
-            eh,
-            &logits0,
-            sampling.as_ref(),
-            pen.as_ref(),
-            &pen_hist,
-            &mut sctr,
-            "glm5-prime",
-        )?;
-        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-            pf.anchor_ms = ck.lap(e, eh);
-        }
-
-        // Keyed on the KIND the general law returned, not on a second local re-derivation:
-        // a seam whose answer is recomputed by its consumer is decoration. (`tap_layers` is
-        // `Some` exactly when `dflash_src` is, and the law returns `Dflash2` exactly then, so
-        // this is the same program the pre-seam code ran — the `_` arm's refusal is the
-        // never-taken proof of that rather than a silent fallback.)
-        let (mut draft, pending) = match (source_kind, dflash_src, tap_layers) {
-            (crate::spec::DraftSourceKind::Dflash2, Some(dr), Some(taps)) => {
-                if let Some(kv) = v2_kv.take() {
-                    // Chunked arm: the KV already holds every prompt row (kv.len == plen);
-                    // round 1 finds nothing pending and walks straight to its block forward.
-                    debug_assert_eq!(kv.len, plen, "chunked drafter prime must cover the prompt");
-                    (
-                        Glm5DraftState::Dflash2 {
-                            kv,
-                            pending: Vec::new(),
-                            taps,
-                        },
-                        Vec::new(),
-                    )
-                } else {
-                    let sink = cache
-                        .hc_taps
-                        .take()
-                        .ok_or("glm5 dflash prime tap sink vanished")?;
-                    // Drafter ctx KV on the HEAD engine (where the drafter weights loaded and
-                    // every round's chain runs); prompt feature rows ride `pending` so round 1
-                    // ingests them through the one chunked path.
-                    let kv = DflashKv::new(eh, &dr.draft.cfg, ctx_cap)?;
-                    if let Some(pf) = prof.as_mut() {
-                        pf.draft_kv_mb = dflash_kv_bytes(&dr.draft.cfg, ctx_cap) as f64 / 1e6;
-                    }
-                    (
-                        Glm5DraftState::Dflash2 {
-                            kv,
-                            pending: sink.rows,
-                            taps,
-                        },
-                        Vec::new(),
-                    )
-                }
-            }
-            (crate::spec::DraftSourceKind::Dflash2, _, _) => {
-                return Err(
-                    "the draft-source law selected DFlash2 but this session resolved no tap \
-                     layers — a load-path bug, refused instead of silently drafting from the \
-                     MTP plane (a VANISHED tap sink is a different failure, caught by name in \
-                     the Dflash2 arm itself)"
-                        .into(),
-                );
-            }
-            (crate::spec::DraftSourceKind::NativeMtp, _, _) => {
-                // BATCHED PLANE WARM (loop-port fold-in — the map's #4, the spec.rs
-                // `mtp_kv_fill_all` pattern re-aimed at the MLA plane): pairs
-                // (prompt[i+1], h_i) at plane pos i, i in 0..P-1, filled in CHUNKED
-                // t-parallel passes instead of P-1 sequential full-block forwards. The
-                // sequential warm ran ~400 tok/s — the measured +2.5 s TTFT per 1k
-                // prompt tokens, spec-battery flip condition 1 by name. MTP rows are
-                // INDEPENDENT given the trunk hiddens (no row-to-row recurrence — the
-                // plane is the only carrier), so the fill is exact in structure; the
-                // t>1 attention takes the prime-class program, which can only move
-                // DRAFTS, never output (verify arbitrates; the byte-identity batteries
-                // stay the proof).
-                self.glm5_mtp_plane_fill(eh, &prompt[1..], &hiddens, plen - 1, &mut cache)?;
-                // pending = committed (token, h_seed) pairs not yet fed to the MTP plane.
-                // The LAST pair's logits are the next round's first draft — the re-warm
-                // doubles as draft 1.
-                let pending = vec![(anchor, self.glm5_seed_row(eh, &hiddens, plen, plen - 1)?)];
-                (Glm5DraftState::NativeMtp, pending)
-            }
-        };
-        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-            pf.draft_alloc_ms += ck.lap(e, eh);
-        }
-        // EAGER-ARM INGEST AT CREATION (doc on `glm5_draft_prime_lazy_on`): the prompt's tap
-        // rows go into the drafter KV NOW, before the session (and its anchor) is handed to
-        // the worker, unless the lazy seam asks for the round-1 placement. The chunked arm
-        // arrives here with nothing pending.
-        if !glm5_draft_prime_lazy_on()
-            && let (Glm5DraftState::Dflash2 { kv, pending, taps }, Some(dr)) =
-                (&mut draft, dflash_src)
-            && !pending.is_empty()
-        {
-            let rows = std::mem::take(pending);
-            let stats = self.glm5_dflash_ingest_rows(
-                eh,
-                &dr.draft,
-                kv,
-                &rows,
-                taps.len() * n_embd,
-                pclk.as_mut(),
-            )?;
-            if let Some(pf) = prof.as_mut() {
-                stats.write(pf, "eager");
-            }
-        }
-        if let Some(pf) = prof.as_mut() {
-            pf.free_mb_after = self.glm5_free_mb(e);
-        }
-        // Composition engagement receipt — printed immediately before the session is
-        // RETURNED (after every admission law, the d2t vocabulary check, the cache
-        // allocation and the prompt prime), so a grep for this line counts sessions that
-        // actually opened; a refusal or a failure anywhere above never logs it (the #82
-        // review moved it here after finding four fallible steps below its first home).
-        if tp_sharded {
-            eprintln!(
-                "[glm5-spec] spec x TP composition ARMED (MEMRA_GLM5_SPEC_TP=1): verify \
-                 rows ride the TP shards; rollback restores per-rank planes \
-                 performance_claim=false"
-            );
-        }
-        Ok(Glm5SpecSession {
+        Glm5PrimeState::cold(
+            self,
+            e,
             cache,
-            committed: prompt.to_vec(),
-            anchor,
-            anchor_emitted: false,
-            pending,
-            draft,
+            prompt,
+            ctx_cap,
             sampling,
             pen,
-            pen_hist,
-            sctr,
-            uctr: 0,
-            snap_pool: Vec::new(),
-            verify_graphs: VerifyGraphPool::default(),
-            rounds: 0,
-            rank_trimmed_rounds: 0,
-            done: false,
-            max_ctx: ctx_cap,
             mtp_il,
-            prefix_capture,
-            prof_rounds: prof.as_ref().map(|_| SpecRoundsLog::default()),
+            source_kind,
+            tp_sharded,
             prof,
-        })
+        )
     }
 
     /// Range-begin hook of the device-resident drafter prime (called by the prime's range
@@ -3257,7 +3012,34 @@ impl HybridModel {
     pub fn glm5_spec_session_from_restored(
         &self,
         e: &Engine,
-        mut cache: Cache,
+        cache: Cache,
+        fed: &[u32],
+        suffix: &[u32],
+        boundary_logits: &[f32],
+        dkv: DflashKv,
+        ctx_cap: usize,
+        sampling: Option<SpecSampling>,
+    ) -> Res<Glm5SpecSession> {
+        let mut state = Some(self.glm5_prime_restored_start(
+            e,
+            cache,
+            fed,
+            suffix,
+            boundary_logits,
+            dkv,
+            ctx_cap,
+            sampling,
+        )?);
+        let mut walker = self.glm5_prime_walker(e, &mut state);
+        crate::prime_walker::advance_prime(&mut walker, false, crate::prime_walker::trace_chunk)?;
+        crate::prime_walker::finish_prime(walker)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn glm5_prime_restored_start(
+        &self,
+        e: &Engine,
+        cache: Cache,
         fed: &[u32],
         suffix: &[u32],
         // The ENTRY's boundary logits (`ReuseEntry::last_logits`), read ONLY on the
@@ -3267,7 +3049,7 @@ impl HybridModel {
         dkv: DflashKv,
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
-    ) -> Res<Glm5SpecSession> {
+    ) -> Res<Glm5PrimeState> {
         if self.hyper.is_none() {
             return Err("glm5_spec_session_from_restored requires a HyperConnections trunk".into());
         }
@@ -3293,7 +3075,7 @@ impl HybridModel {
         // DFlash2 source ONLY: the native MTP plane fill consumes trunk hiddens the restored
         // range does not have (re-running the trunk over it would be a second prime — the
         // whole cost this restore exists to avoid).
-        let dr = self.glm5_dflash.as_ref().ok_or(
+        self.glm5_dflash.as_ref().ok_or(
             "restored glm5 spec sessions require the DFlash2 drafter (MEMRA_GLM5_DFLASH): \
              the native MTP plane cannot be re-warmed from restored KV",
         )?;
@@ -3393,8 +3175,6 @@ impl HybridModel {
         // ---- suffix prime over the restored planes (the continuation program), taps armed
         // for exactly the suffix rows (`HcTapSink::origin` anchors the sink at the restored
         // boundary; the chunked walk's absolute bases rebase through it).
-        let n_embd = self.cfg.n_embd as usize;
-        let taps = glm5_dflash_tap_layers(&dr.draft, self.layers.len())?;
         let eh = self.glm5_head_engine(e)?;
         // ---- STREAM ORDERING, UNCONDITIONAL AND BEFORE THE SUFFIX BRANCH (memra#95, the
         // fleet-fatal full-cover panic).
@@ -3432,115 +3212,18 @@ impl HybridModel {
         // panic between the `RESTORED session` line and the round's first `[glm5-acc]`),
         // fleet-fatal after one respawn.
         crate::pp::PpNRt::order_engine_behind(e, eh)?;
-        // FIRST-TOKEN PROFILE (`MEMRA_SPEC_PROF=1`): the restored shape pays no cache or
-        // drafter allocation here (the caller restored both); its prime bucket is the
-        // SUFFIX prime (0 on a full-cover hit), which is what makes the restore worth having.
-        let mut prof = spec_prof_on().then(SpecFirstTokenProf::default);
-        let mut pclk = prof.as_ref().map(|_| ProfClock::start(e, eh));
-        // FULL COVER: no suffix, so no prime, no taps and no republish (the entry ALREADY
-        // sits at this boundary, and a capture here would be the same key the worker's has_key
-        // dedupe drops). The boundary row is the entry's own; the drafter ctx KV is already
-        // at `cache.pos` from the tail, so `pending` is empty and round 1's
-        // `kv.len == cache.pos` invariant holds without an ingest.
-        let (logits_s, tap_rows, prefix_capture) = if suffix.is_empty() {
-            (boundary_logits.to_vec(), Vec::new(), None)
-        } else {
-            cache.hc_taps = Some(HcTapSink::new_at(
-                taps.clone(),
-                n_embd,
-                suffix.len(),
-                fed.len(),
-            ));
-            let (logits_s, _seed, hiddens) = self.prime_cache(e, suffix, &mut cache, 0)?;
-            if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-                pf.prime_ms = ck.lap(e, eh);
-            }
-            // Republish capture at the NEW (deeper) boundary — pos == fed + suffix here.
-            let capture = if glm5_spec_prefix_on() {
-                // `hiddens` is the SUFFIX stack: its last row is the boundary hidden
-                // (indexed through `suffix.len()`, not the absolute boundary).
-                self.glm5_prefix_boundary_capture(
-                    e,
-                    eh,
-                    &cache,
-                    &logits_s,
-                    &hiddens,
-                    cache.pos,
-                    suffix.len(),
-                )
-            } else {
-                None
-            };
-            let sink = cache
-                .hc_taps
-                .take()
-                .ok_or("glm5 restored-session suffix tap sink vanished")?;
-            (logits_s, sink.rows, capture)
-        };
-        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-            pf.capture_ms = ck.lap(e, eh);
-        }
-        let mut committed = Vec::with_capacity(fed.len() + suffix.len());
-        committed.extend_from_slice(fed);
-        committed.extend_from_slice(suffix);
-        // The penalty window is the whole committed prompt (restored prefix + suffix), which
-        // is what the plain hit's sampler replays too ("penalty history replayed over the
-        // whole prefix"). Empty with penalties off.
-        let pen_hist = glm5_pen_window_seed(pen.as_ref(), &committed);
-        let mut sctr = 0u32;
-        let anchor = glm5_anchor(
-            eh,
-            &logits_s,
-            sampling.as_ref(),
-            pen.as_ref(),
-            &pen_hist,
-            &mut sctr,
-            "glm5-restore",
-        )?;
-        if let (Some(pf), Some(ck)) = (prof.as_mut(), pclk.as_mut()) {
-            pf.anchor_ms = ck.lap(e, eh);
-        }
-        // Engagement receipt (the dspark restore's shape — the deploy gate greps this; a
-        // cached_tokens number alone cannot distinguish a spec restore from a plain hit).
-        eprintln!(
-            "[glm5-spec] RESTORED session: {} prefix tokens + {} suffix from cache — no \
-             cold prime (drafter tail rows {}, arm {})",
-            fed.len(),
-            suffix.len(),
-            dkv.len,
-            if suffix.is_empty() {
-                "full-cover"
-            } else {
-                "suffix-prime"
-            },
-        );
-        Ok(Glm5SpecSession {
+        Glm5PrimeState::restored(
+            self,
+            e,
             cache,
-            committed,
-            anchor,
-            anchor_emitted: false,
-            pending: Vec::new(),
-            draft: Glm5DraftState::Dflash2 {
-                kv: dkv,
-                pending: tap_rows,
-                taps,
-            },
+            fed,
+            suffix,
+            boundary_logits,
+            dkv,
+            ctx_cap,
             sampling,
             pen,
-            pen_hist,
-            sctr,
-            uctr: 0,
-            snap_pool: Vec::new(),
-            verify_graphs: VerifyGraphPool::default(),
-            rounds: 0,
-            rank_trimmed_rounds: 0,
-            done: false,
-            max_ctx: ctx_cap,
-            mtp_il: None,
-            prefix_capture,
-            prof_rounds: prof.as_ref().map(|_| SpecRoundsLog::default()),
-            prof,
-        })
+        )
     }
 
     /// The loaded FR-Spec draft->target map for the session's DRAFT SOURCE (None = full-vocab

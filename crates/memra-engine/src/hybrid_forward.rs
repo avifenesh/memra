@@ -6,6 +6,9 @@
 // node-for-node (header above); iterator reshapes are not bit-neutral by inspection.
 #![allow(clippy::needless_range_loop)]
 
+mod glm5_prime;
+pub(crate) use glm5_prime::{Glm5TrunkPrime, PrimeEnvironment};
+
 use crate::Engine;
 use crate::cache::Cache;
 use cudarc::driver::CudaSlice;

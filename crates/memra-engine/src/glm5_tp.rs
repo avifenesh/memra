@@ -188,6 +188,26 @@ pub struct Glm5TpRt {
 }
 
 impl Glm5TpRt {
+    /// Complete both ranks before a saved prime returns to the worker.
+    pub(crate) fn prime_completion_fence(
+        &self,
+        root: &Engine,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let engines: Vec<_> = std::iter::once(root).chain(self.peers.iter()).collect();
+        for e in &engines {
+            let _main = e.gpu.enter_main()?;
+            e.stream().synchronize()?;
+        }
+        let guard = self.ar.lock().map_err(|_| "TP prime AR link poisoned")?;
+        if let Some(link) = guard.as_ref() {
+            let errors = link.barrier_errors(&engines)?;
+            if errors.iter().any(|&e| e != 0) {
+                return Err(format!("GLM5 prime rank rendezvous failed: {errors:?}").into());
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(devices: &[usize]) -> Result<Self, Box<dyn std::error::Error>> {
         let root_dev = devices[0];
         let peer_devs: Vec<usize> = devices[1..].to_vec();

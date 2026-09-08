@@ -11908,6 +11908,8 @@ struct Session {
     /// re-arms via `glm5_spec_session_from_restored`; no demotion-to-park (each a named
     /// follow-up).
     glm5: Option<memra_engine::glm_spec::Glm5SpecSession>,
+    glm5_prime: Option<memra_engine::glm_spec::Glm5PrimeState>,
+    glm5_plain_prime: Option<memra_engine::glm_spec::Glm5PlainPrimeState>,
     /// Marks the session as glm5-routed even before `glm5` exists (the pre-prime window)
     /// — scheduler filters key on this, the dspark_on convention (derived from what
     /// admission actually installs, so dispatch and session can never disagree).
@@ -16469,7 +16471,7 @@ pub fn run(
                     continue; // batch-formation hold
                 }
                 let s = &mut active[i];
-                if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.prefill_done {
+                if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.glm5_on || s.prefill_done {
                     continue;
                 }
                 if s.lane != crate::lanes::Lane::Interactive {
@@ -16944,7 +16946,7 @@ pub fn run(
                     continue;
                 }
                 let s = &mut active[i];
-                if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.prefill_done {
+                if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.glm5_on || s.prefill_done {
                     continue;
                 }
                 let li = s.lane.idx();
@@ -21729,6 +21731,8 @@ fn admit(
         // the dkv below is Some ONLY when glm5_on took the restored carrier, and the
         // first spec tick consumes it together with s.cache + s.fed.
         glm5: None,
+        glm5_prime: None,
+        glm5_plain_prime: None,
         glm5_on,
         glm5_k,
         glm5_restored_dkv: glm5_prefix_restored_dkv,
@@ -22394,13 +22398,17 @@ fn prefill_tick(
         .filter(|&b| b > fed_len)
         .map(|b| b - fed_len)
         .min();
-    if !confidence_trace_enabled()
-        && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
-        && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
-        && !(eager_mono && carried && !suffix_prime)
-        && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T)
+    if s.glm5_plain_prime.is_some()
+        || (!confidence_trace_enabled()
+            && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
+            && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
+            && !(eager_mono && carried && !suffix_prime)
+            && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T))
     {
-        let take = prefill_tick_take(q, budget, eager_mono, bound_rem);
+        let take = s.glm5_plain_prime.as_ref().map_or_else(
+            || prefill_tick_take(q, budget, eager_mono, bound_rem),
+            |state| state.tokens_len(),
+        );
         if eager_mono && carried && suffix_prime {
             // ENGAGEMENT RECEIPT (lane/glm5-prefix-latent2): the deploy gate greps this —
             // a restored-turn TTFT number alone cannot distinguish the prime program from
@@ -22426,27 +22434,49 @@ fn prefill_tick(
                 s.snapshot_at,
             );
         }
-        let chunk: Vec<u32> = s.prefill_queue.drain(..take).collect();
-        // REQUEST-LEVEL seq_end (lane/tick-seg, 2026-08-07): the tokens still queued after this
-        // tick are the SAME request — pass them so the engine's arm selection is keyed to the
-        // request's end, not this tick's. Without it the tick budget (dark lanes: 256 AND
-        // SLO-headroom-capped) and the LCP-split boundary steered step35's prefill arithmetic
-        // (budgets 512/256/64 DIFFER 1.813e0 vs monolithic — tickinv35 gate).
-        // fed_len is this chunk's prompt-relative offset (vision sessions never resume, so
-        // fed counts exactly the prompt tokens already primed) — the overlay window rebases
-        // image spans to call-relative positions.
-        let ov_window = s
-            .vision
-            .as_ref()
-            .and_then(|v| v.overlay.as_ref())
-            .and_then(|o| o.window(fed_len, take));
-        let (l, _h, x) = lm.model.prime_cache_overlaid(
-            engine,
-            &chunk,
-            s.cache.as_mut().unwrap(),
-            s.prefill_queue.len(),
-            ov_window.as_ref(),
-        )?;
+        // Text-only hyper segments use the same saved trunk on both arms.
+        // Keep the queue and capture boundaries intact until this segment finishes.
+        let saved_hyper = s.glm5_plain_prime.is_some()
+            || (hyper_trunk && s.vision.is_none() && s.capture.is_none());
+        let chunk: Vec<u32> = if saved_hyper {
+            s.prefill_queue.iter().take(take).copied().collect()
+        } else {
+            s.prefill_queue.drain(..take).collect()
+        };
+        let (l, x) = if saved_hyper {
+            if s.glm5_plain_prime.is_none() {
+                let cache = s.cache.take().ok_or("hyper prefill missing carrier")?;
+                s.glm5_plain_prime =
+                    Some(
+                        lm.model
+                            .glm5_plain_prime_start(engine, cache, &chunk, q - take)?,
+                    );
+            }
+            let mut walker = lm
+                .model
+                .glm5_plain_prime_walker(engine, &mut s.glm5_plain_prime);
+            if !s.prime_service.advance(&mut walker)? {
+                return Ok(0);
+            }
+            let (cache, l, x) = s.prime_service.finish(walker)?;
+            s.cache = Some(cache);
+            s.prefill_queue.drain(..take);
+            (l, x)
+        } else {
+            let ov_window = s
+                .vision
+                .as_ref()
+                .and_then(|v| v.overlay.as_ref())
+                .and_then(|o| o.window(fed_len, take));
+            let (l, _h, x) = lm.model.prime_cache_overlaid(
+                engine,
+                &chunk,
+                s.cache.as_mut().unwrap(),
+                s.prefill_queue.len(),
+                ov_window.as_ref(),
+            )?;
+            (l, x)
+        };
         s.last_logits = l;
         // PROMPT CAPTURE (lane/embed-serve): this chunk finished the prompt — read the
         // final position off THIS call's hidden stack (later chunks would not exist).
@@ -23303,7 +23333,7 @@ fn step_session(
     }
     // Same refusal class for the glm5 route: a glm5 session owns its cache (s.cache is
     // None), so a plain step over it would decode coherent garbage from an empty context.
-    if s.glm5.is_some() {
+    if s.glm5.is_some() || s.glm5_prime.is_some() {
         return Err(
             "plain step_session received a session holding a glm5 spec session — \
              dispatch flag disagrees with the installed session"
@@ -24459,6 +24489,20 @@ fn step_dspark_spec(
 /// per public id, EOS text never streamed, budget clamp via `spec_visible_len` (engine
 /// overshoot stays committed in the session cache, never in the worker's public vectors).
 /// Between bursts the scheduler round-robins batch chunks — the coexistence contract.
+#[derive(Debug, PartialEq, Eq)]
+enum Glm5PrimeSource {
+    Cold,
+    Restored,
+}
+
+fn glm5_prime_source(cache: bool, draft: bool) -> Result<Glm5PrimeSource, &'static str> {
+    match (cache, draft) {
+        (false, false) => Ok(Glm5PrimeSource::Cold),
+        (true, true) => Ok(Glm5PrimeSource::Restored),
+        _ => Err("GLM5 prime admission must carry both restored cache and draft KV"),
+    }
+}
+
 fn step_glm5_spec(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -24492,67 +24536,51 @@ fn step_glm5_spec(
     // restored trunk cache in s.cache (the gemma spec-on-cache-hit shape), and the dkv
     // admission rebuilt from the entry's tail rides s.glm5_restored_dkv.
     if s.glm5.is_none() {
-        let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
-        // An empty prefill queue is a finished request on the COLD arm (nothing to prime).
-        // On the RESTORED arm it is the FULL-COVER hit (memra#74): the whole prompt is
-        // already in `s.fed` and the restored trunk cache, and the boundary row rides
-        // `s.last_logits`, so there is nothing left to prime and the session starts at the
-        // boundary. Admission is what decides that shape is admissible.
-        if queued.is_empty() && s.glm5_restored_dkv.is_none() {
-            finish(s, StopReason::MaxNew);
-            return Ok(false);
-        }
-        if let Some(trace) = s.ttft.as_ref() {
-            trace.mark_prime_start();
-        }
-        // Sampled admission (T>0): the ONE Sampler->SpecSampling seam (spec_sampling_for),
-        // same as the frspec/dspark routes — None = greedy, byte-identical instrument route.
-        // The glm5 twin (`glm5_spec_sampling_for`) additionally carries a GREEDY request's
-        // penalties in (MEMRA_SPEC_PENALTY=1, lane/spec-exclusions-20260902).
-        let sess = match s.glm5_restored_dkv.take() {
-            Some(dkv) => {
-                let restored = s
-                    .cache
-                    .take()
-                    .ok_or("glm5 restored dkv without a carrier cache (admission literal bug)")?;
-                lm.model
-                    .glm5_spec_session_from_restored(
-                        engine,
-                        restored,
-                        &s.fed,
-                        &queued,
-                        &s.last_logits,
-                        dkv,
-                        s.gspec_ctx,
-                        glm5_spec_sampling_for(&s.sampler),
-                    )
-                    // A restored-arm refusal is an invariant break (admission pre-validated
-                    // the shape): fail loudly rather than silently switching numeric
-                    // programs mid-request — the dspark law, same as the cold arm below.
-                    .map_err(|err| format!("glm5 spec restore prime failed: {err}"))?
+        if s.glm5_prime.is_none() {
+            let queued: Vec<u32> = s.prefill_queue.iter().copied().collect();
+            if queued.is_empty() && s.glm5_restored_dkv.is_none() {
+                finish(s, StopReason::MaxNew);
+                return Ok(false);
             }
-            None => match lm.model.glm5_spec_session_new(
-                engine,
-                &queued,
-                s.gspec_ctx,
-                glm5_spec_sampling_for(&s.sampler),
-            ) {
-                Ok(sess) => sess,
-                Err(err) => {
-                    // Prime-time refusal (ctx shape, alloc failure): fail the request loudly
-                    // rather than silently switching numeric programs mid-request — admission
-                    // is where the plain fallback lives (the dspark law).
-                    return Err(format!("glm5 spec prime failed: {err}").into());
-                }
-            },
-        };
+            if let Some(trace) = s.ttft.as_ref() {
+                trace.mark_prime_start();
+            }
+            // Admission supplies the restored carrier; suffix work always enters
+            // this same pending walker, never a nested synchronous constructor.
+            let source = glm5_prime_source(s.cache.is_some(), s.glm5_restored_dkv.is_some())?;
+            s.glm5_prime = Some(match source {
+                Glm5PrimeSource::Restored => lm.model.glm5_prime_restored_start(
+                    engine,
+                    s.cache.take().ok_or("GLM5 restore missing carrier")?,
+                    &s.fed,
+                    &queued,
+                    &s.last_logits,
+                    s.glm5_restored_dkv
+                        .take()
+                        .ok_or("GLM5 restored draft missing")?,
+                    s.gspec_ctx,
+                    glm5_spec_sampling_for(&s.sampler),
+                )?,
+                Glm5PrimeSource::Cold => lm.model.glm5_prime_start(
+                    engine,
+                    &queued,
+                    s.gspec_ctx,
+                    glm5_spec_sampling_for(&s.sampler),
+                )?,
+            });
+        }
+        let mut walker = lm.model.glm5_prime_walker(engine, &mut s.glm5_prime);
+        if !s.prime_service.advance(&mut walker)? {
+            return Ok(true);
+        }
+        let sess = s.prime_service.finish(walker)?;
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
         if prof_on {
             session_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
         }
-        for &tok in &queued {
+        for tok in s.prefill_queue.drain(..) {
             s.fed.push(tok);
             s.sampler.accept(tok);
         }
@@ -29797,8 +29825,8 @@ mod tests {
             "the session literal must carry the restored drafter KV"
         );
         assert!(
-            live_pre_tests.contains("glm5_spec_session_from_restored("),
-            "the first spec tick must consume the restored carrier via from_restored"
+            live_pre_tests.contains("glm5_prime_restored_start("),
+            "the first spec tick must install a walker over the restored carrier"
         );
         assert!(
             live_pre_tests.contains("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);"),
@@ -35550,5 +35578,23 @@ mod vision_placement_admissibility_tests {
             step_load < call && call < ready,
             "placement is decided after every tower has loaded and before readiness"
         );
+    }
+}
+
+#[cfg(test)]
+mod glm5_prime_routing_tests {
+    use super::*;
+    #[test]
+    fn restored_suffix_keeps_the_carrier_instead_of_cold_priming() {
+        assert_eq!(
+            glm5_prime_source(true, true).unwrap(),
+            Glm5PrimeSource::Restored
+        );
+        assert_eq!(
+            glm5_prime_source(false, false).unwrap(),
+            Glm5PrimeSource::Cold
+        );
+        assert!(glm5_prime_source(true, false).is_err());
+        assert!(glm5_prime_source(false, true).is_err());
     }
 }

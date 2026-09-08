@@ -551,3 +551,54 @@ restore support; record it as a prerequisite, never silently test plain instead.
 Builds/tests use a lane-owned directory and target on the assigned single B200 tune
 host, nice 19, at most 16 jobs, serialized with other lanes via
 `/tmp/memra-gpu.lock`. Pair gates are queued, not executed on this single-card host.
+
+### Stage 2 implementation and validation
+
+The route now owns Glm5PrimeState and Glm5PlainPrimeState, bound temporarily to
+PrimeWalker implementations. Glm5TrunkPrime keeps the frozen token ranges,
+request-absolute seq_end, hidden stack, last logits, PP stage-0 lookahead payload
+and logical rank acknowledgments. Each advance issues all ranks before waiting,
+checks physical MLA frontiers and retires all participating streams before return.
+PP rx already returns an owned copy; the adapter retains that copy across peer
+work so the shared runtime slot can be reused safely. No MemraArSignal layout or
+shared PrimeWalker/PrimePolicy code changed.
+
+Cold and restored speculative constructors drain these same walkers on OFF.
+The worker keeps queues intact until successful finish and protects pending GLM5
+sessions from both plain prefill phases. Anchor sampling stays after the last
+trunk range; native warm uses its existing 512-row ranges and host DFlash ingest
+its existing 256-row ranges. A single short warm is folded into a one-chunk cold
+request's final service quantum, preserving first-token delivery in that turn.
+No prompt-length loop is hidden in finish. Existing prefix leases remain owned
+by the worker; optional captures publish only after a completed speculative step.
+
+Text-only plain hyper segments, including HYPER_SUFFIX_PRIME, also use the saved
+trunk. Their original prefill_tick segment size, queued_after and snapshot stops
+are frozen, and later budgets cannot resize an in-flight segment. Vision and
+prompt-capture paths keep their existing synchronous overlay program. This
+answers the earlier plain-admission open item without a scheduler change: the
+existing plain phase can advance the same pending segment once per tick.
+
+Frozen numeric settings are checked on every advance/finish against the initial
+MEMRA environment snapshot. A gate changing settings in-process must finish the
+current walker first; a mutation during suspension refuses instead of silently
+selecting another numerical program. Model/artifact/placement references remain
+immutable; overlay is absent in the admitted adapter shape.
+
+Remote validation r5 on one B200, own directory/target, nice 19 and jobs=16 under
+the shared GPU lock: strict library clippy passed; 33 engine prime CPU tests passed;
+639 server tests passed, zero failed, one pre-existing ignored. Server and pair
+probe builds passed. The PP-1 miniature DFlash GPU gate passed four-turn cold and
+restored chains OFF/ON, including interleaved peer work, exact boundary logits and
+actual recurrent/latent-tail captures. Cold ON arms each yielded 17 times; restored
+ON arms each yielded twice. These are fixture correctness receipts, not model-scale
+HTTP or pair qualification. The HTTP cells and full pair gate remain separate.
+
+Remaining seam-owner requests are generic request/boot correlation in prime
+trace records and review of the shared phase-order fairness bound for plain
+pending segments. No new generic utility API is required for the implemented
+ownership, multi-phase count, zero-trunk full-cover or host barrier.
+At f604518ca the worker still refuses TP speculation at boot and the engine
+refuses TP spec restores. The separate TP spec lane must remove those refusals
+with its own evidence before this lane's TP HTTP cold/restored queue can pass.
+The adapter does not remove or bypass those admission laws.
