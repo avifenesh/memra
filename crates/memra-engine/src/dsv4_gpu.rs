@@ -13874,12 +13874,9 @@ impl Dsv4Gpu {
             vws.h_a.device_ptr(&stream).0 as *const f32
         };
         let mut slots = win
-            + if layer.ratio == 0 {
-                0
-            } else {
-                let nb = (pos0 + t) / layer.ratio;
-                layer.idx.as_ref().map_or(nb, |ix| ix.topk.min(nb))
-            };
+            + (pos0 + t)
+                .checked_div(layer.ratio)
+                .map_or(0, |nb| layer.idx.as_ref().map_or(nb, |ix| ix.topk.min(nb)));
         if phase.is_none_or(|p| p == 0) {
             // ---- attention sub-block
             self.hc_pre_batch_dev(
