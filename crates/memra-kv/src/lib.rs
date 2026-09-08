@@ -440,7 +440,7 @@ pub trait KvDev {
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn set_i32_one(&self, d: &mut CudaSlice<i32>, v: i32)
-        -> Result<(), Box<dyn std::error::Error>>;
+    -> Result<(), Box<dyn std::error::Error>>;
 }
 
 use cudarc::driver::CudaSlice;
@@ -3010,8 +3010,8 @@ impl Cache {
 #[cfg(test)]
 mod tp_transaction_tests {
     use super::{
+        Cache, INDEX_RING_WORKING_ROWS, KvRingAppend, ResidentTpKvCache, TpKvTransactionState,
         index_ring_default_rows, index_ring_rows_for, index_ring_take, tp_kv_rank_allocation_shape,
-        Cache, KvRingAppend, ResidentTpKvCache, TpKvTransactionState, INDEX_RING_WORKING_ROWS,
     };
 
     /// glm5_next's declared k-pool width, from `crates/memra-gguf/src/model_packs/glm5_next/mod.rs`
@@ -3424,8 +3424,8 @@ mod tp_transaction_tests {
 #[cfg(test)]
 mod swa_ring_tests {
     use super::{
-        kv_plane_allocation_bytes, swa_retain_from, swa_ring_rows, KvRing, KvRingAppend,
-        PRIME_CHUNK_MAX_TOKENS, SWA_REWIND_SLACK_ROWS, SWA_VIEW_ALIGNMENT_ROWS,
+        KvRing, KvRingAppend, PRIME_CHUNK_MAX_TOKENS, SWA_REWIND_SLACK_ROWS,
+        SWA_VIEW_ALIGNMENT_ROWS, kv_plane_allocation_bytes, swa_retain_from, swa_ring_rows,
     };
 
     #[test]
