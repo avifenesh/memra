@@ -727,7 +727,23 @@ fn main() {
         })
         .collect();
         let first = &receipts[0];
+        let first_e = if compose {
+            receipts
+                .iter()
+                .find(|r| ["A", "E", "E", "A", "B", "E", "E", "B"][(r.repeat / 5) % 8] == "E")
+        } else {
+            None
+        };
         for receipt in &receipts {
+            // A/B are exact rewrites. E has a tolerance-bounded split-K numeric
+            // class: compare every E row to the first E, never to A/B.
+            let first = if compose
+                && ["A", "E", "E", "A", "B", "E", "E", "B"][(receipt.repeat / 5) % 8] == "E"
+            {
+                first_e.expect("composed E reference")
+            } else {
+                first
+            };
             assert_eq!(
                 first.generated_sha256, receipt.generated_sha256,
                 "same-program sampled repeat stream"
@@ -786,11 +802,14 @@ fn main() {
                 );
             }
             println!(
-                "COMPOSE_ABBA cycles=10 rows_per_block=5 rows_A=100 rows_B=100 rows_E=200 E_vs_A_pct={:.6} E_vs_B_pct={:.6} mean_E_vs_A_pct={:.6} mean_E_vs_B_pct={:.6} tokens_logits_cache_hidden_identical=true timing_scope=sample_plus_forward_envelope",
+                "COMPOSE_ABBA cycles=10 rows_per_block=5 rows_A=100 rows_B=100 rows_E=200 E_vs_A_pct={:.6} E_vs_B_pct={:.6} mean_E_vs_A_pct={:.6} mean_E_vs_B_pct={:.6} B_vs_A_pct={:.6} mean_B_vs_A_pct={:.6} A_B_tokens_logits_cache_hidden_identical=true E_within_arm_tokens_logits_cache_hidden_identical=true E_cross_arm_identity=not_applicable E_numeric_class={} timing_scope=sample_plus_forward_envelope",
                 (rates[2] / rates[0] - 1.0) * 100.0,
                 (rates[2] / rates[1] - 1.0) * 100.0,
                 (means[2] / means[0] - 1.0) * 100.0,
-                (means[2] / means[1] - 1.0) * 100.0
+                (means[2] / means[1] - 1.0) * 100.0,
+                (rates[1] / rates[0] - 1.0) * 100.0,
+                (means[1] / means[0] - 1.0) * 100.0,
+                memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
             );
         }
         if abba {
