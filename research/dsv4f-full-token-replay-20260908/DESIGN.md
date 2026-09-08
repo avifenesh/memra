@@ -58,8 +58,32 @@ The positive cell changes token/position/uniform bits on every replay across
 live scalar, pending/ring payload, block count and device AR epoch is checked.
 The negative cells inject a sticky refusal independently on either rank at
 127/255/511, require neither committed plane/readback to advance, restore both
-transient fixtures, and reject retry. Injection tests the host decision boundary;
-it is not a peer-timeout or full-model refusal qualification.
+transient fixtures, and reject retry. Each negative cell now replays a real
+prefix, so saved C4 counts are nonzero and saved C128 counts are nonzero at
+255/511. A reset-to-zero rollback cannot pass those cells.
+
+The first source review found two exceptional-path bugs in the initial component:
+rank destruction could free peer memory before the other rank drained, and sum
+validation preceded refusal handling even though a timed-out AR leaves sums
+unwritten. A `Pair` owner now drains both ranks before either member destructor
+releases resources, also during stack unwinding. Failed drains are reported and
+retain both allocations until process exit. Refusal handling immediately follows
+both word reads; it restores only submitted ranks and quarantines both before
+looking at any control or sum output.
+
+Focused cells launch the actual AR kernel without its peer on each rank, with
+poisoned sums and nonzero high-water marks. These use separate two-join fault
+graphs with a 5,000,000-cycle bound; the positive 86-join graphs keep the original
+2,000,000,000-cycle bound. A separate host submission exception after rank A
+launch and before rank B enqueue tests stack unwinding: both drains must precede
+either free, and A's device word must report the actual 40043 start timeout.
+This is an injected host submission failure, not an invalid CUDA call suppressed
+from sanitizer reports. There are no sanitizer suppressions.
+
+Eight-token cells check all elements and all per-block epochs at the default
+production AR shapes: 4096 floats/1 block and 24576 floats/48 blocks. Uniform
+payloads vary all 64 bits. This remains a payload freshness check, not sampling
+qualification. No full-model refusal or numeric qualification is implied.
 
 Build remotely (no local rig gates):
 
