@@ -599,17 +599,6 @@ fn main() {
     assert!(prompt.len() >= PROMPT_TOKENS);
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
-    let interleave = match std::env::var("MEMRA_DSV4_ISSUE_INTERLEAVE_GATE").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("0") => false,
-        Ok("1") => true,
-        _ => panic!("MEMRA_DSV4_ISSUE_INTERLEAVE_GATE requires 0 or 1"),
-    };
-    assert!(
-        !interleave || attention_mode,
-        "interleave requires attention TP2"
-    );
-    Dsv4Gpu::set_tp_ep_issue_interleave_for_gate(interleave);
-    println!("ISSUE_ORDER interleave={interleave}");
     Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
     println!("NUMERIC_CLASS {numeric_class}");
     println!(

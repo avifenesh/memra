@@ -464,4 +464,5 @@ SOTA-SWEEP-2026-07-13.md | (file, not a lane) | -
 upstream-sweeps.md | (file, not a lane) | -
 | step37 08-25/29 lanes (pre-squash narrative) | LANDED on main 2026-08-29 as squashes 068cbc425 + 46f700291 - the receipts are all in-repo. The 134-commit narrative behind them is NOT, and lives only in archive bundles; the 2026-09-01 check that proved the content was already landed (compare FILES not commit subjects: 276/280 byte-identical, the other 4 newer on main) is written up with the bundle keys | `research/step37-lane-narrative-archive.md` |
 
+dsv4f-2card-1m-20260904 | Phase interleaving removes first-kernel/AR skew but sampled ABBA is flat: -0.285757% without split-K, -0.131580% with it; exact tokens and state, door removed. | ISSUE-INTERLEAVE.md
 dsv4f-moe-m1-splitk-20260907 | Adaptive M1 split-K accepted: no observed component regression, pooled GU 3.46x/2.07x at slots 1/2; fresh-process sampled ABBA 38.822799 vs 35.569475 tok/s (+9.146392%), correctness/refusals pass; process gate stays OFF; raw receipts in private ops | RESULTS.md

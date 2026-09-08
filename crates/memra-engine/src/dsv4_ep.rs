@@ -947,7 +947,6 @@ pub(crate) const TP_EP_RANK_ORDER_NUMERIC_CLASS: &str =
 /// partition. There is no peer dispatch and therefore no PP owner hidden in
 /// this function.
 #[allow(clippy::too_many_arguments)]
-#[cfg(test)]
 pub(crate) fn execute_matrix_local(
     gpu: &Gpu,
     bank: &EpLayer,
@@ -961,37 +960,6 @@ pub(crate) fn execute_matrix_local(
     limit: f32,
     allow_gu_fuse: bool,
 ) -> Res<u64> {
-    execute_matrix_local_phase(
-        gpu,
-        bank,
-        table,
-        scale2,
-        scale2_host,
-        local,
-        work,
-        rows,
-        topk,
-        limit,
-        allow_gu_fuse,
-        None,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn execute_matrix_local_phase(
-    gpu: &Gpu,
-    bank: &EpLayer,
-    table: &CudaSlice<u64>,
-    scale2: &CudaSlice<f32>,
-    scale2_host: &[f32],
-    local: &mut EpCompute<'_>,
-    work: &mut crate::dsv4_grouped::GroupedWork,
-    rows: usize,
-    topk: usize,
-    limit: f32,
-    allow_gu_fuse: bool,
-    phase: Option<u8>,
-) -> Res<u64> {
     if rows == 0 || topk == 0 {
         return Err("TP/EP local expert execution requires nonzero rows/topk".into());
     }
@@ -1002,20 +970,13 @@ pub(crate) fn execute_matrix_local_phase(
     // contribution plane.  Unlike peer-dispatch EP, no later slot-merge overwrites the
     // complementary half.  Clear the external plane first so a reused one-row workspace
     // cannot feed a previous token/layer's non-owned partial into the rank-order reduce.
-    let mut calls = 0;
-    if phase.is_none_or(|p| p == 0) {
-        gpu.stream()
-            .memset_zeros(local.contribution)
-            .map_err(|e| format!("TP/EP local contribution clear: {e}"))?;
-        calls = u64::from(work.prepare(gpu, local, scale2, scale2_host, rows, topk, true)?);
-        work.set_gu_fuse_for_plain(allow_gu_fuse);
-    }
-    if phase.is_none_or(|p| p == 1) {
-        work.gate_up(gpu, table, local, limit)?;
-    }
-    if phase.is_none_or(|p| p == 2) {
-        work.down(gpu, table, local)?;
-    }
+    gpu.stream()
+        .memset_zeros(local.contribution)
+        .map_err(|e| format!("TP/EP local contribution clear: {e}"))?;
+    let calls = u64::from(work.prepare(gpu, local, scale2, scale2_host, rows, topk, true)?);
+    work.set_gu_fuse_for_plain(allow_gu_fuse);
+    work.gate_up(gpu, table, local, limit)?;
+    work.down(gpu, table, local)?;
     Ok(calls)
 }
 
