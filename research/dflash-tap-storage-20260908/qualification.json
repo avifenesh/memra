@@ -131,7 +131,7 @@
     "before_retained_FA_bytes": 647930880,
     "after_retained_FA_bytes": 287440896
   },
-  "qualification": "incomplete: warm admission refused; mixed p95 increased",
+  "qualification": "128k warm admission remains unqualified; paired cold TTFT shows no material regression at this resolution.",
   "sampling": "no sampling fields supplied on capacity/mixed requests; greedy used only for the 64-token identity tape",
   "context_configured": 262144,
   "vision_tower_loaded": true,
@@ -193,5 +193,422 @@
     "cargo_clippy_release_all_targets_D_warnings": "pass",
     "cargo_test_release_p_memra_engine_dflash": "pass"
   },
-  "private_receipts": "darklanes research/qwen-ornith-5090-capacity-20260908/issue365/REPORT.md"
+  "private_receipts": "darklanes research/qwen-ornith-5090-capacity-20260908/issue365/REPORT.md",
+  "paired_ttft_ab": {
+    "complete": true,
+    "protocol": "A1 B1 A2 B2 A3 B3; 5 cold requests per shape per boot, 15 per arm; identical paired message bytes, vendor sampling, c=1; trim inactive pools before timing, not in mixed run; no allocation tracing",
+    "boots": [
+      {
+        "cell": "ab370v2-1-control",
+        "boot": 1,
+        "arm": "control",
+        "boot_nonce": "09f35f803350822ee8a2a575fb26af39",
+        "pid": 392258,
+        "binary_sha256": "959d0b0effc4b86d91594d71144705b7c065a53d410d3afa1bc551f1d05dd9e6",
+        "utc": "2026-09-08T18:04:42Z",
+        "ready_s": 17.02562116505578,
+        "boot_wall_s": 133.49748943699524,
+        "measured_wall_s": 112.82270423602313,
+        "server_delta": {
+          "served_dspark": 15,
+          "served_spec": 0,
+          "served_plain": 0,
+          "admitted": 15,
+          "completed": 15,
+          "step_oom_parks": 0
+        },
+        "shape_medians": {
+          "2048": 0.6642521519679576,
+          "8192": 2.5597564841154963,
+          "32760": 11.122908797115088
+        },
+        "shape_total_request_wall_s": {
+          "2048": 13.372299819719046,
+          "8192": 28.890033388743177,
+          "32760": 70.3745153453201
+        }
+      },
+      {
+        "cell": "ab370v2-1-candidate",
+        "boot": 1,
+        "arm": "candidate",
+        "boot_nonce": "deaa535f33b8ac65a1c89964435d8006",
+        "pid": 393570,
+        "binary_sha256": "a972c62204b0a75ecd5ff884808fdc4c37b50f73aae87790ffb2ebadccdc5df5",
+        "utc": "2026-09-08T18:06:56Z",
+        "ready_s": 17.02407590788789,
+        "boot_wall_s": 129.0782448539976,
+        "measured_wall_s": 109.55733471503481,
+        "server_delta": {
+          "served_dspark": 15,
+          "served_spec": 0,
+          "served_plain": 0,
+          "admitted": 15,
+          "completed": 15,
+          "step_oom_parks": 0
+        },
+        "shape_medians": {
+          "2048": 0.6677377540618181,
+          "8192": 2.565348553005606,
+          "32760": 11.183318308088928
+        },
+        "shape_total_request_wall_s": {
+          "2048": 13.564474194077775,
+          "8192": 22.576412589056417,
+          "32760": 73.27297458099201
+        }
+      },
+      {
+        "cell": "ab370v2-2-control",
+        "boot": 2,
+        "arm": "control",
+        "boot_nonce": "9c56c534b1b5346f8e414ffff69481a7",
+        "pid": 394870,
+        "binary_sha256": "959d0b0effc4b86d91594d71144705b7c065a53d410d3afa1bc551f1d05dd9e6",
+        "utc": "2026-09-08T18:09:05Z",
+        "ready_s": 17.022891625994816,
+        "boot_wall_s": 134.85925495414995,
+        "measured_wall_s": 114.78190456703305,
+        "server_delta": {
+          "served_dspark": 15,
+          "served_spec": 0,
+          "served_plain": 0,
+          "admitted": 15,
+          "completed": 15,
+          "step_oom_parks": 0
+        },
+        "shape_medians": {
+          "2048": 0.665219355840236,
+          "8192": 2.566349158063531,
+          "32760": 11.161867944989353
+        },
+        "shape_total_request_wall_s": {
+          "2048": 13.072847391944379,
+          "8192": 30.095039807260036,
+          "32760": 71.41609299462289
+        }
+      },
+      {
+        "cell": "ab370v2-2-candidate",
+        "boot": 2,
+        "arm": "candidate",
+        "boot_nonce": "d93a9885471fa1ec304467520ff97a43",
+        "pid": 396208,
+        "binary_sha256": "a972c62204b0a75ecd5ff884808fdc4c37b50f73aae87790ffb2ebadccdc5df5",
+        "utc": "2026-09-08T18:11:20Z",
+        "ready_s": 17.02365341410041,
+        "boot_wall_s": 131.02461137622595,
+        "measured_wall_s": 111.39830343401991,
+        "server_delta": {
+          "served_dspark": 15,
+          "served_spec": 0,
+          "served_plain": 0,
+          "admitted": 15,
+          "completed": 15,
+          "step_oom_parks": 0
+        },
+        "shape_medians": {
+          "2048": 0.6660239980556071,
+          "8192": 2.567512945039198,
+          "32760": 11.180190023034811
+        },
+        "shape_total_request_wall_s": {
+          "2048": 14.592289474559948,
+          "8192": 24.468665616819635,
+          "32760": 72.19447037018836
+        }
+      },
+      {
+        "cell": "ab370v2-3-control",
+        "boot": 3,
+        "arm": "control",
+        "boot_nonce": "6fa01c7b895dd15f7d7e6c1b472ec4ff",
+        "pid": 397529,
+        "binary_sha256": "959d0b0effc4b86d91594d71144705b7c065a53d410d3afa1bc551f1d05dd9e6",
+        "utc": "2026-09-08T18:13:31Z",
+        "ready_s": 17.02489458397031,
+        "boot_wall_s": 130.09737619315274,
+        "measured_wall_s": 110.36773937288672,
+        "server_delta": {
+          "served_dspark": 15,
+          "served_spec": 0,
+          "served_plain": 0,
+          "admitted": 15,
+          "completed": 15,
+          "step_oom_parks": 0
+        },
+        "shape_medians": {
+          "2048": 0.6650816260371357,
+          "8192": 2.566711334977299,
+          "32760": 11.163460581097752
+        },
+        "shape_total_request_wall_s": {
+          "2048": 14.504722688812762,
+          "8192": 22.91932542133145,
+          "32760": 72.74446644284762
+        }
+      },
+      {
+        "cell": "ab370v2-3-candidate",
+        "boot": 3,
+        "arm": "candidate",
+        "boot_nonce": "edf0677629ee3458cfaffacaf66b367b",
+        "pid": 398836,
+        "binary_sha256": "a972c62204b0a75ecd5ff884808fdc4c37b50f73aae87790ffb2ebadccdc5df5",
+        "utc": "2026-09-08T18:15:41Z",
+        "ready_s": 17.024710081983358,
+        "boot_wall_s": 130.05727539304644,
+        "measured_wall_s": 109.69706637901254,
+        "server_delta": {
+          "served_dspark": 15,
+          "served_spec": 0,
+          "served_plain": 0,
+          "admitted": 15,
+          "completed": 15,
+          "step_oom_parks": 0
+        },
+        "shape_medians": {
+          "2048": 0.6675276390742511,
+          "8192": 2.5681947548873723,
+          "32760": 11.182746059959754
+        },
+        "shape_total_request_wall_s": {
+          "2048": 17.533254913054407,
+          "8192": 22.98681781277992,
+          "32760": 69.02436013193801
+        }
+      }
+    ],
+    "shapes": [
+      {
+        "shape": 2048,
+        "arms": {
+          "control": {
+            "n": 15,
+            "ttft_median_s": 0.6650816260371357,
+            "ttft_min_s": 0.6570317610166967,
+            "ttft_max_s": 0.6732210027985275,
+            "ttft_mad_s": 0.0020197199191898108,
+            "total_request_wall_s": 40.94986990047619,
+            "total_output_tokens": 4702,
+            "prompt_tokens_min": 2025,
+            "prompt_tokens_max": 2090
+          },
+          "candidate": {
+            "n": 15,
+            "ttft_median_s": 0.6675276390742511,
+            "ttft_min_s": 0.6637650060001761,
+            "ttft_max_s": 0.6750461298506707,
+            "ttft_mad_s": 0.0036178419832140207,
+            "total_request_wall_s": 45.69001858169213,
+            "total_output_tokens": 5300,
+            "prompt_tokens_min": 2025,
+            "prompt_tokens_max": 2090
+          }
+        },
+        "matched_pair_changes_percent": [
+          1.046834640641614,
+          0.5223763766995848,
+          0.5308851928166325,
+          0.45145556065762094,
+          0.5247408056614944,
+          0.06770154459536659,
+          0.16194931569735171,
+          0.15642977041721018,
+          0.39600779369013406,
+          0.12095893005921177,
+          0.11683274603861982,
+          0.18645544733635333,
+          0.14343325438344046,
+          0.10661616156217857,
+          0.3960421460365682
+        ],
+        "median_ttft_change_percent": 0.3677763662920386,
+        "boot_median_changes_percent": [
+          0.5247408056614944,
+          0.12095893005921177,
+          0.3677763662920386
+        ]
+      },
+      {
+        "shape": 8192,
+        "arms": {
+          "control": {
+            "n": 15,
+            "ttft_median_s": 2.566349158063531,
+            "ttft_min_s": 2.547200117027387,
+            "ttft_max_s": 2.6636383910663426,
+            "ttft_mad_s": 0.009519302053377032,
+            "total_request_wall_s": 81.90439861733466,
+            "total_output_tokens": 5905,
+            "prompt_tokens_min": 8175,
+            "prompt_tokens_max": 8445
+          },
+          "candidate": {
+            "n": 15,
+            "ttft_median_s": 2.567512945039198,
+            "ttft_min_s": 2.5569666370283812,
+            "ttft_max_s": 2.6667251610197127,
+            "ttft_mad_s": 0.009707492077723145,
+            "total_request_wall_s": 70.03189601865597,
+            "total_output_tokens": 4318,
+            "prompt_tokens_min": 8175,
+            "prompt_tokens_max": 8445
+          }
+        },
+        "matched_pair_changes_percent": [
+          1.0780984833892227,
+          0.6999519640601859,
+          0.4163526792886785,
+          0.3331741834689428,
+          0.19842710876003533,
+          0.11190988882174846,
+          0.025544796758714128,
+          -0.03691504625434883,
+          0.19895005652998954,
+          0.04493086281858183,
+          0.08846309208285774,
+          0.1788568542092639,
+          0.07885943264760442,
+          0.10568927586718235,
+          0.057794575099201495
+        ],
+        "median_ttft_change_percent": 0.04534795945478898,
+        "boot_median_changes_percent": [
+          0.21846097176865253,
+          0.04534795945478898,
+          0.057794575099201495
+        ]
+      },
+      {
+        "shape": 32760,
+        "arms": {
+          "control": {
+            "n": 15,
+            "ttft_median_s": 11.161867944989353,
+            "ttft_min_s": 11.019369618035853,
+            "ttft_max_s": 11.610480482922867,
+            "ttft_mad_s": 0.1070651849731803,
+            "total_request_wall_s": 214.53507478279062,
+            "total_output_tokens": 4964,
+            "prompt_tokens_min": 32745,
+            "prompt_tokens_max": 33835
+          },
+          "candidate": {
+            "n": 15,
+            "ttft_median_s": 11.182746059959754,
+            "ttft_min_s": 11.150877177948132,
+            "ttft_max_s": 11.63623967114836,
+            "ttft_mad_s": 0.03161682095378637,
+            "total_request_wall_s": 214.49180508311838,
+            "total_output_tokens": 4938,
+            "prompt_tokens_min": 32745,
+            "prompt_tokens_max": 33835
+          }
+        },
+        "matched_pair_changes_percent": [
+          1.1934218060626112,
+          1.0005915474378124,
+          0.5431089301883851,
+          0.6289725346521724,
+          0.32119047752245944,
+          0.15636947818440383,
+          0.2566225746475359,
+          0.1641488515699896,
+          0.23062543939420532,
+          0.2366972064705264,
+          0.20085441215582645,
+          0.1347051447181391,
+          0.17275538102097254,
+          0.2868192411514592,
+          0.22186151781902197
+        ],
+        "median_ttft_change_percent": 0.18704857532176877,
+        "boot_median_changes_percent": [
+          0.5431089301883851,
+          0.1641488515699896,
+          0.17275538102097254
+        ]
+      }
+    ],
+    "verdict": "No material TTFT regression resolved: median changes +0.368%, +0.045%, +0.187%, within observed run variation. Three boots do not establish exactly zero overhead.",
+    "nonce_source": "Harness nonce bound to Popen PID, binary SHA256 and UTC start; not a server nonce header.",
+    "control_binary_sha256": "959d0b0effc4b86d91594d71144705b7c065a53d410d3afa1bc551f1d05dd9e6",
+    "candidate_binary_sha256": "a972c62204b0a75ecd5ff884808fdc4c37b50f73aae87790ffb2ebadccdc5df5",
+    "scored_requests": 90,
+    "scored_step_ooms": 0,
+    "scored_retries": 0,
+    "scored_dspark_routes": 90,
+    "untrimmed_control_pilot": "Second 32k cold request OOM/retried; excluded. Cold comparison trims inactive pools before timing on both arms. Untrimmed mixed remains separate.",
+    "profile_note": "Same c=1 mixed profile on both arms, plus identical loopback admin and synthetic budget fixture for cold reset. Full vision, context and reserve unchanged; no tracing."
+  },
+  "mixed_tail_analysis": {
+    "candidate_large_request_id": 7,
+    "small_p95_request_id": 9,
+    "large_end_s": 109.94892623811029,
+    "small_dispatch_s": 109.52012653299607,
+    "overlap_s": 0.4287997051142156,
+    "small_ttft_s": 1.0846799560822546,
+    "ttft_less_overlap_s": 0.655880250968039,
+    "interpretation": "client timing is consistent with the small request waiting for the preceding large request at c=1; not a CUDA prime-phase attribution"
+  },
+  "warm_admission_followup": "https://github.com/avifenesh/memra/issues/372",
+  "same_session_mixed_comparison": {
+    "control": {
+      "cell": "qwen-mixed-control370",
+      "date_utc": "2026-09-08",
+      "completed": 24,
+      "routes": {
+        "admitted": 24,
+        "completed": 24,
+        "prompt_tokens_in": 133529,
+        "computed_tokens_in": 133529,
+        "cached_tokens_in": 0,
+        "tokens_out": 7978,
+        "step_oom_parks": 0,
+        "served_spec": 0,
+        "served_dspark": 24,
+        "served_plain": 0
+      },
+      "small_p95_ttft_s": 1.027,
+      "small_median_ttft_s": 0.6587583711370826,
+      "total_request_wall_s": 108.08886327710934,
+      "tail_request_id": 19,
+      "tail_overlap_s": 0.3684543641284108,
+      "tail_ttft_less_overlap_s": 0.6586577650159597,
+      "preceding_inflight_ids": [
+        17
+      ],
+      "faults": [],
+      "queue_after_drain": 0
+    },
+    "candidate": {
+      "cell": "qwen-mixed-final365",
+      "date_utc": "2026-09-08",
+      "completed": 24,
+      "routes": {
+        "admitted": 24,
+        "completed": 24,
+        "prompt_tokens_in": 133529,
+        "computed_tokens_in": 133529,
+        "cached_tokens_in": 0,
+        "tokens_out": 7113,
+        "step_oom_parks": 0,
+        "served_spec": 0,
+        "served_dspark": 24,
+        "served_plain": 0
+      },
+      "small_p95_ttft_s": 1.085,
+      "small_median_ttft_s": 0.6586460240650922,
+      "total_request_wall_s": 103.41927738278173,
+      "tail_request_id": 9,
+      "tail_overlap_s": 0.4287997051142156,
+      "tail_ttft_less_overlap_s": 0.655880250968039,
+      "preceding_inflight_ids": [
+        7
+      ],
+      "faults": [],
+      "queue_after_drain": 0
+    }
+  }
 }
