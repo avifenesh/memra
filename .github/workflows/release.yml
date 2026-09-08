@@ -162,15 +162,4 @@ jobs:
             --verify-tag \
             /tmp/pkgs/*.tar.gz /tmp/pkgs/SHA256SUMS /tmp/pkgs/SHA256SUMS.sigstore.json
 
-      # The claim branch (docs/RELEASING.md "Claiming a version number") has done its
-      # job once the release exists — sweep it so the namespace shows only in-flight
-      # claims. The guard proved it existed at run start; if it is gone by now someone
-      # swept early, which is worth a warning but not a red release.
-      - name: Sweep the claim branch
-        run: |
-          claim="refs/heads/release/claim-$GITHUB_REF_NAME"
-          if git ls-remote --exit-code origin "$claim" >/dev/null; then
-            git push origin ":$claim"
-          else
-            echo "::warning::claim branch release/claim-$GITHUB_REF_NAME already gone — the guard saw it at run start"
-          fi
+      # Keep the version claim: publish retries and later tag guards require it.
