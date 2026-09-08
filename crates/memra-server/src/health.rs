@@ -603,6 +603,40 @@ enum ProbeErr {
     Exit(String),
 }
 
+const GPU_STARTUP_PROBES: usize = 6;
+
+enum StartupOutcome {
+    Rich { hangs: usize },
+    Minimal { hangs: usize },
+    Unavailable(String),
+    Fault(String),
+}
+
+fn startup_verdict(
+    mut probe: impl FnMut() -> Result<String, ProbeErr>,
+    deadline: Duration,
+) -> StartupOutcome {
+    // A prior server's VRAM teardown can stall the driver during a same-box redeploy.
+    // Allow six consecutive probes, each with the existing deadline (about 60s total
+    // at the 10s default). No extra sleeps: each hung probe already waits its deadline.
+    // Only six hangs latch; any answer ends startup. Steady state still latches one hang.
+    for hangs in 0..GPU_STARTUP_PROBES {
+        match probe() {
+            Ok(_) => return StartupOutcome::Rich { hangs },
+            Err(ProbeErr::Exit(_)) => return StartupOutcome::Minimal { hangs },
+            Err(ProbeErr::Spawn(e)) => return StartupOutcome::Unavailable(e),
+            Err(ProbeErr::Hang) => {}
+        }
+    }
+    StartupOutcome::Fault(format!(
+        "nvidia-smi did not answer at startup: {GPU_STARTUP_PROBES} probes hung over {}s \
+         ({}s each) - GPU/driver wedge (the GSP-timeout class raises no Xid and hangs \
+         the query tools, so this timeout IS the fault)",
+        deadline.as_secs().saturating_mul(GPU_STARTUP_PROBES as u64),
+        deadline.as_secs()
+    ))
+}
+
 fn probe_smi(args: &[&str], deadline: Duration) -> Result<String, ProbeErr> {
     use std::process::{Command, Stdio};
     let mut child = Command::new("nvidia-smi")
@@ -651,8 +685,8 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
     let _ = std::thread::Builder::new()
         .name("memra-gpu-watch".into())
         .spawn(move || {
-            // First probe decides whether the canary is available at all. "tool missing" is NOT a
-            // fault (CI, containers without the driver toolkit) — the watcher disables that half
+            // Startup probes decide whether the canary is available at all. "tool missing" is NOT a
+            // fault (CI, containers without the driver toolkit); the watcher disables that half
             // and says so once, rather than reporting a phantom CRITICAL.
             //
             // FIELD DEGRADATION (measured on this rig, driver 595.84 / RTX 5090 Laptop):
@@ -668,24 +702,20 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
             ];
             const MIN: &[&str] = &["--query-gpu=timestamp,memory.used", "--format=csv,noheader"];
             let mut args: &[&str] = RICH;
-            match probe_smi(RICH, deadline) {
-                Ok(_) => {}
-                Err(ProbeErr::Hang) => {
-                    health.mark_gpu_fault(format!(
-                        "nvidia-smi did not answer within {}s at startup — GPU/driver wedge \
-                     (the GSP-timeout class raises no Xid and hangs the query tools, so this \
-                     timeout IS the fault)",
-                        deadline.as_secs()
-                    ));
+            let hangs = match startup_verdict(|| probe_smi(RICH, deadline), deadline) {
+                StartupOutcome::Rich { hangs } => hangs,
+                StartupOutcome::Fault(reason) => {
+                    health.mark_gpu_fault(reason);
+                    0
                 }
-                Err(ProbeErr::Spawn(e)) => {
+                StartupOutcome::Unavailable(e) => {
                     eprintln!(
                         "[gpu-watch] nvidia-smi canary unavailable ({e}); Xid log watch only"
                     );
                     loop_xid_only();
                     return;
                 }
-                Err(ProbeErr::Exit(_)) => {
+                StartupOutcome::Minimal { hangs } => {
                     // fields unsupported on this part -> degrade to the liveness-only query
                     args = MIN;
                     eprintln!(
@@ -693,7 +723,11 @@ pub fn spawn_gpu_watch(health: SharedHealth) {
                            canary degraded to a driver-liveness query \
                            (the probe's own timeout stays the alarm)"
                     );
+                    hangs
                 }
+            };
+            if hangs > 0 {
+                eprintln!("[gpu-watch] startup canary recovered after {hangs} hangs");
             }
             eprintln!(
                 "[gpu-watch] on: every {}s, probe deadline {}s, fatal Xid {:?}",
@@ -899,6 +933,83 @@ pub fn spawn_sd_watchdog(health: SharedHealth) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_canary_hang_then_ok_recovers() {
+        let mut probes = [Err(ProbeErr::Hang), Ok("timestamp, 0, No, No".into())].into_iter();
+        assert!(matches!(
+            startup_verdict(|| probes.next().unwrap(), Duration::from_secs(10)),
+            StartupOutcome::Rich { hangs: 1 }
+        ));
+        assert!(probes.next().is_none());
+    }
+
+    #[test]
+    fn startup_canary_hang_then_exit_degrades() {
+        let mut probes = [
+            Err(ProbeErr::Hang),
+            Err(ProbeErr::Exit("unsupported".into())),
+        ]
+        .into_iter();
+        assert!(matches!(
+            startup_verdict(|| probes.next().unwrap(), Duration::from_secs(10)),
+            StartupOutcome::Minimal { hangs: 1 }
+        ));
+        assert!(probes.next().is_none());
+    }
+
+    #[test]
+    fn startup_canary_all_hangs_latch_with_count_and_window() {
+        for seconds in [10, 3] {
+            let mut calls = 0;
+            let outcome = startup_verdict(
+                || {
+                    calls += 1;
+                    Err(ProbeErr::Hang)
+                },
+                Duration::from_secs(seconds),
+            );
+            assert_eq!(calls, GPU_STARTUP_PROBES);
+            let StartupOutcome::Fault(reason) = outcome else {
+                panic!("all startup probes hung without a fault");
+            };
+            assert!(reason.contains(&format!(
+                "6 probes hung over {}s ({}s each)",
+                seconds * 6,
+                seconds
+            )));
+            assert!(reason.contains("GPU/driver wedge"));
+            let health = WorkerHealth::new();
+            health.mark_gpu_fault(&reason);
+            assert_eq!(health.live(), Err(reason));
+        }
+    }
+
+    #[test]
+    fn startup_canary_spawn_stops_immediately() {
+        for hangs in [0, 1] {
+            let mut probes = std::iter::repeat_with(|| Err(ProbeErr::Hang))
+                .take(hangs)
+                .chain(std::iter::once(Err(ProbeErr::Spawn("tool missing".into()))));
+            let outcome = startup_verdict(|| probes.next().unwrap(), Duration::from_secs(10));
+            assert!(matches!(outcome, StartupOutcome::Unavailable(e) if e == "tool missing"));
+            assert!(probes.next().is_none());
+        }
+    }
+
+    #[test]
+    fn startup_canary_ok_on_first_or_last_probe_keeps_rich() {
+        for hangs in [0, GPU_STARTUP_PROBES - 1] {
+            let mut probes = std::iter::repeat_with(|| Err(ProbeErr::Hang))
+                .take(hangs)
+                .chain(std::iter::once(Ok(String::new())));
+            assert!(matches!(
+                startup_verdict(|| probes.next().unwrap(), Duration::from_secs(10)),
+                StartupOutcome::Rich { hangs: actual } if actual == hangs
+            ));
+            assert!(probes.next().is_none());
+        }
+    }
 
     #[test]
     fn xid_classification_covers_both_kernel_line_forms_and_the_fatal_set() {

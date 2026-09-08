@@ -1,0 +1,452 @@
+{
+  "arm": "old",
+  "binary_sha256": "9ed73960687ee557eda349395f27fd4dc61073d48cbbf365b949e5ebff3c8f4d",
+  "gpu": "RTX 5090",
+  "model": "Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+  "probe_deadline_s": 10,
+  "watch_interval_s": 1,
+  "injected_sleep_s": [
+    15,
+    15
+  ],
+  "passed": true,
+  "observations": [
+    {
+      "elapsed_s": 9.02,
+      "code": 200,
+      "health": {
+        "status": "ok",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 352,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 352,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 817
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        }
+      }
+    },
+    {
+      "elapsed_s": 10.02,
+      "code": 200,
+      "health": {
+        "status": "ok",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 1353,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 1353,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 1818
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        }
+      }
+    },
+    {
+      "elapsed_s": 11.02,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 2353,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 2353,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 2819
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 12.02,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 3354,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 3354,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 3820
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 13.02,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 4355,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 4355,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 4821
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 14.02,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 5356,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 5356,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 5821
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 15.02,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 6357,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 6357,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 6822
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 16.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 7358,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 7358,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 7823
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 17.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 8358,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 8358,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 8824
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 18.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 9359,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 9359,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 9825
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 19.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 10360,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 10360,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 10825
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 20.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 11360,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 11360,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 11826
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 21.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 12361,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 12361,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 12827
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 22.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 13362,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 13362,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 13827
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 23.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 14363,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 14363,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 14828
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    },
+    {
+      "elapsed_s": 24.03,
+      "code": 503,
+      "health": {
+        "status": "unhealthy",
+        "models": [
+          "q38"
+        ],
+        "worker": {
+          "phase": "idle",
+          "beat_age_ms": 15363,
+          "tick_max_ms": 0,
+          "stall_threshold_ms": 120000,
+          "forward_progress_age_ms": 15363,
+          "prime_progress": {
+            "rows": 4096,
+            "chunks": 1,
+            "age_ms": 15829
+          },
+          "generation": 0,
+          "xid_warnings": 0
+        },
+        "detail": "nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)"
+      }
+    }
+  ],
+  "probes": [
+    {
+      "call": 1,
+      "time": 1788833413.9257226,
+      "sleep_s": 15,
+      "args": [
+        "--query-gpu=timestamp,ecc.errors.uncorrected.volatile.total,retired_pages.pending,remapped_rows.failure",
+        "--format=csv,noheader"
+      ]
+    },
+    {
+      "call": 2,
+      "time": 1788833424.9326048,
+      "sleep_s": 15,
+      "args": [
+        "--query-gpu=timestamp,ecc.errors.uncorrected.volatile.total,retired_pages.pending,remapped_rows.failure",
+        "--format=csv,noheader"
+      ]
+    },
+    {
+      "call": 3,
+      "time": 1788833435.9399276,
+      "sleep_s": 0,
+      "args": [
+        "--query-gpu=timestamp,ecc.errors.uncorrected.volatile.total,retired_pages.pending,remapped_rows.failure",
+        "--format=csv,noheader"
+      ]
+    },
+    {
+      "call": 4,
+      "time": 1788833437.0403674,
+      "sleep_s": 0,
+      "args": [
+        "--query-gpu=timestamp,ecc.errors.uncorrected.volatile.total,retired_pages.pending,remapped_rows.failure",
+        "--format=csv,noheader"
+      ]
+    }
+  ],
+  "server_log": "[server] build: memra-0.133.0-1d03d97403d8 (id: source-tree, git: unknown)\n[server] starting; models config = [(\"q38\", \"/data/qual/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf\", None)]\n[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable \u2014 kernel.dmesg_restrict)\n[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)\n[worker] Engine ready (device=0, MEMRA_FAST=true)\n[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on\n[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)\n[worker] loading model \"q38\" <- /data/qual/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf\n[worker]   loaded \"q38\": 65 layers, eos=248046, stop=[248046]\n[worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok=\"qwen35\" instruct=Some(\"chatml\") chat_defaults=None/None\n[worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)\n[prefix-cache] on: budget 435MB (435421184 B, derived: 2 x 217710592 B max entry for model \"q38\" at MEMRA_CTX=2048, requested 435421184 B; boot driver free 18268225536 B, post-reserve clamp 16657612800 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)\n[admission] \"q38\": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas\n[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)\n[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32\n[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32\n[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)\n[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc\n[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32\n[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc\n[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32\n[spec] draft-session state high-water: 46MB (max of parked delta 46MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)\n[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)\n[admit-cal] post-probe pool trim: released 2240MB cached back to the driver\n[admit-cal] boot calibration done: model=\"q38\" route=mtp transient floor 2066MB (static was 1536MB; measured 2066MB; probe kv charge 127MB, draft-state 46MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16736MB charged 173MB -> 2066MB]; 1.6s)\n[server] worker ready; serving models: [\"q38\"]\n[server] listening on http://127.0.0.1:34645\n[gpu-watch] CRITICAL: nvidia-smi did not answer within 10s at startup \u2014 GPU/driver wedge (the GSP-timeout class raises no Xid and hangs the query tools, so this timeout IS the fault)\n[gpu-watch] on: every 1s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]\n[gpu-watch] CRITICAL: nvidia-smi did not answer within 10s \u2014 GPU/driver wedge\n[server] SIGTERM: draining (0 in flight, deadline 30s)\n[server] drain complete in 0.0s; exiting\n[server] GPU worker shutdown complete\n"
+}
