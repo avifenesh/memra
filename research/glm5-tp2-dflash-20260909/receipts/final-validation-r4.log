@@ -1,0 +1,88 @@
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.136.0 (/root/wt-glm5-tp-spec-20260909/crates/memra-server)
+    Checking memra-engine v0.136.0 (/root/wt-glm5-tp-spec-20260909/crates/memra-engine)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.71s
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.136.0 (/root/wt-glm5-tp-spec-20260909/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.52s
+     Running unittests src/lib.rs (/root/memra/target/debug/deps/memra_engine-fe48329ef2b16c37)
+
+running 9 tests
+test glm5_tp::tests::armed_check_counts_parse_errors_as_armed ... ok
+test glm5_tp::tests::every_refused_door_composition_bites_by_name ... ok
+test glm5_tp::tests::parse_is_literal_and_fail_closed ... ok
+test glm5_tp::tests::preflight_geometry_laws_are_dimension_derived ... ok
+test glm5_tp_spec::tests::admission_refuses_each_missing_precondition ... ok
+test glm5_tp_spec::tests::both_ranks_restore_every_accepted_prefix_and_continue ... ok
+test glm5_tp_spec::tests::invalid_decision_and_rank_failure_never_report_success ... ok
+test glm5_tp_spec::tests::torn_checkpoint_refuses_before_either_rank_changes ... ok
+test glm5_tp_spec_pair_gpu::pair_arm ... ignored, requires the scheduled two-device pair and pinned full model/drafter artifacts
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 472 filtered out; finished in 0.00s
+
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.136.0 (/root/wt-glm5-tp-spec-20260909/crates/memra-engine)
+   Compiling memra-server v0.136.0 (/root/wt-glm5-tp-spec-20260909/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.83s
+     Running unittests src/lib.rs (/root/memra/target/debug/deps/memra_server-74d214de2c5edd71)
+
+running 28 tests
+test tests::glm5_chat_arms_the_native_tool_parser ... ok
+test tests::glm5_fixtures_match_the_vendor_jinja ... ok
+test tests::glm5_model_row_does_not_claim_structured_output ... ok
+test tests::glm5_never_renders_chatml ... ok
+test tests::glm5_plain_fast_path_never_drops_replayed_reasoning ... ok
+test tests::glm5_reasoning_effort_renders_and_keeps_its_max_tier ... ok
+test tests::glm5_refuses_what_its_template_cannot_honour ... ok
+test tests::glm5_vision_decode_is_deferred_and_grid_pinned ... ok
+test tests::one_glm5_request_renders_identical_bytes_on_all_three_surfaces ... ok
+test toolcall::tests::glm5_back_to_back_calls_need_no_separator ... ok
+test toolcall::tests::glm5_live_emissions_parse_into_the_serve_surface ... ok
+test toolcall::tests::glm5_malformed_span_surfaces_verbatim ... ok
+test toolcall::tests::glm5_newline_holdback_never_swallows_real_content ... ok
+test toolcall::tests::glm5_wire_parses_whole_and_char_by_char ... ok
+test toolcall::tests::glm5_without_tools_is_a_reasoning_splitter_only ... ok
+test worker::glm5_tp_serve_boot_verdict_tests::tp_off_is_silent ... ok
+test worker::glm5_tp_serve_boot_verdict_tests::tp_refuses_every_spec_program_by_name ... ok
+test worker::glm5_tp_serve_boot_verdict_tests::tp_refuses_the_batched_hc_walk_by_name ... ok
+test worker::glm5_tp_serve_boot_verdict_tests::tp_serves_plain_only_by_explicit_choice ... ok
+test worker::glm5_tp_serve_boot_verdict_tests::tp_spec_door_permits_request_admission_but_not_dspark_or_hyper_batch ... ok
+test worker::tests::a_plain_step_refuses_a_session_holding_a_glm5_session ... ok
+test worker::tests::glm5_cold_short_depth_is_the_measured_peak_and_scoped_to_that_branch ... ok
+test worker::tests::glm5_full_cover_hit_is_an_admissible_carrier_and_always_names_itself ... ok
+test worker::tests::glm5_route_class_matrix_is_exact ... ok
+test worker::tests::glm5_route_wiring_is_live_in_comment_stripped_source ... ok
+test worker::tests::glm5_sharded_placement_matrix_is_exact ... ok
+test worker::tests::glm5_spec_k_clamp_holds_the_verify_knee ... ok
+test worker::tests::glm5_spec_sampling_seam_carries_greedy_penalties_and_nothing_else ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 621 filtered out; finished in 0.06s
+
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.136.0 (/root/wt-glm5-tp-spec-20260909/crates/memra-engine)
+   Compiling memra-server v0.136.0 (/root/wt-glm5-tp-spec-20260909/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 1m 01s
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.136.0 (/root/wt-glm5-tp-spec-20260909/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 38.31s
+     Running unittests src/lib.rs (/root/memra/target/release/deps/memra_engine-38136f5f2c1329a0)
+
+running 4 tests
+test glm5_tp_spec::tests::admission_refuses_each_missing_precondition ... ok
+test glm5_tp_spec::tests::both_ranks_restore_every_accepted_prefix_and_continue ... ok
+test glm5_tp_spec::tests::invalid_decision_and_rank_failure_never_report_success ... ok
+test glm5_tp_spec::tests::torn_checkpoint_refuses_before_either_rank_changes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 477 filtered out; finished in 0.00s
+
+test_arm_env_leaves_policy_unforced_and_isolates_k0 (test_pair_cell.Receipts.test_arm_env_leaves_policy_unforced_and_isolates_k0) ... ok
+test_complete_sse_and_matching_engagement_pass (test_pair_cell.Receipts.test_complete_sse_and_matching_engagement_pass) ... ok
+test_mismatched_acceptance_fails (test_pair_cell.Receipts.test_mismatched_acceptance_fails) ... ok
+test_plain_arm_cannot_hide_speculation (test_pair_cell.Receipts.test_plain_arm_cannot_hide_speculation) ... ok
+test_usage_without_done_is_not_completion (test_pair_cell.Receipts.test_usage_without_done_is_not_completion) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.003s
+
+OK
+check-flags: rg is required
