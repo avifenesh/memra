@@ -47,6 +47,18 @@ sampler. `MatrixStep` declares it before the captured workspace allocations.
 Capture is ended/aborted before drains, and both ranks are drained before graph
 or buffer release, including an exception between rank submissions.
 
+If either rank's completion cannot be proved by a successful drain, the runtime
+attempts both drains, reports their errors and aborts the process before Rust
+destructors run. Logging and returning would let the enclosing workspace, caches
+and model pointers be freed while peer access might remain outstanding. Drop
+also fails stop if capture abort cannot be established. This is restricted to
+the unrecoverable completion failure; ordinary AR refusal with successful drains
+still rolls back and returns a quarantined request. Rust subprocess tests inject
+failed completion on either rank, during an error return and destructor unwind,
+and assert SIGABRT with no captured-storage destructor release. The separate
+Rust CUDA lifecycle test covers partial forward/commit submission, capture-body
+unwind and the capture-end/instantiate error boundary using the actual owners.
+
 Capture records GPU work but runs Rust bookkeeping. Host compressor high-water
 marks are restored after initial capture and on pre-execution capture failures.
 Each replay refreshes the host checkpoint marks once/token. On an AR refusal,
