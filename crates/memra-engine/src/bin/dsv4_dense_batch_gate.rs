@@ -633,6 +633,17 @@ fn run(
             before_variants,
             expected_variants(on, PRIME, PRIME + OUTPUT, true),
         );
+        let census = gpu
+            .full_token_replay_variant_census_for_gate(&active.state)
+            .unwrap();
+        let launches_per_step: [f64; 2] = std::array::from_fn(|rank| {
+            (0..4)
+                .map(|slot| {
+                    (variants[rank][slot] - before_variants[rank][slot]) * census[rank][slot][1]
+                })
+                .sum::<u64>() as f64
+                / OUTPUT as f64
+        });
         let capture_counts = gpu
             .full_token_replay_captures_for_gate(&active.state)
             .unwrap();
@@ -659,7 +670,7 @@ fn run(
             h.update(0u64.to_le_bytes());
         }
         println!(
-            r#"MEASURE {{"row":{row},"arm_row":{arm_row},"arm":"{arm_name}","cadence_on":true,"exact_tail_on":true,"dense_batch_on":{on},"sampler":"device","generated_tokens":256,"decode_wall_ns":{wall},"decode_tok_s":{rate},"first_capture":{first_capture},"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"splitk":false,"generated_sha256":"{expected_tokens}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"captures":{capture_counts:?},"variant_device_counts":{variants:?},"control_sha256":"{:x}"}}"#,
+            r#"MEASURE {{"row":{row},"arm_row":{arm_row},"arm":"{arm_name}","launches_per_step":{launches_per_step:?},"cadence_on":true,"exact_tail_on":true,"dense_batch_on":{on},"sampler":"device","generated_tokens":256,"decode_wall_ns":{wall},"decode_tok_s":{rate},"first_capture":{first_capture},"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"splitk":false,"generated_sha256":"{expected_tokens}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"captures":{capture_counts:?},"variant_device_counts":{variants:?},"control_sha256":"{:x}"}}"#,
             expected_identity.0,
             expected_identity.1,
             expected_identity.2,
