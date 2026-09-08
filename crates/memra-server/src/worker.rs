@@ -22688,9 +22688,6 @@ fn step_session(
         } else {
             s.prefill_queue.drain(..).collect()
         };
-        if !cooperative_prime {
-            s.prefill_done = true;
-        }
         if suffix.is_empty() && spec.next_pred.is_none() && spec.pending_tok.is_none() {
             // nothing primed and nothing to prime — shouldn't happen (admit rejects empty prompts)
             finish(s, StopReason::MaxNew);
@@ -22773,8 +22770,10 @@ fn step_session(
             }
             s.prime_service.finish(walker)?;
             s.prefill_queue.clear();
-            s.prefill_done = true;
         }
+        // Empty-suffix restores/continuations are already primed too. A pending
+        // walker returned above, so every path reaching decode has completed prefill.
+        s.prefill_done = true;
         // SPEC x CONSTRAINED: greedy constrained bursts carry the grammar hook — verify-side
         // truncation + masked-argmax cut slots (engine contract; sampled never gets here).
         // Telemetry (lane/accept-telemetry): the session's counters are LIFETIME (a pool
