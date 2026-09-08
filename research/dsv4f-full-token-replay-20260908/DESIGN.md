@@ -1,128 +1,129 @@
-# Full-token segmented replay: component checkpoint
+# Full-token segmented replay: review checkpoint
 
-Status: model-free component source only. No full-model dispatch exists yet.
-No model exactness, model graph coverage, device sampling, or throughput result
-is claimed. This checkpoint is for independent review before integration.
+Status: full-token runtime integration and the one-load model gate are implemented
+in source. Real compressor/attention control and device-sampler components pass
+on the target development pair. Full-model graph coverage, changing-token/refusal
+qualification and the 20-row performance experiment have **not run**. This is a
+review checkpoint, not production admission or a speed result.
 
-Base: `2d0271fb3b6021c2c9f1b3b36d2598614a10284f` (fresh origin/main).
-The existing issue #4 claim remains with its continuing controller. No open
-full-token replay PR existed when this branch was opened. Existing partial
-graph owners and probe guards are preserved.
+Base: `2d0271fb3b6021c2c9f1b3b36d2598614a10284f`. Existing issue #4 ownership
+and the older window-only/EP/compressor probe guards are preserved.
 
-## Implementation map
+## Runtime contract
 
-| Owned file | Required integration |
+The request owns four retained graphs: forward and commit/sample on each rank.
+Forward captures embedding, all 43 complete trunk layers and both collectives
+per layer. Both forward graphs launch before either rank is drained. The host
+then reads **both** sticky AR refusal words. Only `[0, 0]` allows segment two:
+persistent-ring commit on each rank, head and the existing device sampler on the
+head rank. Both streams drain before the sampled token is returned. The caller
+checks token/EOS before starting another step.
+
+One 24-byte pinned upload per rank/token contains token/position, the f64
+position-keyed uniform bits, and a live rank/layer refusal control word. Captured
+nodes use stable device pointers. RoPE positions, compressor append/store slots,
+C4/C128 emission cadence, selector counts, attention slot bounds and commit
+`slot_rows` are live. There is no per-node host update loop or recapture path.
+
+The compressor uses a uniform whole-block emission predicate at kernel entry.
+An inactive block returns **before** any barrier or write; active blocks retain
+the exact existing pooling, norm, RoPE, quantization, and reduction program.
+The selector computes the same live power-of-two sort width. Attention retains
+the exact live loop bounds and reduction order; it does not substitute padded
+reduction bounds. No new numeric class is introduced.
+
+The initially tested CUDA-IF body implementation failed synccheck in the composed
+compressor, despite normal and memcheck equality. Removing/moving its diagnostic
+marker, prewarming, and a newer sanitizer did not clear the composed failure.
+That implementation is unqualified and its runtime helpers were removed. The
+uniform-predicate implementation is the separately gated equivalent. No sanitizer
+suppression or numerical-program change was used to obtain its pass. Private
+companion receipts retain the failing controls and diagnostic source snapshot.
+
+## Ownership and failure handling
+
+`ReplayPair` owns both ranks' graph handles, pinned/device inputs, counters and
+sampler. `MatrixStep` declares it before the captured workspace allocations.
+Capture is ended/aborted before drains, and both ranks are drained before graph
+or buffer release, including an exception between rank submissions.
+
+Capture records GPU work but runs Rust bookkeeping. Host compressor high-water
+marks are restored after initial capture and on pre-execution capture failures.
+Each replay refreshes the host checkpoint marks once/token. On an AR refusal,
+the existing zero-commit rollback restores both pending planes/high-water marks;
+neither ring is committed and the request remains quarantined. Prefix restoration
+rejects failed/open requests and cannot act as a retry bypass.
+
+Refusal injection is read by the existing AR kernel at the captured attention
+rank/layer from the live control word. It runs before actual barriers, whose real
+timeout errors therefore take precedence. It is not a captured stack-backed host
+copy or a frozen per-node error value. Device AR epochs remain model-global and
+the existing walk mutex protects their sequence.
+
+The arming API is explicitly unsafe and gate-only: the borrowed model must remain
+at a stable address, with immutable weight allocations/kernel configuration, until
+the armed state is dropped. The gate owns that lifetime. No serving route invokes
+this API. Admission refuses unsupported topology, cache residency, stream override,
+shape, numeric program, sampling configuration, DSpark and split-K. Both arms use
+attention TP2/expert-ID EP, f32x/RefFp8Round, device sampler and small-kernel diet.
+The admitted request has capacity 512..1024 and replay positions below 512.
+
+## Owned implementation
+
+| File under `crates/memra-engine/` | Role |
 | --- | --- |
-| `src/dsv4_gpu.rs` | At `decode_step_tp_ep`, retain the walk mutex and request workspace. Allocate controls and capture both rank forward segments without executing either alone. Snapshot and restore capture-time host metadata. Replace host compressor address/cadence, indexer `nbs`/`kks`/`slots`, and commit `slot_rows` with live controls. Restore both transient planes on refusal. |
-| `src/dsv4_graph.rs` | New capture-only lifecycle; current `capture_layer` pre-drains, launches immediately, and post-drains, which cannot represent independent paired rank capture. Graph executables must die before request buffers and AR state. Drain both ranks on submission failure. |
-| `cu/dsv4_replay_control.cuh`, CUDA implementation and `src/dsv4_ffi.rs` | One stable input upload per rank per token. Same-device IF bodies for C4/C128 emission. Dynamic append and store addresses. Keep compressor pool/attention/selector loop bounds and reduction order exact. No per-node host parameter update loop. |
-| `src/dsv4_ep.rs` | Retain the actual one-shot AR signal allocation, device epoch updates, start/end barriers and sticky refusal words across graph launches. Capture must not count as successful execution. |
-| `src/dsv4_grouped.rs` | Require the existing device route and mirror-validation-off program. Preserve unsupported EP/compressor guards in the older probes. Scope admission before any capture-side mutation. |
-| `src/dsv4_sampler.rs`, `cu/dsv4_sampler.cu` | Split enqueue from result drain. Feed the existing f64 position-keyed uniform from stable device storage; it is currently a by-value launch argument. Preserve the sampler numeric class. |
+| `src/dsv4_gpu.rs` | Strict request arming, complete token capture/replay, host refusal boundary, capture metadata restoration, enqueue-only successful commit, stable-address prefix row reset |
+| `src/dsv4_graph.rs` | Capture-only graph lifetime, paired submission/drains, stable input/sampler ownership, device replay counters, structural census and DOT export |
+| `cu/dsv4_gpu.cu`, `src/dsv4_ffi.rs` | Live scalar/offset consumers, uniform compressor predicates and copies, capture lifecycle, controls, counters and census |
+| `cu/tp_ar.cu`, `src/tp_ar.rs`, `src/dsv4_ep.rs` | Existing AR with live diagnostic word, capture context binding and authoritative device-epoch readback |
+| `cu/dsv4_sampler.cu`, `src/dsv4_sampler.rs` | Existing device sampler with pointer-fed uniform and separate enqueue/readback |
+| `src/dsv4_full_token_replay_gate.rs` and sampled gate entry | Changing-token/state/epoch/refusal checks, then one bounded 20-row ABBA |
 
-Paths above are under `crates/memra-engine/`. The component-stage header is
-not wired into the runtime build or a scored arm.
+## Components and model gate
 
-The first segment owns embedding, all 43 complete layers and both ARs/layer
-on each rank. The host reads both refusal words after both graphs are enqueued.
-Only `[0, 0]` permits the second segment: successful ring commit on both ranks,
-head and device sampling on the existing head rank. Token/EOS readback remains
-the feedback barrier for the next token. There must be no per-layer eager
-fallback, recapture, or silent fallback from the scored arm.
+- `tools/dsv4-full-token-control-gate.cu`: paired lifecycle, live controls, actual
+  AR widths/epochs, injected and actual missing-peer refusal, failure cleanup,
+  quarantine and live rank/layer refusal after capture. The original five setup
+  and poison writes are explicitly ordered on the owning nonblocking stream.
+- `tools/dsv4-replay-live-kernel-gate.cu`: real pool/norm/RoPE/quantization across
+  513 positions for C4, C128 and the rotated indexer; real selector/attention
+  intermediates at changing and decreasing bounds. Exact eager comparison on both
+  GPUs. The guarded implementation passed normal, memcheck and synccheck.
+- `tools/dsv4-replay-sampler-gate.cu`: fixed logits, eight changing f64 uniforms,
+  257 and 129280 vocabulary entries, both GPUs. Exact token/canary/prefix/block-sum
+  comparison with the existing sampler, eight distinct tokens in each case.
 
-Existing success commit (`commit_verify_dev_plane`) ends with a stream drain;
-its enqueue portion must be separated without moving the refusal decision.
-Compressor checkpoints mutate pending payloads and host block counts before
-that decision. A capture records GPU writes but executes Rust metadata changes;
-restore those changes before first launch, then update metadata for each replay.
-On refusal restore pending payloads and high-water marks and quarantine retry.
-Unused emitted rows beyond the restored high-water mark follow the existing
-rollback contract; do not broaden live cache state to include them.
+Build/checks run remotely only, with arch `120a`, a dedicated target directory,
+and at most two build jobs. `MEMRA_SKIP_PERF_CI=1` is used for push; local git
+hooks are disabled because they run rig gates. Hosted CI remains a merge gate.
 
-Admission is plain short-context, one token at a time, device caches, attention
-TP2 plus expert-ID EP, device sampler plus diet, split-K off. Refuse DSpark,
-host C4, incompatible numeric programs and unsupported topology/shapes.
-The future runtime door defaults off and must be decided by 2026-09-22.
+The sampled gate's `--full-token-replay` arm uses the existing pinned source and
+model loader. It first primes 256 tokens and compares every subsequent changing
+sample, final logits, both cache/hidden planes and all 72 AR epochs/rank for 256
+steps. It requires exactly one capture per segment and a forward census of 86 AR
+nodes, one embedding and 86 HC posts per rank, with no unsupported node type.
 
-## Component contract and limits
+Six faults are armed **after capture**: each rank at positions 259/383/511 and
+layers 0/21/42. Each must leave the cache/position unchanged, increase forward
+counters only, and quarantine ordinary retry and prefix-reset retry.
 
-`tools/dsv4-full-token-control-gate.cu` compiles the actual `cu/tp_ar.cu`
-source into a standalone executable. It creates two rank-local forward graphs,
-each containing live control, a pending-state fixture snapshot, two conditional
-bodies and 86 actual AR launches. Each rank has a separate commit fixture graph.
-It never loads model weights. Integer payload fixtures do not implement model
-compressor pooling, logits, or sampling.
+Only then does the same load run `AAAAA BBBBB BBBBB AAAAA`: five rows/block,
+256 outputs/row. A new scored graph state includes its first capture in the first
+B row's measured wall, then retains the same four graphs for all later B rows.
+Rows reset primed bytes into existing allocations outside timing. Both arms use
+the same consume/commit/draw order: a common initial carry draw outside timing,
+then 256 forward/refusal/commit/head/sample/readback steps inside timing, including
+the final next draw. Output/caches/hidden/epochs are validated after each row.
+EOS-shortened or looped rows fail eligibility. No profile/hash work is timed.
 
-The positive cell changes token/position/uniform bits on every replay across
-513 positions, C4/C128 emissions and four 128-slot ring wraps. Every partial sum,
-live scalar, pending/ring payload, block count and device AR epoch is checked.
-The negative cells inject a sticky refusal independently on either rank at
-127/255/511, require neither committed plane/readback to advance, restore both
-transient fixtures, and reject retry. Each negative cell now replays a real
-prefix, so saved C4 counts are nonzero and saved C128 counts are nonzero at
-255/511. A reset-to-zero rollback cannot pass those cells.
+Every row emits wall time, token/state hashes, live-control hash, replay/capture
+counts and eligibility. DOT graphs are exported for SHA binding. On correctness
+failure the experiment stops. Flat/negative full-model replay removes the added
+door/dispatch/kernels/gate cells in this lane; a win returns to root for full
+qualification. No merge, serving claim, DSpark/server/host-C4/1M ladder or automatic
+scope expansion is authorized by component results.
 
-The first source review found two exceptional-path bugs in the initial component:
-rank destruction could free peer memory before the other rank drained, and sum
-validation preceded refusal handling even though a timed-out AR leaves sums
-unwritten. A `Pair` owner now drains both ranks before either member destructor
-releases resources, also during stack unwinding. Failed drains are reported and
-retain both allocations until process exit. Refusal handling immediately follows
-both word reads; it restores only submitted ranks and quarantines both before
-looking at any control or sum output.
-
-Focused cells launch the actual AR kernel without its peer on each rank, with
-poisoned sums and nonzero high-water marks. These use separate two-join fault
-graphs with a 5,000,000-cycle bound; the positive 86-join graphs keep the original
-2,000,000,000-cycle bound. A separate host submission exception after rank A
-launch and before rank B enqueue tests stack unwinding: both drains must precede
-either free, and A's device word must report the actual 40043 start timeout.
-This is an injected host submission failure, not an invalid CUDA call suppressed
-from sanitizer reports. There are no sanitizer suppressions.
-
-Eight-token cells check all elements and all per-block epochs at the default
-production AR shapes: 4096 floats/1 block and 24576 floats/48 blocks. The latter alternates attention
-and expert geometry on the same signal allocation: block 0 advances 86 epochs
-per token, other blocks advance 43. Uniform
-payloads vary all 64 bits. This remains a payload freshness check, not sampling
-qualification. No full-model refusal or numeric qualification is implied.
-
-Re-review closed the pair-lifetime and refusal-order findings but found that
-setup and poisoned-output `cudaMemset` calls used the legacy default stream.
-The nonblocking rank streams did not order those writes. All five initialization
-and poison sites now use `cudaMemsetAsync` on the owning rank stream; the existing
-constructor drain and same-stream replay order cover them. Earlier normal and
-sanitizer passes do not establish the missing dependency.
-
-Build remotely (no local rig gates):
-
-```sh
-nvcc -t 2 -std=c++17 -O2 -fmad=false -arch=sm_120a \
-  tools/dsv4-full-token-control-gate.cu -o "$CARGO_TARGET_DIR/dsv4-full-token-control-gate"
-```
-
-Use the controller-assigned pair slot with fd9 on `/tmp/memra-gpu.lock`.
-Remote build and component receipts live in the private companion ops lane.
-No result is inferred from installed headers or a successful compile.
-
-## Required next gates
-
-1. Run the model-free component on the assigned pair, inspect failures and
-   CUDA sanitizer results before integrating the runtime.
-2. Review the complete capture integration at a stable source checkpoint.
-3. On the same loaded model prove changing-token cache/hidden identity on both
-   ranks across C4/C128/ring wrap, AR epochs, both-rank refusal before commit,
-   actual sampling-uniform freshness and complete model graph coverage.
-4. Only then run one same-load 20-row ABBA, five rows per block, 256 prime and
-   256 sampled outputs. Measure the complete `sample_plus_forward_envelope`,
-   including control upload, refusal reads, commit, head, sample and readback.
-5. Stop on correctness failure. Flat/negative full replay removes the entire
-   diagnostic arm in this lane. A win goes back to the controller for a full
-   qualification decision, without merge or automatic scope expansion.
-
-CUDA API source: [NVIDIA CUDA Graphs](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html),
-conditional node requirements and capture restrictions, read 2026-09-08.
-Conditional bodies are single-device. Capture cannot synchronize a captured
-stream. The installed CUDA 13.1 header uses the six-argument `cudaGraphAddNode`
-form with edge data; the initial five-argument documentation example did not
-compile. The component explicitly supplies null edge data.
+CUDA references: [CUDA Graphs](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html),
+[Compute Sanitizer](https://docs.nvidia.com/compute-sanitizer/ComputeSanitizer/index.html).
+Target runtime/headers and failure controls are recorded in the private ops lane;
+architecture labels alone are not support evidence.

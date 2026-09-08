@@ -158,6 +158,7 @@ struct MemraArSignal {
 };
 
 extern "C" int memra_tp_ar_signal_bytes(void) { return (int)sizeof(MemraArSignal); }
+extern "C" int memra_tp_ar_seq_offset_bytes(void) { return (int)offsetof(MemraArSignal, seq); }
 
 __device__ __forceinline__ void memra_ar_st_release(unsigned* addr, unsigned v) {
     asm volatile("st.release.sys.global.u32 [%1], %0;" ::"r"(v), "l"(addr));
@@ -202,7 +203,15 @@ __device__ __forceinline__ int memra_ar_barrier(unsigned (*peer_ctr)[MEMRA_AR_RA
 __global__ void __launch_bounds__(512, 1) memra_tp_ar_1stage_kernel(
         const float* __restrict__ in_rank0, const float* __restrict__ in_rank1,
         float* __restrict__ out, MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, long n,
-        int* __restrict__ err, long long spin_limit) {
+        int* __restrict__ err, long long spin_limit,
+        const unsigned long long* fault = nullptr, int site = -1) {
+    // Live request-local diagnostic, before the real waits so a real timeout
+    // takes precedence. The ordinary entry passes null and keeps its program.
+    if (fault && threadIdx.x == 0) {
+        unsigned long long word = *fault;
+        if ((unsigned)(word >> 32) && (int)(word & 0xffffu) == site &&
+            (int)((word >> 16) & 0xffffu) == rank) *(volatile int*)err = (int)(word >> 32);
+    }
     unsigned flag = self_sg->seq[blockIdx.x] + 1;
     if (memra_ar_barrier(peer_sg->start, self_sg->start, flag, rank, spin_limit)) {
         if (threadIdx.x == 0) {
@@ -232,6 +241,21 @@ extern "C" int memra_tp_ar_1stage(const float* in_rank0, const float* in_rank1, 
     memra_tp_ar_1stage_kernel<<<(unsigned)blocks, 512u, 0, stream>>>(
         in_rank0, in_rank1, out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, n, err,
         spin_limit);
+    TP_AR_ERR();
+    return 0;
+}
+
+extern "C" int memra_tp_ar_1stage_replay(const float* in_rank0, const float* in_rank1, float* out,
+    void* self_sg, void* peer_sg, int rank, long n, int* err, long long spin_limit, int blocks,
+    void* stream_v, const void* fault, int site) {
+    if (n <= 0) return 40041;
+    if (spin_limit <= 0) return 40042;
+    if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
+    if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
+    if (!fault || site < 0 || site >= 43) return 40047;
+    memra_tp_ar_1stage_kernel<<<(unsigned)blocks, 512u, 0, (cudaStream_t)stream_v>>>(
+        in_rank0,in_rank1,out,(MemraArSignal*)self_sg,(MemraArSignal*)peer_sg,rank,n,err,
+        spin_limit,(const unsigned long long*)fault,site);
     TP_AR_ERR();
     return 0;
 }

@@ -145,6 +145,69 @@ impl Dsv4DeviceSampler {
         zero_guard!(self.counts);
         Ok(())
     }
+    /// Capture-only unpenalized sampler. All scratch is retained on self and
+    /// `uniform` belongs to the same request's stable replay input allocation.
+    /// # Safety
+    /// Both pointers must remain valid on this stream through every graph replay.
+    pub(crate) unsafe fn enqueue_replay(
+        &mut self,
+        input: *const f32,
+        uniform: *const f64,
+        cfg: &Dsv4SampleCfg,
+    ) -> Res<()> {
+        if !cfg.temperature.is_finite()
+            || cfg.temperature <= 0.0
+            || !(cfg.top_p > 0.0 && cfg.top_p <= 1.0)
+            || uniform.is_null()
+        {
+            return Err(
+                "replay sampler requires finite positive temperature, top_p and live uniform"
+                    .into(),
+            );
+        }
+        self.stream
+            .memset_zeros(&mut self.counts)
+            .map_err(|e| e.to_string())?;
+        let k = if cfg.top_k == 0 {
+            self.n
+        } else {
+            cfg.top_k.min(self.n)
+        };
+        unsafe {
+            crate::dsv4_ffi::ck(
+                "replay device sampler",
+                crate::dsv4_ffi::memra_dsv4_sample_device_replay(
+                    input,
+                    self.values.device_ptr_mut(&self.stream).0 as *mut f32,
+                    self.keys0.device_ptr_mut(&self.stream).0 as *mut u64,
+                    self.keys1.device_ptr_mut(&self.stream).0 as *mut u64,
+                    self.prefix.device_ptr_mut(&self.stream).0 as *mut f64,
+                    self.blocks.device_ptr_mut(&self.stream).0 as *mut f64,
+                    self.counts.device_ptr(&self.stream).0 as *const i32,
+                    self.result.device_ptr_mut(&self.stream).0 as *mut u32,
+                    self.n as i32,
+                    k as i32,
+                    cfg.temperature as f64,
+                    cfg.top_p as f64,
+                    uniform,
+                    self.stream.cu_stream().cast(),
+                ),
+            )
+        }
+    }
+    pub(crate) fn read_replay(&mut self) -> Res<u32> {
+        let mut token = [0u32];
+        self.stream
+            .memcpy_dtoh(&self.result.slice(0..1), &mut token)
+            .map_err(|e| e.to_string())?;
+        self.stream.synchronize().map_err(|e| e.to_string())?;
+        if token[0] as usize >= self.n {
+            return Err("replay sampler refuses nonfinite output".into());
+        }
+        self.calls += 1;
+        Ok(token[0])
+    }
+
     /// Prefill/restore adapter: the existing cache API owns a host logits row.
     pub fn sample_host_row(
         &mut self,

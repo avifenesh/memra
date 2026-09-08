@@ -72,6 +72,7 @@ struct Rank {
     Fixture* fixture{};
     void* signal{};
     int* error{};
+    uint64_t* injection{};
     float *partial{}, *sum{};
     bool quarantined=false, release_allowed=true;
     CleanupAudit* audit=nullptr;
@@ -85,6 +86,7 @@ struct Rank {
         ck(cudaMalloc(&signal,memra_tp_ar_signal_bytes()));
         ck(cudaMemsetAsync(signal,0,memra_tp_ar_signal_bytes(),stream));
         ck(cudaMalloc(&error,sizeof(int))); ck(cudaMemsetAsync(error,0,sizeof(int),stream));
+        ck(cudaMalloc(&injection,sizeof(uint64_t))); ck(cudaMemsetAsync(injection,0,sizeof(uint64_t),stream));
         ck(cudaMalloc(&partial,width*sizeof(float))); ck(cudaMalloc(&sum,86*width*sizeof(float)));
         ck(cudaMemsetAsync(sum,0xff,86*width*sizeof(float),stream));
         ck(cudaStreamSynchronize(stream));
@@ -107,7 +109,7 @@ struct Rank {
         if(commit) cudaGraphDestroy(commit);
         if(fault) cudaGraphDestroy(fault);
         cudaFree(input); cudaFreeHost(host); cudaFree(control); cudaFree(fixture);
-        cudaFree(signal); cudaFree(error); cudaFree(partial); cudaFree(sum);
+        cudaFree(signal); cudaFree(error); cudaFree(injection); cudaFree(partial); cudaFree(sum);
         cudaStreamDestroy(stream);
     }
     Rank(const Rank&)=delete;
@@ -186,8 +188,12 @@ void build(Rank& r,Rank& peer,bool fault=false) {
         producer<<<1,128,0,r.stream>>>(r.control,r.partial,r.device,layer,phase,width);
         const auto* p0=r.device==0?r.partial:peer.partial;
         const auto* p1=r.device==1?r.partial:peer.partial;
-        require(memra_tp_ar_1stage(p0,p1,r.sum+(layer*2+phase)*r.width,r.signal,peer.signal,r.device,width,r.error,
-                                  fault?5000000LL:r.spin_limit,blocks,r.stream)==0,"AR capture failed");
+        const int rc = phase==0
+            ? memra_tp_ar_1stage_replay(p0,p1,r.sum+(layer*2+phase)*r.width,r.signal,peer.signal,r.device,width,r.error,
+                                      fault?5000000LL:r.spin_limit,blocks,r.stream,r.injection,layer)
+            : memra_tp_ar_1stage(p0,p1,r.sum+(layer*2+phase)*r.width,r.signal,peer.signal,r.device,width,r.error,
+                                fault?5000000LL:r.spin_limit,blocks,r.stream);
+        require(rc==0,"AR capture failed");
     }
     cudaGraph_t ended{}; ck(cudaStreamEndCapture(r.stream,&ended));
     require(ended==graph,"capture changed graph owner");
@@ -399,6 +405,29 @@ int main() try {
                 audit.refusals[0]==40043 && audit.refusals[1]==0,
                 "second submission failure did not drain both before either release");
         puts("PASS first_launch_success_second_launch_failure both_drained_before_free=1");
+    }
+    for(int rank=0;rank<2;++rank) for(int site:{0,21,42}) {
+        Pair pair; auto& a=pair.a; auto& b=pair.b; build(a,b); build(b,a);
+        for(unsigned p=0;p<128;++p) {
+            Dsv4ReplayInput in{17+p,p,uint64_t(p)*0xd6e8feb86659fd93ULL,window,4096};
+            require(step(pair,in),"live refusal prefix failed");
+        }
+        auto saved=std::array<Fixture,2>{read(a,a.fixture),read(b,b.fixture)};
+        uint64_t word=(uint64_t(40043+rank)<<32)|(uint64_t(rank)<<16)|unsigned(site);
+        for(auto* r:{&a,&b}) {
+            ck(cudaSetDevice(r->device));
+            ck(cudaMemcpyAsync(r->injection,&word,sizeof(word),cudaMemcpyHostToDevice,r->stream));
+        }
+        Dsv4ReplayInput in{991,128,0x3fe12345abcdef01ULL,window,4096};
+        require(!step(pair,in),"captured live refusal did not engage");
+        for(auto* r:{&a,&b}) {
+            require(read(*r,r->error)==(r->device==rank?40043+rank:0),"live refusal rank/site mismatch");
+            auto f=read(*r,r->fixture); const auto& old=saved[r->device];
+            require(!memcmp(f.ring,old.ring,sizeof(f.ring)) && !memcmp(f.pending4,old.pending4,sizeof(f.pending4)) &&
+                !memcmp(f.pending128,old.pending128,sizeof(f.pending128)) && f.blocks4==32 && f.blocks128==1 &&
+                f.commits==old.commits && f.sampled_token==old.sampled_token && r->quarantined,"live refusal changed state");
+        }
+        printf("PASS live AR refusal rank=%d site=%d armed_after_capture=1 no_commit=1\n",rank,site);
     }
     require(!cleanup_failed,"pair cleanup reported a CUDA error");
     puts("PASS model-free prerequisite only; model_layers=0 model_sampling=0 performance_rows=0");
