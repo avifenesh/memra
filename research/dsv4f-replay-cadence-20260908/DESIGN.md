@@ -2,7 +2,12 @@
 
 Base source: `24555c1740f55c9108334e6f4a3c67d003f68661`. One isolated owner,
 branch `lane/dsv4f-replay-cadence-20260908`; issue #4 remains root-owned.
-Current implementation is unmeasured. The original full-token replay remains
+Measured source c16385b02 passed the component prerequisites and two full-model
+20-row loads: ABBA +1.007107%, BAAB +1.074545%, all identities/censuses/eight
+refusals pass, first captures included for both arms. Verdict: KEEP candidate,
+default OFF, not serving admission. Private Darklanes #508 report:
+`research/dsv4f-replay-cadence-20260908/COMBINED-RESULT.md`.
+The original full-token replay remains
 the exact oracle. Post-#358 main changes affect server admission/tests, not the
 replay/compressor program. GU/dense candidates are separately owned and OFF for
 this lane's first model comparison.

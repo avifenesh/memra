@@ -1730,9 +1730,13 @@ replay oracle; ON retains three forward cadences per rank and one shared commit
 graph, omitting inactive emission/shift bodies at capture. Both arms keep exact
 math, live controls, refusal-before-commit and paired completion fail-stop. Rollback
 is to drop the armed request and use the original full replay selector. No serving
-route or environment switch enables it. **decide-by: 2026-09-22**. Unmeasured;
-source/protocol: `research/dsv4f-replay-cadence-20260908/DESIGN.md`; private receipt
-namespace `replay-cadence-20260908`. The standalone
+route or environment switch enables it. **decide-by: 2026-09-22**. KEEP candidate:
+exact-source c16385b02 ABBA +1.007107% and fresh-load BAAB +1.074545%, 20 eligible
+rows each with identity/census/eight-refusal checks and first captures included.
+No serving admission or default promotion. Source/protocol:
+`research/dsv4f-replay-cadence-20260908/DESIGN.md`; private Darklanes PR #508,
+`research/dsv4f-replay-cadence-20260908/COMBINED-RESULT.md`, receipt namespaces
+`replay-cadence-model-c16385b-r1` and `replay-cadence-model-c16385b-r2`. The standalone
 `tools/dsv4-replay-cadence-gate.cu` is a component-only invocation, also OFF by
 default. Remove cadence-only support on a flat/negative verdict; repeatably
 positive incremental gains have no arbitrary size floor.
