@@ -947,6 +947,7 @@ pub(crate) const TP_EP_RANK_ORDER_NUMERIC_CLASS: &str =
 /// partition. There is no peer dispatch and therefore no PP owner hidden in
 /// this function.
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn execute_matrix_local(
     gpu: &Gpu,
     bank: &EpLayer,

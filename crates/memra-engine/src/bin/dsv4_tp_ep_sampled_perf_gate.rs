@@ -639,6 +639,24 @@ fn main() {
     gpu.set_dense_wo_a_grouped_for_gate(!attention_mode);
     gpu.set_index_topk_radix_for_gate(true);
 
+    if paired_abba || profiled {
+        // Host-only bind cost, outside all prime/decode and NVTX intervals.
+        drain(&gpu);
+        let start = Instant::now();
+        for _ in 0..10_000 {
+            for stage in &gpu.stages {
+                stage.gpu.ctx.bind_to_thread().expect("paired bind cost");
+            }
+        }
+        let binds = 10_000 * gpu.stages.len();
+        let elapsed = start.elapsed();
+        println!(
+            "CONTEXT_BIND switches={binds} wall_ns={} ns_per_switch={:.3} timing_scope=host_only_outside_decode",
+            elapsed.as_nanos(),
+            elapsed.as_nanos() as f64 / binds as f64
+        );
+    }
+
     if sampler_abba {
         assert!(
             !profiled && attention_mode,
