@@ -1658,6 +1658,12 @@ mod tests {
             rope_yarn: None,
             glm5: None,
             step35: Some(Step35Config {
+                variant: memra_gguf::config::Step35Variant::StepFlash,
+                norm_plus_one: true,
+                qk_norm: true,
+                rope_factors: true,
+                fused_qkv: false,
+                hidden_act: "silu".to_string(),
                 head_count,
                 head_count_kv: vec![8; total_layers as usize],
                 swa_pattern: (0..total_layers).map(|il| il % 4 != 0).collect(),
