@@ -31644,18 +31644,6 @@ impl Engine {
         co: usize,
         cm: usize,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        // A large context jump can exceed the doubled old capacity. Reserving exactly
-        // that request then forces another retained generation at the next split
-        // boundary: 50,380,800 -> 100,761,600 f32s after a 128k DFlash prime (#365).
-        // Geometric buckets leave headroom after jumps as well as gradual growth.
-        // Only capacity changes: callers keep their exact launch and memset extents,
-        // and retired addresses remain alive for every graph that may have baked them.
-        let o_len = o_len
-            .checked_next_power_of_two()
-            .ok_or("FA output capacity overflow")?;
-        let ml_len = ml_len
-            .checked_next_power_of_two()
-            .ok_or("FA stats capacity overflow")?;
         static GROWS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = GROWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if n < 64 {
