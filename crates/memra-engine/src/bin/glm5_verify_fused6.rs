@@ -142,7 +142,7 @@ fn main() -> Res<()> {
                 for (pi, (a, b)) in a.iter().zip(&b).enumerate() {
                     let a = e.dtoh(a)?;
                     let b = e.dtoh(b)?;
-                    if a.len() != b.len() || a.len() % t != 0 {
+                    if a.len() != b.len() || !a.len().is_multiple_of(t) {
                         return Err("output geometry mismatch".into());
                     }
                     let n = a.len() / t;

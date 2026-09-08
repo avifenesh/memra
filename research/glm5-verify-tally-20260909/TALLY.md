@@ -178,4 +178,4 @@ source patches, binary hashes, failed attempts and the profiler probe.
 environments and stay private; public summaries and the instrumentation
 patch retain the reproducible numeric method.
 
-Verdict: **TALLY BANKED, fusion oracle and timing pending**. rev: 2026-09-23
+Verdict: **TALLY BANKED; fusion KEEP at 1.789758071 ms/round**, see RESULTS.md. rev: 2026-09-23

@@ -26482,18 +26482,6 @@ impl Engine {
         m: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
-        let _tally_weight = crate::glm_spec::VerifyTallyRange::new(|| {
-            let (qt, bytes) = match w {
-                GpuTensor::Quant { qtype, bytes, .. } => (*qtype, bytes.len()),
-                GpuTensor::Float { data, .. } => (QT_F32, data.len() * 4),
-                GpuTensor::FloatBf16 { data, .. } => (QT_BF16, data.len()),
-            };
-            format!(
-                "glm5-weight:in={}:out={}:t={m}:qt={qt}:bytes={bytes}",
-                w.in_features(),
-                w.out_features()
-            )
-        });
         // MEMRA_GLM5_W8: the glm5 verify-rows walk's KDA/MLA projections take the SAME q8_0
         // mirror the plain t=1/small-t decode arm uses in `matvec_bf16_rows_into` — placed
         // BEFORE the tcols check below so the door's own class (not the bf16 tcols class) wins
