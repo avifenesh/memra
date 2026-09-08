@@ -49,6 +49,9 @@ for the next layer. All 43 per-layer distributions are retained privately.
 | Rank-0 time without a kernel, ms/token | 6.365735 | 9.474545 |
 | Forward GPU span, ms/token | 31.118339 | 31.012585 |
 
+The shared-window values are bound by private receipt files
+`residence-baseline.json` and `residence-new.json`.
+
 Baseline layer-0 first-start skew median is 130.2195 us (N=32). The lag is
 already present at the start of attention, not created only inside the AR.
 But eliminating its residence in the reduction does not eliminate step time:
@@ -144,5 +147,6 @@ every possible persistent-worker design.
 No local cargo, CI or GPU runs were performed. Pushes used exported
 `MEMRA_SKIP_PERF_CI=1` with normal hooks. Hosted build, Clippy, engine/server
 unit tests, architecture coverage, publish dry-run and policy gates passed on
-the measured source. The runtime arm was not promoted; only verdict/receipt
-documentation was retained.
+the measured source. The measured phase-interleaved runtime was not promoted. Its selector and
+dispatch were removed after both sampled comparisons returned no-go; this
+documentation preserves the evidence.
