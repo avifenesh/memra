@@ -669,3 +669,14 @@ Both rollback seams have decide-by 2026-09-22 for removal review.
 Composition confirmation is directly recorded in
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, alongside the standalone cadence #508 and dense #507 receipts.
+
+### Dense M=1 row batching (candidate, 2026-09-08)
+
+`cu/dsv4_dense_m1_exact_tail.cuh`: batch independent projection rows over
+shared activations using the current FP8 and dot exact-tail row programs.
+The arithmetic contract remains the existing decode, leaf order and 128-leaf
+reduction tree. `MEMRA_DSV4_DENSE_BATCH=1` opts in before capture; default OFF,
+decide-by 2026-09-22. Planned sites are attention Q-a/KV, Q-b/indexer Q-b,
+and compressor KV/gate pairs. No dependent projection chain is collapsed
+across an activation-producing operation. Component and model gates pending;
+private receipts: Darklanes `research/dsv4f-dense-batch-20260908/`.
