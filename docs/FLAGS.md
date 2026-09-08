@@ -1723,6 +1723,14 @@ ones — filed under their own heading so a flag audit scanning the live section
 
 ## DSV4 full-token replay prerequisite, 2026-09-08
 
+`MEMRA_TEST_REPLAY_DRAIN_FAILURE_CHILD` is a `cfg(test)`-only subprocess selector
+for the Rust fail-stop policy test. Unset runs the parent test; `error:0|1` and
+`drop:0|1` inject failed completion on that rank during error handling or destructor
+unwind. Each child must SIGABRT before the captured-storage destructor marker.
+Never read by a production binary; unset rolls back. Fault-injection test control,
+not a serving/performance door. Receipt: `DESIGN.md` under
+`research/dsv4f-full-token-replay-20260908/` and the companion Rust failsafe receipts.
+
 | Diagnostic selector | Default / both arms / rollback | Decision and receipt |
 | --- | --- | --- |
 | Standalone `dsv4-full-token-control-gate` executable | OFF: not part of the runtime build or dispatch. Explicit invocation tests live controls and paired segmented graph fixtures; no invocation leaves the engine unchanged. Rollback is to stop invoking the component. No model replay env flag is installed at this checkpoint. | decide-by: 2026-09-22. Component only, not full-model capture or performance. Source/gates: `research/dsv4f-full-token-replay-20260908/DESIGN.md`. Remote receipts held in the companion private ops lane. Remove with a negative/flat full-model verdict; do not promote from the fixture. |

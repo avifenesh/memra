@@ -587,6 +587,19 @@ mod tests {
             pair.abort_capture_both().unwrap();
             let error = pair.graphs[0][0].as_mut().unwrap().end().unwrap_err();
             assert!(error.contains("replay capture end"), "{error}");
+            // This deliberately calls EndCapture on a stream already ended by
+            // abort_capture_both. Consume only its asserted CUDA API last error
+            // before testing later launches; do not mask an unexpected failure.
+            assert!(error.ends_with("rc=10401"), "unexpected end error: {error}");
+            unsafe extern "C" {
+                fn cudaGetLastError() -> i32;
+            }
+            assert_eq!(
+                unsafe { cudaGetLastError() },
+                401,
+                "expected illegal-state error"
+            );
+            eprintln!("PASS Rust capture-end failure rc=10401 asserted and consumed");
         }
         assert_uncaptured();
         // Use the runtime's actual pair-launch loop and real graph counters.
