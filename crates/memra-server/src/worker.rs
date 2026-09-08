@@ -12841,6 +12841,8 @@ pub fn run(
     // if configured but unloadable — silently serving text-only would be dishonest.
     // MEMRA_VISION=0 skips the tower even with the dir configured (owner knob for
     // VRAM-tight boxes: ~1.8 GB f32-resident). Image requests then 400 at the HTTP layer.
+    memra_engine::dflash::trace_allocation_phase(&engine, "vision-before")
+        .expect("allocation phase trace");
     let vision_tower: Option<memra_engine::vision::VisionTower> =
         match std::env::var("MEMRA_VISION_DIR") {
             Ok(_) if std::env::var("MEMRA_VISION").as_deref() == Ok("0") => {
@@ -12853,6 +12855,8 @@ pub fn run(
             ),
             Err(_) => None,
         };
+    memra_engine::dflash::trace_allocation_phase(&engine, "vision-after")
+        .expect("allocation phase trace");
     // GEMMA-4 vision tower (lane/gemma-vision): loaded once at spawn behind the seam. Fail
     // LOUD at boot if configured but unloadable. Default off — no gemma image serving until
     // an operator sets MEMRA_GEMMA_VISION=1 + MEMRA_GEMMA_MMPROJ=<gemma4v mmproj>.

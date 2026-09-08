@@ -1,0 +1,1147 @@
+{
+  "schema": 2,
+  "issue": 365,
+  "scope": "Serial Qwen GDN DFlash serving cold and restored/parked suffix primes. Does not bound standalone generation or qualify 262k capacity or an eight-turn warm chain.",
+  "source_commit": "6f20c073648abda0deee94eb0c33cf790a67adfb",
+  "source_sha256": {
+    "crates/memra-engine/src/dflash.rs": "01e3336d65c46fc6cdf57a90e2e17908315039271e441f805828f62d294beccc",
+    "crates/memra-engine/src/lib.rs": "a90d6d7acda936944a72898d7cb3b6c57fc5f11b8e19fbb8892163c0a0066ebc",
+    "crates/memra-server/src/worker.rs": "5a8bd8cc9e2378d68913d5e3a85dc451aef36dc562c3e1947f35fe4ca18dca42",
+    "docs/FLAGS.md": "e2954487eedb14f30578f45159cb1983ab1157c5f067eb9c91ca00bcef2dbc7f"
+  },
+  "shared_fa_policy": "unchanged from origin/main; power-of-two experiment is a separate default-OFF PR",
+  "remaining_scope": {
+    "standalone_whole_prompt_sinks": [
+      "crates/memra-engine/src/dflash.rs:generate_spec_dflash",
+      "crates/memra-engine/src/dflash.rs:generate_spec_dspark"
+    ],
+    "warm_admission_issue": "https://github.com/avifenesh/memra/issues/372"
+  },
+  "artifacts": [
+    {
+      "path": "/data/qual/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+      "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+    },
+    {
+      "path": "/data/qual/models/q38-dflash2/config.json",
+      "sha256": "873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980"
+    },
+    {
+      "path": "/data/qual/models/q38-dflash2/model.safetensors",
+      "sha256": "67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c"
+    },
+    {
+      "path": "/data/qual/models/q38-gguf/q38-ranks-sxc32768.gguf.txt",
+      "sha256": "2f7c2e94683ac552724c2275380de6de4035f0f597c71df0826c50826a7d1bb9"
+    },
+    {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-vision/outside.safetensors",
+      "sha256": "bdbee7e072110ccddcf126a7f0c44f9f364bd00b07203dae244aa292a2e81ba5"
+    }
+  ],
+  "binary_sha256": "66d8477f5dc298aaabd2ac4d3d52832c3fb184f1b8e2f66f5c6c79fd2227ccee",
+  "oracle": {
+    "exact": true,
+    "old_sets": [
+      {
+        "rows": "4096",
+        "taps": "1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081",
+        "features": "6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf",
+        "positions": "6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3",
+        "target_logits": "a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6",
+        "boundary_pos": "0",
+        "boundary_logits": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "rows": "1050",
+        "taps": "d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411",
+        "features": "7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66",
+        "positions": "044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033",
+        "target_logits": "45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3",
+        "boundary_pos": "1024",
+        "boundary_logits": "04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8"
+      },
+      {
+        "rows": "32708",
+        "taps": "ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9",
+        "features": "8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1",
+        "positions": "50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf",
+        "target_logits": "276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a",
+        "boundary_pos": "32672",
+        "boundary_logits": "f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c"
+      },
+      {
+        "rows": "32760",
+        "taps": "f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd",
+        "features": "01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094",
+        "positions": "3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3",
+        "target_logits": "1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82",
+        "boundary_pos": "32736",
+        "boundary_logits": "b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      }
+    ],
+    "new_sets": [
+      {
+        "rows": "4096",
+        "taps": "1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081",
+        "features": "6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf",
+        "positions": "6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3",
+        "target_logits": "a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6",
+        "boundary_pos": "0",
+        "boundary_logits": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "rows": "1050",
+        "taps": "d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411",
+        "features": "7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66",
+        "positions": "044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033",
+        "target_logits": "45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3",
+        "boundary_pos": "1024",
+        "boundary_logits": "04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8"
+      },
+      {
+        "rows": "32708",
+        "taps": "ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9",
+        "features": "8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1",
+        "positions": "50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf",
+        "target_logits": "276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a",
+        "boundary_pos": "32672",
+        "boundary_logits": "f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c"
+      },
+      {
+        "rows": "32760",
+        "taps": "f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd",
+        "features": "01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094",
+        "positions": "3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3",
+        "target_logits": "1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82",
+        "boundary_pos": "32736",
+        "boundary_logits": "b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      }
+    ],
+    "tapes": [
+      {
+        "cell": "qwen-32k-old-tap-oracle",
+        "request": "a-seed",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "cached": 0
+      },
+      {
+        "cell": "qwen-32k-old-tap-oracle",
+        "request": "a-restore",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "cached": 32672
+      },
+      {
+        "cell": "qwen-oracle370-taps",
+        "request": "a-seed",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "cached": 0
+      },
+      {
+        "cell": "qwen-oracle370-taps",
+        "request": "a-restore",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "cached": 32672
+      }
+    ],
+    "binary_sha256": "66d8477f5dc298aaabd2ac4d3d52832c3fb184f1b8e2f66f5c6c79fd2227ccee"
+  },
+  "oracle_baseline_references": {
+    "server.log": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/server.log",
+      "sha256": "18a856b63d621a953f298d499c8810f14b4a31e10c72428e4f7aa0ca21e21c13",
+      "bytes": 117948882
+    },
+    "a-seed.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/a-seed.json",
+      "sha256": "0a0900c593c2302d9fddc5e06fa150d51c141f64b2ebfd9e18aa96006d83f6f6",
+      "bytes": 796
+    },
+    "a-restore.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/a-restore.json",
+      "sha256": "bc6979e0167b072eefbab290db373005944a4731790e04e0da5268b1358498df",
+      "bytes": 799
+    },
+    "a-seed-request.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/a-seed-request.json",
+      "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+      "bytes": 160419
+    },
+    "a-restore-request.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/a-restore-request.json",
+      "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+      "bytes": 160419
+    },
+    "profile.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/profile.json",
+      "sha256": "7cd15bfa7fcdee5bb6232ec6cfe466ca06ec4deb4384808bcfee0f6ea540e1e3",
+      "bytes": 1116
+    },
+    "models.toml": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/models.toml",
+      "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+      "bytes": 5640
+    }
+  },
+  "long_suffix_identity": {
+    "reference": {
+      "cell": "qwen-long-suffix370-reference",
+      "prompt_tokens": 41719,
+      "cached_tokens": 32672,
+      "sha256": "9578d1e2c25fa7ed3ea8bb2b7de96ea7da841a0b835244b02695587bafd181a7",
+      "output_tokens": 64
+    },
+    "taps": {
+      "cell": "qwen-long-suffix370-taps",
+      "prompt_tokens": 41719,
+      "cached_tokens": 32672,
+      "sha256": "9578d1e2c25fa7ed3ea8bb2b7de96ea7da841a0b835244b02695587bafd181a7",
+      "output_tokens": 64
+    },
+    "exact": true
+  },
+  "validation": {
+    "results": {
+      "format_exit": 0,
+      "clippy_exit": 0,
+      "tests_exit": 0,
+      "passed": 57,
+      "failed": 0,
+      "ignored": 12,
+      "carry_test_line": "test dflash::dflash_tap_oracle_tests::production_carry_preserves_whole_buffer_batches_across_chunks_and_boundary ... ok",
+      "source_commit": "6f20c0736"
+    },
+    "references": {
+      "checks370-reviewed.json": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/checks370-reviewed.json",
+        "sha256": "2e8f2615a33dd9ff7191da43fca23b5c7864a5de26fc41902453a82dbd4cb5d0",
+        "bytes": 286
+      },
+      "longsuffix370-comparison.json": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/longsuffix370-comparison.json",
+        "sha256": "5289e517ef34748c8ce6b07ca7f993e3559bd54d0715a635d64c3f3dccc24e23",
+        "bytes": 468
+      },
+      "tap370-checks.status": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/tap370-checks.status",
+        "sha256": "a05d806bade0448f9ba304bdebdf3d29802206f44ee7c0e2a53f5fc43bf274bb",
+        "bytes": 30
+      },
+      "fmt-370-reviewed.log": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/fmt-370-reviewed.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "clippy-370-reviewed.log": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/clippy-370-reviewed.log",
+        "sha256": "cb428ece6cedae1df9439d2306a2654aa69faff3dca4e675a7beabfd3a83506c",
+        "bytes": 1476
+      },
+      "tests-370-reviewed.log": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/tests-370-reviewed.log",
+        "sha256": "5c55e410936f76e7ad3197731a76e3e7afb6d135d2a8b61ff74fac355e400159",
+        "bytes": 58640
+      },
+      "oracle370-reviewed.json": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/oracle370-reviewed.json",
+        "sha256": "94109ed8db4ab896b4e5b47d5c8575c3679df68dc3f8b674f1a24060db7dba62",
+        "bytes": 4928
+      },
+      "tap370-reviewed.sha256": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/tap370-reviewed.sha256",
+        "sha256": "b0f2651eb93c8b7049a324568197f1916be7b3d74dc7be237c3ba7c7c3218626",
+        "bytes": 131
+      }
+    }
+  },
+  "cells": {
+    "qwen-oracle370-taps": {
+      "binary_sha256": "66d8477f5dc298aaabd2ac4d3d52832c3fb184f1b8e2f66f5c6c79fd2227ccee",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 225,
+          "finish": "stop",
+          "ttft_s": 0.456,
+          "wall_s": 2.975,
+          "spec": {
+            "rounds": 77,
+            "drafted": 240,
+            "accepted": 148,
+            "acceptance_rate": 0.6166666666666667
+          },
+          "error": null
+        },
+        {
+          "name": "turn1",
+          "prompt_tokens": 32760,
+          "cached_tokens": 0,
+          "completion_tokens": 315,
+          "finish": "stop",
+          "ttft_s": 13.063,
+          "wall_s": 17.145,
+          "spec": {
+            "rounds": 124,
+            "drafted": 348,
+            "accepted": 191,
+            "acceptance_rate": 0.5488505747126436
+          },
+          "error": null
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 57,
+          "finish": "stop",
+          "ttft_s": 0.273,
+          "wall_s": 1.578,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/profile.json",
+          "sha256": "24caadf306334dc50fb9196a2379701881a57af82a57d8de51e01c6bb8e295e0",
+          "bytes": 1104
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/server.log",
+          "sha256": "66298d7dad5cb0e9393108a8700a806e6ef01a00794eaa04ecd268ab3fc5e34d",
+          "bytes": 130057050
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/telemetry.jsonl",
+          "sha256": "8f54610d5e79328fa0965ce8f44a73c991742e3b13a31e5dc4e799b6ae4e84d5",
+          "bytes": 98201
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/capacity.py",
+          "sha256": "133884523a68a08fce4d51692d0862fde904694a4f3fd92332c8b765875255ce",
+          "bytes": 14250
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/ledger.jsonl",
+          "sha256": "5ac855a290e4578ad2f3fc7ad2aca3ef67262e5d933143e99835edf700ffbbc0",
+          "bytes": 4011
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/ready-metrics.json",
+          "sha256": "4dc603b208973f0f98f9701319811e36d005799843ec4e4afcc50f0b83320b47",
+          "bytes": 2459
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/calibration-before-metrics.json",
+          "sha256": "26f28649241d293a9e9c636c37ea3c385826070760e09f450a7c3027ea8d9b1f",
+          "bytes": 2459
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/calibration-request.json",
+          "sha256": "3909434527b741955abf39225f9dc30770504483f4a0d4ecd6ae9859f2ca08ff",
+          "bytes": 5131
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/calibration.sse",
+          "sha256": "647e02cd696f97238a3af792bb40eec44d4036d4507bab6dc1eec73dfbbb2ed6",
+          "bytes": 59082
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/calibration-verdict.json",
+          "sha256": "f9ad6de91eca19f441123ae62d3b5c4287b2e56e58d64c23de0fda8fb0736d4d",
+          "bytes": 1659
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/calibration-after-metrics.json",
+          "sha256": "bcbc2bbc42c6b487aea11609584a3b0841fe4fa405b6a0e075b5ba22dce81ed6",
+          "bytes": 2753
+        },
+        "a-seed-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-seed-before-metrics.json",
+          "sha256": "d9a339886e335c3b0b06d87adb43d3aa88f0aa938dd36e9b763062cd2a513473",
+          "bytes": 2753
+        },
+        "a-seed-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-seed-request.json",
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-seed.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-seed.json",
+          "sha256": "85b63e3b000163bc5b93eaf96f0e199f0f4db65a456d9faee6ab907cd2928de4",
+          "bytes": 796
+        },
+        "a-seed-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-seed-verdict.json",
+          "sha256": "3a9c16bb1ada7a2f55baa2149425c1678f92ffdfd2422476aecf29c60168e248",
+          "bytes": 864
+        },
+        "a-seed-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-seed-after-metrics.json",
+          "sha256": "fbf767ba9c57e0b4e2f07208b02c44d37b3e84ffedf31b0f95aa7325c7b721ce",
+          "bytes": 2756
+        },
+        "a-restore-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-restore-before-metrics.json",
+          "sha256": "5f4721035918d3baafd0481a02f8e8359953cdfb224f34810483f60a90968683",
+          "bytes": 2756
+        },
+        "a-restore-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-restore-request.json",
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-restore.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-restore.json",
+          "sha256": "f9794d944cf8a9cb7715a795aeb18127fe72caf34e958f44ccc120d8dd4c9114",
+          "bytes": 799
+        },
+        "a-restore-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-restore-verdict.json",
+          "sha256": "375450108f3cf031ab7cc5d5bb8fabc618a88efec0e409f3fabea73d8f266518",
+          "bytes": 870
+        },
+        "a-restore-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/a-restore-after-metrics.json",
+          "sha256": "53fe0fb7ff1de3fa1737cfb8437c581bebc871e98656e1906ba2bb598bfd545a",
+          "bytes": 2800
+        },
+        "turn1-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/turn1-before-metrics.json",
+          "sha256": "49828d6117713aef84408467a538c46e80ba916274bd7c151cbbf06037ea9a07",
+          "bytes": 2800
+        },
+        "turn1-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/turn1-request.json",
+          "sha256": "e13746b3d69e80d776af6fc4b064af2884977320323d0e251d017508260a057a",
+          "bytes": 160512
+        },
+        "turn1.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/turn1.sse",
+          "sha256": "01b71cd8cf2d04014f4db0f3503966c040e4db6c876d411b875e37f1bbe32fa0",
+          "bytes": 82846
+        },
+        "turn1-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/turn1-verdict.json",
+          "sha256": "df9ef89122ded57d69c83eec1a905952fcb2a7313dffeaadcb52fcaa96049a31",
+          "bytes": 2091
+        },
+        "turn1-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/turn1-after-metrics.json",
+          "sha256": "6d43f600dcec0b467aacaf2ca891b82bb6a1fe43415cdaba74ef202ab015fc41",
+          "bytes": 2800
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/vision-before-metrics.json",
+          "sha256": "caf2d5c9e48f3c9384aff68e1772824e1df4ae6907893aefd1d52e9bd66088e7",
+          "bytes": 2800
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/vision-request.json",
+          "sha256": "38c6865e59d31106b32f741cc3bb0f3d2175cfb93a0219d890e681ac2d9c8f62",
+          "bytes": 690
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/vision.sse",
+          "sha256": "ddaa1d9c6493f1ef466d263248c2a752ae80d8cd0fbd80a4a638f37bcce0c9f0",
+          "bytes": 14644
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/vision-verdict.json",
+          "sha256": "f594d11cf8e1f9c4506aced3c3faf73f223948a5ce64e76df638eb21547572b5",
+          "bytes": 670
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/vision-after-metrics.json",
+          "sha256": "e6f86597c92459b72feff409bdb6c7f085d42d94de826ae6edbd34ddba5d9f7f",
+          "bytes": 2796
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle370-taps/summary.json",
+          "sha256": "2311354ca8732e7848fb2cd7544678847303eef317a73f509ace55778060cf61",
+          "bytes": 9356
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-taps] base=0 rows=4096 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=419430400",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=1050 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=107520000",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=32708 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=3349299200",
+        "[dflash-oracle] rows=32708 taps=ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9 features=8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1 positions=50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf target_logits=276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a boundary_pos=32672 boundary_logits=f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c",
+        "[fa-pool] grow #2 dev=0 o_len 6389760 -> 12779520 ml_len 24960 -> 49920 (retired kept, zero=false)",
+        "[prefix-cache] DSPARK restore: 32672 of 32708 prompt tokens + draft tail from cache (36 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+        "[dflash-taps] base=32672 rows=36 max_chunk_rows=36 chunk_tap_bytes=3686400 carry_bytes=3686400 former_full_tap_bytes=3686400",
+        "[dflash-taps] base=0 rows=32760 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=3354624000",
+        "[dflash-oracle] rows=32760 taps=f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd features=01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094 positions=3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3 target_logits=1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82 boundary_pos=32736 boundary_logits=b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      ]
+    },
+    "qwen-128k370-taps": {
+      "binary_sha256": "66d8477f5dc298aaabd2ac4d3d52832c3fb184f1b8e2f66f5c6c79fd2227ccee",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 440,
+          "finish": "stop",
+          "ttft_s": 0.459,
+          "wall_s": 5.688,
+          "spec": {
+            "rounds": 162,
+            "drafted": 487,
+            "accepted": 278,
+            "acceptance_rate": 0.5708418891170431
+          },
+          "error": null
+        },
+        {
+          "name": "turn1",
+          "prompt_tokens": 131074,
+          "cached_tokens": 0,
+          "completion_tokens": 1024,
+          "finish": "length",
+          "ttft_s": 75.518,
+          "wall_s": 96.825,
+          "spec": {
+            "rounds": 406,
+            "drafted": 1121,
+            "accepted": 618,
+            "acceptance_rate": 0.5512934879571811
+          },
+          "error": "output budget exhausted before completed answer"
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 83,
+          "finish": "stop",
+          "ttft_s": 0.259,
+          "wall_s": 2.221,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/profile.json",
+          "sha256": "75fe1dd64ff3cbe48f527cbcd533d661ae53e12668c2a0b65dcce59d0a69219b",
+          "bytes": 1098
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/server.log",
+          "sha256": "ca1dbb10bd1280d5c8e0f99996120bde4d2580306b99671de3d6760f9f68cee3",
+          "bytes": 258955948
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/telemetry.jsonl",
+          "sha256": "c1b13fc7090bb201a6d92ffedc9248f602c76fd21919d4f374506bf2428d5670",
+          "bytes": 217987
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/capacity.py",
+          "sha256": "cfa4aaf3b0fbaa74840f50f4e4b2fbfdb4733b24708639bdf1bd83f3b03dd6c7",
+          "bytes": 14567
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/ledger.jsonl",
+          "sha256": "b3f22ded663c7e29ec085a2f02715da512f63dc331e3dce60e0b446d759d49e4",
+          "bytes": 2417
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/ready-metrics.json",
+          "sha256": "eff1c5ad8aa4df9c06b95338851812863d80534e686e9da5d32800c33becd46a",
+          "bytes": 2459
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/calibration-before-metrics.json",
+          "sha256": "eff1c5ad8aa4df9c06b95338851812863d80534e686e9da5d32800c33becd46a",
+          "bytes": 2459
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/calibration-request.json",
+          "sha256": "87273f3b2b532aa8ab79db19d25255abe1e9f8fba04bd3a6e7ae0ac04fa2c3d2",
+          "bytes": 5131
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/calibration.sse",
+          "sha256": "11ae0565d9543997dff80e6aa31d3e9062a554764f0a7c6cf236a2578040d38e",
+          "bytes": 115764
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/calibration-verdict.json",
+          "sha256": "3f927592d4319f3d568c8dfa022789fb1a18e4dc0c6820a3394c4b4f10cf0815",
+          "bytes": 2648
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/calibration-after-metrics.json",
+          "sha256": "6f6d14fa4d85a88082b0d4ca9a6c029865ce10c67fa33e07b000c7e6821d4a85",
+          "bytes": 2752
+        },
+        "turn1-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/turn1-before-metrics.json",
+          "sha256": "e480a62870f0e569f62d455ea12da49d7e4c8c9062bc0e5bb7e1b9c66433c020",
+          "bytes": 2753
+        },
+        "turn1-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/turn1-request.json",
+          "sha256": "8fbbf9714b5eb34818ea349d135adc539e21922a18ca894f5dac537f724a705d",
+          "bytes": 642249
+        },
+        "turn1.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/turn1.sse",
+          "sha256": "ca73af427c84df116db2f3e54fbe9b41b769e3fdaace3576b44625a23976e51f",
+          "bytes": 269828
+        },
+        "turn1-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/turn1-verdict.json",
+          "sha256": "b5a9685360051adee5e7cb72913b4f540436e1affd2eeb8626d3b87dd5d75c2d",
+          "bytes": 4676
+        },
+        "turn1-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/turn1-after-metrics.json",
+          "sha256": "679c48dc30d24d3c438aa142a59dd2f7ecc2f970e6eed05388a12a8b5801e3a4",
+          "bytes": 2766
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/vision-before-metrics.json",
+          "sha256": "a439a196b5df5c6ed2a97e5f874228bfb09dec4441f65beacd8dad7f53035330",
+          "bytes": 2766
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/vision-request.json",
+          "sha256": "341b45dea8e7cc09f71697f45fb2c33adf9ddbbdc4575178f873a76c6a0c2095",
+          "bytes": 690
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/vision.sse",
+          "sha256": "a1360f316f4b55bc9056119f9a3cb79bc7489b73589cc2a14f9d13795cc967a5",
+          "bytes": 21485
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/vision-verdict.json",
+          "sha256": "1fcb9a43df41700c642ca116df397062e66e104c7fd0f82562889b0d4b70286a",
+          "bytes": 780
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/vision-after-metrics.json",
+          "sha256": "1dd80a279f03d12cb2c1e670895e59fe50c5bd35b8730143890f4eaf3f9de96b",
+          "bytes": 2766
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k370-taps/summary.json",
+          "sha256": "dba72d53a7cbaf853bd11b40938f7bccdf2fab0759cdb178d307b8dd5c039cee",
+          "bytes": 10376
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-taps] base=0 rows=4096 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=419430400",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=1050 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=107520000",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=131074 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=13421977600",
+        "[dflash-oracle] rows=131074 taps=9352a09514250036d4ad2526ac23fbde887432e60471a0fad58937dd070fcb4a features=bde4c40118e9adfae57d5f0c196a22e6986c72522dfc7ead74363f587021a639 positions=023cd4dfda88e8c9ab5457f1d22cc5a2b20c03f1a24ed93fa3ca534db149c85e target_logits=d3fc196942d4083ee4df6d34cffbfbbb385a51dc64c0372adf7b914f1355475d boundary_pos=131040 boundary_logits=f7564a2647fdcc27528ccbcef9a8edd349de720ab35dd1bed74b474884820db7",
+        "[fa-pool] grow #2 dev=0 o_len 6389760 -> 50380800 ml_len 24960 -> 196800 (retired kept, zero=false)"
+      ]
+    },
+    "qwen-long-suffix370-taps": {
+      "binary_sha256": "66d8477f5dc298aaabd2ac4d3d52832c3fb184f1b8e2f66f5c6c79fd2227ccee",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 367,
+          "finish": "stop",
+          "ttft_s": 0.461,
+          "wall_s": 4.534,
+          "spec": {
+            "rounds": 125,
+            "drafted": 392,
+            "accepted": 242,
+            "acceptance_rate": 0.6173469387755102
+          },
+          "error": null
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 87,
+          "finish": "stop",
+          "ttft_s": 0.251,
+          "wall_s": 2.27,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/profile.json",
+          "sha256": "79657b7302bd1a452ca4b20ce5c3582c9285ec56b94f8e083b32062e0b5ab4a2",
+          "bytes": 1119
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/server.log",
+          "sha256": "fa7bf509511d6e11609fb4dec62d490b3c897864295a4738e40c46910046e75c",
+          "bytes": 112184250
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/telemetry.jsonl",
+          "sha256": "4e079f00fb00706bbb270122fcdaf18212b8563f00d0a8c27f86e37b2f82daee",
+          "bytes": 82164
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/capacity.py",
+          "sha256": "48910ebbb5a04cf9117d2fadfa1eb3a91cbf0effe56123193c66f8204ae99148",
+          "bytes": 14355
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/ledger.jsonl",
+          "sha256": "8f6f679505021f975f37c19a156c7e70e2198b73d153363c921772f00c9b0438",
+          "bytes": 4000
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/ready-metrics.json",
+          "sha256": "28c536d411d69fb66d5863b4f003d2a2d051a248c552e305750083a84b24b45c",
+          "bytes": 2459
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/calibration-before-metrics.json",
+          "sha256": "135825a29a55d127eced5acc45a813f6f31d5e2fec9c0539c85d673dbc8d33c8",
+          "bytes": 2459
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/calibration-request.json",
+          "sha256": "3909434527b741955abf39225f9dc30770504483f4a0d4ecd6ae9859f2ca08ff",
+          "bytes": 5131
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/calibration.sse",
+          "sha256": "cc188e4ed7abcb988f555a4ba3d906e92e3fafb1b5bac2af1fe5a364d3561c16",
+          "bytes": 96524
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/calibration-verdict.json",
+          "sha256": "a4f5b0623f2cb0e415147e0e5b8aa567ed12f23471bcc16827918fb6cfc52982",
+          "bytes": 2315
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/calibration-after-metrics.json",
+          "sha256": "004200621ddd8b1b42e5d4b57fd11e82364a275d7d68d518738259e570ea8b56",
+          "bytes": 2751
+        },
+        "a-seed-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-seed-before-metrics.json",
+          "sha256": "17aa56b6d8ad7b4b0a1d352bfbc52518e427e5548972f51b77b41e110d785ab5",
+          "bytes": 2751
+        },
+        "a-seed-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-seed-request.json",
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-seed.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-seed.json",
+          "sha256": "78eabe867a6f5e83cfb9c283df85103758edc597f5484415365f4189ce71e6d8",
+          "bytes": 796
+        },
+        "a-seed-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-seed-verdict.json",
+          "sha256": "eee83b34155f4cd9e6a9ca9577973308fa27cd69842cc9fe9b3dc393ebd614c5",
+          "bytes": 864
+        },
+        "a-seed-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-seed-after-metrics.json",
+          "sha256": "a6331d564476e8db7081b2e8b767907a0da7fe8e9ee527d7fb7feb5d1e2746c2",
+          "bytes": 2755
+        },
+        "a-restore-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-restore-before-metrics.json",
+          "sha256": "189b9b1241d38dab48b2a97ec85078b04890b0733d429f9096cac4c71e84bd3b",
+          "bytes": 2756
+        },
+        "a-restore-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-restore-request.json",
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-restore.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-restore.json",
+          "sha256": "7c42ea21863cb07e87e068fe70ca630aaaf3c41172da3eb6086eb1c2c5b3f497",
+          "bytes": 797
+        },
+        "a-restore-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-restore-verdict.json",
+          "sha256": "a69d1d7ca8ff1db18740ebf13d549d5b94509ee4e606543b51ddbc5fb25ba998",
+          "bytes": 869
+        },
+        "a-restore-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/a-restore-after-metrics.json",
+          "sha256": "1f14ed2778391a8129dbc9a51aba4f7a3b689c08ff4f9c2ddf6f5badc7ac5e5f",
+          "bytes": 2800
+        },
+        "long-suffix-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/long-suffix-before-metrics.json",
+          "sha256": "deb989eae3ee3d82d42e9a87f12407784289c818fee02a7b273a83343a72b7f9",
+          "bytes": 2799
+        },
+        "long-suffix-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/long-suffix-request.json",
+          "sha256": "72bf6396e0da13405634f41121ebee012a2b0869d2cc1c4a4ad79a10630c6fc8",
+          "bytes": 204577
+        },
+        "long-suffix.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/long-suffix.json",
+          "sha256": "2d28da6c843b15328c99023918a7071673e76467d78ffad234bd59f84dbf57d5",
+          "bytes": 797
+        },
+        "long-suffix-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/long-suffix-verdict.json",
+          "sha256": "41514b35c96a924cf24a345acefb761e363e46d4f20b35818b6becfff99b61f4",
+          "bytes": 870
+        },
+        "long-suffix-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/long-suffix-after-metrics.json",
+          "sha256": "012d3f78aa7383ddb344be9cdf0cde9bb3aeedc5094b3fedd745f2672c7230de",
+          "bytes": 2800
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/vision-before-metrics.json",
+          "sha256": "8e2ead8d2cf4b68974ee399bc241816ecc1a806523fc82ae4ae81e1a1e6626b2",
+          "bytes": 2800
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/vision-request.json",
+          "sha256": "38c6865e59d31106b32f741cc3bb0f3d2175cfb93a0219d890e681ac2d9c8f62",
+          "bytes": 690
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/vision.sse",
+          "sha256": "5c89686d8f6f5a9c3f4baa46842274ff43e17df9e15fdc16fd3b5854bf63bf3a",
+          "bytes": 22546
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/vision-verdict.json",
+          "sha256": "58b356a7f717630d3801fdbd7f319bad5ee581915a98a0c0c5dc7213e0b3cabe",
+          "bytes": 804
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/vision-after-metrics.json",
+          "sha256": "daafcdf51dd20865f05e8d863e322162230b9a04be4e3f92b51c61b15a475cc4",
+          "bytes": 2800
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-taps/summary.json",
+          "sha256": "ad4f539ce172165ee5ea5bd6ef7aa996dd6b9bdd420e5f4a90c8f27b21bb52f0",
+          "bytes": 8939
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-taps] base=0 rows=4096 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=419430400",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=1050 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=107520000",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=32708 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=3349299200",
+        "[dflash-oracle] rows=32708 taps=ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9 features=8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1 positions=50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf target_logits=276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a boundary_pos=32672 boundary_logits=f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c",
+        "[fa-pool] grow #2 dev=0 o_len 6389760 -> 12779520 ml_len 24960 -> 49920 (retired kept, zero=false)",
+        "[prefix-cache] DSPARK restore: 32672 of 32708 prompt tokens + draft tail from cache (36 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+        "[dflash-taps] base=32672 rows=36 max_chunk_rows=36 chunk_tap_bytes=3686400 carry_bytes=3686400 former_full_tap_bytes=3686400",
+        "[prefix-cache] DSPARK restore: 32672 of 41719 prompt tokens + draft tail from cache (9047 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+        "[dflash-taps] base=32672 rows=9047 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=926412800",
+        "[fa-pool] grow #3 dev=0 o_len 12779520 -> 25559040 ml_len 49920 -> 99840 (retired kept, zero=false)"
+      ]
+    },
+    "qwen-long-suffix370-reference": {
+      "binary_sha256": "a972c62204b0a75ecd5ff884808fdc4c37b50f73aae87790ffb2ebadccdc5df5",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 169,
+          "finish": "stop",
+          "ttft_s": 0.462,
+          "wall_s": 2.25,
+          "spec": {
+            "rounds": 54,
+            "drafted": 179,
+            "accepted": 115,
+            "acceptance_rate": 0.6424581005586593
+          },
+          "error": null
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 62,
+          "finish": "stop",
+          "ttft_s": 0.255,
+          "wall_s": 1.694,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/profile.json",
+          "sha256": "2ad4580c934a380935b247c9712b53684d54f6f576df1bd47183acf46da43299",
+          "bytes": 1134
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/server.log",
+          "sha256": "26748bebcb93fccb8bcaeb67167eaf020c74cb70ddd2ce8139cfb700c3b2acc2",
+          "bytes": 82310630
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/telemetry.jsonl",
+          "sha256": "4f4739801ca6f3acaff811949acd3e0d9da530015bc9edef623aea697ee155d4",
+          "bytes": 76809
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/capacity.py",
+          "sha256": "48910ebbb5a04cf9117d2fadfa1eb3a91cbf0effe56123193c66f8204ae99148",
+          "bytes": 14355
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/ledger.jsonl",
+          "sha256": "ae793d0b812cffd0fae174599d09216c4a85d0de69ab581d447ba6d9bbc0ce6d",
+          "bytes": 4002
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/ready-metrics.json",
+          "sha256": "31aa0240dde495a63afa85a41355a091eb2eadd05434ac077d177680ec933646",
+          "bytes": 2459
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/calibration-before-metrics.json",
+          "sha256": "31aa0240dde495a63afa85a41355a091eb2eadd05434ac077d177680ec933646",
+          "bytes": 2459
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/calibration-request.json",
+          "sha256": "3909434527b741955abf39225f9dc30770504483f4a0d4ecd6ae9859f2ca08ff",
+          "bytes": 5131
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/calibration.sse",
+          "sha256": "e25366f7ab61045e6cc47411a9a9eb64c2058df02e223e42d331f22a5ac65eb6",
+          "bytes": 44316
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/calibration-verdict.json",
+          "sha256": "5fa03e954b743372a67fc747d1571a1d3358371f18896871df8b10ac7ded7b9d",
+          "bytes": 1372
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/calibration-after-metrics.json",
+          "sha256": "37e0c2969a4ef4c66b671a8c192d78193512723eebe2a523e6f65c77b0519fd4",
+          "bytes": 2753
+        },
+        "a-seed-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-seed-before-metrics.json",
+          "sha256": "49951de3b7105be63ac652743e9d63e9f12d077f5be824481934a21c5456f44e",
+          "bytes": 2753
+        },
+        "a-seed-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-seed-request.json",
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-seed.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-seed.json",
+          "sha256": "4a0b49dfdfe3eb3defacb255c19f9e1eb644668820580f825d38da5895e2b315",
+          "bytes": 796
+        },
+        "a-seed-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-seed-verdict.json",
+          "sha256": "ba4f8970bc8e2810b48e0e18882aadd8653af63ba1c3fc3bba00944fe5b3fbbe",
+          "bytes": 863
+        },
+        "a-seed-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-seed-after-metrics.json",
+          "sha256": "29dcd2110b7bf843c6d0501d7c389858625337553405a6215eb7ca2ac76c6cf0",
+          "bytes": 2756
+        },
+        "a-restore-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-restore-before-metrics.json",
+          "sha256": "a66fa8753d04d321ec676bc6cf609c3a51a2d538ce12fb8124e01c722baba57a",
+          "bytes": 2756
+        },
+        "a-restore-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-restore-request.json",
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-restore.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-restore.json",
+          "sha256": "ba09bfc70959bfb8c8332fbb2071a673fefc5a1b5834f23dd05cedc38c21cb07",
+          "bytes": 799
+        },
+        "a-restore-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-restore-verdict.json",
+          "sha256": "d177ac8bfe732f44fee944a074304e7e4198759f2c958fcfa94dd6c7638e8f45",
+          "bytes": 868
+        },
+        "a-restore-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/a-restore-after-metrics.json",
+          "sha256": "4f137b29f0bfa9d5b15b5010a4c54d6a5e341e2ed46adb6cfc14f9c2fc68dbcf",
+          "bytes": 2800
+        },
+        "long-suffix-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/long-suffix-before-metrics.json",
+          "sha256": "cfd6a4d75edfe1d6e1443b5d63154457495bfb17bfb71244ad4ce4035b04c101",
+          "bytes": 2800
+        },
+        "long-suffix-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/long-suffix-request.json",
+          "sha256": "72bf6396e0da13405634f41121ebee012a2b0869d2cc1c4a4ad79a10630c6fc8",
+          "bytes": 204577
+        },
+        "long-suffix.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/long-suffix.json",
+          "sha256": "c10211a7e6bc49d8292a922cfd23a73407d359de42f7dc2f1cdbbb848d35da85",
+          "bytes": 797
+        },
+        "long-suffix-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/long-suffix-verdict.json",
+          "sha256": "cdf78fd758548528deb177ba4dd7d1f2eeeb7b9f0c1c61223ddbfaf8c2b2cabd",
+          "bytes": 870
+        },
+        "long-suffix-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/long-suffix-after-metrics.json",
+          "sha256": "caeacf984e496eb0055ea3083c42e681a7d17ddfb0463c41914406e1e095ba86",
+          "bytes": 2800
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/vision-before-metrics.json",
+          "sha256": "ef64b30fcd8ed8643230607704a2ee171071fb3a804456a0545059f5532c5e8d",
+          "bytes": 2799
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/vision-request.json",
+          "sha256": "38c6865e59d31106b32f741cc3bb0f3d2175cfb93a0219d890e681ac2d9c8f62",
+          "bytes": 690
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/vision.sse",
+          "sha256": "de316e080b8e1a11edcf5ac117b5e261ae4b5ede84d10dff86ff5fee25d33351",
+          "bytes": 15965
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/vision-verdict.json",
+          "sha256": "7a0f7eaddc03324901c98bddc6c9875c34bf835f1fb188a8c66011a53b4b0f3e",
+          "bytes": 696
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/vision-after-metrics.json",
+          "sha256": "262d6c515ee317cc96698d783a52826549b7661d359c5a563a54eda1d243a85c",
+          "bytes": 2799
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-long-suffix370-reference/summary.json",
+          "sha256": "4355c4bc9ccd3c60538df76e7bbb78a4dcb31c61e7bc2e4c34d987e521f1756a",
+          "bytes": 7901
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 4194304 ml_len 0 -> 16384 (retired kept, zero=false)",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[dflash-oracle] rows=32708 taps=ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9 features=8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1 positions=50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf target_logits=276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a boundary_pos=32672 boundary_logits=f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c",
+        "[fa-pool] grow #1 dev=0 o_len 4194304 -> 16777216 ml_len 16384 -> 65536 (retired kept, zero=false)",
+        "[prefix-cache] DSPARK restore: 32672 of 32708 prompt tokens + draft tail from cache (36 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+        "[prefix-cache] DSPARK restore: 32672 of 41719 prompt tokens + draft tail from cache (9047 suffix tokens to prime) (model qwen/qwen3.8-27b)"
+      ]
+    }
+  },
+  "historical_combined_candidate": {
+    "scope": "Previous cold-tap plus unconditional FA-rounding binary only; not qualification for the current source",
+    "paired_ttft_receipt": {
+      "path": "darklanes@039a1b773f6a6b495205aad654a51fb84868f841:research/qwen-ornith-5090-capacity-20260908/ab370/ab370-summary.json",
+      "sha256": "7f1f43a70d7859a4d97f3643cb49694c7b0338b14fa04f7dab29141b1dd176d4"
+    }
+  }
+}
