@@ -502,6 +502,7 @@ fn main() {
         ] {
             println!("cargo:rerun-if-changed={mmq_src}");
             println!("cargo:rerun-if-changed=cu/mmq_common.cuh");
+            println!("cargo:rerun-if-changed=cu/dsv4_dense_m1_exact_tail.cuh");
             println!("cargo:rerun-if-changed=cu/mmq_mma_i8.cuh");
             println!("cargo:rerun-if-changed=cu/sm100_blockscale_layout.cuh");
             // fa3_prefill.cu includes the shared wgmma header (dedup 2026-08-21).

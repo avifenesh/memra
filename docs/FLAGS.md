@@ -1796,3 +1796,9 @@ qualification, serving promotion or wall-saving claim. The measured source remai
 in this PR's history. Raw evidence is private in Darklanes:
 `research/dsv4f-devpair-20260905/compressor-paired-copy-20260908.md`, receipt namespace
 `compressor-paired-copy-3d011dc-r1`.
+
+## Dense M=1 exact-tree transport experiment, 2026-09-08
+
+| Control | Default | Both arms, rollback and evidence |
+| --- | --- | --- |
+| `memra_dsv4_dense_exact_tail_set_for_gate` (thread-local host API only) | **OFF**, decide-by: 2026-09-22 | `0` retains the actual FP8 GEMV/F32-dot M-row kernels; `1` selects M=1 exact-tail twins only for admitted aligned operands. The per-leaf arithmetic, FP8 decode/unroll, 128-thread output geometry and 64/32/16/8/4/2/1 tree are unchanged; one shared publication/barrier is followed by warp-0 register transport. No environment or serving switch. Grouped, M>1 (including recursive tails), unsupported shape/type/alignment retain control. Capture stores a fixed kernel function, never a live device selector. Gate owner must use separate candidate/control states/graphs and drain both ranks before changing selection; rollback is `0` plus fresh control graphs, not relabeling retained candidate graphs. `memra_dsv4_dense_exact_tail_counts_for_gate` counts successful host enqueues, including capture, NOT graph replays; actual graph execution also requires candidate-node census, live outputs and replay counts. Component gate: `tools/dsv4-dense-exact-tail-gate.cu`. Receipt status: `research/dsv4f-dense-exact-tail-20260908/README.md`; compilation/numeric/model results pending, no speed claim. |
