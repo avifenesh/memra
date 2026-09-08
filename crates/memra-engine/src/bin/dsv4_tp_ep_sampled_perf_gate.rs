@@ -787,7 +787,11 @@ fn sampler_boundary_case(
     let nonuniform = !cdf_case && index & 4 != 0;
     let mut row = vec![-64.0; n];
     for (i, value) in row[start..start + k].iter_mut().enumerate() {
-        *value = if nonuniform { -(i as f32) / k as f32 } else { 0.0 };
+        *value = if nonuniform {
+            -(i as f32) / k as f32
+        } else {
+            0.0
+        };
     }
     let mut cfg = Dsv4SampleCfg {
         temperature: 0.75,
@@ -798,8 +802,7 @@ fn sampler_boundary_case(
     if cdf_case {
         // Exact dyadic probabilities: draw below, at, and above a CDF edge,
         // separated by one RNG quantum (2^-53). Strict u < acc is exercised.
-        let numerator = (cut as u64) * ((1u64 << 53) / k as u64)
-            - 1 + ((index / 4) % 3) as u64;
+        let numerator = (cut as u64) * ((1u64 << 53) / k as u64) - 1 + ((index / 4) % 3) as u64;
         cfg.seed = sampler_boundary_seed(numerator, pos);
         (row, cfg, "cdf")
     } else {
@@ -824,8 +827,19 @@ fn sampler_boundary_case(
         let ulp = (nearest.next_up() as f64 - nearest as f64)
             .max(nearest as f64 - nearest.next_down() as f64);
         assert!((cfg.top_p as f64 - boundary).abs() <= 2.0 * ulp);
-        assert!(cfg.top_p as f64 > probs[0], "nucleus must retain more than one token");
-        (row, cfg, if nonuniform { "nucleus-exp" } else { "nucleus-dyadic" })
+        assert!(
+            cfg.top_p as f64 > probs[0],
+            "nucleus must retain more than one token"
+        );
+        (
+            row,
+            cfg,
+            if nonuniform {
+                "nucleus-exp"
+            } else {
+                "nucleus-dyadic"
+            },
+        )
     }
 }
 
