@@ -1342,6 +1342,8 @@ pub(crate) fn kda_tp_partials_sym(
 
 /// Same rank partial program with the PP verifier's rows-exact projections and
 /// rank-local replay material. Capture precedes every recurrent-state mutation.
+type SymKdaVerify = (Vec<CudaSlice<f32>>, Glm5TpKdaVerifyStash);
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn kda_tp_partials_sym_verify(
     e: &Engine,
@@ -1351,7 +1353,7 @@ pub(crate) fn kda_tp_partials_sym_verify(
     eps: f32,
     cache: &mut Cache,
     il: usize,
-) -> Result<(Vec<CudaSlice<f32>>, Glm5TpKdaVerifyStash), Box<dyn std::error::Error>> {
+) -> Result<SymKdaVerify, Box<dyn std::error::Error>> {
     let mut stash = Vec::new();
     let partials = kda_tp_partials_sym_inner(
         e,

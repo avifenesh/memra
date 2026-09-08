@@ -1,6 +1,6 @@
 # GLM-5.3-Flash DFlash2 on the symmetric TP-2 walk
 
-Status: stage 2 implemented, qualification pending. The owner corrected the
+Status: eager implementation and pair cell prepared; pair qualification pending. The owner corrected the
 contract after stage 1: use the decode split's per-row expert program, not F16
 grouped prime, and implement the row/state interfaces in this lane. The original
 inspection below is retained as the record of the starting constraints.
@@ -49,12 +49,40 @@ https://claude.ai/code/session_01TFyR32RLUiSejCgrPm5nNj
    equal. A fixed 160-token TP/PP tape may pass; this inspection does not predict
    failure. It also cannot promise that equality for arbitrary prompts.
 
-The owner explicitly permits stopping at the document when a seam change is
-required. This is that stop: the next implementation must introduce an exact
-TP row execution contract, or explicitly admit the grouped prime's numerical
-class subject to the pair oracle. It must not describe grouped prime as already
-exact. This is a source-contract obstruction to the specified reuse, not a claim
-that TP speculation is impossible or too expensive to implement.
+The owner corrected the contract after this inspection: these interfaces are
+this lane's work, the expert stage must retain the decode split program, and
+O2 is a TP/PP class comparison. Stage 2 implements those choices. No F16 grouped
+prime enters verification and no TP/PP bitwise-logit claim is made.
+
+## Implemented walk
+
+- `HybridModel::glm5_tp_verify_symmetric` owns the eager rank pair for each
+  verification call. It uses rows-exact HC pre, batched KDA and MLA/DSA, a
+  per-token invocation of the existing split expert partial program, and t-row
+  AR followed by unfused HC post. It emits root tap rows after each full layer.
+- `kda_tp_partials_sym_verify` snapshots each rank and returns its partials plus
+  `KdaRowsStash`. The ordinary t=1 entry is unchanged. The MLA symmetric helper
+  threads `rows_exact` through projections, indexer, attention and output head
+  shards. Indexer-less shards decline before speculative session creation.
+- `glm5_tp_spec::Commit` validates the accepted prefix and every rank stash before
+  restoration. The outer rollback validates all layers and both latent replicas
+  before mutation, restores recurrent state through each owning rank, truncates
+  both KV/DSA cursors, and drains both streams before publishing the new position.
+- Root retains the existing DFlash2 block forward, selector, PMIN, FR-Spec and
+  sampler counters. The row IDs and positions are broadcast using existing
+  transport. No drafter copy executes on the peer.
+- Worker admission keys on loaded shards and returns plain for unsupported
+  compositions before draining the prompt. The existing K policy and K=0 plain
+  route remain intact. Errors after mutation fail the request; they do not
+  silently resume from a partly advanced cache.
+- `MEMRA_GLM5_SPEC_TP` stays OFF, with decide-by 2026-09-23. A separate verify
+  graph implementation remains deferred. Its default-OFF eligibility row is in
+  section 4 of `docs/FLAGS.md`.
+
+The exactness argument is the reuse of the TP decode arithmetic per row and
+rank-local replay, not a completed pair receipt. O1 and O3 require the pair and
+remain pending. See `research/glm5-tp2-dflash-20260909/PAIR-CELL.md` in private Darklanes and
+`research/glm5-tp2-dflash-20260909/run-pair-cell.sh` in private Darklanes for the actual oracle and A/B entry point.
 
 ## Inputs read without rerunning the experiments
 
@@ -205,13 +233,9 @@ Require full SSE completion, usage, model/binary/artifact identity, K>0 and
 accepted/drafted/round log reconciliation for both spec arms. Report TTFT,
 counted decode interval and full wall separately; reject loop-inflated rows.
 
-No executable pair cell script is supplied: its TP-spec arm cannot pass the
-current boot gate, and the required exact executor/test entry points do not
-exist. Fabricating commands around them would not be a runnable deliverable.
-After the seam is implemented, put the orchestrator-scheduled script in
-`research/glm5-tp2-dflash-20260909/run-pair-cell.sh`, with exact pinned launch
-recipes and rollback under the pair's existing deployment authority. Do not
-execute it from this lane.
+Stage 3 supplies the executable pair cell and its hash-checked configuration.
+The earlier proposal in this section is superseded by the corrected O1-O3
+contract and the detailed `research/glm5-tp2-dflash-20260909/PAIR-CELL.md` in private Darklanes runbook.
 
 ## Stage-1 evidence
 
@@ -219,6 +243,15 @@ Stage 1: direct source and existing receipt inspection only. No cargo, gate,
 server, benchmark or CI invocation on the local rig or any GPU host. No
 production host access. No new equality or performance measurement.
 
-Stages 2-5: not attempted under the owner's document-only stop condition. No
-implementation, CPU/GPU test tail, box build, push or PR. The local document
-commit remains available for the owner to review the required seam change.
+The original document-only commit was `395136b1a`. Eager implementation landed
+in `aebbcd422`; tests, pair-cell preparation and remote validation follow in
+the next stage. Validation receipts live in this lane's `receipts/` directory.
+
+## Repository boundary
+
+Engine base: `dcfeab7c738912a150ebbfea277112724bb99de4`. Private cell base:
+`dd5b04cd1188fb2aada272c32a6465e569d63fff`. The exact numerical launch recipes,
+HTTP cell driver and scheduling inputs are tracked in Darklanes on
+`lane/glm5-tp2-dflash-cell-20260909`, under the same research namespace. They
+are private serving material under `tools/public-boundary-policy.toml`. The
+ignored engine oracle harness remains in Memra.

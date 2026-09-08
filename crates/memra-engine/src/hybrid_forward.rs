@@ -3030,6 +3030,16 @@ impl HybridModel {
                         crate::hybrid::Ffn::Dense { .. } => true,
                     }
             }),
+            indexers: self.layers.iter().all(|l| match &l.mixer {
+                Mixer::Mla(m) => {
+                    m.index.is_some()
+                        && m.tp
+                            .as_ref()
+                            .is_some_and(|tp| tp.peers.iter().all(|p| p.index.is_some()))
+                }
+                Mixer::Kda(_) => true,
+                _ => false,
+            }),
             dflash: self.glm5_dflash.is_some(),
             batch: crate::glm_spec::glm5_verify_batch_on(),
             graphs: crate::glm5_verify_graph_on(),

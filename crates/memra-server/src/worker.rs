@@ -17921,11 +17921,11 @@ fn mtp_spec_capable(lm: &LoadedModel) -> bool {
 /// stays false for glm5 and no plan can ever satisfy both predicates
 /// (`the_two_spec_programs_never_both_claim_one_plan`).
 fn glm5_spec_capable(lm: &LoadedModel) -> bool {
-    if lm.model.glm5_has_tp_shards() {
-        if let Some(reason) = lm.model.glm5_tp_spec_refusal() {
-            eprintln!("[glm5-tp-spec] declined to plain: {reason}");
-            return false;
-        }
+    if lm.model.glm5_has_tp_shards()
+        && let Some(reason) = lm.model.glm5_tp_spec_refusal()
+    {
+        eprintln!("[glm5-tp-spec] declined to plain: {reason}");
+        return false;
     }
     lm.model.hyper.is_some()
         // A DRAFT SOURCE must be loaded (lane/glm5-dflash-draft-src): the embedded MTP
@@ -34184,6 +34184,20 @@ mod dspark_boot_conflict_tests {
 #[cfg(test)]
 mod glm5_tp_serve_boot_verdict_tests {
     use super::glm5_tp_serve_boot_verdict;
+
+    #[test]
+    fn tp_spec_door_permits_request_admission_but_not_dspark_or_hyper_batch() {
+        let candidate = glm5_tp_serve_boot_verdict(true, true, false, Some("1"), Some("0"), true)
+            .unwrap()
+            .unwrap();
+        assert!(candidate.contains("loaded-model admission"));
+        assert!(glm5_tp_serve_boot_verdict(true, true, true, Some("1"), Some("0"), true).is_err());
+        assert!(glm5_tp_serve_boot_verdict(true, true, false, Some("1"), Some("1"), true).is_err());
+        let declined = glm5_tp_serve_boot_verdict(true, true, false, Some("1"), Some("0"), false)
+            .unwrap()
+            .unwrap();
+        assert!(declined.contains("serving PLAIN"));
+    }
 
     #[test]
     fn tp_off_is_silent() {

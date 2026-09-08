@@ -88,6 +88,8 @@ pub mod glm5_decode_graph;
 pub mod glm5_sel_ledger;
 pub mod glm5_tp;
 pub mod glm5_tp_spec;
+#[cfg(test)]
+mod glm5_tp_spec_pair_gpu;
 pub mod glm5_tp_sym_graph;
 /// glm5_next T-parallel speculative verify: the rows-walk verify, per-step KDA state-column
 /// rollback, latent/kpool truncation, and the MEMRA_GLM5_SPEC-gated draft->verify->rollback

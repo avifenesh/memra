@@ -2593,10 +2593,10 @@ impl HybridModel {
             _ => false,
         });
         if tp_sharded {
-            if self.glm5_tp_prefix_class() {
-                if let Some(why) = self.glm5_tp_spec_refusal() {
-                    return Err(why.into());
-                }
+            if self.glm5_tp_prefix_class()
+                && let Some(why) = self.glm5_tp_spec_refusal()
+            {
+                return Err(why.into());
             }
             if !glm5_spec_tp_on() {
                 return Err(
@@ -4287,6 +4287,10 @@ impl HybridModel {
         plap!(first_accept_ms);
 
         // ---- 5. commit j drafts + the bonus token ----
+        if let Some(observer) = knobs.verify_observer.as_mut() {
+            // Gate-only, after acceptance. No extra readback in the serving path.
+            observer(ckpt.pos, &rows, &eh.dtoh(&vlogits)?, j)?;
+        }
         let mut round_tokens: Vec<u32> = Vec::with_capacity(j + 1);
         round_tokens.extend_from_slice(&drafts[..j]);
         round_tokens.push(bonus);
@@ -5131,6 +5135,9 @@ impl DraftIngestStats {
 /// path constructs a non-default value.
 #[derive(Default)]
 pub struct Glm5SpecKnobs<'a> {
+    /// Gate-only observation of actual target rows and the root accept decision.
+    /// Arguments are (start position, anchor plus drafts, full logits, accepted drafts).
+    pub verify_observer: Option<&'a mut Glm5VerifyObserver<'a>>,
     /// `(round, draft_index, greedy_draft) -> draft` — deterministic forced-accept /
     /// forced-reject rounds for the end-to-end gate.
     pub draft_override: Option<&'a mut dyn FnMut(usize, usize, u32) -> u32>,
@@ -5165,6 +5172,8 @@ pub struct Glm5SpecKnobs<'a> {
     /// Never a serving surface: no serving path constructs a non-default value.
     pub accept_probe: bool,
 }
+
+pub type Glm5VerifyObserver<'a> = dyn FnMut(usize, &[u32], &[f32], usize) -> Res<()> + 'a;
 
 #[cfg(test)]
 mod conf_keep_tests {
