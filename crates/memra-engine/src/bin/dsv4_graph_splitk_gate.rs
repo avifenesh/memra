@@ -295,12 +295,52 @@ fn run(
         );
     }
 }
+fn teacher_forcing(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg) {
+    use std::io::Write;
+    assert!(prompt.len() >= PRIME + 160);
+    let mut prefix = state(gpu);
+    gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
+        .unwrap();
+    for &token in &prompt[1..PRIME] {
+        gpu.decode_step_device_logits(token, &mut prefix).unwrap();
+    }
+    let mut graph = graph_state(gpu, &prefix, cfg);
+    let mut raw =
+        std::io::BufWriter::new(std::fs::File::create(output.join("logits.f32le")).unwrap());
+    for i in 0..160 {
+        let before = gpu.full_token_ar_epochs_for_gate().unwrap();
+        // Fixed source-tape token; ignore the sampled next token in both arms.
+        gpu.decode_sample_full_token_for_gate(prompt[PRIME + i], &mut graph)
+            .unwrap();
+        epochs(gpu, &before, 1);
+        let logits = gpu.read_decode_logits_for_gate(&graph).unwrap();
+        let hash = sha_f32(&logits);
+        for &value in &logits {
+            raw.write_all(&value.to_bits().to_le_bytes()).unwrap();
+        }
+        println!(
+            "TF_POSITION offset={i} position={} input={} vocab={} logits_sha256={hash}",
+            graph.pos,
+            prompt[PRIME + i],
+            logits.len()
+        );
+        assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
+    }
+    raw.flush().unwrap();
+    census(gpu, &graph, &output.join("tf-graphs"));
+    println!(
+        "TF_COMPLETE positions=160 report_only=true quality_admission=false identity={:?}",
+        identity(gpu, &graph)
+    );
+}
+
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert!(
         args.len() == 4
-            || (args.len() == 5 && matches!(args[4].as_str(), "--qualify" | "--component")),
-        "usage: dsv4_graph_splitk_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component]"
+            || (args.len() == 5
+                && matches!(args[4].as_str(), "--qualify" | "--component" | "--tf")),
+        "usage: dsv4_graph_splitk_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component|--tf]"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     for (name, value) in [
@@ -372,6 +412,10 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
+    if args.get(4).is_some_and(|v| v == "--tf") {
+        teacher_forcing(&gpu, &prompt, &output, cfg);
+        return;
+    }
     if args.get(4).is_some_and(|v| v == "--component") {
         assert!(memra_engine::moe_m1_graph_splitk_on());
         unsafe extern "C" {

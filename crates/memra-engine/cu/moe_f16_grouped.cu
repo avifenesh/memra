@@ -1966,6 +1966,10 @@ moe_m1_graph_splitk_partial_kernel(
         float* __restrict__ partial,
         const int* __restrict__ ex_off, int n_active,
         int in_f, int out_f){
+    // Uniform CTA exit before any shared-memory staging or synchronization.
+    const int live = ex_off[n_active];
+    const int slices = moe_m1_slices(live, out_f, Projections == 2);
+    if(blockIdx.x >= live * ((out_f + SK_BN - 1) / SK_BN) * slices) return;
     moe_m1_splitk_partial_body<Projections>(table, proj, n_expert, ex_ids, row_bytes, A, partial, ex_off, n_active, in_f, out_f);
 }
 
