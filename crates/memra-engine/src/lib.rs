@@ -302,8 +302,19 @@ pub fn set_moe_m1_splitk_for_gate(enabled: bool) -> bool {
     MOE_M1_SPLITK.swap(enabled as i8, Ordering::AcqRel) != 0
 }
 pub const MOE_M1_GRAPH_SPLITK_NUMERIC_CLASS: &str = "moe_m1_graph_splitk_f32_fixed_order";
-/// Frozen on first use. Changing a retained graph's numeric policy is forbidden.
+static MOE_M1_GRAPH_SPLITK_GATE: AtomicI8 = AtomicI8::new(-1);
+/// Gate-only enqueue selector. Drain both ranks before switching. Retained
+/// graphs keep their captured functions and must keep their original prefix.
+pub fn set_moe_m1_graph_splitk_for_gate(enabled: bool) {
+    MOE_M1_GRAPH_SPLITK_GATE.store(i8::from(enabled), Ordering::Release);
+}
+/// The environment default is frozen on first use. The gate override affects
+/// future eager enqueues and captures, never an already retained graph.
 pub fn moe_m1_graph_splitk_on() -> bool {
+    let gate = MOE_M1_GRAPH_SPLITK_GATE.load(Ordering::Acquire);
+    if gate >= 0 {
+        return gate != 0;
+    }
     static GRAPH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *GRAPH.get_or_init(
         || match std::env::var("MEMRA_DSV4_MOE_M1_SPLITK").as_deref() {

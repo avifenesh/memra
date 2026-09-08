@@ -2671,6 +2671,7 @@ int memra_moe_m1_graph_splitk_component(
     if(observed != 6) return 0;
     struct Buffers {
         float *a=nullptr,*b=nullptr,*p=nullptr;
+        __half* activation=nullptr;
         int* offsets=nullptr;
         void* flush=nullptr;
         cudaEvent_t begin=nullptr,end=nullptr;
@@ -2679,12 +2680,15 @@ int memra_moe_m1_graph_splitk_component(
         ~Buffers(){ if(exec) cudaGraphExecDestroy(exec); if(graph) cudaGraphDestroy(graph);
             if(begin) cudaEventDestroy(begin); if(end) cudaEventDestroy(end);
             if(a) cudaFree(a); if(b) cudaFree(b); if(p) cudaFree(p);
+            if(activation) cudaFree(activation);
             if(offsets) cudaFree(offsets); if(flush) cudaFree(flush); }
     } b;
     const size_t n=size_t(6)*out_f, pn=n*16*(gu?2:1), flush_bytes=256ull<<20;
     GS_CHECK(cudaMalloc(&b.a,(n+128)*4)); GS_CHECK(cudaMalloc(&b.b,(n+128)*4));
     GS_CHECK(cudaMalloc(&b.p,(pn+128)*4)); GS_CHECK(cudaMalloc(&b.offsets,(n_active+1)*4));
     GS_CHECK(cudaMalloc(&b.flush,flush_bytes));
+    GS_CHECK(cudaMalloc(&b.activation,6ull*in_f*sizeof(__half)));
+    GS_CHECK(cudaMemcpyAsync(b.activation,act_f16,6ull*in_f*sizeof(__half),cudaMemcpyDeviceToDevice,st));
     GS_CHECK(cudaEventCreate(&b.begin)); GS_CHECK(cudaEventCreate(&b.end));
     std::vector<int> offsets(n_active+1), ids(n_active);
     GS_CHECK(cudaMemcpyAsync(offsets.data(),ex_off,(n_active+1)*4,cudaMemcpyDeviceToHost,st));
@@ -2696,13 +2700,13 @@ int memra_moe_m1_graph_splitk_component(
         if(offsets[g+1]!=offsets[g]) printf("GRAPH_COMPONENT_OPERAND device=%d gu=%d row=%d expert=%d\n",device,gu,offsets[g],ids[g]);
     }
     auto launch = [&](int arm,int live){
-        if(arm==2) return memra_moe_m1_graph_splitk(table,n_expert,ex_ids,act_f16,b.b+64,row_scale,
+        if(arm==2) return memra_moe_m1_graph_splitk(table,n_expert,ex_ids,b.activation,b.b+64,row_scale,
             macro_g,macro_u,route_w,b.offsets,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
-        if(arm==1) return memra_moe_m1_splitk(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+        if(arm==1) return memra_moe_m1_splitk(table,n_expert,ex_ids,b.activation,b.a+64,row_scale,
             macro_g,macro_u,route_w,b.offsets,n_active,in_f,out_f,limit,std::max(live,1),gu,b.p+64,stream);
-        if(gu) return memra_moe_kq_gemm_sk_gu_m1_half2(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+        if(gu) return memra_moe_kq_gemm_sk_gu_m1_half2(table,n_expert,ex_ids,b.activation,b.a+64,row_scale,
             macro_g,macro_u,route_w,b.offsets,n_active,in_f,out_f,limit,in_f/2,stream);
-        return memra_moe_kq_gemm_sk_m1_half2(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+        return memra_moe_kq_gemm_sk_m1_half2(table,n_expert,ex_ids,b.activation,b.a+64,row_scale,
             b.offsets,n_active,in_f,out_f,in_f/2,stream);
     };
     GS_CHECK(cudaMemcpyAsync(b.offsets,offsets.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
@@ -2774,6 +2778,19 @@ int memra_moe_m1_graph_splitk_component(
             }
             printf("GRAPH_COMPONENT device=%d gu=%d live=%d cold=%d flush_bytes=%zu control_us=%.6f adaptive_us=%.6f graph_us=%.6f measurements=20 bit_equal=1 deterministic=1 canaries=1 candidate_capture_count=1 all_timed_arms=replay\n",device,gu,live,cold,cold?flush_bytes:0,totals[0]/20,totals[1]/20,totals[2]/20);
         }
+        // The down projection is the consumer of rowwise-packed GU output.
+        // Poison only inactive activation rows in a private real-operand copy:
+        // the actual captured projection must ignore them through the CSR.
+        if(live < 6){
+            GS_CHECK(cudaMemsetAsync(b.activation+size_t(live)*in_f,0x7b,size_t(6-live)*in_f*sizeof(__half),st));
+            GS_CHECK(cudaGraphLaunch(b.exec,st));
+            std::vector<float> poisoned(n);
+            GS_CHECK(cudaMemcpyAsync(poisoned.data(),b.b+64,n*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaStreamSynchronize(st));
+            if(std::memcmp(first.data(),poisoned.data(),n*4)) return 40010;
+            GS_CHECK(cudaMemcpyAsync(b.activation,act_f16,6ull*in_f*sizeof(__half),cudaMemcpyDeviceToDevice,st));
+        }
+        printf("GRAPH_COMPONENT_TAIL device=%d gu=%d live=%d zero_output_rows=%d inactive_activation_poison_ignored=1\n",device,gu,live,6-live);
     }
     g_graph_splitk_component_mask.fetch_or(bit);
     #undef GS_CHECK

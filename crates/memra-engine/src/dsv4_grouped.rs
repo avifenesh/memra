@@ -65,6 +65,42 @@ fn splitk_component_claim(gpu: &Gpu, gu: bool) -> bool {
     SPLITK_COMPONENT_SEEN.fetch_or(bit, Ordering::AcqRel) & bit == 0
 }
 
+fn graph_splitk_inactive_rows_for_gate(offsets: &[i32], pairs: &[i32]) -> Res<usize> {
+    let live = *offsets.last().ok_or("empty component CSR")?;
+    if pairs.len() < 6
+        || !(0..=6).contains(&live)
+        || offsets[0] != 0
+        || offsets.windows(2).any(|p| p[0] > p[1] || p[1] > live)
+        || pairs[live as usize..6].iter().any(|&p| p != -1)
+        || pairs[..live as usize].iter().any(|&p| !(0..6).contains(&p))
+    {
+        return Err("graph split-K inactive output rows are not consumer-masked".into());
+    }
+    Ok(live as usize)
+}
+
+#[cfg(test)]
+mod graph_splitk_tail_tests {
+    use super::graph_splitk_inactive_rows_for_gate;
+    #[test]
+    fn graph_splitk_inactive_rows_contract() {
+        assert_eq!(
+            graph_splitk_inactive_rows_for_gate(&[0, 0, 1, 2], &[4, 2, -1, -1, -1, -1]),
+            Ok(2)
+        );
+        assert_eq!(
+            graph_splitk_inactive_rows_for_gate(&[0, 0], &[-1; 6]),
+            Ok(0)
+        );
+        assert_eq!(
+            graph_splitk_inactive_rows_for_gate(&[0, 6], &[0, 1, 2, 3, 4, 5]),
+            Ok(6)
+        );
+        assert!(graph_splitk_inactive_rows_for_gate(&[0, 2], &[4, 2, 0, -1, -1, -1]).is_err());
+        assert!(graph_splitk_inactive_rows_for_gate(&[0, 2, 1], &[0, -1, -1, -1, -1, -1]).is_err());
+    }
+}
+
 static MIRROR_VALIDATE: AtomicBool = AtomicBool::new(true);
 static ROUTE_VALIDATE: AtomicBool = AtomicBool::new(true);
 
@@ -389,6 +425,23 @@ impl GroupedWork {
         } else {
             (&self.intermediate, self.input.cols)
         };
+        if component && crate::moe_m1_graph_splitk_on() {
+            // The reducer zeroes [CSR live, 6). Down's scatter must ignore
+            // exactly that region; GU's downstream projection uses this CSR.
+            let offsets = s
+                .clone_dtoh(&self.routes.offsets)
+                .map_err(|e| format!("component CSR read: {e}"))?;
+            let pairs = s
+                .clone_dtoh(&self.routes.pairs)
+                .map_err(|e| format!("component scatter mask read: {e}"))?;
+            s.synchronize()
+                .map_err(|e| format!("component mask drain: {e}"))?;
+            let live = graph_splitk_inactive_rows_for_gate(&offsets, &pairs)?;
+            println!(
+                "GRAPH_COMPONENT_CONSUMER rank={} gu={gu} live={live} inactive_scatter_ids=-1 csr_excludes_tail=true",
+                gpu.ctx.ordinal()
+            );
+        }
         let graph = !component && crate::moe_m1_graph_splitk_on();
         let live = if graph { 6 } else { self.routes.live_slots };
         if graph && (self.input.rows != 6 || self.intermediate.rows != 6) {
