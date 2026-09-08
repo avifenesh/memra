@@ -1,8 +1,8 @@
 {
   "recorded_utc": "2026-09-08T22:46:32.452746+00:00",
-  "code_commit": "f604518caf15db72a80d52b10941f9fd243b2972",
+  "code_commit": "41f15a8618c37ba1e1c845ee03ebcbc0049d5189",
   "shared_seam_commit": "534040262e86d3009ba298ebdfbf79acb48b93d1",
-  "source_tree": "96843f7750e0ddd764f678057663ac52bbaae609",
+  "source_tree": "0ddaf045bb69c72d1f0f0371c889ad3f3dbae175",
   "execution": "authorized non-production remote CPU; no GPU process launched",
   "nice": 19,
   "jobs": 2,
@@ -70,12 +70,12 @@
     "crates/memra-engine/src/bin/run_spec.rs": "defd6dd20f352b5709f27780f216886cd542713e77155cfd17305de1181822ff",
     "crates/memra-server/src/lib.rs": "554f903d29cb5b9d3fcbf5c9c387a2be8ac1c095020f4854d2a1c03e3331fa33",
     "crates/memra-server/src/prime_fairness.rs": "8cd6f28912efa04a1bb19e301990929dae240b4731b8c5f38b1f9939e0c5ad5d",
-    "crates/memra-server/src/worker.rs": "9d1cb0347751c33027d6310ef1896c94dc1056de2cbe9cb066234faf9c0b97de"
+    "crates/memra-server/src/worker.rs": "fe6256e30d959af54eb508cdaeebdbe07d72b6a0ae17bc2ba3c88dcf3b33b929"
   },
   "binaries": [
     {
       "remote_path": "/root/target-prefill/release/memra-server",
-      "sha256": "f28dc7fec215c7335227600e01168720f4f2f7393910deda2928281341561f4a"
+      "sha256": "19db5df71812eabfa914ba99f58ff676e5d6a860174c0a75084dfad19a89d8e4"
     },
     {
       "remote_path": "/root/target-prefill/release/run-spec",
@@ -84,10 +84,22 @@
   ],
   "gpu_qualification": "pending explicit GPU handoff; no latency or byte-identity result claimed",
   "logs_sha256": {
+    "research/prefill-fairness-20260908/cpu/cpu-continuation-build.log": "a481294a47520da688d2f78919472de0cb33ea5f42161447e58d5d6657112d16",
+    "research/prefill-fairness-20260908/cpu/cpu-continuation-clippy.log": "adfb69811b26a93fd79a766c46fa632eb466fca98c5b63064cf8cb72a2e27bf2",
+    "research/prefill-fairness-20260908/cpu/cpu-continuation-server.log": "9a46c918c0aa66fe07ccbc54132b7562a870b7842365a95c3494dbda62376c6e",
     "research/prefill-fairness-20260908/cpu/cpu-delivery-build.log": "98a4fa1912b95f5cf4dcadf66e552325b941651741b6610c77b023e5aa09f9dd",
     "research/prefill-fairness-20260908/cpu/cpu-delivery-clippy.log": "b5cb0e195a244f76569dd9640192ea6421f79b0436c71b71f9ed1015cc4d940d",
     "research/prefill-fairness-20260908/cpu/cpu-delivery-engine.log": "e311add70c55032f2c0b877d3d68d57992325f9afde9767c7f753fa03fbfd41f",
     "research/prefill-fairness-20260908/cpu/cpu-delivery-server.log": "df906775b6f19aeb13138f5b805da989a2ae45979a9680207d502f6d54a43337",
     "research/prefill-fairness-20260908/cpu/cpu-pinned-build.log": "61118b976093da41cd04be926ece0317225d2dc6a7b3d0e2021382127d4dd256"
+  },
+  "adapter_commit": "f604518caf15db72a80d52b10941f9fd243b2972",
+  "followup": "Mark empty-suffix MTP restores and continuations as prefilled; full server suite and all-target release clippy repeated successfully. Engine inputs unchanged.",
+  "previous_server_binary_sha256": "f28dc7fec215c7335227600e01168720f4f2f7393910deda2928281341561f4a",
+  "qwen_long_template": {
+    "remote_path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k-chunk1024-cap1/turn1-request.json",
+    "sha256": "324cc7205e985469e1f6903a7ca19bd620e78601fca45a712aed0081cb2d7021",
+    "sampling_overrides": false,
+    "content_chars": 641994
   }
 }

@@ -1,6 +1,7 @@
 # CPU checkpoint, 2026-09-08 UTC
 
-Code commit `f604518caf15db72a80d52b10941f9fd243b2972`, after shared seam
+Current code commit `41f15a8618c37ba1e1c845ee03ebcbc0049d5189`, after adapter commit
+`f604518caf15db72a80d52b10941f9fd243b2972` and shared seam
 `534040262e86d3009ba298ebdfbf79acb48b93d1`. Source hashes were read back from the
 remote checkout and matched the local files before commit. The development
 binaries were then rebuilt from the exact code commit. No GPU process launched.
@@ -21,6 +22,10 @@ hashes are in `cpu-adapters.json`.
 | Release `memra-server` and `run-spec` builds | PASS |
 | Mixed-load driver's Python compilation | PASS |
 
+The follow-up marks empty-suffix MTP restores/continuations as prefilled. Full
+server tests and all-target release clippy passed again; engine inputs are
+unchanged from the 61-test pass. Earlier logs and the prior server hash are retained.
+
 The ignored `prefill_proxy_fixture` is the existing manual loopback fixture for
 external proxy qualification. The new failure test covers both a failed chunk
 and failed final ingestion remaining ineligible for parking.
@@ -28,7 +33,7 @@ and failed final ingestion remaining ineligible for parking.
 Remote binaries for handoff:
 
 - `/root/target-prefill/release/memra-server`, SHA-256
-  `f28dc7fec215c7335227600e01168720f4f2f7393910deda2928281341561f4a`.
+  `19db5df71812eabfa914ba99f58ff676e5d6a860174c0a75084dfad19a89d8e4`.
 - `/root/target-prefill/release/run-spec`, SHA-256
   `23b74c97675adc3ed74fd1c878d8ad136b220118924eeafa56a78ccbaf5e8d95`.
 
@@ -44,7 +49,9 @@ hash and profile inputs. Prefill mode schedules one long request at time zero an
 drain is explicit, sampling fields are omitted, and each boot records a nonce,
 PID and start ticks. It holds `/tmp/memra-gpu.lock` and requires an empty
 `nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader` before
-launch. The pinned Qwen long request can be supplied through `--long-request`.
+launch. The pinned Qwen long request can be supplied through `--long-request`:
+`/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k-chunk1024-cap1/turn1-request.json`.
+Its SHA is in `cpu-adapters.json`; it has no sampling overrides.
 
 GPU c1/c2 greedy bytes, capture equivalence, 1024/4096 chunk wall and interleaved
 sampled TTFT/long-request penalty remain pending explicit GPU handoff. The door
