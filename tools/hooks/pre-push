@@ -284,8 +284,17 @@ if ! changed=$(git diff --name-only "$range"..HEAD); then
     exit 1
 fi
 engine_files=$(printf '%s\n' "$changed" | grep -E '^crates/memra-engine/(cu/|src/.*\.rs$)' || true)
-if [ -n "$engine_files" ]; then
-    hardware_gate=${MEMRA_HARDWARE_GATE:-generic}
+hardware_gate=${MEMRA_HARDWARE_GATE:-generic}
+if [ "$hardware_gate" = "sampled-instrument" ]; then
+        [ "${MEMRA_SKIP_PERF_CI:-0}:${MEMRA_SKIP_FLAGS_CENSUS:-0}" = "0:0" ] || {
+            echo "sampled gate refuses skip flags"; exit 1;
+        }
+        [ -n "${MEMRA_SAMPLED_RECEIPT:-}" ] && [ -n "${MEMRA_SAMPLED_RECEIPT_SHA256:-}" ] || {
+            echo "sampled gate requires pinned eight-turn continuation evidence"; exit 1;
+        }
+        python3 tools/check_sampled_instrument_gate.py --repo-root "$(pwd)" --base "$range" \
+            --receipt "$MEMRA_SAMPLED_RECEIPT" --receipt-sha256 "$MEMRA_SAMPLED_RECEIPT_SHA256"
+elif [ -n "$engine_files" ]; then
     if [ "$hardware_gate" = "step-pro" ]; then
         if [ "${MEMRA_SKIP_PERF_CI:-0}" = "1" ]; then
             echo "pre-push: MEMRA_SKIP_PERF_CI is incompatible with the Step PRO gate."

@@ -2,7 +2,7 @@
 # argmax-margin-gate — the run-gen prefill-vs-decode argmax gate, CALIBRATED.
 # Self-gating (`kind=cmd` in tools/fast-gate/models.tsv): exit 0 = PASS.
 #
-#   tools/argmax-margin-gate.sh [<model.gguf>] [--prompt <file>] [--window N]
+#   tools/argmax-margin-gate.sh [<model.gguf|hf_dir>] [--prompt <file>] [--window N]
 #                              [--max-flips N] [--margin-floor F] [--canary]
 #                              [--logdir DIR]
 #
@@ -66,12 +66,18 @@ PROBE=./target/release/argmax-margin-probe
 
 MODEL="${1:-}"
 if [ -n "$MODEL" ] && [ "${MODEL#--}" != "$MODEL" ]; then MODEL=""; else shift 2>/dev/null || true; fi
+EXPLICIT_MODEL=0
+[ -z "$MODEL" ] || EXPLICIT_MODEL=1
 PROMPT=research/e2e/prompts/board-2048.txt
 WINDOW=12
 MAX_FLIPS=""    # unset = model-calibrated default (resolved after MODEL below)
 MARGIN_FLOOR=""      # optional: reject any flip whose margin exceeds this (off by default)
 CANARY=0
 while [ $# -gt 0 ]; do
+    case "$1" in
+        --prompt|--window|--max-flips|--margin-floor|--logdir)
+            [ $# -ge 2 ] && [[ "$2" != --* ]] || { echo "FAIL: $1 requires a value"; exit 2; } ;;
+    esac
     case "$1" in
         --prompt)       PROMPT="$2"; shift 2 ;;
         --window)       WINDOW="$2"; shift 2 ;;
@@ -82,6 +88,10 @@ while [ $# -gt 0 ]; do
         *)              echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
+[[ "$WINDOW" =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: window must be a positive integer"; exit 2; }
+if [ "$EXPLICIT_MODEL" = 1 ] && [ ! -f "$MODEL" ] && [ ! -d "$MODEL" ]; then
+    echo "FAIL: requested model does not exist: $MODEL"; exit 1
+fi
 
 # Default model: the fast-gate's Q8_0 row if present, else the first probe model available.
 if [ -z "$MODEL" ]; then
@@ -95,7 +105,7 @@ fi
 # artifact is indistinguishable from a real pass by exit code alone — the hole that reported
 # chunkinv/chunkinvc as "PASS (0s)" on the 188-SM pod during the v0.70.0 battery. The
 # fast-gate cmd runner greps "^<name>: *SKIP", so emit exactly that shape.
-[ -n "$MODEL" ] && [ -f "$MODEL" ] || { echo "argmax-margin-gate: SKIP (no probe model on this rig)"; exit 0; }
+[ -n "$MODEL" ] && { [ -f "$MODEL" ] || [ -d "$MODEL" ]; } || { echo "argmax-margin-gate: SKIP (no probe model on this rig)"; exit 0; }
 # PER-MODEL FLIP-BUDGET CALIBRATION ROWS (explicit --max-flips always wins).
 # gemma-4-31B (added 2026-08-17, ship-lane merge diligence): the banked board-2048
 # margin measurement (evidence/gemma-ship-20260817/zoofusion/gate-*.log) shows decode
@@ -110,8 +120,20 @@ if [ -z "$MAX_FLIPS" ]; then
         *)            MAX_FLIPS=1 ;;
     esac
 fi
-[ -f "$PROMPT" ] || { echo "argmax-margin-gate: SKIP (prompt $PROMPT missing)"; exit 0; }
-[ -x "$PROBE" ] || { echo "argmax-margin-gate: SKIP (build target/release/argmax-margin-probe to enable)"; exit 0; }
+[[ "$MAX_FLIPS" =~ ^[0-9]+$ ]] || { echo "FAIL: max-flips must be a nonnegative integer"; exit 2; }
+if [ -n "$MARGIN_FLOOR" ]; then
+    if ! [[ "$MARGIN_FLOOR" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$ ]] ||
+       ! awk -v value="$MARGIN_FLOOR" 'BEGIN { exit (sprintf("%g", value+0) ~ /[iI][nN][fF]|[nN][aA][nN]/) }'; then
+        echo "FAIL: margin-floor must be finite and nonnegative"; exit 2
+    fi
+fi
+[ -f "$PROMPT" ] || { echo "FAIL: prompt $PROMPT missing"; exit 1; }
+if [ ! -x "$PROBE" ]; then
+    if [ "$EXPLICIT_MODEL" = 1 ]; then
+        echo "FAIL: build target/release/argmax-margin-probe before running the requested gate"; exit 1
+    fi
+    echo "argmax-margin-gate: SKIP (build target/release/argmax-margin-probe to enable)"; exit 0
+fi
 
 # Logs go to a scratch dir, NOT into the tracked research dir: this gate runs on every
 # fast-gate invocation, and writing under research/ made each battery run dirty the worktree
@@ -137,6 +159,25 @@ if [ $rc -ne 0 ]; then
         exit 0
     fi
     echo "  FAIL: probe exited $rc"; tail -20 "$LOG"; exit 1
+fi
+
+# Validate the measured table before fault injection: empty or malformed output cannot
+# become PASS, including in canary mode. This does not relax any numerical threshold.
+if ! awk -v expected="$WINDOW" '
+    /^[0-9]+[ \t]+[0-9]+/ {
+        rows++
+        if (seen[$1]++ || $4 !~ /^[0-9]+$/ || ($7 != "yes" && $7 != "NO")) bad++
+        for (i=3; i<=6; i++) {
+            if (i == 4) continue
+            if ($i !~ /^[+-]?[0-9]+([.][0-9]*)?([eE][+-]?[0-9]+)?$/ || $i+0 < 0) bad++
+            if (sprintf("%g", $i+0) ~ /[iI][nN][fF]|[nN][aA][nN]/) bad++
+        }
+    }
+    END { exit (rows != expected || bad != 0) }
+' "$LOG"; then
+    echo "  FAIL: probe table is missing, malformed, non-finite, or has the wrong row count"
+    echo "  raw: $LOG"
+    exit 1
 fi
 
 # The canary appends ONE synthetic row of the defect class to the table the comparator parses:

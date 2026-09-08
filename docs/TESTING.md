@@ -202,13 +202,31 @@ within-config isolation that any fix for that flip relies on.
 run-gen's prefill-vs-decode argmax assert calibrated against the **top-2 margin at the deciding
 position**, because a near-tie flip and a real cache bug are the same red until you measure the
 margin (see `research/q8-argmax-20260806/`). Flags:
-`tools/argmax-margin-gate.sh [<model.gguf>] [--prompt f] [--window N] [--max-flips N]
+`tools/argmax-margin-gate.sh [<model.gguf|hf_dir>] [--prompt f] [--window N] [--max-flips N]
 [--margin-floor F] [--canary] [--logdir D]`. **Effective `--window` default is 12**, not the 24
 the probe binary advertises in its own usage line: the wrapper always passes its own
-`WINDOW=12` (`argmax-margin-gate.sh:70,111`). Worth knowing, since window width *is* this gate's
+`WINDOW=12`. Worth knowing, since window width *is* this gate's
 coverage. Automatic dispatch is limited to `decode.rs`, `forward.rs`, `hybrid_forward.rs`, and
 the gate's own wrapper/probe implementation; `--probes amargin,amarginc` remains the clean-tree
 or deliberate explicit invocation.
+
+HF directories use the native `SafetensorsSource` loader and their HF tokenizer; GGUF inputs
+retain the GGUF loader and tokenizer. This gate compares batched prefill with tokenwise
+**serial decode** on the same prompt positions, not the server's batched or speculative
+paths, and supplies no performance result. Checkpoint size and placement still determine
+the required hardware; accepting a directory is not a model qualification receipt.
+The decode cache uses native pipeline placement. Sharded cross-device inputs are accepted
+only for the hyper-connection trunk whose `forward_last` has a pipeline prefill dispatch;
+other sharded trunks are explicitly rejected before measurement. No alternate prime
+arithmetic is substituted to make them pass.
+
+An explicitly requested missing model or probe, a missing prompt, invalid options, or an
+empty/malformed/non-finite/duplicate-position table fails. The measured table must contain
+exactly the requested window before canary injection. Automatic discovery with no available
+model remains an explicit SKIP. Machine-consumed margins preserve f32 round-trip precision;
+display rounding must not turn a small explained flip into a false failure. CPU controls:
+`python3 tools/test_argmax_margin_gate.py` and
+`cargo test -p memra-engine --bin argmax-margin-probe` (no GPU execution in these tests).
 
 Also 2026-08-06: `accept` (`tools/accept-gate.sh`, the **served-spec acceptance +
 long-text** assertion). It exists because the battery was *provably* blind to a class:
@@ -744,3 +762,31 @@ Timings, the deliberate-break catch demonstrations (diffs, consoles, per-probe r
 and the depth-determinism sweeps: [`research/fast-gate-20260802/`](../research/fast-gate-20260802/).
 The serve-path mode-switch exactness harness and its verdicts:
 [`research/spec-gate-20260806/`](../research/spec-gate-20260806/) (`RESULTS.md` §2, `exactness.py`).
+# Sampled evidence for argmax-instrument source publication
+
+For a branch whose only changed crate file is
+`crates/memra-engine/src/bin/argmax_margin_probe.rs`, the push hook supports
+`MEMRA_HARDWARE_GATE=sampled-instrument`. This is not a serving-runtime
+performance exemption: any other changed crate file is refused by this mode.
+It checks the committed and working probe bytes against an ancestor's tested
+source SHA, a pinned twelve-row numerical table (unchanged one-flip budget),
+and eight real vendor-default sampled continuation turns. The separate sampled
+runtime identity is retained and is not mislabelled as the probe's source.
+
+Supply an external receipt with `MEMRA_SAMPLED_RECEIPT` and its explicit
+`MEMRA_SAMPLED_RECEIPT_SHA256`. The schema and CPU refusal fixtures are in
+`tools/check_sampled_instrument_gate.py` and `tools/test_sampled_instrument_gate.py`.
+The runtime source/binary must match the pinned input manifest and boot log;
+every response fingerprint must match that captured runtime. Each turn must
+bind its request and generated text, continue the exact prior
+assistant history, show speculation and prefix reuse, and have valid timing,
+no errors and no loops. Sampling overrides (including temperature zero),
+missing turns, changed probe code, runtime changes and tampered evidence fail.
+Raw workloads remain outside this public repository. No performance ledger
+mtime is rewritten and no skip variable is accepted for this route. Existing
+flag, release and public-boundary push checks still run.
+
+This route establishes publication evidence for the test instrument only;
+it makes no comparative speed, checkpoint-family or deployment claim. Greedy
+remains solely a numerical correctness instrument. Runtime performance changes
+need their own measured serving-shaped regression evidence.

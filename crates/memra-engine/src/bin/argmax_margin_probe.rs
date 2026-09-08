@@ -22,12 +22,12 @@
 //!   * agreement rate across all sampled positions (a near-tie class predicts ~1 flip in many;
 //!     a broken kernel predicts systematic disagreement).
 //!
-//! usage: argmax-margin-probe <model.gguf> <prompt-file> [window=24]
+//! usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window=24]
 //! env: engine knobs (MEMRA_FA_SPLIT, MEMRA_Q80_G2, MEMRA_FAST, ...) steer the arm under test.
 
 use memra_engine::Engine;
-use memra_engine::cache::Cache;
 use memra_engine::hybrid::HybridModel;
+use memra_engine::pp::new_cache as new_model_cache;
 use memra_gguf::GgufFile;
 use memra_tokenizer::Tokenizer;
 
@@ -47,22 +47,69 @@ fn top2(l: &[f32]) -> (usize, f32, usize, f32) {
     (i1, v1, i2, v2)
 }
 
+fn validate_placement(
+    sharded_cross_device: bool,
+    has_hyper_prefill: bool,
+) -> Result<(), &'static str> {
+    if sharded_cross_device && !has_hyper_prefill {
+        return Err(
+            "argmax-margin-probe: sharded cross-device prefill is unsupported for this trunk; no measurement was performed",
+        );
+    }
+    Ok(())
+}
+
+fn measurement_row(pos: usize, prefill: (usize, f32), decode: (usize, f32), delta: f32) -> String {
+    let (p1, mp) = prefill;
+    let (d1, md) = decode;
+    // The shell gate compares these values, so display rounding must not erase a
+    // small explained margin. Ten significant digits preserve every finite f32.
+    format!(
+        "{pos:<8} {p1:<13} {mp:<16.9e} {d1:<12} {md:<16.9e} {delta:<16.9e} {}",
+        if p1 == d1 { "yes" } else { "NO <-- FLIP" }
+    )
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let model_path = args
         .first()
-        .expect("usage: argmax-margin-probe <model.gguf> <prompt-file> [window]");
+        .expect("usage: argmax-margin-probe <model.gguf|hf_dir> <prompt-file> [window]");
     let prompt_file = args.get(1).expect("need <prompt-file>");
-    let window: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(24);
+    let window: usize = args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(24);
+    if window == 0 {
+        return Err("window must be a positive integer".into());
+    }
 
     let e = Engine::new(0)?;
-    let g = GgufFile::open(model_path)?;
-    let model = HybridModel::load_without_mtp(&e, &g)?;
-    let tok = Tokenizer::from_gguf(&g).map_err(|err| format!("tokenizer: {err}"))?;
+    let path = std::path::Path::new(model_path);
+    let (model, tok) = if path.is_dir() {
+        let source = memra_gguf::source::SafetensorsSource::open(path)?;
+        (
+            HybridModel::load_from_source_without_mtp(&e, &source)?,
+            Tokenizer::from_hf_dir(path).map_err(|err| format!("tokenizer: {err}"))?,
+        )
+    } else {
+        let g = GgufFile::open(model_path)?;
+        (
+            HybridModel::load_without_mtp(&e, &g)?,
+            Tokenizer::from_gguf(&g).map_err(|err| format!("tokenizer: {err}"))?,
+        )
+    };
+    // forward_last has a PP prefill dispatch for the hyper-connection trunk. The
+    // generic trunk still executes prefill through one engine; reject remote
+    // weight placement rather than silently substitute different prime arithmetic.
+    validate_placement(
+        memra_engine::pp::pp_sharded_cross_device(),
+        model.hyper.is_some(),
+    )?;
     let text = std::fs::read_to_string(prompt_file)?;
     let prompt = tok.encode(&text, true);
     let t = prompt.len();
-    assert!(t > window + 2, "prompt shorter than the window");
+    assert!(
+        window < t.saturating_sub(2),
+        "prompt shorter than the window"
+    );
 
     println!(
         "argmax-margin-probe: T={t} window={window} sm_count={} model={}",
@@ -80,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- config A: the tokenwise decode path, capturing logits at EVERY position ---
     // This is the gate's "decode" side. Stepping the whole prompt gives us, for free, the
     // per-position top-2 margin distribution under one fixed arithmetic config.
-    let mut cache = Cache::new(&e, &model.cfg, t + 8)?;
+    let mut cache = new_model_cache(&e, &model.cfg, t + 8)?;
     let mut dec_at: Vec<Vec<f32>> = Vec::with_capacity(window);
     for (i, &tk) in prompt.iter().enumerate() {
         let l = model.decode_step(&e, tk, &mut cache)?;
@@ -130,10 +177,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // across the smaller of the two margins at ITS OWN position.
             flip_rows.push((pos, mp.min(md), delta, delta > mp.min(md)));
         }
-        println!(
-            "{pos:<8} {p1:<13} {mp:<12.4} {d1:<12} {md:<12.4} {delta:<14.4} {}",
-            if agree { "yes" } else { "NO <-- FLIP" }
-        );
+        println!("{}", measurement_row(pos, (p1, mp), (d1, md), delta));
         if k == window - 1 {
             last_row = Some((p1, d1, mp, md, delta, (pre_at[k][p1] - dec_at[k][p1]).abs()));
         }
@@ -248,4 +292,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // owns the exit code — a probe-side exit would double-fail ahead of the comparator
     // and break the canary's inject-then-parse flow.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{measurement_row, validate_placement};
+
+    #[test]
+    fn unsupported_sharded_prefill_is_rejected() {
+        assert!(validate_placement(true, false).is_err());
+        assert!(validate_placement(true, true).is_ok());
+        assert!(validate_placement(false, false).is_ok());
+        assert!(validate_placement(false, true).is_ok());
+    }
+
+    #[test]
+    fn table_round_trips_f32_margins() {
+        for (margin, delta) in [
+            (0.00002_f32, 0.00003_f32),
+            (1.0e-30, 2.0e-30),
+            (1.2345678, 2.3456788),
+        ] {
+            let row = measurement_row(10, (1, margin), (2, margin), delta);
+            let fields: Vec<_> = row.split_whitespace().collect();
+            assert_eq!(
+                fields[2].parse::<f32>().unwrap().to_bits(),
+                margin.to_bits()
+            );
+            assert_eq!(
+                fields[4].parse::<f32>().unwrap().to_bits(),
+                margin.to_bits()
+            );
+            assert_eq!(fields[5].parse::<f32>().unwrap().to_bits(), delta.to_bits());
+            assert_eq!(fields[6], "NO");
+            assert!(fields[5].parse::<f64>().unwrap() > fields[2].parse::<f64>().unwrap());
+        }
+        assert_eq!(
+            measurement_row(10, (1, 1.0), (1, 1.0), 0.0)
+                .split_whitespace()
+                .nth(6),
+            Some("yes")
+        );
+    }
 }
