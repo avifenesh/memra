@@ -5,11 +5,17 @@
   "composition": {
     "tap_streaming_source": "6f20c0736",
     "fa_patch_commit": "69676db39a42d28ad98a718ed6575c16bbe6e71e",
-    "note": "GPU binary composes this patch with the revised #370 cold/resume tap implementation. Rebase this PR onto #370 after its independent squash merge."
+    "note": "Rebased onto the #370 squash merge. The following runtime source hashes match the on-box composed binary source exactly.",
+    "integration_base": "15f4bf96fc3a1bfcaa401944515af7f18877307d",
+    "runtime_source_sha256": {
+      "crates/memra-engine/src/dflash.rs": "01e3336d65c46fc6cdf57a90e2e17908315039271e441f805828f62d294beccc",
+      "crates/memra-engine/src/lib.rs": "6801c8505ead0096290c034bfe87cebb513dcd02409f2f6af5a55e51925de850",
+      "crates/memra-server/src/worker.rs": "5a8bd8cc9e2378d68913d5e3a85dc451aef36dc562c3e1947f35fe4ca18dca42"
+    }
   },
   "source_sha256": {
     "crates/memra-engine/src/lib.rs": "6801c8505ead0096290c034bfe87cebb513dcd02409f2f6af5a55e51925de850",
-    "docs/FLAGS.md": "9135f98321d5733ee8af15f611a8fcee2739d746e5c41846dedc50987189dedc"
+    "docs/FLAGS.md": "7457c27799be03eda6ae504b1701b340aec859c81d8ac2fb18e4845c3a5983bb"
   },
   "binary_sha256": "a23b61defec75ead654c8ebfa11ac9ba580161c58c7067d07617ccc18a65d510",
   "artifacts": [
