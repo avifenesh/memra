@@ -1,0 +1,33 @@
+{
+  "base_sha": "72aa777c3763a21281fb9c1c55b2499f2c14d1ee",
+  "scope": "early generic seam only; no route adapter or GPU qualification",
+  "execution": "authorized non-production remote CPU",
+  "nice": 19,
+  "jobs": 2,
+  "env": {
+    "MEMRA_CUDA_ARCH": "120a",
+    "CARGO_TARGET_DIR": "/root/target-prefill"
+  },
+  "checks": [
+    {
+      "command": "cargo test --release -p memra-engine --lib prime_walker -- --nocapture",
+      "passed": 3,
+      "failed": 0,
+      "filtered": 468
+    },
+    {
+      "command": "cargo test --release -p memra-server --lib prime_fairness -- --nocapture",
+      "passed": 3,
+      "failed": 0,
+      "filtered": 635
+    }
+  ],
+  "source_sha256": {
+    "crates/memra-engine/src/lib.rs": "0e3115d2a4ac2f2ab1927f3d8b4543778aaad5b14cff8fc5ef9387714376a0a0",
+    "crates/memra-engine/src/prime_walker.rs": "8a5d4dd11b9537eed67596c107678240f335592d58f641f81d0054284e97dfee",
+    "crates/memra-server/src/lib.rs": "554f903d29cb5b9d3fcbf5c9c387a2be8ac1c095020f4854d2a1c03e3331fa33",
+    "crates/memra-server/src/prime_fairness.rs": "c0e7f0f7856a51efa63abe7e6cd352c8975cf8ed2d9114bd1927d04290d52b65",
+    "crates/memra-server/src/worker.rs": "4cb64d3a9774881cb433a177fc13565fd4048288b691a891e830070f0452c41d"
+  },
+  "gpu_processes_launched": 0
+}

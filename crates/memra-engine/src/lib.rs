@@ -63,6 +63,7 @@ pub mod hybrid;
 pub mod hybrid_forward;
 pub mod hyper;
 pub mod model;
+pub mod prime_walker;
 pub mod sigrouter_contract;
 pub mod vision;
 pub mod vision_gemma;

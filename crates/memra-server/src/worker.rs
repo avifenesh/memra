@@ -11318,6 +11318,7 @@ fn vision_spans(
 }
 
 struct Session {
+    prime_service: crate::prime_fairness::PrimeService,
     model: String,
     /// Request-owned speculative depth. Zero means this session is on the plain path.
     /// Positive values are fixed for the request and consumed by every spec round.
@@ -13224,6 +13225,7 @@ pub fn run(
     // a dspark-armed model is probed through the dspark session, never the MTP spec arm
     // it has disabled — the receipt names the route it measured.
     run_boot_calibration(&engine, &loaded, &dspark_drafts, &mut admission_costs);
+    let mut prime_policy = crate::prime_fairness::PrimePolicy::default();
 
     // ---- serving counters + engine-truth step stats (30s percentile window) ----
     // Lane machinery (x-lane QoS gate, lane/dl-metering port): policy from env; step_stats
@@ -15014,6 +15016,11 @@ pub fn run(
             // next request. Keeping this sweep inside the demotion branch made MEMRA_SPEC_K=3
             // exact but permanently cache-cold.
             for s in active.iter_mut() {
+                // A saved prime is not a committed decode/park boundary. Its adapter
+                // owns the partial captures until finalization succeeds.
+                if s.prime_service.pending {
+                    continue;
+                }
                 let mtp_captures = s
                     .spec
                     .as_mut()
@@ -15070,6 +15077,9 @@ pub fn run(
                     // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for i in 0..active.len() {
                         if finished.contains(&i) {
+                            continue;
+                        }
+                        if active[i].prime_service.pending {
                             continue;
                         }
                         // DSPARK TICK DEMOTION (lane/dspark-spec-gate-demote, 2026-08-24).
@@ -15333,12 +15343,20 @@ pub fn run(
             if admit_yield_on {
                 spec_order.sort_by_key(|&i| !active[i].generated.is_empty());
             }
+            if memra_engine::prime_walker::prime_yield_enabled() {
+                prime_policy.order(&mut spec_order, |i| active[i].prime_service.pending);
+            }
             let mut dspark_phase_captures: Vec<(usize, memra_engine::spec::SpecBoundaryCapture)> =
                 Vec::new();
             for i in spec_order {
                 if finished.contains(&i) {
                     continue;
                 }
+                // Re-read after each prime step: a peer later in this same tick already
+                // owes bounded service when an earlier route has just yielded.
+                active[i].prime_service.peer_quantum =
+                    memra_engine::prime_walker::prime_yield_enabled()
+                        && active.iter().any(|s| s.prime_service.pending);
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
                 let step_started = Instant::now();
@@ -16462,7 +16480,7 @@ pub fn run(
                 oom_teardowns += 1;
                 continue;
             }
-            if !retire_may_park(s.aborted, s.oom_teardown) {
+            if s.prime_service.pending || !retire_may_park(s.aborted, s.oom_teardown) {
                 continue;
             }
             // AGENT-PAUSE DEMOTE ARM (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831,
@@ -21031,6 +21049,7 @@ fn admit(
     };
 
     let mut s = Session {
+        prime_service: crate::prime_fairness::PrimeService::default(),
         model: req.model,
         spec_k,
         cache_ns: req.cache_ns,
@@ -22654,7 +22673,7 @@ fn step_session(
         // The engine target is a scheduler cadence, not a public-output cap. Session mode may
         // return a cache-authoritative surplus token past this target; expose it when the request
         // still has room so worker generated/sampler/fed state stays aligned with SpecSession.
-        let burst_target = request_room.min(burst_t);
+        let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
         let suffix: Vec<u32> = s.prefill_queue.drain(..).collect();
         s.prefill_done = true;
         if suffix.is_empty() && spec.next_pred.is_none() && spec.pending_tok.is_none() {
@@ -23263,7 +23282,7 @@ fn step_gemma_spec(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
-    let burst_target = request_room.min(burst_t);
+    let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
     let sess = s.gspec.as_mut().unwrap();
     let rounds_before = sess.rounds;
     let (burst, dr, ac) =
@@ -23468,7 +23487,7 @@ fn step_dspark_spec(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
-    let burst_target = request_room.min(burst_t);
+    let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
     // FIRST-TOKEN EAGER, dspark twin (lane/dspark-first-token-eager, memra#249 lever 22b,
     // the same `MEMRA_SPEC_FIRST_TOKEN_EAGER` door the glm5 route reads). This route emitted
     // at BURST cadence and said so in its own comment: the first `Event::Token` of a request
@@ -23736,7 +23755,7 @@ fn step_glm5_spec(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
-    let burst_target = request_room.min(burst_t);
+    let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
     // FIRST-TOKEN EAGER door (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_FIRST_TOKEN_EAGER`,
     // DEFAULT ON, `=0` = rollback): publish at ROUND cadence instead of burst cadence — the
     // qwen route's sse-cadence shape (2026-08-05) ported to this session. OFF (the pre-lane
