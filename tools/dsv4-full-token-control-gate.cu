@@ -181,11 +181,13 @@ void build(Rank& r,Rank& peer,bool fault=false) {
     // integer-exact fixtures, not substitutes for DSV4 layer arithmetic.
     ck(cudaStreamBeginCaptureToGraph(r.stream,graph,&tail,nullptr,1,cudaStreamCaptureModeRelaxed));
     for(int layer=0; layer<int(fault?1:layers); ++layer) for(int phase=0; phase<2; ++phase) {
-        producer<<<1,128,0,r.stream>>>(r.control,r.partial,r.device,layer,phase,r.width);
+        const int width=(r.width==24576 && phase==0)?4096:r.width;
+        const int blocks=(r.width==24576 && phase==0)?1:r.blocks;
+        producer<<<1,128,0,r.stream>>>(r.control,r.partial,r.device,layer,phase,width);
         const auto* p0=r.device==0?r.partial:peer.partial;
         const auto* p1=r.device==1?r.partial:peer.partial;
-        require(memra_tp_ar_1stage(p0,p1,r.sum+(layer*2+phase)*r.width,r.signal,peer.signal,r.device,r.width,r.error,
-                                  fault?5000000LL:r.spin_limit,r.blocks,r.stream)==0,"AR capture failed");
+        require(memra_tp_ar_1stage(p0,p1,r.sum+(layer*2+phase)*r.width,r.signal,peer.signal,r.device,width,r.error,
+                                  fault?5000000LL:r.spin_limit,blocks,r.stream)==0,"AR capture failed");
     }
     cudaGraph_t ended{}; ck(cudaStreamEndCapture(r.stream,&ended));
     require(ended==graph,"capture changed graph owner");
@@ -261,7 +263,7 @@ bool step(Pair& pair,Dsv4ReplayInput in,int inject=-1,Submission submission=Subm
         ck(cudaSetDevice(r->device));
         ck(cudaMemcpy(sums.data(),r->sum,sums.size()*sizeof(float),cudaMemcpyDeviceToHost));
         for(unsigned layer=0;layer<layers;++layer) for(unsigned phase=0;phase<2;++phase)
-            for(int i=0;i<r->width;++i)
+            for(int i=0;i<((r->width==24576 && phase==0)?4096:r->width);++i)
                 require(sums[(layer*2+phase)*r->width+i]==float(2*((in.token%1024)+in.position+layer+phase+i%127)+1),
                         "AR stale input or wrong order");
     }
@@ -348,10 +350,10 @@ int main() try {
             for(auto* r:{&a,&b}) {
                 auto* seq=((const MemraArSignal*)r->signal)->seq;
                 for(int block=0;block<r->blocks;++block)
-                    require(read(*r,seq+block)==(p+1)*86,"production-geometry epoch mismatch");
+                    require(read(*r,seq+block)==(p+1)*(block==0?86:43),"production-geometry epoch mismatch");
             }
         }
-        printf("PASS production geometry n=%d blocks=%d replay_tokens=8 joins_per_token=86\n",geometry.first,geometry.second);
+        printf("PASS production geometry max_n=%d max_blocks=%d replay_tokens=8 joins_per_token=86 alternating_attention_expert=1\n",geometry.first,geometry.second);
     }
     for(int rank=0;rank<2;++rank) {
         Pair pair(4096,1); auto& a=pair.a; auto& b=pair.b;

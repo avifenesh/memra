@@ -81,7 +81,9 @@ This is an injected host submission failure, not an invalid CUDA call suppressed
 from sanitizer reports. There are no sanitizer suppressions.
 
 Eight-token cells check all elements and all per-block epochs at the default
-production AR shapes: 4096 floats/1 block and 24576 floats/48 blocks. Uniform
+production AR shapes: 4096 floats/1 block and 24576 floats/48 blocks. The latter alternates attention
+and expert geometry on the same signal allocation: block 0 advances 86 epochs
+per token, other blocks advance 43. Uniform
 payloads vary all 64 bits. This remains a payload freshness check, not sampling
 qualification. No full-model refusal or numeric qualification is implied.
 
