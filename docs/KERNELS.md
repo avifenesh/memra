@@ -1,5 +1,20 @@
 # Kernel inventory
 
+## DSV4 small-kernel diet, 2026-09-07
+
+Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use
+`MEMRA_DSV4_SMALL_KERNEL_DIET` (default OFF). Gate status and receipt routing:
+`research/dsv4f-small-kernel-diet-20260907/README.md`.
+
+| Kernel | Replaced launches and numeric contract | Geometry |
+| --- | --- | --- |
+| `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128, t=1, HC4, hidden4096. |
+| `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128, t=1. |
+
+The gate counts successful enqueues in the replaced families and requires 8 to
+3 launches per layer per rank. This counter excludes all other kernels; total
+launch counts require the profile. A PASS with the old targeted count fails.
+
 Derived from code (build.rs, cu/, FFI shims) 2026-09-02 **at commit 6a131edb** — line
 references resolve against that commit (`git show 6a131edb:<path>`), not necessarily HEAD.
 Every row comes from a grep or a read; UNKNOWN means not determinable from the code without

@@ -40,6 +40,7 @@ struct Counters {
     down_half2: u64,
     wo_a: u64,
     index_radix: u64,
+    small_launches: [u64; 2],
 }
 
 fn counters(gpu: &Dsv4Gpu) -> Counters {
@@ -58,6 +59,7 @@ fn counters(gpu: &Dsv4Gpu) -> Counters {
         down_half2: memra_engine::moe_f16g_down_m1_half2_dispatches(),
         wo_a: gpu.dense_wo_a_grouped_dispatches(),
         index_radix: gpu.index_topk_radix_dispatches(),
+        small_launches: gpu.small_kernel_launches(),
     }
 }
 
@@ -80,6 +82,7 @@ fn delta(after: Counters, before: Counters) -> Counters {
         down_half2: after.down_half2 - before.down_half2,
         wo_a: after.wo_a - before.wo_a,
         index_radix: after.index_radix - before.index_radix,
+        small_launches: std::array::from_fn(|i| after.small_launches[i] - before.small_launches[i]),
     }
 }
 
@@ -205,6 +208,16 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
         "actual attention reductions"
     );
     let local_steps = 2 * (prime + decode) as u64 * layers;
+    let expected_small = if gpu.small_kernel_diet_enabled() {
+        [2, 1]
+    } else {
+        [6, 2]
+    };
+    assert_eq!(
+        c.small_launches,
+        expected_small.map(|n| n * local_steps),
+        "HC and Q pack actual enqueues: a diet PASS with the old count is forbidden"
+    );
     let splitk = memra_engine::moe_m1_splitk_on();
     let oracle_steps = if splitk { 0 } else { local_steps };
     let splitk_steps = if splitk { local_steps } else { 0 };
@@ -499,12 +512,16 @@ fn main() {
     let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba]"
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba]"
     );
+    let components = args
+        .get(3)
+        .is_some_and(|v| v == "--small-kernel-components");
+    let small_abba = args.get(3).is_some_and(|v| v == "--small-kernel-abba");
     let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
     let splitk_abba = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-abba");
     assert!(
-        args.len() == 3 || splitk || splitk_abba || sampler_abba,
+        args.len() == 3 || splitk || splitk_abba || sampler_abba || components || small_abba,
         "unknown gate arm"
     );
     memra_engine::set_moe_m1_splitk_for_gate(splitk);
@@ -527,7 +544,7 @@ fn main() {
     } else {
         host_sampler_name
     };
-    let repeats = if sampler_abba {
+    let repeats = if sampler_abba || small_abba {
         40
     } else if attention_mode {
         ATTENTION_REPEATS
@@ -587,7 +604,7 @@ fn main() {
     println!(
         "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
     );
-    let gpu = Dsv4Gpu::load(
+    let mut gpu = Dsv4Gpu::load(
         dir,
         &[0, 1],
         ActQuantVariant::RefFp8Round,
@@ -621,6 +638,34 @@ fn main() {
             "CPU radix oracle required"
         );
     }
+    if components {
+        assert!(
+            attention_mode && gpu.chains_f32,
+            "component gate requires attention TP2 f32x"
+        );
+        gpu.enable_small_kernel_components_for_gate();
+        let mut state = gpu
+            .alloc_decode_state_for_transient(8, 1)
+            .expect("component state");
+        gpu.prefill_with_cache_chunked(&prompt[..1], &mut state, 1)
+            .expect("live checkpoint components");
+        drain(&gpu);
+        assert!(
+            gpu.small_kernel_components_complete_for_gate(),
+            "both components must run on both ranks"
+        );
+        println!(
+            "PASS small-kernel live-checkpoint components; both ranks; bitwise; 32 ABBA repeats each"
+        );
+        return;
+    }
+    if small_abba {
+        assert!(
+            attention_mode && !profiled && sampler_name == "radix",
+            "diet ABBA requires unprofiled attention TP2 and radix"
+        );
+    }
+
     let arms: &[bool] = if splitk_abba {
         &[false, true, true, false]
     } else {
@@ -644,14 +689,22 @@ fn main() {
                 } else {
                     device
                 };
-                run_once(
+                if small_abba {
+                    gpu.set_small_kernel_diet_for_gate(matches!(repeat % 4, 1 | 2))
+                        .expect("ABBA arm");
+                }
+                let row = run_once(
                     &gpu,
                     &prompt,
                     &tokenizer,
                     repeat,
                     if arm { "device" } else { host_sampler_name },
                     arm,
-                )
+                );
+                let launches: u64 = row.counters_decode.small_launches.iter().sum();
+                println!("LAUNCHES repeat={repeat} diet={} targeted_launches={} targeted_launches_per_step_per_rank={:.6} expected_saved_per_layer_per_rank=5 scope=hc_finish_and_q_norm_pack",
+                    gpu.small_kernel_diet_enabled(), launches, launches as f64 / (2 * row.forward_calls) as f64);
+                row
             })
             .collect();
         let first = &receipts[0];
@@ -719,9 +772,27 @@ fn main() {
                 .map(|receipt| receipt.decode_wall.as_nanos())
                 .sum();
             let pooled_tok_s = total_tokens as f64 * 1e9 / total_wall_ns as f64;
-            println!(
-                "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"{sampler_name}\",\"paired_control\":false,\"speculative\":false}}"
-            );
+            if small_abba {
+                let mut wall = [0u128; 2];
+                let mut tokens = [0usize; 2];
+                for row in &receipts {
+                    let arm = usize::from(matches!(row.repeat % 4, 1 | 2));
+                    wall[arm] += row.decode_wall.as_nanos();
+                    tokens[arm] += row.generated_tokens;
+                }
+                let rates: [f64; 2] =
+                    std::array::from_fn(|i| tokens[i] as f64 * 1e9 / wall[i] as f64);
+                println!(
+                    "ABBA cycles=10 off_tok_s={:.6} on_tok_s={:.6} delta_pct={:.6} digests_identical=true timing_scope=sample_plus_forward_envelope sampler=radix",
+                    rates[0],
+                    rates[1],
+                    100.0 * (rates[1] / rates[0] - 1.0)
+                );
+            } else {
+                println!(
+                    "SUMMARY {{\"repeats\":{repeats},\"eligible_repeats\":{repeats},\"generated_tokens\":{total_tokens},\"decode_wall_ns\":{total_wall_ns},\"sampled_envelope_tok_s\":{pooled_tok_s:.6},\"timing_scope\":\"sample_plus_forward_envelope\",\"sampler_order\":\"{sampler_name}\",\"paired_control\":false,\"speculative\":false}}"
+                );
+            }
         }
         if attention_mode && profiled {
             assert!(receipts.iter().all(|receipt| !receipt.eligible));
