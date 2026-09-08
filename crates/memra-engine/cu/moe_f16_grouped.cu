@@ -1958,7 +1958,7 @@ moe_m1_splitk_partial_kernel(
 }
 
 template<int Projections>
-static __device__ __forceinline__ void
+static __global__ void __launch_bounds__(128)
 moe_m1_graph_splitk_partial_kernel(
         const unsigned long long* __restrict__ table, int proj, int n_expert,
         const int* __restrict__ ex_ids, long row_bytes,
@@ -1966,40 +1966,16 @@ moe_m1_graph_splitk_partial_kernel(
         float* __restrict__ partial,
         const int* __restrict__ ex_off, int n_active,
         int in_f, int out_f){
-    // Uniform CTA exit before any shared-memory staging or synchronization.
+    // Uniform CTA exit before shared-memory staging or synchronization.
     const int live = ex_off[n_active];
     const int slices = moe_m1_slices(live, out_f, Projections == 2);
     if(blockIdx.x >= live * ((out_f + SK_BN - 1) / SK_BN) * slices) return;
     moe_m1_splitk_partial_body<Projections>(table, proj, n_expert, ex_ids, row_bytes, A, partial, ex_off, n_active, in_f, out_f);
 }
 
-template<int Projections>
-static __global__ void __launch_bounds__(128)
-moe_m1_graph_splitk_partial_kernel(
-        const unsigned long long* __restrict__ table, int proj, int n_expert,
-        const int* __restrict__ ex_ids, long row_bytes,
-        const __half* __restrict__ A,
-        float* __restrict__ partial,
-        const int* __restrict__ ex_off, int n_active,
-        int in_f, int out_f){
-    moe_m1_splitk_reduce_body<Projections>(partial, out, row_scale, macro_g, macro_u, route_w, slots, out_f, limit, ex_off, n_active);
-}
 
 template<int Projections>
-static __global__ void __launch_bounds__(128)
-moe_m1_graph_splitk_partial_kernel(
-        const unsigned long long* __restrict__ table, int proj, int n_expert,
-        const int* __restrict__ ex_ids, long row_bytes,
-        const __half* __restrict__ A,
-        float* __restrict__ partial,
-        const int* __restrict__ ex_off, int n_active,
-        int in_f, int out_f){
-    moe_m1_splitk_reduce_body<Projections>(partial, out, row_scale, macro_g, macro_u, route_w, slots, out_f, limit, ex_off, n_active);
-}
-
-
-template<int Projections>
-static __global__ void moe_m1_splitk_reduce_kernel(
+static __device__ __forceinline__ void moe_m1_splitk_reduce_body(
         const float* partial, float* out, const float* row_scale,
         const float* macro_g, const float* macro_u, const float* route_w,
         int slots, int out_f, float limit, const int* ex_off, int n_active){
@@ -2025,6 +2001,22 @@ static __global__ void moe_m1_splitk_reduce_kernel(
         g = fminf(g, limit);
         out[c] = __fmul_rn(__fmul_rn(__fmul_rn(g, kq_gu_sigmoid(g)), u), route_w[row]);
     }
+}
+
+template<int Projections>
+static __global__ void moe_m1_splitk_reduce_kernel(
+        const float* partial, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        int slots, int out_f, float limit, const int* ex_off, int n_active){
+    moe_m1_splitk_reduce_body<Projections>(partial, out, row_scale, macro_g, macro_u, route_w, slots, out_f, limit, ex_off, n_active);
+}
+
+template<int Projections>
+static __global__ void moe_m1_graph_splitk_reduce_kernel(
+        const float* partial, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        int slots, int out_f, float limit, const int* ex_off, int n_active){
+    moe_m1_splitk_reduce_body<Projections>(partial, out, row_scale, macro_g, macro_u, route_w, slots, out_f, limit, ex_off, n_active);
 }
 
 // Per-QT direct-from-quant launch (lane/iq-direct-loaders: the Q4_K/Q6_K if/else ladder
