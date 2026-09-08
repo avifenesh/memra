@@ -1731,6 +1731,14 @@ scored arm: 32 matched eager/replay steps at identical positions 368..400 with
 existing NVTX switch enables the new token phase markers; when unset they emit
 no NVTX calls or timing accumulation. Both selectors remain diagnostic/default OFF.
 
+Follow-on receipt at `bd30a57bad9295c9668c95871dc650f3790f4c91`: the clean
+BAAB20 passed all correctness/refusal/identity checks and measured eager
+42.804086 vs graph 44.005344 tok/s (+2.806409%, first capture included). Separate
+matched 32-step profile passed; its instrumented durations are not scored rates.
+Default remains OFF, decide-by 2026-09-22. See `RESULT.md` under
+`research/dsv4f-full-token-replay-20260908/` and private namespaces
+`full-token-replay-model-baab-bd30a57-r1` / `full-token-replay-profile-bd30a57-r1`.
+
 `MEMRA_TEST_REPLAY_DRAIN_FAILURE_CHILD` is a `cfg(test)`-only subprocess selector
 for the Rust fail-stop policy test. Unset runs the parent test; `error:0|1` and
 `drop:0|1` inject failed completion on that rank during error handling or destructor

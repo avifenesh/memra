@@ -1,4 +1,4 @@
-# Full-token segmented replay: +2.64% plain envelope
+# Full-token segmented replay: two bounded positive plain results
 
 On two RTX PRO 6000 Blackwell development GPUs, the bounded same-load 20-row
 ABBA measured **42.799984 tok/s eager** and **43.931954 tok/s full-token graph**,
@@ -77,3 +77,55 @@ The shared model/pod remains available to its controller.
 Verdict: keep the default-OFF diagnostic for root's qualification decision, with
 decide-by 2026-09-22. No further experiment, merge or production rollout is started
 by this result. Source review and hosted CI remain independent integration gates.
+
+## Fresh-load reverse-order confirmation
+
+The authorized follow-on at source `bd30a57bad9295c9668c95871dc650f3790f4c91`
+measured **42.804086 tok/s eager** and **44.005344 tok/s graph**,
+**+2.806409%**, saving **0.637743 ms/token**. Its exact schedule is
+BBBBB AAAAA AAAAA BBBBB, ten eligible 256-output rows per arm. All 256 changing
+steps, six live refusals, both-rank cache/hidden identity, epochs and graph census
+checks passed. All row identities match the initial experiment. First scored B
+capture is inside its timer; counters reach 2560 per segment/rank with one capture.
+
+This is a separate source/binary from the initial result. Changes are harness
+arm order, a separate profile-only selector and NVTX-only markers disabled during
+scoring, with no CUDA/FFI or numerical dispatch change. Binary SHA-256:
+`4880e3caabc7a8784789ceb4f9e8f83168ac77de12a56a9bc7fc41464a35ad9b`.
+All hosted CI checks passed on this measured head. The clean controller exited
+zero; process-map readback shows no profiler injection. Complete unfiltered rows,
+source/control/graph hashes and validation are in private receipt namespace
+`full-token-replay-model-baab-bd30a57-r1` and companion `BAAB-RESULT.md`.
+
+## Separate profile, not scored timing
+
+After BAAB, a separate process loaded the same binary/tape and profiled 32 steps
+per arm from identical restored position-368 prefixes through position 400.
+Both arms match sampled tokens, final state and epochs, including the C128
+boundary. Controller EXIT=0; no MEASURE or scored-rate rows were emitted. Every
+replay kernel event has a graph-node ID; each token has full embedding/43-layer
+HC-post/86-AR-per-rank coverage.
+
+Nsight node tracing adds overhead. Instrumented mean shared GPU forward spans
+28.636 ms eager and 26.282 ms replay, while host steps are 30.537 and 30.305 ms.
+Replay forward kernel-free time is 0.669 ms on rank 0 and 4.332 ms on rank 1,
+with 3.633 ms of traced rank-start skew. The 22.078-ms host refusal read/drain
+waits on queued forward execution; it is not additional removable time. Aggregate
+graph-launch API duration is likewise not a native launch-cost estimate.
+The replay sampler GPU window is 0.090 ms, then 0.016 ms to host step end.
+
+Source/cadence accounting reconciles 575.25 extra replay kernels per rank/token
+in this window: 396.125 inactive compressor emission/shift kernels and 179.125
+live copy/control kernels. The always-launched emission sequence is at
+`cu/dsv4_gpu.cu:6683`, called by `cmp_decode_batch_dev` in `dsv4_gpu.rs`.
+A possible next mechanism is a small retained graph set selected by compressor
+cadence, keeping live addresses and exact arithmetic. It is unimplemented; node
+counts do not predict wall savings. Large GU/down/dense kernels still dominate
+forward work. AR residence is not counted as removable wall. Split-K stays OFF.
+
+Full phase tables, per-step interval unions, API/family counts, source-derived
+node reconciliation and trace hashes are in companion `PROFILE-RESULT.md`,
+namespace `full-token-replay-profile-bd30a57-r1`. Raw profiler blobs stay private
+on the development host. Both authorized processes are complete; final inventory
+is empty and the shared lock is free. No additional run, merge, default change
+or serving admission is implied by these two modest positive results.
