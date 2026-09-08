@@ -16,6 +16,7 @@
 //! so the second produces tokens before the first finishes (not serialized end-to-end).
 
 mod host_glm;
+mod host_memory;
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Write as _;
@@ -4184,8 +4185,8 @@ fn kv_host_budget_bytes() -> usize {
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0)
             .saturating_mul(1024 * 1024);
-        if requested == 0 {
-            return 0;
+        if requested == 0 || glm5_tp_kv_host_on() {
+            return requested;
         }
         let avail = std::fs::read_to_string("/proc/meminfo")
             .ok()
@@ -7159,6 +7160,8 @@ struct HostPrefixEntry {
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
 #[derive(Default)]
 struct HostPrefixCache {
+    arena: Option<memra_engine::PinnedHostArena>,
+    arena_reserve_ms: f64,
     model_generations: HashMap<String, Arc<()>>,
     entries: HashMap<PoolKey, Vec<HostPrefixEntry>>,
     /// (last_use, id) -> (pool key, index); same deterministic tie-break as the device LRU.
@@ -7224,6 +7227,61 @@ impl HostPrefixCache {
             budget,
             tenant_pct: kv_host_tenant_pct(),
             ..Default::default()
+        }
+    }
+
+    fn generation_current(&self, entry: &HostPrefixEntry) -> bool {
+        entry.model_generation.as_ref().is_none_or(|saved| {
+            self.model_generations
+                .get(&entry.pool_key.0)
+                .is_some_and(|active| Arc::ptr_eq(saved, active))
+        }) && (entry.glm.is_none() || entry.model_generation.is_some())
+    }
+
+    fn log_arena(&self, event: &str) {
+        if let Some(arena) = &self.arena {
+            let (capacity, leased, free) = arena.bytes();
+            eprintln!(
+                "[prefix-host DEBUG] arena {event}: reserve_ms={:.3} capacity={capacity} leased={leased} free={free}",
+                self.arena_reserve_ms
+            );
+        }
+    }
+
+    // Logical image bytes govern tenancy/LRU; arena bytes are physical backing,
+    // never an additional charge against the same budget.
+    fn reserve_image(
+        &mut self,
+        key: &PoolKey,
+        toks: &[u32],
+        bytes: usize,
+        sizes: &[usize],
+    ) -> Result<HostPlaneLeases, String> {
+        let Some(arena) = self.arena.clone() else {
+            return Ok(HostPlaneLeases(None));
+        };
+        if bytes > self.budget || self.tenant_cap_would_evaporate(key, toks, bytes) {
+            return Err("pinned arena admission refused: image exceeds host/tenant budget".into());
+        }
+        // Credit and recycle the exact twin before reserving its replacement.
+        if let Some(i) = self.key_index(key, toks) {
+            drop(self.remove_at(key, i));
+            self.log_arena("replace eviction");
+        }
+        loop {
+            match arena.try_reserve_planes(sizes) {
+                Ok(planes) => return Ok(HostPlaneLeases(Some(planes.into_iter()))),
+                Err(err) => {
+                    let Some((key, i)) = self.lru.values().next().cloned() else {
+                        self.rejected_allocs += 1;
+                        self.log_arena("admission refusal");
+                        return Err(format!("pinned arena admission refused: {err}"));
+                    };
+                    drop(self.remove_at(&key, i));
+                    self.evictions += 1;
+                    self.log_arena("LRU eviction");
+                }
+            }
         }
     }
 
@@ -7450,6 +7508,8 @@ impl HostPrefixCache {
                 victim_key.0,
                 ns_suffix(&victim_key.1)
             );
+            drop(dead);
+            self.log_arena("LRU eviction");
         }
         true
     }
@@ -7492,12 +7552,31 @@ impl HostPrefixCache {
     }
 }
 
+// Some means the entire image was reserved before the first copy. Exhaustion
+// can never fall through to CUDA allocation. None is the unchanged OFF path.
+struct HostPlaneLeases(Option<std::vec::IntoIter<memra_engine::PinnedHostBuf>>);
+impl HostPlaneLeases {
+    fn take(&mut self, bytes: usize) -> Result<memra_engine::PinnedHostBuf, String> {
+        match &mut self.0 {
+            Some(planes) => {
+                let plane = planes.next().ok_or("pinned image layout exhausted")?;
+                if plane.len() != bytes {
+                    return Err("pinned image plane length mismatch".into());
+                }
+                Ok(plane)
+            }
+            None => memra_engine::PinnedHostBuf::new(bytes).map_err(|e| e.to_string()),
+        }
+    }
+}
+
 /// D2H one device plane into pinned cacheable host memory. Alloc failures LATCH THE TIER OFF
 /// (loud, no pageable fallback); copy failures drop the entry and count, without latching.
 fn host_plane_from_device(
     engine: &Engine,
     host: &mut HostPrefixCache,
     p: &PrefixPlane,
+    planes: &mut HostPlaneLeases,
 ) -> Result<HostPlane, String> {
     let kb = p.len * p.k_tok_bytes;
     let vb = p.len * p.v_tok_bytes;
@@ -7505,22 +7584,29 @@ fn host_plane_from_device(
         let attempt = if kv_host_fault() == "alloc-fail" {
             Err("injected failure (MEMRA_KV_HOST_FAULT=alloc-fail)".to_string())
         } else {
-            memra_engine::PinnedHostBuf::new(n).map_err(|err| err.to_string())
+            planes.take(n)
         };
         attempt.map_err(|err| {
             host.rejected_allocs += 1;
-            host.disable(&format!("pinned host alloc of {n} B failed: {err}"));
+            if host.arena.is_none() {
+                host.disable(&format!("pinned host alloc of {n} B failed: {err}"));
+            }
             format!("pinned host alloc of {n} B failed: {err}")
         })
     };
     let mut k = alloc(kb)?;
     let mut v = alloc(vb)?;
-    if kb > 0 {
+    if host.arena.is_some() {
+        k.copy_from_device_u8(&p.k)
+            .map_err(|e| format!("K plane D2H failed: {e}"))?;
+        v.copy_from_device_u8(&p.v)
+            .map_err(|e| format!("V plane D2H failed: {e}"))?;
+    } else if kb > 0 {
         engine
             .dtoh_u8_into_pinned(&p.k, &mut k, kb)
             .map_err(|err| format!("K plane D2H failed: {err}"))?;
     }
-    if vb > 0 {
+    if host.arena.is_none() && vb > 0 {
         engine
             .dtoh_u8_into_pinned(&p.v, &mut v, vb)
             .map_err(|err| format!("V plane D2H failed: {err}"))?;
@@ -7542,20 +7628,47 @@ fn host_entry_from_device(
     dead: &PrefixEntry,
     verify_digest: Option<String>,
 ) -> Result<HostPrefixEntry, String> {
-    let glm = if dead.tp.is_some() || dead.latent.iter().any(Option::is_some) {
+    let is_glm = dead.tp.is_some() || dead.latent.iter().any(Option::is_some);
+    if dead.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
+        return Err("host image layout version mismatch".into());
+    }
+    let model_generation = if is_glm {
+        if host.arena.is_none() {
+            return Err("GLM host image requires startup pinned arena".into());
+        }
         Some(
-            host_glm::HostGlmState::down(engine, dead).inspect_err(|err| {
-                host.rejected_allocs += 1;
-                host.disable(err);
-            })?,
+            host.model_generations
+                .get(&dead.pool_key.0)
+                .cloned()
+                .ok_or("GLM host image has no loaded model generation")?,
         )
+    } else {
+        None
+    };
+    let mut sizes = if is_glm {
+        host_glm::HostGlmState::plane_sizes(dead)
+    } else {
+        Vec::new()
+    };
+    for p in dead.kv.iter().flatten().chain(dead.draft.iter()) {
+        sizes.extend([p.len * p.k_tok_bytes, p.len * p.v_tok_bytes]);
+    }
+    if is_glm && sizes.iter().try_fold(0usize, |n, b| n.checked_add(*b)) != Some(dead.bytes) {
+        return Err(format!(
+            "GLM host byte census does not match device snapshot accounting {}",
+            dead.bytes
+        ));
+    }
+    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, dead.bytes, &sizes)?;
+    let glm = if is_glm {
+        Some(host_glm::HostGlmState::down(engine, dead, &mut planes)?)
     } else {
         None
     };
     let mut kv = Vec::with_capacity(dead.kv.len());
     for plane in &dead.kv {
         kv.push(match plane {
-            Some(p) => Some(host_plane_from_device(engine, host, p)?),
+            Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
             _ => None,
         });
     }
@@ -7598,7 +7711,7 @@ fn host_entry_from_device(
         });
     }
     let draft = match &dead.draft {
-        Some(p) => Some(host_plane_from_device(engine, host, p)?),
+        Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
         _ => None,
     };
     let dspark_draft = match &dead.dspark_draft {
@@ -7622,16 +7735,6 @@ fn host_entry_from_device(
             })
         }
         _ => None,
-    };
-    let model_generation = if glm.is_some() {
-        Some(
-            host.model_generations
-                .get(&dead.pool_key.0)
-                .cloned()
-                .ok_or("GLM host image has no loaded model generation")?,
-        )
-    } else {
-        None
     };
     let entry = HostPrefixEntry {
         model_generation,
@@ -7783,6 +7886,7 @@ fn host_demote_prefix_ref(
             let bytes = e.bytes;
             if host.insert(&dead.pool_key, e) {
                 let ms = t0.elapsed().as_secs_f64() * 1e3;
+                host.log_arena("demotion");
                 host.demotions += 1;
                 host.demote_ms_total += ms;
                 eprintln!(
@@ -8142,13 +8246,9 @@ fn host_promote_prefix_hit(
 ) -> Option<(usize, PrefixPin)> {
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
     let candidate = &host.entries[pool_key][hi];
-    if candidate.glm.is_some()
-        && !matches!(
-            (candidate.model_generation.as_ref(),host.model_generations.get(&pool_key.0)),
-            (Some(saved),Some(active)) if Arc::ptr_eq(saved,active)
-        )
-    {
-        host.remove_at(pool_key, hi);
+    if !host.generation_current(candidate) {
+        drop(host.remove_at(pool_key, hi));
+        host.log_arena("stale generation eviction");
         eprintln!("[prefix-host] promote refused: stale GLM model/artifact instance");
         return None;
     }
@@ -8196,6 +8296,7 @@ fn host_promote_prefix_hit(
     let pin = px.insert_pinned_demoting(pool_key, e, "host-promote", 1, engine, host)?;
     let i = px.id_index(&pin)?;
     let ms = t0.elapsed().as_secs_f64() * 1e3;
+    host.log_arena("promotion");
     host.promotions += 1;
     host.promote_ms_total += ms;
     eprintln!(
@@ -9109,10 +9210,13 @@ fn handoff_read_entry<R: std::io::Read>(
 /// Pinned-host twin of a parsed plane. Alloc failures are the ONLY error class here
 /// (shapes were validated at parse), and the caller treats them with the tier's latch
 /// posture: pinned RAM exhaustion aborts the import loudly.
-fn host_plane_from_owned(p: HandoffPlaneOwned) -> Result<HostPlane, String> {
-    let mut k = memra_engine::PinnedHostBuf::new(p.k.len()).map_err(|e| e.to_string())?;
+fn host_plane_from_owned(
+    p: HandoffPlaneOwned,
+    planes: &mut HostPlaneLeases,
+) -> Result<HostPlane, String> {
+    let mut k = planes.take(p.k.len())?;
     k.as_mut_slice().copy_from_slice(&p.k);
-    let mut v = memra_engine::PinnedHostBuf::new(p.v.len()).map_err(|e| e.to_string())?;
+    let mut v = planes.take(p.v.len())?;
     v.as_mut_slice().copy_from_slice(&p.v);
     Ok(HostPlane {
         k,
@@ -9123,16 +9227,30 @@ fn host_plane_from_owned(p: HandoffPlaneOwned) -> Result<HostPlane, String> {
     })
 }
 
-fn host_entry_from_owned(e: HandoffEntryOwned) -> Result<HostPrefixEntry, String> {
+fn host_entry_from_owned(
+    e: HandoffEntryOwned,
+    host: &mut HostPrefixCache,
+) -> Result<HostPrefixEntry, String> {
+    if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
+        return Err("host handoff layout version mismatch".into());
+    }
+    let sizes: Vec<_> =
+        e.kv.iter()
+            .flatten()
+            .chain(e.draft.iter())
+            .flat_map(|p| [p.k.len(), p.v.len()])
+            .collect();
+    let mut planes =
+        host.reserve_image(&(e.model.clone(), e.ns.clone()), &e.toks, e.bytes, &sizes)?;
     let mut kv = Vec::with_capacity(e.kv.len());
     for p in e.kv {
         kv.push(match p {
-            Some(p) => Some(host_plane_from_owned(p)?),
+            Some(p) => Some(host_plane_from_owned(p, &mut planes)?),
             None => None,
         });
     }
     let draft = match e.draft {
-        Some(p) => Some(host_plane_from_owned(p)?),
+        Some(p) => Some(host_plane_from_owned(p, &mut planes)?),
         None => None,
     };
     Ok(HostPrefixEntry {
@@ -9365,7 +9483,7 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
             }
             let t0 = Instant::now();
             let key: PoolKey = (e.model.clone(), e.ns.clone());
-            match host_entry_from_owned(e) {
+            match host_entry_from_owned(e, hpx) {
                 Ok(entry) => {
                     let (toks, bytes) = (entry.toks.len(), entry.bytes);
                     // Ordinary insert: identity/version re-checked, budget LRU and tenant
@@ -9395,7 +9513,9 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
                 Err(err) => {
                     // Pinned alloc failure: the tier's no-pageable-fallback latch posture.
                     hpx.rejected_allocs += 1;
-                    hpx.disable(&format!("handoff import pinned alloc failed: {err}"));
+                    if hpx.arena.is_none() {
+                        hpx.disable(&format!("handoff import pinned alloc failed: {err}"));
+                    }
                     eprintln!(
                         "[prefix-host] handoff import ABORTED at frame {} of {}: {err}; \
                          {} entries already imported stay resident, the rest serves cold",
@@ -13134,6 +13254,37 @@ pub fn run(
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
     // kv_host_budget_bytes). Feeds the device cache only: the restore path is untouched.
     let mut hpx = HostPrefixCache::new(kv_host_budget_bytes());
+    if glm5_tp_kv_host_on() {
+        let reserve = (|| -> Result<(), String> {
+            // Parse afresh and fail rather than silently clamp, shrink or disarm.
+            let mib = std::env::var("MEMRA_KV_HOST_MB")
+                .map_err(|e| format!("MEMRA_KV_HOST_MB: {e}"))?
+                .parse::<usize>()
+                .map_err(|e| format!("MEMRA_KV_HOST_MB: {e}"))?;
+            let bytes = mib
+                .checked_mul(1 << 20)
+                .filter(|n| *n > 0)
+                .ok_or("MEMRA_KV_HOST_MB must be positive and fit in bytes")?;
+            host_memory::check_headroom(bytes)?;
+            let start = Instant::now();
+            hpx.arena = Some(
+                memra_engine::PinnedHostArena::reserve(engine.ctx().clone(), bytes).map_err(
+                    |e| format!("startup pinned arena reserve failed: budget={bytes}: {e}"),
+                )?,
+            );
+            hpx.budget = bytes;
+            hpx.arena_reserve_ms = start.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "[prefix-host DEBUG] arena startup: reserve_ms={:.3} capacity={bytes} leased=0 free={bytes} request_pin_count=0",
+                start.elapsed().as_secs_f64() * 1000.0
+            );
+            Ok(())
+        })();
+        if let Err(err) = reserve {
+            let _ = ready_tx.send(Err(err));
+            return;
+        }
+    }
     // All models load before this point and are immutable throughout run().
     // A worker reload creates a new map/cache/context. Tokens bind images to
     // these exact loaded instances, even if names and device ordinals repeat.
@@ -13143,7 +13294,7 @@ pub fn run(
         if prefix_cache_budget_bytes() > 0 && serve_batching() {
             eprintln!(
                 "[prefix-host] on: budget {:.0}MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, \
-                 boot-clamped to MemAvailable x 0.6), plain byte-LRU, demote on device \
+                 startup budget policy), plain byte-LRU, demote on device \
                  capacity eviction, promote on exact-prefix probe; verify={} \
                  (MEMRA_KV_HOST_VERIFY); tenant share cap {}% = {:.0}MB \
                  (MEMRA_KV_HOST_TENANT_PCT)",
@@ -31158,6 +31309,20 @@ mod tests {
             id: 0,
             verify_digest: None,
         }
+    }
+
+    #[test]
+    fn host_cache_stale_generation_refused_before_promotion() {
+        let key = key("tenant-generation");
+        let mut h = HostPrefixCache::new(1024);
+        let mut entry = host_entry(&key, toks(super::PREFIX_CACHE_MIN_TOKENS), 64);
+        let generation = Arc::new(());
+        entry.model_generation = Some(generation.clone());
+        assert!(!h.generation_current(&entry));
+        h.model_generations.insert(key.0.clone(), generation);
+        assert!(h.generation_current(&entry));
+        h.model_generations.insert(key.0.clone(), Arc::new(()));
+        assert!(!h.generation_current(&entry));
     }
 
     #[test]

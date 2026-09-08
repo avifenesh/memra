@@ -21,10 +21,12 @@ struct Plane {
     stream: Stream,
 }
 impl Plane {
-    fn down(p: &CudaSlice<f32>) -> Result<Self, String> {
+    fn down(p: &CudaSlice<f32>, planes: &mut HostPlaneLeases) -> Result<Self, String> {
+        let mut data = planes.take(p.len() * 4)?;
+        data.copy_from_device_f32(p)
+            .map_err(|e| format!("pinned GLM copy failed: {e}"))?;
         Ok(Self {
-            data: memra_engine::PinnedHostBuf::from_device_f32(p)
-                .map_err(|e| format!("pinned GLM allocation/copy failed: {e}"))?,
+            data,
             stream: p.stream().clone(),
         })
     }
@@ -45,15 +47,23 @@ struct Latent {
     index_pools_ready: usize,
 }
 impl Latent {
-    fn down(p: &LatentPlaneSnapshot) -> Result<Self, String> {
+    fn down(p: &LatentPlaneSnapshot, planes: &mut HostPlaneLeases) -> Result<Self, String> {
         Ok(Self {
-            rows: Plane::down(&p.rows)?,
+            rows: Plane::down(&p.rows, planes)?,
             width: p.width,
             len: p.len,
             index_width: p.index_width,
             index_pool: p.index_pool,
-            index_tail: p.index_tail.as_ref().map(Plane::down).transpose()?,
-            index_pool_keys: p.index_pool_keys.as_ref().map(Plane::down).transpose()?,
+            index_tail: p
+                .index_tail
+                .as_ref()
+                .map(|p| Plane::down(p, planes))
+                .transpose()?,
+            index_pool_keys: p
+                .index_pool_keys
+                .as_ref()
+                .map(|p| Plane::down(p, planes))
+                .transpose()?,
             index_pools_ready: p.index_pools_ready,
         })
     }
@@ -95,45 +105,84 @@ pub(super) struct HostGlmState {
     draft: Option<Draft>,
 }
 impl HostGlmState {
-    pub(super) fn down(engine: &Engine, e: &PrefixEntry) -> Result<Self, String> {
+    pub(super) fn plane_sizes(e: &PrefixEntry) -> Vec<usize> {
+        fn latent(p: &LatentPlaneSnapshot, out: &mut Vec<usize>) {
+            out.push(p.rows.len() * 4);
+            out.extend(
+                p.index_tail
+                    .iter()
+                    .chain(&p.index_pool_keys)
+                    .map(|p| p.len() * 4),
+            );
+        }
+        let mut out = Vec::new();
+        for p in e.latent.iter().flatten() {
+            latent(p, &mut out);
+        }
+        if let Some(tp) = &e.tp {
+            for (c, s) in tp.recur.iter().flatten().flatten() {
+                out.extend([c.len() * 4, s.len() * 4]);
+            }
+            for p in tp.latent_peer.iter().flatten().flatten() {
+                latent(p, &mut out);
+            }
+        }
+        out.extend(e.conv.iter().chain(&e.ssm).flatten().map(|p| p.len() * 4));
+        if let Some(d) = &e.dspark_draft {
+            for (k, v) in &d.layers {
+                out.extend([k.len() * 4, v.len() * 4]);
+            }
+        }
+        out
+    }
+    pub(super) fn down(
+        engine: &Engine,
+        e: &PrefixEntry,
+        planes: &mut HostPlaneLeases,
+    ) -> Result<Self, String> {
         let latent = e
             .latent
             .iter()
-            .map(|p| p.as_ref().map(Latent::down).transpose())
+            .map(|p| p.as_ref().map(|p| Latent::down(p, planes)).transpose())
             .collect::<Result<_, _>>()?;
-        let tp = e
-            .tp
-            .as_ref()
-            .map(|tp| -> Result<Tp, String> {
-                let recur = tp
-                    .recur
-                    .iter()
-                    .map(|ps| {
-                        ps.as_ref()
-                            .map(|ps| {
-                                ps.iter()
-                                    .map(|(c, s)| Ok((Plane::down(c)?, Plane::down(s)?)))
-                                    .collect::<Result<Vec<_>, String>>()
-                            })
-                            .transpose()
+        let tp =
+            e.tp.as_ref()
+                .map(|tp| -> Result<Tp, String> {
+                    let recur = tp
+                        .recur
+                        .iter()
+                        .map(|ps| {
+                            ps.as_ref()
+                                .map(|ps| {
+                                    ps.iter()
+                                        .map(|(c, s)| {
+                                            Ok((Plane::down(c, planes)?, Plane::down(s, planes)?))
+                                        })
+                                        .collect::<Result<Vec<_>, String>>()
+                                })
+                                .transpose()
+                        })
+                        .collect::<Result<_, _>>()?;
+                    let latent_peer = tp
+                        .latent_peer
+                        .iter()
+                        .map(|ps| {
+                            ps.as_ref()
+                                .map(|ps| {
+                                    ps.iter()
+                                        .map(|p| Latent::down(p, planes))
+                                        .collect::<Result<Vec<_>, _>>()
+                                })
+                                .transpose()
+                        })
+                        .collect::<Result<_, _>>()?;
+                    Ok(Tp {
+                        recur,
+                        latent_peer,
+                        bytes: tp.bytes,
                     })
-                    .collect::<Result<_, _>>()?;
-                let latent_peer = tp
-                    .latent_peer
-                    .iter()
-                    .map(|ps| {
-                        ps.as_ref()
-                            .map(|ps| ps.iter().map(Latent::down).collect::<Result<Vec<_>, _>>())
-                            .transpose()
-                    })
-                    .collect::<Result<_, _>>()?;
-                Ok(Tp {
-                    recur,
-                    latent_peer,
-                    bytes: tp.bytes,
                 })
-            })
-            .transpose()?;
+                .transpose()?;
         Ok(Self {
             root_context: engine.ctx().clone(),
             pool_key: e.pool_key.clone(),
@@ -142,12 +191,12 @@ impl HostGlmState {
             conv: e
                 .conv
                 .iter()
-                .map(|p| p.as_ref().map(Plane::down).transpose())
+                .map(|p| p.as_ref().map(|p| Plane::down(p, planes)).transpose())
                 .collect::<Result<_, _>>()?,
             ssm: e
                 .ssm
                 .iter()
-                .map(|p| p.as_ref().map(Plane::down).transpose())
+                .map(|p| p.as_ref().map(|p| Plane::down(p, planes)).transpose())
                 .collect::<Result<_, _>>()?,
             draft: e
                 .dspark_draft
@@ -157,7 +206,7 @@ impl HostGlmState {
                         layers: d
                             .layers
                             .iter()
-                            .map(|(k, v)| Ok((Plane::down(k)?, Plane::down(v)?)))
+                            .map(|(k, v)| Ok((Plane::down(k, planes)?, Plane::down(v, planes)?)))
                             .collect::<Result<_, String>>()?,
                         base: d.base,
                         rows: d.rows,
@@ -487,7 +536,13 @@ mod tests {
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: ("model-a".into(), "tenant-a\u{1f}ns".into()),
             toks: (0..128).collect(),
-            kv: vec![None],
+            kv: vec![Some(PrefixPlane {
+                k: root.ctx().default_stream().clone_htod(&[71u8; 8]).unwrap(),
+                v: root.ctx().default_stream().clone_htod(&[81u8; 8]).unwrap(),
+                len: 8,
+                k_tok_bytes: 1,
+                v_tok_bytes: 1,
+            })],
             conv: vec![Some(peer.htod(&[40.0]).unwrap())],
             ssm: vec![Some(peer.htod(&[41.0]).unwrap())],
             latent: vec![Some(latent(root, 50.0))],
@@ -507,7 +562,7 @@ mod tests {
                 floor: 0,
             }),
             last_h: vec![0.125],
-            bytes: 2616,
+            bytes: 2632,
             last_use: Instant::now(),
             id: 0,
             segment: PrefixSegment::Probation,
@@ -526,6 +581,16 @@ mod tests {
         let src = entry(&root, &peer);
         let want = digest(&src).unwrap();
         let mut pool = HostPrefixCache::new(1 << 20);
+        super::host_memory::check_headroom(pool.budget).unwrap();
+        let start = Instant::now();
+        pool.arena =
+            Some(memra_engine::PinnedHostArena::reserve(root.ctx().clone(), pool.budget).unwrap());
+        eprintln!(
+            "[prefix-host DEBUG] arena startup: reserve_ms={:.3} capacity={} leased=0 free={}",
+            start.elapsed().as_secs_f64() * 1000.0,
+            pool.budget,
+            pool.budget
+        );
         pool.model_generations
             .insert("model-a".into(), Arc::new(()));
         let mut host = host_entry_from_device(&root, &mut pool, &src, Some(want.clone())).unwrap();
@@ -658,6 +723,30 @@ mod tests {
         assert_eq!(digest(&preflight.entries[&key][index]).unwrap(), expected);
         eprintln!(
             "host-glm: prepare_snapshot reserved bytes, respected lease, demoted and promoted real state PASS"
+        );
+        // Evict every image, poison the full backing, then reuse exactly that
+        // storage. Every owner plane must overwrite poison before publication.
+        pool.entries.clear();
+        pool.lru.clear();
+        pool.total_bytes = 0;
+        pool.tenant_bytes.clear();
+        let arena = pool.arena.as_ref().unwrap().clone();
+        assert_eq!(arena.bytes(), (pool.budget, 0, pool.budget));
+        let mut poison = arena.try_reserve_planes(&[pool.budget]).unwrap();
+        poison[0].as_mut_slice().fill(0xa5);
+        drop(poison);
+        let recycled = entry(&root, &peer);
+        let want = digest(&recycled).unwrap();
+        let host = host_entry_from_device(&root, &mut pool, &recycled, Some(want.clone())).unwrap();
+        assert_eq!(arena.bytes().1, recycled.bytes);
+        assert_eq!(
+            digest(&device_entry_from_host(&root, &host).unwrap()).unwrap(),
+            want
+        );
+        drop(host);
+        assert_eq!(arena.bytes(), (pool.budget, 0, pool.budget));
+        eprintln!(
+            "host-glm: startup victim + recycled victim + full plane overwrite + unchanged digest PASS"
         );
         // Typed pinned helpers reject partial floats and safely handle zero rows.
         let zero = root.htod(&[]).unwrap();
