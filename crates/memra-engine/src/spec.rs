@@ -7244,7 +7244,8 @@ impl HybridModel {
             // below normalises the handles, even T runs the scan in place), so the graph path's
             // per-replay handle swap stays correct. The post-row snapshots the checkpoint needs
             // land in the caller's slabs (stash) or in temporaries split into the per-column
-            // clones the rollback reads; the same bytes either way.
+            // clones the rollback reads; the same bytes either way. Resolve state through
+            // the per-round table so graph replay follows parity and new cache allocations.
             debug_assert_eq!(
                 qkv_w, conv_dim,
                 "packed conv reads qkv_mixed as [t, conv_dim]"
@@ -7253,7 +7254,8 @@ impl HybridModel {
             debug_assert_eq!(alpha_w, num_v);
             let conv_words = conv_dim * (d_conv - 1);
             let ssm_words = d_state * d_state * num_v;
-            let want_snap = ckpt.is_some();
+            // Captured graph bodies have no host checkpoint, but rollback still reads stash.
+            let want_snap = ckpt.is_some() || stash.is_some();
             let (mut conv_tmp, mut ssm_tmp) = (None, None);
             if want_snap && stash.is_none() {
                 conv_tmp = Some(e.uninit((t - 1) * conv_words)?);
@@ -7266,9 +7268,7 @@ impl HybridModel {
             let mut beta_b = e.uninit(t * num_v)?;
             let mut g_log = e.uninit(t * num_v)?;
             {
-                let rl = cache.recur[il]
-                    .as_mut()
-                    .ok_or("qwen35 linear verify layer has no recurrent state")?;
+                let state_ptrs = table.slice(toff..toff + 3);
                 let (conv_snap, ssm_snap): (
                     Option<&mut CudaSlice<f32>>,
                     Option<&mut CudaSlice<f32>>,
@@ -7278,7 +7278,7 @@ impl HybridModel {
                 };
                 e.ssm_conv1d_fused_decode_tloop(
                     &qkv_mixed,
-                    &mut rl.conv_state,
+                    &state_ptrs,
                     la.ssm_conv1d.float_data(),
                     &mut conv_outs,
                     conv_snap,
@@ -7305,19 +7305,18 @@ impl HybridModel {
                     conv_dim,
                     t,
                 )?;
-                let crate::cache::RecurLayer {
-                    ssm_state,
-                    ssm_state_alt,
-                    ..
-                } = rl;
-                let out = if t % 2 == 1 {
-                    Some(ssm_state_alt)
-                } else {
-                    None
-                };
                 e.gdn_scan_s128_tsnap(
-                    &q_l2, &k_l2, &v_gd, &g_log, &beta_b, ssm_state, out, &mut o_all, num_v, t,
-                    gdn_scale, ssm_snap,
+                    &q_l2,
+                    &k_l2,
+                    &v_gd,
+                    &g_log,
+                    &beta_b,
+                    &state_ptrs,
+                    &mut o_all,
+                    num_v,
+                    t,
+                    gdn_scale,
+                    ssm_snap,
                 )?;
             }
             if let (Some(ct), Some(st)) = (conv_tmp.as_ref(), ssm_tmp.as_ref()) {

@@ -28,9 +28,25 @@ fn bit_diffs(a: &[f32], b: &[f32]) -> usize {
 #[test]
 #[ignore = "needs a CUDA device, run under flock on the lane box"]
 fn gpu_gdn_packed_matches_per_row_bitwise() {
+    packed_matches_per_row(2, 4, false);
+}
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock on the lane box"]
+fn gpu_gdn_packed_ornith_matches_per_row_bitwise() {
+    packed_matches_per_row(16, 32, false);
+}
+
+#[test]
+#[ignore = "needs a CUDA device, run under flock on the lane box"]
+fn gpu_gdn_packed_graph_rebind_matches_per_row_bitwise() {
+    packed_matches_per_row(2, 4, true);
+    packed_matches_per_row(16, 32, true);
+}
+
+fn packed_matches_per_row(num_k: usize, num_v: usize, graph_rebind: bool) {
     let e = Engine::new(0).expect("CUDA engine on device 0");
-    // A small qwen35-shaped linear layer: d_state 128 (the s128 scan), 2 key heads, 4 value heads.
-    let (d_state, num_k, num_v, d_conv) = (128usize, 2usize, 4usize, 4usize);
+    let (d_state, d_conv) = (128usize, 4usize);
     let key_dim = d_state * num_k;
     let value_dim = d_state * num_v;
     let conv_dim = key_dim * 2 + value_dim;
@@ -42,7 +58,7 @@ fn gpu_gdn_packed_matches_per_row_bitwise() {
     let dt_bias = e.htod(&varied(num_v, 2, 0.5)).expect("dt");
     let a = e.htod(&varied(num_v, 3, 1.0)).expect("a");
     let mut cells = 0usize;
-    for (ti, &t) in [2usize, 3, 5, 8].iter().enumerate() {
+    for (ti, &t) in [2usize, 3, 4, 5, 6, 7, 8].iter().enumerate() {
         let conv0 = varied(conv_dim * pad, 10 + ti as u64, 1.0);
         let ssm0 = varied(state_words, 20 + ti as u64, 0.3);
         let qkv = e
@@ -132,86 +148,142 @@ fn gpu_gdn_packed_matches_per_row_bitwise() {
         let ref_final_conv = e.dtoh(&conv_state).expect("final conv");
 
         // ---- packed: one launch per kernel over all T rows ----
-        let mut conv_state_p = e.htod(&conv0).expect("conv0 p");
-        let mut s0p = e.htod(&ssm0).expect("ssm0 p");
-        let mut s1p = e.zeros(state_words).expect("alt p");
+        let conv_state_p = e.htod(&conv0).expect("conv0 p");
+        let s0p = e.htod(&ssm0).expect("ssm0 p");
+        let s1p = e.zeros(state_words).expect("alt p");
         let mut conv_outs = e.uninit(t * conv_dim).expect("cos");
         let mut snap_conv = e.zeros((t - 1) * conv_dim * pad).expect("snap c");
         let mut snap_ssm = e.zeros((t - 1) * state_words).expect("snap s");
-        e.ssm_conv1d_fused_decode_tloop(
-            &qkv,
-            &mut conv_state_p,
-            &w,
-            &mut conv_outs,
-            Some(&mut snap_conv),
-            conv_dim,
-            d_conv,
-            t,
-        )
-        .expect("conv tloop");
         let mut q_l2 = e.uninit(t * value_dim).expect("q");
         let mut k_l2 = e.uninit(t * value_dim).expect("k");
         let mut v_g = e.uninit(t * value_dim).expect("v");
         let mut beta_b = e.uninit(t * num_v).expect("b");
         let mut g_log = e.uninit(t * num_v).expect("g");
-        e.gdn_prep_decode_b(
-            &conv_outs,
-            &beta_raw,
-            &alpha,
-            &dt_bias,
-            &a,
-            &mut q_l2,
-            &mut k_l2,
-            &mut v_g,
-            &mut beta_b,
-            &mut g_log,
-            d_state,
-            num_v,
-            num_k,
-            key_dim,
-            eps,
-            conv_dim,
-            t,
-        )
-        .expect("prep packed");
         let mut o_all = e.uninit(t * value_dim).expect("o all");
-        e.gdn_scan_s128_tsnap(
-            &q_l2,
-            &k_l2,
-            &v_g,
-            &g_log,
-            &beta_b,
-            &mut s0p,
-            if t % 2 == 1 { Some(&mut s1p) } else { None },
-            &mut o_all,
-            num_v,
-            t,
-            scale,
-            Some(&mut snap_ssm),
-        )
-        .expect("scan tsnap");
+        let mut table = e
+            .htod_u64(&state_ptrs(&e, &conv_state_p, &s0p, &s1p))
+            .expect("packed table");
+        let graph = {
+            let mut run = |e: &Engine| {
+                e.ssm_conv1d_fused_decode_tloop(
+                    &qkv,
+                    &table.slice(0..3),
+                    &w,
+                    &mut conv_outs,
+                    Some(&mut snap_conv),
+                    conv_dim,
+                    d_conv,
+                    t,
+                )
+                .expect("conv tloop");
+                e.gdn_prep_decode_b(
+                    &conv_outs,
+                    &beta_raw,
+                    &alpha,
+                    &dt_bias,
+                    &a,
+                    &mut q_l2,
+                    &mut k_l2,
+                    &mut v_g,
+                    &mut beta_b,
+                    &mut g_log,
+                    d_state,
+                    num_v,
+                    num_k,
+                    key_dim,
+                    eps,
+                    conv_dim,
+                    t,
+                )
+                .expect("prep packed");
+                e.gdn_scan_s128_tsnap(
+                    &q_l2,
+                    &k_l2,
+                    &v_g,
+                    &g_log,
+                    &beta_b,
+                    &table.slice(0..3),
+                    &mut o_all,
+                    num_v,
+                    t,
+                    scale,
+                    Some(&mut snap_ssm),
+                )
+                .expect("scan tsnap");
+                Ok(())
+            };
+            if graph_rebind {
+                Some(e.capture_graph_retained(&mut run).expect("capture packed"))
+            } else {
+                run(&e).expect("packed eager");
+                None
+            }
+        };
+        for replay in 0..if graph_rebind { 2 } else { 1 } {
+            // Keep the capture-time buffers alive but replace every cache allocation. On the
+            // second replay also reverse canonical/alt addresses, as an odd verify round does.
+            let rebound = graph.as_ref().map(|(graph, _keeper)| {
+                let conv = e.htod(&conv0).expect("rebound conv");
+                let mut first = e.zeros(state_words).expect("rebound first");
+                let mut second = e.zeros(state_words).expect("rebound second");
+                let (canonical, alt) = if replay == 0 {
+                    e.htod_f32_into(&ssm0, &mut first).expect("canonical first");
+                    (first, second)
+                } else {
+                    e.htod_f32_into(&ssm0, &mut second)
+                        .expect("canonical second");
+                    (second, first)
+                };
+                e.htod_u64_into(&state_ptrs(&e, &conv, &canonical, &alt), &mut table)
+                    .expect("refresh table");
+                graph.launch().expect("replay packed");
+                (conv, canonical, alt)
+            });
+            let (conv_state_p, s0p, s1p) =
+                rebound
+                    .as_ref()
+                    .map(|(c, s, a)| (c, s, a))
+                    .unwrap_or((&conv_state_p, &s0p, &s1p));
 
-        let got_conv_out = e.dtoh(&conv_outs).expect("cos h");
-        let got_o = e.dtoh(&o_all).expect("o h");
-        // odd t landed in the alt buffer, even t ran in place: the per-row parity
-        let got_final_ssm = e
-            .dtoh(if t % 2 == 1 { &s1p } else { &s0p })
-            .expect("final p");
-        let got_final_conv = e.dtoh(&conv_state_p).expect("final conv p");
-        let got_snap_conv = e.dtoh(&snap_conv).expect("snap c h");
-        let got_snap_ssm = e.dtoh(&snap_ssm).expect("snap s h");
-        for (what, r, g) in [
-            ("conv_out", &ref_conv_out, &got_conv_out),
-            ("scan o", &ref_o, &got_o),
-            ("final ssm state", &ref_final_ssm, &got_final_ssm),
-            ("final conv ring", &ref_final_conv, &got_final_conv),
-            ("conv snapshots", &ref_snap_conv, &got_snap_conv),
-            ("ssm snapshots", &ref_snap_ssm, &got_snap_ssm),
-        ] {
-            let d = bit_diffs(r, g);
-            assert_eq!(d, 0, "t={t}: {what} differs in {d} of {} words", r.len());
-            cells += 1;
+            let got_conv_out = e.dtoh(&conv_outs).expect("cos h");
+            let got_o = e.dtoh(&o_all).expect("o h");
+            // odd t landed in the alt buffer, even t ran in place: the per-row parity
+            let got_final_ssm = e.dtoh(if t % 2 == 1 { s1p } else { s0p }).expect("final p");
+            let got_final_conv = e.dtoh(conv_state_p).expect("final conv p");
+            let got_snap_conv = e.dtoh(&snap_conv).expect("snap c h");
+            let got_snap_ssm = e.dtoh(&snap_ssm).expect("snap s h");
+            for (what, r, g) in [
+                ("conv_out", &ref_conv_out, &got_conv_out),
+                ("scan o", &ref_o, &got_o),
+                ("final ssm state", &ref_final_ssm, &got_final_ssm),
+                ("final conv ring", &ref_final_conv, &got_final_conv),
+                ("conv snapshots", &ref_snap_conv, &got_snap_conv),
+                ("ssm snapshots", &ref_snap_ssm, &got_snap_ssm),
+            ] {
+                assert!(
+                    r.iter().chain(g.iter()).all(|x| x.is_finite()),
+                    "t={t}: {what} is not finite"
+                );
+                let d = bit_diffs(r, g);
+                assert_eq!(d, 0, "t={t}: {what} differs in {d} of {} words", r.len());
+                cells += 1;
+            }
         }
     }
-    eprintln!("[gdn-packed] {cells} cells bit-identical (T in 2,3,5,8)");
+    eprintln!(
+        "[gdn-packed] graph_rebind={graph_rebind} num_k={num_k} num_v={num_v}: {cells} cells bit-identical (T in 2..=8)"
+    );
+}
+
+fn state_ptrs(
+    e: &Engine,
+    conv: &cudarc::driver::CudaSlice<f32>,
+    canonical: &cudarc::driver::CudaSlice<f32>,
+    alt: &cudarc::driver::CudaSlice<f32>,
+) -> [u64; 3] {
+    let stream = e.stream();
+    let (c, _gc) = conv.device_ptr(&stream);
+    let (s, _gs) = canonical.device_ptr(&stream);
+    let (a, _ga) = alt.device_ptr(&stream);
+    [c, s, a]
 }
