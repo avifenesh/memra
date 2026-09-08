@@ -33,7 +33,7 @@ changes between distinct states must not change any retained graph. Prime both
 scored states from the same OFF prefix; qualification states are separate.
 
 Keep the existing plain TP2 attention/expert-ID EP device-cache topology,
-capacity1024 with replay input position below512, 256 prime and 256 sampled
+capacity520 (PRIME + OUTPUT + 8, matching both helpers) with replay input position below512, 256 prime and 256 sampled
 outputs, source prompt/seed20260907, vendor-default temperature1/top-p1/top-k0,
 MEMRA_DSV4_FMAD=0. Pin artifact revision, full weight manifest, tokenizer/config,
 source tape, launcher environment, binary, source and per-file provenance.
