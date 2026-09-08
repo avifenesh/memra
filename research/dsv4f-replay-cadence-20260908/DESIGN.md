@@ -44,8 +44,10 @@ three variants, compares all pending/store bytes over 512 changing positions
 plus nine decreasing/wrap positions on each GPU, checks nonzero seeded state,
 token/position/ring-slot and full-u64 input freshness, and validates device
 variant counters/censuses. It makes no sampling/model claim. The actual Rust
-owner test extends partial-submit/capture cleanup to every slot and checks live
-controls through all slots; the paired completion policy subprocess regression
+owner test extends partial submission through every slot and checks live controls
+through all slots. Capture-body/aborted-end failures cover the original slot 0
+and cadence slot 3 while earlier slots 0/2 remain retained; no actual allocation
+failure inside cudaGraphInstantiate is claimed. The paired completion policy subprocess regression
 remains required because owner storage dimensions changed.
 
 The model gate compares full replay with cadence replay at every generated

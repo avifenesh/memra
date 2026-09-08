@@ -57,7 +57,7 @@ static void compressor(int ratio,int dim,bool rotate) {
     const bool overlap=ratio==4;
     const int latent=overlap?2*dim:dim, pending_rows=overlap?8:128, rd=64;
     const int store_rows=512/ratio+1;
-    auto input=a.alloc<unsigned long long>(3), counts=a.alloc<unsigned long long>(4);
+    auto input=a.alloc<uint64_t>(3), counts=a.alloc<uint64_t>(4);
     auto kv=a.alloc<float>(latent), sc=a.alloc<float>(latent);
     auto ape=a.alloc<float>(ratio*latent), norm=a.alloc<float>(dim), rope=a.alloc<float>(512*rd);
     a.write(ape,values(ratio*latent,7)); a.write(norm,std::vector<float>(dim,1));
@@ -92,7 +92,7 @@ static void compressor(int ratio,int dim,bool rotate) {
         nodes[variant]=census[1];
         insist(census[6]==0 && census[1]==3+(emits?(5+int(rotate)+4*int(overlap)):0),"cadence node omission");
     }
-    insist(a.read(counts,4)==std::vector<unsigned long long>(4,0),"capture executed controls");
+    insist(a.read(counts,4)==std::vector<uint64_t>(4,0),"capture executed controls");
     a.equal(full.kv,candidate.kv,pending_rows*latent,"capture mutated pending state");
     a.equal(full.store,candidate.store,store_rows*dim,"capture mutated store");
     std::vector<int> positions;
@@ -100,12 +100,12 @@ static void compressor(int ratio,int dim,bool rotate) {
     // These address tests intentionally reuse nonzero planes at decreasing positions.
     // They do not claim a valid whole-model prefix without a prefix restore.
     for(int p:{300,3,127,128,511,4,383,259,256}) positions.push_back(p);
-    std::vector<unsigned long long> expected(4,0);
+    std::vector<uint64_t> expected(4,0);
     for(size_t step=0;step<positions.size();++step) {
         int pos=positions[step], variant=(pos+1)%128==0?3:((pos+1)%4==0?2:1);
         unsigned token=unsigned((step*37+13)%4096);
-        unsigned long long uniform=0x6a09e667f3bcc909ull ^ ((step+1)*0x9e3779b97f4a7c15ull);
-        std::vector<unsigned long long> words{token|(static_cast<unsigned long long>(pos)<<32),uniform,0};
+        uint64_t uniform=0x6a09e667f3bcc909ull ^ ((step+1)*0x9e3779b97f4a7c15ull);
+        std::vector<uint64_t> words{token|(static_cast<uint64_t>(pos)<<32),uniform,0};
         a.write(input,words); a.write(kv,values(latent,int(step))); a.write(sc,values(latent,int(step)+7));
         kernel_check(memra_dsv4_replay_launch(a.executable[0],a.stream));
         kernel_check(memra_dsv4_replay_launch(a.executable[variant],a.stream));
@@ -122,7 +122,9 @@ static void compressor(int ratio,int dim,bool rotate) {
         insist(a.read(counts,4)==expected,"actual variant counter differs");
     }
     printf("PASS cadence compressor ratio=%d dim=%d rotate=%d positions=%zu captures=4 nodes=[%llu,%llu,%llu,%llu] replays=[%llu,%llu,%llu,%llu] full_replay_bit_equal=1 decreasing_positions=1 full_u64_uniform_fresh=1 actual_sampling=0 model_layers=0\n",
-        ratio,dim,int(rotate),positions.size(),nodes[0],nodes[1],nodes[2],nodes[3],expected[0],expected[1],expected[2],expected[3]);
+        ratio,dim,int(rotate),positions.size(),nodes[0],nodes[1],nodes[2],nodes[3],
+        static_cast<unsigned long long>(expected[0]),static_cast<unsigned long long>(expected[1]),
+        static_cast<unsigned long long>(expected[2]),static_cast<unsigned long long>(expected[3]));
 }
 int main() try {
     int n=0;check(cudaGetDeviceCount(&n));insist(n==2,"exact visible pair required");
