@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+glm5-tp2-gpu-sampler-20260908 | Three-observation medians: 81.821 -> 91.577 wall tok/s (+11.92%), and 11.875 -> 10.610 server ms/token. | RESULTS.md
+
 gpuwatch-startup-20260908 | The candidate recovered after two startup hangs and returned HTTP 200; the old binary stayed HTTP 503 after probes resumed. | RESULTS.md
 
 8bit-decision-20260803 | Hybrid, with a promotion gate. Q8_0 GGUF is the serving arm NOW; FP8-E4M3 safetensors is the hard-tuning development track, promoted to serving only when it beats the Q8_0 arm ≥1.1x e2e... | DECISION.md

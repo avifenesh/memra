@@ -1,0 +1,14 @@
+{
+  "base_commit": "001c09e5d451798ef8d570f6087dc11527cbcc19",
+  "source_manifest_sha256": "a2ef4095ba912a3b80735d1627509ce78eaef07117920233579d5a1ec56eb96f",
+  "stock_binary_sha256": "849a3947d6c5a1dd648483aee1408f257972efbbd45e3832a458a8ae0e27d14b",
+  "hardware": "2x NVIDIA B200, 183359 MiB each",
+  "cuda": "13.1.115",
+  "rust": "1.97.1",
+  "environment": {
+    "MEMRA_CUDA_ARCH": "100a",
+    "MEMRA_GPU_LOCK": "/tmp/memra-gpu.lock",
+    "nice": 19,
+    "cargo_jobs": 16
+  }
+}
