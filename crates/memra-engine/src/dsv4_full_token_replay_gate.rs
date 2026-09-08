@@ -52,6 +52,31 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
         }
     }
 }
+fn forward_kernel_census(graph_splitk: bool) -> [(usize, u64); 3] {
+    // Each of 43 layers replaces one GU and one down node with two passes each.
+    let extra = if graph_splitk { 86 + 86 - 43 - 43 } else { 0 };
+    [(0, 2741 + extra), (2, 3140 + extra), (3, 3240 + extra)]
+}
+
+fn check_expert_nodes(dot: &str, graph_splitk: bool, forward: bool) {
+    let count = |name: &str| {
+        dot.lines()
+            .filter(|line| line.contains("| {ID |") && line.contains(name))
+            .count()
+    };
+    let splitk_nodes = if forward && graph_splitk { 86 } else { 0 };
+    let sktail_nodes = if forward && !graph_splitk { 43 } else { 0 };
+    assert_eq!(count("moe_m1_graph_splitk_partial_kernel"), splitk_nodes);
+    assert_eq!(count("moe_m1_graph_splitk_reduce_kernel"), splitk_nodes);
+    assert_eq!(count("moe_kq_sktail_gu_kernel"), sktail_nodes);
+    assert_eq!(count("moe_kq_sktail_kernel"), sktail_nodes);
+    assert_eq!(
+        count("moe_m1_splitk_partial_kernel"),
+        0,
+        "host-adaptive class"
+    );
+}
+
 fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
     assert_eq!(
         gpu.full_token_replay_captures_for_gate(state).unwrap(),
@@ -74,7 +99,7 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
             .full_token_replay_variant_census_for_gate(state)
             .unwrap()
         {
-            for (slot, kernels) in [(0, 2741), (2, 3140), (3, 3240)] {
+            for (slot, kernels) in forward_kernel_census(memra_engine::moe_m1_graph_splitk_on()) {
                 assert_eq!(rank[slot][1], kernels, "cadence kernel census slot {slot}");
                 assert_eq!(
                     [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
@@ -469,6 +494,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     use memra_engine::dsv4_gpu::Dsv4Phase;
     let cadence = memra_engine::dsv4_gpu::dsv4_replay_cadence_default();
     let dense = memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate();
+    let graph_splitk = memra_engine::moe_m1_graph_splitk_on();
     assert_eq!(std::env::var("MEMRA_DSV4_NVTX").as_deref(), Ok("1"));
     assert_ne!(
         std::env::var("MEMRA_DSV4_ROUND_PROFILE").as_deref(),
@@ -499,7 +525,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     }
     assert_eq!(prefix.pos, 368);
     println!(
-        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
+        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"graph_splitk_on":{graph_splitk},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
         sha256_tokens(&prefix_tape)
     );
     let mut control = state(gpu);
@@ -520,6 +546,18 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     std::fs::create_dir_all("profile-graphs").unwrap();
     gpu.dump_full_token_replay_for_gate(&candidate, Path::new("profile-graphs"))
         .unwrap();
+    for rank in 0..2 {
+        for segment in 0..if cadence { 4 } else { 2 } {
+            let dot = std::fs::read_to_string(format!(
+                "profile-graphs/full-token-rank{rank}-segment{segment}.dot"
+            ))
+            .unwrap();
+            check_expert_nodes(&dot, graph_splitk, segment != 1);
+            println!(
+                "PROFILE_CENSUS rank={rank} segment={segment} graph_splitk={graph_splitk} passed=true"
+            );
+        }
+    }
     let mut oracle = None;
     for graph_arm in [false, true] {
         let active = if graph_arm {
@@ -589,7 +627,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             oracle = Some(result);
         }
         println!(
-            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
+            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"graph_splitk_on":{graph_splitk},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
             if graph_arm { "graph" } else { "eager" },
             sha256_tokens(&tokens)
         );
@@ -602,4 +640,40 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
         }
     }
     println!("PASS separate profile-only eager/replay windows; no scored rate");
+}
+
+#[cfg(test)]
+mod profile_census_tests {
+    use super::{check_expert_nodes, forward_kernel_census};
+
+    #[test]
+    fn forward_census_keeps_off_and_replaces_both_expert_nodes_on() {
+        assert_eq!(
+            forward_kernel_census(false),
+            [(0, 2741), (2, 3140), (3, 3240)]
+        );
+        assert_eq!(
+            forward_kernel_census(true),
+            [(0, 2827), (2, 3226), (3, 3326)]
+        );
+    }
+
+    #[test]
+    fn expert_census_requires_active_policy_and_ignores_non_nodes() {
+        let off =
+            "| {ID | 1 moe_kq_sktail_gu_kernel }\n| {ID | 2 moe_kq_sktail_kernel }\n".repeat(43);
+        let on = "| {ID | 1 moe_m1_graph_splitk_partial_kernel }\n| {ID | 2 moe_m1_graph_splitk_reduce_kernel }\n".repeat(86);
+        check_expert_nodes(&off, false, true);
+        check_expert_nodes(&on, true, true);
+        assert!(std::panic::catch_unwind(|| check_expert_nodes(&off, true, true)).is_err());
+        assert!(std::panic::catch_unwind(|| check_expert_nodes(&on, false, true)).is_err());
+        let missing_reduce = on.replacen("| {ID | 2", "edge 2", 1);
+        assert!(
+            std::panic::catch_unwind(|| check_expert_nodes(&missing_reduce, true, true)).is_err()
+        );
+        for policy in [false, true] {
+            check_expert_nodes("graph moe_m1_graph_splitk_partial_kernel\n", policy, false);
+            assert!(std::panic::catch_unwind(|| check_expert_nodes(&on, policy, false)).is_err());
+        }
+    }
 }
