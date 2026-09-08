@@ -1,15 +1,30 @@
 # GLM-5.3-Flash DFlash2 on the symmetric TP-2 walk
 
-Status: stage 1 only. The requested grouped-prime reuse cannot retain an exact
-verify contract without changing the numerical execution seam. No runtime code,
-flag default, serving admission, or graph dispatch changes in this commit.
+Status: stage 2 implemented, qualification pending. The owner corrected the
+contract after stage 1: use the decode split's per-row expert program, not F16
+grouped prime, and implement the row/state interfaces in this lane. The original
+inspection below is retained as the record of the starting constraints.
+
+Stage 2 uses t-row KDA and MLA/DSA with rows-exact projections, rank-local replay
+stashes, the decode expert partial program per row, a t-row one-shot reduction,
+and unfused HC post for t>1. Anchor-only rounds use the existing symmetric t=1
+layer. Root drafts/accepts and broadcasts IDs; rollback validates both ranks before
+mutation and synchronizes both streams before returning. Request preconditions
+fail closed to plain; an error after mutation fails the request. Graph capture is
+not part of this stage.
+
+Corrected pair gates: O1 is K=0 versus plain TP greedy tape, exact. O2 compares
+TP spec K=6 against PP spec K=6 using per-row argmax and a declared numeric band,
+plus accepted-token sequence identity over 160 output tokens. O3 compares t-row
+verify target logits against sequential plain TP logits on identical input IDs,
+bit for bit. None of these pair gates can run on the single-card tune host.
 
 Engine inspection pin: `dcfeab7c738912a150ebbfea277112724bb99de4` (`origin/main`,
 including #325). All source line numbers below refer to this pin. Branch:
 `lane/glm5-tp2-dflash-20260909`. Session:
 https://claude.ai/code/session_01TFyR32RLUiSejCgrPm5nNj
 
-## Decision and the three hardest constraints
+## Stage-1 inspection: the three hardest constraints
 
 1. **Grouped prime is not the decode-exact expert program.**
    `hybrid_forward.rs:16296` explicitly calls it a band class and declines
@@ -155,7 +170,7 @@ It is not a TP graph state implementation. Do not pass it to the new symmetric
 verify path until its checkpoint ownership includes both ranks. Grouped prime's
 host CSR construction also cannot simply be enclosed in CUDA capture.
 
-## Exactness and qualification plan
+## Stage-1 qualification proposal (superseded by O1-O3 above)
 
 Construction claims available after the required changes: one authoritative
 draft/accept decision; identical broadcast IDs; rank-ordered AR results equal
@@ -198,7 +213,7 @@ After the seam is implemented, put the orchestrator-scheduled script in
 recipes and rollback under the pair's existing deployment authority. Do not
 execute it from this lane.
 
-## Stage evidence
+## Stage-1 evidence
 
 Stage 1: direct source and existing receipt inspection only. No cargo, gate,
 server, benchmark or CI invocation on the local rig or any GPU host. No

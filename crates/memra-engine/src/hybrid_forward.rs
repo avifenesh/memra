@@ -3005,6 +3005,38 @@ impl HybridModel {
             .map(|rt| rt.ranks())
     }
 
+    pub fn glm5_has_tp_shards(&self) -> bool {
+        self.layers.iter().any(|l| match &l.mixer {
+            Mixer::Kda(k) => k.tp.is_some(),
+            Mixer::Mla(m) => m.tp.is_some(),
+            _ => false,
+        })
+    }
+
+    /// Request admission, before any speculative cache or prompt mutation.
+    pub fn glm5_tp_spec_refusal(&self) -> Option<&'static str> {
+        let rt = self.glm5_tp_rt_for(0, self.layers.len());
+        crate::glm5_tp_spec::Admission {
+            enabled: crate::glm_spec::glm5_spec_tp_on(),
+            ranks: rt.as_ref().map_or(0, |r| r.ranks()),
+            all_layers: rt.is_some(),
+            peer_ar: rt.as_ref().is_some_and(|r| r.ar_1stage_available()),
+            split_experts: self.layers.iter().all(|l| {
+                l.tp_glue.len() == 1
+                    && match &l.ffn {
+                        crate::hybrid::Ffn::Moe(m) => {
+                            m.glm5_tp_split.is_some() && l.tp_glue[0].router.is_some()
+                        }
+                        crate::hybrid::Ffn::Dense { .. } => true,
+                    }
+            }),
+            dflash: self.glm5_dflash.is_some(),
+            batch: crate::glm_spec::glm5_verify_batch_on(),
+            graphs: crate::glm5_verify_graph_on(),
+        }
+        .refusal()
+    }
+
     /// Capture the per-rank state of a glm5 TP session for a prefix entry: every rank's KDA
     /// shard and every peer's latent plane, each cloned ON ITS OWN DEVICE (lane/glm5-tp-prefix,
     /// 2026-09-07). `Ok(None)` when the model is not TP-sharded. `pos` is the cache boundary the
@@ -3196,7 +3228,7 @@ impl HybridModel {
         Ok(())
     }
 
-    fn glm5_tp_rt_for(
+    pub(crate) fn glm5_tp_rt_for(
         &self,
         lo: usize,
         hi: usize,
@@ -3215,6 +3247,154 @@ impl HybridModel {
             rt.get_or_insert(this);
         }
         rt
+    }
+
+    /// Eager speculative rows on the symmetric walk. Mixer projections use the
+    /// decode-exact row kernels; expert partials run the existing t=1 slot program
+    /// per row before one t-row reduction. HC post is deliberately unfused here.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn glm5_tp_verify_symmetric(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        mut x: CudaSlice<f32>,
+        pos: &CudaSlice<i32>,
+        t: usize,
+        cache: &mut Cache,
+        stashes: &mut [Option<crate::glm5_tp::Glm5TpKdaVerifyStash>],
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let rt = self
+            .glm5_tp_rt_for(0, self.layers.len())
+            .ok_or("TP verify requires symmetric glue on every layer")?;
+        if rt.ranks() != 2 || !rt.ar_1stage_available() {
+            return Err("TP verify requires a real two-rank all-reduce".into());
+        }
+        let peer = &rt.peers[0];
+        let hop = rt.hop(e);
+        let n = self.cfg.n_embd as usize;
+        let eps = self.cfg.rms_eps;
+        let mut xp = crate::tp_transport::fanout_f32(&hop, &x, x.len())?
+            .pop()
+            .ok_or("TP verify residual broadcast missing")?;
+        let pp = crate::tp_transport::fanout_i32(&hop, pos, t)?
+            .pop()
+            .ok_or("TP verify positions broadcast missing")?;
+        // PMIN0 can leave only the anchor. Preserve the plain symmetric layer's
+        // exact t=1 dispatch, including its fused HC and shared expert choices.
+        if t == 1 {
+            let mut ws = crate::hyper::HyperDecodeWs::new(e, topology, n)?;
+            let mut wsp = crate::hyper::HyperDecodeWs::new(peer, topology, n)?;
+            for il in 0..self.layers.len() {
+                self.sym_layer_step(
+                    e, peer, &rt, topology, il, &mut x, &mut xp, &mut ws, &mut wsp, pos, &pp, cache,
+                )?;
+                self.glm5_hc_tap(e, cache, topology, il, &x, 1)?;
+            }
+            return Ok(x);
+        }
+        for (il, stash) in stashes.iter_mut().enumerate().take(self.layers.len()) {
+            let (layer, hyper) = self.ws_layer(il)?;
+            let glue = &layer.tp_glue[0];
+            let (y, mix) = crate::hyper::pre_exact(e, topology, &hyper.attn, &x, t, n)?;
+            let (yp, mixp) = crate::hyper::pre_exact(peer, topology, &glue.hyper.attn, &xp, t, n)?;
+            let mut h = e.uninit(t * n)?;
+            let mut hp = peer.uninit(t * n)?;
+            e.rms_norm(&y, layer.attn_norm.float_data(), &mut h, n, t, eps)?;
+            peer.rms_norm(&yp, glue.attn_norm.float_data(), &mut hp, n, t, eps)?;
+            let mut mixed = match &layer.mixer {
+                Mixer::Kda(la) => {
+                    let (mut parts, saved) = crate::glm5_tp::kda_tp_partials_sym_verify(
+                        e,
+                        la,
+                        &[&h, &hp],
+                        t,
+                        eps,
+                        cache,
+                        il,
+                    )?;
+                    *stash = Some(saved);
+                    let (a, b) = parts.split_at_mut(1);
+                    if !rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n)? {
+                        return Err("TP verify KDA all-reduce declined".into());
+                    }
+                    parts
+                }
+                Mixer::Mla(mla) => self.mla_tp_attn_cached_sym_rows(
+                    e,
+                    mla,
+                    &[&h, &hp],
+                    &[pos, &pp],
+                    t,
+                    il,
+                    cache,
+                    true,
+                )?,
+                _ => return Err("TP verify only supports KDA and MLA".into()),
+            };
+            x = crate::hyper::post(e, topology, &mixed[0], &x, &mix, t, n)?;
+            xp = crate::hyper::post(peer, topology, &mixed[1], &xp, &mixp, t, n)?;
+            let (y, mix) = crate::hyper::pre_exact(e, topology, &hyper.mlp, &x, t, n)?;
+            let (yp, mixp) = crate::hyper::pre_exact(peer, topology, &glue.hyper.mlp, &xp, t, n)?;
+            e.rms_norm(&y, layer.post_attn_norm.float_data(), &mut h, n, t, eps)?;
+            peer.rms_norm(&yp, glue.post_attn_norm.float_data(), &mut hp, n, t, eps)?;
+            // Keep the decode split's per-row numeric program, including routing,
+            // Q8 activation quantization, macro folds and shared-expert placement.
+            // F16 grouped prime is intentionally absent from verification.
+            mixed = vec![e.uninit(t * n)?, peer.uninit(t * n)?];
+            for row in 0..t {
+                let mut z = e.uninit(n)?;
+                let mut zp = peer.uninit(n)?;
+                e.dtod_copy_view(&h.slice(row * n..(row + 1) * n), &mut z)?;
+                peer.dtod_copy_view(&hp.slice(row * n..(row + 1) * n), &mut zp)?;
+                let parts = match &layer.ffn {
+                    crate::hybrid::Ffn::Moe(m) => Self::moe_ffn_glm5_tp_split_sym(
+                        e,
+                        m,
+                        m.glm5_tp_split
+                            .as_ref()
+                            .ok_or("TP verify missing expert split")?,
+                        &[&z, &zp],
+                        None,
+                        glue.router.as_ref().ok_or("TP verify missing router")?,
+                        glue.shexp_root.as_ref().zip(glue.shexp_peer.as_ref()),
+                        1,
+                        &self.cfg,
+                        il as u16,
+                    )?,
+                    crate::hybrid::Ffn::Dense { .. } => {
+                        let out = self.hyper_ffn_branch(e, layer, &z, 1, il, false, None)?;
+                        let outp = match &glue.dense {
+                            Some(d) => self.dense_ffn_with(
+                                peer,
+                                &d.ffn_gate,
+                                &d.ffn_up,
+                                &d.ffn_down,
+                                d.ffn_down_pqs.as_ref(),
+                                &zp,
+                                1,
+                                il,
+                            )?,
+                            None => crate::tp_transport::fanout_f32(&hop, &out, n)?
+                                .pop()
+                                .ok_or("TP verify dense broadcast missing")?,
+                        };
+                        vec![out, outp]
+                    }
+                };
+                e.copy_into(&mut mixed[0], row * n, &parts[0], n)?;
+                peer.copy_into(&mut mixed[1], row * n, &parts[1], n)?;
+            }
+            if matches!(&layer.ffn, crate::hybrid::Ffn::Moe(_)) {
+                let (a, b) = mixed.split_at_mut(1);
+                if !rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n)? {
+                    return Err("TP verify expert all-reduce declined".into());
+                }
+            }
+            x = crate::hyper::post(e, topology, &mixed[0], &x, &mix, t, n)?;
+            xp = crate::hyper::post(peer, topology, &mixed[1], &xp, &mixp, t, n)?;
+            self.glm5_hc_tap(e, cache, topology, il, &x, t)?;
+        }
+        Ok(x)
     }
 
     /// The SYMMETRIC workspace walk (lane/tp-symmetric-20260906). Both ranks hold the residual
@@ -11457,6 +11637,21 @@ impl HybridModel {
         il: usize,
         cache: &mut Cache,
     ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        self.mla_tp_attn_cached_sym_rows(e, mla, h_by_rank, pos_by_rank, t, il, cache, false)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn mla_tp_attn_cached_sym_rows(
+        &self,
+        e: &Engine,
+        mla: &crate::hybrid::MlaAttnLayer,
+        h_by_rank: &[&CudaSlice<f32>],
+        pos_by_rank: &[&CudaSlice<i32>],
+        t: usize,
+        il: usize,
+        cache: &mut Cache,
+        rows_exact: bool,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
         let tp = mla
             .tp
             .as_ref()
@@ -11502,9 +11697,13 @@ impl HybridModel {
                 il,
                 layer,
                 max_ctx,
-                false,
+                rows_exact,
             )?;
-            partials.push(e.matmul(&mla.wo, &a, t)?);
+            partials.push(if rows_exact {
+                e.matmul_rows_exact(&mla.wo, &a, t)?
+            } else {
+                e.matmul(&mla.wo, &a, t)?
+            });
         }
         for r in 1..ranks {
             let layer = &mut cache.glm5_tp_latent_peer[il].as_mut().unwrap()[r - 1];
@@ -11518,9 +11717,13 @@ impl HybridModel {
                 il,
                 layer,
                 max_ctx,
-                false,
+                rows_exact,
             )?;
-            partials.push(dev.matmul(&tp.peers[r - 1].wo, &a, t)?);
+            partials.push(if rows_exact {
+                dev.matmul_rows_exact(&tp.peers[r - 1].wo, &a, t)?
+            } else {
+                dev.matmul(&tp.peers[r - 1].wo, &a, t)?
+            });
         }
         let (a, b) = partials.split_at_mut(1);
         let reduced = rt.ar_1stage(e, &mut [&mut a[0], &mut b[0]], t * n_embd)?;

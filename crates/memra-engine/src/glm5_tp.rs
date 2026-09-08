@@ -1337,6 +1337,48 @@ pub(crate) fn kda_tp_partials_sym(
     il: usize,
     arm: ConvArm,
 ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+    kda_tp_partials_sym_inner(e, la_root, x_by_rank, t, eps, cache, il, arm, None)
+}
+
+/// Same rank partial program with the PP verifier's rows-exact projections and
+/// rank-local replay material. Capture precedes every recurrent-state mutation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn kda_tp_partials_sym_verify(
+    e: &Engine,
+    la: &KdaAttnLayer,
+    inputs: &[&CudaSlice<f32>],
+    t: usize,
+    eps: f32,
+    cache: &mut Cache,
+    il: usize,
+) -> Result<(Vec<CudaSlice<f32>>, Glm5TpKdaVerifyStash), Box<dyn std::error::Error>> {
+    let mut stash = Vec::new();
+    let partials = kda_tp_partials_sym_inner(
+        e,
+        la,
+        inputs,
+        t,
+        eps,
+        cache,
+        il,
+        ConvArm::Prefill,
+        Some(&mut stash),
+    )?;
+    Ok((partials, stash))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn kda_tp_partials_sym_inner(
+    e: &Engine,
+    la_root: &KdaAttnLayer,
+    x_by_rank: &[&CudaSlice<f32>],
+    t: usize,
+    eps: f32,
+    cache: &mut Cache,
+    il: usize,
+    arm: ConvArm,
+    mut verify: Option<&mut Glm5TpKdaVerifyStash>,
+) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
     let tp = la_root
         .tp
         .as_ref()
@@ -1356,6 +1398,12 @@ pub(crate) fn kda_tp_partials_sym(
     for r in 0..ranks {
         let dev = if r == 0 { e } else { &rt.peers[r - 1] };
         let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
+        let snap = if verify.is_some() {
+            Some(dev.clone_dtod(&states[r].ssm_state)?)
+        } else {
+            None
+        };
+        let mut rows = None;
         let RecurLayer {
             conv_state,
             ssm_state,
@@ -1371,14 +1419,26 @@ pub(crate) fn kda_tp_partials_sym(
             ssm_state,
             ssm_state_alt,
             arm,
-            crate::kda::KdaStash::None,
+            if verify.is_some() {
+                crate::kda::KdaStash::Rows(&mut rows)
+            } else {
+                crate::kda::KdaStash::None
+            },
             None,
             None,
             None,
         )?;
         std::mem::swap(ssm_state, ssm_state_alt);
         // Row-parallel wo: this rank's channels in, the FULL hidden width out, as a partial sum.
-        partials.push(dev.matmul(&la.wo, &gated, t)?);
+        partials.push(if let Some(stash) = verify.as_deref_mut() {
+            stash.push((
+                snap.expect("verify snapshot"),
+                rows.ok_or("TP KDA verify rows missing")?,
+            ));
+            dev.matmul_rows_exact(&la.wo, &gated, t)?
+        } else {
+            dev.matmul(&la.wo, &gated, t)?
+        });
     }
     // Out of place: the partials are the inputs, two fresh buffers the outputs (no staging copy).
     Ok(partials)
@@ -1465,13 +1525,21 @@ pub(crate) fn kda_tp_verify_rollback(
     let states = cache.glm5_tp_recur[il]
         .as_mut()
         .ok_or_else(|| format!("glm5-tp verify rollback: layer {il} has no per-rank state"))?;
-    for r in 0..ranks {
-        let dev = if r == 0 { e } else { &rt.peers[r - 1] };
-        let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
-        let (snap, rows) = &stash[r];
-        crate::kda::kda_verify_rollback_rows_on(dev, la, snap, rows, keep, &mut states[r], il)?;
+    if states.len() != ranks {
+        return Err("TP KDA rollback missing rank state".into());
     }
-    Ok(())
+    let rows = stash.first().ok_or("TP KDA rollback empty stash")?.1.rows;
+    let commit = crate::glm5_tp_spec::Commit::new(0, rows, keep)?;
+    commit.restore(
+        ranks,
+        &stash.iter().map(|s| s.1.rows).collect::<Vec<_>>(),
+        |r, keep| {
+            let dev = if r == 0 { e } else { &rt.peers[r - 1] };
+            let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
+            let (snap, rows) = &stash[r];
+            crate::kda::kda_verify_rollback_rows_on(dev, la, snap, rows, keep, &mut states[r], il)
+        },
+    )
 }
 
 // ------------------------------------------------------------------------------------------

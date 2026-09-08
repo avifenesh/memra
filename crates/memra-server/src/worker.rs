@@ -4834,19 +4834,16 @@ fn dspark_spec_boot_conflict(
 /// exercises every arm without a worker spawn; the caller panics on `Err` and prints the
 /// `Ok(Some(..))` line once.
 ///
-/// CONTRACT: the walk serves the PLAIN route only. Every spec program is refused by name
-/// (`MEMRA_GLM5_SPEC=1`: the glm5 verify walk has no TP gate receipt; `MEMRA_DSPARK_SPEC=1`:
-/// never co-gated), and the operator must write `MEMRA_SERVE_SPEC=0` so the plain intent is
-/// stated rather than inherited (the mtp-skip precedent: unset means spec ON for serving,
-/// and a boot that silently serves plain at half speed is the DFlash2 2026-08-25 incident
-/// class). The engine's own preflight (`glm5_tp::preflight`) still owns the topology rules:
-/// distinct devices, the rank envelope, the by-name door refusals, no PP composition.
+/// DFlash2 TP verification is an explicit default-OFF experiment. Boot permits
+/// the request; loaded-model admission decides spec versus plain before mutation.
+/// Unrelated dspark and batched-HC compositions remain refused at boot.
 fn glm5_tp_serve_boot_verdict(
     glm5_tp: bool,
     glm5_spec: bool,
     dspark_spec: bool,
     serve_spec_env: Option<&str>,
     hyper_batch_env: Option<&str>,
+    spec_tp: bool,
 ) -> Result<Option<String>, String> {
     if !glm5_tp {
         return Ok(None);
@@ -4867,19 +4864,23 @@ fn glm5_tp_serve_boot_verdict(
                 .to_string(),
         );
     }
-    if glm5_spec {
-        return Err(
-            "MEMRA_GLM5_TP with MEMRA_GLM5_SPEC=1: the glm5 spec verify walk has no \
-                    gate receipt on the TP walk (single-engine and ppN only); unset one"
-                .to_string(),
-        );
-    }
     if dspark_spec {
         return Err(
             "MEMRA_GLM5_TP with MEMRA_DSPARK_SPEC=1: the dspark round has never been \
                     co-gated with the glm5 TP walk; unset one"
                 .to_string(),
         );
+    }
+    if glm5_spec {
+        return Ok(Some(
+            if spec_tp {
+                "glm5 TP spec requested: eager DFlash2 verification; loaded-model admission \
+             decides each request, unsupported compositions serve PLAIN"
+            } else {
+                "glm5 TP spec declined: MEMRA_GLM5_SPEC_TP is off; serving PLAIN"
+            }
+            .to_string(),
+        ));
     }
     match serve_spec_env.map(str::trim) {
         Some("0") => Ok(Some(
@@ -13077,23 +13078,15 @@ pub fn run(
         }
     }
 
-    // glm5 TP-2 walk on a serving worker (MEMRA_GLM5_TP, lane/glm5-tp-serve-20260907).
-    // Until this lane the worker panicked here ("engine/gate-only in v1"). What the panic
-    // named has since landed in the engine: per-session TP state lives in the session's
-    // Cache (`glm5_tp_recur`, `glm5_tp_latent_peer`, `glm5_tp_sym_graph`), so sessions are
-    // independent and the walk is the same `prime_cache` / `decode_step` pair the eager-only
-    // class already serves. What is NOT gated stays refused BY NAME in
-    // `glm5_tp_serve_boot_verdict`: every spec program (the TP verify walk has no gate
-    // receipt), and the operator states the plain intent (MEMRA_SERVE_SPEC=0) so a TP boot
-    // can never be the "fluent plain at half speed with no receipt" incident class.
-    // Snapshot consumers (plain-affinity checkpoint, park-compact, the grow path) decline by
-    // name inside `Cache::snapshot` and fall back to the cold path.
+    // TP speculation is admitted only by the explicit door and loaded model
+    // geometry. The worker keeps independent dspark and hyper-batch refusals.
     match glm5_tp_serve_boot_verdict(
         memra_engine::glm5_tp::glm5_tp_armed(),
         memra_engine::glm_spec::glm5_spec_on(),
         std::env::var("MEMRA_DSPARK_SPEC").as_deref() == Ok("1"),
         std::env::var("MEMRA_SERVE_SPEC").ok().as_deref(),
         std::env::var("MEMRA_HYPER_BATCH").ok().as_deref(),
+        memra_engine::glm_spec::glm5_spec_tp_on(),
     ) {
         Ok(Some(line)) => eprintln!("[worker] {line}"),
         Ok(None) => {}
@@ -17928,10 +17921,13 @@ fn mtp_spec_capable(lm: &LoadedModel) -> bool {
 /// stays false for glm5 and no plan can ever satisfy both predicates
 /// (`the_two_spec_programs_never_both_claim_one_plan`).
 fn glm5_spec_capable(lm: &LoadedModel) -> bool {
+    if lm.model.glm5_has_tp_shards() {
+        if let Some(reason) = lm.model.glm5_tp_spec_refusal() {
+            eprintln!("[glm5-tp-spec] declined to plain: {reason}");
+            return false;
+        }
+    }
     lm.model.hyper.is_some()
-        // The TP walk has no spec gate receipt; the boot verdict already refuses the
-        // combination, this keeps the request path honest if that ever changes.
-        && !memra_engine::glm5_tp::glm5_tp_armed()
         // A DRAFT SOURCE must be loaded (lane/glm5-dflash-draft-src): the embedded MTP
         // head (MEMRA_GLM5_MTP=1) OR the DFlash2 drafter (MEMRA_GLM5_DFLASH) — the
         // DFlash2 source deliberately does NOT require the head (the q38 VRAM pattern).
@@ -34192,18 +34188,19 @@ mod glm5_tp_serve_boot_verdict_tests {
     #[test]
     fn tp_off_is_silent() {
         assert_eq!(
-            glm5_tp_serve_boot_verdict(false, true, true, None, Some("1")),
+            glm5_tp_serve_boot_verdict(false, true, true, None, Some("1"), false),
             Ok(None)
         );
     }
 
     #[test]
     fn tp_serves_plain_only_by_explicit_choice() {
-        let ok = glm5_tp_serve_boot_verdict(true, false, false, Some("0"), Some("0")).unwrap();
+        let ok =
+            glm5_tp_serve_boot_verdict(true, false, false, Some("0"), Some("0"), false).unwrap();
         assert!(ok.is_some_and(|l| l.contains("PLAIN") && l.contains("MEMRA_SERVE_SPEC=0")));
         // Unset, blank and an explicit non-zero all refuse and name the missing intent.
         for env in [None, Some(""), Some("1"), Some(" 1 ")] {
-            let err = glm5_tp_serve_boot_verdict(true, false, false, env, None).unwrap_err();
+            let err = glm5_tp_serve_boot_verdict(true, false, false, env, None, false).unwrap_err();
             assert!(err.contains("MEMRA_SERVE_SPEC=0"), "{err}");
         }
     }
@@ -34212,11 +34209,12 @@ mod glm5_tp_serve_boot_verdict_tests {
     fn tp_refuses_the_batched_hc_walk_by_name() {
         // The dispatch choice: under TP the sessions decode eagerly through the TP walk;
         // MEMRA_HYPER_BATCH=1 (the batched hc walk, no TP mixer branches) refuses at boot.
-        let err = glm5_tp_serve_boot_verdict(true, false, false, Some("0"), Some("1")).unwrap_err();
+        let err = glm5_tp_serve_boot_verdict(true, false, false, Some("0"), Some("1"), false)
+            .unwrap_err();
         assert!(err.contains("MEMRA_HYPER_BATCH=1"), "{err}");
         assert!(err.contains("decode_step"), "{err}");
         for env in [None, Some("0"), Some("")] {
-            let ok = glm5_tp_serve_boot_verdict(true, false, false, Some("0"), env).unwrap();
+            let ok = glm5_tp_serve_boot_verdict(true, false, false, Some("0"), env, false).unwrap();
             assert!(
                 ok.is_some_and(|l| l.contains("eager per-session decode")),
                 "{env:?}"
@@ -34226,9 +34224,10 @@ mod glm5_tp_serve_boot_verdict_tests {
 
     #[test]
     fn tp_refuses_every_spec_program_by_name() {
-        let err = glm5_tp_serve_boot_verdict(true, true, false, Some("0"), None).unwrap_err();
-        assert!(err.contains("MEMRA_GLM5_SPEC=1"), "{err}");
-        let err = glm5_tp_serve_boot_verdict(true, false, true, Some("0"), None).unwrap_err();
+        let plain = glm5_tp_serve_boot_verdict(true, true, false, Some("0"), None, false).unwrap();
+        assert!(plain.unwrap().contains("MEMRA_GLM5_SPEC_TP is off"));
+        let err =
+            glm5_tp_serve_boot_verdict(true, false, true, Some("0"), None, false).unwrap_err();
         assert!(err.contains("MEMRA_DSPARK_SPEC=1"), "{err}");
     }
 }

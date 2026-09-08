@@ -1328,17 +1328,31 @@ impl HybridModel {
         let pos = Glm5VerifyPos::new(e, pos0, t)?;
         let embedded = self.glm5_rows_embed(e, tokens, n_embd)?;
         let x = crate::hyper::expand(e, &topology, &embedded, t, n_embd)?;
-        let x = self.glm5_verify_range_graphed(
-            e,
-            &topology,
-            x,
-            0,
-            self.layers.len(),
-            &pos,
-            cache,
-            &mut ckpt,
-            graphs,
-        )?;
+        let x = if self.glm5_tp_prefix_class() {
+            if let Some(why) = self.glm5_tp_spec_refusal() {
+                return Err(why.into());
+            }
+            // Draft IDs are chosen once on root. Publish the same row tape through
+            // the integer exchange, before either rank consumes the residual.
+            let rt = self
+                .glm5_tp_rt_for(0, self.layers.len())
+                .expect("admitted TP");
+            let ids = e.htod_i32(&tokens.iter().map(|&id| id as i32).collect::<Vec<_>>())?;
+            let _peer_ids = crate::tp_transport::fanout_i32(&rt.hop(e), &ids, t)?;
+            self.glm5_tp_verify_symmetric(e, &topology, x, &pos.all, t, cache, &mut ckpt.kda_tp)?
+        } else {
+            self.glm5_verify_range_graphed(
+                e,
+                &topology,
+                x,
+                0,
+                self.layers.len(),
+                &pos,
+                cache,
+                &mut ckpt,
+                graphs,
+            )?
+        };
         let (logits, collapsed) = self.glm5_verify_head(e, &topology, &x, t)?;
         Ok((logits, collapsed, ckpt))
     }
@@ -2122,6 +2136,52 @@ impl HybridModel {
             )
             .into());
         }
+        let commit = crate::glm5_tp_spec::Commit::new(ckpt.pos, ckpt.rows, keep)?;
+        if let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) {
+            // Validate the whole checkpoint before changing any layer or rank.
+            for (il, layer) in self.layers.iter().enumerate() {
+                match &layer.mixer {
+                    Mixer::Kda(_) => {
+                        let states = cache.glm5_tp_recur[il]
+                            .as_ref()
+                            .ok_or("TP rollback missing recurrent ranks")?;
+                        if states.len() != rt.ranks() {
+                            return Err("TP rollback recurrent rank count mismatch".into());
+                        }
+                        if keep < ckpt.rows {
+                            let stash = ckpt.kda_tp[il]
+                                .as_ref()
+                                .ok_or("TP rollback missing recurrent checkpoint")?;
+                            commit.restore::<Box<dyn std::error::Error>>(
+                                rt.ranks(),
+                                &stash.iter().map(|s| s.1.rows).collect::<Vec<_>>(),
+                                |_, _| Ok(()),
+                            )?;
+                        }
+                    }
+                    Mixer::Mla(_) => {
+                        let saved =
+                            ckpt.latent_len[il].ok_or("TP rollback missing latent checkpoint")?;
+                        let expected = saved
+                            .checked_add(ckpt.rows)
+                            .ok_or("TP latent cursor overflow")?;
+                        let root = cache.latent[il]
+                            .as_ref()
+                            .ok_or("TP rollback missing root latent")?;
+                        let peers = cache.glm5_tp_latent_peer[il]
+                            .as_ref()
+                            .ok_or("TP rollback missing peer latent")?;
+                        if root.len != expected
+                            || peers.len() + 1 != rt.ranks()
+                            || peers.iter().any(|p| p.len != expected)
+                        {
+                            return Err("TP rollback latent rank cursors differ".into());
+                        }
+                    }
+                    _ => return Err("TP rollback unsupported mixer".into()),
+                }
+            }
+        }
         match crate::pp::pp_cuts(self.layers.len()) {
             Some(fence) if !crate::pp::pp2_streams_off() => {
                 let rt = crate::pp::PpNRt::get(e)?;
@@ -2141,7 +2201,16 @@ impl HybridModel {
                 }
             }
         }
-        cache.pos = ckpt.pos + keep;
+        // Peer rollback enqueues work on peer-owned streams. Publish completion
+        // before the next draft consumes the retained tap rows or a cache is reused.
+        if let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) {
+            for peer in &rt.peers {
+                let _main = peer.gpu.enter_main()?;
+                peer.stream().synchronize()?;
+            }
+            e.stream().synchronize()?;
+        }
+        cache.pos = commit.end();
         Ok(())
     }
 
@@ -2524,6 +2593,11 @@ impl HybridModel {
             _ => false,
         });
         if tp_sharded {
+            if self.glm5_tp_prefix_class() {
+                if let Some(why) = self.glm5_tp_spec_refusal() {
+                    return Err(why.into());
+                }
+            }
             if !glm5_spec_tp_on() {
                 return Err(
                     "glm5 spec is co-refused on a MEMRA_GLM5_TP-sharded model: set \
