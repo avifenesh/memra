@@ -41,6 +41,19 @@ pub fn prime_yield_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("MEMRA_PRIME_YIELD").as_deref() == Ok("1"))
 }
 
+/// Shared observer used by synchronous engine callers and cooperative serving adapters.
+/// Existing tick tracing enables measurement in both arms without a second door.
+pub fn trace_chunk(chunk: PrimeChunk, wall: Duration) {
+    if std::env::var("MEMRA_TICK_TRACE").as_deref() == Ok("1") {
+        eprintln!(
+            "[prime-chunk] phase={} rows={} wall_ms={:.3}",
+            chunk.phase,
+            chunk.rows,
+            wall.as_secs_f64() * 1000.0
+        );
+    }
+}
+
 /// OFF drains the frozen tape; ON executes one chunk. The observer sees EVERY actual
 /// chunk in both arms, so chunk-wall receipts never infer cost from whole-request TTFT.
 pub fn advance_prime<W: PrimeWalker>(
@@ -73,7 +86,17 @@ pub fn finish_prime<W: PrimeWalker>(walker: W) -> Result<W::Output, PrimeError> 
     if walker.remaining_chunks() != 0 {
         return Err("cannot finalize an incomplete prime".into());
     }
-    walker.finish()
+    let start = Instant::now();
+    let result = walker.finish();
+    if std::env::var("MEMRA_TICK_TRACE").as_deref() == Ok("1") {
+        eprintln!(
+            "[prime-finalize] walker={} wall_ms={:.3} success={}",
+            std::any::type_name::<W>(),
+            start.elapsed().as_secs_f64() * 1000.0,
+            result.is_ok()
+        );
+    }
+    result
 }
 
 #[cfg(test)]

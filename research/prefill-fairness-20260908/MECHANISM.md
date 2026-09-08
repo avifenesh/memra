@@ -1,7 +1,9 @@
 # Speculative prime fairness: mechanism and proposed design
 
 2026-09-08. Code read at `72aa777c3763a21281fb9c1c55b2499f2c14d1ee`.
-Step 2 checkpoint, before implementation. No build, test, or GPU experiment has run.
+Step 2 checkpoint, before implementation. At that checkpoint no build, test, or GPU
+experiment had run. Later adapter and CPU results are in `MTP.md`, `DFLASH.md` and
+`CPU.md`.
 Source line references below refer to that commit.
 
 ## Prior result and measured trigger

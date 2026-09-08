@@ -8,6 +8,9 @@
 //!     Cache snapshot/rollback lives in cache.rs (§D.4). The MTP head uses its OWN scratch KV (§D.6),
 //!     PERSISTENT over the committed sequence (see `MtpScratch`).
 
+mod prime;
+pub use prime::{MtpPrimeState, MtpPrimeWalker};
+
 use crate::Engine;
 use crate::cache::{Cache, KvLayer};
 use crate::forward::argmax;
@@ -15,6 +18,47 @@ use crate::hybrid::{FullAttnLayer, HybridModel, LinearAttnLayer, Mixer, MtpHead}
 use cudarc::driver::CudaSlice;
 use memra_gguf::config::SwigluClamp;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+fn resolve_spec_sampling(sampling: Option<SpecSampling>) -> SpecSampling {
+    sampling.unwrap_or_else(|| SpecSampling {
+        temp: std::env::var("MEMRA_SPEC_TEMP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0),
+        seed: std::env::var("MEMRA_SEED")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(42),
+        top_k: std::env::var("MEMRA_TOP_K")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
+        top_p: std::env::var("MEMRA_TOP_P")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0),
+        min_p: std::env::var("MEMRA_MIN_P")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0),
+        penalty_last_n: std::env::var("MEMRA_PENALTY_LAST_N")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
+        penalty_repeat: std::env::var("MEMRA_PENALTY_REPEAT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0),
+        penalty_freq: std::env::var("MEMRA_PENALTY_FREQ")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0),
+        penalty_present: std::env::var("MEMRA_PENALTY_PRESENT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0),
+    })
+}
 
 /// Parse the documented `MEMRA_SPEC_REPLAY=1` rollback seam.
 ///
@@ -1118,7 +1162,7 @@ fn vbuf(e: &Engine, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Erro
 ///     then the round loop runs unchanged. `last_h` carries the pre-output_norm hidden of the last
 ///     committed row across turns (the predecessor-pairing seed + fill anchor).
 ///     Per-request sampling config for the sampled-spec serve path.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SpecSampling {
     pub temp: f32,
     pub seed: u64,
@@ -1426,7 +1470,17 @@ impl SpecTelemetryCounters {
     }
 }
 
+struct SpecDraftSetup {
+    dctx: DraftGraphCtx,
+    dmask_on: bool,
+    dmask_words: usize,
+    s_key: SampledGraphKey,
+    pure_temp: bool,
+    s_capturable: bool,
+}
+
 pub struct SpecSession {
+    prime_ready: Option<prime::PreparedMtp>,
     pub(crate) cache: Cache,
     pub(crate) scratch: MtpScratch,
     /// Every token whose state the caches hold, in order (prompt turns + generated), INCLUDING
@@ -9013,6 +9067,7 @@ impl HybridModel {
         max_ctx: usize,
     ) -> Result<SpecSession, Box<dyn std::error::Error>> {
         Ok(SpecSession {
+            prime_ready: None,
             // STAGE-OWNED KV (lane/pp2-spec 2026-08-06): `pp::new_cache`, not `Cache::new`. This
             // is the SERVING spec-session path, and with the ppN door open across two cards a
             // primary-homed cache makes every remote stage peer-read its OWN KV on every verify
@@ -9086,6 +9141,61 @@ impl HybridModel {
     pub fn spec_session_from_restored(
         &self,
         e: &Engine,
+        cache: Cache,
+        prefix: Vec<u32>,
+        suffix: &[u32],
+        draft_k: &CudaSlice<u8>,
+        draft_v: &CudaSlice<u8>,
+        draft_k_tok_bytes: usize,
+        draft_v_tok_bytes: usize,
+        draft_len: usize,
+        last_h: &[f32],
+        // The ENTRY's boundary logits row (the full-cover shape's seed source). May be empty
+        // when a suffix follows — the feed's own logits are the boundary then.
+        boundary_logits: &[f32],
+        // The request's sampler, or None for greedy. Owned here so the seed rule lives in
+        // ONE place instead of being half-applied by the worker.
+        sampling: Option<SpecSampling>,
+        require_anchor: bool,
+        max_ctx: usize,
+        // STABLE-BOUNDARY REPUBLICATION (lane/frspec-multiturn-cache, 2026-08-21): ABSOLUTE
+        // prompt position to split the suffix feed at and capture the extended-entry
+        // publication + this session's `turn_ckpt` — the worker's stable pre-generation
+        // boundary (`plain_checkpoint_boundary`). None = legacy prompt-end republication.
+        // WHY: the prompt-end capture below includes the template's live generation header
+        // (`<|im_start|>assistant\n<think>\n`), which the next turn's re-render replaces, so
+        // for a hybrid (whole-entry restores only) every extended entry's last ~2 tokens
+        // diverged from every future prompt and the hit boundary FROZE at the first
+        // lcp-split entry forever (measured: cached 6811 of 38228 by turn 8, B4).
+        republish_at: Option<usize>,
+    ) -> Result<SpecSession, (Option<Cache>, String)> {
+        self.spec_session_from_restored_deferred(
+            e,
+            cache,
+            prefix,
+            suffix,
+            draft_k,
+            draft_v,
+            draft_k_tok_bytes,
+            draft_v_tok_bytes,
+            draft_len,
+            last_h,
+            boundary_logits,
+            sampling,
+            require_anchor,
+            max_ctx,
+            republish_at,
+            false,
+        )
+    }
+
+    /// Worker restore materialization can defer the suffix to its owned prime walker.
+    /// No boundary is sampled until the suffix has actually completed.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::result_large_err)] // preserves the existing recoverable carrier error contract
+    pub fn spec_session_from_restored_deferred(
+        &self,
+        e: &Engine,
         mut cache: Cache,
         prefix: Vec<u32>,
         suffix: &[u32],
@@ -9113,6 +9223,7 @@ impl HybridModel {
         // diverged from every future prompt and the hit boundary FROZE at the first
         // lcp-split entry forever (measured: cached 6811 of 38228 by turn 8, B4).
         republish_at: Option<usize>,
+        defer_suffix: bool,
     ) -> Result<SpecSession, (Option<Cache>, String)> {
         let pos = prefix.len();
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
@@ -9240,7 +9351,10 @@ impl HybridModel {
         // after the suffix joins `committed` below.
         let mut boundary_captures: Vec<SpecBoundaryCapture> = Vec::new();
         let mut restored_turn_ckpt: Option<SpecCheckpoint> = None;
-        if !suffix.is_empty() {
+        let deferred = defer_suffix && !suffix.is_empty();
+        if deferred {
+            next_pred = None;
+        } else if !suffix.is_empty() {
             // ---- SUFFIX FEED, mirroring prefill_tick's program selection exactly ----
             // From here on the trunk cache mutates: failures return Err((None, _)) and
             // the worker serves the request cold-plain instead of reusing the carrier.
@@ -9528,6 +9642,7 @@ impl HybridModel {
             });
         }
         Ok(SpecSession {
+            prime_ready: None,
             cache,
             scratch,
             committed,
@@ -9543,9 +9658,17 @@ impl HybridModel {
             // fell back to the frozen prefix entry forever.
             turn_ckpt: restored_turn_ckpt,
             telem: SpecTelemetryCounters::default(),
-            capture_at: None,
+            capture_at: if deferred && spec_restore_republish_on() {
+                Some(
+                    republish_at
+                        .and_then(|p| p.checked_sub(pos))
+                        .unwrap_or(suffix.len()),
+                )
+            } else {
+                None
+            },
             boundary_captures,
-            ckpt_at: None,
+            ckpt_at: if deferred { republish_at } else { None },
             capture_disabled: false,
         })
     }
@@ -10008,7 +10131,7 @@ impl HybridModel {
         max_new: usize,
         k: usize,
         sampling: Option<SpecSampling>,
-        constraint: Option<&mut dyn SpecConstraint>,
+        mut constraint: Option<&mut dyn SpecConstraint>,
         prime_split: Option<usize>,
         on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
@@ -10027,6 +10150,25 @@ impl HybridModel {
             && (!suffix.is_empty() || sampling.is_some_and(|s| s.temp > 0.0))
         {
             self.spec_flush_pending(e, sess, sampling)?;
+        }
+
+        if !suffix.is_empty() && self.mtp_prime_walk_supported() && sess.prime_ready.is_none() {
+            let mut state =
+                Some(self.mtp_prime_start(e, sess, suffix, k, sampling, prime_split)?);
+            let mut walker = self.mtp_prime_walker(
+                e,
+                sess,
+                &mut state,
+                constraint
+                    .as_mut()
+                    .map(|c| &mut **c as &mut dyn SpecConstraint),
+            );
+            crate::prime_walker::advance_prime(
+                &mut walker,
+                false,
+                crate::prime_walker::trace_chunk,
+            )?;
+            crate::prime_walker::finish_prime(walker)?;
         }
 
         // FULL_PREC forces the EAGER draft: the graph capture would enclose cuBLASLt f32 GEMV
@@ -10126,870 +10268,36 @@ impl HybridModel {
         r
     }
 
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    fn generate_spec_inner2(
+    /// Shared once-per-regime draft graph setup, called before draft-KV fill. Keeping
+    /// this operation separate lets a saved prime retain the context across fill chunks.
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_spec_draft(
         &self,
         e: &Engine,
-        prompt: &[u32],
-        max_new: usize,
+        scratch: &mut MtpScratch,
+        parked: Option<DraftGraphCtx>,
+        base: usize,
         k: usize,
         graph_draft: bool,
-        mut sess: Option<&mut SpecSession>,
-        sampling: Option<SpecSampling>,
-        mut constraint: Option<&mut dyn SpecConstraint>,
-        mut on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
-        prime_split: Option<usize>,
-    ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
-        assert!(k >= 1, "k must be >= 1");
-        // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
-        let mut flushed = 0usize;
-        // admission yield (2026-08-06): on_commit's continue-verdict; false = end the burst
-        // at the next round boundary (same exit as max_new reached — the session tail runs).
-        // Initialized by the unconditional post-prime flush below.
-        let mut keep_going;
-        let mtp = self
-            .mtp
-            .as_ref()
-            .expect("generate_spec requires an MTP head (nextn_predict_layers>0)");
-        let n_vocab = self.output.out_features();
-        // FR-Spec: the draft head may be TRIMMED (fewer rows than n_vocab); the draft argmax runs
-        // over the draft vocab and the winning index maps through d2t to a TARGET token id.
-        // Everything downstream (verify/accept/commit) sees target ids only — exactness unchanged.
+        sp: SpecSampling,
+        pen_on: bool,
+        sess_capture_disabled: bool,
+        dmask_on: bool,
+        p_min: f32,
+        embd_gpu: Option<&CudaSlice<u8>>,
+        embd_qt: i32,
+        embd_rb: usize,
+    ) -> Result<SpecDraftSetup, Box<dyn std::error::Error>> {
+        let mtp = self.mtp.as_ref().ok_or("MTP draft setup without a head")?;
+        let n_embd = self.cfg.n_embd as usize;
         let d_vocab = mtp
             .shared_head_head
             .as_ref()
             .unwrap_or(&self.output)
             .out_features();
-        if !self.mtp_extra.is_empty() {
-            if self.plan.draft_source != memra_gguf::model_plan::DraftSourcePlan::Embedded
-                || self.plan.mtp_blocks.len() != self.mtp_head_count()
-            {
-                return Err(
-                    "multi-head MTP requires one embedded canonical block per loaded head".into(),
-                );
-            }
-            // TRIMMED chains (2026-08-27): every head must carry the SAME d2t — the ranking is
-            // token-frequency and head-independent, and every downstream remap (per-step argmax,
-            // stream pack, sampled d2t_dev) reads head 0's map, so equality is what makes that
-            // single map correct for the whole chain. Mixed trimmed/untrimmed is refused.
-            for (offset, head) in self.mtp_extra.iter().enumerate() {
-                if head.d2t != mtp.d2t
-                    || head
-                        .shared_head_head
-                        .as_ref()
-                        .unwrap_or(&self.output)
-                        .out_features()
-                        != d_vocab
-                {
-                    return Err(format!(
-                        "embedded MTP head {} has incompatible draft vocabulary",
-                        offset + 1
-                    )
-                    .into());
-                }
-            }
-            eprintln!(
-                "[mtp-chain] heads={} policy=step-modulo prefix-replay kv=per-head",
-                self.mtp_head_count()
-            );
-        }
-        let n_embd = self.cfg.n_embd as usize;
-        // SESSION MODE: reuse the live cache/scratch, prime only the suffix. `base` = tokens
-        // already committed (their state is in the caches); 0 = fresh single-shot call.
-        let session_mode = sess.is_some();
-        let max_ctx = match sess.as_ref() {
-            Some(s) => s.cache.max_ctx,
-            None => prompt.len() + max_new + k + 8,
-        };
-        let mut own_cache;
-        let mut own_scratch;
-        // PREFIX-CACHE capture request threaded out of the session (lane/spec-prefix-cache):
-        // (requested split, destination list). Single-shot per burst; fresh calls have none.
-        let mut sess_capture: Option<(Option<usize>, &mut Vec<SpecBoundaryCapture>)> = None;
-        // STABLE-BOUNDARY turn-checkpoint request (lane/frspec-multiturn-cache): ABSOLUTE
-        // committed-length position; consumed one-shot like `capture_at`. None = legacy
-        // prompt-end capture below.
-        let mut ckpt_req: Option<usize> = None;
-        // FAIL-SAFE bit threaded out of the session (see `SpecSession::capture_disabled`).
-        let mut sess_capture_disabled = false;
-        let (
-            cache,
-            scratch,
-            mut sess_tail,
-            mut sess_draft_slot,
-            mut sess_pending_slot,
-            sess_ckpt_slot,
-            sess_telem,
-        ): (
-            &mut Cache,
-            &mut MtpScratch,
-            Option<(
-                &mut Vec<u32>,
-                &mut Option<CudaSlice<f32>>,
-                &mut Option<u32>,
-                &mut u32,
-                &mut u32,
-            )>,
-            Option<&mut Option<DraftGraphCtx>>,
-            Option<&mut Option<u32>>,
-            Option<&mut Option<SpecCheckpoint>>,
-            Option<&SpecTelemetryCounters>,
-        ) = match sess.take() {
-            Some(sr) => {
-                let SpecSession {
-                    cache,
-                    scratch,
-                    committed,
-                    last_h,
-                    next_pred,
-                    sctr: s_sctr,
-                    uctr: s_uctr,
-                    draft_ctx,
-                    pending_tok,
-                    turn_ckpt,
-                    telem,
-                    capture_at,
-                    boundary_captures,
-                    ckpt_at,
-                    capture_disabled,
-                } = sr;
-                sess_capture_disabled = *capture_disabled;
-                sess_capture = Some((capture_at.take(), boundary_captures));
-                ckpt_req = ckpt_at.take();
-                (
-                    cache,
-                    scratch,
-                    Some((committed, last_h, next_pred, s_sctr, s_uctr)),
-                    Some(draft_ctx),
-                    Some(pending_tok),
-                    Some(turn_ckpt),
-                    Some(telem),
-                )
-            }
-            None => {
-                // STAGE-OWNED KV (lane/pp2-spec 2026-08-06) — see `new_session`. Door shut =
-                // `Cache::new` verbatim.
-                own_cache = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, max_ctx)?;
-                // Persistent scratch = max_ctx rows (~2KB/token quantized).
-                own_scratch = self.new_mtp_scratch(e, max_ctx)?;
-                (
-                    &mut own_cache,
-                    &mut own_scratch,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-            }
-        };
-        cache.ensure_usable("generate_spec")?;
-        if scratch.plane_count() != self.mtp_head_count() {
-            return Err(format!(
-                "MTP scratch/head count mismatch ({}/{})",
-                scratch.plane_count(),
-                self.mtp_head_count()
-            )
-            .into());
-        }
-        let base = cache.pos;
-        // PENDING-CARRY consume (2026-08-01): a carried bonus reaches here only on the
-        // empty-suffix GREEDY continuation path (generate_spec_session_sampled flushed every
-        // other case). It enters the round loop as round-0's pending — verify col 0 — exactly
-        // like a mid-burst full-accept boundary: no init feed, no tail commit pass.
-        let carried_pending: Option<u32> = sess_pending_slot.as_mut().and_then(|s| s.take());
-        // PERSISTENT DRAFT KV (the only mode since 2026-07-08 — the legacy round-local scratch,
-        // MEMRA_SPEC_KVLOCAL, measured -35 acceptance pts on the 27B p3 sweep and was removed;
-        // acceptance-only — exactness is verify's job either way).
-        // HIDDEN-PAIRING CONVENTION (DEFAULT = predecessor-row, 2026-07-04 — the 27B acceptance
-        // unlock, +16pts): the MTP head is TRAINED on rows pairing token x_p with the trunk
-        // hidden of its PREDECESSOR h_{p-1} (the reference engine's mtp_update shifts the target
-        // hiddens right by one; its draft step 0 feeds (id_last, TRUE hidden of the row id_last
-        // was sampled from)). memra's historical convention paired SAME-ROW (x_p, h_p) in the fill
-        // and seeded chain step 0 through an extra MTP pass on a duplicated token (the
-        // pseudo-seed) — measured 27B p2 K=3 acceptance 0.569 vs 0.731, p3 0.445 vs 0.63+, and
-        // the chain steps j>=1 were already predecessor-shaped, so ONLY the fill + step-0 seed
-        // move. The fill shifts by one and the chain seeds from the predecessor's true hidden
-        // DIRECTLY (vh_seed / vx[j-1]) — the pseudo pass disappears (one MTP-block pass saved
-        // per round on top of the acceptance win). Draft-quality-only: exactness stays the
-        // verify's job either way. (The legacy same-row pairing seam, MEMRA_SPEC_HSAME, and its
-        // pseudo-seed passes were removed 2026-07-08 — predecessor pairing won by +16 acc pts;
-        // the legacy round-local scratch, MEMRA_SPEC_KVLOCAL, went with it.)
-        // REPLAY-FREE PARTIAL ACCEPT (default, 2026-07-03): partial rounds keep the verify's own
-        // bit-identical committed-prefix state (KV truncate + recur rebuild from the VerifyCkpt)
-        // and leave the bonus PENDING — no duplicate trunk pass (profiled ~0.54 extra full weight
-        // reads/round at long ctx). MEMRA_SPEC_REPLAY=1 restores the legacy rollback+replay (A/B
-        // + fallback seam).
-        // Qwen35-MoE replay pin LIFTED (lane/draftcost-moe, 2026-08-20). The pin's stated
-        // bar — the retained verify-state commit proven equivalent to sequential serving —
-        // was waiting on this arch running the serving batched verify class, which the
-        // t-parallel admission (this lane, increment 1) provided: the VerifyCkpt the
-        // replay-free commit consumes is now produced by the SAME serving-class verify that
-        // qualified dense qwen35 on 2026-08-15 (where the per-round duplicate replay
-        // measured 69 -> 30 tok/s). Qualification receipts (run-spec K=1..8 both arms,
-        // 8-prompt replay-vs-replay-free canary, long-prompt cell):
-        // research/draftcost-moe-20260820/RECEIPTS.md. MEMRA_SPEC_REPLAY=1 stays the
-        // rollback + A/B seam.
-        let spec_replay = spec_replay_env_enabled();
-        if constraint.is_some() && spec_replay {
-            return Err(
-                "constrained spec decode does not support MEMRA_SPEC_REPLAY=1 \
-                        (legacy replay commits an unmasked bonus)"
-                    .into(),
-            );
-        }
-        // TRUE-HIDDEN REFRESH (default in persistent-draft-KV mode): every round overwrites the
-        // committed positions' scratch entries from the verify's exact hiddens (mtp_kv_fill batch)
-        // instead of keeping chain-approximate entries. MEMRA_SPEC_NOREFRESH=1 = legacy (A/B seam).
-        let refresh = std::env::var("MEMRA_SPEC_NOREFRESH").is_err();
-        if !refresh && !self.mtp_extra.is_empty() {
-            return Err("multi-head MTP requires exact accepted-prefix refresh".into());
-        }
-
-        // prime: BATCHED cache prime (prime_cache — the measured #1 e2e gap: tokenwise primed at
-        // ~102/38 tok/s vs the engine's ~2000-5900 tok/s batched prefill). prime_cache returns the
-        // full pre-output_norm hidden stack [T, n_embd], which IS prompt_h (the persistent-draft-KV
-        // mtp_kv_fill input) — no per-token collection needed. Prompts below PRIME_MIN_T, and
-        // MEMRA_PRIME_TOKENWISE=1, and frozen Hy3 CPU/GPU expert splits take the tokenwise
-        // decode_step_h loop. The latter avoids transient GPU staging of the spilled expert bank.
-        // EMPTY-SUFFIX CONTINUATION (serve bursts): a session turn with NO new tokens resumes
-        // generation exactly where the last turn stopped — no prime at all. The stashed
-        // `next_pred` plays prime_logits' role: it is the token produced from the logits after
-        // committed.last() by the same rule this entry applies to a cold prime's last row —
-        // an argmax when greedy, a `sample_boundary_token` draw when sampled (the burst tail,
-        // or `spec_session_from_restored` for a converted prefix-cache hit, did the drawing
-        // where the sampler and the session's Philox counters were live). `last_h` seeds the
-        // predecessor pairing below. Fresh calls and non-empty suffixes take the normal path.
-        let continuation = prompt.is_empty();
-        if continuation {
-            assert!(session_mode, "empty prompt requires a session");
-            assert!(
-                sess_tail
-                    .as_ref()
-                    .is_some_and(|(c, lh, np, _, _)| !c.is_empty()
-                        && lh.is_some()
-                        && (np.is_some() || carried_pending.is_some())),
-                "empty-suffix continuation needs a primed session (committed + last_h + next_pred|pending)"
-            );
-        }
-        let mut prime_logits;
-        let mut prompt_h: Option<CudaSlice<f32>> = None;
-        let t_prime = std::time::Instant::now();
-        let batched_prime = !continuation
-            && prompt.len() >= crate::hybrid_forward::PRIME_MIN_T
-            && std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
-            && !e.frozen_cpu_experts_prefer_tokenwise_prime();
-        let prime_split = prime_split.filter(|&split| split > 0 && split < prompt.len());
-        if prime_split.is_some() && continuation {
-            return Err("spec prime split requires a non-empty prime".into());
-        }
-        // STABLE-BOUNDARY TURN CHECKPOINT stop (lane/frspec-multiturn-cache, 2026-08-21):
-        // the worker's `ckpt_at` request, ABSOLUTE -> prompt-relative. On WARM bursts
-        // (base != 0, an affinity-rewound or pool-resumed session priming its own delta)
-        // this is the only stop; on COLD bursts it usually coincides with `prime_split`
-        // (both are the plain tier's stable pre-generation boundary). A boundary the prime
-        // cannot honor (outside this prime's range) silently drops the capture — the
-        // turn_ckpt convention: the next turn re-primes in full, never a wrong resume.
-        let ckpt_rel = if continuation {
-            None
-        } else {
-            ckpt_req
-                .and_then(|abs| abs.checked_sub(base))
-                .filter(|&r| r > 0 && r < prompt.len())
-        };
-        // Prime stops, ordered: each is a boundary the prime halts at so the in-place GDN
-        // conv/ssm state can be snapshotted there (the only moment it exists). One stop =
-        // the legacy single-split program, byte-for-byte.
-        let mut stops: Vec<usize> = Vec::new();
-        for b in [prime_split, ckpt_rel].into_iter().flatten() {
-            if !stops.contains(&b) {
-                stops.push(b);
-            }
-        }
-        stops.sort_unstable();
-        // Captured at the ckpt stop, installed into the session slot post-prime (replacing
-        // the legacy prompt-end capture). Some(None) = capture attempted and failed -> the
-        // slot is cleared (a stale checkpoint would rewind to the WRONG boundary).
-        let mut ckpt_early: Option<Option<SpecCheckpoint>> = None;
-        if continuation {
-            prime_logits = Vec::new();
-        } else if !stops.is_empty() {
-            if let Some(&first) = stops.first()
-                && prime_split == Some(first)
-                && first < crate::hybrid_forward::PRIME_MIN_T
-            {
-                return Err(format!(
-                    "spec prime split {first} is below PRIME_MIN_T {}",
-                    crate::hybrid_forward::PRIME_MIN_T,
-                )
-                .into());
-            }
-            // Mirror the plain worker's boundary stops exactly. Each segment is a
-            // request-level prime (`queued_after` keeps Step35 arm selection independent of
-            // the stops — tick-seg law); a segment below PRIME_MIN_T (and the final tail
-            // under MEMRA_PRIME_TOKENWISE) takes the same eager tokenwise continuation as
-            // prefill_tick. Retain every hidden row so the draft scratch fill remains one
-            // coherent prompt.
-            let mut h_all = e.uninit(prompt.len() * n_embd)?;
-            prime_logits = Vec::new();
-            let mut prev = 0usize;
-            for seg_end in stops.iter().copied().chain(std::iter::once(prompt.len())) {
-                if seg_end <= prev {
-                    continue;
-                }
-                let seg = &prompt[prev..seg_end];
-                let is_final = seg_end == prompt.len();
-                let batched_seg = seg.len() >= crate::hybrid_forward::PRIME_MIN_T
-                    && (!is_final
-                        || (std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
-                            && !e.frozen_cpu_experts_prefer_tokenwise_prime()));
-                if batched_seg {
-                    let (l, _, h_seg) =
-                        self.prime_cache(e, seg, &mut *cache, prompt.len() - seg_end)?;
-                    e.copy_into(&mut h_all, prev * n_embd, &h_seg, seg.len() * n_embd)?;
-                    prime_logits = l;
-                } else {
-                    for (i, &tok) in seg.iter().enumerate() {
-                        let (l, h) = self.decode_step_h(e, tok, &mut *cache)?;
-                        e.copy_into(&mut h_all, (prev + i) * n_embd, &h, n_embd)?;
-                        prime_logits = l;
-                    }
-                }
-                prev = seg_end;
-                if is_final {
-                    break;
-                }
-                debug_assert_eq!(cache.pos, base + seg_end, "prime stop landed off boundary");
-                // PREFIX-CACHE BOUNDARY CAPTURE (lane/spec-prefix-cache): the GDN conv/ssm
-                // states are about to be advanced in place by the next segment, so this is
-                // the ONLY moment the boundary's recurrent state exists. Capture iff the
-                // worker requested exactly this stop (cold sessions only — `capture_at` is
-                // never armed warm). A failed snapshot is silent (turn_ckpt convention) —
-                // publication is an optimization, never a correctness dependency.
-                if base == 0
-                    && let Some((requested, slot)) = sess_capture.as_mut()
-                {
-                    // Publish at the requested miss-LCP stop (the shared-prefix class)
-                    // AND at the stable-boundary stop (the next-turn re-render class,
-                    // lane/frspec-multiturn-cache) — the same boundary set the plain
-                    // prefill tick learns. Without the second entry, the turn after a
-                    // cold re-park could only hit the OLDER lcp entry (the measured
-                    // one-turn transient: t3 restored 607 of 24122 while the plain arm
-                    // rewound to 15222). Dedupe is the worker sweep's has_key.
-                    if (*requested == Some(seg_end) || ckpt_rel == Some(seg_end))
-                        && let Ok(snap) = cache.snapshot(e)
-                    {
-                        slot.push(SpecBoundaryCapture {
-                            snap,
-                            pos: seg_end,
-                            logits: prime_logits.clone(),
-                            // rows [0..seg_end) of h_all are primed — the following
-                            // segments append, never overwrite.
-                            last_h: capture_boundary_hidden(e, &h_all, seg_end, n_embd),
-                            latent_tails: Vec::new(),
-                        });
-                    }
-                }
-                // SESSION-AFFINITY TURN CHECKPOINT at the STABLE boundary (see `ckpt_at`):
-                // same snapshot mechanics, installed post-prime in place of the prompt-end
-                // capture the re-render class always diverged below.
-                if ckpt_rel == Some(seg_end) {
-                    let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
-                        e.uninit(n_embd).and_then(|mut a| {
-                            e.copy_view_into(
-                                &mut a,
-                                0,
-                                &h_all.slice((seg_end - 1) * n_embd..seg_end * n_embd),
-                                n_embd,
-                            )?;
-                            Ok(a)
-                        });
-                    ckpt_early = Some(match (cache.snapshot(e), anchor) {
-                        (Ok(snap), Ok(last_h)) => Some(SpecCheckpoint {
-                            snap,
-                            pos: base + seg_end,
-                            last_h,
-                        }),
-                        _ => None,
-                    });
-                }
-            }
-            if std::env::var("MEMRA_SPEC_STATS").as_deref() == Ok("1") {
-                eprintln!(
-                    "[spec-prime] stops={stops:?} tail={}",
-                    prompt.len() - stops.last().copied().unwrap_or(0)
-                );
-            }
-            prompt_h = Some(h_all);
-        } else if batched_prime {
-            let (l, _h_seed, hiddens) = self.prime_cache(e, prompt, &mut *cache, 0)?;
-            prime_logits = l;
-            prompt_h = Some(hiddens);
-        } else {
-            prime_logits = Vec::new();
-            prompt_h = Some(e.uninit(prompt.len() * n_embd)?);
-            for (i, &tok) in prompt.iter().enumerate() {
-                let (l, h) = self.spec_target_step_h(e, tok, &mut *cache)?;
-                if let Some(ph) = prompt_h.as_mut() {
-                    e.copy_into(ph, i * n_embd, &h, n_embd)?;
-                }
-                prime_logits = l;
-            }
-        }
-        e.stream().synchronize()?;
-        // PREFIX-CACHE SEED CAPTURE (lane/spec-prefix-cache): boundary == prompt end (the seed
-        // case — no shared-prefix split, publish the whole prompt). The prime just finished, so
-        // cache.pos == base + prompt.len() and the recurrent state IS the boundary state;
-        // prime_logits are the boundary logits. Cold sessions only (base == 0) — same law as
-        // prime_split. The mid-prompt capture above already consumed the request if it matched.
-        if !continuation
-            && base == 0
-            && let Some((requested, slot)) = sess_capture.as_mut()
-            && *requested == Some(prompt.len())
-            && slot.is_empty()
-        {
-            debug_assert_eq!(cache.pos, prompt.len(), "seed capture off prompt end");
-            if let Ok(snap) = cache.snapshot(e) {
-                slot.push(SpecBoundaryCapture {
-                    snap,
-                    pos: prompt.len(),
-                    logits: prime_logits.clone(),
-                    last_h: prompt_h
-                        .as_ref()
-                        .map(|ph| capture_boundary_hidden(e, ph, prompt.len(), n_embd))
-                        .unwrap_or_default(),
-                    latent_tails: Vec::new(),
-                });
-            }
-        }
-        // Harness timing contract (see crate::PRIME_NANOS): gen-only throughput without the
-        // prime-subtraction hack.
-        crate::PRIME_NANOS.store(
-            t_prime.elapsed().as_nanos() as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-
-        let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
-        // Resident table is fastest when it fits. Large spill deployments can preserve that HBM
-        // for expert-cache slots and gather only the exact rows needed by MTP/verify from host.
-        let host_embd = spec_host_embd();
-        let embd_gpu = if host_embd {
-            None
-        } else {
-            Some(
-                self.embd_gpu
-                    .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload")),
-            )
-        };
-        let embd_dev = embd_gpu.map(|g| (g, embd_qt, embd_rb));
-        if host_embd {
-            eprintln!(
-                "[spec] host-row embedding: {} bytes kept off HBM",
-                self.embd.raw.len()
-            );
-        }
-        let mut out: Vec<u32> = Vec::with_capacity(max_new);
-        let mut total_drafted = 0usize;
-        let mut total_accepted = 0usize;
-
-        // --- SAMPLER FIRST (lane/sampled-spec-quality, 2026-08-19) ---
-        // The sampler config, the session's Philox counters and the penalty window are parsed
-        // HERE, above the boundary-token selection, because the boundary token must be drawn
-        // from the sampler the request asked for. Pre-lane this block sat ~50 lines BELOW the
-        // selection, which is the whole mechanical reason the boundary token was an argmax:
-        // the sampler state was not in scope yet. Nothing here depends on the round loop, so
-        // moving it up is a pure reordering for greedy (`sampled == false` ⇒ every branch
-        // below takes the argmax path it always took).
-        // --- SAMPLED SPEC (MEMRA_SPEC_TEMP>0, research/sampled-spec-impl-map.md): rejection-
-        // sampling verify (Leviathan/Chen) — accept draft x at u < p(x)/q(x), resample from
-        // norm(max(0,p-q)) on reject, bonus sampled from p on full accept. Counter-based Philox
-        // everywhere (seed, event) -> reproducible. temp==0/unset = the greedy path, untouched.
-        let sp = sampling.unwrap_or_else(|| SpecSampling {
-            temp: std::env::var("MEMRA_SPEC_TEMP")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.0),
-            seed: std::env::var("MEMRA_SEED")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(42),
-            top_k: std::env::var("MEMRA_TOP_K")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0),
-            top_p: std::env::var("MEMRA_TOP_P")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(1.0),
-            min_p: std::env::var("MEMRA_MIN_P")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.0),
-            penalty_last_n: std::env::var("MEMRA_PENALTY_LAST_N")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0),
-            penalty_repeat: std::env::var("MEMRA_PENALTY_REPEAT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(1.0),
-            penalty_freq: std::env::var("MEMRA_PENALTY_FREQ")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.0),
-            penalty_present: std::env::var("MEMRA_PENALTY_PRESENT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.0),
-        });
-        let (sp_temp, sp_seed) = (sp.temp, sp.seed);
+        let (sp_seed, sp_temp) = (sp.seed, sp.temp);
         let sampled = sp_temp > 0.0;
-        // Counters resume from the session (burst continuity: randomness must never repeat
-        // across generate_spec_session calls); one-shot callers start at (0,0). Read through
-        // sess_tail — `sess` was take()n into it above, so sess.as_ref() here is always None.
-        let mut sctr: u32 = sess_tail.as_ref().map(|(_, _, _, s, _)| **s).unwrap_or(0);
-        let mut uctr: u32 = sess_tail.as_ref().map(|(_, _, _, _, u)| **u).unwrap_or(0);
-        // Penalties (v2.1): applied to COPIES of q rows and p columns symmetrically (exactness
-        // for the penalized+filtered target). History = generated tokens, host-tracked window.
-        let pen_on = sampled
-            && sp.penalty_last_n > 0
-            && (sp.penalty_repeat != 1.0 || sp.penalty_freq != 0.0 || sp.penalty_present != 0.0);
-        // SESSION-SPANNING PENALTY WINDOW (Item 2). Pre-lane this was
-        // `prompt.iter().rev().take(64).rev()` — the BURST's suffix slice — so a continuation
-        // burst (the majority of a stream's tokens, and ALL of a converted cache hit's) started
-        // with an EMPTY penalty history and the client's repetition/frequency/presence penalties
-        // silently reset at every burst boundary. The window now spans `committed ++ prompt`,
-        // which is what the API contract says and what the plain sampler's own `history` does.
-        // Byte-identical to the pre-lane seed for a cold turn-1 burst at the default window.
-        let mut pen_hist: Vec<u32> = if pen_on {
-            let sess_hist: &[u32] = if spec_pen_session_on() {
-                sess_tail
-                    .as_ref()
-                    .map(|(c, ..)| c.as_slice())
-                    .unwrap_or(&[])
-            } else {
-                &[] // MEMRA_SPEC_PEN_SESSION=0: pre-lane burst-local window
-            };
-            pen_window_seed(sess_hist, prompt, sp.penalty_last_n)
-        } else {
-            Vec::new()
-        };
-        // First generated token = the BOUNDARY token: greedy takes the argmax of the prompt's
-        // last logits (== greedy's first token, byte-contract); SAMPLED draws it from the
-        // request's own filtered/penalized target through the session's Philox stream
-        // (`sample_boundary_token`, lane/sampled-spec-quality Item 1 — pre-lane this was an
-        // argmax in both regimes, so ~1 token per burst of a sampled stream was greedy).
-        // Emit it, then FEED it to establish the loop invariant below.
-        // PENDING-CARRY: the carried bonus was already emitted by the LAST burst — it becomes
-        // last_token WITHOUT re-emission, and round 0 consumes it as pending (no init feed).
-        // CONSTRAINED entry rules: the first emitted token is the MASKED argmax of the
-        // prompt's last logits (plain constrained-greedy identity); a continuation without
-        // a carried pending would emit an UNMASKED stashed next_pred — refused loudly (the
-        // worker never resumes constrained sessions from the pool, so this cannot fire).
-        if let Some(c) = constraint.as_deref_mut() {
-            if continuation && carried_pending.is_none() {
-                return Err("constrained spec continuation requires a carried pending \
-                            (pool resume is unconstrained-only)"
-                    .into());
-            }
-            if !continuation {
-                c.mask_logits(&mut prime_logits)
-                    .map_err(|e2| format!("constraint: {e2}"))?;
-            }
-        }
-        let mut last_token = if let Some(b) = carried_pending {
-            b
-        } else if continuation {
-            // A continuation's boundary token was DRAWN by the burst that stashed it (the
-            // session tail below), or by `spec_session_from_restored` for a converted
-            // prefix-cache hit — in both cases from the correct logits row with this same
-            // session's Philox stream, which is why it can be consumed here as-is.
-            sess_tail.as_ref().unwrap().2.unwrap()
-        } else if sampled && constraint.is_none() && spec_sampled_boundary_on() {
-            sample_boundary_token(e, &prime_logits, &sp, &pen_hist, &mut sctr, "cold-prime")?
-        } else {
-            // greedy (byte contract), the rollback door, or constrained (masked-argmax
-            // identity — the worker routes sampled+constrained to the plain path, and this
-            // function refuses the combination outright above).
-            argmax(&prime_logits) as u32
-        };
-        if pen_on {
-            // The boundary token is a GENERATED token: the plain sampler `accept()`s every
-            // emitted token into its penalty history, and pre-lane the burst's first token
-            // was invisible to penalties forever (never pushed, and never in `committed`
-            // until this burst's tail). Covers the carry/continuation seeds too — neither is
-            // in `committed` yet.
-            pen_hist.push(last_token);
-        }
-        if carried_pending.is_none() {
-            out.push(last_token);
-            // grammar advances with every emitted token (carried pendings were consumed
-            // by the burst that emitted them).
-            if let Some(c) = constraint.as_deref_mut() {
-                c.consume(last_token)
-                    .map_err(|e2| format!("constraint: {e2}"))?;
-            }
-        }
-        if continuation {
-            // draft-KV invariant: entries [0..base) are the session's exact fills; truncate any
-            // overhang so the chain's first append lands at slot base (== committed.len()).
-            scratch.set_len(e, base)?;
-        }
-        // sse-cadence: hand the caller every not-yet-flushed token (disjoint in-order slices
-        // concatenating to the full `out`). Called after the prime's first token and after each
-        // round commit — emission timing only, token bytes untouched. The slice may be EMPTY
-        // (poll-only boundary: zero-round folds commit nothing new); returns the caller's
-        // continue-verdict (admission yield, 2026-08-06) — false ends the burst at this round.
-        #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-        fn flush_commit(
-            cb: &mut Option<&mut dyn FnMut(&[u32]) -> bool>,
-            out: &[u32],
-            flushed: &mut usize,
-        ) -> bool {
-            if let Some(f) = cb.as_mut() {
-                let keep = f(&out[*flushed..]);
-                *flushed = out.len();
-                keep
-            } else {
-                true
-            }
-        }
-        keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
-        // INVARIANT at loop top: `last_token` is the most-recently-committed/emitted token, its
-        // KV+recur state IS in `cache` (cache.pos = position right AFTER last_token), `last_pred`
-        // is the greedy ARGMAX of the logits that predict the token FOLLOWING last_token, and
-        // `h_seed` = last_token's pre-output_norm hidden. Establish it by feeding last_token once
-        // (mirrors plain greedy). DEVICE-ARGMAX lever: the accept walk only ever consumes the
-        // argmax of those logits — never the full vector — so a host u32 replaces the Vec<f32>.
-        // Trimmed heads: q lives on the trimmed vocab; accept gathers use the TRIMMED index and
-        // the residual scatters q into target-id space (q=-inf off-trim — the head cannot propose
-        // those, so their residual mass is p(x), correct by construction).
-        let d2t_dev: Option<CudaSlice<u32>> = if sampled || crate::spec::spec_stream() {
-            match &mtp.d2t {
-                Some(map) => Some(e.htod_u32_v(map)?),
-                None => None,
-            }
-        } else {
-            None
-        };
-        let mut q_full_buf: Option<CudaSlice<f32>> = None;
-        // host Philox4x32-10 accept-test uniforms: module fn `host_u01` (shared with the
-        // dspark sampled-admission walk); byte-identical to the closure it replaces.
-        let mut draft_logits: Vec<CudaSlice<f32>> = Vec::new(); // retained head logits (q), per slot
-        let mut draft_stats: Vec<(f32, f32, f32)> = Vec::new(); // (row_max, th_e, z_e) per slot
-        let mut perturb_buf: Option<CudaSlice<f32>> = None; // gumbel scratch (max(n_vocab,d_vocab))
-        let mut sample_tok = e.alloc_u32_zeroed(1)?; // residual/bonus sample out
-        let mut col_buf: Option<CudaSlice<f32>> = None; // materialized verify column
-        let mut pen_hist_d: Option<CudaSlice<u32>> = None;
-        let mut pcol_buf: Option<CudaSlice<f32>> = None; // penalized p-column scratch
-        // MEMRA_SPEC_SETUP_TRACE=1 (diagnostics): per-call wall decomposition of the burst
-        // SETUP + TAIL segments (the round loop's internals are MEMRA_SPEC_PHASE's job) —
-        // built to pin the serve per-burst fixed cost (research/spec-serving-20260801).
-        let setup_trace = std::env::var("MEMRA_SPEC_SETUP_TRACE").as_deref() == Ok("1");
-        let t_ent = std::time::Instant::now();
-
-        // SESSION-AFFINITY TURN CHECKPOINT (lane/session-affinity, 2026-08-05): capture the
-        // PROMPT-END boundary state so a LATER turn can rewind here and re-prime only its own
-        // delta instead of the whole conversation. See `SpecCheckpoint` for why this boundary is
-        // the one that matters (a history-rewriting client mutates what the session GENERATED,
-        // so the next turn's prompt agrees with this one up to exactly here).
-        //
-        // WHERE — AND WHY THIS EXACT LINE. Right after the trunk prime, BEFORE the init feed
-        // (`decode_step_h(last_token)`) and before round 0: the last instant at which the caches
-        // hold exactly `base + prompt.len()` rows and nothing generated.
-        //
-        // This was WRONG in the first cut of this lane: the capture sat after the draft-KV fill,
-        // which is also after the init feed, so `cache.pos` was `base + prompt.len() + 1` — the
-        // boundary included the FIRST GENERATED TOKEN. That token is the first thing inside the
-        // `<think>` block the client strips, so every later turn's diff diverged exactly one
-        // token below the checkpoint and affinity declined 100% of the time. Measured on the
-        // owner regime: "history diverged at 12233 of checkpoint 12234". The off-by-one made the
-        // whole mechanism inert while looking, from the outside, like a working
-        // correctness-declines-safely path — hence the decline log carries the offsets.
-        //
-        // The full-attn planes are `len`-truncatable so the snapshot copies only the GDN conv/ssm
-        // state (the reason a spec session could not rewind before). The draft scratch needs no
-        // copy: rows below the boundary are rewritten by the next turn's own fill.
-        //
-        // WHEN: non-empty prime only. An empty-suffix continuation burst adds no prompt boundary
-        // (its "prompt end" IS the previous checkpoint's, already held), so it keeps the existing
-        // checkpoint rather than replacing it with a strictly worse one.
-        //
-        // FAILURE IS SILENT BY DESIGN: on a VRAM-tight rig the snapshot alloc can fail. That
-        // costs the NEXT turn its rewind (it re-primes fully, today's behavior) and must never
-        // fail the burst that is already running — so the error is swallowed, loud only under
-        // MEMRA_DEBUG_SPEC.
-        //
-        // STABLE-BOUNDARY OVERRIDE (lane/frspec-multiturn-cache, 2026-08-21): the prompt-end
-        // posture above was DISPROVED for the think-posture template class — the prompt's own
-        // tail is the live generation header (`<|im_start|>assistant\n<think>\n`) that the
-        // next turn's re-render replaces, so the diff diverged a couple tokens BELOW the
-        // checkpoint and affinity declined 100% of multi-turn agent traffic (the same class
-        // the plain tier fixed on 2026-08-09 via `plain_checkpoint_boundary`; the port to the
-        // spec tier is this lane). When the worker armed `ckpt_at`, the capture happened at
-        // that stop inside the prime above (`ckpt_early`) and is installed here instead;
-        // capture-attempted-but-failed clears the slot exactly like the legacy arm.
-        if let Some(slot) = sess_ckpt_slot {
-            if let Some(early) = ckpt_early {
-                if early.is_none() && std::env::var("MEMRA_DEBUG_SPEC").is_ok() {
-                    eprintln!(
-                        "[spec] stable-boundary turn checkpoint skipped; \
-                               next turn re-primes in full"
-                    );
-                }
-                *slot = early;
-            } else if !continuation {
-                let pos = cache.pos;
-                debug_assert_eq!(
-                    pos,
-                    base + prompt.len(),
-                    "turn checkpoint must sit at the prompt end, before the init feed"
-                );
-                let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
-                    if let Some(ph) = &prompt_h {
-                        // hidden of the LAST primed row = the predecessor anchor at this
-                        // boundary (exactly what a fresh prime of committed[..pos] leaves in
-                        // last_h, and what the next prime's fill reads for its first row).
-                        let np = prompt.len();
-                        e.uninit(n_embd).and_then(|mut a| {
-                            e.copy_view_into(
-                                &mut a,
-                                0,
-                                &ph.slice((np - 1) * n_embd..np * n_embd),
-                                n_embd,
-                            )?;
-                            Ok(a)
-                        })
-                    } else {
-                        Err("no prompt hiddens".into())
-                    };
-                match (cache.snapshot(e), anchor) {
-                    (Ok(snap), Ok(last_h)) => {
-                        *slot = Some(SpecCheckpoint { snap, pos, last_h });
-                    }
-                    (s, a) => {
-                        *slot = None; // a stale checkpoint would rewind to the WRONG boundary
-                        if std::env::var("MEMRA_DEBUG_SPEC").is_ok() {
-                            let err = s
-                                .err()
-                                .map(|e| e.to_string())
-                                .or_else(|| a.err().map(|e| e.to_string()))
-                                .unwrap_or_default();
-                            eprintln!(
-                                "[spec] turn checkpoint skipped ({err}); \
-                                       next turn re-primes in full"
-                            );
-                        }
-                    }
-                }
-            }
-        }
-        // INIT FEED — skipped on a pending carry: last_token (the carried bonus) is NOT in the
-        // caches and must NOT be fed solo; round 0's batched verify commits it as col 0. Its
-        // seed/anchor hidden is the carried last_h (copied below); last_pred is dead in the
-        // pending path (t_pred reads verify col 0 — the accept walk overwrites it).
-        let mut last_pred = 0u32;
-        let mut last_col_logits: Option<CudaSlice<f32>> = None;
-        // CONSTRAINED: the init feed's logits back the (n_acc==0, base==0) masked-argmax
-        // recompute in the grammar-truncation walk — retained host-side, round 0 only.
-        let mut init_logits_host: Option<Vec<f32>> = None;
-        let h_seed0: CudaSlice<f32> = if carried_pending.is_none() {
-            let (init_logits, h) = self.spec_target_step_h(e, last_token, &mut *cache)?;
-            last_pred = argmax(&init_logits) as u32;
-            if constraint.is_some() {
-                init_logits_host = Some(init_logits.clone());
-            }
-            // sampled mode: p-distribution after last_token, for the j==0/base==0 accept test.
-            if sampled {
-                last_col_logits = Some(e.htod(&init_logits)?);
-            }
-            h
-        } else {
-            // predecessor-row anchor: hidden of the last COMMITTED row (the carry contract).
-            let lh = sess_tail
-                .as_ref()
-                .unwrap()
-                .1
-                .as_ref()
-                .expect("pending carry requires last_h");
-            e.clone_dtod(lh)?
-        };
-        let t_init = t_ent.elapsed();
-        let mut last_col_stats: Option<(f32, f32, f32)> = None;
-        // PERSISTENT h_seed buffer (allocated BEFORE any graph capture so no captured scratch can
-        // alias it): every path that updates the round seed copies INTO it — no per-round allocs,
-        // stable pointer for the graph-draft round-start copy.
-        let mut h_seed_buf = e.clone_dtod(&h_seed0)?;
-        // Predecessor-pairing trackers: `fill_prev` = trunk hidden AT the last COMMITTED row (the
-        // predecessor of the next verify's col 0 — the reference's carried pending-h analogue;
-        // also the predecessor-row hidden for the round-0 legacy-replay seed). At round 0 that
-        // row is last_token's own (h_seed0). The chain step-0 seed under the pairing default =
-        // hidden of the row BEFORE last_token = the prompt's last row at round 0 (h_seed_buf
-        // overwritten below).
-        let mut fill_prev = e.clone_dtod(&h_seed0)?;
-        {
-            if let Some(ph) = &prompt_h {
-                let np = prompt.len();
-                e.copy_view_into(
-                    &mut h_seed_buf,
-                    0,
-                    &ph.slice((np - 1) * n_embd..np * n_embd),
-                    n_embd,
-                )?;
-            } else if continuation
-                && let Some((_, lh, _, _, _)) = sess_tail.as_ref()
-                && let Some(lh) = lh.as_ref()
-            {
-                e.copy_into(&mut h_seed_buf, 0, lh, n_embd)?;
-            }
-        }
-        // Persistent device prediction slots for the accept walk (max k+1 verify columns).
-        let mut preds_d = e.alloc_u32_zeroed(k + 2)?;
-
-        let debug_spec = std::env::var("MEMRA_DEBUG_SPEC").is_ok();
-        // MEMRA_SPEC_STATS=1: per-slot accept histogram + draft-length histogram, printed once at
-        // the end. Metric normalization vs the reference engine: BOTH engines count
-        // accepted/drafted where the chain stopped at p-min and the sub-threshold token is
-        // discarded uncounted — per-slot decay + chain-length mix are the extra dimensions.
-        let spec_stats = std::env::var("MEMRA_SPEC_STATS").is_ok();
-        let mut st_drafted = vec![0usize; k];
-        let mut st_accepted = vec![0usize; k];
-        let mut st_len_hist = vec![0usize; k + 1];
-        let mut st_full = 0usize;
-        // P-MIN CONFIDENCE GATE (MEMRA_SPEC_PMIN, the serve script's --spec-draft-p-min mechanism):
-        // stop the draft chain early when the head's softmax confidence in its own pick drops
-        // below p_min. Hoisted above the loop: the graph capture bakes the prob kernels iff on.
-        static PMIN: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-        let p_min = *PMIN.get_or_init(|| {
-            std::env::var("MEMRA_SPEC_PMIN")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.0)
-        });
-        // ZERO-DRAFT ROUNDS (MEMRA_SPEC_PMIN0=1, vendored from llama.cpp's draft gating): let the
-        // p-min gate apply at j==0 too, so a low-confidence round drafts NOTHING and the verify
-        // batch is just the pending bonus (m=1 = a plain decode step). llama's 35B win rides
-        // exactly this — draft acceptance 76% at mean len 2.5 because unpredictable stretches
-        // never pay draft+verify overhead. Only legal when a pending bonus exists (an empty
-        // verify batch is not); the j==0 exemption stays for pending-less rounds.
-        let pmin0 = std::env::var("MEMRA_SPEC_PMIN0")
-            .map(|v| v == "1")
-            .unwrap_or(false);
-
-        // --- GRAPH DRAFT setup: persistent I/O buffers + ONE capture (2 warmups inside). The
-        // warmups mutate scratch len_d / pos / tok / seed — all reset at every round start, so the
-        // only restore needed is the scratch counter. Capture failure (e.g. a non-capturable
-        // cuBLAS path in an exotic head) falls back to the eager draft chain.
-        // PER-SESSION PERSISTENCE (2026-08-01): session calls reuse the DraftGraphCtx parked on
-        // the SpecSession — the capture (2 warmup head forwards + instantiate) ran ONCE at the
-        // session's first burst, not per burst (measured ~16ms/burst fixed cost on H100 q27,
-        // research/spec-serving-20260801). Reuse is pointer-exact: the graph bakes the session's
-        // own scratch KV (never realloc'd), the model's resident embedding, the OnceLock p_min,
-        // and the g_* buffers carried in the ctx — replay dispatch is identical to a fresh
-        // capture, so draft tokens are bit-identical (drafts never decide exactness anyway; the
-        // verify arbitrates). Single-shot calls (sess=None) build a fresh ctx and drop it.
-        let mut dctx: DraftGraphCtx = match sess_draft_slot.as_mut().and_then(|s| s.take()) {
+        let mut dctx: DraftGraphCtx = match parked {
             Some(c) => c,
             None => DraftGraphCtx::new(e, n_embd, if sampled { d_vocab } else { 1 })?,
         };
@@ -11015,9 +10323,6 @@ impl HybridModel {
         // truncation (the correctness backstop) stops cutting every tight-schema round.
         // The mask is one node inside the captured draft chain — presence is a CAPTURE-TIME
         // shape, so a parked graph of the other shape is dropped and recaptured.
-        let dmask_on = constraint
-            .as_deref()
-            .is_some_and(|c| c.draft_mask_enabled());
         let dmask_words = if dmask_on { d_vocab.div_ceil(32) } else { 0 };
         if dmask_on && dctx.g_dmask.len() < dmask_words {
             dctx.g_dmask = e.alloc_u32_zeroed(dmask_words)?;
@@ -11801,12 +11106,919 @@ impl HybridModel {
                 dctx.s_key,
             );
         }
+        Ok(SpecDraftSetup {
+            dctx,
+            dmask_on,
+            dmask_words,
+            s_key,
+            pure_temp,
+            s_capturable,
+        })
+    }
+
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    fn generate_spec_inner2(
+        &self,
+        e: &Engine,
+        prompt: &[u32],
+        max_new: usize,
+        k: usize,
+        graph_draft: bool,
+        mut sess: Option<&mut SpecSession>,
+        sampling: Option<SpecSampling>,
+        mut constraint: Option<&mut dyn SpecConstraint>,
+        mut on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        prime_split: Option<usize>,
+    ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        assert!(k >= 1, "k must be >= 1");
+        // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
+        let mut flushed = 0usize;
+        // admission yield (2026-08-06): on_commit's continue-verdict; false = end the burst
+        // at the next round boundary (same exit as max_new reached — the session tail runs).
+        // Initialized by the unconditional post-prime flush below.
+        let mut keep_going;
+        let mtp = self
+            .mtp
+            .as_ref()
+            .expect("generate_spec requires an MTP head (nextn_predict_layers>0)");
+        let n_vocab = self.output.out_features();
+        // FR-Spec: the draft head may be TRIMMED (fewer rows than n_vocab); the draft argmax runs
+        // over the draft vocab and the winning index maps through d2t to a TARGET token id.
+        // Everything downstream (verify/accept/commit) sees target ids only — exactness unchanged.
+        let d_vocab = mtp
+            .shared_head_head
+            .as_ref()
+            .unwrap_or(&self.output)
+            .out_features();
+        if !self.mtp_extra.is_empty() {
+            if self.plan.draft_source != memra_gguf::model_plan::DraftSourcePlan::Embedded
+                || self.plan.mtp_blocks.len() != self.mtp_head_count()
+            {
+                return Err(
+                    "multi-head MTP requires one embedded canonical block per loaded head".into(),
+                );
+            }
+            // TRIMMED chains (2026-08-27): every head must carry the SAME d2t — the ranking is
+            // token-frequency and head-independent, and every downstream remap (per-step argmax,
+            // stream pack, sampled d2t_dev) reads head 0's map, so equality is what makes that
+            // single map correct for the whole chain. Mixed trimmed/untrimmed is refused.
+            for (offset, head) in self.mtp_extra.iter().enumerate() {
+                if head.d2t != mtp.d2t
+                    || head
+                        .shared_head_head
+                        .as_ref()
+                        .unwrap_or(&self.output)
+                        .out_features()
+                        != d_vocab
+                {
+                    return Err(format!(
+                        "embedded MTP head {} has incompatible draft vocabulary",
+                        offset + 1
+                    )
+                    .into());
+                }
+            }
+            eprintln!(
+                "[mtp-chain] heads={} policy=step-modulo prefix-replay kv=per-head",
+                self.mtp_head_count()
+            );
+        }
+        let n_embd = self.cfg.n_embd as usize;
+        // SESSION MODE: reuse the live cache/scratch, prime only the suffix. `base` = tokens
+        // already committed (their state is in the caches); 0 = fresh single-shot call.
+        let session_mode = sess.is_some();
+        let max_ctx = match sess.as_ref() {
+            Some(s) => s.cache.max_ctx,
+            None => prompt.len() + max_new + k + 8,
+        };
+        let mut prepared = sess.as_mut().and_then(|s| s.prime_ready.take());
+        if prepared.as_ref().is_some_and(|p| {
+            p.prompt != prompt
+                || p.sampling != resolve_spec_sampling(sampling)
+                || p.k != k
+                || p.constrained != constraint.is_some()
+        }) {
+            return Err("prepared MTP prime does not match this suffix".into());
+        }
+        let mut own_cache;
+        let mut own_scratch;
+        // PREFIX-CACHE capture request threaded out of the session (lane/spec-prefix-cache):
+        // (requested split, destination list). Single-shot per burst; fresh calls have none.
+        let mut sess_capture: Option<(Option<usize>, &mut Vec<SpecBoundaryCapture>)> = None;
+        // STABLE-BOUNDARY turn-checkpoint request (lane/frspec-multiturn-cache): ABSOLUTE
+        // committed-length position; consumed one-shot like `capture_at`. None = legacy
+        // prompt-end capture below.
+        let mut ckpt_req: Option<usize> = None;
+        // FAIL-SAFE bit threaded out of the session (see `SpecSession::capture_disabled`).
+        let mut sess_capture_disabled = false;
+        let (
+            cache,
+            scratch,
+            mut sess_tail,
+            mut sess_draft_slot,
+            mut sess_pending_slot,
+            sess_ckpt_slot,
+            sess_telem,
+        ): (
+            &mut Cache,
+            &mut MtpScratch,
+            Option<(
+                &mut Vec<u32>,
+                &mut Option<CudaSlice<f32>>,
+                &mut Option<u32>,
+                &mut u32,
+                &mut u32,
+            )>,
+            Option<&mut Option<DraftGraphCtx>>,
+            Option<&mut Option<u32>>,
+            Option<&mut Option<SpecCheckpoint>>,
+            Option<&SpecTelemetryCounters>,
+        ) = match sess.take() {
+            Some(sr) => {
+                let SpecSession {
+                    cache,
+                    scratch,
+                    committed,
+                    last_h,
+                    next_pred,
+                    sctr: s_sctr,
+                    uctr: s_uctr,
+                    draft_ctx,
+                    pending_tok,
+                    turn_ckpt,
+                    telem,
+                    capture_at,
+                    boundary_captures,
+                    ckpt_at,
+                    capture_disabled,
+                    prime_ready: _,
+                } = sr;
+                sess_capture_disabled = *capture_disabled;
+                sess_capture = Some((capture_at.take(), boundary_captures));
+                ckpt_req = ckpt_at.take();
+                (
+                    cache,
+                    scratch,
+                    Some((committed, last_h, next_pred, s_sctr, s_uctr)),
+                    Some(draft_ctx),
+                    Some(pending_tok),
+                    Some(turn_ckpt),
+                    Some(telem),
+                )
+            }
+            None => {
+                // STAGE-OWNED KV (lane/pp2-spec 2026-08-06) — see `new_session`. Door shut =
+                // `Cache::new` verbatim.
+                own_cache = crate::pp::new_cache_planned(e, &self.cfg, &self.plan, max_ctx)?;
+                // Persistent scratch = max_ctx rows (~2KB/token quantized).
+                own_scratch = self.new_mtp_scratch(e, max_ctx)?;
+                (
+                    &mut own_cache,
+                    &mut own_scratch,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            }
+        };
+        cache.ensure_usable("generate_spec")?;
+        if scratch.plane_count() != self.mtp_head_count() {
+            return Err(format!(
+                "MTP scratch/head count mismatch ({}/{})",
+                scratch.plane_count(),
+                self.mtp_head_count()
+            )
+            .into());
+        }
+        let base = prepared.as_ref().map_or(cache.pos, |p| p.base);
+        // PENDING-CARRY consume (2026-08-01): a carried bonus reaches here only on the
+        // empty-suffix GREEDY continuation path (generate_spec_session_sampled flushed every
+        // other case). It enters the round loop as round-0's pending — verify col 0 — exactly
+        // like a mid-burst full-accept boundary: no init feed, no tail commit pass.
+        let carried_pending: Option<u32> = sess_pending_slot.as_mut().and_then(|s| s.take());
+        // PERSISTENT DRAFT KV (the only mode since 2026-07-08 — the legacy round-local scratch,
+        // MEMRA_SPEC_KVLOCAL, measured -35 acceptance pts on the 27B p3 sweep and was removed;
+        // acceptance-only — exactness is verify's job either way).
+        // HIDDEN-PAIRING CONVENTION (DEFAULT = predecessor-row, 2026-07-04 — the 27B acceptance
+        // unlock, +16pts): the MTP head is TRAINED on rows pairing token x_p with the trunk
+        // hidden of its PREDECESSOR h_{p-1} (the reference engine's mtp_update shifts the target
+        // hiddens right by one; its draft step 0 feeds (id_last, TRUE hidden of the row id_last
+        // was sampled from)). memra's historical convention paired SAME-ROW (x_p, h_p) in the fill
+        // and seeded chain step 0 through an extra MTP pass on a duplicated token (the
+        // pseudo-seed) — measured 27B p2 K=3 acceptance 0.569 vs 0.731, p3 0.445 vs 0.63+, and
+        // the chain steps j>=1 were already predecessor-shaped, so ONLY the fill + step-0 seed
+        // move. The fill shifts by one and the chain seeds from the predecessor's true hidden
+        // DIRECTLY (vh_seed / vx[j-1]) — the pseudo pass disappears (one MTP-block pass saved
+        // per round on top of the acceptance win). Draft-quality-only: exactness stays the
+        // verify's job either way. (The legacy same-row pairing seam, MEMRA_SPEC_HSAME, and its
+        // pseudo-seed passes were removed 2026-07-08 — predecessor pairing won by +16 acc pts;
+        // the legacy round-local scratch, MEMRA_SPEC_KVLOCAL, went with it.)
+        // REPLAY-FREE PARTIAL ACCEPT (default, 2026-07-03): partial rounds keep the verify's own
+        // bit-identical committed-prefix state (KV truncate + recur rebuild from the VerifyCkpt)
+        // and leave the bonus PENDING — no duplicate trunk pass (profiled ~0.54 extra full weight
+        // reads/round at long ctx). MEMRA_SPEC_REPLAY=1 restores the legacy rollback+replay (A/B
+        // + fallback seam).
+        // Qwen35-MoE replay pin LIFTED (lane/draftcost-moe, 2026-08-20). The pin's stated
+        // bar — the retained verify-state commit proven equivalent to sequential serving —
+        // was waiting on this arch running the serving batched verify class, which the
+        // t-parallel admission (this lane, increment 1) provided: the VerifyCkpt the
+        // replay-free commit consumes is now produced by the SAME serving-class verify that
+        // qualified dense qwen35 on 2026-08-15 (where the per-round duplicate replay
+        // measured 69 -> 30 tok/s). Qualification receipts (run-spec K=1..8 both arms,
+        // 8-prompt replay-vs-replay-free canary, long-prompt cell):
+        // research/draftcost-moe-20260820/RECEIPTS.md. MEMRA_SPEC_REPLAY=1 stays the
+        // rollback + A/B seam.
+        let spec_replay = spec_replay_env_enabled();
+        if constraint.is_some() && spec_replay {
+            return Err(
+                "constrained spec decode does not support MEMRA_SPEC_REPLAY=1 \
+                        (legacy replay commits an unmasked bonus)"
+                    .into(),
+            );
+        }
+        // TRUE-HIDDEN REFRESH (default in persistent-draft-KV mode): every round overwrites the
+        // committed positions' scratch entries from the verify's exact hiddens (mtp_kv_fill batch)
+        // instead of keeping chain-approximate entries. MEMRA_SPEC_NOREFRESH=1 = legacy (A/B seam).
+        let refresh = std::env::var("MEMRA_SPEC_NOREFRESH").is_err();
+        if !refresh && !self.mtp_extra.is_empty() {
+            return Err("multi-head MTP requires exact accepted-prefix refresh".into());
+        }
+
+        // prime: BATCHED cache prime (prime_cache — the measured #1 e2e gap: tokenwise primed at
+        // ~102/38 tok/s vs the engine's ~2000-5900 tok/s batched prefill). prime_cache returns the
+        // full pre-output_norm hidden stack [T, n_embd], which IS prompt_h (the persistent-draft-KV
+        // mtp_kv_fill input) — no per-token collection needed. Prompts below PRIME_MIN_T, and
+        // MEMRA_PRIME_TOKENWISE=1, and frozen Hy3 CPU/GPU expert splits take the tokenwise
+        // decode_step_h loop. The latter avoids transient GPU staging of the spilled expert bank.
+        // EMPTY-SUFFIX CONTINUATION (serve bursts): a session turn with NO new tokens resumes
+        // generation exactly where the last turn stopped — no prime at all. The stashed
+        // `next_pred` plays prime_logits' role: it is the token produced from the logits after
+        // committed.last() by the same rule this entry applies to a cold prime's last row —
+        // an argmax when greedy, a `sample_boundary_token` draw when sampled (the burst tail,
+        // or `spec_session_from_restored` for a converted prefix-cache hit, did the drawing
+        // where the sampler and the session's Philox counters were live). `last_h` seeds the
+        // predecessor pairing below. Fresh calls and non-empty suffixes take the normal path.
+        let continuation = prompt.is_empty();
+        if continuation {
+            assert!(session_mode, "empty prompt requires a session");
+            assert!(
+                sess_tail
+                    .as_ref()
+                    .is_some_and(|(c, lh, np, _, _)| !c.is_empty()
+                        && lh.is_some()
+                        && (np.is_some() || carried_pending.is_some())),
+                "empty-suffix continuation needs a primed session (committed + last_h + next_pred|pending)"
+            );
+        }
+        let mut prime_logits;
+        let mut prompt_h: Option<CudaSlice<f32>> = None;
+        let t_prime = std::time::Instant::now();
+        let batched_prime = !continuation
+            && prompt.len() >= crate::hybrid_forward::PRIME_MIN_T
+            && std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
+            && !e.frozen_cpu_experts_prefer_tokenwise_prime();
+        let prime_split = prime_split.filter(|&split| split > 0 && split < prompt.len());
+        if prime_split.is_some() && continuation {
+            return Err("spec prime split requires a non-empty prime".into());
+        }
+        // STABLE-BOUNDARY TURN CHECKPOINT stop (lane/frspec-multiturn-cache, 2026-08-21):
+        // the worker's `ckpt_at` request, ABSOLUTE -> prompt-relative. On WARM bursts
+        // (base != 0, an affinity-rewound or pool-resumed session priming its own delta)
+        // this is the only stop; on COLD bursts it usually coincides with `prime_split`
+        // (both are the plain tier's stable pre-generation boundary). A boundary the prime
+        // cannot honor (outside this prime's range) silently drops the capture — the
+        // turn_ckpt convention: the next turn re-primes in full, never a wrong resume.
+        let ckpt_rel = if continuation {
+            None
+        } else {
+            ckpt_req
+                .and_then(|abs| abs.checked_sub(base))
+                .filter(|&r| r > 0 && r < prompt.len())
+        };
+        // Prime stops, ordered: each is a boundary the prime halts at so the in-place GDN
+        // conv/ssm state can be snapshotted there (the only moment it exists). One stop =
+        // the legacy single-split program, byte-for-byte.
+        let mut stops: Vec<usize> = Vec::new();
+        for b in [prime_split, ckpt_rel].into_iter().flatten() {
+            if !stops.contains(&b) {
+                stops.push(b);
+            }
+        }
+        stops.sort_unstable();
+        // Captured at the ckpt stop, installed into the session slot post-prime (replacing
+        // the legacy prompt-end capture). Some(None) = capture attempted and failed -> the
+        // slot is cleared (a stale checkpoint would rewind to the WRONG boundary).
+        let mut ckpt_early: Option<Option<SpecCheckpoint>> = None;
+        if let Some(ready) = prepared.as_mut() {
+            prime_logits = ready.logits.clone();
+            prompt_h = ready.hiddens.take();
+        } else if continuation {
+            prime_logits = Vec::new();
+        } else if !stops.is_empty() {
+            if let Some(&first) = stops.first()
+                && prime_split == Some(first)
+                && first < crate::hybrid_forward::PRIME_MIN_T
+            {
+                return Err(format!(
+                    "spec prime split {first} is below PRIME_MIN_T {}",
+                    crate::hybrid_forward::PRIME_MIN_T,
+                )
+                .into());
+            }
+            // Mirror the plain worker's boundary stops exactly. Each segment is a
+            // request-level prime (`queued_after` keeps Step35 arm selection independent of
+            // the stops — tick-seg law); a segment below PRIME_MIN_T (and the final tail
+            // under MEMRA_PRIME_TOKENWISE) takes the same eager tokenwise continuation as
+            // prefill_tick. Retain every hidden row so the draft scratch fill remains one
+            // coherent prompt.
+            let mut h_all = e.uninit(prompt.len() * n_embd)?;
+            prime_logits = Vec::new();
+            let mut prev = 0usize;
+            for seg_end in stops.iter().copied().chain(std::iter::once(prompt.len())) {
+                if seg_end <= prev {
+                    continue;
+                }
+                let seg = &prompt[prev..seg_end];
+                let is_final = seg_end == prompt.len();
+                let batched_seg = seg.len() >= crate::hybrid_forward::PRIME_MIN_T
+                    && (!is_final
+                        || (std::env::var("MEMRA_PRIME_TOKENWISE").is_err()
+                            && !e.frozen_cpu_experts_prefer_tokenwise_prime()));
+                if batched_seg {
+                    let (l, _, h_seg) =
+                        self.prime_cache(e, seg, &mut *cache, prompt.len() - seg_end)?;
+                    e.copy_into(&mut h_all, prev * n_embd, &h_seg, seg.len() * n_embd)?;
+                    prime_logits = l;
+                } else {
+                    for (i, &tok) in seg.iter().enumerate() {
+                        let (l, h) = self.decode_step_h(e, tok, &mut *cache)?;
+                        e.copy_into(&mut h_all, (prev + i) * n_embd, &h, n_embd)?;
+                        prime_logits = l;
+                    }
+                }
+                prev = seg_end;
+                if is_final {
+                    break;
+                }
+                debug_assert_eq!(cache.pos, base + seg_end, "prime stop landed off boundary");
+                // PREFIX-CACHE BOUNDARY CAPTURE (lane/spec-prefix-cache): the GDN conv/ssm
+                // states are about to be advanced in place by the next segment, so this is
+                // the ONLY moment the boundary's recurrent state exists. Capture iff the
+                // worker requested exactly this stop (cold sessions only — `capture_at` is
+                // never armed warm). A failed snapshot is silent (turn_ckpt convention) —
+                // publication is an optimization, never a correctness dependency.
+                if base == 0
+                    && let Some((requested, slot)) = sess_capture.as_mut()
+                {
+                    // Publish at the requested miss-LCP stop (the shared-prefix class)
+                    // AND at the stable-boundary stop (the next-turn re-render class,
+                    // lane/frspec-multiturn-cache) — the same boundary set the plain
+                    // prefill tick learns. Without the second entry, the turn after a
+                    // cold re-park could only hit the OLDER lcp entry (the measured
+                    // one-turn transient: t3 restored 607 of 24122 while the plain arm
+                    // rewound to 15222). Dedupe is the worker sweep's has_key.
+                    if (*requested == Some(seg_end) || ckpt_rel == Some(seg_end))
+                        && let Ok(snap) = cache.snapshot(e)
+                    {
+                        slot.push(SpecBoundaryCapture {
+                            snap,
+                            pos: seg_end,
+                            logits: prime_logits.clone(),
+                            // rows [0..seg_end) of h_all are primed — the following
+                            // segments append, never overwrite.
+                            last_h: capture_boundary_hidden(e, &h_all, seg_end, n_embd),
+                            latent_tails: Vec::new(),
+                        });
+                    }
+                }
+                // SESSION-AFFINITY TURN CHECKPOINT at the STABLE boundary (see `ckpt_at`):
+                // same snapshot mechanics, installed post-prime in place of the prompt-end
+                // capture the re-render class always diverged below.
+                if ckpt_rel == Some(seg_end) {
+                    let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
+                        e.uninit(n_embd).and_then(|mut a| {
+                            e.copy_view_into(
+                                &mut a,
+                                0,
+                                &h_all.slice((seg_end - 1) * n_embd..seg_end * n_embd),
+                                n_embd,
+                            )?;
+                            Ok(a)
+                        });
+                    ckpt_early = Some(match (cache.snapshot(e), anchor) {
+                        (Ok(snap), Ok(last_h)) => Some(SpecCheckpoint {
+                            snap,
+                            pos: base + seg_end,
+                            last_h,
+                        }),
+                        _ => None,
+                    });
+                }
+            }
+            if std::env::var("MEMRA_SPEC_STATS").as_deref() == Ok("1") {
+                eprintln!(
+                    "[spec-prime] stops={stops:?} tail={}",
+                    prompt.len() - stops.last().copied().unwrap_or(0)
+                );
+            }
+            prompt_h = Some(h_all);
+        } else if batched_prime {
+            let (l, _h_seed, hiddens) = self.prime_cache(e, prompt, &mut *cache, 0)?;
+            prime_logits = l;
+            prompt_h = Some(hiddens);
+        } else {
+            prime_logits = Vec::new();
+            prompt_h = Some(e.uninit(prompt.len() * n_embd)?);
+            for (i, &tok) in prompt.iter().enumerate() {
+                let (l, h) = self.spec_target_step_h(e, tok, &mut *cache)?;
+                if let Some(ph) = prompt_h.as_mut() {
+                    e.copy_into(ph, i * n_embd, &h, n_embd)?;
+                }
+                prime_logits = l;
+            }
+        }
+        e.stream().synchronize()?;
+        // PREFIX-CACHE SEED CAPTURE (lane/spec-prefix-cache): boundary == prompt end (the seed
+        // case — no shared-prefix split, publish the whole prompt). The prime just finished, so
+        // cache.pos == base + prompt.len() and the recurrent state IS the boundary state;
+        // prime_logits are the boundary logits. Cold sessions only (base == 0) — same law as
+        // prime_split. The mid-prompt capture above already consumed the request if it matched.
+        if !continuation
+            && base == 0
+            && let Some((requested, slot)) = sess_capture.as_mut()
+            && *requested == Some(prompt.len())
+            && slot.is_empty()
+        {
+            debug_assert_eq!(cache.pos, prompt.len(), "seed capture off prompt end");
+            if let Ok(snap) = cache.snapshot(e) {
+                slot.push(SpecBoundaryCapture {
+                    snap,
+                    pos: prompt.len(),
+                    logits: prime_logits.clone(),
+                    last_h: prompt_h
+                        .as_ref()
+                        .map(|ph| capture_boundary_hidden(e, ph, prompt.len(), n_embd))
+                        .unwrap_or_default(),
+                    latent_tails: Vec::new(),
+                });
+            }
+        }
+        // Harness timing contract (see crate::PRIME_NANOS): gen-only throughput without the
+        // prime-subtraction hack.
+        crate::PRIME_NANOS.store(
+            prepared
+                .as_ref()
+                .map_or_else(|| t_prime.elapsed(), |p| p.wall)
+                .as_nanos() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        let (embd_qt, embd_rb) = self.embd.qt_and_row_bytes(n_embd);
+        // Resident table is fastest when it fits. Large spill deployments can preserve that HBM
+        // for expert-cache slots and gather only the exact rows needed by MTP/verify from host.
+        let host_embd = spec_host_embd();
+        let embd_gpu = if host_embd {
+            None
+        } else {
+            Some(
+                self.embd_gpu
+                    .get_or_init(|| e.upload_u8(&self.embd.raw).expect("embed table upload")),
+            )
+        };
+        let embd_dev = embd_gpu.map(|g| (g, embd_qt, embd_rb));
+        if host_embd {
+            eprintln!(
+                "[spec] host-row embedding: {} bytes kept off HBM",
+                self.embd.raw.len()
+            );
+        }
+        let mut out: Vec<u32> = Vec::with_capacity(max_new);
+        let mut total_drafted = 0usize;
+        let mut total_accepted = 0usize;
+
+        // --- SAMPLER FIRST (lane/sampled-spec-quality, 2026-08-19) ---
+        // The sampler config, the session's Philox counters and the penalty window are parsed
+        // HERE, above the boundary-token selection, because the boundary token must be drawn
+        // from the sampler the request asked for. Pre-lane this block sat ~50 lines BELOW the
+        // selection, which is the whole mechanical reason the boundary token was an argmax:
+        // the sampler state was not in scope yet. Nothing here depends on the round loop, so
+        // moving it up is a pure reordering for greedy (`sampled == false` ⇒ every branch
+        // below takes the argmax path it always took).
+        // --- SAMPLED SPEC (MEMRA_SPEC_TEMP>0, research/sampled-spec-impl-map.md): rejection-
+        // sampling verify (Leviathan/Chen) — accept draft x at u < p(x)/q(x), resample from
+        // norm(max(0,p-q)) on reject, bonus sampled from p on full accept. Counter-based Philox
+        // everywhere (seed, event) -> reproducible. temp==0/unset = the greedy path, untouched.
+        let sp = resolve_spec_sampling(sampling);
+        let (sp_temp, sp_seed) = (sp.temp, sp.seed);
+        let sampled = sp_temp > 0.0;
+        // Counters resume from the session (burst continuity: randomness must never repeat
+        // across generate_spec_session calls); one-shot callers start at (0,0). Read through
+        // sess_tail — `sess` was take()n into it above, so sess.as_ref() here is always None.
+        let mut sctr: u32 = sess_tail.as_ref().map(|(_, _, _, s, _)| **s).unwrap_or(0);
+        let mut uctr: u32 = sess_tail.as_ref().map(|(_, _, _, _, u)| **u).unwrap_or(0);
+        // Penalties (v2.1): applied to COPIES of q rows and p columns symmetrically (exactness
+        // for the penalized+filtered target). History = generated tokens, host-tracked window.
+        let pen_on = sampled
+            && sp.penalty_last_n > 0
+            && (sp.penalty_repeat != 1.0 || sp.penalty_freq != 0.0 || sp.penalty_present != 0.0);
+        // SESSION-SPANNING PENALTY WINDOW (Item 2). Pre-lane this was
+        // `prompt.iter().rev().take(64).rev()` — the BURST's suffix slice — so a continuation
+        // burst (the majority of a stream's tokens, and ALL of a converted cache hit's) started
+        // with an EMPTY penalty history and the client's repetition/frequency/presence penalties
+        // silently reset at every burst boundary. The window now spans `committed ++ prompt`,
+        // which is what the API contract says and what the plain sampler's own `history` does.
+        // Byte-identical to the pre-lane seed for a cold turn-1 burst at the default window.
+        let mut pen_hist: Vec<u32> = if pen_on {
+            let sess_hist: &[u32] = if spec_pen_session_on() {
+                sess_tail
+                    .as_ref()
+                    .map(|(c, ..)| c.as_slice())
+                    .unwrap_or(&[])
+            } else {
+                &[] // MEMRA_SPEC_PEN_SESSION=0: pre-lane burst-local window
+            };
+            pen_window_seed(sess_hist, prompt, sp.penalty_last_n)
+        } else {
+            Vec::new()
+        };
+        // First generated token = the BOUNDARY token: greedy takes the argmax of the prompt's
+        // last logits (== greedy's first token, byte-contract); SAMPLED draws it from the
+        // request's own filtered/penalized target through the session's Philox stream
+        // (`sample_boundary_token`, lane/sampled-spec-quality Item 1 — pre-lane this was an
+        // argmax in both regimes, so ~1 token per burst of a sampled stream was greedy).
+        // Emit it, then FEED it to establish the loop invariant below.
+        // PENDING-CARRY: the carried bonus was already emitted by the LAST burst — it becomes
+        // last_token WITHOUT re-emission, and round 0 consumes it as pending (no init feed).
+        // CONSTRAINED entry rules: the first emitted token is the MASKED argmax of the
+        // prompt's last logits (plain constrained-greedy identity); a continuation without
+        // a carried pending would emit an UNMASKED stashed next_pred — refused loudly (the
+        // worker never resumes constrained sessions from the pool, so this cannot fire).
+        if let Some(c) = constraint.as_deref_mut() {
+            if continuation && carried_pending.is_none() {
+                return Err("constrained spec continuation requires a carried pending \
+                            (pool resume is unconstrained-only)"
+                    .into());
+            }
+            if !continuation && prepared.is_none() {
+                c.mask_logits(&mut prime_logits)
+                    .map_err(|e2| format!("constraint: {e2}"))?;
+            }
+        }
+        let mut last_token = if let Some(ready) = prepared.as_ref() {
+            ready.boundary
+        } else if let Some(b) = carried_pending {
+            b
+        } else if continuation {
+            // A continuation's boundary token was DRAWN by the burst that stashed it (the
+            // session tail below), or by `spec_session_from_restored` for a converted
+            // prefix-cache hit — in both cases from the correct logits row with this same
+            // session's Philox stream, which is why it can be consumed here as-is.
+            sess_tail.as_ref().unwrap().2.unwrap()
+        } else if sampled && constraint.is_none() && spec_sampled_boundary_on() {
+            sample_boundary_token(e, &prime_logits, &sp, &pen_hist, &mut sctr, "cold-prime")?
+        } else {
+            // greedy (byte contract), the rollback door, or constrained (masked-argmax
+            // identity — the worker routes sampled+constrained to the plain path, and this
+            // function refuses the combination outright above).
+            argmax(&prime_logits) as u32
+        };
+        if pen_on {
+            // The boundary token is a GENERATED token: the plain sampler `accept()`s every
+            // emitted token into its penalty history, and pre-lane the burst's first token
+            // was invisible to penalties forever (never pushed, and never in `committed`
+            // until this burst's tail). Covers the carry/continuation seeds too — neither is
+            // in `committed` yet.
+            pen_hist.push(last_token);
+        }
+        if carried_pending.is_none() {
+            out.push(last_token);
+            // grammar advances with every emitted token (carried pendings were consumed
+            // by the burst that emitted them).
+            if let Some(c) = constraint.as_deref_mut()
+                && prepared.is_none()
+            {
+                c.consume(last_token)
+                    .map_err(|e2| format!("constraint: {e2}"))?;
+            }
+        }
+        if continuation {
+            // draft-KV invariant: entries [0..base) are the session's exact fills; truncate any
+            // overhang so the chain's first append lands at slot base (== committed.len()).
+            scratch.set_len(e, base)?;
+        }
+        // sse-cadence: hand the caller every not-yet-flushed token (disjoint in-order slices
+        // concatenating to the full `out`). Called after the prime's first token and after each
+        // round commit — emission timing only, token bytes untouched. The slice may be EMPTY
+        // (poll-only boundary: zero-round folds commit nothing new); returns the caller's
+        // continue-verdict (admission yield, 2026-08-06) — false ends the burst at this round.
+        #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+        fn flush_commit(
+            cb: &mut Option<&mut dyn FnMut(&[u32]) -> bool>,
+            out: &[u32],
+            flushed: &mut usize,
+        ) -> bool {
+            if let Some(f) = cb.as_mut() {
+                let keep = f(&out[*flushed..]);
+                *flushed = out.len();
+                keep
+            } else {
+                true
+            }
+        }
+        keep_going = flush_commit(&mut on_commit, &out, &mut flushed);
+        // INVARIANT at loop top: `last_token` is the most-recently-committed/emitted token, its
+        // KV+recur state IS in `cache` (cache.pos = position right AFTER last_token), `last_pred`
+        // is the greedy ARGMAX of the logits that predict the token FOLLOWING last_token, and
+        // `h_seed` = last_token's pre-output_norm hidden. Establish it by feeding last_token once
+        // (mirrors plain greedy). DEVICE-ARGMAX lever: the accept walk only ever consumes the
+        // argmax of those logits — never the full vector — so a host u32 replaces the Vec<f32>.
+        // Trimmed heads: q lives on the trimmed vocab; accept gathers use the TRIMMED index and
+        // the residual scatters q into target-id space (q=-inf off-trim — the head cannot propose
+        // those, so their residual mass is p(x), correct by construction).
+        let d2t_dev: Option<CudaSlice<u32>> = if sampled || crate::spec::spec_stream() {
+            match &mtp.d2t {
+                Some(map) => Some(e.htod_u32_v(map)?),
+                None => None,
+            }
+        } else {
+            None
+        };
+        let mut q_full_buf: Option<CudaSlice<f32>> = None;
+        // host Philox4x32-10 accept-test uniforms: module fn `host_u01` (shared with the
+        // dspark sampled-admission walk); byte-identical to the closure it replaces.
+        let mut draft_logits: Vec<CudaSlice<f32>> = Vec::new(); // retained head logits (q), per slot
+        let mut draft_stats: Vec<(f32, f32, f32)> = Vec::new(); // (row_max, th_e, z_e) per slot
+        let mut perturb_buf: Option<CudaSlice<f32>> = None; // gumbel scratch (max(n_vocab,d_vocab))
+        let mut sample_tok = e.alloc_u32_zeroed(1)?; // residual/bonus sample out
+        let mut col_buf: Option<CudaSlice<f32>> = None; // materialized verify column
+        let mut pen_hist_d: Option<CudaSlice<u32>> = None;
+        let mut pcol_buf: Option<CudaSlice<f32>> = None; // penalized p-column scratch
+        // MEMRA_SPEC_SETUP_TRACE=1 (diagnostics): per-call wall decomposition of the burst
+        // SETUP + TAIL segments (the round loop's internals are MEMRA_SPEC_PHASE's job) —
+        // built to pin the serve per-burst fixed cost (research/spec-serving-20260801).
+        let setup_trace = std::env::var("MEMRA_SPEC_SETUP_TRACE").as_deref() == Ok("1");
+        let t_ent = std::time::Instant::now();
+
+        // SESSION-AFFINITY TURN CHECKPOINT (lane/session-affinity, 2026-08-05): capture the
+        // PROMPT-END boundary state so a LATER turn can rewind here and re-prime only its own
+        // delta instead of the whole conversation. See `SpecCheckpoint` for why this boundary is
+        // the one that matters (a history-rewriting client mutates what the session GENERATED,
+        // so the next turn's prompt agrees with this one up to exactly here).
+        //
+        // WHERE — AND WHY THIS EXACT LINE. Right after the trunk prime, BEFORE the init feed
+        // (`decode_step_h(last_token)`) and before round 0: the last instant at which the caches
+        // hold exactly `base + prompt.len()` rows and nothing generated.
+        //
+        // This was WRONG in the first cut of this lane: the capture sat after the draft-KV fill,
+        // which is also after the init feed, so `cache.pos` was `base + prompt.len() + 1` — the
+        // boundary included the FIRST GENERATED TOKEN. That token is the first thing inside the
+        // `<think>` block the client strips, so every later turn's diff diverged exactly one
+        // token below the checkpoint and affinity declined 100% of the time. Measured on the
+        // owner regime: "history diverged at 12233 of checkpoint 12234". The off-by-one made the
+        // whole mechanism inert while looking, from the outside, like a working
+        // correctness-declines-safely path — hence the decline log carries the offsets.
+        //
+        // The full-attn planes are `len`-truncatable so the snapshot copies only the GDN conv/ssm
+        // state (the reason a spec session could not rewind before). The draft scratch needs no
+        // copy: rows below the boundary are rewritten by the next turn's own fill.
+        //
+        // WHEN: non-empty prime only. An empty-suffix continuation burst adds no prompt boundary
+        // (its "prompt end" IS the previous checkpoint's, already held), so it keeps the existing
+        // checkpoint rather than replacing it with a strictly worse one.
+        //
+        // FAILURE IS SILENT BY DESIGN: on a VRAM-tight rig the snapshot alloc can fail. That
+        // costs the NEXT turn its rewind (it re-primes fully, today's behavior) and must never
+        // fail the burst that is already running — so the error is swallowed, loud only under
+        // MEMRA_DEBUG_SPEC.
+        //
+        // STABLE-BOUNDARY OVERRIDE (lane/frspec-multiturn-cache, 2026-08-21): the prompt-end
+        // posture above was DISPROVED for the think-posture template class — the prompt's own
+        // tail is the live generation header (`<|im_start|>assistant\n<think>\n`) that the
+        // next turn's re-render replaces, so the diff diverged a couple tokens BELOW the
+        // checkpoint and affinity declined 100% of multi-turn agent traffic (the same class
+        // the plain tier fixed on 2026-08-09 via `plain_checkpoint_boundary`; the port to the
+        // spec tier is this lane). When the worker armed `ckpt_at`, the capture happened at
+        // that stop inside the prime above (`ckpt_early`) and is installed here instead;
+        // capture-attempted-but-failed clears the slot exactly like the legacy arm.
+        if let Some(slot) = sess_ckpt_slot.filter(|_| prepared.is_none()) {
+            if let Some(early) = ckpt_early {
+                if early.is_none() && std::env::var("MEMRA_DEBUG_SPEC").is_ok() {
+                    eprintln!(
+                        "[spec] stable-boundary turn checkpoint skipped; \
+                               next turn re-primes in full"
+                    );
+                }
+                *slot = early;
+            } else if !continuation {
+                let pos = cache.pos;
+                debug_assert_eq!(
+                    pos,
+                    base + prompt.len(),
+                    "turn checkpoint must sit at the prompt end, before the init feed"
+                );
+                let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
+                    if let Some(ph) = &prompt_h {
+                        // hidden of the LAST primed row = the predecessor anchor at this
+                        // boundary (exactly what a fresh prime of committed[..pos] leaves in
+                        // last_h, and what the next prime's fill reads for its first row).
+                        let np = prompt.len();
+                        e.uninit(n_embd).and_then(|mut a| {
+                            e.copy_view_into(
+                                &mut a,
+                                0,
+                                &ph.slice((np - 1) * n_embd..np * n_embd),
+                                n_embd,
+                            )?;
+                            Ok(a)
+                        })
+                    } else {
+                        Err("no prompt hiddens".into())
+                    };
+                match (cache.snapshot(e), anchor) {
+                    (Ok(snap), Ok(last_h)) => {
+                        *slot = Some(SpecCheckpoint { snap, pos, last_h });
+                    }
+                    (s, a) => {
+                        *slot = None; // a stale checkpoint would rewind to the WRONG boundary
+                        if std::env::var("MEMRA_DEBUG_SPEC").is_ok() {
+                            let err = s
+                                .err()
+                                .map(|e| e.to_string())
+                                .or_else(|| a.err().map(|e| e.to_string()))
+                                .unwrap_or_default();
+                            eprintln!(
+                                "[spec] turn checkpoint skipped ({err}); \
+                                       next turn re-primes in full"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // INIT FEED — skipped on a pending carry: last_token (the carried bonus) is NOT in the
+        // caches and must NOT be fed solo; round 0's batched verify commits it as col 0. Its
+        // seed/anchor hidden is the carried last_h (copied below); last_pred is dead in the
+        // pending path (t_pred reads verify col 0 — the accept walk overwrites it).
+        let mut last_pred = 0u32;
+        let mut last_col_logits: Option<CudaSlice<f32>> = None;
+        // CONSTRAINED: the init feed's logits back the (n_acc==0, base==0) masked-argmax
+        // recompute in the grammar-truncation walk — retained host-side, round 0 only.
+        let mut init_logits_host: Option<Vec<f32>> = None;
+        let h_seed0: CudaSlice<f32> = if carried_pending.is_none() {
+            let (init_logits, h) = match prepared.as_mut() {
+                Some(ready) => ready
+                    .init
+                    .take()
+                    .ok_or("prepared MTP init already consumed")?,
+                None => self.spec_target_step_h(e, last_token, &mut *cache)?,
+            };
+            last_pred = argmax(&init_logits) as u32;
+            if constraint.is_some() {
+                init_logits_host = Some(init_logits.clone());
+            }
+            // sampled mode: p-distribution after last_token, for the j==0/base==0 accept test.
+            if sampled {
+                last_col_logits = Some(e.htod(&init_logits)?);
+            }
+            h
+        } else {
+            // predecessor-row anchor: hidden of the last COMMITTED row (the carry contract).
+            let lh = sess_tail
+                .as_ref()
+                .unwrap()
+                .1
+                .as_ref()
+                .expect("pending carry requires last_h");
+            e.clone_dtod(lh)?
+        };
+        let t_init = t_ent.elapsed();
+        let mut last_col_stats: Option<(f32, f32, f32)> = None;
+        // PERSISTENT h_seed buffer (allocated BEFORE any graph capture so no captured scratch can
+        // alias it): every path that updates the round seed copies INTO it — no per-round allocs,
+        // stable pointer for the graph-draft round-start copy.
+        let mut h_seed_buf = match prepared.as_mut() {
+            Some(p) => p.seed_buf.take().ok_or("MTP prepared seed consumed")?,
+            None => e.clone_dtod(&h_seed0)?,
+        };
+        // Predecessor-pairing trackers: `fill_prev` = trunk hidden AT the last COMMITTED row (the
+        // predecessor of the next verify's col 0 — the reference's carried pending-h analogue;
+        // also the predecessor-row hidden for the round-0 legacy-replay seed). At round 0 that
+        // row is last_token's own (h_seed0). The chain step-0 seed under the pairing default =
+        // hidden of the row BEFORE last_token = the prompt's last row at round 0 (h_seed_buf
+        // overwritten below).
+        let mut fill_prev = match prepared.as_mut() {
+            Some(p) => p
+                .fill_prev
+                .take()
+                .ok_or("MTP prepared predecessor consumed")?,
+            None => e.clone_dtod(&h_seed0)?,
+        };
+        {
+            if let Some(ph) = &prompt_h {
+                let np = prompt.len();
+                e.copy_view_into(
+                    &mut h_seed_buf,
+                    0,
+                    &ph.slice((np - 1) * n_embd..np * n_embd),
+                    n_embd,
+                )?;
+            } else if continuation
+                && let Some((_, lh, _, _, _)) = sess_tail.as_ref()
+                && let Some(lh) = lh.as_ref()
+            {
+                e.copy_into(&mut h_seed_buf, 0, lh, n_embd)?;
+            }
+        }
+        // Persistent device prediction slots for the accept walk (max k+1 verify columns).
+        let mut preds_d = match prepared.as_mut() {
+            Some(p) => p.preds.take().ok_or("MTP prepared predictions consumed")?,
+            None => e.alloc_u32_zeroed(k + 2)?,
+        };
+
+        let debug_spec = std::env::var("MEMRA_DEBUG_SPEC").is_ok();
+        // MEMRA_SPEC_STATS=1: per-slot accept histogram + draft-length histogram, printed once at
+        // the end. Metric normalization vs the reference engine: BOTH engines count
+        // accepted/drafted where the chain stopped at p-min and the sub-threshold token is
+        // discarded uncounted — per-slot decay + chain-length mix are the extra dimensions.
+        let spec_stats = std::env::var("MEMRA_SPEC_STATS").is_ok();
+        let mut st_drafted = vec![0usize; k];
+        let mut st_accepted = vec![0usize; k];
+        let mut st_len_hist = vec![0usize; k + 1];
+        let mut st_full = 0usize;
+        // P-MIN CONFIDENCE GATE (MEMRA_SPEC_PMIN, the serve script's --spec-draft-p-min mechanism):
+        // stop the draft chain early when the head's softmax confidence in its own pick drops
+        // below p_min. Hoisted above the loop: the graph capture bakes the prob kernels iff on.
+        static PMIN: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+        let p_min = *PMIN.get_or_init(|| {
+            std::env::var("MEMRA_SPEC_PMIN")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.0)
+        });
+        // ZERO-DRAFT ROUNDS (MEMRA_SPEC_PMIN0=1, vendored from llama.cpp's draft gating): let the
+        // p-min gate apply at j==0 too, so a low-confidence round drafts NOTHING and the verify
+        // batch is just the pending bonus (m=1 = a plain decode step). llama's 35B win rides
+        // exactly this — draft acceptance 76% at mean len 2.5 because unpredictable stretches
+        // never pay draft+verify overhead. Only legal when a pending bonus exists (an empty
+        // verify batch is not); the j==0 exemption stays for pending-less rounds.
+        let pmin0 = std::env::var("MEMRA_SPEC_PMIN0")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+
+        // --- GRAPH DRAFT setup: persistent I/O buffers + ONE capture (2 warmups inside). The
+        // warmups mutate scratch len_d / pos / tok / seed — all reset at every round start, so the
+        // only restore needed is the scratch counter. Capture failure (e.g. a non-capturable
+        // cuBLAS path in an exotic head) falls back to the eager draft chain.
+        // PER-SESSION PERSISTENCE (2026-08-01): session calls reuse the DraftGraphCtx parked on
+        // the SpecSession — the capture (2 warmup head forwards + instantiate) ran ONCE at the
+        // session's first burst, not per burst (measured ~16ms/burst fixed cost on H100 q27,
+        // research/spec-serving-20260801). Reuse is pointer-exact: the graph bakes the session's
+        // own scratch KV (never realloc'd), the model's resident embedding, the OnceLock p_min,
+        // and the g_* buffers carried in the ctx — replay dispatch is identical to a fresh
+        // capture, so draft tokens are bit-identical (drafts never decide exactness anyway; the
+        // verify arbitrates). Single-shot calls (sess=None) build a fresh ctx and drop it.
+        let SpecDraftSetup {
+            mut dctx,
+            dmask_on,
+            dmask_words,
+            s_key,
+            pure_temp,
+            s_capturable,
+        } = match prepared.as_mut() {
+            Some(p) => p
+                .draft_setup
+                .take()
+                .ok_or("MTP prepared draft context consumed")?,
+            None => self.prepare_spec_draft(
+                e,
+                scratch,
+                sess_draft_slot.as_mut().and_then(|s| s.take()),
+                base,
+                k,
+                graph_draft,
+                sp,
+                pen_on,
+                sess_capture_disabled,
+                constraint
+                    .as_deref()
+                    .is_some_and(|c| c.draft_mask_enabled()),
+                p_min,
+                embd_gpu,
+                embd_qt,
+                embd_rb,
+            )?,
+        };
         let t_cap = t_ent.elapsed();
         // PERSISTENT DRAFT KV: fill the MTP block's K/V for every prompt position from the exact
         // trunk hiddens collected during prime — ONE batched K/V-only pass (overwrites any
         // capture-warmup garbage; capture left len at 0). last_token (the init feed) needs no
         // fill: the first chain step processes it and appends its entry at slot prompt.len().
-        if let Some(ph) = &prompt_h {
+        if let Some(ph) = &prompt_h
+            && prepared.is_none()
+        {
             // SESSION: rows [0..base) are the previous turns' exact fills (refresh overwrote them
             // with true verify hiddens) — truncate any draft overhang, fill ONLY the suffix at
             // global positions [base..base+tp). Fresh call: base==0, identical to before.

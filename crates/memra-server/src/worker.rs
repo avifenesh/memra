@@ -11346,6 +11346,7 @@ struct Session {
     /// allocation on this path (kept to avoid restructuring admit; ~small VRAM overhead until
     /// a follow-up drops it). committed == every token whose state the spec caches hold.
     spec: Option<memra_engine::spec::SpecSession>,
+    mtp_prime: Option<memra_engine::spec::MtpPrimeState>,
     /// STEP-OOM PARK (lane/admit-oom): how many times this session has been parked back to
     /// the queue after a step-time CUDA OOM. Bounded by STEP_OOM_MAX_RETRIES before the
     /// honest error — a session that cannot make progress must not retry forever.
@@ -11395,6 +11396,7 @@ struct Session {
     ///   sampled, gate-off, and positive-K-pinned regimes keep solo admission because they do not
     ///   demote; K=0 refuses admission.
     dspark: Option<memra_engine::dflash::DsparkSpecSession>,
+    dspark_prime: Option<memra_engine::dflash::DsparkPrimeState>,
     /// Marks the session as dspark-routed even before `dspark` exists (the pre-prime
     /// window) — scheduler filters key on this, mirroring gspec_k's role.
     dspark_on: bool,
@@ -19412,7 +19414,7 @@ fn admit(
                 let republish_at =
                     plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
                         .filter(|&b| b > fed_len);
-                match lm.model.spec_session_from_restored(
+                match lm.model.spec_session_from_restored_deferred(
                     engine,
                     carrier_cache,
                     fed.clone(),
@@ -19428,6 +19430,7 @@ fn admit(
                     full_cover,
                     cap,
                     republish_at,
+                    lm.model.mtp_prime_walk_supported(),
                 ) {
                     Ok(sess) => {
                         eprintln!(
@@ -19437,6 +19440,8 @@ fn admit(
                             prompt.len(),
                             if full_cover {
                                 " [continuation]"
+                            } else if lm.model.mtp_prime_walk_supported() {
+                                " [suffix queued]"
                             } else {
                                 " [suffix fed]"
                             },
@@ -21058,6 +21063,7 @@ fn admit(
         cache,
         sampler,
         spec,
+        mtp_prime: None,
         oom_retries: req_oom_retries,
         vision_memory,
         replay,
@@ -21070,6 +21076,7 @@ fn admit(
         gspec_k,
         gspec_ctx: ctx_cap,
         dspark: dspark_resume_sess,
+        dspark_prime: None,
         // ROOT CAUSE of the "tiny-budget hazard" (bench repro 2026-08-27, closed): this field
         // routes the tick dispatch, and it used to carry the value computed BEFORE the
         // prefix-restore fold — so a restored session installed with dspark_on=false was
@@ -22674,14 +22681,100 @@ fn step_session(
         // return a cache-authoritative surplus token past this target; expose it when the request
         // still has room so worker generated/sampler/fed state stays aligned with SpecSession.
         let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
-        let suffix: Vec<u32> = s.prefill_queue.drain(..).collect();
-        s.prefill_done = true;
+        let cooperative_prime = memra_engine::prime_walker::prime_yield_enabled()
+            && lm.model.mtp_prime_walk_supported();
+        let suffix: Vec<u32> = if cooperative_prime {
+            s.prefill_queue.iter().copied().collect()
+        } else {
+            s.prefill_queue.drain(..).collect()
+        };
+        if !cooperative_prime {
+            s.prefill_done = true;
+        }
         if suffix.is_empty() && spec.next_pred.is_none() && spec.pending_tok.is_none() {
             // nothing primed and nothing to prime — shouldn't happen (admit rejects empty prompts)
             finish(s, StopReason::MaxNew);
             return Ok(false);
         }
         let sampling = spec_sampling_for(&s.sampler);
+        // Cold speculative sessions must enter decode with the same prompt state as the plain
+        // policy they replace. Plain affinity stops at the stable live-turn boundary and primes
+        // a sub-floor tail tokenwise; a monolithic spec prime can select different Step35 bytes.
+        // Mirror that cold boundary — and, under the stable-boundary door
+        // (lane/frspec-multiturn-cache, 2026-08-21), the WARM one too: an affinity-rewound or
+        // pool-resumed session priming its own delta stops at the new turn's stable boundary
+        // exactly like a resumed plain session's prefill tick does (`ckpt_at` filter
+        // `b > seed_fed.len()`). Warm sessions skip the nominatable predicate — a session that
+        // was parked and resumed has already proven nomination, and the suffix alone
+        // undercounts the conversation's segments. Empty-suffix continuation bursts remain
+        // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
+        let cold = spec.committed.is_empty();
+        let boundary = if !suffix.is_empty()
+            && affinity_enabled()
+            && (cold
+                && (s.affinity.is_some()
+                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)))
+                || !cold)
+        {
+            plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+        } else {
+            None
+        };
+        // SPEC-TIER TURN CHECKPOINT at the stable boundary (the plain tier's 2026-08-09 law,
+        // ported): the engine captures `turn_ckpt` at this stop instead of prompt-end, so the
+        // next re-rendered turn's byte diff lands ON the checkpoint instead of diverging
+        // inside the live generation header 2 tokens below it. Absolute position, `capture_at`
+        // convention.
+        spec.ckpt_at = boundary.map(|b| spec.committed.len() + b).or(spec.ckpt_at);
+        let prime_split = boundary;
+        // PREFIX-CACHE capture boundary (lane/spec-prefix-cache): a cold burst with an armed
+        // mid-prompt capture boundary must actually SPLIT the prime there, or the capture
+        // never fires (the engine compares capture_at == split). When affinity also wants a
+        // split, the EARLIER boundary wins — both are legal prime stops, and the engine's
+        // PRIME_MIN_T law vetoes sub-floor splits on its own. A seed boundary (== suffix
+        // length) is not a split; the engine's post-prime seed capture handles it. (Under the
+        // stable boundary the affinity stop is re-armed via `ckpt_at` above, so taking
+        // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
+        // plain prefill tick's snapshot_at/ckpt_at pair.)
+        let prime_split = if cold {
+            match (prime_split, spec.capture_at.filter(|&b| b < suffix.len())) {
+                (Some(a), Some(c)) => Some(a.min(c)),
+                (None, Some(c)) => Some(c),
+                (a, None) => a,
+            }
+        } else {
+            prime_split
+        };
+        if cooperative_prime && !suffix.is_empty() {
+            if s.mtp_prime.is_none() {
+                s.mtp_prime = Some(lm.model.mtp_prime_start(
+                    engine,
+                    spec,
+                    &suffix,
+                    k,
+                    sampling,
+                    prime_split,
+                )?);
+            }
+            let mut grammar = s
+                .constraint
+                .as_mut()
+                .map(|c| crate::constrained::SpecGrammar::new(c, lm.eos_id));
+            let mut walker = lm.model.mtp_prime_walker(
+                engine,
+                spec,
+                &mut s.mtp_prime,
+                grammar
+                    .as_mut()
+                    .map(|g| g as &mut dyn memra_engine::spec::SpecConstraint),
+            );
+            if !s.prime_service.advance(&mut walker)? {
+                return Ok(true);
+            }
+            s.prime_service.finish(walker)?;
+            s.prefill_queue.clear();
+            s.prefill_done = true;
+        }
         // SPEC x CONSTRAINED: greedy constrained bursts carry the grammar hook — verify-side
         // truncation + masked-argmax cut slots (engine contract; sampled never gets here).
         // Telemetry (lane/accept-telemetry): the session's counters are LIFETIME (a pool
@@ -22753,54 +22846,6 @@ fn step_session(
             None
         } else {
             Some(&mut flush_cb)
-        };
-        // Cold speculative sessions must enter decode with the same prompt state as the plain
-        // policy they replace. Plain affinity stops at the stable live-turn boundary and primes
-        // a sub-floor tail tokenwise; a monolithic spec prime can select different Step35 bytes.
-        // Mirror that cold boundary — and, under the stable-boundary door
-        // (lane/frspec-multiturn-cache, 2026-08-21), the WARM one too: an affinity-rewound or
-        // pool-resumed session priming its own delta stops at the new turn's stable boundary
-        // exactly like a resumed plain session's prefill tick does (`ckpt_at` filter
-        // `b > seed_fed.len()`). Warm sessions skip the nominatable predicate — a session that
-        // was parked and resumed has already proven nomination, and the suffix alone
-        // undercounts the conversation's segments. Empty-suffix continuation bursts remain
-        // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
-        let cold = spec.committed.is_empty();
-        let boundary = if !suffix.is_empty()
-            && affinity_enabled()
-            && (cold
-                && (s.affinity.is_some()
-                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)))
-                || !cold)
-        {
-            plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
-        } else {
-            None
-        };
-        // SPEC-TIER TURN CHECKPOINT at the stable boundary (the plain tier's 2026-08-09 law,
-        // ported): the engine captures `turn_ckpt` at this stop instead of prompt-end, so the
-        // next re-rendered turn's byte diff lands ON the checkpoint instead of diverging
-        // inside the live generation header 2 tokens below it. Absolute position, `capture_at`
-        // convention.
-        spec.ckpt_at = boundary.map(|b| spec.committed.len() + b);
-        let prime_split = boundary;
-        // PREFIX-CACHE capture boundary (lane/spec-prefix-cache): a cold burst with an armed
-        // mid-prompt capture boundary must actually SPLIT the prime there, or the capture
-        // never fires (the engine compares capture_at == split). When affinity also wants a
-        // split, the EARLIER boundary wins — both are legal prime stops, and the engine's
-        // PRIME_MIN_T law vetoes sub-floor splits on its own. A seed boundary (== suffix
-        // length) is not a split; the engine's post-prime seed capture handles it. (Under the
-        // stable boundary the affinity stop is re-armed via `ckpt_at` above, so taking
-        // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
-        // plain prefill tick's snapshot_at/ckpt_at pair.)
-        let prime_split = if cold {
-            match (prime_split, spec.capture_at.filter(|&b| b < suffix.len())) {
-                (Some(a), Some(c)) => Some(a.min(c)),
-                (None, Some(c)) => Some(c),
-                (a, None) => a,
-            }
-        } else {
-            prime_split
         };
         let (burst, d, a) = match s.constraint.as_mut() {
             Some(c) => {
@@ -23397,6 +23442,53 @@ fn step_dspark_spec(
     if request_room == 0 {
         finish(s, StopReason::MaxNew);
         return Ok(false);
+    }
+    // Cooperative cold/resumed adapter. Keep the request queue intact until the
+    // whole prime finalizes, and retain the DFlash route while its caches are owned
+    // by the pending state. A yield is neither a decode boundary nor a park boundary.
+    if memra_engine::prime_walker::prime_yield_enabled()
+        && (s.dspark_prime.is_some() || !s.prefill_queue.is_empty())
+    {
+        if s.dspark_prime.is_none() {
+            if let Some(trace) = s.ttft.as_ref() {
+                trace.mark_prime_start();
+            }
+            let tokens: Vec<u32> = s.prefill_queue.iter().copied().collect();
+            let capture = match (s.dspark_capture_prefix, s.dspark_capture_at) {
+                (false, _) => memra_engine::dflash::DsparkCapture::Off,
+                (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
+                (true, None) if s.dspark.is_none() => {
+                    memra_engine::dflash::DsparkCapture::PromptEnd
+                }
+                _ => memra_engine::dflash::DsparkCapture::Off,
+            };
+            s.dspark_prime = Some(match s.dspark.take() {
+                Some(sess) => lm
+                    .model
+                    .dspark_prime_resume_start(engine, d, sess, &tokens, capture)?,
+                None => lm.model.dspark_prime_start(
+                    engine,
+                    d,
+                    &tokens,
+                    s.gspec_ctx,
+                    dspark_spec_sampling_for(&s.sampler),
+                    capture,
+                )?,
+            });
+        }
+        let mut walker = lm.model.dspark_prime_walker(engine, d, &mut s.dspark_prime);
+        if !s.prime_service.advance(&mut walker)? {
+            return Ok(true);
+        }
+        s.dspark = Some(s.prime_service.finish(walker)?);
+        for tok in s.prefill_queue.drain(..) {
+            s.fed.push(tok);
+            s.sampler.accept(tok);
+        }
+        s.prefill_done = true;
+        if let Some(trace) = s.ttft.as_ref() {
+            trace.mark_prime_end();
+        }
     }
     // POOL RESUME (lane/dflash2-session-reuse): a resumed session arrives with its
     // parked state in s.dspark and the new turn's suffix in prefill_queue — prime ONLY

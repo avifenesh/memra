@@ -29,7 +29,9 @@ Worker API in `crates/memra-server/src/prime_fairness.rs`:
 - Every `Session` has `prime_service: PrimeService`. The route calls
   `s.prime_service.advance(&mut walker)?`; false means save the adapter's owned
   state and return `Ok(true)` without draining the remaining request or decoding.
-  True means consume `finish_prime`, install its outcome, then do first-token work.
+  True means call `s.prime_service.finish(walker)`, install its outcome, then do
+  first-token work. This additive helper keeps failed final ingestion out of reuse
+  pools; the engine trait and the original driver signatures remain unchanged.
 - The service records `pending` and cumulative yield count; `MEMRA_TICK_TRACE=1`
   prints `[prime-chunk] phase=... rows=... wall_ms=...` on either arm. ON yields
   print `[prime-yield] count=... remaining=...`.
@@ -37,8 +39,9 @@ Worker API in `crates/memra-server/src/prime_fairness.rs`:
   peers. Existing tick-top command drain/admission runs before the next advance.
   Each selected row appears once. Pending primes cannot publish captures, demote,
   or park. Cancellation/error must drop their owned state through normal retirement.
-- `PrimeService::decode_target` limits peers to the first committed spec round
-  while any prime is pending. A round's committed surplus is preserved; this is
+- `PrimeService::decode_target` limits peers to one public progress quantum
+  while any prime is pending: an initial seed or at most one committed spec round.
+  A round's committed surplus is preserved; this is
   scheduler cadence, not a request budget. Existing plain prefill/decode batching
   is retained. All route burst targets use this common policy, including the
   future GLM5 adapter's existing decode path; this commit implements no GLM5 prime.
@@ -61,9 +64,9 @@ CPU validation uses only the authorized remote CPU, nice 19, two jobs,
   arrivals precede a saved prime, the long request progresses under continuous
   arrivals, peer service rotates without duplicates, and no-prime behavior stays
   unchanged. `cpu-seam.json` binds the checked source files.
-- Remote `cargo fmt --all` applied; final fmt/clippy receipt follows the early
-  compile-and-unit-test seam handoff. Full all-target release clippy is also owed
-  after the route adapters land.
+- Remote fmt and release library clippy passed before route integration. Hosted CI
+  passed all checks at the early seam commit `534040262`. Adapter validation and
+  full all-target clippy are recorded separately in `CPU.md`.
 
 No GPU process launched. No local build/test/gate. Pushes use
 `MEMRA_SKIP_PERF_CI=1`; local hooks are disabled per invocation to honor the

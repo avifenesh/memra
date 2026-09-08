@@ -17,23 +17,27 @@ impl PrimeService {
         &mut self,
         walker: &mut W,
     ) -> Result<bool, memra_engine::prime_walker::PrimeError> {
-        let trace = std::env::var("MEMRA_TICK_TRACE").as_deref() == Ok("1");
+        // A partially mutated failing chunk must never become a park candidate.
+        self.pending = walker.remaining_chunks() > 0;
         let progress = memra_engine::prime_walker::advance_prime(
             walker,
             memra_engine::prime_walker::prime_yield_enabled(),
-            |chunk, wall| {
-                if trace {
-                    eprintln!(
-                        "[prime-chunk] phase={} rows={} wall_ms={:.3}",
-                        chunk.phase,
-                        chunk.rows,
-                        wall.as_secs_f64() * 1000.0
-                    );
-                }
-            },
+            memra_engine::prime_walker::trace_chunk,
         )?;
         self.record(progress);
         Ok(!self.pending)
+    }
+
+    /// Finalization can still fail (for example a final draft ingestion). Keep its
+    /// owned state out of reuse pools until that last fallible operation succeeds.
+    pub fn finish<W: memra_engine::prime_walker::PrimeWalker>(
+        &mut self,
+        walker: W,
+    ) -> Result<W::Output, memra_engine::prime_walker::PrimeError> {
+        self.pending = true;
+        let out = memra_engine::prime_walker::finish_prime(walker)?;
+        self.pending = false;
+        Ok(out)
     }
 
     /// Called by every adapter after the generic engine walker returns.
@@ -52,8 +56,9 @@ impl PrimeService {
         }
     }
 
-    /// A target of one ends at the first committed speculative round. A round may
-    /// commit multiple tokens; never truncate that committed state to meet cadence.
+    /// A target of one stops at the first public progress boundary: the initial
+    /// seed or at most one committed spec round. Preserve a round's surplus tokens;
+    /// this is a cadence bound, never a truncation of committed state.
     pub fn decode_target(&self, usual: usize) -> usize {
         if self.peer_quantum {
             usual.min(1)
@@ -91,6 +96,36 @@ impl PrimePolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_advance_or_final_ingestion_never_makes_a_park_boundary() {
+        struct Fails {
+            remaining: usize,
+        }
+        impl memra_engine::prime_walker::PrimeWalker for Fails {
+            type Output = ();
+            fn remaining_chunks(&self) -> usize {
+                self.remaining
+            }
+            fn advance_chunk(
+                &mut self,
+            ) -> Result<
+                memra_engine::prime_walker::PrimeChunk,
+                memra_engine::prime_walker::PrimeError,
+            > {
+                Err("partial chunk failure".into())
+            }
+            fn finish(self) -> Result<(), memra_engine::prime_walker::PrimeError> {
+                Err("final ingestion failure".into())
+            }
+        }
+        let mut service = PrimeService::default();
+        assert!(service.advance(&mut Fails { remaining: 1 }).is_err());
+        assert!(service.pending);
+        let mut service = PrimeService::default();
+        assert!(service.finish(Fails { remaining: 0 }).is_err());
+        assert!(service.pending);
+    }
 
     #[test]
     fn new_peer_precedes_resumed_prime_and_neither_can_starve() {

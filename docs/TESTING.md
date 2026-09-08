@@ -744,3 +744,22 @@ Timings, the deliberate-break catch demonstrations (diffs, consoles, per-probe r
 and the depth-determinism sweeps: [`research/fast-gate-20260802/`](../research/fast-gate-20260802/).
 The serve-path mode-switch exactness harness and its verdicts:
 [`research/spec-gate-20260806/`](../research/spec-gate-20260806/) (`RESULTS.md` §2, `exactness.py`).
+
+### Cooperative prime state (default-OFF diagnostic)
+
+`run-spec <model.gguf> --prime-walker-check`, with `MEMRA_PROMPT_FILE` naming a
+multi-chunk real prompt, first compares the MTP walker against ordinary unyielded
+`prime_cache` segments. A separate cache advances between chunks. Require
+`[prime-walker-check] PASS`, nonzero yields, bit-identical final logits and the
+same capture hash (positions, KV lengths, logits, hidden anchor, conv and SSM
+snapshot storage). The normal run-spec comparison then runs too. This CLI switch
+is off unless explicitly passed; it is not a serving flag. Supported diagnostic
+shape: single-device GDN MTP, with at least two legal prime segments.
+
+For DFlash, retain the `MEMRA_ALLOC_TRACE=1` oracle from
+`research/dflash-tap-storage-20260908`; `[dflash-oracle]` now also records
+`boundary_state`, hashing actual GDN snapshot storage. Match tapes, features,
+positions, final logits, boundary logits and capture state between OFF/ON.
+`MEMRA_TICK_TRACE=1` records actual chunk and finalization wall in both arms.
+Neither diagnostic is a timed performance cell. Route receipts live under
+`research/prefill-fairness-20260908/`.
