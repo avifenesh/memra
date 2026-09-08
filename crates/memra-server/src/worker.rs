@@ -6917,7 +6917,13 @@ impl PrefixCache {
     /// Reserve publication room before allocating its device snapshot. Leases and the
     /// selected eviction policy remain authoritative. Refuse without evicting anything
     /// when the eligible entries cannot make room; publication must never fail a request.
-    fn prepare_snapshot(&mut self, bytes: usize, budget: usize, slru: bool) -> bool {
+    fn prepare_snapshot(
+        &mut self,
+        bytes: usize,
+        budget: usize,
+        slru: bool,
+        mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
+    ) -> bool {
         if bytes > budget {
             return false;
         }
@@ -6950,9 +6956,15 @@ impl PrefixCache {
                 key.0,
                 ns_suffix(&key.1),
             );
-            // Drop device planes before the replacement allocates. Like admission reclaim,
-            // do not stall the request by demoting gigabytes into the optional host tier.
-            drop(dead);
+            // Preserve the reservation and victim policy, but publication preflight
+            // must feed the same host sink as insert-time capacity eviction.
+            // Failed/disabled demotion still retires this unleased victim; it
+            // never publishes a half host entry or weakens the device ceiling.
+            if let Some(sink) = demote.as_mut() {
+                sink(dead);
+            } else {
+                drop(dead);
+            }
         }
         true
     }
@@ -7492,10 +7504,12 @@ fn host_entry_from_device(
     verify_digest: Option<String>,
 ) -> Result<HostPrefixEntry, String> {
     let glm = if dead.tp.is_some() || dead.latent.iter().any(Option::is_some) {
-        Some(host_glm::HostGlmState::down(engine, dead).inspect_err(|err| {
-            host.rejected_allocs += 1;
-            host.disable(err);
-        })?)
+        Some(
+            host_glm::HostGlmState::down(engine, dead).inspect_err(|err| {
+                host.rejected_allocs += 1;
+                host.disable(err);
+            })?,
+        )
     } else {
         None
     };
@@ -10544,10 +10558,12 @@ fn prefix_insert_from_session(
     if px.has_key(&pool_key, &s.fed) {
         return;
     }
+    let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     if !px.prepare_snapshot(
         prefix_snapshot_bytes(cache),
         prefix_cache_budget_bytes(),
         prefix_cache_slru_enabled(),
+        Some(&mut demote),
     ) {
         static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -32777,7 +32793,7 @@ mod tests {
             px.entries[&k][0].pins, 1,
             "the other session keeps its lease"
         );
-        assert!(!px.prepare_snapshot(size, budget, false));
+        assert!(!px.prepare_snapshot(size, budget, false, None));
         assert_eq!(px_survivors(&px), vec![0]);
         assert_eq!(
             px.evictions, 0,
@@ -32787,7 +32803,7 @@ mod tests {
         let mut other_session_pin = Some(pin.clone());
         retire_prefix_pin(&mut px, &mut other_session_pin);
         assert_eq!(px.capacity_victim_with(false), Some((k.clone(), 0)));
-        assert!(px.prepare_snapshot(size, budget, false));
+        assert!(px.prepare_snapshot(size, budget, false, None));
         assert_eq!(px.total_bytes, 0, "source drops before snapshot allocation");
         assert!(px.id_index(&pin).is_none());
         px.insert_with_budget(&k, entry_b(&k, 1, size), "deeper", budget);

@@ -630,6 +630,35 @@ mod tests {
         assert_eq!(pool.digest_mismatches, 1);
         assert_eq!(pool.n_entries(), 0);
         assert_eq!(empty.n_entries(), 0);
+        // Actual snapshot preflight must demote its capacity victim before
+        // reserving a new snapshot. The leased case must not evict or copy.
+        let before = entry(&root, &peer);
+        let expected = digest(&before).unwrap();
+        let size = before.bytes;
+        let mut preflight = PrefixCache::default();
+        preflight.insert_with_budget(&key, before, "preflight-fixture", size);
+        let lease = preflight.pin_n(&key, 0, 1).unwrap();
+        let demotions = pool.demotions;
+        {
+            let mut sink = |dead| host_demote_prefix_entry(&root, &mut pool, dead);
+            assert!(!preflight.prepare_snapshot(size, size, false, Some(&mut sink)));
+        }
+        assert_eq!(pool.demotions, demotions);
+        let mut lease = Some(lease);
+        retire_prefix_pin(&mut preflight, &mut lease);
+        {
+            let mut sink = |dead| host_demote_prefix_entry(&root, &mut pool, dead);
+            assert!(preflight.prepare_snapshot(size, size, false, Some(&mut sink)));
+        }
+        assert_eq!(preflight.total_bytes, 0);
+        assert_eq!(pool.demotions, demotions + 1);
+        assert_eq!(pool.total_bytes, size);
+        let (index, _) =
+            host_promote_prefix_hit(&root, &mut preflight, &mut pool, &key, &prompt, 0).unwrap();
+        assert_eq!(digest(&preflight.entries[&key][index]).unwrap(), expected);
+        eprintln!(
+            "host-glm: prepare_snapshot reserved bytes, respected lease, demoted and promoted real state PASS"
+        );
         // Typed pinned helpers reject partial floats and safely handle zero rows.
         let zero = root.htod(&[]).unwrap();
         let pinned = memra_engine::PinnedHostBuf::from_device_f32(&zero).unwrap();
