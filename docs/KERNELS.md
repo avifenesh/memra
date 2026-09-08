@@ -647,8 +647,8 @@ existing M-row launchers select them by default when admitted;
 `MEMRA_DSV4_DENSE_EXACT_TAIL=0` retains the original kernels. Explicit host-thread
 gate overrides still select immutable A/B capture functions. No expert or
 compressor arithmetic changes. Dense independent orders +0.459578%/+0.397451%
-are banked in private Darklanes #507,
-`research/dsv4f-dense-exact-tail-20260908/MODEL-RESULT.md`. Combined qualification
+are banked in [private Darklanes #507](https://github.com/avifenesh/darklanes/pull/507),
+in that lane's model result report. Combined qualification
 is tracked by `research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`.
 
 ### Full-token cadence capture (default ON within admitted replay, 2026-09-08)
@@ -657,7 +657,8 @@ No new kernel: three retained forward graphs omit inactive compressor emission/
 shift calls, retaining the existing active kernels, geometry and reduction order.
 `MEMRA_DSV4_REPLAY_CADENCE=0` selects the original full-forward graph at fresh
 request arming. Shared commit/head/sample and both refusal checks remain.
-Cadence independent orders +1.007107%/+1.074545% are banked in private Darklanes
-#508, `research/dsv4f-replay-cadence-20260908/COMBINED-RESULT.md`. Full replay
+Cadence independent orders +1.007107%/+1.074545% are banked in
+[private Darklanes #508](https://github.com/avifenesh/darklanes/pull/508),
+in that lane's combined result report. Full replay
 admission remains unchanged, including pos<512; no general eager graph fallback.
 Both rollback seams have decide-by 2026-09-22 for removal review.
