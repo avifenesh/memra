@@ -6,10 +6,10 @@ rebased onto `001c09e5d451798ef8d570f6087dc11527cbcc19`. The kernel arithmetic,
 cadence variant bodies, paired capture/drain/fail-stop, refusal-before-commit,
 live control layout and supported shapes remain unchanged.
 
-This draft prepares both defaults ON. It is not merge authorization: root gates
-the default decision on the composition reverse-order receipt. Composition R1
-reported +1.87% with identity; its reverse twin is a separate qualification cell.
-No GPU execution or new numerical claim is attached to this default-only source.
+This draft prepares both defaults ON. Root reports composition confirmation:
+R1 +1.87%, reverse R2 +2.11%, identity true in both. No new numerical claim is
+attached to this default-policy source. Merge additionally requires its narrow
+source review and the environment-selected engagement gate described below.
 
 ## Selection and rollback
 
@@ -53,6 +53,24 @@ Hosted sampled/drift/composition CPU tests run with both defaults explicitly ON;
 the subprocess test also covers unset and rollback. Remote formatting only; no
 local rig build/test/lint/gate. Hosted CI must pass before this draft is ready.
 
+## Environment-selected engagement gate
+
+The composition binary adds `--defaults`, separate from its unchanged explicit
+ABBA/BAAB modes. It reads the actual cadence environment policy and initial C++
+dense thread-local value before any override, admitting only both variables
+unset or both exactly `0`. It loads the vendor-default sampled shape, compares
+all 256 steps against eager OFF, checks selected cadence variants/dense nodes,
+AR epochs/cache/hidden/logits/tokens, then runs eight refusal cells. Fresh scored
+state emits five sanity rows, first capture included. Two separate invocations,
+unset then zero, provide ten rows total; no new speed claim.
+
+The selected state calls the environment-aware arming API. After the eager oracle
+temporarily selects dense OFF, the first selected capture restores the actual
+C++ environment policy, not a hardcoded boolean. Subsequent graph replays need
+no host selector update. Both modes retain exact source/binary/graph/control
+hashes and full stdout/stderr/controller/process/lock readbacks. Root assigns
+the shared development pair; no model starts before the source checkpoint/CI.
+
 ## Receipt pointers and scientific limits
 
 - Cadence #508 merged `03fac532bad64bc7c647fabdb89244170fdaa0a7`: private
@@ -64,9 +82,9 @@ local rig build/test/lint/gate. Hosted CI must pass before this draft is ready.
 - Composition #371: private composition receipt family
   `/root/dsv4-dev/receipts/compose-cadence-dense-*`; the exact reversed twin is
   `compose-cadence-dense-e591f45-r2`. Root owns the combined result write-up and
-  final R2 decision. R1 +1.87% is root-reported here, not a new measurement.
+  final R2 decision. +1.87%/+2.11% are root-reported here, not new measurements.
 
-No root decision is inferred from an in-progress composition cell. This draft
-references #366/#368/#371 for later consolidation; it does not close or merge
-those PRs. Old provenance documents describe their measured source snapshots;
+Root authorizes default-policy qualification, with merge conditional on review
+and the engagement gate. This draft references #366/#368/#371 for later
+consolidation; it does not yet close or merge those PRs. Old provenance documents describe their measured source snapshots;
 the new environment semantics are the narrow changes specified here and in FLAGS.

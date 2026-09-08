@@ -1734,6 +1734,16 @@ expected cadence/dense booleans; it tests real environment initialization and
 thread-local overrides without CUDA allocation. It is never read by production
 code and is not a performance door.
 
+The composition instrument's `--defaults` mode admits either both cadence/dense
+environment variables unset or both exact `0`, records the actual policies before
+overrides, and arms the environment-selected path. After the eager oracle uses
+dense OFF, `restore_dense_exact_tail_default_for_gate` re-reads that same actual
+environment policy before first capture. Each process requires 256-step identity,
+census/epochs and eight refusals before five sanity-only rows; unset and zero
+processes form ten rows total. It is explicit, OFF unless invoked, and adds no
+serving dispatch or performance claim. Protocol/receipts are in
+`research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`.
+
 Follow-on gate selectors: `--full-token-replay-baab` reverses the single 20-row
 order to B×5/A×5/A×5/B×5 with the same correctness/refusal gates and first-capture
 timing. `--full-token-replay-profile` is a separate profile-only load, never a

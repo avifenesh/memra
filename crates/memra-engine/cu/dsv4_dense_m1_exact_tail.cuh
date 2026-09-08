@@ -10,10 +10,11 @@
 // Gate callers own separate candidate/control states and drain before switching.
 // Read once per host thread before its first enqueue. Only explicit 0 rolls back.
 // The explicit gate override below still owns A/B selection before capture.
-static thread_local bool dsv4_dense_exact_tail_enabled = [] {
+static bool dsv4_dense_exact_tail_environment_default() {
     const char* value = std::getenv("MEMRA_DSV4_DENSE_EXACT_TAIL");
     return !value || std::strcmp(value, "0") != 0;
-}();
+}
+static thread_local bool dsv4_dense_exact_tail_enabled = dsv4_dense_exact_tail_environment_default();
 static thread_local int dsv4_dense_exact_tail_suppressed = 0;
 static thread_local uint64_t dsv4_dense_exact_tail_enqueues[2] = {};
 extern "C" int memra_dsv4_dense_exact_tail_set_for_gate(int enabled) {
@@ -22,6 +23,10 @@ extern "C" int memra_dsv4_dense_exact_tail_set_for_gate(int enabled) {
     return 0;
 }
 extern "C" int memra_dsv4_dense_exact_tail_enabled_for_gate() {
+    return dsv4_dense_exact_tail_enabled ? 1 : 0;
+}
+extern "C" int memra_dsv4_dense_exact_tail_restore_default_for_gate() {
+    dsv4_dense_exact_tail_enabled = dsv4_dense_exact_tail_environment_default();
     return dsv4_dense_exact_tail_enabled ? 1 : 0;
 }
 extern "C" int memra_dsv4_dense_exact_tail_counts_for_gate(uint64_t* fp8, uint64_t* dots) {

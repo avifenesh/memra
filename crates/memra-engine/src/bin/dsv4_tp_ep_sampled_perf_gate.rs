@@ -881,6 +881,11 @@ mod default_policy_tests {
             set_dense_exact_tail_for_gate(true).unwrap();
             super::select_legacy_dense_control();
             assert!(!dense_exact_tail_enabled_for_gate());
+            assert_eq!(
+                memra_engine::dsv4_gpu::restore_dense_exact_tail_default_for_gate(),
+                dense == "1"
+            );
+            assert_eq!(dense_exact_tail_enabled_for_gate(), dense == "1");
             // The override is thread-local; a new host thread sees its env default.
             assert_eq!(
                 std::thread::spawn(dense_exact_tail_enabled_for_gate)

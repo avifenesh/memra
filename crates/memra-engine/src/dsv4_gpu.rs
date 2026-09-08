@@ -70,6 +70,15 @@ pub fn dense_exact_tail_enabled_for_gate() -> bool {
     unsafe { memra_dsv4_dense_exact_tail_enabled_for_gate() == 1 }
 }
 
+/// Restore the actual environment policy after a drained eager-oracle override.
+/// Used only by the default-engagement instrument before fresh graph capture.
+pub fn restore_dense_exact_tail_default_for_gate() -> bool {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_exact_tail_restore_default_for_gate() -> i32;
+    }
+    unsafe { memra_dsv4_dense_exact_tail_restore_default_for_gate() == 1 }
+}
+
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 

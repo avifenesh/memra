@@ -13,6 +13,8 @@ use std::{
 };
 
 const PRIME: usize = 256;
+#[path = "../dsv4_default_engagement_gate.rs"]
+mod default_engagement;
 const OUTPUT: usize = 256;
 const CAPACITY: usize = PRIME + OUTPUT + 8;
 const SOURCE_SHA: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
@@ -265,9 +267,27 @@ struct Arm {
     state: DecodeState,
     program: Program,
     graph_hashes: Option<GraphHashes>,
+    environment_default: bool,
 }
 impl Arm {
     fn new(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg, program: Program) -> Self {
+        Self::new_inner(gpu, prefix, cfg, program, false)
+    }
+    fn new_default(
+        gpu: &Dsv4Gpu,
+        prefix: &DecodeState,
+        cfg: Dsv4SampleCfg,
+        program: Program,
+    ) -> Self {
+        Self::new_inner(gpu, prefix, cfg, program, true)
+    }
+    fn new_inner(
+        gpu: &Dsv4Gpu,
+        prefix: &DecodeState,
+        cfg: Dsv4SampleCfg,
+        program: Program,
+        environment_default: bool,
+    ) -> Self {
         assert_eq!(
             program.cadence, program.dense,
             "only complete A/B programs admitted"
@@ -277,8 +297,18 @@ impl Arm {
             .expect("initial restore");
         // gpu is boxed at a stable address and outlives every Arm; its weights,
         // numeric controls and runtime configuration stay fixed throughout.
-        unsafe { gpu.arm_full_token_replay_mode_for_gate(&mut state, cfg, program.cadence) }
-            .expect("arm immutable composed program");
+        unsafe {
+            if environment_default {
+                assert_eq!(
+                    memra_engine::dsv4_gpu::dsv4_replay_cadence_default(),
+                    program.cadence
+                );
+                gpu.arm_full_token_replay_for_gate(&mut state, cfg)
+            } else {
+                gpu.arm_full_token_replay_mode_for_gate(&mut state, cfg, program.cadence)
+            }
+        }
+        .expect("arm immutable composed program");
         assert_eq!(
             gpu.full_token_replay_captures_for_gate(&state).unwrap(),
             [0, 0]
@@ -287,6 +317,7 @@ impl Arm {
             state,
             program,
             graph_hashes: None,
+            environment_default,
         }
     }
     fn prepare(&self, gpu: &Dsv4Gpu) -> bool {
@@ -295,7 +326,15 @@ impl Arm {
             .unwrap();
         let first = captures == [0, 0];
         if first {
-            select(gpu, self.program.dense);
+            if self.environment_default {
+                drain(gpu);
+                assert_eq!(
+                    memra_engine::dsv4_gpu::restore_dense_exact_tail_default_for_gate(),
+                    self.program.dense
+                );
+            } else {
+                select(gpu, self.program.dense);
+            }
         } else {
             assert_eq!(captures, [if self.program.cadence { 3 } else { 1 }, 1]);
         }
@@ -690,8 +729,9 @@ fn run(
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert!(
-        args.len() == 4 || (args.len() == 5 && args[4] == "--reverse"),
-        "usage: dsv4_compose_cadence_dense_gate <model-dir> <source.txt> <new-output-dir> [--reverse]"
+        args.len() == 4
+            || (args.len() == 5 && matches!(args[4].as_str(), "--reverse" | "--defaults")),
+        "usage: dsv4_compose_cadence_dense_gate <model-dir> <source.txt> <new-output-dir> [--reverse|--defaults]"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     for (name, value) in [
@@ -719,6 +759,11 @@ fn main() {
     memra_engine::set_moe_m1_splitk_for_gate(false);
     assert!(!memra_engine::moe_m1_splitk_on());
     let programs = PROGRAMS;
+    // Observe the real initial C++ thread-local policy before any gate override.
+    let default_program = args
+        .get(4)
+        .is_some_and(|arg| arg == "--defaults")
+        .then(default_engagement::observed_program);
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
@@ -766,15 +811,19 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
-    run(
-        &gpu,
-        &prompt[..PRIME],
-        &tokenizer,
-        &output,
-        programs,
-        cfg,
-        args.len() == 5,
-    );
+    if let Some(program) = default_program {
+        default_engagement::run(&gpu, &prompt[..PRIME], &tokenizer, &output, program, cfg);
+    } else {
+        run(
+            &gpu,
+            &prompt[..PRIME],
+            &tokenizer,
+            &output,
+            programs,
+            cfg,
+            args.get(4).is_some_and(|arg| arg == "--reverse"),
+        );
+    }
 }
 
 #[cfg(test)]
