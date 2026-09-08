@@ -2071,6 +2071,31 @@ impl PinnedHostBuf {
         let ptr = unsafe { cudarc::driver::result::malloc_host(len.max(1), 0)? } as *mut u8;
         Ok(PinnedHostBuf { ptr, len })
     }
+    /// Copy to cacheable pinned storage on the allocation's own stream.
+    pub fn from_device_f32(src: &CudaSlice<f32>) -> Result<Self, Box<dyn std::error::Error>> {
+        let n = src.len().checked_mul(4).ok_or("pinned f32 size overflow")?;
+        src.context().bind_to_thread()?;
+        let out = Self::new(n)?;
+        // CUDA host allocations are aligned; this covers exactly n bytes.
+        let dst = unsafe { std::slice::from_raw_parts_mut(out.ptr.cast::<f32>(), src.len()) };
+        src.stream().memcpy_dtoh(src, dst)?;
+        src.stream().synchronize()?;
+        Ok(out)
+    }
+    /// Restore on the model-owned stream. Synchronize before source may drop.
+    pub fn to_device_f32(
+        &self,
+        stream: &Arc<cudarc::driver::CudaStream>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if !self.len.is_multiple_of(4) {
+            return Err("pinned f32 byte length is not divisible by four".into());
+        }
+        // Same aligned allocation as from_device_f32, validated whole f32 length.
+        let src = unsafe { std::slice::from_raw_parts(self.ptr.cast::<f32>(), self.len / 4) };
+        let out = stream.clone_htod(src)?;
+        stream.synchronize()?;
+        Ok(out)
+    }
     pub fn len(&self) -> usize {
         self.len
     }

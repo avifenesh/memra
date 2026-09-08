@@ -15,6 +15,8 @@
 //! interleave: a long generation and a freshly-admitted one make forward progress in the same loop,
 //! so the second produces tokens before the first finishes (not serialized end-to-end).
 
+mod host_glm;
+
 use std::collections::{HashMap, VecDeque};
 use std::io::Write as _;
 use std::sync::Arc;
@@ -4169,6 +4171,11 @@ fn prefix_cache_protected_bytes(budget: usize, protected_pct: usize) -> usize {
 /// operator sets an explicit per-stack budget; the MemAvailable x 0.6 boot clamp below is a
 /// backstop against a fat-fingered value (the 2026-08-17 swap-storm law), NEVER the sizing
 /// mechanism. Pinned RAM is not reclaimable by the kernel once allocated.
+// Unqualified GLM host images remain opt-in; device-prefix support is independent.
+fn glm5_tp_kv_host_on() -> bool {
+    std::env::var("MEMRA_GLM5_TP_KV_HOST").as_deref() == Ok("1")
+}
+
 fn kv_host_budget_bytes() -> usize {
     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *B.get_or_init(|| {
@@ -7042,8 +7049,8 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
 // `prefix_restore_at`. Byte-lossless by construction, and `MEMRA_KV_HOST_MB=0` (the default)
 // is byte-identical to today because nothing ever reaches the tier.
 //
-// Model exclusions ride the upstream refusals for free: step37's SWA ring and glm5's latent
-// planes are refused at `prefix_snapshot`, so no such entry can ever exist to demote.
+// SWA-ring exclusions remain upstream. GLM images are opt-in and process-lifetime;
+// the old deploy-handoff frame skips them, so a deploy loses GLM host warmth.
 //
 // v1 keeps every copy on the CUDA owner thread (the HY3 spill law) and instruments each
 // demote/promote duration so the pod tick-stall cell has its receipt. The overlapped
@@ -7074,6 +7081,8 @@ struct HostDflashTail {
 /// mismatched version is REFUSED at both insert and promote: the identity rule the
 /// PREFIX_ENTRY_LAYOUT_VERSION comment reserved for exactly this tier.
 struct HostPrefixEntry {
+    model_generation: Option<Arc<()>>,
+    glm: Option<host_glm::HostGlmState>,
     layout_version: u32,
     pool_key: PoolKey,
     toks: Vec<u32>,
@@ -7099,6 +7108,7 @@ struct HostPrefixEntry {
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
 #[derive(Default)]
 struct HostPrefixCache {
+    model_generations: HashMap<String, Arc<()>>,
     entries: HashMap<PoolKey, Vec<HostPrefixEntry>>,
     /// (last_use, id) -> (pool key, index); same deterministic tie-break as the device LRU.
     lru: std::collections::BTreeMap<(Instant, u64), (PoolKey, usize)>,
@@ -7481,11 +7491,19 @@ fn host_entry_from_device(
     dead: &PrefixEntry,
     verify_digest: Option<String>,
 ) -> Result<HostPrefixEntry, String> {
+    let glm = if dead.tp.is_some() || dead.latent.iter().any(Option::is_some) {
+        Some(host_glm::HostGlmState::down(engine, dead).inspect_err(|err| {
+            host.rejected_allocs += 1;
+            host.disable(err);
+        })?)
+    } else {
+        None
+    };
     let mut kv = Vec::with_capacity(dead.kv.len());
     for plane in &dead.kv {
         kv.push(match plane {
             Some(p) => Some(host_plane_from_device(engine, host, p)?),
-            None => None,
+            _ => None,
         });
     }
     // Diagnostic fault door (see kv_host_fault): corrupt one demoted byte AFTER the demote
@@ -7502,40 +7520,42 @@ fn host_entry_from_device(
     }
     let mut conv = Vec::with_capacity(dead.conv.len());
     for c in &dead.conv {
+        if glm.is_some() {
+            conv.push(None);
+            continue;
+        }
         conv.push(match c {
-            Some(c) => Some(
-                engine
-                    .dtoh(c)
-                    .map_err(|err| format!("conv state D2H failed: {err}"))?,
-            ),
-            None => None,
+            Some(c) => {
+                Some(host_glm::read_f32(c).map_err(|err| format!("conv state D2H failed: {err}"))?)
+            }
+            _ => None,
         });
     }
     let mut ssm = Vec::with_capacity(dead.ssm.len());
     for s in &dead.ssm {
+        if glm.is_some() {
+            ssm.push(None);
+            continue;
+        }
         ssm.push(match s {
-            Some(s) => Some(
-                engine
-                    .dtoh(s)
-                    .map_err(|err| format!("ssm state D2H failed: {err}"))?,
-            ),
-            None => None,
+            Some(s) => {
+                Some(host_glm::read_f32(s).map_err(|err| format!("ssm state D2H failed: {err}"))?)
+            }
+            _ => None,
         });
     }
     let draft = match &dead.draft {
         Some(p) => Some(host_plane_from_device(engine, host, p)?),
-        None => None,
+        _ => None,
     };
     let dspark_draft = match &dead.dspark_draft {
-        Some(t) => {
+        Some(t) if glm.is_none() => {
             let mut layers = Vec::with_capacity(t.layers.len());
             for (k, v) in &t.layers {
                 layers.push((
-                    engine
-                        .dtoh(k)
+                    host_glm::read_f32(k)
                         .map_err(|err| format!("draft tail K D2H failed: {err}"))?,
-                    engine
-                        .dtoh(v)
+                    host_glm::read_f32(v)
                         .map_err(|err| format!("draft tail V D2H failed: {err}"))?,
                 ));
             }
@@ -7548,9 +7568,21 @@ fn host_entry_from_device(
                 floor: t.floor,
             })
         }
-        None => None,
+        _ => None,
     };
-    Ok(HostPrefixEntry {
+    let model_generation = if glm.is_some() {
+        Some(
+            host.model_generations
+                .get(&dead.pool_key.0)
+                .cloned()
+                .ok_or("GLM host image has no loaded model generation")?,
+        )
+    } else {
+        None
+    };
+    let entry = HostPrefixEntry {
+        model_generation,
+        glm,
         layout_version: dead.layout_version,
         pool_key: dead.pool_key.clone(),
         toks: dead.toks.clone(),
@@ -7566,7 +7598,30 @@ fn host_entry_from_device(
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest,
-    })
+    };
+    if let Some(glm) = &entry.glm {
+        let plane_bytes = |p: &HostPlane| p.len * (p.k_tok_bytes + p.v_tok_bytes);
+        let bytes = glm.state_bytes()
+            + entry.kv.iter().flatten().map(plane_bytes).sum::<usize>()
+            + entry
+                .conv
+                .iter()
+                .chain(&entry.ssm)
+                .flatten()
+                .map(|p| p.len() * 4)
+                .sum::<usize>()
+            + entry.draft.as_ref().map_or(0, plane_bytes)
+            + entry.dspark_draft.as_ref().map_or(0, |d| {
+                d.layers.iter().map(|(k, v)| (k.len() + v.len()) * 4).sum()
+            });
+        if bytes != dead.bytes {
+            return Err(format!(
+                "GLM host byte census {bytes} != device snapshot accounting {}",
+                dead.bytes
+            ));
+        }
+    }
+    Ok(entry)
 }
 
 /// What one demotion attempt did with the source entry's bytes, so callers that still OWN
@@ -7601,6 +7656,14 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, dead: P
 /// device state is still live (a parked session, a resident prefix entry) removes it only
 /// after `Demoted`/`Evaporated`: the entry stays until the host copy publishes, which is
 /// what makes a demote racing the next request lose cleanly.
+fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String, String> {
+    if entry.tp.is_some() || entry.latent.iter().any(Option::is_some) {
+        host_glm::digest(entry)
+    } else {
+        prefix_entry_state_digest(engine, entry, entry.pos).map_err(|e| e.to_string())
+    }
+}
+
 fn host_demote_prefix_ref(
     engine: &Engine,
     host: &mut HostPrefixCache,
@@ -7609,13 +7672,9 @@ fn host_demote_prefix_ref(
     if !host.armed() {
         return HostDemoteOutcome::Off; // tier off (or latched off): byte-identical to today
     }
-    // LATENT (MLA/DSA) planes cannot be expressed in the host tier yet (`HostPrefixEntry`
-    // carries no latent slot — extending it is its own lane's work, not this seam's). A
-    // latent-bearing entry refuses BEFORE any copy: `Failed` keeps live device state at the
-    // pause-demote caller (fail closed), and the SLRU sink's dying entry drops exactly as it
-    // did before the tier existed. Silently demoting would strip the planes and the restore
-    // guard (`unsupported_prefix_restore`) would then refuse every promote-hit anyway.
-    if dead.tp.is_some() {
+    // GLM host images are opt-in. OFF preserves the old refusal; ON copies
+    // all current model-owned planes, with byte census before publication.
+    if dead.tp.is_some() && !glm5_tp_kv_host_on() {
         eprintln!(
             "[prefix-host] demote refused: entry carries glm5 TP rank shards the host tier \
              cannot hold ({} tokens, model {}{})",
@@ -7625,7 +7684,7 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Failed;
     }
-    if dead.latent.iter().any(Option::is_some) {
+    if dead.latent.iter().any(Option::is_some) && !glm5_tp_kv_host_on() {
         eprintln!(
             "[prefix-host] demote refused: entry carries latent (MLA/DSA) planes the host \
              tier cannot hold ({} tokens, model {}{})",
@@ -7655,7 +7714,7 @@ fn host_demote_prefix_ref(
     }
     let t0 = Instant::now();
     let verify_digest = if kv_host_verify_on() {
-        match prefix_entry_state_digest(engine, dead, dead.pos) {
+        match host_roundtrip_digest(engine, dead) {
             Ok(d) => Some(d),
             Err(err) => {
                 eprintln!("[prefix-host] demote digest failed ({err}); nothing demoted");
@@ -7876,6 +7935,12 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             src.layout_version, PREFIX_ENTRY_LAYOUT_VERSION,
         ));
     }
+    if let Some(glm) = &src.glm {
+        if !glm5_tp_kv_host_on() {
+            return Err("GLM host restore door is off".into());
+        }
+        glm.validate_owner(engine, &src.pool_key)?;
+    }
     let plane_up = |p: &HostPlane| -> Result<PrefixPlane, String> {
         let kb = p.len * p.k_tok_bytes;
         let vb = p.len * p.v_tok_bytes;
@@ -7913,22 +7978,14 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
     let mut conv = Vec::with_capacity(src.conv.len());
     for c in &src.conv {
         conv.push(match c {
-            Some(c) => Some(
-                engine
-                    .htod(c)
-                    .map_err(|err| format!("conv state H2D failed: {err}"))?,
-            ),
+            Some(c) => Some(engine.htod(c).map_err(|e| e.to_string())?),
             None => None,
         });
     }
     let mut ssm = Vec::with_capacity(src.ssm.len());
     for s in &src.ssm {
         ssm.push(match s {
-            Some(s) => Some(
-                engine
-                    .htod(s)
-                    .map_err(|err| format!("ssm state H2D failed: {err}"))?,
-            ),
+            Some(s) => Some(engine.htod(s).map_err(|e| e.to_string())?),
             None => None,
         });
     }
@@ -7941,12 +7998,8 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             let mut layers = Vec::with_capacity(t.layers.len());
             for (k, v) in &t.layers {
                 layers.push((
-                    engine
-                        .htod(k)
-                        .map_err(|err| format!("draft tail K H2D failed: {err}"))?,
-                    engine
-                        .htod(v)
-                        .map_err(|err| format!("draft tail V H2D failed: {err}"))?,
+                    engine.htod(k).map_err(|e| e.to_string())?,
+                    engine.htod(v).map_err(|e| e.to_string())?,
                 ));
             }
             Some(memra_engine::dflash::DflashKvTail {
@@ -7965,16 +8018,30 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         pool_key: src.pool_key.clone(),
         toks: src.toks.clone(),
         kv,
-        conv,
-        ssm,
-        // Latent-bearing entries refuse demotion at `host_demote_prefix_ref`, so every host
-        // entry is latent-free by construction and each promoted slot is legitimately absent.
-        latent: (0..src.kv.len()).map(|_| None).collect(),
-        tp: None,
+        conv: match &src.glm {
+            Some(g) => g.conv_up()?,
+            None => conv,
+        },
+        ssm: match &src.glm {
+            Some(g) => g.ssm_up()?,
+            None => ssm,
+        },
+        // Ordinary entries have no latent planes; GLM images restore all owners.
+        latent: match &src.glm {
+            Some(g) => g.latent_up()?,
+            None => (0..src.kv.len()).map(|_| None).collect(),
+        },
+        tp: match &src.glm {
+            Some(g) => g.tp_up()?,
+            None => None,
+        },
         pos: src.pos,
         last_logits: src.last_logits.clone(),
         draft,
-        dspark_draft,
+        dspark_draft: match &src.glm {
+            Some(g) => g.draft_up()?,
+            None => dspark_draft,
+        },
         last_h: src.last_h.clone(),
         bytes: src.bytes,
         last_use: Instant::now(),
@@ -8021,6 +8088,18 @@ fn host_promote_prefix_hit(
     device_best_len: usize,
 ) -> Option<(usize, PrefixPin)> {
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
+    let candidate = &host.entries[pool_key][hi];
+    if candidate.glm.is_some()
+        && !matches!(
+            (candidate.model_generation.as_ref(),host.model_generations.get(&pool_key.0)),
+            (Some(saved),Some(active)) if Arc::ptr_eq(saved,active)
+        )
+    {
+        host.remove_at(pool_key, hi);
+        eprintln!("[prefix-host] promote refused: stale GLM model/artifact instance");
+        return None;
+    }
+
     let (host_len, expected_digest) = {
         let e = &host.entries[pool_key][hi];
         (e.toks.len(), e.verify_digest.clone())
@@ -8035,7 +8114,7 @@ fn host_promote_prefix_hit(
         }
     };
     if let Some(expected) = expected_digest {
-        match prefix_entry_state_digest(engine, &e, e.pos) {
+        match host_roundtrip_digest(engine, &e) {
             Ok(actual) if actual == expected => {
                 eprintln!(
                     "[prefix-host] verify ok: promoted state digest matches demote digest \
@@ -9004,6 +9083,8 @@ fn host_entry_from_owned(e: HandoffEntryOwned) -> Result<HostPrefixEntry, String
         None => None,
     };
     Ok(HostPrefixEntry {
+        model_generation: None,
+        glm: None,
         layout_version: e.layout_version,
         pool_key: (e.model, e.ns),
         toks: e.toks,
@@ -9076,6 +9157,12 @@ fn host_handoff_export(
     let mut selected: Vec<(PoolKey, usize)> = Vec::new();
     let (mut sel_bytes, mut skipped_over_cap) = (0u64, 0u64);
     for (key, i) in hpx.lru.values().rev() {
+        if hpx.entries[key][*i].glm.is_some() {
+            eprintln!(
+                "[prefix-host] handoff skip: GLM model-owned planes need a new handoff frame"
+            );
+            continue;
+        }
         let b = hpx.entries[key][*i].bytes as u64;
         if cap_bytes > 0 && sel_bytes + b > cap_bytes as u64 {
             skipped_over_cap += 1;
@@ -12992,6 +13079,11 @@ pub fn run(
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
     // kv_host_budget_bytes). Feeds the device cache only: the restore path is untouched.
     let mut hpx = HostPrefixCache::new(kv_host_budget_bytes());
+    // All models load before this point and are immutable throughout run().
+    // A worker reload creates a new map/cache/context. Tokens bind images to
+    // these exact loaded instances, even if names and device ordinals repeat.
+    hpx.model_generations = loaded.keys().map(|k| (k.clone(), Arc::new(()))).collect();
+
     if hpx.budget > 0 {
         if prefix_cache_budget_bytes() > 0 && serve_batching() {
             eprintln!(
@@ -30993,6 +31085,8 @@ mod tests {
 
     fn host_entry(pool_key: &PoolKey, toks: Vec<u32>, bytes: usize) -> HostPrefixEntry {
         HostPrefixEntry {
+            model_generation: None,
+            glm: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: pool_key.clone(),
             toks,
