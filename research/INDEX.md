@@ -469,3 +469,5 @@ upstream-sweeps.md | (file, not a lane) | -
 dsv4f-moe-m1-splitk-20260907 | Adaptive M1 split-K accepted: no observed component regression, pooled GU 3.46x/2.07x at slots 1/2; fresh-process sampled ABBA 38.822799 vs 35.569475 tok/s (+9.146392%), correctness/refusals pass; process gate stays OFF; raw receipts in private ops | RESULTS.md
 
 mtp-head-nonresident-capture-20260908 | "The 10 GiB squeeze reproduced #263 on main `dd8cc9c74`." | mtp-head-nonresident-capture-20260908/RESULTS.md
+
+release-v0.134.0-20260908 | "Full release battery: PASS" | release-v0.134.0-20260908/RESULTS.md

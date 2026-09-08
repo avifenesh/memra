@@ -15,17 +15,47 @@ Version claimed atomically at the base before changing manifests.
 - #354, code `6adf6bbc9`, receipt `801a21ca9`, merge `df1273928`: refuse MTP verify
   capture for a non-resident or host-routed MoE MTP head and name eager verification.
 
+The release also corrects one platform-dependent Gemma reference test pin; see
+[NUMERICS.md](NUMERICS.md). Runtime arithmetic is unchanged.
+
 The release changes workspace and internal pinned versions, Cargo.lock, the README
 serving row, the release ledger, and this receipt namespace. No engine math,
 serving default, published performance number, or fleet pin changes in this lane.
 
 ## Qualification
 
-Pending on the authorized non-production RTX 5090, sm_120a. Every run will record
-source HEAD, status, and binary hashes. No local rig build, test, gate, or server.
+Versioned candidate `9d669417e58c59f02f3647a050c4707a0c7191e5` was built and
+qualified on the authorized non-production RTX 5090, sm_120a, CUDA 13.0. Every
+qualification log records source HEAD/status and the four release-gate binary hashes.
+
+- Build: PASS; memra-server 0.134.0, source fingerprint
+  `memra-0.134.0-1e3db796b617`, git SHA `9d669417e58c`.
+- Full release battery: PASS, kernel-check 95 cells/21 skips; Ornith margin
+  `flips=1 bad=0`, Qwen `flips=0 bad=0`, both K=1..8 self-consistency PASS.
+- 10240 MiB squeeze: named eager verify fallback, K=1..8 PASS, exit 0.
+- Engine suite: 446 passed, zero runtime skips (budget 0), zero failures.
+- Server suite: 629 passed, zero failures, one ignored.
+- Corrected model-plan/reference suite: 341 passed, 12 declared artifact skips
+  (budget 12), zero failures across five binaries.
+- Corrected Gemma exact oracle and wrong-semantics controls: PASS natively and
+  with the isolated alternate-tanh diagnostic.
+- DSV4 gate binary unit tests, formatting, release guard, and clippy: PASS.
+- Raw model, binary, source, and log hashes are retained in the compressed logs
+  and `RECEIPTS.json`. The initial ownership-refused guard and zero-test baseline
+  run are preserved but excluded from qualification.
+
+The initial local version/docs commit triggered the existing pre-commit formatting
+check. That violated the no-local-gates instruction; no local CUDA, build, unit test,
+battery, or server ran. All subsequent commits and validation/push hooks run on the
+5090. The initial rsync ownership issue was corrected only in the isolated checkout;
+the rebuilt binary reports the known Git SHA and the release guard passes.
+
+The follow-up reference change is entirely inside `#[cfg(test)]`; its production
+prefix, the engine tree, and versioned Cargo inputs match the GPU candidate exactly.
+These byte identities preserve the existing GPU receipt binding. No performance claim is inferred
+from correctness-only runs.
 
 ## Publication scope
 
 Publicity: skipped (maintenance release). No HN, social, or blog publication.
 No model-support or performance claims are added for the DSV4 experiment.
-Owner review of the exact release PR head is required before merge or tag.

@@ -9266,12 +9266,109 @@ mod tests {
             panic!("expected global state");
         };
         assert_eq!(window, None);
-        assert_eq!(
-            output.logits[..4]
-                .iter()
-                .map(|value| value.to_bits())
-                .collect::<Vec<_>>(),
-            vec![3_198_203_366, 1_057_194_687, 3_185_247_713, 3_204_119_266]
+        // The old four-logit bit pin depended on libc tanhf. On the same binary,
+        // tanhf(x) and (float)tanh((double)x) produce different valid f32 results.
+        // Keep the general fixture above, then check a sparse, hand-derived program
+        // exactly using this platform's primitive instead of a platform-specific pin.
+        let mut weights = fixture.weights.clone();
+        for tensor in weights.values_mut() {
+            tensor.data.fill(0.0);
+        }
+        weights
+            .get_mut(&TensorId::OutputNorm)
+            .unwrap()
+            .data
+            .fill(1.0);
+        let embedding = &mut weights.get_mut(&TensorId::TokenEmbedding).unwrap().data;
+        embedding[0] = 1.0;
+        embedding[9] = 1.0;
+        for layer in 0..2 {
+            for kind in [
+                LayerTensor::PreAttentionNorm,
+                LayerTensor::PostAttentionNorm,
+                LayerTensor::PreMlpNorm,
+                LayerTensor::PostMlpNorm,
+                LayerTensor::QueryNorm,
+                LayerTensor::KeyNorm,
+            ] {
+                if let Some(tensor) = weights.get_mut(&layer_id(layer, kind)) {
+                    tensor.data.fill(1.0);
+                }
+            }
+        }
+        weights
+            .get_mut(&layer_id(0, LayerTensor::LayerScale))
+            .unwrap()
+            .data[0] = 0.5;
+        weights
+            .get_mut(&layer_id(1, LayerTensor::LayerScale))
+            .unwrap()
+            .data[0] = 0.25;
+        weights
+            .get_mut(&layer_id(1, LayerTensor::Key))
+            .unwrap()
+            .data[0] = 1.0;
+        weights
+            .get_mut(&layer_id(1, LayerTensor::AttentionOutput))
+            .unwrap()
+            .data[8] = 1.0;
+        // K-as-V takes the projected key before its learned norm, not the normed key.
+        weights
+            .get_mut(&layer_id(1, LayerTensor::KeyNorm))
+            .unwrap()
+            .data
+            .fill(3.0);
+
+        // Token 0 embeds as sqrt(8)*e0. Layer 0 has zero branches and scales by 1/2.
+        // In layer 1, the only projected key component becomes the value; one source
+        // makes attention probability exactly one. Its output writes only coordinate 1.
+        // Both MLPs are zero. These scalars are the whole surviving program, derived
+        // without calling any executor/norm/attention helper to compute the expectation.
+        let epsilon = 1e-6_f32;
+        let a = 8.0_f32.sqrt() * 0.5;
+        let projected_key = a * (1.0 / (a * a / 8.0 + epsilon).sqrt());
+        let value = projected_key * (1.0 / (projected_key * projected_key / 4.0 + epsilon).sqrt());
+        let b = value * (1.0 / (value * value / 8.0 + epsilon).sqrt());
+        let (c, d) = (a * 0.25, b * 0.25);
+        let inverse = 1.0 / ((c * c + d * d) / 8.0 + epsilon).sqrt();
+        let mut expected = vec![0.0; 32];
+        expected[0] = c * inverse;
+        expected[1] = d * inverse;
+        let mut uncapped_plan = plan.clone();
+        uncapped_plan.logits.clear();
+        let uncapped = execute(&uncapped_plan, &weights, &[0]).unwrap();
+        let bits = |values: &[f32]| values.iter().map(|v| v.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(&uncapped.logits), bits(&expected));
+        // Keep expected tanhf at runtime, like the executor. Compile-time
+        // transcendental folding need not match the platform libc implementation.
+        for logit in &mut expected {
+            *logit = 30.0 * (std::hint::black_box(*logit) / 30.0).tanh();
+        }
+        let sparse = execute(&plan, &weights, &[0]).unwrap();
+        assert_eq!(bits(&sparse.logits), bits(&expected));
+        assert_ne!(sparse.logits, uncapped.logits, "softcap must bind");
+        let ReferenceLayerState::Kv { value: cached, .. } = &sparse.state.layers[1] else {
+            panic!("expected global state");
+        };
+        assert_eq!(bits(cached), bits(&[value, 0.0, 0.0, 0.0]));
+
+        let mut unscaled = weights.clone();
+        unscaled
+            .get_mut(&layer_id(0, LayerTensor::LayerScale))
+            .unwrap()
+            .data[0] = 1.0;
+        assert_ne!(execute(&plan, &unscaled, &[0]).unwrap().logits, expected);
+        let mut separate_value = plan.clone();
+        let AttentionPlan::Full(attention) = &mut separate_value.layers[1].attention else {
+            panic!("expected global attention");
+        };
+        assert_eq!(attention.value_projection, ValueProjection::ReuseKey);
+        assert_eq!(attention.value_norm, ValueNorm::WeightlessRms);
+        attention.value_projection = ValueProjection::Separate;
+        weights.insert(layer_id(1, LayerTensor::Value), weight(&[4, 8], &[0.0; 32]));
+        assert_ne!(
+            execute(&separate_value, &weights, &[0]).unwrap().logits,
+            expected
         );
     }
 
