@@ -18869,8 +18869,132 @@ temperature = 0.6
         }
     }
 
+    /// Exercise the HTTP extractor with raw bytes. Parsing a serde_json::Value first
+    /// would erase duplicate keys and would not prove this routing contract.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: serialize process-global admission counters
+    async fn chat_http_rejects_duplicate_model_before_handler_work() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tower::ServiceExt;
+
+        let _lock = drain_lock();
+        let mut st = fake_worker_state();
+        st.models = Arc::new(vec!["vendor/m".into()]);
+        let meter = MockMetering::capturing();
+        st.metering = Some(meter.clone());
+        let entered = Arc::new(AtomicUsize::new(0));
+        let tap = entered.clone();
+        let app = apply_body_limit(
+            Router::new()
+                .route(
+                    "/v1/chat/completions",
+                    post(
+                        move |state: State<AppState>,
+                              headers: HeaderMap,
+                              trace: Option<Extension<TtftRequestTrace>>,
+                              admitted: AdmittedJson<ChatCompletionReq>| {
+                            tap.fetch_add(1, Ordering::SeqCst);
+                            chat_completions_admitted(state, headers, trace, admitted)
+                        },
+                    ),
+                )
+                .with_state(st.clone()),
+        );
+        // Numeric 92 keeps this byte assertion independent of source escape handling.
+        const ESCAPED_KEY: &[u8] = &[
+            b'"', 92, b'u', b'0', b'0', b'6', b'd', b'o', b'd', b'e', b'l', b'"',
+        ];
+        let escaped_count = |raw: &str| {
+            raw.as_bytes()
+                .windows(ESCAPED_KEY.len())
+                .filter(|bytes| *bytes == ESCAPED_KEY)
+                .count()
+        };
+        for (first_key, first_value, later_key, later_value, escapes) in [
+            (r#""model""#, "m", r#""model""#, "vendor/m", 0),
+            (r#""model""#, "m", r#""\u006dodel""#, "vendor/m", 1),
+            (r#""\u006dodel""#, "m", r#""model""#, "vendor/m", 1),
+            (r#""\u006dodel""#, "vendor/m", r#""\u006dodel""#, "m", 2),
+            (r#""model""#, "m", r#""model""#, "m", 0),
+        ] {
+            for padding in [0, 5 * 1024 * 1024] {
+                let raw = format!(
+                    r#"{{{first_key}:"{first_value}","messages":[],"ignored":"{}",{later_key}:"{later_value}"}}"#,
+                    "x".repeat(padding)
+                );
+                assert_eq!(
+                    escaped_count(&raw),
+                    escapes,
+                    "verify literal JSON escape bytes before HTTP extraction"
+                );
+                let response = app
+                    .clone()
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .method("POST")
+                            .uri("/v1/chat/completions")
+                            .header("content-type", "application/json")
+                            .body(Body::from(raw))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+                let body = axum::body::to_bytes(response.into_body(), 4096)
+                    .await
+                    .unwrap();
+                let message = String::from_utf8(body.to_vec()).unwrap();
+                assert!(message.contains("duplicate field `model`"), "{message}");
+                assert_eq!(
+                    entered.load(Ordering::SeqCst),
+                    0,
+                    "extractor must refuse before preprocessing, admission or inference"
+                );
+                assert!(
+                    meter.events().is_empty(),
+                    "no capture, reservation or receipt"
+                );
+                assert!(st.inflight.iter().all(|n| n.load(Ordering::SeqCst) == 0));
+            }
+        }
+        // Both unique canonical and alias spellings reach the real handler. Its
+        // empty-message refusal proves canonicalization succeeded without GPU work.
+        for (key, escapes) in [(r#""model""#, 0), (r#""\u006dodel""#, 1)] {
+            for model in ["vendor/m", "m"] {
+                let raw = format!(r#"{{{key}:"{model}","messages":[]}}"#);
+                assert_eq!(
+                    escaped_count(&raw),
+                    escapes,
+                    "verify positive-control escape bytes"
+                );
+                let response = app
+                    .clone()
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .method("POST")
+                            .uri("/v1/chat/completions")
+                            .header("content-type", "application/json")
+                            .body(Body::from(raw))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                let body = body_value(response).await;
+                assert!(
+                    body["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("messages must")
+                );
+            }
+        }
+        assert_eq!(entered.load(Ordering::SeqCst), 4);
+        assert!(meter.events().is_empty());
+    }
+
     /// Fake GPU worker: consumes Generate commands and answers each with one Token +
-    /// Done — handler-level tests (headers, drain) without a GPU or a loaded model.
+    /// Done for handler-level tests (headers, drain) without a GPU or a loaded model.
     ///
     /// It also drives the SAME health handle the real worker does (mark_ready at "load"
     /// completion, beat_busy per iteration), which is what lets the /health and /readyz tests
