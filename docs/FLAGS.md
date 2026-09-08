@@ -1720,3 +1720,9 @@ ones — filed under their own heading so a flag audit scanning the live section
 | Decided selector | Verdict | Evidence |
 |---|---|---|
 | `MEMRA_DSV4_SAMPLE_SORT` | **Radix wins; default promoted** | 2026-09-06: 49,643,520 full-order elements and 1,536 sampled parameter cases identical; CPU sampler 14.4-14.9 ms to 2.9-3.2 ms per row; plain and DSpark decode +29-38% at 256 and 8192 context. The 2026-09-07 comparison-pinned attention-TP envelope observed prime 41.8 versus sampled 24.9 tok/s on one binary. `comparison` remains the explicit legacy/oracle arm under the gate-selector exception; NaN rows retain the comparator and the per-thread gate override is unchanged. Private ops receipts: `sampler-order-20260906-*`, `attention-tp-sampled-2383-r1`. |
+
+## Removed doors, 2026-09-08 (DSV4 phase-interleaved issue)
+
+| Removed selector | Verdict | Evidence |
+|---|---|---|
+| `MEMRA_DSV4_ISSUE_INTERLEAVE_GATE` / `Dsv4Gpu::set_tp_ep_issue_interleave_for_gate` | **NO-GO; removed** | Default-OFF candidate, decide-by 2026-09-22, decided early. Same kernels and numeric class; six attention phases, five post-attention/expert phases and three shared-tail phases alternate ranks without new host joins. Correctness SHA and all six refusal cells pass on both arms. First-kernel skew median falls 103.102 to 1.0425 us and rank-0 AR residence 5.2201 to 2.0227 ms/token, but the freed residence becomes non-kernel gaps. Fresh-process sampled ABBA, ten rows per arm: radix current 38.072290 vs interleaved 37.963496 tok/s (-0.285757%); with split-K current 41.045194 vs interleaved 40.991187 (-0.131580%). All 40 rows eligible and all state/token hashes identical within each numeric class. Removed the setter, env reads, phased dispatch bodies and harness arm together. Measured source `dcc1e9fd56b1b0a44f14106a953039c25e78f6e6`; private namespace `issue-interleave-dcc1e9f-r1`. Scope: `research/dsv4f-2card-1m-20260904/ISSUE-INTERLEAVE.md`. |
