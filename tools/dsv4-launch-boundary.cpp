@@ -71,7 +71,7 @@ extern "C" int __wrap_memra_dsv4_replay_capture_end(void* graph,void** executabl
     cudaGraphNode_t marker;
     ck(cudaGraphAddEventRecordNode(&marker,e.graph,nullptr,0,ranks[rank].start),"first-node event");
     std::vector<cudaGraphNode_t> markers(roots_count,marker);
-    ck(cudaGraphAddDependencies(e.graph,markers.data(),roots.data(),roots_count),"marker precedes original roots");
+    ck(cudaGraphAddDependencies(e.graph,markers.data(),roots.data(),nullptr,roots_count),"marker precedes original roots");
     size_t instrumented_count=0; ck(cudaGraphGetNodes(e.graph,nullptr,&instrumented_count),"instrumented census");
     require(instrumented_count==count+1,"instrumented census mismatch");
     ck(cudaGraphInstantiate(&e.instrumented,e.graph,0),"instantiate diagnostic clone");
