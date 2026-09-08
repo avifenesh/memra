@@ -189,6 +189,7 @@ fn detect_arch() -> String {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=cu/dsv4_gu_n32.cuh");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     // docs.rs builders have no nvcc and no CUDA libs: emit empty placeholder fatbins so

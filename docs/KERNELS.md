@@ -1,5 +1,13 @@
 # Kernel inventory
 
+## DSV4 GU N32 diagnostic, 2026-09-08
+
+| Kernel / seam | Contract | Geometry / evidence |
+|---|---|---|
+| `dsv4_gu_n32_kernel` in `cu/dsv4_gu_n32.cuh`, included by `moe_f16_grouped.cu`; selected in existing `memra_moe_kq_gemm_sk_gu_m1_half2` | GU only: unchanged ModelOpt half2 decode, A/B orientation, m16n8k16 f32 chain and fixed GU scale/clamp/SiLU/route epilogue. Full K4096, no split reduction. Down unchanged. | N32, two warps, only warp0 MMA, A stages3x16x72 and B32x72; 1024B packed LUT plus existing CSR prefix. Useful tiles=64 per live expert; optional visits pointer is untimed component-only. Default-OFF `MEMRA_DSV4_GU_N32`, decide-by 2026-09-22. Frozen real component/memcheck and paired warm/cold timing pending, private `gu-n32-<sha7>-r1`. |
+
+The bounded `memra_dsv4_gu_n32_capture` ABI freezes actual grouped operands for the standalone gate; it is not a GPU kernel or a scored path. No `dsv4_gpu.rs`, `dsv4_graph.rs` or cadence-gate edit.
+
 ## DSV4 small-kernel diet, 2026-09-07
 
 Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use

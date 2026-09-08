@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <atomic>
 #include <vector>
+#include <mutex>
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -1804,6 +1805,8 @@ moe_kq_sktail_gu_kernel(
     }
 }
 
+#include "dsv4_gu_n32.cuh"
+
 // Numeric class moe_m1_adaptive_splitk_f32_fixed_order. The device CSR live
 // count determines the split count. Integer K-block boundaries partition all K
 // exactly, including non-divisors such as 13 slices. MMA order within each slice
@@ -2134,6 +2137,14 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int 
 }
 
 extern "C" {
+int memra_dsv4_gu_n32_capture(
+        const unsigned long long* table, int ne, const int* ids, const int* off,
+        const void* act, const float* rs, const float* mg, const float* mu,
+        const float* rw, const float* md, const int* pairs, int k, int n,
+        float limit, void* stream, const char* directory) {
+    return dsv4_gu_n32_capture_fixture(table,ne,ids,off,act,rs,mg,mu,rw,md,pairs,k,n,limit,stream,directory);
+}
+
 
 size_t memra_moe_f16g_w_bytes(int n_active, int out_f, int in_f){
     return (size_t)n_active*out_f*in_f*sizeof(__half);
@@ -2474,6 +2485,31 @@ int memra_moe_kq_gemm_sk_gu_m1_half2(
        || n_active > SK_MAX_G || in_f <= 0 || out_f <= 0 || in_f % SKT_BK
        || out_f % SK_BN || row_bytes != in_f / 2)
         return 40004;
+    // Selection is fixed for the process and therefore for retained graph nodes.
+    static const int n32 = [] {
+        const char* e = getenv("MEMRA_DSV4_GU_N32");
+        if(!e || strcmp(e, "0") == 0) return 0;
+        if(strcmp(e, "1") == 0) return 1;
+        return -1;
+    }();
+    if(n32 < 0) return 40004;
+    if(n32) {
+        if(in_f != 4096 || out_f != 2048 || n_expert != 128 || n_active != 128)
+            return 40004;
+        int dev = 0, sms = 0, occ = 0;
+        cudaError_t e = cudaGetDevice(&dev);
+        if(!e) e = cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev);
+        if(!e) e = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&occ,
+            dsv4_gu_n32_kernel, 64, 256 * sizeof(uint32_t));
+        if(e || sms < 1 || occ < 1) return e ? 1000 + (int)e : 40004;
+        dsv4_gu_n32_kernel<<<sms * occ, dim3(32,2,1), 256 * sizeof(uint32_t),
+            reinterpret_cast<cudaStream_t>(stream)>>>(table,n_expert,ex_ids,row_bytes,
+            (const __half*)act_f16,h,row_scale,macro_g,macro_u,route_w,ex_off_dev,
+            n_active,in_f,out_f,-1,limit);
+        e = cudaGetLastError();
+        if(!e) g_moe_kq_gu_h2_dispatches.fetch_add(1, std::memory_order_relaxed);
+        return e ? 1000 + (int)e : 0;
+    }
     int dev = 0, sms = 1, occ = 1;
     cudaGetDevice(&dev);
     if(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev) != cudaSuccess

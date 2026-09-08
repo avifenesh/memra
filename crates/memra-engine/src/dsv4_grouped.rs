@@ -542,6 +542,39 @@ impl GroupedWork {
                 }
                 self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, false)?;
             } else if let Some(gu_kind) = gu_kind {
+                // Bounded untimed operand capture. Absent in normal execution;
+                // never used in scored rows or graph capture. No candidate math.
+                static CAPTURE: std::sync::OnceLock<Option<std::ffi::CString>> =
+                    std::sync::OnceLock::new();
+                if let Some(directory) = CAPTURE.get_or_init(|| {
+                    std::env::var("MEMRA_DSV4_GU_N32_CAPTURE")
+                        .ok()
+                        .map(|p| std::ffi::CString::new(p).expect("capture path contains NUL"))
+                }) {
+                    let rc = unsafe {
+                        crate::mmq_ffi::memra_dsv4_gu_n32_capture(
+                            table.device_ptr(&s).0 as *const u64,
+                            self.routes.experts as i32,
+                            self.routes.ids.device_ptr(&s).0 as *const i32,
+                            self.routes.offsets.device_ptr(&s).0 as *const i32,
+                            self.input.half.device_ptr(&s).0 as *const std::ffi::c_void,
+                            self.input.scale.device_ptr(&s).0 as *const f32,
+                            self.routes.macro1.device_ptr(&s).0 as *const f32,
+                            self.routes.macro3.device_ptr(&s).0 as *const f32,
+                            self.routes.weights.device_ptr(&s).0 as *const f32,
+                            self.routes.macro2.device_ptr(&s).0 as *const f32,
+                            self.routes.pairs.device_ptr(&s).0 as *const i32,
+                            self.input.cols as i32,
+                            self.intermediate.cols as i32,
+                            limit,
+                            s.cu_stream().cast(),
+                            directory.as_ptr(),
+                        )
+                    };
+                    if rc != 0 {
+                        return Err(format!("GU N32 operand capture rc={rc}"));
+                    }
+                }
                 let rc = unsafe {
                     let launch = match gu_kind {
                         GuLaunchKind::M1Half2 => memra_moe_kq_gemm_sk_gu_m1_half2,

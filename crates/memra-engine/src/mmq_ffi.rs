@@ -1304,6 +1304,24 @@ unsafe extern "C" {
     // Composition of the existing GU-M1 and packed-half2 gate doors. This is
     // one successful <108,true,true> CUDA enqueue; the caller intentionally
     // advances both feature receipts for that same enqueue.
+    pub fn memra_dsv4_gu_n32_capture(
+        table: *const u64,
+        ne: i32,
+        ids: *const i32,
+        offsets: *const i32,
+        act: *const c_void,
+        row_scale: *const f32,
+        macro_g: *const f32,
+        macro_u: *const f32,
+        route_weight: *const f32,
+        macro_d: *const f32,
+        pairs: *const i32,
+        k: i32,
+        n: i32,
+        limit: f32,
+        stream: *mut c_void,
+        directory: *const std::ffi::c_char,
+    ) -> i32;
     pub fn memra_moe_kq_gemm_sk_gu_m1_half2(
         table: *const u64,
         n_expert: i32,
