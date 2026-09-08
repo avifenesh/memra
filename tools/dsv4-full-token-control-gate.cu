@@ -353,7 +353,7 @@ int main() try {
                     require(read(*r,seq+block)==(p+1)*(block==0?86:43),"production-geometry epoch mismatch");
             }
         }
-        printf("PASS production geometry max_n=%d max_blocks=%d replay_tokens=8 joins_per_token=86 alternating_attention_expert=1\n",geometry.first,geometry.second);
+        printf("PASS production geometry max_n=%d max_blocks=%d replay_tokens=8 joins_per_token=86\n",geometry.first,geometry.second);
     }
     for(int rank=0;rank<2;++rank) {
         Pair pair(4096,1); auto& a=pair.a; auto& b=pair.b;
