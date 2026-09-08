@@ -18,7 +18,7 @@ pub(super) fn copy_pair<
     enabled: bool,
 ) -> Res<bool> {
     if enabled
-        && a.len() != 0
+        && !a.is_empty()
         && a.len() == b.len()
         && c.len() >= a.len()
         && d.len() >= b.len()
