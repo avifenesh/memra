@@ -1864,6 +1864,18 @@ impl Dsv4Gpu {
         crate::set_moe_f16g_m1_tc_for_gate(enabled)
     }
 
+    /// Change the experimental numeric program only between drained requests.
+    pub fn set_grouped_m1_splitk_for_gate(&self, enabled: bool) -> bool {
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain M1 split-K gate");
+        }
+        crate::set_moe_m1_splitk_for_gate(enabled)
+    }
+
     pub fn grouped_m1_tc_for_gate(&self) -> bool {
         crate::moe_f16g_m1_tc_on()
     }

@@ -36,3 +36,14 @@ decode returns only the sampled u32 after the device chain.
 
 Perf CI is skipped per the owner. All GPU gates run on the development pair.
 The parent 120 tok/s plain objective remains open. No serving qualification.
+
+Review follow-up: armed penalties reuse host count/touched-ID scratch and upload
+only coalesced ranges from the previous/current windows, including departed IDs.
+The unpenalized branch and CUDA sampler are unchanged in behaviour, so the banked
+unpenalized +14.244028% receipt still describes that path.
+The penalized sampled envelope is unmeasured; no penalized speedup is claimed.
+The component tape now has 640 distinct cases (320 per GPU), including 64
+boundary-directed cases per GPU: nearest/adjacent f32 top-p values around
+cumulative masses, multi-token nuclei, and exact dyadic CDF draws at or one
+RNG quantum beside a boundary. Identity assertions remain strict. This expanded
+GPU tape has not been rechecked in this source-only follow-up.

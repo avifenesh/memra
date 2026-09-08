@@ -6900,6 +6900,49 @@ impl PrefixCache {
             .map(|_| inserted_id)
     }
 
+    /// Reserve publication room before allocating its device snapshot. Leases and the
+    /// selected eviction policy remain authoritative. Refuse without evicting anything
+    /// when the eligible entries cannot make room; publication must never fail a request.
+    fn prepare_snapshot(&mut self, bytes: usize, budget: usize, slru: bool) -> bool {
+        if bytes > budget {
+            return false;
+        }
+        let target = budget - bytes;
+        let needed = self.total_bytes.saturating_sub(target);
+        if needed == 0 {
+            return true;
+        }
+        let reclaimable: usize = self
+            .probation_lru
+            .values()
+            .chain(self.protected_lru.values().filter(|_| !slru))
+            .map(|(key, i)| self.entries[key][*i].bytes)
+            .sum();
+        if needed > reclaimable {
+            return false;
+        }
+        while self.total_bytes > target {
+            let Some((key, i)) = self.capacity_victim_with(slru) else {
+                return false;
+            };
+            let Some(dead) = self.remove_at(&key, i) else {
+                return false;
+            };
+            self.evictions += 1;
+            eprintln!(
+                "[prefix-cache] evict (snapshot preflight): {} tokens, {:.1}MB (model {}{})",
+                dead.toks.len(),
+                dead.bytes as f64 / 1e6,
+                key.0,
+                ns_suffix(&key.1),
+            );
+            // Drop device planes before the replacement allocates. Like admission reclaim,
+            // do not stall the request by demoting gigabytes into the optional host tier.
+            drop(dead);
+        }
+        true
+    }
+
     /// KV-FLEX SHED (lane/kv-flex-20260831): evict entries in capacity order (probation
     /// LRU first, protected LRU past its share: the SAME victim function the insert-time
     /// budget loop uses, so flex adds no second eviction policy) until residency is back
@@ -10339,6 +10382,53 @@ fn prefix_insert_from_spec_boundary(
     px.insert_demoting(pool_key, e, why, engine, hpx);
 }
 
+/// Device bytes allocated by a plain snapshot, including both TP ranks. Use live lengths,
+/// not cache capacity: latent snapshots contain rows, final pool keys and only the live tail.
+fn prefix_snapshot_bytes(cache: &Cache) -> usize {
+    let mut bytes = 0usize;
+    for il in 0..cache.kv.len() {
+        if let Some(kv) = &cache.kv[il] {
+            if kv.len == 0 && cache.pos > 0 {
+                continue;
+            }
+            bytes = bytes.saturating_add(kv.len.saturating_mul(kv.k_tok_bytes + kv.v_tok_bytes));
+        }
+        if let Some(recur) = &cache.recur[il] {
+            bytes = bytes.saturating_add((recur.conv_state.len() + recur.ssm_state.len()) * 4);
+        }
+    }
+    for planes in cache.glm5_tp_recur.iter().flatten() {
+        for recur in planes {
+            bytes = bytes.saturating_add((recur.conv_state.len() + recur.ssm_state.len()) * 4);
+        }
+    }
+    for latent in cache
+        .latent
+        .iter()
+        .flatten()
+        .chain(cache.glm5_tp_latent_peer.iter().flatten().flatten())
+    {
+        if latent.len == 0 {
+            continue;
+        }
+        let mut floats = latent.len.saturating_mul(latent.width);
+        if latent.index_width > 0 {
+            let tail = latent
+                .len
+                .saturating_sub(latent.index_pools_ready.saturating_mul(latent.index_pool));
+            floats = floats
+                .saturating_add(tail.saturating_mul(latent.index_width))
+                .saturating_add(
+                    latent
+                        .index_pools_ready
+                        .saturating_mul(latent.index_width / 2),
+                );
+        }
+        bytes = bytes.saturating_add(floats.saturating_mul(4));
+    }
+    bytes
+}
+
 fn prefix_insert_from_session(
     engine: &Engine,
     px: &mut PrefixCache,
@@ -10357,6 +10447,22 @@ fn prefix_insert_from_session(
         return;
     }
     let pool_key = s.pool_key();
+    if px.has_key(&pool_key, &s.fed) {
+        return;
+    }
+    if !px.prepare_snapshot(
+        prefix_snapshot_bytes(cache),
+        prefix_cache_budget_bytes(),
+        prefix_cache_slru_enabled(),
+    ) {
+        static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[prefix-cache] snapshot skipped: cannot fit beside leased/protected entries; request continues"
+            );
+        }
+        return;
+    }
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
         Ok(e) => {
             trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
@@ -20734,7 +20840,7 @@ fn admit(
         prefill_done_at_admit
     };
 
-    Ok(Session {
+    let mut s = Session {
         model: req.model,
         spec_k,
         cache_ns: req.cache_ns,
@@ -20821,7 +20927,42 @@ fn admit(
         tx: req.tx,
         ttft: req.ttft,
         t0: Instant::now(),
-    })
+    };
+    // Admission has finalized the carrier. Conversion/drafter paths retain their leases;
+    // fanout acquires its own leases later and never passes through this release point.
+    if s.prefix_pin.is_some()
+        && s.spec.is_none()
+        && s.gspec_k == 0
+        && !s.dspark_on
+        && !s.glm5_on
+        && s.cache.is_some()
+    {
+        match lm.model.prefix_restore_fence(engine) {
+            Ok(()) => {
+                let entry_tokens = s.prefix_pin.as_ref().and_then(|pin| {
+                    let i = px.id_index(pin)?;
+                    let entry = &px.entries[&pin.key][i];
+                    (entry.pins > 0).then_some(entry.toks.len())
+                });
+                retire_prefix_pin(px, &mut s.prefix_pin);
+                if let Some(entry_tokens) = entry_tokens {
+                    eprintln!(
+                        "[prefix-cache] source lease released after restore fence (entry {entry_tokens} tokens, model {})",
+                        s.model,
+                    );
+                }
+            }
+            Err(err) => {
+                // Keep the source leased when completion is uncertain. Publication is optional.
+                s.snapshot_at = None;
+                s.seed_prefix = false;
+                eprintln!(
+                    "[prefix-cache] restore fence failed ({err}); source stays leased, publication skipped"
+                );
+            }
+        }
+    }
+    Ok(s)
 }
 
 /// Resolve each capture piece to a single vocabulary token and read its last-position
@@ -32431,6 +32572,41 @@ mod tests {
             entry.pins, 0,
             "retirement must release the cache pin in release builds"
         );
+    }
+
+    #[test]
+    fn prefix_cache_plain_source_release_keeps_deeper_entry_with_one_entry_budget() {
+        let k = key("");
+        let mut px = PrefixCache::default();
+        let (size, budget) = (10, 12);
+        px.insert_with_budget(&k, entry_b(&k, 0, size), "source", budget);
+        let pin = px.pin_n(&k, 0, 2).unwrap();
+        let mut session_pin = Some(pin.clone());
+
+        retire_prefix_pin(&mut px, &mut session_pin);
+        assert!(session_pin.is_none());
+        assert_eq!(
+            px.entries[&k][0].pins, 1,
+            "the other session keeps its lease"
+        );
+        assert!(!px.prepare_snapshot(size, budget, false));
+        assert_eq!(px_survivors(&px), vec![0]);
+        assert_eq!(
+            px.evictions, 0,
+            "failed publication does not evict the source"
+        );
+
+        let mut other_session_pin = Some(pin.clone());
+        retire_prefix_pin(&mut px, &mut other_session_pin);
+        assert_eq!(px.capacity_victim_with(false), Some((k.clone(), 0)));
+        assert!(px.prepare_snapshot(size, budget, false));
+        assert_eq!(px.total_bytes, 0, "source drops before snapshot allocation");
+        assert!(px.id_index(&pin).is_none());
+        px.insert_with_budget(&k, entry_b(&k, 1, size), "deeper", budget);
+        assert_eq!(px_survivors(&px), vec![1]);
+        assert_eq!(px.total_bytes, size);
+        assert_eq!(px.evictions, 1);
+        assert_prefix_cache_accounting(&px);
     }
 
     #[test]

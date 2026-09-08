@@ -294,6 +294,35 @@ pub fn clear_moe_f16g_m1_tc_for_gate() {
     MOE_F16G_M1_TC_OVERRIDE.store(-1, Ordering::Release);
 }
 
+/// Experimental M=1 numeric class. Set before loading or starting a request,
+/// and only change after draining all ranks. No environment or serving arm.
+static MOE_M1_SPLITK: AtomicI8 = AtomicI8::new(0);
+pub const MOE_M1_SPLITK_NUMERIC_CLASS: &str = "moe_m1_adaptive_splitk_f32_fixed_order";
+pub fn set_moe_m1_splitk_for_gate(enabled: bool) -> bool {
+    MOE_M1_SPLITK.swap(enabled as i8, Ordering::AcqRel) != 0
+}
+pub fn moe_m1_splitk_on() -> bool {
+    MOE_M1_SPLITK.load(Ordering::Acquire) != 0
+}
+pub static MOE_M1_SPLITK_GU_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static MOE_M1_SPLITK_DOWN_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+static MOE_M1_SPLITK_COMPONENT: AtomicI8 = AtomicI8::new(0);
+pub fn set_moe_m1_splitk_component_for_gate(enabled: bool) {
+    MOE_M1_SPLITK_COMPONENT.store(enabled as i8, Ordering::Release);
+}
+
+/// Arm first-layer component capture for the next real routed token. The gate
+/// calls this after the previous token has drained, never during a request run.
+pub fn set_moe_m1_splitk_component_token_for_gate(token: usize) {
+    assert!(token < i32::MAX as usize);
+    unsafe {
+        mmq_ffi::memra_moe_m1_splitk_component_token(token as i32);
+    }
+    dsv4_grouped::reset_splitk_component_token();
+}
+
 /// DSV4 matrix plain-only GU tensor-core m_e=1 work-elision candidate. This
 /// is deliberately a process-local gate override with no environment arm: the
 /// shipped GU path remains the rollback until the valid-row identity gate and
@@ -32948,16 +32977,16 @@ impl Engine {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// PACKED conv twin (lane/dspark-gdn-packed): T rows of ONE sequence through the per-row
     /// conv program in one launch; `snap` (optional) receives the post-row ring for rows 0..T-2
     /// in the checkpoint slab layout (`[T-1, conv_dim, pad]`). Bit-identical to T chained
-    /// `ssm_conv1d_fused_decode_b` rows (see the kernel header).
+    /// `ssm_conv1d_fused_decode_b` rows (see the kernel header). `state_ptrs` contains
+    /// [conv, canonical ssm, alternate ssm] and is refreshed before each graph replay.
     #[allow(clippy::too_many_arguments)]
     pub fn ssm_conv1d_fused_decode_tloop(
         &self,
         qkv_cols: &CudaSlice<f32>,
-        conv_state: &mut CudaSlice<f32>,
+        state_ptrs: &cudarc::driver::CudaView<u64>,
         w: &CudaSlice<f32>,
         conv_outs: &mut CudaSlice<f32>,
         snap: Option<&mut CudaSlice<f32>>,
@@ -32978,7 +33007,7 @@ impl Engine {
         let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
         let mut b = __s_b.launch_builder(&f);
         b.arg(qkv_cols)
-            .arg(conv_state)
+            .arg(state_ptrs)
             .arg(w)
             .arg(conv_outs)
             .arg(&snap_ptr)
@@ -33003,16 +33032,15 @@ impl Engine {
         v: &CudaSlice<f32>,
         g: &CudaSlice<f32>,
         beta: &CudaSlice<f32>,
-        state_in: &mut CudaSlice<f32>,
-        state_out: Option<&mut CudaSlice<f32>>,
+        state_ptrs: &cudarc::driver::CudaView<u64>,
         o: &mut CudaSlice<f32>,
         n_head: usize,
         t: usize,
         scale: f32,
         snap: Option<&mut CudaSlice<f32>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // `state_out` None = IN PLACE on `state_in` (the even-T parity of the per-row
-        // ping-pong); the kernel reads each shard before it writes it.
+        // Resolve [conv, canonical ssm, alternate ssm] through the refreshed table.
+        // Odd T writes alternate; even T writes canonical in place, matching per-row parity.
         use cudarc::driver::DevicePtr;
         let f = self.func("gdn_scan_s128_tsnap");
         const S_V: u32 = 128;
@@ -33025,10 +33053,6 @@ impl Engine {
         };
         let (h, ti) = (n_head as i32, t as i32);
         let __s_b = self.gpu.stream();
-        let in_guard = state_in.device_ptr(&__s_b);
-        let in_ptr: u64 = in_guard.0;
-        let out_guard = state_out.map(|so| so.device_ptr(&__s_b));
-        let out_ptr: u64 = out_guard.as_ref().map(|(p, _)| *p).unwrap_or(in_ptr);
         let snap_guard = snap.map(|sn| sn.device_ptr(&__s_b));
         let snap_ptr: u64 = snap_guard.as_ref().map(|(p, _)| *p).unwrap_or(0);
         let mut b = __s_b.launch_builder(&f);
@@ -33037,8 +33061,7 @@ impl Engine {
             .arg(v)
             .arg(g)
             .arg(beta)
-            .arg(&in_ptr)
-            .arg(&out_ptr)
+            .arg(state_ptrs)
             .arg(o)
             .arg(&h)
             .arg(&ti)
@@ -33048,8 +33071,6 @@ impl Engine {
             b.launch(cfg)?;
         }
         drop(snap_guard);
-        drop(out_guard);
-        drop(in_guard);
         Ok(())
     }
 
