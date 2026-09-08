@@ -1,4 +1,4 @@
-// Frozen comparison oracle from809376789, followed by independent prefix/draw gates.
+// Frozen comparison oracle from 809376789, followed by independent prefix/draw gates.
 
 use super::*;
 
@@ -41,7 +41,7 @@ fn bits(cand: &[(u32, f32)]) -> Vec<(u32, u32)> {
 }
 
 fn check_case(logits: &[f32], cfg: SamplerConfig, history: &[u32], draws: usize) {
-    let mut actual = Sampler::new(cfg.clone());
+    let mut actual = Sampler::with_nucleus_ordering(cfg.clone(), NucleusOrdering::PrefixRadix);
     let mut expected = Sampler::new(cfg);
     for &t in history {
         actual.accept(t);
@@ -121,7 +121,7 @@ fn discarded_zero_tail_does_not_disable_radix() {
         top_p: 0.95,
         ..Default::default()
     };
-    let mut sampler = Sampler::new(cfg.clone());
+    let mut sampler = Sampler::with_nucleus_ordering(cfg.clone(), NucleusOrdering::PrefixRadix);
     sampler.sample(&row);
     assert_eq!(sampler.nucleus_sort_counts(), (1, 0));
     check_case(&row, cfg, &[], 4);
@@ -139,7 +139,7 @@ fn ties_inside_and_across_nucleus_preserve_legacy_order() {
             top_p,
             ..Default::default()
         };
-        let mut sampler = Sampler::new(cfg.clone());
+        let mut sampler = Sampler::with_nucleus_ordering(cfg.clone(), NucleusOrdering::PrefixRadix);
         sampler.sample(&row);
         assert_eq!(
             sampler.nucleus_sort_counts().0,
@@ -300,7 +300,7 @@ fn radix_draws_have_reference_support_and_expected_mass() {
     row[513] = 0.6f32.ln();
     row[3] = 0.25f32.ln();
     row[701] = 0.15f32.ln();
-    let mut a = Sampler::new(SamplerConfig {
+    let mut a = Sampler::for_glm5_plain_tp2(SamplerConfig {
         temperature: 1.0,
         top_p: 0.8,
         seed: 42,
@@ -312,6 +312,7 @@ fn radix_draws_have_reference_support_and_expected_mass() {
         seed: 42,
         ..Default::default()
     });
+    a.nucleus_ordering = NucleusOrdering::PrefixRadix;
     let mut high = 0;
     for _ in 0..4096 {
         let x = a.sample(&row);
@@ -321,7 +322,7 @@ fn radix_draws_have_reference_support_and_expected_mass() {
     }
     assert!(
         high > 2700 && high < 3100,
-        "expected about2891 top-token draws, got{high}"
+        "expected about 2891 top-token draws, got {high}"
     );
     assert_eq!(a.nucleus_sort_counts(), (4096, 0));
 }
@@ -345,7 +346,7 @@ fn benchmark_pinned_rows() {
             seed: 20260908,
             ..Default::default()
         };
-        let mut a = Sampler::new(cfg.clone());
+        let mut a = Sampler::with_nucleus_ordering(cfg.clone(), NucleusOrdering::PrefixRadix);
         let mut b = Sampler::new(cfg);
         for _ in 0..3 {
             assert_eq!(a.sample(&row), reference_sample(&mut b, &row));
@@ -479,5 +480,82 @@ fn oracle_softmax(cand: &mut [(u32, f32)]) {
     let inv = if sum > 0.0 { 1.0 / sum } else { 0.0 };
     for c in cand.iter_mut() {
         c.1 *= inv;
+    }
+}
+
+#[test]
+fn shared_default_skips_radix_scratch_even_for_broad_rows() {
+    let row = random_row(154_880, 20260908);
+    let cfg = SamplerConfig {
+        temperature: 1.0,
+        top_p: 0.95,
+        ..Default::default()
+    };
+    let mut sampler = Sampler::new(cfg.clone());
+    let mut reference = Sampler::new(cfg);
+    for _ in 0..4 {
+        assert_eq!(sampler.sample(&row), reference_sample(&mut reference, &row));
+        assert_eq!(sampler.rng.state, reference.rng.state);
+    }
+    assert_eq!(sampler.nucleus_sort_counts(), (0, 4));
+    assert!(sampler.nucleus_order.keys.is_empty());
+    assert!(sampler.nucleus_order.order.is_empty());
+    assert!(sampler.nucleus_order.scratch.is_empty());
+    assert!(sampler.nucleus_order.sorted.is_empty());
+}
+
+#[test]
+fn glm_plain_constructor_limits_ordering_to_qualified_sampling_shape() {
+    let row = vendor_finite_row(154_880);
+    let cfg = SamplerConfig {
+        temperature: 1.0,
+        top_p: 0.95,
+        ..Default::default()
+    };
+    let mut qualified = Sampler::for_glm5_plain_tp2(cfg.clone());
+    let mut reference = Sampler::new(cfg.clone());
+    assert_eq!(qualified.sample(&row), reference.sample(&row));
+    assert_eq!(qualified.nucleus_sort_counts(), (1, 0));
+    for changed in [
+        SamplerConfig {
+            temperature: 0.8,
+            ..cfg.clone()
+        },
+        SamplerConfig {
+            top_p: 0.9,
+            ..cfg.clone()
+        },
+        SamplerConfig {
+            top_k: 40,
+            ..cfg.clone()
+        },
+        SamplerConfig {
+            min_p: 0.01,
+            ..cfg.clone()
+        },
+        SamplerConfig {
+            penalty_last_n: 32,
+            penalty_repeat: 1.1,
+            ..cfg.clone()
+        },
+        SamplerConfig {
+            penalty_last_n: 32,
+            penalty_freq: 0.1,
+            ..cfg.clone()
+        },
+        SamplerConfig {
+            penalty_last_n: 32,
+            penalty_present: 0.1,
+            ..cfg.clone()
+        },
+    ] {
+        let mut actual = Sampler::for_glm5_plain_tp2(changed.clone());
+        let mut expected = Sampler::new(changed);
+        actual.accept(19);
+        expected.accept(19);
+        assert_eq!(actual.sample(&row), expected.sample(&row));
+        assert_eq!(actual.rng.state, expected.rng.state);
+        assert_eq!(actual.nucleus_sort_counts(), (0, 1));
+        assert!(actual.nucleus_order.keys.is_empty());
     }
 }

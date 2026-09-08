@@ -176,6 +176,12 @@ impl SamplerIdentity {
     }
 }
 
+#[derive(Clone, Copy)]
+enum NucleusOrdering {
+    Comparison,
+    PrefixRadix,
+}
+
 /// Stateful sampler: owns the RNG + the recent-token history (for penalties).
 pub struct Sampler {
     cfg: SamplerConfig,
@@ -186,10 +192,35 @@ pub struct Sampler {
     // instead of either the full vocabulary or an O(history^2) device-side dedup walk.
     penalty_counts: HashMap<u32, u32>,
     nucleus_order: NucleusOrderScratch,
+    nucleus_ordering: NucleusOrdering,
 }
 
 impl Sampler {
     pub fn new(cfg: SamplerConfig) -> Self {
+        Self::with_nucleus_ordering(cfg, NucleusOrdering::Comparison)
+    }
+
+    /// Ordering-only specialization for the qualified GLM plain TP2 serving route.
+    /// Broad synthetic rows regress when radix reaches a tie and repeats the sort;
+    /// other callers and sampling shapes therefore retain the comparison path.
+    /// This does not change any filter, probability arithmetic, or RNG draw.
+    pub fn for_glm5_plain_tp2(cfg: SamplerConfig) -> Self {
+        let neutral_penalties = cfg.penalty_last_n == 0
+            || (cfg.penalty_repeat == 1.0 && cfg.penalty_freq == 0.0 && cfg.penalty_present == 0.0);
+        let ordering = if cfg.temperature == 1.0
+            && cfg.top_p == 0.95
+            && cfg.top_k == 0
+            && cfg.min_p == 0.0
+            && neutral_penalties
+        {
+            NucleusOrdering::PrefixRadix
+        } else {
+            NucleusOrdering::Comparison
+        };
+        Self::with_nucleus_ordering(cfg, ordering)
+    }
+
+    fn with_nucleus_ordering(cfg: SamplerConfig, nucleus_ordering: NucleusOrdering) -> Self {
         let rng = SplitMix64::new(cfg.seed);
         Sampler {
             cfg,
@@ -197,6 +228,7 @@ impl Sampler {
             history: Vec::new(),
             penalty_counts: HashMap::new(),
             nucleus_order: NucleusOrderScratch::default(),
+            nucleus_ordering,
         }
     }
 
@@ -360,7 +392,10 @@ impl Sampler {
 
         // 4. top-p (nucleus): smallest set whose cumulative prob >= top_p. Needs desc-by-prob order.
         if self.cfg.top_p < 1.0 {
-            self.nucleus_order.sort(&mut cand, self.cfg.top_p);
+            match self.nucleus_ordering {
+                NucleusOrdering::Comparison => self.nucleus_order.comparison(&mut cand),
+                NucleusOrdering::PrefixRadix => self.nucleus_order.sort(&mut cand, self.cfg.top_p),
+            }
             let mut cum = 0.0f32;
             let mut keep = 0usize;
             for (i, c) in cand.iter().enumerate() {

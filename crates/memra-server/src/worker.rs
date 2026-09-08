@@ -18553,7 +18553,18 @@ fn admit(
             .map(|v| v != "0")
             .unwrap_or(true)
         && peer_probe_allows_spec;
-    let mut sampler = Sampler::new(req.sampler_cfg);
+    // Prefix radix is qualified on the loaded GLM TP2 plain route. Keep shared
+    // sampler users on comparison ordering: broad tied rows can regress on fallback.
+    let mut sampler = if !serve_spec
+        && !vision_req
+        && !capture_req
+        && !constrained
+        && lm.model.glm5_tp_rank_count() == Some(2)
+    {
+        Sampler::for_glm5_plain_tp2(req.sampler_cfg)
+    } else {
+        Sampler::new(req.sampler_cfg)
+    };
     // GREEDY + penalties keeps the legacy tokenwise path (gap-scan F3 plumbing): the greedy
     // spec arm verifies by pure argmax (sampling=None), which would silently ignore the
     // penalties the host sampler applies pre-argmax. Sampled requests carry penalties into

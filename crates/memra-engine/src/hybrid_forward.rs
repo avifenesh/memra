@@ -2999,6 +2999,12 @@ impl HybridModel {
         self.glm5_tp_rt_for(0, self.layers.len()).is_some()
     }
 
+    /// Loaded symmetric GLM TP rank count, independent of requested environment flags.
+    pub fn glm5_tp_rank_count(&self) -> Option<usize> {
+        self.glm5_tp_rt_for(0, self.layers.len())
+            .map(|rt| rt.ranks())
+    }
+
     /// Capture the per-rank state of a glm5 TP session for a prefix entry: every rank's KDA
     /// shard and every peer's latent plane, each cloned ON ITS OWN DEVICE (lane/glm5-tp-prefix,
     /// 2026-09-07). `Ok(None)` when the model is not TP-sharded. `pos` is the cache boundary the
