@@ -1721,6 +1721,12 @@ ones — filed under their own heading so a flag audit scanning the live section
 |---|---|---|
 | `MEMRA_DSV4_SAMPLE_SORT` | **Radix wins; default promoted** | 2026-09-06: 49,643,520 full-order elements and 1,536 sampled parameter cases identical; CPU sampler 14.4-14.9 ms to 2.9-3.2 ms per row; plain and DSpark decode +29-38% at 256 and 8192 context. The 2026-09-07 comparison-pinned attention-TP envelope observed prime 41.8 versus sampled 24.9 tok/s on one binary. `comparison` remains the explicit legacy/oracle arm under the gate-selector exception; NaN rows retain the comparator and the per-thread gate override is unchanged. Private ops receipts: `sampler-order-20260906-*`, `attention-tp-sampled-2383-r1`. |
 
+## DSV4 full-token replay prerequisite, 2026-09-08
+
+| Diagnostic selector | Default / both arms / rollback | Decision and receipt |
+| --- | --- | --- |
+| Standalone `dsv4-full-token-control-gate` executable | OFF: not part of the runtime build or dispatch. Explicit invocation tests live controls and paired segmented graph fixtures; no invocation leaves the engine unchanged. Rollback is to stop invoking the component. No model replay env flag is installed at this checkpoint. | decide-by: 2026-09-22. Component only, not full-model capture or performance. Source/gates: `research/dsv4f-full-token-replay-20260908/DESIGN.md`. Remote receipts held in the companion private ops lane. Remove with a negative/flat full-model verdict; do not promote from the fixture. |
+
 ## Removed doors, 2026-09-08 (DSV4 phase-interleaved issue)
 
 | Removed selector | Verdict | Evidence |

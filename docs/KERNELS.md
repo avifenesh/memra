@@ -608,6 +608,13 @@ receipts: `research/kernel-dedup-20260821/RECEIPTS.md`; every modified TU × arc
   m64n64k16.bf16 wrapper. Still local by design: fa3's `_tb` (transpose-B imm) and
   templated wait, qmatvec's m64n64k32.s8 form and raw asm statements.
 
+## DSV4 segmented replay component, 2026-09-08
+
+| Source | Kernel | Contract / dispatch |
+| --- | --- | --- |
+| `cu/dsv4_replay_control.cuh` | `dsv4_replay_control_kernel` | Integer live token/position/uniform storage, ring slot, compressor cadence/offsets, indexer bounds. Same-device C4/C128 IF handles set on every execution. Standalone `tools/dsv4-full-token-control-gate.cu` only; no runtime FFI or model dispatch. Default OFF; decide-by 2026-09-22. `research/dsv4f-full-token-replay-20260908/DESIGN.md`. |
+| `tools/dsv4-full-token-control-gate.cu` | `snapshot`, `emit4`, `emit128`, `producer`, `finish`, `rollback` | Integer payload/control fixtures around the unmodified `memra_tp_ar_1stage` transport. Not model compressor, attention, head or sampling kernels. No runtime dispatch. Same diagnostic lifetime as the control kernel. |
+
 ## Known UNKNOWNs
 
 Per-variant dispatch flags inside the four giant fatbin TUs (kernels/qmatvec/flash_attn/
