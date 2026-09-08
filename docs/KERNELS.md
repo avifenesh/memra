@@ -1,5 +1,11 @@
 # Kernel inventory
 
+## Compressor paired copies, 2026-09-08
+
+| Kernel / FFI | Contract | Geometry / gate |
+|---|---|---|
+| `dsv4_compressor_copy_pair_kernel` / `memra_dsv4_compressor_copy_pair` in `cu/dsv4_gpu.cu`, `src/dsv4_ffi.rs` | Two independent f32-storage spans copied as u32 words, preserving every bit including NaN payloads and signed zero. No arithmetic or allocation. No write/read or write/write overlap; raw launcher returns 40071 before enqueue, and Rust retains the original ordered driver copies. Read/read alias is allowed. Same CUDA stream and retained cudarc dependency guards. | 256 threads, ceil(n/256) blocks capped at 256, bounds-checked tail; n=0 is a no-op. Only compressor snapshot/append sites, t=1. `MEMRA_DSV4_COMPRESSOR_PAIRED_COPY`, default OFF, decide-by 2026-09-22. Component/canary plus 20-row sampled ABBA pending; private receipt namespace `compressor-paired-copy-<sha7>-r1`. |
+
 ## DSV4 small-kernel diet, 2026-09-07
 
 Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use

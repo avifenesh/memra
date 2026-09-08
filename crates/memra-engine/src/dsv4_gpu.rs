@@ -48,6 +48,9 @@ type Res<T> = Result<T, String>;
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
+#[path = "dsv4_compressor_copy.rs"]
+mod compressor_copy;
+
 // Gate-only dense wo_a launch fusion. It is process-local and deliberately
 // default OFF; no environment variable or serving default selects this arm.
 static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
@@ -788,6 +791,8 @@ pub struct Dsv4Gpu {
     pub chains_f32: bool,
     /// Process-local, default OFF; fixed at load, never toggled during a walk.
     small_kernel_diet: bool,
+    compressor_paired_copy: bool,
+    compressor_copy_counts: [AtomicU64; 2],
     /// Successful enqueues for HC finish and Q norm/pack, respectively.
     /// Counts launches, not tokens, expected savings, or graph nodes.
     small_kernel_launches: [AtomicU64; 2],
@@ -3144,6 +3149,15 @@ impl Dsv4Gpu {
         if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
             return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
         }
+        let compressor_paired_copy =
+            match std::env::var("MEMRA_DSV4_COMPRESSOR_PAIRED_COPY").as_deref() {
+                Err(std::env::VarError::NotPresent) | Ok("0") => false,
+                Ok("1") => true,
+                _ => return Err("MEMRA_DSV4_COMPRESSOR_PAIRED_COPY requires 0 or 1".into()),
+            };
+        if compressor_paired_copy && !topology.is_tp_ep() {
+            return Err("compressor paired copy requires all-layer TP/EP".into());
+        }
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -3178,6 +3192,8 @@ impl Dsv4Gpu {
             dots_f32,
             chains_f32,
             small_kernel_diet,
+            compressor_paired_copy,
+            compressor_copy_counts: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_launches: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_component_mask: AtomicU64::new(u64::MAX),
             dspark_head_f32,
@@ -13474,12 +13490,16 @@ impl Dsv4Gpu {
         let stream = st.gpu.stream();
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
         // snapshot + high-water mark BEFORE anything is written
-        stream
-            .memcpy_dtod(pend_kv, &mut ck_dev.kv_snap)
-            .map_err(e("ckpt snap kv"))?;
-        stream
-            .memcpy_dtod(pend_score, &mut ck_dev.sc_snap)
-            .map_err(e("ckpt snap sc"))?;
+        let paired = compressor_copy::copy_pair(
+            &stream,
+            pend_kv,
+            pend_score,
+            &mut ck_dev.kv_snap,
+            &mut ck_dev.sc_snap,
+            self.compressor_paired_copy && t == 1,
+        )?;
+        self.compressor_copy_counts[usize::from(paired)]
+            .fetch_add(if paired { 1 } else { 2 }, Ordering::Relaxed);
         ck_dev.n_blocks0 = *blocks;
         self.dots_m_dev(
             st,
@@ -13509,12 +13529,20 @@ impl Dsv4Gpu {
                 pos % ratio
             };
             {
-                let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("pend kv b"))?;
-                let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("pend sc b"))?;
+                let kv = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
+                let sc = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
+                let mut kv_dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
+                let mut sc_dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
+                let paired = compressor_copy::copy_pair(
+                    &stream,
+                    &kv,
+                    &sc,
+                    &mut kv_dst,
+                    &mut sc_dst,
+                    self.compressor_paired_copy && t == 1,
+                )?;
+                self.compressor_copy_counts[usize::from(paired)]
+                    .fetch_add(if paired { 1 } else { 2 }, Ordering::Relaxed);
             }
             if (pos + 1) % ratio != 0 {
                 continue;

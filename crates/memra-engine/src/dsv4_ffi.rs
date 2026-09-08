@@ -7,6 +7,14 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_dsv4_compressor_copy_pair(
+        src_kv: *const f32,
+        src_score: *const f32,
+        dst_kv: *mut f32,
+        dst_score: *mut f32,
+        n: usize,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_sample_device(
         logits: *const f32,
         values: *mut f32,
