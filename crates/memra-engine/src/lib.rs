@@ -31644,6 +31644,25 @@ impl Engine {
         co: usize,
         cm: usize,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // Experimental capacity policy, default OFF. A large jump can otherwise
+        // allocate an exact-sized generation and immediately retain another at the
+        // next split boundary. Source addresses remain retired for captured graphs.
+        // Ordinary launch dimensions and per-use memset slices stay unchanged.
+        // MEMRA_FA_PART_ZERO zeroes the entire allocation, so its work grows too.
+        static POW2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let (o_len, ml_len) =
+            if *POW2.get_or_init(|| std::env::var("MEMRA_FA_CAP_POW2").as_deref() == Ok("1")) {
+                (
+                    o_len
+                        .checked_next_power_of_two()
+                        .ok_or("FA output capacity overflow")?,
+                    ml_len
+                        .checked_next_power_of_two()
+                        .ok_or("FA stats capacity overflow")?,
+                )
+            } else {
+                (o_len, ml_len)
+            };
         static GROWS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = GROWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if n < 64 {
