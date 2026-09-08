@@ -18869,12 +18869,6 @@ temperature = 0.6
         }
     }
 
-    /// Fake GPU worker: consumes Generate commands and answers each with one Token +
-    /// Done — handler-level tests (headers, drain) without a GPU or a loaded model.
-    ///
-    /// It also drives the SAME health handle the real worker does (mark_ready at "load"
-    /// completion, beat_busy per iteration), which is what lets the /health and /readyz tests
-    /// exercise the real handlers instead of a mock.
     /// Exercise the HTTP extractor with raw bytes. Parsing a serde_json::Value first
     /// would erase duplicate keys and would not prove this routing contract.
     #[tokio::test]
@@ -18906,15 +18900,32 @@ temperature = 0.6
                 )
                 .with_state(st.clone()),
         );
-        for suffix in [
-            r#", "model":"vendor/m""#,
-            r#", "model":"vendor/m""#,
-            r#", "model":"m""#,
+        // Numeric 92 keeps this byte assertion independent of source escape handling.
+        const ESCAPED_KEY: &[u8] = &[
+            b'"', 92, b'u', b'0', b'0', b'6', b'd', b'o', b'd', b'e', b'l', b'"',
+        ];
+        let escaped_count = |raw: &str| {
+            raw.as_bytes()
+                .windows(ESCAPED_KEY.len())
+                .filter(|bytes| *bytes == ESCAPED_KEY)
+                .count()
+        };
+        for (first_key, first_value, later_key, later_value, escapes) in [
+            (r#""model""#, "m", r#""model""#, "vendor/m", 0),
+            (r#""model""#, "m", r#""\u006dodel""#, "vendor/m", 1),
+            (r#""\u006dodel""#, "m", r#""model""#, "vendor/m", 1),
+            (r#""\u006dodel""#, "vendor/m", r#""\u006dodel""#, "m", 2),
+            (r#""model""#, "m", r#""model""#, "m", 0),
         ] {
             for padding in [0, 5 * 1024 * 1024] {
                 let raw = format!(
-                    r#"{{"model":"m","messages":[],"ignored":"{}"{suffix}}}"#,
+                    r#"{{{first_key}:"{first_value}","messages":[],"ignored":"{}",{later_key}:"{later_value}"}}"#,
                     "x".repeat(padding)
+                );
+                assert_eq!(
+                    escaped_count(&raw),
+                    escapes,
+                    "verify literal JSON escape bytes before HTTP extraction"
                 );
                 let response = app
                     .clone()
@@ -18948,34 +18959,46 @@ temperature = 0.6
         }
         // Both unique canonical and alias spellings reach the real handler. Its
         // empty-message refusal proves canonicalization succeeded without GPU work.
-        for model in ["vendor/m", "m"] {
-            let response = app
-                .clone()
-                .oneshot(
-                    axum::http::Request::builder()
-                        .method("POST")
-                        .uri("/v1/chat/completions")
-                        .header("content-type", "application/json")
-                        .body(Body::from(format!(
-                            r#"{{"model":"{model}","messages":[]}}"#
-                        )))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-            let body = body_value(response).await;
-            assert!(
-                body["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("messages must")
-            );
+        for (key, escapes) in [(r#""model""#, 0), (r#""\u006dodel""#, 1)] {
+            for model in ["vendor/m", "m"] {
+                let raw = format!(r#"{{{key}:"{model}","messages":[]}}"#);
+                assert_eq!(
+                    escaped_count(&raw),
+                    escapes,
+                    "verify positive-control escape bytes"
+                );
+                let response = app
+                    .clone()
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .method("POST")
+                            .uri("/v1/chat/completions")
+                            .header("content-type", "application/json")
+                            .body(Body::from(raw))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                let body = body_value(response).await;
+                assert!(
+                    body["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("messages must")
+                );
+            }
         }
-        assert_eq!(entered.load(Ordering::SeqCst), 2);
+        assert_eq!(entered.load(Ordering::SeqCst), 4);
         assert!(meter.events().is_empty());
     }
 
+    /// Fake GPU worker: consumes Generate commands and answers each with one Token +
+    /// Done for handler-level tests (headers, drain) without a GPU or a loaded model.
+    ///
+    /// It also drives the SAME health handle the real worker does (mark_ready at "load"
+    /// completion, beat_busy per iteration), which is what lets the /health and /readyz tests
+    /// exercise the real handlers instead of a mock.
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }
