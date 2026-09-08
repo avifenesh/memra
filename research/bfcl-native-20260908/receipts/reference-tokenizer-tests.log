@@ -1,0 +1,203 @@
+   Compiling memra-tokenizer v0.134.0 (/root/bfcl-gates/crates/memra-tokenizer)
+   Compiling memra-reference v0.134.0 (/root/bfcl-gates/crates/memra-reference)
+    Finished `release` profile [optimized] target(s) in 2.05s
+     Running unittests src/lib.rs (/root/bfcl-native-pinned-target/release/deps/memra_reference-6c4392a5799681e5)
+
+running 33 tests
+test gelu_erf_activation_tests::activate_pair_routes_gelu_erf_to_the_erf_program ... ok
+test gelu_erf_activation_tests::gelu_erf_matches_the_closed_form_to_f32_tolerance ... ok
+test gelu_erf_activation_tests::gelu_tanh_and_gelu_erf_are_different_functions ... ok
+test tests::eos_segment_reset_reads_eos_across_boundaries ... ok
+test tests::dense_gemma_executes_scaled_parallel_residual_and_k_as_v ... ok
+test tests::full_attention_selection_mask_restricts_sources_to_hand_derived_rows ... ok
+test tests::embedded_mtp_executes_typed_fusion_block_and_fallback_head ... ok
+test tests::gated_residual_read_and_write_match_hand_derived_two_stream_toy ... ok
+test tests::gdn_sigmoid_gate_matches_hand_derived_single_token ... ok
+test tests::gemma4_parallel_moe_executes_shared_routed_and_scaled_residual_branches ... ok
+test tests::generated_tiny_fixture_is_deterministic_and_executable ... ok
+test tests::gemma4_vision_executes_patch_rope_pool_standardize_and_projection ... ok
+test tests::kimi_delta_net_matches_hand_derived_three_token_recurrence ... ok
+test tests::kpool_indexer_selects_causal_pools_and_appends_visible_tail ... ok
+test tests::micro_block_indexer_selects_unambiguous_block_and_always_keeps_the_tail ... ok
+test tests::mla_fixture_emits_latent_state_and_sparse_overflow_refuses ... ok
+test tests::multi_depth_mtp_threads_hidden_through_every_typed_block ... ok
+test tests::ngram_ids_match_independently_computed_hash_chain ... ok
+test tests::one_token_dense_plan_matches_hand_derived_logits_and_emits_kv_state ... ok
+test tests::ple_block_matches_hand_derived_scalar_gather_gate_and_dilated_conv ... ok
+test tests::qwen3_moe_fixture_executes_routed_and_shared_branches ... ok
+test tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state ... ok
+test tests::hyperconnections_execute_stream_state_and_head_collapse ... ok
+test tests::rope_uses_neox_split_half_pairs ... ok
+test tests::router_laws_pin_stable_ties_and_selection_only_bias ... ok
+test tests::sliding_window_limits_attention_and_trims_reference_state ... ok
+test tests::the_mla_fixture_shapes_match_the_tensor_contract ... ok
+test tests::token_hash_moe_fixture_executes_from_semantic_token_table ... ok
+test tests::glm5_shaped_tiny_plan_executes_kda_kpool_mla_and_mean_collapse_deterministically ... ok
+test tests::qwen4exp_tiny_plan_executes_gated_residual_qsa_ple_moe_and_mtp ... ok
+test tests::compressed_mla_executes_window_compressor_indexer_and_grouped_output ... ok
+test tests::dsv4_shaped_trunk_executes_one_canonical_plan ... ok
+test tests::dspark_executes_trunk_tap_ring_blocks_markov_and_confidence ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/bin/glm5_checkpoint_runner.rs (/root/bfcl-native-pinned-target/release/deps/glm5_checkpoint_runner-7d8fc1f02cef7be4)
+
+running 1 test
+test tests::streamed_trunk_self_test_passes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/llama_dense_checkpoint_runner.rs (/root/bfcl-native-pinned-target/release/deps/llama_dense_checkpoint_runner-4ec3e5d39db2a8b9)
+
+running 1 test
+test tests::streamed_trunk_self_test_passes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen4exp_tiny_parity.rs (/root/bfcl-native-pinned-target/release/deps/qwen4exp_tiny_parity-210eacefdb229713)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/spark25_checkpoint_runner.rs (/root/bfcl-native-pinned-target/release/deps/spark25_checkpoint_runner-e0916dcc234f8232)
+
+running 1 test
+test tests::streamed_trunk_self_test_passes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_vision_upstream.rs (/root/bfcl-native-pinned-target/release/deps/glm5_vision_upstream-a7730d515f817add)
+
+running 1 test
+test reference_matches_upstream_tower_on_banked_fixture ... ignored, needs the 1.26 GB visual shard; see the module doc for the invocation
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/root/bfcl-native-pinned-target/release/deps/memra_tokenizer-a9382448c2901a1b)
+
+running 64 tests
+test chat::tests::a_qwen_template_without_the_ladder_is_byte_identical_at_every_level ... ok
+test chat::tests::dsv4_effort_prefix_law ... ok
+test chat::tests::assistant_content_plus_calls_and_consecutive_tool_turns_group ... ok
+test chat::tests::dsv4_effort_renders_per_encoding_through_dispatch ... ok
+test chat::tests::gemma4_thinking_maps_to_the_think_token_and_open_turn ... ok
+test chat::tests::gemma4_tools_arm_is_byte_identical_to_legacy_on_toolless_requests ... ok
+test chat::tests::gemma4_tools_arm_still_rejects_tools_without_the_tool_marker ... ok
+test chat::tests::glm_tool_wire_is_keyed_on_arg_key_not_on_the_glm_turn_dialect ... ok
+test chat::tests::hy3_thinking_maps_to_its_reasoning_effort_levels ... ok
+test chat::tests::hy3_tool_call_and_response_history_match_the_pinned_jinja ... ok
+test chat::tests::nothink_maps_to_enable_thinking_false_tail_and_degrades_gracefully ... ok
+test chat::tests::hy3_tools_definitions_match_the_pinned_jinja ... ok
+test chat::tests::plain_chatml ... ok
+test chat::tests::qwen38_effort_ladder_holds_on_the_tools_branch_too ... ok
+test chat::tests::qwen38_ladder_rungs_are_distinct_prompts_and_medium_is_the_neutral_one ... ok
+test chat::tests::qwen_think_mode_covers_all_three_directions ... ok
+test chat::tests::qwen38_effort_ladder_reproduces_the_vendor_jinja_byte_for_byte ... ok
+test chat::tests::qwen_think_tail ... ok
+test chat::tests::step35_assistant_think_split_and_the_reasoning_boundary ... ok
+test chat::tests::step35_dispatch_beats_the_qwen_marker_arm ... ok
+test chat::tests::reasoning_effort_reaches_step35_through_the_public_entry_and_only_step35 ... ok
+test chat::tests::step35_plain_paths_match_the_shipped_jinja ... ok
+test chat::tests::step35_plain_path_is_identical_through_both_renderers ... ok
+test chat::tests::step35_reasoning_effort_renders_in_the_system_turn ... ok
+test chat::tests::step35_tool_results_take_their_own_role_and_group ... ok
+test chat::tests::step35_tools_header_is_not_the_qwen_header ... ok
+test chat::tests::step35_think_tail_is_unconditional_and_nothink_is_a_noop ... ok
+test chat::tests::tools_on_templates_without_tools_branch_error ... ok
+test chat::tests::tools_renderer_matches_legacy_when_plain ... ok
+test chat::tests::templateless_dsv4_artifact_dispatches_on_encoding ... ok
+test chat::tests::tools_header_and_tool_response_render_per_template_law ... ok
+test hf_tests::hf_dir_identifies_deepseek_v3_from_tokenizer_json ... ok
+test hf_tests::hf_dir_identifies_qwen2_regex ... ok
+test hf_tests::hf_dir_multi_eos_array_extends_the_stop_set_beyond_the_first_id ... ok
+test hf_tests::hf_dir_generation_config_eos_fallback_and_jinja ... ok
+test hf_tests::hf_dir_encode_decode_roundtrip_and_specials ... ok
+test hf_tests::hf_dir_identifies_glm4_regex ... ok
+test hf_tests::staged_checkpoints_resolve_their_own_pretokenizer ... ok
+test json::tests::scalars_and_nesting ... ok
+test pretokenizer_tests::collect_split_regexes_walks_in_order ... ok
+test pretokenizer_tests::dictalm_tekken_pre_tokenizer_is_the_glm4_split ... ok
+test hf_tests::hf_dir_dsv4_encoding_detection ... ok
+test pretokenizer_tests::every_supported_pre_resolves ... ok
+test hf_tests::hf_dir_refuses_unidentifiable_pretokenizer ... ok
+test pretokenizer_tests::opt_out_env_gate ... ok
+test pretokenizer_tests::opt_out_loads_with_a_fallback_marker ... ok
+test pretokenizer_tests::pre_and_vocab_model_must_agree ... ok
+test pretokenizer_tests::split_regex_identification_is_exact ... ok
+test pretokenizer_tests::unknown_pre_is_a_typed_error ... ok
+test unicode::tests::collapse_map_category_bytes ... ok
+test hf_tests::hf_dir_rejects_non_byte_level ... ok
+test hf_tests::hf_dir_single_eos_family_stop_set_unchanged ... ok
+test unicode::tests::deepseek_v3_differs_from_qwen35_per_mechanism ... ok
+test unicode::tests::glm4_contractions_fold_like_the_checkpoint ... ok
+test unicode::tests::glm4_does_not_fold_combining_marks_like_qwen35 ... ok
+test unicode::tests::deepseek_v3_split_matches_reference ... ok
+test unicode::tests::glm4_equals_qwen35_off_the_two_divergences ... ok
+test unicode::tests::glm4_groups_digits_where_qwen35_does_not ... ok
+test unicode::tests::spark25_is_not_the_deepseek_v3_split ... ok
+test unicode::tests::spark25_split_matches_the_hf_pre_tokenizer ... ok
+test unicode::tests::glm4_split_matches_reference ... ok
+test unicode::tests::glm4_split_survives_long_uniform_runs ... ok
+test unicode::tests::deepseek_v3_split_survives_long_uniform_runs ... ok
+test hf_tests::hf_dir_glm53_flash_carries_all_three_declared_eos_ids ... ok
+
+test result: ok. 64 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running unittests src/bin/tok_check.rs (/root/bfcl-native-pinned-target/release/deps/tok_check-68a6a939505ee9ba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tok_freq.rs (/root/bfcl-native-pinned-target/release/deps/tok_freq-351f9754e8182955)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tok_parity.rs (/root/bfcl-native-pinned-target/release/deps/tok_parity-34d23b98499d8a67)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tok_trim.rs (/root/bfcl-native-pinned-target/release/deps/tok_trim-10d914a66f3d9a3d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tok_chat_render.rs (/root/bfcl-native-pinned-target/release/deps/tok_chat_render-4ea36cca197e024a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tok_span.rs (/root/bfcl-native-pinned-target/release/deps/tok_span-f902c02041503771)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/llama_parity.rs (/root/bfcl-native-pinned-target/release/deps/llama_parity-feab0889b8b93664)
+
+running 3 tests
+test golden_pairs ... ok
+test round_trip ... ok
+test parity_with_llama_tokenize ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_reference
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_tokenizer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
