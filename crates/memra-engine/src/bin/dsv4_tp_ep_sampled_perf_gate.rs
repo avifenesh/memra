@@ -512,16 +512,25 @@ fn main() {
         sampler_component();
         return;
     }
+    let cadence_reverse = args
+        .get(3)
+        .is_some_and(|a| a == "--full-token-replay-cadence-baab");
+    let replay_cadence = args
+        .get(3)
+        .is_some_and(|a| a == "--full-token-replay-cadence")
+        || cadence_reverse;
     let replay_reverse = args.get(3).is_some_and(|a| a == "--full-token-replay-baab");
     let replay_profile = args
         .get(3)
         .is_some_and(|a| a == "--full-token-replay-profile");
-    let full_replay =
-        args.get(3).is_some_and(|a| a == "--full-token-replay") || replay_reverse || replay_profile;
+    let full_replay = args.get(3).is_some_and(|a| a == "--full-token-replay")
+        || replay_reverse
+        || replay_profile
+        || replay_cadence;
     let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile]"
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile|--full-token-replay-cadence|--full-token-replay-cadence-baab]"
     );
     let components = args
         .get(3)
@@ -651,7 +660,9 @@ fn main() {
         );
         gpu.set_small_kernel_diet_for_gate(true)
             .expect("replay diet");
-        if replay_profile {
+        if replay_cadence {
+            full_token_replay::cadence(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer, cadence_reverse);
+        } else if replay_profile {
             full_token_replay::profile(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer);
         } else {
             full_token_replay::run(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer, replay_reverse);

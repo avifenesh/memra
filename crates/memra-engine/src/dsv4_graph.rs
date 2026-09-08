@@ -139,7 +139,9 @@ impl Drop for ReplayGraph {
 /// and the real sampler. Drop drains BOTH ranks before any captured resource
 /// is released. MatrixStep declares this before its workspace/cache references.
 pub(crate) struct ReplayPair {
-    graphs: [[Option<ReplayGraph>; 2]; 2],
+    // Slots 0/1 retain the original full-forward/commit ABI. Cadence mode uses
+    // forward slots 0 (ordinary), 2 (C4), 3 (C4+C128), sharing commit slot 1.
+    graphs: [[Option<ReplayGraph>; 4]; 2],
     pub sampler: crate::dsv4_sampler::Dsv4DeviceSampler,
     input: [CudaSlice<u64>; 2],
     host: [crate::PinnedHostBuf; 2],
@@ -150,6 +152,39 @@ pub(crate) struct ReplayPair {
     pub owner: usize,
     pub captures: [u64; 2],
     pub ar_blocks: [i32; 2],
+    pub cadence: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReplayCadence {
+    Ordinary,
+    C4,
+    C128,
+}
+impl ReplayCadence {
+    pub fn for_position(pos: usize) -> Self {
+        if (pos + 1).is_multiple_of(128) {
+            Self::C128
+        } else if (pos + 1).is_multiple_of(4) {
+            Self::C4
+        } else {
+            Self::Ordinary
+        }
+    }
+    pub fn slot(self) -> usize {
+        match self {
+            Self::Ordinary => 0,
+            Self::C4 => 2,
+            Self::C128 => 3,
+        }
+    }
+    pub fn emits(self, ratio: usize) -> bool {
+        match ratio {
+            4 => self != Self::Ordinary,
+            128 => self == Self::C128,
+            _ => false,
+        }
+    }
 }
 impl ReplayPair {
     pub fn new(
@@ -157,6 +192,7 @@ impl ReplayPair {
         sampler: crate::dsv4_sampler::Dsv4DeviceSampler,
         cfg: crate::dsv4_gpu::Dsv4SampleCfg,
         owner: usize,
+        cadence: bool,
     ) -> Result<Self, String> {
         let mut inputs = Vec::new();
         let mut hosts = Vec::new();
@@ -167,12 +203,12 @@ impl ReplayPair {
                 .bind_to_thread()
                 .map_err(|e| e.to_string())?;
             inputs.push(stream.alloc_zeros(3).map_err(|e| e.to_string())?);
-            counts.push(stream.alloc_zeros(2).map_err(|e| e.to_string())?);
+            counts.push(stream.alloc_zeros(4).map_err(|e| e.to_string())?);
             hosts.push(crate::PinnedHostBuf::new(24).map_err(|e| e.to_string())?);
             stream.synchronize().map_err(|e| e.to_string())?;
         }
         Ok(Self {
-            graphs: [[None, None], [None, None]],
+            graphs: std::array::from_fn(|_| std::array::from_fn(|_| None)),
             sampler,
             input: inputs.try_into().map_err(|_| "replay input rank count")?,
             host: hosts.try_into().map_err(|_| "replay host rank count")?,
@@ -181,6 +217,7 @@ impl ReplayPair {
             cfg,
             ready: false,
             owner,
+            cadence,
             captures: [0; 2],
             ar_blocks: [
                 crate::tp_ar::ar_blocks_for(4096),
@@ -214,6 +251,9 @@ impl ReplayPair {
         Ok(())
     }
     pub fn begin(&mut self, segment: usize) -> Result<(), String> {
+        if segment >= 4 || (!self.cadence && segment >= 2) {
+            return Err("unsupported replay graph slot".into());
+        }
         for rank in 0..2 {
             if self.graphs[rank][segment].is_some() {
                 return Err("replay recapture refused".into());
@@ -230,14 +270,14 @@ impl ReplayPair {
                 .end()?;
             let census = self.graphs[rank][segment].as_ref().expect("capture").census;
             if census[6] != 0
-                || (segment == 0 && (census[2] != 86 || census[3] != 1 || census[4] != 86))
+                || (segment != 1 && (census[2] != 86 || census[3] != 1 || census[4] != 86))
             {
                 return Err(format!(
                     "incomplete full-token graph rank {rank} segment {segment}: {census:?}"
                 ));
             }
         }
-        self.captures[segment] += 1;
+        self.captures[usize::from(segment == 1)] += 1;
         Ok(())
     }
     pub fn launch(&self, segment: usize) -> Result<(), String> {
@@ -255,10 +295,15 @@ impl ReplayPair {
             std::array::from_fn(|s| self.graphs[r][s].as_ref().map_or([0; 7], |g| g.census))
         })
     }
+    pub fn variant_census(&self) -> [[[u64; 7]; 4]; 2] {
+        std::array::from_fn(|r| {
+            std::array::from_fn(|s| self.graphs[r][s].as_ref().map_or([0; 7], |g| g.census))
+        })
+    }
     pub fn dump(&self, directory: &std::path::Path) -> Result<(), String> {
         self.drain_both()?;
         for rank in 0..2 {
-            for segment in 0..2 {
+            for segment in 0..if self.cadence { 4 } else { 2 } {
                 let graph = self.graphs[rank][segment]
                     .as_ref()
                     .ok_or("graph dump before complete capture")?;
@@ -290,7 +335,10 @@ impl ReplayPair {
         }
     }
     pub fn counts(&self) -> Result<[[u64; 2]; 2], String> {
-        let mut out = [[0; 2]; 2];
+        Ok(self.variant_counts()?.map(|r| [r[0] + r[2] + r[3], r[1]]))
+    }
+    pub fn variant_counts(&self) -> Result<[[u64; 4]; 2], String> {
+        let mut out = [[0; 4]; 2];
         for (rank, row) in out.iter_mut().enumerate() {
             self.streams[rank]
                 .context()
@@ -544,7 +592,7 @@ mod tests {
             contexts[0].new_stream().unwrap(),
             contexts[1].new_stream().unwrap(),
         ];
-        let make_pair = || {
+        let make_pair = |cadence| {
             let sampler =
                 crate::dsv4_sampler::Dsv4DeviceSampler::new(streams[1].clone(), 257).unwrap();
             ReplayPair::new(
@@ -557,6 +605,7 @@ mod tests {
                     seed: 1,
                 },
                 0,
+                cadence,
             )
             .unwrap()
         };
@@ -573,7 +622,7 @@ mod tests {
         // Actual Rust owner unwinding from a capture-body failure. No execution
         // occurred; Drop must end BOTH capture scopes before its paired drain.
         let capture_error = (|| -> Result<(), String> {
-            let mut pair = make_pair();
+            let mut pair = make_pair(false);
             pair.begin(0)?;
             Err("injected capture body failure".into())
         })()
@@ -582,7 +631,7 @@ mod tests {
         assert_uncaptured();
         // End/instantiate error at the real Rust capture_end FFI boundary.
         {
-            let mut pair = make_pair();
+            let mut pair = make_pair(false);
             pair.begin(0).unwrap();
             pair.abort_capture_both().unwrap();
             let error = pair.graphs[0][0].as_mut().unwrap().end().unwrap_err();
@@ -605,8 +654,15 @@ mod tests {
         // Use the runtime's actual pair-launch loop and real graph counters.
         // These are tiny no-peer graphs; they cover Rust ownership/submission,
         // not the C++ fixture's peer barriers or full-model layer coverage.
-        for segment in 0..2 {
-            let mut pair = make_pair();
+        for (cadence, segment) in [
+            (false, 0),
+            (false, 1),
+            (true, 0),
+            (true, 1),
+            (true, 2),
+            (true, 3),
+        ] {
+            let mut pair = make_pair(cadence);
             pair.begin(segment).unwrap();
             for (rank, stream) in streams.iter().enumerate() {
                 stream.context().bind_to_thread().unwrap();
@@ -630,7 +686,7 @@ mod tests {
             let error = pair.launch(segment).unwrap_err();
             assert!(error.contains("replay graph missing"), "{error}");
             pair.drain_both().unwrap();
-            let counts = pair.counts().unwrap();
+            let counts = pair.variant_counts().unwrap();
             assert_eq!(counts[0][segment], 1, "first rank never submitted");
             assert_eq!(counts[1][segment], 0, "second rank unexpectedly submitted");
             pair.graphs[1][segment] = peer;
@@ -640,6 +696,100 @@ mod tests {
                 "PASS Rust partial segment={segment} first_submit=1 second_submit=0 paired_completion=1"
             );
         }
+        // Exercise the actual retained variant owner and live input upload with
+        // all three forward slots, decreasing positions and ring-wrap boundaries.
+        let mut live: [CudaSlice<i32>; 2] =
+            std::array::from_fn(|rank| streams[rank].alloc_zeros(3).unwrap());
+        for stream in &streams {
+            stream.synchronize().unwrap();
+        }
+        // Locals drop in reverse order: the pair must drain/abort before live.
+        let mut pair = make_pair(true);
+        for slot in [0, 2, 3, 1] {
+            pair.begin(slot).unwrap();
+            for rank in 0..2 {
+                let stream = &streams[rank];
+                stream.context().bind_to_thread().unwrap();
+                unsafe {
+                    let fields = live[rank].device_ptr_mut(stream).0 as *mut i32;
+                    let rc = if slot == 1 {
+                        crate::dsv4_ffi::memra_dsv4_replay_tick(
+                            pair.counter_ptr(rank, slot),
+                            stream.cu_stream().cast(),
+                        )
+                    } else {
+                        crate::dsv4_ffi::memra_dsv4_replay_input(
+                            pair.input_ptr(rank),
+                            fields,
+                            fields.add(1),
+                            fields.add(2),
+                            128,
+                            pair.counter_ptr(rank, slot),
+                            stream.cu_stream().cast(),
+                        )
+                    };
+                    crate::dsv4_ffi::ck("cadence input fixture", rc).unwrap();
+                }
+            }
+            for rank in 0..2 {
+                pair.graphs[rank][slot].as_mut().unwrap().end().unwrap();
+            }
+        }
+        assert_eq!(
+            pair.variant_counts().unwrap(),
+            [[0; 4]; 2],
+            "capture executed controls"
+        );
+        let mut expected = [0u64; 4];
+        for (index, (pos, slot)) in [
+            (0, 0),
+            (3, 2),
+            (127, 3),
+            (128, 0),
+            (255, 3),
+            (256, 0),
+            (383, 3),
+            (511, 3),
+            (300, 0),
+            (3, 2),
+            (4, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(ReplayCadence::for_position(pos).slot(), slot);
+            let token = (index as u32 + 1) * 17;
+            pair.upload(token, pos, 0).unwrap();
+            pair.launch(slot).unwrap();
+            pair.launch(1).unwrap();
+            pair.drain_both().unwrap();
+            expected[slot] += 1;
+            expected[1] += 1;
+            assert_eq!(pair.variant_counts().unwrap(), [expected; 2]);
+            for rank in 0..2 {
+                let mut fields = [0i32; 3];
+                let mut words = [0u64; 3];
+                streams[rank].memcpy_dtoh(&live[rank], &mut fields).unwrap();
+                streams[rank]
+                    .memcpy_dtoh(&pair.input[rank], &mut words)
+                    .unwrap();
+                streams[rank].synchronize().unwrap();
+                assert_eq!(fields, [token as i32, pos as i32, (pos % 128) as i32]);
+                assert_eq!(
+                    words,
+                    [
+                        u64::from(token) | ((pos as u64) << 32),
+                        crate::dsv4_gpu::dsv4_pos_uniform(1, pos + 1).to_bits(),
+                        0
+                    ]
+                );
+            }
+        }
+        drop(pair);
+        assert_uncaptured();
+        eprintln!(
+            "PASS Rust cadence slots=4 changing_tokens=11 decreasing_positions=1 per_variant_counters=1 full_uniform_bits=1 model_layers=0"
+        );
     }
 
     #[test]

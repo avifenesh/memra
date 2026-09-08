@@ -1723,6 +1723,20 @@ ones — filed under their own heading so a flag audit scanning the live section
 
 ## DSV4 full-token replay prerequisite, 2026-09-08
 
+Cadence diagnostic: `Dsv4Gpu::arm_full_token_replay_cadence_for_gate` and sampled
+gate `--full-token-replay-cadence` / `--full-token-replay-cadence-baab` are
+intentionally **OFF** unless explicitly invoked. OFF selects the existing full
+replay oracle; ON retains three forward cadences per rank and one shared commit
+graph, omitting inactive emission/shift bodies at capture. Both arms keep exact
+math, live controls, refusal-before-commit and paired completion fail-stop. Rollback
+is to drop the armed request and use the original full replay selector. No serving
+route or environment switch enables it. **decide-by: 2026-09-22**. Unmeasured;
+source/protocol: `research/dsv4f-replay-cadence-20260908/DESIGN.md`; private receipt
+namespace `replay-cadence-20260908`. The standalone
+`tools/dsv4-replay-cadence-gate.cu` is a component-only invocation, also OFF by
+default. Remove cadence-only support on a flat/negative verdict; repeatably
+positive incremental gains have no arbitrary size floor.
+
 Follow-on gate selectors: `--full-token-replay-baab` reverses the single 20-row
 order to B×5/A×5/A×5/B×5 with the same correctness/refusal gates and first-capture
 timing. `--full-token-replay-profile` is a separate profile-only load, never a
