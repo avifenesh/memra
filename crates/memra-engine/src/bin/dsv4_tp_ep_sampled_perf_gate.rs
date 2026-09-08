@@ -720,43 +720,62 @@ fn main() {
                 "existing_m1_f16_mma"
             }
         );
-        let receipts: Vec<_> = (0..repeats)
-            .map(|repeat| {
-                let arm = if sampler_abba {
-                    matches!(repeat % 4, 1 | 2)
-                } else {
-                    device
-                };
-                if small_abba {
-                    gpu.set_small_kernel_diet_for_gate(matches!(repeat % 4, 1 | 2))
-                        .expect("ABBA arm");
-                }
-                if paired_abba {
-                    gpu.set_paired_issue_for_gate(matches!((repeat / 5) % 4, 1 | 2))
-                        .expect("paired issue ABBA arm");
-                }
-                let row = run_once(
-                    &gpu,
-                    &prompt,
-                    &tokenizer,
-                    repeat,
-                    if arm { "device" } else { host_sampler_name },
-                    arm,
-                );
-                let expected_paired = if gpu.paired_issue_enabled() {
-                    row.forward_calls as u64 * 43 * 2 * 9
-                } else { 0 };
-                assert_eq!(row.counters_decode.paired_stages, expected_paired,
-                    "paired stage engagement must match actual completed stage calls");
-                println!("PAIRED_ISSUE repeat={repeat} enabled={} decode_stages={} prime_stages={} ar_refusals={:?}",
-                    gpu.paired_issue_enabled(), row.counters_decode.paired_stages,
-                    row.counters_prime.paired_stages, row.ar_refusals);
-                let launches: u64 = row.counters_decode.small_launches.iter().sum();
-                println!("LAUNCHES repeat={repeat} diet={} targeted_launches={} targeted_launches_per_step_per_rank={:.6} expected_saved_per_layer_per_rank=5 scope=hc_finish_and_q_norm_pack",
-                    gpu.small_kernel_diet_enabled(), launches, launches as f64 / (2 * row.forward_calls) as f64);
-                row
-            })
-            .collect();
+        let mut receipts: Vec<RunReceipt> = Vec::with_capacity(repeats);
+        for repeat in 0..repeats {
+            let arm = if sampler_abba {
+                matches!(repeat % 4, 1 | 2)
+            } else {
+                device
+            };
+            if small_abba {
+                gpu.set_small_kernel_diet_for_gate(matches!(repeat % 4, 1 | 2))
+                    .expect("ABBA arm");
+            }
+            if paired_abba {
+                gpu.set_paired_issue_for_gate(matches!((repeat / 5) % 4, 1 | 2))
+                    .expect("paired issue ABBA arm");
+            }
+            let row = run_once(
+                &gpu,
+                &prompt,
+                &tokenizer,
+                repeat,
+                if arm { "device" } else { host_sampler_name },
+                arm,
+            );
+            let expected_paired = if gpu.paired_issue_enabled() {
+                row.forward_calls as u64 * 43 * 2 * 9
+            } else {
+                0
+            };
+            assert_eq!(
+                row.counters_decode.paired_stages, expected_paired,
+                "paired stage engagement must match actual completed stage calls"
+            );
+            println!(
+                "PAIRED_ISSUE repeat={repeat} enabled={} decode_stages={} prime_stages={} ar_refusals={:?}",
+                gpu.paired_issue_enabled(),
+                row.counters_decode.paired_stages,
+                row.counters_prime.paired_stages,
+                row.ar_refusals
+            );
+            let launches: u64 = row.counters_decode.small_launches.iter().sum();
+            println!(
+                "LAUNCHES repeat={repeat} diet={} targeted_launches={} targeted_launches_per_step_per_rank={:.6} expected_saved_per_layer_per_rank=5 scope=hc_finish_and_q_norm_pack",
+                gpu.small_kernel_diet_enabled(),
+                launches,
+                launches as f64 / (2 * row.forward_calls) as f64
+            );
+            // Refuse the first divergent row, before spending the remaining ABBA blocks.
+            if let Some(first) = receipts.first() {
+                assert_eq!(first.generated_sha256, row.generated_sha256);
+                assert_eq!(first.final_logits_sha256, row.final_logits_sha256);
+                assert_eq!(first.final_cache_digest, row.final_cache_digest);
+                assert_eq!(first.final_hidden_digest, row.final_hidden_digest);
+                assert_eq!(first.attention_join_sha256, row.attention_join_sha256);
+            }
+            receipts.push(row);
+        }
         let first = &receipts[0];
         for receipt in &receipts {
             assert_eq!(
