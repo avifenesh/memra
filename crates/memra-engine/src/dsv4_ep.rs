@@ -960,6 +960,38 @@ pub(crate) fn execute_matrix_local(
     limit: f32,
     allow_gu_fuse: bool,
 ) -> Res<u64> {
+    execute_matrix_local_stage(
+        gpu,
+        bank,
+        table,
+        scale2,
+        scale2_host,
+        local,
+        work,
+        rows,
+        topk,
+        limit,
+        allow_gu_fuse,
+        None,
+    )
+}
+
+/// Same kernels and per-rank order as the serial producer, with host issue boundaries.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_matrix_local_stage(
+    gpu: &Gpu,
+    bank: &EpLayer,
+    table: &CudaSlice<u64>,
+    scale2: &CudaSlice<f32>,
+    scale2_host: &[f32],
+    local: &mut EpCompute<'_>,
+    work: &mut crate::dsv4_grouped::GroupedWork,
+    rows: usize,
+    topk: usize,
+    limit: f32,
+    allow_gu_fuse: bool,
+    issue_stage: Option<usize>,
+) -> Res<u64> {
     if rows == 0 || topk == 0 {
         return Err("TP/EP local expert execution requires nonzero rows/topk".into());
     }
@@ -970,13 +1002,20 @@ pub(crate) fn execute_matrix_local(
     // contribution plane.  Unlike peer-dispatch EP, no later slot-merge overwrites the
     // complementary half.  Clear the external plane first so a reused one-row workspace
     // cannot feed a previous token/layer's non-owned partial into the rank-order reduce.
-    gpu.stream()
-        .memset_zeros(local.contribution)
-        .map_err(|e| format!("TP/EP local contribution clear: {e}"))?;
-    let calls = u64::from(work.prepare(gpu, local, scale2, scale2_host, rows, topk, true)?);
-    work.set_gu_fuse_for_plain(allow_gu_fuse);
-    work.gate_up(gpu, table, local, limit)?;
-    work.down(gpu, table, local)?;
+    let mut calls = 0;
+    if issue_stage.is_none_or(|stage| stage == 0) {
+        gpu.stream()
+            .memset_zeros(local.contribution)
+            .map_err(|e| format!("TP/EP local contribution clear: {e}"))?;
+        calls = u64::from(work.prepare(gpu, local, scale2, scale2_host, rows, topk, true)?);
+        work.set_gu_fuse_for_plain(allow_gu_fuse);
+    }
+    if issue_stage.is_none_or(|stage| stage == 1) {
+        work.gate_up(gpu, table, local, limit)?;
+    }
+    if issue_stage.is_none_or(|stage| stage == 2) {
+        work.down(gpu, table, local)?;
+    }
     Ok(calls)
 }
 

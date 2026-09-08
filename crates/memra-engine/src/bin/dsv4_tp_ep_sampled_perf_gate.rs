@@ -41,6 +41,7 @@ struct Counters {
     wo_a: u64,
     index_radix: u64,
     small_launches: [u64; 2],
+    paired_stages: u64,
 }
 
 fn counters(gpu: &Dsv4Gpu) -> Counters {
@@ -60,6 +61,7 @@ fn counters(gpu: &Dsv4Gpu) -> Counters {
         wo_a: gpu.dense_wo_a_grouped_dispatches(),
         index_radix: gpu.index_topk_radix_dispatches(),
         small_launches: gpu.small_kernel_launches(),
+        paired_stages: gpu.paired_issue_stages(),
     }
 }
 
@@ -69,6 +71,7 @@ fn delta(after: Counters, before: Counters) -> Counters {
             after.rank_layer[0] - before.rank_layer[0],
             after.rank_layer[1] - before.rank_layer[1],
         ],
+        paired_stages: after.paired_stages - before.paired_stages,
         ep: after.ep - before.ep,
         ar: after.ar - before.ar,
         attention_rank: std::array::from_fn(|rank| {
@@ -509,10 +512,11 @@ fn main() {
         sampler_component();
         return;
     }
+    let paired_abba = args.get(3).is_some_and(|a| a == "--paired-issue-abba");
     let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba]"
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--paired-issue-abba]"
     );
     let components = args
         .get(3)
@@ -521,7 +525,13 @@ fn main() {
     let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
     let splitk_abba = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-abba");
     assert!(
-        args.len() == 3 || splitk || splitk_abba || sampler_abba || components || small_abba,
+        args.len() == 3
+            || splitk
+            || splitk_abba
+            || sampler_abba
+            || components
+            || small_abba
+            || paired_abba,
         "unknown gate arm"
     );
     memra_engine::set_moe_m1_splitk_for_gate(splitk);
@@ -544,7 +554,9 @@ fn main() {
     } else {
         host_sampler_name
     };
-    let repeats = if sampler_abba || small_abba {
+    let repeats = if paired_abba {
+        200 // 10 ABBA cycles, five fresh request rows in each block.
+    } else if sampler_abba || small_abba {
         40
     } else if attention_mode {
         ATTENTION_REPEATS
@@ -666,6 +678,14 @@ fn main() {
         );
     }
 
+    if paired_abba {
+        assert!(
+            attention_mode && !profiled && device && gpu.small_kernel_diet_enabled(),
+            "paired issue ABBA requires unprofiled attention TP2, device sampler and diet ON"
+        );
+        assert_eq!(sampler, Dsv4SamplerOrder::Radix);
+    }
+
     let arms: &[bool] = if splitk_abba {
         &[false, true, true, false]
     } else {
@@ -693,6 +713,10 @@ fn main() {
                     gpu.set_small_kernel_diet_for_gate(matches!(repeat % 4, 1 | 2))
                         .expect("ABBA arm");
                 }
+                if paired_abba {
+                    gpu.set_paired_issue_for_gate(matches!((repeat / 5) % 4, 1 | 2))
+                        .expect("paired issue ABBA arm");
+                }
                 let row = run_once(
                     &gpu,
                     &prompt,
@@ -701,6 +725,14 @@ fn main() {
                     if arm { "device" } else { host_sampler_name },
                     arm,
                 );
+                let expected_paired = if gpu.paired_issue_enabled() {
+                    row.forward_calls as u64 * 43 * 2 * 9
+                } else { 0 };
+                assert_eq!(row.counters_decode.paired_stages, expected_paired,
+                    "paired stage engagement must match actual completed stage calls");
+                println!("PAIRED_ISSUE repeat={repeat} enabled={} decode_stages={} prime_stages={} ar_refusals={:?}",
+                    gpu.paired_issue_enabled(), row.counters_decode.paired_stages,
+                    row.counters_prime.paired_stages, row.ar_refusals);
                 let launches: u64 = row.counters_decode.small_launches.iter().sum();
                 println!("LAUNCHES repeat={repeat} diet={} targeted_launches={} targeted_launches_per_step_per_rank={:.6} expected_saved_per_layer_per_rank=5 scope=hc_finish_and_q_norm_pack",
                     gpu.small_kernel_diet_enabled(), launches, launches as f64 / (2 * row.forward_calls) as f64);
@@ -738,6 +770,33 @@ fn main() {
                 receipt.counters_decode,
             );
         }
+        if paired_abba {
+            assert!(
+                receipts.iter().all(|r| r.eligible),
+                "all paired ABBA rows must be eligible"
+            );
+            let mut wall = [0u128; 2];
+            let mut tokens = [0usize; 2];
+            let mut stages = [0u64; 2];
+            for row in &receipts {
+                let arm = usize::from(matches!((row.repeat / 5) % 4, 1 | 2));
+                wall[arm] += row.decode_wall.as_nanos();
+                tokens[arm] += row.generated_tokens;
+                stages[arm] += row.counters_decode.paired_stages;
+                assert_eq!(row.counters_decode.splitk_gu, 0);
+                assert_eq!(row.counters_decode.splitk_down, 0);
+            }
+            let rates: [f64; 2] = std::array::from_fn(|i| tokens[i] as f64 * 1e9 / wall[i] as f64);
+            assert_eq!(stages[0], 0);
+            assert!(stages[1] > 0);
+            println!(
+                "PAIRED_ABBA cycles=10 rows_per_block=5 rows_per_arm=100 off_tok_s={:.6} on_tok_s={:.6} delta_pct={:.6} tokens_logits_cache_hidden_identical=true engagements={:?} ar_refusals=[0,0] timing_scope=sample_plus_forward_envelope sampler=device diet=true splitk=false",
+                rates[0],
+                rates[1],
+                100.0 * (rates[1] / rates[0] - 1.0),
+                stages
+            );
+        }
         if sampler_abba {
             assert!(
                 receipts.iter().all(|r| r.eligible),
@@ -758,7 +817,7 @@ fn main() {
                 (device / host - 1.0) * 100.0
             );
         }
-        if attention_mode && !profiled && !sampler_abba {
+        if attention_mode && !profiled && !sampler_abba && !paired_abba {
             assert!(
                 receipts.iter().all(|receipt| receipt.eligible),
                 "all five sampled attention rows must be eligible; no reroll or forward-only substitute"
