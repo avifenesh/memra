@@ -39,7 +39,7 @@ struct Device {
     Device(){ck(cudaStreamCreate(&stream));}
     ~Device(){cudaStreamSynchronize(stream);for(void* p:allocations)cudaFree(p);cudaStreamDestroy(stream);}
     template<class T>T* alloc(size_t n){T* p=nullptr;ck(cudaMalloc(&p,std::max(size_t(1),n)*sizeof(T)));allocations.push_back(p);return p;}
-    template<class T>T* upload(const std::vector<T>& x){T* p=alloc<T>(x.size());if(!x.empty())ck(cudaMemcpyAsync(p,x.data(),x.size()*sizeof(T),cudaMemcpyHostToDevice,stream));return p;}
+    template<class T>T* upload(const std::vector<T>& x){T* p=alloc<T>(x.size());if(!x.empty()){ck(cudaMemcpyAsync(p,x.data(),x.size()*sizeof(T),cudaMemcpyHostToDevice,stream));ck(cudaStreamSynchronize(stream));}return p;}
     template<class T>std::vector<T> read(T* p,size_t n){std::vector<T> x(n);ck(cudaMemcpyAsync(x.data(),p,n*sizeof(T),cudaMemcpyDeviceToHost,stream));ck(cudaStreamSynchronize(stream));return x;}
 };
 struct Payload {
