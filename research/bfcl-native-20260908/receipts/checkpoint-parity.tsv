@@ -1,0 +1,12 @@
+status	passed
+reference_engine	hf-transformers-fp32-block-dequant
+native_engine	memra-reference-fp32
+numeric_class	source-weights-float32-accumulation
+tokens	1,2,3,4
+vocab	131072
+max_abs	0.00018501282
+max_rel	0.0000083913355
+reference_argmax	4
+native_argmax	4
+artifact_lock_sha256	4fc7f2832d3804024203e6cb9435de2e6ba0bb8ef6717bde518195996a4f6a3c
+native_runner_sha256	5896d40f2debed6d1bde3c025aeb2e96705a6a80f2c91f7f4701716422d85e7b

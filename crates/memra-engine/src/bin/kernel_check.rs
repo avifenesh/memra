@@ -4984,6 +4984,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             },
                         );
                     }
+                    if !exact && in_f == 512 && out_f == 128 && run_fp8_blk_mmq_policy_cell {
+                        use memra_engine::model::{Fp8BlockScales, GpuTensor};
+                        let weight = GpuTensor::Quant {
+                            bytes: e.htod_bytes(&wb)?,
+                            qtype: memra_engine::QT_F8_E4M3_BLK,
+                            row_bytes: in_f,
+                            ne: vec![in_f as u64, out_f as u64],
+                            scale: 1.0,
+                            rp: false,
+                            fp8: None,
+                            rp4: None,
+                            f16: None,
+                            #[cfg(memra_cutlass)]
+                            cutlass: None,
+                            blk: Some(Fp8BlockScales {
+                                dynamic_activations: true,
+                                scales: e.htod(&sc)?,
+                                rows: srows,
+                                cols: scols,
+                            }),
+                        };
+                        assert!(!e.uses_q8_1_fast(&weight));
+                        let fp8_ref =
+                            e.dtoh(&e.qmatvec_mmq_fp8_blk(&wd, &scd, &xd, mm, in_f, out_f)?)?;
+                        let output = e.dtoh(&e.matmul(&weight, &xd, mm)?)?;
+                        let verify = e.dtoh(&e.matmul_decode_exact(&weight, &xd, mm)?)?;
+                        let fallback = e.dtoh(&e.matmul_pre(&weight, &aqd, &add, &xd, mm)?)?;
+                        let bit_bad = output
+                            .iter()
+                            .zip(&fp8_ref)
+                            .filter(|(a, b)| a.to_bits() != b.to_bits())
+                            .count()
+                            + verify
+                                .iter()
+                                .zip(&fp8_ref)
+                                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                                .count()
+                            + fallback
+                                .iter()
+                                .zip(&fp8_ref)
+                                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                                .count();
+                        let wrong_class_diff = maxdiff(&got, &fp8_ref);
+                        println!(
+                            "FP8-DYNAMIC-DISPATCH m={mm}: bit_bad={bit_bad} q8_red_diff={wrong_class_diff:.3e} {}",
+                            if bit_bad == 0 && wrong_class_diff > 0.0 {
+                                "OK"
+                            } else {
+                                fails += 1;
+                                "FAIL"
+                            }
+                        );
+                        cells.record("FP8-DYNAMIC-DISPATCH");
+                    }
                     let want = blk_ref(&wb, &aq, &ad, &sc, in_f, out_f, mm, scols);
                     // EXACT arm sanity: q8_1 must have been lossless, or the "integers only"
                     // premise (and with it the bit-identity bar) is void. Checked, not assumed.
@@ -7172,8 +7226,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Cases cover a continuation chunk whose window is smaller than the chunk (the SWA
     // chunk-prime shape: inside one chunk an early query must not see keys a trimmed view
     // still holds), a fresh chunk, and a BK-unaligned tail.
-    {
-        let (hd, nh, nhkv) = (128usize, 8usize, 2usize);
+    for hd in [128usize, 256usize] {
+        let (nh, nhkv) = (8usize, 2usize);
         let scale = 1.0f32 / (hd as f32).sqrt();
         let (kv_dim_k, kv_dim_v) = (hd * nhkv, hd * nhkv);
         let (kbb, vbb) = memra_engine::kv_blk_bytes();
@@ -7400,7 +7454,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             );
 
-            // --- fa_prefill_view_ws_w_hd128: the WINDOWED hd128 FA twin (lane/pp-prefill) ---
+            // --- fa_prefill_view_ws_windowed: the WINDOWED hd128 FA twin (lane/pp-prefill) ---
             // The serving default for step35 SWA prefill since 2026-08-07 (the f32 floor above
             // is its f32 oracle). Four assertions per case:
             //   (a) live window vs the same CPU windowed oracle, in the fa_prefill numeric band
@@ -7412,7 +7466,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             //       is the assertion that catches a t_start buffer-PARITY bug in the db
             //       prologue (case (64,192,32) has t_start=3, an ODD start tile).
             let mut o_fa = e.zeros(hd * nh * t)?;
-            e.fa_prefill_view_ws_w_hd128(
+            e.fa_prefill_view_ws_windowed(
                 &qd,
                 &kview,
                 &vview,
@@ -7431,7 +7485,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let gf = e.dtoh(&o_fa)?;
             let rel_cpu = maxdiff(&cpu, &gf) / sc;
             println!(
-                "fa_prefill_view_ws_w_hd128 window={win} vs CPU windowed oracle T={t} Tkv={tkv}: rel={rel_cpu:.2e} {}",
+                "fa_prefill_view_ws_windowed window={win} vs CPU windowed oracle T={t} Tkv={tkv}: rel={rel_cpu:.2e} {}",
                 if rel_cpu < 2e-2 {
                     "OK"
                 } else {
@@ -7441,7 +7495,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             let rel_floor = maxdiff(&g, &gf) / sc;
             println!(
-                "fa_prefill_view_ws_w_hd128 window={win} vs f32 floor T={t} Tkv={tkv}: rel={rel_floor:.2e} {}",
+                "fa_prefill_view_ws_windowed window={win} vs f32 floor T={t} Tkv={tkv}: rel={rel_floor:.2e} {}",
                 if rel_floor < 2e-2 {
                     "OK"
                 } else {
@@ -7473,7 +7527,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter(|(x, y)| x.to_bits() != y.to_bits())
                 .count();
             println!(
-                "fa_prefill_view_ws_w_hd128 window={win} differs from unwindowed FA T={t} Tkv={tkv}: changed={bite}/{} {}",
+                "fa_prefill_view_ws_windowed window={win} differs from unwindowed FA T={t} Tkv={tkv}: changed={bite}/{} {}",
                 gu.len(),
                 if bite > 0 {
                     "OK"
@@ -7484,7 +7538,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             let mut o_fa_sb = e.zeros(hd * nh * t)?;
             unsafe { std::env::set_var("MEMRA_PRIME_DEQW_DB", "0") };
-            e.fa_prefill_view_ws_w_hd128(
+            e.fa_prefill_view_ws_windowed(
                 &qd,
                 &kview,
                 &vview,
@@ -7508,7 +7562,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter(|(x, y)| x.to_bits() != y.to_bits())
                 .count();
             println!(
-                "fa_prefill_view_ws_w_hd128 window={win} db vs single-buffer T={t} Tkv={tkv}: bitdiff={bd_db} {}",
+                "fa_prefill_view_ws_windowed window={win} db vs single-buffer T={t} Tkv={tkv}: bitdiff={bd_db} {}",
                 if bd_db == 0 {
                     "OK"
                 } else {
@@ -7567,7 +7621,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 false,
             )?;
             let mut o_w0 = e.zeros(hd * nh * t)?;
-            e.fa_prefill_view_ws_w_hd128(
+            e.fa_prefill_view_ws_windowed(
                 &qd,
                 &kview,
                 &vview,
@@ -7591,7 +7645,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter(|(x, y)| x.to_bits() != y.to_bits())
                 .count();
             println!(
-                "fa_prefill_view_ws_w_hd128(window=0) vs fa_prefill_view_ws T={t} Tkv={tkv}: bitdiff={bd} {}",
+                "fa_prefill_view_ws_windowed(window=0) vs fa_prefill_view_ws T={t} Tkv={tkv}: bitdiff={bd} {}",
                 if bd == 0 {
                     "OK"
                 } else {
@@ -7600,7 +7654,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             );
         }
-        cells.record("fa_prefill_view_ws_w_hd128");
+        cells.record("fa_prefill_view_ws_windowed");
     }
 
     // --- KV-cache quantization round-trip: append-quantize then dequant (matches §A formulas) ---
@@ -8755,8 +8809,8 @@ mod tests {
             Some("DUAL-BATCHED-AUX"),
         );
         assert_eq!(
-            output_cell_name("fa_prefill_view_ws_w_hd128(window=0) bitdiff=0 OK").as_deref(),
-            Some("fa_prefill_view_ws_w_hd128"),
+            output_cell_name("fa_prefill_view_ws_windowed(window=0) bitdiff=0 OK").as_deref(),
+            Some("fa_prefill_view_ws_windowed"),
         );
         assert_eq!(
             output_cell_name("SKIP DUAL-BATCHED-AUX (missing model x)"),

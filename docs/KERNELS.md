@@ -633,3 +633,24 @@ specific gate was not found. FLAGS.md is the authoritative flag catalog.
 | Translation unit | Kernels | Contract / gate |
 | --- | --- | --- |
 | `cu/dsv4_sampler.cu` | `dsv4_sample_prepare`, `dsv4_sample_merge`, `dsv4_sample_exp_scan`, `dsv4_sample_offsets`, `dsv4_sample_draw` | Head-stream f32 penalty/key preparation; stable unique-key merge chain; f64 exp and block prefix sums; block offsets; top-k/top-p inverse CDF. Request-owned scratch, one token u32 D2H. Numeric class `device-f64-exp-tree-cdf-v1`; finite inputs required. `MEMRA_DSV4_SAMPLER=device`, default OFF. Component tape and sampled ABBA: `dsv4_tp_ep_sampled_perf_gate --sampler-component` / `<model> <source> --sampler-abba`. Receipt: `research/dsv4f-gpu-sampler-20260907/RESULTS.md`. |
+
+## Spark hd256 sliding-window prefill
+
+`fa_prefill_qw_w_hd256` and `fa_prefill_qw_db_w_hd256` instantiate the existing
+workspace attention bodies with head_dim256 and the same window predicate. The
+windowed launch wrapper dispatches128/256 explicitly. Spark long prompts previously
+reached the hd128-only assert once the request exceeded its512-token window.
+Gate: `kernel-check` windowed-KV cells cover both head dimensions, CPU/f32 reference
+bands, effective masking, single/double-buffer bit identity, and window-zero identity.
+Receipt namespace: `research/bfcl-native-20260908/`; qualification pending.
+
+## Declared dynamic block128 FP8 activations
+
+The checkpoint quantization contract now rides its native FP8 block-scale operand.
+A `quant_method=fp8`, `activation_scheme=dynamic`, `[128,128]` checkpoint uses the
+existing E4M3 per128 activation quantizer and MMQ at decode and prefill. It refuses
+q8_1 activation sharing and requantized residency fallbacks. Unquantized BF16 tensors
+remain source-preserved. Synthetic `FP8-DYNAMIC-DISPATCH` gates widths1/2/5/9 against
+the E4M3 primitive, with the q8_1 path as a differing negative control. This is a
+format-correctness change, not a new environment flag; per-model serving qualification
+remains required. Receipt namespace: `research/bfcl-native-20260908/`.

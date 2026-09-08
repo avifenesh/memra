@@ -4947,6 +4947,17 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_w
                             scale, causal, kv_dim_k, kv_dim_v, window);
 }
 
+// Spark uses the same window predicate with 256-wide heads.
+extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_w_hd256(
+        const float* __restrict__ Q, const __nv_bfloat16* __restrict__ Kw,
+        const __nv_bfloat16* __restrict__ Vw, float* __restrict__ O,
+        int head_dim, int n_head, int n_head_kv, int T, int T_kv,
+        float scale, int causal, int kv_dim_k, int kv_dim_v, int window)
+{
+    fa_prefill_qw_body<256>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                            scale, causal, kv_dim_k, kv_dim_v, window);
+}
+
 // ===================================================================== //
 //  KERNEL 1b-qwdb : fa_prefill_qw_db  (cp.async double-buffered twin)   //
 //  fa_prefill_qw with the K/V workspace staging DOUBLE-BUFFERED via     //
@@ -5234,6 +5245,17 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 1) fa_prefill_qw_d
         float scale, int causal, int kv_dim_k, int kv_dim_v, int window)
 {
     fa_prefill_qw_db_body<128>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                               scale, causal, kv_dim_k, kv_dim_v, window);
+}
+
+// Spark uses the same window predicate with 256-wide heads.
+extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 1) fa_prefill_qw_db_w_hd256(
+        const float* __restrict__ Q, const __nv_bfloat16* __restrict__ Kw,
+        const __nv_bfloat16* __restrict__ Vw, float* __restrict__ O,
+        int head_dim, int n_head, int n_head_kv, int T, int T_kv,
+        float scale, int causal, int kv_dim_k, int kv_dim_v, int window)
+{
+    fa_prefill_qw_db_body<256>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
                                scale, causal, kv_dim_k, kv_dim_v, window);
 }
 

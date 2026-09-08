@@ -1782,3 +1782,13 @@ qualification, serving promotion or wall-saving claim. The measured source remai
 in this PR's history. Raw evidence is private in Darklanes:
 `research/dsv4f-devpair-20260905/compressor-paired-copy-20260908.md`, receipt namespace
 `compressor-paired-copy-3d011dc-r1`.
+
+### Declared fine-grained FP8 format requirements
+
+A checkpoint declaring `quant_method=fp8`, `activation_scheme=dynamic`, and a 128x128
+weight block requires its native E4M3 weight/grid and per-128 E4M3 activation program
+at decode and prefill. `MEMRA_FP8_FOLD=1`, disabled native residency, or a disabled or
+unavailable native MMQ implementation now refuse that declared format instead of
+silently substituting per-tensor scales or q8_1 activations. These flags keep their
+legacy behavior for operands without that declaration. No new flag is introduced.
+Parser, row-slice and dynamic-dispatch gate receipts: `research/bfcl-native-20260908/`.

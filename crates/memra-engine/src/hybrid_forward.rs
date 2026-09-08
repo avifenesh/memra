@@ -26211,7 +26211,7 @@ impl HybridModel {
                 };
                 if swa && swa_naive {
                     // Windowed mask needed (see the doc note). DEFAULT since lane/pp-prefill
-                    // 2026-08-07: the windowed hd128 FA stamp (`fa_prefill_view_ws_w_hd128`) —
+                    // 2026-08-07: the windowed hd128 FA stamp (`fa_prefill_view_ws_windowed`) —
                     // the anatomy profile measured the f32 floor at 565 ms/layer on a pp4096
                     // (41% of the whole prime) while the unwindowed hd128 FA family did the
                     // strictly harder causal-4096 in 3.3 ms. NOTE t_kv can be <= win here
@@ -26221,7 +26221,7 @@ impl HybridModel {
                     // selected on `seq_end` like every arm here, so the class is uniform for
                     // the whole request at every MEMRA_PRIME_CHUNK — chunkinv holds by the
                     // same construction as the chunkfix.
-                    e.fa_prefill_view_ws_w_hd128(
+                    e.fa_prefill_view_ws_windowed(
                         &q,
                         &k_view,
                         &v_view,
@@ -26736,7 +26736,7 @@ impl HybridModel {
                 let mut attention_out = engine.uninit(tokens * local_heads * head_dim)?;
                 if swa_naive {
                     let window = window.expect("SWA predicate requires a window");
-                    engine.fa_prefill_view_ws_w_hd128(
+                    engine.fa_prefill_view_ws_windowed(
                         &q[rank],
                         &k_view,
                         &v_view,

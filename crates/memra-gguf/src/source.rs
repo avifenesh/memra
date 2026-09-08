@@ -258,6 +258,7 @@ pub struct Nvfp4Native<'a> {
 ///    the checkpoint's `weight_scale_inv` decoded to f32, in its ON-DISK order — see
 ///    `F8BlockGrid` for the layout contract.
 pub struct Fp8Native<'a> {
+    pub dynamic_block128_activations: bool,
     pub bytes: Cow<'a, [u8]>,     // e4m3 codes, [out_f, in_f] row-major
     pub scale: f32, // per-tensor weight_scale (dequant multiplier); 1.0 when blk is Some
     pub blk: Option<F8BlockGrid>, // block-128 fine-grained scales (Qwen official FP8)
@@ -647,6 +648,10 @@ pub trait TensorSource: Sync {
     fn find_fp8_native(&self, _ggml_name: &str) -> Option<Fp8Native<'_>> {
         None
     }
+    /// A format requirement remains true even when native shape/layout lookup refuses.
+    fn requires_fp8_dynamic_activations(&self, _ggml_name: &str) -> bool {
+        false
+    }
     /// Native access for a stacked expert bank. This is deliberately distinct from
     /// `find_fp8_native`: expert and scale-grid strides are part of the checkpoint contract.
     fn find_fp8_stacked_native(&self, _ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
@@ -794,6 +799,12 @@ impl RepackFallback {
         match self {
             Self::Safetensors(source) => source.find_fp8_native(name),
             Self::Repack(source) => source.find_fp8_native(name),
+        }
+    }
+    fn requires_fp8_dynamic_activations(&self, name: &str) -> bool {
+        match self {
+            Self::Safetensors(source) => source.requires_fp8_dynamic_activations(name),
+            Self::Repack(source) => source.requires_fp8_dynamic_activations(name),
         }
     }
 
@@ -1227,6 +1238,13 @@ impl TensorSource for Hy3RepackSource {
         }
         self.fallback.as_ref()?.find_fp8_native(ggml_name)
     }
+    fn requires_fp8_dynamic_activations(&self, name: &str) -> bool {
+        !self.tensors.contains_key(name)
+            && self
+                .fallback
+                .as_ref()
+                .is_some_and(|source| source.requires_fp8_dynamic_activations(name))
+    }
 
     fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
         if self.tensors.contains_key(ggml_name) {
@@ -1516,6 +1534,7 @@ pub struct SafetensorsSource {
     dir: std::path::PathBuf,
     modules_to_not_convert: Vec<String>,
     preserve_checkpoint_bf16: bool,
+    fp8_dynamic_block128: bool,
     quant_algo: Option<String>,
     nvfp4_scale_layout: Nvfp4ScaleLayout,
 }
@@ -1554,6 +1573,7 @@ impl SafetensorsSource {
             dir: dir.to_path_buf(),
             modules_to_not_convert: hf.modules_to_not_convert,
             preserve_checkpoint_bf16: hf.preserve_checkpoint_bf16,
+            fp8_dynamic_block128: hf.fp8_dynamic_block128,
             quant_algo: hf.quant_algo,
             nvfp4_scale_layout,
         })
@@ -1587,6 +1607,7 @@ impl SafetensorsSource {
             dir,
             modules_to_not_convert,
             preserve_checkpoint_bf16,
+            fp8_dynamic_block128: hf.as_ref().is_some_and(|c| c.fp8_dynamic_block128),
             quant_algo,
             nvfp4_scale_layout,
         })
@@ -2217,6 +2238,19 @@ impl TensorSource for SafetensorsSource {
     ///    a per-row e4m3 operand.
     ///    Dim gates: 2D, in_f/out_f % 16 == 0 (cuBLASLt FP8 TN alignment), and the Transform arm
     ///    keeps the >=1M-element gate of its Q8_0 twin (small tensors stay F32 there).
+    fn requires_fp8_dynamic_activations(&self, ggml_name: &str) -> bool {
+        use crate::hf_mapping::{HfTarget, resolve_ggml};
+        if !self.fp8_dynamic_block128 {
+            return false;
+        }
+        let hf = match resolve_ggml(ggml_name, &self.cfg) {
+            Some(HfTarget::Plain(hf) | HfTarget::Transform { hf, .. }) => hf,
+            None => return false,
+        };
+        self.lookup(&hf)
+            .is_some_and(|(info, _)| info.dtype == "F8_E4M3")
+    }
+
     fn find_fp8_native(&self, ggml_name: &str) -> Option<Fp8Native<'_>> {
         use crate::hf_mapping::{HfTarget, resolve_ggml};
         let (hf, kind) = match resolve_ggml(ggml_name, &self.cfg)? {
@@ -2241,6 +2275,9 @@ impl TensorSource for SafetensorsSource {
             // question — argmax + logit-maxdiff vs the Q8_0 floor arbitrate). Plain targets only:
             // a Transform (V-reorder) still falls to the Q8_0 arm below.
             F8Scales::Block128 { scales, cols } if kind.is_none() && fp8_fold_enabled() => {
+                if self.fp8_dynamic_block128 {
+                    return None; // declared block scales cannot become a per-tensor fold
+                }
                 if in_hf % 16 != 0 || out_hf % 16 != 0 {
                     return None;
                 }
@@ -2257,6 +2294,7 @@ impl TensorSource for SafetensorsSource {
                     .map(|&v| crate::nvfp4_repack::f32_to_fp8_e4m3(v / s))
                     .collect();
                 return Some(Fp8Native {
+                    dynamic_block128_activations: self.fp8_dynamic_block128,
                     bytes: Cow::Owned(enc),
                     scale: s,
                     blk: None,
@@ -2280,6 +2318,7 @@ impl TensorSource for SafetensorsSource {
                     return None;
                 }
                 Some(Fp8Native {
+                    dynamic_block128_activations: self.fp8_dynamic_block128,
                     bytes: Cow::Borrowed(bytes),
                     scale,
                     blk,
@@ -2307,6 +2346,7 @@ impl TensorSource for SafetensorsSource {
                         let (in_f, out_f) = (ne[0] as usize, ne[1] as usize);
                         if in_f % 16 == 0 && out_f % 16 == 0 {
                             return Some(Fp8Native {
+                                dynamic_block128_activations: self.fp8_dynamic_block128,
                                 bytes: Cow::Owned(codes),
                                 scale,
                                 blk: Some(F8BlockGrid {
@@ -2339,6 +2379,7 @@ impl TensorSource for SafetensorsSource {
                     })
                     .collect();
                 Some(Fp8Native {
+                    dynamic_block128_activations: self.fp8_dynamic_block128,
                     bytes: Cow::Owned(enc),
                     scale,
                     blk: None,
@@ -4588,6 +4629,43 @@ mod f8_block128 {
             blk.scales, grid_f32,
             "grid decoded to f32 in checkpoint order"
         );
+
+        assert!(!src.requires_fp8_dynamic_activations("blk.0.attn_q.weight"));
+        drop(src);
+        let config_path = dir.join("config.json");
+        let original_config = std::fs::read_to_string(&config_path).unwrap();
+        let declared = format!(
+            "{},{}",
+            original_config.trim_end_matches('}'),
+            r#""quantization_config":{"quant_method":"fp8","activation_scheme":"dynamic","weight_block_size":[128,128]}}"#
+        );
+        std::fs::write(&config_path, declared).unwrap();
+        let declared_source = SafetensorsSource::open(&dir).unwrap();
+        assert!(declared_source.requires_fp8_dynamic_activations("blk.0.attn_q.weight"));
+        assert!(
+            declared_source
+                .find_fp8_native("blk.0.attn_q.weight")
+                .unwrap()
+                .dynamic_block128_activations
+        );
+        drop(declared_source);
+        // Malformed scale geometry must not erase the activation requirement and
+        // permit an incompatible fallback at the engine load boundary.
+        let bad_header = json.replace("\"shape\":[2,2]", "\"shape\":[1,4]");
+        assert_ne!(bad_header, json);
+        let mut bad = (bad_header.len() as u64).to_le_bytes().to_vec();
+        bad.extend_from_slice(bad_header.as_bytes());
+        bad.extend_from_slice(&codes);
+        bad.extend_from_slice(&grid_bf16);
+        std::fs::write(dir.join("model.safetensors"), bad).unwrap();
+        let refused_source = SafetensorsSource::open(&dir).unwrap();
+        assert!(
+            refused_source
+                .find_fp8_native("blk.0.attn_q.weight")
+                .is_none()
+        );
+        assert!(refused_source.requires_fp8_dynamic_activations("blk.0.attn_q.weight"));
+        drop(refused_source);
 
         std::fs::remove_dir_all(&dir).ok();
     }

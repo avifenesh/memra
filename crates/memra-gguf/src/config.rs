@@ -3053,6 +3053,8 @@ pub struct HfConfig {
     /// than architecture identity: Step-3.5, base Hy3, and GGUF imports do not inherit a
     /// mixed-precision ModelOpt artifact's preservation rule.
     pub preserve_checkpoint_bf16: bool,
+    /// Declared per-token 128-value FP8 activation program of a fine-grained FP8 checkpoint.
+    pub fp8_dynamic_block128: bool,
 }
 
 impl Default for HfConfig {
@@ -3203,6 +3205,7 @@ impl Default for HfConfig {
             modules_to_not_convert: Vec::new(),
             quant_algo: None,
             preserve_checkpoint_bf16: false,
+            fp8_dynamic_block128: false,
         }
     }
 }
@@ -3266,30 +3269,37 @@ impl HfConfig {
         cfg.quant_algo = top
             .object("quantization_config")
             .and_then(|quantization| quantization.string("quant_algo"));
+        cfg.fp8_dynamic_block128 = top.object("quantization_config").is_some_and(|q| {
+            q.string("quant_method").as_deref() == Some("fp8")
+                && q.string("activation_scheme").as_deref() == Some("dynamic")
+                && q.u32_array("weight_block_size").as_deref() == Some(&[128, 128])
+                && matches!(q.string("fmt").as_deref(), None | Some("e4m3"))
+        });
         // Both official Step-3.7-Flash quantized artifacts keep everything OUTSIDE the routed
         // experts (attention, gates, shared experts, MTP, lm_head) as checkpoint BF16, and the
         // Step TP attention program requires those exact bytes. A ModelOpt Hy3 artifact likewise
         // uses physical BF16 to declare the deliberately unquantized half of a mixed profile.
         // Base checkpoints and unrelated formats keep the Q8_0 loader law.
-        cfg.preserve_checkpoint_bf16 = top.object("quantization_config").is_some_and(|q| {
-            (top.string("model_type").as_deref() == Some("step3p7")
-                && ((q.string("quant_method").as_deref() == Some("fp8")
-                    && q.string("activation_scheme").as_deref() == Some("dynamic")
-                    && q.string("fmt").as_deref() == Some("e4m3")
-                    && q.u32_array("weight_block_size").as_deref() == Some(&[128, 128]))
-                    || (q.string("quant_method").as_deref() == Some("modelopt")
+        cfg.preserve_checkpoint_bf16 = cfg.fp8_dynamic_block128
+            || top.object("quantization_config").is_some_and(|q| {
+                (top.string("model_type").as_deref() == Some("step3p7")
+                    && ((q.string("quant_method").as_deref() == Some("fp8")
+                        && q.string("activation_scheme").as_deref() == Some("dynamic")
+                        && q.string("fmt").as_deref() == Some("e4m3")
+                        && q.u32_array("weight_block_size").as_deref() == Some(&[128, 128]))
+                        || (q.string("quant_method").as_deref() == Some("modelopt")
                         // W4A16_NVFP4 = the weight-only mint (glm5_next lane): identical
                         // weight/scale layout, no input_scale — same repack path.
                         && matches!(
                             q.string("quant_algo").as_deref(),
                             Some("NVFP4") | Some("W4A16_NVFP4")
                         ))))
-                || (top.string("model_type").as_deref() == Some("hy_v3")
-                    && matches!(
-                        q.string("quant_method").as_deref(),
-                        Some("modelopt" | "compressed-tensors")
-                    ))
-        });
+                    || (top.string("model_type").as_deref() == Some("hy_v3")
+                        && matches!(
+                            q.string("quant_method").as_deref(),
+                            Some("modelopt" | "compressed-tensors")
+                        ))
+            });
         // qwen4_exp ViT tower: its own key spellings (depth / num_heads /
         // num_position_embeddings / spatial_merge_size / temporal_patch_size). Loud refusal
         // on a missing field — a defaulted tower geometry is a silently different program.
@@ -5451,6 +5461,28 @@ mod minimax_tests {
                 ..
             }) => {}
             _ => panic!("gemma-norm fold not applied to attn_norm"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod fp8_activation_contract_tests {
+    use super::HfConfig;
+    #[test]
+    fn dynamic_block128_fp8_is_an_explicit_format_contract() {
+        let config = HfConfig::parse(
+            r#"{"quantization_config":{"quant_method":"fp8",
+            "activation_scheme":"dynamic","weight_block_size":[128,128]}}"#,
+        );
+        assert!(config.fp8_dynamic_block128);
+        assert!(config.preserve_checkpoint_bf16);
+        for json in [
+            r#"{}"#,
+            r#"{"quantization_config":{"quant_method":"fp8","activation_scheme":"static","weight_block_size":[128,128]}}"#,
+            r#"{"quantization_config":{"quant_method":"fp8","activation_scheme":"dynamic","weight_block_size":[64,128]}}"#,
+            r#"{"quantization_config":{"quant_method":"fp8","activation_scheme":"dynamic","weight_block_size":[128,128],"fmt":"e5m2"}}"#,
+        ] {
+            assert!(!HfConfig::parse(json).fp8_dynamic_block128, "{json}");
         }
     }
 }

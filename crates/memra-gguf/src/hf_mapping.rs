@@ -574,6 +574,41 @@ impl TransformKind {
         cols: usize,
         cfg: &ModelConfig,
     ) -> Option<(Vec<u64>, Vec<u8>, Vec<f32>, usize, usize)> {
+        // Spark's fused Q/K/V bands are contiguous output rows. A boundary aligned
+        // to 128 rows slices whole scale-grid rows, preserving both codes and scales
+        // exactly. Do this before head_params: Spark has no Qwen SSM geometry.
+        if matches!(
+            self,
+            TransformKind::SparkQkvQuery
+                | TransformKind::SparkQkvKey
+                | TransformKind::SparkQkvValue
+        ) {
+            let (q, k, v) = spark_qkv_bands(cfg);
+            let (start, rows) = match self {
+                TransformKind::SparkQkvQuery => (0, q),
+                TransformKind::SparkQkvKey => (q, k),
+                TransformKind::SparkQkvValue => (q + k, v),
+                _ => unreachable!(),
+            };
+            if in_f == 0
+                || rows == 0
+                || out_f != q.checked_add(k)?.checked_add(v)?
+                || codes.len() != out_f.checked_mul(in_f)?
+                || cols != in_f.div_ceil(128)
+                || scales.len() != out_f.div_ceil(128).checked_mul(cols)?
+                || !start.is_multiple_of(128)
+                || !rows.is_multiple_of(128)
+            {
+                return None;
+            }
+            return Some((
+                vec![in_f as u64, rows as u64],
+                codes[start * in_f..(start + rows) * in_f].to_vec(),
+                scales[start / 128 * cols..(start + rows) / 128 * cols].to_vec(),
+                rows / 128,
+                cols,
+            ));
+        }
         // See `apply_nvfp4`: the MLA kv_b split has no packed arm, and `head_params` panics here.
         if matches!(
             self,
@@ -2575,6 +2610,96 @@ mod tests {
         assert!(
             TransformKind::NormPlusOne
                 .apply_fp8_blk(&codes, out_f, in_f, &scales, cols, &cfg)
+                .is_none()
+        );
+    }
+}
+
+#[cfg(test)]
+mod spark_fp8_slice_tests {
+    use super::*;
+    use crate::config::HfConfig;
+
+    fn config() -> ModelConfig {
+        ModelConfig::from_hf(&HfConfig::parse(
+            r#"{
+            "architectures":["Spark2_5ForCausalLM"], "model_type":"spark2_5",
+            "hidden_size":256, "num_hidden_layers":4, "num_attention_heads":2,
+            "num_key_value_heads":1, "head_dim":128, "intermediate_size":512,
+            "vocab_size":256, "headwise_attn_output_gate":true, "hidden_act":"gelu",
+            "gate_attn_act_mode":"sigmoid", "sliding_window":512,
+            "layer_types":["sliding_attention","sliding_attention","sliding_attention","full_attention"],
+            "rope_parameters":{"full_attention":{"rope_theta":5000000,"partial_rotary_factor":0.25},
+                               "sliding_attention":{"rope_theta":10000,"partial_rotary_factor":1.0}}
+        }"#,
+        ))
+    }
+
+    #[test]
+    fn spark_fp8_slices_preserve_codes_scales_and_dequantized_values() {
+        let cfg = config();
+        let (out_f, in_f, cols) = (512usize, 160usize, 2usize);
+        let codes: Vec<u8> = (0..out_f * in_f).map(|i| (i % 126) as u8).collect();
+        let scales = vec![0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0];
+        for (kind, start, rows) in [
+            (TransformKind::SparkQkvQuery, 0usize, 256usize),
+            (TransformKind::SparkQkvKey, 256, 128),
+            (TransformKind::SparkQkvValue, 384, 128),
+        ] {
+            let (ne, sliced, grid, grid_rows, grid_cols) = kind
+                .apply_fp8_blk(&codes, out_f, in_f, &scales, cols, &cfg)
+                .unwrap();
+            assert_eq!(ne, vec![in_f as u64, rows as u64]);
+            assert_eq!((grid_rows, grid_cols), (rows / 128, cols));
+            for row in 0..rows {
+                for col in 0..in_f {
+                    let expected_code = codes[(start + row) * in_f + col];
+                    let expected_scale = scales[(start + row) / 128 * cols + col / 128];
+                    assert_eq!(sliced[row * in_f + col], expected_code);
+                    assert_eq!(
+                        grid[row / 128 * cols + col / 128].to_bits(),
+                        expected_scale.to_bits()
+                    );
+                    let got = crate::nvfp4_repack::fp8_e4m3_to_f32(sliced[row * in_f + col])
+                        * grid[row / 128 * cols + col / 128];
+                    let want = crate::nvfp4_repack::fp8_e4m3_to_f32(expected_code) * expected_scale;
+                    assert_eq!(got.to_bits(), want.to_bits());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn spark_fp8_slices_refuse_bad_geometry_and_unaligned_grid_bands() {
+        let mut cfg = config();
+        let kind = TransformKind::SparkQkvKey;
+        let codes = vec![0x38; 512 * 160];
+        let scales = vec![1.0; 8];
+        assert!(
+            kind.apply_fp8_blk(&codes[..codes.len() - 1], 512, 160, &scales, 2, &cfg)
+                .is_none()
+        );
+        assert!(
+            kind.apply_fp8_blk(&codes, 512, 160, &scales[..7], 2, &cfg)
+                .is_none()
+        );
+        assert!(
+            kind.apply_fp8_blk(&codes, 512, 160, &scales, 1, &cfg)
+                .is_none()
+        );
+        assert!(
+            kind.apply_fp8_blk(&codes, 511, 160, &scales, 2, &cfg)
+                .is_none()
+        );
+        cfg.head_dim_k = 64;
+        assert!(
+            kind.apply_fp8_blk(&vec![0x38; 256 * 160], 256, 160, &[1.0; 4], 2, &cfg)
+                .is_none()
+        );
+        cfg.head_dim_k = 128;
+        cfg.n_head_kv = 0;
+        assert!(
+            kind.apply_fp8_blk(&vec![0x38; 256 * 160], 256, 160, &[1.0; 4], 2, &cfg)
                 .is_none()
         );
     }

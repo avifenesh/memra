@@ -17626,6 +17626,14 @@ impl Engine {
         x: &CudaSlice<f32>,
         m: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        // A declared FP8 activation program must not silently become q8_1 at decode.
+        // The existing block-FP8 MMQ quantizer operates on the original f32 input and
+        // supports tail token widths, so the same per-128 program covers every m.
+        if w.requires_fp8_dynamic_activations() {
+            return self.try_fp8_blk_mmq(w, x, m)?.ok_or_else(|| {
+                "declared dynamic block128 FP8 activation program unavailable; refusing q8 fallback".into()
+            });
+        }
         use crate::model::GpuTensor;
         let in_f = w.in_features();
         let out_f = w.out_features();
@@ -17988,6 +17996,9 @@ impl Engine {
     /// True if `w` would take the int8-dp4a fast path under MEMRA_FAST (so its activation can be
     /// pre-quantized once and shared across sibling matmuls via `matmul_pre`).
     pub fn uses_q8_1_fast(&self, w: &crate::model::GpuTensor) -> bool {
+        if w.requires_fp8_dynamic_activations() {
+            return false;
+        }
         use crate::model::GpuTensor;
         if std::env::var("MEMRA_FAST").as_deref() == Ok("0") {
             return false;
@@ -18029,6 +18040,9 @@ impl Engine {
         x_fallback: &CudaSlice<f32>,
         m: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if w.requires_fp8_dynamic_activations() {
+            return self.matmul(w, x_fallback, m);
+        }
         use crate::model::GpuTensor;
         // Every raw-f32 arm below (fp8/f16/MMQ/fp4) reads m*in_f from x_fallback. Callers that
         // pre-quantized and dropped the f32 input pass an EMPTY x_fallback (E4B's fusion port:
@@ -21517,6 +21531,11 @@ impl Engine {
         ad: &CudaSlice<f32>,
         m: usize,
     ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        if w.requires_fp8_dynamic_activations() {
+            return Err(
+                "q8_1 activation cannot serve a declared dynamic block128 FP8 operand".into(),
+            );
+        }
         use crate::model::GpuTensor;
         if let GpuTensor::Quant {
             bytes,
@@ -29285,11 +29304,11 @@ impl Engine {
     /// f32 floor on SWA rows (bf16 MMA online-softmax vs f32 serial softmax) — adoption is
     /// gated by the full battery, and the class must change UNIFORMLY for a whole request
     /// (kernel selection keys on seq_end, never per chunk — the chunkfix law).
-    /// hd128-only deliberately: the only windowed-prefill consumer at another head_dim is
-    /// gemma4 (hd256), which already has `fa_prefill_w_f32`.
+    /// Both Step's hd128 and Spark's hd256 use this same quantized-KV workspace path.
+    /// The head dimension selects a compiled specialization; it never changes the window mask.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
-    pub fn fa_prefill_view_ws_w_hd128(
+    pub fn fa_prefill_view_ws_windowed(
         &self,
         q: &CudaSlice<f32>,
         k: &cudarc::driver::CudaView<u8>,
@@ -29306,9 +29325,9 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        assert_eq!(
-            head_dim, 128,
-            "fa_prefill_view_ws_w_hd128: only the hd128 twin is stamped"
+        assert!(
+            matches!(head_dim, 128 | 256),
+            "fa_prefill_view_ws_windowed: only hd128 and hd256 are supported"
         );
         if portable_mma_gated() {
             return self.sdpa_naive_w_quantized_view(
@@ -29386,10 +29405,12 @@ impl Engine {
             .map(|v| v != "0")
             .unwrap_or(true);
         {
-            let f = self.func(if db {
-                "fa_prefill_qw_db_w_hd128"
-            } else {
-                "fa_prefill_qw_w_hd128"
+            let f = self.func(match (head_dim, db) {
+                (128, true) => "fa_prefill_qw_db_w_hd128",
+                (128, false) => "fa_prefill_qw_w_hd128",
+                (256, true) => "fa_prefill_qw_db_w_hd256",
+                (256, false) => "fa_prefill_qw_w_hd256",
+                _ => unreachable!(),
             });
             let shmem = if db {
                 (2 * (4 * BK * head_dim + BLOCK_Q * BK) + 4 * BLOCK_Q) as u32
