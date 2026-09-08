@@ -651,6 +651,66 @@ mod tests {
             eprintln!("PASS Rust capture-end failure rc=10401 asserted and consumed");
         }
         assert_uncaptured();
+        // A late capture failure must also clean up while earlier executable
+        // variants are retained. These graphs remain unlaunched throughout.
+        let retain_earlier_variants = |pair: &mut ReplayPair| {
+            for slot in [0, 2] {
+                pair.begin(slot).unwrap();
+                for (rank, stream) in streams.iter().enumerate() {
+                    stream.context().bind_to_thread().unwrap();
+                    unsafe {
+                        crate::dsv4_ffi::ck(
+                            "retained cadence tick",
+                            crate::dsv4_ffi::memra_dsv4_replay_tick(
+                                pair.counter_ptr(rank, slot),
+                                stream.cu_stream().cast(),
+                            ),
+                        )
+                        .unwrap();
+                    }
+                }
+                for graphs in &mut pair.graphs {
+                    graphs[slot].as_mut().unwrap().end().unwrap();
+                }
+            }
+            assert_eq!(pair.variant_counts().unwrap(), [[0; 4]; 2]);
+        };
+        let late_body_error = (|| -> Result<(), String> {
+            let mut pair = make_pair(true);
+            retain_earlier_variants(&mut pair);
+            pair.begin(3)?;
+            Err("injected C128 capture body failure with earlier variants retained".into())
+        })()
+        .unwrap_err();
+        assert!(late_body_error.contains("earlier variants retained"));
+        assert_uncaptured();
+        eprintln!(
+            "PASS Rust late capture-body abort slot=3 retained_forward_slots=[0,2] both_streams_uncaptured=1"
+        );
+        {
+            let mut pair = make_pair(true);
+            retain_earlier_variants(&mut pair);
+            pair.begin(3).unwrap();
+            pair.abort_capture_both().unwrap();
+            let error = pair.graphs[0][3].as_mut().unwrap().end().unwrap_err();
+            assert!(
+                error.contains("replay capture end") && error.ends_with("rc=10401"),
+                "{error}"
+            );
+            unsafe extern "C" {
+                fn cudaGetLastError() -> i32;
+            }
+            assert_eq!(
+                unsafe { cudaGetLastError() },
+                401,
+                "expected already-aborted capture"
+            );
+            assert_eq!(pair.variant_counts().unwrap(), [[0; 4]; 2]);
+        }
+        assert_uncaptured();
+        eprintln!(
+            "PASS Rust late capture-end failure slot=3 retained_forward_slots=[0,2] rc=10401 asserted_and_consumed=1"
+        );
         // Use the runtime's actual pair-launch loop and real graph counters.
         // These are tiny no-peer graphs; they cover Rust ownership/submission,
         // not the C++ fixture's peer barriers or full-model layer coverage.
