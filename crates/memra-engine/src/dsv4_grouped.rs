@@ -55,6 +55,12 @@ fn splitk_component_claim(gpu: &Gpu, gu: bool) -> bool {
     if crate::MOE_M1_SPLITK_COMPONENT.load(Ordering::Acquire) == 0 {
         return false;
     }
+    if crate::moe_m1_graph_splitk_on() {
+        // Search real routes across layers until the C++ gate has a six-live
+        // operand set for this rank/projection. Its completion mask skips all
+        // subsequent calls. The historical adaptive gate still samples once.
+        return true;
+    }
     let bit = 1u64 << (gpu.ctx.ordinal() * 2 + usize::from(gu));
     SPLITK_COMPONENT_SEEN.fetch_or(bit, Ordering::AcqRel) & bit == 0
 }
