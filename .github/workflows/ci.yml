@@ -274,9 +274,9 @@ jobs:
           MEMRA_CUDA_ARCH: "120a"
 
       # These tests exercise RNG/CDF boundaries, timing contracts and drift metrics;
-      # they never create a CUDA context or run either gate's main().
-      - name: DSV4 sampled and drift-gate CPU contract tests
-        run: cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate --bin dsv4_tp_ep_tf_drift_gate
+      # they never create a CUDA context or run the gates' main functions.
+      - name: DSV4 sampled, drift and composition CPU contract tests
+        run: cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate --bin dsv4_tp_ep_tf_drift_gate --bin dsv4_compose_cadence_dense_gate
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"

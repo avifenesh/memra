@@ -1,18 +1,18 @@
 # Draft composed cadence + dense model gate
 
-Status: source composition and build checkpoint only. This protocol is pending
+Status: standalone adapter implemented; GPU evidence pending. This protocol is pending
 root review and a separately scheduled model slot. No combined model result or
 serving admission is claimed. Reviewed source provenance is in COMPOSE-PIN.md.
 
 ## One binary, two fixed programs
 
-A future standalone `dsv4_compose_cadence_dense_gate` should adapt the reviewed
+The standalone `dsv4_compose_cadence_dense_gate` adapts the reviewed
 `dsv4_dense_exact_tail_gate.rs` Arm/state/identity/census driver and the cadence
 variant checks in `dsv4_full_token_replay_gate.rs`. Reuse public Dsv4Gpu APIs and
 the existing dense selector FFI; do not change kernel math, reviewed helpers,
-shared runtime, capture owner, or the legacy sampled CLI. The checkpoint builds
-the two existing helpers, not this proposed adapter. Root review must cover the
-adapter's source and new binary SHA before a model launch.
+shared runtime, capture owner, or the legacy sampled CLI. The initial source checkpoint built
+the two existing helpers. The r2 checkpoint builds this combined adapter. Root
+review must cover its source and new binary SHA before a model launch.
 
 One immutable source/binary/model/input tuple, one model load, independently
 allocated states with a shared pinned prime snapshot:
@@ -49,7 +49,7 @@ first-changing-token checks and final next-draw identity. Run both retained
 reset proofs from the same prime snapshot; compare full graph hashes before
 and after restoration and enforce stable allocation/capture ownership.
 
-Adapt dense `dense_census` to inspect all retained cadence slots, using the
+The adapted dense `dense_census` inspects all retained cadence slots, using the
 cadence variant dump/census APIs and the existing per-kernel DOT record parser.
 Required actual captured functions, on both ranks:
 
@@ -106,3 +106,22 @@ no idle waiter or peer kill. Retain controller PID/start/exit, process census,
 source/binary/model/launcher pins, raw rows and terminal lock readback. Release
 for the next owner immediately; compact raw DOT banks to representative A/B
 pairs and complete hash/size manifests with originals retained remotely.
+
+## Adapter implementation and hosted checks
+
+Run the pinned binary with `<model-dir> <source.txt> <new-output-dir>` only.
+There is no reverse mode or profiling mode. `PROGRAMS` fixes A/B choices before
+model load; `Dsv4SampleCfg` and device sampler selection are fixed at the same
+point. The dense capture selector is chosen outside the scored envelope before
+first capture, while the actual captures occur in the first decode inside the
+envelope. Scored `arm_row=0` must be the only first-capture row for that arm.
+The first A/B global rows are0/5. No selector changes occur inside timed loops.
+
+Every eager/A/B qualification step checks its own AR epoch increment separately,
+so errors in two arms cannot cancel in an aggregate epoch check. Counter checks
+include variant increments at every qualification position, across retained
+resets, per scored row, and on refused forwards with commit delta zero. Dense
+DOT census covers all three B forward variants and the shared head/commit.
+The test step in hosted CI includes CPU-only full-window variant counts,
+ordinary/C4/C128/refusal boundaries and strict DOT function-record counting.
+No local tests or GPU executions are part of this checkpoint.
