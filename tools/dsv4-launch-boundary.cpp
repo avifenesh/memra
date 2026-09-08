@@ -161,6 +161,7 @@ extern "C" void memra_launch_boundary_finish(unsigned position) {
     std::printf("BOUNDARY_ROW {\"position\":%u,\"host_before_ns\":[%llu,%llu],\"host_after_ns\":[%llu,%llu],\"host_launch_ms\":[%.9f,%.9f],\"calibration_roundtrip_ms\":%.9f,\"start_from_local_base_ms\":[%.9f,%.9f],\"prelaunch_from_local_base_ms\":[%.9f,%.9f],\"prelaunch_to_graph_start_ms\":[%.9f,%.9f],\"rank1_minus_rank0_start_lower_ms\":%.9f,\"rank1_minus_rank0_start_upper_ms\":%.9f,\"rank1_minus_rank0_start_midpoint_ms\":%.9f,\"event_resolution_us_approx\":0.5,\"first_ar_wait\":null,\"first_ar_event_residence_ms\":[%.9f,%.9f]}\n",position,
         (unsigned long long)ranks[0].host_before,(unsigned long long)ranks[1].host_before,(unsigned long long)ranks[0].host_after,(unsigned long long)ranks[1].host_after,
         double(ranks[0].host_after-ranks[0].host_before)/1e6,double(ranks[1].host_after-ranks[1].host_before)/1e6,roundtrip,start[0],start[1],before[0],before[1],queued[0],queued[1],lower,lower+roundtrip,lower+roundtrip/2,ar[0],ar[1]);
+    require(std::fflush(stdout)==0,"flush completed row before Rust output");
     ck(cudaSetDevice(saved_device),"restore device after readback");
 }
 extern "C" void memra_launch_boundary_cleanup() {
