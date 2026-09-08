@@ -185,6 +185,7 @@ pub struct Sampler {
     // oracle cheaper too, and lets the serving path upload O(unique ids) sparse penalty state
     // instead of either the full vocabulary or an O(history^2) device-side dedup walk.
     penalty_counts: HashMap<u32, u32>,
+    nucleus_comparison_calls: u64,
 }
 
 impl Sampler {
@@ -195,7 +196,13 @@ impl Sampler {
             rng,
             history: Vec::new(),
             penalty_counts: HashMap::new(),
+            nucleus_comparison_calls: 0,
         }
+    }
+
+    /// Per-request ordering incidence for the serving receipt. No policy state.
+    pub fn nucleus_sort_counts(&self) -> (u64, u64) {
+        (0, self.nucleus_comparison_calls)
     }
 
     pub fn is_greedy(&self) -> bool {
@@ -351,6 +358,7 @@ impl Sampler {
         // 4. top-p (nucleus): smallest set whose cumulative prob >= top_p. Needs desc-by-prob order.
         if self.cfg.top_p < 1.0 {
             cand.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
+            self.nucleus_comparison_calls += 1;
             let mut cum = 0.0f32;
             let mut keep = 0usize;
             for (i, c) in cand.iter().enumerate() {

@@ -16281,6 +16281,16 @@ pub fn run(
         let mut oom_teardowns = 0usize;
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
+            // One retirement receipt, never per-token logging or a sampler policy switch.
+            if !s.oom_teardown {
+                let (radix, comparison) = s.sampler.nucleus_sort_counts();
+                if radix + comparison > 0 {
+                    eprintln!(
+                        "[sampler-order] model={} radix={} comparison={}",
+                        s.model, radix, comparison
+                    );
+                }
+            }
             // PREDICTIVE-ADMISSION BOOK, retire seam (D2 gaps G2+G3): the single point
             // a session leaves `active`, so the book stays exact by construction. The
             // completion history records only terminal completions: a step-OOM park
