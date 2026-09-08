@@ -1506,7 +1506,7 @@ extern "C" __global__ void gdn_scan_s128_b(
 // taps, same FMA order, same warp reductions, so every value is bit-identical.
 extern "C" __global__ void ssm_conv1d_fused_decode_tloop_f32(
         const float* __restrict__ qkv_cols,     // [T, conv_dim]
-        float* __restrict__ conv_state,         // [conv_dim, pad] in/out, this sequence
+        float* const* __restrict__ state_ptrs,   // [conv, ssm_in, ssm_alt], refreshed per replay
         const float* __restrict__ w,            // [conv_dim, d_conv]
         float* __restrict__ conv_outs,          // [T, conv_dim]
         float* __restrict__ snap,               // [T-1, conv_dim, pad] post-row ring, or null
@@ -1514,7 +1514,7 @@ extern "C" __global__ void ssm_conv1d_fused_decode_tloop_f32(
     int c = blockIdx.x * blockDim.x + threadIdx.x;
     if (c >= conv_dim) return;
     int pad = d_conv - 1;
-    float* st = conv_state + (size_t)c * pad;
+    float* st = state_ptrs[0] + (size_t)c * pad;
     const float* wc = w + (size_t)c * d_conv;
     float win[8];
     #pragma unroll
@@ -1601,8 +1601,11 @@ __device__ void gdn_scan_kernel_snap(
 
 extern "C" __global__ void gdn_scan_s128_tsnap(
         const float* q, const float* k, const float* v, const float* g, const float* beta,
-        const float* state_in, float* state_out, float* o, int H, int T, float scale,
+        float* const* state_ptrs, float* o, int H, int T, float scale,
         float* snap) {
+    // Resolve at replay time: cache addresses and canonical/alt parity can both change.
+    const float* state_in = state_ptrs[1];
+    float* state_out = state_ptrs[(T % 2 == 1) ? 2 : 1];
     gdn_scan_kernel_snap<128, 32>(q, k, v, g, beta, state_in, state_out, o, H, T, scale, snap);
 }
 
