@@ -50,6 +50,11 @@ This contract refuses illegal layouts early. It is not evidence that serving
 TP/EP, native P2P, or multi-card throughput is complete; those surfaces require
 separate official-model and target-hardware gates.
 
+When memory pressure leaves a MoE MTP head non-resident, the MTP route logs
+`[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk`
+and verifies eagerly. This admission check also applies to `MEMRA_SPEC_VERIFY_GRAPH=1`;
+resident heads retain the existing graph default. See [the capture receipt](../research/mtp-head-nonresident-capture-20260908/RESULTS.md).
+
 ## Fleet tooling
 
 (Not to be confused with the OpenAI `tools` API surface — that is

@@ -484,6 +484,23 @@ pub fn spec_capture_gate_on() -> bool {
 /// would leave less than this behind is not worth its eager-coverage risk.
 pub(crate) const CAPTURE_HEADROOM_FLOOR: usize = 1536 << 20;
 
+/// Shared refusal for draft capture and MTP verify-pool admission. Each item describes
+/// one MoE head; dense heads need no host-visible routing and contribute no item.
+fn mtp_capture_refusal(
+    moe_heads_resident: impl IntoIterator<Item = bool>,
+    sigmoid_router: bool,
+) -> Option<&'static str> {
+    for resident in moe_heads_resident {
+        if !resident {
+            return Some("non-resident MoE MTP head");
+        }
+        if sigmoid_router {
+            return Some("sigmoid-router MoE MTP head requires host-visible routing");
+        }
+    }
+    None
+}
+
 /// Pure verdict half of the pre-capture reserve check (unit-testable): given the device's
 /// driver-free and pool-cached bytes and the capture's expected `need`, returns
 /// `Some((required, effective))` when the capture must be REFUSED, `None` when it fits.
@@ -9822,28 +9839,26 @@ impl HybridModel {
     /// exact eager draft chain until a device-only sigmoid expert program lands. Trunk FFN class
     /// is irrelevant — the graph body is the HEAD forward only. One predicate for all three
     /// eligibility sites so they cannot drift (the serving numeric-class lesson).
+    fn mtp_graph_refusal(&self) -> Option<&'static str> {
+        mtp_capture_refusal(
+            self.mtp
+                .iter()
+                .chain(self.mtp_extra.iter())
+                .filter_map(|head| match &head.ffn {
+                    crate::hybrid::Ffn::Dense { .. } => None,
+                    crate::hybrid::Ffn::Moe(mo) => Some(mo.dev_exps.is_some()),
+                }),
+            self.cfg.sigmoid_router().is_some(),
+        )
+    }
+
     fn mtp_graph_capturable(&self) -> bool {
-        let sigmoid_router = self.cfg.sigmoid_router().is_some();
-        for head in self.mtp.iter().chain(self.mtp_extra.iter()) {
-            let reason = match &head.ffn {
-                crate::hybrid::Ffn::Dense { .. } => None,
-                crate::hybrid::Ffn::Moe(mo) if mo.dev_exps.is_none() => {
-                    Some("non-resident MoE MTP head")
-                }
-                crate::hybrid::Ffn::Moe(_) if sigmoid_router => {
-                    Some("sigmoid-router MoE MTP head requires host-visible routing")
-                }
-                crate::hybrid::Ffn::Moe(_) => None,
-            };
-            if let Some(reason) = reason {
-                static NOTICE: std::sync::Once = std::sync::Once::new();
-                NOTICE.call_once(|| {
-                    eprintln!(
-                        "[spec] draft graph unavailable: {reason}; eager draft chain engaged"
-                    );
-                });
-                return false;
-            }
+        if let Some(reason) = self.mtp_graph_refusal() {
+            static NOTICE: std::sync::Once = std::sync::Once::new();
+            NOTICE.call_once(|| {
+                eprintln!("[spec] draft graph unavailable: {reason}; eager draft chain engaged");
+            });
+            return false;
         }
         self.mtp.is_some()
     }
@@ -12093,7 +12108,17 @@ impl HybridModel {
         // it never reads.
         let vg_armed =
             crate::spec::spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default());
-        let mut vg_guard = if vg_armed && !stream_active {
+        // Residency is decided per device for both trunk and MTP experts. A non-resident
+        // head signals that the verify trunk can take the host router's DtoH + stream sync.
+        // Refuse before creating or reusing the pool, even when the flag explicitly arms it.
+        let vg_refusal = self.mtp_graph_refusal();
+        if vg_armed
+            && !stream_active
+            && let Some(reason) = vg_refusal
+        {
+            eprintln!("[spec-vg] MTP verify-graph pool declined ({reason}); eager verify walk");
+        }
+        let mut vg_guard = if vg_armed && !stream_active && vg_refusal.is_none() {
             let mut g = self.dspark_vgraphs.lock().unwrap();
             if g.is_none() {
                 // Size by the WIDEST verify this run can present, which is k+1 and NOT
@@ -14408,6 +14433,37 @@ mod vg_debt_tests {
         assert_eq!(d(6, 256, 10 * MIB, Some((4, 99 * MIB))), 0);
         // a stale observation at the same capture count falls back to bootstrap.
         assert_eq!(d(4, 256, 80 * MIB, Some((4, 80 * MIB))), 80 * MIB);
+    }
+}
+
+#[cfg(test)]
+mod mtp_capture_admission_tests {
+    use super::mtp_capture_refusal;
+
+    #[test]
+    fn nonresident_head_refuses_draft_and_verify_capture() {
+        for heads in [vec![false], vec![false, true], vec![true, false]] {
+            assert_eq!(
+                mtp_capture_refusal(heads, false),
+                Some("non-resident MoE MTP head")
+            );
+        }
+    }
+
+    #[test]
+    fn resident_softmax_and_dense_heads_keep_capture_available() {
+        assert_eq!(mtp_capture_refusal([true], false), None);
+        assert_eq!(mtp_capture_refusal([true, true], false), None);
+        assert_eq!(mtp_capture_refusal([], false), None);
+        assert_eq!(mtp_capture_refusal([], true), None);
+    }
+
+    #[test]
+    fn resident_sigmoid_head_still_requires_host_routing() {
+        assert_eq!(
+            mtp_capture_refusal([true], true),
+            Some("sigmoid-router MoE MTP head requires host-visible routing")
+        );
     }
 }
 
