@@ -135,7 +135,7 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             [[step as u64 + 1; 2]; 2]
         );
         capture_once(gpu, &graph);
-        if (graph.pos % 4 == 0) || step == 0 {
+        if graph.pos.is_multiple_of(4) || step == 0 {
             println!(
                 r#"REPLAY_EXACT {{"position":{},"both_rank_cache_hidden_logits":true,"token":{actual},"device_replays":{:?},"captures":{:?}}}"#,
                 graph.pos,
@@ -281,9 +281,9 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
         }
         let counts = if graph_arm {
             let after = gpu.full_token_replay_counts_for_gate(active).unwrap();
-            for r in 0..2 {
-                for s in 0..2 {
-                    assert_eq!(after[r][s] - before_counts.unwrap()[r][s], OUTPUT as u64);
+            for (rank_after, rank_before) in after.iter().zip(before_counts.unwrap()) {
+                for (&count_after, count_before) in rank_after.iter().zip(rank_before) {
+                    assert_eq!(count_after - count_before, OUTPUT as u64);
                 }
             }
             capture_once(gpu, active);

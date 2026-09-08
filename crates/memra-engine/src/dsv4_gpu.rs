@@ -7827,7 +7827,7 @@ impl Dsv4Gpu {
             || self
                 .stages
                 .iter()
-                .any(|st| !std::sync::Arc::ptr_eq(&st.gpu.stream(), &st.gpu.main_stream()))
+                .any(|st| !std::sync::Arc::ptr_eq(&st.gpu.stream(), st.gpu.main_stream()))
         {
             return Err("full-token replay requires the pinned plain TP2/expert-ID EP, device+diet, f32x/RefFp8Round program; split-K/DSpark/host validation/other modes refused".into());
         }
@@ -9820,18 +9820,17 @@ impl Dsv4Gpu {
             if replaying != replay_draw {
                 return Err("armed replay requires the combined forward/sample API".into());
             }
-            if let Some(pair) = &work.replay {
-                if pair.owner != self as *const Self as usize
+            if let Some(pair) = &work.replay
+                && (pair.owner != self as *const Self as usize
                     || state.pos >= 512
                     || tok as usize >= work.verify.ws[1].logits.len()
                     || pair.ar_blocks
                         != [
                             crate::tp_ar::ar_blocks_for(4096),
                             crate::tp_ar::ar_blocks_for(6 * 4096),
-                        ]
-                {
-                    return Err("replay owner/position/token mismatch".into());
-                }
+                        ])
+            {
+                return Err("replay owner/position/token mismatch".into());
             }
             let capture = work.replay.as_ref().is_some_and(|p| !p.ready);
             let DecodePath::Device { host_math: false } = self.decode_path else {
@@ -10317,22 +10316,20 @@ impl Dsv4Gpu {
         })();
         if let Err(error) = &mut result {
             work.failed = true;
-            if !forward_started {
-                if let Some((owner, peer)) = &host_marks {
-                    for (cache, &(blocks, index_blocks)) in state.caches.iter_mut().zip(owner) {
-                        cache.n_blocks = blocks;
-                        cache.i_blocks = index_blocks;
-                    }
-                    for (cache, &(blocks, index_blocks)) in rank1_caches.iter_mut().zip(peer) {
-                        cache.n_blocks = blocks;
-                        cache.i_blocks = index_blocks;
-                    }
+            if !forward_started && let Some((owner, peer)) = &host_marks {
+                for (cache, &(blocks, index_blocks)) in state.caches.iter_mut().zip(owner) {
+                    cache.n_blocks = blocks;
+                    cache.i_blocks = index_blocks;
+                }
+                for (cache, &(blocks, index_blocks)) in rank1_caches.iter_mut().zip(peer) {
+                    cache.n_blocks = blocks;
+                    cache.i_blocks = index_blocks;
                 }
             }
-            if let Some(pair) = &work.replay {
-                if let Err(abort_error) = pair.abort_capture_both() {
-                    error.push_str(&format!("; capture abort: {abort_error}"));
-                }
+            if let Some(pair) = &work.replay
+                && let Err(abort_error) = pair.abort_capture_both()
+            {
+                error.push_str(&format!("; capture abort: {abort_error}"));
             }
             // If submission failed after only one rank enqueued its peer wait,
             // do not return/drop its buffers while it can still access the peer.
@@ -15107,11 +15104,10 @@ impl Dsv4Gpu {
             if let Some(pos_dev) = replay_pos {
                 let topk = layer.idx.as_ref().map_or(i32::MAX, |ix| ix.topk as i32);
                 let slots_max = win
-                    + if layer.ratio == 0 {
-                        0
-                    } else {
-                        (vws.replay_limit / layer.ratio).min(topk as usize)
-                    };
+                    + vws
+                        .replay_limit
+                        .checked_div(layer.ratio)
+                        .map_or(0, |n| n.min(topk as usize));
                 ck(
                     "replay attention",
                     k::memra_dsv4_replay_attention(
