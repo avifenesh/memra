@@ -56,8 +56,14 @@ But eliminating its residence in the reduction does not eliminate step time:
 Both profiles have the same non-sampler kernel counts, 2,706.25 per token on
 rank 0 and 2,712.25 on rank 1.
 
-Forward GPU span runs from the first embedding kernel to the final non-sampler
-kernel. Gaps can include copies. The baseline uses device sampling and diet;
+The table uses a shared forward window: the earliest embedding kernel across
+both ranks to the latest non-sampler kernel across both ranks, per token.
+The initial rank-0-local window ran only from rank 0 embedding to its own last
+kernel and measured 29.898808 -> 29.770140 ms/token, with kernel-free time
+5.146204 -> 8.232100 ms/token. The shared window is 31.118339 -> 31.012585
+ms/token and includes the rank-1 head interval. These are different window
+definitions over the same trace, not changed runs or conflicting measurements.
+Gaps can include copies. The baseline uses device sampling and diet;
 the candidate profile uses default radix and diet. These instrumented captures
 explain residence, not an unprofiled throughput delta. The ABBA below fixes the
 sampler and binary within each comparison.
@@ -138,5 +144,5 @@ every possible persistent-worker design.
 No local cargo, CI or GPU runs were performed. Pushes used exported
 `MEMRA_SKIP_PERF_CI=1` with normal hooks. Hosted build, Clippy, engine/server
 unit tests, architecture coverage, publish dry-run and policy gates passed on
-the measured source. PR #352 remains draft and unmerged because there is no
-performance win to promote.
+the measured source. The runtime arm was not promoted; only verdict/receipt
+documentation was retained.
