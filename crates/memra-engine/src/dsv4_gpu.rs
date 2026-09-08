@@ -48,6 +48,9 @@ type Res<T> = Result<T, String>;
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
+// Gate-only issue ordering. The walk snapshots this once per token.
+static DSV4_TP_EP_ISSUE_INTERLEAVE: AtomicBool = AtomicBool::new(false);
+
 // Gate-only dense wo_a launch fusion. It is process-local and deliberately
 // default OFF; no environment variable or serving default selects this arm.
 static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
@@ -1955,6 +1958,11 @@ impl Dsv4Gpu {
 
     pub fn tp_ep_topology_for_gate() -> bool {
         dsv4_topology::tp_ep_for_gate()
+    }
+
+    /// Process-local diagnostic. Read once per token; no serving environment knob.
+    pub fn set_tp_ep_issue_interleave_for_gate(enabled: bool) -> bool {
+        DSV4_TP_EP_ISSUE_INTERLEAVE.swap(enabled, Ordering::AcqRel)
     }
 
     pub fn set_attention_tp_for_gate(enabled: bool) -> bool {
@@ -9552,54 +9560,72 @@ impl Dsv4Gpu {
                     )?;
                 }
             }
+            let interleave = DSV4_TP_EP_ISSUE_INTERLEAVE.load(Ordering::Acquire);
+            if interleave && self.attention_tp.is_none() {
+                return Err("issue interleave requires attention TP2".into());
+            }
             for (il, rank1_cache) in rank1_caches.iter_mut().enumerate() {
-                for rank in 0..2usize {
-                    let st = &self.stages[rank];
-                    let layer = st
-                        .layers
-                        .iter()
-                        .find(|l| l.il == il as u32)
-                        .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
-                    let vws = &mut work.verify.ws[rank];
-                    let lck = if rank == 0 {
-                        &mut work.verify.layers[il]
-                    } else {
-                        work.verify
-                            .tp_ep_layers
-                            .as_mut()
-                            .ok_or("TP/EP rank-1 checkpoints missing")?
-                            .get_mut(il)
-                            .ok_or("TP/EP rank-1 checkpoint layer missing")?
-                    };
-                    let cache = if rank == 0 {
-                        &mut state.caches[il]
-                    } else {
-                        &mut *rank1_cache
-                    };
-                    if self.attention_tp.is_some() {
-                        self.attention_verify_dev(
-                            st, layer, cache, lck, vws, false, state.pos, 1, false,
-                        )?;
-                        self.attention_tp_rank_calls[rank].fetch_add(1, Ordering::Relaxed);
-                    } else {
-                        self.block_verify_dev(
-                            st,
-                            layer,
-                            cache,
-                            lck,
-                            vws,
-                            false,
-                            state.pos,
-                            1,
-                            &[tok],
-                            false,
-                            true,
-                            None,
-                            true,
-                        )?;
+                for phase in 0..if interleave { 6 } else { 1 } {
+                    for rank in 0..2usize {
+                        let st = &self.stages[rank];
+                        let layer = st
+                            .layers
+                            .iter()
+                            .find(|l| l.il == il as u32)
+                            .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
+                        let vws = &mut work.verify.ws[rank];
+                        let lck = if rank == 0 {
+                            &mut work.verify.layers[il]
+                        } else {
+                            work.verify
+                                .tp_ep_layers
+                                .as_mut()
+                                .ok_or("TP/EP rank-1 checkpoints missing")?
+                                .get_mut(il)
+                                .ok_or("TP/EP rank-1 checkpoint layer missing")?
+                        };
+                        let cache = if rank == 0 {
+                            &mut state.caches[il]
+                        } else {
+                            &mut *rank1_cache
+                        };
+                        if self.attention_tp.is_some() {
+                            self.attention_verify_dev_phase(
+                                st,
+                                layer,
+                                cache,
+                                lck,
+                                vws,
+                                false,
+                                state.pos,
+                                1,
+                                false,
+                                interleave.then_some(phase),
+                            )?;
+                            if !interleave || phase == 5 {
+                                self.attention_tp_rank_calls[rank].fetch_add(1, Ordering::Relaxed);
+                            }
+                        } else {
+                            self.block_verify_dev(
+                                st,
+                                layer,
+                                cache,
+                                lck,
+                                vws,
+                                false,
+                                state.pos,
+                                1,
+                                &[tok],
+                                false,
+                                true,
+                                None,
+                                true,
+                            )?;
+                        }
+                        if !interleave || phase == 5 {
+                            self.tp_ep_rank_layer_calls[rank].fetch_add(1, Ordering::Relaxed);
+                        }
                     }
-                    self.tp_ep_rank_layer_calls[rank]
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
                 let (rank0_ws, rank1_ws) = work.verify.ws.split_at_mut(1);
                 let owner_ws = &mut rank0_ws[0];
@@ -9660,26 +9686,30 @@ impl Dsv4Gpu {
                                 .set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
                         }
                     }
-                    for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)] {
-                        let st = &self.stages[rank];
-                        let layer = st
-                            .layers
-                            .iter()
-                            .find(|layer| layer.il == il as u32)
-                            .ok_or("attention TP2 post-join layer missing")?;
-                        self.post_attention_moe_verify_dev(
-                            st,
-                            layer,
-                            workspace,
-                            false,
-                            1,
-                            &[tok],
-                            false,
-                            true,
-                            None,
-                            true,
-                            Some(&attention_outputs[rank]),
-                        )?;
+                    for phase in 0..if interleave { 5 } else { 1 } {
+                        for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)]
+                        {
+                            let st = &self.stages[rank];
+                            let layer = st
+                                .layers
+                                .iter()
+                                .find(|layer| layer.il == il as u32)
+                                .ok_or("attention TP2 post-join layer missing")?;
+                            self.post_attention_moe_verify_dev_phase(
+                                st,
+                                layer,
+                                workspace,
+                                false,
+                                1,
+                                &[tok],
+                                false,
+                                true,
+                                None,
+                                true,
+                                Some(&attention_outputs[rank]),
+                                interleave.then_some(phase),
+                            )?;
+                        }
                     }
                 }
                 {
@@ -9710,28 +9740,32 @@ impl Dsv4Gpu {
                     .iter()
                     .find(|l| l.il == il as u32)
                     .ok_or("TP/EP rank-1 layer missing for tail")?;
-                self.moe_verify_common_tail(
-                    &self.stages[0],
-                    layer0,
-                    owner_ws,
-                    1,
-                    topk,
-                    hidden,
-                    d.swiglu_limit,
-                    true,
-                    Some(&ar_outputs[0]),
-                )?;
-                self.moe_verify_common_tail(
-                    &self.stages[1],
-                    layer1,
-                    peer_ws,
-                    1,
-                    topk,
-                    hidden,
-                    d.swiglu_limit,
-                    true,
-                    Some(&ar_outputs[1]),
-                )?;
+                for phase in 0..if interleave { 3 } else { 1 } {
+                    self.moe_verify_common_tail_phase(
+                        &self.stages[0],
+                        layer0,
+                        owner_ws,
+                        1,
+                        topk,
+                        hidden,
+                        d.swiglu_limit,
+                        true,
+                        Some(&ar_outputs[0]),
+                        interleave.then_some(phase),
+                    )?;
+                    self.moe_verify_common_tail_phase(
+                        &self.stages[1],
+                        layer1,
+                        peer_ws,
+                        1,
+                        topk,
+                        hidden,
+                        d.swiglu_limit,
+                        true,
+                        Some(&ar_outputs[1]),
+                        interleave.then_some(phase),
+                    )?;
+                }
             }
             // A successful enqueue does not prove a successful one-shot join:
             // bounded peer waits report 40043/40044 through sticky device words.
@@ -13762,6 +13796,25 @@ impl Dsv4Gpu {
         t: usize,
         host_math: bool,
     ) -> Res<()> {
+        self.attention_verify_dev_phase(
+            st, layer, cache, lck, vws, input_rx, pos0, t, host_math, None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn attention_verify_dev_phase(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        cache: &mut LayerCache,
+        lck: &mut LayerCkptDev,
+        vws: &mut VerifyWs,
+        input_rx: bool,
+        pos0: usize,
+        t: usize,
+        host_math: bool,
+        phase: Option<u8>,
+    ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
         let hc = d.hc_mult as usize;
@@ -13820,458 +13873,560 @@ impl Dsv4Gpu {
         } else {
             vws.h_a.device_ptr(&stream).0 as *const f32
         };
-        // ---- attention sub-block
-        self.hc_pre_batch_dev(
-            st,
-            h_in_ptr,
-            &layer.hc_attn_fn,
-            &layer.hc_attn_base,
-            &layer.hc_attn_scale,
-            &layer.hc_attn_base_dev,
-            &layer.hc_attn_scale_dev,
-            vws,
-            t,
-            hc,
-            hidden,
-            iters,
-            hc_eps,
-            host_math,
-        )?;
-        unsafe {
-            ck(
-                "rmsnorm attn batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.y_hc, &stream),
-                    dpf!(layer.attn_norm, &stream),
-                    dpm!(vws.x, &stream),
-                    t as i32,
-                    hidden as i32,
-                    eps,
-                    sp(&stream),
-                ),
+        let mut slots = win
+            + if layer.ratio == 0 {
+                0
+            } else {
+                let nb = (pos0 + t) / layer.ratio;
+                layer.idx.as_ref().map_or(nb, |ix| ix.topk.min(nb))
+            };
+        if phase.is_none_or(|p| p == 0) {
+            // ---- attention sub-block
+            self.hc_pre_batch_dev(
+                st,
+                h_in_ptr,
+                &layer.hc_attn_fn,
+                &layer.hc_attn_base,
+                &layer.hc_attn_scale,
+                &layer.hc_attn_base_dev,
+                &layer.hc_attn_scale_dev,
+                vws,
+                t,
+                hc,
+                hidden,
+                iters,
+                hc_eps,
+                host_math,
             )?;
-        }
-
-        // q path (weights read once for all t rows)
-        Self::gemm_m_dev(
-            st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
-            t,
-            q_lora,
-            hidden,
-            vws.qr.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
-        if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
-            self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
-        }
-        if self.small_kernel_diet && t == 1 && !host_math {
             unsafe {
                 ck(
-                    "small Q norm pack f32 fixed order",
-                    k::memra_dsv4_small_norm_pack_f32_fixed_order(
-                        dpm!(vws.qr, &stream),
-                        dpf!(layer.q_norm, &stream),
-                        vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
-                        t as i32,
-                        q_lora as i32,
-                        eps,
-                        sp(&stream),
-                    ),
-                )?;
-            }
-            self.small_kernel_launches[1].fetch_add(1, Ordering::Relaxed);
-        } else {
-            unsafe {
-                ck(
-                    "rmsnorm q batch",
+                    "rmsnorm attn batch",
                     self.rmsnorm_arm(
-                        dpf!(vws.qr, &stream),
-                        dpf!(layer.q_norm, &stream),
-                        dpm!(vws.qr, &stream),
+                        dpf!(vws.y_hc, &stream),
+                        dpf!(layer.attn_norm, &stream),
+                        dpm!(vws.x, &stream),
                         t as i32,
-                        q_lora as i32,
+                        hidden as i32,
                         eps,
                         sp(&stream),
                     ),
                 )?;
-                ck(
-                    "cvt qr batch",
-                    k::memra_dsv4_cvt_bf16(
-                        dpf!(vws.qr, &stream),
-                        vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
-                        (t * q_lora) as i64,
-                        sp(&stream),
-                    ),
-                )?;
             }
-            self.small_kernel_launches[1].fetch_add(2, Ordering::Relaxed);
         }
-        Self::gemv_m_dev(
-            st,
-            shard.map_or_else(
-                || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
-                |(_, bank)| packed_dense(&bank.wq_b, &stream),
-            ),
-            vws.qr_b.device_ptr(&stream).0 as *const c_void,
-            vws.q.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            heads * hd,
-            q_lora,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "headrms batch",
-                self.headrms_arm(
-                    dpm!(vws.q, &stream),
-                    (t * heads) as i32,
-                    hd as i32,
-                    eps,
-                    sp(&stream),
-                ),
+        if phase.is_none_or(|p| p == 1) {
+            // q path (weights read once for all t rows)
+            Self::gemm_m_dev(
+                st,
+                vws.x.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+                t,
+                q_lora,
+                hidden,
+                vws.qr.device_ptr_mut(&stream).0 as *mut f32,
             )?;
-            ck(
-                "rope q batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.q, &stream),
-                    t as i32,
-                    heads as i32,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    0,
-                    sp(&stream),
-                ),
-            )?;
-        }
-
-        // shared K==V latent rows + window QAT, then the TRANSIENT ring write
-        Self::gemm_m_dev(
-            st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
-            t,
-            hd,
-            hidden,
-            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
-        unsafe {
-            ck(
-                "rmsnorm kv batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.kv, &stream),
-                    dpf!(layer.kv_norm, &stream),
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    hd as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "rope kv batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    1,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    0,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "act_quant kv batch",
-                k::memra_dsv4_act_quant(
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    hd as i64,
-                    (hd - rd) as i32,
-                    64,
-                    clamp_only,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        {
-            let src = vws.kv.slice(0..t * hd);
-            let physical_trans = if c4_host.is_some() { win } else { trans_base };
-            let mut dst = kvc.slice_mut(physical_trans * hd..(physical_trans + t) * hd);
-            stream
-                .memcpy_dtod(&src, &mut dst)
-                .map_err(e("transient ring write"))?;
-        }
-
-        // ---- per-position index lists (redirected) + compressor advances
-        let mut slots = win;
-        if layer.ratio != 0 {
-            let ratio = layer.ratio;
-            // the round's per-position block counts (host arithmetic, exactly the
-            // sequential program's `(pos+1)/ratio`)
-            let nbs: Vec<usize> = (0..t).map(|i| (pos0 + i + 1) / ratio).collect();
-            if let Some(ix) = &layer.idx {
-                // indexer q, batched
-                Self::gemv_m_dev(
-                    st,
-                    dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
-                    vws.qr_b.device_ptr(&stream).0 as *const c_void,
-                    vws.qi.device_ptr_mut(&stream).0 as *mut f32,
-                    t,
-                    ix.heads * ix.hd,
-                    q_lora,
-                    0,
-                    0,
-                )?;
+            if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
+                self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
+            }
+            if self.small_kernel_diet && t == 1 && !host_math {
                 unsafe {
                     ck(
-                        "rope qi batch",
-                        k::memra_dsv4_rope(
-                            dpm!(vws.qi, &stream),
+                        "small Q norm pack f32 fixed order",
+                        k::memra_dsv4_small_norm_pack_f32_fixed_order(
+                            dpm!(vws.qr, &stream),
+                            dpf!(layer.q_norm, &stream),
+                            vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
                             t as i32,
-                            ix.heads as i32,
-                            ix.hd as i32,
-                            rd as i32,
-                            fc_dev,
-                            vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                            0,
-                            sp(&stream),
-                        ),
-                    )?;
-                    let scale = (ix.hd as f32).powf(-0.5);
-                    ck(
-                        "hadamard qi batch",
-                        k::memra_dsv4_hadamard(
-                            dpm!(vws.qi, &stream),
-                            (t * ix.heads) as i32,
-                            ix.hd as i32,
-                            scale,
-                            sp(&stream),
-                        ),
-                    )?;
-                    ck(
-                        "fp4 qi batch",
-                        k::memra_dsv4_fp4_act_quant(
-                            dpm!(vws.qi, &stream),
-                            (t * ix.heads) as i32,
-                            ix.hd as i64,
-                            ix.hd as i32,
+                            q_lora as i32,
+                            eps,
                             sp(&stream),
                         ),
                     )?;
                 }
-                // indexer weights projection, batched
-                Self::gemm_m_dev(
-                    st,
-                    vws.x.device_ptr(&stream).0 as *const f32,
-                    &mut vws.gemm_xb,
-                    dwsel(
-                        self.dense_fp8,
-                        &stream,
-                        &ix.weights_proj,
-                        &ix.weights_proj_fp8,
-                    ),
-                    t,
-                    ix.heads,
-                    hidden,
-                    vws.wproj.device_ptr_mut(&stream).0 as *mut f32,
-                )?;
-                // indexer compressor: batched projections + position-ordered state machine
-                {
-                    let VerifyWs {
-                        x,
-                        cmp_emit,
-                        cmp_shift,
-                        ..
-                    } = vws;
-                    self.cmp_decode_batch_dev(
-                        st,
-                        &ix.cmp,
-                        x.device_ptr(&stream).0 as *const f32,
-                        t,
-                        pos0,
-                        hidden,
-                        &st.fc_yarn,
-                        rd,
+                self.small_kernel_launches[1].fetch_add(1, Ordering::Relaxed);
+            } else {
+                unsafe {
+                    ck(
+                        "rmsnorm q batch",
+                        self.rmsnorm_arm(
+                            dpf!(vws.qr, &stream),
+                            dpf!(layer.q_norm, &stream),
+                            dpm!(vws.qr, &stream),
+                            t as i32,
+                            q_lora as i32,
+                            eps,
+                            sp(&stream),
+                        ),
+                    )?;
+                    ck(
+                        "cvt qr batch",
+                        k::memra_dsv4_cvt_bf16(
+                            dpf!(vws.qr, &stream),
+                            vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
+                            (t * q_lora) as i64,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+                self.small_kernel_launches[1].fetch_add(2, Ordering::Relaxed);
+            }
+            Self::gemv_m_dev(
+                st,
+                shard.map_or_else(
+                    || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
+                    |(_, bank)| packed_dense(&bank.wq_b, &stream),
+                ),
+                vws.qr_b.device_ptr(&stream).0 as *const c_void,
+                vws.q.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                heads * hd,
+                q_lora,
+                0,
+                0,
+            )?;
+            unsafe {
+                ck(
+                    "headrms batch",
+                    self.headrms_arm(
+                        dpm!(vws.q, &stream),
+                        (t * heads) as i32,
+                        hd as i32,
                         eps,
-                        lck.idx.as_mut().expect("idx ckpt"),
-                        cmp_emit,
-                        cmp_shift,
-                        ipend_kv.as_mut().expect("ipend"),
-                        ipend_score.as_mut().expect("ipend"),
-                        ikvc.as_mut().expect("ikvc"),
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "rope q batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.q, &stream),
+                        t as i32,
+                        heads as i32,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
                         0,
-                        i_blocks,
-                        None,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        if phase.is_none_or(|p| p == 2) {
+            // shared K==V latent rows + window QAT, then the TRANSIENT ring write
+            Self::gemm_m_dev(
+                st,
+                vws.x.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+                t,
+                hd,
+                hidden,
+                vws.kv.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+            unsafe {
+                ck(
+                    "rmsnorm kv batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.kv, &stream),
+                        dpf!(layer.kv_norm, &stream),
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        hd as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "rope kv batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        1,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "act_quant kv batch",
+                    k::memra_dsv4_act_quant(
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        hd as i64,
+                        (hd - rd) as i32,
+                        64,
+                        clamp_only,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            {
+                let src = vws.kv.slice(0..t * hd);
+                let physical_trans = if c4_host.is_some() { win } else { trans_base };
+                let mut dst = kvc.slice_mut(physical_trans * hd..(physical_trans + t) * hd);
+                stream
+                    .memcpy_dtod(&src, &mut dst)
+                    .map_err(e("transient ring write"))?;
+            }
+        }
+        if phase.is_none_or(|p| p == 3) {
+            // ---- per-position index lists (redirected) + compressor advances
+
+            if layer.ratio != 0 {
+                let ratio = layer.ratio;
+                // the round's per-position block counts (host arithmetic, exactly the
+                // sequential program's `(pos+1)/ratio`)
+                let nbs: Vec<usize> = (0..t).map(|i| (pos0 + i + 1) / ratio).collect();
+                if let Some(ix) = &layer.idx {
+                    // indexer q, batched
+                    Self::gemv_m_dev(
+                        st,
+                        dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
+                        vws.qr_b.device_ptr(&stream).0 as *const c_void,
+                        vws.qi.device_ptr_mut(&stream).0 as *mut f32,
+                        t,
+                        ix.heads * ix.hd,
+                        q_lora,
+                        0,
+                        0,
                     )?;
-                }
-                debug_assert_eq!(*i_blocks, nbs[t - 1], "indexer block count (batch)");
-                let kks: Vec<usize> = nbs.iter().map(|&nb| ix.topk.min(nb)).collect();
-                let tail_max = kks.iter().cloned().max().unwrap_or(0);
-                slots = win + tail_max;
-                // Keep the shipped speculative range (today T<=6, conservatively <=8)
-                // on the pre-batch scalar sequence: the batched indexer is a long-prefill
-                // optimization and measured no short-decode win. T=1 also remains the
-                // always-live exactness witness for the width-64 hardware gate.
-                if host_math || t <= 8 {
-                    for i in 0..t {
-                        let pos = pos0 + i;
-                        let idx_off = i * vws.idx_stride;
-                        unsafe {
-                            ck(
-                                "build_idx_redirect fine",
-                                k::memra_dsv4_build_idx_redirect(
-                                    (vws.idx.device_ptr_mut(&stream).0 as usize + idx_off * 4)
-                                        as *mut i32,
-                                    pos as i32,
-                                    win as i32,
-                                    0,
-                                    slots as i32,
-                                    pos0 as i32,
-                                    trans_base as i32,
-                                    sp(&stream),
-                                ),
-                            )?;
-                        }
-                        let nb = nbs[i];
-                        if nb == 0 {
-                            continue;
-                        }
-                        let wscale =
-                            ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
-                        unsafe {
-                            ck(
-                                "indexer_score batch",
-                                self.indexer_score_arm(
-                                    (vws.qi.device_ptr(&stream).0 as usize
-                                        + i * ix.heads * ix.hd * 4)
-                                        as *const f32,
-                                    dpf!(ikvc.as_ref().expect("ikvc"), &stream),
-                                    (vws.wproj.device_ptr(&stream).0 as usize + i * ix.heads * 4)
-                                        as *const f32,
-                                    wscale,
-                                    dpm!(vws.score, &stream),
-                                    1,
-                                    ix.heads as i32,
-                                    ix.hd as i32,
-                                    nb as i32,
-                                    ratio as i32,
-                                    nb as i32,
-                                    sp(&stream),
-                                ),
-                            )?;
-                        }
-                        let kk = kks[i];
-                        if !host_math && nb > 4096 {
-                            // Keep the small-context witness unchanged. Large-history
-                            // verification must not copy and sort all scores on the CPU.
-                            // Each row has its own nb; scratch is safely reused on this
-                            // single stream before the following row overwrites score.
+                    unsafe {
+                        ck(
+                            "rope qi batch",
+                            k::memra_dsv4_rope(
+                                dpm!(vws.qi, &stream),
+                                t as i32,
+                                ix.heads as i32,
+                                ix.hd as i32,
+                                rd as i32,
+                                fc_dev,
+                                vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                                0,
+                                sp(&stream),
+                            ),
+                        )?;
+                        let scale = (ix.hd as f32).powf(-0.5);
+                        ck(
+                            "hadamard qi batch",
+                            k::memra_dsv4_hadamard(
+                                dpm!(vws.qi, &stream),
+                                (t * ix.heads) as i32,
+                                ix.hd as i32,
+                                scale,
+                                sp(&stream),
+                            ),
+                        )?;
+                        ck(
+                            "fp4 qi batch",
+                            k::memra_dsv4_fp4_act_quant(
+                                dpm!(vws.qi, &stream),
+                                (t * ix.heads) as i32,
+                                ix.hd as i64,
+                                ix.hd as i32,
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
+                    // indexer weights projection, batched
+                    Self::gemm_m_dev(
+                        st,
+                        vws.x.device_ptr(&stream).0 as *const f32,
+                        &mut vws.gemm_xb,
+                        dwsel(
+                            self.dense_fp8,
+                            &stream,
+                            &ix.weights_proj,
+                            &ix.weights_proj_fp8,
+                        ),
+                        t,
+                        ix.heads,
+                        hidden,
+                        vws.wproj.device_ptr_mut(&stream).0 as *mut f32,
+                    )?;
+                    // indexer compressor: batched projections + position-ordered state machine
+                    {
+                        let VerifyWs {
+                            x,
+                            cmp_emit,
+                            cmp_shift,
+                            ..
+                        } = vws;
+                        self.cmp_decode_batch_dev(
+                            st,
+                            &ix.cmp,
+                            x.device_ptr(&stream).0 as *const f32,
+                            t,
+                            pos0,
+                            hidden,
+                            &st.fc_yarn,
+                            rd,
+                            eps,
+                            lck.idx.as_mut().expect("idx ckpt"),
+                            cmp_emit,
+                            cmp_shift,
+                            ipend_kv.as_mut().expect("ipend"),
+                            ipend_score.as_mut().expect("ipend"),
+                            ikvc.as_mut().expect("ikvc"),
+                            0,
+                            i_blocks,
+                            None,
+                        )?;
+                    }
+                    debug_assert_eq!(*i_blocks, nbs[t - 1], "indexer block count (batch)");
+                    let kks: Vec<usize> = nbs.iter().map(|&nb| ix.topk.min(nb)).collect();
+                    let tail_max = kks.iter().cloned().max().unwrap_or(0);
+                    slots = win + tail_max;
+                    // Keep the shipped speculative range (today T<=6, conservatively <=8)
+                    // on the pre-batch scalar sequence: the batched indexer is a long-prefill
+                    // optimization and measured no short-decode win. T=1 also remains the
+                    // always-live exactness witness for the width-64 hardware gate.
+                    if host_math || t <= 8 {
+                        for i in 0..t {
+                            let pos = pos0 + i;
+                            let idx_off = i * vws.idx_stride;
                             unsafe {
                                 ck(
-                                    "topk_idx_stream narrow verify",
-                                    k::memra_dsv4_topk_idx_stream_m(
-                                        dpf!(vws.score, &stream),
-                                        1,
-                                        nb as i32,
-                                        kk as i32,
-                                        win as i32,
+                                    "build_idx_redirect fine",
+                                    k::memra_dsv4_build_idx_redirect(
                                         (vws.idx.device_ptr_mut(&stream).0 as usize + idx_off * 4)
                                             as *mut i32,
+                                        pos as i32,
+                                        win as i32,
+                                        0,
+                                        slots as i32,
+                                        pos0 as i32,
+                                        trans_base as i32,
+                                        sp(&stream),
+                                    ),
+                                )?;
+                            }
+                            let nb = nbs[i];
+                            if nb == 0 {
+                                continue;
+                            }
+                            let wscale =
+                                ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
+                            unsafe {
+                                ck(
+                                    "indexer_score batch",
+                                    self.indexer_score_arm(
+                                        (vws.qi.device_ptr(&stream).0 as usize
+                                            + i * ix.heads * ix.hd * 4)
+                                            as *const f32,
+                                        dpf!(ikvc.as_ref().expect("ikvc"), &stream),
+                                        (vws.wproj.device_ptr(&stream).0 as usize
+                                            + i * ix.heads * 4)
+                                            as *const f32,
+                                        wscale,
+                                        dpm!(vws.score, &stream),
+                                        1,
+                                        ix.heads as i32,
+                                        ix.hd as i32,
+                                        nb as i32,
+                                        ratio as i32,
+                                        nb as i32,
+                                        sp(&stream),
+                                    ),
+                                )?;
+                            }
+                            let kk = kks[i];
+                            if !host_math && nb > 4096 {
+                                // Keep the small-context witness unchanged. Large-history
+                                // verification must not copy and sort all scores on the CPU.
+                                // Each row has its own nb; scratch is safely reused on this
+                                // single stream before the following row overwrites score.
+                                unsafe {
+                                    ck(
+                                        "topk_idx_stream narrow verify",
+                                        k::memra_dsv4_topk_idx_stream_m(
+                                            dpf!(vws.score, &stream),
+                                            1,
+                                            nb as i32,
+                                            kk as i32,
+                                            win as i32,
+                                            (vws.idx.device_ptr_mut(&stream).0 as usize
+                                                + idx_off * 4)
+                                                as *mut i32,
+                                            vws.idx_stride as i32,
+                                            vws.topk_a.device_ptr_mut(&stream).0 as *mut u64,
+                                            vws.topk_b.device_ptr_mut(&stream).0 as *mut u64,
+                                            vws.topk_stride as i32,
+                                            sp(&stream),
+                                        ),
+                                    )?;
+                                }
+                                continue;
+                            }
+                            if !host_math && self.verify_topk == Dsv4VerifyTopk::Device {
+                                let use_radix = DSV4_INDEX_TOPK_RADIX.load(Ordering::Acquire)
+                                    && index_topk_radix_eligible(t, nb, kk)
+                                    && vws.topk_radix_cap >= nb;
+                                unsafe {
+                                    let idx_tail = (vws.idx.device_ptr_mut(&stream).0 as usize
+                                        + (idx_off + win) * 4)
+                                        as *mut i32;
+                                    ck(
+                                        if use_radix {
+                                            "radix top-k narrow verify"
+                                        } else {
+                                            "numeric top-k narrow verify"
+                                        },
+                                        if use_radix {
+                                            k::memra_dsv4_topk_idx_radix_m1(
+                                                dpf!(vws.score, &stream),
+                                                nb as i32,
+                                                kk as i32,
+                                                win as i32,
+                                                idx_tail,
+                                                vws.topk_radix_keys.device_ptr_mut(&stream).0
+                                                    as *mut u64,
+                                                vws.topk_radix_candidates.device_ptr_mut(&stream).0
+                                                    as *mut u64,
+                                                sp(&stream),
+                                            )
+                                        } else {
+                                            k::memra_dsv4_topk_idx_numeric(
+                                                dpf!(vws.score, &stream),
+                                                nb as i32,
+                                                kk as i32,
+                                                win as i32,
+                                                idx_tail,
+                                                sp(&stream),
+                                            )
+                                        },
+                                    )?;
+                                    if use_radix {
+                                        DSV4_INDEX_TOPK_RADIX_DISPATCHES
+                                            .fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                                self.device_verify_topk_calls
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                continue;
+                            }
+                            let score_h = {
+                                let view = vws.score.slice(0..nb);
+                                let mut v = vec![0f32; nb];
+                                stream
+                                    .memcpy_dtoh(&view, &mut v[..])
+                                    .map_err(e("dtoh sc b"))?;
+                                stream.synchronize().map_err(e("sync sc b"))?;
+                                v
+                            };
+                            let mut order: Vec<usize> = (0..nb).collect();
+                            order.sort_by(|&a, &b| {
+                                score_h[b]
+                                    .partial_cmp(&score_h[a])
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                                    .then(a.cmp(&b))
+                            });
+                            let cidx: Vec<i32> = order
+                                .into_iter()
+                                .take(kk)
+                                .map(|j| (j + win) as i32)
+                                .collect();
+                            let mut dst = vws.idx.slice_mut(idx_off + win..idx_off + win + kk);
+                            stream
+                                .memcpy_htod(&cidx, &mut dst)
+                                .map_err(e("htod idx b"))?;
+                        }
+                    } else {
+                        let nb = nbs[t - 1];
+                        unsafe {
+                            ck(
+                                "build_idx_redirect_m fine",
+                                k::memra_dsv4_build_idx_redirect_m(
+                                    vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                    pos0 as i32,
+                                    t as i32,
+                                    win as i32,
+                                    ratio as i32,
+                                    slots as i32,
+                                    vws.idx_stride as i32,
+                                    trans_base as i32,
+                                    1,
+                                    sp(&stream),
+                                ),
+                            )?;
+                        }
+                        if nb > 0 {
+                            let wscale =
+                                ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
+                            unsafe {
+                                let score_rc = if self.indexer_score == Dsv4IndexerScore::Tiled {
+                                    k::memra_dsv4_indexer_score_tiled(
+                                        dpf!(vws.qi, &stream),
+                                        dpf!(ikvc.as_ref().expect("ikvc"), &stream),
+                                        dpf!(vws.wproj, &stream),
+                                        wscale,
+                                        dpm!(vws.score, &stream),
+                                        t as i32,
+                                        ix.heads as i32,
+                                        ix.hd as i32,
+                                        nb as i32,
+                                        ratio as i32,
+                                        -1,
+                                        pos0 as i32,
+                                        sp(&stream),
+                                    )
+                                } else {
+                                    k::memra_dsv4_indexer_score_f32acc_pos_m(
+                                        dpf!(vws.qi, &stream),
+                                        dpf!(ikvc.as_ref().expect("ikvc"), &stream),
+                                        dpf!(vws.wproj, &stream),
+                                        wscale,
+                                        dpm!(vws.score, &stream),
+                                        t as i32,
+                                        ix.heads as i32,
+                                        ix.hd as i32,
+                                        nb as i32,
+                                        ratio as i32,
+                                        pos0 as i32,
+                                        sp(&stream),
+                                    )
+                                };
+                                ck("indexer_score_pos_m", score_rc)?;
+                                let topk_rc = if nb <= 4096 {
+                                    k::memra_dsv4_topk_idx_m(
+                                        dpf!(vws.score, &stream),
+                                        t as i32,
+                                        nb as i32,
+                                        ix.topk as i32,
+                                        win as i32,
+                                        vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                        vws.idx_stride as i32,
+                                        pos0 as i32,
+                                        ratio as i32,
+                                        sp(&stream),
+                                    )
+                                } else {
+                                    k::memra_dsv4_topk_idx_stream_m(
+                                        dpf!(vws.score, &stream),
+                                        t as i32,
+                                        nb as i32,
+                                        ix.topk as i32,
+                                        win as i32,
+                                        vws.idx.device_ptr_mut(&stream).0 as *mut i32,
                                         vws.idx_stride as i32,
                                         vws.topk_a.device_ptr_mut(&stream).0 as *mut u64,
                                         vws.topk_b.device_ptr_mut(&stream).0 as *mut u64,
                                         vws.topk_stride as i32,
                                         sp(&stream),
-                                    ),
-                                )?;
+                                    )
+                                };
+                                ck("topk_idx_m", topk_rc)?;
                             }
-                            continue;
                         }
-                        if !host_math && self.verify_topk == Dsv4VerifyTopk::Device {
-                            let use_radix = DSV4_INDEX_TOPK_RADIX.load(Ordering::Acquire)
-                                && index_topk_radix_eligible(t, nb, kk)
-                                && vws.topk_radix_cap >= nb;
-                            unsafe {
-                                let idx_tail = (vws.idx.device_ptr_mut(&stream).0 as usize
-                                    + (idx_off + win) * 4)
-                                    as *mut i32;
-                                ck(
-                                    if use_radix {
-                                        "radix top-k narrow verify"
-                                    } else {
-                                        "numeric top-k narrow verify"
-                                    },
-                                    if use_radix {
-                                        k::memra_dsv4_topk_idx_radix_m1(
-                                            dpf!(vws.score, &stream),
-                                            nb as i32,
-                                            kk as i32,
-                                            win as i32,
-                                            idx_tail,
-                                            vws.topk_radix_keys.device_ptr_mut(&stream).0
-                                                as *mut u64,
-                                            vws.topk_radix_candidates.device_ptr_mut(&stream).0
-                                                as *mut u64,
-                                            sp(&stream),
-                                        )
-                                    } else {
-                                        k::memra_dsv4_topk_idx_numeric(
-                                            dpf!(vws.score, &stream),
-                                            nb as i32,
-                                            kk as i32,
-                                            win as i32,
-                                            idx_tail,
-                                            sp(&stream),
-                                        )
-                                    },
-                                )?;
-                                if use_radix {
-                                    DSV4_INDEX_TOPK_RADIX_DISPATCHES
-                                        .fetch_add(1, Ordering::Relaxed);
-                                }
-                            }
-                            self.device_verify_topk_calls
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            continue;
-                        }
-                        let score_h = {
-                            let view = vws.score.slice(0..nb);
-                            let mut v = vec![0f32; nb];
-                            stream
-                                .memcpy_dtoh(&view, &mut v[..])
-                                .map_err(e("dtoh sc b"))?;
-                            stream.synchronize().map_err(e("sync sc b"))?;
-                            v
-                        };
-                        let mut order: Vec<usize> = (0..nb).collect();
-                        order.sort_by(|&a, &b| {
-                            score_h[b]
-                                .partial_cmp(&score_h[a])
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                                .then(a.cmp(&b))
-                        });
-                        let cidx: Vec<i32> = order
-                            .into_iter()
-                            .take(kk)
-                            .map(|j| (j + win) as i32)
-                            .collect();
-                        let mut dst = vws.idx.slice_mut(idx_off + win..idx_off + win + kk);
-                        stream
-                            .memcpy_htod(&cidx, &mut dst)
-                            .map_err(e("htod idx b"))?;
                     }
                 } else {
-                    let nb = nbs[t - 1];
+                    let tail_max = nbs.iter().cloned().max().unwrap_or(0);
+                    slots = win + tail_max;
                     unsafe {
                         ck(
-                            "build_idx_redirect_m fine",
+                            "build_idx_redirect_m coarse",
                             k::memra_dsv4_build_idx_redirect_m(
                                 vws.idx.device_ptr_mut(&stream).0 as *mut i32,
                                 pos0 as i32,
@@ -14281,315 +14436,228 @@ impl Dsv4Gpu {
                                 slots as i32,
                                 vws.idx_stride as i32,
                                 trans_base as i32,
-                                1,
+                                0,
                                 sp(&stream),
                             ),
                         )?;
                     }
-                    if nb > 0 {
-                        let wscale =
-                            ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
-                        unsafe {
-                            let score_rc = if self.indexer_score == Dsv4IndexerScore::Tiled {
-                                k::memra_dsv4_indexer_score_tiled(
-                                    dpf!(vws.qi, &stream),
-                                    dpf!(ikvc.as_ref().expect("ikvc"), &stream),
-                                    dpf!(vws.wproj, &stream),
-                                    wscale,
-                                    dpm!(vws.score, &stream),
-                                    t as i32,
-                                    ix.heads as i32,
-                                    ix.hd as i32,
-                                    nb as i32,
-                                    ratio as i32,
-                                    -1,
-                                    pos0 as i32,
-                                    sp(&stream),
-                                )
-                            } else {
-                                k::memra_dsv4_indexer_score_f32acc_pos_m(
-                                    dpf!(vws.qi, &stream),
-                                    dpf!(ikvc.as_ref().expect("ikvc"), &stream),
-                                    dpf!(vws.wproj, &stream),
-                                    wscale,
-                                    dpm!(vws.score, &stream),
-                                    t as i32,
-                                    ix.heads as i32,
-                                    ix.hd as i32,
-                                    nb as i32,
-                                    ratio as i32,
-                                    pos0 as i32,
-                                    sp(&stream),
-                                )
-                            };
-                            ck("indexer_score_pos_m", score_rc)?;
-                            let topk_rc = if nb <= 4096 {
-                                k::memra_dsv4_topk_idx_m(
-                                    dpf!(vws.score, &stream),
-                                    t as i32,
-                                    nb as i32,
-                                    ix.topk as i32,
-                                    win as i32,
-                                    vws.idx.device_ptr_mut(&stream).0 as *mut i32,
-                                    vws.idx_stride as i32,
-                                    pos0 as i32,
-                                    ratio as i32,
-                                    sp(&stream),
-                                )
-                            } else {
-                                k::memra_dsv4_topk_idx_stream_m(
-                                    dpf!(vws.score, &stream),
-                                    t as i32,
-                                    nb as i32,
-                                    ix.topk as i32,
-                                    win as i32,
-                                    vws.idx.device_ptr_mut(&stream).0 as *mut i32,
-                                    vws.idx_stride as i32,
-                                    vws.topk_a.device_ptr_mut(&stream).0 as *mut u64,
-                                    vws.topk_b.device_ptr_mut(&stream).0 as *mut u64,
-                                    vws.topk_stride as i32,
-                                    sp(&stream),
-                                )
-                            };
-                            ck("topk_idx_m", topk_rc)?;
-                        }
-                    }
                 }
+                // attention compressor: batched projections + position-ordered state machine
+                {
+                    let VerifyWs {
+                        x,
+                        cmp_emit,
+                        cmp_shift,
+                        ..
+                    } = vws;
+                    self.cmp_decode_batch_dev(
+                        st,
+                        layer.cmp.as_ref().expect("ratio!=0 has compressor"),
+                        x.device_ptr(&stream).0 as *const f32,
+                        t,
+                        pos0,
+                        hidden,
+                        &st.fc_yarn,
+                        rd,
+                        eps,
+                        lck.cmp.as_mut().expect("cmp ckpt"),
+                        cmp_emit,
+                        cmp_shift,
+                        pend_kv.as_mut().expect("pend"),
+                        pend_score.as_mut().expect("pend"),
+                        kvc,
+                        win,
+                        n_blocks,
+                        c4_host.as_mut(),
+                    )?;
+                }
+                debug_assert_eq!(*n_blocks, nbs[t - 1], "attn block count (batch)");
             } else {
-                let tail_max = nbs.iter().cloned().max().unwrap_or(0);
-                slots = win + tail_max;
                 unsafe {
                     ck(
-                        "build_idx_redirect_m coarse",
-                        k::memra_dsv4_build_idx_redirect_m(
-                            vws.idx.device_ptr_mut(&stream).0 as *mut i32,
-                            pos0 as i32,
+                        "build_idx_redirect_m window-only",
+                        if vws.graph_scalars && t == 1 {
+                            k::memra_dsv4_build_idx_redirect_window_pos(
+                                vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                                win as i32,
+                                win as i32,
+                                trans_base as i32,
+                                sp(&stream),
+                            )
+                        } else {
+                            k::memra_dsv4_build_idx_redirect_m(
+                                vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                pos0 as i32,
+                                t as i32,
+                                win as i32,
+                                0,
+                                win as i32,
+                                vws.idx_stride as i32,
+                                trans_base as i32,
+                                0,
+                                sp(&stream),
+                            )
+                        },
+                    )?;
+                }
+            }
+        }
+        if phase.is_none_or(|p| p == 4) {
+            // sparse sink attention, T queries in one launch (uniform `slots`, -1 pads —
+            // bit-inert by the pinned pad contract) + per-position de-rotation
+            let (attention_kv, attention_indices) = if let Some(host) = c4_host.as_ref() {
+                host.gather(
+                    kvc,
+                    &vws.idx,
+                    &mut vws.c4_gather,
+                    t,
+                    slots,
+                    vws.idx_stride,
+                    *n_blocks,
+                    trans_base,
+                )?
+            } else {
+                (
+                    dpf!(kvc, &stream),
+                    vws.idx.device_ptr(&stream).0 as *const i32,
+                )
+            };
+            let scale = (hd as f64).powf(-0.5) as f32;
+            unsafe {
+                if self.chains_f32 {
+                    let launch = if self.sink_score == Dsv4SinkScore::Tiled {
+                        k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
+                    } else {
+                        k::memra_dsv4_sink_attn_dec_mq_f32acc
+                    };
+                    ck(
+                        "sink_attn_dec_mq_f32acc",
+                        launch(
+                            dpf!(vws.q, &stream),
+                            attention_kv,
+                            attention_indices,
+                            sink,
+                            dpm!(vws.sink_scores, &stream),
+                            dpm!(vws.sink_evals, &stream),
+                            vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
+                            dpm!(vws.o, &stream),
                             t as i32,
-                            win as i32,
-                            ratio as i32,
+                            heads as i32,
+                            hd as i32,
                             slots as i32,
                             vws.idx_stride as i32,
-                            trans_base as i32,
-                            0,
+                            scale,
+                            sp(&stream),
+                        ),
+                    )?;
+                    if self.sink_score == Dsv4SinkScore::Tiled {
+                        self.sink_tiled_calls
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                } else {
+                    ck(
+                        "sink_attn_dec_mq",
+                        k::memra_dsv4_sink_attn_dec_mq(
+                            dpf!(vws.q, &stream),
+                            attention_kv,
+                            attention_indices,
+                            sink,
+                            dpm!(vws.sink_scores, &stream),
+                            dpm!(vws.sink_evals, &stream),
+                            vws.sink_den.device_ptr_mut(&stream).0 as *mut f64,
+                            dpm!(vws.o, &stream),
+                            t as i32,
+                            heads as i32,
+                            hd as i32,
+                            slots as i32,
+                            vws.idx_stride as i32,
+                            scale,
                             sp(&stream),
                         ),
                     )?;
                 }
-            }
-            // attention compressor: batched projections + position-ordered state machine
-            {
-                let VerifyWs {
-                    x,
-                    cmp_emit,
-                    cmp_shift,
-                    ..
-                } = vws;
-                self.cmp_decode_batch_dev(
-                    st,
-                    layer.cmp.as_ref().expect("ratio!=0 has compressor"),
-                    x.device_ptr(&stream).0 as *const f32,
-                    t,
-                    pos0,
-                    hidden,
-                    &st.fc_yarn,
-                    rd,
-                    eps,
-                    lck.cmp.as_mut().expect("cmp ckpt"),
-                    cmp_emit,
-                    cmp_shift,
-                    pend_kv.as_mut().expect("pend"),
-                    pend_score.as_mut().expect("pend"),
-                    kvc,
-                    win,
-                    n_blocks,
-                    c4_host.as_mut(),
+                ck(
+                    "rope o inv batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.o, &stream),
+                        t as i32,
+                        heads as i32,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        1,
+                        sp(&stream),
+                    ),
                 )?;
             }
-            debug_assert_eq!(*n_blocks, nbs[t - 1], "attn block count (batch)");
-        } else {
+        }
+        if phase.is_none_or(|p| p == 5) {
+            // grouped output projection: cvt o once, then per-group strided batched GEMVs
+            let gw = heads / o_groups * hd;
             unsafe {
                 ck(
-                    "build_idx_redirect_m window-only",
-                    if vws.graph_scalars && t == 1 {
-                        k::memra_dsv4_build_idx_redirect_window_pos(
-                            vws.idx.device_ptr_mut(&stream).0 as *mut i32,
-                            vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                            win as i32,
-                            win as i32,
-                            trans_base as i32,
-                            sp(&stream),
-                        )
-                    } else {
-                        k::memra_dsv4_build_idx_redirect_m(
-                            vws.idx.device_ptr_mut(&stream).0 as *mut i32,
-                            pos0 as i32,
-                            t as i32,
-                            win as i32,
-                            0,
-                            win as i32,
-                            vws.idx_stride as i32,
-                            trans_base as i32,
-                            0,
-                            sp(&stream),
-                        )
-                    },
-                )?;
-            }
-        }
-
-        // sparse sink attention, T queries in one launch (uniform `slots`, -1 pads —
-        // bit-inert by the pinned pad contract) + per-position de-rotation
-        let (attention_kv, attention_indices) = if let Some(host) = c4_host.as_ref() {
-            host.gather(
-                kvc,
-                &vws.idx,
-                &mut vws.c4_gather,
-                t,
-                slots,
-                vws.idx_stride,
-                *n_blocks,
-                trans_base,
-            )?
-        } else {
-            (
-                dpf!(kvc, &stream),
-                vws.idx.device_ptr(&stream).0 as *const i32,
-            )
-        };
-        let scale = (hd as f64).powf(-0.5) as f32;
-        unsafe {
-            if self.chains_f32 {
-                let launch = if self.sink_score == Dsv4SinkScore::Tiled {
-                    k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
-                } else {
-                    k::memra_dsv4_sink_attn_dec_mq_f32acc
-                };
-                ck(
-                    "sink_attn_dec_mq_f32acc",
-                    launch(
-                        dpf!(vws.q, &stream),
-                        attention_kv,
-                        attention_indices,
-                        sink,
-                        dpm!(vws.sink_scores, &stream),
-                        dpm!(vws.sink_evals, &stream),
-                        vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
-                        dpm!(vws.o, &stream),
-                        t as i32,
-                        heads as i32,
-                        hd as i32,
-                        slots as i32,
-                        vws.idx_stride as i32,
-                        scale,
-                        sp(&stream),
-                    ),
-                )?;
-                if self.sink_score == Dsv4SinkScore::Tiled {
-                    self.sink_tiled_calls
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-            } else {
-                ck(
-                    "sink_attn_dec_mq",
-                    k::memra_dsv4_sink_attn_dec_mq(
-                        dpf!(vws.q, &stream),
-                        attention_kv,
-                        attention_indices,
-                        sink,
-                        dpm!(vws.sink_scores, &stream),
-                        dpm!(vws.sink_evals, &stream),
-                        vws.sink_den.device_ptr_mut(&stream).0 as *mut f64,
-                        dpm!(vws.o, &stream),
-                        t as i32,
-                        heads as i32,
-                        hd as i32,
-                        slots as i32,
-                        vws.idx_stride as i32,
-                        scale,
+                    "cvt o batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.o, &stream),
+                        vws.o_b.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * heads * hd) as i64,
                         sp(&stream),
                     ),
                 )?;
             }
-            ck(
-                "rope o inv batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.o, &stream),
-                    t as i32,
-                    heads as i32,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    1,
-                    sp(&stream),
-                ),
-            )?;
-        }
-
-        // grouped output projection: cvt o once, then per-group strided batched GEMVs
-        let gw = heads / o_groups * hd;
-        unsafe {
-            ck(
-                "cvt o batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.o, &stream),
-                    vws.o_b.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * heads * hd) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        let wo_a_dw = shard.map_or_else(
-            || dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8),
-            |(_, bank)| packed_dense(&bank.wo_a, &stream),
-        );
-        // The packed rank-half has only local groups. Its per-group GEMV is qualified
-        // by the component gate; the distinct grouped_m1 8-to-4 shape still needs a
-        // target receipt and must not inherit the full-attention accelerator flag.
-        let grouped_wo_a = if shard.is_none() && t == 1 && !vws.is_prefill {
-            Self::gemv_wo_a_grouped_fp8_m1_dev(
-                st,
-                wo_a_dw,
-                vws.o_b.device_ptr(&stream).0 as *const c_void,
-                vws.og.device_ptr_mut(&stream).0 as *mut f32,
-                o_groups,
-                o_lora,
-                gw,
-                gw,
-                o_lora,
-            )?
-        } else {
-            false
-        };
-        if !grouped_wo_a {
-            for g in 0..o_groups {
-                Self::gemv_m_dev(
+            let wo_a_dw = shard.map_or_else(
+                || dwsel(self.dense_fp8, &stream, &layer.wo_a, &layer.wo_a_fp8),
+                |(_, bank)| packed_dense(&bank.wo_a, &stream),
+            );
+            // The packed rank-half has only local groups. Its per-group GEMV is qualified
+            // by the component gate; the distinct grouped_m1 8-to-4 shape still needs a
+            // target receipt and must not inherit the full-attention accelerator flag.
+            let grouped_wo_a = if shard.is_none() && t == 1 && !vws.is_prefill {
+                Self::gemv_wo_a_grouped_fp8_m1_dev(
                     st,
-                    wo_a_dw.offset_rows(g * o_lora, gw),
-                    (vws.o_b.device_ptr(&stream).0 as usize + g * gw * 2) as *const c_void,
-                    (vws.og.device_ptr_mut(&stream).0 as usize + g * o_lora * 4) as *mut f32,
-                    t,
+                    wo_a_dw,
+                    vws.o_b.device_ptr(&stream).0 as *const c_void,
+                    vws.og.device_ptr_mut(&stream).0 as *mut f32,
+                    o_groups,
                     o_lora,
                     gw,
-                    heads * hd,
-                    o_groups * o_lora,
-                )?;
+                    gw,
+                    o_lora,
+                )?
+            } else {
+                false
+            };
+            if !grouped_wo_a {
+                for g in 0..o_groups {
+                    Self::gemv_m_dev(
+                        st,
+                        wo_a_dw.offset_rows(g * o_lora, gw),
+                        (vws.o_b.device_ptr(&stream).0 as usize + g * gw * 2) as *const c_void,
+                        (vws.og.device_ptr_mut(&stream).0 as usize + g * o_lora * 4) as *mut f32,
+                        t,
+                        o_lora,
+                        gw,
+                        heads * hd,
+                        o_groups * o_lora,
+                    )?;
+                }
             }
+            Self::gemm_m_dev(
+                st,
+                vws.og.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                shard.map_or_else(
+                    || dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
+                    |(_, bank)| packed_dense(&bank.wo_b, &stream),
+                ),
+                t,
+                hidden,
+                o_groups * o_lora,
+                vws.attn_out.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
         }
-        Self::gemm_m_dev(
-            st,
-            vws.og.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            shard.map_or_else(
-                || dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
-                |(_, bank)| packed_dense(&bank.wo_b, &stream),
-            ),
-            t,
-            hidden,
-            o_groups * o_lora,
-            vws.attn_out.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
-
         Ok(())
     }
 
@@ -14610,6 +14678,38 @@ impl Dsv4Gpu {
         defer_tp_ep_tail: bool,
         joined_attention: Option<&CudaSlice<f32>>,
     ) -> Res<()> {
+        self.post_attention_moe_verify_dev_phase(
+            st,
+            layer,
+            vws,
+            input_rx,
+            t,
+            toks,
+            host_math,
+            allow_gu_fuse,
+            matrix_ep_graph,
+            defer_tp_ep_tail,
+            joined_attention,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn post_attention_moe_verify_dev_phase(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        input_rx: bool,
+        t: usize,
+        toks: &[u32],
+        host_math: bool,
+        allow_gu_fuse: bool,
+        matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
+        defer_tp_ep_tail: bool,
+        joined_attention: Option<&CudaSlice<f32>>,
+        phase: Option<u8>,
+    ) -> Res<()> {
         if self.attention_tp.is_some() != joined_attention.is_some() {
             return Err(
                 "attention output consumer does not match the selected rank-sum program".into(),
@@ -14629,68 +14729,73 @@ impl Dsv4Gpu {
         };
         let attention_out = joined_attention.unwrap_or(&vws.attn_out);
 
-        // hc_post (attention) -> vws.h_b
-        unsafe {
-            ck(
-                "hc_post attn batch",
-                k::memra_dsv4_hc_post(
-                    dpf!(attention_out, &stream),
-                    h_in_ptr,
-                    dpf!(vws.post, &stream),
-                    dpf!(vws.comb, &stream),
-                    dpm!(vws.h_b, &stream),
-                    t as i32,
-                    hc as i32,
-                    hidden as i32,
-                    sp(&stream),
-                ),
-            )?;
-        }
+        if phase.is_none_or(|p| p == 0) {
+            // hc_post (attention) -> vws.h_b
+            unsafe {
+                ck(
+                    "hc_post attn batch",
+                    k::memra_dsv4_hc_post(
+                        dpf!(attention_out, &stream),
+                        h_in_ptr,
+                        dpf!(vws.post, &stream),
+                        dpf!(vws.comb, &stream),
+                        dpm!(vws.h_b, &stream),
+                        t as i32,
+                        hc as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
 
-        // ---- ffn sub-block (input vws.h_b, output vws.h_a)
-        let h_b_ptr = vws.h_b.device_ptr(&stream).0 as *const f32;
-        self.hc_pre_batch_dev(
-            st,
-            h_b_ptr,
-            &layer.hc_ffn_fn,
-            &layer.hc_ffn_base,
-            &layer.hc_ffn_scale,
-            &layer.hc_ffn_base_dev,
-            &layer.hc_ffn_scale_dev,
-            vws,
-            t,
-            hc,
-            hidden,
-            iters,
-            hc_eps,
-            host_math,
-        )?;
-        unsafe {
-            ck(
-                "rmsnorm ffn batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.y_hc, &stream),
-                    dpf!(layer.ffn_norm, &stream),
-                    dpm!(vws.xf, &stream),
-                    t as i32,
-                    hidden as i32,
-                    eps,
-                    sp(&stream),
-                ),
+            // ---- ffn sub-block (input vws.h_b, output vws.h_a)
+            let h_b_ptr = vws.h_b.device_ptr(&stream).0 as *const f32;
+            self.hc_pre_batch_dev(
+                st,
+                h_b_ptr,
+                &layer.hc_ffn_fn,
+                &layer.hc_ffn_base,
+                &layer.hc_ffn_scale,
+                &layer.hc_ffn_base_dev,
+                &layer.hc_ffn_scale_dev,
+                vws,
+                t,
+                hc,
+                hidden,
+                iters,
+                hc_eps,
+                host_math,
+            )?;
+            unsafe {
+                ck(
+                    "rmsnorm ffn batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.y_hc, &stream),
+                        dpf!(layer.ffn_norm, &stream),
+                        dpm!(vws.xf, &stream),
+                        t as i32,
+                        hidden as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        if phase != Some(0) {
+            self.moe_verify_dev_phase(
+                st,
+                layer,
+                vws,
+                t,
+                toks,
+                host_math,
+                allow_gu_fuse,
+                true,
+                matrix_ep_graph,
+                defer_tp_ep_tail,
+                phase.map(|p| p - 1),
             )?;
         }
-        self.moe_verify_dev(
-            st,
-            layer,
-            vws,
-            t,
-            toks,
-            host_math,
-            allow_gu_fuse,
-            true,
-            matrix_ep_graph,
-            defer_tp_ep_tail,
-        )?;
         Ok(())
     }
 
@@ -14866,132 +14971,166 @@ impl Dsv4Gpu {
         include_hc_post: bool,
         joined_contribution: Option<&CudaSlice<f32>>,
     ) -> Res<()> {
+        self.moe_verify_common_tail_phase(
+            st,
+            layer,
+            vws,
+            t,
+            topk,
+            hidden,
+            limit,
+            include_hc_post,
+            joined_contribution,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn moe_verify_common_tail_phase(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        t: usize,
+        topk: usize,
+        hidden: usize,
+        limit: f32,
+        include_hc_post: bool,
+        joined_contribution: Option<&CudaSlice<f32>>,
+        phase: Option<u8>,
+    ) -> Res<()> {
         let stream = st.gpu.stream();
-        let contribution = joined_contribution.unwrap_or(&vws.contrib);
-        unsafe {
-            ck(
-                "combine_rows_m",
-                k::memra_dsv4_combine_rows_m(
-                    dpf!(contribution, &stream),
-                    vws.order.device_ptr(&stream).0 as *const i32,
-                    topk as i32,
-                    dpm!(vws.y, &stream),
-                    hidden as i64,
-                    t as i32,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt xb batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.xf, &stream),
-                    vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
         let sh_inter = vws.sg1.len() / vws.tmax;
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[0],
-                &layer.shared_fp8[0],
-            ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            sh_inter,
-            hidden,
-            0,
-            0,
-        )?;
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[2],
-                &layer.shared_fp8[2],
-            ),
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            sh_inter,
-            hidden,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "swiglu sh batch",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.sg1, &stream),
-                    dpf!(vws.sg3, &stream),
-                    dpm!(vws.shbuf, &stream),
-                    t as i32,
-                    sh_inter as i32,
-                    limit,
-                    std::ptr::null(),
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt sh batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.shbuf, &stream),
-                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * sh_inter) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[1],
-                &layer.shared_fp8[1],
-            ),
-            vws.shb16.device_ptr(&stream).0 as *const c_void,
-            vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            hidden,
-            sh_inter,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "add shared batch",
-                k::memra_dsv4_add_inplace(
-                    dpm!(vws.y, &stream),
-                    dpf!(vws.sh_out, &stream),
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
-        }
-        if include_hc_post {
-            let hc = self.model.cfg().hc_mult as usize;
+        let contribution = joined_contribution.unwrap_or(&vws.contrib);
+        if phase.is_none_or(|p| p == 0) {
             unsafe {
                 ck(
-                    "hc_post ffn batch",
-                    k::memra_dsv4_hc_post(
-                        dpf!(vws.y, &stream),
-                        dpf!(vws.h_b, &stream),
-                        dpf!(vws.post, &stream),
-                        dpf!(vws.comb, &stream),
-                        dpm!(vws.h_a, &stream),
+                    "combine_rows_m",
+                    k::memra_dsv4_combine_rows_m(
+                        dpf!(contribution, &stream),
+                        vws.order.device_ptr(&stream).0 as *const i32,
+                        topk as i32,
+                        dpm!(vws.y, &stream),
+                        hidden as i64,
                         t as i32,
-                        hc as i32,
-                        hidden as i32,
                         sp(&stream),
                     ),
                 )?;
+                ck(
+                    "cvt xb batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.xf, &stream),
+                        vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * hidden) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        if phase.is_none_or(|p| p == 1) {
+            Self::gemv_m_dev(
+                st,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[0],
+                    &layer.shared_fp8[0],
+                ),
+                vws.xb.device_ptr(&stream).0 as *const c_void,
+                vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                sh_inter,
+                hidden,
+                0,
+                0,
+            )?;
+            Self::gemv_m_dev(
+                st,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[2],
+                    &layer.shared_fp8[2],
+                ),
+                vws.xb.device_ptr(&stream).0 as *const c_void,
+                vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                sh_inter,
+                hidden,
+                0,
+                0,
+            )?;
+            unsafe {
+                ck(
+                    "swiglu sh batch",
+                    k::memra_dsv4_swiglu(
+                        dpf!(vws.sg1, &stream),
+                        dpf!(vws.sg3, &stream),
+                        dpm!(vws.shbuf, &stream),
+                        t as i32,
+                        sh_inter as i32,
+                        limit,
+                        std::ptr::null(),
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "cvt sh batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.shbuf, &stream),
+                        vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * sh_inter) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        if phase.is_none_or(|p| p == 2) {
+            Self::gemv_m_dev(
+                st,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[1],
+                    &layer.shared_fp8[1],
+                ),
+                vws.shb16.device_ptr(&stream).0 as *const c_void,
+                vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                hidden,
+                sh_inter,
+                0,
+                0,
+            )?;
+            unsafe {
+                ck(
+                    "add shared batch",
+                    k::memra_dsv4_add_inplace(
+                        dpm!(vws.y, &stream),
+                        dpf!(vws.sh_out, &stream),
+                        (t * hidden) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            if include_hc_post {
+                let hc = self.model.cfg().hc_mult as usize;
+                unsafe {
+                    ck(
+                        "hc_post ffn batch",
+                        k::memra_dsv4_hc_post(
+                            dpf!(vws.y, &stream),
+                            dpf!(vws.h_b, &stream),
+                            dpf!(vws.post, &stream),
+                            dpf!(vws.comb, &stream),
+                            dpm!(vws.h_a, &stream),
+                            t as i32,
+                            hc as i32,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
             }
         }
         Ok(())
@@ -15015,6 +15154,36 @@ impl Dsv4Gpu {
         matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
         defer_tp_ep_tail: bool,
     ) -> Res<()> {
+        self.moe_verify_dev_phase(
+            st,
+            layer,
+            vws,
+            t,
+            toks,
+            host_math,
+            allow_gu_fuse,
+            include_hc_post,
+            matrix_ep_graph,
+            defer_tp_ep_tail,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn moe_verify_dev_phase(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        t: usize,
+        toks: &[u32],
+        host_math: bool,
+        allow_gu_fuse: bool,
+        include_hc_post: bool,
+        matrix_ep_graph: Option<&mut MatrixEpGraphSlot>,
+        defer_tp_ep_tail: bool,
+        phase: Option<u8>,
+    ) -> Res<()> {
         let mc = &self.model.mc;
         let d = self.model.cfg();
         let moe = mc.moe.as_ref().expect("moe");
@@ -15035,90 +15204,96 @@ impl Dsv4Gpu {
         };
         let slots = t * topk;
 
-        self.dots_m_dev(
-            st,
-            vws.xf.device_ptr(&stream).0 as *const f32,
-            layer.gate_w.device_ptr(&stream).0 as *const c_void,
-            0,
-            t,
-            hidden,
-            ne,
-            vws.raw.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
-        if host_math {
-            let raw_h = {
-                let view = vws.raw.slice(0..t * ne);
-                let mut v = vec![0f32; t * ne];
+        if phase.is_none_or(|p| p == 0) {
+            self.dots_m_dev(
+                st,
+                vws.xf.device_ptr(&stream).0 as *const f32,
+                layer.gate_w.device_ptr(&stream).0 as *const c_void,
+                0,
+                t,
+                hidden,
+                ne,
+                vws.raw.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+            if host_math {
+                let raw_h = {
+                    let view = vws.raw.slice(0..t * ne);
+                    let mut v = vec![0f32; t * ne];
+                    stream
+                        .memcpy_dtoh(&view, &mut v[..])
+                        .map_err(e("dtoh raw b"))?;
+                    stream.synchronize().map_err(e("sync raw b"))?;
+                    v
+                };
+                let (indices, weights) =
+                    Self::route_host(layer, &raw_h, toks, t, ne, topk, d.routed_scaling_factor);
+                let sel: Vec<i32> = indices.iter().map(|&x| x as i32).collect();
+                let mut order = vec![0i32; t * topk];
+                for p in 0..t {
+                    let mut o: Vec<i32> = (0..topk as i32).collect();
+                    o.sort_by_key(|&s| indices[p * topk + s as usize]);
+                    order[p * topk..(p + 1) * topk].copy_from_slice(&o);
+                }
+                let mut dst = vws.sel.slice_mut(0..t * topk);
                 stream
-                    .memcpy_dtoh(&view, &mut v[..])
-                    .map_err(e("dtoh raw b"))?;
-                stream.synchronize().map_err(e("sync raw b"))?;
-                v
-            };
-            let (indices, weights) =
-                Self::route_host(layer, &raw_h, toks, t, ne, topk, d.routed_scaling_factor);
-            let sel: Vec<i32> = indices.iter().map(|&x| x as i32).collect();
-            let mut order = vec![0i32; t * topk];
-            for p in 0..t {
-                let mut o: Vec<i32> = (0..topk as i32).collect();
-                o.sort_by_key(|&s| indices[p * topk + s as usize]);
-                order[p * topk..(p + 1) * topk].copy_from_slice(&o);
-            }
-            let mut dst = vws.sel.slice_mut(0..t * topk);
-            stream
-                .memcpy_htod(&sel, &mut dst)
-                .map_err(e("htod sel b"))?;
-            let mut dst = vws.selw.slice_mut(0..t * topk);
-            stream
-                .memcpy_htod(&weights, &mut dst)
-                .map_err(e("htod selw b"))?;
-            let mut dst = vws.order.slice_mut(0..t * topk);
-            stream
-                .memcpy_htod(&order, &mut dst)
-                .map_err(e("htod order b"))?;
-        } else {
-            unsafe {
-                ck(
-                    "route_m",
-                    k::memra_dsv4_route_m(
-                        dpf!(vws.raw, &stream),
-                        layer
-                            .gate_bias_dev
-                            .as_ref()
-                            .map(|b| b.device_ptr(&stream).0 as *const f32)
-                            .unwrap_or(std::ptr::null()),
-                        layer
-                            .tid2eid_dev
-                            .as_ref()
-                            .map(|x| x.device_ptr(&stream).0 as *const i32)
-                            .unwrap_or(std::ptr::null()),
-                        vws.tok.device_ptr(&stream).0 as *const i32,
-                        t as i32,
-                        ne as i32,
-                        topk as i32,
-                        d.routed_scaling_factor,
-                        vws.sel.device_ptr_mut(&stream).0 as *mut i32,
-                        vws.selw.device_ptr_mut(&stream).0 as *mut f32,
-                        vws.order.device_ptr_mut(&stream).0 as *mut i32,
-                        sp(&stream),
-                    ),
-                )?;
+                    .memcpy_htod(&sel, &mut dst)
+                    .map_err(e("htod sel b"))?;
+                let mut dst = vws.selw.slice_mut(0..t * topk);
+                stream
+                    .memcpy_htod(&weights, &mut dst)
+                    .map_err(e("htod selw b"))?;
+                let mut dst = vws.order.slice_mut(0..t * topk);
+                stream
+                    .memcpy_htod(&order, &mut dst)
+                    .map_err(e("htod order b"))?;
+            } else {
+                unsafe {
+                    ck(
+                        "route_m",
+                        k::memra_dsv4_route_m(
+                            dpf!(vws.raw, &stream),
+                            layer
+                                .gate_bias_dev
+                                .as_ref()
+                                .map(|b| b.device_ptr(&stream).0 as *const f32)
+                                .unwrap_or(std::ptr::null()),
+                            layer
+                                .tid2eid_dev
+                                .as_ref()
+                                .map(|x| x.device_ptr(&stream).0 as *const i32)
+                                .unwrap_or(std::ptr::null()),
+                            vws.tok.device_ptr(&stream).0 as *const i32,
+                            t as i32,
+                            ne as i32,
+                            topk as i32,
+                            d.routed_scaling_factor,
+                            vws.sel.device_ptr_mut(&stream).0 as *mut i32,
+                            vws.selw.device_ptr_mut(&stream).0 as *mut f32,
+                            vws.order.device_ptr_mut(&stream).0 as *mut i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
             }
         }
-
+        if phase == Some(0) {
+            return Ok(());
+        }
         if let Some(ep) = &layer.ep {
-            unsafe {
-                ck(
-                    "EP activation quantization",
-                    k::memra_dsv4_act_quant_fp8(
-                        dpf!(vws.xf, &stream),
-                        vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
-                        dpm!(vws.xs, &stream),
-                        t as i32,
-                        hidden as i32,
-                        sp(&stream),
-                    ),
-                )?;
+            if phase.is_none_or(|p| p == 1) {
+                unsafe {
+                    ck(
+                        "EP activation quantization",
+                        k::memra_dsv4_act_quant_fp8(
+                            dpf!(vws.xf, &stream),
+                            vws.xq.device_ptr_mut(&stream).0 as *mut c_void,
+                            dpm!(vws.xs, &stream),
+                            t as i32,
+                            hidden as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                }
             }
             if self.matrix_moe {
                 if !self.grouped_route_device || self.grouped_fresh_storage_control {
@@ -15143,7 +15318,7 @@ impl Dsv4Gpu {
                         hs: &mut vws.hs,
                         contribution: &mut vws.contrib,
                     };
-                    let calls = crate::dsv4_ep::execute_matrix_local(
+                    let calls = crate::dsv4_ep::execute_matrix_local_phase(
                         &st.gpu,
                         ep,
                         layer
@@ -15160,11 +15335,13 @@ impl Dsv4Gpu {
                         topk,
                         limit,
                         allow_gu_fuse,
+                        phase.map(|p| p - 1),
                     )?;
                     self.grouped_device_route_calls
                         .fetch_add(calls, std::sync::atomic::Ordering::Relaxed);
-                    self.ep_calls
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if phase.is_none_or(|p| p == 3) {
+                        self.ep_calls.fetch_add(1, Ordering::Relaxed);
+                    }
                     return Ok(());
                 }
                 let mut graph_used = false;
