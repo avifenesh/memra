@@ -562,12 +562,102 @@ mod tests {
                 floor: 0,
             }),
             last_h: vec![0.125],
-            bytes: 2632,
+            bytes: 2636,
             last_use: Instant::now(),
             id: 0,
             segment: PrefixSegment::Probation,
             pins: 0,
         }
+    }
+
+    #[test]
+    #[ignore = "requires one CUDA device; run on the lane tune box"]
+    fn host_generic_arena_all_planes_and_handoff() {
+        let root = Engine::new(0).expect("host arena gate requires device0");
+        let mut src = entry(&root, &root);
+        src.latent = vec![None];
+        src.tp = None;
+        src.draft = Some(PrefixPlane {
+            k: root.ctx().default_stream().clone_htod(&[91u8; 12]).unwrap(),
+            v: root.ctx().default_stream().clone_htod(&[92u8; 16]).unwrap(),
+            len: 4,
+            k_tok_bytes: 3,
+            v_tok_bytes: 4,
+        });
+        src.bytes = 72; // trunk 16, conv/SSM 8, draft 28, DFlash 16, hidden row 4
+        let want = digest(&src).unwrap();
+        let mut pool = HostPrefixCache::new(4096);
+        pool.tenant_pct = 100;
+        let arena =
+            memra_engine::PinnedHostArena::reserve(root.ctx().clone(), pool.budget).unwrap();
+        pool.arena = Some(arena.clone());
+        let host = host_entry_from_device(&root, &mut pool, &src, None).unwrap();
+        assert_eq!(arena.bytes().1, 80); // every plane plus logits/hidden boundary
+        assert_eq!(host.bytes, 80 + src.toks.len() * 4);
+        assert!(matches!(host.conv[0], Some(HostF32::Pinned(_))));
+        assert!(matches!(host.ssm[0], Some(HostF32::Pinned(_))));
+        let tail = host.dspark_draft.as_ref().unwrap();
+        assert!(matches!(
+            tail.layers[0],
+            (HostF32::Pinned(_), HostF32::Pinned(_))
+        ));
+        assert_eq!(
+            digest(&device_entry_from_host(&root, &host).unwrap()).unwrap(),
+            want
+        );
+        let mut wire = Vec::new();
+        handoff_write_entry(&mut wire, &handoff_entry_ref(&host)).unwrap();
+        drop(host);
+        assert_eq!(arena.bytes().1, 0);
+        let parsed = handoff_read_entry(&mut wire.as_slice(), wire.len() as u64)
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let imported = host_entry_from_owned(parsed, &mut pool).unwrap();
+        assert_eq!(arena.bytes().1, 80);
+        assert_eq!(
+            digest(&device_entry_from_host(&root, &imported).unwrap()).unwrap(),
+            want
+        );
+        drop(imported);
+        assert_eq!(arena.reserve_timings_ms().1, 0.0);
+        let mut poison = arena.try_reserve_planes(&[pool.budget]).unwrap();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = poison[0].as_slice();
+            }))
+            .is_err()
+        );
+        poison[0].fill(0xa5);
+        drop(poison);
+        let recycled = host_entry_from_device(&root, &mut pool, &src, None).unwrap();
+        assert_eq!(
+            digest(&device_entry_from_host(&root, &recycled).unwrap()).unwrap(),
+            want
+        );
+        drop(recycled);
+        // Leave room for K/V but not the complete image. The batch must fail
+        // without leaking its partially available extents or falling back.
+        let blocker = arena.try_reserve_planes(&[pool.budget - 76]).unwrap();
+        let leased = arena.bytes().1;
+        let error = host_entry_from_device(&root, &mut pool, &src, None)
+            .err()
+            .unwrap();
+        assert!(error.contains("pinned arena admission refused"));
+        assert_eq!(arena.bytes().1, leased);
+        let parsed = handoff_read_entry(&mut wire.as_slice(), wire.len() as u64)
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(
+            host_entry_from_owned(parsed, &mut pool)
+                .err()
+                .unwrap()
+                .contains("pinned arena admission refused")
+        );
+        assert_eq!(arena.bytes().1, leased);
+        drop(blocker);
+        assert_eq!(arena.bytes().1, 0);
     }
 
     /// Requires two devices. It executes the ACTUAL server demote/promote
@@ -585,8 +675,9 @@ mod tests {
         let start = Instant::now();
         pool.arena =
             Some(memra_engine::PinnedHostArena::reserve(root.ctx().clone(), pool.budget).unwrap());
+        let (alloc_ms, fill_ms) = pool.arena.as_ref().unwrap().reserve_timings_ms();
         eprintln!(
-            "[prefix-host DEBUG] arena startup: reserve_ms={:.3} capacity={} leased=0 free={}",
+            "[prefix-host DEBUG] arena startup: reserve_ms={:.3} alloc_ms={alloc_ms:.3} fill_ms={fill_ms:.3} capacity={} leased=0 free={}",
             start.elapsed().as_secs_f64() * 1000.0,
             pool.budget,
             pool.budget
@@ -636,14 +727,18 @@ mod tests {
         host.pool_key.1 = "tenant-b".into();
         assert!(device_entry_from_host(&root, &host).is_err());
         host.pool_key.1 = "tenant-a\u{1f}ns".into();
-        host.last_logits[0] += 1.0;
+        if let HostF32::Pinned(p) = &mut host.last_logits {
+            p.as_mut_slice()[0] ^= 1;
+        }
         assert_ne!(
             digest(&device_entry_from_host(&root, &host).unwrap()).unwrap(),
             want
         );
         // Missing owner must fail after partial restoration without publishing
         // an entry. The original valid host image remains intact and retryable.
-        host.last_logits[0] -= 1.0;
+        if let HostF32::Pinned(p) = &mut host.last_logits {
+            p.as_mut_slice()[0] ^= 1;
+        }
         let data = std::mem::replace(
             &mut host.glm.as_mut().unwrap().ssm[0].as_mut().unwrap().data,
             memra_engine::PinnedHostBuf::new(3).unwrap(),
@@ -717,7 +812,7 @@ mod tests {
         }
         assert_eq!(preflight.total_bytes, 0);
         assert_eq!(pool.demotions, demotions + 1);
-        assert_eq!(pool.total_bytes, size);
+        assert_eq!(pool.total_bytes, size + prompt.len() * 4 + 8);
         let (index, _) =
             host_promote_prefix_hit(&root, &mut preflight, &mut pool, &key, &prompt, 0).unwrap();
         assert_eq!(digest(&preflight.entries[&key][index]).unwrap(), expected);
@@ -733,12 +828,12 @@ mod tests {
         let arena = pool.arena.as_ref().unwrap().clone();
         assert_eq!(arena.bytes(), (pool.budget, 0, pool.budget));
         let mut poison = arena.try_reserve_planes(&[pool.budget]).unwrap();
-        poison[0].as_mut_slice().fill(0xa5);
+        poison[0].fill(0xa5);
         drop(poison);
         let recycled = entry(&root, &peer);
         let want = digest(&recycled).unwrap();
         let host = host_entry_from_device(&root, &mut pool, &recycled, Some(want.clone())).unwrap();
-        assert_eq!(arena.bytes().1, recycled.bytes);
+        assert_eq!(arena.bytes().1, recycled.bytes + 8);
         assert_eq!(
             digest(&device_entry_from_host(&root, &host).unwrap()).unwrap(),
             want

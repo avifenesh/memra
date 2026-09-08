@@ -7146,11 +7146,62 @@ struct HostPlane {
     v_tok_bytes: usize,
 }
 
+/// Legacy pageable state only exists with the arena OFF. Every f32 payload in
+/// an armed host image consumes the same pre-reserved lease as its K/V planes.
+enum HostF32 {
+    Heap(Vec<f32>),
+    Pinned(memra_engine::PinnedHostBuf),
+}
+impl HostF32 {
+    fn down(p: &CudaSlice<f32>, planes: &mut HostPlaneLeases) -> Result<Self, String> {
+        if planes.0.is_none() {
+            return host_glm::read_f32(p).map(Self::Heap);
+        }
+        let mut data = planes.take(p.len() * 4)?;
+        data.copy_from_device_f32(p).map_err(|e| e.to_string())?;
+        Ok(Self::Pinned(data))
+    }
+    fn from_slice(p: &[f32], planes: &mut HostPlaneLeases) -> Result<Self, String> {
+        if planes.0.is_none() {
+            return Ok(Self::Heap(p.to_vec()));
+        }
+        let mut data = planes.take(p.len() * 4)?;
+        data.copy_from_slice(f32s_as_bytes(p))
+            .map_err(|e| e.to_string())?;
+        Ok(Self::Pinned(data))
+    }
+    fn as_slice(&self) -> &[f32] {
+        match self {
+            Self::Heap(p) => p,
+            Self::Pinned(p) => p.as_f32_slice(),
+        }
+    }
+}
+impl std::ops::Deref for HostF32 {
+    type Target = [f32];
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+fn host_image_bytes(device_bytes: usize, toks: &[u32], logits: &[f32]) -> Result<usize, String> {
+    // Token IDs are ordinary unpinned indexing metadata, not CUDA planes; charge
+    // their bytes too. The snapshot ledger already includes last_h; logits
+    // are the remaining boundary plane. Both have arena backing.
+    [toks.len(), logits.len()]
+        .into_iter()
+        .try_fold(device_bytes, |n, len| {
+            len.checked_mul(4)
+                .and_then(|bytes| n.checked_add(bytes))
+                .ok_or_else(|| "pinned arena admission refused: image byte count overflow".into())
+        })
+}
+
 /// Host copy of a `DflashKvTail` (device f32 layer pairs pulled D2H). Small beside the trunk
 /// planes (~85 MB at the flagship shape) and required for losslessness: a promoted entry must
 /// be field-for-field the entry that was demoted, or a dspark restore silently downgrades.
 struct HostDflashTail {
-    layers: Vec<(Vec<f32>, Vec<f32>)>,
+    layers: Vec<(HostF32, HostF32)>,
     base: usize,
     rows: usize,
     len: usize,
@@ -7168,13 +7219,14 @@ struct HostPrefixEntry {
     pool_key: PoolKey,
     toks: Vec<u32>,
     kv: Vec<Option<HostPlane>>,
-    conv: Vec<Option<Vec<f32>>>,
-    ssm: Vec<Option<Vec<f32>>>,
+    conv: Vec<Option<HostF32>>,
+    ssm: Vec<Option<HostF32>>,
     pos: usize,
-    last_logits: Vec<f32>,
+    last_logits: HostF32,
     draft: Option<HostPlane>,
     dspark_draft: Option<HostDflashTail>,
-    last_h: Vec<f32>,
+    last_h: HostF32,
+    device_bytes: usize,
     bytes: usize,
     last_use: Instant,
     id: u64,
@@ -7270,8 +7322,9 @@ impl HostPrefixCache {
     fn log_arena(&self, event: &str) {
         if let Some(arena) = &self.arena {
             let (capacity, leased, free) = arena.bytes();
+            let (alloc_ms, fill_ms) = arena.reserve_timings_ms();
             eprintln!(
-                "[prefix-host DEBUG] arena {event}: reserve_ms={:.3} capacity={capacity} leased={leased} free={free}",
+                "[prefix-host DEBUG] arena {event}: reserve_ms={:.3} alloc_ms={alloc_ms:.3} fill_ms={fill_ms:.3} capacity={capacity} leased={leased} free={free}",
                 self.arena_reserve_ms
             );
         }
@@ -7679,16 +7732,39 @@ fn host_entry_from_device(
     } else {
         Vec::new()
     };
-    for p in dead.kv.iter().flatten().chain(dead.draft.iter()) {
+    for p in dead.kv.iter().flatten() {
         sizes.extend([p.len * p.k_tok_bytes, p.len * p.v_tok_bytes]);
     }
-    if is_glm && sizes.iter().try_fold(0usize, |n, b| n.checked_add(*b)) != Some(dead.bytes) {
+    if !is_glm {
+        sizes.extend(
+            dead.conv
+                .iter()
+                .chain(&dead.ssm)
+                .flatten()
+                .map(|p| p.len() * 4),
+        );
+    }
+    if let Some(p) = &dead.draft {
+        sizes.extend([p.len * p.k_tok_bytes, p.len * p.v_tok_bytes]);
+    }
+    if !is_glm && let Some(t) = &dead.dspark_draft {
+        for (k, v) in &t.layers {
+            sizes.extend([k.len() * 4, v.len() * 4]);
+        }
+    }
+    if sizes
+        .iter()
+        .try_fold(dead.last_h.len() * 4, |n, b| n.checked_add(*b))
+        != Some(dead.bytes)
+    {
         return Err(format!(
-            "GLM host byte census does not match device snapshot accounting {}",
+            "pinned arena admission refused: host byte census does not match snapshot accounting {}",
             dead.bytes
         ));
     }
-    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, dead.bytes, &sizes)?;
+    sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
+    let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
+    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, bytes, &sizes)?;
     let glm = if is_glm {
         Some(host_glm::HostGlmState::down(engine, dead, &mut planes)?)
     } else {
@@ -7720,9 +7796,10 @@ fn host_entry_from_device(
             continue;
         }
         conv.push(match c {
-            Some(c) => {
-                Some(host_glm::read_f32(c).map_err(|err| format!("conv state D2H failed: {err}"))?)
-            }
+            Some(c) => Some(
+                HostF32::down(c, &mut planes)
+                    .map_err(|err| format!("conv state D2H failed: {err}"))?,
+            ),
             _ => None,
         });
     }
@@ -7733,9 +7810,10 @@ fn host_entry_from_device(
             continue;
         }
         ssm.push(match s {
-            Some(s) => {
-                Some(host_glm::read_f32(s).map_err(|err| format!("ssm state D2H failed: {err}"))?)
-            }
+            Some(s) => Some(
+                HostF32::down(s, &mut planes)
+                    .map_err(|err| format!("ssm state D2H failed: {err}"))?,
+            ),
             _ => None,
         });
     }
@@ -7748,9 +7826,9 @@ fn host_entry_from_device(
             let mut layers = Vec::with_capacity(t.layers.len());
             for (k, v) in &t.layers {
                 layers.push((
-                    host_glm::read_f32(k)
+                    HostF32::down(k, &mut planes)
                         .map_err(|err| format!("draft tail K D2H failed: {err}"))?,
-                    host_glm::read_f32(v)
+                    HostF32::down(v, &mut planes)
                         .map_err(|err| format!("draft tail V D2H failed: {err}"))?,
                 ));
             }
@@ -7775,11 +7853,12 @@ fn host_entry_from_device(
         conv,
         ssm,
         pos: dead.pos,
-        last_logits: dead.last_logits.clone(),
+        last_logits: HostF32::from_slice(&dead.last_logits, &mut planes)?,
         draft,
         dspark_draft,
-        last_h: dead.last_h.clone(),
-        bytes: dead.bytes,
+        last_h: HostF32::from_slice(&dead.last_h, &mut planes)?,
+        device_bytes: dead.bytes,
+        bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest,
@@ -7787,6 +7866,7 @@ fn host_entry_from_device(
     if let Some(glm) = &entry.glm {
         let plane_bytes = |p: &HostPlane| p.len * (p.k_tok_bytes + p.v_tok_bytes);
         let bytes = glm.state_bytes()
+            + entry.last_h.len() * 4
             + entry.kv.iter().flatten().map(plane_bytes).sum::<usize>()
             + entry
                 .conv
@@ -7879,17 +7959,24 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Failed;
     }
+    let host_bytes = match host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
+            return HostDemoteOutcome::Failed;
+        }
+    };
     // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT), checked BEFORE the D2H copy: a
     // demotion that would evaporate at insert must skip the PCIe trip entirely, not
     // pay gigabytes of synchronous copy for an entry the pool then refuses.
-    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, dead.bytes) {
+    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes) {
         host.tenant_rejects += 1;
         eprintln!(
             "[prefix-host] demote evaporated at the tenant share cap before the D2H \
              copy: {} tokens, {:.1}MB ({}% of {:.0}MB, MEMRA_KV_HOST_TENANT_PCT; \
              model {}{})",
             dead.toks.len(),
-            dead.bytes as f64 / 1e6,
+            host_bytes as f64 / 1e6,
             host.tenant_pct,
             host.budget as f64 / 1e6,
             dead.pool_key.0,
@@ -8222,14 +8309,14 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             None => None,
         },
         pos: src.pos,
-        last_logits: src.last_logits.clone(),
+        last_logits: src.last_logits.to_vec(),
         draft,
         dspark_draft: match &src.glm {
             Some(g) => g.draft_up()?,
             None => dspark_draft,
         },
-        last_h: src.last_h.clone(),
-        bytes: src.bytes,
+        last_h: src.last_h.to_vec(),
+        bytes: src.device_bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
         segment: PrefixSegment::Probation,
@@ -8672,8 +8759,8 @@ struct HandoffEntryRef<'a> {
     ns: &'a str,
     toks: &'a [u32],
     kv: Vec<Option<HandoffPlaneRef<'a>>>,
-    conv: &'a [Option<Vec<f32>>],
-    ssm: &'a [Option<Vec<f32>>],
+    conv: Vec<Option<&'a [f32]>>,
+    ssm: Vec<Option<&'a [f32]>>,
     pos: usize,
     last_logits: &'a [f32],
     draft: Option<HandoffPlaneRef<'a>>,
@@ -8743,8 +8830,8 @@ impl HandoffEntryOwned {
             ns: &self.ns,
             toks: &self.toks,
             kv: self.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-            conv: &self.conv,
-            ssm: &self.ssm,
+            conv: self.conv.iter().map(|p| p.as_deref()).collect(),
+            ssm: self.ssm.iter().map(|p| p.as_deref()).collect(),
             pos: self.pos,
             last_logits: &self.last_logits,
             draft: self.draft.as_ref().map(plane),
@@ -8784,8 +8871,8 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
         ns: &e.pool_key.1,
         toks: &e.toks,
         kv: e.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-        conv: &e.conv,
-        ssm: &e.ssm,
+        conv: e.conv.iter().map(|p| p.as_deref()).collect(),
+        ssm: e.ssm.iter().map(|p| p.as_deref()).collect(),
         pos: e.pos,
         last_logits: &e.last_logits,
         draft: e.draft.as_ref().map(plane),
@@ -8802,7 +8889,7 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
             floor: t.floor,
         }),
         last_h: &e.last_h,
-        bytes: e.bytes,
+        bytes: e.device_bytes,
         verify_digest: e.verify_digest.as_deref(),
     }
 }
@@ -8939,7 +9026,7 @@ fn handoff_entry_wire_len(e: &HandoffEntryRef) -> u64 {
     for p in &e.kv {
         n += 1 + p.as_ref().map_or(0, plane_len);
     }
-    for class in [e.conv, e.ssm] {
+    for class in [&e.conv, &e.ssm] {
         n += 8;
         for c in class {
             n += 1 + c.as_ref().map_or(0, |v| f32s_len(v));
@@ -8997,7 +9084,7 @@ fn handoff_write_entry<W: std::io::Write>(out: &mut W, e: &HandoffEntryRef) -> R
             None => w.put_u8(0)?,
         }
     }
-    for class in [e.conv, e.ssm] {
+    for class in [&e.conv, &e.ssm] {
         w.put_u64(class.len() as u64)?;
         for c in class {
             match c {
@@ -9244,9 +9331,9 @@ fn host_plane_from_owned(
     planes: &mut HostPlaneLeases,
 ) -> Result<HostPlane, String> {
     let mut k = planes.take(p.k.len())?;
-    k.as_mut_slice().copy_from_slice(&p.k);
+    k.copy_from_slice(&p.k).map_err(|e| e.to_string())?;
     let mut v = planes.take(p.v.len())?;
-    v.as_mut_slice().copy_from_slice(&p.v);
+    v.copy_from_slice(&p.v).map_err(|e| e.to_string())?;
     Ok(HostPlane {
         k,
         v,
@@ -9263,14 +9350,29 @@ fn host_entry_from_owned(
     if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
         return Err("host handoff layout version mismatch".into());
     }
-    let sizes: Vec<_> =
+    let mut sizes: Vec<_> =
         e.kv.iter()
             .flatten()
             .chain(e.draft.iter())
             .flat_map(|p| [p.k.len(), p.v.len()])
             .collect();
+    sizes.extend(e.conv.iter().chain(&e.ssm).flatten().map(|p| p.len() * 4));
+    if let Some(t) = &e.dspark {
+        for (k, v) in &t.layers {
+            sizes.extend([k.len() * 4, v.len() * 4]);
+        }
+    }
+    if sizes
+        .iter()
+        .try_fold(e.last_h.len() * 4, |n, b| n.checked_add(*b))
+        != Some(e.bytes)
+    {
+        return Err("pinned arena admission refused: handoff image byte census mismatch".into());
+    }
+    sizes.extend([e.last_logits.len() * 4, e.last_h.len() * 4]);
+    let bytes = host_image_bytes(e.bytes, &e.toks, &e.last_logits)?;
     let mut planes =
-        host.reserve_image(&(e.model.clone(), e.ns.clone()), &e.toks, e.bytes, &sizes)?;
+        host.reserve_image(&(e.model.clone(), e.ns.clone()), &e.toks, bytes, &sizes)?;
     let mut kv = Vec::with_capacity(e.kv.len());
     for p in e.kv {
         kv.push(match p {
@@ -9282,6 +9384,46 @@ fn host_entry_from_owned(
         Some(p) => Some(host_plane_from_owned(p, &mut planes)?),
         None => None,
     };
+    let conv = e
+        .conv
+        .iter()
+        .map(|p| {
+            p.as_ref()
+                .map(|p| HostF32::from_slice(p, &mut planes))
+                .transpose()
+        })
+        .collect::<Result<_, _>>()?;
+    let ssm = e
+        .ssm
+        .iter()
+        .map(|p| {
+            p.as_ref()
+                .map(|p| HostF32::from_slice(p, &mut planes))
+                .transpose()
+        })
+        .collect::<Result<_, _>>()?;
+    let dspark_draft = e
+        .dspark
+        .map(|t| -> Result<_, String> {
+            Ok(HostDflashTail {
+                layers: t
+                    .layers
+                    .iter()
+                    .map(|(k, v)| {
+                        Ok((
+                            HostF32::from_slice(k, &mut planes)?,
+                            HostF32::from_slice(v, &mut planes)?,
+                        ))
+                    })
+                    .collect::<Result<_, String>>()?,
+                base: t.base,
+                rows: t.rows,
+                len: t.len,
+                row_bytes: t.row_bytes,
+                floor: t.floor,
+            })
+        })
+        .transpose()?;
     Ok(HostPrefixEntry {
         model_generation: None,
         glm: None,
@@ -9289,21 +9431,15 @@ fn host_entry_from_owned(
         pool_key: (e.model, e.ns),
         toks: e.toks,
         kv,
-        conv: e.conv,
-        ssm: e.ssm,
+        conv,
+        ssm,
         pos: e.pos,
-        last_logits: e.last_logits,
+        last_logits: HostF32::from_slice(&e.last_logits, &mut planes)?,
         draft,
-        dspark_draft: e.dspark.map(|t| HostDflashTail {
-            layers: t.layers,
-            base: t.base,
-            rows: t.rows,
-            len: t.len,
-            row_bytes: t.row_bytes,
-            floor: t.floor,
-        }),
-        last_h: e.last_h,
-        bytes: e.bytes,
+        dspark_draft,
+        last_h: HostF32::from_slice(&e.last_h, &mut planes)?,
+        device_bytes: e.bytes,
+        bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest: e.verify_digest,
@@ -13307,15 +13443,14 @@ pub fn run(
                 .ok_or("MEMRA_KV_HOST_MB must be positive and fit in bytes")?;
             host_memory::check_headroom(bytes)?;
             let start = Instant::now();
-            hpx.arena = Some(
-                memra_engine::PinnedHostArena::reserve(engine.ctx().clone(), bytes).map_err(
-                    |e| format!("startup pinned arena reserve failed: budget={bytes}: {e}"),
-                )?,
-            );
+            let arena = memra_engine::PinnedHostArena::reserve(engine.ctx().clone(), bytes)
+                .map_err(|e| format!("startup pinned arena reserve failed: budget={bytes}: {e}"))?;
+            let (alloc_ms, fill_ms) = arena.reserve_timings_ms();
+            hpx.arena = Some(arena);
             hpx.budget = bytes;
             hpx.arena_reserve_ms = start.elapsed().as_secs_f64() * 1000.0;
             eprintln!(
-                "[prefix-host DEBUG] arena startup: reserve_ms={:.3} capacity={bytes} leased=0 free={bytes} request_pin_count=0",
+                "[prefix-host DEBUG] arena startup: reserve_ms={:.3} alloc_ms={alloc_ms:.3} fill_ms={fill_ms:.3} capacity={bytes} leased=0 free={bytes} request_pin_count=0",
                 start.elapsed().as_secs_f64() * 1000.0
             );
             Ok(())
@@ -31516,15 +31651,25 @@ mod tests {
             conv: Vec::new(),
             ssm: Vec::new(),
             pos: 0,
-            last_logits: vec![0.0],
+            last_logits: super::HostF32::Heap(vec![0.0]),
             draft: None,
             dspark_draft: None,
-            last_h: Vec::new(),
+            last_h: super::HostF32::Heap(Vec::new()),
+            device_bytes: bytes,
             bytes,
             last_use: next_instant(),
             id: 0,
             verify_digest: None,
         }
+    }
+
+    #[test]
+    fn host_image_accounts_boundary_planes_and_token_metadata() {
+        assert_eq!(
+            super::host_image_bytes(72, &[1, 2, 3], &[0.5, 0.25]).unwrap(),
+            92
+        );
+        assert!(super::host_image_bytes(usize::MAX, &[1], &[]).is_err());
     }
 
     #[test]
@@ -34449,6 +34594,18 @@ mod host_handoff_tests {
             entries: 2,
             resident_bytes: 24690,
         }
+    }
+
+    #[test]
+    fn host_handoff_refuses_bad_plane_census_before_allocation() {
+        let mut pool = super::HostPrefixCache::new(1 << 20);
+        let error = super::host_entry_from_owned(handoff_fixture("m", "ns", 7), &mut pool)
+            .err()
+            .unwrap();
+        assert!(
+            error.contains("pinned arena admission refused: handoff image byte census mismatch")
+        );
+        assert_eq!(pool.total_bytes, 0);
     }
 
     #[test]

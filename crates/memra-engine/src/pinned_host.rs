@@ -1,5 +1,5 @@
 //! Fixed, portable pinned storage. Only startup/shutdown allocate/free CUDA host memory.
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream};
+use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr, DeviceRepr};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
@@ -68,6 +68,7 @@ struct ArenaInner {
     ptr: *mut u8,
     context: Arc<CudaContext>,
     extents: Mutex<Extents>,
+    alloc_ms: f64,
 }
 // Backing never moves. Only exclusive, non-overlapping region owners expose data;
 // the mutex controls extent ownership, and each buffer's copies fence before return.
@@ -88,11 +89,15 @@ pub struct PinnedHostArena {
 impl PinnedHostArena {
     /// Reserve the entire configured physical budget before readiness. Portable is
     /// cacheable (not write-combined) and recognized by all CUDA owner contexts.
+    /// Backing is deliberately uninitialized: each new/recycled lease starts
+    /// unreadable and only a full host write or fenced D2H enables slice access.
+    /// This avoids touching the entire arena before any image needs its bytes.
     pub fn reserve(context: Arc<CudaContext>, bytes: usize) -> Result<Self, Error> {
         if bytes == 0 || bytes > isize::MAX as usize || !bytes.is_multiple_of(4) {
             return Err("pinned arena size must be positive and four-byte aligned".into());
         }
         context.bind_to_thread()?;
+        let alloc_start = std::time::Instant::now();
         let ptr = unsafe {
             cudarc::driver::result::malloc_host(
                 bytes,
@@ -100,16 +105,13 @@ impl PinnedHostArena {
             )?
         }
         .cast::<u8>();
-        // Initialize backing once at startup, not on request-time region recycling.
-        // Thus safe slice access never exposes uninitialized Rust values.
-        unsafe {
-            ptr.write_bytes(0, bytes);
-        }
+        let alloc_ms = alloc_start.elapsed().as_secs_f64() * 1000.0;
         Ok(Self {
             inner: Arc::new(ArenaInner {
                 ptr,
                 context,
                 extents: Mutex::new(Extents::new(bytes)),
+                alloc_ms,
             }),
         })
     }
@@ -129,6 +131,7 @@ impl PinnedHostArena {
             .map(|((offset, reserved), &len)| PinnedHostBuf {
                 ptr: unsafe { self.inner.ptr.add(offset) },
                 len,
+                written: false,
                 region: Some(Region {
                     arena: self.inner.clone(),
                     offset,
@@ -136,6 +139,11 @@ impl PinnedHostArena {
                 }),
             })
             .collect())
+    }
+    /// CUDA allocation time and startup fill time. Fill is zero by design;
+    /// full image copies initialize only the leased logical bytes before use.
+    pub fn reserve_timings_ms(&self) -> (f64, f64) {
+        (self.inner.alloc_ms, 0.0)
     }
     /// Physical backing, leased extents (including alignment), reusable extents.
     pub fn bytes(&self) -> (usize, usize, usize) {
@@ -168,6 +176,9 @@ impl Drop for Region {
 pub struct PinnedHostBuf {
     ptr: *mut u8,
     len: usize,
+    // Reset on EVERY lease, including recycled/zero-length ranges. No mutable
+    // slice escape is allowed until the whole logical range is initialized.
+    written: bool,
     region: Option<Region>,
 }
 unsafe impl Send for PinnedHostBuf {}
@@ -184,6 +195,7 @@ impl PinnedHostBuf {
         Ok(Self {
             ptr,
             len,
+            written: true,
             region: None,
         })
     }
@@ -199,12 +211,7 @@ impl PinnedHostBuf {
         if n != self.len {
             return Err("pinned f32 copy length mismatch".into());
         }
-        let dst = unsafe { std::slice::from_raw_parts_mut(self.ptr.cast::<f32>(), src.len()) };
-        let copy = src.stream().memcpy_dtoh(src, dst);
-        let fence = src.stream().synchronize();
-        copy?;
-        fence?;
-        Ok(())
+        self.copy_from_device(src)
     }
     /// Copy a complete logical byte plane on its owning stream, fencing even
     /// when enqueue returns an error before the region can be recycled.
@@ -212,14 +219,55 @@ impl PinnedHostBuf {
         if self.len > src.len() {
             return Err("pinned byte copy length mismatch".into());
         }
-        let len = self.len;
-        let copy = src
-            .stream()
-            .memcpy_dtoh(&src.slice(..len), self.as_mut_slice());
-        let fence = src.stream().synchronize();
+        self.copy_from_device(src)
+    }
+    // Callers checked that the source spans the entire destination. Use the raw
+    // CUDA entry point: constructing &mut [u8]/[f32] over fresh uninitialized
+    // backing would already violate Rust validity, before memcpy could fill it.
+    fn copy_from_device<T: DeviceRepr>(&mut self, src: &CudaSlice<T>) -> Result<(), Error> {
+        self.written = false;
+        if self.len == 0 {
+            self.written = true;
+            return Ok(());
+        }
+        let stream = src.stream();
+        src.context().bind_to_thread()?;
+        let (device, _record_src) = src.device_ptr(stream);
+        // SAFETY: this exclusive buffer owns len writable bytes; the live source
+        // spans them and stays retained through the owner-stream fence. No host
+        // slice exists until both enqueue and synchronization succeed.
+        let copy = unsafe {
+            cudarc::driver::sys::cuMemcpyDtoHAsync_v2(
+                self.ptr.cast(),
+                device,
+                self.len,
+                stream.cu_stream(),
+            )
+            .result()
+        };
+        let fence = stream.synchronize();
         copy?;
         fence?;
+        self.written = true;
         Ok(())
+    }
+    /// Initialize the entire logical range without first exposing a slice.
+    /// A short/oversized write is refused and never marks a fresh lease readable.
+    pub fn copy_from_slice(&mut self, src: &[u8]) -> Result<(), Error> {
+        if src.len() != self.len {
+            return Err("pinned host copy length mismatch".into());
+        }
+        // SAFETY: src is initialized and self exclusively owns len writable
+        // bytes. The Rust borrows prevent src from aliasing this destination.
+        unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), self.ptr, self.len) };
+        self.written = true;
+        Ok(())
+    }
+    /// Explicit full initialization, also used to poison backing in reuse gates.
+    pub fn fill(&mut self, value: u8) {
+        // SAFETY: this exclusive buffer owns len writable bytes.
+        unsafe { self.ptr.write_bytes(value, self.len) };
+        self.written = true;
     }
     pub fn to_device_f32(&self, stream: &Arc<CudaStream>) -> Result<CudaSlice<f32>, Error> {
         if !self.len.is_multiple_of(4) {
@@ -231,7 +279,8 @@ impl PinnedHostBuf {
         fence?;
         Ok(out)
     }
-    fn as_f32_slice(&self) -> &[f32] {
+    pub fn as_f32_slice(&self) -> &[f32] {
+        assert!(self.written, "pinned buffer read before full write");
         assert!(self.len.is_multiple_of(4));
         unsafe { std::slice::from_raw_parts(self.ptr.cast(), self.len / 4) }
     }
@@ -242,9 +291,11 @@ impl PinnedHostBuf {
         self.len == 0
     }
     pub fn as_slice(&self) -> &[u8] {
+        assert!(self.written, "pinned buffer read before full write");
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        assert!(self.written, "pinned buffer read before full write");
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
     }
 }
@@ -259,6 +310,82 @@ impl Drop for PinnedHostBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Exercise the real buffer API over aligned, uninitialized CPU storage.
+    // ManuallyDrop prevents this fixture from trying to free it through CUDA.
+    fn with_unwritten_buffer(len: usize, test: impl FnOnce(&mut PinnedHostBuf)) {
+        let mut backing = [std::mem::MaybeUninit::<u32>::uninit(); 4];
+        assert!(len <= std::mem::size_of_val(&backing));
+        let mut buf = std::mem::ManuallyDrop::new(PinnedHostBuf {
+            ptr: backing.as_mut_ptr().cast(),
+            len,
+            written: false,
+            region: None,
+        });
+        test(&mut buf);
+    }
+
+    #[test]
+    fn pinned_arena_unwritten_lease_refuses_all_slice_access() {
+        with_unwritten_buffer(16, |buf| {
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = buf.as_slice();
+                }))
+                .is_err()
+            );
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = buf.as_f32_slice();
+                }))
+                .is_err()
+            );
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = buf.as_mut_slice();
+                }))
+                .is_err()
+            );
+            assert!(buf.copy_from_slice(&[7; 15]).is_err());
+            assert!(buf.copy_from_slice(&[7; 17]).is_err());
+            assert!(!buf.written);
+            buf.copy_from_slice(&[7; 16]).unwrap();
+            assert_eq!(buf.as_slice(), &[7; 16]);
+            assert_eq!(buf.as_f32_slice().len(), 4);
+            buf.as_mut_slice()[0] = 9;
+            assert_eq!(buf.as_slice()[0], 9);
+        });
+    }
+
+    #[test]
+    fn pinned_arena_full_write_replaces_every_poisoned_byte() {
+        with_unwritten_buffer(16, |buf| {
+            buf.fill(0xa5);
+            assert_eq!(buf.as_slice(), &[0xa5; 16]);
+            // Reacquisition resets visibility even when backing was initialized
+            // by an earlier tenant. A new full write is required for this lease.
+            buf.written = false;
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = buf.as_slice();
+                }))
+                .is_err()
+            );
+            let source = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+            buf.copy_from_slice(&source).unwrap();
+            assert_eq!(buf.as_slice(), &source);
+        });
+    }
+
+    #[test]
+    fn pinned_arena_zero_length_write_is_explicit() {
+        with_unwritten_buffer(0, |buf| {
+            assert!(!buf.written);
+            buf.copy_from_slice(&[]).unwrap();
+            assert!(buf.as_slice().is_empty());
+            assert!(buf.as_f32_slice().is_empty());
+        });
+    }
+
     #[test]
     fn pinned_arena_exact_fit_and_coalesced_reuse() {
         let mut e = Extents::new(64);
