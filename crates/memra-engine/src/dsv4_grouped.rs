@@ -337,6 +337,21 @@ impl GroupedWork {
             .bytes
             .checked_add(extra_bytes as u64)
             .ok_or("grouped workspace byte overflow")?;
+        // Allocate both projections' maximum workspace before any capture.
+        let splitk_len = if crate::moe_m1_graph_splitk_on() && slots == 6 {
+            slots * (inter * 32).max(hidden * 16)
+        } else {
+            0
+        };
+        let splitk_scratch = if splitk_len > 0 {
+            Some(
+                s.alloc_zeros::<f32>(splitk_len)
+                    .map_err(|e| format!("graph split-K scratch: {e}"))?,
+            )
+        } else {
+            None
+        };
+        let bytes = bytes + (splitk_len * 4) as u64;
         Ok(Self {
             routes,
             input: HalfMirror::new(s, slots, hidden)?,
@@ -348,7 +363,7 @@ impl GroupedWork {
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
-            splitk_scratch: None,
+            splitk_scratch,
         })
     }
 
@@ -368,7 +383,11 @@ impl GroupedWork {
         } else {
             (&self.intermediate, self.input.cols)
         };
-        let live = self.routes.live_slots;
+        let graph = !component && crate::moe_m1_graph_splitk_on();
+        let live = if graph { 6 } else { self.routes.live_slots };
+        if graph && (self.input.rows != 6 || self.intermediate.rows != 6) {
+            return Err("graph split-K requires six-slot M=1 storage".into());
+        }
         if table.len() != self.routes.experts * 6
             || crate::moe_f16g_mode() < 2
             || crate::moe_f16g_sk_params().0 < 0
@@ -389,6 +408,9 @@ impl GroupedWork {
                 .as_ref()
                 .is_none_or(|p| p.len() < needed)
         {
+            if graph {
+                return Err("graph split-K scratch must be allocated before capture".into());
+            }
             let old_bytes = self.splitk_scratch.as_ref().map_or(0, |p| p.len() * 4);
             self.splitk_scratch = Some(
                 s.alloc_zeros::<f32>(needed)
@@ -400,8 +422,12 @@ impl GroupedWork {
             .splitk_scratch
             .as_mut()
             .map_or(std::ptr::null_mut(), |p| p.device_ptr_mut(&s).0 as *mut f32);
-        let launch = if component {
+        let launch = if component && crate::moe_m1_graph_splitk_on() {
+            crate::mmq_ffi::memra_moe_m1_graph_splitk_component
+        } else if component {
             crate::mmq_ffi::memra_moe_m1_splitk_component
+        } else if graph {
+            crate::mmq_ffi::memra_moe_m1_graph_splitk
         } else {
             crate::mmq_ffi::memra_moe_m1_splitk
         };
