@@ -506,7 +506,14 @@ fn run_once(
     }
 }
 
+fn select_legacy_dense_control() {
+    // This historical instrument owns its frozen dense control program. The
+    // composition/default gate measures the ON program explicitly.
+    memra_engine::dsv4_gpu::set_dense_exact_tail_for_gate(false).expect("dense control selection");
+}
+
 fn main() {
+    select_legacy_dense_control();
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).is_some_and(|a| a == "--sampler-component") {
         sampler_component();
@@ -855,6 +862,69 @@ fn main() {
     }
     Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
+}
+
+#[cfg(test)]
+mod default_policy_tests {
+    #[test]
+    fn environment_defaults_and_explicit_gate_rollback() {
+        use memra_engine::dsv4_gpu::{
+            dense_exact_tail_enabled_for_gate, dsv4_replay_cadence_default,
+            set_dense_exact_tail_for_gate,
+        };
+        const CHILD: &str = "MEMRA_TEST_DSV4_DEFAULT_CHILD";
+        if let Ok(expected) = std::env::var(CHILD) {
+            let (cadence, dense) = expected.split_once(':').unwrap();
+            assert_eq!(dsv4_replay_cadence_default(), cadence == "1");
+            assert_eq!(dense_exact_tail_enabled_for_gate(), dense == "1");
+            // Exercise the real legacy gate initialization with an ON override.
+            set_dense_exact_tail_for_gate(true).unwrap();
+            super::select_legacy_dense_control();
+            assert!(!dense_exact_tail_enabled_for_gate());
+            // The override is thread-local; a new host thread sees its env default.
+            assert_eq!(
+                std::thread::spawn(dense_exact_tail_enabled_for_gate)
+                    .join()
+                    .unwrap(),
+                dense == "1"
+            );
+            return;
+        }
+        for cadence in [None, Some("0"), Some("1")] {
+            for dense in [None, Some("0"), Some("1")] {
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+                child.args([
+                    "--exact",
+                    "default_policy_tests::environment_defaults_and_explicit_gate_rollback",
+                    "--nocapture",
+                ]);
+                for (name, value) in [
+                    ("MEMRA_DSV4_REPLAY_CADENCE", cadence),
+                    ("MEMRA_DSV4_DENSE_EXACT_TAIL", dense),
+                ] {
+                    if let Some(value) = value {
+                        child.env(name, value);
+                    } else {
+                        child.env_remove(name);
+                    }
+                }
+                child.env(
+                    CHILD,
+                    format!(
+                        "{}:{}",
+                        u8::from(cadence != Some("0")),
+                        u8::from(dense != Some("0"))
+                    ),
+                );
+                let out = child.output().unwrap();
+                assert!(
+                    out.status.success(),
+                    "cadence={cadence:?} dense={dense:?}: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+        }
+    }
 }
 
 /// Invert the position-keyed SplitMix64 map to place a draw on a chosen

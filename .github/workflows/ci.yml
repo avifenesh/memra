@@ -280,6 +280,8 @@ jobs:
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
+          MEMRA_DSV4_REPLAY_CADENCE: "1"
+          MEMRA_DSV4_DENSE_EXACT_TAIL: "1"
 
   # ── clippy: the workspace stays clippy-zero ────────────────────────────────────────────────
   # (lane/clippy-zero-restore-20260901). -D warnings so the count cannot regrow silently: main

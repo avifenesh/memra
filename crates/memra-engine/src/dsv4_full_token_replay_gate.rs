@@ -99,7 +99,7 @@ fn arm(gpu: &Dsv4Gpu, state: &mut DecodeState, cfg: Dsv4SampleCfg, cadence: bool
         if cadence {
             gpu.arm_full_token_replay_cadence_for_gate(state, cfg)
         } else {
-            gpu.arm_full_token_replay_for_gate(state, cfg)
+            gpu.arm_full_token_replay_mode_for_gate(state, cfg, false)
         }
     }
     .expect("arm replay");
@@ -507,7 +507,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     gpu.restore_full_token_prefix_for_gate(&mut candidate, &prefix)
         .unwrap();
     // Safety: gpu/weights/config remain borrowed and unchanged until both states drop.
-    unsafe { gpu.arm_full_token_replay_for_gate(&mut candidate, cfg) }.unwrap();
+    unsafe { gpu.arm_full_token_replay_mode_for_gate(&mut candidate, cfg, false) }.unwrap();
     let expected = eager_step(gpu, &mut control, &mut sampler, &cfg, first);
     let actual = gpu
         .decode_sample_full_token_for_gate(first, &mut candidate)

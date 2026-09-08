@@ -192,7 +192,8 @@ impl Arm {
             .expect("initial restore");
         // gpu is boxed at a stable address and outlives every Arm; its weights,
         // numeric controls and runtime configuration stay fixed throughout.
-        unsafe { gpu.arm_full_token_replay_for_gate(&mut state, cfg) }.expect("arm full replay");
+        unsafe { gpu.arm_full_token_replay_mode_for_gate(&mut state, cfg, false) }
+            .expect("arm full replay");
         assert_eq!(
             gpu.full_token_replay_captures_for_gate(&state).unwrap(),
             [0, 0]

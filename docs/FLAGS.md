@@ -1723,19 +1723,16 @@ ones — filed under their own heading so a flag audit scanning the live section
 
 ## DSV4 full-token replay prerequisite, 2026-09-08
 
-Cadence diagnostic: `Dsv4Gpu::arm_full_token_replay_cadence_for_gate` and sampled
-gate `--full-token-replay-cadence` / `--full-token-replay-cadence-baab` are
-intentionally **OFF** unless explicitly invoked. OFF selects the existing full
-replay oracle; ON retains three forward cadences per rank and one shared commit
-graph, omitting inactive emission/shift bodies at capture. Both arms keep exact
-math, live controls, refusal-before-commit and paired completion fail-stop. Rollback
-is to drop the armed request and use the original full replay selector. No serving
-route or environment switch enables it. **decide-by: 2026-09-22**. Unmeasured;
-source/protocol: `research/dsv4f-replay-cadence-20260908/DESIGN.md`; private receipt
-namespace `replay-cadence-20260908`. The standalone
-`tools/dsv4-replay-cadence-gate.cu` is a component-only invocation, also OFF by
-default. Remove cadence-only support on a flat/negative verdict; repeatably
-positive incremental gains have no arbitrary size floor.
+| Control | Default / arms | Rollback / evidence |
+| --- | --- | --- |
+| `MEMRA_DSV4_REPLAY_CADENCE` | **ON** within explicitly armed, admitted full-token replay: unset or any value other than exact `0` selects ordinary/C4/C4+C128 forward variants and shared commit. Exact `0` selects original full replay. Existing pos<512/device-cache/TP2+EP admission and refusal/paired-completion protections are unchanged. No automatic arming of eager or serving requests. | Set `0` before arming a fresh request; retained graph functions do not change in place. Explicit gate mode overrides preserve original full replay, cadence-only and composition A/B instruments. decide-by: 2026-09-22 for rollback-seam removal review. Cadence +1.007107%/+1.074545%, first captures included, private Darklanes #508 `research/dsv4f-replay-cadence-20260908/COMBINED-RESULT.md`; composition receipt pointer and pending promotion decision: `research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`. |
+
+The standalone cadence component and CLI measurement selectors remain explicit
+instruments. Their A/B definitions do not inherit the new runtime defaults.
+`MEMRA_TEST_DSV4_DEFAULT_CHILD` is a cfg(test)-only subprocess marker carrying
+expected cadence/dense booleans; it tests real environment initialization and
+thread-local overrides without CUDA allocation. It is never read by production
+code and is not a performance door.
 
 Follow-on gate selectors: `--full-token-replay-baab` reverses the single 20-row
 order to B×5/A×5/A×5/B×5 with the same correctness/refusal gates and first-capture
@@ -1801,4 +1798,4 @@ in this PR's history. Raw evidence is private in Darklanes:
 
 | Control | Default | Both arms, rollback and evidence |
 | --- | --- | --- |
-| `memra_dsv4_dense_exact_tail_set_for_gate` (thread-local host API only) | **OFF**, decide-by: 2026-09-22 | `0` retains the actual FP8 GEMV/F32-dot M-row kernels; `1` selects M=1 exact-tail twins only for admitted aligned operands. The per-leaf arithmetic, FP8 decode/unroll, 128-thread output geometry and 64/32/16/8/4/2/1 tree are unchanged; one shared publication/barrier is followed by warp-0 register transport. No environment or serving switch. Grouped, M>1 (including recursive tails), unsupported shape/type/alignment retain control. Capture stores a fixed kernel function, never a live device selector. Gate owner must use separate candidate/control states/graphs and drain both ranks before changing selection; rollback is `0` plus fresh control graphs, not relabeling retained candidate graphs. `memra_dsv4_dense_exact_tail_counts_for_gate` counts successful host enqueues, including capture, NOT graph replays; actual graph execution also requires candidate-node census, live outputs and replay counts. Component gate: `tools/dsv4-dense-exact-tail-gate.cu`. Receipt status: `research/dsv4f-dense-exact-tail-20260908/README.md`; compilation/numeric/model results pending, no speed claim. |
+| `MEMRA_DSV4_DENSE_EXACT_TAIL` plus explicit `memra_dsv4_dense_exact_tail_set_for_gate` | **ON**, decide-by: 2026-09-22 for rollback-seam removal review | Unset or any value except exact `0` selects the M=1 exact-tree twins for admitted aligned operands; exact `0` retains original FP8 GEMV/F32-dot kernels. The per-leaf arithmetic, decode/unroll, 128-thread geometry and reduction tree are unchanged. Grouped/M>1 recursive tails and unsupported shapes retain control. The environment is read once per host thread before its first enqueue; set `0` before starting workers and create fresh graphs for rollback. Captures freeze functions and never read a live device selector. Explicit thread-local gate overrides take precedence, preserving composition A=(both OFF), B=(both ON) and separate legacy controls. Enqueue counters are not device replay proof. Dense independent +0.459578%/+0.397451% receipts: private Darklanes #507 `research/dsv4f-dense-exact-tail-20260908/MODEL-RESULT.md`, namespaces `dense-tail-model-5b66fe9-r2/r3`. Cadence #508 and composition pointers: `research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`. No serving admission is inferred from the diagnostic receipt. |

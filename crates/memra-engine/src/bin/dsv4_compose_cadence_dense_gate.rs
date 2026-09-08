@@ -277,14 +277,8 @@ impl Arm {
             .expect("initial restore");
         // gpu is boxed at a stable address and outlives every Arm; its weights,
         // numeric controls and runtime configuration stay fixed throughout.
-        unsafe {
-            if program.cadence {
-                gpu.arm_full_token_replay_cadence_for_gate(&mut state, cfg)
-            } else {
-                gpu.arm_full_token_replay_for_gate(&mut state, cfg)
-            }
-        }
-        .expect("arm immutable composed program");
+        unsafe { gpu.arm_full_token_replay_mode_for_gate(&mut state, cfg, program.cadence) }
+            .expect("arm immutable composed program");
         assert_eq!(
             gpu.full_token_replay_captures_for_gate(&state).unwrap(),
             [0, 0]
@@ -786,6 +780,34 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arm_a_explicitly_rolls_back_both_default_on_programs() {
+        assert_eq!(
+            PROGRAMS[0],
+            Program {
+                cadence: false,
+                dense: false
+            }
+        );
+        assert_eq!(
+            PROGRAMS[1],
+            Program {
+                cadence: true,
+                dense: true
+            }
+        );
+        std::thread::spawn(|| {
+            set_dense(true);
+            assert!(memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate());
+            set_dense(PROGRAMS[0].dense);
+            assert!(!memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate());
+            set_dense(PROGRAMS[1].dense);
+            assert!(memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate());
+        })
+        .join()
+        .unwrap();
+    }
 
     #[test]
     fn block_order_reverses_without_changing_arm_identity() {

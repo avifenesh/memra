@@ -2,17 +2,27 @@
 // inherits its -fmad=false build. Original arithmetic/load bodies stay intact.
 #pragma once
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 
 // Host gate selection is thread-local and never read by a device kernel. Capture
 // freezes the chosen kernel function, so later selection cannot mutate a graph.
 // Gate callers own separate candidate/control states and drain before switching.
-static thread_local bool dsv4_dense_exact_tail_enabled = false;
+// Read once per host thread before its first enqueue. Only explicit 0 rolls back.
+// The explicit gate override below still owns A/B selection before capture.
+static thread_local bool dsv4_dense_exact_tail_enabled = [] {
+    const char* value = std::getenv("MEMRA_DSV4_DENSE_EXACT_TAIL");
+    return !value || std::strcmp(value, "0") != 0;
+}();
 static thread_local int dsv4_dense_exact_tail_suppressed = 0;
 static thread_local uint64_t dsv4_dense_exact_tail_enqueues[2] = {};
 extern "C" int memra_dsv4_dense_exact_tail_set_for_gate(int enabled) {
     if (enabled != 0 && enabled != 1) return 40075;
     dsv4_dense_exact_tail_enabled = enabled != 0;
     return 0;
+}
+extern "C" int memra_dsv4_dense_exact_tail_enabled_for_gate() {
+    return dsv4_dense_exact_tail_enabled ? 1 : 0;
 }
 extern "C" int memra_dsv4_dense_exact_tail_counts_for_gate(uint64_t* fp8, uint64_t* dots) {
     if (!fp8 || !dots) return 40075;

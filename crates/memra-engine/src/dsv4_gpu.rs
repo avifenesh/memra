@@ -45,6 +45,31 @@ use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
 type Res<T> = Result<T, String>;
 
+/// Cadence selection for the already-admitted full-token replay path. Set before
+/// arming a request; retained graphs never change when the environment changes.
+pub fn dsv4_replay_cadence_default() -> bool {
+    std::env::var("MEMRA_DSV4_REPLAY_CADENCE").as_deref() != Ok("0")
+}
+
+/// Explicit host-thread gate override, applied before enqueue/capture. Existing
+/// retained graphs keep their captured functions; callers drain before switching.
+pub fn set_dense_exact_tail_for_gate(enabled: bool) -> Res<()> {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_exact_tail_set_for_gate(enabled: i32) -> i32;
+    }
+    ck("dense exact-tail gate selection", unsafe {
+        memra_dsv4_dense_exact_tail_set_for_gate(i32::from(enabled))
+    })
+}
+
+/// Read the actual host-thread dispatch selection without allocating CUDA state.
+pub fn dense_exact_tail_enabled_for_gate() -> bool {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_exact_tail_enabled_for_gate() -> i32;
+    }
+    unsafe { memra_dsv4_dense_exact_tail_enabled_for_gate() == 1 }
+}
+
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
@@ -7844,7 +7869,9 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    /// Default-OFF request-local diagnostic. No environment or serving dispatch.
+    /// Explicit request-local full-token replay arming. Cadence defaults ON
+    /// within this admitted path; MEMRA_DSV4_REPLAY_CADENCE=0 selects full replay.
+    /// This does not automatically arm ordinary eager/serving requests.
     /// # Safety
     /// The model must outlive this state at a stable address. Its weight allocations
     /// and kernel configuration must not be replaced or reconfigured while armed.
@@ -7855,10 +7882,10 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         cfg: Dsv4SampleCfg,
     ) -> Res<()> {
-        self.arm_full_token_replay_inner(state, cfg, false)
+        self.arm_full_token_replay_inner(state, cfg, dsv4_replay_cadence_default())
     }
 
-    /// Default-OFF three-cadence forward graphs, retaining the original commit graph.
+    /// Explicit three-cadence selection, retaining the original commit graph.
     /// # Safety
     /// The same stable model/weight/config lifetime lease as
     /// `arm_full_token_replay_for_gate` applies for the complete armed request.
@@ -7868,6 +7895,20 @@ impl Dsv4Gpu {
         cfg: Dsv4SampleCfg,
     ) -> Res<()> {
         self.arm_full_token_replay_inner(state, cfg, true)
+    }
+
+    /// Explicit gate selection, independent of the environment default. This
+    /// keeps the legacy full-replay oracle and composition A reproducible.
+    /// # Safety
+    /// The stable model/weight/config lease of `arm_full_token_replay_for_gate`
+    /// applies for the lifetime of this armed request.
+    pub unsafe fn arm_full_token_replay_mode_for_gate(
+        &self,
+        state: &mut DecodeState,
+        cfg: Dsv4SampleCfg,
+        cadence: bool,
+    ) -> Res<()> {
+        self.arm_full_token_replay_inner(state, cfg, cadence)
     }
 
     fn arm_full_token_replay_inner(

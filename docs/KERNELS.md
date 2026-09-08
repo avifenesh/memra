@@ -634,7 +634,7 @@ specific gate was not found. FLAGS.md is the authoritative flag catalog.
 | --- | --- | --- |
 | `cu/dsv4_sampler.cu` | `dsv4_sample_prepare`, `dsv4_sample_merge`, `dsv4_sample_exp_scan`, `dsv4_sample_offsets`, `dsv4_sample_draw` | Head-stream f32 penalty/key preparation; stable unique-key merge chain; f64 exp and block prefix sums; block offsets; top-k/top-p inverse CDF. Request-owned scratch, one token u32 D2H. Numeric class `device-f64-exp-tree-cdf-v1`; finite inputs required. `MEMRA_DSV4_SAMPLER=device`, default OFF. Component tape and sampled ABBA: `dsv4_tp_ep_sampled_perf_gate --sampler-component` / `<model> <source> --sampler-abba`. Receipt: `research/dsv4f-gpu-sampler-20260907/RESULTS.md`. |
 
-### Dense M=1 exact-tail candidate (default OFF, 2026-09-08)
+### Dense M=1 exact-tail transport (default ON, 2026-09-08)
 
 `crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh`, included only by
 `cu/dsv4_gpu.cu`, defines `dsv4_dense_exact_tail_fp8_kernel<1,false>` and
@@ -643,6 +643,21 @@ copied intact up to the reduction tail. The replacement replays the exact
 128-leaf tree after one shared store/barrier, using guarded full-mask warp-0
 shuffles. Original kernels and grouped/M>1 dispatch remain the control.
 `memra_dsv4_dense_exact_tail_{fp8,dots}` refuse unsupported raw calls; the two
-existing M-row launchers select them through the host-only gate API documented
-in FLAGS.md. No expert or compressor kernel changes. Component and model
-receipts are pending; see `research/dsv4f-dense-exact-tail-20260908/README.md`.
+existing M-row launchers select them by default when admitted;
+`MEMRA_DSV4_DENSE_EXACT_TAIL=0` retains the original kernels. Explicit host-thread
+gate overrides still select immutable A/B capture functions. No expert or
+compressor arithmetic changes. Dense independent orders +0.459578%/+0.397451%
+are banked in private Darklanes #507,
+`research/dsv4f-dense-exact-tail-20260908/MODEL-RESULT.md`. Combined qualification
+is tracked by `research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`.
+
+### Full-token cadence capture (default ON within admitted replay, 2026-09-08)
+
+No new kernel: three retained forward graphs omit inactive compressor emission/
+shift calls, retaining the existing active kernels, geometry and reduction order.
+`MEMRA_DSV4_REPLAY_CADENCE=0` selects the original full-forward graph at fresh
+request arming. Shared commit/head/sample and both refusal checks remain.
+Cadence independent orders +1.007107%/+1.074545% are banked in private Darklanes
+#508, `research/dsv4f-replay-cadence-20260908/COMBINED-RESULT.md`. Full replay
+admission remains unchanged, including pos<512; no general eager graph fallback.
+Both rollback seams have decide-by 2026-09-22 for removal review.
