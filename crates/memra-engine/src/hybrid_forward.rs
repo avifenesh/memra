@@ -3176,6 +3176,20 @@ impl HybridModel {
         Ok(())
     }
 
+    /// Complete every source read issued by a plain prefix restore before its lease ends.
+    /// Root copies use `e`'s current stream; TP KDA and latent peer copies use each peer's
+    /// main stream in `glm5_tp_prefix_restore`. Returning from those copies only enqueues.
+    pub fn prefix_restore_fence(&self, e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
+        e.stream().synchronize()?;
+        if let Some(rt) = self.glm5_tp_rt_for(0, self.layers.len()) {
+            for peer in &rt.peers {
+                let _m = peer.gpu.enter_main()?;
+                peer.stream().synchronize()?;
+            }
+        }
+        Ok(())
+    }
+
     fn glm5_tp_rt_for(
         &self,
         lo: usize,
