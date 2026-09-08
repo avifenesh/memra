@@ -1732,7 +1732,11 @@ impl Engine {
         ) {
             let six = [e_q, e_k, e_v, e_fa, e_ga, e_b];
             let in_f = e_q.0;
-            if t != 1
+            let verify_fused = (2..=8).contains(&t)
+                && std::env::var("MEMRA_GLM5_VERIFY_E4M3_FUSED6").as_deref() == Ok("1")
+                && std::env::var("MEMRA_NO_BATCHED").is_err()
+                && (t <= 4 || Self::b8_enabled());
+            if (t != 1 && !verify_fused)
                 || std::env::var("MEMRA_FAST").as_deref() == Ok("0")
                 || !self.mmvq_supports(crate::QT_F8_E4M3)
                 || !self.e4m3_dual_on()
@@ -1741,7 +1745,7 @@ impl Engine {
                 // layout this kernel's single `row_bytes` cannot address.
                 || six.iter().any(|&(i, rb, _)| i != in_f || rb != in_f)
                 || !in_f.is_multiple_of(32)
-                || x.len() < in_f
+                || x.len() < t * in_f
             {
                 return Ok(None);
             }
@@ -1780,19 +1784,24 @@ impl Engine {
             let (aq, ad): (&CudaSlice<i8>, &CudaSlice<f32>) = match pre_q8 {
                 Some((q, d)) => (q, d),
                 None => {
-                    owned = self.quantize_q8_1(x, 1, in_f)?;
+                    owned = self.quantize_q8_1(x, t, in_f)?;
                     (&owned.0, &owned.1)
                 }
             };
             let mut outs = [
-                self.uninit(dims[0])?,
-                self.uninit(dims[1])?,
-                self.uninit(dims[2])?,
-                self.uninit(dims[3])?,
-                self.uninit(dims[4])?,
-                self.uninit(dims[5])?,
+                self.uninit(t * dims[0])?,
+                self.uninit(t * dims[1])?,
+                self.uninit(t * dims[2])?,
+                self.uninit(t * dims[3])?,
+                self.uninit(t * dims[4])?,
+                self.uninit(t * dims[5])?,
             ];
-            self.e4m3_fused6_into(w, aq, ad, in_f, dims, in_f, ws, &mut outs)?;
+            if verify_fused {
+                self.e4m3_verify_fused6_into(w, aq, ad, in_f, dims, in_f, ws, &mut outs, t)?;
+                GLM5_VERIFY_E4M3_FUSED6_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+            } else {
+                self.e4m3_fused6_into(w, aq, ad, in_f, dims, in_f, ws, &mut outs)?;
+            }
             if KDA_FUSED6_E4M3_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
                 eprintln!(
                     "[kda-fused6] engaged arm=e4m3 in_f={in_f} out={dims:?} t={t} (one launch \
@@ -2332,3 +2341,7 @@ mod kda_conv3_default_tests {
         assert!(!kda_conv3_on_from(Some("0"), "100a"));
     }
 }
+
+/// Candidate engagement counter, checked by the real-input oracle.
+pub static GLM5_VERIFY_E4M3_FUSED6_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);

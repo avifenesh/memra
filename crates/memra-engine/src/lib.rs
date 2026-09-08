@@ -21060,6 +21060,83 @@ impl Engine {
         Ok(())
     }
 
+    /// Candidate batched six-group, same per-row dot and rounded macro-scale.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn e4m3_verify_fused6_into(
+        &self,
+        w: [&CudaSlice<u8>; 6],
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        in_f: usize,
+        dims: [usize; 6],
+        row_bytes: usize,
+        ws: [f32; 6],
+        outs: &mut [CudaSlice<f32>; 6],
+        t: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const ROWS_PER_BLOCK: u32 = 4;
+        let blocks: u32 = dims
+            .iter()
+            .map(|&o| (o as u32).div_ceil(ROWS_PER_BLOCK))
+            .sum();
+        let name = match Self::batched_mcols(t) {
+            2 => "qmatvec_e4m3_verify_fused6_b2",
+            4 => "qmatvec_e4m3_verify_fused6_b4",
+            8 => "qmatvec_e4m3_verify_fused6_b8",
+            _ => return Err("verify fused6 only supports t2..8".into()),
+        };
+        let f = self.func(name);
+        let mt = t as i32;
+        let cfg = LaunchConfig {
+            grid_dim: (blocks, 1, 1),
+            block_dim: (32, ROWS_PER_BLOCK, 1),
+            shared_mem_bytes: 0,
+        };
+        let inf = in_f as i32;
+        let o: [i32; 6] = std::array::from_fn(|i| dims[i] as i32);
+        let rbl = row_bytes as i64;
+        let (o0, o1) = outs.split_at_mut(1);
+        let (o1, o2) = o1.split_at_mut(1);
+        let (o2, o3) = o2.split_at_mut(1);
+        let (o3, o4) = o3.split_at_mut(1);
+        let (o4, o5) = o4.split_at_mut(1);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(w[0])
+            .arg(w[1])
+            .arg(w[2])
+            .arg(w[3])
+            .arg(w[4])
+            .arg(w[5])
+            .arg(aq)
+            .arg(ad)
+            .arg(&mut o0[0])
+            .arg(&mut o1[0])
+            .arg(&mut o2[0])
+            .arg(&mut o3[0])
+            .arg(&mut o4[0])
+            .arg(&mut o5[0])
+            .arg(&inf)
+            .arg(&o[0])
+            .arg(&o[1])
+            .arg(&o[2])
+            .arg(&o[3])
+            .arg(&o[4])
+            .arg(&o[5])
+            .arg(&rbl)
+            .arg(&ws[0])
+            .arg(&ws[1])
+            .arg(&ws[2])
+            .arg(&ws[3])
+            .arg(&ws[4])
+            .arg(&ws[5])
+            .arg(&mt);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// BATCHED FUSED e4m3 pair (m=2..8). The batched kernels carry no `ws` arg (every batched
     /// kernel in the tree is scale-free), so each output takes its own `scale_inplace` — the
     /// SAME post-op the per-tensor batched dispatch applies, hence still bit-identical.
@@ -26405,6 +26482,18 @@ impl Engine {
         m: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         use crate::model::GpuTensor;
+        let _tally_weight = crate::glm_spec::VerifyTallyRange::new(|| {
+            let (qt, bytes) = match w {
+                GpuTensor::Quant { qtype, bytes, .. } => (*qtype, bytes.len()),
+                GpuTensor::Float { data, .. } => (QT_F32, data.len() * 4),
+                GpuTensor::FloatBf16 { data, .. } => (QT_BF16, data.len()),
+            };
+            format!(
+                "glm5-weight:in={}:out={}:t={m}:qt={qt}:bytes={bytes}",
+                w.in_features(),
+                w.out_features()
+            )
+        });
         // MEMRA_GLM5_W8: the glm5 verify-rows walk's KDA/MLA projections take the SAME q8_0
         // mirror the plain t=1/small-t decode arm uses in `matvec_bf16_rows_into` — placed
         // BEFORE the tcols check below so the door's own class (not the bf16 tcols class) wins

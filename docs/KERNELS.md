@@ -677,75 +677,9 @@ Composition confirmation is directly recorded in
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
-### KV RMSNorm and RoPE default with rollback, 2026-09-09
 
-`dsv4_norm_rope_f32_fixed_order_kernel` is the default-ON (admitted TP/EP f32x)
-`MEMRA_DSV4_NORM_FUSE` arm. It replaces the adjacent KV norm and rotary launches
-in each t=1 device batch attention layer (SWA, CSA and HCA). The 128-thread
-RMSNorm reduction is unchanged; only shared-memory transport replaces the
-normalized f32 global-memory intermediate. The subsequent QAT is unchanged.
-Retained census confirms 43 launches removed per rank per forward step,
-with 43 fused nodes in each ON forward variant and zero in OFF.
+## Verify E4M3 six-group candidate, 2026-09-09
 
-Attention-entry norm feeds Q and KV projections and, in compressed layers,
-f32 compressor/indexer projections. Q norm/pack is already fused by the diet.
-MoE-entry norm feeds router logits before activation quantization and grouped
-FP8-to-half gathering; shared experts also consume its BF16 pack. Those are
-not one adjacent norm/gather/convert chain. Compressor emission norm feeds
-RoPE then Hadamard/FP4 (indexer) or QAT (attention), but its replay wrappers
-are outside this lane. Final norm feeds f32 head dots. No fusion of these
-fan-out chains or modification of their reduction trees is proposed.
-
-KEEP small, same numeric class: +0.607010% forward and +0.437574% reverse
-pooled throughput on pinned DSV4F EP+TP2 2x RTX PRO 6000 with full replay,
-cadence, dense exact-tail, graph split-K, device sampler and diet. A second
-forward run confirms +0.499856%. Each order has 20 sampled rows with first
-capture included. All 86 component sites pass raw-bit comparison, memcheck
-and synccheck report zero errors, and every 256-step identity/census/reset
-and 16-refusal invocation passes. Receipts: [private Darklanes #530](https://github.com/avifenesh/darklanes/pull/530),
-the report and raw manifests linked there, source `511f0e663`,
-binary `e36c98b0bd80cd8f1c6895f7193e68ebf9120327e437b5fab07c1945cad5761c`.
-The composition with dense-fast is KEEP at +1.618979% / +1.609496%, with
-40 identity-matched sampled rows, and is now the default in the admitted path.
-Same numeric class, token-identical to the prior default. Rollback uses explicit
-`MEMRA_DSV4_NORM_FUSE=0` with a fresh process/uncaptured state; unset is ON.
-Rollback seam decide-by: 2026-09-23. Composition receipts: [private Darklanes #535](https://github.com/avifenesh/darklanes/pull/535). FFI entry: `memra_dsv4_norm_rope_f32_fixed_order` in
-`src/dsv4_ffi.rs`, dispatched by the t=1 batch attention path in `src/dsv4_gpu.rs`.
-
-### Dense-fast exact-tree kernels and qualification (default ON, 2026-09-09)
-
-`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
-and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
-launchers by `MEMRA_DSV4_DENSE_FAST`. FP8 uses 256 threads for two independent
-rows sharing the identical E4M3 table; each row keeps 128 leaves. Dots retain
-128 threads, existing 16-byte operand loads and four-iteration loop unrolling.
-Leaf t consumes K positions 8*t+1024*j+[0..7] in ascending j/element order.
-The final tree is ((p[t]+p[t+64])+(p[t+32]+p[t+96])) followed by guarded
-16/8/4/2/1 warp shuffles, all F32 additions. FMAD stays disabled. Ragged tile
-rows participate in barriers without out-of-range operand loads or stores.
-
-`tools/dsv4-dense-fast-gate.cu` checks raw bits, guards, operand immutability
-and actual retained graph functions. All 24 real rank/shape cases, 36 boundary
-cases and two cancellation witnesses pass in normal, memcheck and synccheck;
-both sanitizers report zero errors. Each real case has 50 warm and 50 cold
-CUDA-event samples per arm; cold flushes 256 MiB. GB/s is modeled unique tensor
-traffic, not measured DRAM bandwidth. Resource APIs report static occupancy
-limits; disassembly reports static instructions. The captured operand callback
-is null in normal work and verifies registered stream and allocation ownership.
-
-`src/bin/dsv4_dense_fast_gate.rs` forces A OFF and B ON on the default
-split-K/cadence/device sampler/diet program, checks 256 per-step identities,
-retained resets, every forward variant's functions and 16 live refusals.
-Its 20-row ON/OFF/OFF/ON and single reverse twin include each scored arm's first
-capture. Pooled gains are +1.551526% and +1.459516%; all 40 rows are eligible
-and share token/logit/cache/hidden identity. Composition with norm-fuse is KEEP
-at +1.618979% / +1.609496% and defaults ON when unset. Explicit `0` is the
-rollback with fresh uncaptured states; seam decide-by: 2026-09-23.
-Same numeric class, token-identical to the prior default. Source `711165799`, model binary SHA256
-`4be3e8084bb7d589abb8d2250c06f8c12f1edb713a66e2390bc90ed91821d5fd`.
-Receipts: [private Darklanes #529](https://github.com/avifenesh/darklanes/pull/529).
-Composition receipts: [private Darklanes #535](https://github.com/avifenesh/darklanes/pull/535).
-`dsv4_densefast_normfuse_default_gate` checks real unset/0 selection before
-capture, both function censuses, eager identity, refusals and five sanity rows.
-Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
-environment policy after the eager OFF oracle. No kernel arithmetic changes.
+| Kernel | Purpose | Dispatch | Binding |
+|---|---|---|---|
+| `qmatvec_e4m3_verify_fused6_b2`, `qmatvec_e4m3_verify_fused6_b4`, `qmatvec_e4m3_verify_fused6_b8` | One block-offset grid for six E4M3 projections, current Q8 activation and dot order, rounded macro-scale store | `MEMRA_GLM5_VERIFY_E4M3_FUSED6=1`, default OFF, t2..8; decide-by: 2026-09-23 | `Engine::e4m3_verify_fused6_into`, `cu/qmatvec.cu`; receipt `research/glm5-verify-tally-20260909/RESULTS.md` |

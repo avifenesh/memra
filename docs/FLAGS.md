@@ -1837,14 +1837,17 @@ serving admission. Direct composition evidence is
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, in addition to dense #507 and cadence #508.
 
-## DSV4 KV norm fusion, 2026-09-09
 
-| Door | Default | Contract and gate |
-| --- | --- | --- |
-| `MEMRA_DSV4_NORM_FUSE` | **ON when unset in admitted TP/EP f32x**, rollback seam decide-by: 2026-09-23 | Unset or `1` selects adjacent KV RMSNorm plus RoPE fusion in the qualified t=1 TP/EP f32 path and newly captured cadence variants. Explicit `0` restores the unfused pair. Unset stays OFF outside that admitted topology/numeric domain; explicit unsupported `1` still refuses. Same numeric class, token-identical to the prior default. The 128-thread reduction and rotary expressions are unchanged, with 43 fused nodes and 43 fewer launches per rank/forward. Rollback: set `0` before process initialization and create fresh uncaptured states; retained graphs keep their captured functions. Historical gate controls force OFF explicitly. Composition KEEP: +1.618979% A5B5B5A5 / +1.609496% B5A5A5B5, 20 rows/order with first captures included, 256-step identity, both censuses, resets and 16 refusals per invocation. Receipts: [dense single #529](https://github.com/avifenesh/darklanes/pull/529), [single #530](https://github.com/avifenesh/darklanes/pull/530), [composition #535](https://github.com/avifenesh/darklanes/pull/535), measured source `73c8b04b7`, binary `f891afea1e008a754f17cb534e35cbe26bdd35857bf5ae3c6d40b34df002b755`. Default engagement: `dsv4_densefast_normfuse_default_gate`, separate unset/0 invocations, 256-step eager identity and five sanity rows per mode. |
+## Verify tally diagnostic, 2026-09-09
 
-### Dense-fast exact-tree composition door (2026-09-09)
+| Flag | Default | Arms and rollback | Evidence |
+|---|---|---|---|
+| `MEMRA_GLM5_VERIFY_TALLY` | OFF | `1`: NVTX round/verify/layer ranges and CUDA profiler start at first round; unset/`0`: no instrumentation. No stream drains or math change. Explanatory diagnostic. | `research/glm5-verify-tally-20260909/TALLY.md` |
 
-| Flag | Default | Both arms, rollback and evidence |
-| --- | --- | --- |
-| `MEMRA_DSV4_DENSE_FAST` | **ON when unset**, rollback seam decide-by: 2026-09-23 | Unset or exact `1` selects two-row FP8 LUT sharing and four-iteration dot load scheduling within admitted dense exact-tail calls. Explicit `0` restores the previous exact-tail kernels; other strings retain their previous OFF behavior. `MEMRA_DSV4_DENSE_EXACT_TAIL=0` still selects the legacy control. Same numeric class, token-identical to the prior default. Arithmetic/load bodies are unchanged. Rollback: set `0` before process initialization and create fresh uncaptured states; retained graphs keep their captured functions. Historical gate controls force OFF explicitly. Composition KEEP: +1.618979% A5B5B5A5 / +1.609496% B5A5A5B5, 20 rows/order with first captures included, 256-step identity, both censuses, resets and 16 refusals per invocation. Receipts: [single #529](https://github.com/avifenesh/darklanes/pull/529), [norm single #530](https://github.com/avifenesh/darklanes/pull/530), [composition #535](https://github.com/avifenesh/darklanes/pull/535), measured source `73c8b04b7`, binary `f891afea1e008a754f17cb534e35cbe26bdd35857bf5ae3c6d40b34df002b755`. Default engagement: `dsv4_densefast_normfuse_default_gate`, separate unset/0 invocations, 256-step eager identity and five sanity rows per mode. |
+| `MEMRA_GLM5_VERIFY_E4M3_FUSED6` | OFF | `1`: one batched six-projection E4M3 grid at t2..8, shared Q8 conversion and in-store scales; unset/`0`: six current calls. Requires `MEMRA_KDA_FUSED_PROJ=1`; existing dtype/layout/numeric-program refusals remain. decide-by: 2026-09-23. | `research/glm5-verify-tally-20260909/CANDIDATE.md` |
+
+The tally diagnostic also accepts `capture:/absolute/directory`: first real KDA
+input per layer at each t2/4/7, with context metadata. This capture arm performs
+DtoH and file I/O and is never used for timing. `1` starts/flushed-stops CUDA
+profiling at each burst boundary and emits asynchronous round/verify/layer/weight
+NVTX ranges. Boundary synchronization is outside the verify ranges.
