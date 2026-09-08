@@ -1,0 +1,1417 @@
+{
+  "base": "dcfeab7c738912a150ebbfea277112724bb99de4",
+  "implementation": "8aa555ebc2815232faaf8beb274e1806415668bf",
+  "binary_build": "base plus exact source files below",
+  "binaries": {
+    "candidate-route": {
+      "sha256": "be87c098583d6dfe246e6c8500f55da64df80a815301de34f2720bd48f89a44e",
+      "bytes": 64343776
+    },
+    "candidate-route-faults": {
+      "sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "bytes": 64344688
+    }
+  },
+  "source": {
+    "crates/memra-server/src/worker.rs": {
+      "sha256": "cc7c5c33717b2c0247d0ee17953ad9649a4229559c477a7978637e892828b752",
+      "bytes": 1656824
+    },
+    "crates/memra-engine/src/dflash.rs": {
+      "sha256": "c65e834e3cb07e614f76c72acaef9f043c8e35f5d932033f86c4961beb1a6284",
+      "bytes": 365988
+    }
+  },
+  "cells": {
+    "route-headline": {
+      "binary_sha256": "be87c098583d6dfe246e6c8500f55da64df80a815301de34f2720bd48f89a44e",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "turn1",
+          "result": {
+            "prompt_tokens": 131074,
+            "cached_tokens": 0,
+            "completion_tokens": 1024,
+            "finish": "length",
+            "spec": {
+              "rounds": 401,
+              "drafted": 1120,
+              "accepted": 623,
+              "acceptance_rate": 0.55625
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=132162 path=spec = 29696 B/token x ctx + 3154MB prefill-workspace + 0MB fixed = 7079MB",
+            "[dspark-acc] ctx=132075 burst=13/29 cum=623/1120=0.556"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 30128592148,
+            "prefix_cache_bytes": 4132470784
+          }
+        },
+        {
+          "cell": "turn2",
+          "result": {
+            "prompt_tokens": 131112,
+            "cached_tokens": 131040,
+            "completion_tokens": 1024,
+            "finish": "length",
+            "spec": {
+              "rounds": 444,
+              "drafted": 1171,
+              "accepted": 581,
+              "acceptance_rate": 0.4961571306575576
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=132200 path=spec = 29696 B/token x ctx + 3155MB prefill-workspace + 0MB fixed = 7081MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (131040 tokens, model qwen/qwen3.8-27b)",
+            "[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 0 spec + 1 dspark parked sessions (global LRU); effective free 2132MB -> 6934MB",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=131040 suffix=72 cost 7250MB -> 4129MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[prefix-cache] DSPARK restore: 131040 of 131112 prompt tokens + draft tail from cache (72 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 132144, suffix: Prime(72) } admitted=true admission_lease_released=true source_pins=1 pinned_bytes=4132470784 pool_used_bytes=29972896404",
+            "[dspark-acc] ctx=132103 burst=20/36 cum=581/1171=0.496"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 30128592148,
+            "prefix_cache_bytes": 4132470784
+          },
+          "after": {
+            "admitted": 2,
+            "completed": 2,
+            "cuda_pool_used_bytes": 30128886932,
+            "prefix_cache_bytes": 4132470784
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "b5ac26ef6d5fc70c76e08284550a7816cb77c065393acd72274f16efe66e0b54",
+          "bytes": 992
+        },
+        "server.log": {
+          "sha256": "dffeeba56bc0b00917c3f872af67083f7ca76f758713cd63bc95d1583c4f5a7a",
+          "bytes": 168476916
+        },
+        "turn1-request.json": {
+          "sha256": "8fbbf9714b5eb34818ea349d135adc539e21922a18ca894f5dac537f724a705d",
+          "bytes": 642249
+        },
+        "receipt.json": {
+          "sha256": "288e1fb1aaf6f68942b0dc1597374c4a4f1528acfe887ffd2d11ace9e9410d24",
+          "bytes": 30189
+        },
+        "turn2-request.json": {
+          "sha256": "034e1c37b9e0f26b27bf7a7d48a4429d69ce7f78fe65d0c8f9a354aa144aa259",
+          "bytes": 642474
+        }
+      }
+    },
+    "route-oracle": {
+      "binary_sha256": "be87c098583d6dfe246e6c8500f55da64df80a815301de34f2720bd48f89a44e",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "calibration",
+          "result": {
+            "prompt_tokens": 1050,
+            "cached_tokens": 0,
+            "completion_tokens": 204,
+            "finish": "stop",
+            "spec": {
+              "rounds": 63,
+              "drafted": 215,
+              "accepted": 141,
+              "acceptance_rate": 0.6558139534883721
+            },
+            "error": null
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=3162 path=spec = 29696 B/token x ctx + 491MB prefill-workspace + 0MB fixed = 585MB",
+            "[dspark-acc] ctx=1219 burst=23/36 cum=141/215=0.656"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 21415186964,
+            "prefix_cache_bytes": 229244928
+          }
+        },
+        {
+          "cell": "a-seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 28,
+              "drafted": 77,
+              "accepted": 39,
+              "acceptance_rate": 0.5064935064935064
+            },
+            "error": null
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32740 burst=21/36 cum=39/77=0.506"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 21415186964,
+            "prefix_cache_bytes": 229244928
+          },
+          "after": {
+            "admitted": 2,
+            "completed": 2,
+            "cuda_pool_used_bytes": 23773692820,
+            "prefix_cache_bytes": 1440579584
+          }
+        },
+        {
+          "cell": "a-restore",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 32672,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 28,
+              "drafted": 77,
+              "accepted": 39,
+              "acceptance_rate": 0.5064935064935064
+            },
+            "error": null
+          },
+          "log": [
+            "[prefix-cache] DSPARK restore: 32672 of 32708 prompt tokens + draft tail from cache (36 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+            "[dspark-acc] ctx=32740 burst=21/36 cum=39/77=0.506"
+          ],
+          "before": {
+            "admitted": 2,
+            "completed": 2,
+            "cuda_pool_used_bytes": 23773692820,
+            "prefix_cache_bytes": 1440579584
+          },
+          "after": {
+            "admitted": 3,
+            "completed": 3,
+            "cuda_pool_used_bytes": 23772771220,
+            "prefix_cache_bytes": 1440579584
+          }
+        },
+        {
+          "cell": "turn1",
+          "result": {
+            "prompt_tokens": 32760,
+            "cached_tokens": 0,
+            "completion_tokens": 262,
+            "finish": "stop",
+            "spec": {
+              "rounds": 94,
+              "drafted": 285,
+              "accepted": 168,
+              "acceptance_rate": 0.5894736842105263
+            },
+            "error": null
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=34872 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 537MB fixed = 2714MB",
+            "[dspark-acc] ctx=32994 burst=20/28 cum=168/285=0.589"
+          ],
+          "before": {
+            "admitted": 3,
+            "completed": 3,
+            "cuda_pool_used_bytes": 23772771220,
+            "prefix_cache_bytes": 1440579584
+          },
+          "after": {
+            "admitted": 4,
+            "completed": 4,
+            "cuda_pool_used_bytes": 25051680404,
+            "prefix_cache_bytes": 2653814784
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "1199613339336f635bbd69a9394b46a47259a0c27baaa40e88609c43e74c63e0",
+          "bytes": 988
+        },
+        "server.log": {
+          "sha256": "c247b7324ed400b6f7e279c0ba119c8f0bea43a956ed10b81edd08842f3253e5",
+          "bytes": 52435142
+        },
+        "calibration-request.json": {
+          "sha256": "3909434527b741955abf39225f9dc30770504483f4a0d4ecd6ae9859f2ca08ff",
+          "bytes": 5131
+        },
+        "receipt.json": {
+          "sha256": "1abf7f930f701f40dfe6b6f2dff335b5b149652b8e03d1f70c3947026d417961",
+          "bytes": 36614
+        },
+        "a-seed-request.json": {
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-restore-request.json": {
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "turn1-request.json": {
+          "sha256": "e13746b3d69e80d776af6fc4b064af2884977320323d0e251d017508260a057a",
+          "bytes": 160512
+        }
+      }
+    },
+    "final-full": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 24,
+              "drafted": 72,
+              "accepted": 42,
+              "acceptance_rate": 0.5833333333333334
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32740 burst=23/33 cum=42/72=0.583"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23518248852,
+            "prefix_cache_bytes": 1212403712
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 32708,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 29,
+              "drafted": 76,
+              "accepted": 36,
+              "acceptance_rate": 0.47368421052631576
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admit-oom] reclaim spared the prompt's prefix entry (32708 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32708 suffix=0 cost 2283MB -> 1152MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[prefix-cache] DSPARK restore: 32708 of 32708 prompt tokens + draft tail from cache (0 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32780, suffix: FullCover } admitted=true admission_lease_released=true source_pins=1 pinned_bytes=1212403712 pool_used_bytes=25029167080",
+            "[dspark-acc] ctx=32740 burst=17/40 cum=36/76=0.474"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23518248852,
+            "prefix_cache_bytes": 1212403712
+          },
+          "after": {
+            "admitted": 2,
+            "completed": 2,
+            "cuda_pool_used_bytes": 23518248852,
+            "prefix_cache_bytes": 1212403712
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "056a604f97af65e8e58d83ccb71342c4334eaa0e1ffd23f7ddea4ba0c771a619",
+          "bytes": 984
+        },
+        "server.log": {
+          "sha256": "2b009e82ac25b9b141318987f87cfc54541871df94aecf9562340c633b3ff413",
+          "bytes": 18751828
+        },
+        "seed-request.json": {
+          "sha256": "1add1a34b607c478e4b4341a62235c54ef708706be8649342642003a4a9058a9",
+          "bytes": 160390
+        },
+        "receipt.json": {
+          "sha256": "2080e47f4649429d3263794af5d56a1d94db5521c247a3106433e6cb4d331079",
+          "bytes": 17371
+        },
+        "restore-request.json": {
+          "sha256": "1add1a34b607c478e4b4341a62235c54ef708706be8649342642003a4a9058a9",
+          "bytes": 160390
+        }
+      }
+    },
+    "final-boundary": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 20,
+              "drafted": 73,
+              "accepted": 44,
+              "acceptance_rate": 0.6027397260273972
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32741 burst=24/31 cum=44/73=0.603"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517896596,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": 32793,
+            "cached_tokens": 32672,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 21,
+              "drafted": 73,
+              "accepted": 45,
+              "acceptance_rate": 0.6164383561643836
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[prefix-cache] DSPARK restore: 32672 of 32793 prompt tokens + draft tail from cache (121 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=true admission_lease_released=true source_pins=1 pinned_bytes=1211334656 pool_used_bytes=25031496744",
+            "[dspark-acc] ctx=32829 burst=23/32 cum=45/73=0.616"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517896596,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 2,
+            "completed": 2,
+            "cuda_pool_used_bytes": 24836129876,
+            "prefix_cache_bytes": 2425520128
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "bb28f064c0ec4b1b7697d4d77b2264b7ddce7679606ea8eb1f5ce6997fbcfa28",
+          "bytes": 992
+        },
+        "server.log": {
+          "sha256": "272f70cfe547968c8946c6d62ab723a5b64a0a4ac02defa616409fec980631b3",
+          "bytes": 17453389
+        },
+        "seed-request.json": {
+          "sha256": "136ab80df287f6d13cfea6fd4cb596aa6a57037469a2b1c0f96bf0e7a4d0f770",
+          "bytes": 160394
+        },
+        "receipt.json": {
+          "sha256": "f9e22e430dfd8533558747e0f018b43a3e99d51543534179c972c559d9b64e1f",
+          "bytes": 17524
+        },
+        "restore-request.json": {
+          "sha256": "36778d1a26374e4d10a17618aae69e001f679687ceaa25cf08fb7f11aad3ab3a",
+          "bytes": 160850
+        }
+      }
+    },
+    "final-missing-tail": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 25,
+              "drafted": 72,
+              "accepted": 40,
+              "acceptance_rate": 0.5555555555555556
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32742 burst=19/33 cum=40/72=0.556"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": null,
+            "cached_tokens": null,
+            "completion_tokens": null,
+            "finish": null,
+            "spec": {},
+            "error": "HTTP 429"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=false admission_lease_released=true source_pins=0 pinned_bytes=0 pool_used_bytes=23432351636"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "5121bcbad9330485135e0de505ab8d623bebf4ff87c501765e97064de7879cd9",
+          "bytes": 1000
+        },
+        "server.log": {
+          "sha256": "c153a02fb939a23799f5d64945374f219d2fd7d494bdc1fd4ae42d3ab755c236",
+          "bytes": 14202529
+        },
+        "seed-request.json": {
+          "sha256": "78b7e8df31a47367f57400919cc07dca411e859449a02b50231f8bf0aa43b8c8",
+          "bytes": 160398
+        },
+        "receipt.json": {
+          "sha256": "96d15c059e0eb13a21fe785deba420cfb5a18cf620c722e93b481c1fab0eae14",
+          "bytes": 16714
+        },
+        "restore-request.json": {
+          "sha256": "923910425c5c87ac67207ea795501952dad586567dc5f316e6a27f08413c6487",
+          "bytes": 160854
+        }
+      }
+    },
+    "final-short-tail": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 20,
+              "drafted": 71,
+              "accepted": 47,
+              "acceptance_rate": 0.6619718309859155
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32741 burst=27/31 cum=47/71=0.662"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517896596,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": null,
+            "cached_tokens": null,
+            "completion_tokens": null,
+            "finish": null,
+            "spec": {},
+            "error": "HTTP 429"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=false admission_lease_released=true source_pins=0 pinned_bytes=0 pool_used_bytes=23517896596"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517896596,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517896596,
+            "prefix_cache_bytes": 1211334656
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "8962eb21c468779a0fcd9c33d7680d3e63e65ce768ee8c1f866bd0290cd69a9d",
+          "bytes": 996
+        },
+        "server.log": {
+          "sha256": "97b00e45bd2a6742475e140131e2520a4cb9d0cee3a0daefc8d27cc1fc422393",
+          "bytes": 13454389
+        },
+        "seed-request.json": {
+          "sha256": "d5afb6c9d49b49f7f9f5c879edd4e820118f58cd4324d02924c8e8323fb8ad85",
+          "bytes": 160396
+        },
+        "receipt.json": {
+          "sha256": "1b5d8e44ec8229cb993b816d703e7321981971700aea1f659b2360c93e1f67d2",
+          "bytes": 16705
+        },
+        "restore-request.json": {
+          "sha256": "d02cde20ef1529e90560306c4b2081d46ee787454c67d489289a9ca0fb73d946",
+          "bytes": 160852
+        }
+      }
+    },
+    "final-invalid-source": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 25,
+              "drafted": 70,
+              "accepted": 39,
+              "acceptance_rate": 0.5571428571428572
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32740 burst=21/31 cum=39/70=0.557"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": null,
+            "cached_tokens": null,
+            "completion_tokens": null,
+            "finish": null,
+            "spec": {},
+            "error": "HTTP 429"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=false admission_lease_released=true source_pins=0 pinned_bytes=0 pool_used_bytes=23516565396"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "e808dc4aa460e50c1172dce05877dceefc16a98f742612848652be6e38f2337f",
+          "bytes": 1004
+        },
+        "server.log": {
+          "sha256": "023b5109d663d9f48ef7082ce69d10622039b86e11bcac0e9bc71317cd976b92",
+          "bytes": 14188112
+        },
+        "seed-request.json": {
+          "sha256": "c1cf5f12c3b60b052783284d9b96119d12bb1a50c16efead5fb9e4f3b841b252",
+          "bytes": 160400
+        },
+        "receipt.json": {
+          "sha256": "843ae901f436e820b7c60d1a381631994bc161f0c0a6257598a6a15c09bd7bc8",
+          "bytes": 16692
+        },
+        "restore-request.json": {
+          "sha256": "756cff7f6763aaffe26fee960b2ae3f0bf324252abdf2bee8b81b03b3930426f",
+          "bytes": 160856
+        }
+      }
+    },
+    "final-missing-logits": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 32,
+              "drafted": 83,
+              "accepted": 34,
+              "acceptance_rate": 0.40963855421686746
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32741 burst=20/36 cum=34/83=0.410"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": null,
+            "cached_tokens": null,
+            "completion_tokens": null,
+            "finish": null,
+            "spec": {},
+            "error": "HTTP 429"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=false admission_lease_released=true source_pins=0 pinned_bytes=0 pool_used_bytes=23516565396"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "c8a73895a5800b22449498ffbb2d385a8a3f36d6302623959d643c124b22f87f",
+          "bytes": 1004
+        },
+        "server.log": {
+          "sha256": "e25b46f74d0f8759d7843156e049b064863d68314ce293d0e70b42d254408f5b",
+          "bytes": 15320628
+        },
+        "seed-request.json": {
+          "sha256": "1bef2e9acbaf967f8cf64c86636cc478f90dcff74dac7d26bf7ccd96a14d12a6",
+          "bytes": 160400
+        },
+        "receipt.json": {
+          "sha256": "c66aa9dc451d4de859e10da21a25b1aa3610994b3f8eec6f2a0bd3fc1cb3ad62",
+          "bytes": 16732
+        },
+        "restore-request.json": {
+          "sha256": "905ad02746d8b3daa2d1f08afd95bcf5bde65bff7ff8ab218b8c0eb9d6496853",
+          "bytes": 160856
+        }
+      }
+    },
+    "final-lost-source": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 26,
+              "drafted": 72,
+              "accepted": 39,
+              "acceptance_rate": 0.5416666666666666
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32741 burst=20/32 cum=39/72=0.542"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": null,
+            "cached_tokens": null,
+            "completion_tokens": null,
+            "finish": null,
+            "spec": {},
+            "error": "HTTP 429"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=false admission_lease_released=false source_pins=0 pinned_bytes=0 pool_used_bytes=22305230740"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23516565396,
+            "prefix_cache_bytes": 1211334656
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "a8dc20241eb6e68f64f36b4c59500172f765171dd93181b778e578a0ad1d9d95",
+          "bytes": 998
+        },
+        "server.log": {
+          "sha256": "b9b03ae8e8488a33fe9f27a1e09d53bc90fcfb9e81907879989ae582e573295d",
+          "bytes": 14350811
+        },
+        "seed-request.json": {
+          "sha256": "d2b20b23612bb7d041c82cfded649843aaa4a666b01df811c961ba660c387f7e",
+          "bytes": 160397
+        },
+        "receipt.json": {
+          "sha256": "6426604dd4240daa5c28cb90cb84c1f4a17fa001781f72202660e01f37c3ff5d",
+          "bytes": 16690
+        },
+        "restore-request.json": {
+          "sha256": "d3a7776f5a650b7201c1672027ddc6aa2df840db526665325f5cc6753bc04ecf",
+          "bytes": 160853
+        }
+      }
+    },
+    "final-short-suffix": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 21,
+              "drafted": 74,
+              "accepted": 43,
+              "acceptance_rate": 0.581081081081081
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32743 burst=20/34 cum=43/74=0.581"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517896596,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": null,
+            "cached_tokens": null,
+            "completion_tokens": null,
+            "finish": null,
+            "spec": {},
+            "error": "HTTP 429"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=false admission_lease_released=true source_pins=0 pinned_bytes=0 pool_used_bytes=23517896596"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517896596,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517896596,
+            "prefix_cache_bytes": 1211334656
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "28b292e8c2e745812b2bc2b4794d47f9991193e810540b64cdf4c889deaeb97c",
+          "bytes": 1000
+        },
+        "server.log": {
+          "sha256": "ba2ccafa0932955272b44e05bbe3193aa6d1a1a6cb7cb58b6852d0e553636b8a",
+          "bytes": 13623092
+        },
+        "seed-request.json": {
+          "sha256": "4d3ed5f85910368c39f78f05bb251a8afab198b2b5856868ba0478aed8ab1433",
+          "bytes": 160398
+        },
+        "receipt.json": {
+          "sha256": "a799619f7fc086b1ece30a1a9642597ec89648746a52b1cafe35c676fe35bf24",
+          "bytes": 16688
+        },
+        "restore-request.json": {
+          "sha256": "956b6355dd5e6609c9ecd2d93fa8f37d0c87a998f2970119bf6458263f96aca0",
+          "bytes": 160854
+        }
+      }
+    },
+    "final-consumed-carrier": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 24,
+              "drafted": 75,
+              "accepted": 43,
+              "acceptance_rate": 0.5733333333333334
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32740 burst=24/35 cum=43/75=0.573"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517179796,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": null,
+            "cached_tokens": null,
+            "completion_tokens": null,
+            "finish": null,
+            "spec": {},
+            "error": "HTTP 429"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[prefix-cache] dspark restore declined (injected failure after carrier consumption); cold admission required (model qwen/qwen3.8-27b)",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=false admission_lease_released=true source_pins=0 pinned_bytes=0 pool_used_bytes=23517179796"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517179796,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517179796,
+            "prefix_cache_bytes": 1211334656
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "44ee560fe5f76df45f3d4d06034b5eb7e3aaf8175bc1c595c94446a198c445a6",
+          "bytes": 1008
+        },
+        "server.log": {
+          "sha256": "09df59a67e0e3f69a984616f16af5b4b81973fc3c879e319224c66d4965fce08",
+          "bytes": 14090950
+        },
+        "seed-request.json": {
+          "sha256": "df349023430874037a65016819379fcc8ae27835593b150a22f89740bf397c21",
+          "bytes": 160402
+        },
+        "receipt.json": {
+          "sha256": "8b4fdc34ccee4a793d4fa86a6171a7ca45610026d839129800d8ebbb718b8cd3",
+          "bytes": 16853
+        },
+        "restore-request.json": {
+          "sha256": "34b5ef8175e0f4c9034f9648a5638942beb30751863a028b62fbb257b9eb76c4",
+          "bytes": 160858
+        }
+      }
+    },
+    "final-pressure": {
+      "binary_sha256": "f7147c3b9d5c01ef31d600eea9b2f827dbd5d550d0994b9738e14a75ad08bd0f",
+      "gpu_after": "",
+      "rows": [
+        {
+          "cell": "seed",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 22,
+              "drafted": 70,
+              "accepted": 42,
+              "acceptance_rate": 0.6
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32836 path=spec = 29696 B/token x ctx + 1140MB prefill-workspace + 0MB fixed = 2115MB",
+            "[dspark-acc] ctx=32743 burst=20/30 cum=42/70=0.600"
+          ],
+          "before": {
+            "admitted": 0,
+            "completed": 0,
+            "cuda_pool_used_bytes": 0,
+            "prefix_cache_bytes": 0
+          },
+          "after": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517179796,
+            "prefix_cache_bytes": 1211334656
+          }
+        },
+        {
+          "cell": "resident",
+          "result": {
+            "prompt_tokens": 32708,
+            "cached_tokens": 0,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 28,
+              "drafted": 75,
+              "accepted": 38,
+              "acceptance_rate": 0.5066666666666667
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[dspark-acc] ctx=32742 burst=17/35 cum=38/75=0.507"
+          ],
+          "before": {
+            "admitted": 1,
+            "completed": 1,
+            "cuda_pool_used_bytes": 23517179796,
+            "prefix_cache_bytes": 1211334656
+          },
+          "after": {
+            "admitted": 2,
+            "completed": 2,
+            "cuda_pool_used_bytes": 24728514452,
+            "prefix_cache_bytes": 2422669312
+          }
+        },
+        {
+          "cell": "restore",
+          "result": {
+            "prompt_tokens": 32793,
+            "cached_tokens": 32672,
+            "completion_tokens": 64,
+            "finish": "length",
+            "spec": {
+              "rounds": 24,
+              "drafted": 70,
+              "accepted": 40,
+              "acceptance_rate": 0.5714285714285714
+            },
+            "error": "output budget exhausted before completed answer"
+          },
+          "log": [
+            "[admission] request cost: model=\"qwen/qwen3.8-27b\" ctx=32921 path=spec = 29696 B/token x ctx + 1141MB prefill-workspace + 0MB fixed = 2119MB",
+            "[admit-oom] reclaim spared the prompt's prefix entry (32672 tokens, model qwen/qwen3.8-27b)",
+            "[admission] retained prefix plan: model=\"qwen/qwen3.8-27b\" restored=32672 suffix=121 cost 2288MB -> 1204MB; reserve 1720MB unchanged; cold fallback forbidden",
+            "[prefix-cache] DSPARK restore: 32672 of 32793 prompt tokens + draft tail from cache (121 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+            "[admission] retained prefix result: route=Dflash { ctx_cap: 32865, suffix: Prime(121) } admitted=true admission_lease_released=true source_pins=1 pinned_bytes=1211334656 pool_used_bytes=26242114600",
+            "[dspark-acc] ctx=32826 burst=20/31 cum=40/70=0.571"
+          ],
+          "before": {
+            "admitted": 2,
+            "completed": 2,
+            "cuda_pool_used_bytes": 24728514452,
+            "prefix_cache_bytes": 2422669312
+          },
+          "after": {
+            "admitted": 3,
+            "completed": 3,
+            "cuda_pool_used_bytes": 26046747732,
+            "prefix_cache_bytes": 3636854784
+          }
+        }
+      ],
+      "references": {
+        "models.toml": {
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "sha256": "64de13901372130dd6cd639c52e31a6b6407476c894d3c8950cd4ebd80d753e5",
+          "bytes": 992
+        },
+        "server.log": {
+          "sha256": "d6b186345d49839b60a2ffdaf3aaf1282a4df624e673d8ff07c0dea17e9ea857",
+          "bytes": 28528432
+        },
+        "seed-request.json": {
+          "sha256": "61019c32367ea0377b5f4c18d1a3ed1b8612ed611a8eaa74852848b2e160b50a",
+          "bytes": 160394
+        },
+        "receipt.json": {
+          "sha256": "5fb6295d1ddbcbb70a91c8c186db07513624d783536826958d939561229cfb70",
+          "bytes": 26095
+        },
+        "resident-request.json": {
+          "sha256": "8aa7ff3f48de1f9d4e107c97099f16224a9eebffd6353b4a3eb926d6e1930b96",
+          "bytes": 163664
+        },
+        "restore-request.json": {
+          "sha256": "720730d2103fbbbbdce60b330be8f5836a0a43049b294b43fc816120dc2891d0",
+          "bytes": 160850
+        }
+      },
+      "pool_readback": [
+        "[retained-pool] active=0 parked_dspark=1 pinned_bytes=0 pool_used=23517179796",
+        "[retained-pool] active=0 parked_dspark=1 pinned_bytes=0 pool_used=24728514452",
+        "[retained-pool] active=0 parked_dspark=1 pinned_bytes=0 pool_used=26046747732"
+      ]
+    }
+  },
+  "checks": {
+    "route-policy-red-composed": {
+      "sha256": "31b291a563e3e8954a7ab3fa3ad090236020d40d56643478590604a734601050",
+      "bytes": 1206,
+      "evidence": [
+        "    Finished `release` profile [optimized] target(s) in 52.75s",
+        "assertion `left == right` failed: a metadata-valid source must not bypass the live DFlash route policy",
+        "  left: Some(Dflash { ctx_cap: 34000, suffix: Prime(64) })",
+        " right: None",
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 651 filtered out; finished in 0.00s"
+      ]
+    },
+    "fmt-route-composed": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "evidence": []
+    },
+    "clippy-route-composed": {
+      "sha256": "40531369f999819266d2f6ec7fb9b59888533bd9e1d8a1f474eeaab11f567d88",
+      "bytes": 440,
+      "evidence": [
+        "    Finished `release` profile [optimized] target(s) in 24.23s"
+      ]
+    },
+    "server-route-composed": {
+      "sha256": "5fd7750518bb63cb04b097f7447e9ae087eddc18d19fe22c7f7b6b5302867605",
+      "bytes": 52885,
+      "evidence": [
+        "    Finished `release` profile [optimized] target(s) in 23.90s",
+        "test result: ok. 648 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 5.59s"
+      ]
+    },
+    "engine-route-composed": {
+      "sha256": "257f8b487328899a6ca6bbadb8089b69b0d370db594cb8d589fe3671332ae845",
+      "bytes": 58616,
+      "evidence": [
+        "    Finished `release` profile [optimized] target(s) in 59.28s",
+        "test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 420 filtered out; finished in 0.24s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s"
+      ]
+    },
+    "plan-route-composed": {
+      "sha256": "8fe509cb21b1b57a91d56626f54e7c8c0a090e13ace8e8a3f6020cbbd5145b54",
+      "bytes": 3085,
+      "evidence": [
+        "    Finished `release` profile [optimized] target(s) in 0.11s",
+        "[retained-plan-test] full: validated=true pins=0 source_bytes=0",
+        "[retained-plan-test] boundary: validated=true pins=0 source_bytes=0",
+        "[retained-plan-test] missing-tail: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] short-tail: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] storage: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] tail-position: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] logits: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] nonfinite-logits: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] short-suffix: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] source-position: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] source-layout: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] source-key: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] lost-source: validated=false pins=0 source_bytes=0",
+        "[retained-plan-test] capacity: validated=false pins=0 source_bytes=0",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 651 filtered out; finished in 0.24s"
+      ]
+    },
+    "build-route-composed": {
+      "sha256": "1f40865f1f5dafea67ff46760f4bdd071ec91cb9680c16b42b3f9d05130a8b8b",
+      "bytes": 259,
+      "evidence": [
+        "    Finished `release` profile [optimized] target(s) in 0.28s"
+      ]
+    },
+    "build-route-faults": {
+      "sha256": "796e41d2dcf5f38f3404895999388088f65137d861d4f6c92690843358757cf4",
+      "bytes": 260,
+      "evidence": [
+        "    Finished `release` profile [optimized] target(s) in 12.86s"
+      ]
+    }
+  },
+  "oracle": {
+    "sets_equal": true,
+    "sets": [
+      {
+        "rows": "4096",
+        "taps": "1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081",
+        "features": "6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf",
+        "positions": "6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3",
+        "target_logits": "a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6",
+        "boundary_pos": "0",
+        "boundary_logits": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "rows": "1050",
+        "taps": "d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411",
+        "features": "7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66",
+        "positions": "044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033",
+        "target_logits": "45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3",
+        "boundary_pos": "1024",
+        "boundary_logits": "04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8"
+      },
+      {
+        "rows": "32708",
+        "taps": "ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9",
+        "features": "8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1",
+        "positions": "50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf",
+        "target_logits": "276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a",
+        "boundary_pos": "32672",
+        "boundary_logits": "f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c"
+      },
+      {
+        "rows": "32760",
+        "taps": "f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd",
+        "features": "01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094",
+        "positions": "3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3",
+        "target_logits": "1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82",
+        "boundary_pos": "32736",
+        "boundary_logits": "b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      }
+    ],
+    "greedy_tapes": {
+      "a-seed": {
+        "equal": true,
+        "sha256": "58247b8b272bbeaf6a24abca88057126533e32c53f371a1c9e7b63dba78f266c"
+      },
+      "a-restore": {
+        "equal": true,
+        "sha256": "58247b8b272bbeaf6a24abca88057126533e32c53f371a1c9e7b63dba78f266c"
+      }
+    }
+  },
+  "verdict": "PASS: exact headline, all seven fault cells, full/boundary restore, old-storage oracle/tapes, pressure, and composed software gates. Live route vetoes now leave cold charges and normal defer behavior intact."
+}
