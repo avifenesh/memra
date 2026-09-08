@@ -6563,10 +6563,19 @@ impl PrefixCache {
             .sum()
     }
 
-    /// Bytes a pinned admission may reclaim without crossing the protected share. Existing
-    /// probation is immediately eligible. A multi-participant fanout also promotes the incoming
+    /// Bytes a pinned admission may reclaim under the selected eviction policy. LRU may
+    /// reclaim either segment, but never a leased entry. SLRU preserves its protected share.
+    /// Existing probation is immediately eligible. A multi-participant fanout also promotes the incoming
     /// entry, so only the protected LRU bytes that promotion would demote back to probation count.
-    fn pinned_admission_reclaimable_bytes(&self, incoming_bytes: usize, promotes: bool) -> usize {
+    fn pinned_admission_reclaimable_bytes(
+        &self,
+        incoming_bytes: usize,
+        promotes: bool,
+        slru: bool,
+    ) -> usize {
+        if !slru {
+            return self.total_bytes.saturating_sub(self.pinned_bytes());
+        }
         let mut reclaimable = self
             .probation_lru
             .values()
@@ -6778,6 +6787,34 @@ impl PrefixCache {
     fn insert_with_budget_pins_and_pct(
         &mut self,
         key: &PoolKey,
+        e: PrefixEntry,
+        why: &str,
+        budget: usize,
+        protected_pct: usize,
+        initial_pins: usize,
+        // HOST-TIER DEMOTE SINK (lane/kv-host-spill-20260830): capacity-evicted entries are
+        // handed here still holding their device bytes; the sink D2H-copies them into the
+        // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
+        // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
+        demote: Option<&mut dyn FnMut(PrefixEntry)>,
+    ) -> Option<u64> {
+        self.insert_with_budget_pins_and_policy(
+            key,
+            e,
+            why,
+            budget,
+            protected_pct,
+            initial_pins,
+            demote,
+            prefix_cache_slru_enabled(),
+        )
+    }
+
+    /// Explicit policy seam keeps admission and victim selection on the same arm in tests.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the existing insertion seam plus its policy
+    fn insert_with_budget_pins_and_policy(
+        &mut self,
+        key: &PoolKey,
         mut e: PrefixEntry,
         why: &str,
         budget: usize,
@@ -6788,6 +6825,7 @@ impl PrefixCache {
         // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
         // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
         mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
+        slru: bool,
     ) -> Option<u64> {
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
@@ -6836,7 +6874,8 @@ impl PrefixCache {
                 .total_bytes
                 .saturating_add(e.bytes)
                 .saturating_sub(budget);
-            let reclaimable = self.pinned_admission_reclaimable_bytes(e.bytes, initial_pins > 1);
+            let reclaimable =
+                self.pinned_admission_reclaimable_bytes(e.bytes, initial_pins > 1, slru);
             if needed > reclaimable {
                 self.record_budget_skip(true);
                 eprintln!(
@@ -6883,7 +6922,7 @@ impl PrefixCache {
             self.rebalance_protected();
         }
         while self.total_bytes > budget {
-            let Some((k, i)) = self.capacity_victim() else {
+            let Some((k, i)) = self.capacity_victim_with(slru) else {
                 break;
             };
             let Some(dead) = self.remove_at(&k, i) else {
@@ -32587,6 +32626,80 @@ mod tests {
             2,
             "policy=lru must not make every newcomer its own victim"
         );
+    }
+
+    #[test]
+    fn prefix_cache_host_promote_pinned_admission_follows_policy_and_leases() {
+        // A host promotion takes one lease before restore. A prior reused device entry
+        // remains Protected after its lease ends, even under LRU's 100% share.
+        for slru in [false, true] {
+            let k = key("host-promote");
+            let mut px = PrefixCache::default();
+            px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, 0, 8),
+                "seed",
+                10,
+                100,
+                0,
+                None,
+                slru,
+            )
+            .unwrap();
+            let lease = px.pin(&k, 0).unwrap();
+            assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
+            let mut demoted = Vec::new();
+            assert!(
+                px.insert_with_budget_pins_and_policy(
+                    &k,
+                    entry_b(&k, 1, 8),
+                    "host-promote",
+                    10,
+                    100,
+                    1,
+                    Some(&mut |dead| demoted.push(dead.toks[0])),
+                    slru,
+                )
+                .is_none(),
+                "an active lease must refuse promotion under either policy"
+            );
+            assert!(demoted.is_empty());
+            assert_eq!(px_survivors(&px), vec![0]);
+            assert!(px.unpin(&lease));
+            assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
+            let promoted = px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, 1, 8),
+                "host-promote",
+                10,
+                100,
+                1,
+                Some(&mut |dead| demoted.push(dead.toks[0])),
+                slru,
+            );
+            if slru {
+                assert!(
+                    promoted.is_none(),
+                    "SLRU must retain bytes below its protected share"
+                );
+                assert!(demoted.is_empty());
+                assert_eq!(px_survivors(&px), vec![0]);
+                assert_eq!(px.evictions, 0);
+            } else {
+                let id = promoted.expect("LRU must reclaim protected but unleased bytes");
+                assert_eq!(
+                    demoted,
+                    vec![0],
+                    "the victim must reach the host demote sink"
+                );
+                assert_eq!(px_survivors(&px), vec![1]);
+                assert_eq!(px.entries[&k][0].id, id);
+                assert_eq!(px.entries[&k][0].pins, 1);
+                assert_eq!(px.evictions, 1);
+            }
+            assert_eq!(px.total_bytes, 8);
+            assert_prefix_cache_accounting(&px);
+        }
     }
 
     #[test]
