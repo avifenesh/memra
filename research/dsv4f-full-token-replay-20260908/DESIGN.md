@@ -87,6 +87,13 @@ per token, other blocks advance 43. Uniform
 payloads vary all 64 bits. This remains a payload freshness check, not sampling
 qualification. No full-model refusal or numeric qualification is implied.
 
+Re-review closed the pair-lifetime and refusal-order findings but found that
+setup and poisoned-output `cudaMemset` calls used the legacy default stream.
+The nonblocking rank streams did not order those writes. All five initialization
+and poison sites now use `cudaMemsetAsync` on the owning rank stream; the existing
+constructor drain and same-stream replay order cover them. Earlier normal and
+sanitizer passes do not establish the missing dependency.
+
 Build remotely (no local rig gates):
 
 ```sh

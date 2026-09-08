@@ -81,12 +81,12 @@ struct Rank {
         ck(cudaSetDevice(device)); ck(cudaStreamCreateWithFlags(&stream,cudaStreamNonBlocking));
         ck(cudaMalloc(&input,sizeof(*input))); ck(cudaMallocHost(&host,sizeof(*host)));
         ck(cudaMalloc(&control,sizeof(*control))); ck(cudaMalloc(&fixture,sizeof(*fixture)));
-        ck(cudaMemset(fixture,0,sizeof(*fixture)));
+        ck(cudaMemsetAsync(fixture,0,sizeof(*fixture),stream));
         ck(cudaMalloc(&signal,memra_tp_ar_signal_bytes()));
-        ck(cudaMemset(signal,0,memra_tp_ar_signal_bytes()));
-        ck(cudaMalloc(&error,sizeof(int))); ck(cudaMemset(error,0,sizeof(int)));
+        ck(cudaMemsetAsync(signal,0,memra_tp_ar_signal_bytes(),stream));
+        ck(cudaMalloc(&error,sizeof(int))); ck(cudaMemsetAsync(error,0,sizeof(int),stream));
         ck(cudaMalloc(&partial,width*sizeof(float))); ck(cudaMalloc(&sum,86*width*sizeof(float)));
-        ck(cudaMemset(sum,0xff,86*width*sizeof(float)));
+        ck(cudaMemsetAsync(sum,0xff,86*width*sizeof(float),stream));
         ck(cudaStreamSynchronize(stream));
     }
     ~Rank() {
@@ -367,7 +367,7 @@ int main() try {
         auto saved=std::array<Fixture,2>{read(a,a.fixture),read(b,b.fixture)};
         // Poison sum outputs. A genuine start-barrier timeout cannot produce
         // them; checking sums before refusal would deterministically fail here.
-        for(auto* r:{&a,&b}) {ck(cudaSetDevice(r->device)); ck(cudaMemset(r->sum,0xff,86*r->width*sizeof(float)));}
+        for(auto* r:{&a,&b}) {ck(cudaSetDevice(r->device)); ck(cudaMemsetAsync(r->sum,0xff,86*r->width*sizeof(float),r->stream));}
         Dsv4ReplayInput in{999,255,0xa5a5a5a5ffffffffULL,window,4096};
         require(!step(pair,in,-1,rank?Submission::OnlyB:Submission::OnlyA),"missing peer did not refuse");
         auto& launched=rank?b:a;
