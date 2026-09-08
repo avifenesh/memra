@@ -18,6 +18,7 @@ support matrix remains [docs/MODELS.md](../MODELS.md); measurements remain
 - [Gemma 4 31B](gemma4-31b.md)
 - [Gemma 4 E4B](gemma4-e4b.md)
 - [Step 3.7 Flash 196B-A11B](step37-flash.md)
+- [Spark-X2.5-4B](spark-x25-4b.md) — NativeReference
 - [DeepSeek V4 Flash](deepseek-v4-flash.md) — experimental
 - [GLM-5.3 Flash](glm53-flash.md) — NativeReference
 - [Hy3](hy3.md) — NativeReference canonical plan; NativeQualified for the exact NVFP4 artifact

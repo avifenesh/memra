@@ -79,6 +79,7 @@ library embedded in your application.
 [Gemma 4 31B](docs/models/gemma4-31b.md) ·
 [Gemma 4 E4B](docs/models/gemma4-e4b.md) ·
 [Step 3.7 Flash](docs/models/step37-flash.md) ·
+[Spark-X2.5-4B](docs/models/spark-x25-4b.md) (NativeReference) ·
 [DeepSeek V4 Flash](docs/models/deepseek-v4-flash.md) ·
 [GLM-5.3 Flash](docs/models/glm53-flash.md) (NativeReference) ·
 [Hy3](docs/models/hy3.md) (NativeReference · NVFP4 NativeQualified)

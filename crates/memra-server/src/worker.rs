@@ -2695,13 +2695,24 @@ impl AdmissionCostModel {
         cold_cost: usize,
         prompt_rows: usize,
         restored_rows: usize,
+        cold_resident_credit: usize,
+        suffix_resident_credit: usize,
     ) -> Option<usize> {
         if restored_rows == 0 || restored_rows > prompt_rows {
             return None;
         }
+        let cold_workspace = self.prefill_workspace_bytes(prompt_rows);
+        let suffix_workspace = self.prefill_workspace_bytes(prompt_rows - restored_rows);
+        if cold_resident_credit > cold_workspace || suffix_resident_credit > suffix_workspace {
+            return None;
+        }
+        // cold_cost already excludes resident slabs. Undo that credit before replacing
+        // the full workspace, then credit only the suffix's reusable slab prefix.
+        // Otherwise the original slab credit would also be deducted from active KV.
         cold_cost
-            .checked_sub(self.prefill_workspace_bytes(prompt_rows))?
-            .checked_add(self.prefill_workspace_bytes(prompt_rows - restored_rows))
+            .checked_add(cold_resident_credit)?
+            .checked_sub(cold_workspace)?
+            .checked_add(suffix_workspace - suffix_resident_credit)
     }
 
     /// Learn only the fixed residual beyond the exact context allocation.
@@ -14454,8 +14465,21 @@ pub fn run(
                             })
                             .flatten();
                         let planned_cost = restored.and_then(|rows| {
-                            let model = &admission_costs[&model_key];
-                            model.cost_after_prefix_restore(cost, prompt_len, rows)
+                            let cost_model = &admission_costs[&model_key];
+                            let suffix_credit = if applied_prime_credit > 0 {
+                                model
+                                    .reusable_prime_slab_bytes(&engine, prompt_len - rows)
+                                    .min(cost_model.prefill_workspace_bytes(prompt_len - rows))
+                            } else {
+                                0
+                            };
+                            cost_model.cost_after_prefix_restore(
+                                cost,
+                                prompt_len,
+                                rows,
+                                applied_prime_credit,
+                                suffix_credit,
+                            )
                         });
                         if let Some((rows, next_cost)) = restored.zip(planned_cost)
                             && !headroom.sufficient(required)
@@ -29309,7 +29333,7 @@ mod tests {
         let reserve = 1536 << 20;
         let cold = model.estimate(ctx, prompt, true) + draft;
         let warm = model
-            .cost_after_prefix_restore(cold, prompt, restored)
+            .cost_after_prefix_restore(cold, prompt, restored, 0, 0)
             .unwrap();
         assert!(warm < cold);
         assert_eq!(
@@ -29320,12 +29344,68 @@ mod tests {
                 + model.prefill_workspace_bytes(prompt - restored)
         );
         assert_eq!(super::admission_required(warm, reserve), warm + reserve);
-        assert_eq!(model.cost_after_prefix_restore(cold, prompt, 0), None);
+        assert_eq!(model.cost_after_prefix_restore(cold, prompt, 0, 0, 0), None);
         assert_eq!(
-            model.cost_after_prefix_restore(cold, prompt, prompt + 1),
+            model.cost_after_prefix_restore(cold, prompt, prompt + 1, 0, 0),
             None
         );
-        assert_eq!(model.cost_after_prefix_restore(0, prompt, restored), None);
+        assert_eq!(
+            model.cost_after_prefix_restore(0, prompt, restored, 0, 0),
+            None
+        );
+
+        let cold_credit = 512 << 20;
+        let suffix_credit = 8 << 20;
+        let composed = model
+            .cost_after_prefix_restore(
+                cold - cold_credit,
+                prompt,
+                restored,
+                cold_credit,
+                suffix_credit,
+            )
+            .unwrap();
+        assert_eq!(composed, warm - suffix_credit);
+        assert_eq!(
+            composed,
+            model.context_bytes(ctx, true)
+                + model.activation_bytes
+                + draft
+                + model.prefill_workspace_bytes(prompt - restored)
+                - suffix_credit
+        );
+        assert_eq!(
+            super::admission_required(composed, reserve),
+            composed + reserve
+        );
+        assert_eq!(
+            model.cost_after_prefix_restore(cold - cold_credit, prompt, prompt, cold_credit, 0),
+            Some(model.context_bytes(ctx, true) + model.activation_bytes + draft)
+        );
+        assert_eq!(
+            model.cost_after_prefix_restore(
+                cold,
+                prompt,
+                restored,
+                model.prefill_workspace_bytes(prompt) + 1,
+                0
+            ),
+            None
+        );
+        assert_eq!(
+            model.cost_after_prefix_restore(
+                cold,
+                prompt,
+                restored,
+                0,
+                model.prefill_workspace_bytes(prompt - restored) + 1
+            ),
+            None
+        );
+        assert_eq!(
+            model.cost_after_prefix_restore(usize::MAX, prompt, restored, 1, 0),
+            None
+        );
     }
 
     #[test]

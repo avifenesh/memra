@@ -45,6 +45,7 @@ question from what is supported:
 | DeepSeek-V4-Flash | **safetensors** checkpoint dir through its own two-card door — **experimental engine support**, functional and gated, **not serving-grade** (see its section below) | performance ([#4](https://github.com/avifenesh/memra/issues/4)) |
 | GLM-5.3-Flash | **safetensors** (FP8 e4m3, MIT) on the hand-written `glm5_next` path — **NativeReference**; multi-card TP serving, vision, and MTP spec gated (see [its card](models/glm53-flash.md)) | — |
 | Qwen3.8-Flash-Next | **bring-up only** — hand-written `qwen4_exp` gate path on the minted NVFP4 artifact, real-checkpoint eager gate green; ModelPlan loader not wired, no serving surface (see [its card](models/qwen38-flash-next.md)) | — |
+| Spark-X2.5-4B | **safetensors FP8** — `spark25` ModelPlan pack and native reference executor, **NativeReference**; optimized and complete serving qualification remain open (see [its card](models/spark-x25-4b.md)) | native FP8 evaluation |
 | Hy3 | **safetensors** — canonical BF16 plan **NativeReference**; the exact all-expert ModelOpt W4A16 artifact is **NativeQualified** on four-card Blackwell receipts (see [its card](models/hy3.md)) | — |
 | everything else in the table | GGUF | — |
 

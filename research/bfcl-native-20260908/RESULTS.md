@@ -68,3 +68,17 @@ Baseline source: `8cfb182babe9fd64a708a10fce1e2c3f29200528`; server SHA256
 The isolated candidate target avoids stale dependencies observed when switching the
 shared Cargo target between worktrees. Main-runner/spec and broader regression gates
 remain pending. The active BFCL server resumed its original binary without this change.
+
+## Composition with retained prefix admission
+
+The lane was replayed onto main24555c174, including upstream's retained prefix restore
+(#362). Resident slab credit is already absent from the cold request estimate. The
+restore calculation now adds that credit back before replacing full-prompt workspace
+with suffix workspace, then removes only the measured suffix slab credit. Without
+this composition, the old full-prompt credit could be subtracted from active KV bytes.
+
+The remote accounting regression passes, including full restore, partial restore,
+context/draft/fixed/reserve preservation, invalid credit refusal and arithmetic overflow.
+See `receipts/prefix-credit-composition-test.log`. This new composition still needs its
+GPU integration check. The earlier pressure receipts remain bound to their original
+8cfb182ba/1ea01297a sources and binaries; they are not relabeled as a rebased-head result.

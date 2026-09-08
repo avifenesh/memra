@@ -1,0 +1,18 @@
+   Compiling memra-engine v0.134.0 (/root/bfcl-gates/crates/memra-engine)
+   Compiling memra-kv v0.134.0 (/root/bfcl-gates/crates/memra-kv)
+   Compiling memra-server v0.134.0 (/root/bfcl-gates/crates/memra-server)
+warning: memra-engine@0.134.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 4m 52s
+     Running unittests src/lib.rs (/root/bfcl-native-pinned-target/release/deps/memra_server-afcd58d0c488d9b2)
+
+running 1 test
+test worker::tests::retained_restore_cost_keeps_context_draft_residual_and_reserve_paid ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 636 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/root/bfcl-native-pinned-target/release/deps/memra_server-679a973db8418d26)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
