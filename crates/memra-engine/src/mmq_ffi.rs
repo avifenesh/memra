@@ -1309,7 +1309,7 @@ unsafe extern "C" {
         ne: i32,
         ids: *const i32,
         offsets: *const i32,
-        act: *const c_void,
+        act: *const std::ffi::c_void,
         row_scale: *const f32,
         macro_g: *const f32,
         macro_u: *const f32,
@@ -1319,7 +1319,7 @@ unsafe extern "C" {
         k: i32,
         n: i32,
         limit: f32,
-        stream: *mut c_void,
+        stream: *mut std::ffi::c_void,
         directory: *const std::ffi::c_char,
     ) -> i32;
     pub fn memra_moe_kq_gemm_sk_gu_m1_half2(
