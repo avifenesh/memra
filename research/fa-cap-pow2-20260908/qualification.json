@@ -1,0 +1,1208 @@
+{
+  "status": "experimental; default OFF; no general capacity or graph-replay qualification",
+  "decide_by": "2026-09-22",
+  "flag": "MEMRA_FA_CAP_POW2",
+  "composition": {
+    "tap_streaming_source": "6f20c0736",
+    "fa_patch_commit": "69676db39a42d28ad98a718ed6575c16bbe6e71e",
+    "note": "GPU binary composes this patch with the revised #370 cold/resume tap implementation. Rebase this PR onto #370 after its independent squash merge."
+  },
+  "source_sha256": {
+    "crates/memra-engine/src/lib.rs": "6801c8505ead0096290c034bfe87cebb513dcd02409f2f6af5a55e51925de850",
+    "docs/FLAGS.md": "2908707baa3a25ca9f5601ebbf14dfbd67a41f142a37bccb435c3df299720df3"
+  },
+  "binary_sha256": "a23b61defec75ead654c8ebfa11ac9ba580161c58c7067d07617ccc18a65d510",
+  "artifacts": [
+    {
+      "path": "/data/qual/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+      "sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
+    },
+    {
+      "path": "/data/qual/models/q38-dflash2/config.json",
+      "sha256": "873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980"
+    },
+    {
+      "path": "/data/qual/models/q38-dflash2/model.safetensors",
+      "sha256": "67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c"
+    },
+    {
+      "path": "/data/qual/models/q38-gguf/q38-ranks-sxc32768.gguf.txt",
+      "sha256": "2f7c2e94683ac552724c2275380de6de4035f0f597c71df0826c50826a7d1bb9"
+    },
+    {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-vision/outside.safetensors",
+      "sha256": "bdbee7e072110ccddcf126a7f0c44f9f364bd00b07203dae244aa292a2e81ba5"
+    }
+  ],
+  "cells": {
+    "qwen128k-fa370-0": {
+      "binary_sha256": "a23b61defec75ead654c8ebfa11ac9ba580161c58c7067d07617ccc18a65d510",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 403,
+          "finish": "stop",
+          "ttft_s": 0.458,
+          "wall_s": 5.182,
+          "spec": {
+            "rounds": 145,
+            "drafted": 437,
+            "accepted": 258,
+            "acceptance_rate": 0.5903890160183066
+          },
+          "error": null
+        },
+        {
+          "name": "turn1",
+          "prompt_tokens": 131074,
+          "cached_tokens": 0,
+          "completion_tokens": 1024,
+          "finish": "length",
+          "ttft_s": 75.309,
+          "wall_s": 95.219,
+          "spec": {
+            "rounds": 410,
+            "drafted": 1132,
+            "accepted": 615,
+            "acceptance_rate": 0.5432862190812721
+          },
+          "error": "output budget exhausted before completed answer"
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 53,
+          "finish": "stop",
+          "ttft_s": 0.28,
+          "wall_s": 1.513,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/profile.json",
+          "sha256": "a3b40e27b5c0a7b6973f918015a13268f71bb5ad1fbe4737f03d3a025453cd5e",
+          "bytes": 1123
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/server.log",
+          "sha256": "c354dd24b896f095f4b55e274b29c773ef8a9fda0312c35a410d15b8c3177428",
+          "bytes": 250717941
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/telemetry.jsonl",
+          "sha256": "69b045d8db5ce18ed4a5e5e95a9968aa6aac4e6ce1d63b7775d50afd6ddd9625",
+          "bytes": 230380
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/capacity.py",
+          "sha256": "df47a6ed69011324672e6ecd78ccceb92545c733e42323452a47988387a8fba0",
+          "bytes": 14670
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/ledger.jsonl",
+          "sha256": "72e2d3011e23acb75c8001a6bc84252f0de8b0ce0f7406eec61d2af780a1ab6d",
+          "bytes": 2426
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/ready-metrics.json",
+          "sha256": "4db8f72c261cfb018a974d6fb97b76a7be5b655d3433fafad69eb39c0ef961b0",
+          "bytes": 2459
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/calibration-before-metrics.json",
+          "sha256": "4db8f72c261cfb018a974d6fb97b76a7be5b655d3433fafad69eb39c0ef961b0",
+          "bytes": 2459
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/calibration-request.json",
+          "sha256": "87273f3b2b532aa8ab79db19d25255abe1e9f8fba04bd3a6e7ae0ac04fa2c3d2",
+          "bytes": 5131
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/calibration.sse",
+          "sha256": "6c976a4d3af65eb74d1a8ff4f81c4de56460eb1706730e3f0939e02f0e2913db",
+          "bytes": 106065
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/calibration-verdict.json",
+          "sha256": "f3a43a52979cd21dbcee5edb0c50542652866c185be87a2313faa0e6e274da22",
+          "bytes": 2513
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/calibration-after-metrics.json",
+          "sha256": "36559af93b1a62932b8f7cef47b09c2d480f71c2ed566d940b7de8043b5e798f",
+          "bytes": 2753
+        },
+        "turn1-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/turn1-before-metrics.json",
+          "sha256": "ec6c1450ac884f46d4527e3489bf0dac3b1e4bb362c695f617af3680afc36024",
+          "bytes": 2753
+        },
+        "turn1-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/turn1-request.json",
+          "sha256": "8fbbf9714b5eb34818ea349d135adc539e21922a18ca894f5dac537f724a705d",
+          "bytes": 642249
+        },
+        "turn1.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/turn1.sse",
+          "sha256": "8ffd1f23185bb8f182d3f30c55e0cd59206db5c429110387a1ea2bd34e821c8e",
+          "bytes": 269994
+        },
+        "turn1-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/turn1-verdict.json",
+          "sha256": "92d4f54652cf2ba6c20b4b9614c0b5f0ffa9bcdcbc7b30d31332a14c9fc6b700",
+          "bytes": 4840
+        },
+        "turn1-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/turn1-after-metrics.json",
+          "sha256": "cccc6373850e5c7b6a5119f88752cec99c1632ebe6effba38881e9e3cbb62b3b",
+          "bytes": 2774
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/vision-before-metrics.json",
+          "sha256": "2e937c653e8389f26266b61e3ecf73179bdd7384374e1904097440a5b65bdcdf",
+          "bytes": 2774
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/vision-request.json",
+          "sha256": "341b45dea8e7cc09f71697f45fb2c33adf9ddbbdc4575178f873a76c6a0c2095",
+          "bytes": 690
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/vision.sse",
+          "sha256": "880e21f2e941aaad03c2dfe8eb59feab3663620436aa227967c1b5f057ce3bc6",
+          "bytes": 13592
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/vision-verdict.json",
+          "sha256": "e66bb4933df63eeaee4218d551bd30c36eaf55bd4a576e494988d57014bcd810",
+          "bytes": 653
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/vision-after-metrics.json",
+          "sha256": "72b383bcb4b5bbc5321a66bb065934cb2776b41584e559d2ab0f3001104dcd38",
+          "bytes": 2774
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-0/summary.json",
+          "sha256": "116cf0368aba694d3f58efc2d8d93ccdbfcbad6227948e2cbc594cd8dbaad4d5",
+          "bytes": 10305
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-taps] base=0 rows=4096 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=419430400",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=1050 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=107520000",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=131074 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=13421977600",
+        "[dflash-oracle] rows=131074 taps=9352a09514250036d4ad2526ac23fbde887432e60471a0fad58937dd070fcb4a features=bde4c40118e9adfae57d5f0c196a22e6986c72522dfc7ead74363f587021a639 positions=023cd4dfda88e8c9ab5457f1d22cc5a2b20c03f1a24ed93fa3ca534db149c85e target_logits=d3fc196942d4083ee4df6d34cffbfbbb385a51dc64c0372adf7b914f1355475d boundary_pos=131040 boundary_logits=f7564a2647fdcc27528ccbcef9a8edd349de720ab35dd1bed74b474884820db7",
+        "[fa-pool] grow #2 dev=0 o_len 6389760 -> 50380800 ml_len 24960 -> 196800 (retired kept, zero=false)"
+      ]
+    },
+    "qwen128k-fa370-1": {
+      "binary_sha256": "a23b61defec75ead654c8ebfa11ac9ba580161c58c7067d07617ccc18a65d510",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 147,
+          "finish": "stop",
+          "ttft_s": 0.462,
+          "wall_s": 1.974,
+          "spec": {
+            "rounds": 46,
+            "drafted": 157,
+            "accepted": 101,
+            "acceptance_rate": 0.643312101910828
+          },
+          "error": null
+        },
+        {
+          "name": "turn1",
+          "prompt_tokens": 131074,
+          "cached_tokens": 0,
+          "completion_tokens": 1024,
+          "finish": "length",
+          "ttft_s": 75.688,
+          "wall_s": 95.222,
+          "spec": {
+            "rounds": 397,
+            "drafted": 1127,
+            "accepted": 627,
+            "acceptance_rate": 0.5563442768411713
+          },
+          "error": "output budget exhausted before completed answer"
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 67,
+          "finish": "stop",
+          "ttft_s": 0.256,
+          "wall_s": 1.813,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/profile.json",
+          "sha256": "3a5d09c002ecc9998065bccfd54dcd82ee7f4a51f4e992fd918f7d91726e2be8",
+          "bytes": 1123
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/server.log",
+          "sha256": "1eb4d0e1b219f68b83b66c2f1c90fc24492a2cadd6bb12b270577487be4edd9d",
+          "bytes": 217299531
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/telemetry.jsonl",
+          "sha256": "d4994af299732d8c3ced3f3159c43c0b34fea3639daa92926554cf2bb5b08fab",
+          "bytes": 210665
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/capacity.py",
+          "sha256": "df47a6ed69011324672e6ecd78ccceb92545c733e42323452a47988387a8fba0",
+          "bytes": 14670
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/ledger.jsonl",
+          "sha256": "8fe5c443dc8a96b28ea5a933860a7d865844d31fc534610d1e13e350f8ec5b39",
+          "bytes": 2419
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/ready-metrics.json",
+          "sha256": "6a57f8d61068bdfb0f6d7319a5272c9bebc929e7dd24e2febf59ce8ed53b5995",
+          "bytes": 2459
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/calibration-before-metrics.json",
+          "sha256": "2e97d9db8fd046713aadb24a37ac0128a2becc0903c4e83d88850fdb68d646ca",
+          "bytes": 2459
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/calibration-request.json",
+          "sha256": "87273f3b2b532aa8ab79db19d25255abe1e9f8fba04bd3a6e7ae0ac04fa2c3d2",
+          "bytes": 5131
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/calibration.sse",
+          "sha256": "97b0b7f5d0f803d5c9bcbc7d187d24d8f729b495190fcc0d2a93784fb51fc6ed",
+          "bytes": 38487
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/calibration-verdict.json",
+          "sha256": "e0d8363267ad67a5d491d0250d189583567c6ff87617c8dca80faa0d0c74cb95",
+          "bytes": 1252
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/calibration-after-metrics.json",
+          "sha256": "ad5b10292fbeb3c00de182fb978db2e4acbe3078a8bb53cd7b2427e90f2cf9fc",
+          "bytes": 2752
+        },
+        "turn1-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/turn1-before-metrics.json",
+          "sha256": "5f2116fea3ede8919a7151bde010a0c02079e4d3b1871a8fc305d5855be3d308",
+          "bytes": 2751
+        },
+        "turn1-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/turn1-request.json",
+          "sha256": "8fbbf9714b5eb34818ea349d135adc539e21922a18ca894f5dac537f724a705d",
+          "bytes": 642249
+        },
+        "turn1.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/turn1.sse",
+          "sha256": "21a6619888274d5fe7a7750d751998bc470f0b0182065abb98ca1a7889322c77",
+          "bytes": 270233
+        },
+        "turn1-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/turn1-verdict.json",
+          "sha256": "e2e32bc5105cd498f288d0ea3e45b3e9642e4c2e7fa992a1d58c9375bafd3504",
+          "bytes": 5082
+        },
+        "turn1-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/turn1-after-metrics.json",
+          "sha256": "8b56902e05a1849b2c89541a3db30f9f940763c1bd547a3c82a12121c7b805d9",
+          "bytes": 2770
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/vision-before-metrics.json",
+          "sha256": "15306d413b79fe7d178c2303dad444c499378950417483893fba6705b87b7aae",
+          "bytes": 2770
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/vision-request.json",
+          "sha256": "341b45dea8e7cc09f71697f45fb2c33adf9ddbbdc4575178f873a76c6a0c2095",
+          "bytes": 690
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/vision.sse",
+          "sha256": "ee43937b4ec51a71cf5fa2dbcd6a6a5f941a438c7854103898965833bcfe4852",
+          "bytes": 17288
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/vision-verdict.json",
+          "sha256": "fa6b2530163129689ed316ee98e0d93e79af87360d49056e0f5bd7954229218b",
+          "bytes": 724
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/vision-after-metrics.json",
+          "sha256": "aa6e8ca4ef121fc35374d62fcfa8d8be058c43aa43320511fe8f9552cc041154",
+          "bytes": 2770
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-1/summary.json",
+          "sha256": "66e7c0a948298c95abce528be2486d76dac5ac9ea2f2abda04038050a7cfec54",
+          "bytes": 9357
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-taps] base=0 rows=4096 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=419430400",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 4194304 ml_len 0 -> 16384 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=1050 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=107520000",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[dflash-taps] base=0 rows=131074 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=13421977600",
+        "[dflash-oracle] rows=131074 taps=9352a09514250036d4ad2526ac23fbde887432e60471a0fad58937dd070fcb4a features=bde4c40118e9adfae57d5f0c196a22e6986c72522dfc7ead74363f587021a639 positions=023cd4dfda88e8c9ab5457f1d22cc5a2b20c03f1a24ed93fa3ca534db149c85e target_logits=d3fc196942d4083ee4df6d34cffbfbbb385a51dc64c0372adf7b914f1355475d boundary_pos=131040 boundary_logits=f7564a2647fdcc27528ccbcef9a8edd349de720ab35dd1bed74b474884820db7",
+        "[fa-pool] grow #1 dev=0 o_len 4194304 -> 67108864 ml_len 16384 -> 262144 (retired kept, zero=false)"
+      ]
+    },
+    "qwen128k-fa370-seed0-0": {
+      "binary_sha256": "a23b61defec75ead654c8ebfa11ac9ba580161c58c7067d07617ccc18a65d510",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 294,
+          "finish": "stop",
+          "ttft_s": 0.461,
+          "wall_s": 4.086,
+          "spec": {
+            "rounds": 111,
+            "drafted": 326,
+            "accepted": 183,
+            "acceptance_rate": 0.5613496932515337
+          },
+          "error": null
+        },
+        {
+          "name": "turn1",
+          "prompt_tokens": 131074,
+          "cached_tokens": 0,
+          "completion_tokens": 1024,
+          "finish": "length",
+          "ttft_s": 75.86,
+          "wall_s": 95.846,
+          "spec": {
+            "rounds": 411,
+            "drafted": 1136,
+            "accepted": 613,
+            "acceptance_rate": 0.539612676056338
+          },
+          "error": "output budget exhausted before completed answer"
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 56,
+          "finish": "stop",
+          "ttft_s": 0.256,
+          "wall_s": 1.563,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/profile.json",
+          "sha256": "dcc26c787e7170b45d907f37771ae2fe5a9abfd6cee09aa2994a26f50a3687c7",
+          "bytes": 1141
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/server.log",
+          "sha256": "f51dccddcdff49ba3ba57bfbc59328fc2ccb2fb79ad5e81658a0329ba3eef8ac",
+          "bytes": 240261603
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/telemetry.jsonl",
+          "sha256": "9759e0edc850d32a9c177761478e8fe393d8c5c860556a946ddb694703965963",
+          "bytes": 214253
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/capacity.py",
+          "sha256": "75b010198ea495d1714da4bb00bfceab27f571a53dd1fee437412fe926df881b",
+          "bytes": 14686
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/ledger.jsonl",
+          "sha256": "fdbc241a9e09c1d5d5ffc210e84c58bdfab5f4d0d5899a3d1c48d5489a881e68",
+          "bytes": 2419
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/ready-metrics.json",
+          "sha256": "d63aed70ad03691a47a0c442d0ca9039537ebe2557c8c0654ccb46d5e29d9230",
+          "bytes": 2459
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/calibration-before-metrics.json",
+          "sha256": "b9b01178fe0092964f968f3cddd680ad2a1cc39a463fbd34a30989d69fa82d53",
+          "bytes": 2459
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/calibration-request.json",
+          "sha256": "d48e8fbb9c18fa3882afa81fdfb6e18708a945e278a11e99f4bcae984d7d0c87",
+          "bytes": 5144
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/calibration.sse",
+          "sha256": "5a64cf8f11fdfeb88491464c4c9f8c35bed3b63f235cfad76f2ba5394e5913bb",
+          "bytes": 77306
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/calibration-verdict.json",
+          "sha256": "19d5039b64966e39df35cb1f1feb3035dc4d8e208e0d6a046c01ac993f91fc13",
+          "bytes": 1996
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/calibration-after-metrics.json",
+          "sha256": "59d83099c57a190464ccb03f91c26f615c5e9917dd134dd8a41dbabde526b42a",
+          "bytes": 2752
+        },
+        "turn1-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/turn1-before-metrics.json",
+          "sha256": "0fe9b8af41e28a5caf13b3fd9a08717d4cdb5bb1053038e3bca5a392202ca4d6",
+          "bytes": 2752
+        },
+        "turn1-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/turn1-request.json",
+          "sha256": "642f0416dc956b94945faa76fc09b8dfa5ce1823850955c548581b52bc61f029",
+          "bytes": 642262
+        },
+        "turn1.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/turn1.sse",
+          "sha256": "a2b495a5161deb7ee1afc3f8e2fb6b0e7441500bdb49c40e55aa98357e719c9c",
+          "bytes": 270353
+        },
+        "turn1-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/turn1-verdict.json",
+          "sha256": "6ebb482135f579053097ba2af4daac59c7766c96b896603e47d2457ac3e16e77",
+          "bytes": 5198
+        },
+        "turn1-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/turn1-after-metrics.json",
+          "sha256": "baf19570fbdf1031c0f5bcac2c2f2245aa8be6ad95a61afea00c8e68f234f70f",
+          "bytes": 2773
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/vision-before-metrics.json",
+          "sha256": "bfbf543286344f0deeb6ef85dff9b94c2a486d7813c873a80aeb111842622a9d",
+          "bytes": 2773
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/vision-request.json",
+          "sha256": "0d10d0dfb1e35f2a26cac84b8f98ce7dc0e7ae0fb529f5e9ad5314f2e82e1817",
+          "bytes": 703
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/vision.sse",
+          "sha256": "e7f4d7dd8b7db2464dc6971258deedcb6368a487948385064fa7ada95d2f26cb",
+          "bytes": 14386
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/vision-verdict.json",
+          "sha256": "e4e37edd9b3c58238c469c463218212ca12c38342b19c6a9193e20df702f05e8",
+          "bytes": 671
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/vision-after-metrics.json",
+          "sha256": "063ec8bba5dbe542acd7cc60845ddf2e005f6301f82b21cef997d6fe0624d4c5",
+          "bytes": 2771
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-0/summary.json",
+          "sha256": "f1d2dc2bd27e466eaa94b75abbdc8f9335cdb766a5b923c1ed2002b6ff429b52",
+          "bytes": 10182
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-taps] base=0 rows=4096 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=419430400",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=1050 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=107520000",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=131074 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=13421977600",
+        "[dflash-oracle] rows=131074 taps=9352a09514250036d4ad2526ac23fbde887432e60471a0fad58937dd070fcb4a features=bde4c40118e9adfae57d5f0c196a22e6986c72522dfc7ead74363f587021a639 positions=023cd4dfda88e8c9ab5457f1d22cc5a2b20c03f1a24ed93fa3ca534db149c85e target_logits=d3fc196942d4083ee4df6d34cffbfbbb385a51dc64c0372adf7b914f1355475d boundary_pos=131040 boundary_logits=f7564a2647fdcc27528ccbcef9a8edd349de720ab35dd1bed74b474884820db7",
+        "[fa-pool] grow #2 dev=0 o_len 6389760 -> 50380800 ml_len 24960 -> 196800 (retired kept, zero=false)"
+      ]
+    },
+    "qwen128k-fa370-seed0-1": {
+      "binary_sha256": "a23b61defec75ead654c8ebfa11ac9ba580161c58c7067d07617ccc18a65d510",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 294,
+          "finish": "stop",
+          "ttft_s": 0.462,
+          "wall_s": 4.124,
+          "spec": {
+            "rounds": 111,
+            "drafted": 326,
+            "accepted": 183,
+            "acceptance_rate": 0.5613496932515337
+          },
+          "error": null
+        },
+        {
+          "name": "turn1",
+          "prompt_tokens": 131074,
+          "cached_tokens": 0,
+          "completion_tokens": 1024,
+          "finish": "length",
+          "ttft_s": 75.866,
+          "wall_s": 95.853,
+          "spec": {
+            "rounds": 411,
+            "drafted": 1136,
+            "accepted": 613,
+            "acceptance_rate": 0.539612676056338
+          },
+          "error": "output budget exhausted before completed answer"
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 56,
+          "finish": "stop",
+          "ttft_s": 0.254,
+          "wall_s": 1.567,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/profile.json",
+          "sha256": "8bff5bebbf38237117e326b1561f657233b2c7c58e17bc1e312ff9dd307279ff",
+          "bytes": 1141
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/server.log",
+          "sha256": "3927296e96e77609bb3330d3ae4fcefb7f3a71508210f7f1d59c6d20266b9138",
+          "bytes": 240261099
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/telemetry.jsonl",
+          "sha256": "7eac6711b41832dbc14a8e9cb358676bb10da3b06cb899e8d1a730ac2fa5e8b1",
+          "bytes": 214408
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/capacity.py",
+          "sha256": "75b010198ea495d1714da4bb00bfceab27f571a53dd1fee437412fe926df881b",
+          "bytes": 14686
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/ledger.jsonl",
+          "sha256": "7bc43c9d61a6cb7d27c5523750f993ca6d2f187fde799e2957cde045b37904d5",
+          "bytes": 2419
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/ready-metrics.json",
+          "sha256": "7ead4f8d877cb7eb44b78893072517da33e0ca74398236af3353853cd08c1aec",
+          "bytes": 2458
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/calibration-before-metrics.json",
+          "sha256": "7ead4f8d877cb7eb44b78893072517da33e0ca74398236af3353853cd08c1aec",
+          "bytes": 2458
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/calibration-request.json",
+          "sha256": "d48e8fbb9c18fa3882afa81fdfb6e18708a945e278a11e99f4bcae984d7d0c87",
+          "bytes": 5144
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/calibration.sse",
+          "sha256": "349f4466a77f471f6d8fcf5de936dfc116fca3a693150550bb448e4ac2c27f53",
+          "bytes": 77306
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/calibration-verdict.json",
+          "sha256": "1a3064695076331d36e70aa74a095d757adfe78a3ac7234e456819ebce011476",
+          "bytes": 1996
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/calibration-after-metrics.json",
+          "sha256": "1ba0094a875ab44f6e3433180e1ef7d644d29c3b230997572d14b17d431d06b9",
+          "bytes": 2753
+        },
+        "turn1-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/turn1-before-metrics.json",
+          "sha256": "474c8df5587be9705a258520b157f27f1a53fc27a693b5fe146fbe030fd7fe66",
+          "bytes": 2753
+        },
+        "turn1-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/turn1-request.json",
+          "sha256": "642f0416dc956b94945faa76fc09b8dfa5ce1823850955c548581b52bc61f029",
+          "bytes": 642262
+        },
+        "turn1.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/turn1.sse",
+          "sha256": "55118e7d780108153bee8f5bb03392d65e131b4551b2a4faccc8d29d63e771ad",
+          "bytes": 270353
+        },
+        "turn1-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/turn1-verdict.json",
+          "sha256": "30469e6d5ee9e1ab03b13367a27d0a04d8ef158fca6a818516f1348b7e82c422",
+          "bytes": 5199
+        },
+        "turn1-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/turn1-after-metrics.json",
+          "sha256": "0d5d2f7dae9afedbdb293a8bd85e585ffa66ca1f7f2afca8fcccea3f92017db5",
+          "bytes": 2770
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/vision-before-metrics.json",
+          "sha256": "02792b0422095d2ee9dde700654b190d5956f4946864001d64d991d4381dd914",
+          "bytes": 2770
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/vision-request.json",
+          "sha256": "0d10d0dfb1e35f2a26cac84b8f98ce7dc0e7ae0fb529f5e9ad5314f2e82e1817",
+          "bytes": 703
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/vision.sse",
+          "sha256": "b3feef2fd3cedf275a25f5f284fe257667b86cb1a5d58ddc0a34e0669cdca9b2",
+          "bytes": 14386
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/vision-verdict.json",
+          "sha256": "494d94153d68e6e3fbb62cd67904419e0f25bdb7740b8d109f17c987b3fb7935",
+          "bytes": 671
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/vision-after-metrics.json",
+          "sha256": "b098cedc048f89bb2c4394452263dab0f15c77987aadc2a95b20a279cbb1f82c",
+          "bytes": 2771
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen128k-fa370-seed0-1/summary.json",
+          "sha256": "95ded6301b93d70422b0690398847b2d6696b825fc8ebc21356f59a6c61d63f9",
+          "bytes": 10183
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-taps] base=0 rows=4096 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=419430400",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 4194304 ml_len 0 -> 16384 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=1050 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=107520000",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[dflash-taps] base=0 rows=131074 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=13421977600",
+        "[dflash-oracle] rows=131074 taps=9352a09514250036d4ad2526ac23fbde887432e60471a0fad58937dd070fcb4a features=bde4c40118e9adfae57d5f0c196a22e6986c72522dfc7ead74363f587021a639 positions=023cd4dfda88e8c9ab5457f1d22cc5a2b20c03f1a24ed93fa3ca534db149c85e target_logits=d3fc196942d4083ee4df6d34cffbfbbb385a51dc64c0372adf7b914f1355475d boundary_pos=131040 boundary_logits=f7564a2647fdcc27528ccbcef9a8edd349de720ab35dd1bed74b474884820db7",
+        "[fa-pool] grow #1 dev=0 o_len 4194304 -> 67108864 ml_len 16384 -> 262144 (retired kept, zero=false)"
+      ]
+    },
+    "qwen-oracle-fa370-on": {
+      "binary_sha256": "a23b61defec75ead654c8ebfa11ac9ba580161c58c7067d07617ccc18a65d510",
+      "passed": true,
+      "error": null,
+      "rows": [
+        {
+          "name": "calibration",
+          "prompt_tokens": 1050,
+          "cached_tokens": 0,
+          "completion_tokens": 164,
+          "finish": "stop",
+          "ttft_s": 0.462,
+          "wall_s": 2.416,
+          "spec": {
+            "rounds": 59,
+            "drafted": 180,
+            "accepted": 105,
+            "acceptance_rate": 0.5833333333333334
+          },
+          "error": null
+        },
+        {
+          "name": "turn1",
+          "prompt_tokens": 32760,
+          "cached_tokens": 0,
+          "completion_tokens": 239,
+          "finish": "stop",
+          "ttft_s": 13.18,
+          "wall_s": 16.034,
+          "spec": {
+            "rounds": 84,
+            "drafted": 269,
+            "accepted": 155,
+            "acceptance_rate": 0.5762081784386617
+          },
+          "error": null
+        },
+        {
+          "name": "vision",
+          "prompt_tokens": 130,
+          "cached_tokens": 0,
+          "completion_tokens": 80,
+          "finish": "stop",
+          "ttft_s": 0.25,
+          "wall_s": 2.116,
+          "spec": {},
+          "error": null
+        }
+      ],
+      "faults": {
+        "step_ooms": 0,
+        "oom_replays": 0,
+        "engine_errors": 0
+      },
+      "references": {
+        "models.toml": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/models.toml",
+          "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+          "bytes": 5640
+        },
+        "profile.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/profile.json",
+          "sha256": "ecac13e9df533dd366f19f020010e5a079a1fc88ded2b428331816d52a8a339b",
+          "bytes": 1135
+        },
+        "server.log": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/server.log",
+          "sha256": "30722f7db0124f9253f60bc8aa0628667604695cc203fad4fc597a162951c908",
+          "bytes": 118827877
+        },
+        "telemetry.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/telemetry.jsonl",
+          "sha256": "2f6d1376d35d76ab3f1fa46eb0ea54dc9c545d6ed4c5e8683b7f95a1e225709c",
+          "bytes": 98057
+        },
+        "capacity.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/capacity.py",
+          "sha256": "4984e6ec216fc25179118c9a92252848db576f9aa0df8350abe439627308f43b",
+          "bytes": 14353
+        },
+        "checks.py": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/checks.py",
+          "sha256": "6cb58cbebeae9a53cee65c8456bfc009a5a2b6f9c2c4584e9dff0509ef63748a",
+          "bytes": 453
+        },
+        "ledger.jsonl": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/ledger.jsonl",
+          "sha256": "8940f84027cd3565701c30b0965009428cbf0939b18c6da03e25aa4cf65c077d",
+          "bytes": 4011
+        },
+        "ready-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/ready-metrics.json",
+          "sha256": "bf092675bf229d4b3d0bd14f3d2becfb84c26ea2340a6d938031170857f7587b",
+          "bytes": 2459
+        },
+        "calibration-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/calibration-before-metrics.json",
+          "sha256": "6f8f5eed2a1f993bdf0d08ca7cec87849cb5d8f7aa47d40636c1a001df539a7f",
+          "bytes": 2459
+        },
+        "calibration-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/calibration-request.json",
+          "sha256": "3909434527b741955abf39225f9dc30770504483f4a0d4ecd6ae9859f2ca08ff",
+          "bytes": 5131
+        },
+        "calibration.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/calibration.sse",
+          "sha256": "4913dc1a95d32c4afb0dd97c3296a38335cd024498ed92f9913d687156df982b",
+          "bytes": 42948
+        },
+        "calibration-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/calibration-verdict.json",
+          "sha256": "1f960c3d3b29e65a66a472377a80b8dd78b0e975d34a65982fd6397361837dea",
+          "bytes": 1319
+        },
+        "calibration-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/calibration-after-metrics.json",
+          "sha256": "c7503f67548f13291a68c2f9491bd94e0f26b8ea7b8a1268510a631c65dd3635",
+          "bytes": 2753
+        },
+        "a-seed-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-seed-before-metrics.json",
+          "sha256": "a9d158d5c23d448261b299b9d9d0cea07296c19f112d401bdaf867199dec144b",
+          "bytes": 2753
+        },
+        "a-seed-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-seed-request.json",
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-seed.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-seed.json",
+          "sha256": "e2b47097d90b3a098cb4c19f2e4183d9f8410c8bc9775e2db1447b7693ce6172",
+          "bytes": 796
+        },
+        "a-seed-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-seed-verdict.json",
+          "sha256": "4fe37a275e85f30e153ace10f4761891c4ebd0ec3d209c7512da0bc13da2237c",
+          "bytes": 863
+        },
+        "a-seed-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-seed-after-metrics.json",
+          "sha256": "9ec3ea21ac66ff53a2c7fcb6166a3cf6c057c6e01d1ac7112b2c749101a1f447",
+          "bytes": 2755
+        },
+        "a-restore-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-restore-before-metrics.json",
+          "sha256": "9d6307f2cf2312b8de1574eef0b41403c299b66d214791c6126083a9f98949f3",
+          "bytes": 2755
+        },
+        "a-restore-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-restore-request.json",
+          "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+          "bytes": 160419
+        },
+        "a-restore.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-restore.json",
+          "sha256": "6b6f51326c3e4c24fbfd7acfbb501d3d45e2dba694b1fdf7efce5f8cbd5f5bb2",
+          "bytes": 799
+        },
+        "a-restore-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-restore-verdict.json",
+          "sha256": "f70afe3d2ef09506d5dc885677505c066e829925f21051eab26b9657b135284b",
+          "bytes": 870
+        },
+        "a-restore-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/a-restore-after-metrics.json",
+          "sha256": "88b2fad172ce5ec6179349fd3346a81a62a4466f82ae00ca9412fb5bc36a0320",
+          "bytes": 2799
+        },
+        "turn1-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/turn1-before-metrics.json",
+          "sha256": "0e17d22ff169fa20dc848717ab34e198be5df527dd3a72899946a13db754f3fa",
+          "bytes": 2799
+        },
+        "turn1-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/turn1-request.json",
+          "sha256": "e13746b3d69e80d776af6fc4b064af2884977320323d0e251d017508260a057a",
+          "bytes": 160512
+        },
+        "turn1.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/turn1.sse",
+          "sha256": "1f3d144c7d7de5c5cc8ecfe96a8db86d1fc4f5db4eef8bc40492f1dbbd617682",
+          "bytes": 62799
+        },
+        "turn1-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/turn1-verdict.json",
+          "sha256": "4bca3315ecb0172847168516d8f1c920fce369b8a32a49cb0979a48d7e7d2975",
+          "bytes": 1735
+        },
+        "turn1-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/turn1-after-metrics.json",
+          "sha256": "04d90bb1cc2c75e7a81cb209c86fbc45cc6f7763ccd515fda6fc40f94858b8e1",
+          "bytes": 2799
+        },
+        "vision-before-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/vision-before-metrics.json",
+          "sha256": "ed1bd69301581f9f022e7e10cadf565715e50be4c7cd1b302ef5a18ae5cbb340",
+          "bytes": 2799
+        },
+        "vision-request.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/vision-request.json",
+          "sha256": "38c6865e59d31106b32f741cc3bb0f3d2175cfb93a0219d890e681ac2d9c8f62",
+          "bytes": 690
+        },
+        "vision.sse": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/vision.sse",
+          "sha256": "277609ae403d791c0360a778addd3076cd0d4a40e778c47c83cf51799bc1348f",
+          "bytes": 20729
+        },
+        "vision-verdict.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/vision-verdict.json",
+          "sha256": "4592283911208c08644b3947f9ae968ba041a147c4fb7b2db5ee55878f7559f8",
+          "bytes": 803
+        },
+        "vision-after-metrics.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/vision-after-metrics.json",
+          "sha256": "1412e18dca50d10b55cac895212f286b0a192a115105fdff78edab73ae2f6e5d",
+          "bytes": 2794
+        },
+        "summary.json": {
+          "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-oracle-fa370-on/summary.json",
+          "sha256": "d5cbc4c22e4fb3cf7dd74b7a70d0ee2c02cab3103b16b1287fbae8e910971a32",
+          "bytes": 8825
+        }
+      },
+      "allocation_excerpts": [
+        "[vision] tower loaded from /tmp/qwen-ornith-5090-capacity-20260908/qwen-vision (27 blocks, out_width 5120, f32-resident)",
+        "[dflash-taps] base=0 rows=4096 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=419430400",
+        "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "[fa-pool] grow #0 dev=0 o_len 0 -> 4194304 ml_len 0 -> 16384 (retired kept, zero=false)",
+        "[dflash-taps] base=0 rows=1050 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=107520000",
+        "[dflash-oracle] rows=1050 taps=d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411 features=7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66 positions=044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033 target_logits=45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3 boundary_pos=1024 boundary_logits=04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8",
+        "[dflash-taps] base=0 rows=32708 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=3349299200",
+        "[dflash-oracle] rows=32708 taps=ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9 features=8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1 positions=50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf target_logits=276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a boundary_pos=32672 boundary_logits=f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c",
+        "[fa-pool] grow #1 dev=0 o_len 4194304 -> 16777216 ml_len 16384 -> 65536 (retired kept, zero=false)",
+        "[prefix-cache] DSPARK restore: 32672 of 32708 prompt tokens + draft tail from cache (36 suffix tokens to prime) (model qwen/qwen3.8-27b)",
+        "[dflash-taps] base=32672 rows=36 max_chunk_rows=36 chunk_tap_bytes=3686400 carry_bytes=3686400 former_full_tap_bytes=3686400",
+        "[dflash-taps] base=0 rows=32760 max_chunk_rows=1024 chunk_tap_bytes=104857600 carry_bytes=26214400 former_full_tap_bytes=3354624000",
+        "[dflash-oracle] rows=32760 taps=f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd features=01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094 positions=3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3 target_logits=1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82 boundary_pos=32736 boundary_logits=b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      ]
+    }
+  },
+  "greedy_identity": {
+    "old_sets": [
+      {
+        "rows": "4096",
+        "taps": "1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081",
+        "features": "6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf",
+        "positions": "6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3",
+        "target_logits": "a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6",
+        "boundary_pos": "0",
+        "boundary_logits": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "rows": "1050",
+        "taps": "d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411",
+        "features": "7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66",
+        "positions": "044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033",
+        "target_logits": "45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3",
+        "boundary_pos": "1024",
+        "boundary_logits": "04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8"
+      },
+      {
+        "rows": "32708",
+        "taps": "ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9",
+        "features": "8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1",
+        "positions": "50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf",
+        "target_logits": "276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a",
+        "boundary_pos": "32672",
+        "boundary_logits": "f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c"
+      },
+      {
+        "rows": "32760",
+        "taps": "f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd",
+        "features": "01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094",
+        "positions": "3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3",
+        "target_logits": "1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82",
+        "boundary_pos": "32736",
+        "boundary_logits": "b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      }
+    ],
+    "on_sets": [
+      {
+        "rows": "4096",
+        "taps": "1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081",
+        "features": "6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf",
+        "positions": "6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3",
+        "target_logits": "a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6",
+        "boundary_pos": "0",
+        "boundary_logits": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "rows": "1050",
+        "taps": "d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411",
+        "features": "7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66",
+        "positions": "044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033",
+        "target_logits": "45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3",
+        "boundary_pos": "1024",
+        "boundary_logits": "04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8"
+      },
+      {
+        "rows": "32708",
+        "taps": "ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9",
+        "features": "8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1",
+        "positions": "50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf",
+        "target_logits": "276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a",
+        "boundary_pos": "32672",
+        "boundary_logits": "f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c"
+      },
+      {
+        "rows": "32760",
+        "taps": "f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd",
+        "features": "01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094",
+        "positions": "3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3",
+        "target_logits": "1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82",
+        "boundary_pos": "32736",
+        "boundary_logits": "b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      }
+    ],
+    "tapes": [
+      {
+        "cell": "qwen-32k-old-tap-oracle",
+        "name": "a-seed",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "cached_tokens": 0
+      },
+      {
+        "cell": "qwen-32k-old-tap-oracle",
+        "name": "a-restore",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "cached_tokens": 32672
+      },
+      {
+        "cell": "qwen-oracle-fa370-on",
+        "name": "a-seed",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "cached_tokens": 0
+      },
+      {
+        "cell": "qwen-oracle-fa370-on",
+        "name": "a-restore",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "cached_tokens": 32672
+      }
+    ],
+    "exact": true
+  },
+  "greedy_identity_reference": {
+    "path": "/tmp/qwen-ornith-5090-capacity-20260908/fa370-identity.json",
+    "sha256": "4311e7bc5dd4b54cd52ef75aa85fc5cc15ae33b4abf3bb4acc65ed3e1cacb374",
+    "bytes": 4858
+  },
+  "baseline_references": {
+    "server.log": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/server.log",
+      "sha256": "18a856b63d621a953f298d499c8810f14b4a31e10c72428e4f7aa0ca21e21c13",
+      "bytes": 117948882
+    },
+    "a-seed.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/a-seed.json",
+      "sha256": "0a0900c593c2302d9fddc5e06fa150d51c141f64b2ebfd9e18aa96006d83f6f6",
+      "bytes": 796
+    },
+    "a-restore.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/a-restore.json",
+      "sha256": "bc6979e0167b072eefbab290db373005944a4731790e04e0da5268b1358498df",
+      "bytes": 799
+    },
+    "a-seed-request.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/a-seed-request.json",
+      "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+      "bytes": 160419
+    },
+    "a-restore-request.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/a-restore-request.json",
+      "sha256": "1f4b7a8da37d9e5f73089c7722df8bdfbaa439248235c61c4cadbf2bfde814bc",
+      "bytes": 160419
+    },
+    "profile.json": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/profile.json",
+      "sha256": "7cd15bfa7fcdee5bb6232ec6cfe466ca06ec4deb4384808bcfee0f6ea540e1e3",
+      "bytes": 1116
+    },
+    "models.toml": {
+      "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-32k-old-tap-oracle/models.toml",
+      "sha256": "7cf4ce597ee0514716541fa7aa31dc6808a8fbb540f5452bd45db04906e5c62b",
+      "bytes": 5640
+    }
+  },
+  "historical_red": {
+    "description": "Prior combined tap-storage candidate failed a 3145728-byte checkpoint allocation after FA growth; this is not the same-binary OFF control below.",
+    "references": {
+      "summary.json": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k-decode-repro3/summary.json",
+        "sha256": "02aad6dc6d5d9a87862fe63749a77ebf48c2f7e8c7d830f47abd0098d23f005d"
+      },
+      "server.log": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k-decode-repro3/server.log",
+        "sha256": "29eee53dad2c46dbce9f82f15c965586ff5ed9cc9d973843aab20f516af16f42"
+      },
+      "profile.json": {
+        "path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k-decode-repro3/profile.json",
+        "sha256": "f1db519636f089286d537ffb575134ae5ee4065e4c17ce325cbff62061d91240"
+      }
+    }
+  },
+  "verdict": "Both current unseeded and fixed-seed OFF/ON 128k/1024 pairs completed without OOM. OFF did not reproduce the offending later FA generation. The historical OOM is not relabeled as a current red arm. No OOM-prevention claim or default promotion is supported by these controls.",
+  "unqualified": [
+    "other models including Ornith/qwen35moe, GLM5 and DSV4",
+    "24 GB budget profiles",
+    "RTX PRO 6000",
+    "B200 and TP profiles",
+    "capacity boundaries and captured-graph replay for those profiles"
+  ],
+  "memset_contract": "Ordinary launch dimensions and per-use slice memset extents are unchanged. MEMRA_FA_PART_ZERO=1 zeroes the entire allocation, so that diagnostic does more work for larger rounded capacities."
+}
