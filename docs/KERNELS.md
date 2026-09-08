@@ -676,7 +676,14 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
 shared activations using the current FP8 and dot exact-tail row programs.
 The arithmetic contract remains the existing decode, leaf order and 128-leaf
 reduction tree. `MEMRA_DSV4_DENSE_BATCH=1` opts in before capture; default OFF,
-decide-by 2026-09-22. Planned sites are attention Q-a/KV, Q-b/indexer Q-b,
+decide-by 2026-09-22. Sites are attention Q-a/KV, Q-b/indexer Q-b,
 and compressor KV/gate pairs. No dependent projection chain is collapsed
 across an activation-producing operation. Component and model gates pending;
 private receipts: Darklanes `research/dsv4f-dense-batch-20260908/`.
+
+New entries `dsv4_dense_batch_fp8_kernel` and `dsv4_dense_batch_dots_kernel`
+select a projection-local row, then inline the same row body as the control
+entries. All blocks remain 128 threads. Rust dispatch in `dsv4_gpu.rs` batches
+only M=1 admitted pairs. `tools/dsv4-dense-batch-gate.cu` reads captured real
+operands; `dsv4_dense_batch_gate --capture` uses only separate control kernels
+to collect them. Both cadence arms in the model gate keep exact-tail ON.

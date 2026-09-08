@@ -288,6 +288,42 @@ impl DenseView<'_> {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct DenseBatchFp8 {
+    w: *const c_void,
+    sc: *const f32,
+    y: *mut f32,
+    n: i32,
+    sc_cols: i32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct DenseBatchDots {
+    w: *const c_void,
+    y: *mut f32,
+    n: i32,
+    w_is_bf16: i32,
+}
+unsafe extern "C" {
+    fn memra_dsv4_dense_batch_enabled_for_gate() -> i32;
+    fn memra_dsv4_dense_batch_fp8(
+        x: *const c_void,
+        k: i32,
+        pair: *const DenseBatchFp8,
+        stream: *mut c_void,
+    ) -> i32;
+    fn memra_dsv4_dense_batch_dots(
+        x: *const f32,
+        k: i32,
+        pair: *const DenseBatchDots,
+        stream: *mut c_void,
+    ) -> i32;
+}
+fn dense_batch_on() -> bool {
+    unsafe { memra_dsv4_dense_batch_enabled_for_gate() == 1 }
+}
+
 /// Dense-weight pointer for the device-path GEMV wrappers: the bf16 dequant slab, or
 /// the as-stored FP8 pair when the dense arm is on. Copy of raw pointers only — built
 /// per call from the owning slabs via [`dwsel`].
@@ -13887,6 +13923,68 @@ impl Dsv4Gpu {
         }
     }
 
+    /// Two independent FP8 projections of the same activation. Descriptors are
+    /// copied into kernel arguments at enqueue, including during graph capture.
+    /// None of the host descriptor storage is retained by the device.
+    #[allow(clippy::too_many_arguments)]
+    fn dense_batch_fp8_dev(
+        st: &Stage,
+        x: *const c_void,
+        convert: Option<&mut CudaSlice<u8>>,
+        m: usize,
+        kdim: usize,
+        projections: [(DW, usize, *mut f32); 2],
+    ) -> Res<bool> {
+        if m != 1 || !dense_batch_on() {
+            return Ok(false);
+        }
+        let mut pair = [DenseBatchFp8 {
+            w: std::ptr::null(),
+            sc: std::ptr::null(),
+            y: std::ptr::null_mut(),
+            n: 0,
+            sc_cols: 0,
+        }; 2];
+        for (dst, (w, n, y)) in pair.iter_mut().zip(projections) {
+            let DW::Fp8 {
+                codes,
+                scales,
+                sc_cols,
+            } = w
+            else {
+                return Ok(false);
+            };
+            *dst = DenseBatchFp8 {
+                w: codes,
+                sc: scales,
+                y,
+                n: i32::try_from(n).map_err(|e| e.to_string())?,
+                sc_cols,
+            };
+        }
+        let kdim: i32 = i32::try_from(kdim).map_err(|e| e.to_string())?;
+        let stream = st.gpu.stream();
+        let xb = if let Some(buffer) = convert {
+            let ptr = buffer.device_ptr_mut(&stream).0 as *mut c_void;
+            unsafe {
+                ck(
+                    "dense batch cvt",
+                    k::memra_dsv4_cvt_bf16(x.cast(), ptr, kdim as i64, sp(&stream)),
+                )?;
+            }
+            ptr as *const c_void
+        } else {
+            x
+        };
+        unsafe {
+            ck(
+                "dense batch fp8",
+                memra_dsv4_dense_batch_fp8(xb, kdim, pair.as_ptr(), sp(&stream)),
+            )?;
+        }
+        Ok(true)
+    }
+
     /// f32 cvt + batched GEMV (the m=T twin of `gemm_dev`).
     #[allow(clippy::too_many_arguments)]
     fn gemm_m_dev(
@@ -14175,26 +14273,54 @@ impl Dsv4Gpu {
             .memcpy_dtod(pend_score, &mut ck_dev.sc_snap)
             .map_err(e("ckpt snap sc"))?;
         ck_dev.n_blocks0 = *blocks;
-        self.dots_m_dev(
-            st,
-            x_ptr,
-            cmp.wkv.device_ptr(&stream).0 as *const c_void,
-            0,
-            t,
-            hidden,
-            latent,
-            ck_dev.rows_kv.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
-        self.dots_m_dev(
-            st,
-            x_ptr,
-            cmp.wgate.device_ptr(&stream).0 as *const c_void,
-            0,
-            t,
-            hidden,
-            latent,
-            ck_dev.rows_sc.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
+        if t == 1 && self.dots_f32 && dense_batch_on() {
+            let pair = [
+                DenseBatchDots {
+                    w: cmp.wkv.device_ptr(&stream).0 as *const c_void,
+                    y: ck_dev.rows_kv.device_ptr_mut(&stream).0 as *mut f32,
+                    n: i32::try_from(latent).map_err(|e| e.to_string())?,
+                    w_is_bf16: 0,
+                },
+                DenseBatchDots {
+                    w: cmp.wgate.device_ptr(&stream).0 as *const c_void,
+                    y: ck_dev.rows_sc.device_ptr_mut(&stream).0 as *mut f32,
+                    n: i32::try_from(latent).map_err(|e| e.to_string())?,
+                    w_is_bf16: 0,
+                },
+            ];
+            unsafe {
+                ck(
+                    "dense batch compressor",
+                    memra_dsv4_dense_batch_dots(
+                        x_ptr,
+                        hiddei32::try_from(n).map_err(|e| e.to_string())?,
+                        pair.as_ptr(),
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        } else {
+            self.dots_m_dev(
+                st,
+                x_ptr,
+                cmp.wkv.device_ptr(&stream).0 as *const c_void,
+                0,
+                t,
+                hidden,
+                latent,
+                ck_dev.rows_kv.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+            self.dots_m_dev(
+                st,
+                x_ptr,
+                cmp.wgate.device_ptr(&stream).0 as *const c_void,
+                0,
+                t,
+                hidden,
+                latent,
+                ck_dev.rows_sc.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+        }
         for i in 0..t {
             let pos = pos0 + i;
             let slot = if cmp.overlap {
@@ -14610,17 +14736,39 @@ impl Dsv4Gpu {
             )?;
         }
 
-        // q path (weights read once for all t rows)
-        Self::gemm_m_dev(
+        // Independent Q-a/KV rows consume x before either output is normalized.
+        let qkv_batched = Self::dense_batch_fp8_dev(
             st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+            vws.x.device_ptr(&stream).0 as *const c_void,
+            Some(&mut vws.gemm_xb),
             t,
-            q_lora,
             hidden,
-            vws.qr.device_ptr_mut(&stream).0 as *mut f32,
+            [
+                (
+                    dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+                    q_lora,
+                    vws.qr.device_ptr_mut(&stream).0 as *mut f32,
+                ),
+                (
+                    dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+                    hd,
+                    vws.kv.device_ptr_mut(&stream).0 as *mut f32,
+                ),
+            ],
         )?;
+        if !qkv_batched {
+            // q path (weights read once for all t rows)
+            Self::gemm_m_dev(
+                st,
+                vws.x.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+                t,
+                q_lora,
+                hidden,
+                vws.qr.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+        }
         if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
             self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
         }
@@ -14666,20 +14814,48 @@ impl Dsv4Gpu {
             }
             self.small_kernel_launches[1].fetch_add(2, Ordering::Relaxed);
         }
-        Self::gemv_m_dev(
-            st,
-            shard.map_or_else(
-                || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
-                |(_, bank)| packed_dense(&bank.wq_b, &stream),
-            ),
-            vws.qr_b.device_ptr(&stream).0 as *const c_void,
-            vws.q.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            heads * hd,
-            q_lora,
-            0,
-            0,
-        )?;
+        let q_index_batched = if let Some(ix) = layer.idx.as_ref().filter(|_| layer.ratio != 0) {
+            Self::dense_batch_fp8_dev(
+                st,
+                vws.qr_b.device_ptr(&stream).0 as *const c_void,
+                None,
+                t,
+                q_lora,
+                [
+                    (
+                        shard.map_or_else(
+                            || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
+                            |(_, bank)| packed_dense(&bank.wq_b, &stream),
+                        ),
+                        heads * hd,
+                        vws.q.device_ptr_mut(&stream).0 as *mut f32,
+                    ),
+                    (
+                        dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
+                        ix.heads * ix.hd,
+                        vws.qi.device_ptr_mut(&stream).0 as *mut f32,
+                    ),
+                ],
+            )?
+        } else {
+            false
+        };
+        if !q_index_batched {
+            Self::gemv_m_dev(
+                st,
+                shard.map_or_else(
+                    || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
+                    |(_, bank)| packed_dense(&bank.wq_b, &stream),
+                ),
+                vws.qr_b.device_ptr(&stream).0 as *const c_void,
+                vws.q.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                heads * hd,
+                q_lora,
+                0,
+                0,
+            )?;
+        }
         unsafe {
             ck(
                 "headrms batch",
@@ -14707,17 +14883,19 @@ impl Dsv4Gpu {
             )?;
         }
 
-        // shared K==V latent rows + window QAT, then the TRANSIENT ring write
-        Self::gemm_m_dev(
-            st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
-            t,
-            hd,
-            hidden,
-            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
+        if !qkv_batched {
+            // shared K==V latent rows + window QAT, then the TRANSIENT ring write
+            Self::gemm_m_dev(
+                st,
+                vws.x.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+                t,
+                hd,
+                hidden,
+                vws.kv.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+        }
         unsafe {
             ck(
                 "rmsnorm kv batch",
@@ -14775,18 +14953,20 @@ impl Dsv4Gpu {
             // sequential program's `(pos+1)/ratio`)
             let nbs: Vec<usize> = (0..t).map(|i| (pos0 + i + 1) / ratio).collect();
             if let Some(ix) = &layer.idx {
-                // indexer q, batched
-                Self::gemv_m_dev(
-                    st,
-                    dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
-                    vws.qr_b.device_ptr(&stream).0 as *const c_void,
-                    vws.qi.device_ptr_mut(&stream).0 as *mut f32,
-                    t,
-                    ix.heads * ix.hd,
-                    q_lora,
-                    0,
-                    0,
-                )?;
+                if !q_index_batched {
+                    // indexer q, batched
+                    Self::gemv_m_dev(
+                        st,
+                        dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
+                        vws.qr_b.device_ptr(&stream).0 as *const c_void,
+                        vws.qi.device_ptr_mut(&stream).0 as *mut f32,
+                        t,
+                        ix.heads * ix.hd,
+                        q_lora,
+                        0,
+                        0,
+                    )?;
+                }
                 unsafe {
                     ck(
                         "rope qi batch",

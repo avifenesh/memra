@@ -4,6 +4,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 // Host gate selection is thread-local and never read by a device kernel. Capture
 // freezes the chosen kernel function, so later selection cannot mutate a graph.
@@ -74,12 +78,11 @@ __device__ __forceinline__ float dsv4_dense_exact_tail_reduce(const float* p) {
 }
 
 template <int M, bool GROUPED = false>
-__global__ void dsv4_dense_exact_tail_fp8_kernel(const uint8_t* __restrict__ w,
+__device__ __forceinline__ void dsv4_dense_exact_tail_fp8_row(const uint8_t* __restrict__ w,
                                        const float* __restrict__ sc, int sc_cols,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
-                                       int group_xstride, int group_ystride) {
-    int flat = blockIdx.x;
+                                       int group_xstride, int group_ystride, int flat) {
     int row = GROUPED ? flat % n : flat;
     if (row >= n) return;
     int group = GROUPED ? flat / n : 0;
@@ -180,10 +183,9 @@ __global__ void dsv4_dense_exact_tail_fp8_kernel(const uint8_t* __restrict__ w,
 }
 
 template <int M>
-__global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
+__device__ __forceinline__ void dsv4_dense_exact_tail_dots_row(const float* __restrict__ x,
                                              const void* __restrict__ w, int w_is_bf16,
-                                             float* __restrict__ y, int k, int n) {
-    int j = blockIdx.x;
+                                             float* __restrict__ y, int k, int n, int j) {
     if (j >= n) return;
     float part[M];
 #pragma unroll
@@ -241,6 +243,177 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
         float v = dsv4_dense_exact_tail_reduce(red);
         if (threadIdx.x == 0) y[j] = v;
     }
+}
+
+// Existing entry points and batch entries instantiate the SAME row bodies.
+// Only the mapping from blockIdx.x to a projection-local row changes.
+template <int M, bool GROUPED = false>
+__global__ void dsv4_dense_exact_tail_fp8_kernel(const uint8_t* w,
+    const float* sc, int sc_cols, const uint16_t* x, float* y,
+    int n, int k, int xstride, int ystride, int group_xstride, int group_ystride) {
+    dsv4_dense_exact_tail_fp8_row<M, GROUPED>(w, sc, sc_cols, x, y, n, k,
+        xstride, ystride, group_xstride, group_ystride, blockIdx.x);
+}
+template <int M>
+__global__ void dsv4_dense_exact_tail_dots_kernel(const float* x, const void* w,
+    int w_is_bf16, float* y, int k, int n) {
+    dsv4_dense_exact_tail_dots_row<M>(x, w, w_is_bf16, y, k, n, blockIdx.x);
+}
+
+struct Dsv4DenseBatchFp8 {
+    const void* w;
+    const float* sc;
+    float* y;
+    int n;
+    int sc_cols;
+};
+struct Dsv4DenseBatchDots {
+    const void* w;
+    float* y;
+    int n;
+    int w_is_bf16;
+};
+// Explicit gate-only operand capture. No environment read or production caller.
+// Copies real live operands once per projection pair; captures stay on the gate host.
+static thread_local std::string dsv4_dense_batch_capture_dir;
+static thread_local std::unordered_set<const void*> dsv4_dense_batch_captured;
+extern "C" int memra_dsv4_dense_batch_capture_for_gate(const char* dir) {
+    dsv4_dense_batch_capture_dir = dir ? dir : "";
+    dsv4_dense_batch_captured.clear();
+    return 0;
+}
+static int dsv4_dense_batch_write(FILE* f, const void* ptr, size_t bytes) {
+    std::vector<unsigned char> data(bytes);
+    auto rc = cudaMemcpy(data.data(), ptr, bytes, cudaMemcpyDeviceToHost);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    return fwrite(data.data(), 1, bytes, f) == bytes ? 0 : 40075;
+}
+// Binary tape: eight u32 header words, then x, wa, sca (FP8), wb, scb (FP8).
+// Header = magic, kind, K, Na, Nb, scale-cols-a/type-a, scale-cols-b/type-b, device.
+static int dsv4_dense_batch_capture(const void* x, int k,
+    const Dsv4DenseBatchFp8* fp8, const Dsv4DenseBatchDots* dots, cudaStream_t stream) {
+    if (dsv4_dense_batch_capture_dir.empty()) return 0;
+    const void* key = fp8 ? fp8[0].w : dots[0].w;
+    if (dsv4_dense_batch_captured.count(key)) return 0;
+    cudaStreamCaptureStatus status;
+    auto rc = cudaStreamIsCapturing(stream, &status);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    if (status != cudaStreamCaptureStatusNone) return 40075;
+    rc = cudaStreamSynchronize(stream);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    int dev = -1;
+    rc = cudaGetDevice(&dev);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    const std::string path = dsv4_dense_batch_capture_dir + "/pair-" +
+        std::to_string(dsv4_dense_batch_captured.size()) + ".bin";
+    FILE* f = fopen(path.c_str(), "wbx");
+    if (!f) return 40075;
+    uint32_t h[8] = {0x44534231u, fp8 ? 0u : 1u, (uint32_t)k,
+        (uint32_t)(fp8 ? fp8[0].n : dots[0].n), (uint32_t)(fp8 ? fp8[1].n : dots[1].n),
+        (uint32_t)(fp8 ? fp8[0].sc_cols : dots[0].w_is_bf16),
+        (uint32_t)(fp8 ? fp8[1].sc_cols : dots[1].w_is_bf16), (uint32_t)dev};
+    int err = fwrite(h, sizeof(h), 1, f) == 1 ? 0 : 40075;
+    if (!err) err = dsv4_dense_batch_write(f, x, (size_t)k * (fp8 ? 2 : 4));
+    for (int i = 0; i < 2 && !err; ++i) {
+        if (fp8) {
+            err = dsv4_dense_batch_write(f, fp8[i].w, (size_t)fp8[i].n * k);
+            if (!err) err = dsv4_dense_batch_write(f, fp8[i].sc,
+                (size_t)((fp8[i].n + 127) / 128) * fp8[i].sc_cols * 4);
+        } else {
+            err = dsv4_dense_batch_write(f, dots[i].w,
+                (size_t)dots[i].n * k * (dots[i].w_is_bf16 ? 2 : 4));
+        }
+    }
+    if (fclose(f) != 0 && !err) err = 40075;
+    if (!err) dsv4_dense_batch_captured.insert(key);
+    return err;
+}
+
+static thread_local bool dsv4_dense_batch_enabled = [] {
+    const char* value = std::getenv("MEMRA_DSV4_DENSE_BATCH");
+    return value && std::strcmp(value, "1") == 0;
+}();
+static thread_local uint64_t dsv4_dense_batch_enqueues[2] = {};
+extern "C" int memra_dsv4_dense_batch_set_for_gate(int enabled) {
+    if (enabled != 0 && enabled != 1) return 40075;
+    dsv4_dense_batch_enabled = enabled != 0;
+    return 0;
+}
+extern "C" int memra_dsv4_dense_batch_enabled_for_gate() {
+    return dsv4_dense_batch_enabled && dsv4_dense_exact_tail_enabled &&
+        !dsv4_dense_exact_tail_suppressed;
+}
+extern "C" int memra_dsv4_dense_batch_counts_for_gate(uint64_t* fp8, uint64_t* dots) {
+    if (!fp8 || !dots) return 40075;
+    *fp8 = dsv4_dense_batch_enqueues[0];
+    *dots = dsv4_dense_batch_enqueues[1];
+    return 0;
+}
+__global__ void dsv4_dense_batch_fp8_kernel(const uint16_t* x, int k,
+    Dsv4DenseBatchFp8 a, Dsv4DenseBatchFp8 b) {
+    const bool second = blockIdx.x >= a.n;
+    const Dsv4DenseBatchFp8 p = second ? b : a;
+    const int row = second ? blockIdx.x - a.n : blockIdx.x;
+    dsv4_dense_exact_tail_fp8_row<1, false>((const uint8_t*)p.w, p.sc, p.sc_cols,
+        x, p.y, p.n, k, k, p.n, 0, 0, row);
+}
+__global__ void dsv4_dense_batch_dots_kernel(const float* x, int k,
+    Dsv4DenseBatchDots a, Dsv4DenseBatchDots b) {
+    const bool second = blockIdx.x >= a.n;
+    const Dsv4DenseBatchDots p = second ? b : a;
+    const int row = second ? blockIdx.x - a.n : blockIdx.x;
+    dsv4_dense_exact_tail_dots_row<1>(x, p.w, p.w_is_bf16, p.y, k, p.n, row);
+}
+static bool dsv4_dense_batch_disjoint(float* a, int na, float* b, int nb) {
+    const uintptr_t pa = reinterpret_cast<uintptr_t>(a);
+    const uintptr_t pb = reinterpret_cast<uintptr_t>(b);
+    return na > 0 && nb > 0 && (pa < pb ? (pb - pa) / sizeof(float) >= (unsigned)na
+        : (pa - pb) / sizeof(float) >= (unsigned)nb);
+}
+extern "C" int memra_dsv4_dense_batch_fp8(const void* x, int k,
+    const Dsv4DenseBatchFp8* pair, void* raw_stream) {
+    if (!pair) return 40075;
+    const auto a = pair[0], b = pair[1];
+    if (!dsv4_dense_exact_tail_fp8_admits(a.w, a.sc, a.sc_cols, x, a.y, 1, a.n, k) ||
+        !dsv4_dense_exact_tail_fp8_admits(b.w, b.sc, b.sc_cols, x, b.y, 1, b.n, k) ||
+        (int64_t)a.n + b.n > INT32_MAX || !dsv4_dense_batch_disjoint(a.y,a.n,b.y,b.n)) return 40075;
+    if (!dsv4_dense_batch_capture_dir.empty()) {
+        for (const auto p : {a, b}) {
+            dsv4_dense_exact_tail_fp8_kernel<1, false><<<p.n,128,0,(cudaStream_t)raw_stream>>>(
+                (const uint8_t*)p.w,p.sc,p.sc_cols,(const uint16_t*)x,p.y,p.n,k,k,p.n,0,0);
+            auto rc = cudaGetLastError();
+            if (rc != cudaSuccess) return 10000 + (int)rc;
+        }
+        return dsv4_dense_batch_capture(x,k,pair,nullptr,(cudaStream_t)raw_stream);
+    }
+    dsv4_dense_batch_fp8_kernel<<<a.n + b.n, 128, 0, (cudaStream_t)raw_stream>>>(
+        (const uint16_t*)x, k, a, b);
+    auto rc = cudaGetLastError();
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    ++dsv4_dense_batch_enqueues[0];
+    return 0;
+}
+extern "C" int memra_dsv4_dense_batch_dots(const float* x, int k,
+    const Dsv4DenseBatchDots* pair, void* raw_stream) {
+    if (!pair) return 40075;
+    const auto a = pair[0], b = pair[1];
+    if (!dsv4_dense_exact_tail_dots_admits(x, a.w, a.w_is_bf16, a.y, 1, a.n, k) ||
+        !dsv4_dense_exact_tail_dots_admits(x, b.w, b.w_is_bf16, b.y, 1, b.n, k) ||
+        (int64_t)a.n + b.n > INT32_MAX || !dsv4_dense_batch_disjoint(a.y,a.n,b.y,b.n)) return 40075;
+    if (!dsv4_dense_batch_capture_dir.empty()) {
+        for (const auto p : {a, b}) {
+            dsv4_dense_exact_tail_dots_kernel<1><<<p.n,128,0,(cudaStream_t)raw_stream>>>(
+                x,p.w,p.w_is_bf16,p.y,k,p.n);
+            auto rc = cudaGetLastError();
+            if (rc != cudaSuccess) return 10000 + (int)rc;
+        }
+        return dsv4_dense_batch_capture(x,k,nullptr,pair,(cudaStream_t)raw_stream);
+    }
+    dsv4_dense_batch_dots_kernel<<<a.n + b.n, 128, 0, (cudaStream_t)raw_stream>>>(x,k,a,b);
+    auto rc = cudaGetLastError();
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    ++dsv4_dense_batch_enqueues[1];
+    return 0;
 }
 
 // Raw candidates refuse unsupported arguments before enqueue. Production-facing
