@@ -4744,7 +4744,7 @@ pub fn tail_geometry_ok(
     if tail_len > cap {
         return Err("logical length exceeds the session cap");
     }
-    if tail_base + tail_rows != tail_len {
+    if tail_base.checked_add(tail_rows) != Some(tail_len) {
         return Err("tail does not end at its own logical length");
     }
     if tail_floor > tail_base {
@@ -4786,6 +4786,34 @@ pub struct DflashKvTail {
 }
 
 impl DflashKvTail {
+    /// Validate before allocating the destination. Admission and import share this check.
+    pub fn validate_restore(&self, cfg: &DflashCfg, cap: usize) -> Result<(), &'static str> {
+        tail_geometry_ok(
+            self.layers.len(),
+            self.row_bytes,
+            self.base,
+            self.rows,
+            self.len,
+            self.floor,
+            cfg.n_layer,
+            cfg.n_kv * cfg.head_dim * std::mem::size_of::<f32>(),
+            cfg.sliding_window.saturating_add(cfg.block_size),
+            cap,
+        )?;
+        let elements = self
+            .rows
+            .checked_mul(self.row_bytes / std::mem::size_of::<f32>())
+            .ok_or("draft tail size overflow")?;
+        if self
+            .layers
+            .iter()
+            .any(|(k, v)| k.len() != elements || v.len() != elements)
+        {
+            return Err("draft tail storage differs from its geometry");
+        }
+        Ok(())
+    }
+
     pub fn bytes(&self) -> usize {
         self.layers.len() * self.rows * self.row_bytes * 2
     }
@@ -4873,22 +4901,11 @@ impl DflashKv {
     /// below it (the clipped kernel, `d2_windowed_attn`). Full tails keep `floor = 0` and the
     /// pre-lane program exactly.
     pub fn from_tail(e: &Engine, cfg: &DflashCfg, cap: usize, tail: &DflashKvTail) -> Option<Self> {
-        let mut kv = Self::new(e, cfg, cap).ok()?;
-        if let Err(why) = tail_geometry_ok(
-            tail.layers.len(),
-            tail.row_bytes,
-            tail.base,
-            tail.rows,
-            tail.len,
-            tail.floor,
-            kv.k.len(),
-            kv.row_bytes,
-            kv.window_rows,
-            cap,
-        ) {
+        if let Err(why) = tail.validate_restore(cfg, cap) {
             eprintln!("[dspark] tail import refused: {why}");
             return None;
         }
+        let mut kv = Self::new(e, cfg, cap).ok()?;
         // A short tail (rows below the window because the exporter never owned them) makes
         // this KV floor-bearing; a full tail from a floored exporter does not need the floor
         // (every readable row is present) and keeps the pre-lane program.
