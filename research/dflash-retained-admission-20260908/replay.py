@@ -27,6 +27,7 @@ a.run.mkdir(parents=True, exist_ok=False)
 lock = open('/tmp/memra-gpu.lock', 'a')
 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 assert not subprocess.check_output(['nvidia-smi', '--query-compute-apps=pid,process_name', '--format=csv,noheader'], text=True).strip()
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(a.harness_tools or a.templates.parent / 'baseline/tools'))
 import cache_qualification as cq
 profile = json.loads((a.templates / 'profile.json').read_text())

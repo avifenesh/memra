@@ -98,3 +98,10 @@ All specified model, context, cache, reserve, vision and sampling settings remai
 
 No release or fleet action is part of this lane. If merged later, it ships in the next
 batched release; fleet exposure is deferred by the owner. Issue #372 remains open.
+
+## Cleanup
+
+The remote worktree and 2.5 GiB of owned scratch were removed after banking. All 20
+recorded server PIDs were absent, no scratch handles remained, the GPU was empty and
+`flock -n /tmp/memra-gpu.lock true` passed. The reference capacity lane, unrelated
+remote checkout changes and shared Cargo cache were preserved. See [cleanup.json](cleanup.json).
