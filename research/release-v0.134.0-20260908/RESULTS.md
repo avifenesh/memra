@@ -1,11 +1,16 @@
 # v0.134.0 release candidate
 
-Current-main composition: `4fe96ccfcdfb7ae617865a5256b30613a1c637b8`.
+Current-main composition: `2d0271fb3b6021c2c9f1b3b36d2598614a10284f`.
 Version reservation and GPU-candidate base: `df1273928a7369acf8cc943131382cccbf2f9044`.
 Prior published tag: `v0.133.0`.
 Version claimed atomically at the base before changing manifests.
 
 ## Complete change inventory
+
+- #356, `2d0271fb3`: adds a standalone report-only teacher-forced DSV4 split-K
+  drift instrument and its CI tests. Its build, three unit tests, and targeted
+  clippy pass on the release checkout. No library/runtime/CUDA changes, quality
+  certification, or serving-default promotion.
 
 - #352, `4fe96ccfc`: documents the DSV4 issue-interleave no-go and removed gate.
   Its changes are limited to FLAGS, the research index, and the no-go write-up;
@@ -56,7 +61,9 @@ battery, or server ran. All subsequent commits and validation/push hooks run on 
 the rebuilt binary reports the known Git SHA and the release guard passes.
 
 The follow-up reference change is entirely inside `#[cfg(test)]`; its production
-prefix, the engine tree, and versioned Cargo inputs match the GPU candidate exactly.
+prefix, the engine library/CUDA/build inputs outside src/bin, and versioned Cargo
+inputs match the GPU candidate exactly. The full engine tree differs because #356
+adds a standalone diagnostic binary. `RUNTIME-BINDING.json` records the comparison.
 These byte identities preserve the existing GPU receipt binding. No performance claim is inferred
 from correctness-only runs.
 

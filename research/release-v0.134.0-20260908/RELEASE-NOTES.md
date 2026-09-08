@@ -6,6 +6,9 @@
 - Include the DSV4 small-kernel diet experiment (#339), controlled by
   `MEMRA_DSV4_SMALL_KERNEL_DIET` and disabled by default.
 
+- Add a report-only teacher-forced DSV4 split-K drift instrument (#356), with no
+  quality certification or serving-default change.
+
 The release also records the DSV4 issue-interleave no-go (#352); that addition
 changes documentation only.
 

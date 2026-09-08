@@ -53,8 +53,9 @@ passed, 12 declared artifact skips, zero failures; corrected workspace clippy pa
 
 ## GPU receipt binding
 
-The memra-engine tree and Cargo manifests/lock are unchanged from the versioned
-GPU candidate. Every byte before the reference crate's `#[cfg(test)]` module is
+The memra-engine library/CUDA/build inputs outside src/bin and Cargo manifests/lock
+are unchanged from the versioned GPU candidate. The full engine tree differs only
+by the separately built/tested #356 binary; see `RUNTIME-BINDING.json`. Every byte before the reference crate's `#[cfg(test)]` module is
 identical, with SHA256 in `RECEIPTS.json`. These byte identities preserve the existing GPU receipt binding for the
 test-only correction. GPU gates were run
 with native runtime arithmetic; the tanhf interposer is only a CPU-test diagnostic.
