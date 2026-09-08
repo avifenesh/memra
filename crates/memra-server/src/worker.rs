@@ -6558,6 +6558,39 @@ impl PrefixCache {
         .then_some(entry.pos)
     }
 
+    fn admission_dflash_restore(
+        &self,
+        pin: &PrefixPin,
+        prompt: &[u32],
+        cfg: &memra_engine::dflash::DflashCfg,
+        is_dflash2: bool,
+        ctx_cap: usize,
+        vocab: usize,
+    ) -> Option<AdmissionRestoreRoute> {
+        let rows = self.admission_restore_rows(pin, prompt)?;
+        let entry = &self.entries.get(&pin.key)?[self.id_index(pin)?];
+        let tail = entry.dspark_draft.as_ref()?;
+        if !dspark_prefix_restore_on()
+            || entry.draft.is_some()
+            || tail.len != rows
+            || entry.last_logits.len() != vocab
+            || entry.last_logits.iter().any(|v| !v.is_finite())
+            || tail.validate_restore(cfg, ctx_cap).is_err()
+            || !memra_engine::dflash::dspark_spec_prompt_fits(
+                prompt.len(), ctx_cap, cfg.block_size,
+                cfg.sliding_window, is_dflash2,
+            )
+            // from_tail allocates at ctx_cap; the legacy session clamps to its window.
+            || (!is_dflash2 && ctx_cap > cfg.sliding_window)
+        {
+            return None;
+        }
+        Some(AdmissionRestoreRoute::Dflash {
+            ctx_cap,
+            suffix: DflashRestoreSuffix::new(rows, prompt.len(), dspark_partial_restore_on())?,
+        })
+    }
+
     /// Release one session lease. The last release makes the entry evictable again and
     /// treats the protected fanout interval as recent use.
     fn unpin(&mut self, pin: &PrefixPin) -> bool {
@@ -9945,6 +9978,60 @@ fn prefix_snapshot(
 struct AdmissionPrefixRestore {
     pin: PrefixPin,
     rows: usize,
+    route: AdmissionRestoreRoute,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AdmissionRestoreRoute {
+    Native,
+    Dflash {
+        ctx_cap: usize,
+        suffix: DflashRestoreSuffix,
+    },
+}
+
+impl AdmissionRestoreRoute {
+    fn with_dflash_admission(self, admission: DsparkColdPrefixAdmission) -> Option<Self> {
+        match self {
+            Self::Native => Some(self),
+            Self::Dflash { .. } => dspark_prefers_cold_over_prefix(admission).then_some(self),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DflashRestoreSuffix {
+    FullCover,
+    Prime(usize),
+}
+
+impl DflashRestoreSuffix {
+    fn new(rows: usize, prompt: usize, partial: bool) -> Option<Self> {
+        match prompt.checked_sub(rows)? {
+            0 => Some(Self::FullCover),
+            n if partial && n >= memra_engine::hybrid_forward::PRIME_MIN_T => Some(Self::Prime(n)),
+            _ => None,
+        }
+    }
+}
+
+/// A consumed carrier cannot reach cold prime on a suffix-only charge. Release the
+/// serving lease here; run() owns and unconditionally releases the admission lease.
+fn finish_planned_dflash_conversion(
+    route: Option<AdmissionRestoreRoute>,
+    converted: bool,
+    px: &mut PrefixCache,
+    serving_pin: &mut Option<PrefixPin>,
+) -> Result<(), EngineError> {
+    if matches!(route, Some(AdmissionRestoreRoute::Dflash { .. })) && !converted {
+        if let Some(pin) = serving_pin.take() {
+            px.unpin(&pin);
+        }
+        return Err(EngineError::rate_limit(
+            "retained DFlash conversion failed; cold admission required",
+        ));
+    }
+    Ok(())
 }
 
 /// Deep-copy the first `restore_len` tokens of an entry INTO a freshly allocated session cache:
@@ -14845,7 +14932,6 @@ pub fn run(
                             && req.gemma_images.is_empty()
                             && req.glm5_images.is_empty()
                             && req.step_images.is_empty()
-                            && !dspark_drafts.contains_key(&model_key)
                             && !gemma_drafts.contains_key(&model_key)
                             && model.hyper.is_none()
                             && !(memra_engine::cache::swa_ring_on()
@@ -14859,9 +14945,78 @@ pub fn run(
                                 )
                             })
                             .flatten();
-                        let planned_cost = restored.and_then(|rows| {
+                        let route = restored.and_then(|_| match dspark_drafts.get(&model_key) {
+                            Some(draft) if estimate_spec => px
+                                .admission_dflash_restore(
+                                    &pin,
+                                    req.prepared_prompt.as_ref().unwrap(),
+                                    &draft.cfg,
+                                    draft.dflash2.is_some(),
+                                    shape.ctx_cap,
+                                    model.cfg.n_vocab as usize,
+                                )
+                                .and_then(|route| {
+                                    let sampler = Sampler::new(req.sampler_cfg.clone());
+                                    let greedy = sampler.is_greedy();
+                                    // Nomination must use the same DFlash decision as consume.
+                                    // A route veto leaves the full charge and normal queue/defer
+                                    // policy intact, rather than committing a plan that must 429.
+                                    route.with_dflash_admission(DsparkColdPrefixAdmission {
+                                        route_ready: serve_spec_enabled()
+                                            && peer_probe_allows_spec
+                                            && !memra_engine::pp::pp_host_bounce_active()
+                                            && memra_engine::plan_backend::gdn_dspark_compatible(
+                                                &model.plan,
+                                            ),
+                                        // The validated source already proved full-prompt fit.
+                                        prime_feasible: true,
+                                        greedy,
+                                        greedy_penalized: greedy
+                                            && (sampler.penalty_repeat() != 1.0
+                                                || sampler.penalty_freq() != 0.0
+                                                || sampler.penalty_present() != 0.0),
+                                        sampled: sampler.temperature() > 0.0,
+                                        // can_plan excludes these shapes, and a committed plan
+                                        // suppresses every continuation donor.
+                                        constrained: false,
+                                        vision: false,
+                                        cold: true,
+                                        gate_on: spec_gate_on(),
+                                        pin: spec_k_pin(),
+                                        projected_wave: projected_admission_wave(
+                                            active.len(),
+                                            queue.len() + requeue.len(),
+                                        ),
+                                        low: spec_gate_low(),
+                                        n_active: active.len(),
+                                        has_live_non_demotable: active.iter().any(|s| {
+                                            dspark_blocks_greedy_widening(
+                                                s.dspark_on,
+                                                s.sampler.is_greedy(),
+                                                s.constraint.is_some(),
+                                            )
+                                        }),
+                                        prompt_len,
+                                        decode_budget: shape.budget,
+                                        hit_available: true,
+                                        hit_restorable: dspark_partial_restore_on(),
+                                    })
+                                }),
+                            Some(_) => None,
+                            None => Some(AdmissionRestoreRoute::Native),
+                        });
+                        let planned_cost = restored.zip(route).and_then(|(rows, route)| {
                             let model = &admission_costs[&model_key];
-                            model.cost_after_prefix_restore(cost, prompt_len, rows)
+                            // Keep one minimum prime workspace even for a full cover:
+                            // boundary sampling/conversion transients still need funding.
+                            let workspace_rows = match route {
+                                AdmissionRestoreRoute::Native => rows,
+                                AdmissionRestoreRoute::Dflash { .. } => rows.min(
+                                    prompt_len
+                                        .saturating_sub(memra_engine::hybrid_forward::PRIME_MIN_T),
+                                ),
+                            };
+                            model.cost_after_prefix_restore(cost, prompt_len, workspace_rows)
                         });
                         if let Some((rows, next_cost)) = restored.zip(planned_cost)
                             && !headroom.sufficient(required)
@@ -14881,7 +15036,11 @@ pub fn run(
                             required = admission_required(cost, reserve);
                             required_eager =
                                 admission_required(cost.saturating_sub(draft_state_bytes), reserve);
-                            admission_restore = Some(AdmissionPrefixRestore { pin, rows });
+                            admission_restore = Some(AdmissionPrefixRestore {
+                                pin,
+                                rows,
+                                route: route.unwrap(),
+                            });
                         } else {
                             px.unpin(&pin);
                         }
@@ -15164,7 +15323,18 @@ pub fn run(
                 step_tower.as_ref(),
             );
             if let Some(plan) = admission_restore {
-                px.unpin(&plan.pin);
+                let released = px.unpin(&plan.pin);
+                let source_pins = px
+                    .id_index(&plan.pin)
+                    .map(|i| px.entries[&plan.pin.key][i].pins)
+                    .unwrap_or(0);
+                eprintln!(
+                    "[admission] retained prefix result: route={:?} admitted={} admission_lease_released={released} source_pins={source_pins} pinned_bytes={} pool_used_bytes={}",
+                    plan.route,
+                    admitted.is_ok(),
+                    px.pinned_bytes(),
+                    engine.pool_reserved_used().1,
+                );
             }
             match admitted {
                 Ok(mut s) => {
@@ -19219,7 +19389,9 @@ fn admit(
     // hybrid/GDN trunk `gdn_dspark_compatible` selects — so for this route a full-prefix entry
     // is the whole set. Third and final granularity of the defect review chased across three
     // rounds: the veto must never fire without a hit to take the cold prime's place.
-    let mut consumable_hit = if prefix_on {
+    let mut consumable_hit = if let Some(plan) = admission_restore {
+        px.id_index(&plan.pin)
+    } else if prefix_on {
         px.lookup(&pool_key, &prompt)
     } else {
         None
@@ -19339,7 +19511,25 @@ fn admit(
     if let Some(plan) = admission_restore {
         if !prefix_on
             || reused.is_some()
-            || dspark_prefers_cold
+            || match plan.route {
+                AdmissionRestoreRoute::Native => dspark_prefers_cold,
+                AdmissionRestoreRoute::Dflash {
+                    ctx_cap: paid_cap, ..
+                } => {
+                    !dspark_prefers_cold
+                        || paid_cap != ctx_cap
+                        || dspark_draft.is_none_or(|draft| {
+                            px.admission_dflash_restore(
+                                &plan.pin,
+                                &prompt,
+                                &draft.cfg,
+                                draft.dflash2.is_some(),
+                                ctx_cap,
+                                lm.model.cfg.n_vocab as usize,
+                            ) != Some(plan.route)
+                        })
+                }
+            }
             || px.admission_restore_rows(&plan.pin, &prompt) != Some(plan.rows)
         {
             return Err((
@@ -20002,14 +20192,14 @@ fn admit(
                         }
                         Err(why) => {
                             eprintln!(
-                                "[prefix-cache] dspark restore declined ({why}); request                                  cold-primes (model {})",
+                                "[prefix-cache] dspark restore declined ({why}); cold admission required (model {})",
                                 req.model,
                             );
                         }
                     }
                 }
                 None => eprintln!(
-                    "[prefix-cache] dspark restore: tail does not cover the drafter window;                      request cold-primes (model {})",
+                    "[prefix-cache] dspark restore: tail does not cover the drafter window;                      cold admission required (model {})",
                     req.model,
                 ),
             }
@@ -20019,11 +20209,18 @@ fn admit(
             // a prefill saving. Drop the carrier (the entry itself stays published) and let
             // the cold prime happen exactly as before this lane.
             eprintln!(
-                "[prefix-cache] dspark: hit cannot re-arm the drafter; keeping the cold prime \
-                 rather than downgrading to plain (model {})",
+                "[prefix-cache] dspark: hit cannot re-arm the drafter; cold admission required (model {})",
                 req.model,
             );
         }
+    }
+    if let Err(error) = finish_planned_dflash_conversion(
+        admission_restore.map(|plan| plan.route),
+        dspark_prefix_restored.is_some(),
+        px,
+        &mut prefix_pin,
+    ) {
+        return Err((req.tx, error));
     }
     // GLM5 SPEC RESTORE, half 1 of 2 (lane/glm5-prefix-latent2, 2026-09-01): rebuild the
     // DFlash2 drafter KV from the entry's tail HERE, while the PrefixCache is borrowable
@@ -20288,7 +20485,7 @@ fn admit(
         // before this lane, so the pool tiers keep exactly the shapes they already serve.
         spec_resumed = sess.committed.len();
         Some(sess)
-    } else if spec_eligible && seed_fed.is_empty() {
+    } else if spec_eligible && seed_fed.is_empty() && admission_restore.is_none() {
         // POOL RESUME: a parked spec session whose committed sequence exactly prefixes this
         // prompt (with cache room) resumes — only the suffix primes; equal-length = pure burst.
         // Match order: exact token prefix (bit-clean), else TEXT prefix (survives BPE boundary
@@ -20872,7 +21069,8 @@ fn admit(
     // costs a re-prime on the NEXT extension turn but never a wrong stream).
     let mut dspark_resume: Option<(memra_engine::dflash::DsparkSpecSession, Vec<u32>, Vec<u32>)> =
         None; // (session, pre-fed stream, suffix to prime)
-    if dspark_draft_ready
+    if admission_restore.is_none()
+        && dspark_draft_ready
         && dspark_prefers_cold
         && spec.is_none()
         && gspec_k == 0
@@ -29687,6 +29885,236 @@ mod tests {
         assert_eq!(px.admission_restore_rows(&pin, &tokens), None);
         assert_eq!(px.evict_all(), 1);
         assert_eq!(px.admission_restore_rows(&pin, &tokens), None);
+    }
+
+    #[test]
+    #[ignore = "requires an exclusively locked CUDA device and DFlash restore profile"]
+    fn dflash_retained_gpu_plan_fault_matrix() {
+        use memra_engine::dflash::{DflashCfg, DflashKvTail};
+        assert!(super::dspark_prefix_restore_on());
+        assert!(super::dspark_partial_restore_on());
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let cfg = DflashCfg {
+            hidden: 4,
+            n_head: 2,
+            n_kv: 1,
+            head_dim: 2,
+            n_ff: 8,
+            n_layer: 1,
+            eps: 1e-6,
+            rope_theta: 1e6,
+            block_size: 8,
+            mask_token_id: 4,
+            target_layer_ids: vec![0],
+            sliding_window: 16,
+            layer_sliding: vec![true],
+            strategy_dspark: false,
+            is_causal: None,
+        };
+        for fault in [
+            "full",
+            "boundary",
+            "missing-tail",
+            "short-tail",
+            "storage",
+            "tail-position",
+            "logits",
+            "nonfinite-logits",
+            "short-suffix",
+            "source-position",
+            "source-layout",
+            "source-key",
+            "lost-source",
+            "capacity",
+        ] {
+            let k = key("tenant");
+            let mut px = PrefixCache::default();
+            let tokens = toks(PREFIX_CACHE_MIN_TOKENS);
+            let rows = tokens.len();
+            let mut donor = entry(&k, tokens.clone());
+            donor.pos = rows;
+            donor.dspark_draft = Some(DflashKvTail {
+                layers: vec![(engine.zeros(48).unwrap(), engine.zeros(48).unwrap())],
+                base: rows - 24,
+                rows: 24,
+                len: rows,
+                row_bytes: 8,
+                floor: 0,
+            });
+            px.insert_with_budget(&k, donor, "source", 2);
+            let (pin, _) = px.pin_prompt_prefix(&k, &tokens).unwrap();
+            let mut prompt = tokens.clone();
+            let cap = rows + 1024;
+            assert!(
+                px.admission_dflash_restore(&pin, &prompt, &cfg, true, cap, 1)
+                    .is_some()
+            );
+            let en = &mut px.entries.get_mut(&k).unwrap()[0];
+            match fault {
+                "full" => {}
+                "boundary" => prompt.extend([42; memra_engine::hybrid_forward::PRIME_MIN_T]),
+                "missing-tail" => en.dspark_draft = None,
+                "short-tail" => {
+                    let tail = en.dspark_draft.as_mut().unwrap();
+                    tail.rows -= 1;
+                    tail.base += 1;
+                }
+                "storage" => {
+                    en.dspark_draft.as_mut().unwrap().layers[0].0 = engine.zeros(1).unwrap()
+                }
+                "tail-position" => en.dspark_draft.as_mut().unwrap().len -= 1,
+                "logits" => en.last_logits.clear(),
+                "nonfinite-logits" => en.last_logits[0] = f32::NAN,
+                "short-suffix" => prompt.push(42),
+                "source-position" => en.pos -= 1,
+                "source-layout" => en.layout_version += 1,
+                "source-key" => en.pool_key = key("other"),
+                "lost-source" => {
+                    assert!(px.unpin(&pin));
+                    assert_eq!(px.evict_all(), 1);
+                }
+                "capacity" => {}
+                _ => unreachable!(),
+            }
+            let decision = px.admission_dflash_restore(
+                &pin,
+                &prompt,
+                &cfg,
+                true,
+                if fault == "capacity" { rows } else { cap },
+                1,
+            );
+            assert_eq!(
+                decision.is_some(),
+                matches!(fault, "full" | "boundary"),
+                "{fault}"
+            );
+            if fault != "lost-source" {
+                assert!(px.unpin(&pin));
+            }
+            assert_eq!(px.pinned_bytes(), 0, "{fault}: leaked lease");
+            px.evict_all();
+            assert_eq!(px.total_bytes, 0, "{fault}: retained source after release");
+            engine.stream().synchronize().unwrap();
+            eprintln!(
+                "[retained-plan-test] {fault}: validated={} pins=0 source_bytes=0",
+                decision.is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn dflash_retained_plan_checks_route_before_discounting() {
+        use super::{AdmissionRestoreRoute, DflashRestoreSuffix, DsparkColdPrefixAdmission};
+        let route = AdmissionRestoreRoute::Dflash {
+            ctx_cap: 34_000,
+            suffix: DflashRestoreSuffix::Prime(64),
+        };
+        let admitted = DsparkColdPrefixAdmission {
+            route_ready: true,
+            prime_feasible: true,
+            greedy: false,
+            greedy_penalized: false,
+            sampled: true,
+            constrained: false,
+            vision: false,
+            cold: true,
+            gate_on: true,
+            pin: None,
+            projected_wave: 1,
+            low: 2,
+            n_active: 0,
+            has_live_non_demotable: false,
+            prompt_len: 32_768,
+            decode_budget: 1024,
+            hit_available: true,
+            hit_restorable: true,
+        };
+        assert_eq!(route.with_dflash_admission(admitted), Some(route));
+        // MTP may still estimate positive K in these shapes. DFlash must refuse the
+        // plan before reducing the charge, so pressure retains the normal defer path.
+        for veto in [
+            DsparkColdPrefixAdmission {
+                gate_on: false,
+                n_active: 1,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                pin: Some(8),
+                n_active: 1,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                projected_wave: 3,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                route_ready: false,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                hit_restorable: false,
+                decode_budget: 64,
+                ..admitted
+            },
+        ] {
+            assert_eq!(
+                route.with_dflash_admission(veto),
+                None,
+                "a metadata-valid source must not bypass the live DFlash route policy"
+            );
+        }
+    }
+
+    #[test]
+    fn dflash_retained_suffix_distinguishes_full_boundary_and_unsupported_suffix() {
+        use super::DflashRestoreSuffix::{self, FullCover, Prime};
+        let rows = PREFIX_CACHE_MIN_TOKENS;
+        let min = memra_engine::hybrid_forward::PRIME_MIN_T;
+        assert_eq!(DflashRestoreSuffix::new(rows, rows, false), Some(FullCover));
+        assert_eq!(
+            DflashRestoreSuffix::new(rows, rows + min, true),
+            Some(Prime(min))
+        );
+        assert_eq!(DflashRestoreSuffix::new(rows, rows + min - 1, true), None);
+        assert_eq!(DflashRestoreSuffix::new(rows, rows + min, false), None);
+        assert_eq!(DflashRestoreSuffix::new(rows, rows - 1, true), None);
+    }
+
+    #[test]
+    fn dflash_retained_consumed_carrier_failure_releases_serving_lease_and_refuses_cold() {
+        use super::{AdmissionRestoreRoute, DflashRestoreSuffix, finish_planned_dflash_conversion};
+        let k = key("tenant");
+        let mut px = PrefixCache::default();
+        let tokens = toks(PREFIX_CACHE_MIN_TOKENS);
+        let mut donor = entry(&k, tokens.clone());
+        donor.pos = tokens.len();
+        px.insert_with_budget(&k, donor, "source", 2);
+        let (admission_pin, rows) = px.pin_prompt_prefix(&k, &tokens).unwrap();
+        let mut serving_pin = px.pin(&k, 0);
+        let route = AdmissionRestoreRoute::Dflash {
+            ctx_cap: rows + 1024,
+            suffix: DflashRestoreSuffix::FullCover,
+        };
+        assert!(
+            finish_planned_dflash_conversion(Some(route), true, &mut px, &mut serving_pin).is_ok()
+        );
+        assert_eq!(px.entries[&k][0].pins, 2);
+        // Engine failure can consume the entire carrier. The production barrier must
+        // reject before the next cold allocation becomes reachable.
+        let result =
+            finish_planned_dflash_conversion(Some(route), false, &mut px, &mut serving_pin);
+        assert!(
+            result.is_err(),
+            "a consumed carrier must never authorize cold prime"
+        );
+        assert!(serving_pin.is_none());
+        assert_eq!(px.entries[&k][0].pins, 1);
+        assert_eq!(px.evict_all(), 0);
+        assert!(px.unpin(&admission_pin));
+        assert_eq!(px.pinned_bytes(), 0);
+        assert_eq!(px.evict_all(), 1);
+        assert_eq!(px.total_bytes, 0);
     }
 
     #[test]
