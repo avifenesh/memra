@@ -105,8 +105,8 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
         gpu.full_token_replay_captures_for_gate(state).unwrap(),
         [3, 1]
     );
-    for rank in 0..2 {
-        for segment in 0..4 {
+    for (rank, rank_hashes) in hashes.iter_mut().enumerate() {
+        for (segment, hash) in rank_hashes.iter_mut().enumerate() {
             let dot = std::fs::read_to_string(
                 dir.join(format!("full-token-rank{rank}-segment{segment}.dot")),
             )
@@ -131,7 +131,7 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                     if on { 0 } else { 43 }
                 );
             }
-            hashes[rank][segment] = format!("{:x}", Sha256::digest(dot.as_bytes()));
+            *hash = format!("{:x}", Sha256::digest(dot.as_bytes()));
             println!(
                 "GRAPH_CENSUS on={on} rank={rank} segment={segment} partial={partial} reduce={reduce} sha256={:x}",
                 Sha256::digest(dot.as_bytes())
