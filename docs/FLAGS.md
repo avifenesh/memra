@@ -5,7 +5,6 @@
 | Flag | Default, arms, gate and rollback |
 | --- | --- |
 | `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
-| `MEMRA_DSV4_COMPRESSOR_PAIRED_COPY` | **Default 0**, decide-by: **2026-09-22**. Parsed once at model load, only 0 or 1; ON requires all-layer TP/EP. Fuses only compressor KV/score snapshot pairs and pending-row append pairs at t=1 into one asynchronous bitwise-u32 copy kernel. Same allocation stream, equal nonzero source lengths, sufficient destinations, and disjoint writes required; other shapes, streams and aliases retain the two original ordered driver copies. No allocation, layout, math, cache commit or rollback changes. Snapshot completes before pending mutation by existing stream order. cudarc read/write dependency guards remain live through enqueue. OFF uses original driver calls. Rollback: restart with =0. No speed or serving admission yet; default OFF is intentional pending bounded paired measurement. Gate: `dsv4_tp_ep_sampled_perf_gate --compressor-copy-components`, then fresh-process sampled 20-row ABBA, device sampler + small-kernel diet, split-K OFF, exact token/logit/cache/hidden digests and actual targeted enqueue counters. Receipt namespace: private Darklanes `compressor-paired-copy-<sha7>-r1` under `research/dsv4f-devpair-20260905/receipts/`. |
 
 > **A new `MEMRA_*` read needs a row here IN THE SAME COMMIT.** `tools/hooks/pre-push` runs
 > `tools/check-flags.sh` on every push (+0.55 s) and refuses one that adds an uncovered name. That
@@ -1727,3 +1726,28 @@ ones — filed under their own heading so a flag audit scanning the live section
 | Removed selector | Verdict | Evidence |
 |---|---|---|
 | `MEMRA_DSV4_ISSUE_INTERLEAVE_GATE` / `Dsv4Gpu::set_tp_ep_issue_interleave_for_gate` | **NO-GO; removed** | Default-OFF candidate, decide-by 2026-09-22, decided early. Same kernels and numeric class; six attention phases, five post-attention/expert phases and three shared-tail phases alternate ranks without new host joins. Correctness SHA and all six refusal cells pass on both arms. First-kernel skew median falls 103.102 to 1.0425 us and rank-0 AR residence 5.2201 to 2.0227 ms/token, but the freed residence becomes non-kernel gaps. Fresh-process sampled ABBA, ten rows per arm: radix current 38.072290 vs interleaved 37.963496 tok/s (-0.285757%); with split-K current 41.045194 vs interleaved 40.991187 (-0.131580%). All 40 rows eligible and all state/token hashes identical within each numeric class. Removed the setter, env reads, phased dispatch bodies and harness arm together. Measured source `dcc1e9fd56b1b0a44f14106a953039c25e78f6e6`; private namespace `issue-interleave-dcc1e9f-r1`. Scope: `research/dsv4f-2card-1m-20260904/ISSUE-INTERLEAVE.md`. |
+
+
+## Removed doors, 2026-09-08 (DSV4 compressor paired copies)
+
+`MEMRA_DSV4_COMPRESSOR_PAIRED_COPY` was default OFF and is removed after its
+bounded sampled falsification. Source `3d011dc4ed38986ea9086948bda87bac694198e2`
+combined only independent KV/score compressor snapshot and append pairs.
+The targeted program engaged: 496 driver D2D calls per token became 248 paired
+u32-copy kernel launches, with unchanged layout, math and cache protocol.
+
+On the development pair, 20 eligible rows (10 per arm, paired/current/current/paired,
+five rows per fresh load), device sampler + small-kernel diet and split-K OFF,
+measured 43.291066 current versus 43.424397 paired tok/s: **+0.307986%, flat**.
+The complete sample-plus-forward wall was timed; token/logit/cache/hidden and
+attention-join digests were identical. The 96 component cases, memcheck (zero
+errors), and both full-model correctness arms with six refusal cells each passed.
+
+The runtime read, field/counters, dispatch branches, helper/kernel/FFI, component
+mode, sampled engagement cells and active FLAGS/KERNELS rows were removed in this
+lane. Delayed cross-stream actual-paired dependency and wrapper alias-fallback
+coverage were deferred and were not run after the flat verdict. No broader
+qualification, serving promotion or wall-saving claim. The measured source remains
+in this PR's history. Raw evidence is private in Darklanes:
+`research/dsv4f-devpair-20260905/compressor-paired-copy-20260908.md`, receipt namespace
+`compressor-paired-copy-3d011dc-r1`.

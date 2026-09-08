@@ -41,7 +41,6 @@ struct Counters {
     wo_a: u64,
     index_radix: u64,
     small_launches: [u64; 2],
-    compressor_copies: [u64; 2],
 }
 
 fn counters(gpu: &Dsv4Gpu) -> Counters {
@@ -61,7 +60,6 @@ fn counters(gpu: &Dsv4Gpu) -> Counters {
         wo_a: gpu.dense_wo_a_grouped_dispatches(),
         index_radix: gpu.index_topk_radix_dispatches(),
         small_launches: gpu.small_kernel_launches(),
-        compressor_copies: gpu.compressor_copy_counts(),
     }
 }
 
@@ -85,9 +83,6 @@ fn delta(after: Counters, before: Counters) -> Counters {
         wo_a: after.wo_a - before.wo_a,
         index_radix: after.index_radix - before.index_radix,
         small_launches: std::array::from_fn(|i| after.small_launches[i] - before.small_launches[i]),
-        compressor_copies: std::array::from_fn(|i| {
-            after.compressor_copies[i] - before.compressor_copies[i]
-        }),
     }
 }
 
@@ -222,24 +217,6 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
         c.small_launches,
         expected_small.map(|n| n * local_steps),
         "HC and Q pack actual enqueues: a diet PASS with the old count is forbidden"
-    );
-    let copy_pairs = gpu.compressor_copy_pairs_per_step() * (prime + decode) as u64;
-    let paired = gpu.compressor_paired_copy_enabled();
-    assert_eq!(
-        c.compressor_copies,
-        if paired {
-            [0, copy_pairs]
-        } else {
-            [2 * copy_pairs, 0]
-        },
-        "actual compressor snapshot and append enqueues"
-    );
-    println!(
-        "COMPRESSOR_COPY_ENGAGEMENT enabled={paired} dtod={} kernels={} steps={} pairs_per_step={}",
-        c.compressor_copies[0],
-        c.compressor_copies[1],
-        prime + decode,
-        gpu.compressor_copy_pairs_per_step()
     );
     let splitk = memra_engine::moe_m1_splitk_on();
     let oracle_steps = if splitk { 0 } else { local_steps };
@@ -528,13 +505,6 @@ fn run_once(
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args
-        .get(1)
-        .is_some_and(|a| a == "--compressor-copy-components")
-    {
-        Dsv4Gpu::compressor_copy_components_for_gate().expect("compressor copy component");
-        return;
-    }
     if args.get(1).is_some_and(|a| a == "--sampler-component") {
         sampler_component();
         return;

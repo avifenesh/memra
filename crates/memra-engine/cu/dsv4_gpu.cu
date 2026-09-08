@@ -26,7 +26,6 @@
 // 0 ok / 10000+cudaError / cublas bands, stream passed as void*.
 
 #include <cublasLt.h>
-#include <stdint.h>
 // NVTX is a RESEARCH-INSTRUMENT dependency (memra_dsv4_nvtx_push/pop, armed only by
 // MEMRA_DSV4_NVTX=1 at runtime) — the header is optional so the TU builds on toolkits
 // that ship without nvtx3 (GitHub CI's minimal CUDA install; the v0.98 train's CI
@@ -55,43 +54,6 @@
         cudaError_t ce_ = cudaGetLastError();                  \
         if (ce_ != cudaSuccess) return 10000 + (int)ce_;       \
     } while (0)
-
-// Byte-exact compressor snapshot/append pairs. No arithmetic or layout conversion.
-__global__ void dsv4_compressor_copy_pair_kernel(
-        const unsigned* kv, const unsigned* score, unsigned* kv_out, unsigned* score_out,
-        size_t n) {
-    for (size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x; i < n;
-         i += (size_t)blockDim.x * gridDim.x) {
-        kv_out[i] = kv[i];
-        score_out[i] = score[i];
-    }
-}
-
-extern "C" int memra_dsv4_compressor_copy_pair(
-        const float* kv, const float* score, float* kv_out, float* score_out,
-        size_t n, void* stream_v) {
-    if (n == 0) return 0;
-    if (n > SIZE_MAX / sizeof(float)) return 40071;
-    const size_t bytes = n * sizeof(float);
-    const uintptr_t p[] = {(uintptr_t)kv, (uintptr_t)score,
-                           (uintptr_t)kv_out, (uintptr_t)score_out};
-    for (int i = 0; i < 4; ++i)
-        if (!p[i] || (p[i] & 3) || p[i] > UINTPTR_MAX - bytes)
-            return 40071;
-    // Read/read alias is legal. Every write must be disjoint from both reads and
-    // the other write. Ordered/overlapping copies retain the original driver path.
-    for (int dst = 2; dst < 4; ++dst)
-        for (int other = 0; other < dst; ++other)
-            if (p[dst] < p[other] + bytes && p[other] < p[dst] + bytes)
-                return 40071;
-    size_t blocks = (n + 255) / 256;
-    if (blocks > 256) blocks = 256;
-    dsv4_compressor_copy_pair_kernel<<<(unsigned)blocks, 256, 0, (cudaStream_t)stream_v>>>(
-        (const unsigned*)kv, (const unsigned*)score, (unsigned*)kv_out,
-        (unsigned*)score_out, n);
-    DSV4_ERR();
-    return 0;
-}
 
 // ---------------------------------------------------------------- numeric primitives
 
