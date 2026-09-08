@@ -1,8 +1,10 @@
 # GLM TP-2 device sampler qualification
 
 Status: remote build, fmt, clippy, CPU suites and GPU sampler oracles PASS.
-All five TP-2 p32k OFF/ON pairs, both p128k rows and the 160-token greedy twins
-completed across an interrupted and resumed test run. No default promotion.
+Current receipt: three TP-2 p32k OFF/ON pairs, both p128k rows and the 160-token
+greedy twins, frozen by the owner on 2026-09-09. Pairs 4 and 5 are pending an
+owner-scheduled pair-box cell. The destroyed tune box will not be retried.
+No default promotion.
 Base: `001c09e5d` (v0.135.0), including the existing GLM host prefix-radix sampler. The historical v0.132.0 comparison-sort measurements
 are motivation, not this change's OFF baseline.
 
@@ -85,17 +87,20 @@ non-degenerate sampled output, seed/position determinism and boundary-row adapte
 identity. The CPU test covers flag defaults/parsing, sampling argument transfer,
 route/full-row refusals and unsupported penalties/filters.
 
-## Served A/B: five pairs complete
+## Served A/B: current three-pair receipt
 
-Ten accepted p32k rows complete the requested five OFF/ON pairs. The assigned
-test container stopped during earlier attempts; completed receipts were retained
-and the missing pairs resumed on the same physical B200 UUIDs with unchanged
-source and binary hashes. One additional ON attempt was excluded when a compiler
-appeared at the scored completion boundary. Interrupted attempts are not counted.
-For the final two pairs, the shared GPU lock was acquired separately per pair and
-released immediately afterwards. Every new row was written atomically and copied
-to the rig before advancing to the next arm. Both pair completion markers and
-all ten clean worker shutdowns were read back after measurement.
+The owner-selected current receipt contains pairs 1 through 3. Pairs 4 and 5
+remain pending a later owner-scheduled pair-box cell. Additional tune-box pairs
+4 and 5 did complete and reach the rig before destruction; those observations
+are preserved in [SUPPLEMENTARY-TUNE-PAIRS.md](SUPPLEMENTARY-TUNE-PAIRS.md) and
+excluded from this current receipt summary.
+
+Earlier container interruptions were followed by source/binary hash and physical
+GPU UUID checks before resuming. One separate ON attempt was excluded for
+compilation overlap. The final tune attempts acquired and released the shared
+lock separately per pair, and mirrored each new row before proceeding. All ten
+collected tune processes have clean worker shutdown receipts, including the
+supplementary observations.
 
 The same metered server binary ran both arms, SHA256
 `c8bcbd80902d86f668733a790672d2d740bccec58c901fb5c60020b5b2076dc5`,
@@ -125,8 +130,8 @@ Each row used a fresh process, a 32-token p32k warmup, then a vendor-default
 512-token request with no sampling fields. The p32k file plus the fixed analysis
 instruction rendered to 29,813 prompt tokens, with 29,792 cached tokens after
 warmup. All measured rows completed 512 tokens with finish reason `length`.
-The accepted order was OFF, ON, ON, OFF, OFF, ON, ON, OFF, OFF, ON,
-with interruptions between completed blocks. Sampled outputs passed the repeated-text
+The current receipt order was OFF, ON, ON, OFF, OFF, ON, with interruptions
+between completed blocks. Sampled outputs passed the repeated-text
 screen (no 16-word span repeated four times); raw outputs remain available.
 
 | Pair | OFF wall s | OFF tok/s | OFF server ms/token | ON wall s | ON tok/s | ON server ms/token |
@@ -134,11 +139,9 @@ screen (no 16-word span repeated four times); raw outputs remain available.
 | 1 | 6.296 | 81.32 | 11.875 | 5.590 | 91.59 | 10.607 |
 | 2 | 6.204 | 82.53 | 11.801 | 5.591 | 91.58 | 10.610 |
 | 3 | 6.258 | 81.82 | 11.894 | 5.653 | 90.57 | 10.649 |
-| 4 | 6.235 | 82.12 | 11.859 | 5.611 | 91.24 | 10.640 |
-| 5 | 6.229 | 82.19 | 11.841 | 5.604 | 91.36 | 10.625 |
 
-Five-observation arm medians: 82.116 -> 91.359 wall tok/s (+11.26%),
-and 11.859 -> 10.625 server ms/token. Every row generated 512 tokens.
+Three-observation arm medians: 81.821 -> 91.577 wall tok/s (+11.92%),
+and 11.875 -> 10.610 server ms/token. Every row generated 512 tokens.
 Rates use `completion_tokens / elapsed_wall_seconds`; prefill is included in wall
 rate and excluded from the steady server tick summary.
 
@@ -159,7 +162,9 @@ oracle. Every ON scored row logged 512 device draws and no host fallback.
 
 Raw rows, requests, SSE responses, generated strings, timing windows and checks:
 `raw/served/`. Full deployment logs and private configuration remain outside the
-public receipt. The requested five-pair campaign is complete. The flag remains
-default OFF with its existing deadline; this receipt does not flip a serving default. Push uses
+public receipt. `current-receipt-rows.json` and `current-receipt-summary.json`
+select the three pairs above from the complete archived tune data. Pairs 4 and 5
+remain pending the owner-scheduled pair-box cell. The flag remains default OFF
+with its existing deadline. Push uses
 `MEMRA_SKIP_PERF_CI=1` because local-rig gates remain prohibited. The source
 implementation did not change during measurement or this receipt update.
