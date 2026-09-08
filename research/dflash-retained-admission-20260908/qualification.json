@@ -2784,12 +2784,14 @@
       "bytes": 365988
     }
   },
-  "verdict": "DRAFT: required 128k cold/1024-output plus warm continuation is blocked by cold decode OOM before warm admission; no merge or capacity claim",
+  "verdict": "PASS for the exact recorded two-request sequence; see sequence-check.json. Initial calibration-prefixed cold failures remain recorded; no general capacity claim.",
   "receipt_assertions": {
     "seven_http_faults_fail_closed": true,
     "full_and_boundary_restore": true,
     "co_located_parked_session_observed": true,
     "all_oracle_sets_and_greedy_tapes_exact": true,
     "headline": false
-  }
+  },
+  "initial_phase_verdict": "DRAFT: required 128k cold/1024-output plus warm continuation is blocked by cold decode OOM before warm admission; no merge or capacity claim",
+  "headline_receipt": "sequence-check.json"
 }
