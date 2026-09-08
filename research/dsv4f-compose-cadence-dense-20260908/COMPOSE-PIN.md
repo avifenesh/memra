@@ -40,10 +40,21 @@ thread-local gate selector, initially false. Neither adds an environment door
 or changes the serving default. Rollback and decide-by 2026-09-22 entries remain.
 No feature performance transfers to this newly linked binary.
 
-Build checkpoint: compile both existing standalone binaries
-`dsv4_dense_exact_tail_gate` and `dsv4_tp_ep_sampled_perf_gate` from this tree,
-arch120a, MEMRA_DSV4_FMAD=0, two jobs, nice 10. These unchanged helpers prove
-source/link integration only. Neither is advertised as the combined A/B
-instrument. The draft COMPOSE-PROTOCOL.md identifies the required standalone
-adapter and review before any combined model execution. No GPU cell is part of
-this source checkpoint.
+The initial source-only build compiled both unchanged helpers. The combined
+adapter now lives in `crates/memra-engine/src/bin/dsv4_compose_cadence_dense_gate.rs`,
+adapted from their reviewed identity/census/refusal code without editing either
+original. The original provenance table and source-provenance.sha256 still
+hold byte-for-byte. The only other implementation change is adding the new
+bin's CPU contract tests to the existing hosted DSV4 test step.
+
+Arm configurations and sampler config are immutable before model creation:
+A=(cadence OFF,dense OFF), B=(cadence ON,dense ON). The existing thread-local
+dense enqueue selector is selected only before a state's first capture (and
+for the separate eager OFF oracle). Captured functions never read it, retained
+graphs are never mutated, and no sampler switch occurs during timing. This is
+the reviewed dense selector mechanism; a single global value fixed ON or OFF
+for the entire process could not capture both A and B in the same process.
+
+Build arch120a, MEMRA_DSV4_FMAD=0, two jobs, nice10. New combined-adapter source
+and binary require independent narrow review and root slot assignment before
+any model execution. No GPU cell is part of the implementation checkpoint.
