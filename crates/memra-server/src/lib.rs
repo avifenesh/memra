@@ -18875,6 +18875,107 @@ temperature = 0.6
     /// It also drives the SAME health handle the real worker does (mark_ready at "load"
     /// completion, beat_busy per iteration), which is what lets the /health and /readyz tests
     /// exercise the real handlers instead of a mock.
+    /// Exercise the HTTP extractor with raw bytes. Parsing a serde_json::Value first
+    /// would erase duplicate keys and would not prove this routing contract.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: serialize process-global admission counters
+    async fn chat_http_rejects_duplicate_model_before_handler_work() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tower::ServiceExt;
+
+        let _lock = drain_lock();
+        let mut st = fake_worker_state();
+        st.models = Arc::new(vec!["vendor/m".into()]);
+        let meter = MockMetering::capturing();
+        st.metering = Some(meter.clone());
+        let entered = Arc::new(AtomicUsize::new(0));
+        let tap = entered.clone();
+        let app = apply_body_limit(
+            Router::new()
+                .route(
+                    "/v1/chat/completions",
+                    post(
+                        move |state: State<AppState>,
+                              headers: HeaderMap,
+                              trace: Option<Extension<TtftRequestTrace>>,
+                              admitted: AdmittedJson<ChatCompletionReq>| {
+                            tap.fetch_add(1, Ordering::SeqCst);
+                            chat_completions_admitted(state, headers, trace, admitted)
+                        },
+                    ),
+                )
+                .with_state(st.clone()),
+        );
+        for suffix in [
+            r#", "model":"vendor/m""#,
+            r#", "model":"vendor/m""#,
+            r#", "model":"m""#,
+        ] {
+            for padding in [0, 5 * 1024 * 1024] {
+                let raw = format!(
+                    r#"{{"model":"m","messages":[],"ignored":"{}"{suffix}}}"#,
+                    "x".repeat(padding)
+                );
+                let response = app
+                    .clone()
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .method("POST")
+                            .uri("/v1/chat/completions")
+                            .header("content-type", "application/json")
+                            .body(Body::from(raw))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+                let body = axum::body::to_bytes(response.into_body(), 4096)
+                    .await
+                    .unwrap();
+                let message = String::from_utf8(body.to_vec()).unwrap();
+                assert!(message.contains("duplicate field `model`"), "{message}");
+                assert_eq!(
+                    entered.load(Ordering::SeqCst),
+                    0,
+                    "extractor must refuse before preprocessing, admission or inference"
+                );
+                assert!(
+                    meter.events().is_empty(),
+                    "no capture, reservation or receipt"
+                );
+                assert!(st.inflight.iter().all(|n| n.load(Ordering::SeqCst) == 0));
+            }
+        }
+        // Both unique canonical and alias spellings reach the real handler. Its
+        // empty-message refusal proves canonicalization succeeded without GPU work.
+        for model in ["vendor/m", "m"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/v1/chat/completions")
+                        .header("content-type", "application/json")
+                        .body(Body::from(format!(
+                            r#"{{"model":"{model}","messages":[]}}"#
+                        )))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = body_value(response).await;
+            assert!(
+                body["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("messages must")
+            );
+        }
+        assert_eq!(entered.load(Ordering::SeqCst), 2);
+        assert!(meter.events().is_empty());
+    }
+
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }
