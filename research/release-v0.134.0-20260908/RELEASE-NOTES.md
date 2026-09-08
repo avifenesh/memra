@@ -6,6 +6,9 @@
 - Include the DSV4 small-kernel diet experiment (#339), controlled by
   `MEMRA_DSV4_SMALL_KERNEL_DIET` and disabled by default.
 
+The release also records the DSV4 issue-interleave no-go (#352); that addition
+changes documentation only.
+
 No serving defaults or published performance numbers change in this release.
 
 Publicity: skipped (maintenance release).

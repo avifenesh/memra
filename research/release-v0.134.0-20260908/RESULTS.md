@@ -1,10 +1,15 @@
 # v0.134.0 release candidate
 
-Base: `df1273928a7369acf8cc943131382cccbf2f9044`.
+Current-main composition: `4fe96ccfcdfb7ae617865a5256b30613a1c637b8`.
+Version reservation and GPU-candidate base: `df1273928a7369acf8cc943131382cccbf2f9044`.
 Prior published tag: `v0.133.0`.
 Version claimed atomically at the base before changing manifests.
 
 ## Complete change inventory
+
+- #352, `4fe96ccfc`: documents the DSV4 issue-interleave no-go and removed gate.
+  Its changes are limited to FLAGS, the research index, and the no-go write-up;
+  it changes no runtime code.
 
 - #339, `f80553700`: DSV4 small-kernel diet. The only new environment door is
   `MEMRA_DSV4_SMALL_KERNEL_DIET`, default OFF. No default promotion or performance
