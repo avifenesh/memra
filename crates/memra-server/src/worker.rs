@@ -6514,6 +6514,13 @@ impl PrefixCache {
         self.pin_n(key, i, 1)
     }
 
+    /// Lease the same whole-entry match that restore will look up, without crediting a hit.
+    fn pin_prompt_prefix(&mut self, key: &PoolKey, prompt: &[u32]) -> Option<(PrefixPin, usize)> {
+        let i = self.lookup(key, prompt)?;
+        let tokens = self.entries.get(key)?[i].toks.len();
+        self.pin(key, i).map(|pin| (pin, tokens))
+    }
+
     /// Release one session lease. The last release makes the entry evictable again and
     /// treats the protected fanout interval as recent use.
     fn unpin(&mut self, pin: &PrefixPin) -> bool {
@@ -14269,6 +14276,23 @@ pub fn run(
                     // the floor residency the operator actually budgeted for. No hold: this
                     // is session pressure, not capture traffic; the grant re-derives from
                     // the post-admission free reading at the next tick.
+                    // Keep the incoming donor through BOTH borrowed-first shedding and
+                    // reclaim-on-defer. Cold prefill would have to materialize these prefix
+                    // tokens in the request's KV again; dropping the donor does not remove
+                    // that requirement. Pool/headroom accounting is separate (memra#346).
+                    let reclaim_prefix_pin = if !headroom.sufficient(required) {
+                        let key = (req.model.clone(), req.cache_ns.clone());
+                        px.pin_prompt_prefix(&key, req.prepared_prompt.as_ref().unwrap())
+                            .map(|(pin, tokens)| {
+                                eprintln!(
+                                    "[admit-oom] reclaim spared the prompt's prefix entry \
+                                     ({tokens} tokens, model {model_key})"
+                                );
+                                pin
+                            })
+                    } else {
+                        None
+                    };
                     if !headroom.sufficient(required)
                         && kv_flex.shed(&mut px, false, "admission headroom") > 0
                         && let Some(next_headroom) =
@@ -14277,8 +14301,8 @@ pub fn run(
                         headroom = next_headroom;
                     }
                     if !headroom.sufficient(required) {
-                        // Prefix snapshots are cache, not capacity reservations. Sessions win:
-                        // drop them before deciding that a request must queue or be rejected.
+                        // Drop unleased snapshots before deciding to queue or reject. The
+                        // incoming prompt's donor and other sessions' leases stay protected.
                         let evicted_prefix = px.evict_all();
                         if evicted_prefix > 0
                             && let Some(next_headroom) =
@@ -14328,6 +14352,9 @@ pub fn run(
                                 headroom.limiting_free_bytes() as f64 / 1e6,
                             );
                         }
+                    }
+                    if let Some(pin) = reclaim_prefix_pin {
+                        px.unpin(&pin);
                     }
                     let eager_arm = !headroom.sufficient(required)
                         && draft_state_bytes > 0
@@ -29035,6 +29062,52 @@ mod tests {
 
     fn toks(n: usize) -> Vec<u32> {
         (0..n as u32).collect()
+    }
+
+    #[test]
+    fn admission_reclaim_spares_prompt_prefix_until_exemption_ends() {
+        let k = key("tenant");
+        let mut px = PrefixCache::default();
+        let donor = toks(PREFIX_CACHE_MIN_TOKENS);
+        let unrelated = vec![u32::MAX; PREFIX_CACHE_MIN_TOKENS];
+        // F is older than E. Two one-byte entries fill this device-free budget.
+        px.insert_with_budget(&k, entry(&k, unrelated.clone()), "F", 2);
+        px.insert_with_budget(&k, entry(&k, donor.clone()), "E", 2);
+        let mut prompt = donor.clone();
+        prompt.push(42);
+        let (pin, tokens) = px.pin_prompt_prefix(&k, &prompt).expect("E matches");
+        assert_eq!(tokens, donor.len());
+        let (victim_key, victim) = px.oldest_evictable().expect("F is reclaimable");
+        assert_eq!(px.entries[&victim_key][victim].toks, unrelated);
+        assert_eq!(px.evict_to_bytes(1), (1, 1), "borrowed-first shed takes F");
+        assert!(
+            px.oldest_evictable().is_none(),
+            "E is exempt even when alone"
+        );
+        assert_eq!(px.evict_all(), 0, "reclaim-on-defer must also spare E");
+        assert!(px.lookup(&k, &prompt).is_some());
+        assert_eq!(px.total_bytes, 1);
+        assert_eq!((px.hits, px.hit_tokens, px.misses), (0, 0, 0));
+        assert!(px.unpin(&pin));
+        assert_eq!(px.evict_all(), 1, "without the exemption reclaim takes E");
+        assert_prefix_cache_accounting(&px);
+    }
+
+    #[test]
+    fn admission_reclaim_no_match_and_existing_lease_are_preserved() {
+        let k = key("tenant");
+        let mut px = PrefixCache::default();
+        let donor = toks(PREFIX_CACHE_MIN_TOKENS);
+        px.insert_with_budget(&k, entry(&k, donor.clone()), "E", 1);
+        assert!(px.pin_prompt_prefix(&key("other"), &donor).is_none());
+        assert!(px.pin_prompt_prefix(&k, &[u32::MAX]).is_none());
+        let source = px.pin(&k, 0).unwrap();
+        let (reclaim, _) = px.pin_prompt_prefix(&k, &donor).unwrap();
+        assert!(px.unpin(&reclaim));
+        assert_eq!(px.evict_all(), 0, "the original source lease remains");
+        assert!(px.unpin(&source));
+        assert_eq!(px.evict_all(), 1, "no exemption leaves reclaim unchanged");
+        assert_prefix_cache_accounting(&px);
     }
 
     /// A cache carrying a latent (MLA/DSA) plane must never be snapshotted into a PrefixEntry
