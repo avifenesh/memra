@@ -47,8 +47,9 @@ sampler. `MatrixStep` declares it before the captured workspace allocations.
 Capture is ended/aborted before drains, and both ranks are drained before graph
 or buffer release, including an exception between rank submissions.
 
-If either rank's completion cannot be proved by a successful drain, the runtime
-attempts both drains, reports their errors and aborts the process before Rust
+For an armed replay request only, if either rank's completion cannot be proved
+by a successful drain, the runtime attempts both drains, reports their errors
+and aborts the process before Rust
 destructors run. Logging and returning would let the enclosing workspace, caches
 and model pointers be freed while peer access might remain outstanding. Drop
 also fails stop if capture abort cannot be established. This is restricted to
@@ -58,6 +59,10 @@ failed completion on either rank, during an error return and destructor unwind,
 and assert SIGABRT with no captured-storage destructor release. The separate
 Rust CUDA lifecycle test covers partial forward/commit submission, capture-body
 unwind and the capture-end/instantiate error boundary using the actual owners.
+The eager TP/EP error path retains its original policy: attempt both rank drains,
+append each drain error to the original error, and return it. `work.replay.is_some()`
+selects the new fail-stop policy; `ReplayPair::drop` and `drain_both` remain strict.
+This diagnostic lane does not change eager completion/error policy.
 
 Capture records GPU work but runs Rust bookkeeping. Host compressor high-water
 marks are restored after initial capture and on pre-execution capture failures.

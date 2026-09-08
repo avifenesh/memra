@@ -10334,15 +10334,30 @@ impl Dsv4Gpu {
             // If submission failed after only one rank enqueued its peer wait,
             // do not return/drop its buffers while it can still access the peer.
             // Attempt both drains even if the first context or stream failed.
-            crate::dsv4_graph::require_pair_completion(error, |rank| {
-                let stage = &self.stages[rank];
-                stage
-                    .gpu
-                    .ctx
-                    .bind_to_thread()
-                    .and_then(|()| stage.gpu.stream().synchronize())
-                    .map_err(|e| e.to_string())
-            });
+            if work.replay.is_some() {
+                // Only armed replay owns the new fail-stop completion policy.
+                crate::dsv4_graph::require_pair_completion(error, |rank| {
+                    let stage = &self.stages[rank];
+                    stage
+                        .gpu
+                        .ctx
+                        .bind_to_thread()
+                        .and_then(|()| stage.gpu.stream().synchronize())
+                        .map_err(|e| e.to_string())
+                });
+            } else {
+                // Preserve eager TP/EP's existing error propagation exactly.
+                for (rank, stage) in self.stages.iter().enumerate() {
+                    let drained = stage
+                        .gpu
+                        .ctx
+                        .bind_to_thread()
+                        .and_then(|()| stage.gpu.stream().synchronize());
+                    if let Err(drain_error) = drained {
+                        error.push_str(&format!("; TP/EP rank {rank} drain: {drain_error}"));
+                    }
+                }
+            }
         }
         state.tp_ep_caches = Some(rank1_caches);
         state.matrix_step = Some(work);
