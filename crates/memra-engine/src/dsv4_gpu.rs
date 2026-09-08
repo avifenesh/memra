@@ -1398,6 +1398,16 @@ pub fn dsv4_prof_on() -> bool {
     dsv4_prof_sync() || dsv4_prof_nvtx()
 }
 
+/// NVTX-only token diagnostic. Disabled runs construct no timing accumulator,
+/// emit no NVTX calls and introduce no synchronization. Scored gate refuses NVTX.
+pub(crate) fn full_token_profile_phase(name: &'static str) -> Option<Dsv4Phase<'static>> {
+    if dsv4_prof_nvtx() {
+        Dsv4Phase::new(name, None)
+    } else {
+        None
+    }
+}
+
 /// A named, nestable phase bracket. Constructed through the `phase!` macro, which supplies a
 /// NUL-terminated literal so the NVTX push needs no allocation.
 pub struct Dsv4Phase<'a> {
@@ -6456,6 +6466,7 @@ impl Dsv4Gpu {
                 None
             };
             Some(Box::new(MatrixStep {
+                replay: None,
                 verify,
                 taps,
                 tap_device: self.stages.last().expect("matrix head stage").dev,
@@ -7791,6 +7802,313 @@ impl Dsv4Gpu {
                 penalty,
             )
         }
+    }
+
+    fn validate_full_token_program(&self) -> Res<()> {
+        if !self.topology.is_tp_ep()
+            || self.stages.len() != 2
+            || self.attention_tp.is_none()
+            || !self.matrix_moe
+            || self.expert_arm != ExpertArm::Native
+            || self.decode_path != (DecodePath::Device { host_math: false })
+            || !self.grouped_route_device
+            || self.grouped_fresh_storage_control
+            || self.ep_serial_control
+            || self.dspark.is_some()
+            || !self.chains_f32
+            || !self.dots_f32
+            || !self.dense_fp8
+            || !self.small_kernel_diet
+            || self.variant != ActQuantVariant::RefFp8Round
+            || self.sink_score != Dsv4SinkScore::Scalar
+            || self.indexer_score != Dsv4IndexerScore::Scalar
+            || self.verify_topk != Dsv4VerifyTopk::Device
+            || (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) != 43
+            || self.model.mc.n_embd != 4096
+            || crate::moe_m1_splitk_on()
+            || crate::MOE_M1_SPLITK_COMPONENT.load(Ordering::Acquire) != 0
+            || crate::dsv4_grouped::route_validation_enabled()
+            || crate::dsv4_grouped::mirror_validation_enabled()
+            || !crate::moe_f16g_gu_fuse_on()
+            || !crate::moe_f16g_m1_tc_on()
+            || !crate::moe_f16g_gu_m1_tc_on()
+            || !crate::moe_f16g_gu_half2_on()
+            || !crate::moe_f16g_down_m1_half2_on()
+            || self
+                .stages
+                .iter()
+                .any(|st| !std::sync::Arc::ptr_eq(&st.gpu.stream(), st.gpu.main_stream()))
+        {
+            return Err("full-token replay requires the pinned plain TP2/expert-ID EP, device+diet, f32x/RefFp8Round program; split-K/DSpark/host validation/other modes refused".into());
+        }
+        Ok(())
+    }
+
+    /// Default-OFF request-local diagnostic. No environment or serving dispatch.
+    /// # Safety
+    /// The model must outlive this state at a stable address. Its weight allocations
+    /// and kernel configuration must not be replaced or reconfigured while armed.
+    /// Cache/control updates through these request APIs remain permitted. This is
+    /// an explicit gate-only lifetime lease, not a general serving API.
+    pub unsafe fn arm_full_token_replay_for_gate(
+        &self,
+        state: &mut DecodeState,
+        cfg: Dsv4SampleCfg,
+    ) -> Res<()> {
+        self.validate_full_token_program()?;
+        if state.capacity < 512
+            || state.capacity > 1024
+            || state.pos >= 512
+            || cfg.temperature != 1.0
+            || cfg.top_p != 1.0
+            || cfg.top_k != 0
+            || state.caches.iter().any(|c| c.c4_host.is_some())
+            || state
+                .tp_ep_caches
+                .as_ref()
+                .is_none_or(|cs| cs.iter().any(|c| c.c4_host.is_some()))
+        {
+            return Err("full-token replay admits only device caches, positions below 512 and vendor-default plain sampling".into());
+        }
+        let _walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        let work = state
+            .matrix_step
+            .as_mut()
+            .ok_or("replay matrix state missing")?;
+        if work.failed || work.verify.open.is_some() || work.replay.is_some() {
+            return Err("replay requires a closed, unarmed request".into());
+        }
+        for (rank, ws) in work.verify.ws.iter_mut().enumerate() {
+            if self.stages[rank].gpu.ctx.is_event_tracking()
+                || ws.is_prefill
+                || work.verify.tmax != 1
+            {
+                return Err(
+                    "replay requires t=1 decode workspace allocated without event tracking".into(),
+                );
+            }
+        }
+        let pair = crate::dsv4_graph::ReplayPair::new(
+            [self.stages[0].gpu.stream(), self.stages[1].gpu.stream()],
+            self.device_sampler()?,
+            cfg,
+            self as *const Self as usize,
+        )?;
+        for ws in &mut work.verify.ws {
+            ws.full_token_replay = true;
+            ws.replay_limit = 512;
+        }
+        work.replay = Some(pair);
+        Ok(())
+    }
+
+    /// Consume one token, commit only after both refusal words are zero, and
+    /// return the real sampled next token. Both rank streams drain before return.
+    pub fn decode_sample_full_token_for_gate(&self, tok: u32, state: &mut DecodeState) -> Res<u32> {
+        self.validate_full_token_program()?;
+        self.decode_step_tp_ep(tok, state, false, true, None, true)
+            .map(|(_, token)| token)
+    }
+
+    pub fn full_token_replay_counts_for_gate(&self, state: &DecodeState) -> Res<[[u64; 2]; 2]> {
+        state
+            .matrix_step
+            .as_ref()
+            .and_then(|w| w.replay.as_ref())
+            .ok_or("full-token replay is not armed")?
+            .counts()
+    }
+
+    pub fn full_token_ar_epochs_for_gate(&self) -> Res<[Vec<u32>; 2]> {
+        let _walk = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        self.tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP AR mutex poisoned")?
+            .as_ref()
+            .ok_or("TP/EP AR missing")?
+            .epochs_for_gate(&self.stages[0].gpu, &self.stages[1].gpu)
+    }
+
+    pub fn full_token_replay_census_for_gate(
+        &self,
+        state: &DecodeState,
+    ) -> Res<[[[u64; 7]; 2]; 2]> {
+        Ok(state
+            .matrix_step
+            .as_ref()
+            .and_then(|w| w.replay.as_ref())
+            .ok_or("full-token replay is not armed")?
+            .census())
+    }
+
+    pub fn full_token_replay_captures_for_gate(&self, state: &DecodeState) -> Res<[u64; 2]> {
+        Ok(state
+            .matrix_step
+            .as_ref()
+            .and_then(|w| w.replay.as_ref())
+            .ok_or("replay is not armed")?
+            .captures)
+    }
+    pub fn dump_full_token_replay_for_gate(
+        &self,
+        state: &DecodeState,
+        directory: &Path,
+    ) -> Res<()> {
+        let _guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        state
+            .matrix_step
+            .as_ref()
+            .and_then(|w| w.replay.as_ref())
+            .ok_or("replay is not armed")?
+            .dump(directory)
+    }
+
+    /// Gate-only same-load row reset. Copy the immutable primed state back into
+    /// existing allocations; retained graph/input/sampler addresses never change.
+    /// A failed request remains quarantined and cannot use this as a retry door.
+    pub fn restore_full_token_prefix_for_gate(
+        &self,
+        dst: &mut DecodeState,
+        src: &DecodeState,
+    ) -> Res<()> {
+        self.validate_full_token_program()?;
+        if src.pos == 0 || src.pos >= 512 || src.capacity != dst.capacity {
+            return Err("replay prefix position/capacity mismatch".into());
+        }
+        let _walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        let sw = src
+            .matrix_step
+            .as_ref()
+            .ok_or("source matrix workspace missing")?;
+        let dw = dst
+            .matrix_step
+            .as_mut()
+            .ok_or("destination matrix workspace missing")?;
+        if sw.failed || dw.failed || sw.verify.open.is_some() || dw.verify.open.is_some() {
+            return Err("cannot reset an open or quarantined request".into());
+        }
+        let source_peer = src
+            .tp_ep_caches
+            .as_ref()
+            .ok_or("source peer cache missing")?;
+        let destination_peer = dst
+            .tp_ep_caches
+            .as_mut()
+            .ok_or("destination peer cache missing")?;
+        fn same(a: &Option<CudaSlice<f32>>, b: &Option<CudaSlice<f32>>) -> bool {
+            match (a, b) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a.len() == b.len(),
+                _ => false,
+            }
+        }
+        for (from, to) in [
+            (&src.caches, &dst.caches),
+            (source_peer, &*destination_peer),
+        ] {
+            if from.len() != 43 || to.len() != 43 {
+                return Err("prefix cache layer count mismatch".into());
+            }
+            for (a, b) in from.iter().zip(to) {
+                if a.c4_host.is_some()
+                    || b.c4_host.is_some()
+                    || a.kvc.len() != b.kvc.len()
+                    || !same(&a.pend_kv, &b.pend_kv)
+                    || !same(&a.pend_score, &b.pend_score)
+                    || !same(&a.ikvc, &b.ikvc)
+                    || !same(&a.ipend_kv, &b.ipend_kv)
+                    || !same(&a.ipend_score, &b.ipend_score)
+                {
+                    return Err("prefix plane layout mismatch".into());
+                }
+            }
+        }
+        if sw.verify.tmax != 1
+            || dw.verify.tmax != 1
+            || sw.verify.ws.len() != 2
+            || dw.verify.ws.len() != 2
+        {
+            return Err("prefix workspace shape mismatch".into());
+        }
+        for rank in 0..2 {
+            if sw.verify.ws[rank].h_a.len() != dw.verify.ws[rank].h_a.len()
+                || sw.verify.ws[rank].logits.len() != dw.verify.ws[rank].logits.len()
+            {
+                return Err("prefix workspace allocation mismatch".into());
+            }
+        }
+        let mut result = (|| -> Res<()> {
+            for rank in 0..2 {
+                let st = &self.stages[rank];
+                st.gpu.ctx.bind_to_thread().map_err(e("prefix copy bind"))?;
+                let stream = st.gpu.stream();
+                let (from, to) = if rank == 0 {
+                    (&src.caches, &mut dst.caches)
+                } else {
+                    (source_peer, &mut *destination_peer)
+                };
+                for (a, b) in from.iter().zip(to) {
+                    stream
+                        .memcpy_dtod(&a.kvc, &mut b.kvc)
+                        .map_err(e("prefix ring/store copy"))?;
+                    for (source, target) in [
+                        (&a.pend_kv, &mut b.pend_kv),
+                        (&a.pend_score, &mut b.pend_score),
+                        (&a.ikvc, &mut b.ikvc),
+                        (&a.ipend_kv, &mut b.ipend_kv),
+                        (&a.ipend_score, &mut b.ipend_score),
+                    ] {
+                        if let (Some(source), Some(target)) = (source, target) {
+                            stream
+                                .memcpy_dtod(source, target)
+                                .map_err(e("prefix pending copy"))?;
+                        }
+                    }
+                    b.n_blocks = a.n_blocks;
+                    b.i_blocks = a.i_blocks;
+                }
+                stream
+                    .memcpy_dtod(&sw.verify.ws[rank].h_a, &mut dw.verify.ws[rank].h_a)
+                    .map_err(e("prefix hidden copy"))?;
+                stream
+                    .memcpy_dtod(&sw.verify.ws[rank].logits, &mut dw.verify.ws[rank].logits)
+                    .map_err(e("prefix logits copy"))?;
+            }
+            Ok(())
+        })();
+        for (rank, st) in self.stages.iter().enumerate() {
+            if let Err(error) = st
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .and_then(|()| st.gpu.stream().synchronize())
+            {
+                let message = format!("prefix copy drain rank {rank}: {error}");
+                if let Err(previous) = &mut result {
+                    previous.push_str(&format!("; {message}"));
+                } else {
+                    result = Err(message);
+                }
+            }
+        }
+        if let Err(error) = result {
+            dw.failed = true;
+            return Err(error);
+        }
+        dst.pos = src.pos;
+        Ok(())
     }
 
     /// Gate-only final identity read, outside the sampled envelope.
@@ -9473,6 +9791,7 @@ impl Dsv4Gpu {
         want_logits: bool,
         device_logits: bool,
         taps: Option<(&mut CudaSlice<f32>, usize)>,
+        replay_draw: bool,
     ) -> Res<(Option<Vec<f32>>, u32)> {
         if taps.is_some() {
             return Err("TP/EP vertical slice does not admit DSpark taps yet".into());
@@ -9489,10 +9808,41 @@ impl Dsv4Gpu {
             .matrix_step
             .take()
             .ok_or("TP/EP matrix workspace missing")?;
+        let host_marks = work.replay.as_ref().map(|_| {
+            (
+                state
+                    .caches
+                    .iter()
+                    .map(|c| (c.n_blocks, c.i_blocks))
+                    .collect::<Vec<_>>(),
+                rank1_caches
+                    .iter()
+                    .map(|c| (c.n_blocks, c.i_blocks))
+                    .collect::<Vec<_>>(),
+            )
+        });
+        let mut forward_started = false;
         let mut result = (|| -> Res<(Option<Vec<f32>>, u32)> {
             if work.failed || work.verify.open.is_some() {
                 return Err("TP/EP workspace has an unfinished transaction".into());
             }
+            let replaying = work.replay.is_some();
+            if replaying != replay_draw {
+                return Err("armed replay requires the combined forward/sample API".into());
+            }
+            if let Some(pair) = &work.replay
+                && (pair.owner != self as *const Self as usize
+                    || state.pos >= 512
+                    || tok as usize >= work.verify.ws[1].logits.len()
+                    || pair.ar_blocks
+                        != [
+                            crate::tp_ar::ar_blocks_for(4096),
+                            crate::tp_ar::ar_blocks_for(6 * 4096),
+                        ])
+            {
+                return Err("replay owner/position/token mismatch".into());
+            }
+            let capture = work.replay.as_ref().is_some_and(|p| !p.ready);
             let DecodePath::Device { host_math: false } = self.decode_path else {
                 return Err("TP/EP vertical slice requires device math".into());
             };
@@ -9510,234 +9860,338 @@ impl Dsv4Gpu {
                     state.pos, state.capacity
                 ));
             }
-            let pos_i32 = [state.pos as i32];
-            let tok_i32 = [tok as i32];
-            for rank in 0..2usize {
-                let st = &self.stages[rank];
-                let vws = &mut work.verify.ws[rank];
-                st.gpu.ctx.bind_to_thread().map_err(e("TP/EP bind rank"))?;
-                let stream = st.gpu.stream();
-                stream
-                    .memcpy_htod(&tok_i32, &mut vws.tok)
-                    .map_err(e("TP/EP token upload"))?;
-                stream
-                    .memcpy_htod(&pos_i32, &mut vws.pos_dev)
-                    .map_err(e("TP/EP position upload"))?;
-                unsafe {
-                    ck(
-                        "TP/EP embed",
-                        k::memra_dsv4_embed_rows(
-                            st.embed
-                                .as_ref()
-                                .ok_or("TP/EP rank embed missing")?
-                                .device_ptr(&stream)
-                                .0 as *const c_void,
-                            vws.tok.device_ptr(&stream).0 as *const i32,
-                            dpm!(vws.emb, &stream),
-                            1,
-                            hidden as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                    ck(
-                        "TP/EP repeat hc",
-                        k::memra_dsv4_repeat_hc(
-                            dpf!(vws.emb, &stream),
-                            dpm!(vws.h_a, &stream),
-                            1,
-                            hc as i32,
-                            hidden as i32,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
+            let input_phase = full_token_profile_phase("FULL_TOKEN_INPUT\0");
+            if let Some(pair) = &mut work.replay {
+                let injection = self
+                    .attention_tp_refusal_injection
+                    .lock()
+                    .map_err(|_| "refusal injection mutex poisoned")?
+                    .take();
+                let fault = injection.map_or(0, |i| {
+                    (u64::from(i.code as u32) << 32) | ((i.rank as u64) << 16) | i.layer as u64
+                });
+                pair.upload(tok, state.pos, fault)?;
             }
-            for (il, rank1_cache) in rank1_caches.iter_mut().enumerate() {
+            drop(input_phase);
+            let forward_phase = full_token_profile_phase("FULL_TOKEN_FORWARD_SUBMIT\0");
+            if capture {
+                work.replay.as_mut().expect("replay").begin(0)?;
+            }
+            if !replaying || capture {
+                let pos_i32 = [state.pos as i32];
+                let tok_i32 = [tok as i32];
                 for rank in 0..2usize {
                     let st = &self.stages[rank];
-                    let layer = st
-                        .layers
-                        .iter()
-                        .find(|l| l.il == il as u32)
-                        .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
                     let vws = &mut work.verify.ws[rank];
-                    let lck = if rank == 0 {
-                        &mut work.verify.layers[il]
-                    } else {
-                        work.verify
-                            .tp_ep_layers
-                            .as_mut()
-                            .ok_or("TP/EP rank-1 checkpoints missing")?
-                            .get_mut(il)
-                            .ok_or("TP/EP rank-1 checkpoint layer missing")?
-                    };
-                    let cache = if rank == 0 {
-                        &mut state.caches[il]
-                    } else {
-                        &mut *rank1_cache
-                    };
-                    if self.attention_tp.is_some() {
-                        self.attention_verify_dev(
-                            st, layer, cache, lck, vws, false, state.pos, 1, false,
-                        )?;
-                        self.attention_tp_rank_calls[rank].fetch_add(1, Ordering::Relaxed);
-                    } else {
-                        self.block_verify_dev(
-                            st,
-                            layer,
-                            cache,
-                            lck,
-                            vws,
-                            false,
-                            state.pos,
-                            1,
-                            &[tok],
-                            false,
-                            true,
-                            None,
-                            true,
-                        )?;
-                    }
-                    self.tp_ep_rank_layer_calls[rank]
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-                let (rank0_ws, rank1_ws) = work.verify.ws.split_at_mut(1);
-                let owner_ws = &mut rank0_ws[0];
-                let peer_ws = &mut rank1_ws[0];
-                let ar_outputs = work
-                    .verify
-                    .tp_ep_ar_outputs
-                    .as_mut()
-                    .ok_or("TP/EP one-shot output buffers missing")?;
-                let owner_gpu = &self.stages[0].gpu;
-                let peer_gpu = &self.stages[1].gpu;
-                if self.attention_tp.is_some() {
-                    // The partials are independent producers. Neither rank enters HC/FFN
-                    // until its stream has received the complete rank-ordered attention sum.
-                    // Dedicated attention outputs remain separate from the later expert join.
-                    let attention_outputs = work
-                        .verify
-                        .tp_ep_attention_outputs
-                        .as_mut()
-                        .ok_or("attention TP2 output buffers missing")?;
-                    {
-                        let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
-                        let mut ar = self
-                            .tp_ep_ar
-                            .lock()
-                            .map_err(|_| "attention TP2 AR mutex poisoned")?;
-                        ar.as_mut()
-                            .ok_or("attention TP2 AR state missing")?
-                            .all_reduce_into(
-                                owner_gpu,
-                                peer_gpu,
-                                &owner_ws.attn_out,
-                                &peer_ws.attn_out,
-                                &mut owner_output[0],
-                                &mut peer_output[0],
-                                hidden,
+                    st.gpu.ctx.bind_to_thread().map_err(e("TP/EP bind rank"))?;
+                    let stream = st.gpu.stream();
+                    if let Some(pair) = &mut work.replay {
+                        unsafe {
+                            ck(
+                                "replay token controls",
+                                k::memra_dsv4_replay_input(
+                                    pair.input_ptr(rank),
+                                    vws.tok.device_ptr_mut(&stream).0 as *mut i32,
+                                    vws.pos_dev.device_ptr_mut(&stream).0 as *mut i32,
+                                    vws.slot_rows.device_ptr_mut(&stream).0 as *mut i32,
+                                    self.model.cfg().sliding_window as i32,
+                                    pair.counter_ptr(rank, 0),
+                                    sp(&stream),
+                                ),
                             )?;
-                        self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
-                        let injection = {
-                            let mut armed = self
-                                .attention_tp_refusal_injection
-                                .lock()
-                                .map_err(|_| "attention TP2 refusal injection mutex poisoned")?;
-                            if armed
-                                .as_ref()
-                                .is_some_and(|injection| injection.layer == il)
-                            {
-                                armed.take()
-                            } else {
-                                None
-                            }
-                        };
-                        if let Some(injection) = injection {
-                            let mut words = [0, 0];
-                            words[injection.rank] = injection.code;
-                            ar.as_mut()
-                                .ok_or("attention TP2 AR state missing during injection")?
-                                .set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
                         }
+                    } else {
+                        stream
+                            .memcpy_htod(&tok_i32, &mut vws.tok)
+                            .map_err(e("TP/EP token upload"))?;
+                        stream
+                            .memcpy_htod(&pos_i32, &mut vws.pos_dev)
+                            .map_err(e("TP/EP position upload"))?;
                     }
-                    for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)] {
+                    unsafe {
+                        ck(
+                            "TP/EP embed",
+                            k::memra_dsv4_embed_rows(
+                                st.embed
+                                    .as_ref()
+                                    .ok_or("TP/EP rank embed missing")?
+                                    .device_ptr(&stream)
+                                    .0 as *const c_void,
+                                vws.tok.device_ptr(&stream).0 as *const i32,
+                                dpm!(vws.emb, &stream),
+                                1,
+                                hidden as i32,
+                                sp(&stream),
+                            ),
+                        )?;
+                        ck(
+                            "TP/EP repeat hc",
+                            k::memra_dsv4_repeat_hc(
+                                dpf!(vws.emb, &stream),
+                                dpm!(vws.h_a, &stream),
+                                1,
+                                hc as i32,
+                                hidden as i32,
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
+                }
+                for (il, rank1_cache) in rank1_caches.iter_mut().enumerate() {
+                    for rank in 0..2usize {
                         let st = &self.stages[rank];
+                        if capture {
+                            st.gpu
+                                .ctx
+                                .bind_to_thread()
+                                .map_err(e("replay capture rank bind"))?;
+                        }
                         let layer = st
                             .layers
                             .iter()
-                            .find(|layer| layer.il == il as u32)
-                            .ok_or("attention TP2 post-join layer missing")?;
-                        self.post_attention_moe_verify_dev(
-                            st,
-                            layer,
-                            workspace,
-                            false,
-                            1,
-                            &[tok],
-                            false,
-                            true,
-                            None,
-                            true,
-                            Some(&attention_outputs[rank]),
-                        )?;
+                            .find(|l| l.il == il as u32)
+                            .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
+                        let vws = &mut work.verify.ws[rank];
+                        let lck = if rank == 0 {
+                            &mut work.verify.layers[il]
+                        } else {
+                            work.verify
+                                .tp_ep_layers
+                                .as_mut()
+                                .ok_or("TP/EP rank-1 checkpoints missing")?
+                                .get_mut(il)
+                                .ok_or("TP/EP rank-1 checkpoint layer missing")?
+                        };
+                        let cache = if rank == 0 {
+                            &mut state.caches[il]
+                        } else {
+                            &mut *rank1_cache
+                        };
+                        if self.attention_tp.is_some() {
+                            self.attention_verify_dev(
+                                st, layer, cache, lck, vws, false, state.pos, 1, false,
+                            )?;
+                            self.attention_tp_rank_calls[rank].fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            self.block_verify_dev(
+                                st,
+                                layer,
+                                cache,
+                                lck,
+                                vws,
+                                false,
+                                state.pos,
+                                1,
+                                &[tok],
+                                false,
+                                true,
+                                None,
+                                true,
+                            )?;
+                        }
+                        self.tp_ep_rank_layer_calls[rank]
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    let (rank0_ws, rank1_ws) = work.verify.ws.split_at_mut(1);
+                    let owner_ws = &mut rank0_ws[0];
+                    let peer_ws = &mut rank1_ws[0];
+                    let ar_outputs = work
+                        .verify
+                        .tp_ep_ar_outputs
+                        .as_mut()
+                        .ok_or("TP/EP one-shot output buffers missing")?;
+                    let owner_gpu = &self.stages[0].gpu;
+                    let peer_gpu = &self.stages[1].gpu;
+                    if self.attention_tp.is_some() {
+                        // The partials are independent producers. Neither rank enters HC/FFN
+                        // until its stream has received the complete rank-ordered attention sum.
+                        // Dedicated attention outputs remain separate from the later expert join.
+                        let attention_outputs = work
+                            .verify
+                            .tp_ep_attention_outputs
+                            .as_mut()
+                            .ok_or("attention TP2 output buffers missing")?;
+                        {
+                            let (owner_output, peer_output) = attention_outputs.split_at_mut(1);
+                            let mut ar = self
+                                .tp_ep_ar
+                                .lock()
+                                .map_err(|_| "attention TP2 AR mutex poisoned")?;
+                            ar.as_mut()
+                                .ok_or("attention TP2 AR state missing")?
+                                .all_reduce_into(
+                                    owner_gpu,
+                                    peer_gpu,
+                                    &owner_ws.attn_out,
+                                    &peer_ws.attn_out,
+                                    &mut owner_output[0],
+                                    &mut peer_output[0],
+                                    hidden,
+                                    capture,
+                                    work.replay.as_ref().map(|p| unsafe {
+                                        ([p.input_ptr(0).add(2), p.input_ptr(1).add(2)], il as i32)
+                                    }),
+                                )?;
+                            self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
+                            let injection = if replaying {
+                                None
+                            } else {
+                                let mut armed =
+                                    self.attention_tp_refusal_injection.lock().map_err(
+                                        |_| "attention TP2 refusal injection mutex poisoned",
+                                    )?;
+                                if armed
+                                    .as_ref()
+                                    .is_some_and(|injection| injection.layer == il)
+                                {
+                                    armed.take()
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some(injection) = injection {
+                                let mut words = [0, 0];
+                                words[injection.rank] = injection.code;
+                                ar.as_mut()
+                                    .ok_or("attention TP2 AR state missing during injection")?
+                                    .set_refusal_words_for_gate(owner_gpu, peer_gpu, words)?;
+                            }
+                        }
+                        for (rank, workspace) in [(0usize, &mut *owner_ws), (1usize, &mut *peer_ws)]
+                        {
+                            let st = &self.stages[rank];
+                            let layer = st
+                                .layers
+                                .iter()
+                                .find(|layer| layer.il == il as u32)
+                                .ok_or("attention TP2 post-join layer missing")?;
+                            self.post_attention_moe_verify_dev(
+                                st,
+                                layer,
+                                workspace,
+                                false,
+                                1,
+                                &[tok],
+                                false,
+                                true,
+                                None,
+                                true,
+                                Some(&attention_outputs[rank]),
+                            )?;
+                        }
+                    }
+                    {
+                        let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
+                        let mut ar = self
+                            .tp_ep_ar
+                            .lock()
+                            .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
+                        ar.as_mut()
+                            .ok_or("TP/EP one-shot reduction state missing")?
+                            .all_reduce_into(
+                                owner_gpu,
+                                peer_gpu,
+                                &owner_ws.contrib,
+                                &peer_ws.contrib,
+                                &mut owner_output[0],
+                                &mut peer_output[0],
+                                topk * hidden,
+                                capture,
+                                None,
+                            )?;
+                    }
+                    let layer0 = self.stages[0]
+                        .layers
+                        .iter()
+                        .find(|l| l.il == il as u32)
+                        .ok_or("TP/EP rank-0 layer missing for tail")?;
+                    let layer1 = self.stages[1]
+                        .layers
+                        .iter()
+                        .find(|l| l.il == il as u32)
+                        .ok_or("TP/EP rank-1 layer missing for tail")?;
+                    self.moe_verify_common_tail(
+                        &self.stages[0],
+                        layer0,
+                        owner_ws,
+                        1,
+                        topk,
+                        hidden,
+                        d.swiglu_limit,
+                        true,
+                        Some(&ar_outputs[0]),
+                    )?;
+                    self.moe_verify_common_tail(
+                        &self.stages[1],
+                        layer1,
+                        peer_ws,
+                        1,
+                        topk,
+                        hidden,
+                        d.swiglu_limit,
+                        true,
+                        Some(&ar_outputs[1]),
+                    )?;
+                }
+            }
+            if replaying {
+                if capture {
+                    work.replay.as_mut().expect("replay").end(0)?;
+                    // Rust ran while CUDA only recorded: restore every host high-water
+                    // mark before the first execution. GPU snapshots execute on replay.
+                    for (c, ckpt) in state.caches.iter_mut().zip(&work.verify.layers) {
+                        if let Some(ck) = &ckpt.cmp {
+                            c.n_blocks = ck.n_blocks0;
+                        }
+                        if let Some(ck) = &ckpt.idx {
+                            c.i_blocks = ck.n_blocks0;
+                        }
+                    }
+                    for (c, ckpt) in rank1_caches
+                        .iter_mut()
+                        .zip(work.verify.tp_ep_layers.as_ref().expect("rank1"))
+                    {
+                        if let Some(ck) = &ckpt.cmp {
+                            c.n_blocks = ck.n_blocks0;
+                        }
+                        if let Some(ck) = &ckpt.idx {
+                            c.i_blocks = ck.n_blocks0;
+                        }
                     }
                 }
-                {
-                    let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
-                    let mut ar = self
-                        .tp_ep_ar
-                        .lock()
-                        .map_err(|_| "TP/EP one-shot reduction state mutex poisoned")?;
-                    ar.as_mut()
-                        .ok_or("TP/EP one-shot reduction state missing")?
-                        .all_reduce_into(
-                            owner_gpu,
-                            peer_gpu,
-                            &owner_ws.contrib,
-                            &peer_ws.contrib,
-                            &mut owner_output[0],
-                            &mut peer_output[0],
-                            topk * hidden,
-                        )?;
+                // Refresh host checkpoint metadata once/token, not once/node. All
+                // device append/store/selector/attention addresses come from pos_dev.
+                for rank in 0..2 {
+                    let (cs, checkpoints) = if rank == 0 {
+                        (&mut state.caches, &mut work.verify.layers)
+                    } else {
+                        (
+                            &mut rank1_caches,
+                            work.verify.tp_ep_layers.as_mut().expect("rank1"),
+                        )
+                    };
+                    for (cache, checkpoint) in cs.iter_mut().zip(checkpoints) {
+                        if let Some(ck) = &mut checkpoint.cmp {
+                            ck.n_blocks0 = cache.n_blocks;
+                            cache.n_blocks = (state.pos + 1) / ck.ratio;
+                        }
+                        if let Some(ck) = &mut checkpoint.idx {
+                            ck.n_blocks0 = cache.i_blocks;
+                            cache.i_blocks = (state.pos + 1) / ck.ratio;
+                        }
+                    }
                 }
-                let layer0 = self.stages[0]
-                    .layers
-                    .iter()
-                    .find(|l| l.il == il as u32)
-                    .ok_or("TP/EP rank-0 layer missing for tail")?;
-                let layer1 = self.stages[1]
-                    .layers
-                    .iter()
-                    .find(|l| l.il == il as u32)
-                    .ok_or("TP/EP rank-1 layer missing for tail")?;
-                self.moe_verify_common_tail(
-                    &self.stages[0],
-                    layer0,
-                    owner_ws,
-                    1,
-                    topk,
-                    hidden,
-                    d.swiglu_limit,
-                    true,
-                    Some(&ar_outputs[0]),
-                )?;
-                self.moe_verify_common_tail(
-                    &self.stages[1],
-                    layer1,
-                    peer_ws,
-                    1,
-                    topk,
-                    hidden,
-                    d.swiglu_limit,
-                    true,
-                    Some(&ar_outputs[1]),
-                )?;
+                forward_started = true;
+                work.replay.as_ref().expect("replay").launch(0)?;
             }
             // A successful enqueue does not prove a successful one-shot join:
             // bounded peer waits report 40043/40044 through sticky device words.
             // Read both ranks only after all layer work is submitted, before
             // either persistent plane or the public token position can advance.
+            drop(forward_phase);
+            let refusal_phase = full_token_profile_phase("FULL_TOKEN_REFUSAL_READ_DRAIN\0");
             let refusals = self.tp_ep_ar_refusal_words()?;
+            drop(refusal_phase);
             if refusals != [0, 0] {
                 // All layers completed their snapshots, but compressors already
                 // mutated pending rows/high-water marks speculatively. Restore
@@ -9775,6 +10229,73 @@ impl Dsv4Gpu {
                 return Err(error);
             }
             let pos0 = state.pos;
+            if replaying {
+                if capture {
+                    work.replay.as_mut().expect("replay").begin(1)?;
+                }
+                if capture {
+                    self.commit_verify_dev_plane(
+                        &mut state.caches,
+                        &mut work.verify.layers,
+                        &mut work.verify.ws,
+                        Some(0),
+                        pos0,
+                        1,
+                        1,
+                    )?;
+                    self.commit_verify_dev_plane(
+                        &mut rank1_caches,
+                        work.verify.tp_ep_layers.as_mut().expect("rank1"),
+                        &mut work.verify.ws,
+                        Some(1),
+                        pos0,
+                        1,
+                        1,
+                    )?;
+                    self.head_logits_batch_dev(&mut work.verify.ws[1], 1, false)?;
+                    let pair = work.replay.as_mut().expect("replay");
+                    let stream = self.stages[1].gpu.stream();
+                    let uniform = unsafe { pair.input_ptr(1).add(1).cast::<f64>() };
+                    unsafe {
+                        pair.sampler.enqueue_replay(
+                            work.verify.ws[1].logits.device_ptr(&stream).0 as *const f32,
+                            uniform,
+                            &pair.cfg,
+                        )?;
+                    }
+                    for rank in 0..2 {
+                        let st = &self.stages[rank];
+                        st.gpu
+                            .ctx
+                            .bind_to_thread()
+                            .map_err(e("replay commit tick bind"))?;
+                        unsafe {
+                            ck(
+                                "replay commit counter",
+                                k::memra_dsv4_replay_tick(
+                                    pair.counter_ptr(rank, 1),
+                                    sp(&st.gpu.stream()),
+                                ),
+                            )?;
+                        }
+                    }
+                    pair.end(1)?;
+                    pair.ready = true;
+                }
+                let pair = work.replay.as_mut().expect("replay");
+                let submit_phase = full_token_profile_phase("FULL_TOKEN_COMMIT_SAMPLE_SUBMIT\0");
+                pair.launch(1)?;
+                drop(submit_phase);
+                let drain_phase = full_token_profile_phase("FULL_TOKEN_COMMIT_SAMPLE_DRAIN\0");
+                // Drain BOTH before reading/returning a token or releasing any plane.
+                pair.drain_both()?;
+                drop(drain_phase);
+                let _readback = full_token_profile_phase("FULL_TOKEN_TOKEN_READBACK\0");
+                state.pos = pos0 + 1; // the forward is committed even if sampling refuses its logits
+                let token = pair.sampler.read_replay()?;
+                return Ok((None, token));
+            }
+            let commit_phase = full_token_profile_phase("FULL_TOKEN_EAGER_COMMIT_DRAIN\0");
             self.commit_verify_dev_plane(
                 &mut state.caches,
                 &mut work.verify.layers,
@@ -9798,8 +10319,11 @@ impl Dsv4Gpu {
                 1,
                 1,
             )?;
+            drop(commit_phase);
+            let head_phase = full_token_profile_phase("FULL_TOKEN_EAGER_HEAD_SUBMIT\0");
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
+            drop(head_phase);
             let stream = self.stages[1].gpu.stream();
             if device_logits {
                 state.pos = pos0 + 1;
@@ -9817,17 +10341,46 @@ impl Dsv4Gpu {
         })();
         if let Err(error) = &mut result {
             work.failed = true;
+            if !forward_started && let Some((owner, peer)) = &host_marks {
+                for (cache, &(blocks, index_blocks)) in state.caches.iter_mut().zip(owner) {
+                    cache.n_blocks = blocks;
+                    cache.i_blocks = index_blocks;
+                }
+                for (cache, &(blocks, index_blocks)) in rank1_caches.iter_mut().zip(peer) {
+                    cache.n_blocks = blocks;
+                    cache.i_blocks = index_blocks;
+                }
+            }
+            if let Some(pair) = &work.replay
+                && let Err(abort_error) = pair.abort_capture_both()
+            {
+                error.push_str(&format!("; capture abort: {abort_error}"));
+            }
             // If submission failed after only one rank enqueued its peer wait,
             // do not return/drop its buffers while it can still access the peer.
             // Attempt both drains even if the first context or stream failed.
-            for (rank, stage) in self.stages.iter().enumerate() {
-                let drained = stage
-                    .gpu
-                    .ctx
-                    .bind_to_thread()
-                    .and_then(|()| stage.gpu.stream().synchronize());
-                if let Err(drain_error) = drained {
-                    error.push_str(&format!("; TP/EP rank {rank} drain: {drain_error}"));
+            if work.replay.is_some() {
+                // Only armed replay owns the new fail-stop completion policy.
+                crate::dsv4_graph::require_pair_completion(error, |rank| {
+                    let stage = &self.stages[rank];
+                    stage
+                        .gpu
+                        .ctx
+                        .bind_to_thread()
+                        .and_then(|()| stage.gpu.stream().synchronize())
+                        .map_err(|e| e.to_string())
+                });
+            } else {
+                // Preserve eager TP/EP's existing error propagation exactly.
+                for (rank, stage) in self.stages.iter().enumerate() {
+                    let drained = stage
+                        .gpu
+                        .ctx
+                        .bind_to_thread()
+                        .and_then(|()| stage.gpu.stream().synchronize());
+                    if let Err(drain_error) = drained {
+                        error.push_str(&format!("; TP/EP rank {rank} drain: {drain_error}"));
+                    }
                 }
             }
         }
@@ -9861,7 +10414,7 @@ impl Dsv4Gpu {
         mut taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
         if self.topology.is_tp_ep() {
-            return self.decode_step_tp_ep(tok, state, want_logits, device_logits, taps);
+            return self.decode_step_tp_ep(tok, state, want_logits, device_logits, taps, false);
         }
         self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
@@ -11859,6 +12412,9 @@ pub struct VerifyWs {
     /// Gate-only scalar-pointer arm. It is set only for a selected window-only
     /// layer capture; normal serving keeps the original ABI and launch sequence.
     graph_scalars: bool,
+    /// Strict retained full-token capture; separate from the older guarded probes.
+    full_token_replay: bool,
+    replay_limit: usize,
     argmax: CudaSlice<i32>,
     /// ring-commit staging: transient rows copied out, then scattered to ring slots
     /// (source and destination live in the same `kvc` allocation, so the bounce is a
@@ -11964,6 +12520,8 @@ pub struct VerifyState {
 }
 
 struct MatrixStep {
+    // Pair-wide drain/drop must precede workspace and cache-plane destruction.
+    replay: Option<crate::dsv4_graph::ReplayPair>,
     verify: VerifyState,
     taps: Option<CudaSlice<f32>>,
     tap_device: usize,
@@ -12895,6 +13453,8 @@ impl Dsv4Gpu {
                 pos_host: crate::PinnedHostBuf::new(tmax * std::mem::size_of::<i32>())
                     .map_err(e("vws position host scalar"))?,
                 graph_scalars: false,
+                full_token_replay: false,
+                replay_limit: 0,
                 argmax: i(tmax)?,
                 bounce: f(tmax * hd)?,
                 slot_rows: i(tmax)?,
@@ -13470,7 +14030,12 @@ impl Dsv4Gpu {
         row0: usize,
         blocks: &mut usize,
         mut host_store: Option<&mut C4HostStore>,
+        replay_pos: Option<*const i32>,
     ) -> Res<()> {
+        if replay_pos.is_some() && (t != 1 || host_store.is_some() || !matches!(cmp.ratio, 4 | 128))
+        {
+            return Err("full-token compressor requires t=1 device C4/C128".into());
+        }
         let stream = st.gpu.stream();
         let (ratio, d, latent) = (cmp.ratio, cmp.d, cmp.latent);
         // snapshot + high-water mark BEFORE anything is written
@@ -13508,16 +14073,64 @@ impl Dsv4Gpu {
             } else {
                 pos % ratio
             };
-            {
+            if let Some(pos_dev) = replay_pos {
+                unsafe {
+                    for (src, dst) in [
+                        (&ck_dev.rows_kv, &mut *pend_kv),
+                        (&ck_dev.rows_sc, &mut *pend_score),
+                    ] {
+                        ck(
+                            "replay compressor append",
+                            k::memra_dsv4_replay_copy_row(
+                                dpf!(*src, &stream),
+                                dpm!(*dst, &stream),
+                                pos_dev,
+                                latent as i32,
+                                ratio as i32,
+                                if cmp.overlap { ratio as i32 } else { 0 },
+                                0,
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
+                    ck(
+                        "replay compressor emission",
+                        k::memra_dsv4_replay_compressor_emit(
+                            dpm!(*pend_kv, &stream),
+                            dpm!(*pend_score, &stream),
+                            dpf!(cmp.ape, &stream),
+                            dpm!(*emit, &stream),
+                            dpf!(cmp.norm, &stream),
+                            dpf!(fc_dev, &stream),
+                            dpm!(*store, &stream),
+                            dpm!(*shift, &stream),
+                            pos_dev,
+                            ratio as i32,
+                            d as i32,
+                            latent as i32,
+                            cmp.overlap as i32,
+                            cmp.rotate as i32,
+                            (self.variant == ActQuantVariant::ClampOnly) as i32,
+                            rd as i32,
+                            row0 as i32,
+                            eps,
+                            (d as f32).powf(-0.5),
+                            sp(&stream),
+                        ),
+                    )?;
+                }
+                *blocks = (pos + 1) / ratio;
+                continue;
+            } else {
                 let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
                 let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
                 stream.memcpy_dtod(&src, &mut dst).map_err(e("pend kv b"))?;
                 let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
                 let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
                 stream.memcpy_dtod(&src, &mut dst).map_err(e("pend sc b"))?;
-            }
-            if (pos + 1) % ratio != 0 {
-                continue;
+                if (pos + 1) % ratio != 0 {
+                    continue;
+                }
             }
             let j = pos / ratio;
             let nb_launch = if cmp.overlap { 2usize } else { 1 };
@@ -13803,6 +14416,19 @@ impl Dsv4Gpu {
         };
         let clamp_only = (self.variant == ActQuantVariant::ClampOnly) as i32;
         let trans_base = lck.trans_base;
+        let replay_pos = vws
+            .full_token_replay
+            .then(|| vws.pos_dev.device_ptr(&stream).0 as *const i32);
+        if replay_pos.is_some()
+            && (t != 1
+                || host_math
+                || cache.c4_host.is_some()
+                || !self.chains_f32
+                || self.sink_score != Dsv4SinkScore::Scalar
+                || self.indexer_score != Dsv4IndexerScore::Scalar)
+        {
+            return Err("full-token attention requires t=1 scalar f32 device-cache program".into());
+        }
         let LayerCache {
             kvc,
             c4_host,
@@ -14109,6 +14735,7 @@ impl Dsv4Gpu {
                         0,
                         i_blocks,
                         None,
+                        replay_pos,
                     )?;
                 }
                 debug_assert_eq!(*i_blocks, nbs[t - 1], "indexer block count (batch)");
@@ -14119,7 +14746,46 @@ impl Dsv4Gpu {
                 // on the pre-batch scalar sequence: the batched indexer is a long-prefill
                 // optimization and measured no short-decode win. T=1 also remains the
                 // always-live exactness witness for the width-64 hardware gate.
-                if host_math || t <= 8 {
+                if let Some(pos_dev) = replay_pos {
+                    let cap = win + ix.topk.min(vws.replay_limit / ratio);
+                    let wscale = ((ix.hd as f64).powf(-0.5) * (ix.heads as f64).powf(-0.5)) as f32;
+                    unsafe {
+                        ck(
+                            "replay fine indices",
+                            k::memra_dsv4_replay_indices(
+                                vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                pos_dev,
+                                win as i32,
+                                ratio as i32,
+                                cap as i32,
+                                vws.idx_stride as i32,
+                                trans_base as i32,
+                                1,
+                                ix.topk as i32,
+                                sp(&stream),
+                            ),
+                        )?;
+                        ck(
+                            "replay indexer",
+                            k::memra_dsv4_replay_indexer(
+                                dpf!(vws.qi, &stream),
+                                dpf!(ikvc.as_ref().expect("ikvc"), &stream),
+                                dpf!(vws.wproj, &stream),
+                                wscale,
+                                dpm!(vws.score, &stream),
+                                (vws.idx.device_ptr_mut(&stream).0 as *mut i32).add(win),
+                                pos_dev,
+                                ix.heads as i32,
+                                ix.hd as i32,
+                                (vws.replay_limit / ratio) as i32,
+                                ratio as i32,
+                                ix.topk as i32,
+                                win as i32,
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
+                } else if host_math || t <= 8 {
                     for i in 0..t {
                         let pos = pos0 + i;
                         let idx_off = i * vws.idx_stride;
@@ -14361,18 +15027,33 @@ impl Dsv4Gpu {
                 unsafe {
                     ck(
                         "build_idx_redirect_m coarse",
-                        k::memra_dsv4_build_idx_redirect_m(
-                            vws.idx.device_ptr_mut(&stream).0 as *mut i32,
-                            pos0 as i32,
-                            t as i32,
-                            win as i32,
-                            ratio as i32,
-                            slots as i32,
-                            vws.idx_stride as i32,
-                            trans_base as i32,
-                            0,
-                            sp(&stream),
-                        ),
+                        if let Some(pos_dev) = replay_pos {
+                            k::memra_dsv4_replay_indices(
+                                vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                pos_dev,
+                                win as i32,
+                                ratio as i32,
+                                (win + vws.replay_limit / ratio) as i32,
+                                vws.idx_stride as i32,
+                                trans_base as i32,
+                                0,
+                                i32::MAX,
+                                sp(&stream),
+                            )
+                        } else {
+                            k::memra_dsv4_build_idx_redirect_m(
+                                vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                pos0 as i32,
+                                t as i32,
+                                win as i32,
+                                ratio as i32,
+                                slots as i32,
+                                vws.idx_stride as i32,
+                                trans_base as i32,
+                                0,
+                                sp(&stream),
+                            )
+                        },
                     )?;
                 }
             }
@@ -14403,6 +15084,7 @@ impl Dsv4Gpu {
                     win,
                     n_blocks,
                     c4_host.as_mut(),
+                    replay_pos,
                 )?;
             }
             debug_assert_eq!(*n_blocks, nbs[t - 1], "attn block count (batch)");
@@ -14410,7 +15092,7 @@ impl Dsv4Gpu {
             unsafe {
                 ck(
                     "build_idx_redirect_m window-only",
-                    if vws.graph_scalars && t == 1 {
+                    if (vws.graph_scalars || vws.full_token_replay) && t == 1 {
                         k::memra_dsv4_build_idx_redirect_window_pos(
                             vws.idx.device_ptr_mut(&stream).0 as *mut i32,
                             vws.pos_dev.device_ptr(&stream).0 as *const i32,
@@ -14458,7 +15140,37 @@ impl Dsv4Gpu {
         };
         let scale = (hd as f64).powf(-0.5) as f32;
         unsafe {
-            if self.chains_f32 {
+            if let Some(pos_dev) = replay_pos {
+                let topk = layer.idx.as_ref().map_or(i32::MAX, |ix| ix.topk as i32);
+                let slots_max = win
+                    + vws
+                        .replay_limit
+                        .checked_div(layer.ratio)
+                        .map_or(0, |n| n.min(topk as usize));
+                ck(
+                    "replay attention",
+                    k::memra_dsv4_replay_attention(
+                        dpf!(vws.q, &stream),
+                        attention_kv,
+                        attention_indices,
+                        sink,
+                        dpm!(vws.sink_scores, &stream),
+                        dpm!(vws.sink_evals, &stream),
+                        vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
+                        dpm!(vws.o, &stream),
+                        pos_dev,
+                        heads as i32,
+                        hd as i32,
+                        slots_max as i32,
+                        vws.idx_stride as i32,
+                        scale,
+                        win as i32,
+                        layer.ratio as i32,
+                        topk,
+                        sp(&stream),
+                    ),
+                )?;
+            } else if self.chains_f32 {
                 let launch = if self.sink_score == Dsv4SinkScore::Tiled {
                     k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
                 } else {
@@ -16127,6 +16839,12 @@ impl Dsv4Gpu {
                 "commit plane width {n_commit} outside transaction width {t}"
             ));
         }
+        let graph_commit = n_commit == 1
+            && t == 1
+            && stage_override.is_some()
+            && stage_override
+                .and_then(|s| ws.get(s))
+                .is_some_and(|w| w.full_token_replay);
         let (ring_start, slot_rows) = if n_commit == 0 {
             (0, Vec::new())
         } else {
@@ -16161,7 +16879,7 @@ impl Dsv4Gpu {
                         .memcpy_dtod(&src, &mut dst)
                         .map_err(e("commit bounce"))?;
                 }
-                {
+                if !graph_commit {
                     let mut dst = vws.slot_rows.slice_mut(0..ring_keep);
                     stream
                         .memcpy_htod(&slot_rows, &mut dst)
@@ -16208,6 +16926,9 @@ impl Dsv4Gpu {
                 )?;
             }
         }
+        if graph_commit {
+            return Ok(());
+        } // caller captures enqueue-only, then drains both ranks
         let sync_stages: Vec<usize> = match stage_override {
             Some(stage) => vec![stage],
             None => (0..self.stages.len()).collect(),

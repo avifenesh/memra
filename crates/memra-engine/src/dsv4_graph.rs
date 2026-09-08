@@ -3,6 +3,355 @@
 use cudarc::driver::{CudaGraph, CudaStream, sys};
 use std::{collections::BTreeMap, sync::Arc};
 
+use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+use std::ffi::c_void;
+
+/// An unsuccessful stream drain is not a completion receipt. Never unwind or
+/// return through owners of peer-visible storage when either rank is unproven.
+/// Try both ranks, print every failure, then fail-stop without running Drop.
+pub(crate) fn require_pair_completion(
+    context: &str,
+    mut drain: impl FnMut(usize) -> Result<(), String>,
+) {
+    let mut errors = Vec::new();
+    for rank in 0..2 {
+        if let Err(error) = drain(rank) {
+            errors.push(format!("rank {rank}: {error}"));
+        }
+    }
+    if !errors.is_empty() {
+        replay_fail_stop(context, &errors.join("; "));
+    }
+}
+
+fn replay_fail_stop(context: &str, error: &str) -> ! {
+    use std::io::Write;
+    let _ = writeln!(
+        std::io::stderr(),
+        "FATAL full-token replay completion unproven ({context}): {error}; aborting before captured storage release"
+    );
+    let _ = std::io::stderr().flush();
+    std::process::abort();
+}
+
+/// Capture-only owner. This deliberately does not use `capture_layer`, which
+/// executes immediately and drains before its paired rank can launch.
+struct ReplayGraph {
+    graph: *mut c_void,
+    executable: *mut c_void,
+    stream: Arc<CudaStream>,
+    census: [u64; 7],
+}
+// The request and TP walk mutex serialize every launch. Handles are immutable
+// after instantiate; each operation explicitly binds its owning CUDA context.
+unsafe impl Send for ReplayGraph {}
+unsafe impl Sync for ReplayGraph {}
+impl ReplayGraph {
+    fn begin(stream: Arc<CudaStream>) -> Result<Self, String> {
+        if stream.context().is_event_tracking() {
+            return Err("full replay requires tracking disabled before allocation".into());
+        }
+        let mut result = Self {
+            graph: std::ptr::null_mut(),
+            executable: std::ptr::null_mut(),
+            stream,
+            census: [0; 7],
+        };
+        result
+            .stream
+            .context()
+            .bind_to_thread()
+            .map_err(|e| e.to_string())?;
+        unsafe {
+            crate::dsv4_ffi::ck(
+                "replay capture begin",
+                crate::dsv4_ffi::memra_dsv4_replay_capture_begin(
+                    &mut result.graph,
+                    result.stream.cu_stream().cast(),
+                ),
+            )?;
+        }
+        Ok(result)
+    }
+    fn end(&mut self) -> Result<(), String> {
+        self.stream
+            .context()
+            .bind_to_thread()
+            .map_err(|e| e.to_string())?;
+        unsafe {
+            crate::dsv4_ffi::ck(
+                "replay capture end",
+                crate::dsv4_ffi::memra_dsv4_replay_capture_end(
+                    self.graph,
+                    &mut self.executable,
+                    self.stream.cu_stream().cast(),
+                ),
+            )?;
+            crate::dsv4_ffi::ck(
+                "replay census",
+                crate::dsv4_ffi::memra_dsv4_replay_census(self.graph, self.census.as_mut_ptr()),
+            )
+        }
+    }
+    fn launch(&self) -> Result<(), String> {
+        if self.executable.is_null() {
+            return Err("uninstantiated replay graph".into());
+        }
+        self.stream
+            .context()
+            .bind_to_thread()
+            .map_err(|e| e.to_string())?;
+        unsafe {
+            crate::dsv4_ffi::ck(
+                "replay launch",
+                crate::dsv4_ffi::memra_dsv4_replay_launch(
+                    self.executable,
+                    self.stream.cu_stream().cast(),
+                ),
+            )
+        }
+    }
+}
+impl Drop for ReplayGraph {
+    fn drop(&mut self) {
+        let result = self
+            .stream
+            .context()
+            .bind_to_thread()
+            .map_err(|e| e.to_string())
+            .and_then(|()| unsafe {
+                crate::dsv4_ffi::ck(
+                    "replay graph destroy",
+                    crate::dsv4_ffi::memra_dsv4_replay_destroy(
+                        self.graph,
+                        self.executable,
+                        self.stream.cu_stream().cast(),
+                    ),
+                )
+            });
+        if let Err(error) = result {
+            eprintln!("{error}");
+        }
+    }
+}
+
+/// One request owns both ranks, both segments, stable inputs, device counters
+/// and the real sampler. Drop drains BOTH ranks before any captured resource
+/// is released. MatrixStep declares this before its workspace/cache references.
+pub(crate) struct ReplayPair {
+    graphs: [[Option<ReplayGraph>; 2]; 2],
+    pub sampler: crate::dsv4_sampler::Dsv4DeviceSampler,
+    input: [CudaSlice<u64>; 2],
+    host: [crate::PinnedHostBuf; 2],
+    counters: [CudaSlice<u64>; 2],
+    streams: [Arc<CudaStream>; 2],
+    pub cfg: crate::dsv4_gpu::Dsv4SampleCfg,
+    pub ready: bool,
+    pub owner: usize,
+    pub captures: [u64; 2],
+    pub ar_blocks: [i32; 2],
+}
+impl ReplayPair {
+    pub fn new(
+        streams: [Arc<CudaStream>; 2],
+        sampler: crate::dsv4_sampler::Dsv4DeviceSampler,
+        cfg: crate::dsv4_gpu::Dsv4SampleCfg,
+        owner: usize,
+    ) -> Result<Self, String> {
+        let mut inputs = Vec::new();
+        let mut hosts = Vec::new();
+        let mut counts = Vec::new();
+        for stream in &streams {
+            stream
+                .context()
+                .bind_to_thread()
+                .map_err(|e| e.to_string())?;
+            inputs.push(stream.alloc_zeros(3).map_err(|e| e.to_string())?);
+            counts.push(stream.alloc_zeros(2).map_err(|e| e.to_string())?);
+            hosts.push(crate::PinnedHostBuf::new(24).map_err(|e| e.to_string())?);
+            stream.synchronize().map_err(|e| e.to_string())?;
+        }
+        Ok(Self {
+            graphs: [[None, None], [None, None]],
+            sampler,
+            input: inputs.try_into().map_err(|_| "replay input rank count")?,
+            host: hosts.try_into().map_err(|_| "replay host rank count")?,
+            counters: counts.try_into().map_err(|_| "replay counter rank count")?,
+            streams,
+            cfg,
+            ready: false,
+            owner,
+            captures: [0; 2],
+            ar_blocks: [
+                crate::tp_ar::ar_blocks_for(4096),
+                crate::tp_ar::ar_blocks_for(6 * 4096),
+            ],
+        })
+    }
+    pub fn upload(&mut self, token: u32, pos: usize, fault: u64) -> Result<(), String> {
+        let words = [
+            u64::from(token) | ((pos as u64) << 32),
+            crate::dsv4_gpu::dsv4_pos_uniform(self.cfg.seed, pos + 1).to_bits(),
+            fault,
+        ];
+        for rank in 0..2 {
+            let stream = &self.streams[rank];
+            stream
+                .context()
+                .bind_to_thread()
+                .map_err(|e| e.to_string())?;
+            let src = unsafe {
+                std::slice::from_raw_parts_mut(
+                    self.host[rank].as_mut_slice().as_mut_ptr().cast::<u64>(),
+                    3,
+                )
+            };
+            src.copy_from_slice(&words);
+            stream
+                .memcpy_htod(&src[..], &mut self.input[rank])
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+    pub fn begin(&mut self, segment: usize) -> Result<(), String> {
+        for rank in 0..2 {
+            if self.graphs[rank][segment].is_some() {
+                return Err("replay recapture refused".into());
+            }
+            self.graphs[rank][segment] = Some(ReplayGraph::begin(self.streams[rank].clone())?);
+        }
+        Ok(())
+    }
+    pub fn end(&mut self, segment: usize) -> Result<(), String> {
+        for rank in 0..2 {
+            self.graphs[rank][segment]
+                .as_mut()
+                .ok_or("replay capture missing")?
+                .end()?;
+            let census = self.graphs[rank][segment].as_ref().expect("capture").census;
+            if census[6] != 0
+                || (segment == 0 && (census[2] != 86 || census[3] != 1 || census[4] != 86))
+            {
+                return Err(format!(
+                    "incomplete full-token graph rank {rank} segment {segment}: {census:?}"
+                ));
+            }
+        }
+        self.captures[segment] += 1;
+        Ok(())
+    }
+    pub fn launch(&self, segment: usize) -> Result<(), String> {
+        // Never drain the first rank before submission of the second.
+        for rank in 0..2 {
+            self.graphs[rank][segment]
+                .as_ref()
+                .ok_or("replay graph missing")?
+                .launch()?;
+        }
+        Ok(())
+    }
+    pub fn census(&self) -> [[[u64; 7]; 2]; 2] {
+        std::array::from_fn(|r| {
+            std::array::from_fn(|s| self.graphs[r][s].as_ref().map_or([0; 7], |g| g.census))
+        })
+    }
+    pub fn dump(&self, directory: &std::path::Path) -> Result<(), String> {
+        self.drain_both()?;
+        for rank in 0..2 {
+            for segment in 0..2 {
+                let graph = self.graphs[rank][segment]
+                    .as_ref()
+                    .ok_or("graph dump before complete capture")?;
+                let name = format!("full-token-rank{rank}-segment{segment}.dot");
+                let path = directory.join(name);
+                let path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+                    .map_err(|e| e.to_string())?;
+                graph
+                    .stream
+                    .context()
+                    .bind_to_thread()
+                    .map_err(|e| e.to_string())?;
+                unsafe {
+                    crate::dsv4_ffi::ck(
+                        "replay graph dump",
+                        crate::dsv4_ffi::memra_dsv4_replay_dump(graph.graph, path.as_ptr()),
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+    pub fn input_ptr(&self, rank: usize) -> *const u64 {
+        self.input[rank].device_ptr(&self.streams[rank]).0 as *const u64
+    }
+    pub fn counter_ptr(&mut self, rank: usize, segment: usize) -> *mut u64 {
+        unsafe {
+            (self.counters[rank].device_ptr_mut(&self.streams[rank]).0 as *mut u64).add(segment)
+        }
+    }
+    pub fn counts(&self) -> Result<[[u64; 2]; 2], String> {
+        let mut out = [[0; 2]; 2];
+        for (rank, row) in out.iter_mut().enumerate() {
+            self.streams[rank]
+                .context()
+                .bind_to_thread()
+                .map_err(|e| e.to_string())?;
+            self.streams[rank]
+                .memcpy_dtoh(&self.counters[rank], row)
+                .map_err(|e| e.to_string())?;
+            self.streams[rank]
+                .synchronize()
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(out)
+    }
+    pub fn abort_capture_both(&self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for (rank, stream) in self.streams.iter().enumerate() {
+            let result = stream
+                .context()
+                .bind_to_thread()
+                .map_err(|e| e.to_string())
+                .and_then(|()| unsafe {
+                    crate::dsv4_ffi::ck(
+                        "replay capture abort",
+                        crate::dsv4_ffi::memra_dsv4_replay_abort(stream.cu_stream().cast()),
+                    )
+                });
+            if let Err(error) = result {
+                errors.push(format!("rank {rank}: {error}"));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+    pub fn drain_both(&self) -> Result<(), String> {
+        require_pair_completion("ReplayPair drain", |rank| {
+            let stream = &self.streams[rank];
+            stream
+                .context()
+                .bind_to_thread()
+                .and_then(|()| stream.synchronize())
+                .map_err(|e| e.to_string())
+        });
+        Ok(())
+    }
+}
+impl Drop for ReplayPair {
+    fn drop(&mut self) {
+        // Abort capture first: synchronizing a captured stream is prohibited.
+        if let Err(error) = self.abort_capture_both() {
+            replay_fail_stop("ReplayPair drop capture abort", &error);
+        }
+        if let Err(error) = self.drain_both() {
+            replay_fail_stop("ReplayPair drop drain", &error);
+        }
+    }
+}
+
 pub struct Dsv4LayerCapture {
     pub layer: usize,
     pub nodes: BTreeMap<String, usize>,
@@ -110,6 +459,188 @@ pub(crate) fn capture_layer(
 mod tests {
     use super::*;
     use cudarc::driver::{CudaContext, DevicePtr, DevicePtrMut};
+
+    #[test]
+    fn replay_completion_policy_fail_stop_subprocess() {
+        const CHILD: &str = "MEMRA_TEST_REPLAY_DRAIN_FAILURE_CHILD";
+        if let Ok(value) = std::env::var(CHILD) {
+            struct CapturedStorage;
+            impl Drop for CapturedStorage {
+                fn drop(&mut self) {
+                    eprintln!("CAPTURED_STORAGE_RELEASED");
+                }
+            }
+            let _request_workspace = CapturedStorage;
+            let (scenario, rank) = value.split_once(':').unwrap();
+            let failed_rank = rank.parse::<usize>().unwrap();
+            let drain = |rank| {
+                eprintln!("DRAIN_ATTEMPTED_{rank}");
+                if rank == failed_rank {
+                    Err("injected drain failure".into())
+                } else {
+                    Ok(())
+                }
+            };
+            if scenario == "drop" {
+                struct CompletionGuard<F: FnMut(usize) -> Result<(), String>>(F);
+                impl<F: FnMut(usize) -> Result<(), String>> Drop for CompletionGuard<F> {
+                    fn drop(&mut self) {
+                        require_pair_completion("destructor unwind", &mut self.0);
+                    }
+                }
+                let _guard = CompletionGuard(drain);
+                panic!("original submission exception");
+            }
+            require_pair_completion("injected failed CUDA completion", drain);
+            panic!("failed completion returned instead of aborting");
+        }
+        for scenario in ["error", "drop"] {
+            for rank in 0..2 {
+                use std::os::unix::process::ExitStatusExt;
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "dsv4_graph::tests::replay_completion_policy_fail_stop_subprocess",
+                        "--nocapture",
+                    ])
+                    .env(CHILD, format!("{scenario}:{rank}"))
+                    .output()
+                    .unwrap();
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                assert_eq!(output.status.signal(), Some(libc::SIGABRT), "{stderr}");
+                assert!(
+                    stderr.contains("DRAIN_ATTEMPTED_0") && stderr.contains("DRAIN_ATTEMPTED_1"),
+                    "{stderr}"
+                );
+                assert!(
+                    stderr.contains("injected drain failure")
+                        && stderr.contains("completion unproven"),
+                    "{stderr}"
+                );
+                assert!(
+                    !stderr.contains("CAPTURED_STORAGE_RELEASED"),
+                    "destructor ran: {stderr}"
+                );
+            }
+        }
+        let mut attempts = Vec::new();
+        require_pair_completion("successful drains after ordinary refusal", |rank| {
+            attempts.push(rank);
+            Ok(())
+        });
+        assert_eq!(attempts, [0, 1]);
+    }
+
+    #[test]
+    #[ignore = "requires the exclusively locked development pair; runtime lifetime gate, not a model gate"]
+    fn replay_rust_partial_submission_and_capture_cleanup() {
+        let contexts = [CudaContext::new(0).unwrap(), CudaContext::new(1).unwrap()];
+        for ctx in &contexts {
+            unsafe {
+                ctx.disable_event_tracking();
+            }
+        }
+        let streams = [
+            contexts[0].new_stream().unwrap(),
+            contexts[1].new_stream().unwrap(),
+        ];
+        let make_pair = || {
+            let sampler =
+                crate::dsv4_sampler::Dsv4DeviceSampler::new(streams[1].clone(), 257).unwrap();
+            ReplayPair::new(
+                streams.clone(),
+                sampler,
+                crate::dsv4_gpu::Dsv4SampleCfg {
+                    temperature: 1.0,
+                    top_p: 1.0,
+                    top_k: 0,
+                    seed: 1,
+                },
+                0,
+            )
+            .unwrap()
+        };
+        let assert_uncaptured = || {
+            for stream in &streams {
+                stream.context().bind_to_thread().unwrap();
+                assert_eq!(
+                    stream.capture_status().unwrap(),
+                    sys::CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE
+                );
+                stream.synchronize().unwrap();
+            }
+        };
+        // Actual Rust owner unwinding from a capture-body failure. No execution
+        // occurred; Drop must end BOTH capture scopes before its paired drain.
+        let capture_error = (|| -> Result<(), String> {
+            let mut pair = make_pair();
+            pair.begin(0)?;
+            Err("injected capture body failure".into())
+        })()
+        .unwrap_err();
+        assert_eq!(capture_error, "injected capture body failure");
+        assert_uncaptured();
+        // End/instantiate error at the real Rust capture_end FFI boundary.
+        {
+            let mut pair = make_pair();
+            pair.begin(0).unwrap();
+            pair.abort_capture_both().unwrap();
+            let error = pair.graphs[0][0].as_mut().unwrap().end().unwrap_err();
+            assert!(error.contains("replay capture end"), "{error}");
+            // This deliberately calls EndCapture on a stream already ended by
+            // abort_capture_both. Consume only its asserted CUDA API last error
+            // before testing later launches; do not mask an unexpected failure.
+            assert!(error.ends_with("rc=10401"), "unexpected end error: {error}");
+            unsafe extern "C" {
+                fn cudaGetLastError() -> i32;
+            }
+            assert_eq!(
+                unsafe { cudaGetLastError() },
+                401,
+                "expected illegal-state error"
+            );
+            eprintln!("PASS Rust capture-end failure rc=10401 asserted and consumed");
+        }
+        assert_uncaptured();
+        // Use the runtime's actual pair-launch loop and real graph counters.
+        // These are tiny no-peer graphs; they cover Rust ownership/submission,
+        // not the C++ fixture's peer barriers or full-model layer coverage.
+        for segment in 0..2 {
+            let mut pair = make_pair();
+            pair.begin(segment).unwrap();
+            for (rank, stream) in streams.iter().enumerate() {
+                stream.context().bind_to_thread().unwrap();
+                unsafe {
+                    crate::dsv4_ffi::ck(
+                        "test replay tick",
+                        crate::dsv4_ffi::memra_dsv4_replay_tick(
+                            pair.counter_ptr(rank, segment),
+                            stream.cu_stream().cast(),
+                        ),
+                    )
+                    .unwrap();
+                }
+            }
+            // Finish primitive graphs directly: the full-forward census gate
+            // deliberately rejects tiny fixtures. Production census is untouched.
+            for rank in 0..2 {
+                pair.graphs[rank][segment].as_mut().unwrap().end().unwrap();
+            }
+            let peer = pair.graphs[1][segment].take();
+            let error = pair.launch(segment).unwrap_err();
+            assert!(error.contains("replay graph missing"), "{error}");
+            pair.drain_both().unwrap();
+            let counts = pair.counts().unwrap();
+            assert_eq!(counts[0][segment], 1, "first rank never submitted");
+            assert_eq!(counts[1][segment], 0, "second rank unexpectedly submitted");
+            pair.graphs[1][segment] = peer;
+            drop(pair);
+            assert_uncaptured();
+            eprintln!(
+                "PASS Rust partial segment={segment} first_submit=1 second_submit=0 paired_completion=1"
+            );
+        }
+    }
 
     #[test]
     #[ignore = "requires an exclusively locked non-serving CUDA device"]

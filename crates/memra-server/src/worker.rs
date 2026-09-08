@@ -2687,6 +2687,22 @@ impl AdmissionCostModel {
             .saturating_add(self.activation_bytes)
     }
 
+    /// Replace only the cold prefill workspace for a guaranteed whole-entry restore.
+    /// Active KV, fixed residual, draft state and the caller's reserve are unchanged.
+    fn cost_after_prefix_restore(
+        &self,
+        cold_cost: usize,
+        prompt_rows: usize,
+        restored_rows: usize,
+    ) -> Option<usize> {
+        if restored_rows == 0 || restored_rows > prompt_rows {
+            return None;
+        }
+        cold_cost
+            .checked_sub(self.prefill_workspace_bytes(prompt_rows))?
+            .checked_add(self.prefill_workspace_bytes(prompt_rows - restored_rows))
+    }
+
     /// Learn only the fixed residual beyond the exact context allocation.
     /// Returns the new high-water value when it moved.
     fn observe(&mut self, observed_bytes: usize, ctx_cap: usize, spec: bool) -> Option<usize> {
@@ -6529,6 +6545,19 @@ impl PrefixCache {
         self.pin(key, i).map(|pin| (pin, tokens))
     }
 
+    fn admission_restore_rows(&self, pin: &PrefixPin, prompt: &[u32]) -> Option<usize> {
+        let entry = &self.entries.get(&pin.key)?[self.id_index(pin)?];
+        (entry.pins > 0
+            && entry.layout_version == PREFIX_ENTRY_LAYOUT_VERSION
+            && entry.pool_key == pin.key
+            && entry.pos == entry.toks.len()
+            && entry.pos >= PREFIX_CACHE_MIN_TOKENS
+            && prompt.starts_with(&entry.toks)
+            && entry.tp.is_none()
+            && entry.latent.iter().all(Option::is_none))
+        .then_some(entry.pos)
+    }
+
     /// Release one session lease. The last release makes the entry evictable again and
     /// treats the protected fanout interval as recent use.
     fn unpin(&mut self, pin: &PrefixPin) -> bool {
@@ -9773,6 +9802,13 @@ fn prefix_snapshot(
         segment: PrefixSegment::Probation,
         pins: 0,
     })
+}
+
+/// An admission discount is bound to one leased whole-entry restore. The caller
+/// retains this lease through admit(), whose failure paths cannot fall through cold.
+struct AdmissionPrefixRestore {
+    pin: PrefixPin,
+    rows: usize,
 }
 
 /// Deep-copy the first `restore_len` tokens of an entry INTO a freshly allocated session cache:
@@ -13067,6 +13103,8 @@ pub fn run(
     // if configured but unloadable — silently serving text-only would be dishonest.
     // MEMRA_VISION=0 skips the tower even with the dir configured (owner knob for
     // VRAM-tight boxes: ~1.8 GB f32-resident). Image requests then 400 at the HTTP layer.
+    memra_engine::dflash::trace_allocation_phase(&engine, "vision-before")
+        .expect("allocation phase trace");
     let vision_tower: Option<memra_engine::vision::VisionTower> =
         match std::env::var("MEMRA_VISION_DIR") {
             Ok(_) if std::env::var("MEMRA_VISION").as_deref() == Ok("0") => {
@@ -13079,6 +13117,8 @@ pub fn run(
             ),
             Err(_) => None,
         };
+    memra_engine::dflash::trace_allocation_phase(&engine, "vision-after")
+        .expect("allocation phase trace");
     // GEMMA-4 vision tower (lane/gemma-vision): loaded once at spawn behind the seam. Fail
     // LOUD at boot if configured but unloadable. Default off — no gemma image serving until
     // an operator sets MEMRA_GEMMA_VISION=1 + MEMRA_GEMMA_MMPROJ=<gemma4v mmproj>.
@@ -14132,6 +14172,7 @@ pub fn run(
                 peer_probe_allows_spec,
             );
             let admission_cap = shape.admission_cap();
+            let mut admission_restore: Option<AdmissionPrefixRestore> = None;
             let decode_policy = chunk_policies
                 .get(&model_key)
                 .expect("loaded model missing decode chunk policy");
@@ -14186,7 +14227,7 @@ pub fn run(
                 (true, None) => loaded[&model_key].model.draft_session_admission_bytes(),
             };
             let cost_pre_draft = cost;
-            let cost = cost.saturating_add(draft_state_bytes);
+            let mut cost = cost.saturating_add(draft_state_bytes);
             if log_estimate && draft_state_bytes > 0 {
                 // Separate line, never a reshape of the request-cost line below (ops gates
                 // grep that line's existing arithmetic shape).
@@ -14494,14 +14535,14 @@ pub fn run(
                 } else {
                     None
                 };
-                let required = admission_required(cost, reserve);
+                let mut required = admission_required(cost, reserve);
                 // EAGER-ARM twin (lane/step37-vram-admission-20260830): the draft-state
                 // charge models a session that CAPTURES its draft graphs. When headroom
                 // cannot hold that arm, the pre-capture reserve gate will refuse the
                 // captures at this same headroom, so the honest charge for the work that
                 // will actually run is the EAGER one. Consulted only after the captured
                 // arm defers, and only while the gate that enforces it is armed.
-                let required_eager =
+                let mut required_eager =
                     admission_required(cost.saturating_sub(draft_state_bytes), reserve);
                 let device_requirements = if pp_plan.is_some()
                     || !request_tp_kv.is_empty()
@@ -14652,7 +14693,63 @@ pub fn run(
                         }
                     }
                     if let Some(pin) = reclaim_prefix_pin {
-                        px.unpin(&pin);
+                        // #361: the normal full-cost path has reclaimed every unleased
+                        // donor and parked session it needs. Only a concrete retained
+                        // single-device restore can now replace the cold workspace charge.
+                        // Context KV, source residency, draft state and reserve stay paid.
+                        let can_plan = device_requirements.is_none()
+                            && !is_multi_device_deployment(&loaded)
+                            && !confidence_trace_enabled()
+                            && serve_batching()
+                            && prefix_cache_budget_bytes() > 0
+                            && std::env::var("MEMRA_KV_REUSE").as_deref() != Ok("0")
+                            && req.oom_retries == 0
+                            && req.capture.is_none()
+                            && req.grammar.is_none()
+                            && req.images.is_empty()
+                            && req.gemma_images.is_empty()
+                            && req.glm5_images.is_empty()
+                            && req.step_images.is_empty()
+                            && !dspark_drafts.contains_key(&model_key)
+                            && !gemma_drafts.contains_key(&model_key)
+                            && model.hyper.is_none()
+                            && !(memra_engine::cache::swa_ring_on()
+                                && memra_engine::plan_backend::decode_batch_program(&model.plan)
+                                    == memra_engine::plan_backend::DecodeBatchProgram::SlidingGatedMoe);
+                        let restored = can_plan
+                            .then(|| {
+                                px.admission_restore_rows(
+                                    &pin,
+                                    req.prepared_prompt.as_ref().unwrap(),
+                                )
+                            })
+                            .flatten();
+                        let planned_cost = restored.and_then(|rows| {
+                            let model = &admission_costs[&model_key];
+                            model.cost_after_prefix_restore(cost, prompt_len, rows)
+                        });
+                        if let Some((rows, next_cost)) = restored.zip(planned_cost)
+                            && !headroom.sufficient(required)
+                            && next_cost < cost
+                            && headroom.sufficient(admission_required(next_cost, reserve))
+                        {
+                            eprintln!(
+                                "[admission] retained prefix plan: model={model_key:?} \
+                                 restored={rows} suffix={} cost {:.0}MB -> {:.0}MB; \
+                                 reserve {:.0}MB unchanged; cold fallback forbidden",
+                                prompt_len - rows,
+                                cost as f64 / 1e6,
+                                next_cost as f64 / 1e6,
+                                reserve as f64 / 1e6,
+                            );
+                            cost = next_cost;
+                            required = admission_required(cost, reserve);
+                            required_eager =
+                                admission_required(cost.saturating_sub(draft_state_bytes), reserve);
+                            admission_restore = Some(AdmissionPrefixRestore { pin, rows });
+                        } else {
+                            px.unpin(&pin);
+                        }
                     }
                     let eager_arm = !headroom.sufficient(required)
                         && draft_state_bytes > 0
@@ -14906,7 +15003,7 @@ pub fn run(
                     s.constraint.is_some(),
                 )
             });
-            match admit(
+            let admitted = admit(
                 &engine,
                 &loaded,
                 &mut reuse,
@@ -14922,6 +15019,7 @@ pub fn run(
                 has_exact_preprime_dspark_owner,
                 *req,
                 shape,
+                admission_restore.as_ref(),
                 peer_probe_allows_spec,
                 gemma_draft_ready,
                 dspark_draft,
@@ -14929,7 +15027,11 @@ pub fn run(
                 vision_tower.as_ref(),
                 glm5_tower.as_ref(),
                 step_tower.as_ref(),
-            ) {
+            );
+            if let Some(plan) = admission_restore {
+                px.unpin(&plan.pin);
+            }
+            match admitted {
                 Ok(mut s) => {
                     // The request has crossed the worker admission boundary and now lives in
                     // `active`; its queue reservation must no longer count against waiting
@@ -18334,6 +18436,7 @@ fn admit(
     has_exact_preprime_dspark_owner: bool,
     mut req: Request,
     shape: RequestShape,
+    admission_restore: Option<&AdmissionPrefixRestore>,
     peer_probe_allows_spec: bool,
     gemma_draft_ready: bool,
     // The drafter itself, not just "is one attached": a prefix hit that carries a draft tail is
@@ -18574,14 +18677,15 @@ fn admit(
         && std::env::var("MEMRA_KV_REUSE")
             .map(|v| v != "0")
             .unwrap_or(true);
-    if let (true, Some(pool)) = (reuse_on, reuse.get_mut(&pool_key))
-        && let Some(idx) = pool.iter().rposition(|e| {
-            e.fed.len() >= REUSE_MIN_PREFIX
-                && plain_resume_cap_admits(e.cap, ctx_cap, kv_park_compact_on())
-                && prompt.len() >= e.fed.len()
-                && prompt.starts_with(&e.fed)
-        })
-    {
+    if let (true, Some(pool)) = (
+        reuse_on && admission_restore.is_none(),
+        reuse.get_mut(&pool_key),
+    ) && let Some(idx) = pool.iter().rposition(|e| {
+        e.fed.len() >= REUSE_MIN_PREFIX
+            && plain_resume_cap_admits(e.cap, ctx_cap, kv_park_compact_on())
+            && prompt.len() >= e.fed.len()
+            && prompt.starts_with(&e.fed)
+    }) {
         reused = Some(pool.remove(idx));
     }
     // PARK-COMPACT GROW (MEMRA_KV_PARK_COMPACT, Arc C1): a compacted entry parked at
@@ -18671,7 +18775,7 @@ fn admit(
     // committed tokens up to the pre-generation boundary; only this turn's delta primes. A
     // fingerprint collision costs one wasted comparison, never a wrong resume (bytes decide).
     // MEMRA_AFFINITY=0 declines every candidate (the exactness A/B arm).
-    if reuse_on && reused.is_none() && affinity_enabled() {
+    if reuse_on && admission_restore.is_none() && reused.is_none() && affinity_enabled() {
         let req_fp = conversation_fingerprint(&prompt, &|t| lm.tok.token_is_control(t), true);
         let candidate = if let Some(pool) = reuse.get(&pool_key) {
             // WHY A DECLINE IS LOGGED (mirrors the spec tier): every requirement below is
@@ -18994,7 +19098,7 @@ fn admit(
     // resolves; it is RELEASED unconditionally after the probe block below, whatever route
     // the request took (the serving hit path takes its own pin first).
     let mut host_promote_pin: Option<PrefixPin> = None;
-    if prefix_on && reused.is_none() && hpx.armed() {
+    if prefix_on && reused.is_none() && admission_restore.is_none() && hpx.armed() {
         let device_best_len = consumable_hit
             .map(|i| px.entries[&pool_key][i].toks.len())
             .unwrap_or(0);
@@ -19097,6 +19201,21 @@ fn admit(
     // plain-session cache; every engine surveyed gates drafting off at high load anyway —
     // research/cache-spec-design-20260814/REPORT.md). On a miss, the armed snapshot_at /
     // seed_prefix boundary rides into the spec session as its capture request.
+    if let Some(plan) = admission_restore {
+        if !prefix_on
+            || reused.is_some()
+            || dspark_prefers_cold
+            || px.admission_restore_rows(&plan.pin, &prompt) != Some(plan.rows)
+        {
+            return Err((
+                req.tx,
+                EngineError::rate_limit(
+                    "retained prefix admission plan is no longer usable; cold admission required",
+                ),
+            ));
+        }
+        consumable_hit = px.id_index(&plan.pin);
+    }
     if should_probe_prefix_cache(
         prefix_on,
         reused.is_some(),
@@ -19207,6 +19326,16 @@ fn admit(
                     reused = Some(entry);
                 }
                 Err(msg) => {
+                    if admission_restore.is_some() {
+                        // The discounted admission bought this restore, never a cold
+                        // prime. The caller releases its lease on this error too.
+                        return Err((
+                            req.tx,
+                            EngineError::rate_limit(format!(
+                                "retained prefix materialization failed ({msg}); cold admission required",
+                            )),
+                        ));
+                    }
                     // headroom discipline: sessions win over the cache — on alloc pressure
                     // drop every entry so the cold path (and the retries behind it) can fit.
                     if msg.starts_with("session cache alloc failed") {
@@ -19617,6 +19746,19 @@ fn admit(
                         });
                     }
                     Err((None, why)) => {
+                        if admission_restore.is_some() {
+                            // The failed conversion consumed the paid restore. Release
+                            // the serving lease; the caller releases its admission lease.
+                            if let Some(pin) = prefix_pin.take() {
+                                px.unpin(&pin);
+                            }
+                            return Err((
+                                req.tx,
+                                EngineError::rate_limit(format!(
+                                    "retained prefix conversion failed ({why}); cold admission required",
+                                )),
+                            ));
+                        }
                         // the carrier is part-fed and unusable: serve this request
                         // cold-plain (correct, slower); the entry stays published.
                         spec_restore_declined = Some("conversion failed mid-feed (serves COLD)");
@@ -29381,6 +29523,80 @@ mod tests {
 
     fn toks(n: usize) -> Vec<u32> {
         (0..n as u32).collect()
+    }
+
+    #[test]
+    fn retained_restore_plan_requires_a_live_matching_lease_and_boundary() {
+        let k = key("tenant");
+        let mut px = PrefixCache::default();
+        let tokens = toks(PREFIX_CACHE_MIN_TOKENS);
+        let mut donor = entry(&k, tokens.clone());
+        donor.pos = tokens.len();
+        px.insert_with_budget(&k, donor, "source", 2);
+        let (pin, rows) = px.pin_prompt_prefix(&k, &tokens).unwrap();
+        let mut prompt = tokens.clone();
+        prompt.extend([42, 43]);
+        assert_eq!(px.admission_restore_rows(&pin, &prompt), Some(rows));
+        assert_eq!(px.evict_all(), 0);
+        assert_eq!(px.admission_restore_rows(&pin, &prompt), Some(rows));
+        assert_eq!(px.admission_restore_rows(&pin, &tokens[..rows - 1]), None);
+        prompt[0] = u32::MAX;
+        assert_eq!(px.admission_restore_rows(&pin, &prompt), None);
+        px.entries.get_mut(&k).unwrap()[0].pos -= 1;
+        assert_eq!(px.admission_restore_rows(&pin, &tokens), None);
+        px.entries.get_mut(&k).unwrap()[0].pos = rows;
+        px.entries.get_mut(&k).unwrap()[0].layout_version += 1;
+        assert_eq!(px.admission_restore_rows(&pin, &tokens), None);
+        px.entries.get_mut(&k).unwrap()[0].layout_version = PREFIX_ENTRY_LAYOUT_VERSION;
+        assert!(px.unpin(&pin));
+        assert_eq!(px.admission_restore_rows(&pin, &tokens), None);
+        assert_eq!(px.evict_all(), 1);
+        assert_eq!(px.admission_restore_rows(&pin, &tokens), None);
+    }
+
+    #[test]
+    fn retained_restore_cost_keeps_context_draft_residual_and_reserve_paid() {
+        let model = super::AdmissionCostModel {
+            plain_bytes_per_token: 9280,
+            spec_bytes_per_token: 10208,
+            plain_ring_bytes_per_token: 0,
+            spec_ring_bytes_per_token: 0,
+            ring_rows: 0,
+            activation_bytes: 370 << 20,
+            prefill: None,
+            prime: Some(memra_engine::hybrid_forward::PrimeWorkspaceShape {
+                call_row_bytes: 345_000,
+                prompt_row_bytes: 8192,
+                n_layers: 40,
+            }),
+            transient_floor: Some(1536 << 20),
+            pp_activation_bytes: [0; 4],
+            last_logged: None,
+        };
+        let prompt = 257_768;
+        let restored = 257_696;
+        let ctx = 262_144;
+        let draft = 134 << 20;
+        let reserve = 1536 << 20;
+        let cold = model.estimate(ctx, prompt, true) + draft;
+        let warm = model
+            .cost_after_prefix_restore(cold, prompt, restored)
+            .unwrap();
+        assert!(warm < cold);
+        assert_eq!(
+            warm,
+            model.context_bytes(ctx, true)
+                + model.activation_bytes
+                + draft
+                + model.prefill_workspace_bytes(prompt - restored)
+        );
+        assert_eq!(super::admission_required(warm, reserve), warm + reserve);
+        assert_eq!(model.cost_after_prefix_restore(cold, prompt, 0), None);
+        assert_eq!(
+            model.cost_after_prefix_restore(cold, prompt, prompt + 1),
+            None
+        );
+        assert_eq!(model.cost_after_prefix_restore(0, prompt, restored), None);
     }
 
     #[test]

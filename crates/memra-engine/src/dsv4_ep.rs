@@ -230,6 +230,8 @@ impl TpEpArState {
         owner_output: &mut CudaSlice<f32>,
         peer_output: &mut CudaSlice<f32>,
         n: usize,
+        capture: bool,
+        fault: Option<([*const u64; 2], i32)>,
     ) -> Res<()> {
         if n == 0
             || owner_input.len() < n
@@ -291,21 +293,42 @@ impl TpEpArState {
                 peer_error_ptr,
             ),
         ] {
+            if capture {
+                gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            }
             let stream = gpu.stream();
             let rc = unsafe {
-                crate::tp_ar::memra_tp_ar_1stage(
-                    in0,
-                    in1,
-                    out,
-                    self_signal,
-                    peer_signal,
-                    rank,
-                    n as i64,
-                    error,
-                    crate::tp_ar::AR_SPIN_LIMIT,
-                    blocks,
-                    stream.cu_stream().cast(),
-                )
+                if let Some((inputs, site)) = fault {
+                    crate::tp_ar::memra_tp_ar_1stage_replay(
+                        in0,
+                        in1,
+                        out,
+                        self_signal,
+                        peer_signal,
+                        rank,
+                        n as i64,
+                        error,
+                        crate::tp_ar::AR_SPIN_LIMIT,
+                        blocks,
+                        stream.cu_stream().cast(),
+                        inputs[rank as usize].cast(),
+                        site,
+                    )
+                } else {
+                    crate::tp_ar::memra_tp_ar_1stage(
+                        in0,
+                        in1,
+                        out,
+                        self_signal,
+                        peer_signal,
+                        rank,
+                        n as i64,
+                        error,
+                        crate::tp_ar::AR_SPIN_LIMIT,
+                        blocks,
+                        stream.cu_stream().cast(),
+                    )
+                }
             };
             if rc != 0 {
                 return Err(format!(
@@ -319,6 +342,30 @@ impl TpEpArState {
 
     pub(crate) fn launches(&self) -> u64 {
         self.launches
+    }
+    pub(crate) fn epochs_for_gate(&self, owner: &Gpu, peer: &Gpu) -> Res<[Vec<u32>; 2]> {
+        let offset = unsafe { crate::tp_ar::memra_tp_ar_seq_offset_bytes() } as usize;
+        let mut out = [Vec::new(), Vec::new()];
+        for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+            if offset + 72 * 4 > self.signal[rank].len() {
+                return Err("AR epoch view outside signal allocation".into());
+            }
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = gpu.stream();
+            let mut bytes = vec![0u8; 72 * 4];
+            stream
+                .memcpy_dtoh(
+                    &self.signal[rank].slice(offset..offset + 72 * 4),
+                    &mut bytes,
+                )
+                .map_err(|e| e.to_string())?;
+            stream.synchronize().map_err(|e| e.to_string())?;
+            out[rank] = bytes
+                .chunks_exact(4)
+                .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+                .collect();
+        }
+        Ok(out)
     }
 
     pub(crate) fn refusal_words(&self, owner: &Gpu, peer: &Gpu) -> Res<[i32; 2]> {

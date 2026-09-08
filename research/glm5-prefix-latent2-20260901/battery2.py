@@ -26,16 +26,21 @@ cache-engagement expectation is named and the script exits 2.
 
 usage: battery2.py <outdir> <on|off|bust> [raw_reps]
 env:   EP (default http://127.0.0.1:18400), MODEL (default zai/glm-5.3-flash),
+       CACHE_BATTERY_KEY_FILE (optional bearer key file),
+       CACHE_BATTERY_MAX_TOKENS (default 2048 for sampled completed answers),
        PROMPTS_JSON (default /root/prompts.json)
 """
 
-import hashlib
 import json
 import os
 import sys
-import time
-import urllib.request
 import uuid
+
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from cache_qualification import (QualificationError, append_answer, completion,
+                                 load_prompt_pool, same_identity)
 
 OUT = sys.argv[1]
 ARM = sys.argv[2]
@@ -43,10 +48,18 @@ assert ARM in ("on", "off", "bust"), "arm must be 'on', 'off' or 'bust'"
 RAW_REPS = int(sys.argv[3]) if len(sys.argv) > 3 else 4
 EP = os.environ.get("EP", "http://127.0.0.1:18400")
 MODEL = os.environ.get("MODEL", "zai/glm-5.3-flash")
-POOL = json.load(open(os.environ.get("PROMPTS_JSON", "/root/prompts.json")))["decode"]
+try:
+    POOL, POOL_META = load_prompt_pool(os.environ.get("PROMPTS_JSON", "/root/prompts.json"),
+                                      explicit="PROMPTS_JSON" in os.environ)
+except QualificationError as error:
+    sys.exit(str(error))
+if RAW_REPS < 2:
+    sys.exit("REFUSE: byte identity requires at least two repetitions")
+CHAT_MAX_TOKENS = int(os.environ.get("CACHE_BATTERY_MAX_TOKENS", "2048"))
+
 os.makedirs(OUT, exist_ok=True)
 VIOLATIONS = []
-RESULTS = {"arm": ARM, "ep": EP, "model": MODEL, "raw": [], "rawext": [], "multiturn": [], "depth": []}
+RESULTS = {"arm": ARM, "ep": EP, "model": MODEL, "pool": POOL_META, "raw": [], "rawext": [], "multiturn": [], "depth": []}
 BUST = ARM == "bust"
 
 
@@ -84,104 +97,30 @@ def expect_cached(row, cold, where, full_cover=True):
 
 
 def raw_completion(prompt, name, max_tokens=64, extra=None):
-    body = {
-        "model": MODEL,
-        "prompt": prompt,
-        "max_tokens": max_tokens,
-        "stream": False,
-        "temperature": 0.0,
-        **salt(),
-        **(extra or {}),
-    }
-    req = urllib.request.Request(
-        EP + "/v1/completions",
-        data=json.dumps(body).encode(),
-        headers={"content-type": "application/json"},
-    )
-    t0 = time.time()
-    try:
-        with urllib.request.urlopen(req, timeout=1800) as resp:
-            r = json.loads(resp.read().decode())
-    except Exception as e:  # noqa: BLE001 - every failure is a named receipt row
-        r = {"__error__": f"{type(e).__name__}: {e}"}
-    ch = (r.get("choices") or [{}])[0]
-    txt = ch.get("text", "") or ""
-    u = r.get("usage") or {}
-    row = {
-        "name": name,
-        "wall_s": round(time.time() - t0, 3),
-        "prompt_tokens": u.get("prompt_tokens"),
-        "cached_tokens": (u.get("prompt_tokens_details") or {}).get("cached_tokens"),
-        "completion_tokens": u.get("completion_tokens"),
-        "finish": ch.get("finish_reason"),
-        "out_sha16": hashlib.sha256(txt.encode()).hexdigest()[:16],
-        "spec": (u.get("spec") or {}),
-        "error": r.get("__error__"),
-    }
-    open(f"{OUT}/{name}.json", "w").write(json.dumps(r, indent=1))
+    # Bounded greedy tapes are byte instruments, not completed-answer claims.
+    body = {"model": MODEL, "prompt": prompt, "max_tokens": max_tokens,
+            "stream": False, "temperature": 0.0,
+            **salt(),
+            **(extra or {})}
+    row = completion(EP, body, OUT, name, raw_tape=True)
+    if not row["identity_eligible"]:
+        VIOLATIONS.append(f"{name}: invalid byte-oracle row: {row['error']}")
     return row
 
 
-def chat(messages, name, max_tokens=512):
-    body = {
-        "model": MODEL,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "reasoning_effort": "low",
-        "stream": True,
-        "stream_options": {"include_usage": True},
-        **salt(),
+def chat(messages, name, max_tokens=None):
+    # No sampling or reasoning overrides: use the model's vendor defaults.
+    body = {"model": MODEL, "messages": messages,
+            "max_tokens": CHAT_MAX_TOKENS if max_tokens is None else max_tokens,
+            "stream": True, "stream_options": {"include_usage": True},
+            **salt(),
     }
-    req = urllib.request.Request(
-        EP + "/v1/chat/completions",
-        data=json.dumps(body, ensure_ascii=False).encode(),
-        headers={"content-type": "application/json"},
-    )
-    think, out, fr, usage, sse, ttft = [], [], None, None, [], None
-    t0 = time.time()
-    try:
-        with urllib.request.urlopen(req, timeout=1800) as r:
-            for rl in r:
-                line = rl.decode()
-                sse.append(line)
-                s = line.strip()
-                if not s.startswith("data:"):
-                    continue
-                pay = s[5:].strip()
-                if pay == "[DONE]":
-                    break
-                o = json.loads(pay)
-                if o.get("usage"):
-                    usage = o["usage"]
-                c = (o.get("choices") or [{}])[0]
-                if c.get("finish_reason"):
-                    fr = c["finish_reason"]
-                d = c.get("delta") or {}
-                tok = d.get("reasoning") or d.get("reasoning_content") or d.get("content")
-                if tok and ttft is None:
-                    ttft = round(time.time() - t0, 3)
-                if d.get("reasoning") or d.get("reasoning_content"):
-                    think.append(d.get("reasoning") or d.get("reasoning_content"))
-                if d.get("content"):
-                    out.append(d["content"])
-    except Exception as e:  # noqa: BLE001
-        sse.append(f"{type(e).__name__}: {e}")
-    open(f"{OUT}/{name}.sse", "w").write("".join(sse))
-    text, thought = "".join(out), "".join(think)
-    u = usage or {}
-    return {
-        "name": name,
-        "ttft_s": ttft,
-        "wall_s": round(time.time() - t0, 3),
-        "finish": fr,
-        "prompt_tokens": u.get("prompt_tokens"),
-        "cached_tokens": (u.get("prompt_tokens_details") or {}).get("cached_tokens"),
-        "completion_tokens": u.get("completion_tokens"),
-        "spec": (u.get("spec") or {}),
-        "loop_content": loopiness(text),
-        "loop_reasoning": loopiness(thought),
-        "content": text,
-    }
+    row = completion(EP, body, OUT, name)
+    row["loop_content"] = loopiness(row["content"])
+    row["loop_reasoning"] = loopiness(row["reasoning"])
+    if not row["completed_answer"]:
+        VIOLATIONS.append(f"{name}: {row['verdict']}: {row['error']}")
+    return row
 
 
 BAR = "#" * 78
@@ -192,22 +131,23 @@ print(f"# C1 raw /v1/completions greedy, p5/p7, rep0 cold + {RAW_REPS - 1} repea
 print(BAR)
 c1_pass = True
 for idx in (5, 7):
-    shas = []
+    shas, identity_rows = [], []
     for rep in range(RAW_REPS):
         row = raw_completion(POOL[idx]["text"], f"c1-p{idx}-rep{rep}")
         row["idx"], row["rep"] = idx, rep
         expect_cached(row, cold=(rep == 0), where=f"C1 p{idx} rep{rep}")
         RESULTS["raw"].append(row)
         shas.append(row["out_sha16"])
+        identity_rows.append(row)
         print(
             f"  p{idx} rep{rep}: sha={row['out_sha16']} cached={row['cached_tokens']} "
             f"prompt={row['prompt_tokens']} spec={row['spec']} finish={row['finish']} "
             f"err={row['error']}"
         )
-    if len(set(shas)) != 1:
+    if not same_identity(identity_rows):
         c1_pass = False
         VIOLATIONS.append(f"C1 p{idx}: BYTE DIVERGENCE across reps: {shas}")
-    print(f"  == p{idx}: {'ONE sha' if len(set(shas)) == 1 else 'DIVERGED'} ({shas[0]})")
+    print(f"  == p{idx}: {'ONE sha' if same_identity(identity_rows) else 'INVALID OR DIVERGED'} ({shas[0]})")
 print()
 
 # C1b RESTORED-SUFFIX CONTINUATION BYTE ORACLE (THIS lane's bar — the strict-prefix shape
@@ -248,7 +188,7 @@ for idx, jdx in ((5, 6), (7, 3)):
             )
     for r in (cold2, seed1, hit2):
         RESULTS["rawext"].append(r)
-    same = hit2["out_sha16"] == cold2["out_sha16"]
+    same = seed1["identity_eligible"] and same_identity([cold2, hit2])
     if not same:
         c1b_pass = False
         VIOLATIONS.append(
@@ -263,7 +203,7 @@ for idx, jdx in ((5, 6), (7, 3)):
 print()
 
 # C2  THE OWNER-LAW MULTITURN TWIN: 8 turns, larger prompt, full history resent per turn,
-#     vendor-default sampled, reasoning_effort pinned. Per-turn TTFT + engagement.
+#     vendor-default sampled, no sampling overrides. Per-turn TTFT + engagement.
 #     Turn messages are SAVED per turn so the C4 entry-digest compare (runbook) can
 #     replay the exact rendered prompt on a fresh boot.
 print(BAR)
@@ -291,7 +231,10 @@ for turn in range(8):
     looped = row["loop_content"] > 0.5 or row["loop_reasoning"] > 0.5
     row["degenerate_excluded"] = looped
     RESULTS["multiturn"].append({k: v for k, v in row.items() if k != "content"})
-    messages.append({"role": "assistant", "content": row["content"] or "(empty)"})
+    if not row["completed_answer"] or looped:
+        VIOLATIONS.append(f"C2 turn{turn}: stopped continuation after invalid/incomplete/looped answer")
+        break
+    append_answer(messages, row)
     print(
         f"  turn{turn}: ttft={row['ttft_s']}s cached={row['cached_tokens']}/"
         f"{row['prompt_tokens']} completion={row['completion_tokens']} spec={row['spec']} "
@@ -320,9 +263,9 @@ for target_chars in (8_000, 16_000, 32_000):
             + "\n\nSummarize the single most important risk in one sentence.",
         }
     ]
-    cold = chat(prompt, f"c3-{target_chars}-cold", max_tokens=64)
+    cold = chat(prompt, f"c3-{target_chars}-cold", max_tokens=CHAT_MAX_TOKENS)
     expect_cached(cold, cold=True, where=f"C3 {target_chars} cold")
-    hit = chat(prompt, f"c3-{target_chars}-hit", max_tokens=64)
+    hit = chat(prompt, f"c3-{target_chars}-hit", max_tokens=CHAT_MAX_TOKENS)
     expect_cached(hit, cold=False, where=f"C3 {target_chars} hit")
     for row, kind in ((cold, "cold"), (hit, "hit")):
         row["depth_chars"], row["kind"] = target_chars, kind
@@ -334,6 +277,8 @@ for target_chars in (8_000, 16_000, 32_000):
 print()
 
 RESULTS["violations"] = VIOLATIONS
+RESULTS["completed_answer_pass"] = not VIOLATIONS
+RESULTS["verdict"] = "FAIL" if VIOLATIONS else "PASS"
 RESULTS["c1_byte_identity"] = c1_pass
 RESULTS["c1b_continuation_byte_identity"] = c1b_pass
 open(f"{OUT}/battery.json", "w").write(json.dumps(RESULTS, indent=1))

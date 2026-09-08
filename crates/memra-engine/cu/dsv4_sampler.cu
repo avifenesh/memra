@@ -71,7 +71,8 @@ __device__ double dsv4_sample_cdf(const double* prefix, const double* blocks, in
     return __dadd_rn(prefix[i], blocks[i / B]);
 }
 __global__ void dsv4_sample_draw(const uint64_t* keys, const double* prefix,
-    const double* blocks, int k, double top_p, double uniform, unsigned* result) {
+    const double* blocks, int k, double top_p, double uniform, unsigned* result, const double* uniform_dev = nullptr) {
+    if (uniform_dev) uniform = *uniform_dev;
     if (threadIdx.x || blockIdx.x) return;
     if (result[1]) { result[0] = 0xffffffffu; return; }
     double total = blocks[(k + B - 1) / B];
@@ -91,10 +92,10 @@ __global__ void dsv4_sample_draw(const uint64_t* keys, const double* prefix,
     }
     result[0] = (unsigned)keys[lo];
 }
-extern "C" int memra_dsv4_sample_device(const float* logits, float* values,
+static int dsv4_sample_device_enqueue(const float* logits, float* values,
     uint64_t* keys0, uint64_t* keys1, double* prefix, double* blocks,
     const int* counts, unsigned* result, int n, int k, double temperature,
-    double top_p, double uniform, float repeat, float freq, float present, void* raw_stream) {
+    double top_p, double uniform, float repeat, float freq, float present, void* raw_stream, const double* uniform_dev) {
     if (n <= 0 || k <= 0 || k > n || !(temperature > 0.0) || !(top_p > 0.0 && top_p <= 1.0)) return 40001;
     cudaStream_t stream = (cudaStream_t)raw_stream;
     cudaError_t err = cudaMemsetAsync(result, 0, 2 * sizeof(unsigned), stream);
@@ -111,6 +112,22 @@ extern "C" int memra_dsv4_sample_device(const float* logits, float* values,
     err = cudaGetLastError(); if (err != cudaSuccess) return 10000 + (int)err;
     dsv4_sample_offsets<<<1, 1, 0, stream>>>(blocks, nb);
     err = cudaGetLastError(); if (err != cudaSuccess) return 10000 + (int)err;
-    dsv4_sample_draw<<<1, 1, 0, stream>>>(keys0, prefix, blocks, k, top_p, uniform, result);
+    dsv4_sample_draw<<<1, 1, 0, stream>>>(keys0, prefix, blocks, k, top_p, uniform, result, uniform_dev);
     return (int)cudaGetLastError();
+}
+
+extern "C" int memra_dsv4_sample_device(const float* logits, float* values,
+    uint64_t* keys0, uint64_t* keys1, double* prefix, double* blocks,
+    const int* counts, unsigned* result, int n, int k, double temperature,
+    double top_p, double uniform, float repeat, float freq, float present, void* stream) {
+    return dsv4_sample_device_enqueue(logits,values,keys0,keys1,prefix,blocks,counts,result,
+        n,k,temperature,top_p,uniform,repeat,freq,present,stream,nullptr);
+}
+extern "C" int memra_dsv4_sample_device_replay(const float* logits, float* values,
+    uint64_t* keys0, uint64_t* keys1, double* prefix, double* blocks,
+    const int* counts, unsigned* result, int n, int k, double temperature,
+    double top_p, const double* uniform, void* stream) {
+    if (!uniform) return 40001;
+    return dsv4_sample_device_enqueue(logits,values,keys0,keys1,prefix,blocks,counts,result,
+        n,k,temperature,top_p,0.0,1.0f,0.0f,0.0f,stream,uniform);
 }
