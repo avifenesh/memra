@@ -1,5 +1,20 @@
 # Kernel inventory
 
+## DSV4 small-kernel diet, 2026-09-07
+
+Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use
+`MEMRA_DSV4_SMALL_KERNEL_DIET` (default OFF). Gate status and receipt routing:
+`research/dsv4f-small-kernel-diet-20260907/README.md`.
+
+| Kernel | Replaced launches and numeric contract | Geometry |
+| --- | --- | --- |
+| `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128, t=1, HC4, hidden4096. |
+| `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128, t=1. |
+
+The gate counts successful enqueues in the replaced families and requires 8 to
+3 launches per layer per rank. This counter excludes all other kernels; total
+launch counts require the profile. A PASS with the old targeted count fails.
+
 Derived from code (build.rs, cu/, FFI shims) 2026-09-02 **at commit 6a131edb** — line
 references resolve against that commit (`git show 6a131edb:<path>`), not necessarily HEAD.
 Every row comes from a grep or a read; UNKNOWN means not determinable from the code without
@@ -106,8 +121,8 @@ Header: "Stage-1 kernels: correctness-first, all f32, no tensor cores" (kernels.
 | `copy_rows_col_f32` | row-window column-slice copy (devtwin indexer cache): dst[dst_row+r] = src[r*stride+col..+width] — exact byte moves, appends idx_proj k-part rows to the DEVICE raw-key cache without a host round trip | f32 | — | qwen4exp_gpu (`set_idx_cache`, **default ON** 2026-08-31 on receipts) | fatbin/by-name |
 | `copy_batch_uniform_kv_u8_set_len` | TP speculative-verify accepted-prefix repair: one block per uniform attention layer gathers strided full-width canonical K/V rows into the launching rank's contiguous quantized cache slice, then publishes that layer's device length; one launch per rank replaces per-layer K/V copies and len writes | q8_0 K / q5_1 V bytes + i32 len | — | native-P2P, uniform-geometry TP verify restore; per-layer repair fallback otherwise | fatbin/by-name |
 | `gdn_scan_naive_f32` | geometry-generic sequential GDN scan, in-kernel q/k l2 + sigmoid(beta); memra-reference twin (any hk/hv incl. tiny 4/4; z-gate composed by caller) | f32 | — | qwen4exp_gpu eager path only | fatbin/by-name |
-| `ssm_conv1d_fused_decode_tloop_f32` (lane/dspark-gdn-packed) | The per-row decode conv (`ssm_conv1d_fused_decode_b_f32`) iterated over T rows of ONE sequence inside one launch: window and taps in registers, the ring shifted per row exactly as the per-row kernel wrote it, optional post-row ring snapshots (`[T-1, conv_dim, pad]`, the verify-checkpoint slab layout). Bit-identical per row by construction; gate `gdn_packed_gpu`. Door `MEMRA_SPEC_GDN_PACKED` (default ON since 2026-09-08, `0` = per-row). | f32 | — | hybrid.cu |
-| `gdn_scan_s128_tsnap` (lane/dspark-gdn-packed) | `gdn_scan_kernel<128,32>`'s body (the same t-loop `gdn_scan_s128` runs) with post-step state snapshots for steps < T-1 (`[T-1, H, S_v, S_v]`, the checkpoint slab layout) and non-restrict state pointers so even-T verifies run in place; the batched-class verify runs it once per layer over the draft rows and still hands the rollback the per-row states. Bit-identical to T chained `gdn_scan_s128_b` rows; gate `gdn_packed_gpu`. Door `MEMRA_SPEC_GDN_PACKED` (default ON since 2026-09-08, `0` = per-row). | f32 | — | hybrid.cu |
+| `ssm_conv1d_fused_decode_tloop_f32` (lane/dspark-gdn-packed) | The per-row decode conv (`ssm_conv1d_fused_decode_b_f32`) iterated over T rows of ONE sequence inside one launch: state resolved from the replay-refreshed `[conv, canonical ssm, alternate ssm]` pointer table, window and taps in registers, the ring shifted per row exactly as the per-row kernel wrote it, optional post-row ring snapshots (`[T-1, conv_dim, pad]`, the verify-checkpoint slab layout). Bit-identical per row by construction; gate `gdn_packed_gpu`. Door `MEMRA_SPEC_GDN_PACKED` (default ON since 2026-09-08, `0` = per-row). | f32 | none | hybrid.cu |
+| `gdn_scan_s128_tsnap` (lane/dspark-gdn-packed) | `gdn_scan_kernel<128,32>`'s body (the same t-loop `gdn_scan_s128` runs) with post-step state snapshots for steps < T-1 (`[T-1, H, S_v, S_v]`, the checkpoint slab layout) and non-restrict state pointers so even-T verifies run in place; resolves canonical/alternate state from the replay-refreshed table, choosing alternate only for odd T; the batched-class verify runs it once per layer over the draft rows and still hands the rollback the per-row states. Bit-identical to T chained `gdn_scan_s128_b` rows; gate `gdn_packed_gpu`. Door `MEMRA_SPEC_GDN_PACKED` (default ON since 2026-09-08, `0` = per-row). | f32 | none | hybrid.cu |
 | `dwconv_causal_f32` | token-major depthwise causal conv, arbitrary dilation + history rows (GDN conv dil=1, PLE conv dil=max_ngram); modes conv / silu / silu-add | f32 | — | qwen4exp_gpu eager path only | fatbin/by-name |
 | `qmatvec_nvfp4_modelopt_sel_f32` | selected-experts NVFP4 matvec over the AS-STORED modelopt layout (codes [E,out,in/2] + UE4M3 scales [E,out,in/16] + per-expert macro epilogue), W4A16 f32 activations, one launch per projection over all routed experts; x_stride 0 = shared row (gate/up), in_f = per-slot rows (down) | u8-codes/f32 | — | qwen4exp_gpu grouped decode path (t==1, NVFP4 banks; set_moe_sel_path A/B seam) | fatbin/by-name |
 | `hc_lowrank_reduce_f32` | qwen4_exp gated-residual read gate: low_act = silu(mean over streams of the rank-320 down parts) in one launch over the stream-major slab; bit-identical to the axpy chain + scale + silu_mul it replaces | f32 | — | qwen4exp_gpu read gate (set_hc_fused_gate seam) | fatbin/by-name |
@@ -599,3 +614,9 @@ Per-variant dispatch flags inside the four giant fatbin TUs (kernels/qmatvec/fla
 hybrid) are family-level here; per-variant selection lives across ~411 `MEMRA_` read
 sites in src/lib.rs and was not traced symbol-by-symbol. Rows say UNKNOWN where the
 specific gate was not found. FLAGS.md is the authoritative flag catalog.
+
+## DSV4 device sampler, 2026-09-07
+
+| Translation unit | Kernels | Contract / gate |
+| --- | --- | --- |
+| `cu/dsv4_sampler.cu` | `dsv4_sample_prepare`, `dsv4_sample_merge`, `dsv4_sample_exp_scan`, `dsv4_sample_offsets`, `dsv4_sample_draw` | Head-stream f32 penalty/key preparation; stable unique-key merge chain; f64 exp and block prefix sums; block offsets; top-k/top-p inverse CDF. Request-owned scratch, one token u32 D2H. Numeric class `device-f64-exp-tree-cdf-v1`; finite inputs required. `MEMRA_DSV4_SAMPLER=device`, default OFF. Component tape and sampled ABBA: `dsv4_tp_ep_sampled_perf_gate --sampler-component` / `<model> <source> --sampler-abba`. Receipt: `research/dsv4f-gpu-sampler-20260907/RESULTS.md`. |

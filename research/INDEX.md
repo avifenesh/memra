@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+gpuwatch-startup-20260908 | The candidate recovered after two startup hangs and returned HTTP 200; the old binary stayed HTTP 503 after probes resumed. | RESULTS.md
+
 8bit-decision-20260803 | Hybrid, with a promotion gate. Q8_0 GGUF is the serving arm NOW; FP8-E4M3 safetensors is the hard-tuning development track, promoted to serving only when it beats the Q8_0 arm ≥1.1x e2e... | DECISION.md
 27bab-20260810 | Not viable as simultaneously active service within the suggested Step QoS bound. | RESULTS.md
 27btune-20260811 | The naked K=3 path improved the one-lock, interleaved N=5 median from 95.98 to 97.08 spec tok/s, +1.15%, clearing the lane's 1% decision floor. | RESULTS.md
@@ -464,4 +466,7 @@ SOTA-SWEEP-2026-07-13.md | (file, not a lane) | -
 upstream-sweeps.md | (file, not a lane) | -
 | step37 08-25/29 lanes (pre-squash narrative) | LANDED on main 2026-08-29 as squashes 068cbc425 + 46f700291 - the receipts are all in-repo. The 134-commit narrative behind them is NOT, and lives only in archive bundles; the 2026-09-01 check that proved the content was already landed (compare FILES not commit subjects: 276/280 byte-identical, the other 4 newer on main) is written up with the bundle keys | `research/step37-lane-narrative-archive.md` |
 
+dsv4f-2card-1m-20260904 | Phase interleaving removes first-kernel/AR skew but sampled ABBA is flat: -0.285757% without split-K, -0.131580% with it; exact tokens and state, door removed. | ISSUE-INTERLEAVE.md
 dsv4f-moe-m1-splitk-20260907 | Adaptive M1 split-K accepted: no observed component regression, pooled GU 3.46x/2.07x at slots 1/2; fresh-process sampled ABBA 38.822799 vs 35.569475 tok/s (+9.146392%), correctness/refusals pass; process gate stays OFF; raw receipts in private ops | RESULTS.md
+
+mtp-head-nonresident-capture-20260908 | "The 10 GiB squeeze reproduced #263 on main `dd8cc9c74`." | mtp-head-nonresident-capture-20260908/RESULTS.md

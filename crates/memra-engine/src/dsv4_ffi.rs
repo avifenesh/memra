@@ -7,6 +7,25 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_dsv4_sample_device(
+        logits: *const f32,
+        values: *mut f32,
+        keys0: *mut u64,
+        keys1: *mut u64,
+        prefix: *mut f64,
+        blocks: *mut f64,
+        counts: *const i32,
+        result: *mut u32,
+        n: i32,
+        k: i32,
+        temperature: f64,
+        top_p: f64,
+        uniform: f64,
+        repeat: f32,
+        freq: f32,
+        present: f32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_sink_scores_tiled_init() -> i32;
     pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
         q: *const f32,
@@ -670,6 +689,31 @@ unsafe extern "C" {
     // of the remaining device-path f64 chains. Same signatures as their f64 twins except
     // sink dec's `den`, which rides a FLOAT view of the caller's f64 workspace (written
     // and read within the one entry point). f64 kernels untouched.
+    pub fn memra_dsv4_small_norm_pack_f32_fixed_order(
+        x: *mut f32,
+        w: *const f32,
+        packed: *mut c_void,
+        s: i32,
+        n: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_small_hc_f32_fixed_order(
+        x: *const f32,
+        mixes: *mut f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_rmsnorm_f32acc(
         x: *const f32,
         w: *const f32,

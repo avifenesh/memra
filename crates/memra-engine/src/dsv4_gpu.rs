@@ -45,6 +45,9 @@ use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
 type Res<T> = Result<T, String>;
 
+#[path = "dsv4_small_kernel_gate.rs"]
+mod small_kernel_gate;
+
 // Gate-only dense wo_a launch fusion. It is process-local and deliberately
 // default OFF; no environment variable or serving default selects this arm.
 static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
@@ -648,6 +651,7 @@ impl Dsv4PrefillHead {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum VerifyOutput {
+    Device,
     Full,
     Argmax,
     None,
@@ -782,6 +786,12 @@ pub struct Dsv4Gpu {
     /// untouched). hc_sinkhorn is NOT in f32x (never authorized). Legacy path and
     /// prefill NEVER consult this.
     pub chains_f32: bool,
+    /// Process-local, default OFF; fixed at load, never toggled during a walk.
+    small_kernel_diet: bool,
+    /// Successful enqueues for HC finish and Q norm/pack, respectively.
+    /// Counts launches, not tokens, expected savings, or graph nodes.
+    small_kernel_launches: [AtomicU64; 2],
+    small_kernel_component_mask: AtomicU64,
     /// iteration-3 rung 4c MEASURED FORK (`MEMRA_DSV4_DSPARK_HEAD_ARM=f32x`, default
     /// f64 = the lane-10-gated bytes): the DSpark drafter's shared-trunk-head projection
     /// over block_size rows uses the f32-accumulation hoisted kernel instead of the f64
@@ -2761,6 +2771,8 @@ impl Dsv4Gpu {
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
         let sampler_order = dsv4_sampler_order()?;
+        let sampler = crate::dsv4_sampler::dsv4_sampler()?;
+        eprintln!("[load] plain sampler: {sampler:?}");
         eprintln!("[load] sampled candidate order: {sampler_order:?}");
         let grouped_env = match std::env::var("MEMRA_DSV4_PREFILL_MOE") {
             Ok(value) => Some(value),
@@ -3124,6 +3136,14 @@ impl Dsv4Gpu {
             on_device,
         )?;
 
+        let small_kernel_diet = match std::env::var("MEMRA_DSV4_SMALL_KERNEL_DIET").as_deref() {
+            Err(std::env::VarError::NotPresent) | Ok("0") => false,
+            Ok("1") => true,
+            _ => return Err("MEMRA_DSV4_SMALL_KERNEL_DIET requires 0 or 1".into()),
+        };
+        if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
+            return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
+        }
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -3157,6 +3177,9 @@ impl Dsv4Gpu {
             decode_path,
             dots_f32,
             chains_f32,
+            small_kernel_diet,
+            small_kernel_launches: std::array::from_fn(|_| AtomicU64::new(0)),
+            small_kernel_component_mask: AtomicU64::new(u64::MAX),
             dspark_head_f32,
             dspark_fused_moe,
             indexer_score,
@@ -7700,6 +7723,84 @@ impl Dsv4Gpu {
         self.decode_step_impl(tok, state, None)
     }
 
+    /// Forward a plain token while retaining the logits on the head stream.
+    pub fn decode_step_device_logits(&self, tok: u32, state: &mut DecodeState) -> Res<()> {
+        let DecodePath::Device { host_math: false } = self.decode_path else {
+            return Err("device sampler requires native device decode".into());
+        };
+        self.decode_step_fast_tap(tok, state, false, true, false, None)?;
+        Ok(())
+    }
+
+    pub fn device_sampler(&self) -> Res<crate::dsv4_sampler::Dsv4DeviceSampler> {
+        if !matches!(self.decode_path, DecodePath::Device { host_math: false }) {
+            return Err("device sampler requires native device decode".into());
+        }
+        crate::dsv4_sampler::Dsv4DeviceSampler::new(
+            self.stages.last().expect("head rank").gpu.stream(),
+            self.model
+                .st
+                .raw("head.weight")
+                .ok_or("head weight missing")?
+                .0
+                .shape[0] as usize,
+        )
+    }
+
+    fn decode_logits_device<'a>(&self, state: &'a DecodeState) -> Res<&'a CudaSlice<f32>> {
+        if let Some(work) = &state.matrix_step {
+            if work.failed || work.verify.open.is_some() {
+                return Err("sampler cannot read an unfinished matrix transaction".into());
+            }
+            Ok(&work
+                .verify
+                .ws
+                .last()
+                .ok_or("head workspace missing")?
+                .logits)
+        } else {
+            Ok(&state
+                .ws
+                .as_ref()
+                .ok_or("device workspace missing")?
+                .last()
+                .ok_or("head workspace missing")?
+                .logits)
+        }
+    }
+
+    /// Sample the latest committed forward row, with one u32 readback.
+    pub fn sample_device_logits(
+        &self,
+        state: &DecodeState,
+        sampler: &mut crate::dsv4_sampler::Dsv4DeviceSampler,
+        cfg: &Dsv4SampleCfg,
+        window: &[u32],
+        penalty: Option<&Dsv4PenaltyCfg>,
+    ) -> Res<u32> {
+        let stream = self.stages.last().expect("head rank").gpu.stream();
+        let row = self.decode_logits_device(state)?;
+        sampler.validate_source(&stream, row.len())?;
+        // The head workspace belongs to this model and its producer uses this stream.
+        unsafe {
+            sampler.sample_ptr(
+                row.device_ptr(&stream).0 as *const f32,
+                state.pos,
+                cfg,
+                window,
+                penalty,
+            )
+        }
+    }
+
+    /// Gate-only final identity read, outside the sampled envelope.
+    pub fn read_decode_logits_for_gate(&self, state: &DecodeState) -> Res<Vec<f32>> {
+        dtoh_f32(
+            &self.stages.last().expect("head rank").gpu.stream(),
+            self.decode_logits_device(state)?,
+        )
+    }
+
     /// Diagnostic twin: returns (logits, named per-layer intermediates).
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn decode_step_probe(
@@ -9305,6 +9406,7 @@ impl Dsv4Gpu {
         tok: u32,
         state: &mut DecodeState,
         want_logits: bool,
+        device_logits: bool,
         taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
         let mut work = state
@@ -9324,7 +9426,9 @@ impl Dsv4Gpu {
                     return Err("matrix tap destination outside allocation".into());
                 }
             }
-            let output = if want_logits {
+            let output = if device_logits {
+                VerifyOutput::Device
+            } else if want_logits {
                 VerifyOutput::Full
             } else {
                 VerifyOutput::Argmax
@@ -9367,6 +9471,7 @@ impl Dsv4Gpu {
         tok: u32,
         state: &mut DecodeState,
         want_logits: bool,
+        device_logits: bool,
         taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
         if taps.is_some() {
@@ -9696,6 +9801,10 @@ impl Dsv4Gpu {
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
             let stream = self.stages[1].gpu.stream();
+            if device_logits {
+                state.pos = pos0 + 1;
+                return Ok((None, 0));
+            }
             let logits = dtoh_f32(&stream, &head_ws.logits)?;
             let mut best = 0usize;
             for i in 1..logits.len() {
@@ -9734,7 +9843,7 @@ impl Dsv4Gpu {
         want_logits: bool,
         host_math: bool,
     ) -> Res<(Option<Vec<f32>>, u32)> {
-        self.decode_step_fast_tap(tok, state, want_logits, host_math, None)
+        self.decode_step_fast_tap(tok, state, want_logits, false, host_math, None)
     }
 
     /// [`Self::decode_step_fast`] with the iteration-3 DSpark trunk tap: when `taps`
@@ -9747,16 +9856,17 @@ impl Dsv4Gpu {
         tok: u32,
         state: &mut DecodeState,
         want_logits: bool,
+        device_logits: bool,
         host_math: bool,
         mut taps: Option<(&mut CudaSlice<f32>, usize)>,
     ) -> Res<(Option<Vec<f32>>, u32)> {
         if self.topology.is_tp_ep() {
-            return self.decode_step_tp_ep(tok, state, want_logits, taps);
+            return self.decode_step_tp_ep(tok, state, want_logits, device_logits, taps);
         }
         self.ensure_walk_topology_ready()?;
         crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
         if self.matrix_moe {
-            return self.decode_matrix_step(tok, state, want_logits, taps);
+            return self.decode_matrix_step(tok, state, want_logits, device_logits, taps);
         }
         let mc = &self.model.mc;
         let d = self.model.cfg();
@@ -9904,6 +10014,9 @@ impl Dsv4Gpu {
         self.head_logits_dev(&mut ws_all[last], host_math)?;
         let stream_last = self.stages[last].gpu.stream();
         state.pos += 1;
+        if device_logits {
+            return Ok((None, 0));
+        }
         if want_logits {
             let logits = dtoh_f32(&stream_last, &ws_all[last].logits)?;
             let mut best = 0usize;
@@ -11602,6 +11715,7 @@ impl Dsv4Gpu {
             tok,
             state,
             true,
+            false,
             host_math,
             Some((&mut dspark_state.taps, tap_row * n_t * hidden)),
         )?;
@@ -11626,6 +11740,7 @@ impl Dsv4Gpu {
         let (_, tok_next) = self.decode_step_fast_tap(
             tok,
             state,
+            false,
             false,
             host_math,
             Some((&mut dspark_state.taps, tap_row * n_t * hidden)),
@@ -13170,6 +13285,25 @@ impl Dsv4Gpu {
 }
 
 impl Dsv4Gpu {
+    pub fn small_kernel_diet_enabled(&self) -> bool {
+        self.small_kernel_diet
+    }
+
+    /// Same-loaded-model ABBA seam. Exclusive borrow prevents a concurrent walk.
+    pub fn set_small_kernel_diet_for_gate(&mut self, enabled: bool) -> Res<()> {
+        if !self.topology.is_tp_ep() || !self.chains_f32 {
+            return Err("small-kernel gate requires TP/EP f32x".into());
+        }
+        self.small_kernel_diet = enabled;
+        Ok(())
+    }
+
+    /// Actual successful HC-finish and Q-norm/pack launch counts across ranks.
+    /// Other kernel families are outside this counter's scope.
+    pub fn small_kernel_launches(&self) -> [u64; 2] {
+        std::array::from_fn(|i| self.small_kernel_launches[i].load(Ordering::Relaxed))
+    }
+
     /// hc_pre for T rows: the `hc_pre_dev` program with every kernel taking the row
     /// count (Sinkhorn either the host closure per row — byte-identity arm — or the
     /// one-block-per-position device twin).
@@ -13204,6 +13338,36 @@ impl Dsv4Gpu {
             rows,
             vws.mixes.device_ptr_mut(&stream).0 as *mut f32,
         )?;
+        if t == 1 && !host_math && self.small_component_claim(st.dev, 0) {
+            self.small_component_hc(
+                st, h_ptr, &vws.mixes, scale_dev, base_dev, hidden, iters, hc_eps,
+            )?;
+        }
+        if self.small_kernel_diet && t == 1 && !host_math {
+            unsafe {
+                ck(
+                    "small HC f32 fixed order",
+                    k::memra_dsv4_small_hc_f32_fixed_order(
+                        h_ptr,
+                        dpm!(vws.mixes, &stream),
+                        dpf!(scale_dev, &stream),
+                        dpf!(base_dev, &stream),
+                        dpm!(vws.pre, &stream),
+                        dpm!(vws.post, &stream),
+                        dpm!(vws.comb, &stream),
+                        dpm!(vws.y_hc, &stream),
+                        t as i32,
+                        hc as i32,
+                        hidden as i32,
+                        iters as i32,
+                        hc_eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
         unsafe {
             ck(
                 "rowsq_scale batch",
@@ -13217,6 +13381,7 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
+            self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
         }
         if host_math {
             let mut mixes_h = vec![0f32; t * rows];
@@ -13257,6 +13422,7 @@ impl Dsv4Gpu {
                         sp(&stream),
                     ),
                 )?;
+                self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
             }
         }
         unsafe {
@@ -13272,6 +13438,7 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
+            self.small_kernel_launches[0].fetch_add(1, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -13696,28 +13863,50 @@ impl Dsv4Gpu {
             hidden,
             vws.qr.device_ptr_mut(&stream).0 as *mut f32,
         )?;
-        unsafe {
-            ck(
-                "rmsnorm q batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.qr, &stream),
-                    dpf!(layer.q_norm, &stream),
-                    dpm!(vws.qr, &stream),
-                    t as i32,
-                    q_lora as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt qr batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.qr, &stream),
-                    vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * q_lora) as i64,
-                    sp(&stream),
-                ),
-            )?;
+        if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
+            self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
+        }
+        if self.small_kernel_diet && t == 1 && !host_math {
+            unsafe {
+                ck(
+                    "small Q norm pack f32 fixed order",
+                    k::memra_dsv4_small_norm_pack_f32_fixed_order(
+                        dpm!(vws.qr, &stream),
+                        dpf!(layer.q_norm, &stream),
+                        vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
+                        t as i32,
+                        q_lora as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            self.small_kernel_launches[1].fetch_add(1, Ordering::Relaxed);
+        } else {
+            unsafe {
+                ck(
+                    "rmsnorm q batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.qr, &stream),
+                        dpf!(layer.q_norm, &stream),
+                        dpm!(vws.qr, &stream),
+                        t as i32,
+                        q_lora as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "cvt qr batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.qr, &stream),
+                        vws.qr_b.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * q_lora) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            self.small_kernel_launches[1].fetch_add(2, Ordering::Relaxed);
         }
         Self::gemv_m_dev(
             st,
@@ -15821,6 +16010,10 @@ impl Dsv4Gpu {
         } else {
             None
         };
+        if output == VerifyOutput::Device {
+            vstate.open = Some((pos0, t));
+            return Ok((None, vec![0; t]));
+        }
         let mut am = vec![0i32; t];
         if let Some(lg) = &logits {
             for (i, slot) in am.iter_mut().enumerate() {

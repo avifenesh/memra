@@ -494,6 +494,7 @@ fn main() {
             // mul+add rounding; default FMA contraction would silently fork the f32-island
             // arithmetic from the oracle contract.
             "cu/dsv4_gpu.cu",
+            "cu/dsv4_sampler.cu",
             // Small-message cross-rank all-reduce for TP decode (lane/tp-allreduce-20260906).
             // Portable CUDA C; peer stores plus a bounded flag wait, no oracle to match, so it
             // takes the default flags rather than dsv4_gpu.cu's -fmad=false.
