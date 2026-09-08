@@ -48,6 +48,11 @@
 #include <map>
 #include <mutex>
 #include <tuple>
+#include <vector>
+
+__device__ __forceinline__ bool dsv4_replay_emit(const int* pos,int ratio) {
+    return !pos || (*pos + 1) % ratio == 0;
+}
 
 #define DSV4_ERR()                                             \
     do {                                                       \
@@ -656,7 +661,8 @@ extern "C" int memra_dsv4_headrms(float* x, int rows, int d, float eps, void* st
 // ceiling at rows = s·heads > 65535 (first seen at a 1024-token prefill: fp4 on the
 // indexer q has rows = s·64). Pure index swap; per-group arithmetic unchanged.
 extern "C" __global__ void dsv4_act_quant_kernel(float* __restrict__ x, long stride,
-                                                 int block, int clamp_only) {
+                                                 int block, int clamp_only, const int* emit_pos = nullptr, int emit_ratio = 0) {
+    if (!dsv4_replay_emit(emit_pos,emit_ratio)) return;
     int r = blockIdx.x;
     int g = blockIdx.y;   // group within the row prefix
     float* grp = x + (long)r * stride + (long)g * block;
@@ -692,7 +698,8 @@ extern "C" int memra_dsv4_act_quant(float* x, int rows, long stride, int prefix_
 
 // fp4_act_quant QAT sim (identical in both kernel variants): per-32 groups, pow2-ceil of
 // amax*(1/6) (amax floored 6*2^-126), clamp +-6, e2m1 RNE round-trip.
-extern "C" __global__ void dsv4_fp4_act_quant_kernel(float* __restrict__ x, long stride) {
+extern "C" __global__ void dsv4_fp4_act_quant_kernel(float* __restrict__ x, long stride, const int* emit_pos = nullptr, int emit_ratio = 0) {
+    if (!dsv4_replay_emit(emit_pos,emit_ratio)) return;
     int r = blockIdx.x;   // rows on x (lane-6 grid fix, see act_quant note)
     int g = blockIdx.y;
     float* grp = x + (long)r * stride + (long)g * 32;
@@ -722,7 +729,8 @@ extern "C" int memra_dsv4_fp4_act_quant(float* x, int rows, long stride, int len
 // oracle's sequential loop (pairs disjoint per stage -> the parallel adds are the SAME
 // adds: bit-exact). `scale` (= d^-0.5) is computed on the HOST with the oracle's own f32
 // powf so no CUDA-vs-Rust libm ULP skew can enter. d power of two, <= 1024.
-extern "C" __global__ void dsv4_hadamard_kernel(float* __restrict__ x, int d, float scale) {
+extern "C" __global__ void dsv4_hadamard_kernel(float* __restrict__ x, int d, float scale, const int* emit_pos = nullptr, int emit_ratio = 0) {
+    if (!dsv4_replay_emit(emit_pos,emit_ratio)) return;
     extern __shared__ float sh[];
     int row = blockIdx.x;
     float* xr = x + (long)row * d;
@@ -764,7 +772,8 @@ extern "C" __global__ void dsv4_compressor_pool_kernel(const float* __restrict__
                                                        const float* __restrict__ ape,
                                                        float* __restrict__ out, int nb,
                                                        int ratio, int d, int latent,
-                                                       int overlap) {
+                                                       int overlap, const int* emit_pos = nullptr) {
+    if (!dsv4_replay_emit(emit_pos,ratio)) return;
     long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= (long)nb * d) return;
     int j = (int)(i / d);
@@ -1565,7 +1574,9 @@ extern "C" int memra_dsv4_swiglu(const float* gate, const float* up, float* dst,
 // rope at ONE scalar position (same arithmetic as dsv4_rope_kernel; cs row = pos).
 extern "C" __global__ void dsv4_rope_at_kernel(float* __restrict__ x, int n_vec, int dim,
                                                int rd, const float* __restrict__ cs, int pos,
-                                               int inverse) {
+                                               int inverse, const int* replay_pos = nullptr, int replay_ratio = 1) {
+    if (!dsv4_replay_emit(replay_pos,replay_ratio)) return;
+    if (replay_pos) pos = (*replay_pos / replay_ratio) * replay_ratio;
     int half = rd / 2;
     long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
     long tot = (long)n_vec * half;
@@ -2110,7 +2121,13 @@ extern "C" __global__ void dsv4_topk_idx_kernel(const float* score, int nb,
 }
 
 extern "C" __global__ void dsv4_topk_idx_numeric_kernel(const float* score, int nb,
-    int kk, int win, int* idx_out, int npow2) {
+    int kk, int win, int* idx_out, int npow2, const int* replay_pos = nullptr, int ratio = 4) {
+    if (replay_pos) {
+        nb = (*replay_pos + 1) / ratio;
+        kk = min(kk, nb);
+        npow2 = 1;
+        while (npow2 < nb) npow2 <<= 1;
+    }
     extern __shared__ unsigned long long keys[];
     dsv4_topk_idx_body<true>(score, nb, kk, win, idx_out, npow2, keys);
 }
@@ -2889,7 +2906,8 @@ __device__ __forceinline__ float dsv4_block_sum_f32(float v, float* sh) {
 extern "C" __global__ void dsv4_rmsnorm_f32acc_kernel(const float* __restrict__ x,
                                                       const float* __restrict__ w,
                                                       float* __restrict__ dst, int ncols,
-                                                      float eps) {
+                                                      float eps, const int* emit_pos = nullptr, int emit_ratio = 0) {
+    if (!dsv4_replay_emit(emit_pos,emit_ratio)) return;
     int row = blockIdx.x;
     const float* xr = x + (long)row * ncols;
     float* dr = dst + (long)row * ncols;
@@ -3035,7 +3053,8 @@ extern "C" int memra_dsv4_rowsq_scale_f32acc(const float* x, float* mixes, int s
 extern "C" __global__ void dsv4_indexer_score_f32acc_kernel(
     const float* __restrict__ q, const float* __restrict__ ckv, const float* __restrict__ w,
     float wscale, float* __restrict__ score, int s, int heads, int hd, int nb, int ratio,
-    int lim0) {
+    int lim0, const int* replay_pos = nullptr) {
+    if (replay_pos) nb = lim0 = (*replay_pos + 1) / ratio;
     long i = blockIdx.x;
     if (i >= (long)s * nb) return;
     int t = (int)(i / nb);
@@ -3499,7 +3518,11 @@ extern "C" int memra_dsv4_build_idx_redirect_fine_pos(
 // batched top-k kernel; coarse layers append every causally complete ratio block.
 extern "C" __global__ void dsv4_build_idx_redirect_m_kernel(
         int* __restrict__ idx, int pos0, int s, int win, int ratio, int cap,
-        int stride, int trans_base, int fine) {
+        int stride, int trans_base, int fine, const int* replay_pos = nullptr, int topk = 512) {
+    if (replay_pos) {
+        pos0 = *replay_pos;
+        cap = win + (ratio ? min((pos0 + 1) / ratio, topk) : 0);
+    }
     long z = (long)blockIdx.x * blockDim.x + threadIdx.x;
     if (z >= (long)s * cap) return;
     int row = (int)(z / cap);
@@ -6095,7 +6118,9 @@ extern "C" __global__ void dsv4_sink_scores_mq_f32acc_kernel(const float* __rest
                                                              const int* __restrict__ idxs_all,
                                                              float* __restrict__ scores_all,
                                                              int heads, int hd, int slots,
-                                                             int idx_stride, float scale) {
+                                                             int idx_stride, float scale, const int* replay_pos = nullptr,
+    int replay_win = 0, int replay_ratio = 0, int replay_topk = 512) {
+    if (replay_pos) slots = replay_win + (replay_ratio ? min((*replay_pos + 1) / replay_ratio, replay_topk) : 0);
     int sl = blockIdx.x;
     int p = blockIdx.y;
     if (sl >= slots) return;
@@ -6123,7 +6148,9 @@ extern "C" __global__ void dsv4_sink_soft_mq_f32acc_kernel(const float* __restri
                                                            const float* __restrict__ sink,
                                                            float* __restrict__ evals_all,
                                                            float* __restrict__ den_all,
-                                                           int heads, int slots) {
+                                                           int heads, int slots, const int* replay_pos = nullptr,
+    int replay_win = 0, int replay_ratio = 0, int replay_topk = 512) {
+    if (replay_pos) slots = replay_win + (replay_ratio ? min((*replay_pos + 1) / replay_ratio, replay_topk) : 0);
     int h = blockIdx.x;
     int p = blockIdx.y;
     const float* srow = scores_all + (long)p * heads * slots + (long)h * slots;
@@ -6150,7 +6177,9 @@ extern "C" __global__ void dsv4_sink_out_mq_f32acc_kernel(const float* __restric
                                                           const float* __restrict__ evals_all,
                                                           const float* __restrict__ den_all,
                                                           float* __restrict__ o_all, int heads,
-                                                          int hd, int slots, int idx_stride) {
+                                                          int hd, int slots, int idx_stride, const int* replay_pos = nullptr,
+    int replay_win = 0, int replay_ratio = 0, int replay_topk = 512) {
+    if (replay_pos) slots = replay_win + (replay_ratio ? min((*replay_pos + 1) / replay_ratio, replay_topk) : 0);
     const int XC = 8, HC = 8;
     int x0 = blockIdx.x * XC;
     int h0 = blockIdx.y * HC;
@@ -6471,5 +6500,218 @@ extern "C" int memra_bw_read_slabs(const float *x, const long *off4, int nslabs,
     memra_bw_read_slabs_kernel<<<grid, block, 0, stream>>>((const float4 *)x, off4,
                                                            slab_floats / 4, sink);
     DSV4_ERR();
+    return 0;
+}
+
+// Full-token replay prerequisites. These launchers are used only by the new
+// strict one-token arm; the existing eager launchers retain their scalar ABI.
+// Capture lifecycle never launches or synchronizes. The owner submits both
+// rank executables before reading either refusal word.
+__global__ void dsv4_replay_input_kernel(const uint64_t* input, int* token, int* pos,
+    int* slot, int window, unsigned long long* count) {
+    *token = (int)input[0];
+    *pos = (int)(input[0] >> 32);
+    *slot = *pos % window;
+    atomicAdd(count, 1ULL);
+}
+extern "C" int memra_dsv4_replay_input(const uint64_t* input, int* token, int* pos,
+    int* slot, int window, uint64_t* count, void* stream) {
+    if (!input || !token || !pos || !slot || !count || window <= 0) return 40074;
+    dsv4_replay_input_kernel<<<1, 1, 0, (cudaStream_t)stream>>>(input,token,pos,slot,window,
+        (unsigned long long*)count);
+    DSV4_ERR();
+    return 0;
+}
+__global__ void dsv4_replay_tick_kernel(unsigned long long* count) { atomicAdd(count, 1ULL); }
+extern "C" int memra_dsv4_replay_tick(uint64_t* count, void* stream) {
+    if (!count) return 40074;
+    dsv4_replay_tick_kernel<<<1, 1, 0, (cudaStream_t)stream>>>((unsigned long long*)count);
+    DSV4_ERR();
+    return 0;
+}
+extern "C" int memra_dsv4_replay_capture_begin(void** out, void* raw_stream) {
+    cudaGraph_t graph = nullptr;
+    cudaError_t rc = cudaGraphCreate(&graph, 0);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    *out = graph;
+    rc = cudaStreamBeginCaptureToGraph((cudaStream_t)raw_stream, graph, nullptr,
+        nullptr, 0, cudaStreamCaptureModeRelaxed);
+    return rc == cudaSuccess ? 0 : 10000 + (int)rc;
+}
+extern "C" int memra_dsv4_replay_capture_end(void* graph, void** executable, void* raw_stream) {
+    cudaGraph_t ended = nullptr;
+    cudaError_t rc = cudaStreamEndCapture((cudaStream_t)raw_stream, &ended);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    if (ended != (cudaGraph_t)graph) return 40070;
+    cudaGraphExec_t exec = nullptr;
+    rc = cudaGraphInstantiate(&exec, ended, 0);
+    if (rc == cudaSuccess) *executable = exec;
+    return rc == cudaSuccess ? 0 : 10000 + (int)rc;
+}
+extern "C" int memra_dsv4_replay_launch(void* executable, void* raw_stream) {
+    const auto rc = cudaGraphLaunch((cudaGraphExec_t)executable, (cudaStream_t)raw_stream);
+    return rc == cudaSuccess ? 0 : 10000 + (int)rc;
+}
+extern "C" int memra_dsv4_replay_abort(void* raw_stream) {
+    cudaStreamCaptureStatus status;
+    auto rc = cudaStreamIsCapturing((cudaStream_t)raw_stream, &status);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    if (status == cudaStreamCaptureStatusNone) return 0;
+    cudaGraph_t graph = nullptr;
+    rc = cudaStreamEndCapture((cudaStream_t)raw_stream, &graph);
+    // The caller already owns the graph passed to BeginCaptureToGraph.
+    return rc == cudaSuccess ? 0 : 10000 + (int)rc;
+}
+extern "C" int memra_dsv4_replay_census(void* graph, unsigned long long* out) {
+    size_t n=0;
+    auto rc=cudaGraphGetNodes((cudaGraph_t)graph,nullptr,&n);
+    if(rc!=cudaSuccess) return 10000+(int)rc;
+    std::vector<cudaGraphNode_t> nodes(n);
+    rc=cudaGraphGetNodes((cudaGraph_t)graph,nodes.data(),&n);
+    if(rc!=cudaSuccess) return 10000+(int)rc;
+    // nodes, kernels, AR, embedding, HC post, copy/memset, unsupported node types.
+    for(int i=0;i<7;++i) out[i]=0;
+    out[0]=n;
+    for(auto node:nodes){
+        cudaGraphNodeType type;
+        rc=cudaGraphNodeGetType(node,&type);
+        if(rc!=cudaSuccess) return 10000+(int)rc;
+        if(type==cudaGraphNodeTypeKernel){
+            ++out[1]; cudaKernelNodeParams params{}; const char* name=nullptr;
+            rc=cudaGraphKernelNodeGetParams(node,&params);
+            if(rc!=cudaSuccess) return 10000+(int)rc;
+            rc=cudaFuncGetName(&name,params.func);
+            if(rc!=cudaSuccess) return 10000+(int)rc;
+            if(strstr(name,"memra_tp_ar_1stage_kernel")) ++out[2];
+            if(strstr(name,"dsv4_embed_rows_kernel")) ++out[3];
+            if(strstr(name,"dsv4_hc_post_kernel")) ++out[4];
+        }else if(type==cudaGraphNodeTypeMemcpy || type==cudaGraphNodeTypeMemset) ++out[5];
+        else if(type!=cudaGraphNodeTypeEmpty) ++out[6];
+    }
+    return 0;
+}
+extern "C" int memra_dsv4_replay_dump(void* graph, const char* path) {
+    if (!graph || !path) return 40074;
+    auto rc=cudaGraphDebugDotPrint((cudaGraph_t)graph,path,cudaGraphDebugDotFlagsVerbose);
+    return rc==cudaSuccess?0:10000+(int)rc;
+}
+extern "C" int memra_dsv4_replay_destroy(void* graph, void* executable, void* raw_stream) {
+    // Caller drains any submitted work before dropping graph-owned buffers.
+    cudaStreamCaptureStatus status;
+    auto rc = cudaStreamIsCapturing((cudaStream_t)raw_stream, &status);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    if (status != cudaStreamCaptureStatusNone) {
+        cudaGraph_t ignored = nullptr;
+        cudaStreamEndCapture((cudaStream_t)raw_stream, &ignored);
+    }
+    cudaError_t first = cudaSuccess;
+    if (executable) first = cudaGraphExecDestroy((cudaGraphExec_t)executable);
+    if (graph) {
+        auto next = cudaGraphDestroy((cudaGraph_t)graph);
+        if (first == cudaSuccess) first = next;
+    }
+    return first == cudaSuccess ? 0 : 10000 + (int)first;
+}
+__global__ void dsv4_replay_copy_row_kernel(const float* src, float* dst,
+    const int* pos, int width, int ratio, int offset, int emitted) {
+    if (emitted && !dsv4_replay_emit(pos,ratio)) return;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < width) {
+        int row = emitted ? *pos / ratio : *pos % ratio;
+        dst[(long)(offset + row) * width + i] = src[i];
+    }
+}
+extern "C" int memra_dsv4_replay_copy_row(const float* src, float* dst,
+    const int* pos, int width, int ratio, int offset, int emitted, void* raw_stream) {
+    if (!src || !dst || !pos || width <= 0 || ratio <= 0 || offset < 0) return 40074;
+    dsv4_replay_copy_row_kernel<<<(width + 255) / 256, 256, 0, (cudaStream_t)raw_stream>>>(
+        src, dst, pos, width, ratio, offset, emitted);
+    DSV4_ERR();
+    return 0;
+}
+extern "C" int memra_dsv4_replay_indices(int* idx, const int* pos, int win, int ratio,
+    int cap, int stride, int trans_base, int fine, int topk, void* raw_stream) {
+    if (!pos || win <= 0 || cap < win || stride < cap || topk < 0 ||
+        (ratio != 0 && ratio != 4 && ratio != 128)) return 40074;
+    dsv4_build_idx_redirect_m_kernel<<<(cap + 127) / 128, 128, 0, (cudaStream_t)raw_stream>>>(
+        idx, 0, 1, win, ratio, cap, stride, trans_base, fine, pos, topk);
+    DSV4_ERR();
+    return 0;
+}
+extern "C" int memra_dsv4_replay_indexer(const float* q, const float* kv, const float* w,
+    float scale, float* score, int* idx_tail, const int* pos, int heads, int hd,
+    int nb_max, int ratio, int topk, int win, void* raw_stream) {
+    if (!pos || heads < 1 || heads > 1024 || nb_max < 1 || nb_max > 4096 || ratio != 4)
+        return 40074;
+    auto stream = (cudaStream_t)raw_stream;
+    dsv4_indexer_score_f32acc_kernel<<<nb_max, heads, heads * sizeof(float), stream>>>(
+        q, kv, w, scale, score, 1, heads, hd, nb_max, ratio, nb_max, pos);
+    DSV4_ERR();
+    int max_pow2 = 1;
+    while (max_pow2 < nb_max) max_pow2 <<= 1;
+    dsv4_topk_idx_numeric_kernel<<<1, 512, max_pow2 * sizeof(unsigned long long), stream>>>(
+        score, nb_max, topk, win, idx_tail, max_pow2, pos, ratio);
+    DSV4_ERR();
+    return 0;
+}
+extern "C" int memra_dsv4_replay_attention(const float* q, const float* kv, const int* idx,
+    const float* sink, float* score, float* eval, float* den, float* out, const int* pos,
+    int heads, int hd, int slots_max, int stride, float scale, int win, int ratio,
+    int topk, void* raw_stream) {
+    if (!pos || heads < 1 || hd < 1 || slots_max < win || stride < slots_max ||
+        (ratio != 0 && ratio != 4 && ratio != 128)) return 40074;
+    auto stream = (cudaStream_t)raw_stream;
+    dsv4_sink_scores_mq_f32acc_kernel<<<dim3(slots_max, 1), 64, hd * sizeof(float), stream>>>(
+        q, kv, idx, score, heads, hd, slots_max, stride, scale, pos, win, ratio, topk);
+    DSV4_ERR();
+    dsv4_sink_soft_mq_f32acc_kernel<<<dim3(heads, 1), 128, 0, stream>>>(
+        score, sink, eval, den, heads, slots_max, pos, win, ratio, topk);
+    DSV4_ERR();
+    dsv4_sink_out_mq_f32acc_kernel<<<dim3((hd + 7) / 8, (heads + 7) / 8, 1), 64, 0, stream>>>(
+        kv, idx, eval, den, out, heads, hd, slots_max, stride, pos, win, ratio, topk);
+    DSV4_ERR();
+    return 0;
+}
+
+__global__ void dsv4_replay_copy_if_kernel(const float* src,float* dst,int n,const int* pos,int ratio) {
+    if (!dsv4_replay_emit(pos,ratio)) return;
+    int i=blockIdx.x*blockDim.x+threadIdx.x;
+    if(i<n) dst[i]=src[i];
+}
+// Uniform whole-CTA predicates are the conditional-body equivalent. No kernel
+// reaches its barriers on an inactive token; active arithmetic/order is unchanged.
+extern "C" int memra_dsv4_replay_compressor_emit(float* pending_kv,float* pending_score,
+    const float* ape,float* emit,const float* norm,const float* cs,float* store,float* shift,
+    const int* pos,int ratio,int d,int latent,int overlap,int rotate,int clamp_only,int rd,
+    int row0,float eps,float hadamard_scale,void* raw_stream) {
+    if(!pending_kv || !pending_score || !ape || !emit || !norm || !cs || !store || !shift || !pos ||
+       (ratio!=4 && ratio!=128) || d<rd || rd<=0 || rd%2 || latent!=(overlap?2*d:d) ||
+       (rotate && (d>1024 || (d&(d-1)) || d%32)) || (!rotate && (d-rd)%64) || row0<0) return 40074;
+    auto stream=(cudaStream_t)raw_stream;
+    int nb=overlap?2:1; float* row=emit+(overlap?d:0);
+    dsv4_compressor_pool_kernel<<<(nb*d+255)/256,256,0,stream>>>(pending_kv,pending_score,ape,emit,nb,ratio,d,latent,overlap,pos);
+    DSV4_ERR();
+    dsv4_rmsnorm_f32acc_kernel<<<1,128,128*sizeof(float),stream>>>(row,norm,row,d,eps,pos,ratio);
+    DSV4_ERR();
+    dsv4_rope_at_kernel<<<(rd/2+255)/256,256,0,stream>>>(row,1,d,rd,cs,0,0,pos,ratio);
+    DSV4_ERR();
+    if(rotate){
+        int threads=d/2<128?d/2:128;
+        dsv4_hadamard_kernel<<<1,threads,d*sizeof(float),stream>>>(row,d,hadamard_scale,pos,ratio);
+        DSV4_ERR();
+        dsv4_fp4_act_quant_kernel<<<dim3(1,d/32),32,0,stream>>>(row,d,pos,ratio);
+        DSV4_ERR();
+    }else{
+        dsv4_act_quant_kernel<<<dim3(1,(d-rd)/64),64,0,stream>>>(row,d,64,clamp_only,pos,ratio);
+        DSV4_ERR();
+    }
+    dsv4_replay_copy_row_kernel<<<(d+255)/256,256,0,stream>>>(row,store,pos,d,ratio,row0,1);
+    DSV4_ERR();
+    if(overlap) for(float* pending:{pending_kv,pending_score}){
+        dsv4_replay_copy_if_kernel<<<(ratio*latent+255)/256,256,0,stream>>>(pending+ratio*latent,shift,ratio*latent,pos,ratio);
+        DSV4_ERR();
+        dsv4_replay_copy_if_kernel<<<(ratio*latent+255)/256,256,0,stream>>>(shift,pending,ratio*latent,pos,ratio);
+        DSV4_ERR();
+    }
     return 0;
 }

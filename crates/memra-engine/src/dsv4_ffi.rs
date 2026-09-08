@@ -7,6 +7,129 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_dsv4_replay_compressor_emit(
+        pending_kv: *mut f32,
+        pending_score: *mut f32,
+        ape: *const f32,
+        emit: *mut f32,
+        norm: *const f32,
+        cs: *const f32,
+        store: *mut f32,
+        shift: *mut f32,
+        pos: *const i32,
+        ratio: i32,
+        d: i32,
+        latent: i32,
+        overlap: i32,
+        rotate: i32,
+        clamp_only: i32,
+        rd: i32,
+        row0: i32,
+        eps: f32,
+        hadamard_scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_sample_device_replay(
+        logits: *const f32,
+        values: *mut f32,
+        keys0: *mut u64,
+        keys1: *mut u64,
+        prefix: *mut f64,
+        blocks: *mut f64,
+        counts: *const i32,
+        result: *mut u32,
+        n: i32,
+        k: i32,
+        temperature: f64,
+        top_p: f64,
+        uniform: *const f64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_replay_input(
+        input: *const u64,
+        token: *mut i32,
+        pos: *mut i32,
+        slot: *mut i32,
+        window: i32,
+        counter: *mut u64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_replay_tick(counter: *mut u64, stream: *mut c_void) -> i32;
+    pub fn memra_dsv4_replay_capture_begin(graph: *mut *mut c_void, stream: *mut c_void) -> i32;
+    pub fn memra_dsv4_replay_capture_end(
+        graph: *mut c_void,
+        executable: *mut *mut c_void,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_replay_launch(executable: *mut c_void, stream: *mut c_void) -> i32;
+    pub fn memra_dsv4_replay_abort(stream: *mut c_void) -> i32;
+    pub fn memra_dsv4_replay_census(graph: *mut c_void, out: *mut u64) -> i32;
+    pub fn memra_dsv4_replay_dump(graph: *mut c_void, path: *const std::ffi::c_char) -> i32;
+    pub fn memra_dsv4_replay_destroy(
+        graph: *mut c_void,
+        executable: *mut c_void,
+        stream: *mut c_void,
+    ) -> i32;
+
+    pub fn memra_dsv4_replay_copy_row(
+        src: *const f32,
+        dst: *mut f32,
+        pos: *const i32,
+        width: i32,
+        ratio: i32,
+        offset: i32,
+        emitted: i32,
+        stream: *mut c_void,
+    ) -> i32;
+
+    pub fn memra_dsv4_replay_indices(
+        idx: *mut i32,
+        pos: *const i32,
+        win: i32,
+        ratio: i32,
+        cap: i32,
+        stride: i32,
+        trans_base: i32,
+        fine: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_replay_indexer(
+        q: *const f32,
+        kv: *const f32,
+        weights: *const f32,
+        scale: f32,
+        score: *mut f32,
+        idx_tail: *mut i32,
+        pos: *const i32,
+        heads: i32,
+        hd: i32,
+        nb_max: i32,
+        ratio: i32,
+        topk: i32,
+        win: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_replay_attention(
+        q: *const f32,
+        kv: *const f32,
+        idx: *const i32,
+        sink: *const f32,
+        score: *mut f32,
+        eval: *mut f32,
+        den: *mut f32,
+        out: *mut f32,
+        pos: *const i32,
+        heads: i32,
+        hd: i32,
+        slots_max: i32,
+        stride: i32,
+        scale: f32,
+        win: i32,
+        ratio: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_sample_device(
         logits: *const f32,
         values: *mut f32,

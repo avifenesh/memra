@@ -20,6 +20,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "../dsv4_full_token_replay_gate.rs"]
+mod full_token_replay;
+
 const PROMPT_TOKENS: usize = 256;
 const OUTPUT_TOKENS: usize = 256;
 const REPEATS: usize = 2;
@@ -509,10 +512,16 @@ fn main() {
         sampler_component();
         return;
     }
+    let replay_reverse = args.get(3).is_some_and(|a| a == "--full-token-replay-baab");
+    let replay_profile = args
+        .get(3)
+        .is_some_and(|a| a == "--full-token-replay-profile");
+    let full_replay =
+        args.get(3).is_some_and(|a| a == "--full-token-replay") || replay_reverse || replay_profile;
     let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba]"
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile]"
     );
     let components = args
         .get(3)
@@ -521,7 +530,13 @@ fn main() {
     let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
     let splitk_abba = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-abba");
     assert!(
-        args.len() == 3 || splitk || splitk_abba || sampler_abba || components || small_abba,
+        args.len() == 3
+            || splitk
+            || splitk_abba
+            || sampler_abba
+            || components
+            || small_abba
+            || full_replay,
         "unknown gate arm"
     );
     memra_engine::set_moe_m1_splitk_for_gate(splitk);
@@ -544,7 +559,9 @@ fn main() {
     } else {
         host_sampler_name
     };
-    let repeats = if sampler_abba || small_abba {
+    let repeats = if full_replay {
+        20
+    } else if sampler_abba || small_abba {
         40
     } else if attention_mode {
         ATTENTION_REPEATS
@@ -626,6 +643,21 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(!attention_mode);
     gpu.set_index_topk_radix_for_gate(true);
+
+    if full_replay {
+        assert!(
+            attention_mode && device && (profiled == replay_profile) && !splitk,
+            "replay requires TP2/device sampler/split-K OFF and profiling only in the profile-only arm"
+        );
+        gpu.set_small_kernel_diet_for_gate(true)
+            .expect("replay diet");
+        if replay_profile {
+            full_token_replay::profile(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer);
+        } else {
+            full_token_replay::run(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer, replay_reverse);
+        }
+        return;
+    }
 
     if sampler_abba {
         assert!(

@@ -1721,6 +1721,37 @@ ones — filed under their own heading so a flag audit scanning the live section
 |---|---|---|
 | `MEMRA_DSV4_SAMPLE_SORT` | **Radix wins; default promoted** | 2026-09-06: 49,643,520 full-order elements and 1,536 sampled parameter cases identical; CPU sampler 14.4-14.9 ms to 2.9-3.2 ms per row; plain and DSpark decode +29-38% at 256 and 8192 context. The 2026-09-07 comparison-pinned attention-TP envelope observed prime 41.8 versus sampled 24.9 tok/s on one binary. `comparison` remains the explicit legacy/oracle arm under the gate-selector exception; NaN rows retain the comparator and the per-thread gate override is unchanged. Private ops receipts: `sampler-order-20260906-*`, `attention-tp-sampled-2383-r1`. |
 
+## DSV4 full-token replay prerequisite, 2026-09-08
+
+Follow-on gate selectors: `--full-token-replay-baab` reverses the single 20-row
+order to B×5/A×5/A×5/B×5 with the same correctness/refusal gates and first-capture
+timing. `--full-token-replay-profile` is a separate profile-only load, never a
+scored arm: 32 matched eager/replay steps at identical positions 368..400 with
+`MEMRA_DSV4_NVTX=1`, no extra synchronization. Scoring refuses profiling. The
+existing NVTX switch enables the new token phase markers; when unset they emit
+no NVTX calls or timing accumulation. Both selectors remain diagnostic/default OFF.
+
+Follow-on receipt at `bd30a57bad9295c9668c95871dc650f3790f4c91`: the clean
+BAAB20 passed all correctness/refusal/identity checks and measured eager
+42.804086 vs graph 44.005344 tok/s (+2.806409%, first capture included). Separate
+matched 32-step profile passed; its instrumented durations are not scored rates.
+Default remains OFF, decide-by 2026-09-22. See `RESULT.md` under
+`research/dsv4f-full-token-replay-20260908/` and private namespaces
+`full-token-replay-model-baab-bd30a57-r1` / `full-token-replay-profile-bd30a57-r1`.
+
+`MEMRA_TEST_REPLAY_DRAIN_FAILURE_CHILD` is a `cfg(test)`-only subprocess selector
+for the Rust fail-stop policy test. Unset runs the parent test; `error:0|1` and
+`drop:0|1` inject failed completion on that rank during error handling or destructor
+unwind. Each child must SIGABRT before the captured-storage destructor marker.
+Never read by a production binary; unset rolls back. Fault-injection test control,
+not a serving/performance door. Receipt: `DESIGN.md` under
+`research/dsv4f-full-token-replay-20260908/` and the companion Rust failsafe receipts.
+
+| Diagnostic selector | Default / both arms / rollback | Decision and receipt |
+| --- | --- | --- |
+| Standalone `dsv4-full-token-control-gate` executable | OFF: not part of the runtime build or dispatch. Explicit invocation tests live controls and paired segmented graph fixtures; no invocation leaves the engine unchanged. Rollback is to stop invoking the component. No model replay env flag is installed at this checkpoint. | decide-by: 2026-09-22. Component only, not full-model capture or performance. Source/gates: `research/dsv4f-full-token-replay-20260908/DESIGN.md`. Remote receipts held in the companion private ops lane. Remove with a negative/flat full-model verdict; do not promote from the fixture. |
+| `Dsv4Gpu::arm_full_token_replay_for_gate` / sampled gate `--full-token-replay` | **OFF**, request-local diagnostic. OFF keeps the existing eager TP2/expert-ID EP device-sampler+diet program. ON retains forward and commit/head/sample segments per rank with live token/position/uniform/fault inputs, uniform compressor predicates and exact selector/attention loop bounds. No fallback/recapture; unsupported shapes and modes refuse. Rollback drops the armed request; no serving route selects this unsafe gate-only lifetime lease. | decide-by: 2026-09-22. Measured source `754438bb`: full-model 256 changing-token/cache/hidden/epoch checks and six late-refusal cells pass; 20 eligible same-load rows, eager 42.799984 vs graph 43.931954 tok/s (+2.644789%, first scored capture included). Positive diagnostic, still OFF pending root qualification; not serving/default admission. Result: `research/dsv4f-full-token-replay-20260908/RESULT.md`. Source, lifetime contract, cold first-B capture timing and one 20-row ABBA protocol: `research/dsv4f-full-token-replay-20260908/DESIGN.md`. Private namespaces `full-token-replay-guarded-kernels-r1`, `full-token-replay-sampler-r2`. CUDA-IF helpers were removed after composed synccheck refusal; their failure was not waived. |
+
 ## Removed doors, 2026-09-08 (DSV4 phase-interleaved issue)
 
 | Removed selector | Verdict | Evidence |

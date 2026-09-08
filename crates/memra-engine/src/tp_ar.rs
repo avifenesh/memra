@@ -23,6 +23,21 @@ use cudarc::driver::{CudaEvent, CudaSlice, DevicePtr, DevicePtrMut};
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_tp_ar_1stage_replay(
+        in_rank0: *const f32,
+        in_rank1: *const f32,
+        out: *mut f32,
+        self_sg: *mut c_void,
+        peer_sg: *mut c_void,
+        rank: i32,
+        n: i64,
+        err: *mut i32,
+        spin_limit: i64,
+        blocks: i32,
+        stream: *mut c_void,
+        fault: *const c_void,
+        site: i32,
+    ) -> i32;
     /// Push `n` f32 from `src` into the PEER's `peer_stage`. Enqueued on the caller's stream.
     pub fn memra_tp_ar_push(
         src: *const f32,
@@ -44,6 +59,7 @@ unsafe extern "C" {
     ) -> i32;
     /// Size of one rank's barrier signal block, so the host allocates what the kernel expects.
     pub fn memra_tp_ar_signal_bytes() -> i32;
+    pub fn memra_tp_ar_seq_offset_bytes() -> i32;
     /// ONE-SHOT all-reduce: one launch per rank, no CUDA events. Reads BOTH ranks' inputs in
     /// GLOBAL RANK ORDER (so every rank computes the same expression, not a mirror image) and
     /// writes the full sum. `out` may alias this rank's input.

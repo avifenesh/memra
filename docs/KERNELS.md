@@ -608,6 +608,19 @@ receipts: `research/kernel-dedup-20260821/RECEIPTS.md`; every modified TU × arc
   m64n64k16.bf16 wrapper. Still local by design: fa3's `_tb` (transpose-B imm) and
   templated wait, qmatvec's m64n64k32.s8 form and raw asm statements.
 
+## DSV4 segmented replay component, 2026-09-08
+
+| Source | Kernel | Contract / dispatch |
+| --- | --- | --- |
+| `cu/dsv4_replay_control.cuh` | `dsv4_replay_control_kernel` | Integer live token/position/uniform storage, ring slot, compressor cadence/offsets, indexer bounds. Same-device C4/C128 IF handles set on every execution. Standalone `tools/dsv4-full-token-control-gate.cu` only; no runtime FFI or model dispatch. Default OFF; decide-by 2026-09-22. `research/dsv4f-full-token-replay-20260908/DESIGN.md`. |
+| `tools/dsv4-full-token-control-gate.cu` | `snapshot`, `emit4`, `emit128`, `producer`, `finish`, `rollback` | Integer payload/control fixtures around the existing `memra_tp_ar_1stage` transport and its live-fault entry. Not model compressor, attention, head or sampling kernels. No runtime dispatch. Same diagnostic lifetime as the control kernel. |
+| `cu/dsv4_gpu.cu` | `dsv4_replay_input_kernel`, `dsv4_replay_tick_kernel` | Stable 24-byte request controls and per-rank segment counters. Gate-only full-token replay, default OFF, decide-by 2026-09-22; FFI in `dsv4_ffi.rs`. |
+| `cu/dsv4_gpu.cu` | `dsv4_replay_copy_row_kernel`, `dsv4_replay_copy_if_kernel` | Live append/emission addresses and uniformly predicated pending shifts. Byte copies only; existing active compressor arithmetic/reduction order retained. Same diagnostic door. |
+| `cu/dsv4_gpu.cu` | Existing compressor pool, f32 RMSNorm, RoPE-at, Hadamard and activation-quant kernels | Optional uniform whole-block emission predicate at entry, before barriers. Null preserves eager behavior. `memra_dsv4_replay_compressor_emit` composes the exact active program; no CUDA conditional body. Real-kernel byte/sanitizer gate: `tools/dsv4-replay-live-kernel-gate.cu`. |
+| `cu/dsv4_gpu.cu` | Existing redirect, numeric top-k, f32 indexer-score and sink score/soft/out kernels | Optional live position/count/slot inputs; same loop bounds and reduction order as eager. No padded reduction replacement. Same default-OFF full-token door and component gate. |
+| `cu/tp_ar.cu` | `memra_tp_ar_1stage_kernel` | Optional live rank/layer fault input before actual barriers. Existing eager entry passes null; start/end barriers and device epoch program retained. Replay FFI and epoch readback: `tp_ar.rs` / `dsv4_ep.rs`. |
+| `cu/dsv4_sampler.cu` | `dsv4_sample_draw` | Pointer-fed uniform in replay; existing by-value path remains. Same `device-f64-exp-tree-cdf-v1` program. Real changing-uniform equivalence gate: `tools/dsv4-replay-sampler-gate.cu`. |
+
 ## Known UNKNOWNs
 
 Per-variant dispatch flags inside the four giant fatbin TUs (kernels/qmatvec/flash_attn/
