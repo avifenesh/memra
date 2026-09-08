@@ -70,7 +70,7 @@ try:
         body = json.loads((a.templates / (cell + '-request.json')).read_text())
         before = metrics(cell + '-before')
         offset = (a.run / 'server.log').stat().st_size
-        row = cq.completion(base, body, a.run, cell, raw_tape=not body.get('stream', False))
+        row = cq.completion(base, body, a.run, cell, raw_tape=not body.get('stream', False) and body.get('temperature') == 0)
         time.sleep(1)
         after = metrics(cell + '-after')
         with (a.run / 'server.log').open('rb') as stream:

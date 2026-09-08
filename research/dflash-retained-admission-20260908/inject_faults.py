@@ -56,4 +56,7 @@ s = s[:end] + ''').and_then(|sess| {
                             Err("injected failure after carrier consumption".into())
                         } else { Ok(sess) }
                     }''' + s[end:]
+needle = "let (pool_reserved, pool_used) = engine.pool_reserved_used();"
+assert s.count(needle) == 1
+s = s.replace(needle, needle + "\n            eprintln!(\"[retained-pool] active={} parked_dspark={} pinned_bytes={} pool_used={pool_used}\", active.len(), dspark_reuse.values().map(Vec::len).sum::<usize>(), px.pinned_bytes());")
 p.write_text(s)
