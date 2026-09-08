@@ -32,3 +32,17 @@ an unterminated thinking block; the chat API correctly did not expose it as a to
 A greedy offline FP8 control closed the thinking block and emitted the intended call.
 This difference is retained for model-quality analysis; the parser is not altered to
 force a passing result. NativeReference is not production admission.
+
+## Resident prime slab admission candidate
+
+The admission estimate charged all prefill workspace on warm requests even when the
+model retained reusable prime slab planes. Those allocations already reduced effective
+free VRAM. The candidate subtracts only the requested prefix of physically allocated,
+unborrowed slab planes from the workspace charge. Growth, speculative execution,
+draft-backed execution, hyper and multi-device paths receive no credit. KV allocation,
+transient workspace beyond the slabs and the reserve remain charged.
+
+Two pure accounting tests pass remotely, including growth, malformed geometry and
+overflow refusal. Remote format and server compile checks pass. The constrained-VRAM
+HTTP pressure test is pending; this is not yet a verified availability improvement.
+The active BFCL server keeps its original binary, without this candidate.

@@ -42,6 +42,36 @@ pub struct PrimeSlabs {
     pub seg_t: usize,
 }
 
+/// Credit only the requested prefix of complete, already allocated slab planes.
+/// Growth and malformed geometry receive no credit: replacing a slab can overlap both
+/// allocations, and its old bytes must not be treated as available memory.
+fn prime_slab_reuse_credit(
+    capacity: usize,
+    requested: usize,
+    f32_lengths: &[usize],
+    byte_lengths: &[usize],
+) -> usize {
+    if capacity == 0 || requested == 0 || requested > capacity {
+        return 0;
+    }
+    let mut per_row = 0usize;
+    for (lengths, width) in [(f32_lengths, 4usize), (byte_lengths, 1usize)] {
+        for &length in lengths {
+            if length == 0 || !length.is_multiple_of(capacity) {
+                return 0;
+            }
+            let Some(bytes) = (length / capacity).checked_mul(width) else {
+                return 0;
+            };
+            let Some(total) = per_row.checked_add(bytes) else {
+                return 0;
+            };
+            per_row = total;
+        }
+    }
+    per_row.checked_mul(requested).unwrap_or(0)
+}
+
 // Split prime ranges cannot enter the full-range segment-graph arm, and every slab access
 // is serialized by its device mutex after binding that device's CUDA context on the thread.
 unsafe impl Send for PrimeSlabs {}
@@ -6345,6 +6375,51 @@ impl HybridModel {
             && t >= 16
             && !e.verify_exact_on()
             && std::env::var("MEMRA_F16OUT").as_deref() != Ok("0")
+    }
+
+    /// Physical slabs already counted as used VRAM are not a new allocation on a
+    /// subsequent plain request. Single-device only; growth, disabled slabs, borrowed
+    /// slabs and unknown state return zero. This changes accounting, never arithmetic.
+    pub fn reusable_prime_slab_bytes(&self, e: &Engine, prompt_rows: usize) -> usize {
+        if self.hyper.is_some()
+            || std::env::var("MEMRA_PRIME_SLABS").as_deref() == Ok("0")
+            || crate::pp::pp_cuts(self.layers.len()).is_some_and(|cuts| cuts.len() > 2)
+        {
+            return 0;
+        }
+        let chunk = prime_chunk_tokens(prompt_rows, self.layers.len());
+        let requested = if chunk == 0 {
+            prompt_rows
+        } else {
+            prompt_rows.min(chunk)
+        };
+        let Ok(pool) = self.prime_slabs.try_lock() else {
+            return 0;
+        };
+        let Some(entry) = pool.get(&e.ctx().ordinal()) else {
+            return 0;
+        };
+        if std::sync::Arc::strong_count(entry) != 1 {
+            return 0;
+        }
+        let Ok(slab) = entry.try_lock() else { return 0 };
+        prime_slab_reuse_credit(
+            slab.t_cap,
+            requested,
+            &[
+                slab.h.len(),
+                slab.x1.len(),
+                slab.z.len(),
+                slab.act.len(),
+                slab.xa.len(),
+                slab.xb.len(),
+                slab.gate.len(),
+                slab.up.len(),
+                slab.ffn_out.len(),
+                slab.mixed.len(),
+            ],
+            &[slab.h16.len(), slab.z16.len()],
+        )
     }
 
     /// (cache.pos + i). Returns (last-row logits, h_seed, this chunk's hidden stack [T, n_embd]).
@@ -31651,5 +31726,40 @@ impl HybridModel {
             started.elapsed().as_secs_f64() * 1e3
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod resident_prime_slab_tests {
+    use super::prime_slab_reuse_credit;
+
+    #[test]
+    fn prime_slab_credit_covers_only_existing_requested_rows() {
+        let f32_planes = [4096 * 5120; 7];
+        let ffn_planes = [4096 * 32768; 3];
+        let planes: Vec<_> = f32_planes.into_iter().chain(ffn_planes).collect();
+        let bf16_planes = [4096 * 5120 * 2; 2];
+        let per_row = 7 * 5120 * 4 + 3 * 32768 * 4 + 2 * 5120 * 2;
+        assert_eq!(
+            prime_slab_reuse_credit(4096, 4096, &planes, &bf16_planes),
+            per_row * 4096
+        );
+        assert_eq!(
+            prime_slab_reuse_credit(4096, 512, &planes, &bf16_planes),
+            per_row * 512
+        );
+        assert_eq!(
+            prime_slab_reuse_credit(4096, 4097, &planes, &bf16_planes),
+            0
+        );
+        assert_eq!(prime_slab_reuse_credit(0, 512, &planes, &bf16_planes), 0);
+        assert_eq!(prime_slab_reuse_credit(4096, 0, &planes, &bf16_planes), 0);
+    }
+
+    #[test]
+    fn prime_slab_credit_refuses_invalid_or_overflowed_allocations() {
+        assert_eq!(prime_slab_reuse_credit(4, 2, &[15], &[8]), 0);
+        assert_eq!(prime_slab_reuse_credit(4, 2, &[16], &[0]), 0);
+        assert_eq!(prime_slab_reuse_credit(1, 1, &[usize::MAX], &[1]), 0);
     }
 }

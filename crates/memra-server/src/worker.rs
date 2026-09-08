@@ -13883,6 +13883,16 @@ pub fn run(
             let decode_policy = chunk_policies
                 .get(&model_key)
                 .expect("loaded model missing decode chunk policy");
+            // Existing model-owned slabs are already subtracted from effective free VRAM.
+            // Charge only new workspace, without discounting context state or the reserve.
+            let resident_prime_credit = if !estimate_spec && !dspark_drafts.contains_key(&model_key)
+            {
+                loaded[&model_key]
+                    .model
+                    .reusable_prime_slab_bytes(&engine, prompt_len)
+            } else {
+                0
+            };
             let (
                 cost,
                 bytes_per_token,
@@ -13892,11 +13902,16 @@ pub fn run(
                 prefill_bytes,
                 pp_activation_bytes,
                 log_estimate,
+                applied_prime_credit,
             ) = {
                 let model = admission_costs
                     .get_mut(&model_key)
                     .expect("loaded model missing admission cost model");
-                let cost = model.estimate(admission_cap, prompt_len, estimate_spec);
+                let workspace = model.prefill_workspace_bytes(prompt_len);
+                let credit = resident_prime_credit.min(workspace);
+                let cost = model
+                    .estimate(admission_cap, prompt_len, estimate_spec)
+                    .saturating_sub(credit);
                 let key = (admission_cap, estimate_spec, cost);
                 let log = model.last_logged != Some(key);
                 if log {
@@ -13908,9 +13923,10 @@ pub fn run(
                     model.ring_bytes_per_token(estimate_spec),
                     model.ring_rows,
                     model.activation_bytes,
-                    model.prefill_workspace_bytes(prompt_len),
+                    workspace.saturating_sub(credit),
                     model.pp_activation_bytes,
                     log,
+                    credit,
                 )
             };
             // PER-SESSION DRAFT-GRAPH STATE (lane/step37-vram-admission-20260830, defect 2):
@@ -13947,6 +13963,12 @@ pub fn run(
                     } else {
                         "measured capture high-water"
                     },
+                );
+            }
+            if log_estimate && applied_prime_credit > 0 {
+                eprintln!(
+                    "[admission] resident prime slab credit: model={model_key:?} {:.0}MB (already allocated; reserve unchanged)",
+                    applied_prime_credit as f64 / 1e6
                 );
             }
             if log_estimate {
