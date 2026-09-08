@@ -1,0 +1,48 @@
+credit-pressure-0-baseline.log
+[server] build: memra-0.134.0-bb2fdf1abd85 (id: source-tree, git: 8cfb182babe9)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] GPU worker shutdown complete
+credit-pressure-1-candidate.log
+[server] build: memra-0.134.0-8737e7af5319 (id: source-tree, git: 1ea01297aa98)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admission] resident prime slab credit: model="dictalm" 2282MB (already allocated; reserve unchanged)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 1581MB prefill-workspace + 0MB fixed = 5587MB
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] GPU worker shutdown complete
+credit-pressure-2-candidate.log
+[server] build: memra-0.134.0-8737e7af5319 (id: source-tree, git: 1ea01297aa98)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admission] resident prime slab credit: model="dictalm" 2282MB (already allocated; reserve unchanged)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 1581MB prefill-workspace + 0MB fixed = 5587MB
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] GPU worker shutdown complete
+credit-pressure-3-baseline.log
+[server] build: memra-0.134.0-bb2fdf1abd85 (id: source-tree, git: 8cfb182babe9)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] GPU worker shutdown complete
+credit-pressure-4-baseline.log
+[server] build: memra-0.134.0-bb2fdf1abd85 (id: source-tree, git: 8cfb182babe9)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[admit-oom] VRAM reject: model="dictalm" ctx=53952 has no attainable admission headroom (available 7741MB) — HTTP 429
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] GPU worker shutdown complete
+credit-pressure-5-candidate.log
+[server] build: memra-0.134.0-8737e7af5319 (id: source-tree, git: 1ea01297aa98)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 3863MB prefill-workspace + 0MB fixed = 7868MB
+[admission] resident prime slab credit: model="dictalm" 2282MB (already allocated; reserve unchanged)
+[admission] request cost: model="dictalm" ctx=53952 path=plain = 74240 B/token x ctx + 1581MB prefill-workspace + 0MB fixed = 5587MB
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] GPU worker shutdown complete

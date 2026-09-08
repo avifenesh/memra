@@ -1,0 +1,635 @@
+{
+  "source_commit": "1ea01297a",
+  "baseline_commit": "8cfb182babe9fd64a708a10fce1e2c3f29200528",
+  "reserved_mib": 8144,
+  "prompt_sha256": "e816d871a1772ca40791d57dc599ea91404fb001bc968754be5cd7054e395c2d",
+  "binary_sha256": {
+    "baseline": "9c31aee15ad79f1447982cb5178fceab89b4e9d9cac70e71dc8a98ef2ca2bb4b",
+    "candidate": "2ca6e5623bade2dfb63d304cd1907d6f854f0cc026b7923906a09bc214f6cc16"
+  },
+  "sampling": "No sampling parameters; metadata defaults 0.6/0.95/top_k20",
+  "windows": [
+    {
+      "ordinal": 0,
+      "arm": "baseline",
+      "cold": {
+        "wall_seconds": 19.63262157602003,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 19.628974414023105,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 19.60832128196489,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete or modify messages. You may need to contact your advisor directly to address the issue.",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.561559549000002
+              },
+              "id": "cmpl-0949c634ed273fad9ebf30d6e31e22d6",
+              "created": 1788879748,
+              "system_fingerprint": "memra-0.134.0-bb2fdf1abd85"
+            }
+          }
+        ]
+      },
+      "warm": {
+        "wall_seconds": 0.07091928902082145,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 0.036981800047215074,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 0.06903755402890965,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 1,
+      "arm": "candidate",
+      "cold": {
+        "wall_seconds": 39.019035322999116,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 39.017354013980366,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete or modify messages. You\u2019ll need to contact your advisor directly to address the issue.",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.464713525
+              },
+              "id": "cmpl-d1a60f87c7977ace2fa5be3eb017bacf",
+              "created": 1788879796,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 19.55094567098422,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a way to delete or edit messages sent to your advisor. You\u2019ll need to contact your advisor directly to address",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.50403171
+              },
+              "id": "cmpl-a9178444fc308be05e272de25b7ee2fc",
+              "created": 1788879796,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          }
+        ]
+      },
+      "warm": {
+        "wall_seconds": 39.3019166670274,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 19.64528389496263,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete messages or modify previous communications. Please let me know if there\u2019s anything else I can",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.606276752
+              },
+              "id": "cmpl-c6dc46e5fb3d41ea1d3188d2aa0aad0d",
+              "created": 1788879835,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 39.299355630006175,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete or modify messages. If you need to correct the information you sent to your advisor,",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.65370945
+              },
+              "id": "cmpl-5123e8a5cbdfa44af7c796c3227f01b8",
+              "created": 1788879835,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 2,
+      "arm": "candidate",
+      "cold": {
+        "wall_seconds": 39.27707869402366,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 39.27629014401464,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete or modify messages. If you need to correct or withdraw a previous communication, you\u2019ll",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.651684118
+              },
+              "id": "cmpl-95b29095c5dd7aa2188f7f0b18dc8f01",
+              "created": 1788879902,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 19.62322678300552,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m unable to delete messages. You\u2019ll need to contact your advisor directly to address any incorrect information you may have sent.",
+                  "finish_reason": "stop"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 27,
+                "total_tokens": 53883,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.57570846
+              },
+              "id": "cmpl-3e41165b1f63e6666a2f2fc88ec6bb7e",
+              "created": 1788879902,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          }
+        ]
+      },
+      "warm": {
+        "wall_seconds": 39.58535002998542,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 19.803358153963927,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete or modify messages. You\u2019ll need to contact your advisor directly to correct any information you",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.76440264
+              },
+              "id": "cmpl-6a5da5aa3cd42468638e4ccf5747547f",
+              "created": 1788879942,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 39.58263880602317,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete messages. If you need to correct or withdraw your previous communication, you\u2019ll need to",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.778928137
+              },
+              "id": "cmpl-e982333752c8d2d2ac927a6bf1a4585f",
+              "created": 1788879942,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 3,
+      "arm": "baseline",
+      "cold": {
+        "wall_seconds": 19.332728611014318,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 19.31193753000116,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>The message has been removed.",
+                  "finish_reason": "stop"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 8,
+                "total_tokens": 53864,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.263680147
+              },
+              "id": "cmpl-d320dc76681b48d357bc0439696aa9b1",
+              "created": 1788880009,
+              "system_fingerprint": "memra-0.134.0-bb2fdf1abd85"
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 19.330444519990124,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          }
+        ]
+      },
+      "warm": {
+        "wall_seconds": 0.06458658096380532,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 0.06311933998949826,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 0.032945641956757754,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 4,
+      "arm": "baseline",
+      "cold": {
+        "wall_seconds": 19.830202930024825,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 19.80392605200177,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete or modify messages. If you need to correct or retract information you\u2019ve sent, you",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.756536258
+              },
+              "id": "cmpl-a11e5cb7f5b2a7954d471c4c2660db48",
+              "created": 1788880057,
+              "system_fingerprint": "memra-0.134.0-bb2fdf1abd85"
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 19.82733299798565,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          }
+        ]
+      },
+      "warm": {
+        "wall_seconds": 0.0743682740139775,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 0.03843966097338125,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 0.07192448596470058,
+            "status": 429,
+            "response": {
+              "error": {
+                "message": "request context 53952 does not fit available KV capacity; retry with smaller max_tokens or max_ctx",
+                "type": "rate_limit_error",
+                "param": null,
+                "code": "rate_limit_exceeded"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 5,
+      "arm": "candidate",
+      "cold": {
+        "wall_seconds": 39.030109975952655,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 19.403797569975723,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>The previous message has been removed.",
+                  "finish_reason": "stop"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 9,
+                "total_tokens": 53865,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.352657874
+              },
+              "id": "cmpl-bbe3cdd03d4902eedefcffd8d7272c45",
+              "created": 1788880105,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 39.027801396965515,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete or modify previously sent messages. If you need to correct or withdraw your information, you",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.623301746
+              },
+              "id": "cmpl-15324a71ea79ad5cea74d0e509200cec",
+              "created": 1788880105,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          }
+        ]
+      },
+      "warm": {
+        "wall_seconds": 39.54681840300327,
+        "rows": [
+          {
+            "index": 1,
+            "seconds": 19.785538744996302,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete messages. If you need to correct or update your advisor, you\u2019ll need to contact",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.746271135
+              },
+              "id": "cmpl-d5838ec250192eb75b36a71f56e1d1f9",
+              "created": 1788880144,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          },
+          {
+            "index": 2,
+            "seconds": 39.5435759749962,
+            "status": 200,
+            "response": {
+              "object": "text_completion",
+              "model": "dictalm",
+              "choices": [
+                {
+                  "index": 0,
+                  "text": "</think>I\u2019m sorry, but I don\u2019t have a function available to delete or modify messages. You\u2019ll need to contact your advisor directly to correct the information.",
+                  "finish_reason": "length"
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 53856,
+                "completion_tokens": 32,
+                "total_tokens": 53888,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "elapsed_s": 19.758281857
+              },
+              "id": "cmpl-0eff2a29f5be6b86539f2849cbf2ef8c",
+              "created": 1788880144,
+              "system_fingerprint": "memra-0.134.0-8737e7af5319"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "candidate_all_http200": true
+}

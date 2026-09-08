@@ -43,6 +43,28 @@ draft-backed execution, hyper and multi-device paths receive no credit. KV alloc
 transient workspace beyond the slabs and the reserve remain charged.
 
 Two pure accounting tests pass remotely, including growth, malformed geometry and
-overflow refusal. Remote format and server compile checks pass. The constrained-VRAM
-HTTP pressure test is pending; this is not yet a verified availability improvement.
-The active BFCL server keeps its original binary, without this candidate.
+overflow refusal. Remote format and server compile checks pass.
+
+The pressure test passed three interleaved baseline/candidate windows on the non-serving
+RTX 5090. Reserving 8,144 MiB emulated the laptop's 24,463 MiB capacity. Each window used
+a cold pair followed by a warm pair of real 53,856-token requests, capped at 32 output
+tokens with no sampling parameters (metadata defaults 0.6 / 0.95 / top_k20).
+Baseline completed 3/12 requests and rejected 9/12 with HTTP429. Candidate completed
+12/12 with HTTP200 and no CUDA OOM. Its reusable-slab credit was 2,281 MB: estimated
+request cost fell from 7,868 to 5,587 MB while the 1,611 MB reserve stayed unchanged.
+Both arms charged the same 74,240 bytes per context token. Cold candidate admission
+initially charged the full workspace before any reusable allocation existed.
+
+The candidate still serialized the pairs at this capacity. Its median cold/warm pair
+walls were 39.03 / 39.55 seconds. These availability windows do not establish a general
+throughput win; baseline's shorter failed-pair wall is not comparable useful work.
+See `receipts/prime-credit-pressure.json` for every response and
+`receipts/prime-credit-admission.log` for the accounting and refusal readback.
+
+Candidate source: `1ea01297aa98d87a7195fba6425f78b16d302201`; server SHA256
+`2ca6e5623bade2dfb63d304cd1907d6f854f0cc026b7923906a09bc214f6cc16`.
+Baseline source: `8cfb182babe9fd64a708a10fce1e2c3f29200528`; server SHA256
+`9c31aee15ad79f1447982cb5178fceab89b4e9d9cac70e71dc8a98ef2ca2bb4b`.
+The isolated candidate target avoids stale dependencies observed when switching the
+shared Cargo target between worktrees. Main-runner/spec and broader regression gates
+remain pending. The active BFCL server resumed its original binary without this change.
