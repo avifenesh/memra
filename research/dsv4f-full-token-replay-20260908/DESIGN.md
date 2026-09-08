@@ -1,10 +1,10 @@
 # Full-token segmented replay: review checkpoint
 
-Status: full-token runtime integration and the one-load model gate are implemented
-in source. Real compressor/attention control and device-sampler components pass
-on the target development pair. Full-model graph coverage, changing-token/refusal
-qualification and the 20-row performance experiment have **not run**. This is a
-review checkpoint, not production admission or a speed result.
+Status: the full-token runtime and bounded model gate passed on the development
+pair at measured source `754438bb0ea46418b43b44a470ab2affa892cfcd`. All 256 changing
+steps and six late-refusal cells passed, followed by 20 eligible same-load rows:
+42.799984 eager vs 43.931954 graph tok/s, +2.644789%. See `RESULT.md`. The diagnostic
+remains default OFF pending root's qualification decision, not production admission.
 
 Base: `2d0271fb3b6021c2c9f1b3b36d2598614a10284f`. Existing issue #4 ownership
 and the older window-only/EP/compressor probe guards are preserved.
