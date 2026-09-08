@@ -512,9 +512,20 @@ fn select_legacy_dense_control() {
     memra_engine::dsv4_gpu::set_dense_exact_tail_for_gate(false).expect("dense control selection");
 }
 
+fn select_dense_policy(profile: bool) {
+    if profile {
+        memra_engine::dsv4_gpu::restore_dense_exact_tail_default_for_gate();
+    } else {
+        select_legacy_dense_control();
+    }
+}
+
 fn main() {
-    select_legacy_dense_control();
     let args: Vec<String> = std::env::args().collect();
+    let replay_profile = args
+        .get(3)
+        .is_some_and(|a| a == "--full-token-replay-profile");
+    select_dense_policy(replay_profile);
     if args.get(1).is_some_and(|a| a == "--sampler-component") {
         sampler_component();
         return;
@@ -527,9 +538,6 @@ fn main() {
         .is_some_and(|a| a == "--full-token-replay-cadence")
         || cadence_reverse;
     let replay_reverse = args.get(3).is_some_and(|a| a == "--full-token-replay-baab");
-    let replay_profile = args
-        .get(3)
-        .is_some_and(|a| a == "--full-token-replay-profile");
     let full_replay = args.get(3).is_some_and(|a| a == "--full-token-replay")
         || replay_reverse
         || replay_profile
@@ -877,6 +885,13 @@ mod default_policy_tests {
             let (cadence, dense) = expected.split_once(':').unwrap();
             assert_eq!(dsv4_replay_cadence_default(), cadence == "1");
             assert_eq!(dense_exact_tail_enabled_for_gate(), dense == "1");
+            // The real profile initialization restores the environment policy,
+            // even after an explicit override. Other CLI modes stay frozen OFF.
+            set_dense_exact_tail_for_gate(dense != "1").unwrap();
+            super::select_dense_policy(true);
+            assert_eq!(dense_exact_tail_enabled_for_gate(), dense == "1");
+            super::select_dense_policy(false);
+            assert!(!dense_exact_tail_enabled_for_gate());
             // Exercise the real legacy gate initialization with an ON override.
             set_dense_exact_tail_for_gate(true).unwrap();
             super::select_legacy_dense_control();
