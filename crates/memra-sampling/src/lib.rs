@@ -185,7 +185,7 @@ pub struct Sampler {
     // oracle cheaper too, and lets the serving path upload O(unique ids) sparse penalty state
     // instead of either the full vocabulary or an O(history^2) device-side dedup walk.
     penalty_counts: HashMap<u32, u32>,
-    nucleus_comparison_calls: u64,
+    nucleus_order: NucleusOrderScratch,
 }
 
 impl Sampler {
@@ -196,13 +196,16 @@ impl Sampler {
             rng,
             history: Vec::new(),
             penalty_counts: HashMap::new(),
-            nucleus_comparison_calls: 0,
+            nucleus_order: NucleusOrderScratch::default(),
         }
     }
 
-    /// Per-request ordering incidence for the serving receipt. No policy state.
+    /// Diagnostic counts for the nucleus ordering mechanism, not sampling-policy state.
     pub fn nucleus_sort_counts(&self) -> (u64, u64) {
-        (0, self.nucleus_comparison_calls)
+        (
+            self.nucleus_order.radix_calls,
+            self.nucleus_order.comparison_calls,
+        )
     }
 
     pub fn is_greedy(&self) -> bool {
@@ -357,8 +360,7 @@ impl Sampler {
 
         // 4. top-p (nucleus): smallest set whose cumulative prob >= top_p. Needs desc-by-prob order.
         if self.cfg.top_p < 1.0 {
-            cand.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
-            self.nucleus_comparison_calls += 1;
+            self.nucleus_order.sort(&mut cand, self.cfg.top_p);
             let mut cum = 0.0f32;
             let mut keep = 0usize;
             for (i, c) in cand.iter().enumerate() {
@@ -551,6 +553,145 @@ fn argmax_u32(logits: &[f32]) -> u32 {
         }
     }
     best
+}
+
+/// Ordering-only prefix radix path. Probability arithmetic and the downstream
+/// f32 cutoff/draw are unchanged. Resolve high-probability buckets first and stop
+/// at the exact nucleus, avoiding passes/copies over discarded vocabulary tails.
+/// The legacy unstable comparator still owns ties that affect retained IDs.
+#[derive(Default)]
+struct NucleusOrderScratch {
+    keys: Vec<u32>,
+    order: Vec<u32>,
+    scratch: Vec<u32>,
+    sorted: Vec<(u32, f32)>,
+    radix_calls: u64,
+    comparison_calls: u64,
+}
+
+enum NucleusVisit {
+    More,
+    Complete,
+    Tied,
+}
+
+fn descending_probability_key(value: f32) -> u32 {
+    let bits = value.to_bits();
+    let ascending = if bits & 0x8000_0000 == 0 {
+        bits ^ 0x8000_0000
+    } else {
+        !bits
+    };
+    // total_cmp distinguishes signed zeros, unlike DSV4's partial_cmp contract.
+    !ascending
+}
+
+impl NucleusOrderScratch {
+    fn comparison(&mut self, cand: &mut [(u32, f32)]) {
+        cand.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
+        self.comparison_calls += 1;
+    }
+
+    fn sort(&mut self, cand: &mut Vec<(u32, f32)>, top_p: f32) {
+        if cand.len() < 1024
+            || cand.len() > u32::MAX as usize
+            || cand.windows(2).all(|w| w[0].1.total_cmp(&w[1].1).is_ge())
+        {
+            self.comparison(cand);
+            return;
+        }
+        self.keys.resize(cand.len(), 0);
+        self.order.clear();
+        for (i, &(_, probability)) in cand.iter().enumerate() {
+            if !probability.is_finite() || probability < 0.0 {
+                self.comparison(cand);
+                return;
+            }
+            // Zero tails cannot contribute mass. If the positive prefix fails
+            // to reach the cutoff, fall back on the complete untouched input.
+            if probability != 0.0 {
+                self.keys[i] = descending_probability_key(probability);
+                self.order.push(i as u32);
+            }
+        }
+        self.scratch.resize(self.order.len(), 0);
+        self.sorted.clear();
+        let mut cumulative = 0.0f32;
+        let result = self.visit(cand, 0, self.order.len(), 24, top_p, &mut cumulative);
+        if !matches!(result, NucleusVisit::Complete) {
+            self.comparison(cand);
+            return;
+        }
+        // Only discard a tail after the exact original f32 cutoff is reached.
+        // The caller retains its original cutoff/min-p/renormalize/draw code.
+        cand.truncate(self.sorted.len());
+        cand.copy_from_slice(&self.sorted);
+        self.radix_calls += 1;
+    }
+
+    fn visit(
+        &mut self,
+        cand: &[(u32, f32)],
+        lo: usize,
+        hi: usize,
+        shift: i32,
+        top_p: f32,
+        cumulative: &mut f32,
+    ) -> NucleusVisit {
+        if shift < 0 && hi - lo > 1 {
+            return NucleusVisit::Tied;
+        }
+        if hi - lo <= 32 {
+            self.order[lo..hi]
+                .sort_unstable_by(|&a, &b| cand[b as usize].1.total_cmp(&cand[a as usize].1));
+            for i in lo..hi {
+                let candidate = cand[self.order[i] as usize];
+                // Same full key cannot straddle radix buckets. Look ahead in
+                // this leaf before retaining either member of an equal pair.
+                if i + 1 < hi
+                    && candidate
+                        .1
+                        .total_cmp(&cand[self.order[i + 1] as usize].1)
+                        .is_eq()
+                {
+                    return NucleusVisit::Tied;
+                }
+                self.sorted.push(candidate);
+                *cumulative += candidate.1;
+                if *cumulative >= top_p {
+                    return NucleusVisit::Complete;
+                }
+            }
+            return NucleusVisit::More;
+        }
+        let mut counts = [0usize; 256];
+        for &id in &self.order[lo..hi] {
+            counts[((self.keys[id as usize] >> shift) & 255) as usize] += 1;
+        }
+        let mut offsets = [0usize; 256];
+        let mut next = lo;
+        for (offset, &count) in offsets.iter_mut().zip(&counts) {
+            *offset = next;
+            next += count;
+        }
+        for &id in &self.order[lo..hi] {
+            let bucket = ((self.keys[id as usize] >> shift) & 255) as usize;
+            self.scratch[offsets[bucket]] = id;
+            offsets[bucket] += 1;
+        }
+        self.order[lo..hi].copy_from_slice(&self.scratch[lo..hi]);
+        let mut begin = lo;
+        for count in counts {
+            if count != 0 {
+                match self.visit(cand, begin, begin + count, shift - 8, top_p, cumulative) {
+                    NucleusVisit::More => {}
+                    result => return result,
+                }
+            }
+            begin += count;
+        }
+        NucleusVisit::More
+    }
 }
 
 /// Stable softmax over candidate logits, writing probs back into the logit slot.
@@ -1098,3 +1239,6 @@ mod resume_sampler_predicate_tests {
         assert_eq!(b.mismatch(&b), None);
     }
 }
+
+#[cfg(test)]
+mod nucleus_order_tests;
