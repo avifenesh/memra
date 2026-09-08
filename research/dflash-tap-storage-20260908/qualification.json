@@ -1,0 +1,197 @@
+{
+  "issue": 365,
+  "engine_source_commit": "98280dae8f46e5a931f354ce14a26c176e4e0cfc",
+  "engine_base_commit": "24555c174",
+  "hardware": "non-production NVIDIA GeForce RTX 5090, 32 GB",
+  "cuda_arch": "120a",
+  "binary_sha256": "a972c62204b0a75ecd5ff884808fdc4c37b50f73aae87790ffb2ebadccdc5df5",
+  "source_sha256": {
+    "crates/memra-engine/src/dflash.rs": "04e66a51a06efd581356b3dc1ade3bed48febee726a490eca4b4ef42d74d75b5",
+    "crates/memra-engine/src/lib.rs": "776d8662d5a2bcd7d85a449c995dc1da280f2dcaec0d53a2b456c0fb84dc8e1c",
+    "crates/memra-server/src/worker.rs": "5a8bd8cc9e2378d68913d5e3a85dc451aef36dc562c3e1947f35fe4ca18dca42",
+    "docs/FLAGS.md": "fd52d9d5bfa21a8dc8175358b37f795522aeaeb2f71f7753864c8c74d5bfbd39"
+  },
+  "oracle": {
+    "exact": true,
+    "oracle_sets": 4,
+    "old_oracles": [
+      {
+        "rows": "4096",
+        "taps": "1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081",
+        "features": "6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf",
+        "positions": "6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3",
+        "target_logits": "a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6",
+        "boundary_pos": "0",
+        "boundary_logits": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "rows": "1050",
+        "taps": "d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411",
+        "features": "7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66",
+        "positions": "044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033",
+        "target_logits": "45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3",
+        "boundary_pos": "1024",
+        "boundary_logits": "04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8"
+      },
+      {
+        "rows": "32708",
+        "taps": "ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9",
+        "features": "8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1",
+        "positions": "50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf",
+        "target_logits": "276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a",
+        "boundary_pos": "32672",
+        "boundary_logits": "f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c"
+      },
+      {
+        "rows": "32760",
+        "taps": "f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd",
+        "features": "01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094",
+        "positions": "3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3",
+        "target_logits": "1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82",
+        "boundary_pos": "32736",
+        "boundary_logits": "b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      }
+    ],
+    "candidate_oracles": [
+      {
+        "rows": "4096",
+        "taps": "1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081",
+        "features": "6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf",
+        "positions": "6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3",
+        "target_logits": "a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6",
+        "boundary_pos": "0",
+        "boundary_logits": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "rows": "1050",
+        "taps": "d87038f06fd86e7df088b11aa7ab7df5434a3f9e62cee2c6feb6391b6d918411",
+        "features": "7ef955845f4f659983bc63298ff9fa4ad113af4a844695b7a8123245537e9c66",
+        "positions": "044631b70ef9322e2dc7037c1a7ce493acb91ec9c36dc6e790f68f816ea7c033",
+        "target_logits": "45be51e0310f2cc9a11f77f000b0956ac1989c60b6004344e9d2e16113c84cf3",
+        "boundary_pos": "1024",
+        "boundary_logits": "04a65a15d542edee3ad32921ac72bf4f6854e31a04ff5505dbb5f6444eded1c8"
+      },
+      {
+        "rows": "32708",
+        "taps": "ae752e8a3f38bc33db67c6d2d9315d3669c894ca60efcd65bfe8313f5f4496d9",
+        "features": "8824a8f6f65b44171a0e797fca1cf06de420749f006d7b77dedea7b380991ab1",
+        "positions": "50c1f44e26a922d4cb4791ca3a89857e6ad3dac7dd34e351a359503c064017bf",
+        "target_logits": "276cb7c1a08801e202660cd5689cbaa192120ed3005aa1bd620095d6aec2ad0a",
+        "boundary_pos": "32672",
+        "boundary_logits": "f06f0fd722e6af880b6cede096c06178e9e7c2e01b1a0f4e1dd1ec38d8f8da5c"
+      },
+      {
+        "rows": "32760",
+        "taps": "f88a5d94090c5b95c5fbfb91517cfc65751086369bacae7355eb7926887321dd",
+        "features": "01a58d15e79a8885ec319573c896290f1685ebbb35ff47632e2b376ee1986094",
+        "positions": "3b3b137dfb4bee71692ae4b2c5022fc0fcea29fd62ea930985e8233903035da3",
+        "target_logits": "1ea0630b7df352b823b35ac88f3205b5887bac60304a21b330476651deec7d82",
+        "boundary_pos": "32736",
+        "boundary_logits": "b1b739f173b56c2d263eaa864d133a33eaac8743fadd4c8a5cae035b7f19d8c6"
+      }
+    ],
+    "greedy_tapes": [
+      {
+        "cell": "old",
+        "request": "a-seed",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "tokens": 64,
+        "cached_tokens": 0
+      },
+      {
+        "cell": "old",
+        "request": "a-restore",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "tokens": 64,
+        "cached_tokens": 32672
+      },
+      {
+        "cell": "candidate",
+        "request": "a-seed",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "tokens": 64,
+        "cached_tokens": 0
+      },
+      {
+        "cell": "candidate",
+        "request": "a-restore",
+        "sha256": "b57b9afeb091450e9aa1f5bcdf6d03bf6fcf34d3d9aafec79bf4e66536ef6e02",
+        "tokens": 64,
+        "cached_tokens": 32672
+      }
+    ],
+    "binary_sha256": "a972c62204b0a75ecd5ff884808fdc4c37b50f73aae87790ffb2ebadccdc5df5"
+  },
+  "root_cause": {
+    "failing_site": "crates/memra-engine/src/spec.rs:7344",
+    "failing_bytes": 3145728,
+    "trigger": "retained FA output scratch growth from 50380800 to 100761600 f32 elements",
+    "new_FA_output_bytes": 403046400,
+    "new_FA_stats_bytes_each": 1574400,
+    "before_retained_FA_bytes": 647930880,
+    "after_retained_FA_bytes": 287440896
+  },
+  "qualification": "incomplete: warm admission refused; mixed p95 increased",
+  "sampling": "no sampling fields supplied on capacity/mixed requests; greedy used only for the 64-token identity tape",
+  "context_configured": 262144,
+  "vision_tower_loaded": true,
+  "cells": [
+    {
+      "name": "traced_decode_reproduction",
+      "prompt_tokens": 131074,
+      "streamed_before_failure": 650,
+      "step_ooms": 1,
+      "retries": 0,
+      "ttft_s": 75.619,
+      "trace": true
+    },
+    {
+      "name": "cold_128k_output1024",
+      "prompt_tokens": 131074,
+      "output_tokens": 1024,
+      "finish": "length",
+      "step_ooms": 0,
+      "retries": 0,
+      "ttft_s": 75.49,
+      "trace": true
+    },
+    {
+      "name": "warm_continuation",
+      "status": 429,
+      "context_reservation": 132200,
+      "request_cost_MB": 7081,
+      "available_MB": 6862,
+      "reserve_unchanged": true,
+      "reason": "retained-prefix admission workspace adjustment excludes DFlash",
+      "step_ooms": 0,
+      "retries": 0
+    },
+    {
+      "name": "mixed_0.10_rps",
+      "duration_s": 240,
+      "requests": 24,
+      "completed": 24,
+      "served_dspark": 24,
+      "served_plain": 0,
+      "step_ooms": 0,
+      "retries": 0,
+      "max_prompt_tokens": 29326,
+      "small_N": 17,
+      "small_p95_ttft_s": 1.085,
+      "archived_small_p95_ttft_s": 0.671,
+      "trace": false
+    }
+  ],
+  "memory": {
+    "sampling_interval_s": 1,
+    "before_peak_driver_used_MiB": 31776,
+    "after_peak_driver_used_MiB": 31808,
+    "interpretation": "failed-before and completed-after runs have different lengths; sampled peaks do not establish whole-process peak reduction"
+  },
+  "validation": {
+    "cargo_fmt": "pass",
+    "cargo_clippy_release_all_targets_D_warnings": "pass",
+    "cargo_test_release_p_memra_engine_dflash": "pass"
+  },
+  "private_receipts": "darklanes research/qwen-ornith-5090-capacity-20260908/issue365/REPORT.md"
+}
