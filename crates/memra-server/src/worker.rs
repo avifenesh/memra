@@ -15,6 +15,9 @@
 //! interleave: a long generation and a freshly-admitted one make forward progress in the same loop,
 //! so the second produces tokens before the first finishes (not serialized end-to-end).
 
+mod host_glm;
+mod host_memory;
+
 use std::collections::{HashMap, VecDeque};
 use std::io::Write as _;
 use std::sync::Arc;
@@ -4185,6 +4188,11 @@ fn prefix_cache_protected_bytes(budget: usize, protected_pct: usize) -> usize {
 /// operator sets an explicit per-stack budget; the MemAvailable x 0.6 boot clamp below is a
 /// backstop against a fat-fingered value (the 2026-08-17 swap-storm law), NEVER the sizing
 /// mechanism. Pinned RAM is not reclaimable by the kernel once allocated.
+// Unqualified GLM host images remain opt-in; device-prefix support is independent.
+fn glm5_tp_kv_host_on() -> bool {
+    std::env::var("MEMRA_GLM5_TP_KV_HOST").as_deref() == Ok("1")
+}
+
 fn kv_host_budget_bytes() -> usize {
     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *B.get_or_init(|| {
@@ -4193,8 +4201,8 @@ fn kv_host_budget_bytes() -> usize {
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0)
             .saturating_mul(1024 * 1024);
-        if requested == 0 {
-            return 0;
+        if requested == 0 || glm5_tp_kv_host_on() {
+            return requested;
         }
         let avail = std::fs::read_to_string("/proc/meminfo")
             .ok()
@@ -6585,10 +6593,19 @@ impl PrefixCache {
             .sum()
     }
 
-    /// Bytes a pinned admission may reclaim without crossing the protected share. Existing
-    /// probation is immediately eligible. A multi-participant fanout also promotes the incoming
+    /// Bytes a pinned admission may reclaim under the selected eviction policy. LRU may
+    /// reclaim either segment, but never a leased entry. SLRU preserves its protected share.
+    /// Existing probation is immediately eligible. A multi-participant fanout also promotes the incoming
     /// entry, so only the protected LRU bytes that promotion would demote back to probation count.
-    fn pinned_admission_reclaimable_bytes(&self, incoming_bytes: usize, promotes: bool) -> usize {
+    fn pinned_admission_reclaimable_bytes(
+        &self,
+        incoming_bytes: usize,
+        promotes: bool,
+        slru: bool,
+    ) -> usize {
+        if !slru {
+            return self.total_bytes.saturating_sub(self.pinned_bytes());
+        }
         let mut reclaimable = self
             .probation_lru
             .values()
@@ -6800,6 +6817,34 @@ impl PrefixCache {
     fn insert_with_budget_pins_and_pct(
         &mut self,
         key: &PoolKey,
+        e: PrefixEntry,
+        why: &str,
+        budget: usize,
+        protected_pct: usize,
+        initial_pins: usize,
+        // HOST-TIER DEMOTE SINK (lane/kv-host-spill-20260830): capacity-evicted entries are
+        // handed here still holding their device bytes; the sink D2H-copies them into the
+        // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
+        // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
+        demote: Option<&mut dyn FnMut(PrefixEntry)>,
+    ) -> Option<u64> {
+        self.insert_with_budget_pins_and_policy(
+            key,
+            e,
+            why,
+            budget,
+            protected_pct,
+            initial_pins,
+            demote,
+            prefix_cache_slru_enabled(),
+        )
+    }
+
+    /// Explicit policy seam keeps admission and victim selection on the same arm in tests.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the existing insertion seam plus its policy
+    fn insert_with_budget_pins_and_policy(
+        &mut self,
+        key: &PoolKey,
         mut e: PrefixEntry,
         why: &str,
         budget: usize,
@@ -6810,6 +6855,7 @@ impl PrefixCache {
         // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
         // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
         mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
+        slru: bool,
     ) -> Option<u64> {
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
@@ -6858,7 +6904,8 @@ impl PrefixCache {
                 .total_bytes
                 .saturating_add(e.bytes)
                 .saturating_sub(budget);
-            let reclaimable = self.pinned_admission_reclaimable_bytes(e.bytes, initial_pins > 1);
+            let reclaimable =
+                self.pinned_admission_reclaimable_bytes(e.bytes, initial_pins > 1, slru);
             if needed > reclaimable {
                 self.record_budget_skip(true);
                 eprintln!(
@@ -6905,7 +6952,7 @@ impl PrefixCache {
             self.rebalance_protected();
         }
         while self.total_bytes > budget {
-            let Some((k, i)) = self.capacity_victim() else {
+            let Some((k, i)) = self.capacity_victim_with(slru) else {
                 break;
             };
             let Some(dead) = self.remove_at(&k, i) else {
@@ -6939,7 +6986,13 @@ impl PrefixCache {
     /// Reserve publication room before allocating its device snapshot. Leases and the
     /// selected eviction policy remain authoritative. Refuse without evicting anything
     /// when the eligible entries cannot make room; publication must never fail a request.
-    fn prepare_snapshot(&mut self, bytes: usize, budget: usize, slru: bool) -> bool {
+    fn prepare_snapshot(
+        &mut self,
+        bytes: usize,
+        budget: usize,
+        slru: bool,
+        mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
+    ) -> bool {
         if bytes > budget {
             return false;
         }
@@ -6972,9 +7025,15 @@ impl PrefixCache {
                 key.0,
                 ns_suffix(&key.1),
             );
-            // Drop device planes before the replacement allocates. Like admission reclaim,
-            // do not stall the request by demoting gigabytes into the optional host tier.
-            drop(dead);
+            // Preserve the reservation and victim policy, but publication preflight
+            // must feed the same host sink as insert-time capacity eviction.
+            // Failed/disabled demotion still retires this unleased victim; it
+            // never publishes a half host entry or weakens the device ceiling.
+            if let Some(sink) = demote.as_mut() {
+                sink(dead);
+            } else {
+                drop(dead);
+            }
         }
         true
     }
@@ -7071,8 +7130,8 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
 // `prefix_restore_at`. Byte-lossless by construction, and `MEMRA_KV_HOST_MB=0` (the default)
 // is byte-identical to today because nothing ever reaches the tier.
 //
-// Model exclusions ride the upstream refusals for free: step37's SWA ring and glm5's latent
-// planes are refused at `prefix_snapshot`, so no such entry can ever exist to demote.
+// SWA-ring exclusions remain upstream. GLM images are opt-in and process-lifetime;
+// the old deploy-handoff frame skips them, so a deploy loses GLM host warmth.
 //
 // v1 keeps every copy on the CUDA owner thread (the HY3 spill law) and instruments each
 // demote/promote duration so the pod tick-stall cell has its receipt. The overlapped
@@ -7087,11 +7146,62 @@ struct HostPlane {
     v_tok_bytes: usize,
 }
 
+/// Legacy pageable state only exists with the arena OFF. Every f32 payload in
+/// an armed host image consumes the same pre-reserved lease as its K/V planes.
+enum HostF32 {
+    Heap(Vec<f32>),
+    Pinned(memra_engine::PinnedHostBuf),
+}
+impl HostF32 {
+    fn down(p: &CudaSlice<f32>, planes: &mut HostPlaneLeases) -> Result<Self, String> {
+        if planes.0.is_none() {
+            return host_glm::read_f32(p).map(Self::Heap);
+        }
+        let mut data = planes.take(p.len() * 4)?;
+        data.copy_from_device_f32(p).map_err(|e| e.to_string())?;
+        Ok(Self::Pinned(data))
+    }
+    fn from_slice(p: &[f32], planes: &mut HostPlaneLeases) -> Result<Self, String> {
+        if planes.0.is_none() {
+            return Ok(Self::Heap(p.to_vec()));
+        }
+        let mut data = planes.take(p.len() * 4)?;
+        data.copy_from_slice(f32s_as_bytes(p))
+            .map_err(|e| e.to_string())?;
+        Ok(Self::Pinned(data))
+    }
+    fn as_slice(&self) -> &[f32] {
+        match self {
+            Self::Heap(p) => p,
+            Self::Pinned(p) => p.as_f32_slice(),
+        }
+    }
+}
+impl std::ops::Deref for HostF32 {
+    type Target = [f32];
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+fn host_image_bytes(device_bytes: usize, toks: &[u32], logits: &[f32]) -> Result<usize, String> {
+    // Token IDs are ordinary unpinned indexing metadata, not CUDA planes; charge
+    // their bytes too. The snapshot ledger already includes last_h; logits
+    // are the remaining boundary plane. Both have arena backing.
+    [toks.len(), logits.len()]
+        .into_iter()
+        .try_fold(device_bytes, |n, len| {
+            len.checked_mul(4)
+                .and_then(|bytes| n.checked_add(bytes))
+                .ok_or_else(|| "pinned arena admission refused: image byte count overflow".into())
+        })
+}
+
 /// Host copy of a `DflashKvTail` (device f32 layer pairs pulled D2H). Small beside the trunk
 /// planes (~85 MB at the flagship shape) and required for losslessness: a promoted entry must
 /// be field-for-field the entry that was demoted, or a dspark restore silently downgrades.
 struct HostDflashTail {
-    layers: Vec<(Vec<f32>, Vec<f32>)>,
+    layers: Vec<(HostF32, HostF32)>,
     base: usize,
     rows: usize,
     len: usize,
@@ -7103,17 +7213,20 @@ struct HostDflashTail {
 /// mismatched version is REFUSED at both insert and promote: the identity rule the
 /// PREFIX_ENTRY_LAYOUT_VERSION comment reserved for exactly this tier.
 struct HostPrefixEntry {
+    model_generation: Option<Arc<()>>,
+    glm: Option<host_glm::HostGlmState>,
     layout_version: u32,
     pool_key: PoolKey,
     toks: Vec<u32>,
     kv: Vec<Option<HostPlane>>,
-    conv: Vec<Option<Vec<f32>>>,
-    ssm: Vec<Option<Vec<f32>>>,
+    conv: Vec<Option<HostF32>>,
+    ssm: Vec<Option<HostF32>>,
     pos: usize,
-    last_logits: Vec<f32>,
+    last_logits: HostF32,
     draft: Option<HostPlane>,
     dspark_draft: Option<HostDflashTail>,
-    last_h: Vec<f32>,
+    last_h: HostF32,
+    device_bytes: usize,
     bytes: usize,
     last_use: Instant,
     id: u64,
@@ -7128,6 +7241,9 @@ struct HostPrefixEntry {
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
 #[derive(Default)]
 struct HostPrefixCache {
+    arena: Option<memra_engine::PinnedHostArena>,
+    arena_reserve_ms: f64,
+    model_generations: HashMap<String, Arc<()>>,
     entries: HashMap<PoolKey, Vec<HostPrefixEntry>>,
     /// (last_use, id) -> (pool key, index); same deterministic tie-break as the device LRU.
     lru: std::collections::BTreeMap<(Instant, u64), (PoolKey, usize)>,
@@ -7192,6 +7308,62 @@ impl HostPrefixCache {
             budget,
             tenant_pct: kv_host_tenant_pct(),
             ..Default::default()
+        }
+    }
+
+    fn generation_current(&self, entry: &HostPrefixEntry) -> bool {
+        entry.model_generation.as_ref().is_none_or(|saved| {
+            self.model_generations
+                .get(&entry.pool_key.0)
+                .is_some_and(|active| Arc::ptr_eq(saved, active))
+        }) && (entry.glm.is_none() || entry.model_generation.is_some())
+    }
+
+    fn log_arena(&self, event: &str) {
+        if let Some(arena) = &self.arena {
+            let (capacity, leased, free) = arena.bytes();
+            let (alloc_ms, fill_ms) = arena.reserve_timings_ms();
+            eprintln!(
+                "[prefix-host DEBUG] arena {event}: reserve_ms={:.3} alloc_ms={alloc_ms:.3} fill_ms={fill_ms:.3} capacity={capacity} leased={leased} free={free}",
+                self.arena_reserve_ms
+            );
+        }
+    }
+
+    // Logical image bytes govern tenancy/LRU; arena bytes are physical backing,
+    // never an additional charge against the same budget.
+    fn reserve_image(
+        &mut self,
+        key: &PoolKey,
+        toks: &[u32],
+        bytes: usize,
+        sizes: &[usize],
+    ) -> Result<HostPlaneLeases, String> {
+        let Some(arena) = self.arena.clone() else {
+            return Ok(HostPlaneLeases(None));
+        };
+        if bytes > self.budget || self.tenant_cap_would_evaporate(key, toks, bytes) {
+            return Err("pinned arena admission refused: image exceeds host/tenant budget".into());
+        }
+        // Credit and recycle the exact twin before reserving its replacement.
+        if let Some(i) = self.key_index(key, toks) {
+            drop(self.remove_at(key, i));
+            self.log_arena("replace eviction");
+        }
+        loop {
+            match arena.try_reserve_planes(sizes) {
+                Ok(planes) => return Ok(HostPlaneLeases(Some(planes.into_iter()))),
+                Err(err) => {
+                    let Some((key, i)) = self.lru.values().next().cloned() else {
+                        self.rejected_allocs += 1;
+                        self.log_arena("admission refusal");
+                        return Err(format!("pinned arena admission refused: {err}"));
+                    };
+                    drop(self.remove_at(&key, i));
+                    self.evictions += 1;
+                    self.log_arena("LRU eviction");
+                }
+            }
         }
     }
 
@@ -7418,6 +7590,8 @@ impl HostPrefixCache {
                 victim_key.0,
                 ns_suffix(&victim_key.1)
             );
+            drop(dead);
+            self.log_arena("LRU eviction");
         }
         true
     }
@@ -7460,12 +7634,31 @@ impl HostPrefixCache {
     }
 }
 
+// Some means the entire image was reserved before the first copy. Exhaustion
+// can never fall through to CUDA allocation. None is the unchanged OFF path.
+struct HostPlaneLeases(Option<std::vec::IntoIter<memra_engine::PinnedHostBuf>>);
+impl HostPlaneLeases {
+    fn take(&mut self, bytes: usize) -> Result<memra_engine::PinnedHostBuf, String> {
+        match &mut self.0 {
+            Some(planes) => {
+                let plane = planes.next().ok_or("pinned image layout exhausted")?;
+                if plane.len() != bytes {
+                    return Err("pinned image plane length mismatch".into());
+                }
+                Ok(plane)
+            }
+            None => memra_engine::PinnedHostBuf::new(bytes).map_err(|e| e.to_string()),
+        }
+    }
+}
+
 /// D2H one device plane into pinned cacheable host memory. Alloc failures LATCH THE TIER OFF
 /// (loud, no pageable fallback); copy failures drop the entry and count, without latching.
 fn host_plane_from_device(
     engine: &Engine,
     host: &mut HostPrefixCache,
     p: &PrefixPlane,
+    planes: &mut HostPlaneLeases,
 ) -> Result<HostPlane, String> {
     let kb = p.len * p.k_tok_bytes;
     let vb = p.len * p.v_tok_bytes;
@@ -7473,22 +7666,29 @@ fn host_plane_from_device(
         let attempt = if kv_host_fault() == "alloc-fail" {
             Err("injected failure (MEMRA_KV_HOST_FAULT=alloc-fail)".to_string())
         } else {
-            memra_engine::PinnedHostBuf::new(n).map_err(|err| err.to_string())
+            planes.take(n)
         };
         attempt.map_err(|err| {
             host.rejected_allocs += 1;
-            host.disable(&format!("pinned host alloc of {n} B failed: {err}"));
+            if host.arena.is_none() {
+                host.disable(&format!("pinned host alloc of {n} B failed: {err}"));
+            }
             format!("pinned host alloc of {n} B failed: {err}")
         })
     };
     let mut k = alloc(kb)?;
     let mut v = alloc(vb)?;
-    if kb > 0 {
+    if host.arena.is_some() {
+        k.copy_from_device_u8(&p.k)
+            .map_err(|e| format!("K plane D2H failed: {e}"))?;
+        v.copy_from_device_u8(&p.v)
+            .map_err(|e| format!("V plane D2H failed: {e}"))?;
+    } else if kb > 0 {
         engine
             .dtoh_u8_into_pinned(&p.k, &mut k, kb)
             .map_err(|err| format!("K plane D2H failed: {err}"))?;
     }
-    if vb > 0 {
+    if host.arena.is_none() && vb > 0 {
         engine
             .dtoh_u8_into_pinned(&p.v, &mut v, vb)
             .map_err(|err| format!("V plane D2H failed: {err}"))?;
@@ -7510,11 +7710,71 @@ fn host_entry_from_device(
     dead: &PrefixEntry,
     verify_digest: Option<String>,
 ) -> Result<HostPrefixEntry, String> {
+    let is_glm = dead.tp.is_some() || dead.latent.iter().any(Option::is_some);
+    if dead.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
+        return Err("host image layout version mismatch".into());
+    }
+    let model_generation = if is_glm {
+        if host.arena.is_none() {
+            return Err("GLM host image requires startup pinned arena".into());
+        }
+        Some(
+            host.model_generations
+                .get(&dead.pool_key.0)
+                .cloned()
+                .ok_or("GLM host image has no loaded model generation")?,
+        )
+    } else {
+        None
+    };
+    let mut sizes = if is_glm {
+        host_glm::HostGlmState::plane_sizes(dead)
+    } else {
+        Vec::new()
+    };
+    for p in dead.kv.iter().flatten() {
+        sizes.extend([p.len * p.k_tok_bytes, p.len * p.v_tok_bytes]);
+    }
+    if !is_glm {
+        sizes.extend(
+            dead.conv
+                .iter()
+                .chain(&dead.ssm)
+                .flatten()
+                .map(|p| p.len() * 4),
+        );
+    }
+    if let Some(p) = &dead.draft {
+        sizes.extend([p.len * p.k_tok_bytes, p.len * p.v_tok_bytes]);
+    }
+    if !is_glm && let Some(t) = &dead.dspark_draft {
+        for (k, v) in &t.layers {
+            sizes.extend([k.len() * 4, v.len() * 4]);
+        }
+    }
+    if sizes
+        .iter()
+        .try_fold(dead.last_h.len() * 4, |n, b| n.checked_add(*b))
+        != Some(dead.bytes)
+    {
+        return Err(format!(
+            "pinned arena admission refused: host byte census does not match snapshot accounting {}",
+            dead.bytes
+        ));
+    }
+    sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
+    let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
+    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, bytes, &sizes)?;
+    let glm = if is_glm {
+        Some(host_glm::HostGlmState::down(engine, dead, &mut planes)?)
+    } else {
+        None
+    };
     let mut kv = Vec::with_capacity(dead.kv.len());
     for plane in &dead.kv {
         kv.push(match plane {
-            Some(p) => Some(host_plane_from_device(engine, host, p)?),
-            None => None,
+            Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
+            _ => None,
         });
     }
     // Diagnostic fault door (see kv_host_fault): corrupt one demoted byte AFTER the demote
@@ -7531,40 +7791,44 @@ fn host_entry_from_device(
     }
     let mut conv = Vec::with_capacity(dead.conv.len());
     for c in &dead.conv {
+        if glm.is_some() {
+            conv.push(None);
+            continue;
+        }
         conv.push(match c {
             Some(c) => Some(
-                engine
-                    .dtoh(c)
+                HostF32::down(c, &mut planes)
                     .map_err(|err| format!("conv state D2H failed: {err}"))?,
             ),
-            None => None,
+            _ => None,
         });
     }
     let mut ssm = Vec::with_capacity(dead.ssm.len());
     for s in &dead.ssm {
+        if glm.is_some() {
+            ssm.push(None);
+            continue;
+        }
         ssm.push(match s {
             Some(s) => Some(
-                engine
-                    .dtoh(s)
+                HostF32::down(s, &mut planes)
                     .map_err(|err| format!("ssm state D2H failed: {err}"))?,
             ),
-            None => None,
+            _ => None,
         });
     }
     let draft = match &dead.draft {
-        Some(p) => Some(host_plane_from_device(engine, host, p)?),
-        None => None,
+        Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
+        _ => None,
     };
     let dspark_draft = match &dead.dspark_draft {
-        Some(t) => {
+        Some(t) if glm.is_none() => {
             let mut layers = Vec::with_capacity(t.layers.len());
             for (k, v) in &t.layers {
                 layers.push((
-                    engine
-                        .dtoh(k)
+                    HostF32::down(k, &mut planes)
                         .map_err(|err| format!("draft tail K D2H failed: {err}"))?,
-                    engine
-                        .dtoh(v)
+                    HostF32::down(v, &mut planes)
                         .map_err(|err| format!("draft tail V D2H failed: {err}"))?,
                 ));
             }
@@ -7577,9 +7841,11 @@ fn host_entry_from_device(
                 floor: t.floor,
             })
         }
-        None => None,
+        _ => None,
     };
-    Ok(HostPrefixEntry {
+    let entry = HostPrefixEntry {
+        model_generation,
+        glm,
         layout_version: dead.layout_version,
         pool_key: dead.pool_key.clone(),
         toks: dead.toks.clone(),
@@ -7587,15 +7853,40 @@ fn host_entry_from_device(
         conv,
         ssm,
         pos: dead.pos,
-        last_logits: dead.last_logits.clone(),
+        last_logits: HostF32::from_slice(&dead.last_logits, &mut planes)?,
         draft,
         dspark_draft,
-        last_h: dead.last_h.clone(),
-        bytes: dead.bytes,
+        last_h: HostF32::from_slice(&dead.last_h, &mut planes)?,
+        device_bytes: dead.bytes,
+        bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest,
-    })
+    };
+    if let Some(glm) = &entry.glm {
+        let plane_bytes = |p: &HostPlane| p.len * (p.k_tok_bytes + p.v_tok_bytes);
+        let bytes = glm.state_bytes()
+            + entry.last_h.len() * 4
+            + entry.kv.iter().flatten().map(plane_bytes).sum::<usize>()
+            + entry
+                .conv
+                .iter()
+                .chain(&entry.ssm)
+                .flatten()
+                .map(|p| p.len() * 4)
+                .sum::<usize>()
+            + entry.draft.as_ref().map_or(0, plane_bytes)
+            + entry.dspark_draft.as_ref().map_or(0, |d| {
+                d.layers.iter().map(|(k, v)| (k.len() + v.len()) * 4).sum()
+            });
+        if bytes != dead.bytes {
+            return Err(format!(
+                "GLM host byte census {bytes} != device snapshot accounting {}",
+                dead.bytes
+            ));
+        }
+    }
+    Ok(entry)
 }
 
 /// What one demotion attempt did with the source entry's bytes, so callers that still OWN
@@ -7630,6 +7921,14 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, dead: P
 /// device state is still live (a parked session, a resident prefix entry) removes it only
 /// after `Demoted`/`Evaporated`: the entry stays until the host copy publishes, which is
 /// what makes a demote racing the next request lose cleanly.
+fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String, String> {
+    if entry.tp.is_some() || entry.latent.iter().any(Option::is_some) {
+        host_glm::digest(entry)
+    } else {
+        prefix_entry_state_digest(engine, entry, entry.pos).map_err(|e| e.to_string())
+    }
+}
+
 fn host_demote_prefix_ref(
     engine: &Engine,
     host: &mut HostPrefixCache,
@@ -7638,13 +7937,9 @@ fn host_demote_prefix_ref(
     if !host.armed() {
         return HostDemoteOutcome::Off; // tier off (or latched off): byte-identical to today
     }
-    // LATENT (MLA/DSA) planes cannot be expressed in the host tier yet (`HostPrefixEntry`
-    // carries no latent slot — extending it is its own lane's work, not this seam's). A
-    // latent-bearing entry refuses BEFORE any copy: `Failed` keeps live device state at the
-    // pause-demote caller (fail closed), and the SLRU sink's dying entry drops exactly as it
-    // did before the tier existed. Silently demoting would strip the planes and the restore
-    // guard (`unsupported_prefix_restore`) would then refuse every promote-hit anyway.
-    if dead.tp.is_some() {
+    // GLM host images are opt-in. OFF preserves the old refusal; ON copies
+    // all current model-owned planes, with byte census before publication.
+    if dead.tp.is_some() && !glm5_tp_kv_host_on() {
         eprintln!(
             "[prefix-host] demote refused: entry carries glm5 TP rank shards the host tier \
              cannot hold ({} tokens, model {}{})",
@@ -7654,7 +7949,7 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Failed;
     }
-    if dead.latent.iter().any(Option::is_some) {
+    if dead.latent.iter().any(Option::is_some) && !glm5_tp_kv_host_on() {
         eprintln!(
             "[prefix-host] demote refused: entry carries latent (MLA/DSA) planes the host \
              tier cannot hold ({} tokens, model {}{})",
@@ -7664,17 +7959,24 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Failed;
     }
+    let host_bytes = match host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
+            return HostDemoteOutcome::Failed;
+        }
+    };
     // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT), checked BEFORE the D2H copy: a
     // demotion that would evaporate at insert must skip the PCIe trip entirely, not
     // pay gigabytes of synchronous copy for an entry the pool then refuses.
-    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, dead.bytes) {
+    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes) {
         host.tenant_rejects += 1;
         eprintln!(
             "[prefix-host] demote evaporated at the tenant share cap before the D2H \
              copy: {} tokens, {:.1}MB ({}% of {:.0}MB, MEMRA_KV_HOST_TENANT_PCT; \
              model {}{})",
             dead.toks.len(),
-            dead.bytes as f64 / 1e6,
+            host_bytes as f64 / 1e6,
             host.tenant_pct,
             host.budget as f64 / 1e6,
             dead.pool_key.0,
@@ -7684,7 +7986,7 @@ fn host_demote_prefix_ref(
     }
     let t0 = Instant::now();
     let verify_digest = if kv_host_verify_on() {
-        match prefix_entry_state_digest(engine, dead, dead.pos) {
+        match host_roundtrip_digest(engine, dead) {
             Ok(d) => Some(d),
             Err(err) => {
                 eprintln!("[prefix-host] demote digest failed ({err}); nothing demoted");
@@ -7700,6 +8002,7 @@ fn host_demote_prefix_ref(
             let bytes = e.bytes;
             if host.insert(&dead.pool_key, e) {
                 let ms = t0.elapsed().as_secs_f64() * 1e3;
+                host.log_arena("demotion");
                 host.demotions += 1;
                 host.demote_ms_total += ms;
                 eprintln!(
@@ -7905,6 +8208,12 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             src.layout_version, PREFIX_ENTRY_LAYOUT_VERSION,
         ));
     }
+    if let Some(glm) = &src.glm {
+        if !glm5_tp_kv_host_on() {
+            return Err("GLM host restore door is off".into());
+        }
+        glm.validate_owner(engine, &src.pool_key)?;
+    }
     let plane_up = |p: &HostPlane| -> Result<PrefixPlane, String> {
         let kb = p.len * p.k_tok_bytes;
         let vb = p.len * p.v_tok_bytes;
@@ -7942,22 +8251,14 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
     let mut conv = Vec::with_capacity(src.conv.len());
     for c in &src.conv {
         conv.push(match c {
-            Some(c) => Some(
-                engine
-                    .htod(c)
-                    .map_err(|err| format!("conv state H2D failed: {err}"))?,
-            ),
+            Some(c) => Some(engine.htod(c).map_err(|e| e.to_string())?),
             None => None,
         });
     }
     let mut ssm = Vec::with_capacity(src.ssm.len());
     for s in &src.ssm {
         ssm.push(match s {
-            Some(s) => Some(
-                engine
-                    .htod(s)
-                    .map_err(|err| format!("ssm state H2D failed: {err}"))?,
-            ),
+            Some(s) => Some(engine.htod(s).map_err(|e| e.to_string())?),
             None => None,
         });
     }
@@ -7970,12 +8271,8 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             let mut layers = Vec::with_capacity(t.layers.len());
             for (k, v) in &t.layers {
                 layers.push((
-                    engine
-                        .htod(k)
-                        .map_err(|err| format!("draft tail K H2D failed: {err}"))?,
-                    engine
-                        .htod(v)
-                        .map_err(|err| format!("draft tail V H2D failed: {err}"))?,
+                    engine.htod(k).map_err(|e| e.to_string())?,
+                    engine.htod(v).map_err(|e| e.to_string())?,
                 ));
             }
             Some(memra_engine::dflash::DflashKvTail {
@@ -7994,18 +8291,32 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         pool_key: src.pool_key.clone(),
         toks: src.toks.clone(),
         kv,
-        conv,
-        ssm,
-        // Latent-bearing entries refuse demotion at `host_demote_prefix_ref`, so every host
-        // entry is latent-free by construction and each promoted slot is legitimately absent.
-        latent: (0..src.kv.len()).map(|_| None).collect(),
-        tp: None,
+        conv: match &src.glm {
+            Some(g) => g.conv_up()?,
+            None => conv,
+        },
+        ssm: match &src.glm {
+            Some(g) => g.ssm_up()?,
+            None => ssm,
+        },
+        // Ordinary entries have no latent planes; GLM images restore all owners.
+        latent: match &src.glm {
+            Some(g) => g.latent_up()?,
+            None => (0..src.kv.len()).map(|_| None).collect(),
+        },
+        tp: match &src.glm {
+            Some(g) => g.tp_up()?,
+            None => None,
+        },
         pos: src.pos,
-        last_logits: src.last_logits.clone(),
+        last_logits: src.last_logits.to_vec(),
         draft,
-        dspark_draft,
-        last_h: src.last_h.clone(),
-        bytes: src.bytes,
+        dspark_draft: match &src.glm {
+            Some(g) => g.draft_up()?,
+            None => dspark_draft,
+        },
+        last_h: src.last_h.to_vec(),
+        bytes: src.device_bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
         segment: PrefixSegment::Probation,
@@ -8050,6 +8361,14 @@ fn host_promote_prefix_hit(
     device_best_len: usize,
 ) -> Option<(usize, PrefixPin)> {
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
+    let candidate = &host.entries[pool_key][hi];
+    if !host.generation_current(candidate) {
+        drop(host.remove_at(pool_key, hi));
+        host.log_arena("stale generation eviction");
+        eprintln!("[prefix-host] promote refused: stale GLM model/artifact instance");
+        return None;
+    }
+
     let (host_len, expected_digest) = {
         let e = &host.entries[pool_key][hi];
         (e.toks.len(), e.verify_digest.clone())
@@ -8064,7 +8383,7 @@ fn host_promote_prefix_hit(
         }
     };
     if let Some(expected) = expected_digest {
-        match prefix_entry_state_digest(engine, &e, e.pos) {
+        match host_roundtrip_digest(engine, &e) {
             Ok(actual) if actual == expected => {
                 eprintln!(
                     "[prefix-host] verify ok: promoted state digest matches demote digest \
@@ -8093,6 +8412,7 @@ fn host_promote_prefix_hit(
     let pin = px.insert_pinned_demoting(pool_key, e, "host-promote", 1, engine, host)?;
     let i = px.id_index(&pin)?;
     let ms = t0.elapsed().as_secs_f64() * 1e3;
+    host.log_arena("promotion");
     host.promotions += 1;
     host.promote_ms_total += ms;
     eprintln!(
@@ -8439,8 +8759,8 @@ struct HandoffEntryRef<'a> {
     ns: &'a str,
     toks: &'a [u32],
     kv: Vec<Option<HandoffPlaneRef<'a>>>,
-    conv: &'a [Option<Vec<f32>>],
-    ssm: &'a [Option<Vec<f32>>],
+    conv: Vec<Option<&'a [f32]>>,
+    ssm: Vec<Option<&'a [f32]>>,
     pos: usize,
     last_logits: &'a [f32],
     draft: Option<HandoffPlaneRef<'a>>,
@@ -8510,8 +8830,8 @@ impl HandoffEntryOwned {
             ns: &self.ns,
             toks: &self.toks,
             kv: self.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-            conv: &self.conv,
-            ssm: &self.ssm,
+            conv: self.conv.iter().map(|p| p.as_deref()).collect(),
+            ssm: self.ssm.iter().map(|p| p.as_deref()).collect(),
             pos: self.pos,
             last_logits: &self.last_logits,
             draft: self.draft.as_ref().map(plane),
@@ -8551,8 +8871,8 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
         ns: &e.pool_key.1,
         toks: &e.toks,
         kv: e.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-        conv: &e.conv,
-        ssm: &e.ssm,
+        conv: e.conv.iter().map(|p| p.as_deref()).collect(),
+        ssm: e.ssm.iter().map(|p| p.as_deref()).collect(),
         pos: e.pos,
         last_logits: &e.last_logits,
         draft: e.draft.as_ref().map(plane),
@@ -8569,7 +8889,7 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
             floor: t.floor,
         }),
         last_h: &e.last_h,
-        bytes: e.bytes,
+        bytes: e.device_bytes,
         verify_digest: e.verify_digest.as_deref(),
     }
 }
@@ -8706,7 +9026,7 @@ fn handoff_entry_wire_len(e: &HandoffEntryRef) -> u64 {
     for p in &e.kv {
         n += 1 + p.as_ref().map_or(0, plane_len);
     }
-    for class in [e.conv, e.ssm] {
+    for class in [&e.conv, &e.ssm] {
         n += 8;
         for c in class {
             n += 1 + c.as_ref().map_or(0, |v| f32s_len(v));
@@ -8764,7 +9084,7 @@ fn handoff_write_entry<W: std::io::Write>(out: &mut W, e: &HandoffEntryRef) -> R
             None => w.put_u8(0)?,
         }
     }
-    for class in [e.conv, e.ssm] {
+    for class in [&e.conv, &e.ssm] {
         w.put_u64(class.len() as u64)?;
         for c in class {
             match c {
@@ -9006,11 +9326,14 @@ fn handoff_read_entry<R: std::io::Read>(
 /// Pinned-host twin of a parsed plane. Alloc failures are the ONLY error class here
 /// (shapes were validated at parse), and the caller treats them with the tier's latch
 /// posture: pinned RAM exhaustion aborts the import loudly.
-fn host_plane_from_owned(p: HandoffPlaneOwned) -> Result<HostPlane, String> {
-    let mut k = memra_engine::PinnedHostBuf::new(p.k.len()).map_err(|e| e.to_string())?;
-    k.as_mut_slice().copy_from_slice(&p.k);
-    let mut v = memra_engine::PinnedHostBuf::new(p.v.len()).map_err(|e| e.to_string())?;
-    v.as_mut_slice().copy_from_slice(&p.v);
+fn host_plane_from_owned(
+    p: HandoffPlaneOwned,
+    planes: &mut HostPlaneLeases,
+) -> Result<HostPlane, String> {
+    let mut k = planes.take(p.k.len())?;
+    k.copy_from_slice(&p.k).map_err(|e| e.to_string())?;
+    let mut v = planes.take(p.v.len())?;
+    v.copy_from_slice(&p.v).map_err(|e| e.to_string())?;
     Ok(HostPlane {
         k,
         v,
@@ -9020,38 +9343,103 @@ fn host_plane_from_owned(p: HandoffPlaneOwned) -> Result<HostPlane, String> {
     })
 }
 
-fn host_entry_from_owned(e: HandoffEntryOwned) -> Result<HostPrefixEntry, String> {
+fn host_entry_from_owned(
+    e: HandoffEntryOwned,
+    host: &mut HostPrefixCache,
+) -> Result<HostPrefixEntry, String> {
+    if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
+        return Err("host handoff layout version mismatch".into());
+    }
+    let mut sizes: Vec<_> =
+        e.kv.iter()
+            .flatten()
+            .chain(e.draft.iter())
+            .flat_map(|p| [p.k.len(), p.v.len()])
+            .collect();
+    sizes.extend(e.conv.iter().chain(&e.ssm).flatten().map(|p| p.len() * 4));
+    if let Some(t) = &e.dspark {
+        for (k, v) in &t.layers {
+            sizes.extend([k.len() * 4, v.len() * 4]);
+        }
+    }
+    if sizes
+        .iter()
+        .try_fold(e.last_h.len() * 4, |n, b| n.checked_add(*b))
+        != Some(e.bytes)
+    {
+        return Err("pinned arena admission refused: handoff image byte census mismatch".into());
+    }
+    sizes.extend([e.last_logits.len() * 4, e.last_h.len() * 4]);
+    let bytes = host_image_bytes(e.bytes, &e.toks, &e.last_logits)?;
+    let mut planes =
+        host.reserve_image(&(e.model.clone(), e.ns.clone()), &e.toks, bytes, &sizes)?;
     let mut kv = Vec::with_capacity(e.kv.len());
     for p in e.kv {
         kv.push(match p {
-            Some(p) => Some(host_plane_from_owned(p)?),
+            Some(p) => Some(host_plane_from_owned(p, &mut planes)?),
             None => None,
         });
     }
     let draft = match e.draft {
-        Some(p) => Some(host_plane_from_owned(p)?),
+        Some(p) => Some(host_plane_from_owned(p, &mut planes)?),
         None => None,
     };
+    let conv = e
+        .conv
+        .iter()
+        .map(|p| {
+            p.as_ref()
+                .map(|p| HostF32::from_slice(p, &mut planes))
+                .transpose()
+        })
+        .collect::<Result<_, _>>()?;
+    let ssm = e
+        .ssm
+        .iter()
+        .map(|p| {
+            p.as_ref()
+                .map(|p| HostF32::from_slice(p, &mut planes))
+                .transpose()
+        })
+        .collect::<Result<_, _>>()?;
+    let dspark_draft = e
+        .dspark
+        .map(|t| -> Result<_, String> {
+            Ok(HostDflashTail {
+                layers: t
+                    .layers
+                    .iter()
+                    .map(|(k, v)| {
+                        Ok((
+                            HostF32::from_slice(k, &mut planes)?,
+                            HostF32::from_slice(v, &mut planes)?,
+                        ))
+                    })
+                    .collect::<Result<_, String>>()?,
+                base: t.base,
+                rows: t.rows,
+                len: t.len,
+                row_bytes: t.row_bytes,
+                floor: t.floor,
+            })
+        })
+        .transpose()?;
     Ok(HostPrefixEntry {
+        model_generation: None,
+        glm: None,
         layout_version: e.layout_version,
         pool_key: (e.model, e.ns),
         toks: e.toks,
         kv,
-        conv: e.conv,
-        ssm: e.ssm,
+        conv,
+        ssm,
         pos: e.pos,
-        last_logits: e.last_logits,
+        last_logits: HostF32::from_slice(&e.last_logits, &mut planes)?,
         draft,
-        dspark_draft: e.dspark.map(|t| HostDflashTail {
-            layers: t.layers,
-            base: t.base,
-            rows: t.rows,
-            len: t.len,
-            row_bytes: t.row_bytes,
-            floor: t.floor,
-        }),
-        last_h: e.last_h,
-        bytes: e.bytes,
+        dspark_draft,
+        last_h: HostF32::from_slice(&e.last_h, &mut planes)?,
+        device_bytes: e.bytes,
+        bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest: e.verify_digest,
@@ -9105,6 +9493,12 @@ fn host_handoff_export(
     let mut selected: Vec<(PoolKey, usize)> = Vec::new();
     let (mut sel_bytes, mut skipped_over_cap) = (0u64, 0u64);
     for (key, i) in hpx.lru.values().rev() {
+        if hpx.entries[key][*i].glm.is_some() {
+            eprintln!(
+                "[prefix-host] handoff skip: GLM model-owned planes need a new handoff frame"
+            );
+            continue;
+        }
         let b = hpx.entries[key][*i].bytes as u64;
         if cap_bytes > 0 && sel_bytes + b > cap_bytes as u64 {
             skipped_over_cap += 1;
@@ -9254,7 +9648,7 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
             }
             let t0 = Instant::now();
             let key: PoolKey = (e.model.clone(), e.ns.clone());
-            match host_entry_from_owned(e) {
+            match host_entry_from_owned(e, hpx) {
                 Ok(entry) => {
                     let (toks, bytes) = (entry.toks.len(), entry.bytes);
                     // Ordinary insert: identity/version re-checked, budget LRU and tenant
@@ -9284,7 +9678,9 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
                 Err(err) => {
                     // Pinned alloc failure: the tier's no-pageable-fallback latch posture.
                     hpx.rejected_allocs += 1;
-                    hpx.disable(&format!("handoff import pinned alloc failed: {err}"));
+                    if hpx.arena.is_none() {
+                        hpx.disable(&format!("handoff import pinned alloc failed: {err}"));
+                    }
                     eprintln!(
                         "[prefix-host] handoff import ABORTED at frame {} of {}: {err}; \
                          {} entries already imported stay resident, the rest serves cold",
@@ -10493,10 +10889,12 @@ fn prefix_insert_from_session(
     if px.has_key(&pool_key, &s.fed) {
         return;
     }
+    let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     if !px.prepare_snapshot(
         prefix_snapshot_bytes(cache),
         prefix_cache_budget_bytes(),
         prefix_cache_slru_enabled(),
+        Some(&mut demote),
     ) {
         static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -13032,11 +13430,46 @@ pub fn run(
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
     // kv_host_budget_bytes). Feeds the device cache only: the restore path is untouched.
     let mut hpx = HostPrefixCache::new(kv_host_budget_bytes());
+    if glm5_tp_kv_host_on() {
+        let reserve = (|| -> Result<(), String> {
+            // Parse afresh and fail rather than silently clamp, shrink or disarm.
+            let mib = std::env::var("MEMRA_KV_HOST_MB")
+                .map_err(|e| format!("MEMRA_KV_HOST_MB: {e}"))?
+                .parse::<usize>()
+                .map_err(|e| format!("MEMRA_KV_HOST_MB: {e}"))?;
+            let bytes = mib
+                .checked_mul(1 << 20)
+                .filter(|n| *n > 0)
+                .ok_or("MEMRA_KV_HOST_MB must be positive and fit in bytes")?;
+            host_memory::check_headroom(bytes)?;
+            let start = Instant::now();
+            let arena = memra_engine::PinnedHostArena::reserve(engine.ctx().clone(), bytes)
+                .map_err(|e| format!("startup pinned arena reserve failed: budget={bytes}: {e}"))?;
+            let (alloc_ms, fill_ms) = arena.reserve_timings_ms();
+            hpx.arena = Some(arena);
+            hpx.budget = bytes;
+            hpx.arena_reserve_ms = start.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "[prefix-host DEBUG] arena startup: reserve_ms={:.3} alloc_ms={alloc_ms:.3} fill_ms={fill_ms:.3} capacity={bytes} leased=0 free={bytes} request_pin_count=0",
+                start.elapsed().as_secs_f64() * 1000.0
+            );
+            Ok(())
+        })();
+        if let Err(err) = reserve {
+            let _ = ready_tx.send(Err(err));
+            return;
+        }
+    }
+    // All models load before this point and are immutable throughout run().
+    // A worker reload creates a new map/cache/context. Tokens bind images to
+    // these exact loaded instances, even if names and device ordinals repeat.
+    hpx.model_generations = loaded.keys().map(|k| (k.clone(), Arc::new(()))).collect();
+
     if hpx.budget > 0 {
         if prefix_cache_budget_bytes() > 0 && serve_batching() {
             eprintln!(
                 "[prefix-host] on: budget {:.0}MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, \
-                 boot-clamped to MemAvailable x 0.6), plain byte-LRU, demote on device \
+                 startup budget policy), plain byte-LRU, demote on device \
                  capacity eviction, promote on exact-prefix probe; verify={} \
                  (MEMRA_KV_HOST_VERIFY); tenant share cap {}% = {:.0}MB \
                  (MEMRA_KV_HOST_TENANT_PCT)",
@@ -31209,6 +31642,8 @@ mod tests {
 
     fn host_entry(pool_key: &PoolKey, toks: Vec<u32>, bytes: usize) -> HostPrefixEntry {
         HostPrefixEntry {
+            model_generation: None,
+            glm: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: pool_key.clone(),
             toks,
@@ -31216,15 +31651,39 @@ mod tests {
             conv: Vec::new(),
             ssm: Vec::new(),
             pos: 0,
-            last_logits: vec![0.0],
+            last_logits: super::HostF32::Heap(vec![0.0]),
             draft: None,
             dspark_draft: None,
-            last_h: Vec::new(),
+            last_h: super::HostF32::Heap(Vec::new()),
+            device_bytes: bytes,
             bytes,
             last_use: next_instant(),
             id: 0,
             verify_digest: None,
         }
+    }
+
+    #[test]
+    fn host_image_accounts_boundary_planes_and_token_metadata() {
+        assert_eq!(
+            super::host_image_bytes(72, &[1, 2, 3], &[0.5, 0.25]).unwrap(),
+            92
+        );
+        assert!(super::host_image_bytes(usize::MAX, &[1], &[]).is_err());
+    }
+
+    #[test]
+    fn host_cache_stale_generation_refused_before_promotion() {
+        let key = key("tenant-generation");
+        let mut h = HostPrefixCache::new(1024);
+        let mut entry = host_entry(&key, toks(super::PREFIX_CACHE_MIN_TOKENS), 64);
+        let generation = Arc::new(());
+        entry.model_generation = Some(generation.clone());
+        assert!(!h.generation_current(&entry));
+        h.model_generations.insert(key.0.clone(), generation);
+        assert!(h.generation_current(&entry));
+        h.model_generations.insert(key.0.clone(), Arc::new(()));
+        assert!(!h.generation_current(&entry));
     }
 
     #[test]
@@ -32696,6 +33155,80 @@ mod tests {
     }
 
     #[test]
+    fn prefix_cache_host_promote_pinned_admission_follows_policy_and_leases() {
+        // A host promotion takes one lease before restore. A prior reused device entry
+        // remains Protected after its lease ends, even under LRU's 100% share.
+        for slru in [false, true] {
+            let k = key("host-promote");
+            let mut px = PrefixCache::default();
+            px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, 0, 8),
+                "seed",
+                10,
+                100,
+                0,
+                None,
+                slru,
+            )
+            .unwrap();
+            let lease = px.pin(&k, 0).unwrap();
+            assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
+            let mut demoted = Vec::new();
+            assert!(
+                px.insert_with_budget_pins_and_policy(
+                    &k,
+                    entry_b(&k, 1, 8),
+                    "host-promote",
+                    10,
+                    100,
+                    1,
+                    Some(&mut |dead| demoted.push(dead.toks[0])),
+                    slru,
+                )
+                .is_none(),
+                "an active lease must refuse promotion under either policy"
+            );
+            assert!(demoted.is_empty());
+            assert_eq!(px_survivors(&px), vec![0]);
+            assert!(px.unpin(&lease));
+            assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
+            let promoted = px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, 1, 8),
+                "host-promote",
+                10,
+                100,
+                1,
+                Some(&mut |dead| demoted.push(dead.toks[0])),
+                slru,
+            );
+            if slru {
+                assert!(
+                    promoted.is_none(),
+                    "SLRU must retain bytes below its protected share"
+                );
+                assert!(demoted.is_empty());
+                assert_eq!(px_survivors(&px), vec![0]);
+                assert_eq!(px.evictions, 0);
+            } else {
+                let id = promoted.expect("LRU must reclaim protected but unleased bytes");
+                assert_eq!(
+                    demoted,
+                    vec![0],
+                    "the victim must reach the host demote sink"
+                );
+                assert_eq!(px_survivors(&px), vec![1]);
+                assert_eq!(px.entries[&k][0].id, id);
+                assert_eq!(px.entries[&k][0].pins, 1);
+                assert_eq!(px.evictions, 1);
+            }
+            assert_eq!(px.total_bytes, 8);
+            assert_prefix_cache_accounting(&px);
+        }
+    }
+
+    #[test]
     fn prefix_cache_still_refuses_an_entry_larger_than_total_budget() {
         let mut px = PrefixCache::default();
         px.insert_with_budget(&key(""), entry_b(&key(""), 0, 11), "test", 10);
@@ -32899,7 +33432,7 @@ mod tests {
             px.entries[&k][0].pins, 1,
             "the other session keeps its lease"
         );
-        assert!(!px.prepare_snapshot(size, budget, false));
+        assert!(!px.prepare_snapshot(size, budget, false, None));
         assert_eq!(px_survivors(&px), vec![0]);
         assert_eq!(
             px.evictions, 0,
@@ -32909,7 +33442,7 @@ mod tests {
         let mut other_session_pin = Some(pin.clone());
         retire_prefix_pin(&mut px, &mut other_session_pin);
         assert_eq!(px.capacity_victim_with(false), Some((k.clone(), 0)));
-        assert!(px.prepare_snapshot(size, budget, false));
+        assert!(px.prepare_snapshot(size, budget, false, None));
         assert_eq!(px.total_bytes, 0, "source drops before snapshot allocation");
         assert!(px.id_index(&pin).is_none());
         px.insert_with_budget(&k, entry_b(&k, 1, size), "deeper", budget);
@@ -34061,6 +34594,18 @@ mod host_handoff_tests {
             entries: 2,
             resident_bytes: 24690,
         }
+    }
+
+    #[test]
+    fn host_handoff_refuses_bad_plane_census_before_allocation() {
+        let mut pool = super::HostPrefixCache::new(1 << 20);
+        let error = super::host_entry_from_owned(handoff_fixture("m", "ns", 7), &mut pool)
+            .err()
+            .unwrap();
+        assert!(
+            error.contains("pinned arena admission refused: handoff image byte census mismatch")
+        );
+        assert_eq!(pool.total_bytes, 0);
     }
 
     #[test]

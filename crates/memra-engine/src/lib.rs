@@ -2051,44 +2051,8 @@ impl PinnedHtodArena {
     }
 }
 
-/// Owned page-locked CACHEABLE host buffer (flags=0, deliberately NOT write-combined) for the
-/// prefix-cache host tier (lane/kv-host-spill-20260830). Same allocation class as `PinnedStage`
-/// above and for the same reason: `ctx().alloc_pinned` is CU_MEMHOSTALLOC_WRITECOMBINED, which
-/// is right for H2D-only staging but pathologically slow for host READS (see the HostBuf CAVEAT
-/// in model.rs), and these bytes are CPU-read by the MEMRA_KV_HOST_VERIFY digest arm. Public
-/// because the server's host-tier cache owns these buffers across requests.
-pub struct PinnedHostBuf {
-    ptr: *mut u8,
-    len: usize,
-}
-// Safety: the allocation is process-wide page-locked host memory; the raw pointer is owned by
-// this struct alone and freed exactly once in Drop (identical justification to PinnedStage).
-unsafe impl Send for PinnedHostBuf {}
-impl PinnedHostBuf {
-    /// Allocate `len` pinned cacheable bytes (a zero-length request still pins one byte so the
-    /// pointer stays valid, mirroring the device planes' `alloc_u8(kb.max(1))` convention).
-    pub fn new(len: usize) -> Result<Self, Box<dyn std::error::Error>> {
-        let ptr = unsafe { cudarc::driver::result::malloc_host(len.max(1), 0)? } as *mut u8;
-        Ok(PinnedHostBuf { ptr, len })
-    }
-    pub fn len(&self) -> usize {
-        self.len
-    }
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-    pub fn as_slice(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
-    }
-}
-impl Drop for PinnedHostBuf {
-    fn drop(&mut self) {
-        let _ = unsafe { cudarc::driver::result::free_host(self.ptr as _) };
-    }
-}
+mod pinned_host;
+pub use pinned_host::{PinnedHostArena, PinnedHostBuf};
 
 /// Number of pass-1 blocks for the parallel argmax (fan-out across SMs to saturate HBM). 256 blocks
 /// x 256 threads = 65536 threads covering the 248K-vocab scan in ~4 strided loads/thread.
