@@ -9,7 +9,10 @@ The changes preserve fused-QKV FP8 codes and scale-grid row slices, add the miss
 hd256 windowed prefill instantiations, and carry the checkpoint's declared dynamic
 block128 FP8 activation program through decode and prefill. Unsupported native format
 routes refuse rather than silently requantizing. Existing BF16 tensors stay preserved.
-No new environment flag or external inference kernel dependency is introduced.
+No new runtime environment flag or external inference kernel dependency is introduced.
+The inherited rewrite-oracle diagnostic adds `MEMRA_REWRITE_ATOL` and
+`MEMRA_REWRITE_RTOL` (both default 0.05); their FLAGS rows preserve the strict failed
+qualification verdict. See GATES.md for the PR and merge requirements.
 
 The model remains NativeReference while optimized numerical qualification is open.
 The source-level checkpoint gate passes; component gates do not imply production
