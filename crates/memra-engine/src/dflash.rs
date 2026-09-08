@@ -65,7 +65,10 @@ pub fn trace_allocation_phase(e: &Engine, phase: &str) -> Result<(), Box<dyn std
     e.stream().synchronize()?;
     let (free, total) = e.ctx().mem_get_info()?;
     let (reserved, used) = e.pool_reserved_used();
-    eprintln!("[dflash-alloc] phase={phase} driver_free_bytes={free} driver_total_bytes={total} pool_reserved_bytes={reserved} pool_used_bytes={used} graph_pool_bytes={}", e.device_graph_mem_reserved());
+    eprintln!(
+        "[dflash-alloc] phase={phase} driver_free_bytes={free} driver_total_bytes={total} pool_reserved_bytes={reserved} pool_used_bytes={used} graph_pool_bytes={}",
+        e.device_graph_mem_reserved()
+    );
     Ok(())
 }
 
@@ -87,19 +90,42 @@ struct DflashPrimeOracle {
 }
 
 impl DflashPrimeOracle {
-    fn record(&mut self, e: &Engine, taps: &CudaSlice<f32>, features: &CudaSlice<f32>, positions: &[i32]) -> Result<(), Box<dyn std::error::Error>> {
+    fn record(
+        &mut self,
+        e: &Engine,
+        taps: &CudaSlice<f32>,
+        features: &CudaSlice<f32>,
+        positions: &[i32],
+    ) -> Result<(), Box<dyn std::error::Error>> {
         hash_f32_bits(&mut self.taps, &e.dtoh(taps)?);
         hash_f32_bits(&mut self.features, &e.dtoh(features)?);
-        for pos in positions { self.positions.update(pos.to_le_bytes()); }
+        for pos in positions {
+            self.positions.update(pos.to_le_bytes());
+        }
         Ok(())
     }
 
-    fn finish(self, rows: usize, logits: &[f32], boundary: Option<&crate::spec::SpecBoundaryCapture>) {
+    fn finish(
+        self,
+        rows: usize,
+        logits: &[f32],
+        boundary: Option<&crate::spec::SpecBoundaryCapture>,
+    ) {
         let mut output = Sha256::new();
         hash_f32_bits(&mut output, logits);
         let mut cut = Sha256::new();
-        if let Some(boundary) = boundary { hash_f32_bits(&mut cut, &boundary.logits); }
-        eprintln!("[dflash-oracle] rows={rows} taps={:x} features={:x} positions={:x} target_logits={:x} boundary_pos={} boundary_logits={:x}", self.taps.finalize(), self.features.finalize(), self.positions.finalize(), output.finalize(), boundary.map_or(0, |b| b.pos), cut.finalize());
+        if let Some(boundary) = boundary {
+            hash_f32_bits(&mut cut, &boundary.logits);
+        }
+        eprintln!(
+            "[dflash-oracle] rows={rows} taps={:x} features={:x} positions={:x} target_logits={:x} boundary_pos={} boundary_logits={:x}",
+            self.taps.finalize(),
+            self.features.finalize(),
+            self.positions.finalize(),
+            output.finalize(),
+            boundary.map_or(0, |b| b.pos),
+            cut.finalize()
+        );
     }
 }
 
@@ -4970,15 +4996,17 @@ impl crate::hybrid::HybridModel {
                 drop(hiddens);
                 if split == Some(end) {
                     trace_allocation_phase(e, "boundary-snapshot-before")?;
-                    boundary_capture = cache.snapshot(e).ok().map(|snap| {
-                        crate::spec::SpecBoundaryCapture {
-                            snap,
-                            pos: end,
-                            logits: logits.clone(),
-                            last_h: Vec::new(),
-                            latent_tails: Vec::new(),
-                        }
-                    });
+                    boundary_capture =
+                        cache
+                            .snapshot(e)
+                            .ok()
+                            .map(|snap| crate::spec::SpecBoundaryCapture {
+                                snap,
+                                pos: end,
+                                logits: logits.clone(),
+                                last_h: Vec::new(),
+                                latent_tails: Vec::new(),
+                            });
                     trace_allocation_phase(e, "boundary-snapshot-after")?;
                 }
                 final_logits = Some(logits);
@@ -4987,9 +5015,8 @@ impl crate::hybrid::HybridModel {
                 while copied < rows {
                     let count = (batch_capacity - pending).min(rows - copied);
                     let view = e.view(&taps.buf, rows * feature_width);
-                    let source = view.slice(
-                        copied * feature_width..(copied + count) * feature_width,
-                    );
+                    let source =
+                        view.slice(copied * feature_width..(copied + count) * feature_width);
                     e.copy_view_into(
                         &mut batch,
                         pending * feature_width,
@@ -5098,7 +5125,9 @@ impl crate::hybrid::HybridModel {
             None
         };
         trace_allocation_phase(e, "prefix-snapshot-after")?;
-        if let Some(oracle) = oracle { oracle.finish(tp, &logits, prefix_capture.as_ref()); }
+        if let Some(oracle) = oracle {
+            oracle.finish(tp, &logits, prefix_capture.as_ref());
+        }
         // Verify carries [anchor, drafts] = up to n_drafts+1 rows (harvest-dependent;
         // DSPARK-POSTMORTEM-20260820.md; family-keyed for DFlash2, else checkpoint
         // strategy census).
@@ -5527,7 +5556,9 @@ impl crate::hybrid::HybridModel {
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
         use crate::cache::DflashTapSink;
         let trace_first = sess.rounds == 0;
-        if trace_first { trace_allocation_phase(e, "first-burst-before")?; }
+        if trace_first {
+            trace_allocation_phase(e, "first-burst-before")?;
+        }
         // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
         let mut flushed = 0usize;
         let n_embd = self.cfg.n_embd as usize;
@@ -6092,7 +6123,9 @@ impl crate::hybrid::HybridModel {
             on_commit.is_none() || flushed == out.len(),
             "every committed token must have been handed to on_commit"
         );
-        if trace_first { trace_allocation_phase(e, "first-burst-after")?; }
+        if trace_first {
+            trace_allocation_phase(e, "first-burst-after")?;
+        }
         Ok((out, drafted, accepted_n))
     }
 }
@@ -7296,7 +7329,7 @@ mod dspark_harvest_tests {
 // survival, off-by-one on the anchor, silent unknown-value fallback) fails HERE.
 #[cfg(test)]
 mod dflash_tap_oracle_tests {
-    use super::{hash_f32_bits, Digest, Sha256};
+    use super::{Digest, Sha256, hash_f32_bits};
 
     #[test]
     fn tap_hash_preserves_bits_across_arbitrary_capture_partitions() {
