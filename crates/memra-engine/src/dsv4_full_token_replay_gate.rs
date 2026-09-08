@@ -517,6 +517,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     assert_eq!(actual, expected);
     assert_eq!(identity(gpu, &candidate), identity(gpu, &control));
     capture_once(gpu, &candidate, cadence);
+    std::fs::create_dir_all("profile-graphs").unwrap();
     gpu.dump_full_token_replay_for_gate(&candidate, Path::new("profile-graphs"))
         .unwrap();
     let mut oracle = None;
@@ -575,12 +576,9 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             } else {
                 [32, 32, 0, 0]
             };
-            for rank in 0..2 {
+            for (rank, after) in after_variants.iter().enumerate() {
                 for (slot, count) in expected.iter().enumerate() {
-                    assert_eq!(
-                        after_variants[rank][slot] - before_variants.unwrap()[rank][slot],
-                        *count
-                    );
+                    assert_eq!(after[slot] - before_variants.unwrap()[rank][slot], *count);
                 }
             }
             assert_eq!(
