@@ -1496,6 +1496,7 @@ so the probe runs as a killed-on-deadline child and its own timeout
 (`MEMRA_GPU_PROBE_TIMEOUT_S`) is the alarm. Health reads only atomics, so a hung
 `nvidia-smi` can never block a health answer. A GPU fault survives a worker respawn: a new
 thread on a wedged card is not recovery.
+At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, while six hangs latch a fault and a single steady-state hang still latches immediately.
 
 **The supervision contract (`deploy/systemd/memra-server.service`) has three couplings you can
 break silently.** The unit is an example to copy, but these are not stylistic choices — each is
