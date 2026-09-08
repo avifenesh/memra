@@ -1,60 +1,47 @@
-# Cadence and dense composition source pin
+# Default-ON PR source provenance
 
-Base: `001c09e5d451798ef8d570f6087dc11527cbcc19` (fresh origin/main).
+This is the current #374 provenance summary, replacing the inherited claim that
+all historical composition hashes still match. The reviewed compiled source is
+`7faf840cf75cadb836bd58386db9f2d1da51d944`; subsequent changes are documentation
+only. `../dsv4f-cadence-dense-default-on-20260908/PROVENANCE.json` records every
+current and inherited whole-file hash plus the additional policy/engagement files.
 
-Cadence #368: `c16385b02408460b19f311b0e8374b4b07fef5f9`.
+Of the 16 historically pinned files, **10 remain byte-identical and 6 changed**.
+The old `source-provenance.sha256` is retained solely as the historical
+composition snapshot; it is not a current verification manifest. Dense ON changes
+admitted eager calls as well as captures; cadence requires explicit replay arming.
 
-Dense #366: `5b66fe9bfd3d8d2b15f31aac484172c848300f0d`.
+| Unchanged file | SHA-256 |
+| --- | --- |
+| `crates/memra-engine/src/dsv4_graph.rs` | `c1e344416ae25e1574b5fa9bfe36ca8c2bae2c3da9377f275188fc9234795bcd` |
+| `research/dsv4f-replay-cadence-20260908/DESIGN.md` | `10583c97cda324a9ccae13b2633d93a0d2c0077e0a88b763bbcdc93370e46e6f` |
+| `tools/dsv4-replay-cadence-gate.cu` | `a7f37356eb43adb13e32c92da43c2927d106863297644d41e8bb8026a5d9d1f7` |
+| `crates/memra-engine/build.rs` | `6c88ed3762f45fe59c453fe3e68534b71d74f1ddd23148af7c1fb1213e46c4ea` |
+| `crates/memra-engine/cu/dsv4_gpu.cu` | `5c6bd0e5e3058a85db68d713260c8def3d555d86311a94fcb3c27f4d1a7b49b3` |
+| `research/dsv4f-dense-exact-tail-20260908/MODEL-GATE.md` | `a19d8b2e1bfd9d1594940b350ec15a23ce80b34f0c12101c0d075ec68fc189ab` |
+| `research/dsv4f-dense-exact-tail-20260908/README.md` | `b6850ae472e5c9e0e8787ba807e8037f9e72ddfca3ee28c0b94caf31ad10ae68` |
+| `tools/dsv4-dense-exact-tail-gate.cu` | `5bababfcf632858d208552c7b3d44d0fe0faf9f0cdd857b2d81c217926b1e229` |
+| `crates/memra-engine/cu/dsv4_sampler.cu` | `24997d70078825660ff1fe2b9805be1f0181894d2a370c96bce831e90ec431da` |
+| `crates/memra-engine/cu/moe_f16_grouped.cu` | `d034320fb62091cc83c27a515642ba52b66171eadc49f1306e01a88f00d8aad6` |
 
-Both exact reviewed heads were merged with `--no-ff`. No manual conflicts occurred; Git combined the independent FLAGS.md insertions. No reviewed kernel, runtime or helper was rewritten. The table records SHA256 of each complete file and its reviewed source commit. FLAGS.md is the sole two-source composition below. Release metadata from current main is retained. GU #369/#367 are excluded.
-
-| File | Provenance commit | SHA256 |
+| Changed inherited file | Current SHA-256 | Reason |
 | --- | --- | --- |
-| `crates/memra-engine/src/bin/dsv4_tp_ep_sampled_perf_gate.rs` | `c16385b02408460b19f311b0e8374b4b07fef5f9` | `2566775756ee9958553b421579a8cd9ee212130ae7ff549ff7eed08b062eb4ab` |
-| `crates/memra-engine/src/dsv4_full_token_replay_gate.rs` | `c16385b02408460b19f311b0e8374b4b07fef5f9` | `3603accd76a17209cba78009c6e33272545dbc07ef756d638211a19026a3aea5` |
-| `crates/memra-engine/src/dsv4_gpu.rs` | `c16385b02408460b19f311b0e8374b4b07fef5f9` | `6bb018fe9a7d10c04517b4da47f66b32758b36d3d5a39bbac61d73f72b17d593` |
-| `crates/memra-engine/src/dsv4_graph.rs` | `c16385b02408460b19f311b0e8374b4b07fef5f9` | `c1e344416ae25e1574b5fa9bfe36ca8c2bae2c3da9377f275188fc9234795bcd` |
-| `research/dsv4f-replay-cadence-20260908/DESIGN.md` | `c16385b02408460b19f311b0e8374b4b07fef5f9` | `10583c97cda324a9ccae13b2633d93a0d2c0077e0a88b763bbcdc93370e46e6f` |
-| `tools/dsv4-replay-cadence-gate.cu` | `c16385b02408460b19f311b0e8374b4b07fef5f9` | `a7f37356eb43adb13e32c92da43c2927d106863297644d41e8bb8026a5d9d1f7` |
-| `crates/memra-engine/build.rs` | `5b66fe9bfd3d8d2b15f31aac484172c848300f0d` | `6c88ed3762f45fe59c453fe3e68534b71d74f1ddd23148af7c1fb1213e46c4ea` |
-| `crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh` | `5b66fe9bfd3d8d2b15f31aac484172c848300f0d` | `9344ebe4f0205b7ca470c5a9da73ecd3d16137a4bf059f5dfdfea7e58550d736` |
-| `crates/memra-engine/cu/dsv4_gpu.cu` | `5b66fe9bfd3d8d2b15f31aac484172c848300f0d` | `5c6bd0e5e3058a85db68d713260c8def3d555d86311a94fcb3c27f4d1a7b49b3` |
-| `crates/memra-engine/src/bin/dsv4_dense_exact_tail_gate.rs` | `5b66fe9bfd3d8d2b15f31aac484172c848300f0d` | `a0b446b9bb04a96619c6c304bab3c7ba38d84e7c2135c147d2a6c632c76f3a61` |
-| `docs/KERNELS.md` | `5b66fe9bfd3d8d2b15f31aac484172c848300f0d` | `0b33ce77a0d1c011e7a48768c86ce67e9fbb51023817d51bceaeb4e9fd6a3bc9` |
-| `research/dsv4f-dense-exact-tail-20260908/MODEL-GATE.md` | `5b66fe9bfd3d8d2b15f31aac484172c848300f0d` | `a19d8b2e1bfd9d1594940b350ec15a23ce80b34f0c12101c0d075ec68fc189ab` |
-| `research/dsv4f-dense-exact-tail-20260908/README.md` | `5b66fe9bfd3d8d2b15f31aac484172c848300f0d` | `b6850ae472e5c9e0e8787ba807e8037f9e72ddfca3ee28c0b94caf31ad10ae68` |
-| `tools/dsv4-dense-exact-tail-gate.cu` | `5b66fe9bfd3d8d2b15f31aac484172c848300f0d` | `5bababfcf632858d208552c7b3d44d0fe0faf9f0cdd857b2d81c217926b1e229` |
-| `crates/memra-engine/cu/dsv4_sampler.cu` | `001c09e5d451798ef8d570f6087dc11527cbcc19` | `24997d70078825660ff1fe2b9805be1f0181894d2a370c96bce831e90ec431da` |
-| `crates/memra-engine/cu/moe_f16_grouped.cu` | `001c09e5d451798ef8d570f6087dc11527cbcc19` | `d034320fb62091cc83c27a515642ba52b66171eadc49f1306e01a88f00d8aad6` |
-| `docs/FLAGS.md` | merged #368 + #366 insertions onto base | `854b15a23d6e73b3d2e9f288a23b038a22d7ec21b317ebb365048eaf4cb241d9` |
+| `crates/memra-engine/src/bin/dsv4_tp_ep_sampled_perf_gate.rs` | `2b7ec93dca07b2eb277c13bd5328a58efb467cfe51acdfd2ecaf479a55eb1152` | Pins legacy dense OFF and adds actual default/rollback CPU subprocess coverage. |
+| `crates/memra-engine/src/dsv4_full_token_replay_gate.rs` | `87125819d5f8b4adb3272c32310be776386feca1666d9206d099fadbb81e2272` | Pins full-replay oracle/profile cadence OFF through the explicit mode API. |
+| `crates/memra-engine/src/dsv4_gpu.rs` | `47960d7408c68422698fba3fe45b3907faebed5212703864f0d1b1a2a646edd9` | Adds environment policy reads, explicit mode arming, and host dense selection/readback/restore helpers. |
+| `crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh` | `2dd12a2c33dbe843d535ecec226105ed83c1649f28b63e25c6aaf437fa2d88ab` | Changes host policy initialization/readback/restore only; device kernel bodies are unchanged. |
+| `crates/memra-engine/src/bin/dsv4_dense_exact_tail_gate.rs` | `3188edb6bc2f555ef863ee50e1b4f89cb2e27397a83dac3333e653320ecb5bef` | Pins cadence OFF explicitly so the dense-only instrument stays fixed. |
+| `docs/KERNELS.md` | `65e49260c366d6a15ea1e1cc243bcdc95712495984866801cde5fc1772f0cb7f` | Documents ON defaults, eager/replay scope, rollback seams and direct #507/#508/#509 receipts. |
 
-The entire `crates/memra-engine/cu/dsv4_gpu.cu` file matches dense #366.
-Cadence changes only graph selection/capture host code; its CUDA kernels remain
-the existing eager bodies. The dense header, product/scale loads, eight-element
-leaves and exact 128-leaf reduction tree remain unchanged. Sampler and expert
-GU/down CUDA files match base main exactly.
+| Additional current file | SHA-256 | Reason |
+| --- | --- | --- |
+| `crates/memra-engine/src/bin/dsv4_compose_cadence_dense_gate.rs` | `878abc785509dab7ad16c63d095df2fbfe9a0f521fe360df65956a6ef5994517` | Preserves explicit A/B arming and adds the environment-selected engagement mode with real policy restoration. |
+| `crates/memra-engine/src/dsv4_default_engagement_gate.rs` | `bfd99820de7f22fa8babff479f3fe46a6e3e629eeb8cd9e3067efb5f23a4d97d` | New 256-step eager identity/census/refusal instrument plus five sanity rows per unset/zero process. |
+| `.github/workflows/ci.yml` | `bdd9d011c93fe692f3ec66c8aa1874c104727551845cd6069f163e436256e5c5` | Runs existing sampled/drift/composition CPU contracts with both environment defaults ON. |
+| `docs/FLAGS.md` | `f17821cb4c990d3978a198579477bbfe73291e0aec5c6a8a05f25b01cf47309d` | Defines ON/zero rollback semantics, exact eager/replay exposure, direct composition receipts and seam review date. |
+| `research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md` | `74e070ea838a9bd52d610c035e636c6185b3e9536abb6a5b3f62b4ea1a648e40` | Scopes this default-policy change, engagement protocol and current provenance separately from old snapshots. |
 
-Both FLAGS.md additions remain present verbatim relative to their source
-branches. Cadence is a request-local explicit gate arm; dense uses the existing
-thread-local gate selector, initially false. Neither adds an environment door
-or changes the serving default. Rollback and decide-by 2026-09-22 entries remain.
-No feature performance transfers to this newly linked binary.
-
-The initial source-only build compiled both unchanged helpers. The combined
-adapter now lives in `crates/memra-engine/src/bin/dsv4_compose_cadence_dense_gate.rs`,
-adapted from their reviewed identity/census/refusal code without editing either
-original. The original provenance table and source-provenance.sha256 still
-hold byte-for-byte. The only other implementation change is adding the new
-bin's CPU contract tests to the existing hosted DSV4 test step.
-
-Arm configurations and sampler config are immutable before model creation:
-A=(cadence OFF,dense OFF), B=(cadence ON,dense ON). The existing thread-local
-dense enqueue selector is selected only before a state's first capture (and
-for the separate eager OFF oracle). Captured functions never read it, retained
-graphs are never mutated, and no sampler switch occurs during timing. This is
-the reviewed dense selector mechanism; a single global value fixed ON or OFF
-for the entire process could not capture both A and B in the same process.
-
-Build arch120a, MEMRA_DSV4_FMAD=0, two jobs, nice10. New combined-adapter source
-and binary require independent narrow review and root slot assignment before
-any model execution. No GPU cell is part of the implementation checkpoint.
+The unchanged device bodies in the dense header were independently compared
+from the reduction-function marker onward. AR, sampler, expert GU/down, replay
+ownership and CUDA dispatch/math remain byte-identical. Exact build and
+engagement receipts bind 7faf840cf separately from this final docs-only head.

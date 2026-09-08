@@ -26,6 +26,9 @@ retains the original dense kernels. Existing shape/alignment/grouped/M>1 guards
 remain. A thread-local gate override takes precedence. Set rollback environment
 before worker creation and build fresh control graphs; a captured function is
 immutable regardless of subsequent host selection.
+This affects admitted eager DSV4 calls too, including admitted serving calls;
+dense exposure is not restricted to explicit replay arming. Cadence alone remains
+restricted to explicitly armed admitted replay. Neither fact is serving admission.
 
 Both rollback seams carry decide-by 2026-09-22 for seam-removal review. Neither
 is a provider/model setting. No fleet or serving-admission change is included.
@@ -79,12 +82,18 @@ the shared development pair; no model starts before the source checkpoint/CI.
 - Dense #507: private `research/dsv4f-dense-exact-tail-20260908/MODEL-RESULT.md`;
   namespaces `dense-tail-model-5b66fe9-r2` and `dense-tail-model-5b66fe9-r3`,
   +0.459578% and +0.397451%, all identity/retained-graph/refusal gates pass.
-- Composition #371: private composition receipt family
+- Composition #371, direct receipts in private Darklanes #509 (+1.87%/+2.11%):
+  private composition receipt family
   `/root/dsv4-dev/receipts/compose-cadence-dense-*`; the exact reversed twin is
   `compose-cadence-dense-e591f45-r2`. Root owns the combined result write-up and
   final R2 decision. +1.87%/+2.11% are root-reported here, not new measurements.
 
 Root authorizes default-policy qualification, with merge conditional on review
 and the engagement gate. This draft references #366/#368/#371 for later
-consolidation; it does not yet close or merge those PRs. Old provenance documents describe their measured source snapshots;
-the new environment semantics are the narrow changes specified here and in FLAGS.
+consolidation; it does not yet close or merge those PRs. This PR's current
+file-by-file provenance is `PROVENANCE.json` in this directory and the revised
+composition `COMPOSE-PIN.md`: ten inherited files remain byte-identical, six
+inherited files changed for host policy, helper controls or documentation; the
+new engagement helper and other additions are listed separately. Historical
+composition hashes are explicitly scoped to their original source snapshot and
+are not claimed to describe the changed files at this head.

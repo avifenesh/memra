@@ -650,6 +650,10 @@ compressor arithmetic changes. Dense independent orders +0.459578%/+0.397451%
 are banked in [private Darklanes #507](https://github.com/avifenesh/darklanes/pull/507),
 in that lane's model result report. Combined qualification
 is tracked by `research/dsv4f-cadence-dense-default-on-20260908/DESIGN.md`.
+The direct composition receipt is
+[Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87% forward /
++2.11% reverse with identity. The dense default affects admitted eager calls
+as well as new captures; it is not a replay-only dispatch.
 
 ### Full-token cadence capture (default ON within admitted replay, 2026-09-08)
 
@@ -662,3 +666,6 @@ Cadence independent orders +1.007107%/+1.074545% are banked in
 in that lane's combined result report. Full replay
 admission remains unchanged, including pos<512; no general eager graph fallback.
 Both rollback seams have decide-by 2026-09-22 for removal review.
+Composition confirmation is directly recorded in
+[Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
+with identity, alongside the standalone cadence #508 and dense #507 receipts.
