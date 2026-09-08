@@ -1398,6 +1398,16 @@ pub fn dsv4_prof_on() -> bool {
     dsv4_prof_sync() || dsv4_prof_nvtx()
 }
 
+/// NVTX-only token diagnostic. Disabled runs construct no timing accumulator,
+/// emit no NVTX calls and introduce no synchronization. Scored gate refuses NVTX.
+pub(crate) fn full_token_profile_phase(name: &'static str) -> Option<Dsv4Phase<'static>> {
+    if dsv4_prof_nvtx() {
+        Dsv4Phase::new(name, None)
+    } else {
+        None
+    }
+}
+
 /// A named, nestable phase bracket. Constructed through the `phase!` macro, which supplies a
 /// NUL-terminated literal so the NVTX push needs no allocation.
 pub struct Dsv4Phase<'a> {
@@ -9850,6 +9860,7 @@ impl Dsv4Gpu {
                     state.pos, state.capacity
                 ));
             }
+            let input_phase = full_token_profile_phase("FULL_TOKEN_INPUT\0");
             if let Some(pair) = &mut work.replay {
                 let injection = self
                     .attention_tp_refusal_injection
@@ -9861,6 +9872,8 @@ impl Dsv4Gpu {
                 });
                 pair.upload(tok, state.pos, fault)?;
             }
+            drop(input_phase);
+            let forward_phase = full_token_profile_phase("FULL_TOKEN_FORWARD_SUBMIT\0");
             if capture {
                 work.replay.as_mut().expect("replay").begin(0)?;
             }
@@ -10175,7 +10188,10 @@ impl Dsv4Gpu {
             // bounded peer waits report 40043/40044 through sticky device words.
             // Read both ranks only after all layer work is submitted, before
             // either persistent plane or the public token position can advance.
+            drop(forward_phase);
+            let refusal_phase = full_token_profile_phase("FULL_TOKEN_REFUSAL_READ_DRAIN\0");
             let refusals = self.tp_ep_ar_refusal_words()?;
+            drop(refusal_phase);
             if refusals != [0, 0] {
                 // All layers completed their snapshots, but compressors already
                 // mutated pending rows/high-water marks speculatively. Restore
@@ -10267,13 +10283,19 @@ impl Dsv4Gpu {
                     pair.ready = true;
                 }
                 let pair = work.replay.as_mut().expect("replay");
+                let submit_phase = full_token_profile_phase("FULL_TOKEN_COMMIT_SAMPLE_SUBMIT\0");
                 pair.launch(1)?;
+                drop(submit_phase);
+                let drain_phase = full_token_profile_phase("FULL_TOKEN_COMMIT_SAMPLE_DRAIN\0");
                 // Drain BOTH before reading/returning a token or releasing any plane.
                 pair.drain_both()?;
+                drop(drain_phase);
+                let _readback = full_token_profile_phase("FULL_TOKEN_TOKEN_READBACK\0");
                 state.pos = pos0 + 1; // the forward is committed even if sampling refuses its logits
                 let token = pair.sampler.read_replay()?;
                 return Ok((None, token));
             }
+            let commit_phase = full_token_profile_phase("FULL_TOKEN_EAGER_COMMIT_DRAIN\0");
             self.commit_verify_dev_plane(
                 &mut state.caches,
                 &mut work.verify.layers,
@@ -10297,8 +10319,11 @@ impl Dsv4Gpu {
                 1,
                 1,
             )?;
+            drop(commit_phase);
+            let head_phase = full_token_profile_phase("FULL_TOKEN_EAGER_HEAD_SUBMIT\0");
             let head_ws = &mut work.verify.ws[1];
             self.head_logits_batch_dev(head_ws, 1, false)?;
+            drop(head_phase);
             let stream = self.stages[1].gpu.stream();
             if device_logits {
                 state.pos = pos0 + 1;

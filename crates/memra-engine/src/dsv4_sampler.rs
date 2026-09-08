@@ -244,6 +244,8 @@ impl Dsv4DeviceSampler {
         {
             return Err("dsv4 sampled path: need temperature > 0 and top_p in (0,1]".into());
         }
+        let sample_phase =
+            crate::dsv4_gpu::full_token_profile_phase("FULL_TOKEN_EAGER_SAMPLE_SUBMIT\0");
         let n = self.n;
         let pc = penalty.filter(|pc| pc.armed());
         // Keep the unpenalized branch and its CUDA program unchanged. Armed
@@ -304,6 +306,9 @@ impl Dsv4DeviceSampler {
                 ),
             )?;
         }
+        drop(sample_phase);
+        let _readback =
+            crate::dsv4_gpu::full_token_profile_phase("FULL_TOKEN_EAGER_SAMPLE_READBACK_DRAIN\0");
         let mut token = [0u32];
         self.stream
             .memcpy_dtoh(&self.result.slice(0..1), &mut token)

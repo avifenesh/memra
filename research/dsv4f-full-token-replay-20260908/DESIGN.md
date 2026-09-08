@@ -144,3 +144,29 @@ CUDA references: [CUDA Graphs](https://docs.nvidia.com/cuda/cuda-programming-gui
 [Compute Sanitizer](https://docs.nvidia.com/compute-sanitizer/ComputeSanitizer/index.html).
 Target runtime/headers and failure controls are recorded in the private ops lane;
 architecture labels alone are not support evidence.
+
+## Bounded reverse-order follow-on
+
+`--full-token-replay-baab` keeps the same startup/correctness/refusal gates and
+20-row checks, but selects exactly `BBBBB AAAAA AAAAA BBBBB` (A=eager, B=graph).
+The scored candidate is fresh; first-B capture remains inside its row timer.
+No profiler, NVTX or sync-bracket instrumentation is admitted during scoring.
+
+After successful scoring, a separate invocation of the same binary with
+`--full-token-replay-profile` takes a second model load. This deliberately costs
+about five additional load minutes so no profiler injection reaches scored rows.
+It primes the identical sampled prefix to position 368, checks an eager/replay
+warm step, restores both arms to that same prefix, then captures 32 eager and
+32 replay steps through position 400, crossing C128 at 383/384. Prefix copying,
+identity hashing and warm capture remain outside the two profile windows. Both
+profile arms must match their tokens, final state and actual AR epochs. It emits
+no `MEASURE` or scored-rate row and does not rerun the 20-row experiment.
+
+NVTX-only markers partition input, forward submission, refusal read/drain,
+commit/head/sample submission and drain, and token readback. Their shared helper
+returns immediately unless the existing `MEMRA_DSV4_NVTX=1` profile switch is set;
+no timing accumulator, NVTX call or extra synchronization is introduced when OFF.
+`MEMRA_DSV4_ROUND_PROFILE=1` remains refused by the gate. Nsight node tracing is
+used for actual GPU intervals and kernel-free wall; host API sums and AR residence
+are not treated as additive recoverable wall. Control-sequence SHA-256 is host
+reconstruction of intended inputs, not device-readback proof.

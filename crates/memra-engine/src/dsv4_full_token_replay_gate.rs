@@ -71,7 +71,12 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState) {
     }
 }
 
-pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
+pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool) {
+    let schedule = if reverse {
+        "BBBBB AAAAA AAAAA BBBBB"
+    } else {
+        "AAAAA BBBBB BBBBB AAAAA"
+    };
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
@@ -94,7 +99,7 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     assert_eq!(prefix.pos, PRIME);
     assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
     println!(
-        r#"REPLAY_PROTOCOL {{"prime_tokens":{PRIME},"sampled_output_tokens":{OUTPUT},"prime_wall_ns":{},"rows":20,"blocks":"AAAAA BBBBB BBBBB AAAAA","timing_scope":"sample_plus_forward_envelope","step_order":"forward_refusal_commit_head_sample_readback","initial_carry_draw_outside_timing":true,"final_next_draw_inside_timing":true,"both_arms_same_draw_positions":true,"first_scored_graph_capture_inside_timing":true,"split_k":false,"device_sampler":true,"diet":true,"host_c4":false,"speculative":false}}"#,
+        r#"REPLAY_PROTOCOL {{"prime_tokens":{PRIME},"sampled_output_tokens":{OUTPUT},"prime_wall_ns":{},"rows":20,"blocks":"{schedule}","timing_scope":"sample_plus_forward_envelope","step_order":"forward_refusal_commit_head_sample_readback","initial_carry_draw_outside_timing":true,"final_next_draw_inside_timing":true,"both_arms_same_draw_positions":true,"first_scored_graph_capture_inside_timing":true,"control_hash_provenance":"host_reconstructed_intended_sequence","split_k":false,"device_sampler":true,"diet":true,"host_c4":false,"speculative":false}}"#,
         prime_wall.as_nanos()
     );
 
@@ -230,7 +235,7 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     unsafe { gpu.arm_full_token_replay_for_gate(&mut candidate, cfg) }.unwrap();
     let mut walls = [0u128; 2];
     for row in 0..20 {
-        let graph_arm = row / 5 == 1 || row / 5 == 2;
+        let graph_arm = (row / 5 == 1 || row / 5 == 2) != reverse;
         let active = if graph_arm {
             &mut candidate
         } else {
@@ -303,7 +308,7 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             if graph_arm { [1, 1] } else { [0, 0] },
             control_hash.finalize()
         );
-        if row == 5 {
+        if row == if reverse { 0 } else { 5 } {
             std::fs::create_dir_all("perf-graphs").unwrap();
             gpu.dump_full_token_replay_for_gate(active, Path::new("perf-graphs"))
                 .unwrap();
@@ -316,7 +321,120 @@ pub(super) fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     let eager = 10.0 * OUTPUT as f64 * 1e9 / walls[0] as f64;
     let graph = 10.0 * OUTPUT as f64 * 1e9 / walls[1] as f64;
     println!(
-        r#"REPLAY_SUMMARY {{"rows":20,"rows_per_arm":10,"eager_tok_s":{eager},"graph_tok_s":{graph},"delta_pct":{},"speculative":false,"same_load":true,"recapture":false,"decision":"return to root; no automatic qualification or merge"}}"#,
+        r#"REPLAY_SUMMARY {{"rows":20,"rows_per_arm":10,"blocks":"{schedule}","eager_tok_s":{eager},"graph_tok_s":{graph},"delta_pct":{},"speculative":false,"same_load":true,"recapture":false,"decision":"return to root; no automatic qualification or merge"}}"#,
         100.0 * (graph / eager - 1.0)
     );
+}
+
+/// Separate profile-only load. This path emits no MEASURE/rate rows. The scored
+/// process must run without profiler injection; the controller starts this only
+/// after its independent unprofiled BAAB has completed successfully.
+pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
+    use memra_engine::dsv4_gpu::Dsv4Phase;
+    assert_eq!(std::env::var("MEMRA_DSV4_NVTX").as_deref(), Ok("1"));
+    assert_ne!(
+        std::env::var("MEMRA_DSV4_ROUND_PROFILE").as_deref(),
+        Ok("1")
+    );
+    let cfg = Dsv4SampleCfg {
+        temperature: 1.0,
+        top_p: 1.0,
+        top_k: 0,
+        seed: 20260907,
+    };
+    let mut prefix = state(gpu);
+    gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
+        .expect("profile prime first");
+    for &token in &prompt[1..PRIME] {
+        gpu.decode_step_device_logits(token, &mut prefix)
+            .expect("profile prime");
+    }
+    let mut sampler = gpu.device_sampler().unwrap();
+    let mut first = gpu
+        .sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
+        .unwrap();
+    let mut prefix_tape = prompt[..PRIME].to_vec();
+    while prefix.pos < 368 {
+        assert_ne!(first, tokenizer.eos_id(), "profile prefix early EOS");
+        prefix_tape.push(first);
+        first = eager_step(gpu, &mut prefix, &mut sampler, &cfg, first);
+    }
+    assert_eq!(prefix.pos, 368);
+    println!(
+        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
+        sha256_tokens(&prefix_tape)
+    );
+    let mut control = state(gpu);
+    let mut candidate = state(gpu);
+    gpu.restore_full_token_prefix_for_gate(&mut control, &prefix)
+        .unwrap();
+    gpu.restore_full_token_prefix_for_gate(&mut candidate, &prefix)
+        .unwrap();
+    // Safety: gpu/weights/config remain borrowed and unchanged until both states drop.
+    unsafe { gpu.arm_full_token_replay_for_gate(&mut candidate, cfg) }.unwrap();
+    let expected = eager_step(gpu, &mut control, &mut sampler, &cfg, first);
+    let actual = gpu
+        .decode_sample_full_token_for_gate(first, &mut candidate)
+        .unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(identity(gpu, &candidate), identity(gpu, &control));
+    capture_once(gpu, &candidate);
+    let mut oracle = None;
+    for graph_arm in [false, true] {
+        let active = if graph_arm {
+            &mut candidate
+        } else {
+            &mut control
+        };
+        gpu.restore_full_token_prefix_for_gate(active, &prefix)
+            .unwrap();
+        let before = gpu.full_token_ar_epochs_for_gate().unwrap();
+        let mut carry = first;
+        let mut tokens = Vec::with_capacity(32);
+        super::drain(gpu);
+        {
+            let _capture = Dsv4Phase::new("FULL_TOKEN_PROFILE\0", None);
+            let _arm = Dsv4Phase::new(
+                if graph_arm {
+                    "FULL_TOKEN_REPLAY_WINDOW\0"
+                } else {
+                    "FULL_TOKEN_EAGER_WINDOW\0"
+                },
+                None,
+            );
+            for _ in 0..32 {
+                let _step = Dsv4Phase::new("FULL_TOKEN_STEP\0", None);
+                assert_ne!(carry, tokenizer.eos_id(), "profile early EOS");
+                tokens.push(carry);
+                carry = if graph_arm {
+                    gpu.decode_sample_full_token_for_gate(carry, active)
+                        .unwrap()
+                } else {
+                    eager_step(gpu, active, &mut sampler, &cfg, carry)
+                };
+            }
+            super::drain(gpu);
+        }
+        assert_eq!(active.pos, 400);
+        assert!(!looped(&tokens));
+        epochs(gpu, &before, 32);
+        assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
+        let result = (tokens.clone(), carry, identity(gpu, active));
+        if graph_arm {
+            assert_eq!(Some(result), oracle, "profile arms differ");
+            capture_once(gpu, active);
+            assert_eq!(
+                gpu.full_token_replay_counts_for_gate(active).unwrap(),
+                [[33, 33], [33, 33]]
+            );
+        } else {
+            oracle = Some(result);
+        }
+        println!(
+            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
+            if graph_arm { "graph" } else { "eager" },
+            sha256_tokens(&tokens)
+        );
+    }
+    println!("PASS separate profile-only eager/replay windows; no scored rate");
 }

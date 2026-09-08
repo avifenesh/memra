@@ -52,6 +52,7 @@ Each rank's retained forward graph contains 3,493 nodes, 3,240 kernels, 86 AR
 nodes, one embedding and 86 HC-post nodes. Both complete layer paths are captured;
 unsupported graph node types are absent. Successful commit graphs have 87 nodes
 on rank 0 and 116 on rank 1, including the head and real sampler on rank 1.
+Rank 1 has 43 copy nodes and 2 memset nodes, not 45 copies.
 Device counters advance for each executed segment; capture counts remain `[1,1]`
 for the correctness state and the separate scored state, with no recapture or
 per-layer eager fallback. All per-block AR epochs are checked.
@@ -66,7 +67,7 @@ All 20 scored rows are eligible/non-looping and share these identities:
 
 - Tokens SHA-256: `35e9e69e90047d273f266b7a4a71e0848d403be66eeebfcb1fe89a37d1caa433`.
 - Final logits SHA-256: `37eb73d85d43b2237338b7eb069355838f166eafd95dbb9edd71464e2dcff9ca`.
-- Live-control SHA-256: `ccb6de6553cf13a9bb02f5cf7eb44cfebbe08db432dba95e7ee2114edff09cbc`.
+- Host-reconstructed intended control-sequence SHA-256 (not a device readback): `ccb6de6553cf13a9bb02f5cf7eb44cfebbe08db432dba95e7ee2114edff09cbc`.
 - Both cache digests: `5673480229060882075`; both hidden digests: `4231551965497114380`.
 
 The controller exits zero; only the owned model process appears in the process

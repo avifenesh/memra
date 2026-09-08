@@ -512,11 +512,16 @@ fn main() {
         sampler_component();
         return;
     }
-    let full_replay = args.get(3).is_some_and(|a| a == "--full-token-replay");
+    let replay_reverse = args.get(3).is_some_and(|a| a == "--full-token-replay-baab");
+    let replay_profile = args
+        .get(3)
+        .is_some_and(|a| a == "--full-token-replay-profile");
+    let full_replay =
+        args.get(3).is_some_and(|a| a == "--full-token-replay") || replay_reverse || replay_profile;
     let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay]"
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile]"
     );
     let components = args
         .get(3)
@@ -641,12 +646,16 @@ fn main() {
 
     if full_replay {
         assert!(
-            attention_mode && device && !profiled && !splitk,
-            "replay requires unprofiled TP2/device sampler/split-K OFF"
+            attention_mode && device && (profiled == replay_profile) && !splitk,
+            "replay requires TP2/device sampler/split-K OFF and profiling only in the profile-only arm"
         );
         gpu.set_small_kernel_diet_for_gate(true)
             .expect("replay diet");
-        full_token_replay::run(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer);
+        if replay_profile {
+            full_token_replay::profile(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer);
+        } else {
+            full_token_replay::run(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer, replay_reverse);
+        }
         return;
     }
 

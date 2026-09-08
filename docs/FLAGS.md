@@ -1723,6 +1723,14 @@ ones — filed under their own heading so a flag audit scanning the live section
 
 ## DSV4 full-token replay prerequisite, 2026-09-08
 
+Follow-on gate selectors: `--full-token-replay-baab` reverses the single 20-row
+order to B×5/A×5/A×5/B×5 with the same correctness/refusal gates and first-capture
+timing. `--full-token-replay-profile` is a separate profile-only load, never a
+scored arm: 32 matched eager/replay steps at identical positions 368..400 with
+`MEMRA_DSV4_NVTX=1`, no extra synchronization. Scoring refuses profiling. The
+existing NVTX switch enables the new token phase markers; when unset they emit
+no NVTX calls or timing accumulation. Both selectors remain diagnostic/default OFF.
+
 `MEMRA_TEST_REPLAY_DRAIN_FAILURE_CHILD` is a `cfg(test)`-only subprocess selector
 for the Rust fail-stop policy test. Unset runs the parent test; `error:0|1` and
 `drop:0|1` inject failed completion on that rank during error handling or destructor
