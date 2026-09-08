@@ -14293,7 +14293,7 @@ impl Dsv4Gpu {
                     "dense batch compressor",
                     memra_dsv4_dense_batch_dots(
                         x_ptr,
-                        hiddei32::try_from(n).map_err(|e| e.to_string())?,
+                        i32::try_from(hidden).map_err(|e| e.to_string())?,
                         pair.as_ptr(),
                         sp(&stream),
                     ),
