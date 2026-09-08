@@ -9990,6 +9990,15 @@ enum AdmissionRestoreRoute {
     },
 }
 
+impl AdmissionRestoreRoute {
+    fn with_dflash_admission(self, admission: DsparkColdPrefixAdmission) -> Option<Self> {
+        match self {
+            Self::Native => Some(self),
+            Self::Dflash { .. } => dspark_prefers_cold_over_prefix(admission).then_some(self),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DflashRestoreSuffix {
     FullCover,
@@ -14937,14 +14946,62 @@ pub fn run(
                             })
                             .flatten();
                         let route = restored.and_then(|_| match dspark_drafts.get(&model_key) {
-                            Some(draft) if estimate_spec => px.admission_dflash_restore(
-                                &pin,
-                                req.prepared_prompt.as_ref().unwrap(),
-                                &draft.cfg,
-                                draft.dflash2.is_some(),
-                                shape.ctx_cap,
-                                model.cfg.n_vocab as usize,
-                            ),
+                            Some(draft) if estimate_spec => px
+                                .admission_dflash_restore(
+                                    &pin,
+                                    req.prepared_prompt.as_ref().unwrap(),
+                                    &draft.cfg,
+                                    draft.dflash2.is_some(),
+                                    shape.ctx_cap,
+                                    model.cfg.n_vocab as usize,
+                                )
+                                .and_then(|route| {
+                                    let sampler = Sampler::new(req.sampler_cfg.clone());
+                                    let greedy = sampler.is_greedy();
+                                    // Nomination must use the same DFlash decision as consume.
+                                    // A route veto leaves the full charge and normal queue/defer
+                                    // policy intact, rather than committing a plan that must 429.
+                                    route.with_dflash_admission(DsparkColdPrefixAdmission {
+                                        route_ready: serve_spec_enabled()
+                                            && peer_probe_allows_spec
+                                            && !memra_engine::pp::pp_host_bounce_active()
+                                            && memra_engine::plan_backend::gdn_dspark_compatible(
+                                                &model.plan,
+                                            ),
+                                        // The validated source already proved full-prompt fit.
+                                        prime_feasible: true,
+                                        greedy,
+                                        greedy_penalized: greedy
+                                            && (sampler.penalty_repeat() != 1.0
+                                                || sampler.penalty_freq() != 0.0
+                                                || sampler.penalty_present() != 0.0),
+                                        sampled: sampler.temperature() > 0.0,
+                                        // can_plan excludes these shapes, and a committed plan
+                                        // suppresses every continuation donor.
+                                        constrained: false,
+                                        vision: false,
+                                        cold: true,
+                                        gate_on: spec_gate_on(),
+                                        pin: spec_k_pin(),
+                                        projected_wave: projected_admission_wave(
+                                            active.len(),
+                                            queue.len() + requeue.len(),
+                                        ),
+                                        low: spec_gate_low(),
+                                        n_active: active.len(),
+                                        has_live_non_demotable: active.iter().any(|s| {
+                                            dspark_blocks_greedy_widening(
+                                                s.dspark_on,
+                                                s.sampler.is_greedy(),
+                                                s.constraint.is_some(),
+                                            )
+                                        }),
+                                        prompt_len,
+                                        decode_budget: shape.budget,
+                                        hit_available: true,
+                                        hit_restorable: dspark_partial_restore_on(),
+                                    })
+                                }),
                             Some(_) => None,
                             None => Some(AdmissionRestoreRoute::Native),
                         });
@@ -29942,6 +29999,69 @@ mod tests {
             eprintln!(
                 "[retained-plan-test] {fault}: validated={} pins=0 source_bytes=0",
                 decision.is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn dflash_retained_plan_checks_route_before_discounting() {
+        use super::{AdmissionRestoreRoute, DflashRestoreSuffix, DsparkColdPrefixAdmission};
+        let route = AdmissionRestoreRoute::Dflash {
+            ctx_cap: 34_000,
+            suffix: DflashRestoreSuffix::Prime(64),
+        };
+        let admitted = DsparkColdPrefixAdmission {
+            route_ready: true,
+            prime_feasible: true,
+            greedy: false,
+            greedy_penalized: false,
+            sampled: true,
+            constrained: false,
+            vision: false,
+            cold: true,
+            gate_on: true,
+            pin: None,
+            projected_wave: 1,
+            low: 2,
+            n_active: 0,
+            has_live_non_demotable: false,
+            prompt_len: 32_768,
+            decode_budget: 1024,
+            hit_available: true,
+            hit_restorable: true,
+        };
+        assert_eq!(route.with_dflash_admission(admitted), Some(route));
+        // MTP may still estimate positive K in these shapes. DFlash must refuse the
+        // plan before reducing the charge, so pressure retains the normal defer path.
+        for veto in [
+            DsparkColdPrefixAdmission {
+                gate_on: false,
+                n_active: 1,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                pin: Some(8),
+                n_active: 1,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                projected_wave: 3,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                route_ready: false,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                hit_restorable: false,
+                decode_budget: 64,
+                ..admitted
+            },
+        ] {
+            assert_eq!(
+                route.with_dflash_admission(veto),
+                None,
+                "a metadata-valid source must not bypass the live DFlash route policy"
             );
         }
     }
