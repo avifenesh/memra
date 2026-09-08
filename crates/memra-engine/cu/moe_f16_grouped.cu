@@ -2792,6 +2792,7 @@ int memra_moe_m1_graph_splitk_component(
         }
         printf("GRAPH_COMPONENT_TAIL device=%d gu=%d live=%d zero_output_rows=%d inactive_activation_poison_ignored=1\n",device,gu,live,6-live);
     }
+    fflush(stdout); // Keep complete C++ receipt rows ahead of Rust coverage logs.
     g_graph_splitk_component_mask.fetch_or(bit);
     #undef GS_CHECK
     return 0;
