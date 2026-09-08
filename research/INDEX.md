@@ -7,7 +7,7 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
-glm5-tp2-gpu-sampler-20260908 | Three-observation medians: 81.821 -> 91.577 wall tok/s (+11.92%), and 11.875 -> 10.610 server ms/token. | RESULTS.md
+glm5-tp2-gpu-sampler-20260908 | Five-observation arm medians: 82.116 -> 91.359 wall tok/s (+11.26%), and 11.859 -> 10.625 server ms/token. | RESULTS.md
 
 gpuwatch-startup-20260908 | The candidate recovered after two startup hangs and returned HTTP 200; the old binary stayed HTTP 503 after probes resumed. | RESULTS.md
 

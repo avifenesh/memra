@@ -1,10 +1,9 @@
 # GLM TP-2 device sampler qualification
 
 Status: remote build, fmt, clippy, CPU suites and GPU sampler oracles PASS.
-Three TP-2 p32k OFF/ON pairs, both p128k rows and the 160-token greedy twins
-completed across an interrupted and resumed test run. The requested five-pair campaign is
-incomplete. No default promotion. Base: `001c09e5d` (v0.135.0), including the existing
-GLM host prefix-radix sampler. The historical v0.132.0 comparison-sort measurements
+All five TP-2 p32k OFF/ON pairs, both p128k rows and the 160-token greedy twins
+completed across an interrupted and resumed test run. No default promotion.
+Base: `001c09e5d` (v0.135.0), including the existing GLM host prefix-radix sampler. The historical v0.132.0 comparison-sort measurements
 are motivation, not this change's OFF baseline.
 
 ## Program and ownership
@@ -39,7 +38,7 @@ two-pass raw-logit argmax with lowest-ID tie break. No temperature multiplicatio
 softmax or RNG enters that arm. The trunk, collapse, output norm and lm_head are
 shared with the host path. For a finite row, this selects the same u32 as the
 host raw argmax. All-invalid rows that return an invalid device ID are recovered
-through the host path. Served greedy SHA twins remain a pending hardware gate.
+through the host path. The served 160-token greedy SHA twins also passed, as recorded below.
 
 ## Refusals and rollback
 
@@ -86,14 +85,17 @@ non-degenerate sampled output, seed/position determinism and boundary-row adapte
 identity. The CPU test covers flag defaults/parsing, sampling argument transfer,
 route/full-row refusals and unsupported penalties/filters.
 
-## Served A/B: three completed pairs, interrupted
+## Served A/B: five pairs complete
 
-The assigned test box stopped, was restored, and stopped again while later
-repetitions were in progress. Six completed p32k rows were mirrored to the rig
-and are retained as measurements. The final two OFF/ON pairs are still owed;
-no five-pair completion claim is made. One additional ON attempt was excluded
-when a compiler appeared at the scored completion boundary. The resumed runs
-verified unchanged source/binary hashes and the same physical GPU UUIDs.
+Ten accepted p32k rows complete the requested five OFF/ON pairs. The assigned
+test container stopped during earlier attempts; completed receipts were retained
+and the missing pairs resumed on the same physical B200 UUIDs with unchanged
+source and binary hashes. One additional ON attempt was excluded when a compiler
+appeared at the scored completion boundary. Interrupted attempts are not counted.
+For the final two pairs, the shared GPU lock was acquired separately per pair and
+released immediately afterwards. Every new row was written atomically and copied
+to the rig before advancing to the next arm. Both pair completion markers and
+all ten clean worker shutdowns were read back after measurement.
 
 The same metered server binary ran both arms, SHA256
 `c8bcbd80902d86f668733a790672d2d740bccec58c901fb5c60020b5b2076dc5`,
@@ -105,24 +107,26 @@ No serving process or real account was used.
 
 The supplied launcher exec block was copied with its TP-2 expert split, symmetric
 graphs, posture doors, `MEMRA_SERVE_SPEC=0`, context 1,048,576 and cache settings.
-Only sandbox paths, credentials and loopback ports changed; the parent held the
-shared GPU lock across process restarts. Launcher source SHA256:
+Only sandbox paths, credentials and loopback ports changed. The shared GPU lock
+covered process restarts within each pair; the final pairs released it between
+pairs so the other lane could run. Launcher source SHA256:
 `8490641ceb7585d7bdfab4d99d5ad0e0fbf6ebd14055851842d971bc127a481b`.
 Both arms added the existing `MEMRA_TICK_TRACE=1` diagnostic. The raw `[tick]`
 records supply server decode time: mean of the 511 steady one-token ticks with no
 prefill work, rounded to 0.1 ms individually by the server. This includes worker
 sample/emit/decode work, and is not a GPU-kernel-only timer. Trace overhead is in
 both arms. Compilation was absent from the accepted scored boundaries. The retained 250 ms
-telemetry spans the original run and the later retry, with gaps across attempt
-resets. Every accepted process logged TP graph engagement. Shutdown markers are
-recorded separately in `receipt-checks.json`; a mirror taken before final teardown
-does not prove that teardown completed.
+telemetry spans the original run, a later retry, and separate final-pair files,
+with gaps across earlier attempt resets. Every accepted process logged TP graph
+engagement and clean worker shutdown, recorded in `receipt-checks.json`. The
+thermal regime is a fresh process after model load and a 32-token warmup.
 
 Each row used a fresh process, a 32-token p32k warmup, then a vendor-default
 512-token request with no sampling fields. The p32k file plus the fixed analysis
 instruction rendered to 29,813 prompt tokens, with 29,792 cached tokens after
 warmup. All measured rows completed 512 tokens with finish reason `length`.
-The accepted order was OFF, ON, ON, OFF, then OFF, ON after restoration. Sampled outputs passed the repeated-text
+The accepted order was OFF, ON, ON, OFF, OFF, ON, ON, OFF, OFF, ON,
+with interruptions between completed blocks. Sampled outputs passed the repeated-text
 screen (no 16-word span repeated four times); raw outputs remain available.
 
 | Pair | OFF wall s | OFF tok/s | OFF server ms/token | ON wall s | ON tok/s | ON server ms/token |
@@ -130,10 +134,13 @@ screen (no 16-word span repeated four times); raw outputs remain available.
 | 1 | 6.296 | 81.32 | 11.875 | 5.590 | 91.59 | 10.607 |
 | 2 | 6.204 | 82.53 | 11.801 | 5.591 | 91.58 | 10.610 |
 | 3 | 6.258 | 81.82 | 11.894 | 5.653 | 90.57 | 10.649 |
+| 4 | 6.235 | 82.12 | 11.859 | 5.611 | 91.24 | 10.640 |
+| 5 | 6.229 | 82.19 | 11.841 | 5.604 | 91.36 | 10.625 |
 
-Three-observation medians: 81.821 -> 91.577 wall tok/s (+11.92%), and
-11.875 -> 10.610 server ms/token. These are the completed subset, not the
-requested five-observation result.
+Five-observation arm medians: 82.116 -> 91.359 wall tok/s (+11.26%),
+and 11.859 -> 10.625 server ms/token. Every row generated 512 tokens.
+Rates use `completion_tokens / elapsed_wall_seconds`; prefill is included in wall
+rate and excluded from the steady server tick summary.
 
 The p128k requests were cold, each with 128,105 prompt tokens and zero cached
 tokens. Wall rate therefore includes the roughly 29-second prefill.
@@ -152,6 +159,7 @@ oracle. Every ON scored row logged 512 device draws and no host fallback.
 
 Raw rows, requests, SSE responses, generated strings, timing windows and checks:
 `raw/served/`. Full deployment logs and private configuration remain outside the
-public receipt. The flag remains default OFF with its existing deadline until the
-remaining qualification cells are completed. Push must use `MEMRA_SKIP_PERF_CI=1`,
-and the draft PR must disclose the local-rig prohibition and interrupted campaign.
+public receipt. The requested five-pair campaign is complete. The flag remains
+default OFF with its existing deadline; this receipt does not flip a serving default. Push uses
+`MEMRA_SKIP_PERF_CI=1` because local-rig gates remain prohibited. The source
+implementation did not change during measurement or this receipt update.
