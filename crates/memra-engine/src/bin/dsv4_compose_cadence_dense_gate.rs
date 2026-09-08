@@ -65,7 +65,9 @@ const PROGRAMS: [Program; 2] = [
         dense: true,
     },
 ];
-const BLOCK_ARMS: [usize; 4] = [0, 1, 1, 0];
+fn block_arms(reverse: bool) -> [usize; 4] {
+    if reverse { [1, 0, 0, 1] } else { [0, 1, 1, 0] }
+}
 fn sha_f32(row: &[f32]) -> String {
     assert!(row.iter().all(|v| v.is_finite()), "finite final logits");
     let mut h = Sha256::new();
@@ -445,6 +447,7 @@ fn run(
     output: &Path,
     programs: [Program; 2],
     cfg: Dsv4SampleCfg,
+    reverse: bool,
 ) {
     select(gpu, false);
     let mut prefix = state(gpu);
@@ -586,12 +589,13 @@ fn run(
     let mut walls = [0u128; 2];
     let mut rates = [Vec::new(), Vec::new()];
     let mut first_capture_rows = [0usize; 2];
-    let schedule = "A B B A";
+    let blocks = block_arms(reverse);
+    let schedule = if reverse { "B A A B" } else { "A B B A" };
     println!(
         "PROTOCOL blocks={schedule:?} rows_per_block=5 rows=20 prime=256 output=256 both_full_replay=true device_sampler=true diet=true splitk=false cadence_A=false cadence_B=true dense_A=false dense_B=true gu_n32=false first_capture_each_arm_inside_timing=true initial_carry_outside_timing=true final_next_draw_inside_timing=true timing_scope=sample_plus_forward_envelope control_hash_provenance=host_reconstructed_intended_sequence"
     );
     for row in 0..20 {
-        let index = BLOCK_ARMS[row / 5];
+        let index = blocks[row / 5];
         let on = programs[index].dense;
         let arm_name = if on { "B" } else { "A" };
         let active = &mut arms[index];
@@ -692,8 +696,8 @@ fn run(
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert!(
-        args.len() == 4,
-        "usage: dsv4_compose_cadence_dense_gate <model-dir> <source.txt> <new-output-dir>"
+        args.len() == 4 || (args.len() == 5 && args[4] == "--reverse"),
+        "usage: dsv4_compose_cadence_dense_gate <model-dir> <source.txt> <new-output-dir> [--reverse]"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     for (name, value) in [
@@ -768,12 +772,26 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
-    run(&gpu, &prompt[..PRIME], &tokenizer, &output, programs, cfg);
+    run(
+        &gpu,
+        &prompt[..PRIME],
+        &tokenizer,
+        &output,
+        programs,
+        cfg,
+        args.len() == 5,
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn block_order_reverses_without_changing_arm_identity() {
+        assert_eq!(block_arms(false), [0, 1, 1, 0]);
+        assert_eq!(block_arms(true), [1, 0, 0, 1]);
+    }
 
     #[test]
     fn complete_sampled_span_has_exact_cadence_counts() {
