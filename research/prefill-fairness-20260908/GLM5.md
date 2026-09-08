@@ -602,3 +602,55 @@ At f604518ca the worker still refuses TP speculation at boot and the engine
 refuses TP spec restores. The separate TP spec lane must remove those refusals
 with its own evidence before this lane's TP HTTP cold/restored queue can pass.
 The adapter does not remove or bypass those admission laws.
+
+### Stage 3 gate artifacts and pair queue
+
+The reproducible remote command is `glm5/run-validation.sh`; run it under
+nohup/setsid with a complete log. It takes the shared lock, uses a lane-owned
+CARGO_TARGET_DIR, nice 19 and jobs=16, records source/binary hashes and verifies
+empty compute applications before/after GPU work. Final exit status is 0 in
+`glm5/receipts/final/validation.exit`. The exact source manifest was checked
+against the local files after remote formatting.
+
+Final fixture/CPU result: strict library clippy and builds passed; 33 engine prime
+CPU tests passed; 639 server tests passed with one existing ignored; both new
+GLM5 GPU tests passed, including the plain restored segment with queued_after=9;
+all 10 existing native MTP session GPU tests passed. Raw output is retained in
+`glm5/receipts/validation-final.log`, with source/binary hashes alongside it.
+Generated test output is retained verbatim. The standalone plain test compares
+both OFF and yielded suffix logits/hidden rows to the old hyper loop while a
+peer primes between ranges.
+
+Pair script: `glm5/run-pair-cell.sh`. Supply PAIR_PROFILE, PAIR_METADATA,
+PAIR_RECEIPTS, PAIR_BINARY and its SHA256, PAIR_GATE_BINARY (the same-source
+`glm5-tp2-box-probe`) and its SHA256, PAIR_GATE_PROMPTS (multichunk text), and
+PAIR_PROMPT_256K / PAIR_PROMPT_1M (pinned request JSON). The gate probe's new
+BOXP_MODE=prime-walker compares the complete hidden stack and boundary logits
+with the independent old hyper loop while another cache primes and decodes
+between saved chunks. It requires nonzero yields and exercises reuse of the PP
+transfer slots and decode graph scratch. CPU rank acknowledgments have stale,
+missing and repeated-rank red cases. Actual delayed-device and one-rank collective
+fault injection remain pair qualification work; this script does not claim those
+faults were exercised by PP-1 fixtures.
+
+Run separate pinned PP-2 serial, PP-2 pipeline and TP-2 configurations. The HTTP
+runner then executes c1 four-turn cold/restored chains and a c2 long/small pair
+against each request's c1 oracle. Exactness boots pin K=3 and raise LOW/HIGH to
+64/128. Each response requires complete SSE and per-request drafted counts; ON
+requires a real yield, and every boot requires server-side GLM5 engagement.
+The 256k and 1M latency cells use OFF/ON/ON/OFF/OFF/ON boots, 20 small requests
+at five-second offsets over 100 seconds, full drain, vendor-default sampling and
+an eight-turn cache-on twin. Input JSON must reserve enough context for all eight
+continuations, not just the initial generation. Every actual phase/chunk wall is
+retained in server logs; no TTFT-per-chunk estimate is produced.
+
+The single-card HTTP run uses a separate bounded context profile and validates
+only PP-1. Its first attempt refused MEMRA_REQUEST_LEDGER at boot because the
+public engine binary carries no deployment accounting. The harness now omits
+that deployment-only variable; client requests/events/results remain the receipt.
+No serving process or shared checkout was modified. Pair cells remain queued and
+default OFF remains intentional; no latency improvement is claimed by this lane.
+
+Local commit/push hooks are disabled per invocation to obey the no-rig-gates
+instruction. Pushes set MEMRA_SKIP_PERF_CI=1. The complete remote checks above and
+hosted PR CI remain the validation path. No release or deployment is part of this PR.
