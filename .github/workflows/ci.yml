@@ -72,6 +72,9 @@ jobs:
       - name: Change-class teeth (the docs-only skip fails closed in every arm)
         run: tools/test_ci_change_class.sh
 
+      - name: Cache qualification harness regressions
+        run: python3 -m unittest discover -s tools -p test_cache_qualification.py
+
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
 
