@@ -617,7 +617,7 @@ CPU tests passed; 639 server tests passed with one existing ignored; both new
 GLM5 GPU tests passed, including the plain restored segment with queued_after=9;
 all 10 existing native MTP session GPU tests passed. Raw output is retained in
 `glm5/receipts/validation-final.log`, with source/binary hashes alongside it.
-Generated test output is retained verbatim. The standalone plain test compares
+Console log bodies are retained; surplus terminal blank lines are normalized. The standalone plain test compares
 both OFF and yielded suffix logits/hidden rows to the old hyper loop while a
 peer primes between ranges.
 
@@ -654,3 +654,66 @@ default OFF remains intentional; no latency improvement is claimed by this lane.
 Local commit/push hooks are disabled per invocation to obey the no-rig-gates
 instruction. Pushes set MEMRA_SKIP_PERF_CI=1. The complete remote checks above and
 hosted PR CI remain the validation path. No release or deployment is part of this PR.
+
+### Owner base clarification
+
+Keep the f604518ca base under the owner's head-dependency exception. Exactly one
+commit beyond the original seam is required: `f604518ca` (feat: resume DFlash and
+MTP primes through the shared walker). Its route-generic additions are direct
+GLM5 dependencies:
+
+- `PrimeService::finish`, absent at 534040262, protects failed finalization while
+  both GLM5 speculative and plain wrappers transfer their owned state
+  (`crates/memra-server/src/prime_fairness.rs:31-40` at f604518ca).
+- `PrimeService::advance` marks pending before the fallible chunk; that is required
+  to keep a failed partially primed GLM5 request out of reuse
+  (`prime_fairness.rs:20-26`).
+- `prime_walker::trace_chunk`, absent at 534040262, is the shared observer used by
+  GLM5 synchronous wrappers and the pair diagnostic (`prime_walker.rs:44-55`).
+
+No later seam-head commit is required. The PrimeWalker trait signature is exactly
+the owner's signature. The draft PR keeps base lane/prefill-fairness-20260908;
+this lane rebases onto main after #379 merges. The dependency does not authorize
+local edits or a fork of the shared utility.
+
+
+### Final source and model-scale result
+
+Final ownership fix: eager tap storage is released after the ingest completion
+fence. Clearing the Vec length alone retained the whole prompt's host allocation
+until session retirement. The numerical tape is unchanged. Strict clippy, all
+33 engine prime CPU tests, both new GPU gates and the full 639-test server suite
+were rerun successfully after this fix. One pre-existing server test remains
+ignored. The original native MTP suite passed all 10 tests; its route was unchanged
+by this DFlash allocation-lifetime fix.
+
+The final release binary is
+`6a4f1a4cf82e375c8c04d77f9bb6813d24ecd92234bac12db39cf7fb46dd687a`.
+The final source manifest is `glm5/receipts/source-final.sha256`; it updates the
+historical stage-3 manifest for the allocation fix. Final HTTP evidence is under
+`glm5/receipts/http-pp1-final/`, and both controller/server-suite exit files are 0.
+
+PP-1 model-scale exactness passed on the single B200: 24 complete request streams
+across two fresh OFF/ON boots, with K=3 and LOW/HIGH=64/128. Both arms' four-turn
+cold and restored chains matched byte for byte. Restored cached-token counts were
+0, 460, 570, 680 in both arms; every response carried positive speculative drafted
+counts. Each long/small c2 output matched its own c1 oracle. ON recorded 65 yield
+lines across the full boot, maximum per-request count 21, and the small c2 request
+produced its first output before the long prime finished. This is correctness and
+non-vacuous service evidence, not the queued 256k/1M latency qualification.
+
+The restored HTTP chain uses 96-token turns because a 32-token response can finish
+in one burst before the existing GLM5 tick-top prefix publisher runs. This records
+an existing publication limitation; the adapter does not add an alternate cache
+publisher. Each boot records its controller and binary hash, nonce, input profile,
+raw requests, raw SSE events and parsed results. Both owned servers exited with
+status 0 and empty compute-app readbacks while their lock was still held. No
+serving box was contacted.
+
+Draft PR #389 targets lane/prefill-fairness-20260908 with the exact f604518ca
+head-only dependency listed above. Rebase onto main after #379 merges. Hosted
+build CI is not triggered for this stacked base: .github/workflows/ci.yml limits
+pull_request branches to main. Security checks are polled separately; do not call
+those a passing hosted compile gate. Pair latency and delayed-device fault cells,
+TP spec composition, generic request-aware trace fields and the plain-peer
+rotation review remain open. Default stays OFF.

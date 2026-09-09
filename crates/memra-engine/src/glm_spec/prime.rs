@@ -400,12 +400,16 @@ impl Glm5PrimeState {
                     width,
                     None,
                 )?;
-                if self.fill_cursor + 1 == self.fill.len() {
-                    pending.clear();
-                }
             }
         }
         m.glm5_prime_fence(e)?;
+        // All H2D readers have retired. Match the synchronous constructor's
+        // lifetime: release the full host tap allocation, not only its length.
+        if self.fill_cursor + 1 == self.fill.len()
+            && let Glm5DraftState::Dflash2 { pending, .. } = &mut session.draft
+        {
+            *pending = Vec::new();
+        }
         if let Some(p) = &mut session.prof {
             p.draft_prime_ms += started.elapsed().as_secs_f64() * 1000.0;
             p.draft_prime_rows += end - start;

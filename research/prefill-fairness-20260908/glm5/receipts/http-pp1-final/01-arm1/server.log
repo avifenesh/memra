@@ -1,0 +1,620 @@
+[server] build: memra-0.136.0-aaba82633b39 (id: source-tree, git: f604518caf15)
+[auth] keyring loaded: 1 key(s) from /root/wt-glm5-prime-yield-20260909/research/prefill-fairness-20260908/glm5/receipts/http-pp1-final/01-arm1/keys.toml
+[server] OpenRouter metadata loaded: 1 model(s), sha256 c44d39cd99410ba0bd1720d66eec1d7484cb37e8b36522ed5a397127553c708d from /root/wt-glm5-prime-yield-20260909/research/prefill-fairness-20260908/glm5/pp1-models.toml
+[server] starting; models config = [("zai/glm-5.3-flash", "/data/models/glm53-b200-mint", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "zai/glm-5.3-flash" <- /data/models/glm53-b200-mint
+[nvfp4-scale] layout=Swizzle32x4x4 from /data/models/glm53-b200-mint/LAYOUT.json — per-16 scale planes are unswizzled at load; repack caches are keyed -swz32x4x4
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (dev0): experts 187.54GB + trunk 0.00GB vs free 189.45GB (expert budget 188.00GB) -> RESIDENT
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[worker]   loaded "zai/glm-5.3-flash": 46 layers, eos=154820, stop=[154820, 154827, 154829]
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[worker] zai/glm-5.3-flash: decode wave cap 15; scheduler tick cap 15 (exact-16 tier)
+[worker] zai/glm-5.3-flash: BATCHED DECODE (mHC hyper arm, opt-in via MEMRA_HYPER_BATCH=1; unset/0 = eager per-session rollback): batched decode chunks, serial ticks only (no dual waves); monolithic prefill, no graph promotion, no prime batching (eager-only for every non-decode entry point)
+[glm5-vision] tower loaded from /data/models/glm53-b200-mint (24 blocks, out_width 4096, f32-resident, 2.09 GiB device delta at load)
+[glm5-vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true glm5_models=1
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (MEMRA_PREFIX_CACHE_POLICY=lru rollback; no probation segment), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[admit-predict] shadow armed: budget_bytes=4878020744 budget_src=derived(effective_free_bytes=7562375304 - prefix_cache_budget_bytes=1073741824 - admission_reserve_bytes=1610612736) exempt_tenants=0 (logging only, nothing is rejected; enforcement is a separate flip)
+[server] worker ready; serving models: ["zai/glm-5.3-flash"]
+[server] listening on http://127.0.0.1:36165
+[meter] admit id=chatcmpl-c73a632c5399f2eb155477566820b73f tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=620 path=plain = 23936 B/token x ctx + 281MB prefill-workspace + 0MB fixed = 296MB
+[admit-predict] id=chatcmpl-c73a632c5399f2eb155477566820b73f tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=maxtok-fallback prompt=460 predicted_completion=96 kv_hat=13499904 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=460 wave=1 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[hc-fused-pre] engaged streams=4 hidden=4096 t=256 arm=2 kernel=hc_pre_v4 block=512 sinkhorn=registers (one launch replaces rowsq_scale + sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE=2, MEMRA_HC_PRE_BLOCK=512)
+[mla-dsa-score-tc] engaged kpool_score t=256 heads=32 pools=64 precision=1 class=bf16-mma (MEMRA_DSA_SCORE_TC)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=256, t_kv=256, nh=64, width=259); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=256 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[moe-sk-form] dev=0 qt=7 sms=148 occ128=2 occ32=8 occt=7 cross=64 xcross=64 bdb=0 in_f=4096 out_f=2048 n_active=161 max_m=81
+[moe-grouped-prefill] execute layer=3 tokens=256 n_active=161 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=4 tokens=256 n_active=175 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=5 tokens=256 n_active=174 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=6 tokens=256 n_active=178 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=7 tokens=256 n_active=167 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=8 tokens=256 n_active=171 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=9 tokens=256 n_active=168 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=10 tokens=256 n_active=168 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=11 tokens=256 n_active=157 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=12 tokens=256 n_active=168 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=13 tokens=256 n_active=161 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=14 tokens=256 n_active=165 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=15 tokens=256 n_active=181 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=16 tokens=256 n_active=170 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=17 tokens=256 n_active=186 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=18 tokens=256 n_active=147 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=19 tokens=256 n_active=160 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=20 tokens=256 n_active=182 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=21 tokens=256 n_active=182 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=22 tokens=256 n_active=197 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=23 tokens=256 n_active=190 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=24 tokens=256 n_active=204 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=25 tokens=256 n_active=204 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=26 tokens=256 n_active=200 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=27 tokens=256 n_active=207 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=28 tokens=256 n_active=221 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=29 tokens=256 n_active=219 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=30 tokens=256 n_active=221 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=31 tokens=256 n_active=215 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=32 tokens=256 n_active=232 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=33 tokens=256 n_active=211 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=34 tokens=256 n_active=220 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=35 tokens=256 n_active=227 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=36 tokens=256 n_active=219 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=37 tokens=256 n_active=230 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=38 tokens=256 n_active=238 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=39 tokens=256 n_active=214 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=40 tokens=256 n_active=231 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=41 tokens=256 n_active=229 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=42 tokens=256 n_active=221 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=43 tokens=256 n_active=207 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=44 tokens=256 n_active=208 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=256 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=745.953
+[prime-yield] count=1 remaining=3 chunks=1 wall_ms=745.953 max_chunk_ms=745.953
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=747.513 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=747.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=2 ranks=[2] pos=460 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=204 wall_ms=232.718
+[prime-yield] count=2 remaining=2 chunks=1 wall_ms=232.718 max_chunk_ms=232.718
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=232.744 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=232.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=8.028
+[prime-yield] count=3 remaining=1 chunks=1 wall_ms=8.028 max_chunk_ms=8.028
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=8.054 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=8.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=204 wall_ms=6.585
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.040 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=6.680 generated=0->1 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=6.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert probation (glm5-boundary): 460 tokens, 182.5MB (resident 182.5MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}cold-0")
+[ttft] id=chatcmpl-c73a632c5399f2eb155477566820b73f model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=460 outcome=first_sse_byte request_parse_ms=0.116 admission_ms=0.085 queue_wait_ms=0.381 tokenize_ms=1.553 prime_wait_ms=12.231 prime_ms=995.145 decode_wait_ms=0.012 sse_handoff_ms=0.614 request_parse_end_ms=0.116 admission_end_ms=0.201 tokenize_start_ms=0.582 tokenize_end_ms=2.135 prime_start_ms=14.366 prime_end_ms=1009.511 first_decode_ms=1009.523 first_sse_byte_ms=1010.137 total_ms=1010.137
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[hc-mixes-kernel] engaged in_f=16384 out_f=24 (native hc_mixes_gemv_f32 in place of cuBLASLt dot+reduce; MEMRA_HC_MIXES_KERNEL=1, numeric class)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[nvfp4-row-ilp] engaged: split-plane NVFP4 trunk matvec with four groups' loads per lane ahead of the dp4a chains (MEMRA_NVFP4_ROW_ILP=1, mr=1)
+[f32-gemv-kernel] engaged: f32 linear at m<=16 rides gemv_f32_rows instead of cuBLASLt (MEMRA_F32_GEMV_KERNEL=1; first shape 4096->128 m=4)
+[mla-coalesce] engaged absorb_q t_q=4 n_head=64 split=4 (warp-per-row coalesced loads + shuffle reduction; numeric class mla_warp_row_reduce; MEMRA_MLA_COALESCE=1)
+[mla-b200-dsa-decode] engaged attn_gathered t=4 arm=single-pass class=bit-identical (sm_100a; MEMRA_B200_DSA_DECODE)
+[moe-vrows-dev-tables] engaged: pointer/scale tables built on device from the router's own sel/w; the per-layer pinned readback and its cuStreamSynchronize are skipped (MEMRA_MOE_VROWS_DEV_TABLES=1)
+[moe-vrows-ilp] engaged: verify-rows MoE pair with four groups' loads per lane hoisted ahead of their math (MEMRA_MOE_VROWS_ILP=1, packed=false)
+[glm5-vrows] verify MoE batched across rows: pairs=32 (t=4 x 8), one gate/up+preclamp launch + one down/FMA launch per layer-call (rides MEMRA_GLM5_VERIFY_BATCH); arm doors: pack=false dedup_order=false b200_matvec=true dev_tables=true (env MEMRA_MOE_VROWS_DEV_TABLES=true) — the `_rows` pair has several dispatch twins and only the plain one has ever run at t=1, so a box log has to say which it took. `dev_tables` is THIS CALL's provenance, not the env: the decode-graph door owns both halves and routes the tables through the device build whatever `MEMRA_MOE_VROWS_DEV_TABLES` says (run 7B printed the env and read false while the door was building on device, which cost a box window)
+[glm5-acc] ctx=461 burst=23/33 cum=23/33=0.697 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=339.305 generated=1->35 rounds=11 drafted=33 accepted=23 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=339.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=495 burst=24/33 cum=47/66=0.712 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=338.730 generated=35->70 rounds=11 drafted=33 accepted=24 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=338.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=530 burst=18/27 cum=65/93=0.699 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=278.610 generated=70->96 rounds=9 drafted=27 accepted=18 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=278.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-50f478cb1c16fe9be0d607406fedfc90 tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=730 path=plain = 23936 B/token x ctx + 283MB prefill-workspace + 0MB fixed = 300MB
+[admit-predict] id=chatcmpl-50f478cb1c16fe9be0d607406fedfc90 tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=570 predicted_completion=96 kv_hat=16132864 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=570 wave=1 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=256 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=261.290
+[prime-yield] count=1 remaining=5 chunks=1 wall_ms=261.290 max_chunk_ms=261.290
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=261.834 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=261.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=2 ranks=[2] pos=512 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=272.498
+[prime-yield] count=2 remaining=4 chunks=1 wall_ms=272.498 max_chunk_ms=272.498
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=272.519 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=272.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=3 ranks=[3] pos=570 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=58 wall_ms=169.801
+[prime-yield] count=3 remaining=3 chunks=1 wall_ms=169.801 max_chunk_ms=169.801
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=169.826 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=169.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.820
+[prime-yield] count=4 remaining=2 chunks=1 wall_ms=2.820 max_chunk_ms=2.820
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=2.847 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.767
+[prime-yield] count=5 remaining=1 chunks=1 wall_ms=2.767 max_chunk_ms=2.767
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.793 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=58 wall_ms=3.823
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.037 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.908 generated=0->1 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert probation (glm5-boundary): 570 tokens, 189.7MB (resident 372.2MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}cold-1")
+[ttft] id=chatcmpl-50f478cb1c16fe9be0d607406fedfc90 model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=570 outcome=first_sse_byte request_parse_ms=0.078 admission_ms=0.048 queue_wait_ms=0.191 tokenize_ms=1.071 prime_wait_ms=0.191 prime_ms=713.963 decode_wait_ms=0.010 sse_handoff_ms=0.307 request_parse_end_ms=0.078 admission_end_ms=0.126 tokenize_start_ms=0.317 tokenize_end_ms=1.388 prime_start_ms=1.579 prime_end_ms=715.542 first_decode_ms=715.552 first_sse_byte_ms=715.859 total_ms=715.859
+[glm5-acc] ctx=571 burst=21/42 cum=21/42=0.500 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=437.380 generated=1->36 rounds=14 drafted=42 accepted=21 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=437.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=606 burst=19/39 cum=40/81=0.494 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=408.534 generated=36->68 rounds=13 drafted=39 accepted=19 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=408.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=638 burst=19/30 cum=59/111=0.532 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=314.407 generated=68->96 rounds=10 drafted=30 accepted=19 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=314.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-3687c2ec05559d239d9b5d6281cee2b2 tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=840 path=plain = 23936 B/token x ctx + 284MB prefill-workspace + 0MB fixed = 305MB
+[admit-predict] id=chatcmpl-3687c2ec05559d239d9b5d6281cee2b2 tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=680 predicted_completion=96 kv_hat=18765824 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=680 wave=1 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=256 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=259.665
+[prime-yield] count=1 remaining=5 chunks=1 wall_ms=259.665 max_chunk_ms=259.665
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=260.223 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=260.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=2 ranks=[2] pos=512 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=271.536
+[prime-yield] count=2 remaining=4 chunks=1 wall_ms=271.536 max_chunk_ms=271.536
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=271.565 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=271.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=3 ranks=[3] pos=680 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=168 wall_ms=239.741
+[prime-yield] count=3 remaining=3 chunks=1 wall_ms=239.741 max_chunk_ms=239.741
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=239.761 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=239.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.733
+[prime-yield] count=4 remaining=2 chunks=1 wall_ms=2.733 max_chunk_ms=2.733
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=2.763 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.622
+[prime-yield] count=5 remaining=1 chunks=1 wall_ms=2.622 max_chunk_ms=2.622
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=2.646 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=168 wall_ms=4.621
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.039 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=4.708 generated=0->1 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[ttft] id=chatcmpl-3687c2ec05559d239d9b5d6281cee2b2 model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=680 outcome=first_sse_byte request_parse_ms=0.085 admission_ms=0.037 queue_wait_ms=0.130 tokenize_ms=1.262 prime_wait_ms=0.178 prime_ms=781.894 decode_wait_ms=0.010 sse_handoff_ms=0.246 request_parse_end_ms=0.085 admission_end_ms=0.122 tokenize_start_ms=0.252 tokenize_end_ms=1.514 prime_start_ms=1.692 prime_end_ms=783.586 first_decode_ms=783.596 first_sse_byte_ms=783.842 total_ms=783.842
+[prefix-cache] insert probation (glm5-boundary): 680 tokens, 196.8MB (resident 568.9MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}cold-2")
+[glm5-acc] ctx=681 burst=22/39 cum=22/39=0.564 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=412.810 generated=1->36 rounds=13 drafted=39 accepted=22 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=412.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=716 burst=21/33 cum=43/72=0.597 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=351.276 generated=36->68 rounds=11 drafted=33 accepted=21 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=351.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=748 burst=18/33 cum=61/105=0.581 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=354.025 generated=68->96 rounds=11 drafted=33 accepted=18 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=354.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-fb43ecae926abd6b418e51793fc7afb8 tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=950 path=plain = 23936 B/token x ctx + 286MB prefill-workspace + 0MB fixed = 309MB
+[admit-predict] id=chatcmpl-fb43ecae926abd6b418e51793fc7afb8 tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=790 predicted_completion=96 kv_hat=21398784 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=790 wave=1 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=256 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=259.690
+[prime-yield] count=1 remaining=7 chunks=1 wall_ms=259.690 max_chunk_ms=259.690
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=260.259 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=260.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=2 ranks=[2] pos=512 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=271.059
+[prime-yield] count=2 remaining=6 chunks=1 wall_ms=271.059 max_chunk_ms=271.059
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=271.077 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=271.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=3 ranks=[3] pos=768 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=267.439
+[prime-yield] count=3 remaining=5 chunks=1 wall_ms=267.439 max_chunk_ms=267.439
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=267.464 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=267.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=4 ranks=[4] pos=790 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=22 wall_ms=122.203
+[prime-yield] count=4 remaining=4 chunks=1 wall_ms=122.203 max_chunk_ms=122.203
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=122.231 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=122.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.651
+[prime-yield] count=5 remaining=3 chunks=1 wall_ms=2.651 max_chunk_ms=2.651
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=2.675 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.619
+[prime-yield] count=6 remaining=2 chunks=1 wall_ms=2.619 max_chunk_ms=2.619
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.642 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.787
+[prime-yield] count=7 remaining=1 chunks=1 wall_ms=2.787 max_chunk_ms=2.787
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.819 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=22 wall_ms=3.839
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.040 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.927 generated=0->1 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert probation (glm5-boundary): 790 tokens, 203.9MB (resident 772.9MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}cold-3")
+[ttft] id=chatcmpl-fb43ecae926abd6b418e51793fc7afb8 model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=790 outcome=first_sse_byte request_parse_ms=0.090 admission_ms=0.058 queue_wait_ms=0.152 tokenize_ms=1.451 prime_wait_ms=0.175 prime_ms=933.504 decode_wait_ms=0.010 sse_handoff_ms=0.244 request_parse_end_ms=0.090 admission_end_ms=0.148 tokenize_start_ms=0.300 tokenize_end_ms=1.751 prime_start_ms=1.926 prime_end_ms=935.430 first_decode_ms=935.440 first_sse_byte_ms=935.684 total_ms=935.684
+[glm5-acc] ctx=791 burst=21/33 cum=21/33=0.636 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=354.940 generated=1->33 rounds=11 drafted=33 accepted=21 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=355.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=823 burst=24/27 cum=45/60=0.750 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=289.429 generated=33->66 rounds=9 drafted=27 accepted=24 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=289.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=856 burst=24/24 cum=69/84=0.821 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=257.832 generated=66->96 rounds=8 drafted=24 accepted=24 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=257.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-a5e1e1d30d4ff3fe88141e77717fe1bb tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=620 path=plain = 23936 B/token x ctx + 281MB prefill-workspace + 0MB fixed = 296MB
+[admit-predict] id=chatcmpl-a5e1e1d30d4ff3fe88141e77717fe1bb tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=460 predicted_completion=96 kv_hat=13499904 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=460 wave=1 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=256 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=260.604
+[prime-yield] count=1 remaining=3 chunks=1 wall_ms=260.604 max_chunk_ms=260.604
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=261.422 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=261.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=2 ranks=[2] pos=460 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=204 wall_ms=222.981
+[prime-yield] count=2 remaining=2 chunks=1 wall_ms=222.981 max_chunk_ms=222.981
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=223.012 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=223.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.969
+[prime-yield] count=3 remaining=1 chunks=1 wall_ms=2.969 max_chunk_ms=2.969
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=2.998 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=204 wall_ms=4.054
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.037 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=4.135 generated=0->1 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[ttft] id=chatcmpl-a5e1e1d30d4ff3fe88141e77717fe1bb model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=460 outcome=first_sse_byte request_parse_ms=0.076 admission_ms=0.039 queue_wait_ms=0.179 tokenize_ms=0.860 prime_wait_ms=0.985 prime_ms=491.717 decode_wait_ms=0.008 sse_handoff_ms=0.203 request_parse_end_ms=0.076 admission_end_ms=0.115 tokenize_start_ms=0.294 tokenize_end_ms=1.154 prime_start_ms=2.139 prime_end_ms=493.856 first_decode_ms=493.864 first_sse_byte_ms=494.067 total_ms=494.067
+[prefix-cache] insert probation (glm5-boundary): 460 tokens, 182.5MB (resident 955.4MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}restored-chain")
+[glm5-acc] ctx=461 burst=23/33 cum=23/33=0.697 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=336.786 generated=1->35 rounds=11 drafted=33 accepted=23 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=336.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=495 burst=24/33 cum=47/66=0.712 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=338.103 generated=35->70 rounds=11 drafted=33 accepted=24 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=338.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=530 burst=18/27 cum=65/93=0.699 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=278.294 generated=70->96 rounds=9 drafted=27 accepted=18 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=278.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-7c2f9f651ddb158735ff51a246f5f169 tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=730 path=plain = 23936 B/token x ctx + 283MB prefill-workspace + 0MB fixed = 300MB
+[admit-predict] id=chatcmpl-7c2f9f651ddb158735ff51a246f5f169 tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=570 predicted_completion=96 kv_hat=16132864 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[prefix-cache] hit: 460 of 570 prompt tokens from cache (model zai/glm-5.3-flash)
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=570 wave=1 sampled=0 penalized=0 cold=0 restored=1 reason=-
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 333MB (observed 349MB at ctx 674 path=plain)
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=570 stage0_pos=460 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=110 wall_ms=208.648
+[glm5-spec] RESTORED session: 460 prefix tokens + 110 suffix from cache; arm suffix-prime
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.041 success=true
+[ttft] id=chatcmpl-7c2f9f651ddb158735ff51a246f5f169 model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=570 outcome=first_sse_byte request_parse_ms=0.051 admission_ms=0.040 queue_wait_ms=0.161 tokenize_ms=1.129 prime_wait_ms=1.228 prime_ms=209.231 decode_wait_ms=0.006 sse_handoff_ms=0.203 request_parse_end_ms=0.051 admission_end_ms=0.091 tokenize_start_ms=0.252 tokenize_end_ms=1.381 prime_start_ms=2.609 prime_end_ms=211.840 first_decode_ms=211.846 first_sse_byte_ms=212.049 total_ms=212.049
+[glm5-acc] ctx=570 burst=21/30 cum=21/30=0.700 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=522.396 generated=0->32 rounds=10 drafted=30 accepted=21 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=522.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert probation (glm5-boundary): 570 tokens, 189.7MB (resident 1145.0MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}restored-chain")
+[prefix-cache] evict (Probation LRU): 460 tokens, 182.5MB (model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}cold-0")
+[glm5-acc] ctx=602 burst=22/30 cum=43/60=0.717 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=311.865 generated=32->64 rounds=10 drafted=30 accepted=22 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=311.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=634 burst=25/27 cum=68/87=0.782 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=281.550 generated=64->96 rounds=9 drafted=27 accepted=25 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=281.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-b4f244d82b78972cfdc724eb5531abcd tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=840 path=plain = 23936 B/token x ctx + 284MB prefill-workspace + 333MB fixed = 637MB
+[admit-predict] id=chatcmpl-b4f244d82b78972cfdc724eb5531abcd tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=680 predicted_completion=96 kv_hat=351599920 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[prefix-cache] hit: 570 of 680 prompt tokens from cache (model zai/glm-5.3-flash)
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=680 wave=1 sampled=0 penalized=0 cold=0 restored=1 reason=-
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 339MB (observed 358MB at ctx 784 path=plain)
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=680 stage0_pos=570 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=110 wall_ms=202.778
+[glm5-spec] RESTORED session: 570 prefix tokens + 110 suffix from cache; arm suffix-prime
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.034 success=true
+[ttft] id=chatcmpl-b4f244d82b78972cfdc724eb5531abcd model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=680 outcome=first_sse_byte request_parse_ms=0.058 admission_ms=0.042 queue_wait_ms=0.196 tokenize_ms=1.155 prime_wait_ms=1.306 prime_ms=203.275 decode_wait_ms=0.006 sse_handoff_ms=0.177 request_parse_end_ms=0.058 admission_end_ms=0.100 tokenize_start_ms=0.296 tokenize_end_ms=1.451 prime_start_ms=2.757 prime_end_ms=206.032 first_decode_ms=206.038 first_sse_byte_ms=206.215 total_ms=206.215
+[glm5-acc] ctx=680 burst=18/42 cum=18/42=0.429 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=650.411 generated=0->33 rounds=14 drafted=42 accepted=18 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=650.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert probation (glm5-boundary): 680 tokens, 196.8MB (resident 1159.3MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}restored-chain")
+[prefix-cache] evict (Probation LRU): 570 tokens, 189.7MB (model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}cold-1")
+[glm5-acc] ctx=713 burst=21/33 cum=39/75=0.520 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=350.027 generated=33->65 rounds=11 drafted=33 accepted=21 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=350.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=745 burst=21/33 cum=60/108=0.556 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=351.746 generated=65->96 rounds=11 drafted=33 accepted=21 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=351.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-bedbffb699afbda987356b3acecf8e7b tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=950 path=plain = 23936 B/token x ctx + 286MB prefill-workspace + 339MB fixed = 648MB
+[admit-predict] id=chatcmpl-bedbffb699afbda987356b3acecf8e7b tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=790 predicted_completion=96 kv_hat=360318256 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[prefix-cache] hit: 680 of 790 prompt tokens from cache (model zai/glm-5.3-flash)
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=790 wave=1 sampled=0 penalized=0 cold=0 restored=1 reason=-
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 345MB (observed 366MB at ctx 894 path=plain)
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=790 stage0_pos=680 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=110 wall_ms=202.483
+[glm5-spec] RESTORED session: 680 prefix tokens + 110 suffix from cache; arm suffix-prime
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.034 success=true
+[ttft] id=chatcmpl-bedbffb699afbda987356b3acecf8e7b model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=790 outcome=first_sse_byte request_parse_ms=0.051 admission_ms=0.045 queue_wait_ms=0.140 tokenize_ms=2.191 prime_wait_ms=1.236 prime_ms=202.924 decode_wait_ms=0.005 sse_handoff_ms=0.196 request_parse_end_ms=0.051 admission_end_ms=0.096 tokenize_start_ms=0.236 tokenize_end_ms=2.427 prime_start_ms=3.663 prime_end_ms=206.587 first_decode_ms=206.592 first_sse_byte_ms=206.788 total_ms=206.788
+[glm5-acc] ctx=790 burst=23/33 cum=23/33=0.697 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=559.404 generated=0->35 rounds=11 drafted=33 accepted=23 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=559.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert probation (glm5-boundary): 790 tokens, 203.9MB (resident 1173.6MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}restored-chain")
+[prefix-cache] evict (Probation LRU): 680 tokens, 196.8MB (model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}cold-2")
+[glm5-acc] ctx=825 burst=24/24 cum=47/57=0.825 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=257.352 generated=35->67 rounds=8 drafted=24 accepted=24 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=257.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=857 burst=21/27 cum=68/84=0.810 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=292.427 generated=67->96 rounds=9 drafted=27 accepted=21 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=292.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-8af6fd13aa9d930be8d46fe50f15c358 tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=2677 path=plain = 23936 B/token x ctx + 316MB prefill-workspace + 345MB fixed = 725MB
+[admit-predict] id=chatcmpl-8af6fd13aa9d930be8d46fe50f15c358 tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=2581 predicted_completion=32 kv_hat=407735472 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=2581 wave=1 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=256 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=257.472
+[prime-yield] count=1 remaining=21 chunks=1 wall_ms=257.472 max_chunk_ms=257.472
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=258.204 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=258.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=2 ranks=[2] pos=512 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=238.581
+[prime-yield] count=2 remaining=20 chunks=1 wall_ms=238.581 max_chunk_ms=238.581
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=238.606 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=238.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=3 ranks=[3] pos=768 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=242.014
+[prime-yield] count=3 remaining=19 chunks=1 wall_ms=242.014 max_chunk_ms=242.014
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=242.043 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=242.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=4 ranks=[4] pos=1024 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=245.193
+[prime-yield] count=4 remaining=18 chunks=1 wall_ms=245.193 max_chunk_ms=245.193
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=245.216 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=245.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=5 ranks=[5] pos=1280 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=244.555
+[prime-yield] count=5 remaining=17 chunks=1 wall_ms=244.555 max_chunk_ms=244.555
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=244.573 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=244.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=6 ranks=[6] pos=1536 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=244.380
+[prime-yield] count=6 remaining=16 chunks=1 wall_ms=244.380 max_chunk_ms=244.380
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=244.406 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=244.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=7 ranks=[7] pos=1792 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=241.629
+[prime-yield] count=7 remaining=15 chunks=1 wall_ms=241.629 max_chunk_ms=241.629
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=241.655 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=241.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=8 ranks=[8] pos=2048 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=242.716
+[prime-yield] count=8 remaining=14 chunks=1 wall_ms=242.716 max_chunk_ms=242.716
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=242.741 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=242.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=9 ranks=[9] pos=2304 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=238.788
+[prime-yield] count=9 remaining=13 chunks=1 wall_ms=238.788 max_chunk_ms=238.788
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=238.811 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=238.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=10 ranks=[10] pos=2560 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=241.155
+[prime-yield] count=10 remaining=12 chunks=1 wall_ms=241.155 max_chunk_ms=241.155
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=241.177 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=241.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-prime-rendezvous] chunk=11 ranks=[11] pos=2581 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=21 wall_ms=117.339
+[prime-yield] count=11 remaining=11 chunks=1 wall_ms=117.339 max_chunk_ms=117.339
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=117.379 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=117.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.060
+[prime-yield] count=12 remaining=10 chunks=1 wall_ms=3.060 max_chunk_ms=3.060
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.086 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.874
+[prime-yield] count=13 remaining=9 chunks=1 wall_ms=2.874 max_chunk_ms=2.874
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=2.899 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.024
+[prime-yield] count=14 remaining=8 chunks=1 wall_ms=3.024 max_chunk_ms=3.024
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.054 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.134
+[prime-yield] count=15 remaining=7 chunks=1 wall_ms=3.134 max_chunk_ms=3.134
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.157 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.111
+[prime-yield] count=16 remaining=6 chunks=1 wall_ms=3.111 max_chunk_ms=3.111
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.140 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.068
+[prime-yield] count=17 remaining=5 chunks=1 wall_ms=3.068 max_chunk_ms=3.068
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.090 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.049
+[prime-yield] count=18 remaining=4 chunks=1 wall_ms=3.049 max_chunk_ms=3.049
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.074 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.989
+[prime-yield] count=19 remaining=3 chunks=1 wall_ms=2.989 max_chunk_ms=2.989
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.011 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.937
+[prime-yield] count=20 remaining=2 chunks=1 wall_ms=2.937 max_chunk_ms=2.937
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.972 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.907
+[prime-yield] count=21 remaining=1 chunks=1 wall_ms=2.907 max_chunk_ms=2.907
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.931 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=21 wall_ms=10.125
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.046 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=10.240 generated=0->1 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=10.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[ttft] id=chatcmpl-8af6fd13aa9d930be8d46fe50f15c358 model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=2581 outcome=first_sse_byte request_parse_ms=0.074 admission_ms=0.031 queue_wait_ms=0.133 tokenize_ms=3.530 prime_wait_ms=3.545 prime_ms=2596.594 decode_wait_ms=0.023 sse_handoff_ms=0.134 request_parse_end_ms=0.074 admission_end_ms=0.105 tokenize_start_ms=0.238 tokenize_end_ms=3.768 prime_start_ms=7.313 prime_end_ms=2603.907 first_decode_ms=2603.930 first_sse_byte_ms=2604.064 total_ms=2604.064
+[prefix-cache] insert probation (glm5-boundary): 2581 tokens, 298.7MB (resident 1275.5MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}long-c1")
+[prefix-cache] evict (Probation LRU): 790 tokens, 203.9MB (model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}cold-3")
+[glm5-acc] ctx=2582 burst=22/27 cum=22/27=0.815 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=345.000 generated=1->32 rounds=9 drafted=27 accepted=22 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=345.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-3c4bd2b89e44c7c8afdad801dcd2131c tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=112 path=plain = 23936 B/token x ctx + 17MB prefill-workspace + 345MB fixed = 365MB
+[admit-predict] id=chatcmpl-3c4bd2b89e44c7c8afdad801dcd2131c tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=16 predicted_completion=32 kv_hat=346339632 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=16 wave=1 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=16 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=16 wall_ms=165.400
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.037 success=true
+[ttft] id=chatcmpl-3c4bd2b89e44c7c8afdad801dcd2131c model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=16 outcome=first_sse_byte request_parse_ms=0.065 admission_ms=0.043 queue_wait_ms=0.143 tokenize_ms=0.214 prime_wait_ms=0.196 prime_ms=166.139 decode_wait_ms=0.004 sse_handoff_ms=0.200 request_parse_end_ms=0.065 admission_end_ms=0.108 tokenize_start_ms=0.251 tokenize_end_ms=0.465 prime_start_ms=0.661 prime_end_ms=166.800 first_decode_ms=166.804 first_sse_byte_ms=167.004 total_ms=167.004
+[glm5-acc] ctx=16 burst=24/30 cum=24/30=0.800 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=449.311 generated=0->32 rounds=10 drafted=30 accepted=24 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=449.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-480f49e69612400c1d3ba27e2d88ee4c tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=2677 path=plain = 23936 B/token x ctx + 316MB prefill-workspace + 345MB fixed = 725MB
+[admit-predict] id=chatcmpl-480f49e69612400c1d3ba27e2d88ee4c tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=2581 predicted_completion=32 kv_hat=407735472 booked_bytes=0 booked_real=0 inflight=0 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=2581 wave=1 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=256 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=257.040
+[prime-yield] count=1 remaining=21 chunks=1 wall_ms=257.040 max_chunk_ms=257.040
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=257.715 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=257.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-a399806254652cd0992fee3e44f41dd0 tenant=glm5-prime-gate lane=interactive model="zai/glm-5.3-flash"
+[glm5-prime-rendezvous] chunk=2 ranks=[2] pos=512 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=238.044
+[prime-yield] count=2 remaining=20 chunks=1 wall_ms=238.044 max_chunk_ms=238.044
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=238.064 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=238.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[admission] request cost: model="zai/glm-5.3-flash" ctx=112 path=plain = 23936 B/token x ctx + 17MB prefill-workspace + 345MB fixed = 365MB
+[admit-predict] id=chatcmpl-a399806254652cd0992fee3e44f41dd0 tenant="t:glm5-prime-gate" model="zai/glm-5.3-flash" verdict=admit reason=global-p95 prompt=16 predicted_completion=32 kv_hat=346339632 booked_bytes=407735472 booked_real=725178544 inflight=1 cap=2 budget_bytes=4878020744 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="t:glm5-prime-gate" prompt=16 wave=2 sampled=0 penalized=0 cold=1 restored=0 reason=-
+[glm5-prime-rendezvous] chunk=1 ranks=[1] pos=16 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=16 wall_ms=159.674
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.033 success=true
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=160.745 generated=0->1 rounds=0 drafted=0 accepted=0 k=0
+[ttft] id=chatcmpl-a399806254652cd0992fee3e44f41dd0 model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=16 outcome=first_sse_byte request_parse_ms=0.039 admission_ms=0.030 queue_wait_ms=228.890 tokenize_ms=0.199 prime_wait_ms=0.200 prime_ms=160.728 decode_wait_ms=0.005 sse_handoff_ms=0.186 request_parse_end_ms=0.039 admission_end_ms=0.069 tokenize_start_ms=228.959 tokenize_end_ms=229.158 prime_start_ms=229.358 prime_end_ms=390.086 first_decode_ms=390.091 first_sse_byte_ms=390.277 total_ms=390.277
+[glm5-prime-rendezvous] chunk=3 ranks=[3] pos=768 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=240.744
+[prime-yield] count=3 remaining=19 chunks=1 wall_ms=240.744 max_chunk_ms=240.744
+[tick-spec] seq=2 slot=0 trace=- start_ms=160.767 gap_ms=0.020 wall_ms=240.767 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=401.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prefix-cache] insert probation (glm5-boundary): 16 tokens, 153.7MB (resident 1225.2MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}small-c2")
+[prefix-cache] evict (Protected LRU): 460 tokens, 182.5MB (model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}restored-chain")
+[glm5-acc] ctx=17 burst=3/3 cum=3/3=1.000 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.009 generated=1->5 rounds=1 drafted=3 accepted=3 k=0
+[glm5-prime-rendezvous] chunk=4 ranks=[4] pos=1024 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=243.497
+[prime-yield] count=4 remaining=18 chunks=1 wall_ms=243.497 max_chunk_ms=243.497
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.038 gap_ms=0.027 wall_ms=243.521 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=271.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=21 burst=3/3 cum=6/6=1.000 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.250 generated=5->9 rounds=1 drafted=3 accepted=3 k=0
+[glm5-prime-rendezvous] chunk=5 ranks=[5] pos=1280 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=242.815
+[prime-yield] count=5 remaining=17 chunks=1 wall_ms=242.815 max_chunk_ms=242.815
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.273 gap_ms=0.023 wall_ms=242.838 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=271.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=25 burst=3/3 cum=9/9=1.000 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.097 generated=9->13 rounds=1 drafted=3 accepted=3 k=0
+[glm5-prime-rendezvous] chunk=6 ranks=[6] pos=1536 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=242.912
+[prime-yield] count=6 remaining=16 chunks=1 wall_ms=242.912 max_chunk_ms=242.912
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.119 gap_ms=0.021 wall_ms=242.930 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=271.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=29 burst=3/3 cum=12/12=1.000 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.105 generated=13->17 rounds=1 drafted=3 accepted=3 k=0
+[glm5-prime-rendezvous] chunk=7 ranks=[7] pos=1792 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=240.554
+[prime-yield] count=7 remaining=15 chunks=1 wall_ms=240.554 max_chunk_ms=240.554
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.127 gap_ms=0.021 wall_ms=240.576 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=268.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=33 burst=3/3 cum=15/15=1.000 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.611 generated=17->21 rounds=1 drafted=3 accepted=3 k=0
+[glm5-prime-rendezvous] chunk=8 ranks=[8] pos=2048 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=241.884
+[prime-yield] count=8 remaining=14 chunks=1 wall_ms=241.884 max_chunk_ms=241.884
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.635 gap_ms=0.024 wall_ms=241.904 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=270.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=37 burst=3/3 cum=18/18=1.000 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.190 generated=21->25 rounds=1 drafted=3 accepted=3 k=0
+[glm5-prime-rendezvous] chunk=9 ranks=[9] pos=2304 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=238.442
+[prime-yield] count=9 remaining=13 chunks=1 wall_ms=238.442 max_chunk_ms=238.442
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.212 gap_ms=0.022 wall_ms=238.473 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=266.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=41 burst=2/3 cum=20/21=0.952 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.763 generated=25->28 rounds=1 drafted=3 accepted=2 k=0
+[glm5-prime-rendezvous] chunk=10 ranks=[10] pos=2560 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=256 wall_ms=241.112
+[prime-yield] count=10 remaining=12 chunks=1 wall_ms=241.112 max_chunk_ms=241.112
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.783 gap_ms=0.020 wall_ms=241.133 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=269.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=44 burst=1/3 cum=21/24=0.875 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=29.159 generated=28->30 rounds=1 drafted=3 accepted=1 k=0
+[glm5-prime-rendezvous] chunk=11 ranks=[11] pos=2581 stage0_pos=0 lookahead=false
+[prime-chunk] phase=glm5-trunk rows=21 wall_ms=117.064
+[prime-yield] count=11 remaining=11 chunks=1 wall_ms=117.064 max_chunk_ms=117.064
+[tick-spec] seq=2 slot=0 trace=- start_ms=29.181 gap_ms=0.021 wall_ms=117.095 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=146.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=46 burst=0/3 cum=21/27=0.778 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.813 generated=30->31 rounds=1 drafted=3 accepted=0 k=0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.190
+[prime-yield] count=12 remaining=10 chunks=1 wall_ms=3.190 max_chunk_ms=3.190
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.833 gap_ms=0.020 wall_ms=3.225 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=32.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[glm5-acc] ctx=47 burst=3/3 cum=24/30=0.800 trim_rounds=0
+[tick-spec] seq=1 slot=1 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=28.401 generated=31->32 rounds=1 drafted=3 accepted=3 k=0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.100
+[prime-yield] count=13 remaining=9 chunks=1 wall_ms=3.100 max_chunk_ms=3.100
+[tick-spec] seq=2 slot=0 trace=- start_ms=28.426 gap_ms=0.024 wall_ms=3.129 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=2 int=2 priming=1 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=31.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.107
+[prime-yield] count=14 remaining=8 chunks=1 wall_ms=3.107 max_chunk_ms=3.107
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.135 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.115
+[prime-yield] count=15 remaining=7 chunks=1 wall_ms=3.115 max_chunk_ms=3.115
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.142 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.048
+[prime-yield] count=16 remaining=6 chunks=1 wall_ms=3.048 max_chunk_ms=3.048
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.075 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=3.012
+[prime-yield] count=17 remaining=5 chunks=1 wall_ms=3.012 max_chunk_ms=3.012
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=3.037 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.948
+[prime-yield] count=18 remaining=4 chunks=1 wall_ms=2.948 max_chunk_ms=2.948
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.973 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.828
+[prime-yield] count=19 remaining=3 chunks=1 wall_ms=2.828 max_chunk_ms=2.828
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.851 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.794
+[prime-yield] count=20 remaining=2 chunks=1 wall_ms=2.794 max_chunk_ms=2.794
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.827 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=256 wall_ms=2.849
+[prime-yield] count=21 remaining=1 chunks=1 wall_ms=2.849 max_chunk_ms=2.849
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=2.883 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[prime-chunk] phase=glm5-draft rows=21 wall_ms=9.728
+[prime-finalize] walker=memra_engine::glm_spec::prime::Glm5PrimeWalker<'_> wall_ms=0.042 success=true
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=9.830 generated=0->1 rounds=0 drafted=0 accepted=0 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=9.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[ttft] id=chatcmpl-480f49e69612400c1d3ba27e2d88ee4c model="zai/glm-5.3-flash" path="/v1/chat/completions" prompt_tokens=2581 outcome=first_sse_byte request_parse_ms=0.045 admission_ms=0.033 queue_wait_ms=0.181 tokenize_ms=3.923 prime_wait_ms=4.167 prime_ms=3032.737 decode_wait_ms=0.021 sse_handoff_ms=0.219 request_parse_end_ms=0.045 admission_end_ms=0.078 tokenize_start_ms=0.259 tokenize_end_ms=4.182 prime_start_ms=8.349 prime_end_ms=3041.086 first_decode_ms=3041.107 first_sse_byte_ms=3041.326 total_ms=3041.326
+[prefix-cache] insert probation (glm5-boundary): 2581 tokens, 298.7MB (resident 1341.4MB / 1074MB, model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}long-c2")
+[prefix-cache] evict (Protected LRU): 570 tokens, 189.7MB (model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}restored-chain")
+[prefix-cache] evict (Probation LRU): 790 tokens, 203.9MB (model zai/glm-5.3-flash, ns "t:glm5-prime-gate\u{1f}restored-chain")
+[glm5-acc] ctx=2582 burst=22/27 cum=22/27=0.815 trim_rounds=0
+[tick-spec] seq=1 slot=0 trace=- start_ms=0.000 gap_ms=0.000 wall_ms=344.756 generated=1->32 rounds=9 drafted=27 accepted=22 k=0
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=344.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

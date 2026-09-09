@@ -41,6 +41,9 @@ class Boot:
         self.root = args.out / f"{number:02d}-arm{arm}"
         self.root.mkdir(parents=True, exist_ok=False)
         gpu_empty()
+        with args.binary.open("rb") as file:
+            if hashlib.file_digest(file, "sha256").hexdigest() != args.binary_sha256:
+                raise ValueError("binary changed between boots")
         self.key = secrets.token_hex(24)
         keys = self.root / "keys.toml"
         keys.write_text('[[keys]]\ntenant="glm5-prime-gate"\nsha256="' +
@@ -71,6 +74,7 @@ class Boot:
             "profile_sha256": hashlib.sha256(args.profile.read_bytes()).hexdigest(),
             "metadata_sha256": hashlib.sha256(args.metadata.read_bytes()).hexdigest(),
             "cell": args.cell, "chunk": args.chunk,
+            "controller_sha256": args.controller_sha256,
             "guard": [env.get("MEMRA_SPEC_GATE_LOW"), env.get("MEMRA_SPEC_GATE_HIGH")],
         })
         write(self.root / "profile.json", env)
@@ -141,7 +145,7 @@ class Boot:
                 raise RuntimeError(f"missing per-request spec engagement: {spec}")
             row = {"text": "".join(text), "reasoning": "".join(reasoning), "usage": usage,
                    "ttft_s": first, "total_s": time.monotonic() - start, "finish": finish,
-                   "boot_nonce": self.nonce, "label": label}
+                   "boot_nonce": self.nonce, "label": label, "dispatch_monotonic_s": start}
             write(self.root / f"{label}-result.json", row)
             return row
         finally:
@@ -157,7 +161,7 @@ class Boot:
                 label = f"{'restored' if restored else 'cold'}-{turn}"
                 salt = "restored-chain" if restored else label
                 row = self.one(label, {"messages": messages, "temperature": 0,
-                                      "max_tokens": 32, "cache_salt": salt})
+                                      "max_tokens": 96, "cache_salt": salt})
                 cached = row["usage"].get("prompt_tokens_details", {}).get("cached_tokens", 0)
                 if restored and turn > 0 and not cached:
                     raise RuntimeError(f"restored turn {turn} did not hit prefix cache")
@@ -199,6 +203,8 @@ class Boot:
                 raise RuntimeError("paired request differs from its own c1 greedy oracle")
         if self.arm and not re.search(r"\[prime-yield\] count=[1-9]", delta + self.log_path.read_text()[offset:]):
             raise RuntimeError("ON c2 did not yield")
+        if self.arm and c2[1]["dispatch_monotonic_s"] + c2[1]["ttft_s"] >= c2[0]["dispatch_monotonic_s"] + c2[0]["ttft_s"]:
+            raise RuntimeError("ON pair did not serve the small request before the long prime finished")
         result["pair"] = [[r["text"], r["reasoning"]] for r in c2]
         return result
 
@@ -274,6 +280,7 @@ def main():
     parser.add_argument("--boot-timeout", type=int, default=900)
     parser.add_argument("--request-timeout", type=int, default=1800)
     args = parser.parse_args()
+    args.controller_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     for key in ("binary", "profile", "metadata", "out"):
         setattr(args, key, getattr(args, key).resolve())
     with args.binary.open("rb") as file:
