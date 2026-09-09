@@ -843,6 +843,9 @@ pub struct Dsv4Gpu {
     norm_fuse: AtomicBool,
     norm_fuse2: AtomicBool,
     norm2_component_dir: std::sync::Mutex<Option<std::path::PathBuf>>,
+    /// Gate-only capture latch, read before the directory mutex so the OFF arm
+    /// executes main's dispatch with no added lock on any layer.
+    norm2_component_capture: AtomicBool,
     norm_component_capture: AtomicBool,
     norm_component_dir: std::sync::Mutex<Option<std::path::PathBuf>>,
     norm_component_seen: [AtomicU64; 2],
@@ -3285,6 +3288,7 @@ impl Dsv4Gpu {
             norm_fuse: AtomicBool::new(norm_fuse),
             norm_fuse2: AtomicBool::new(norm_fuse2),
             norm2_component_dir: std::sync::Mutex::new(None),
+            norm2_component_capture: AtomicBool::new(false),
             norm_component_capture: AtomicBool::new(false),
             norm_component_dir: std::sync::Mutex::new(None),
             norm_component_seen: std::array::from_fn(|_| AtomicU64::new(0)),
@@ -10332,6 +10336,7 @@ impl Dsv4Gpu {
                             hidden,
                             d.swiglu_limit,
                             true,
+                            false,
                             Some(&ar_outputs[0]),
                         )?;
                         self.moe_verify_common_tail(
@@ -10343,6 +10348,7 @@ impl Dsv4Gpu {
                             hidden,
                             d.swiglu_limit,
                             true,
+                            false,
                             Some(&ar_outputs[1]),
                         )?;
                     }
@@ -14763,7 +14769,7 @@ impl Dsv4Gpu {
             host_math,
         )?;
         let norm2 = self.norm2_active(t, host_math);
-        if t == 1 && !host_math {
+        if t == 1 && !host_math && self.norm2_component_capture.load(Ordering::Relaxed) {
             self.capture_norm2_component(
                 st,
                 layer,
@@ -15759,7 +15765,7 @@ impl Dsv4Gpu {
             hc_eps,
             host_math,
         )?;
-        if t == 1 && !host_math {
+        if t == 1 && !host_math && self.norm2_component_capture.load(Ordering::Relaxed) {
             self.capture_norm2_component(
                 st,
                 layer,
@@ -15987,6 +15993,7 @@ impl Dsv4Gpu {
         hidden: usize,
         limit: f32,
         include_hc_post: bool,
+        host_math: bool,
         joined_contribution: Option<&CudaSlice<f32>>,
     ) -> Res<()> {
         let stream = st.gpu.stream();
@@ -16049,7 +16056,7 @@ impl Dsv4Gpu {
             0,
             0,
         )?;
-        if t == 1 {
+        if t == 1 && !host_math && self.norm2_component_capture.load(Ordering::Relaxed) {
             self.capture_norm2_component(st, layer, 2, &vws.sg1, Some(&vws.sg3), sh_inter, limit)?;
         }
         if vws.norm2_xb_ready && sh_inter == 2048 {
@@ -16287,11 +16294,14 @@ impl Dsv4Gpu {
                         hs: &mut vws.hs,
                         contribution: &mut vws.contrib,
                     };
-                    let norm2_dir = self
-                        .norm2_component_dir
-                        .lock()
-                        .map_err(|e| e.to_string())?
-                        .clone();
+                    let norm2_dir = if self.norm2_component_capture.load(Ordering::Relaxed) {
+                        self.norm2_component_dir
+                            .lock()
+                            .map_err(|e| e.to_string())?
+                            .clone()
+                    } else {
+                        None
+                    };
                     let work = vws
                         .grouped_work
                         .as_mut()
@@ -16385,7 +16395,8 @@ impl Dsv4Gpu {
                                         return Ok(());
                                     }
                                     self.moe_verify_common_tail(
-                                        st, layer, vws, t, topk, hidden, limit, true, None,
+                                        st, layer, vws, t, topk, hidden, limit, true, host_math,
+                                        None,
                                     )
                                 })
                             }) {
@@ -16598,6 +16609,7 @@ impl Dsv4Gpu {
             hidden,
             limit,
             include_hc_post,
+            host_math,
             None,
         )?;
         Ok(())

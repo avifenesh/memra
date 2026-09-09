@@ -63,9 +63,13 @@ impl Dsv4Gpu {
             return Err("norm2 capture requires TP/EP f32x".into());
         }
         *self.norm2_component_dir.lock().map_err(|e| e.to_string())? = Some(dir.to_path_buf());
+        // Latch last: the forward path checks this before it touches the directory
+        // mutex, so an un-armed walk keeps main's dispatch exactly.
+        self.norm2_component_capture.store(true, Ordering::Relaxed);
         Ok(())
     }
     pub fn finish_norm2_components_for_gate(&self) -> Res<()> {
+        self.norm2_component_capture.store(false, Ordering::Relaxed);
         let dir = self
             .norm2_component_dir
             .lock()

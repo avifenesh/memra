@@ -844,8 +844,11 @@ multiply rounding before BF16 RNE. `dsv4_norm2_quant_half_kernel` uses four
 E4M3 rounding and zero-sign canonicalization, then the original 256-thread
 row-scale tree and lossless half/status expressions. Intermediate codes/scales
 are shared-memory transport. No expert GEMV, split-K, dense kernel, HC or rotary
-kernel changes. Counts per rank and forward variant: 86 norm/pack, 43 shared
-SwiGLU/pack, 43 quant/half, removing 215 launches. Commit has none. OFF has zero
+kernel changes. Each site is geometry checked at dispatch and falls back to its unfused chain
+outside the fused domain; the intermediate transport additionally requires the
+half mirror's own row capacity. Counts per rank and forward variant: 86
+norm/pack, 43 shared SwiGLU/pack, 43 quant/half, 387 launches gross for a net
+215 removed. Commit has none. OFF has zero
 new symbols. FFI: `src/dsv4_ffi.rs`; component capture and raw-bit gate:
 `src/dsv4_norm2_component_gate.rs`; replay gate: `dsv4-norm-fuse2-gate`.
 Evidence pending under `research/dsv4f-norm-fuse2-20260909/`; default stays OFF.

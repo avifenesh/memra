@@ -734,7 +734,7 @@ impl GroupedWork {
                     0.0,
                 )?;
             }
-            if !self.norm2 {
+            if !self.norm2_transport(live) {
                 unsafe {
                     dsv4_ffi::ck(
                         "matrix intermediate FP8",
@@ -754,6 +754,21 @@ impl GroupedWork {
         Ok(())
     }
 
+    /// Whether the fused quantize-and-gather transport actually covers this step's
+    /// geometry. The door alone is not enough: the kernel is written for the
+    /// single-token DSV4F shape, and the half mirror has its own row capacity. A
+    /// shape outside that domain falls back to the unfused pair, exactly as the
+    /// other three sites do, instead of failing the step. `queue_up` and `down`
+    /// both read this from the same `routes.live_slots`, so the quantizer and the
+    /// gather can never disagree about which arm produced the codes.
+    fn norm2_transport(&self, live: usize) -> bool {
+        self.norm2
+            && self.plain_single
+            && self.intermediate.cols == 2048
+            && (1..=6).contains(&live)
+            && live <= self.intermediate.rows
+    }
+
     pub fn down(&mut self, gpu: &Gpu, table: &CudaSlice<u64>, out: &mut EpCompute<'_>) -> Res<()> {
         if self.phase != MatrixPhase::UpQueued {
             return Err("matrix down requires queued gate/up".into());
@@ -763,10 +778,7 @@ impl GroupedWork {
         let s = gpu.stream();
         let live = self.routes.live_slots;
         if live > 0 {
-            if self.norm2 {
-                if !self.plain_single || self.intermediate.cols != 2048 || live > 6 {
-                    return Err("norm2 half transport requires single-token DSV4F geometry".into());
-                }
+            if self.norm2_transport(live) {
                 unsafe {
                     dsv4_ffi::ck(
                         "norm2 quant half",

@@ -100,6 +100,7 @@ fn main() {
             std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
             std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
             std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
+            std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
         }
     }
 

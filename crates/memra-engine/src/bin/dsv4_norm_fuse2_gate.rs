@@ -13,6 +13,12 @@ use std::{
 fn norm2_on(gpu: &Dsv4Gpu) -> bool {
     gpu.norm_fuse2_enabled_for_gate()
 }
+/// Every other DSV4 gate bin pins `MEMRA_DSV4_NORM_FUSE2=0` at startup, so this
+/// is the only bin whose rows may depend on the door. It reads the environment
+/// on purpose: `--qualify` selects its arm from it, one arm per process.
+fn norm2_door_env() -> String {
+    std::env::var("MEMRA_DSV4_NORM_FUSE2").unwrap_or_else(|_| "unset".into())
+}
 fn default_program() {
     for name in [
         "MEMRA_DSV4_DENSE_FAST",
@@ -563,6 +569,7 @@ fn main() {
         );
     }
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
+    println!("DOOR MEMRA_DSV4_NORM_FUSE2={}", norm2_door_env());
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
