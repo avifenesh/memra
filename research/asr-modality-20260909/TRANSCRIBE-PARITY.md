@@ -187,6 +187,25 @@ as it measures precision. The direction of the conclusion does not change, becau
 text is inside the band either way, but the band is partly an artefact of the padding
 convention and should not be quoted as a pure precision figure.
 
+### 71-clip sweep, checkpoint at 17 clips
+
+| Count | Value |
+| --- | ---: |
+| Clips scored | 17 of 71 |
+| Windows | 125 of 364 |
+| Windows token-exact | **106 / 125** |
+| Clips text-exact vs CT2 | **15 / 17** |
+| Clips with an identical window program | 15 / 17 |
+| Engine detokenizer agrees with the checker | 17 / 17 |
+| `d1` WER vs CT2 | **0.0000 pt** (7 clips, 4083 words) |
+| `whatsapp` WER vs CT2 | **0.2089 pt** (10 clips, 2393 words) |
+| Divergence classes | boundary_cascade 4, fp16_tie 13, fp16_ulp 1, real 1 |
+
+The `whatsapp` delta falls as the corpus grows: 0.5656 pt at 4 clips, 0.3390 at 7, 0.2089 at
+10. It is converging on the 0.2262 pt the native text sits from the FP32
+backend, which is what a handful of coin-flips diluted by more audio looks like. `d1` has not
+moved off 0.0000.
+
 ### What would settle the rest
 
 Score the 71-clip sweep against CT2, the only reference it has, and read the result against the

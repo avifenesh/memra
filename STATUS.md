@@ -34,16 +34,20 @@ and the predictor hypothesis carried across chunks.
 | RNNT greedy | Token ids | 9 of 9 identical | exact |
 | RNNT session | 26 chunk partials plus final | 26 of 26 identical | exact |
 
-Whisper text parity on the eight HF-oracle clips: `d1` 0.0000 pt against CT2 over 4 clips,
-`whatsapp` 0.5656 pt. The stage gate wanted every clip equal or under 0.05 pt per domain, so
-it is **not met on `whatsapp`**. The oracle's own two backends differ by 0.2114 pt on `d1` and
-0.3394 pt on `whatsapp` over the same clips, and the native text is inside that band on both
-(0.2114 and 0.2262 against the FP32 backend). No divergence in these 61 windows is a native
-defect: the one that looked like one, `whatsapp-001` window 3 step 3, was diagnosed against a
-reference computed on a differently padded window. On the CT2 window a matched FP32 reference
-agrees with the native encoder to 1.2e-06 mean and prefers the native token by 0.051958, while
-CT2's FP16 encoder flips it. Full analysis: `research/asr-modality-20260909/TRANSCRIBE-PARITY.md`
-and `WHATSAPP-001-W3-DIAGNOSIS.json`.
+Whisper text parity, 71-clip sweep checkpoint at 17 clips and 125 windows:
+**106/125 windows token-exact, 15/17 clips text-exact**, `d1` 0.0000 pt and
+`whatsapp` 0.2089 pt against CT2. The stage gate wanted every clip equal or under
+0.05 pt per domain, so it is **still not met on `whatsapp`**, but the delta is falling as the
+corpus grows (0.5656 at 4 clips, 0.3390 at 7, 0.2089 at 10) toward the 0.2262 pt the
+native text sits from the oracle's FP32 backend. The two oracle backends differ from each other
+by 0.2114 pt on `d1` and 0.3394 pt on `whatsapp`, so 0.05 pt is below the disagreement between
+the references. No divergence is a native defect. The classes are boundary_cascade 4,
+fp16_tie 13, fp16_ulp 1 and real 1; the single `real` is `whatsapp-003` window 4 step 86, two
+adjacent timestamps two fp16 steps apart with the clip's text unchanged, and the one that
+looked like a defect (`whatsapp-001` window 3) turned out to be a differently padded reference
+window. The engine's own
+detokenizer agrees with the checker's tokenizer on 17/17 clips. Full analysis:
+`research/asr-modality-20260909/TRANSCRIBE-PARITY.md` and `WHATSAPP-001-W3-DIAGNOSIS.json`.
 
 The speech matrix product is cache-blocked and optionally threaded; both are bit-identical by
 construction and re-proved on the real checkpoint. One encoder window fell 122.950 s to

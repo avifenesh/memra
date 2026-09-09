@@ -27,7 +27,10 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # ── publish census ────────────────────────────────────────────────────────────────────────
 # Arm 1 — THE DEFECT: a publishable member missing from the list (memra-reference, v0.106.0).
-sed -E 's/memra-gguf memra-reference/memra-gguf/' "$pub_wf" > "$tmp/no-reference.yml"
+# The anchor is "memra-tokenizer memra-reference": memra-reference gained a memra-tokenizer
+# dependency for the speech detokenizer, so the list is topological with the tokenizer first
+# and every sed below has to bite on that pair, not on the old memra-gguf one.
+sed -E 's/memra-tokenizer memra-reference/memra-gguf/' "$pub_wf" > "$tmp/no-reference.yml"
 # Assert on the LIST, not the file: publish.yml's comments name memra-reference too, so a
 # whole-file grep would match the documentation and hide a no-op sed.
 listed() { sed -n '/for crate in/,/; do/p' "$1" | tr -d '\\\n'; }
@@ -40,7 +43,7 @@ echo "$out" | grep -q 'memra-reference' \
   || fail "arm 1: refusal does not name the missing member: $out"
 
 # Arm 2 — order: memra-engine listed before its own workspace dep memra-reference.
-sed -E 's/memra-gguf memra-reference/memra-gguf/; s/memra-validate memra-engine/memra-validate memra-engine memra-reference/' \
+sed -E 's/memra-tokenizer memra-reference/memra-gguf/; s/memra-validate memra-engine/memra-validate memra-engine memra-reference/' \
   "$pub_wf" > "$tmp/bad-order.yml"
 if out=$("$census_pub" Cargo.toml "$tmp/bad-order.yml" 2>&1); then
   fail "arm 2: census accepted a non-topological list: $out"
@@ -49,7 +52,7 @@ echo "$out" | grep -q 'topological' \
   || fail "arm 2: refusal is not the ordering one: $out"
 
 # Arm 3 — a ghost: a listed crate that is not a workspace member.
-sed -E 's/memra-gguf memra-reference/memra-gguf memra-ghost memra-reference/' "$pub_wf" \
+sed -E 's/memra-tokenizer memra-reference/memra-tokenizer memra-ghost memra-reference/' "$pub_wf" \
   > "$tmp/ghost.yml"
 if out=$("$census_pub" Cargo.toml "$tmp/ghost.yml" 2>&1); then
   fail "arm 3: census accepted a ghost crate: $out"
@@ -57,7 +60,7 @@ fi
 echo "$out" | grep -q 'memra-ghost' || fail "arm 3: refusal does not name the ghost: $out"
 
 # Arm 4 — a publish = false crate in the list (memra-probe is the real one).
-sed -E 's/memra-gguf memra-reference/memra-gguf memra-probe memra-reference/' "$pub_wf" \
+sed -E 's/memra-tokenizer memra-reference/memra-tokenizer memra-probe memra-reference/' "$pub_wf" \
   > "$tmp/probe.yml"
 if out=$("$census_pub" Cargo.toml "$tmp/probe.yml" 2>&1); then
   fail "arm 4: census accepted memra-probe (publish = false) in the list: $out"
