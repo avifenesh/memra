@@ -1824,6 +1824,12 @@ in this PR's history. Raw evidence is private in Darklanes:
 `research/dsv4f-devpair-20260905/compressor-paired-copy-20260908.md`, receipt namespace
 `compressor-paired-copy-3d011dc-r1`.
 
+## HC-24 dot split experiment
+
+| Flag | Default | Contract |
+| --- | --- | --- |
+| `MEMRA_DSV4_HC_DOT_SPLIT` | **OFF**, decide-by: 2026-09-23 | Exact `1` selects S=16 HC24 split dots; unset, `0`, and other strings retain current dots. Only f32 device HC pre-attention/pre-FFN sites with N=24,K=16384 are eligible. Rollback: unset or set `0` before process initialization and create fresh uncaptured states; host-thread policy initializes once and retained graphs keep their captured kernels. Gate override admits 0/8/16/32 before capture. S8/16/32 are distinct numeric classes; reassociation is not bit-identical to exact-tail dots. Owner selected pinned S16 over component-fastest S32 (5.320960 vs 5.246080 us warm across ranks). **KEEP door**, default-ON is the owner's call: sampled pooled +2.701174% / +2.591532%,20 rows per order with first captures timed; two fresh process observations per arm match token/logit/cache/hidden digests, census/AR epochs/eight refusals per arm pass. Drift49/2048 top1 changes (2.392578%), KL OFF-to-ON mean/max0.005672511/0.421308907 and ON-to-OFF0.005758277/0.483190648; greedy16/64 identical. Receipts: [Darklanes #538](https://github.com/avifenesh/darklanes/pull/538), measured source `d42196214`, binary `d9ca7ac0bb6417fcd99e176cd6e2244d9e9d8b6b837a08d73b27fc0a7bd2dc5c`. No default flip or serving admission. |
+
 ## Dense M=1 exact-tree transport experiment, 2026-09-08
 
 | Control | Default | Both arms, rollback and evidence |
@@ -1886,9 +1892,3 @@ KERNELS rows. No serving dispatch had been installed. The measured source is
 bc89f4d22; the initial harness-only layout-reference mistake and its correction
 are preserved with the raw receipts. Verdict: NEGATIVE, numeric no-go.
 Receipt: `research/moe-rows-f16-20260909/RESULTS.md`. rev: 2026-09-23.
-
-## HC-24 dot split experiment
-
-| Flag | Default | Contract |
-| --- | --- | --- |
-| `MEMRA_DSV4_HC_DOT_SPLIT` | **OFF**, decide-by: 2026-09-23 | Exact `1` selects the HC24 split numeric class, provisionally S=16 pending component selection. Unset, `0`, and other values retain current dots. Only f32 device HC pre sites with N=24,K=16384 are eligible. Host-thread policy initializes once; fresh processes and graphs are required for rollback. Gate override admits 0/8/16/32 before capture. Captured kernels never read the selector. This changes association and is not bit-identical to exact-tail dots. Owner decides promotion from drift; no default flip in this lane. Receipt namespace: private Darklanes `research/dsv4f-hc-dot-split-20260909/`, gates pending. |
