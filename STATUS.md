@@ -34,6 +34,8 @@ and the predictor hypothesis carried across chunks.
 | RNNT greedy | Token ids | 9 of 9 identical | exact |
 | RNNT session, 2 s | 26 chunk partials plus final | 26 of 26 identical | exact |
 | RNNT session, 15.8 s | 199 chunk partials, final, transcript | 199 of 199 identical | exact |
+| RNNT session, d1-000 15.0 s | 189 chunk partials, final, transcript | 189 of 189 identical | exact |
+| RNNT session, 2 s of silence | 26 chunk partials, both empty | 26 of 26 identical | exact |
 
 Whisper text parity, 71-clip sweep checkpoint at 17 clips and 125 windows:
 **106/125 windows token-exact, 15/17 clips text-exact**, `d1` 0.0000 pt and

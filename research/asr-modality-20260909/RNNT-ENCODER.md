@@ -198,3 +198,26 @@ capacity, so the oldest-row eviction path had never run against a reference. Rec
 `stage11-rnnt-stream-15s.json`.
 
 What is still one of: one clip, one language slot, one arm.
+
+## Stage 12: a second clip, and silence
+
+Two more sessions, both against their own pinned NeMo reference:
+
+| Session | Chunks | Tokens | Result |
+| --- | ---: | ---: | --- |
+| `d1-000`, first 15.0 s, a different speaker and register | 189 | 140 | **189 of 189 partials identical**, transcript identical |
+| 2.0 s of digital silence | 26 | 0 | **26 of 26 partials identical**, both empty |
+
+The silence arm is the one worth keeping. A session that emits nothing is the case where a
+predictor that quietly advanced on blanks, or a joint that drifted, would still look fine on
+audio: there is no text to be wrong. Here the reference emits zero tokens for 26 chunks and so
+does the native path, chunk by chunk, and the transcript is empty on both sides rather than
+absent.
+
+`d1-000` is 80.0 s of CPU for 15.0 s of audio, in line with the 5.3x of the other long session.
+
+Receipts `stage12-rnnt-stream-d1.json` and `stage12-rnnt-stream-silence.json`.
+
+Three clips is not a corpus, and none of this is a WER. What these arms buy is that the
+session's state handling has now been exercised on a full cache, on a second speaker, and on
+audio with nothing in it.
