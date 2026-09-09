@@ -11,3 +11,4 @@ pub mod decoder;
 pub mod fastconformer;
 pub mod rnnt_frontend;
 pub mod rnnt_head;
+pub mod text;

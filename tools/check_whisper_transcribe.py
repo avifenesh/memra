@@ -200,6 +200,14 @@ def main():
             row["fp32_ids"] = ids32
 
         row["native_text"] = text(native_ids)
+        # If the engine wrote its own transcript, it has to agree with the offline tokenizer
+        # this checker uses. That is the whole point of having a detokenizer in the engine.
+        engine_path = native_dir / "transcript.txt"
+        if engine_path.exists():
+            engine_text = engine_path.read_text()
+            row["engine_text_matches_checker"] = canon(engine_text) == canon(row["native_text"])
+            if not row["engine_text_matches_checker"]:
+                row["engine_text"] = engine_text
         row["oracle_text"] = text(oracle_ids)
         if "fp32_ids" in row:
             row["fp32_text"] = text(row.pop("fp32_ids"))
@@ -281,6 +289,10 @@ def main():
         "windows_token_exact": window_match,
         "clips_token_exact": sum(r["tokens_match"] for r in rows),
         "clips_text_exact": exact_text,
+        "clips_with_engine_text": sum("engine_text_matches_checker" in r for r in rows),
+        "clips_engine_text_matches_checker": sum(
+            r.get("engine_text_matches_checker", False) for r in rows
+        ),
         "clips_text_exact_vs_fp32": sum(r.get("fp32_text_matches", False) for r in rows),
         "clips_with_fp32_reference": sum("fp32_text" in r for r in rows),
         "windows_token_exact_vs_fp32": sum(r.get("fp32_windows_token_exact", 0) for r in rows),
@@ -305,6 +317,11 @@ def main():
     )
     if classes:
         print("  divergence classes: " + ", ".join(f"{k}={v}" for k, v in sorted(classes.items())))
+    if receipt["clips_with_engine_text"]:
+        print(
+            f"  engine detokenizer agrees with the checker on "
+            f"{receipt['clips_engine_text_matches_checker']}/{receipt['clips_with_engine_text']} clips"
+        )
     for domain, value in domains.items():
         line = f"  {domain}: WER vs CT2 {value['wer_percent_native_vs_ct2']:.4f} pt"
         if "wer_percent_native_vs_fp32" in value:
