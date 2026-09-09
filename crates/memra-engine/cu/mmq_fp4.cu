@@ -1535,6 +1535,30 @@ int memra_mmq_nvfp4(const void * W_nvfp4_blocks, const float * act_f32, float * 
                                stream, out_scale, /*per_token_scale=*/1, /*residual_k=*/0);
 }
 
+// Bytes the CALIBRATED prefill quantizer writes for (in_f, rows).
+//
+// This is NOT the W4A8 activation footprint and must not be sized with it. The W4A8 scratch is
+// block_q8_1_mmq (144 B per 128 inputs) for `rows` rows; this quantizer writes block_fp4_mmq
+// (272 B per 256 inputs) for GGML_PAD(rows, 128) rows, plus one f32 per padded row. Per REAL row
+// the fp4 layout is smaller, which is why long primes never noticed, but the row PADDING is not
+// paid for: at rows=1 and in_f=17408 the quantizer writes 2,368,000 B into the W4A8 sizing's
+// 38,016 B. Short prefills are not a corner case here -- a one-row prefill tail and a restored
+// short suffix are the shapes the activation program is REQUIRED to run.
+size_t memra_mmq_nvfp4_calibrated_prefill_act_bytes(int in_f, int rows) {
+#if CUDART_VERSION >= 12080 && !defined(MEMRA_SM100_TCGEN05)
+    if (in_f <= 0 || rows <= 0) { return 0; }
+    const int padded_rows = GGML_PAD(rows, 128);
+    const size_t quantized = mmq_nvfp4_scale_off(in_f, padded_rows)
+                           + (size_t) padded_rows * sizeof(float);
+    // The mul_mat_q y-tile loader always reads a FULL mmq_x column tile, so keep that overread
+    // mapped, exactly as memra_mmq_nvfp4_w4a8_act_bytes does for its own layout.
+    return quantized + (size_t) MMQ_X * sizeof(block_fp4_mmq);
+#else
+    (void) in_f; (void) rows;
+    return 0;
+#endif
+}
+
 int memra_mmq_nvfp4_calibrated_prefill(
         const void * weights, const float * input, float * output,
         int in_f, int out_f, int rows, void * scratch, void * stream,

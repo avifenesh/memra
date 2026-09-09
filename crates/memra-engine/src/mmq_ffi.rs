@@ -835,6 +835,9 @@ unsafe extern "C" {
         rp: i32,
         clip_stats: *mut core::ffi::c_void,
     ) -> i32;
+    /// Bytes the calibrated prefill quantizer writes for (in_f, rows). NOT interchangeable with
+    /// `memra_mmq_nvfp4_w4a8_act_bytes`: a different block layout over a row count padded to 128.
+    pub fn memra_mmq_nvfp4_calibrated_prefill_act_bytes(in_f: i32, rows: i32) -> usize;
     /// Bytes for the block_e4m3_mmq activation scratch (footprint-identical to block_q8_1_mmq).
     pub fn memra_mmq_nvfp4_f8f4_act_bytes(in_f: i32, n_tokens: i32) -> usize;
     /// R-B W4A8-FP8 MMQ prefill GEMM (research/prefill-mxf8f6f4-design.md): NVFP4 per-16 scales
@@ -2242,8 +2245,49 @@ impl Engine {
             )
             .into());
         }
-        let act_bytes = unsafe { memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32) };
-        let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
+        // The CALIBRATED footprint, not the W4A8 one: this quantizer writes a different block
+        // layout over GGML_PAD(m, 128) rows. Sizing it with the W4A8 helper wrote megabytes past
+        // the end of the allocation on every short prefill.
+        let act_bytes =
+            unsafe { memra_mmq_nvfp4_calibrated_prefill_act_bytes(in_f as i32, m as i32) };
+        if act_bytes == 0 {
+            return Err(format!(
+                "calibrated A4 prefill: no activation scratch size for in_f={in_f} m={m} \
+                 (the kernel is not built into this binary)"
+            )
+            .into());
+        }
+        let scratch = self.alloc_uninit::<u8>(act_bytes)?;
+        self.qmatvec_mmq_nvfp4_calibrated_prefill_into(
+            bytes,
+            x,
+            m,
+            in_f,
+            out_f,
+            weight_scale,
+            input_scale,
+            slot,
+            rp,
+            scratch,
+        )
+    }
+
+    /// `qmatvec_mmq_nvfp4_calibrated_prefill` with a CALLER-OWNED scratch, so a gate can poison
+    /// the bytes past the declared footprint and prove the quantizer stayed inside it.
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn qmatvec_mmq_nvfp4_calibrated_prefill_into(
+        &self,
+        bytes: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        weight_scale: f32,
+        input_scale: f32,
+        slot: u32,
+        rp: bool,
+        scratch: &mut CudaSlice<u8>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let mut y = self.alloc_uninit::<f32>(m * out_f)?;
         {
             let stream = self.gpu.stream();
