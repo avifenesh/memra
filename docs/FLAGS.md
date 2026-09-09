@@ -1849,8 +1849,13 @@ with identity, in addition to dense #507 and cadence #508.
 | --- | --- | --- |
 | `MEMRA_DSV4_DENSE_FAST` | **ON when unset**, rollback seam decide-by: 2026-09-23 | Unset or exact `1` selects two-row FP8 LUT sharing and four-iteration dot load scheduling within admitted dense exact-tail calls. Explicit `0` restores the previous exact-tail kernels; other strings retain their previous OFF behavior. `MEMRA_DSV4_DENSE_EXACT_TAIL=0` still selects the legacy control. Same numeric class, token-identical to the prior default. Arithmetic/load bodies are unchanged. Rollback: set `0` before process initialization and create fresh uncaptured states; retained graphs keep their captured functions. Historical gate controls force OFF explicitly. Composition KEEP: +1.618979% A5B5B5A5 / +1.609496% B5A5A5B5, 20 rows/order with first captures included, 256-step identity, both censuses, resets and 16 refusals per invocation. Receipts: [single #529](https://github.com/avifenesh/darklanes/pull/529), [norm single #530](https://github.com/avifenesh/darklanes/pull/530), [composition #535](https://github.com/avifenesh/darklanes/pull/535), measured source `73c8b04b7`, binary `f891afea1e008a754f17cb534e35cbe26bdd35857bf5ae3c6d40b34df002b755`. Default engagement: `dsv4_densefast_normfuse_default_gate`, separate unset/0 invocations, 256-step eager identity and five sanity rows per mode. |
 
-## Verify E4M3 six-projection candidate, 2026-09-09
+## Removed doors, 2026-09-09 (KDA verify six-projection component)
 
-| Flag | Default | Arms and rollback | Evidence |
-|---|---|---|---|
-| `MEMRA_GLM5_VERIFY_E4M3_FUSED6` | OFF | `1`: one batched six-projection E4M3 grid at t2..8, shared Q8 conversion and rounded in-store scales; unset/`0`: six current calls. Requires `MEMRA_KDA_FUSED_PROJ=1`; existing dtype/layout/numeric-program refusals remain. decide-by: 2026-09-23. | `research/glm5-verify-tally-20260909/RESULTS.md`: byte-exact t2/4/7, ABBA x5 weighted saving 1.789758071 ms/round. Component KEEP; no serving-default qualification. |
+`MEMRA_GLM5_VERIFY_E4M3_FUSED6`, its dispatch, engagement counter,
+`Engine::e4m3_verify_fused6_into`, the scaled batched-row extension, the
+b2/b4/b8 CUDA kernels and dedicated oracle/bench executable are removed.
+Component KEEP OFF, unserved, code removed 2026-09-09. The byte-exact
+2,652-row oracle and 1.743582405 ms/round t=4 saving remain evidence;
+they do not qualify a served pair. Re-derive from
+`7c3ddf0db45295dcd2ec67c963f3295ec8d8c14b`.
+Receipt: `research/glm5-verify-tally-20260909/RESULTS.md`; rev: 2026-09-23.

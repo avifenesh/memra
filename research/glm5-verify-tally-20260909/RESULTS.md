@@ -1,10 +1,21 @@
 # GLM verify six-projection fusion, 2026-09-09
 
+## Current disposition, 2026-09-09
+
+Component KEEP OFF, unserved, code removed 2026-09-09. The owner removed
+unserved default-OFF candidates from runtime. The door, dispatch, dedicated
+CUDA kernels, counter and oracle/bench executable are gone. Measurements
+below describe the archived candidate. Re-derive from
+`7c3ddf0db45295dcd2ec67c963f3295ec8d8c14b` (merged in #388 as
+`cec4f5a05f6a1ab01e3d8e91247df9b0636e20e5`); there is no retained runtime
+switch or serving qualification. rev: 2026-09-23.
+
+
 Verdict: **KEEP, 1.789758071 ms/round weighted saving**. rev: 2026-09-23
 
 The real-input byte-exact oracle passed before timing. Warmed ABBA x5 with
 all 34 KDA layers' weights rotating beats the fixed >=0.5 ms/round bar.
-`MEMRA_GLM5_VERIFY_E4M3_FUSED6` remains default OFF, decide-by: 2026-09-23.
+The measured `MEMRA_GLM5_VERIFY_E4M3_FUSED6` door was default OFF; it is now removed.
 This is a component result. No sampled candidate serving qualification or
 default deployment is claimed.
 
