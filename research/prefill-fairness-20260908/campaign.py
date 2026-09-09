@@ -93,4 +93,13 @@ for model in ('ornith','qwen'):
                 solo=json.loads((root/f'{model}-solo-off/{request}-result.json').read_text())
                 pair=json.loads((root/label/f'{request}-result.json').read_text())
                 assert solo['output_sha256']==pair['output_sha256'], (model,request,'pair bytes')
+# Isolate the 1024-row wall measurements too. Mixed cells include peer work and
+# cannot substitute for a one-request early/middle/late comparison with 4096.
+for model in ('ornith', 'qwen'):
+    for arm in ('off', 'on'):
+        label = f'{model}-1024-{arm}'
+        execute(label, ['python3', str(script/'gate_http.py'), '--source', profiles[model],
+                        '--binary', binary, '--sha', sha, '--out', str(root/label),
+                        '--arm', arm, '--mode', 'chunk', '--chunk', '1024',
+                        '--long-request', longs[model]], False)
 print('CAMPAIGN_PASS',flush=True)
