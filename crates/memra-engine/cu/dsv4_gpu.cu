@@ -2948,6 +2948,63 @@ extern "C" int memra_dsv4_rmsnorm_f32acc(const float* x, const float* w, float* 
     return 0;
 }
 
+// Adjacent KV norm -> RoPE. Preserve the unfused reduction and all f32
+// rounding points. Shared storage is also the in-place read/write barrier.
+extern "C" __global__ void dsv4_norm_rope_f32_fixed_order_kernel(
+        float* x, const float* w, int ncols, float eps, int rd,
+        const float* cs, const int* positions) {
+    const float* xr = x;
+    float acc = 0.0f;
+    int i = threadIdx.x;
+    int B = blockDim.x;
+    for (; i + 7 * B < ncols; i += 8 * B) {
+        float v0 = xr[i], v1 = xr[i + B], v2 = xr[i + 2 * B], v3 = xr[i + 3 * B];
+        float v4 = xr[i + 4 * B], v5 = xr[i + 5 * B], v6 = xr[i + 6 * B], v7 = xr[i + 7 * B];
+        acc += v0 * v0;
+        acc += v1 * v1;
+        acc += v2 * v2;
+        acc += v3 * v3;
+        acc += v4 * v4;
+        acc += v5 * v5;
+        acc += v6 * v6;
+        acc += v7 * v7;
+    }
+    for (; i < ncols; i += B) {
+        float v = xr[i];
+        acc += v * v;
+    }
+    extern __shared__ float shf32[];
+    float tot = dsv4_block_sum_f32(acc, shf32);
+    float mean = tot / (float)ncols;
+    float rsq = 1.0f / sqrtf(mean + eps);
+    float* normalized = shf32 + 128;
+    for (int col = threadIdx.x; col < ncols; col += blockDim.x)
+        normalized[col] = (w ? w[col] : 1.0f) * (xr[col] * rsq);
+    __syncthreads();
+    for (int col = threadIdx.x; col < ncols - rd; col += blockDim.x)
+        x[col] = normalized[col];
+    for (int kk = threadIdx.x; kk < rd / 2; kk += blockDim.x) {
+        const float* row = cs + (long)positions[0] * rd + 2 * kk;
+        float c = row[0], s = row[1];
+        int col = ncols - rd + 2 * kk;
+        float x0 = normalized[col], x1 = normalized[col + 1];
+        x[col] = x0 * c - x1 * s;
+        x[col + 1] = x0 * s + x1 * c;
+    }
+}
+
+extern "C" int memra_dsv4_norm_rope_f32_fixed_order(
+        float* x, const float* w, int ncols, float eps, int rd,
+        const float* cs, const int* positions, void* stream_v) {
+    // Exact target geometry only. Unsupported shapes must use the unfused arm.
+    if (!x || !w || !cs || !positions || ncols != 512 || rd != 64)
+        return 40004;
+    dsv4_norm_rope_f32_fixed_order_kernel<<<1, 128, (128+ncols)*sizeof(float),
+        (cudaStream_t)stream_v>>>(x, w, ncols, eps, rd, cs, positions);
+    DSV4_ERR();
+    return 0;
+}
+
 // Q-LoRA normalization plus the following bf16 pack. Same 128-thread tree,
 // eight-load accumulation order and f32 intermediate as the separate pair.
 extern "C" __global__ void dsv4_small_norm_pack_f32_fixed_order_kernel(

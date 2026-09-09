@@ -670,3 +670,37 @@ Both rollback seams have decide-by 2026-09-22 for removal review.
 Composition confirmation is directly recorded in
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, alongside the standalone cadence #508 and dense #507 receipts.
+
+### KV RMSNorm and RoPE gate-only composition door, 2026-09-09
+
+`dsv4_norm_rope_f32_fixed_order_kernel` is the default-OFF
+`MEMRA_DSV4_NORM_FUSE` arm. It replaces the adjacent KV norm and rotary launches
+in each t=1 device batch attention layer (SWA, CSA and HCA). The 128-thread
+RMSNorm reduction is unchanged; only shared-memory transport replaces the
+normalized f32 global-memory intermediate. The subsequent QAT is unchanged.
+Retained census confirms 43 launches removed per rank per forward step,
+with 43 fused nodes in each ON forward variant and zero in OFF.
+
+Attention-entry norm feeds Q and KV projections and, in compressed layers,
+f32 compressor/indexer projections. Q norm/pack is already fused by the diet.
+MoE-entry norm feeds router logits before activation quantization and grouped
+FP8-to-half gathering; shared experts also consume its BF16 pack. Those are
+not one adjacent norm/gather/convert chain. Compressor emission norm feeds
+RoPE then Hadamard/FP4 (indexer) or QAT (attention), but its replay wrappers
+are outside this lane. Final norm feeds f32 head dots. No fusion of these
+fan-out chains or modification of their reduction trees is proposed.
+
+KEEP small, same numeric class: +0.607010% forward and +0.437574% reverse
+pooled throughput on pinned DSV4F EP+TP2 2x RTX PRO 6000 with full replay,
+cadence, dense exact-tail, graph split-K, device sampler and diet. A second
+forward run confirms +0.499856%. Each order has 20 sampled rows with first
+capture included. All 86 component sites pass raw-bit comparison, memcheck
+and synccheck report zero errors, and every 256-step identity/census/reset
+and 16-refusal invocation passes. Receipts: [private Darklanes #530](https://github.com/avifenesh/darklanes/pull/530),
+the report and raw manifests linked there, source `511f0e663`,
+binary `e36c98b0bd80cd8f1c6895f7193e68ebf9120327e437b5fab07c1945cad5761c`.
+This is below serving relevance alone and remains a default-OFF composition
+candidate with dense-fast. No serving admission or default promotion.
+Rollback uses `MEMRA_DSV4_NORM_FUSE=0` or unset with fresh uncaptured state;
+decide-by 2026-09-23. FFI entry: `memra_dsv4_norm_rope_f32_fixed_order` in
+`src/dsv4_ffi.rs`, dispatched by the t=1 batch attention path in `src/dsv4_gpu.rs`.
