@@ -7859,7 +7859,7 @@ impl Dsv4Gpu {
             || self.verify_topk != Dsv4VerifyTopk::Device
             || (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) != 43
             || self.model.mc.n_embd != 4096
-            || crate::moe_m1_splitk_on()
+            || crate::moe_m1_host_splitk_on()
             || crate::MOE_M1_SPLITK_COMPONENT.load(Ordering::Acquire) != 0
             || crate::dsv4_grouped::route_validation_enabled()
             || crate::dsv4_grouped::mirror_validation_enabled()
@@ -7873,7 +7873,7 @@ impl Dsv4Gpu {
                 .iter()
                 .any(|st| !std::sync::Arc::ptr_eq(&st.gpu.stream(), st.gpu.main_stream()))
         {
-            return Err("full-token replay requires the pinned plain TP2/expert-ID EP, device+diet, f32x/RefFp8Round program; split-K/DSpark/host validation/other modes refused".into());
+            return Err("full-token replay requires the pinned plain TP2/expert-ID EP, device+diet, f32x/RefFp8Round program; only graph split-K admitted, host split-K/DSpark/host validation/other modes refused".into());
         }
         Ok(())
     }
