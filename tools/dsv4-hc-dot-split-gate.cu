@@ -102,6 +102,7 @@ static void hc_case(Case& c,bool timing) {
     printf("PASS hc_components rank=%d guards=1 inputs_immutable=1\n",c.rank);fflush(stdout);
 }
 int main(int argc,char** argv){try {
+    api(memra_dsv4_hc_dot_split_set_for_gate(0));
     insist(argc==2||argc==3,"usage: component operand-dir [--check-only]");
     bool timing=argc==2; if(argc==3)insist(std::string(argv[2])=="--check-only","option");
     int seen=0;

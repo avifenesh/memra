@@ -82,6 +82,12 @@ fn check_expert_nodes(dot: &str, graph_splitk: bool, forward: bool) {
     );
 }
 
+fn hc_slices() -> i32 {
+    unsafe extern "C" {
+        fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+    }
+    unsafe { memra_dsv4_hc_dot_split_slices_for_gate() }
+}
 fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
     assert_eq!(
         gpu.full_token_replay_captures_for_gate(state).unwrap(),
@@ -108,7 +114,11 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
                 memra_engine::moe_m1_graph_splitk_on(),
                 gpu.norm_fuse_enabled_for_gate(),
             ) {
-                assert_eq!(rank[slot][1], kernels, "cadence kernel census slot {slot}");
+                assert_eq!(
+                    rank[slot][1],
+                    kernels + if hc_slices() != 0 { 86 } else { 0 },
+                    "cadence kernel census slot {slot}"
+                );
                 assert_eq!(
                     [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
                     [86, 1, 86, 0]
@@ -576,6 +586,13 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                 count("dsv4_norm_rope_f32_fixed_order_kernel"),
                 if norm_fuse && forward { 43 } else { 0 }
             );
+            let hc = hc_slices() != 0;
+            for name in [
+                "dsv4_hc_dot_split_partial_kernel",
+                "dsv4_hc_dot_split_reduce_kernel",
+            ] {
+                assert_eq!(count(name), if hc && forward { 86 } else { 0 });
+            }
             let fast = dense && dense_fast;
             assert_eq!(
                 count("dsv4_dense_fast_fp8_kernel"),
@@ -586,7 +603,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                 if !fast {
                     0
                 } else if forward {
-                    253
+                    if hc { 167 } else { 253 }
                 } else if rank == 1 {
                     2
                 } else {

@@ -111,6 +111,19 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                 dir.join(format!("full-token-rank{rank}-segment{segment}.dot")),
             )
             .unwrap();
+            unsafe extern "C" {
+                fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+            }
+            let hc = unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0;
+            for name in [
+                "dsv4_hc_dot_split_partial_kernel",
+                "dsv4_hc_dot_split_reduce_kernel",
+            ] {
+                assert_eq!(
+                    count_kernel(&dot, name),
+                    if hc && segment != 1 { 86 } else { 0 }
+                );
+            }
             let partial = count_kernel(&dot, "moe_m1_graph_splitk_partial_kernel");
             let reduce = count_kernel(&dot, "moe_m1_graph_splitk_reduce_kernel");
             let old = count_kernel(&dot, "moe_m1_splitk_partial_kernel");
@@ -478,6 +491,9 @@ fn main() {
     // Freeze this historical instrument independently of the newer defaults.
     // This is process startup, before any model or worker threads exist.
     unsafe {
+        if !std::env::args().any(|v| v == "--defaults") {
+            std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
+        }
         std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
         std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
     }

@@ -510,7 +510,11 @@ extern "C" int memra_dsv4_dense_exact_tail_dots(const float* x, const void* w,
 // Association differs from exact-tail dots. No atomics or capture allocations.
 static thread_local int dsv4_hc_dot_split_slices = [] {
     const char* value = std::getenv("MEMRA_DSV4_HC_DOT_SPLIT");
-    return value && std::strcmp(value, "1") == 0 ? 16 : 0;
+    // Owner accepted S16 on 2026-09-09. Other slice counts stay explicit.
+    if (!value || std::strcmp(value, "1") == 0 || std::strcmp(value, "16") == 0) return 16;
+    if (std::strcmp(value, "8") == 0) return 8;
+    if (std::strcmp(value, "32") == 0) return 32;
+    return 0;
 }();
 extern "C" int memra_dsv4_hc_dot_split_set_for_gate(int slices) {
     if (slices != 0 && slices != 8 && slices != 16 && slices != 32) return 40075;

@@ -25,10 +25,14 @@ const CONTROL_DOTS: &str = "dsv4_dense_exact_tail_dots_kernel";
 // Existing gate-only C ABI. Selection runs only on this host thread before
 // capture; captured functions never read it. No runtime/serving interface added.
 unsafe extern "C" {
+    fn memra_dsv4_hc_dot_split_slices_for_gate() -> c_int;
     fn memra_dsv4_dense_fast_set_for_gate(enabled: c_int) -> c_int;
     fn memra_dsv4_dense_fast_enabled_for_gate() -> c_int;
     fn memra_dsv4_dense_fast_restore_default_for_gate() -> c_int;
     fn memra_dsv4_dense_fast_counts_for_gate(fp8: *mut u64, dots: *mut u64) -> c_int;
+}
+fn hc_on() -> bool {
+    unsafe { memra_dsv4_hc_dot_split_slices_for_gate() != 0 }
 }
 fn enqueues() -> [u64; 2] {
     let mut c = [0u64; 2];
@@ -170,7 +174,7 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState, on: bool) {
         for (slot, baseline) in [(0, 2827), (2, 3226), (3, 3326)] {
             assert_eq!(
                 rank[slot][1],
-                baseline - if on { 43 } else { 0 },
+                baseline - if on { 43 } else { 0 } + if hc_on() { 86 } else { 0 },
                 "composed kernel census slot={slot}"
             );
             assert_eq!(
@@ -214,7 +218,7 @@ fn compose_census(gpu: &Dsv4Gpu, state: &DecodeState, on: bool, dir: &Path) -> G
             let path = dir.join(format!("full-token-rank{rank}-segment{segment}.dot"));
             let dot = std::fs::read_to_string(path).expect("DOT");
             let expected = if segment != 1 {
-                [494, 253]
+                [494, if hc_on() { 167 } else { 253 }]
             } else if rank == 1 {
                 [0, 2]
             } else {
@@ -229,6 +233,15 @@ fn compose_census(gpu: &Dsv4Gpu, state: &DecodeState, on: bool, dir: &Path) -> G
                 count_kernel(&dot, "moe_m1_graph_splitk_reduce_kernel"),
                 split
             );
+            for name in [
+                "dsv4_hc_dot_split_partial_kernel",
+                "dsv4_hc_dot_split_reduce_kernel",
+            ] {
+                assert_eq!(
+                    count_kernel(&dot, name),
+                    if hc_on() && segment != 1 { 86 } else { 0 }
+                );
+            }
             let candidate = [count_kernel(&dot, FP8_NODES), count_kernel(&dot, DOT_NODES)];
             let control = [
                 count_kernel(&dot, CONTROL_FP8),
@@ -317,7 +330,7 @@ impl Arm {
     fn check_enqueues(&self, before: [u64; 2], first: bool) {
         let after = enqueues();
         let expected = if first && self.program.dense {
-            [2964, 1520]
+            [2964, if hc_on() { 1004 } else { 1520 }]
         } else {
             [0, 0]
         };

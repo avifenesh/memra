@@ -837,3 +837,23 @@ positions, final logits, boundary logits and capture state between OFF/ON.
 `MEMRA_TICK_TRACE=1` records actual chunk and finalization wall in both arms.
 Neither diagnostic is a timed performance cell. Route receipts live under
 `research/prefill-fairness-20260908/`.
+
+
+### HC24 default engagement, owner accepted 2026-09-09
+
+Run `dsv4_hc_dot_split_gate <model-dir> <source.txt> <new-output-dir> --defaults`
+in separate fresh processes with `MEMRA_DSV4_HC_DOT_SPLIT` unset and set to `0`.
+Use the existing HC gate's required TP/EP f32x environment and pinned source tape.
+The defaults path never calls the HC selector. Each mode checks 256 sampled
+steps against eager within its own numeric class, all three forward and commit
+censuses, eight transactional refusals, then five sanity rows on a fresh retained
+graph with the first capture timed. Sanity rows must match the eager qualification
+identity. ON requires 86 HC partial and 86 reducer nodes per rank/forward; OFF
+and commit require zero. Graph split-K, dense-fast and norm-fuse censuses are
+checked alongside HC. This gate does not assert identity between HC classes.
+
+CPU policy tests in `dsv4_hc_dot_split_gate` execute the linked C++ selector in
+fresh child processes for unset, 0, 1, 16, 8, 32, invalid and empty values, check
+explicit gate rollback and refusal, and verify a new thread's environment policy.
+`tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
+all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
