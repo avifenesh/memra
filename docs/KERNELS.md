@@ -714,3 +714,17 @@ Disassembly supplies static instruction evidence; neither metric is a hardware
 counter claim. Initial operands are deterministic synthetic inputs, so this
 diagnostic does not replace real-operand equality or model qualification.
 The diagnostic accepts `--reverse` from its first build. No runtime door yet.
+
+### Dense-fast candidate (default OFF)
+
+`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
+and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
+launchers by `MEMRA_DSV4_DENSE_FAST`. FP8 uses 256 threads for two independent
+rows sharing the identical E4M3 table; each row keeps 128 leaves. Dots retain
+128 threads and unroll four iterations of the existing sequential accumulator.
+Leaf t consumes K positions 8*t+1024*j+[0..7] in ascending j/element order.
+Final tree is ((p[t]+p[t+64])+(p[t+32]+p[t+96])) followed by 16/8/4/2/1
+guarded warp shuffles, all F32 additions. FMAD remains disabled. Ragged rows
+participate in barriers and never load or write outside their row.
+The gate callback is null by default and copies real operands only when explicitly
+installed by the diagnostic. Current qualification is pending.
