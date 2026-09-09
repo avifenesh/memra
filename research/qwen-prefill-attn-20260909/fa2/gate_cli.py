@@ -13,6 +13,7 @@ p = argparse.ArgumentParser()
 p.add_argument("kind", choices=["margin", "spec", "eval"])
 p.add_argument("--arm", choices=["0", "1"], default="1")
 p.add_argument("--profile", action="store_true")
+p.add_argument("--version", default="v2")
 a = p.parse_args()
 root = pathlib.Path("/root/qwen-prefill-attn-20260909")
 out = root / "fa2-gates" / (a.kind + "-" + a.arm + "-" + uuid.uuid4().hex[:8])
@@ -23,12 +24,12 @@ env.update(profile)
 env.update(MEMRA_PRIME_ATTN_FA2=a.arm, MEMRA_MODEL_METADATA=str(root / "requal-models.toml"), MEMRA_SEED="5183")
 model = profile["MEMRA_MODELS"].split("=", 1)[1]
 if a.kind == "margin":
-    cmd = [str(root / "fa2-src/qwen-fa2-margin-gate-final"), model, str(out / "logits"), str(root / "margin-board-2048.txt"), str(root / "extra-margin-prompt.txt")]
+    cmd = [str(root / ("fa2-src/qwen-fa2-margin-gate-" + a.version)), model, str(out / "logits"), str(root / "margin-board-2048.txt"), str(root / "extra-margin-prompt.txt")]
 elif a.kind == "spec":
-    cmd = [str(root / "fa2-src/run-spec-final"), model]
+    cmd = [str(root / ("fa2-src/run-spec-" + a.version)), model]
     env.update(MEMRA_PROMPT_FILE=str(root / "gate-prompt.txt"), MEMRA_CHAT="1", MEMRA_NGEN="64")
 else:
-    cmd = [str(root / "fa2-src/concat-prime-probe-final"), model, "nllwin", "--prompt-a", "@" + str(root / "fa2-serving-src/research/fp8st-20260804/mmq-v2/nll-window.txt"), "--window", "1024", "--chunk", "1024", "--jsonl", str(out / "per-token.jsonl")]
+    cmd = [str(root / ("fa2-src/concat-prime-probe-" + a.version)), model, "nllwin", "--prompt-a", "@" + str(root / "fa2-serving-src/research/fp8st-20260804/mmq-v2/nll-window.txt"), "--window", "1024", "--chunk", "1024", "--jsonl", str(out / "per-token.jsonl")]
 binary = pathlib.Path(cmd[0])
 receipt = dict(kind=a.kind, arm=a.arm, nonce=uuid.uuid4().hex, binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(), profile_sha256=hashlib.sha256((root / "requal-profile.json").read_bytes()).hexdigest(), command=cmd, profile=profile)
 if a.profile:
