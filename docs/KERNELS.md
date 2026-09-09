@@ -856,3 +856,52 @@ raw-bit identity at all 344 component sites, memcheck and synccheck zero
 errors, +1.0926% pooled ABBA and +0.9075% pooled reverse on the sampled
 default program. Default is ON when unset in the admitted TP/EP f32x topology; explicit `0` is
 the rollback seam, decide-by: 2026-09-23.
+
+### Wide DSV4 norm2 pack (experimental, 2026-09-09)
+
+`MEMRA_DSV4_NORM2_WIDE` is default OFF, decide-by: 2026-09-23, composed on
+`MEMRA_DSV4_NORM_FUSE2`.
+
+`dsv4_norm2_pack_f32_fixed_order_kernel` launches grid 1 / block 128 over one
+4096-element f32 row. One CTA holds both the reduction and the whole epilogue:
+14.426623 us per launch, 1.240690 ms/step on rank 0 at 86 launches, a provisional
+0.221812% of 1,792 GB/s. That geometry was inherited unchanged from the separate
+pack the norm2 door replaced, so it is not a regression the door introduced, but
+it is the largest single kernel in the fused norm2 family.
+
+`dsv4_norm2_pack_f32_fixed_order_wide_kernel` partitions the EPILOGUE COLUMNS
+across `NORM2_WIDE_TILES` CTAs of 128 threads. Grid X is a column tile, not a
+row: the pack domain is one row of 4096 and the launcher refuses anything else.
+Every CTA repeats, byte for byte, the same eight-load accumulation order and the
+same `dsv4_block_sum_f32` tree over the whole row, so `tot`, `mean` and `rsq` are
+bit-identical in every CTA and identical to the single-CTA kernel. The written
+value is a pure function of (column, rsq), so which CTA writes a column cannot
+move a bit.
+
+**Class: SAME.** The reduction order is the contract the `fixed_order` name
+carries, and nothing here changes it, so this rewrite needs no numerical-drift
+qualification: bit equality is a construction, and the component gate refuses on
+the first differing bit rather than scoring a tolerance. Contrast the two rejected
+shapes, both of which change the summation tree and would therefore be a NEW class
+needing drift rows (Darklanes #534 showed a changed f32 tree flips near-tie
+argmax): per-CTA partial sums combined in a second phase, and a single wider block.
+
+The price is a redundant row read per CTA. At 4096 f32 that is 16 KB re-read
+`tiles` times, which lands in L2 after the first CTA touches the row, against an
+epilogue that becomes `1/tiles` as wide per CTA. Because every CTA still runs the
+whole reduction, the sweep's asymptote as `tiles` grows IS the reduction floor,
+and the gap between `tiles=1` and that floor is the only thing this door can buy.
+The component gate reports that sweep rather than assuming it.
+
+The launcher pins block 128 (the tree is the contract) and requires
+`128 * tiles` to divide `n`, so no CTA is empty and every thread writes the same
+number of columns. `tiles = 1` reproduces the original geometry through the wide
+symbol and is the sweep's own red arm.
+
+No launch count moves: 86 packs per rank and forward variant in both arms, one
+symbol or the other, never both and never neither. No other kernel changes. FFI:
+`src/dsv4_ffi.rs`; component gate: `src/dsv4_norm2_wide_component_gate.rs`;
+replay and sampled gate: `dsv4-norm2-wide-gate`.
+
+Evidence: pending. This door is unmeasured until its component cell and sampled
+ABBA land; the entry moves to a verdict or the door is deleted by 2026-09-23.

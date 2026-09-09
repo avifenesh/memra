@@ -48,7 +48,7 @@ pub(crate) fn capture_words(
     .map_err(|e| e.to_string())?;
     Ok(())
 }
-fn read_words(path: &Path) -> Res<Vec<f32>> {
+pub(crate) fn read_words(path: &Path) -> Res<Vec<f32>> {
     let b = std::fs::read(path).map_err(|e| e.to_string())?;
     if b.len() % 4 != 0 {
         return Err("unaligned operand".into());

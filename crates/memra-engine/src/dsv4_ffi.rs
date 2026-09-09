@@ -16,6 +16,18 @@ unsafe extern "C" {
         eps: f32,
         stream: *mut c_void,
     ) -> i32;
+    /// Same-class wide twin: `tiles` CTAs partition the epilogue columns only,
+    /// each repeating the identical 128-thread fixed-order reduction.
+    pub fn memra_dsv4_norm2_pack_wide(
+        x: *const f32,
+        w: *const f32,
+        dst: *mut f32,
+        packed: *mut c_void,
+        n: i32,
+        eps: f32,
+        tiles: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_norm2_swiglu_pack(
         gate: *const f32,
         up: *const f32,

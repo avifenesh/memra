@@ -95,6 +95,8 @@ pub fn restore_dense_exact_tail_default_for_gate() -> bool {
 
 #[path = "dsv4_norm2_component_gate.rs"]
 pub(crate) mod norm2_component_gate;
+#[path = "dsv4_norm2_wide_component_gate.rs"]
+pub(crate) mod norm2_wide_component_gate;
 #[path = "dsv4_norm_component_gate.rs"]
 mod norm_component_gate;
 #[path = "dsv4_small_kernel_gate.rs"]
@@ -842,6 +844,10 @@ pub struct Dsv4Gpu {
     small_kernel_diet: bool,
     norm_fuse: AtomicBool,
     norm_fuse2: AtomicBool,
+    /// Process-local, default OFF. Widens the norm2 pack epilogue across
+    /// `NORM2_WIDE_TILES` CTAs; the reduction tree is unchanged, so this is a
+    /// same-class door and never a numeric one. Requires norm_fuse2.
+    norm2_wide: AtomicBool,
     norm2_component_dir: std::sync::Mutex<Option<std::path::PathBuf>>,
     /// Gate-only capture latch, read before the directory mutex so the OFF arm
     /// executes main's dispatch with no added lock on any layer.
@@ -1699,6 +1705,25 @@ fn norm_fuse2_environment_policy(
         _ => Err("MEMRA_DSV4_NORM_FUSE2 requires 0 or 1".into()),
     }
 }
+
+/// The wide pack only has a call site when norm2 is dispatching, so an explicit
+/// `1` without the norm2 door is a configuration error rather than a silent
+/// no-op. `admitted` is the norm2 door's own resolved value.
+fn norm2_wide_environment_policy(
+    value: Result<&str, &std::env::VarError>,
+    admitted: bool,
+) -> Res<bool> {
+    match value {
+        Err(std::env::VarError::NotPresent) | Ok("0") => Ok(false),
+        Ok("1") if admitted => Ok(true),
+        Ok("1") => Err("norm2 wide pack requires MEMRA_DSV4_NORM_FUSE2=1".into()),
+        _ => Err("MEMRA_DSV4_NORM2_WIDE requires 0 or 1".into()),
+    }
+}
+
+/// Column tiles for the wide norm2 pack epilogue, pinned from the component
+/// sweep. 4096 must be a whole multiple of `128 * NORM2_WIDE_TILES`.
+const NORM2_WIDE_TILES: i32 = 32;
 
 impl Dsv4Gpu {
     pub fn device_verify_topk_calls(&self) -> u64 {
@@ -3252,6 +3277,10 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
             topology.is_tp_ep() && chains_f32,
         )?;
+        let norm2_wide = norm2_wide_environment_policy(
+            std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
+            norm_fuse2,
+        )?;
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -3288,6 +3317,7 @@ impl Dsv4Gpu {
             small_kernel_diet,
             norm_fuse: AtomicBool::new(norm_fuse),
             norm_fuse2: AtomicBool::new(norm_fuse2),
+            norm2_wide: AtomicBool::new(norm2_wide),
             norm2_component_dir: std::sync::Mutex::new(None),
             norm2_component_capture: AtomicBool::new(false),
             norm_component_capture: AtomicBool::new(false),
@@ -14115,6 +14145,48 @@ impl Dsv4Gpu {
     pub fn norm_fuse2_enabled_for_gate(&self) -> bool {
         self.norm_fuse2.load(Ordering::Relaxed)
     }
+
+    pub fn set_norm2_wide_for_gate(&self, enabled: bool) -> Res<()> {
+        if enabled && !self.norm_fuse2.load(Ordering::Relaxed) {
+            return Err("norm2 wide pack requires MEMRA_DSV4_NORM_FUSE2=1".into());
+        }
+        for st in &self.stages {
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("norm2 wide drain"))?;
+        }
+        self.norm2_wide.store(enabled, Ordering::Relaxed);
+        Ok(())
+    }
+    pub fn norm2_wide_enabled_for_gate(&self) -> bool {
+        self.norm2_wide.load(Ordering::Relaxed)
+    }
+    pub fn norm2_wide_tiles_for_gate() -> i32 {
+        NORM2_WIDE_TILES
+    }
+    /// The single seam both norm2 pack sites dispatch through. The wide arm is a
+    /// same-class rewrite: identical reduction tree, epilogue split across CTAs.
+    /// `norm2_wide` can only be true when `norm2_active` already gated the call.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn norm2_pack_arm(
+        &self,
+        x: *const f32,
+        w: *const f32,
+        dst: *mut f32,
+        packed: *mut c_void,
+        n: i32,
+        eps: f32,
+        sv: *mut c_void,
+    ) -> i32 {
+        unsafe {
+            if self.norm2_wide.load(Ordering::Relaxed) {
+                k::memra_dsv4_norm2_pack_wide(x, w, dst, packed, n, eps, NORM2_WIDE_TILES, sv)
+            } else {
+                k::memra_dsv4_norm2_pack(x, w, dst, packed, n, eps, sv)
+            }
+        }
+    }
     fn norm2_active(&self, t: usize, host_math: bool) -> bool {
         self.norm_fuse2.load(Ordering::Relaxed)
             && self.topology.is_tp_ep()
@@ -14785,7 +14857,7 @@ impl Dsv4Gpu {
             unsafe {
                 ck(
                     "attention norm2 pack",
-                    k::memra_dsv4_norm2_pack(
+                    self.norm2_pack_arm(
                         dpf!(vws.y_hc, &stream),
                         dpf!(layer.attn_norm, &stream),
                         dpm!(vws.x, &stream),
@@ -15782,7 +15854,7 @@ impl Dsv4Gpu {
             unsafe {
                 ck(
                     "FFN norm2 pack",
-                    k::memra_dsv4_norm2_pack(
+                    self.norm2_pack_arm(
                         dpf!(vws.y_hc, &stream),
                         dpf!(layer.ffn_norm, &stream),
                         dpm!(vws.xf, &stream),
@@ -19832,5 +19904,33 @@ mod norm_fuse2_policy_tests {
             assert!(norm_fuse2_environment_policy(Ok("invalid"), admitted).is_err());
             assert!(norm_fuse2_environment_policy(Ok(""), admitted).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod norm2_wide_policy_tests {
+    use super::{NORM2_WIDE_TILES, norm2_wide_environment_policy};
+    #[test]
+    fn default_off_and_explicit_admission() {
+        let absent = std::env::VarError::NotPresent;
+        for admitted in [false, true] {
+            assert!(!norm2_wide_environment_policy(Err(&absent), admitted).unwrap());
+            assert!(!norm2_wide_environment_policy(Ok("0"), admitted).unwrap());
+            for junk in ["invalid", "", " ", "2", "true", "ON", "01", "1 "] {
+                assert!(
+                    norm2_wide_environment_policy(Ok(junk), admitted).is_err(),
+                    "junk must refuse: {junk:?}"
+                );
+            }
+        }
+        // Explicit 1 needs the norm2 door: the wide pack has no other call site.
+        assert!(norm2_wide_environment_policy(Ok("1"), true).unwrap());
+        assert!(norm2_wide_environment_policy(Ok("1"), false).is_err());
+    }
+    #[test]
+    fn pinned_tiles_divide_the_row() {
+        // Launcher contract: tiles in 1..=n/128 and 128*tiles divides 4096.
+        assert!((1..=4096 / 128).contains(&NORM2_WIDE_TILES));
+        assert_eq!(4096 % (128 * NORM2_WIDE_TILES), 0);
     }
 }

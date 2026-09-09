@@ -41,6 +41,15 @@ fn default_program() {
         Ok("0"),
         "explicit OFF required: MEMRA_DSV4_NORM_FUSE2"
     );
+    // Default-OFF wide norm2 pack: this bin reads the environment rather than
+    // pinning it, so an exported 1 has to be refused explicitly.
+    assert!(
+        matches!(
+            std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
+            Err(_) | Ok("0")
+        ),
+        "default OFF required: MEMRA_DSV4_NORM2_WIDE"
+    );
 }
 const PRIME: usize = 256;
 const OUTPUT: usize = 256;

@@ -3134,6 +3134,72 @@ extern "C" int memra_dsv4_norm2_pack(const float* x, const float* w, float* dst,
     return 0;
 }
 
+// Same-class wide twin of dsv4_norm2_pack_f32_fixed_order_kernel. The single-CTA
+// original is grid 1 / block 128 over one 4096-element row: 128 threads carry the
+// whole epilogue. Here grid X partitions the EPILOGUE COLUMNS only. Every CTA
+// repeats, byte for byte, the same 128-thread eight-load accumulation order and
+// the same dsv4_block_sum_f32 tree over the whole row, so tot, mean and rsq are
+// bit-identical in every CTA and identical to the single-CTA kernel. The written
+// value is a pure function of (column, rsq), so which CTA writes a column cannot
+// move a bit. The redundant row read is the price: it lands in L2 after the first
+// CTA touches the row, and it buys an epilogue that is 1/tiles as wide per CTA.
+// Reduction order is the contract; nothing below changes it.
+extern "C" __global__ void dsv4_norm2_pack_f32_fixed_order_wide_kernel(
+        const float* __restrict__ x, const float* __restrict__ w,
+        float* __restrict__ dst, __nv_bfloat16* __restrict__ packed, int ncols,
+        float eps, int tile) {
+    // One row only: the launcher rejects anything else, so row 0 offsets are zero
+    // exactly as they are when the original runs with grid 1.
+    const float* xr = x;
+    float* dr = dst;
+    float acc = 0.0f;
+    int i = threadIdx.x;
+    int B = blockDim.x;
+    for (; i + 7 * B < ncols; i += 8 * B) {
+        float v0 = xr[i], v1 = xr[i + B], v2 = xr[i + 2 * B], v3 = xr[i + 3 * B];
+        float v4 = xr[i + 4 * B], v5 = xr[i + 5 * B], v6 = xr[i + 6 * B], v7 = xr[i + 7 * B];
+        acc += v0 * v0;
+        acc += v1 * v1;
+        acc += v2 * v2;
+        acc += v3 * v3;
+        acc += v4 * v4;
+        acc += v5 * v5;
+        acc += v6 * v6;
+        acc += v7 * v7;
+    }
+    for (; i < ncols; i += B) {
+        float v = xr[i];
+        acc += v * v;
+    }
+    extern __shared__ float shf32[];
+    float tot = dsv4_block_sum_f32(acc, shf32);
+    float mean = tot / (float)ncols;
+    float rsq = 1.0f / sqrtf(mean + eps);
+    int lo = blockIdx.x * tile;
+    int hi = min(ncols, lo + tile);
+    for (int c = lo + threadIdx.x; c < hi; c += blockDim.x)
+    {
+        float v = (w ? w[c] : 1.0f) * (xr[c] * rsq);
+        dr[c] = v;
+        packed[c] = __float2bfloat16_rn(v);
+    }
+}
+
+// tiles == 1 is the original geometry expressed through the wide kernel, kept so
+// the component gate can sweep the whole domain against one symbol.
+extern "C" int memra_dsv4_norm2_pack_wide(const float* x, const float* w, float* dst,
+        void* packed, int n, float eps, int tiles, void* stream_v) {
+    if (!x || !w || !dst || !packed || n != 4096) return 40004;
+    // Every CTA runs the 128-thread tree, so the block is pinned. Requiring each
+    // tile to be a whole multiple of the block keeps every CTA non-empty and every
+    // thread's write count equal.
+    if (tiles < 1 || tiles > n / 128 || n % (tiles * 128) != 0) return 40004;
+    dsv4_norm2_pack_f32_fixed_order_wide_kernel<<<tiles,128,128*sizeof(float),(cudaStream_t)stream_v>>>(
+        x,w,dst,(__nv_bfloat16*)packed,n,eps,n / tiles);
+    DSV4_ERR();
+    return 0;
+}
+
 // Q-LoRA normalization plus the following bf16 pack. Same 128-thread tree,
 // eight-load accumulation order and f32 intermediate as the separate pair.
 extern "C" __global__ void dsv4_small_norm_pack_f32_fixed_order_kernel(
