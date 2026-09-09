@@ -175,11 +175,11 @@ impl Dsv4Gpu {
                     let mut status = stream
                         .clone_htod(&vec![CANARY as i32; rows + 2 * GUARD])
                         .map_err(e("norm2 status"))?;
-                    let xp = dpf!(xd, &stream);
-                    let wp = dpf!(wd, &stream);
-                    let yp = unsafe { dpm!(yd, &stream).add(GUARD) };
+                    let xp = xd.device_ptr(&stream).0 as *const f32;
+                    let wp = wd.device_ptr(&stream).0 as *const f32;
+                    let yp = unsafe { (yd.device_ptr_mut(&stream).0 as *mut f32).add(GUARD) };
                     let bp = (pack.device_ptr_mut(&stream).0 as usize + GUARD) as *mut c_void;
-                    let rsp = unsafe { dpm!(rs, &stream).add(GUARD) };
+                    let rsp = unsafe { (rs.device_ptr_mut(&stream).0 as *mut f32).add(GUARD) };
                     let stp = unsafe { (status.device_ptr_mut(&stream).0 as *mut i32).add(GUARD) };
                     let mut reference: Option<Vec<u8>> = None;
                     for cold in [false, true] {
@@ -304,7 +304,7 @@ impl Dsv4Gpu {
                                             k::memra_dsv4_act_quant_fp8(
                                                 xp,
                                                 codes.device_ptr_mut(&stream).0 as *mut c_void,
-                                                dpm!(scales, &stream),
+                                                scales.device_ptr_mut(&stream).0 as *mut f32,
                                                 rows as i32,
                                                 cols as i32,
                                                 sp(&stream),
@@ -314,7 +314,7 @@ impl Dsv4Gpu {
                                             "norm2 reference gather",
                                             k::memra_dsv4_fp8_gather_half(
                                                 codes.device_ptr(&stream).0 as *const c_void,
-                                                dpf!(scales, &stream),
+                                                scales.device_ptr(&stream).0 as *const f32,
                                                 std::ptr::null(),
                                                 bp,
                                                 rsp,
