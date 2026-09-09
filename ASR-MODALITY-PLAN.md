@@ -1,6 +1,6 @@
 # Native ASR modality plan
 
-Status: metadata skeleton, no native speech execution yet. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
+Status: native CPU mel frontend passed its first oracle gate; encoder and decoding remain in progress. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
 Engine baseline: `1657a5a80`; lane `lane/asr-modality-20260909`.
 
 Build both native speech paths now. Memra owns model math, frontend, state and decoding.
@@ -36,7 +36,8 @@ quality receipt until conversion equivalence has been established tensor by tens
 Actual range-read headers and index are checked in under
 [`crates/memra-gguf/src/model_packs/whisper/fixtures`](crates/memra-gguf/src/model_packs/whisper/fixtures).
 `source.lock.json` records metadata hashes, shard sizes and publisher-declared payload hashes.
-No Whisper payload was downloaded or authenticated in this assignment.
+The initial metadata skeleton did not download payloads. The frontend follow-up downloaded both
+source shards and verified their publisher SHA256 values before the CPU encoder oracle capture.
 
 | Census surface | Exact value |
 | --- | --- |
@@ -243,3 +244,17 @@ qualification; this draft is not a fleet rollout or a support declaration.
 - [Pinned NeMo archive](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/blob/1c8deaecc64b91f034d73e08dd8b64625eb3395d/nemotron-3.5-asr-streaming-0.6b.nemo), locally verified SHA256 and restricted tensor census.
 - [OpenAI Whisper audio/model sources](https://github.com/openai/whisper), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [NeMo](https://github.com/NVIDIA/NeMo): exact reading revisions in `research/asr-modality-20260909/semantic-sources.json`. Reading does not license vendoring kernels.
 - Private requirements read at Darklanes `ae42664bed248cd91124a9cf76829637734b0a2f`, sections 1/2/3/6 of the two-tier program, and its model-onboarding checklist. No private corpus or customer content is copied here.
+
+## Stage 1 receipt, 2026-09-09
+
+The native CPU frontend passed the 2-second synthetic waveform gate, using the normal 30-second
+padded window: `[128,3000]`, max absolute delta **5.6743622e-5** against HF transformers 5.16.1 /
+torch 2.14.0 FP32, threshold **1e-3**. Receipt: `research/asr-modality-20260909/stage1-mel.json`.
+The source is a Memra-owned direct DFT, periodic Hann and Slaney log-mel implementation, with
+no external DSP dependency. The synthetic fixture is checked into the CUDA-free reference crate
+so hosted CI repeats the numerical assertion. It is not a WER or GPU performance receipt.
+
+The owner explicitly allowed this follow-up's tiny, niced, single-process CPU oracle and stage
+gates on the rig. No GPU was opened, and no local workspace CI or general battery was run.
+`tools/whisper_cpu_oracle.py` is offline capture tooling only. The stage runner consumes binary
+fixtures and source safetensors; it never calls that tool as an execution backend.

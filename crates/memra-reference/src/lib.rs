@@ -4,6 +4,7 @@
 //! external engine fallback. Unsupported canonical operations return a named error.
 
 pub mod hidden_trace;
+pub mod speech;
 
 use memra_gguf::config::AttentionGateKind;
 use memra_gguf::model_plan::{
