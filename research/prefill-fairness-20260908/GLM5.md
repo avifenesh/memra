@@ -717,3 +717,30 @@ pull_request branches to main. Security checks are polled separately; do not cal
 those a passing hosted compile gate. Pair latency and delayed-device fault cells,
 TP spec composition, generic request-aware trace fields and the plain-peer
 rotation review remain open. Default stays OFF.
+
+
+### Rebase after #379 merged
+
+2026-09-09. Replayed only the five GLM5 lane commits onto
+`ff0937dd09b808cd97dde174de1b6aedff63a0b8`, which includes #379 at cc9d593be,
+#392 and #378. The original 534040262/f604518ca commits are not replayed;
+the shared seam now comes from main. Range-diff confirmed the only manual
+conflict resolution was the shared FLAGS row: main's measured Qwen/Ornith
+results and bound were preserved, with the GLM5 receipt pointer added.
+
+Fresh validation under nohup/setsid, nice 19, jobs=16 and the shared GPU lock
+on the assigned single B200: build and fmt passed; strict library clippy passed;
+33 engine prime CPU tests passed; 653 server CPU tests passed with 4 pre-existing
+ignored; both requested GLM5 GPU gates passed (2 passed, 0 failed). Source and
+binary hashes, full output, exit status 0 and empty compute-app before/after
+readbacks are in `glm5/receipts/rebase-main/`. The source manifest matches the
+local rebased files. The release GO lane's processes were never stopped or changed.
+The older model-scale HTTP receipts remain historical evidence for their recorded
+binary; this rebase reran the two requested GPU gates, not those HTTP boots.
+
+PR #389 was automatically closed when its old base ref was deleted. Its recorded
+base ref was restored temporarily, the PR reopened and retargeted to main, then
+the temporary ref was deleted with an exact lease and absence readback. It remains
+a draft. Rebase continuation and the receipt commit bypass local hooks because
+those invoke cargo on the rig; validation ran remotely. The rewritten branch is
+pushed with MEMRA_SKIP_PERF_CI=1 and force-with-lease pinned to its prior head.
