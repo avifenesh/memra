@@ -8,3 +8,4 @@ mod matrix;
 
 pub mod decode;
 pub mod decoder;
+pub mod fastconformer;

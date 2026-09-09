@@ -140,7 +140,9 @@ pub const EXPRESSIBLE_CONTEXTS: &[AttentionContext] = &[
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamingStateContract {
     pub context: AttentionContext,
-    /// Attention key/value history per layer, in encoder frames.
+    /// Attention history per layer, in encoder frames. The reference caches the normalized
+    /// layer input and recomputes keys and values from it, so this is one tensor per layer and
+    /// not a key and a value tensor: the captured cache is `[layers, batch, 56, width]`.
     pub last_channel_frames: u32,
     /// Causal depthwise convolution history per layer, in encoder frames.
     pub last_time_frames: u32,
@@ -179,11 +181,13 @@ impl StreamingStateContract {
     }
 
     /// Elements one session holds between chunks, excluding the frontend carry.
+    ///
+    /// The attention term counts one row per cached frame, not two. An earlier version of this
+    /// contract doubled it for a key and a value tensor; the pinned capture shows the reference
+    /// caches the layer input alone, `[24, 1, 56, 1024]`.
     pub fn state_elements(&self) -> u64 {
-        let attention = u64::from(self.layers)
-            * u64::from(self.last_channel_frames)
-            * u64::from(self.width)
-            * 2;
+        let attention =
+            u64::from(self.layers) * u64::from(self.last_channel_frames) * u64::from(self.width);
         let convolution =
             u64::from(self.layers) * u64::from(self.last_time_frames) * u64::from(self.width);
         let predictor =
@@ -454,6 +458,32 @@ pub fn read_archive(archive: &[u8]) -> Result<NemoCheckpoint, RnntError> {
         census,
         storages,
     })
+}
+
+/// A memory-mapped archive with its census already taken.
+///
+/// The map is held for the lifetime of the value so a loader can slice tensor payloads out of
+/// it without a 2.5 GB copy.
+pub struct MappedNemo {
+    map: memmap2::Mmap,
+    pub checkpoint: NemoCheckpoint,
+}
+
+impl MappedNemo {
+    pub fn open(path: &std::path::Path) -> Result<Self, RnntError> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| RnntError::Archive(NemoError::Archive(e.to_string())))?;
+        // SAFETY: the archive is a read-only checkpoint; a concurrent writer would be a
+        // deployment error, not a case this reader tries to survive.
+        let map = unsafe { memmap2::Mmap::map(&file) }
+            .map_err(|e| RnntError::Archive(NemoError::Archive(e.to_string())))?;
+        let checkpoint = read_archive(&map)?;
+        Ok(Self { map, checkpoint })
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.map
+    }
 }
 
 #[cfg(test)]

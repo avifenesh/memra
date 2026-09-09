@@ -103,9 +103,11 @@ fn the_qualified_streaming_arm_never_reads_future_audio() {
     assert_eq!(state.last_time_frames, 8);
     assert_eq!(state.layers, 24);
     assert_eq!(state.chunk_frames, 1);
-    // 24 layers x 56 frames x 1024 x (key and value), plus 24 x 8 x 1024 convolution history,
-    // plus two LSTM layers of hidden and cell state.
-    assert_eq!(state.state_elements(), 2_752_512 + 196_608 + 2_560);
+    // 24 layers x 56 frames x 1024 of cached layer input, plus 24 x 8 x 1024 convolution
+    // history, plus two LSTM layers of hidden and cell state. The attention term is not
+    // doubled: the reference caches the layer input, not separate keys and values, which the
+    // pinned capture shows as a [24, 1, 56, 1024] tensor.
+    assert_eq!(state.state_elements(), 1_376_256 + 196_608 + 2_560);
 
     // The other published arms stay expressible so the schema is not [56,0]-shaped, but they
     // are not causal and this lane does not admit them.
