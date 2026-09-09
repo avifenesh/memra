@@ -78,7 +78,11 @@ The eight-turn cache twin has 21 warm turns per arm, all restoring at least 8160
 tokens, with median warm TTFT 0.187092/0.187206 s. Four greedy restore turns match
 exactly. The GPU destination/stride relocation test passes with the production
 instantiate flags; its initial UPLOAD-only fixture was refused and is retained
-as a failed test attempt. Hosted checks gate the final PR head.
+as a failed test attempt. A read-only diagnostic patch re-snapshots the restored cache before sampling;
+its complete boundary digest equals the cold capture at position 8160. Cold,
+restored and cold-twin greedy responses match. The patch and separate diagnostic
+binary hash are retained in the private companion, not used for performance.
+Hosted checks gate the final PR head.
 
 No local rig gates or CI ran. Pushes use `MEMRA_SKIP_PERF_CI=1` with local hooks
 disabled under the owner's temporary restriction. Hosted CI still gates merge.

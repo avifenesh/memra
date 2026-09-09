@@ -1,5 +1,11 @@
 # Environment flags — the audited catalog
 
+## Qwen carried-prime launch diet, 2026-09-09
+
+| Mechanism | Contract |
+| --- | --- |
+| Carried-prime graph, no runtime door | Naked default on the qualified 170-SM sm_120a Qwen geometry. Live replay tables preserve session state and true KV depth; unsupported shapes, one-off tails and low headroom use the existing eager program. Chunk 1024 and PrimeWalker yields remain unchanged. `MEMRA_PRIME_CHUNK_GRAPH` was a development-only comparison switch and was removed before merge: exact cold TTFT improves 2.24%, 2.94% and 2.59% at 8k/32k/131k, three boots per arm. No active decide-by door remains. Receipt: `research/qwen-prefill-attn-20260909/MECHANISM.md`. |
+
 ## Qwen attention prime staging, 2026-09-09
 
 | Flag | Contract |
