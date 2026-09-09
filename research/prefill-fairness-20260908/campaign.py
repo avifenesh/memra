@@ -15,6 +15,7 @@ p.add_argument('--binary', default='/root/target-prefill/release/memra-server')
 p.add_argument('--sha', default='19db5df71812eabfa914ba99f58ff676e5d6a860174c0a75084dfad19a89d8e4')
 p.add_argument('--repetitions', type=int, default=3)
 p.add_argument('--skip-chunk-probes', action='store_true')
+p.add_argument('--skip-mixed', action='store_true', help='Run correctness cells after retaining a failed capacity cell')
 a = p.parse_args()
 repo, root = pathlib.Path(a.repo), pathlib.Path(a.root)
 script = repo / 'research/prefill-fairness-20260908'
@@ -64,7 +65,7 @@ def execute(label, command, mixed):
     (root/'campaign-progress.json').write_text(json.dumps({'last_completed':label,'summary':summary},indent=2))
     print('PASS', label, flush=True)
 
-for model in ('ornith', 'qwen'):
+for model in (() if a.skip_mixed else ('ornith', 'qwen')):
     for repetition in range(1,a.repetitions+1):
         for arm in ('off','on'):
             label=f'{model}-r{repetition}-{arm}'
