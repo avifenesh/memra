@@ -8345,6 +8345,7 @@ impl Dsv4Gpu {
                 sc_cols,
             } = w
         {
+            let partial_len = partial.len() as i32;
             return ck("FP8 K-split", unsafe {
                 memra_dsv4_fp8_ksplit(
                     codes,
@@ -8352,7 +8353,7 @@ impl Dsv4Gpu {
                     sc_cols,
                     xb_ptr,
                     partial.device_ptr_mut(&stream).0 as *mut f32,
-                    partial.len() as i32,
+                    partial_len,
                     y_ptr,
                     1,
                     n as i32,
@@ -13987,6 +13988,7 @@ impl Dsv4Gpu {
                 sc_cols,
             } = w
         {
+            let partial_len = partial.len() as i32;
             return ck("FP8 K-split", unsafe {
                 memra_dsv4_fp8_ksplit(
                     codes,
@@ -13994,7 +13996,7 @@ impl Dsv4Gpu {
                     sc_cols,
                     x_ptr,
                     partial.device_ptr_mut(&stream).0 as *mut f32,
-                    partial.len() as i32,
+                    partial_len,
                     y_ptr,
                     1,
                     n as i32,
