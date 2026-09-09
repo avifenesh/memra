@@ -673,7 +673,7 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
 ### KV RMSNorm and RoPE candidate, 2026-09-09
 
-`dsv4_norm_rope_f32_fixed_order_kernel` is the planned default-OFF
+`dsv4_norm_rope_f32_fixed_order_kernel` is the default-OFF
 `MEMRA_DSV4_NORM_FUSE` arm. It replaces the adjacent KV norm and rotary launches
 in each t=1 device batch attention layer (SWA, CSA and HCA). The 128-thread
 RMSNorm reduction is unchanged; only shared-memory transport replaces the

@@ -79,6 +79,8 @@ pub fn restore_dense_exact_tail_default_for_gate() -> bool {
     unsafe { memra_dsv4_dense_exact_tail_restore_default_for_gate() == 1 }
 }
 
+#[path = "dsv4_norm_component_gate.rs"]
+mod norm_component_gate;
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
@@ -822,6 +824,10 @@ pub struct Dsv4Gpu {
     pub chains_f32: bool,
     /// Process-local, default OFF; fixed at load, never toggled during a walk.
     small_kernel_diet: bool,
+    norm_fuse: AtomicBool,
+    norm_component_capture: AtomicBool,
+    norm_component_dir: std::sync::Mutex<Option<std::path::PathBuf>>,
+    norm_component_seen: [AtomicU64; 2],
     /// Successful enqueues for HC finish and Q norm/pack, respectively.
     /// Counts launches, not tokens, expected savings, or graph nodes.
     small_kernel_launches: [AtomicU64; 2],
@@ -3188,6 +3194,14 @@ impl Dsv4Gpu {
         if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
             return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
         }
+        let norm_fuse = match std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref() {
+            Err(std::env::VarError::NotPresent) | Ok("0") => false,
+            Ok("1") => true,
+            _ => return Err("MEMRA_DSV4_NORM_FUSE requires 0 or 1".into()),
+        };
+        if norm_fuse && (!topology.is_tp_ep() || !chains_f32) {
+            return Err("norm fusion requires TP/EP f32x".into());
+        }
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -3222,6 +3236,10 @@ impl Dsv4Gpu {
             dots_f32,
             chains_f32,
             small_kernel_diet,
+            norm_fuse: AtomicBool::new(norm_fuse),
+            norm_component_capture: AtomicBool::new(false),
+            norm_component_dir: std::sync::Mutex::new(None),
+            norm_component_seen: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_launches: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_component_mask: AtomicU64::new(u64::MAX),
             dspark_head_f32,
@@ -13973,6 +13991,20 @@ impl Dsv4Gpu {
 }
 
 impl Dsv4Gpu {
+    /// Gate selector for fresh eager calls/captures. Drain before switching;
+    /// retained graphs contain fixed functions and do not read this selector.
+    pub fn set_norm_fuse_for_gate(&self, enabled: bool) -> Res<()> {
+        if enabled && (!self.topology.is_tp_ep() || !self.chains_f32) {
+            return Err("norm fusion gate requires TP/EP f32x".into());
+        }
+        self.norm_fuse.store(enabled, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn norm_fuse_enabled_for_gate(&self) -> bool {
+        self.norm_fuse.load(Ordering::Relaxed)
+    }
+
     pub fn small_kernel_diet_enabled(&self) -> bool {
         self.small_kernel_diet
     }
@@ -14718,33 +14750,58 @@ impl Dsv4Gpu {
             hidden,
             vws.kv.device_ptr_mut(&stream).0 as *mut f32,
         )?;
+        if t == 1 && !host_math && self.norm_component_capture.load(Ordering::Relaxed) {
+            self.capture_norm_component(st, layer, &vws.kv, hd, rd, eps, fc_dev, &vws.pos_dev)?;
+        }
         unsafe {
-            ck(
-                "rmsnorm kv batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.kv, &stream),
-                    dpf!(layer.kv_norm, &stream),
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    hd as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "rope kv batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    1,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    0,
-                    sp(&stream),
-                ),
-            )?;
+            if self.norm_fuse.load(Ordering::Relaxed)
+                && self.chains_f32
+                && !host_math
+                && t == 1
+                && hd == 512
+                && rd == 64
+            {
+                ck(
+                    "KV norm rope f32 fixed order",
+                    k::memra_dsv4_norm_rope_f32_fixed_order(
+                        dpm!(vws.kv, &stream),
+                        dpf!(layer.kv_norm, &stream),
+                        hd as i32,
+                        eps,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        sp(&stream),
+                    ),
+                )?;
+            } else {
+                ck(
+                    "rmsnorm kv batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.kv, &stream),
+                        dpf!(layer.kv_norm, &stream),
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        hd as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "rope kv batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        1,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+            }
             ck(
                 "act_quant kv batch",
                 k::memra_dsv4_act_quant(

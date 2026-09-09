@@ -837,6 +837,16 @@ unsafe extern "C" {
         eps: f32,
         stream: *mut c_void,
     ) -> i32;
+    pub fn memra_dsv4_norm_rope_f32_fixed_order(
+        x: *mut f32,
+        w: *const f32,
+        ncols: i32,
+        eps: f32,
+        rd: i32,
+        cs: *const f32,
+        positions: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_rmsnorm_f32acc(
         x: *const f32,
         w: *const f32,
