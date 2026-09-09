@@ -23975,6 +23975,56 @@ impl Engine {
     /// whole group instead of once per GEMM (the standalone converts were ~250 launches/prime
     /// of small-kernel gap fuel — nsys 2026-07-26). Any member without a mirror (or with a
     /// different in_f) falls back to its own `matmul` — behavior unchanged.
+    /// PREFILL-PHASE group that also owns the f16-mirror choice. Prefer this at prime call sites
+    /// that would otherwise pick between `matmul_group_xh` and `matmul_group` themselves: a
+    /// stamped weight must not silently take the f16 mirror, which is a different numerical
+    /// program from the one its global scale was calibrated against.
+    pub fn matmul_group_prefill_xh(
+        &self,
+        ws: &[&crate::model::GpuTensor],
+        x: &CudaSlice<f32>,
+        xh: Option<&CudaSlice<u8>>,
+        m: usize,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if ws
+            .iter()
+            .any(|w| matches!(w, GpuTensor::Quant { a4: Some(_), .. }))
+        {
+            return self.matmul_group_prefill(ws, x, m);
+        }
+        match xh {
+            Some(xh) => self.matmul_group_xh(ws, x, xh, m),
+            None => self.matmul_group(ws, x, m),
+        }
+    }
+
+    /// PREFILL-PHASE `matmul_group`. A weight the artifact stamped with a calibrated activation
+    /// multiplier takes the A4 tile; every other weight in the group falls through to the ordinary
+    /// group walk, so a mixed group (stamped gate/up beside an unstamped projection) is fine.
+    ///
+    /// The f16 mirror fast path is deliberately NOT consulted for a stamped weight: that mirror is
+    /// a different numerical program, and the calibrated scale was fitted against this one.
+    pub fn matmul_group_prefill(
+        &self,
+        ws: &[&crate::model::GpuTensor],
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if !ws
+            .iter()
+            .any(|w| matches!(w, GpuTensor::Quant { a4: Some(_), .. }))
+        {
+            return self.matmul_group(ws, x, m);
+        }
+        let mut out = Vec::with_capacity(ws.len());
+        for w in ws {
+            out.push(self.matmul_prefill(w, x, m)?);
+        }
+        Ok(out)
+    }
+
     pub fn matmul_group(
         &self,
         ws: &[&crate::model::GpuTensor],

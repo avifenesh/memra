@@ -2268,6 +2268,7 @@ impl Engine {
                 return Err(format!("memra_mmq_nvfp4_calibrated_prefill rc={rc}").into());
             }
         }
+        A4_PREFILL_LAUNCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(y)
     }
 
@@ -3104,4 +3105,23 @@ impl Engine {
         }
         Ok(w_f16)
     }
+}
+
+/// Count of calibrated-A4 GEMM launches, for the dispatch-completeness gate.
+///
+/// Hand-threading the prefill phase through the prime paths fails SAFE (a missed call site runs
+/// the old W4A8 program) but it fails SILENTLY: the artifact would declare a 400-linear activation
+/// program while the engine executed it on fewer. This counter is what makes that loud -- a prime
+/// over the covered layers must issue exactly the stamped-projection count, and the red arm is
+/// reverting any one call site and watching the number drop.
+pub static A4_PREFILL_LAUNCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Read the calibrated-A4 launch counter.
+pub fn a4_prefill_launches() -> u64 {
+    A4_PREFILL_LAUNCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Reset the calibrated-A4 launch counter and return its previous value.
+pub fn a4_prefill_launches_reset() -> u64 {
+    A4_PREFILL_LAUNCHES.swap(0, std::sync::atomic::Ordering::Relaxed)
 }

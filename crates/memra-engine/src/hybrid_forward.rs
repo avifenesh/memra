@@ -2089,9 +2089,17 @@ impl HybridModel {
         z: &CudaSlice<f32>,
         t: usize,
         il: usize,
+        prefill: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_ff = ffn_gate.out_features();
-        let mut g2 = e.matmul_group(&[ffn_gate, ffn_up], z, t)?;
+        // Phase, not row count: a one-row prefill tail is still prefill, and the calibrated
+        // scales were fitted against this program. Decode/verify pass prefill=false and get the
+        // untouched W4A8 walk.
+        let mut g2 = if prefill {
+            e.matmul_group_prefill(&[ffn_gate, ffn_up], z, t)?
+        } else {
+            e.matmul_group(&[ffn_gate, ffn_up], z, t)?
+        };
         let up = g2.pop().unwrap();
         let gate = g2.pop().unwrap();
         let mut act = e.uninit(t * n_ff)?;
@@ -2107,7 +2115,12 @@ impl HybridModel {
             t * n_ff,
         )?;
         let __pqs = e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), t)?;
-        e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), t)
+        let down_in = __pqs.as_ref().unwrap_or(&act);
+        if prefill {
+            e.matmul_prefill(ffn_down, down_in, t)
+        } else {
+            e.matmul(ffn_down, down_in, t)
+        }
     }
 
     /// The FFN branch of one hc site, from an already-normed `[t, hidden]` input.
@@ -2145,6 +2158,7 @@ impl HybridModel {
                 z,
                 t,
                 il,
+                prefill,
             ),
             crate::hybrid::Ffn::Moe(m) => {
                 if prefill {
@@ -3512,6 +3526,9 @@ impl HybridModel {
                         &ws_peer.z,
                         1,
                         il,
+                        // Mirrors the root's own `hyper_ffn_branch(.., false, ..)` above: this
+                        // symmetric TP walk is the t=1 decode step, not prefill.
+                        false,
                     )?,
                     None => {
                         let hop = rt.hop(e);
@@ -6811,10 +6828,8 @@ impl HybridModel {
                 // slab (no copies) -> S-mid segment [add + post-norm] as one graph launch.
                 let (pre, pre16, w_out) = match &layer.mixer {
                     Mixer::Full(fa) => {
-                        let g3 = match hx16 {
-                            Some(xh) => e.matmul_group_xh(&[&fa.wq, &fa.wk, &fa.wv], h, xh, t)?,
-                            None => e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?,
-                        };
+                        let g3 =
+                            e.matmul_group_prefill_xh(&[&fa.wq, &fa.wk, &fa.wv], h, hx16, t)?;
                         let (pre, pre16) =
                             self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il)?;
                         (pre, pre16, &fa.wo)
@@ -6825,10 +6840,7 @@ impl HybridModel {
                     }
                     Mixer::Linear(la) => {
                         let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-                        let g4 = match hx16 {
-                            Some(xh) => e.matmul_group_xh(&ws, h, xh, t)?,
-                            None => e.matmul_group(&ws, h, t)?,
-                        };
+                        let g4 = e.matmul_group_prefill_xh(&ws, h, hx16, t)?;
                         let (pre, pre16) =
                             self.linear_attn_prime_core_pad_inner(e, la, g4, t, cache, il, None)?;
                         (pre, pre16, &la.ssm_out)
@@ -6841,8 +6853,12 @@ impl HybridModel {
                         Some(x) => x,
                         None => e.f16_act(&pre, t * pre_n)?,
                     };
-                    if !e.try_f16_gemm_pre_into(w_out, &xh_pre, t, mslab)? {
-                        let y = e.matmul(w_out, &pre, t)?;
+                    // A stamped out-projection skips the f16 in-epilogue GEMM: that mirror is a
+                    // different numerical program from the calibrated one.
+                    let stamped =
+                        matches!(w_out, crate::model::GpuTensor::Quant { a4: Some(_), .. });
+                    if stamped || !e.try_f16_gemm_pre_into(w_out, &xh_pre, t, mslab)? {
+                        let y = e.matmul_prefill(w_out, &pre, t)?;
                         e.copy_into(mslab, 0, &y, t * n_embd)?;
                     }
                     if sm[il].is_none() {
@@ -6915,15 +6931,19 @@ impl HybridModel {
                     // gate/up INTO boundary slabs (piecewise increment 2); fall back to
                     // the allocating group + copy when a mirror is missing.
                     let mut into_ok = false;
-                    if let Some(xh) = zx16 {
+                    // Stamped gate/up must not take the f16 in-epilogue GEMM: it is a different
+                    // numerical program from the one their global scales were calibrated against.
+                    let stamped_gate_up =
+                        matches!(ffn_gate, crate::model::GpuTensor::Quant { a4: Some(_), .. })
+                            || matches!(ffn_up, crate::model::GpuTensor::Quant { a4: Some(_), .. });
+                    if let Some(xh) = zx16
+                        && !stamped_gate_up
+                    {
                         into_ok = e.try_f16_gemm_pre_into(ffn_gate, xh, t, sl_gate)?
                             && e.try_f16_gemm_pre_into(ffn_up, xh, t, sl_up)?;
                     }
                     if !into_ok {
-                        let mut g2 = match zx16 {
-                            Some(xh) => e.matmul_group_xh(&[ffn_gate, ffn_up], z, xh, t)?,
-                            None => e.matmul_group(&[ffn_gate, ffn_up], z, t)?,
-                        };
+                        let mut g2 = e.matmul_group_prefill_xh(&[ffn_gate, ffn_up], z, zx16, t)?;
                         let up_y = g2.pop().unwrap();
                         let gate_y = g2.pop().unwrap();
                         e.copy_into(sl_gate, 0, &gate_y, t * n_ff)?;
@@ -6970,10 +6990,12 @@ impl HybridModel {
                         Some(x) => x,
                         None => e.f16_act(act, t * n_ff)?,
                     };
-                    if !e.try_f16_gemm_pre_into(ffn_down, &xh_act, t, sl_fo)? {
+                    let stamped_down =
+                        matches!(ffn_down, crate::model::GpuTensor::Quant { a4: Some(_), .. });
+                    if stamped_down || !e.try_f16_gemm_pre_into(ffn_down, &xh_act, t, sl_fo)? {
                         // `act` already carries the AWQ scale (applied above), so both the f16
                         // GEMM and this fallback see the same, scaled input.
-                        let y = e.matmul(ffn_down, &*act, t)?;
+                        let y = e.matmul_prefill(ffn_down, &*act, t)?;
                         e.copy_into(sl_fo, 0, &y, t * n_embd)?;
                     }
                 }
@@ -7411,10 +7433,7 @@ impl HybridModel {
                 Mixer::Kda(_) => crate::hybrid::kda_path_unimplemented("captured prime chunk"),
                 Mixer::Linear(la) => {
                     let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-                    let g4 = match hx16.as_ref() {
-                        Some(xh) => e.matmul_group_xh(&ws, &h, xh, t)?,
-                        None => e.matmul_group(&ws, &h, t)?,
-                    };
+                    let g4 = e.matmul_group_prefill_xh(&ws, &h, hx16.as_ref(), t)?;
                     self.linear_attn_prime_core_pad(e, la, g4, t, cache, il, Some(len_d))?
                 }
             };
@@ -8474,7 +8493,7 @@ impl HybridModel {
                     // itself is BATCHED — per-seq prep/K1-K3, then ONE varlen K4 + ONE
                     // varlen K5 launch for all sequences.
                     let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-                    let g4 = e.matmul_group_xh(&ws, &h, &hx16, total)?;
+                    let g4 = e.matmul_group_prefill_xh(&ws, &h, Some(&hx16), total)?;
                     let outs =
                         self.linear_attn_prime_core_batch(e, la, &g4, &offs, &ts, caches, il)?;
                     for (s, (gn, gn16)) in outs.into_iter().enumerate() {
@@ -8490,7 +8509,7 @@ impl HybridModel {
                             )?;
                         }
                         if !done {
-                            let m = e.matmul(&la.ssm_out, &gn, t)?;
+                            let m = e.matmul_prefill(&la.ssm_out, &gn, t)?;
                             e.copy_into(&mut mixed, o * n_embd, &m, t * n_embd)?;
                         }
                     }
@@ -9006,10 +9025,7 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         // PROJ/CORE SPLIT (task #13): see full_attn_prime — same hoist for the GDN 4-tuple.
         let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-        let g4 = match hx {
-            Some(xh) => e.matmul_group_xh(&ws, h, xh, t)?,
-            None => e.matmul_group(&ws, h, t)?,
-        };
+        let g4 = e.matmul_group_prefill_xh(&ws, h, hx, t)?;
         self.linear_attn_prime_core(e, la, g4, t, cache, il)
     }
 
@@ -9494,12 +9510,17 @@ impl HybridModel {
         pad_len: Option<&CudaSlice<i32>>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let (gn, gn16) = self.linear_attn_prime_core_pad_inner(e, la, g4, t, cache, il, pad_len)?;
-        if let Some(xh) = &gn16
+        // A stamped ssm_out skips the f16 mirror: that mirror is a different numerical program
+        // from the one this weight's global activation scale was calibrated against.
+        if !matches!(
+            la.ssm_out,
+            crate::model::GpuTensor::Quant { a4: Some(_), .. }
+        ) && let Some(xh) = &gn16
             && let Some(y) = e.try_f16_gemm_pre(&la.ssm_out, xh, t)?
         {
             return Ok(y);
         }
-        e.matmul(&la.ssm_out, &gn, t)
+        e.matmul_prefill(&la.ssm_out, &gn, t)
     }
 
     /// Full-attention mixer with QK-norm, partial RoPE, sigmoid output gate (qwen35 :257-336).
