@@ -1,3 +1,7 @@
+# Superseded by owner steering 2026-09-09
+
+FP4 activations and the fused FP4 quantizer are refused; no runtime door lands. The former proposal below is retained as history only. Next: INT8 K16 instruction roof, then same-program W4A8 kernel microbench with bitwise identity. FP8 is conditional on INT8 being near its measured roof and must stop above 0.5% relative L2.
+
 # SM120 FP4 trunk GEMM: pre-integration checkpoint
 
 Base: memra 182819614874be818ff8bef0cfaf13cb3b8051e1. Chunk 1024; native SM120a warp MMA, unchanged NVFP4 weight bytes. No runtime integration at this checkpoint.
