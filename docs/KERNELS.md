@@ -851,4 +851,7 @@ norm/pack, 43 shared SwiGLU/pack, 43 quant/half, 387 launches gross for a net
 215 removed. Commit has none. OFF has zero
 new symbols. FFI: `src/dsv4_ffi.rs`; component capture and raw-bit gate:
 `src/dsv4_norm2_component_gate.rs`; replay gate: `dsv4-norm-fuse2-gate`.
-Evidence pending under `research/dsv4f-norm-fuse2-20260909/`; default stays OFF.
+Evidence: [private Darklanes #560](https://github.com/avifenesh/darklanes/pull/560),
+raw-bit identity at all 344 component sites, memcheck and synccheck zero
+errors, +1.0926% pooled ABBA and +0.9075% pooled reverse on the sampled
+default program. Default stays OFF, decide-by: 2026-09-23.
