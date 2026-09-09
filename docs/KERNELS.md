@@ -1,5 +1,12 @@
 # Kernel inventory
 
+## Qwen FA2 attention experiment, 2026-09-09
+
+| Symbol | Purpose | Gate |
+| --- | --- | --- |
+| `fa_prefill_qw_fa2` | Six query heads share rotating BF16 KV tiles; FP32 direct PV and online softmax | `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23 |
+| `fa_prefill_qw_fa2_prime_table` | Same numerical body with true depth from the replay table | Same door; carried graph class is part of its reuse key |
+
 ## Carried Qwen prime replay, 2026-09-09
 
 All entries are Memra-owned twins. The qualified Qwen geometry on the 170-SM

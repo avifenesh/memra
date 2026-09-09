@@ -29216,6 +29216,29 @@ impl Engine {
                 b.launch(cfg)?;
             }
         }
+        if self.prime_attn_fa2_enabled()
+            && head_dim == 256
+            && n_head == 24
+            && n_head_kv == 4
+            && (128..=1024).contains(&t)
+            && causal
+            && !g
+        {
+            let name = if live.is_some() { "fa_prefill_qw_fa2_prime_table" } else { "fa_prefill_qw_fa2" };
+            let f = self.func(name);
+            let cfg = LaunchConfig {
+                grid_dim: ((t * 6).div_ceil(64) as u32, 4, 1),
+                block_dim: (32, 4, 1),
+                shared_mem_bytes: 49152,
+            };
+            let stream = self.gpu.stream();
+            let (ti, tkvi) = (t as i32, t_kv as i32);
+            let mut b = stream.launch_builder(&f);
+            b.arg(q).arg(&*kw).arg(&*vw).arg(o).arg(&ti);
+            if live.is_some() { b.arg(&table); } else { b.arg(&tkvi); }
+            unsafe { b.launch(cfg)?; }
+            return Ok(());
+        }
         // pass 2: the bf16-workspace prefill twin (same tile sizes/loop structure as fa_prefill_q).
         // DEFAULT: cp.async double-buffered staging twin (fa_prefill_qw_db, +32KB smem for the
         // second K/V tile pair, 1 CTA/SM): overlaps tile n+1's L2->smem copy with tile n's MMA.
@@ -29295,6 +29318,12 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn prime_attn_fa2_enabled(&self) -> bool {
+        env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+            && self.sm_count() == 170
+            && std::env::var("MEMRA_PRIME_ATTN_FA2").as_deref() == Ok("1")
     }
 
     /// WINDOWED `fa_prefill_view_ws` twin at head_dim 128 (lane/pp-prefill 2026-08-07):
