@@ -1,7 +1,7 @@
 use super::*;
 use std::path::Path;
 
-fn tiny_plan() -> WhisperPlan {
+pub(crate) fn tiny_plan() -> WhisperPlan {
     let mut plan = memra_gguf::model_packs::whisper::PACK
         .compile_plan(
             include_str!("../fixtures/whisper-source-config.json"),

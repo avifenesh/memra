@@ -37,16 +37,16 @@ impl WhisperNumeric {
     }
 }
 
-struct Linear {
-    input: usize,
-    output: usize,
-    weight: Vec<f32>,
-    bias: Option<Vec<f32>>,
+pub(super) struct Linear {
+    pub(super) input: usize,
+    pub(super) output: usize,
+    pub(super) weight: Vec<f32>,
+    pub(super) bias: Option<Vec<f32>>,
 }
 
-struct Norm {
-    weight: Vec<f32>,
-    bias: Vec<f32>,
+pub(super) struct Norm {
+    pub(super) weight: Vec<f32>,
+    pub(super) bias: Vec<f32>,
 }
 
 struct EncoderBlock {
@@ -70,7 +70,7 @@ pub struct WhisperEncoder {
     output_norm: Norm,
 }
 
-fn tensor(
+pub(super) fn tensor(
     source: &StModel,
     name: &str,
     shape: &[usize],
@@ -98,7 +98,7 @@ fn tensor(
     Ok(values)
 }
 
-fn load_linear(
+pub(super) fn load_linear(
     source: &StModel,
     stem: &str,
     input: usize,
@@ -118,7 +118,7 @@ fn load_linear(
     })
 }
 
-fn load_norm(
+pub(super) fn load_norm(
     source: &StModel,
     stem: &str,
     hidden: usize,
@@ -395,12 +395,7 @@ impl WhisperEncoder {
     }
 
     fn linear(&self, x: &[f32], rows: usize, layer: &Linear) -> Vec<f32> {
-        let mut y = matrix::linear(x, &layer.weight, rows, layer.input, layer.output);
-        for (i, value) in y.iter_mut().enumerate() {
-            let bias = layer.bias.as_ref().map_or(0.0, |b| b[i % layer.output]);
-            *value = self.numeric.round(*value + bias);
-        }
-        y
+        apply_linear(x, rows, layer, self.numeric)
     }
 
     fn conv(
@@ -429,103 +424,23 @@ impl WhisperEncoder {
     }
 
     fn norm(&self, x: &[f32], rows: usize, norm: &Norm) -> Vec<f32> {
-        let h = norm.weight.len();
-        let mut output = vec![0.0; x.len()];
-        for row in 0..rows {
-            let values = &x[row * h..(row + 1) * h];
-            let (mean, variance) = row_moments(values, self.numeric == WhisperNumeric::F16);
-            let inv = (variance + self.plan.norm.epsilon).sqrt().recip();
-            for c in 0..h {
-                let normalized = if self.numeric == WhisperNumeric::F16 {
-                    // The pinned HF reduced-precision LayerNorm forms scale and bias in
-                    // FP32 before applying the affine. Do not reassociate this as x-mean.
-                    values[c] * inv + (-inv * mean)
-                } else {
-                    (values[c] - mean) * inv
-                };
-                output[row * h + c] = self
-                    .numeric
-                    .round(normalized * norm.weight[c] + norm.bias[c]);
-            }
-        }
-        output
+        apply_norm(x, rows, norm, self.numeric, self.plan.norm.epsilon)
     }
 
     fn gelu(&self, x: &mut [f32]) {
-        for value in x {
-            *value = self.numeric.round(gelu_erf(*value));
-        }
+        apply_gelu(x, self.numeric)
     }
 
     fn attention(&self, x: &[f32], rows: usize, block: &EncoderBlock) -> Vec<f32> {
         let h = self.plan.hidden_size as usize;
         let heads = self.plan.encoder_heads as usize;
-        let dim = h / heads;
         let mut query = self.linear(x, rows, &block.query);
         for q in &mut query {
             *q = self.numeric.round(*q * self.plan.attention.qk_scale);
         }
         let key = self.linear(x, rows, &block.key);
         let value = self.linear(x, rows, &block.value);
-        let mut output = vec![0.0; rows * h];
-        let mut q = vec![0.0; rows * dim];
-        let mut k = vec![0.0; rows * dim];
-        let mut vt = vec![0.0; dim * rows];
-        for head in 0..heads {
-            for row in 0..rows {
-                for d in 0..dim {
-                    q[row * dim + d] = query[row * h + head * dim + d];
-                    k[row * dim + d] = key[row * h + head * dim + d];
-                    vt[d * rows + row] = value[row * h + head * dim + d];
-                }
-            }
-            let mut scores = matrix::linear(&q, &k, rows, dim, rows);
-            for row in scores.chunks_exact_mut(rows) {
-                for score in row.iter_mut() {
-                    *score = self.numeric.round(*score);
-                }
-                let maximum = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                let mut partials = [0.0f32; 8];
-                let vector_end = if self.numeric == WhisperNumeric::F16 {
-                    row.len() / 8 * 8
-                } else {
-                    row.len()
-                };
-                for (i, score) in row.iter_mut().enumerate() {
-                    *score = (*score - maximum).exp();
-                    if i < vector_end {
-                        partials[i % 8] += *score;
-                    }
-                }
-                if self.numeric == WhisperNumeric::F16 {
-                    // Pinned HF AVX2 half softmax: cross-half, pair, then adjacent reduction;
-                    // scalar tail follows that reduction. Normalization multiplies one FP32
-                    // reciprocal, rather than separately rounding a division per probability.
-                    let mut sum = ((partials[0] + partials[4]) + (partials[2] + partials[6]))
-                        + ((partials[1] + partials[5]) + (partials[3] + partials[7]));
-                    for &value in &row[vector_end..] {
-                        sum += value;
-                    }
-                    let inverse = sum.recip();
-                    for score in row {
-                        *score = self.numeric.round(*score * inverse);
-                    }
-                } else {
-                    let sum = ((partials[0] + partials[1]) + (partials[2] + partials[3]))
-                        + ((partials[4] + partials[5]) + (partials[6] + partials[7]));
-                    for score in row {
-                        *score /= sum;
-                    }
-                }
-            }
-            let context = matrix::linear(&scores, &vt, rows, rows, dim);
-            for row in 0..rows {
-                for d in 0..dim {
-                    output[row * h + head * dim + d] = self.numeric.round(context[row * dim + d]);
-                }
-            }
-        }
-        output
+        apply_attention(&query, &key, &value, rows, rows, h, heads, self.numeric)
     }
 }
 
@@ -622,5 +537,129 @@ fn row_moments(values: &[f32], reduced: bool) -> (f32, f32) {
     (merged.mean, merged.m2 / values.len() as f32)
 }
 
+pub(super) fn apply_linear(
+    x: &[f32],
+    rows: usize,
+    layer: &Linear,
+    numeric: WhisperNumeric,
+) -> Vec<f32> {
+    let mut y = matrix::linear(x, &layer.weight, rows, layer.input, layer.output);
+    for (i, value) in y.iter_mut().enumerate() {
+        let bias = layer.bias.as_ref().map_or(0.0, |b| b[i % layer.output]);
+        *value = numeric.round(*value + bias);
+    }
+    y
+}
+
+pub(super) fn apply_norm(
+    x: &[f32],
+    rows: usize,
+    norm: &Norm,
+    numeric: WhisperNumeric,
+    epsilon: f32,
+) -> Vec<f32> {
+    let h = norm.weight.len();
+    let mut output = vec![0.0; x.len()];
+    for row in 0..rows {
+        let values = &x[row * h..(row + 1) * h];
+        let (mean, variance) = row_moments(values, numeric == WhisperNumeric::F16);
+        let inv = (variance + epsilon).sqrt().recip();
+        for c in 0..h {
+            let normalized = if numeric == WhisperNumeric::F16 {
+                // The pinned HF reduced-precision LayerNorm forms scale and bias in
+                // FP32 before applying the affine. Do not reassociate this as x-mean.
+                values[c] * inv + (-inv * mean)
+            } else {
+                (values[c] - mean) * inv
+            };
+            output[row * h + c] = numeric.round(normalized * norm.weight[c] + norm.bias[c]);
+        }
+    }
+    output
+}
+
+pub(super) fn apply_gelu(x: &mut [f32], numeric: WhisperNumeric) {
+    for value in x {
+        *value = numeric.round(gelu_erf(*value));
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // allow: explicit dimensions are the shared attention tensor contract
+pub(super) fn apply_attention(
+    query: &[f32],
+    key: &[f32],
+    value: &[f32],
+    query_rows: usize,
+    kv_rows: usize,
+    h: usize,
+    heads: usize,
+    numeric: WhisperNumeric,
+) -> Vec<f32> {
+    let dim = h / heads;
+    let mut output = vec![0.0; query_rows * h];
+    let mut q = vec![0.0; query_rows * dim];
+    let mut k = vec![0.0; kv_rows * dim];
+    let mut vt = vec![0.0; dim * kv_rows];
+    for head in 0..heads {
+        for row in 0..query_rows {
+            for d in 0..dim {
+                q[row * dim + d] = query[row * h + head * dim + d];
+            }
+        }
+        for row in 0..kv_rows {
+            for d in 0..dim {
+                k[row * dim + d] = key[row * h + head * dim + d];
+                vt[d * kv_rows + row] = value[row * h + head * dim + d];
+            }
+        }
+        let mut scores = matrix::linear(&q, &k, query_rows, dim, kv_rows);
+        for row in scores.chunks_exact_mut(kv_rows) {
+            for score in row.iter_mut() {
+                *score = numeric.round(*score);
+            }
+            let maximum = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let mut partials = [0.0f32; 8];
+            let vector_end = if numeric == WhisperNumeric::F16 {
+                row.len() / 8 * 8
+            } else {
+                row.len()
+            };
+            for (i, score) in row.iter_mut().enumerate() {
+                *score = (*score - maximum).exp();
+                if i < vector_end {
+                    partials[i % 8] += *score;
+                }
+            }
+            if numeric == WhisperNumeric::F16 {
+                // Pinned HF AVX2 half softmax: cross-half, pair, then adjacent reduction;
+                // scalar tail follows that reduction. Normalization multiplies one FP32
+                // reciprocal, rather than separately rounding a division per probability.
+                let mut sum = ((partials[0] + partials[4]) + (partials[2] + partials[6]))
+                    + ((partials[1] + partials[5]) + (partials[3] + partials[7]));
+                for &value in &row[vector_end..] {
+                    sum += value;
+                }
+                let inverse = sum.recip();
+                for score in row {
+                    *score = numeric.round(*score * inverse);
+                }
+            } else {
+                let sum = ((partials[0] + partials[1]) + (partials[2] + partials[3]))
+                    + ((partials[4] + partials[5]) + (partials[6] + partials[7]));
+                for score in row {
+                    *score /= sum;
+                }
+            }
+        }
+        let context = matrix::linear(&scores, &vt, query_rows, kv_rows, dim);
+        for row in 0..query_rows {
+            for d in 0..dim {
+                output[row * h + head * dim + d] = numeric.round(context[row * dim + d]);
+            }
+        }
+    }
+    output
+}
+
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

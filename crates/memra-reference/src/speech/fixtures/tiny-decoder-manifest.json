@@ -1,0 +1,596 @@
+{
+  "seed": 417,
+  "tokens": [
+    1,
+    7,
+    12,
+    3,
+    2
+  ],
+  "config": {
+    "transformers_version": "5.16.1",
+    "architectures": null,
+    "output_hidden_states": false,
+    "return_dict": true,
+    "dtype": null,
+    "chunk_size_feed_forward": 0,
+    "is_encoder_decoder": true,
+    "id2label": {
+      "0": "LABEL_0",
+      "1": "LABEL_1"
+    },
+    "label2id": {
+      "LABEL_0": 0,
+      "LABEL_1": 1
+    },
+    "problem_type": null,
+    "vocab_size": 64,
+    "num_mel_bins": 128,
+    "encoder_layers": 2,
+    "encoder_attention_heads": 2,
+    "decoder_layers": 2,
+    "decoder_attention_heads": 2,
+    "decoder_ffn_dim": 32,
+    "encoder_ffn_dim": 32,
+    "encoder_layerdrop": 0.0,
+    "decoder_layerdrop": 0.0,
+    "decoder_start_token_id": 1,
+    "use_cache": true,
+    "activation_function": "gelu",
+    "d_model": 16,
+    "dropout": 0.0,
+    "attention_dropout": 0.0,
+    "activation_dropout": 0.0,
+    "init_std": 0.02,
+    "scale_embedding": false,
+    "max_source_positions": 8,
+    "max_target_positions": 16,
+    "pad_token_id": 0,
+    "bos_token_id": 1,
+    "eos_token_id": 2,
+    "suppress_tokens": null,
+    "begin_suppress_tokens": [
+      220,
+      50256
+    ],
+    "use_weighted_layer_sum": false,
+    "classifier_proj_size": 256,
+    "apply_spec_augment": false,
+    "mask_time_prob": 0.05,
+    "mask_time_length": 10,
+    "mask_time_min_masks": 2,
+    "mask_feature_prob": 0.0,
+    "mask_feature_length": 10,
+    "mask_feature_min_masks": 0,
+    "median_filter_width": 7,
+    "tie_word_embeddings": true,
+    "_name_or_path": "",
+    "model_type": "whisper",
+    "output_attentions": false
+  },
+  "versions": {
+    "torch": "2.14.0+cu130",
+    "transformers": "5.16.1"
+  },
+  "checkpoint_sha256": "2d634e2a68a750ce320f449036b40e40caaafec8ba08dabd97f1fc0d983d5bea",
+  "generator_sha256": "3ec3e79136345a512ce66d4da322c8d5ef018cfb7b00216a5c218ab0f21e2887",
+  "files": {
+    "tiny-decoder-f32-0-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "4f9c3d01143ca8dcc2ea3e813c416d2fdb32195dd8fd91077226b032022ba645"
+    },
+    "tiny-decoder-f32-0-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "904b0ee9263cbd2e351973593d45773d4b1e9fbe46668e2cea13f4576632c748"
+    },
+    "tiny-decoder-f32-0-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "4f9c3d01143ca8dcc2ea3e813c416d2fdb32195dd8fd91077226b032022ba645"
+    },
+    "tiny-decoder-f32-0-0-self-keys.f32": {
+      "shape": [
+        1,
+        16
+      ],
+      "sha256": "c7daa2c3bafd1e591dd5f6f9ad9febdd1ff129e437c9dfcb9cd5f305bb048492"
+    },
+    "tiny-decoder-f32-0-0-self-values.f32": {
+      "shape": [
+        1,
+        16
+      ],
+      "sha256": "9fc8484c8caf7699eda0b159f9640695704ab6b9678e41cfab6eabca582baf6e"
+    },
+    "tiny-decoder-f32-0-0-cross-keys.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "368417fecaac4a3fffaa2c64c16375dccd364247c772d9f6b9c63e693c25d6fc"
+    },
+    "tiny-decoder-f32-0-0-cross-values.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "8457c8944febe320fa996a0b0011fa1d3d406f3a73a89d05fceba1bef5bc377b"
+    },
+    "tiny-decoder-f32-0-1-self-keys.f32": {
+      "shape": [
+        1,
+        16
+      ],
+      "sha256": "b0cc52c8f0577965b65c0582c455fd3ff55acc50d0716706c83a6cf1b50f6dba"
+    },
+    "tiny-decoder-f32-0-1-self-values.f32": {
+      "shape": [
+        1,
+        16
+      ],
+      "sha256": "880fd492bdfcd8edb6939f7b7c6c1096079854ec14a66cc58271328d2e42c6b9"
+    },
+    "tiny-decoder-f32-0-1-cross-keys.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "c8399469660a848c0fbcadccce7bae0252db7bf4fed1548d7cb57e0d3ef2dcec"
+    },
+    "tiny-decoder-f32-0-1-cross-values.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "63170e9087b069f4652918e0e64ece06f42c32f2fbfb6141547cba24277a50de"
+    },
+    "tiny-decoder-f32-1-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "4be6e265bce318455285c0abe3e2f8bdd3cd1c55715c4af289a1d2006e60fce8"
+    },
+    "tiny-decoder-f32-1-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "0cdb8161352c6bcc9e2ece8e765cde05b685d708210cecbd265393d3656c2b73"
+    },
+    "tiny-decoder-f32-1-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "ab936418360e3d05760146ff8785add9a08f6222c5d51b822fc712a6f927e1d8"
+    },
+    "tiny-decoder-f32-1-0-self-keys.f32": {
+      "shape": [
+        2,
+        16
+      ],
+      "sha256": "0739c2622216ca9e907a74b026a95cbe2c0c243833827dbbb539f2f42ce5591a"
+    },
+    "tiny-decoder-f32-1-0-self-values.f32": {
+      "shape": [
+        2,
+        16
+      ],
+      "sha256": "d329269e4fe4231ec9084decdee51bd3f51665c414baf323d413f9a9a477ee24"
+    },
+    "tiny-decoder-f32-1-1-self-keys.f32": {
+      "shape": [
+        2,
+        16
+      ],
+      "sha256": "16a83a2f6ee61455bf9a314698cba8f1d1f1aef00f164ba141b6931d6b01f95e"
+    },
+    "tiny-decoder-f32-1-1-self-values.f32": {
+      "shape": [
+        2,
+        16
+      ],
+      "sha256": "cb4a37a1e5d7efeb45f2f79758ecd94eb72dd763c46a8d33500501ce760bedfa"
+    },
+    "tiny-decoder-f32-2-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "1b953089c1834be667b1fe5683ce26ca8c938a40721a0e84389b6a2f1754d434"
+    },
+    "tiny-decoder-f32-2-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "1846c2e5af9629f3f27d48ba9e90b4e805cfd305b512157c57d1e830c5d83fa7"
+    },
+    "tiny-decoder-f32-2-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "7e83f28784bd38b65deddba06ea59ed868e3a8da490eb10f9c05ba68d839dd36"
+    },
+    "tiny-decoder-f32-2-0-self-keys.f32": {
+      "shape": [
+        3,
+        16
+      ],
+      "sha256": "a603dd2a4228b6bcdedafa6fa8f3c0ed64ea56a1866a41155601a5fe8f09201d"
+    },
+    "tiny-decoder-f32-2-0-self-values.f32": {
+      "shape": [
+        3,
+        16
+      ],
+      "sha256": "9d45ea3636f1506480ffd727d7b9340759e2117934f8b82f63fd809f33ee0dcd"
+    },
+    "tiny-decoder-f32-2-1-self-keys.f32": {
+      "shape": [
+        3,
+        16
+      ],
+      "sha256": "18a6c68eb36fd61bd3d23a837f9404256a46188ba33995ad681c51ce51ccbff4"
+    },
+    "tiny-decoder-f32-2-1-self-values.f32": {
+      "shape": [
+        3,
+        16
+      ],
+      "sha256": "54dbaab6eb2726f09e2ae581724fa1c996a46662cb4c9b756e89b52c80b90e62"
+    },
+    "tiny-decoder-f32-3-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "f6aa593be9f652bd9a7ed7bb42321e7334de88809c2c291d3bc543ac65a587aa"
+    },
+    "tiny-decoder-f32-3-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "56854697c14e6c0d1d6bf056fba61baad8d02548c90b4bd02bfb4350c425a1ed"
+    },
+    "tiny-decoder-f32-3-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "a2a2194acf60d2d2bfc205ce95bd05582deaf02e139c33fd7fd901a88ea7c700"
+    },
+    "tiny-decoder-f32-3-0-self-keys.f32": {
+      "shape": [
+        4,
+        16
+      ],
+      "sha256": "e18c742d6f04d769f501235ebb46817fd5d0155ae14b05ac9a5746c132d49c1a"
+    },
+    "tiny-decoder-f32-3-0-self-values.f32": {
+      "shape": [
+        4,
+        16
+      ],
+      "sha256": "55d2c0d6847e1e94cca084d98a781dec88cd6b491b6893531063bdd43bec252e"
+    },
+    "tiny-decoder-f32-3-1-self-keys.f32": {
+      "shape": [
+        4,
+        16
+      ],
+      "sha256": "2594ebd3ec305d30928dad5dbf09140bf5608aa21a816b6e42d5ae1a94453c5a"
+    },
+    "tiny-decoder-f32-3-1-self-values.f32": {
+      "shape": [
+        4,
+        16
+      ],
+      "sha256": "ad15b22eb521b9afc0db1bf953c1bfb340f9570b1b42a24b2efd0db8dd6d5035"
+    },
+    "tiny-decoder-f32-4-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "4ff50a5be25a6ea519568ebcb66ae277049c182c886bf25e4ea447fe607b152a"
+    },
+    "tiny-decoder-f32-4-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "fa0fb98c5be165b6b3915872e815bf685682e2bb1721d812595b651437ce76fd"
+    },
+    "tiny-decoder-f32-4-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "a39991134f1fb7647baabf5879f56b8e72805d2bf36c6a6b8f23e85696cf5247"
+    },
+    "tiny-decoder-f32-4-0-self-keys.f32": {
+      "shape": [
+        5,
+        16
+      ],
+      "sha256": "c9e537e23cbff1587e3bb8dcdccf0e16d72de33423024fc9fda70abdf6fd98bc"
+    },
+    "tiny-decoder-f32-4-0-self-values.f32": {
+      "shape": [
+        5,
+        16
+      ],
+      "sha256": "f53bc7c3863532cdf0555d85367fe377ccf59decc6ea48c8e6268ad6f87f1c7f"
+    },
+    "tiny-decoder-f32-4-1-self-keys.f32": {
+      "shape": [
+        5,
+        16
+      ],
+      "sha256": "e263794b8ae75b29faa05a4738377450df8c877386c3ab6600570a353c86f8bc"
+    },
+    "tiny-decoder-f32-4-1-self-values.f32": {
+      "shape": [
+        5,
+        16
+      ],
+      "sha256": "91b1f5b0e34bbab89f36e588dc9953e6d9af5ef415705a3256f681b0e02bb2ed"
+    },
+    "tiny-decoder-f16-0-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "ef12f2bebb027cf20448f4660e27105d172892672f7fb67d5bd57908dd1be8a8"
+    },
+    "tiny-decoder-f16-0-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "c3a9ef7b2d2ea0ef15c66b0f4c9578707d922f1f9602792140733218505c7547"
+    },
+    "tiny-decoder-f16-0-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "ef12f2bebb027cf20448f4660e27105d172892672f7fb67d5bd57908dd1be8a8"
+    },
+    "tiny-decoder-f16-0-0-self-keys.f32": {
+      "shape": [
+        1,
+        16
+      ],
+      "sha256": "513841510c213d370bebbbbe113f6eee747ec2a19f5e97a3586d379ed1b2c3fd"
+    },
+    "tiny-decoder-f16-0-0-self-values.f32": {
+      "shape": [
+        1,
+        16
+      ],
+      "sha256": "53c271e85bb2ed36c3d65cbdb003c33eb69f6957fbde0fe1218d64ccdafa8c53"
+    },
+    "tiny-decoder-f16-0-0-cross-keys.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "8fe647da3b34b9fb8441f9826003983d16f27faa381fa8883838f228ce9d32e3"
+    },
+    "tiny-decoder-f16-0-0-cross-values.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "d43d0b76040356007ba258c89979469394c87396b6ecd66f813a78ecfa2606ef"
+    },
+    "tiny-decoder-f16-0-1-self-keys.f32": {
+      "shape": [
+        1,
+        16
+      ],
+      "sha256": "71279ab8129093bc7ec505893f882ba76ce745743f77702d4fcee901ef454b78"
+    },
+    "tiny-decoder-f16-0-1-self-values.f32": {
+      "shape": [
+        1,
+        16
+      ],
+      "sha256": "f37dbbc0ada81e70e7b915a3550f3f2272e7ca54355ced23ec83f0b787ab728f"
+    },
+    "tiny-decoder-f16-0-1-cross-keys.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "e7b8c9cf15fefb1dc959647144f5974e385db90fa1c9869bd8eac3b8228bacb3"
+    },
+    "tiny-decoder-f16-0-1-cross-values.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "57228a4dc32e56a41aa2dd0eeebdf4cbde0588029dd7279ea9c56a3c7452dd02"
+    },
+    "tiny-decoder-f16-1-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "4138847bb69b48bb6b42964f6c10122c95726b6233b8fdb10479858ead38b33d"
+    },
+    "tiny-decoder-f16-1-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "ff838a3a95b2310cf2855091a86a6f074a1c96ffca4f5b6bb0a707374cfebfa6"
+    },
+    "tiny-decoder-f16-1-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "4138847bb69b48bb6b42964f6c10122c95726b6233b8fdb10479858ead38b33d"
+    },
+    "tiny-decoder-f16-1-0-self-keys.f32": {
+      "shape": [
+        2,
+        16
+      ],
+      "sha256": "a4222e74835524a9bcdd59e899d07c0ec60aede8eb98650517cd39cd11dccf5b"
+    },
+    "tiny-decoder-f16-1-0-self-values.f32": {
+      "shape": [
+        2,
+        16
+      ],
+      "sha256": "8c6eb553eec91ace77fcf8a9c3bbf1546fa90d94f14940256885447c2c8d19fe"
+    },
+    "tiny-decoder-f16-1-1-self-keys.f32": {
+      "shape": [
+        2,
+        16
+      ],
+      "sha256": "793e1c0ba6e811f813614ec93e07ca26f79835b03c46531e86fb9a5190f0567e"
+    },
+    "tiny-decoder-f16-1-1-self-values.f32": {
+      "shape": [
+        2,
+        16
+      ],
+      "sha256": "f8eec06c6a77776e99478fc83d50522fc291630bea0c919a6fb0a3fa713d8d47"
+    },
+    "tiny-decoder-f16-2-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "f348ae4af42868afbd7f8842e1089890661d3135d4eada846cbc6aa318e4410d"
+    },
+    "tiny-decoder-f16-2-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "7ea32a0e44284ff7f8884396de7a02b5481d661ca23c8f345100c2380fc18a64"
+    },
+    "tiny-decoder-f16-2-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "f348ae4af42868afbd7f8842e1089890661d3135d4eada846cbc6aa318e4410d"
+    },
+    "tiny-decoder-f16-2-0-self-keys.f32": {
+      "shape": [
+        3,
+        16
+      ],
+      "sha256": "da8390330cae85d648986571bec7246f24ef2fef843cebee87111be24fa6ef02"
+    },
+    "tiny-decoder-f16-2-0-self-values.f32": {
+      "shape": [
+        3,
+        16
+      ],
+      "sha256": "e464bbbd693d54850174ce601eea7bf5af385418dab845c847e4d0f938b98caf"
+    },
+    "tiny-decoder-f16-2-1-self-keys.f32": {
+      "shape": [
+        3,
+        16
+      ],
+      "sha256": "3bb62041bc53b64c40046531c6171754a52240e317cf9af212ec206dcde70d1a"
+    },
+    "tiny-decoder-f16-2-1-self-values.f32": {
+      "shape": [
+        3,
+        16
+      ],
+      "sha256": "1f06ced988252bc182217f8f8bfae474fa0f8da0e5f6123b5c950ce5025ef531"
+    },
+    "tiny-decoder-f16-3-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "29628f36744c4d5ea38d5403eaf1f8e71df2968f703dc82e4e1f3bd390d46289"
+    },
+    "tiny-decoder-f16-3-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "f5e9b519c11c83b11399f05a703d1509a93ea8d45752b896ed7278d98ce3f9e1"
+    },
+    "tiny-decoder-f16-3-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "29628f36744c4d5ea38d5403eaf1f8e71df2968f703dc82e4e1f3bd390d46289"
+    },
+    "tiny-decoder-f16-3-0-self-keys.f32": {
+      "shape": [
+        4,
+        16
+      ],
+      "sha256": "2af68eec56da52b7c670085df237946ae83d2b4e586abc742f8bd789f3d0c23a"
+    },
+    "tiny-decoder-f16-3-0-self-values.f32": {
+      "shape": [
+        4,
+        16
+      ],
+      "sha256": "98205af2461bca1059f07977040284893e981834c4d8a3854e02a33a0951e92e"
+    },
+    "tiny-decoder-f16-3-1-self-keys.f32": {
+      "shape": [
+        4,
+        16
+      ],
+      "sha256": "a304ced6e78f5427d710ba7a638addb2169f2a0c53a42ea47b4e72348bfe6e49"
+    },
+    "tiny-decoder-f16-3-1-self-values.f32": {
+      "shape": [
+        4,
+        16
+      ],
+      "sha256": "8c52e324d365968ee1994381fc0d88e03d5aca74e08f62631409a18490032dd7"
+    },
+    "tiny-decoder-f16-4-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "6c27f93d660855b61b0a73a41a3ea2348ad018354236992aeecdf5a4467d4f08"
+    },
+    "tiny-decoder-f16-4-logits.f32": {
+      "shape": [
+        64
+      ],
+      "sha256": "474a633b62859d16e1953c2d7e382fafa879d81e00decf9974c9ec1c37c9e2c5"
+    },
+    "tiny-decoder-f16-4-full-hidden.f32": {
+      "shape": [
+        16
+      ],
+      "sha256": "6c27f93d660855b61b0a73a41a3ea2348ad018354236992aeecdf5a4467d4f08"
+    },
+    "tiny-decoder-f16-4-0-self-keys.f32": {
+      "shape": [
+        5,
+        16
+      ],
+      "sha256": "40ef92761ea45383b5cd7ddde001a1fde000b687eeb06b31049eb9ed37098eef"
+    },
+    "tiny-decoder-f16-4-0-self-values.f32": {
+      "shape": [
+        5,
+        16
+      ],
+      "sha256": "033077f7976e47ba29ae170489bc052ba05ba4d65f6762ebce4086c73a6a7f34"
+    },
+    "tiny-decoder-f16-4-1-self-keys.f32": {
+      "shape": [
+        5,
+        16
+      ],
+      "sha256": "f55bb2b5e3a50cb44c23d119aece8156557a544f1c9aba90532d907dc96aacb5"
+    },
+    "tiny-decoder-f16-4-1-self-values.f32": {
+      "shape": [
+        5,
+        16
+      ],
+      "sha256": "be181f4f5ba08f04140cede64b515098db5d6ad0bc2752f2fbef006d9c7844b6"
+    }
+  },
+  "scope": "tiny synthetic decoder, no full-model qualification"
+}

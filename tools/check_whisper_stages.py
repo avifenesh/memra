@@ -47,6 +47,16 @@ def main():
                  'rule':'owner 2026-09-09: native F16 versus HF F16, bounded by same-fixture HF F16 versus HF F32 delta'}
     elif manifest['dtype'] != 'f32':
         raise SystemExit('F32 gate requires HF F32 oracle')
+    # The capture must name the mel it consumed. The same binary scores 0.25 against HF F16 on
+    # the reference log-mel and 0.6796875 on the native mel; a receipt that omits the input
+    # cannot tell an encoder gate from a stacked frontend-and-encoder one.
+    mel_entry = manifest['files']['log-mel']
+    native_input = args.native/'input-mel.f32'
+    if not native_input.exists():
+        raise SystemExit('capture predates input pinning: rerun the stage runner to bank input-mel.f32')
+    native_input_sha = sha(native_input)
+    if native_input_sha != mel_entry['sha256']:
+        raise SystemExit('native encoder consumed '+native_input_sha+', not the reference log-mel '+mel_entry['sha256'])
     names = ['conv1' ,'conv2',*[f'layer-{i:02d}' for i in range(32)],'encoder']
     rows = []
     for name in names:
@@ -77,6 +87,8 @@ def main():
         'gate':'final encoder output','reference_floor':floor,'threshold_abs':threshold,'native_numeric':args.numeric,
         'oracle_dtype':manifest['dtype'],'oracle_manifest_sha256':sha(args.oracle/'manifest.json'),
         'input_pcm_sha256':manifest['input_pcm_sha256'],'binary_sha256':sha(args.binary),
+        'native_input_sha256':native_input_sha,'native_input_is_reference_log_mel':True,
+        'gate_scope':'encoder only: native encoder consumed the reference log-mel, so the frontend is not stacked into this number',
         'native_source_sha256':source_hashes,
         'first_intermediate_above_threshold':next((x['stage'] for x in rows if x['max_abs']>threshold),None),
         'stages':rows,'scope':'2-second synthetic CPU fixture, normal 30-second padded window; no WER, GPU or serving qualification'}

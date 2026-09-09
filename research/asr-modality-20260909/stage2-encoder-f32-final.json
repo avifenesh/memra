@@ -8,11 +8,14 @@
   "oracle_dtype": "f32",
   "oracle_manifest_sha256": "eb7339d6c16a820a590cc4aea9586303d091af236d05971d641c81a0daaf7fd2",
   "input_pcm_sha256": "0922ee34005328549f1d04f89e34a31121f1f5380915db5a636c45472f755eb9",
-  "binary_sha256": "6573d3a07567261e07287babecad3e0f808f276828f54c9a2683899e5ec068eb",
+  "binary_sha256": "457201d65124eee04d267dd6c7416c960659988d188d7183b2e9691db1d1939d",
+  "native_input_sha256": "6a9ddd3de5bb388b22d27d86fcdef1c28e85065a58350d4213034fa43a2c423d",
+  "native_input_is_reference_log_mel": true,
+  "gate_scope": "encoder only: native encoder consumed the reference log-mel, so the frontend is not stacked into this number",
   "native_source_sha256": {
-    "crates/memra-reference/src/speech/encoder.rs": "50fd51ec8b2c03b55ed5f51ac6821cf1aa2042d064497c6fec4d37e59e230471",
+    "crates/memra-reference/src/speech/encoder.rs": "74460b8792bc2e25245e18eb05f537f3e5a72cc028f2f101d249605787d846da",
     "crates/memra-reference/src/speech/matrix.rs": "53fdce3695a1f7bf77611f74750b87d96e4df40689aa3433134e61312a077bd0",
-    "crates/memra-reference/src/bin/whisper-stage.rs": "54a51688e53c05be8ec4bb7093eb85041789819f8e218d14be7566cff90b7da5"
+    "crates/memra-reference/src/bin/whisper-stage.rs": "1cfb60e9096e261ca432bb9482ccdc2317b008b85f63cebafe354207688b71ab"
   },
   "first_intermediate_above_threshold": null,
   "stages": [

@@ -76,3 +76,33 @@ limit **1e-3**. F16 receipt: `stage2-encoder-f16-softmax-order.json`, max abs **
 limit **0.27716827392578125** versus HF F16. Both bind the exact same native binary.
 All eight focused speech tests pass, including the fixed HF vector-GELU fixture.
 No further F16 precision experiment is active. The next implementation stage is cached decoding.
+
+## Capture input pinning, 2026-09-09
+
+The sealed encoder receipts above were not reproducible from the data they recorded.
+Re-running the archived binary `6573d3a07567` on `native-mel.f32` produced **0.6796875**
+against HF F16, not the receipted **0.25**. The committed source and the archived binary
+agree bit for bit, so this was never a code regression. The receipt simply did not record
+which mel the native run consumed, and the two candidates give different answers:
+
+| Native encoder input | F16 max abs vs HF F16 | Reference floor |
+| --- | ---: | ---: |
+| Reference `log-mel.f32` (encoder alone) | 0.25 | 0.27716827392578125 |
+| Native `native-mel.f32` (frontend and encoder stacked) | 0.6796875 | 0.27716827392578125 |
+
+The 0.25 row is the encoder gate and it reproduces exactly once the input is pinned.
+The 0.6796875 row is a separate measured fact: a native log-mel that is within
+**5.6743622e-5** of HF in FP32 still amplifies to **2.45x** the reference's own FP16 noise
+across 32 FP16 encoder blocks. That stacked path has no gate yet and is not claimed as one.
+
+`tools/check_whisper_stages.py` now refuses any capture that does not bank the mel it
+consumed, and refuses one whose banked mel is not the reference log-mel. The runner writes
+`input-mel.f32` for that purpose. Both refusals were exercised: a pre-pinning capture is
+rejected as `capture predates input pinning`, and a native-mel capture is rejected by hash.
+Every receipt in this directory was regenerated on one binary, `457201d65124eee0`.
+
+Also fixed in the same pass: `check_whisper_decoder.py` compared an HF F16 capture taken on
+the F16 encoder oracle against an F32 control taken on the F32 encoder oracle. That floor
+carried encoder FP16 error rather than the decoder rounding the gate is about. The checker
+now requires both precision captures to name the same `encoder_manifest_sha256` and to agree
+on argmax. The contaminated pairing is rejected by name.

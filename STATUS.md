@@ -1,68 +1,82 @@
 # ASR lane status
 
-Updated 2026-09-09 15:16:16 UTC.
+Updated 2026-09-09 (decoder stage + measured FP16 gates).
 Worktree `~/projects/memra/wt-asr-modality`, branch `lane/asr-modality-20260909`.
 Draft PR https://github.com/avifenesh/memra/pull/416, issue #414 remains claimed.
 
-## Encoder stage ready for commit and hosted CI
+## Committed and gated
 
-- Native mel PASS: max abs 5.6743622e-5 versus HF FP32, limit 1e-3.
-- Native FP32 encoder PASS: max abs 0.0002231597900390625, limit 1e-3.
-- Native strict FP16 encoder PASS versus HF FP16: max abs 0.25,
-  reference-derived limit 0.27716827392578125.
-- F32 and F16 bind one binary: `6573d3a07567261e07287babecad3e0f808f276828f54c9a2683899e5ec068eb`.
-- Eight focused speech tests pass. No model process is currently running.
-- Stage-1 CI all green at `5259c5415`:
-  https://github.com/avifenesh/memra/actions/runs/34356817571.
-- Encoder commit/CI is next. Verify current head with `gh pr checks 416 -R avifenesh/memra`.
+Native Whisper large-v3 log-mel, both convolutions, all 32 encoder blocks, and the cached
+decoder (self/cross KV, absolute positions, tied logits) run in the CPU reference path.
+Every receipt below binds ONE binary, `457201d65124eee0`, and one pinned checkpoint.
 
-Corrections: native-owned A&S 7.1.26 GELU matches the pinned HF CPU vector program;
-8-lane AVX2 moment grouping; half softmax reduction/tail order and reciprocal multiply.
-Mixed precision and unsuccessful matrix variants were removed; their failed receipts remain.
-Do not resume those experiments or tighten F16 below its measured reference floor.
+| Stage | Comparison | Max abs | Bound |
+| --- | --- | ---: | ---: |
+| Log-mel | Native vs HF FP32 | 0.0000567436 | 0.001 |
+| Encoder FP32 | Native vs HF FP32 | 0.0002231598 | 0.001 |
+| Encoder FP16 | Native vs HF FP16 | 0.25 | 0.2771682739 |
+| Decoder FP32 | Native vs HF FP32 | 0.0000143051 | 0.001 |
+| Decoder FP16 | Native vs HF FP16 | 0.015625 | 0.0345668793 |
+
+Decoder argmax: 12/12 match the FP32 truth in both numeric classes.
+Native FP16 decoder error against the FP32 truth equals HF FP16's own error to the bit
+(0.0345668793). 11 focused speech tests pass. fmt and clippy clean.
+
+## Two gate defects found and fixed this stage
+
+1. The encoder receipts did not record which mel the native run consumed. The archived
+   winning binary re-run on `native-mel.f32` gives 0.6796875, not the receipted 0.25.
+   Source and binary were never wrong; the receipt was silent about its input. The runner
+   now banks `input-mel.f32` and the checker refuses a capture without it, or one whose
+   banked mel is not the reference log-mel. Both refusals exercised.
+2. The FP16 decoder floor was measured across two different encoder oracles, so it carried
+   encoder FP16 error instead of decoder rounding. The checker now requires both precision
+   captures to name the same `encoder_manifest_sha256` and to agree on argmax.
+
+Four decoder red arms and two encoder red arms fire. See `DECODER-NUMERICS.md` and the
+`Capture input pinning` section of `ENCODER-NUMERICS.md`.
+
+Do not resume the removed mixed-precision or matrix variants, and do not tighten FP16 below
+its measured reference floor.
 
 ## Next executable stage
 
-1. Commit/push the encoder files and receipts with `MEMRA_SKIP_PERF_CI=1`; await CI green.
-2. Wire the prepared `speech/decoder.rs` to shared native operators. It is not yet in
-   `speech/mod.rs` and must not be claimed executable from the source file alone.
-3. Generate/run the prepared tiny cached-decoder oracle; test self/cross KV, positions,
-   transactional failed steps, and same-prefix full/cached parity.
-4. Capture actual-checkpoint decoder step logits with `tools/whisper_decoder_oracle.py`.
-5. Commit the passing decoder stage, update PR/this file, wait for hosted CI, and hand back.
+1. Real-audio gates on the rental oracle: mel vs CT2 log-mel, encoder vs CT2 encoder (FP16),
+   beam-1 token sequence exact match vs CT2. 8 HF clips first, then all 71 if CPU allows.
+2. Update `ASR-MODALITY-PLAN.md` with the measured status ladder.
+3. Start the nemotron streaming RNNT path: tensor contract and loader for the `.nemo`
+   tarball, FastConformer cache-aware encoder skeleton with the `[56,0]` state contract.
+   Stop after the loader and census test pass.
 
-Keep work CPU-only and niced, one process/thread. The owner permits only these fixed
-2-second CPU fixtures and focused speech tests, not general local CI, batteries or GPU work.
-Full speech support remains unset: transcription policy, 71-clip/rental parity, RNNT,
-GPU execution and serving qualification are later gates. No external serving runtime.
+Keep work CPU-only and niced, one process/thread, fixed short fixtures. No general local CI,
+battery, smoke server or GPU work. Full speech support remains unset: transcription policy,
+71-clip parity, RNNT, GPU execution and serving qualification are later gates.
 
 ## Artifact locations
 
 Checkpoint: `~/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9/`, both shard hashes verified.
-Oracle root: `~/hebrew-asr-data/oracle-cpu/asr-modality-20260909/`.
-Reference directories: `hf-f32/`, `hf-f16/`, same 2-second synthetic PCM with normal
-30-second padding ([128,3000] mel; [1500,1280] encoder). All 32 layer outputs are saved.
-Passing native captures: `native-f32-final/`, `native-f16-softmax-order/`.
-Archived winning binary: `bin/whisper-stage-encoder-6573d3a07567` under that oracle root.
-Failed native candidates and isolated `gelu-probe/` / `norm-probe/` remain for diagnosis.
-Receipts: `research/asr-modality-20260909/ENCODER-NUMERICS.md` and sibling JSON files.
-Final receipts: `stage2-encoder-f32-final.json`, `stage2-encoder-f16-softmax-order.json`.
-
-Rental oracle expected at `~/hebrew-asr-data/oracle/whisper-large-v3-ivrit/`; absent at last check.
-Never invent those captures. All current numerical gates are explicitly CPU/synthetic scoped.
+CPU oracle root: `~/hebrew-asr-data/oracle-cpu/asr-modality-20260909/`.
+Current captures: `final-enc-f32/`, `final-enc-f16/`, `final-dec-f32/`, `final-dec-f16/`.
+References: `hf-f32/`, `hf-f16/` (encoder; identical pcm and log-mel), `decoder-hf-f32/`,
+`decoder-hf-f16-encf32/` (HF FP16 decoder recaptured on the FP32 encoder oracle).
+Superseded captures are retained under their original names for diagnosis.
+Rental oracle: `~/hebrew-asr-data/oracle/whisper-large-v3-ivrit/` (MANIFEST.json; 71 CT2
+clips with log-mel, encoder output, beam-1 tokens and post-suppression logits; 8 HF FP32).
+Receipts: `research/asr-modality-20260909/`.
 Tiny fixture directory: `crates/memra-reference/src/speech/fixtures/`.
-Synthetic `tiny-encoder.safetensors` needs `git add -f` because generic weight files are ignored.
+Synthetic `tiny-encoder.safetensors` needs `git add -f`; generic weight files are ignored.
 
 ## Commands
 
-Build: `CARGO_TARGET_DIR=.lane-asr-stage2/target nice -n 15 cargo build -p memra-reference
---bin whisper-stage --release -j 1`.
-Runner: `.lane-asr-stage2/target/release/whisper-stage encoder CHECKPOINT_DIR MEL.f32
-NEW_OUTPUT_DIR f32|f16` (nice; output dir must not exist).
-Comparison: existing ASR venv Python, `tools/check_whisper_stages.py --oracle ORACLE_DIR
---native NATIVE_DIR --binary RUNNER --numeric CLASS --receipt RECEIPT.json
-[--fp32-control HF_F32_DIR]`. F16 requires HF F16 plus its matched HF F32 control.
+Python: `~/hebrew-asr-data/venv-nemo/bin/python` (numpy, torch, transformers, ct2, nemo).
+Build: `PATH=$HOME/.cargo/bin:$PATH CARGO_TARGET_DIR=.lane-asr-stage2/target nice -n 15 \
+cargo build -p memra-reference --bin whisper-stage --release -j 1`.
+Encoder: `whisper-stage encoder CHECKPOINT MEL.f32 NEW_OUT f32|f16` (output dir must not exist).
+Decoder: `whisper-stage decoder CHECKPOINT ENCODER.f32 TOKENS.txt NEW_OUT f32|f16`.
+Encoder gate: `tools/check_whisper_stages.py --oracle DIR --native DIR --binary BIN
+--numeric CLASS --receipt R.json [--fp32-control HF_F32_DIR]` (F16 needs the control).
+Decoder gate: `tools/check_whisper_decoder.py` with the same flags.
+Run every gate from the worktree root; the receipts hash source paths relative to it.
 
-Prepared decoder source and its two oracle tools remain uncommitted and unwired for the next stage.
-Clean `.lane-asr-stage2/` scratch at handoff after preserving the winning binary and receipts.
-Both root checkouts stay on main. Keep this active worktree/branch for the open PR.
+Clean `.lane-asr-stage2/` scratch at handoff after preserving the binary and receipts.
+Both root checkouts stay on main. Keep this worktree/branch for the open PR.
