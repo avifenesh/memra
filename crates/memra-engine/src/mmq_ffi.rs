@@ -833,6 +833,7 @@ unsafe extern "C" {
         weight_scale: f32,
         input_scale: f32,
         rp: i32,
+        clip_stats: *mut core::ffi::c_void,
     ) -> i32;
     /// Bytes for the block_e4m3_mmq activation scratch (footprint-identical to block_q8_1_mmq).
     pub fn memra_mmq_nvfp4_f8f4_act_bytes(in_f: i32, n_tokens: i32) -> usize;
@@ -2246,6 +2247,17 @@ impl Engine {
         let mut y = self.alloc_uninit::<f32>(m * out_f)?;
         {
             let stream = self.gpu.stream();
+            // DIAGNOSTIC ONLY: null while serving, so the quantizer's counter branch is never
+            // taken. A diagnostic run points this at this projection's counters.
+            let stats = self.a4_clip_stats.lock().unwrap();
+            let stats_ptr = match stats.as_ref() {
+                Some(buffer) => {
+                    let (base, _gc) = buffer.device_ptr(&stream);
+                    (base as usize + (slot as usize) * A4_CLIP_STRIDE * std::mem::size_of::<u64>())
+                        as *mut core::ffi::c_void
+                }
+                None => std::ptr::null_mut(),
+            };
             let (w_p, _gw) = bytes.device_ptr(&stream);
             let (x_p, _gx) = x.device_ptr(&stream);
             let (y_p, _gy) = y.device_ptr_mut(&stream);
@@ -2263,6 +2275,7 @@ impl Engine {
                     weight_scale,
                     input_scale,
                     rp as i32,
+                    stats_ptr,
                 )
             };
             if rc != 0 {
@@ -3131,6 +3144,12 @@ pub fn a4_prefill_launches() -> u64 {
 pub fn a4_prefill_launches_reset() -> u64 {
     A4_PREFILL_LAUNCHES.swap(0, std::sync::atomic::Ordering::Relaxed)
 }
+
+/// u64 counters per program slot in the clipping-diagnostic buffer: 0 values seen, 1 values at
+/// the E2M1 +/-6 grid end, 2 values above 6*448*global, 3 blocks whose raw UE4M3 scale saturated
+/// at 448, 4 blocks seen. 5..8 are padding so one slot's counters do not share a cache line with
+/// the next slot's under the atomics.
+pub const A4_CLIP_STRIDE: usize = 8;
 
 /// PER-PROJECTION launch counts, indexed by the weight's slot in the activation program.
 ///

@@ -24,6 +24,7 @@ extern "C" int memra_mmq_nvfp4_ex2(
 }
 
 extern "C" int memra_mmq_nvfp4_calibrated_prefill(
-        const void *, const float *, float *, int, int, int, void *, void *, float, float, int) {
+        const void *, const float *, float *, int, int, int, void *, void *, float, float, int,
+        void *) {
     return 2901;
 }

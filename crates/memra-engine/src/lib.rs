@@ -1887,6 +1887,13 @@ pub struct Engine {
     /// MEMRA_MOE_CACHE. `Mutex` makes it multi-agent safe (§E.2); the lock covers only lookup/admit/
     /// memcpy-issue (µs), NOT the GEMM, so streams still overlap. `None` => cache disabled.
     moe_cache: Mutex<Option<crate::moe_cache::MoeSlotCache>>,
+    /// CALIBRATED-A4 CLIPPING DIAGNOSTIC (research/qwen-fp4-activation-mint-20260909). `None`
+    /// while serving, so the quantizer takes a null pointer and does no atomics. When a
+    /// diagnostic run enables it, this is a device buffer of 4 u64 per program slot
+    /// (values, fp4-max hits, global clips, block-scale clips) that the quantizer accumulates
+    /// into. The offline BF16 calibration reported these same three rates against BF16
+    /// activations; this is their twin measured on the artifact the engine actually executes.
+    a4_clip_stats: Mutex<Option<CudaSlice<u64>>>,
     /// MEMRA_STEP_TP_W8, hybrid half: q8_0 mirrors of bf16 GEMV weights that do NOT live in a
     /// TP resident bank (the LM head, the shared expert, the dense-FFN layers), keyed by the
     /// bf16 slab's device pointer and built on first decode use. The mirror is 1.0625 B/w
@@ -3845,6 +3852,7 @@ impl Engine {
             router,
             sample,
             moe_cache: Mutex::new(None),
+            a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
             moe_cache_layout: Mutex::new(None),
@@ -17769,6 +17777,31 @@ impl Engine {
             );
         }
         self.matmul(w, x, m)
+    }
+
+    /// Arm the calibrated-A4 clipping diagnostic: allocate and zero one counter block per program
+    /// slot. Every A4 GEMM issued afterwards accumulates into its own slot.
+    ///
+    /// This is the ARTIFACT twin of the offline BF16 calibration diagnostic. The offline run
+    /// measured clipping on BF16 activations and its receipt says so
+    /// (`native_mint_diagnostic_required`); this measures the same three definitions on the
+    /// activations the engine actually quantizes, for the artifact it actually executes.
+    pub fn a4_clip_stats_enable(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let slots = memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
+        let zeros = vec![0u64; slots * crate::mmq_ffi::A4_CLIP_STRIDE];
+        let mut buffer = self.alloc_uninit::<u64>(zeros.len())?;
+        self.htod_u64_into(&zeros, &mut buffer)?;
+        *self.a4_clip_stats.lock().unwrap() = Some(buffer);
+        Ok(())
+    }
+
+    /// Read the diagnostic counters back and disarm. `None` when it was never armed.
+    pub fn a4_clip_stats_take(&self) -> Result<Option<Vec<u64>>, Box<dyn std::error::Error>> {
+        let taken = self.a4_clip_stats.lock().unwrap().take();
+        match taken {
+            Some(buffer) => Ok(Some(self.dtoh_u64(&buffer)?)),
+            None => Ok(None),
+        }
     }
 
     /// True when the artifact stamped this weight with a calibrated prefill activation scale.

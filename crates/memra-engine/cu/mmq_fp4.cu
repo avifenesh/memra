@@ -1248,23 +1248,34 @@ static __global__ void nvfp4_residual_correct_kernel(
 #if CUDART_VERSION >= 12080 && !defined(MEMRA_SM100_TCGEN05)
 // Artifact v1: fixed per-linear global multiplier, dynamic per-16 UE4M3.
 // No row-global scale fit, residual correction, or fused SiLU program.
+// `stats`, when non-null, is this projection's four-counter slot: values seen, values rounding to
+// E2M1 +/-6, values above the calibrated global range (|x| > 6*448*global), and 16-value blocks
+// whose raw UE4M3 scale saturated at 448. Serving passes nullptr, so the atomics are not compiled
+// out but are never reached and the branch is uniform per launch. Definitions match the offline
+// BF16 calibration exactly so the two runs are comparable rows.
 static __global__ void quantize_calibrated_prefill_nvfp4(
         const float * x, block_fp4_mmq * q, float * scales,
-        int k, int rows, int padded_rows, float global) {
+        int k, int rows, int padded_rows, float global,
+        unsigned long long * stats) {
     const int row = blockIdx.x;
     if (threadIdx.x == 0) { scales[row] = global; }
     const int padded_k = GGML_PAD(k, 512);
+    const float global_limit = __fmul_rn(2688.f, global); // 6 * 448 * global
     for (int i = threadIdx.x * 4; i < padded_k; i += blockDim.x * 4) {
         float values[4];
         float maximum = 0.f;
+        int seen = 0, over = 0;
         #pragma unroll
         for (int j = 0; j < 4; ++j) {
-            values[j] = row < rows && i+j < k ? x[size_t(row)*k+i+j] : 0.f;
+            const bool real = row < rows && i+j < k;
+            values[j] = real ? x[size_t(row)*k+i+j] : 0.f;
             maximum = fmaxf(maximum, fabsf(values[j]));
+            if (stats && real) { seen++; if (fabsf(values[j]) > global_limit) { over++; } }
         }
         maximum = fmaxf(maximum, __shfl_xor_sync(0xffffffff, maximum, 1, 4));
         maximum = fmaxf(maximum, __shfl_xor_sync(0xffffffff, maximum, 2, 4));
-        const __nv_fp8_e4m3 micro(fminf(448.f, __fdiv_rn(maximum, __fmul_rn(6.f, global))));
+        const float raw_scale = __fdiv_rn(maximum, __fmul_rn(6.f, global));
+        const __nv_fp8_e4m3 micro(fminf(448.f, raw_scale));
         const float denominator = __fmul_rn(global, float(micro));
         #pragma unroll
         for (int j = 0; j < 4; ++j) {
@@ -1275,6 +1286,22 @@ static __global__ void quantize_calibrated_prefill_nvfp4(
         const unsigned pair = __shfl_xor_sync(0xffffffff, bits, 2, 4);
         const int sub = (i % 256) / 16;
         block_fp4_mmq * out = q + size_t(i/256)*padded_rows + row;
+        if (stats) {
+            int at_max = 0;
+            #pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                // E2M1 magnitude code 7 is 6.0, the saturating end of the grid.
+                if (row < rows && i+j < k && ((bits >> (4*j)) & 7u) == 7u) { at_max++; }
+            }
+            if (seen)   { atomicAdd(stats + 0, (unsigned long long)seen); }
+            if (at_max) { atomicAdd(stats + 1, (unsigned long long)at_max); }
+            if (over)   { atomicAdd(stats + 2, (unsigned long long)over); }
+            // One count per 16-value block, from the lane that owns the block's scale byte.
+            if ((threadIdx.x & 3) == 0 && row < rows && i < k) {
+                atomicAdd(stats + 3, (unsigned long long)(raw_scale > 448.f ? 1 : 0));
+                atomicAdd(stats + 4, 1ull);
+            }
+        }
         if ((threadIdx.x & 3) == 0) { reinterpret_cast<uint8_t *>(out->d4)[sub] = micro.__x; }
         if ((threadIdx.x & 3) < 2) {
             uint32_t bytes = 0;
@@ -1511,7 +1538,7 @@ int memra_mmq_nvfp4(const void * W_nvfp4_blocks, const float * act_f32, float * 
 int memra_mmq_nvfp4_calibrated_prefill(
         const void * weights, const float * input, float * output,
         int in_f, int out_f, int rows, void * scratch, void * stream,
-        float weight_scale, float input_scale, int rp) {
+        float weight_scale, float input_scale, int rp, void * clip_stats) {
 #if CUDART_VERSION >= 12080 && !defined(MEMRA_SM100_TCGEN05)
     if (in_f <= 0 || in_f % 512 || out_f <= 0 || out_f % MMQ_Y || rows <= 0
             || !isfinite(input_scale) || input_scale <= 0.f) { return 2902; }
@@ -1520,7 +1547,8 @@ int memra_mmq_nvfp4_calibrated_prefill(
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
     float * scales = mmq_nvfp4_scale_ptr(scratch, in_f, padded_rows);
     quantize_calibrated_prefill_nvfp4<<<padded_rows, 256, 0, st>>>(
-        input, static_cast<block_fp4_mmq *>(scratch), scales, in_f, rows, padded_rows, input_scale);
+        input, static_cast<block_fp4_mmq *>(scratch), scales, in_f, rows, padded_rows, input_scale,
+        static_cast<unsigned long long *>(clip_stats));
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) { return 1000 + int(err); }
     const dim3 grid(out_f/MMQ_Y, (rows+width-1)/width, 1);
