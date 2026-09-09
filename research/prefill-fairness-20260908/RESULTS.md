@@ -6,6 +6,10 @@ latency win. Qwen admits and serves early peers promptly, but its four occupied
 session slots still leave later arrivals waiting for tens of seconds. This is
 not qualification of Qwen at a 0.20 small-request/s latency SLO.
 
+The [latest-main integration](COMPOSITION.md) retains an additional failed Qwen
+capacity cell: one token-capped small request and two client-ceiling rejects,
+with zero OOMs. It does not replace the requested-head table below.
+
 `MEMRA_PRIME_YIELD` remains OFF by design. Proposal for the next owner-batched
 rollout: make it ON in the qualified Ornith launcher default, using this receipt.
 Do not flip the shared engine default across unqualified routes. Qwen's positive
