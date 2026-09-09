@@ -12,7 +12,7 @@ p = pathlib.Path("/root/qwen-prefill-attn-20260909")
 root = p / "fa2-src"
 fatbin, kernel = sys.argv[1:3]
 profile = json.loads((p / "requal-profile.json").read_text())
-request = json.loads((p / "request-32k.json").read_text())
+request = json.loads((p / "request-131k.json").read_text())
 prompt = root / "real-prompt.txt"
 prompt.write_text(request["messages"][0]["content"])
 binary = root / "fa2-real-chunk-probe-v1"
