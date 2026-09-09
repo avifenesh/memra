@@ -2,6 +2,10 @@
 // Reuse Memra's own validated lane maps and baseline, never external kernels.
 #include "../../../crates/memra-engine/cu/flash_attn.cu"
 
+__device__ __forceinline__ float fa2_exp2(float x) {
+    float y; asm("ex2.approx.ftz.f32 %0, %1;" : "=f"(y) : "f"(x)); return y;
+}
+
 template<int TILE>
 __device__ __forceinline__ void fa2_stage(__nv_bfloat16* sk, __nv_bfloat16* sv,
         const __nv_bfloat16* k, const __nv_bfloat16* v, int start, int depth, int head) {
@@ -84,8 +88,8 @@ __device__ __forceinline__ void fa2_body(const float* __restrict__ q, const __nv
             }
         }
         float nl = fmaxf(ml, row_max4(tl)), nh = fmaxf(mh, row_max4(th));
-        float al = ml == NEG_INF ? 0 : exp2f((ml - nl) * (LOG2 ? 1.0f : LOG2E));
-        float ah = mh == NEG_INF ? 0 : exp2f((mh - nh) * (LOG2 ? 1.0f : LOG2E));
+        float al = ml == NEG_INF ? 0 : fa2_exp2((ml - nl) * (LOG2 ? 1.0f : LOG2E));
+        float ah = mh == NEG_INF ? 0 : fa2_exp2((mh - nh) * (LOG2 ? 1.0f : LOG2E));
         ml = nl; mh = nh;
         float pl = 0, ph = 0;
         #pragma unroll
@@ -93,7 +97,7 @@ __device__ __forceinline__ void fa2_body(const float* __restrict__ q, const __nv
             #pragma unroll
             for (int j = 0; j < 4; ++j) {
                 float x = scores[i].x[j];
-                float p = x == NEG_INF ? 0 : exp2f((x - (j < 2 ? nl : nh)) * (LOG2 ? 1.0f : LOG2E));
+                float p = x == NEG_INF ? 0 : fa2_exp2((x - (j < 2 ? nl : nh)) * (LOG2 ? 1.0f : LOG2E));
                 // FA2 class: denominator sums the same BF16 probabilities used by PV.
                 p = __bfloat162float(__float2bfloat16_rn(p));
                 scores[i].x[j] = p;
@@ -214,8 +218,8 @@ __device__ __forceinline__ void fa2_wide_body(const float* __restrict__ q, const
             }
         }
         float nl = fmaxf(ml, row_max4(tl)), nh = fmaxf(mh, row_max4(th));
-        float al = ml == NEG_INF ? 0 : exp2f((ml - nl) * (LOG2 ? 1.0f : LOG2E));
-        float ah = mh == NEG_INF ? 0 : exp2f((mh - nh) * (LOG2 ? 1.0f : LOG2E));
+        float al = ml == NEG_INF ? 0 : fa2_exp2((ml - nl) * (LOG2 ? 1.0f : LOG2E));
+        float ah = mh == NEG_INF ? 0 : fa2_exp2((mh - nh) * (LOG2 ? 1.0f : LOG2E));
         ml = nl; mh = nh;
         float pl = 0, ph = 0;
         #pragma unroll
@@ -223,7 +227,7 @@ __device__ __forceinline__ void fa2_wide_body(const float* __restrict__ q, const
             #pragma unroll
             for (int j = 0; j < 4; ++j) {
                 float x = scores[i].x[j];
-                float p = x == NEG_INF ? 0 : exp2f((x - (j < 2 ? nl : nh)) * (LOG2 ? 1.0f : LOG2E));
+                float p = x == NEG_INF ? 0 : fa2_exp2((x - (j < 2 ? nl : nh)) * (LOG2 ? 1.0f : LOG2E));
                 // FA2 class: denominator sums the same BF16 probabilities used by PV.
                 if constexpr (!DEN_MMA) p = __bfloat162float(__float2bfloat16_rn(p));
                 scores[i].x[j] = p;
