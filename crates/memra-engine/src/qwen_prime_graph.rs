@@ -73,6 +73,7 @@ struct ChunkGraph {
     slab_pointer: u64,
     dequant_pointer: u64,
     tap_layers: Vec<usize>,
+    attention_fa2: bool,
     replays: usize,
 }
 
@@ -127,7 +128,9 @@ pub(crate) fn eligible(
         .qwen_prime_graph
         .as_ref()
         .and_then(|p| p.downcast_ref::<ChunkGraph>())
-        .is_some_and(|p| p.rows == t && p.capacity >= seq_end);
+        .is_some_and(|p| {
+            p.rows == t && p.capacity >= seq_end && p.attention_fa2 == e.prime_attn_fa2_enabled()
+        });
     supported(m, e)
         && crate::spec::graph_launch_headroom_ok(e)
         // A one-off restored suffix or boundary tail cannot amortize capture.
@@ -229,7 +232,8 @@ pub(crate) fn run(
                 && p.capacity >= seq_end
                 && p.slab_pointer == slab_pointer
                 && p.dequant_pointer == dequant_pointer
-                && p.tap_layers == tap_layers =>
+                && p.tap_layers == tap_layers
+                && p.attention_fa2 == e.prime_attn_fa2_enabled() =>
         {
             p
         }
@@ -253,6 +257,7 @@ pub(crate) fn run(
                 capacity: seq_end,
                 slab_pointer,
                 tap_layers,
+                attention_fa2: e.prime_attn_fa2_enabled(),
                 dequant_pointer: e
                     .prime_deqw_ws
                     .lock()

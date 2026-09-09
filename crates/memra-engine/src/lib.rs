@@ -29216,6 +29216,46 @@ impl Engine {
                 b.launch(cfg)?;
             }
         }
+        // Shape first, door last: the door reads the process environment, and every
+        // other model's prefill reaches this line on the same build.
+        if head_dim == 256
+            && n_head == 24
+            && n_head_kv == 4
+            // A restored suffix can be as short as PRIME_MIN_T. Tiny final tails
+            // merge into the previous 1024-row chunk, widening it by up to 15.
+            // Every such prefill must retain the same attention numerical class.
+            && (crate::hybrid_forward::PRIME_MIN_T..=1024 + crate::hybrid_forward::PRIME_MIN_T - 1).contains(&t)
+            && scale == 1.0 / 16.0
+            && causal
+            && !g
+            && self.prime_attn_fa2_enabled()
+        {
+            let name = if live.is_some() {
+                "fa_prefill_qw_fa2_prime_table"
+            } else {
+                "fa_prefill_qw_fa2"
+            };
+            let f = self.func(name);
+            f.set_attribute(cudarc::driver::sys::CUfunction_attribute_enum::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 49152)?;
+            let cfg = LaunchConfig {
+                grid_dim: ((t * 6).div_ceil(64) as u32, 4, 1),
+                block_dim: (32, 4, 1),
+                shared_mem_bytes: 49152,
+            };
+            let stream = self.gpu.stream();
+            let (ti, tkvi) = (t as i32, t_kv as i32);
+            let mut b = stream.launch_builder(&f);
+            b.arg(q).arg(&*kw).arg(&*vw).arg(o).arg(&ti);
+            if live.is_some() {
+                b.arg(&table);
+            } else {
+                b.arg(&tkvi);
+            }
+            unsafe {
+                b.launch(cfg)?;
+            }
+            return Ok(());
+        }
         // pass 2: the bf16-workspace prefill twin (same tile sizes/loop structure as fa_prefill_q).
         // DEFAULT: cp.async double-buffered staging twin (fa_prefill_qw_db, +32KB smem for the
         // second K/V tile pair, 1 CTA/SM): overlaps tile n+1's L2->smem copy with tile n's MMA.
@@ -29295,6 +29335,25 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    /// The FA2 prefill door. Compile-time architecture first, then the cached SM
+    /// count, so a build or a card outside the qualified target never reads the
+    /// environment and never leaves the existing kernel.
+    ///
+    /// The qualified profile primes at exactly `MEMRA_PRIME_CHUNK=1024`, and the
+    /// dispatch guard admits `PRIME_MIN_T..=1039`. A wider deployment chunk would
+    /// leave every full chunk on the legacy class and hand only the folded tail to
+    /// FA2, so a single prime would mix numerical classes and a restored suffix
+    /// would stop matching its cold twin, the exact defect the first integration hit
+    /// at the t<128 boundary. The door therefore requires its qualified chunk.
+    /// Both env reads stay live because `qwen-fa2-margin-gate` toggles the door
+    /// inside one process, and the carried-graph reuse key calls this same helper.
+    pub(crate) fn prime_attn_fa2_enabled(&self) -> bool {
+        env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+            && self.sm_count() == 170
+            && std::env::var("MEMRA_PRIME_ATTN_FA2").as_deref() == Ok("1")
+            && std::env::var("MEMRA_PRIME_CHUNK").as_deref() == Ok("1024")
     }
 
     /// WINDOWED `fa_prefill_view_ws` twin at head_dim 128 (lane/pp-prefill 2026-08-07):
