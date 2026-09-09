@@ -54,6 +54,12 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn main() {
+    // Fixture oracle retains the pre-flip program before model creation.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
+    }
+
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
         eprintln!(

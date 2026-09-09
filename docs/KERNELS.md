@@ -673,7 +673,7 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
 ### KV RMSNorm and RoPE gate-only composition door, 2026-09-09
 
-`dsv4_norm_rope_f32_fixed_order_kernel` is the default-OFF
+`dsv4_norm_rope_f32_fixed_order_kernel` is the default-ON (admitted TP/EP f32x)
 `MEMRA_DSV4_NORM_FUSE` arm. It replaces the adjacent KV norm and rotary launches
 in each t=1 device batch attention layer (SWA, CSA and HCA). The 128-thread
 RMSNorm reduction is unchanged; only shared-memory transport replaces the
@@ -699,13 +699,14 @@ and synccheck report zero errors, and every 256-step identity/census/reset
 and 16-refusal invocation passes. Receipts: [private Darklanes #530](https://github.com/avifenesh/darklanes/pull/530),
 the report and raw manifests linked there, source `511f0e663`,
 binary `e36c98b0bd80cd8f1c6895f7193e68ebf9120327e437b5fab07c1945cad5761c`.
-This is below serving relevance alone and remains a default-OFF composition
-candidate with dense-fast. No serving admission or default promotion.
-Rollback uses `MEMRA_DSV4_NORM_FUSE=0` or unset with fresh uncaptured state;
-decide-by 2026-09-23. FFI entry: `memra_dsv4_norm_rope_f32_fixed_order` in
+The composition with dense-fast is KEEP at +1.618979% / +1.609496%, with
+40 identity-matched sampled rows, and is now the default in the admitted path.
+Same numeric class, token-identical to the prior default. Rollback uses explicit
+`MEMRA_DSV4_NORM_FUSE=0` with a fresh process/uncaptured state; unset is ON.
+Rollback seam decide-by: 2026-09-23. Composition receipts: [private Darklanes #535](https://github.com/avifenesh/darklanes/pull/535). FFI entry: `memra_dsv4_norm_rope_f32_fixed_order` in
 `src/dsv4_ffi.rs`, dispatched by the t=1 batch attention path in `src/dsv4_gpu.rs`.
 
-### Dense-fast exact-tree kernels and qualification (default OFF, 2026-09-09)
+### Dense-fast exact-tree kernels and qualification (default ON, 2026-09-09)
 
 `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
 and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
@@ -731,8 +732,14 @@ split-K/cadence/device sampler/diet program, checks 256 per-step identities,
 retained resets, every forward variant's functions and 16 live refusals.
 Its 20-row ON/OFF/OFF/ON and single reverse twin include each scored arm's first
 capture. Pooled gains are +1.551526% and +1.459516%; all 40 rows are eligible
-and share token/logit/cache/hidden identity. KEEP as a default-OFF composition
-door, decide-by 2026-09-23. Source `711165799`, model binary SHA256
+and share token/logit/cache/hidden identity. Composition with norm-fuse is KEEP
+at +1.618979% / +1.609496% and defaults ON when unset. Explicit `0` is the
+rollback with fresh uncaptured states; seam decide-by: 2026-09-23.
+Same numeric class, token-identical to the prior default. Source `711165799`, model binary SHA256
 `4be3e8084bb7d589abb8d2250c06f8c12f1edb713a66e2390bc90ed91821d5fd`.
 Receipts: [private Darklanes #529](https://github.com/avifenesh/darklanes/pull/529).
-Norm-fuse composition remains unmeasured. No serving admission or 120 tok/s claim.
+Composition receipts: [private Darklanes #535](https://github.com/avifenesh/darklanes/pull/535).
+`dsv4_densefast_normfuse_default_gate` checks real unset/0 selection before
+capture, both function censuses, eager identity, refusals and five sanity rows.
+Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
+environment policy after the eager OFF oracle. No kernel arithmetic changes.
