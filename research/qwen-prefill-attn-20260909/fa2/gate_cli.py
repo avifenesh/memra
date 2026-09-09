@@ -10,7 +10,7 @@ import time
 import uuid
 
 p = argparse.ArgumentParser()
-p.add_argument("kind", choices=["margin", "spec", "eval", "layers"])
+p.add_argument("kind", choices=["margin", "spec", "eval", "layers", "decode"])
 p.add_argument("--arm", choices=["0", "1"], default="1")
 p.add_argument("--profile", action="store_true")
 p.add_argument("--version", default="v2")
@@ -25,6 +25,8 @@ env.update(MEMRA_PRIME_ATTN_FA2=a.arm, MEMRA_MODEL_METADATA=str(root / "requal-m
 model = profile["MEMRA_MODELS"].split("=", 1)[1]
 if a.kind == "margin":
     cmd = [str(root / ("fa2-src/qwen-fa2-margin-gate-" + a.version)), model, str(out / "logits"), str(root / "margin-board-2048.txt"), str(root / "extra-margin-prompt.txt")]
+elif a.kind == "decode":
+    cmd = [str(root / ("fa2-src/qwen-fa2-margin-gate-" + a.version)), model, str(out / "logits"), "--decode-control", str(root / "extra-margin-prompt.txt")]
 elif a.kind == "spec":
     cmd = [str(root / ("fa2-src/run-spec-" + a.version)), model]
     env.update(MEMRA_PROMPT_FILE=str(root / "gate-prompt.txt"), MEMRA_CHAT="1", MEMRA_NGEN="64")

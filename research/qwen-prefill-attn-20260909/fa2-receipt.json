@@ -1,0 +1,179 @@
+{
+  "binary_sha256": "989d8f618a7f4d4567e4c976ddd2e9799904afa39a892f4e576f342b38c4b460",
+  "boots": 24,
+  "unique_nonces": 24,
+  "cold": [
+    {
+      "size": "8k",
+      "samples": {
+        "off": [
+          2.4646428180858493,
+          2.47881084587425,
+          2.4651244648266584
+        ],
+        "on": [
+          2.450418437132612,
+          2.4456020100042224,
+          2.450459921034053
+        ]
+      },
+      "off_median_s": 2.4651244648266584,
+      "on_median_s": 2.450418437132612,
+      "change_percent": -0.5965632934108456
+    },
+    {
+      "size": "32k",
+      "samples": {
+        "off": [
+          11.009986654156819,
+          10.996298079146072,
+          10.999672074103728
+        ],
+        "on": [
+          10.622604059055448,
+          10.62207839707844,
+          10.615692368010059
+        ]
+      },
+      "off_median_s": 10.999672074103728,
+      "on_median_s": 10.62207839707844,
+      "change_percent": -3.4327721270368428
+    },
+    {
+      "size": "131k",
+      "samples": {
+        "off": [
+          66.42514913878404,
+          66.48917546006851,
+          66.5065285298042
+        ],
+        "on": [
+          60.35513831418939,
+          60.405208078213036,
+          60.37595855491236
+        ]
+      },
+      "off_median_s": 66.48917546006851,
+      "on_median_s": 60.37595855491236,
+      "change_percent": -9.194303979341079
+    }
+  ],
+  "margin": {
+    "summary": true,
+    "argmax_flips": 0,
+    "max_logit_deviation": 1.0574546
+  },
+  "spec_k": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "greedy_cold_restore_turns": 4,
+  "boundary_state_sha256": "37858eb88b9e52ace1932ddc139cc1bfb0f6404834ab3cee3c1a4adaed90c898",
+  "cache": {
+    "off": {
+      "warm_turns": 21,
+      "min_cached_tokens": 8160,
+      "median_ttft_s": 0.18628147803246975
+    },
+    "on": {
+      "warm_turns": 21,
+      "min_cached_tokens": 8160,
+      "median_ttft_s": 0.184510531835258
+    }
+  },
+  "decode_fixed_state": {
+    "pairs": [
+      {
+        "pair": 0,
+        "decode_steps": 64,
+        "logits_byte_identical": true,
+        "off_s": 0.7665480430000002,
+        "on_s": 0.788516315,
+        "on_over_off_rate": 0.9721397368930791
+      },
+      {
+        "pair": 1,
+        "decode_steps": 64,
+        "logits_byte_identical": true,
+        "off_s": 0.7893839840000001,
+        "on_s": 0.7860672960000002,
+        "on_over_off_rate": 1.004219343581494
+      },
+      {
+        "pair": 2,
+        "decode_steps": 64,
+        "logits_byte_identical": true,
+        "off_s": 0.7860296340000001,
+        "on_s": 0.7893148360000003,
+        "on_over_off_rate": 0.9958379066879719
+      }
+    ],
+    "median_rate_ratio": 0.9958379066879719
+  },
+  "profiles": {
+    "0": {
+      "window_ms": 67855.997926,
+      "phase_ms": {
+        "attention": 30923.492045,
+        "ffn_gemm": 18361.106965,
+        "projection_gemm": 8294.315553,
+        "other_kernels": 2782.335344,
+        "gdn_scan_conv": 2599.853089,
+        "norm_quantize": 1677.509468,
+        "attention_dequant": 884.017569,
+        "draft_gemm": 574.113136
+      },
+      "gpu_idle_ms": 263.021827,
+      "gpu_idle_fraction": 0.0038761765361823588
+    },
+    "1": {
+      "window_ms": 61768.83808,
+      "phase_ms": {
+        "attention": 24580.813004,
+        "ffn_gemm": 18515.057342,
+        "projection_gemm": 8356.441669,
+        "other_kernels": 2788.740831,
+        "gdn_scan_conv": 2610.320857,
+        "norm_quantize": 1681.61998,
+        "attention_dequant": 885.665606,
+        "draft_gemm": 574.516343
+      },
+      "gpu_idle_ms": 278.175758,
+      "gpu_idle_fraction": 0.004503496692615786
+    }
+  },
+  "repetition_flags": [
+    {
+      "boot": "serving-r2-off",
+      "kind": "chain-0"
+    }
+  ],
+  "repetition_rule": "16 whitespace-token sequence occurring at least three times; flagged outputs require manual review before timing aggregation",
+  "eval": {
+    "off_nll": 0.8587744442744248,
+    "on_nll": 0.8577161673322742,
+    "paired_delta": -0.0010582769421505446,
+    "repeat_max_delta": {
+      "0": 0.0,
+      "1": 0.0
+    },
+    "diagnostic_block_bootstrap": {
+      "block_tokens": 32,
+      "reps": 10000,
+      "seed": 5183,
+      "ci95": [
+        -0.0028497509452164236,
+        0.0005641911282770957
+      ],
+      "note": "Diagnostic sampling uncertainty over paired token blocks; not an invented acceptance tolerance."
+    }
+  },
+  "scope": "Qwen 24Q/4KV/d256 on 170-SM sm_120a; default OFF; decide-by 2026-09-23",
+  "sampled_decode_note": "All 15 sampled c1 pairs differ across prefill classes. Their rates are not used to infer decode speedup; fixed OFF-prime state is the decode oracle."
+}

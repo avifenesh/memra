@@ -23,8 +23,51 @@ widened tails fell back to the old numerical class. The corrected dispatch
 covers all qualified prefill chunks, including t=16..1039. Decode is unchanged.
 The corrected ON program passes the four-turn cold/restored greedy twin and
 cold/restored boundary capture. Its frozen-prompt margin gate has zero flips.
-The remaining paired timing, evaluation and cache receipts are being collected.
-No default flip is proposed while those gates are pending.
+All remaining gates now pass. The receipt is `fa2-receipt.json`. Proposed flip:
+enable the door for the qualified Qwen/5090 profile in the owner's next batched
+release. The code default stays OFF; no deployment or release occurs here.
+
+| Measurement | OFF | ON |
+| --- | ---: | ---: |
+| Cold TTFT 8k, three boots/arm | 2.465124 s | 2.450418 s |
+| Cold TTFT 32k, three boots/arm | 10.999672 s | 10.622078 s |
+| Cold TTFT 131k, three boots/arm | 66.489175 s | 60.375959 s |
+| 131k attention slice | 30.923492 s | 24.580813 s |
+| 131k idle share | 0.3876% | 0.4503% |
+| Mean NLL, three paired boots | 0.8587744443 | 0.8577161673 |
+| Warm cache median TTFT, 21 turns/arm | 0.186281 s | 0.184511 s |
+
+The attention slice misses the 20-23 s design target. The 131k cold improvement is
+9.19%; 32k is 3.43%, 8k is 0.60%. All 24 sampled campaign boots have unique nonces,
+the same binary hash, dspark-acc engagement and no OOM. One repetitive OFF cache
+initializer is excluded from performance aggregates; it is not part of the cold
+matrix or warm-cache medians.
+
+Corrected margin: zero flips across 24 teacher-forced positions, max logit delta
+1.0574546. Same-binary ON run-spec K=1..8 matches plain. All four ON greedy restore
+turns match their cold twins; cold/restored boundary state hashes match at 8160.
+The 64-layer diagnostic has final/max logit delta 0.6003599 on the board prompt.
+
+The paired NLL delta is -0.0010583; diagnostic paired token-block bootstrap 95%
+interval [-0.0028498, +0.0005642] includes zero. Each arm reproduces its per-token
+loss vector exactly over three boots. This estimates sampling noise without a
+new acceptance tolerance.
+
+Sampled c1 output streams differ with the prefill class, so their rates do not
+isolate decode. The fixed-state control primes OFF in both arms, then toggles
+only for decode. All 192 steps have bit-identical logits/tokens; median ON/OFF rate
+ratio is 0.99584. Every warm cache turn retains at least 8160 cached tokens.
+
+Twelve live-depth graph replay byte comparisons pass, including 16-row suffixes
+and 1034-row widened tails. Memcheck and synccheck report zero errors. All 99
+baseline CUDA entry symbols remain, with only the two FA2 entries added. Remote
+Clippy, fmt, flags and fatbin checks pass; engine/server/ModelPlan/reference/runtime
+libraries report 467/652/229/30/1 passing tests. Ignored GPU tests are not counted.
+
+Server binary SHA256:
+`989d8f618a7f4d4567e4c976ddd2e9799904afa39a892f4e576f342b38c4b460`.
+The qualified Qwen runtime is `cad2b21ba`; subsequent formatting, diagnostic-only
+changes and the DSV4 HC-default merge do not change that Qwen program.
 
 All GPU gates and builds run on the designated non-serving 5090, architecture
 120a, with the canonical lock and an empty compute list before each job.

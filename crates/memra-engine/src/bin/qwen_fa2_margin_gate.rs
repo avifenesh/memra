@@ -23,6 +23,43 @@ fn dump(path: &Path, values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+struct DecodeRun {
+    logits: Vec<Vec<f32>>,
+    tokens: Vec<u32>,
+    elapsed_s: f64,
+}
+
+fn decode_control(
+    e: &Engine,
+    model: &HybridModel,
+    ids: &[u32],
+    flag: &str,
+) -> Result<DecodeRun, Box<dyn std::error::Error>> {
+    unsafe {
+        std::env::set_var("MEMRA_PRIME_ATTN_FA2", "0");
+    }
+    let mut cache = Cache::new(e, &model.cfg, ids.len() + 128)?;
+    let (seed, _, _) = model.prime_cache(e, ids, &mut cache, 0)?;
+    let mut token = argmax(&seed) as u32;
+    unsafe {
+        std::env::set_var("MEMRA_PRIME_ATTN_FA2", flag);
+    }
+    let mut run = DecodeRun {
+        logits: Vec::new(),
+        tokens: Vec::new(),
+        elapsed_s: 0.0,
+    };
+    for _ in 0..64 {
+        let start = std::time::Instant::now();
+        let logits = model.decode_step(e, token, &mut cache)?;
+        run.elapsed_s += start.elapsed().as_secs_f64();
+        token = argmax(&logits) as u32;
+        run.tokens.push(token);
+        run.logits.push(logits);
+    }
+    Ok(run)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
@@ -34,6 +71,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let g = GgufFile::open(&args[1])?;
     let model = HybridModel::load_without_mtp(&e, &g)?;
     let tok = Tokenizer::from_gguf(&g).map_err(|x| format!("tokenizer: {x}"))?;
+    if args[3] == "--decode-control" {
+        let text =
+            std::fs::read_to_string(args.get(4).ok_or("decode control needs a prompt file")?)?;
+        let rendered = tok.apply_chat_template(&[("user", text.as_str())], true);
+        let ids = tok.encode(&rendered, true);
+        let _ = decode_control(&e, &model, &ids, "0")?;
+        for pair in 0..3 {
+            let order = if pair == 1 { ["1", "0"] } else { ["0", "1"] };
+            let mut runs = Vec::new();
+            for flag in order {
+                runs.push((flag, decode_control(&e, &model, &ids, flag)?));
+            }
+            let off = &runs.iter().find(|(f, _)| *f == "0").unwrap().1;
+            let on = &runs.iter().find(|(f, _)| *f == "1").unwrap().1;
+            let same = off.logits.len() == on.logits.len()
+                && off.logits.iter().zip(&on.logits).all(|(a, b)| {
+                    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+                });
+            assert!(
+                same && off.tokens == on.tokens,
+                "decode must remain byte-identical"
+            );
+            std::fs::write(
+                out.join(format!("decode-pair-{pair}.txt")),
+                tok.decode(&off.tokens),
+            )?;
+            println!(
+                "{{\"pair\":{pair},\"decode_steps\":64,\"logits_byte_identical\":{same},\"off_s\":{},\"on_s\":{},\"on_over_off_rate\":{}}}",
+                off.elapsed_s,
+                on.elapsed_s,
+                off.elapsed_s / on.elapsed_s
+            );
+        }
+        return Ok(());
+    }
     let mut total_flips = 0;
     let mut max_delta = 0.0f32;
     for (prompt_index, file) in args[3..].iter().enumerate() {
