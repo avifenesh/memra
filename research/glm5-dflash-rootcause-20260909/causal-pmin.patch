@@ -1,0 +1,98 @@
+diff --git a/crates/memra-engine/src/glm_spec.rs b/crates/memra-engine/src/glm_spec.rs
+index 93bce654d..824dfd2c1 100644
+--- a/crates/memra-engine/src/glm_spec.rs
++++ b/crates/memra-engine/src/glm_spec.rs
+@@ -567,6 +567,24 @@ pub(crate) fn glm5_pmin0() -> bool {
+     *P.get_or_init(|| std::env::var("MEMRA_SPEC_PMIN0").as_deref() == Ok("1"))
+ }
+ 
++/// Opt-in correction: decide whether to verify a sampled selector slot from its
++/// distribution, before conditioning on which token was drawn. The legacy chosen-q
++/// cutoff censors rare proposals without changing the rejection sampler's q.
++fn glm5_causal_pmin() -> bool {
++    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_SPEC_CAUSAL_PMIN").as_deref() == Ok("1"))
++}
++
++fn selector_confidence_keep(q_rows: &[f32], top_k: usize, k: usize, p_min: f32, pmin0: bool) -> usize {
++    assert!(top_k > 0 && q_rows.len() / top_k >= k);
++    let confidence: Vec<f32> = q_rows
++        .chunks_exact(top_k)
++        .take(k)
++        .map(|row| row.iter().copied().fold(0.0, f32::max))
++        .collect();
++    glm5_conf_keep(&confidence, p_min, pmin0)
++}
++
+ /// MEMRA_SPEC_PMIN break semantics — hoisted to the shared K-policy surface
+ /// ([`crate::spec::spec_conf_keep`], lane/glm5-extract-general); re-exported here so the
+ /// glm5 gates and call sites keep their name.
+@@ -4501,7 +4519,15 @@ impl HybridModel {
+         // consistent (cand/q_rows/q_chosen are per-slot; the accept walk reads slots
+         // 0..drafts.len()-1 only). p_min unset = today's rounds, untouched.
+         if p_min > 0.0 {
+-            let kc = glm5_conf_keep(&slot_q[..drafts.len()], p_min, pmin0);
++            let kc = match &qside {
++                Glm5DraftQ::Selector {
++                    prop: DsparkDraftSample::Selector { q_rows, top_k, .. },
++                    ..
++                } if glm5_causal_pmin() => {
++                    selector_confidence_keep(q_rows, *top_k, drafts.len(), p_min, pmin0)
++                }
++                _ => glm5_conf_keep(&slot_q[..drafts.len()], p_min, pmin0),
++            };
+             drafts.truncate(kc);
+         }
+         if let Some(over) = knobs.draft_override.as_mut() {
+@@ -5094,7 +5120,50 @@ pub struct Glm5SpecKnobs<'a> {
+ 
+ #[cfg(test)]
+ mod conf_keep_tests {
+-    use super::glm5_conf_keep;
++    use super::{glm5_conf_keep, selector_confidence_keep};
++
++    #[test]
++    fn causal_pmin_preserves_target_distribution_after_an_accepted_prefix() {
++        // At slot 2, q=(.9,.1), p=(.5,.5). Censoring the .1 draw adds
++        // .1*p to the usual rejection walk: output becomes (.55,.45).
++        // The proposed slot-confidence policy makes the same stop decision for
++        // either draw, so exact rejection plus residual still yields p.
++        let p = [0.5_f64, 0.5];
++        let q = [0.9_f64, 0.1];
++        let rows = [1.0_f32, 0.0, 0.9, 0.1];
++        let mut legacy = [0.0_f64; 2];
++        let mut causal = [0.0_f64; 2];
++        for token in 0..2 {
++            for (out, keep) in [
++                (&mut legacy, glm5_conf_keep(&[1.0, q[token] as f32], 0.7, false)),
++                (&mut causal, selector_confidence_keep(&rows, 2, 2, 0.7, false)),
++            ] {
++                if keep == 1 {
++                    for i in 0..2 {
++                        out[i] += q[token] * p[i];
++                    }
++                } else {
++                    let accept = (p[token] / q[token]).min(1.0);
++                    out[token] += q[token] * accept;
++                    // normalize(max(0,p-q)) is exactly (0,1).
++                    out[1] += q[token] * (1.0 - accept);
++                }
++            }
++        }
++        assert!((legacy[0] - 0.55).abs() < 1e-12);
++        assert!((legacy[1] - 0.45).abs() < 1e-12);
++        assert!((causal[0] - p[0]).abs() < 1e-12);
++        assert!((causal[1] - p[1]).abs() < 1e-12);
++    }
++
++    #[test]
++    fn causal_pmin_retains_prefix_and_slot_zero_contracts() {
++        let rows = [0.5, 0.5, 0.9, 0.1, 0.6, 0.4, 0.9, 0.1];
++        assert_eq!(selector_confidence_keep(&rows, 2, 4, 0.7, false), 2);
++        assert_eq!(selector_confidence_keep(&rows, 2, 4, 0.7, true), 0);
++        assert_eq!(selector_confidence_keep(&rows, 2, 4, 0.0, true), 4);
++        assert_eq!(selector_confidence_keep(&rows, 2, 1, 0.7, false), 1);
++    }
+ 
+     /// The spec.rs chain-break semantics, pinned CPU-side (loop-port 2): break at the
+     /// first sub-threshold slot; slot 0 survives a miss unless PMIN0.

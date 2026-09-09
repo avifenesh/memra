@@ -1,0 +1,13 @@
+| Arm | K | N | Accepted/round | Acceptance | HTTP ms/round | Tick ms/token | HTTP tok/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| plain | 0 | 3 | - | - | - | 12.231445 | 80.651195 |
+| off | 6 | 3 | 1.870787 | 0.701031 | 39.151574 | 13.496830 | 73.468425 |
+| kda | 6 | 3 | 1.652850 | 0.662551 | 36.829108 | 13.767967 | 72.031333 |
+| mla | 6 | 3 | 1.777174 | 0.656780 | 36.089155 | 12.823574 | 77.103737 |
+| both | 6 | 3 | 1.664804 | 0.665236 | 32.753638 | 12.166889 | 81.359039 |
+| all | 6 | 3 | 1.557214 | 0.605416 | 32.866492 | 12.776979 | 77.503363 |
+| auto | auto | 3 | 1.454545 | 0.672646 | 30.826906 | 12.295080 | 80.574876 |
+Exactness: [{'a': 'greedy-all', 'b': 'greedy-both', 'token_identical': True, 'text_identical': True}, {'a': 'greedy-all', 'b': 'greedy-kda', 'token_identical': False, 'text_identical': False}, {'a': 'greedy-all', 'b': 'greedy-mla', 'token_identical': True, 'text_identical': True}, {'a': 'greedy-all', 'b': 'greedy-off', 'token_identical': False, 'text_identical': False}, {'a': 'greedy-both', 'b': 'greedy-kda', 'token_identical': False, 'text_identical': False}, {'a': 'greedy-both', 'b': 'greedy-mla', 'token_identical': True, 'text_identical': True}, {'a': 'greedy-both', 'b': 'greedy-off', 'token_identical': False, 'text_identical': False}, {'a': 'greedy-kda', 'b': 'greedy-mla', 'token_identical': False, 'text_identical': False}, {'a': 'greedy-kda', 'b': 'greedy-off', 'token_identical': True, 'text_identical': True}, {'a': 'greedy-mla', 'b': 'greedy-off', 'token_identical': False, 'text_identical': False}]
+MLA: 1782 calls 462528 rows 0 flips 0.057847664 max band ratio
+Divergence: {'accepted_ids': {'n_off': 933, 'n_on': 1026, 'total_variation': 0.427850172053929, 'jensen_shannon_bits': 0.3224278711904067}, 'accepted_lengths': {'n_off': 603, 'n_on': 507, 'total_variation': 0.149459801583797, 'jensen_shannon_bits': 0.02082643201652167}, 'output_ids': {'n_off': 1536, 'n_on': 1536, 'total_variation': 0.40234375, 'jensen_shannon_bits': 0.3000736995640322}}
+Loops: []

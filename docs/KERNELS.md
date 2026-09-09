@@ -670,3 +670,19 @@ Both rollback seams have decide-by 2026-09-22 for removal review.
 Composition confirmation is directly recorded in
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, alongside the standalone cadence #508 and dense #507 receipts.
+
+## Verify E4M3 six-group candidate, 2026-09-09
+
+| Kernel | Purpose | Dispatch | Binding |
+|---|---|---|---|
+| `qmatvec_e4m3_verify_fused6_b2`, `qmatvec_e4m3_verify_fused6_b4`, `qmatvec_e4m3_verify_fused6_b8` | One block-offset grid for six E4M3 projections, current Q8 activation and dot order, rounded macro-scale store | `MEMRA_GLM5_VERIFY_E4M3_FUSED6=1`, default OFF, t2..8; decide-by: 2026-09-23 | `Engine::e4m3_verify_fused6_into`, `cu/qmatvec.cu`; receipt `research/glm5-verify-tally-20260909/RESULTS.md` |
+## GLM5 verify tiled split-KV (2026-09-09)
+
+`memra_mla_verify_splitkv_kernel` / `memra_mla_verify_splitkv_f32` in
+`cu/mla_attn.cu`: one 256-thread CTA per (query, head, 8-way slot partition),
+current eight-slot dot/softmax fold inside each partition, existing
+`memra_mla_dsa_attn_combine_kernel` merges (m,l,acc). f32 numeric class,
+not byte-exact outputs. B200, 64 heads, rank512/rope0, t2..7, 2048..2051
+slots only; geometry refusal 40023. Default-OFF
+`MEMRA_GLM5_MLA_VERIFY_SPLITKV`, decide-by: 2026-09-23.
+Receipt: `research/glm5-mla-verify-20260909/RESULTS.md`: KEEP, 3.700307708 ms/round weighted saving; all 18304 real latent-row argmaxes match and all 66 gathered inputs are byte-exact. Component qualification; serving remains pending.

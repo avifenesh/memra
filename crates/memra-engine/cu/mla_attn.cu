@@ -4006,3 +4006,132 @@ extern "C" int memra_mla_kpool_select_dsa_redarm_f32(const float* score, int* id
     MLA_ERR();
     return 0;
 }
+
+
+// Verify-only tiled split-KV class. Preserve the shipped shuffle-down score and
+// eight-slot fold within each partition; only the partial combine changes order.
+// Real-input oracle and ABBA: research/glm5-mla-verify-20260909/.
+extern "C" __global__ void memra_mla_verify_splitkv_kernel(
+    const float* __restrict__ q_lat, const float* __restrict__ q_pe,
+    const float* __restrict__ cache, const int* __restrict__ idx, float* __restrict__ part_m, float* __restrict__ part_d,
+    float* __restrict__ part_acc,
+    int n_head, int kv_rank, int d_rope, int n_slots, float scale) {
+    __shared__ float s_q[MLA_MAX_RANK];
+    __shared__ float s_qp[MLA_MAX_ROPE];
+    __shared__ float s_acc[MLA_MAX_RANK];
+    __shared__ float s_score[MLA_WARPS];
+    __shared__ int s_row[MLA_WARPS];
+    // __align__(16): this array is accessed through `float4` below, and CUDA
+    // guarantees only the element type's alignment for a plain `extern __shared__`
+    // declaration. Same convention as hybrid.cu's `__align__(16)` gdn_k2_smem and
+    // mmq_fp8_blk.cu's `__align__(128)`: a construction, not a reliance on the
+    // base alignment a given toolkit happens to hand out.
+    extern __shared__ __align__(16) float s_kv[]; // [MLA_WARPS][width]
+
+    const int chunk = blockIdx.x % 8;
+    const int blk = blockIdx.x / 8;
+    const int per = ((n_slots + 63) / 64) * 8;
+    const int lo = chunk * per;
+    const int hi = min(lo + per, n_slots);
+    int i = blk / n_head;
+    int width = kv_rank + d_rope;
+    int width4 = width >> 2; // the launcher guarantees width % 4 == 0
+    const int* row_idx = idx + (long)i * n_slots;
+
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) {
+        s_q[l] = q_lat[(long)blk * kv_rank + l];
+        s_acc[l] = 0.0f;
+    }
+    for (int p = threadIdx.x; p < d_rope; p += blockDim.x)
+        s_qp[p] = q_pe[(long)blk * d_rope + p];
+    __syncthreads();
+
+    int warp = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    float m = -FLT_MAX;
+    float dsum = 0.0f;
+
+    for (int s0 = lo; s0 < hi; s0 += MLA_WARPS) {
+        int s = s0 + warp;
+        int t = (s < hi) ? row_idx[s] : -1;
+        float* krow = s_kv + (long)warp * width;
+        if (t >= 0) {
+            const float4* src = (const float4*)(cache + (long)t * width);
+            float4* dst = (float4*)krow;
+            for (int c = lane; c < width4; c += 32) dst[c] = src[c];
+        }
+        __syncwarp();
+        float part = 0.0f;
+        if (t >= 0) {
+            const float* row = krow;
+            for (int l = lane; l < kv_rank; l += 32) part += s_q[l] * row[l];
+            for (int p = lane; p < d_rope; p += 32) part += s_qp[p] * row[kv_rank + p];
+        }
+        for (int off = 16; off > 0; off >>= 1) part += __shfl_down_sync(0xffffffffu, part, off);
+        if (lane == 0) {
+            s_score[warp] = (t >= 0) ? part * scale : -FLT_MAX;
+            s_row[warp] = t;
+        }
+        __syncthreads();
+
+        float tmax = -FLT_MAX;
+#pragma unroll
+        for (int w = 0; w < MLA_WARPS; ++w)
+            if (s_row[w] >= 0) tmax = fmaxf(tmax, s_score[w]);
+        float mnew = fmaxf(m, tmax);
+        float rescale = (m == -FLT_MAX) ? 0.0f : expf(m - mnew);
+        // The whole point: 8 exponentials per thread per tile, not 8 + 8 * (kv_rank/blockDim.x).
+        float pw[MLA_WARPS];
+        float tsum = 0.0f;
+        if (mnew > -FLT_MAX) {
+#pragma unroll
+            for (int w = 0; w < MLA_WARPS; ++w) {
+                if (s_row[w] < 0) {
+                    pw[w] = 0.0f;
+                    continue;
+                }
+                pw[w] = expf(s_score[w] - mnew);
+                tsum += pw[w];
+            }
+        }
+        dsum = dsum * rescale + tsum;
+
+        for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) {
+            float a = s_acc[l] * rescale;
+            if (mnew > -FLT_MAX)
+#pragma unroll
+                for (int w = 0; w < MLA_WARPS; ++w) {
+                    if (s_row[w] < 0) continue;
+                    a += pw[w] * s_kv[(long)w * width + l];
+                }
+            s_acc[l] = a;
+        }
+        m = mnew;
+        __syncthreads();
+    }
+
+    const long cell = (long)blk * 8 + chunk;
+    if (threadIdx.x == 0) { part_m[cell] = m; part_d[cell] = dsum; }
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x)
+        part_acc[cell * kv_rank + l] = s_acc[l];
+}
+
+extern "C" int memra_mla_verify_splitkv_f32(const float* q_lat, const float* q_pe,
+    const float* cache, const int* idx, float* o_lat, float* part_m, float* part_d,
+    float* part_acc, int n_head, int kv_rank, int d_rope, int t_q, int n_slots,
+    float scale, void* stream_v) {
+    // Exactly 512 complete four-token pools, plus the optional 0..3 tail slots.
+    // No odd pool budgets, head shards, alternate rank/RoPE or unmeasured widths.
+    if (n_head != 64 || kv_rank != 512 || d_rope != 0 || t_q < 2 || t_q > 7 ||
+        n_slots < 2048 || n_slots > 2051) return 40023;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    const int pairs = t_q * n_head;
+    memra_mla_verify_splitkv_kernel<<<pairs * 8, MLA_THREADS,
+        MLA_WARPS * kv_rank * sizeof(float), stream>>>(q_lat, q_pe, cache, idx,
+        part_m, part_d, part_acc, n_head, kv_rank, d_rope, n_slots, scale);
+    MLA_ERR();
+    memra_mla_dsa_attn_combine_kernel<<<pairs, MLA_THREADS, 0, stream>>>(
+        part_m, part_d, part_acc, o_lat, kv_rank, 8);
+    MLA_ERR();
+    return 0;
+}

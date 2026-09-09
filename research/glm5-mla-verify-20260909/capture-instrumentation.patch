@@ -1,0 +1,58 @@
+diff --git a/crates/memra-engine/cu/mla_attn.cu b/crates/memra-engine/cu/mla_attn.cu
+index 18303d7b..62daf421 100644
+--- a/crates/memra-engine/cu/mla_attn.cu
++++ b/crates/memra-engine/cu/mla_attn.cu
+@@ -55,6 +55,37 @@
+ #include <cfloat>
+ #include <cmath>
+ 
++
++#include <cstdio>
++#include <cstdlib>
++#include <vector>
++#include <string>
++static void mla_verify_capture(const float* q,const float* qp,const float* cache,const int* idx,
++ int h,int r,int dr,int t,int slots,float scale,cudaStream_t stream) {
++ const char* root=getenv("GLM5_MLA_CAPTURE_DIR");
++ if(!root || (t!=2 && t!=4 && t!=7)) return;
++ static int seen[8]={};
++ int ordinal=seen[t]++;
++ if(ordinal>=11) return;
++ cudaError_t rc=cudaStreamSynchronize(stream);
++ if(rc!=cudaSuccess) {fprintf(stderr,"capture sync failed %d\n",rc);abort();}
++ std::vector<int> ids(t*slots);
++ if(cudaMemcpy(ids.data(),idx,ids.size()*4,cudaMemcpyDeviceToHost)!=cudaSuccess) abort();
++ int rows=0;for(int x:ids) if(x>=rows) rows=x+1;
++ std::string base=std::string(root)+"/t"+std::to_string(t)+"-mla"+std::to_string(ordinal);
++ auto dump=[&](const char* suffix,const void* ptr,size_t n) {
++   std::vector<char> data(n);
++   if(n && cudaMemcpy(data.data(),ptr,n,cudaMemcpyDeviceToHost)!=cudaSuccess) abort();
++   FILE* f=fopen((base+suffix).c_str(),"wb");if(!f)abort();
++   if(fwrite(data.data(),1,n,f)!=n)abort();fclose(f);
++ };
++ dump(".q",q,(size_t)t*h*r*4);dump(".qp",qp,(size_t)t*h*dr*4);
++ dump(".idx",idx,(size_t)t*slots*4);dump(".cache",cache,(size_t)rows*(r+dr)*4);
++ FILE* f=fopen((base+".meta").c_str(),"w");if(!f)abort();
++ fprintf(f,"%d %d %d %d %d %d %.9g\n",h,r,dr,t,slots,rows,scale);fclose(f);
++ fprintf(stderr,"[mla-verify-capture] ordinal=%d t=%d heads=%d rank=%d rope=%d slots=%d rows=%d\n",ordinal,t,h,r,dr,slots,rows);
++}
++
+ #define MLA_ERR()                                              \
+     do {                                                       \
+         cudaError_t ce_ = cudaGetLastError();                  \
+@@ -2471,6 +2502,7 @@ extern "C" int memra_mla_attn_gathered_f32(const float* q_lat, const float* q_pe
+     if (d_rope > MLA_MAX_ROPE) return 40003;
+     if (n_slots <= 0) return 40015; // an empty candidate list is a zero softmax denominator
+     cudaStream_t stream = (cudaStream_t)stream_v;
++    mla_verify_capture(q_lat,q_pe,cache,idx,n_head,kv_rank,d_rope,t_q,n_slots,scale,stream);
+     long blocks = (long)t_q * n_head;
+     if (blocks == 0) return 0;
+     memra_mla_attn_gathered_kernel<<<(unsigned)blocks, MLA_THREADS, 0, stream>>>(
+@@ -2812,6 +2844,7 @@ extern "C" int memra_mla_attn_gathered_dsa_f32(const float* q_lat, const float*
+     size_t smem = (size_t)MLA_WARPS * (size_t)width * sizeof(float);
+     if (smem > (size_t)MLA_DSA_KV_SMEM_MAX) return 40021;
+     cudaStream_t stream = (cudaStream_t)stream_v;
++    mla_verify_capture(q_lat,q_pe,cache,idx,n_head,kv_rank,d_rope,t_q,n_slots,scale,stream);
+     long blocks = (long)t_q * n_head;
+     if (blocks == 0) return 0;
+     memra_mla_attn_gathered_dsa_kernel<<<(unsigned)blocks, MLA_THREADS, smem, stream>>>(
