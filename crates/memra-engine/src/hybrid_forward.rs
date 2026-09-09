@@ -5533,7 +5533,12 @@ impl HybridModel {
         if out.is_ok() && crate::progress::events() == events_before {
             crate::progress::note_prime_rows(tokens.len());
         }
-        self.a4_prime_receipt_end("prime", tokens.len(), a4_before);
+        self.a4_prime_receipt_end(
+            "prime",
+            tokens.len(),
+            a4_before,
+            out.as_ref().ok().map(|o| &o.0),
+        );
         out
     }
 
@@ -5550,7 +5555,13 @@ impl HybridModel {
             .map(|_| crate::mmq_ffi::a4_prefill_slots_snapshot())
     }
 
-    fn a4_prime_receipt_end(&self, kind: &str, rows: usize, before: Option<Vec<u64>>) {
+    fn a4_prime_receipt_end(
+        &self,
+        kind: &str,
+        rows: usize,
+        before: Option<Vec<u64>>,
+        logits: Option<&Vec<f32>>,
+    ) {
         let Some(before) = before else { return };
         let after = crate::mmq_ffi::a4_prefill_slots_snapshot();
         let ran = before
@@ -5563,7 +5574,39 @@ impl HybridModel {
             .zip(after.iter())
             .map(|(b, a)| a.saturating_sub(*b))
             .sum();
-        eprintln!("[a4-{kind}] rows={rows} a4_launches={launches} projections={ran} of 400");
+        // The prime's OUTPUT row, not just its dispatch. A cold prime and a restored prime that
+        // land on the same prompt must produce the same last-position logits; if they do, any
+        // later divergence was born in decode, and if they do not, the restored state is the
+        // thing that differs. The top-2 margin says how near a tie the first sampled token was,
+        // which is what decides whether a tiny state difference can flip a token at all.
+        let row = logits.map(|l| {
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for v in l.iter() {
+                for b in v.to_bits().to_le_bytes() {
+                    hash ^= u64::from(b);
+                    hash = hash.wrapping_mul(0x100_0000_01b3);
+                }
+            }
+            let mut best = (0usize, f32::NEG_INFINITY);
+            let mut second = f32::NEG_INFINITY;
+            for (i, v) in l.iter().enumerate() {
+                if *v > best.1 {
+                    second = best.1;
+                    best = (i, *v);
+                } else if *v > second {
+                    second = *v;
+                }
+            }
+            format!(
+                " logits_sha={hash:016x} top1={} margin={:.6e}",
+                best.0,
+                best.1 - second
+            )
+        });
+        eprintln!(
+            "[a4-{kind}] rows={rows} a4_launches={launches} projections={ran} of 400{}",
+            row.unwrap_or_default()
+        );
     }
 
     #[allow(clippy::type_complexity)] // allow: mirrors `prime_cache_overlaid`'s signature
@@ -8094,6 +8137,7 @@ impl HybridModel {
             "prime-batch",
             prompts.iter().map(|p| p.len()).sum(),
             a4_before,
+            None,
         );
         out
     }
