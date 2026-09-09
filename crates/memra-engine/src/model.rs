@@ -384,6 +384,15 @@ where
 /// small non-quant tensors (norms, sometimes embed/lm_head) are kept dequantized as f32 (`Float`).
 /// This keeps VRAM ~= on-disk quant size (fixes the f32-on-load OOM).
 #[allow(clippy::large_enum_variant)] // allow: variant size asymmetry is deliberate; these enums live in per-layer tables, not hot moves
+/// The calibrated prefill activation stamp a weight carries: its per-linear global dequant
+/// multiplier and its slot in the 400-linear program. Both travel together because a receipt that
+/// says "400 A4 GEMMs ran" is not the same claim as "these 400 projections ran".
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct A4Stamp {
+    pub multiplier: f32,
+    pub slot: u32,
+}
+
 pub enum GpuTensor {
     Quant {
         bytes: CudaSlice<u8>,
@@ -436,8 +445,9 @@ pub enum GpuTensor {
         /// `matmul`, which never looks at this field, so they keep W4A8 at every row count. The
         /// value is the per-linear global dequant multiplier s = amax/(6*448); the per-16 UE4M3
         /// block scales stay dynamic and are computed in-kernel. Weight `bytes` are untouched --
-        /// this is a scalar carried alongside them, not a re-quantization.
-        a4: Option<f32>,
+        /// this is a scalar carried alongside them, not a re-quantization. The slot is the
+        /// weight's index in the program, so a runtime receipt can name which projections ran.
+        a4: Option<A4Stamp>,
     },
     Float {
         data: CudaSlice<f32>,
@@ -651,7 +661,7 @@ impl GpuTensor {
     /// Refuses anything that is not a 2-D NVFP4 quant tensor: the activation program is declared
     /// per weight NAME by the artifact header, so a name/dtype disagreement means the plan and the
     /// artifact describe different models and must not resolve into a silent W4A8 fallback.
-    pub fn stamp_prefill_a4(&mut self, multiplier: f32) -> Result<(), String> {
+    pub fn stamp_prefill_a4(&mut self, multiplier: f32, slot: u32) -> Result<(), String> {
         let GpuTensor::Quant { qtype, ne, a4, .. } = self else {
             return Err("calibrated prefill activation requires a quantized weight".into());
         };
@@ -666,7 +676,7 @@ impl GpuTensor {
                 "calibrated multiplier must be finite and positive, got {multiplier}"
             ));
         }
-        *a4 = Some(multiplier);
+        *a4 = Some(A4Stamp { multiplier, slot });
         Ok(())
     }
 
@@ -682,7 +692,10 @@ impl GpuTensor {
         if let Some(program) = &cfg.prefill_activation
             && let Some(multiplier) = program.scales().get(name)
         {
-            t.stamp_prefill_a4(*multiplier)
+            let slot = program
+                .slot(name)
+                .expect("a name found in the program has a slot in the program");
+            t.stamp_prefill_a4(*multiplier, slot)
                 .map_err(|error| format!("{name}: {error}"))?;
         }
         Ok(t)

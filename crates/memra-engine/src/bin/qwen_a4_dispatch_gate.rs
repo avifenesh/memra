@@ -21,7 +21,7 @@
 //! Usage: qwen-a4-dispatch-gate <calibrated.gguf> <served.gguf> [prime_tokens]
 use memra_engine::Engine;
 use memra_engine::hybrid::HybridModel;
-use memra_engine::mmq_ffi::a4_prefill_launches_reset;
+use memra_engine::mmq_ffi::{a4_prefill_launches_reset, a4_prefill_slots_reset};
 use memra_gguf::GgufFile;
 
 const PROGRAM_LINEARS: u64 = 400;
@@ -69,22 +69,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ids = prompt(t, model.cfg.n_vocab);
 
     // ---- arm 1: the prime runs the whole declared program, once per chunk ----
+    let names = program.slot_names();
     let mut cache = memra_engine::pp::new_cache(&e, &model.cfg, ids.len() + 64)?;
     a4_prefill_launches_reset();
+    a4_prefill_slots_reset();
     model.prime_cache(&e, &ids, &mut cache, 0)?;
     let primed = a4_prefill_launches_reset();
+    let slots = a4_prefill_slots_reset();
     if primed == 0 {
         fail("the prime issued ZERO calibrated A4 GEMMs: dispatch is not wired");
     }
-    if !primed.is_multiple_of(PROGRAM_LINEARS) {
+    // Every stamped projection must run the SAME number of times: that count is the number of
+    // prime chunks, and any projection below it still has a call site on the W4A8 walk. A bare
+    // total cannot say which one, and the total is what a missed call site quietly changes.
+    let chunks = *slots.iter().max().expect("the program has 400 slots");
+    let missing: Vec<(&str, u64)> = names
+        .iter()
+        .zip(slots.iter())
+        .filter(|(_, ran)| **ran != chunks)
+        .map(|(name, ran)| (*name, *ran))
+        .collect();
+    if !missing.is_empty() {
+        eprintln!(
+            "{} of {PROGRAM_LINEARS} projections did not run the program {chunks} times:",
+            missing.len()
+        );
+        for (name, ran) in missing.iter().take(24) {
+            eprintln!("  {name}: {ran} of {chunks}");
+        }
+        if missing.len() > 24 {
+            eprintln!("  ... and {} more", missing.len() - 24);
+        }
+        fail("at least one stamped projection is missing a prefill call site");
+    }
+    if primed != PROGRAM_LINEARS * chunks {
         fail(&format!(
-            "the prime issued {primed} A4 GEMMs, not a multiple of {PROGRAM_LINEARS}: at least \
-             one stamped projection is missing a prefill call site"
+            "the prime issued {primed} A4 GEMMs but only {} were attributed to slots",
+            PROGRAM_LINEARS * chunks
         ));
     }
-    let chunks = primed / PROGRAM_LINEARS;
     println!(
-        "PASS arm1 prime: {primed} A4 GEMMs = {PROGRAM_LINEARS} x {chunks} chunks over {t} tokens"
+        "PASS arm1 prime: {primed} A4 GEMMs over {t} tokens = all {PROGRAM_LINEARS} projections x {chunks} prime chunks"
     );
 
     // ---- arm 2: decode is W4A8 at every batch size ----

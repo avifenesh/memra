@@ -17751,7 +17751,7 @@ impl Engine {
             qtype,
             scale,
             rp,
-            a4: Some(input_scale),
+            a4: Some(stamp),
             ..
         } = w
             && *qtype == QT_NVFP4
@@ -17763,7 +17763,8 @@ impl Engine {
                 w.in_features(),
                 w.out_features(),
                 *scale,
-                *input_scale,
+                stamp.multiplier,
+                stamp.slot,
                 *rp,
             );
         }

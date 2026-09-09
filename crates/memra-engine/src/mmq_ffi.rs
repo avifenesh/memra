@@ -2230,6 +2230,7 @@ impl Engine {
         out_f: usize,
         weight_scale: f32,
         input_scale: f32,
+        slot: u32,
         rp: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         // The kernel refuses these itself (rc 2902); refusing here keeps the caller's fallback
@@ -2269,6 +2270,9 @@ impl Engine {
             }
         }
         A4_PREFILL_LAUNCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Some(counter) = A4_PREFILL_SLOTS.get(slot as usize) {
+            counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         Ok(y)
     }
 
@@ -3107,6 +3111,8 @@ impl Engine {
     }
 }
 
+use memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
+
 /// Count of calibrated-A4 GEMM launches, for the dispatch-completeness gate.
 ///
 /// Hand-threading the prefill phase through the prime paths fails SAFE (a missed call site runs
@@ -3124,4 +3130,19 @@ pub fn a4_prefill_launches() -> u64 {
 /// Reset the calibrated-A4 launch counter and return its previous value.
 pub fn a4_prefill_launches_reset() -> u64 {
     A4_PREFILL_LAUNCHES.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// PER-PROJECTION launch counts, indexed by the weight's slot in the activation program.
+///
+/// The aggregate above can only say a count is wrong. This says WHICH projection is missing,
+/// which is the only form of the answer that leads to the unconverted call site.
+pub static A4_PREFILL_SLOTS: [std::sync::atomic::AtomicU64; PROGRAM_SLOTS] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; PROGRAM_SLOTS];
+
+/// Snapshot every slot counter and zero them.
+pub fn a4_prefill_slots_reset() -> Vec<u64> {
+    A4_PREFILL_SLOTS
+        .iter()
+        .map(|c| c.swap(0, std::sync::atomic::Ordering::Relaxed))
+        .collect()
 }

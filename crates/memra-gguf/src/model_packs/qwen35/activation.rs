@@ -16,8 +16,14 @@ pub enum LinearPhase {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LinearActivation {
     W4A8,
-    CalibratedNvfp4 { multiplier: f32 },
+    CalibratedNvfp4 { multiplier: f32, slot: u32 },
 }
+
+/// The program's 400 linears are numbered in BTreeMap (name) order. The slot travels with the
+/// multiplier onto the weight so a runtime receipt can say WHICH projections executed the
+/// program, not just how many GEMMs it issued: a missed prefill call site is a specific
+/// projection, and a count alone cannot name it.
+pub const PROGRAM_SLOTS: usize = 400;
 
 #[derive(Clone, PartialEq)]
 pub struct PrefillFp4 {
@@ -143,6 +149,19 @@ impl PrefillFp4 {
         &self.scales
     }
 
+    /// Slot index of a weight in the program, in the same BTreeMap order `slot_names` returns.
+    pub fn slot(&self, weight: &str) -> Option<u32> {
+        self.scales
+            .keys()
+            .position(|name| name == weight)
+            .map(|i| i as u32)
+    }
+
+    /// The program's weight names, slot-indexed.
+    pub fn slot_names(&self) -> Vec<&str> {
+        self.scales.keys().map(String::as_str).collect()
+    }
+
     /// FNV-1a over every (name, IEEE-754 bits) pair in BTreeMap order. Bits, not float equality:
     /// two multipliers that differ in the last mantissa bit are two different calibrations.
     pub fn digest(&self) -> u64 {
@@ -169,10 +188,14 @@ pub fn select_activation(
     phase: LinearPhase,
 ) -> LinearActivation {
     if phase == LinearPhase::Prefill
-        && let Some(multiplier) = program.and_then(|p| p.scales.get(weight))
+        && let Some(program) = program
+        && let Some(multiplier) = program.scales.get(weight)
     {
         return LinearActivation::CalibratedNvfp4 {
             multiplier: *multiplier,
+            slot: program
+                .slot(weight)
+                .expect("a name found in the map has a position in the map"),
         };
     }
     LinearActivation::W4A8
@@ -250,7 +273,10 @@ mod tests {
         for name in projection_names() {
             assert_eq!(
                 select_activation(Some(&program), &name, LinearPhase::Prefill),
-                LinearActivation::CalibratedNvfp4 { multiplier: 0.125 }
+                LinearActivation::CalibratedNvfp4 {
+                    multiplier: 0.125,
+                    slot: program.slot(&name).expect("a program name has a slot")
+                }
             );
             for phase in [LinearPhase::Decode, LinearPhase::Verify] {
                 assert_eq!(
