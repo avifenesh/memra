@@ -107,6 +107,8 @@ fn main() {
     assert!(prompt.len() >= 256);
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(true);
+    // This instrument retains the sktail census and control program.
+    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
     memra_engine::set_moe_m1_splitk_for_gate(false);
     let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 544).unwrap();
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
