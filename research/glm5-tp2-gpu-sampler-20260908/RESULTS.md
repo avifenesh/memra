@@ -1,9 +1,7 @@
 # GLM TP-2 device sampler qualification
 
 Status: remote build, fmt, clippy, CPU suites and GPU sampler oracles PASS.
-Current receipt: three TP-2 p32k OFF/ON pairs, both p128k rows and the 160-token
-greedy twins, frozen by the owner on 2026-09-09. Pairs 4 and 5 are pending an
-owner-scheduled pair-box cell. The destroyed tune box will not be retried.
+Current receipt: five TP-2 p32k OFF/ON pairs, with pairs 1-3 from the original window and pairs 4-5 from the later owner-scheduled pair window. The original p128k controls and both windows' 160-token greedy twins are retained.
 No default promotion.
 Base: `001c09e5d` (v0.135.0), including the existing GLM host prefix-radix sampler. The historical v0.132.0 comparison-sort measurements
 are motivation, not this change's OFF baseline.
@@ -87,13 +85,9 @@ non-degenerate sampled output, seed/position determinism and boundary-row adapte
 identity. The CPU test covers flag defaults/parsing, sampling argument transfer,
 route/full-row refusals and unsupported penalties/filters.
 
-## Served A/B: current three-pair receipt
+## Served A/B: original three-pair window
 
-The owner-selected current receipt contains pairs 1 through 3. Pairs 4 and 5
-remain pending a later owner-scheduled pair-box cell. Additional tune-box pairs
-4 and 5 did complete and reach the rig before destruction; those observations
-are preserved in [SUPPLEMENTARY-TUNE-PAIRS.md](SUPPLEMENTARY-TUNE-PAIRS.md) and
-excluded from this current receipt summary.
+The original window contains pairs 1 through 3. The later pair 4/5 window is recorded below. Additional earlier tune-box observations for pairs 4/5 remain in [SUPPLEMENTARY-TUNE-PAIRS.md](SUPPLEMENTARY-TUNE-PAIRS.md) and are excluded from the current five-pair selection.
 
 Earlier container interruptions were followed by source/binary hash and physical
 GPU UUID checks before resuming. One separate ON attempt was excluded for
@@ -130,7 +124,7 @@ Each row used a fresh process, a 32-token p32k warmup, then a vendor-default
 512-token request with no sampling fields. The p32k file plus the fixed analysis
 instruction rendered to 29,813 prompt tokens, with 29,792 cached tokens after
 warmup. All measured rows completed 512 tokens with finish reason `length`.
-The current receipt order was OFF, ON, ON, OFF, OFF, ON, with interruptions
+The original three-pair order was OFF, ON, ON, OFF, OFF, ON, with interruptions
 between completed blocks. Sampled outputs passed the repeated-text
 screen (no 16-word span repeated four times); raw outputs remain available.
 
@@ -162,9 +156,23 @@ oracle. Every ON scored row logged 512 device draws and no host fallback.
 
 Raw rows, requests, SSE responses, generated strings, timing windows and checks:
 `raw/served/`. Full deployment logs and private configuration remain outside the
-public receipt. `current-receipt-rows.json` and `current-receipt-summary.json`
-select the three pairs above from the complete archived tune data. Pairs 4 and 5
-remain pending the owner-scheduled pair-box cell. The flag remains default OFF
-with its existing deadline. Push uses
-`MEMRA_SKIP_PERF_CI=1` because local-rig gates remain prohibited. The source
-implementation did not change during measurement or this receipt update.
+public receipt. `current-receipt-rows.json` and `current-receipt-summary.json` select the original six rows plus the four later rows below. Earlier supplementary tune pairs 4/5 remain excluded. The flag stays default OFF with its existing deadline. Push uses `MEMRA_SKIP_PERF_CI=1`; no cargo or gates ran on the local rig.
+
+## Owner-scheduled pairs 4 and 5
+
+Both new pairs passed. Each process used the same lane A/B environment, p32k warmup, vendor-default 512-token request and tick diagnostic. The order was ON/OFF for pair 4, then OFF/ON for pair 5. Each measured row has 29,813 prompt tokens, 29,792 cached tokens, 512 output tokens and finish reason length. Both ON rows recorded 512 device draws and no host fallback. Repeated-text screens passed.
+
+The rebuilt binary SHA256 is `8ed89bf30b552f7acf45e1d8b94f8aaea7b49ae631ab96d1b9c1537bc57c2298`, source fingerprint `memra-0.135.0-eadd3136bc62`. This is a separate binary from the original window's hash, with the same engine source fingerprint. Build on the target completed in 4m 37s; source manifest verification passed. No implementation source changed. One initial startup refused a mode 0644 sandbox ledger before GPU/model load; permissions were corrected to 0600 and that unsent attempt was excluded.
+
+| Pair | OFF wall s | OFF tok/s | OFF server ms/token | ON wall s | ON tok/s | ON server ms/token |
+|---|---:|---:|---:|---:|---:|---:|
+| 4 | 6.320590 | 81.005 | 11.990 | 5.610973 | 91.250 | 10.557 |
+| 5 | 6.434862 | 79.567 | 12.113 | 5.631143 | 90.923 | 10.670 |
+
+New two-pair medians: 80.285844 to 91.086349 wall tok/s; 12.051468 to 10.613112 server ms/token. Current five-pair medians: 81.316715 to 91.249779 wall tok/s (+12.215279%), 11.893542 to 10.609980 server ms/token. The five-pair summary combines two measurement windows; the new two-pair table is the direct comparison for the later pair.
+
+All four new greedy/top-k-one requests produced 160 tokens and the same canonical generated-content-plus-reasoning SHA256 as the original oracle: `b3bd73d02dfa61c28b11ccc51c5a56fd481e3962ea9c6555c24998ce0ca1ace9`. This is output-byte identity, supported by the existing device/host token-ID argmax gate; the HTTP API does not return raw token IDs.
+
+Long jobs ran under nohup/setsid, and each sampled row was copied to the rig and acknowledged before continuing. The stop driver signalled only the owned PID and waited for GPU quiet between processes. The driver required its hard-stop path after the graceful drain message; clean GPU-worker-shutdown markers are not claimed for these four processes. Request completion and usage receipts were retained before stopping.
+
+Raw public requests by SHA, SSE, generated output, tick/sampler windows, paired rows, loop checks and telemetry: `raw/pair-box/`. Full private configuration, stop logs and the excluded startup remain in private custody. No default promotion.

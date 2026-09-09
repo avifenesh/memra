@@ -17,3 +17,5 @@ All four rows generated 512 tokens. Their raw data remains under
 rows; `current-receipt-rows.json` and `current-receipt-summary.json` identify
 the owner-selected current receipt. The source/binary and measurement protocol
 are documented in [RESULTS.md](RESULTS.md).
+
+The current receipt now includes the later owner-scheduled pairs 4/5 under `raw/pair-box/`. These earlier tune observations remain supplementary and excluded from that five-pair selection.
