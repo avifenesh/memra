@@ -2683,7 +2683,7 @@ static int moe_m1_splitk_fast_launch(
         const void* act_f16, float* out, const float* row_scale,
         const float* macro_g, const float* macro_u, const float* route_w,
         const int* ex_off, int n_active, int in_f, int out_f,
-        float limit, int slots, int gu, float* partial, void* stream, bool fast, cudaEvent_t middle=nullptr, unsigned event_flags=cudaEventRecordDefault){
+        float limit, int slots, int gu, float* partial, void* stream, bool fast){
     if(!table || !ex_ids || !act_f16 || !out || !row_scale || !ex_off || !partial
        || n_expert < 1 || n_active < 1 || n_active > SK_MAX_G
        || slots != 6 || slots > n_active || (gu != 0 && gu != 1)
@@ -2709,11 +2709,7 @@ static int moe_m1_splitk_fast_launch(
         partial,ex_off,n_active,in_f,out_f);
     }
     cudaError_t e = cudaGetLastError();
-    if(e){
-        if(middle) return splitk_fast_cuda_failure(e,"cudaGetLastError after partial",__FILE__,__LINE__,"instrument_launch",-1,gu,-1);
-        return 1000+int(e);
-    }
-    if(middle){ e=cudaEventRecordWithFlags(middle,st,event_flags); if(e) return splitk_fast_cuda_failure(e,"cudaEventRecordWithFlags(middle,st,event_flags)",__FILE__,__LINE__,"instrument_launch",-1,gu,-1); }
+    if(e) return 1000+int(e);
     if(gu) {
         if(fast) moe_m1_splitk_fast_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
         partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
@@ -2727,7 +2723,6 @@ static int moe_m1_splitk_fast_launch(
         partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
     }
     e = cudaGetLastError();
-    if(e && middle) return splitk_fast_cuda_failure(e,"cudaGetLastError after reducer",__FILE__,__LINE__,"instrument_launch",-1,gu,-1);
     return e ? 1000 + int(e) : 0;
 }
 
@@ -2994,9 +2989,11 @@ int memra_moe_m1_splitk_fast_component(
         int* offsets=nullptr;
         void* flush=nullptr;
         cudaEvent_t begin=nullptr,middle=nullptr,end=nullptr;
-        cudaGraph_t graph=nullptr;
-        cudaGraphExec_t exec=nullptr;
-        ~Buffers(){ if(exec) cudaGraphExecDestroy(exec); if(graph) cudaGraphDestroy(graph);
+        cudaGraph_t graphs[3][2]={};
+        cudaGraphExec_t execs[3][2]={};
+        ~Buffers(){ for(int arm=1;arm<=2;++arm) for(int part=0;part<2;++part){
+                if(execs[arm][part]) cudaGraphExecDestroy(execs[arm][part]);
+                if(graphs[arm][part]) cudaGraphDestroy(graphs[arm][part]); }
             if(begin) cudaEventDestroy(begin); if(middle) cudaEventDestroy(middle); if(end) cudaEventDestroy(end);
             if(a) cudaFree(a); if(b) cudaFree(b); if(p) cudaFree(p);
             if(activation) cudaFree(activation);
@@ -3157,76 +3154,48 @@ int memra_moe_m1_splitk_fast_component(
         rc=read_and_guard(false); if(rc) return rc;
         fflush(stdout); fflush(stderr);
     }
-    phase="instrument_capture_on";
-    auto launch = [&](int arm,int live){
-        cudaStreamCaptureStatus capture=cudaStreamCaptureStatusNone;
-        GS_CHECK(cudaStreamIsCapturing(st,&capture));
-        // Default captured events are dependency markers, not host-waitable
-        // replay event nodes. r1 failed while synchronizing that captured handle.
-        const unsigned event_flags=capture==cudaStreamCaptureStatusNone
-            ? cudaEventRecordDefault : cudaEventRecordExternal;
-        GS_CHECK(cudaEventRecordWithFlags(b.begin,st,event_flags));
-        int rc=moe_m1_splitk_fast_launch(table,n_expert,ex_ids,b.activation,
-            (arm==2?b.b:b.a)+64,row_scale,macro_g,macro_u,route_w,b.offsets,
-            n_active,in_f,out_f,limit,6,gu,b.p+64,stream,arm==2,b.middle,event_flags);
-        if(rc){
-            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"moe_m1_splitk_fast_launch with middle event",__FILE__,__LINE__,phase,device,gu,observed);
-            return rc;
-        }
-        GS_CHECK(cudaEventRecordWithFlags(b.end,st,event_flags));
-        return 0;
-    };
-    auto check_events = [&](cudaGraph_t graph){
-        size_t count=0; GS_CHECK(cudaGraphGetNodes(graph,nullptr,&count));
-        std::vector<cudaGraphNode_t> nodes(count);
-        GS_CHECK(cudaGraphGetNodes(graph,nodes.data(),&count));
-        unsigned mask=0; size_t records=0,kernels=0;
-        for(auto node:nodes){
-            cudaGraphNodeType type; GS_CHECK(cudaGraphNodeGetType(node,&type));
-            if(type==cudaGraphNodeTypeKernel) ++kernels;
-            if(type==cudaGraphNodeTypeEventRecord){
-                cudaEvent_t event; GS_CHECK(cudaGraphEventRecordNodeGetEvent(node,&event));
-                mask |= event==b.begin ? 1u : event==b.middle ? 2u : event==b.end ? 4u : 0u;
-                ++records;
+    // Kernel-only graphs: timing events are recorded on the replay stream,
+    // never captured. Separate retained graphs keep the two intervals distinct.
+    auto launch_kernel = [&](int arm,int part){
+        const int grid=6*(out_f/SK_BN)*16;
+        if(part==0){
+            if(gu){
+                if(arm==2) moe_m1_splitk_fast_partial_kernel<2><<<grid,dim3(32,4),0,st>>>(table,0,n_expert,ex_ids,in_f/2,b.activation,b.p+64,b.offsets,n_active,in_f,out_f);
+                else moe_m1_graph_splitk_partial_kernel<2><<<grid,dim3(32,4),0,st>>>(table,0,n_expert,ex_ids,in_f/2,b.activation,b.p+64,b.offsets,n_active,in_f,out_f);
+            } else {
+                if(arm==2) moe_m1_splitk_fast_partial_kernel<1><<<grid,dim3(32,4),0,st>>>(table,1,n_expert,ex_ids,in_f/2,b.activation,b.p+64,b.offsets,n_active,in_f,out_f);
+                else moe_m1_graph_splitk_partial_kernel<1><<<grid,dim3(32,4),0,st>>>(table,1,n_expert,ex_ids,in_f/2,b.activation,b.p+64,b.offsets,n_active,in_f,out_f);
+            }
+        } else {
+            float* target=(arm==2?b.b:b.a)+64;
+            if(gu){
+                if(arm==2) moe_m1_splitk_fast_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(b.p+64,target,row_scale,macro_g,macro_u,route_w,6,out_f,limit,b.offsets,n_active);
+                else moe_m1_graph_splitk_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(b.p+64,target,row_scale,macro_g,macro_u,route_w,6,out_f,limit,b.offsets,n_active);
+            } else {
+                if(arm==2) moe_m1_splitk_fast_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(b.p+64,target,row_scale,macro_g,macro_u,route_w,6,out_f,limit,b.offsets,n_active);
+                else moe_m1_graph_splitk_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(b.p+64,target,row_scale,macro_g,macro_u,route_w,6,out_f,limit,b.offsets,n_active);
             }
         }
-        if(count!=5 || records!=3 || kernels!=2 || mask!=7){
-            fprintf(stderr,"SPLITK_FAST_EVENT_CENSUS_FAILURE phase=%s nodes=%zu records=%zu kernels=%zu mask=%u\n",phase,count,records,kernels,mask);
-            return 40016;
-        }
-        fprintf(stderr,"SPLITK_FAST_EVENT_CENSUS_PASS phase=%s nodes=5 records=3 kernels=2 handles=begin,middle,end\n",phase);
+        GS_CHECK(cudaPeekAtLastError());
         return 0;
     };
     GS_CHECK(cudaMemcpyAsync(b.offsets,offsets.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
     GS_CHECK(cudaStreamSynchronize(st));
-    GS_CHECK(cudaStreamBeginCapture(st,cudaStreamCaptureModeThreadLocal));
-    int capture_rc=launch(2,6);
-    cudaError_t ended=cudaStreamEndCapture(st,&b.graph);
-    if(capture_rc) return capture_rc;
-    GS_CHECK(ended);
-    int event_rc=check_events(b.graph); if(event_rc) return event_rc;
-    GS_CHECK(cudaGraphInstantiate(&b.exec,b.graph,nullptr,nullptr,0));
-        // Both fixed-grid arms retain one capture across the entire CSR sweep.
-        struct Controls {
-            cudaGraph_t graphs[2]={}; cudaGraphExec_t execs[2]={};
-            ~Controls(){ for(int arm=0;arm<2;++arm){
-                if(execs[arm]) cudaGraphExecDestroy(execs[arm]);
-                if(graphs[arm]) cudaGraphDestroy(graphs[arm]); } }
-        } controls;
-        for(int arm=1;arm<2;++arm){
-            // Reproduce r1's uncaptured warmup and subsequent capture unchanged.
-            phase="instrument_uncaptured_control_with_events";
-            int rc=launch(arm,6); if(rc) return rc;
-            GS_CHECK(cudaStreamSynchronize(st));
-            phase="instrument_capture_off";
-            GS_CHECK(cudaStreamBeginCapture(st,cudaStreamCaptureModeThreadLocal));
-            rc=launch(arm,6);
-            cudaError_t end=cudaStreamEndCapture(st,&controls.graphs[arm]);
-            if(rc) return rc;
-            GS_CHECK(end);
-            rc=check_events(controls.graphs[arm]); if(rc) return rc;
-            GS_CHECK(cudaGraphInstantiate(&controls.execs[arm],controls.graphs[arm],nullptr,nullptr,0));
-        }
+    for(int arm=1;arm<=2;++arm) for(int part=0;part<2;++part){
+        phase=part==0?"instrument_capture_partial":"instrument_capture_reduce";
+        GS_CHECK(cudaStreamBeginCapture(st,cudaStreamCaptureModeThreadLocal));
+        int rc=launch_kernel(arm,part);
+        cudaError_t ended=cudaStreamEndCapture(st,&b.graphs[arm][part]);
+        if(rc) return rc;
+        GS_CHECK(ended);
+        size_t count=0; GS_CHECK(cudaGraphGetNodes(b.graphs[arm][part],nullptr,&count));
+        if(count!=1){ fprintf(stderr,"SPLITK_FAST_CAPTURE_FAILURE phase=%s nodes=%zu expected=1\n",phase,count); return 40016; }
+        cudaGraphNode_t node; GS_CHECK(cudaGraphGetNodes(b.graphs[arm][part],&node,&count));
+        cudaGraphNodeType type; GS_CHECK(cudaGraphNodeGetType(node,&type));
+        if(type!=cudaGraphNodeTypeKernel) return 40016;
+        GS_CHECK(cudaGraphInstantiate(&b.execs[arm][part],b.graphs[arm][part],nullptr,nullptr,0));
+        fprintf(stderr,"SPLITK_FAST_CAPTURE_PASS arm=%d part=%d kernel_nodes=1 event_nodes=0\n",arm,part);
+    }
     for(int live=derived?0:observed;live<=observed;++live){
         std::vector<int> prefix=offsets;
         if(derived) for(auto& v:prefix) v=std::min(v,live);
@@ -3243,7 +3212,11 @@ int memra_moe_m1_splitk_fast_component(
                     GS_CHECK(cudaMemsetAsync(b.p,0xff,(pn+128)*4,st));
                     if(cold) GS_CHECK(cudaMemsetAsync(b.flush,repeat+3,flush_bytes,st));
                     phase=arm==2?"instrument_replay_on":"instrument_replay_off";
-                    GS_CHECK(cudaGraphLaunch(arm==2?b.exec:controls.execs[arm],st));
+                    GS_CHECK(cudaEventRecord(b.begin,st));
+                    GS_CHECK(cudaGraphLaunch(b.execs[arm][0],st));
+                    GS_CHECK(cudaEventRecord(b.middle,st));
+                    GS_CHECK(cudaGraphLaunch(b.execs[arm][1],st));
+                    GS_CHECK(cudaEventRecord(b.end,st));
                     GS_CHECK(cudaEventSynchronize(b.end));
                     phase="instrument_elapsed_total";
                     float ms=0; GS_CHECK(cudaEventElapsedTime(&ms,b.begin,b.end));
@@ -3297,7 +3270,7 @@ int memra_moe_m1_splitk_fast_component(
             const size_t activation=size_t(live)*(out_f/SK_BN)*in_f*16*2*(gu?2:1);
             for(int arm : {1,2}){
                 const double pus=partial_us[arm]/20, rus=reduce_us[arm]/20;
-                printf("SPLITK_FAST_COMPONENT device=%d gu=%d route_origin=%s source_live=%d live=%d slices=%d cold=%d arm=%s flush_bytes=%zu codes_bytes=%zu scales_bytes=%zu weight_bytes=%zu activation_issued_bytes=%zu scratch_write_bytes=%zu partial_us=%.6f reduce_us=%.6f total_us=%.6f modeled_effective_weight_GBs=%.6f pct_nominal_peak_1792=%.6f measurements=20 bit_equal=1 deterministic=1 canaries=1 candidate_capture_count=1 all_timed_arms=replay\n",device,gu,origin,observed,live,slices,cold,arm==2?"on":"off",cold?flush_bytes:0,codes,scales,codes+scales,activation,scratch,pus,rus,totals[arm]/20,(codes+scales)/pus/1000,(codes+scales)/pus/1000/1792*100);
+                printf("SPLITK_FAST_COMPONENT device=%d gu=%d route_origin=%s source_live=%d live=%d slices=%d cold=%d arm=%s flush_bytes=%zu codes_bytes=%zu scales_bytes=%zu weight_bytes=%zu activation_issued_bytes=%zu scratch_write_bytes=%zu partial_us=%.6f reduce_us=%.6f total_us=%.6f modeled_effective_weight_GBs=%.6f pct_nominal_peak_1792=%.6f measurements=20 bit_equal=1 deterministic=1 canaries=1 candidate_capture_count=1 graphs_per_arm=2 events_outside_capture=1 all_timed_arms=replay\n",device,gu,origin,observed,live,slices,cold,arm==2?"on":"off",cold?flush_bytes:0,codes,scales,codes+scales,activation,scratch,pus,rus,totals[arm]/20,(codes+scales)/pus/1000,(codes+scales)/pus/1000/1792*100);
             }
         }
         // The down projection is the consumer of rowwise-packed GU output.
@@ -3305,7 +3278,8 @@ int memra_moe_m1_splitk_fast_component(
         // the actual captured projection must ignore them through the CSR.
         if(live < 6){
             GS_CHECK(cudaMemsetAsync(b.activation+size_t(live)*in_f,0x7b,size_t(6-live)*in_f*sizeof(__half),st));
-            GS_CHECK(cudaGraphLaunch(b.exec,st));
+            GS_CHECK(cudaGraphLaunch(b.execs[2][0],st));
+            GS_CHECK(cudaGraphLaunch(b.execs[2][1],st));
             std::vector<float> poisoned(n);
             GS_CHECK(cudaMemcpyAsync(poisoned.data(),b.b+64,n*4,cudaMemcpyDeviceToHost,st));
             GS_CHECK(cudaStreamSynchronize(st));
