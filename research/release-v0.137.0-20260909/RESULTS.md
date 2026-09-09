@@ -2,6 +2,8 @@
 
 PREPARED CANDIDATE ONLY. No tag or deployment is authorized by this record.
 
+Current status: both preparation blockers are cleared by [the full roster and artifact receipts](BLOCKER-CLOSURE.md). Earlier refusals below remain historical evidence. No tag or pair qualification is implied.
+
 Base main: `6285210078609c7e11aa23ae070ad581c184c153`. Required member #325: `dcfeab7c7`. Conditional #378 remains excluded pending the orchestrator decision and reviewed merge. The source already includes #377; it is inherited, although it is not a plain TP-2 cutover dependency.
 
 ## Battery scope
@@ -79,4 +81,4 @@ A helper mistakenly tried `tools/test_release_battery_roster.sh`, which does not
 
 At 2026-09-09T01:08Z all hosted checks on `8457cd3bf` passed: build, clippy, engine/server tests, sm_100a coverage, publish dry-run, boundary, gates and change classifier. Bugbot skipped. [CI run](https://github.com/avifenesh/memra/actions/runs/34295328494). The subsequent receipt/documentation commit changes no Rust/CUDA source or package versions; its hosted checks still gate merge.
 
-Still outstanding before tag: full Ornith/Qwen roster with pinned weights, two-device runtime/host and released TP-2 sampled qualification, final composition checks after the orchestrator's rebase, and a working pinned sm_100a artifact runner. The artifact attempt produced no output to retain or delete. The draft contains the exact go sequence and remains untagged.
+Still outstanding before tag: two-device runtime/host and released TP-2 sampled qualification, plus final composition checks after the orchestrator's rebase. The full roster and sm_100a artifact-runner blockers were subsequently cleared in `BLOCKER-CLOSURE.md`. The artifact attempt produced no output to retain or delete. The draft contains the exact go sequence and remains untagged.
