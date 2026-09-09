@@ -516,6 +516,7 @@ fn carried_prime_support(operation: OperationKind) -> OperationSupport {
         OperationKind::Embedding
             | OperationKind::RmsNorm
             | OperationKind::FullAttention
+            | OperationKind::PositionQueryScale
             | OperationKind::GatedDeltaNet
             | OperationKind::FusedAttentionGate
             | OperationKind::DenseMlp
@@ -570,6 +571,12 @@ pub fn decode_batch_program(plan: &ModelPlan) -> DecodeBatchProgram {
 pub fn decode_batch_unconverted(plan: &ModelPlan) -> bool {
     plan.trunk_operations()
         .contains(&OperationKind::HyperConnections)
+}
+
+/// Query-scaled YaRN currently has a native eager rewrite only.
+pub fn query_scaled_eager_only(plan: &ModelPlan) -> bool {
+    plan.trunk_operations()
+        .contains(&OperationKind::PositionQueryScale)
 }
 
 pub fn gdn_dspark_compatible(plan: &ModelPlan) -> bool {
@@ -717,6 +724,7 @@ fn native_eager_support(operation: OperationKind) -> OperationSupport {
         OperationKind::Embedding
             | OperationKind::RmsNorm
             | OperationKind::FullAttention
+            | OperationKind::PositionQueryScale
             | OperationKind::DenseMlp
             | OperationKind::SiluActivation
             | OperationKind::SerialResidual

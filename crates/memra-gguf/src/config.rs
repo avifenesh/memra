@@ -39,6 +39,7 @@ pub enum Arch {
     // 288-expert MoE + 1 shared, Sinkhorn hyper-connections (mHC), 1 NextN/MTP layer with its
     // own MLA attention
     Llama,
+    Ministral3, // Text-only Ministral 3: YaRN plus position-dependent query scaling.
     Other(String),
 }
 
@@ -69,6 +70,7 @@ impl Arch {
             // No public GGUF writes this arch yet; the name is memra's own (safetensors-first).
             "glm5-next" => Arch::Glm5Next,
             "llama" => Arch::Llama,
+            "ministral3" => Arch::Ministral3,
             other => Arch::Other(other.to_string()),
         }
     }
@@ -100,6 +102,7 @@ impl Arch {
             // is `glm5_next`, text_config's is `glm5_next_text` — same text architecture.
             "glm5_next" | "glm5_next_text" => "glm5-next",
             "gemma4" | "gemma4_text" => "gemma4",
+            "mistral3" | "ministral3" => "ministral3",
             // Mistral dense (MistralForCausalLM) is the llama execution program: RMSNorm,
             // GQA full attention, rope over the whole head, SwiGLU, no QK-norm, no biases.
             "llama" | "mistral" => "llama",
@@ -155,7 +158,8 @@ impl Arch {
             | Arch::Qwen3
             | Arch::Qwen3Moe
             | Arch::Olmoe
-            | Arch::Llama => Some(AttentionGateKind::None),
+            | Arch::Llama
+            | Arch::Ministral3 => Some(AttentionGateKind::None),
             // DeepSeek-V4-Flash rides its own dsv4 lane (loader/bring-up), never the hybrid
             // q_gate_split path; its attn_q out-features carry no fused gate — declared None
             // like the other DSA-family arch (GlmDsa) rather than left to a fallback.
@@ -1138,8 +1142,8 @@ pub struct ModelConfig {
     pub dsv4: Option<DeepSeekV4Config>,
     // Qwen3.8-Flash-Next extras — `qwen4_exp` only (None for every other arch)
     pub qwen4exp: Option<Qwen4ExpConfig>,
-    /// YaRN rope scaling on the full-attention rope. Populated ONLY by the qwen4_exp HF
-    /// arm today (scope: that family's long-context lane) — other arches keep their own
+    /// YaRN rope scaling on full attention for qwen4_exp and Ministral 3. The latter's
+    /// plan adds unit rotary amplitude and position-dependent query scaling. Other arches keep their own
     /// rope-scaling handling (dsv4 flattens into DeepSeekV4Config, llama3 synthesizes
     /// rope_freqs) and are untouched.
     pub rope_yarn: Option<YarnRopeConfig>,
@@ -1241,6 +1245,10 @@ impl ModelConfig {
     pub fn from_gguf(g: &GgufFile) -> Self {
         let raw_arch = g.arch().unwrap_or("unknown");
         let arch = Arch::parse(raw_arch);
+        assert!(
+            arch != Arch::Ministral3,
+            "ministral3 requires its pinned HF safetensors configuration; GGUF import is not implemented"
+        );
         let u = |k: &str| g.meta_arch(k).and_then(|v| v.as_u64()).map(|x| x as u32);
         let f = |k: &str| g.meta_arch(k).and_then(|v| v.as_f32());
 
@@ -2048,7 +2056,14 @@ impl ModelConfig {
         };
         // YaRN long-context scaling — parsed for THIS family only (see ModelConfig::rope_yarn
         // scope note); other arches keep their existing rope-scaling handling untouched.
-        let rope_yarn = if qwen4exp.is_some() {
+        let rope_yarn = if arch == Arch::Ministral3 {
+            Some(YarnRopeConfig {
+                factor: 16.0,
+                original_context: 16384,
+                beta_fast: 32.0,
+                beta_slow: 1.0,
+            })
+        } else if qwen4exp.is_some() {
             qwen4exp_rope_yarn(c)
         } else {
             None
@@ -3052,6 +3067,95 @@ impl Default for HfConfig {
     }
 }
 
+/// The first Ministral pack accepts the pinned 8B text program only. Refuse changes
+/// to math instead of importing llama defaults. Metadata and quantization are separate.
+fn validate_ministral3(c: &HfConfig, text: &JsonObj, top: &JsonObj) {
+    assert_eq!(
+        (
+            c.num_hidden_layers,
+            c.hidden_size,
+            c.intermediate_size,
+            c.num_attention_heads,
+            c.num_key_value_heads,
+            c.head_dim,
+            c.vocab_size
+        ),
+        (34, 4096, 14336, 32, Some(8), Some(128), 131072),
+        "ministral3: unsupported text geometry"
+    );
+    assert_eq!(c.max_position_embeddings, 262144, "ministral3: context pin");
+    assert_eq!(
+        c.hidden_act.as_deref(),
+        Some("silu"),
+        "ministral3: hidden_act"
+    );
+    assert_eq!(c.rms_norm_eps, 0.00001, "ministral3: norm epsilon");
+    assert!(
+        c.sliding_window.is_none(),
+        "ministral3: sliding window unsupported"
+    );
+    for key in ["attention_bias", "mlp_bias", "tie_word_embeddings"] {
+        assert!(
+            !text
+                .boolean(key)
+                .or_else(|| top.boolean(key))
+                .unwrap_or(false),
+            "ministral3: {key} unsupported"
+        );
+    }
+    let rope = text
+        .object("rope_parameters")
+        .expect("ministral3: rope_parameters required");
+    let keys = [
+        "rope_type",
+        "type",
+        "factor",
+        "original_max_position_embeddings",
+        "beta_fast",
+        "beta_slow",
+        "rope_theta",
+        "mscale",
+        "mscale_all_dim",
+        "llama_4_scaling_beta",
+    ];
+    for (key, _) in rope.fields() {
+        assert!(keys.contains(&key), "ministral3: unknown rope key {key}");
+    }
+    assert_eq!(
+        rope.string("rope_type").as_deref(),
+        Some("yarn"),
+        "ministral3: rope_type"
+    );
+    assert!(
+        rope.string("type").is_none_or(|x| x == "yarn"),
+        "ministral3: conflicting rope type"
+    );
+    for (key, value) in [
+        ("factor", 16.0),
+        ("beta_fast", 32.0),
+        ("beta_slow", 1.0),
+        ("rope_theta", 1000000.0),
+        ("mscale", 1.0),
+        ("mscale_all_dim", 1.0),
+        ("llama_4_scaling_beta", 0.1),
+    ] {
+        assert_eq!(
+            rope.f32(key),
+            Some(value),
+            "ministral3: {key} differs from pinned program"
+        );
+    }
+    assert_eq!(
+        rope.u32("original_max_position_embeddings"),
+        Some(16384),
+        "ministral3: original context"
+    );
+    assert!(
+        c.num_experts.unwrap_or(0) == 0 && c.num_nextn_predict_layers.unwrap_or(0) == 0,
+        "ministral3: unexpected MoE or MTP"
+    );
+}
+
 impl HfConfig {
     fn llama3_rope_factors(&self, base: f32, n_dims: u32) -> Option<Vec<f32>> {
         if self.rope_scaling_type.as_deref() != Some("llama3") {
@@ -3258,6 +3362,17 @@ impl HfConfig {
             && let Some(arch0) = top.first_string_in_array("architectures")
         {
             cfg.model_type = arch0;
+        }
+        assert!(
+            cfg.model_type != "mistral3",
+            "mistral3 wrapper requires a ministral3 text_config"
+        );
+        if cfg.model_type == "ministral3" {
+            let tc = top.object("text_config");
+            let text = tc.as_ref().unwrap_or(&top);
+            validate_ministral3(&cfg, text, &top);
+            // This pack is explicitly text-only. Never compile Pixtral as a generic tower.
+            cfg.vision = None;
         }
         cfg
     }
@@ -4111,6 +4226,7 @@ pub(crate) mod hf_tests {
             (Arch::Qwen3Moe, AttentionGateKind::None),
             (Arch::Olmoe, AttentionGateKind::None),
             (Arch::Llama, AttentionGateKind::None),
+            (Arch::Ministral3, AttentionGateKind::None),
         ];
         for (arch, want) in cases {
             assert_eq!(

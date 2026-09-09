@@ -1,0 +1,285 @@
+[server] build: memra-0.137.0-88a124f2db78 (id: source-tree, git: 70b9508d1ede)
+[server] starting; models config = [("ministral3-8b", "/workspace/ministral/nvfp4", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "ministral3-8b" <- /workspace/ministral/nvfp4
+[worker]   loaded "ministral3-8b": 34 layers, eos=2, stop=[2]
+[worker] ministral3-8b: template caps tools=true think=false think_switch=false chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="tekken" instruct=Some("mistral") chat_defaults=Some(0.05)/Some(1.0)
+[worker] ministral3-8b: decode wave cap 1; scheduler tick cap 1
+[worker] ministral3-8b: EAGER-ONLY serving (native eager plan — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "ministral3-8b": plain 63104 B/token, spec 63104 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["ministral3-8b"]
+[server] listening on http://127.0.0.1:8116
+[meter] admit id=chatcmpl-d99b6f7bce75e0d603c6b6991b95d53e tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=478 path=plain = 63104 B/token x ctx + 61MB prefill-workspace + 0MB fixed = 92MB
+[admission] fixed residual high-water: model="ministral3-8b" 0MB (observed 27MB at ctx 422 path=plain)
+[prefix-cache] insert probation (seed): 158 tokens, 10.0MB (resident 10.0MB / 2147MB, model ministral3-8b)
+[fa-pool] grow #0 dev=0 o_len 0 -> 40960 ml_len 0 -> 320 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 40960 -> 81920 ml_len 320 -> 640 (retired kept, zero=false)
+[meter] admit id=chatcmpl-4952a61b8c1f956be53603c65cffe19f tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=469 path=plain = 63104 B/token x ctx + 83MB prefill-workspace + 0MB fixed = 112MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 213 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 213 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-e152a0310b1094353a32a18662d7fa82 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=408 path=plain = 63104 B/token x ctx + 84MB prefill-workspace + 0MB fixed = 110MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 216 prompt tokens; model ministral3-8b)
+[prefix-cache] insert probation (seed): 216 tokens, 13.6MB (resident 23.6MB / 2147MB, model ministral3-8b)
+[meter] admit id=chatcmpl-a3472aa171a33c280d9d30ba5500b94e tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=484 path=plain = 63104 B/token x ctx + 114MB prefill-workspace + 0MB fixed = 144MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 292 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 292 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-3f06c5e2e35771c0eaa6af602f7535af tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=558 path=plain = 63104 B/token x ctx + 142MB prefill-workspace + 0MB fixed = 178MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 366 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 366 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[fa-pool] grow #2 dev=0 o_len 81920 -> 163840 ml_len 640 -> 1280 (retired kept, zero=false)
+[meter] admit id=chatcmpl-a57ab8019c345522be7c12fe669d52fb tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=633 path=plain = 63104 B/token x ctx + 172MB prefill-workspace + 0MB fixed = 212MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 441 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 441 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-0152df052c7392faf3a19e3bf71beaaa tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=705 path=plain = 63104 B/token x ctx + 200MB prefill-workspace + 0MB fixed = 244MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 513 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 513 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-9bd853ff92095b65051584c75563b67f tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=783 path=plain = 63104 B/token x ctx + 230MB prefill-workspace + 0MB fixed = 279MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 591 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 591 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-5d3b070cabdd1e50dc2556de5bb6c02c tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=856 path=plain = 63104 B/token x ctx + 258MB prefill-workspace + 0MB fixed = 312MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 664 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 664 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[fa-pool] grow #3 dev=0 o_len 163840 -> 327680 ml_len 1280 -> 2560 (retired kept, zero=false)
+[meter] admit id=chatcmpl-d996c5631e79e61645fb167778b63fce tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=933 path=plain = 63104 B/token x ctx + 288MB prefill-workspace + 0MB fixed = 347MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 741 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 741 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-b8943bf5f92aff342216926035f00c10 tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-ca5220399408307cfeccde671d790c13 tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-c01e42530be5aa73c6546541dd182c88 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=478 path=plain = 63104 B/token x ctx + 61MB prefill-workspace + 0MB fixed = 92MB
+[meter] admit id=chatcmpl-b678898c41c937922cd3579358aa99c2 tenant=default lane=interactive model="ministral3-8b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 158 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 158 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 158 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 158 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 158 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 158 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 158 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 158 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-62d388926304db5842149f21e68756ce tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=469 path=plain = 63104 B/token x ctx + 83MB prefill-workspace + 0MB fixed = 112MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 213 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 213 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-3efe764fd0401a7ed68411680a55b258 tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-11953611cc32121b98418f59300f9532 tenant=default lane=interactive model="ministral3-8b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 213 prompt tokens; model ministral3-8b)
+[meter] admit id=chatcmpl-b0f73ab82f34ed798bdc1cc722c83221 tenant=default lane=interactive model="ministral3-8b"
+[prefix-cache] hit: 158 of 213 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 213 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 213 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 213 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 213 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-f661bbeb293abd729f2c31f5a067ea56 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=403 path=plain = 63104 B/token x ctx + 82MB prefill-workspace + 0MB fixed = 108MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 211 prompt tokens; model ministral3-8b)
+[prefix-cache] insert probation (seed): 211 tokens, 13.3MB (resident 36.9MB / 2147MB, model ministral3-8b)
+[meter] admit id=chatcmpl-ce6ecf4c7913680f92d86186553bb423 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=408 path=plain = 63104 B/token x ctx + 84MB prefill-workspace + 0MB fixed = 110MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 216 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 216 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-b32682bf98d9cb94754ed9f8626691b5 tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-6732049c6a9368c4f2b084fa1164aa61 tenant=default lane=interactive model="ministral3-8b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 216 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 216 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 216 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 216 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-704a9579850e4a430cdadac5fdd9da22 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=479 path=plain = 63104 B/token x ctx + 112MB prefill-workspace + 0MB fixed = 142MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 287 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 211 of 287 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 211 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-2b0513407830e0ae34286b0e4ff5e906 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=484 path=plain = 63104 B/token x ctx + 114MB prefill-workspace + 0MB fixed = 144MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 292 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 292 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-c1810be78a98a3ce6a31bb82c7bf878f tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-97ca67883c2f1a0d5281998ad8d57bde tenant=default lane=interactive model="ministral3-8b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 292 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 292 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 292 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 292 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-5bb15418dc014ae098360a536886f4e1 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=554 path=plain = 63104 B/token x ctx + 141MB prefill-workspace + 0MB fixed = 176MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 362 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 211 of 362 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 211 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-f8d83623ffcc0e38c282e0e9ab6a474f tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-e04a9acfa2a74d8046ff91f834c9a28e tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=557 path=plain = 63104 B/token x ctx + 142MB prefill-workspace + 0MB fixed = 177MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 365 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 365 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 365 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 365 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-9021aa26df86d7717dbc7b262fc81ffe tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=559 path=plain = 63104 B/token x ctx + 143MB prefill-workspace + 0MB fixed = 178MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 367 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 367 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-afe319b7bc7f57c41d4a03f830bc4d32 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=627 path=plain = 63104 B/token x ctx + 169MB prefill-workspace + 0MB fixed = 209MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 435 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 211 of 435 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 211 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-68964adac3107a8d29c3e75c6faa5ae8 tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-b54e1771eaff3d40fe3894e0c535a39e tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=632 path=plain = 63104 B/token x ctx + 171MB prefill-workspace + 0MB fixed = 211MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 440 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 440 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 440 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 440 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-efc9c1ecb3722f6fbed3d6145a5503d3 tenant=default lane=interactive model="ministral3-8b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 440 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 440 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-efc9ba7ac0db77fbabd524c462ff8986 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=704 path=plain = 63104 B/token x ctx + 199MB prefill-workspace + 0MB fixed = 244MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 512 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 512 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-338b57bad4bb96510aae8c352fda90ea tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-e858c249149dc68b934739ef7a2dab08 tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-777f5a7e908f4410a23fec8231656674 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=701 path=plain = 63104 B/token x ctx + 198MB prefill-workspace + 0MB fixed = 242MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 509 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 211 of 509 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 211 tokens, model ministral3-8b)
+[admission] request cost: model="ministral3-8b" ctx=705 path=plain = 63104 B/token x ctx + 200MB prefill-workspace + 0MB fixed = 244MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 513 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 513 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[admission] request cost: model="ministral3-8b" ctx=704 path=plain = 63104 B/token x ctx + 199MB prefill-workspace + 0MB fixed = 244MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 512 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 512 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-8731aa7570ef934fa02bcd0f37114d57 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=777 path=plain = 63104 B/token x ctx + 228MB prefill-workspace + 0MB fixed = 277MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 585 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 585 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-8407a81a04db75280a75c3637b18ef14 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=775 path=plain = 63104 B/token x ctx + 227MB prefill-workspace + 0MB fixed = 276MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 583 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 211 of 583 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 211 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-b220386f8ffe78191ed019982c386f63 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=783 path=plain = 63104 B/token x ctx + 230MB prefill-workspace + 0MB fixed = 279MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 591 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 591 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-7cdfd21adbcb0f9c7d9707a99b623c3f tenant=default lane=interactive model="ministral3-8b"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 591 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 591 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=msg_536f0df45cdd6b60e807d6c17ce87748 tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-31c837002e2ec0b2ac083d7148f0406d tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=451 path=plain = 63104 B/token x ctx + 51MB prefill-workspace + 0MB fixed = 79MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 131 prompt tokens; model ministral3-8b)
+[prefix-cache] insert probation (seed): 131 tokens, 8.3MB (resident 45.2MB / 2147MB, model ministral3-8b)
+[meter] admit id=chatcmpl-9d1d68284d9f07021aed9fb8699978eb tenant=default lane=interactive model="ministral3-8b"
+[meter] admit id=chatcmpl-8a18fea6cbfe1c692842ab46922860db tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=852 path=plain = 63104 B/token x ctx + 257MB prefill-workspace + 0MB fixed = 311MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 660 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 660 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[admission] request cost: model="ministral3-8b" ctx=851 path=plain = 63104 B/token x ctx + 256MB prefill-workspace + 0MB fixed = 310MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 659 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 211 of 659 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 211 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-df123a5fdd693286ab4d84da659122e3 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=855 path=plain = 63104 B/token x ctx + 258MB prefill-workspace + 0MB fixed = 312MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 663 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 663 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[admission] request cost: model="ministral3-8b" ctx=856 path=plain = 63104 B/token x ctx + 258MB prefill-workspace + 0MB fixed = 312MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 664 prompt tokens; model ministral3-8b)
+[meter] admit id=msg_ea8eeadebc9fa1697b3341fa391f0331 tenant=default lane=interactive model="ministral3-8b"
+[prefix-cache] hit: 216 of 664 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-bb29d4e29b7766d146ef5ebf8fd79210 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=945 path=plain = 63104 B/token x ctx + 268MB prefill-workspace + 0MB fixed = 328MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 689 prompt tokens; model ministral3-8b)
+[prefix-cache] insert probation (seed): 689 tokens, 43.5MB (resident 88.7MB / 2147MB, model ministral3-8b)
+[meter] admit id=chatcmpl-637de7ebf210c2d4392f93bddb5fce20 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=926 path=plain = 63104 B/token x ctx + 286MB prefill-workspace + 0MB fixed = 344MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 734 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 734 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-dcce0ff8a5ed2ca56ccfbc5589912a82 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=927 path=plain = 63104 B/token x ctx + 286MB prefill-workspace + 0MB fixed = 345MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 735 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 735 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-b8f45665afc3b122baed5041b7b56614 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=925 path=plain = 63104 B/token x ctx + 285MB prefill-workspace + 0MB fixed = 344MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 733 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 211 of 733 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 211 tokens, model ministral3-8b)
+[meter] admit id=resp_ddba0861badcbae264a86d278c84b15c tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=928 path=plain = 63104 B/token x ctx + 286MB prefill-workspace + 0MB fixed = 345MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 736 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 216 of 736 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 216 tokens, model ministral3-8b)
+[admission] request cost: model="ministral3-8b" ctx=953 path=plain = 63104 B/token x ctx + 246MB prefill-workspace + 0MB fixed = 306MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 633 prompt tokens; model ministral3-8b)
+[prefix-cache] insert probation (seed): 633 tokens, 39.9MB (resident 128.6MB / 2147MB, model ministral3-8b)
+[meter] admit id=resp_f5d646af1e04e4d804b4708d998f460d tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=944 path=plain = 63104 B/token x ctx + 268MB prefill-workspace + 0MB fixed = 327MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 688 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 633 of 688 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 633 tokens, model ministral3-8b)
+[meter] admit id=chatcmpl-aa6d8504c29c4010e658c1234a6b2b7b tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=478 path=plain = 63104 B/token x ctx + 61MB prefill-workspace + 0MB fixed = 92MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 158 prompt tokens; model ministral3-8b)
+[prefix-cache] hit: 158 of 158 prompt tokens from cache (model ministral3-8b)
+[prefix-cache] source lease released after restore fence (entry 158 tokens, model ministral3-8b)
+[meter] admit id=cmpl-bb618fad57f5aba74f8214cc3c044678 tenant=default lane=interactive model="ministral3-8b"
+[admission] request cost: model="ministral3-8b" ctx=8258 path=plain = 63104 B/token x ctx + 1661MB prefill-workspace + 0MB fixed = 2182MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 8193 prompt tokens; model ministral3-8b)
+[prefix-cache] insert probation (seed): 8193 tokens, 517.0MB (resident 645.6MB / 2147MB, model ministral3-8b)
+[fa-pool] grow #4 dev=0 o_len 327680 -> 655360 ml_len 2560 -> 5120 (retired kept, zero=false)
+[meter] admit id=cmpl-fa292a3f1c9610009a1a4dada1bcfb39 tenant=default lane=interactive model="ministral3-8b"
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

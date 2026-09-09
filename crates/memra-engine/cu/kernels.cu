@@ -5757,3 +5757,11 @@ extern "C" __global__ void q4e_idx_append_bf16(
     float x = src[r * src_stride + src_col + c];
     dst[(dst_row + r) * (long)width + c] = __bfloat16_as_ushort(__float2bfloat16(x));
 }
+
+// Position scaling is applied AFTER YaRN RoPE, to queries only. Positions are
+// device-resident absolute sequence positions, including carried prime and decode.
+extern "C" __global__ void position_query_scale_f32(float* q, const int* pos,
+                                                   int width, int rows, int original, float beta) {
+    int i=blockIdx.x*blockDim.x+threadIdx.x;
+    if(i<width*rows) q[i] *= 1.0f + beta*log1pf(float(pos[i/width]/original));
+}

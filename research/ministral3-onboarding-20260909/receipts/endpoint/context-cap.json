@@ -1,0 +1,13 @@
+{
+  "request_tokens": 262145,
+  "max_tokens": 1,
+  "status": 400,
+  "response": {
+    "error": {
+      "message": "prompt (262145 tok) >= context cap (262144)",
+      "type": "invalid_request_error",
+      "param": "messages",
+      "code": "context_length_exceeded"
+    }
+  }
+}

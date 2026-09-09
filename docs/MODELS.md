@@ -46,6 +46,7 @@ question from what is supported:
 | GLM-5.3-Flash | **safetensors** (FP8 e4m3, MIT) on the hand-written `glm5_next` path — **NativeReference**; multi-card TP serving, vision, and MTP spec gated (see [its card](models/glm53-flash.md)) | — |
 | Qwen3.8-Flash-Next | **bring-up only** — hand-written `qwen4_exp` gate path on the minted NVFP4 artifact, real-checkpoint eager gate green; ModelPlan loader not wired, no serving surface (see [its card](models/qwen38-flash-next.md)) | — |
 | Hy3 | **safetensors** — canonical BF16 plan **NativeReference**; the exact all-expert ModelOpt W4A16 artifact is **NativeQualified** on four-card Blackwell receipts (see [its card](models/hy3.md)) | — |
+| Ministral-3-8B-Instruct-2512 | **NativeReference** text-only NVFP4 pack; source-FP32, Tekken/template and sampled c=1/c=4 tool gates passed ([card](models/ministral3.md)) | native eager qualification |
 | everything else in the table | GGUF | — |
 
 Nothing above is a roadmap. It is where the code is, and it changes by decision. A row moving

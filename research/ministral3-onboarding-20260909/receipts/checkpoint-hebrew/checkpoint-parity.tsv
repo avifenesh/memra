@@ -1,0 +1,12 @@
+status	passed
+reference_engine	transformers-pinned-source-fp32
+native_engine	memra-reference-fp32
+numeric_class	source-weights-float32-accumulation
+tokens	1,4580,2627,14941,5697,37814
+vocab	131072
+max_abs	0.00006532669
+max_rel	0.03010456
+reference_argmax	1267
+native_argmax	1267
+artifact_lock_sha256	520cdca6d05020cd48fca7ce79d9c061992a801bb645eff5d1e1aa10abeec090
+native_runner_sha256	88a835fb2e62add2c64788e38d430e4429e010fef4f4078a3b0dffcf6dd645fc

@@ -295,6 +295,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let e = Engine::new(0)?;
     println!("GPU: {}", e.ctx().name()?);
     let mut fails = 0;
+    {
+        let positions = [0, 16383, 16384, 32768];
+        let width = 128 * 2;
+        let input: Vec<f32> = (0..positions.len() * width)
+            .map(|i| ((i % 37) as f32 - 18.0) / 19.0)
+            .collect();
+        let mut q = e.htod(&input)?;
+        let pos = e.htod_i32(&positions)?;
+        e.position_query_scale(&mut q, &pos, width, positions.len(), 16384, 0.1)?;
+        let actual = e.dtoh(&q)?;
+        let expected: Vec<f32> = input
+            .iter()
+            .enumerate()
+            .map(|(i, x)| x * (1.0 + 0.1 * ((1 + positions[i / width] / 16384) as f32).ln()))
+            .collect();
+        let error = actual
+            .iter()
+            .zip(&expected)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        let ok = error < 2e-7;
+        println!(
+            "ministral-query-scale-boundaries max_abs={error} {}",
+            if ok {
+                "OK"
+            } else {
+                fails += 1;
+                "FAIL"
+            }
+        );
+        cells.record("ministral-query-scale-boundaries");
+    }
 
     {
         let ok = (1..=32).all(|width| {

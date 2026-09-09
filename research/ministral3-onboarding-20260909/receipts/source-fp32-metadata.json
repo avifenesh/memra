@@ -1,0 +1,19 @@
+{
+  "tokens": [
+    1,
+    4580,
+    2627,
+    14941,
+    5697,
+    37814
+  ],
+  "weight_program": "source FP8 codes * weight_scale_inv in FP32",
+  "activation_program": "FP32; static FP8 activation quantization disabled for this oracle class",
+  "reference_files": {
+    "modeling_ministral3.py": "482a4e2f1b4903bba963528b305d999a2f39ee7a020071874ee5daced7d39f83",
+    "modeling_rope_utils.py": "60438ad10eceddc1809b35256eb8de4492f759888bd929d9f3ae971fa255c60f",
+    "configuration_ministral3.py": "92438408b796088aba2696d62ddaeeb6d2a4c036e3bbacdcab7bcee2fb08a097"
+  },
+  "torch": "2.13.0+cu130",
+  "argmax": 1267
+}

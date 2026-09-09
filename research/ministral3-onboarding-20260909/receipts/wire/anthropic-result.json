@@ -1,0 +1,73 @@
+{
+  "request": {
+    "model": "ministral3-8b",
+    "max_tokens": 192,
+    "messages": [
+      {
+        "role": "user",
+        "content": "מה הסכום המדויק של חשבונית INV-2026-17? הפעל את הכלי get_invoice_total ואחר כך ענה בעברית."
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "call_361269847e382cce",
+            "name": "get_invoice_total",
+            "input": {
+              "invoice_id": "INV-2026-17"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "call_361269847e382cce",
+            "content": "{\"invoice_id\": \"INV-2026-17\", \"total\": 731, \"currency\": \"ILS\"}"
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "get_invoice_total",
+        "description": "Return exact invoice total. Use this for invoice totals.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "invoice_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "invoice_id"
+          ]
+        }
+      }
+    ]
+  },
+  "status": 200,
+  "response": {
+    "id": "msg_ea8eeadebc9fa1697b3341fa391f0331",
+    "type": "message",
+    "role": "assistant",
+    "model": "ministral3-8b",
+    "content": [
+      {
+        "type": "text",
+        "text": "הסכום המדויק של חשבונית **INV-2026-17** הוא **731 ש\"ח**."
+      }
+    ],
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 689,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 33
+    }
+  }
+}

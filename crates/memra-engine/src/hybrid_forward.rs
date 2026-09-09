@@ -2058,6 +2058,12 @@ impl HybridModel {
     /// prevent. Every trunk entry point that has not been converted calls this first, so the
     /// unconverted set is a list of named refusals rather than a list of silent wrong answers.
     pub(crate) fn refuse_hyper(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if crate::plan_backend::query_scaled_eager_only(&self.plan) {
+            return Err(format!(
+                "{path} has no PositionQueryScale rewrite; use native eager execution"
+            )
+            .into());
+        }
         if let Some(topology) = self.hyper.as_ref() {
             return Err(format!(
                 "{path} runs a serial residual, but this model's ModelPlan declares \
@@ -8762,25 +8768,18 @@ impl HybridModel {
         e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv * t, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
-        e.rope_neox(
+        self.full_attention_rope(
+            e,
             &mut q,
-            pos_d,
-            head_dim,
-            rope_dims,
-            n_head,
-            t,
-            geometry.rope_base,
-            1.0,
-        )?;
-        e.rope_neox(
             &mut k,
             pos_d,
             head_dim,
             rope_dims,
+            n_head,
             n_head_kv,
             t,
             geometry.rope_base,
-            1.0,
+            il,
         )?;
 
         // CACHE SIDE-EFFECT: append the T post-rope K/V token rows (token-major [T, kv_dim] ==
@@ -9480,6 +9479,42 @@ impl HybridModel {
         e.matmul(&la.ssm_out, &gn, t)
     }
 
+    /// Shared RoPE seam for native full attention, cached prime and decode.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn full_attention_rope(
+        &self,
+        e: &Engine,
+        q: &mut CudaSlice<f32>,
+        k: &mut CudaSlice<f32>,
+        pos: &CudaSlice<i32>,
+        hd: usize,
+        dims: usize,
+        nh: usize,
+        nkv: usize,
+        rows: usize,
+        base: f32,
+        il: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use memra_gguf::model_plan::{AttentionPlan, RopeFactors};
+        if let AttentionPlan::Full(a) = &self.plan.layers[il].attention
+            && let RopeFactors::YarnQueryScaled {
+                original_context,
+                query_beta,
+                ..
+            } = a.rope.factors
+        {
+            let ff = self
+                .query_scaled_rope
+                .as_ref()
+                .ok_or("missing query-scaled YaRN factors")?;
+            e.rope_neox2(q, k, pos, hd, dims, nh, nkv, rows, base, 1.0, Some(ff))?;
+            e.position_query_scale(q, pos, hd * nh, rows, original_context, query_beta)?;
+            return Ok(());
+        }
+        e.rope_neox(q, pos, hd, dims, nh, rows, base, 1.0)?;
+        e.rope_neox(k, pos, hd, dims, nkv, rows, base, 1.0)
+    }
+
     /// Full-attention mixer with QK-norm, partial RoPE, sigmoid output gate (qwen35 :257-336).
     ///
     /// `il` = layer index: step35 needs it (per-layer n_head / rope width / window / gate) and
@@ -9535,25 +9570,18 @@ impl HybridModel {
         e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv * t, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
-        e.rope_neox(
+        self.full_attention_rope(
+            e,
             &mut q,
-            pos_d,
-            head_dim,
-            rope_dims,
-            n_head,
-            t,
-            geometry.rope_base,
-            1.0,
-        )?;
-        e.rope_neox(
             &mut k,
             pos_d,
             head_dim,
             rope_dims,
+            n_head,
             n_head_kv,
             t,
             geometry.rope_base,
-            1.0,
+            il,
         )?;
 
         // SDPA

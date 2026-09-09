@@ -46,6 +46,8 @@ pub enum Val {
 /// arguments and the OpenAI `tool_calls[].id` used to resolve tool-response names.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ToolCall {
+    /// Mistral preserves string arguments byte-for-byte when replaying assistant history.
+    pub raw_arguments: Option<String>,
     pub name: String,
     pub params: Vec<(String, String)>,
     /// gemma4: typed arguments, dictsorted and dialect-rendered by the gemma arm.
@@ -192,6 +194,18 @@ pub fn apply_chat_template_str(
     messages: &[(&str, &str)],
     add_generation_prompt: bool,
 ) -> String {
+    if template.is_some_and(template_is_mistral) {
+        let turns: Vec<Turn> = messages
+            .iter()
+            .map(|(r, c)| Turn {
+                role: r.to_string(),
+                content: c.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        return apply_mistral_template(template.unwrap(), &turns, &[], &[])
+            .expect("invalid Mistral history");
+    }
     // Tencent Hy3 (`hy_v3`): a completely different special-token dialect (no ChatML).
     // Detected by its `hy_User` token literal; rendered by the dedicated arm below.
     // Legacy path = the template's own default ("no_think") — byte-identical to history.
@@ -462,6 +476,9 @@ pub fn apply_chat_template_tools_ex(
     reasoning_effort: Option<&str>,
     dsv4_encoding: Option<Dsv4Encoding>,
 ) -> Result<String, String> {
+    if template.is_some_and(template_is_mistral) {
+        return apply_mistral_template(template.unwrap(), turns, tools_struct, tools_json);
+    }
     let has_tool_features = !tools_json.is_empty()
         || turns
             .iter()
@@ -1578,7 +1595,8 @@ fn apply_glm5_template(
 /// dsv4 protocol, or the glm5 `<tool_call>` grammar. Shared by the renderer dispatch and the
 /// worker caps probe.
 pub fn template_has_tools_branch(t: &str) -> bool {
-    template_is_dsv4(t)
+    template_is_mistral(t)
+        || template_is_dsv4(t)
         || template_is_glm5(t)
         || t.contains("<tools>")
         || (t.contains("<|turn>") && t.contains("<|tool>"))
@@ -4018,4 +4036,133 @@ mod tests {
             "tools_low",
         )
     }
+}
+
+/// The Mistral v7 protocol is distinct from the older JSON-list TOOL_CALLS format.
+pub fn template_is_mistral(t: &str) -> bool {
+    t.contains("[SYSTEM_PROMPT]") && t.contains("[TOOL_CALLS]") && t.contains("[ARGS]")
+}
+
+fn apply_mistral_template(
+    template: &str,
+    turns: &[Turn],
+    tools: &[Val],
+    tools_json: &[String],
+) -> Result<String, String> {
+    if turns.is_empty() {
+        return Err("Mistral conversation must not be empty".into());
+    }
+    let mut out = String::from("<s>");
+    if turns[0].role != "system" {
+        // Read the literal default from the pinned artifact, including {today}/{yesterday}.
+        // The publisher does not call strftime or substitute those placeholders.
+        let prefix = "set default_system_message = '";
+        let body = template
+            .split_once(prefix)
+            .ok_or("Mistral template missing default system literal")?
+            .1;
+        let end = body
+            .find("' %}")
+            .ok_or("Mistral template has unterminated default system literal")?;
+        let default = body[..end].replace("\\'", "'");
+        out.push_str("[SYSTEM_PROMPT]");
+        out.push_str(&default);
+        out.push_str("[/SYSTEM_PROMPT]");
+    }
+    let mut merged: Vec<Turn> = Vec::new();
+    for turn in turns {
+        if !matches!(turn.role.as_str(), "user" | "assistant" | "tool" | "system") {
+            return Err(format!("Mistral unsupported role {}", turn.role));
+        }
+        if let Some(last) = merged.last_mut()
+            && last.role == turn.role
+            && matches!(turn.role.as_str(), "user" | "assistant")
+        {
+            // Empty strings participate in the publisher's join too.
+            last.content.push_str("\n\n");
+            last.content.push_str(&turn.content);
+            last.tool_calls.extend(turn.tool_calls.clone());
+            continue;
+        }
+        merged.push(turn.clone());
+    }
+    if !matches!(merged[0].role.as_str(), "system" | "user") {
+        return Err("Mistral conversation must start with user or system".into());
+    }
+    for pair in merged.windows(2) {
+        let (a, b) = (pair[0].role.as_str(), pair[1].role.as_str());
+        let valid = match a {
+            "system" | "user" => matches!(b, "user" | "assistant" | "system"),
+            "assistant" => matches!(b, "assistant" | "user" | "tool"),
+            "tool" => matches!(b, "assistant" | "tool" | "user"),
+            _ => false,
+        };
+        if !valid {
+            return Err(format!("Mistral unexpected role {b} after {a}"));
+        }
+    }
+    let mut emitted = false;
+    for turn in &merged {
+        match turn.role.as_str() {
+            "system" => {
+                out.push_str("[SYSTEM_PROMPT]");
+                out.push_str(&turn.content);
+                out.push_str("[/SYSTEM_PROMPT]");
+            }
+            "user" => {
+                if !emitted {
+                    if !tools.is_empty() {
+                        let defs = Val::Arr(
+                            tools
+                                .iter()
+                                .map(|f| {
+                                    Val::Obj(vec![
+                                        ("type".into(), Val::Str("function".into())),
+                                        ("function".into(), f.clone()),
+                                    ])
+                                })
+                                .collect(),
+                        );
+                        out.push_str("[AVAILABLE_TOOLS]");
+                        py_json(&defs, &mut out);
+                        out.push_str("[/AVAILABLE_TOOLS]");
+                    } else if !tools_json.is_empty() {
+                        // Compat callers supply complete tool objects in JSON. The server
+                        // supplies typed definitions above, preserving Python JSON spacing.
+                        out.push_str("[AVAILABLE_TOOLS][");
+                        out.push_str(&tools_json.join(", "));
+                        out.push_str("][/AVAILABLE_TOOLS]");
+                    }
+                    emitted = true;
+                }
+                out.push_str("[INST]");
+                out.push_str(&turn.content);
+                out.push_str("[/INST]");
+            }
+            "assistant" => {
+                if turn.content.is_empty() && turn.tool_calls.is_empty() {
+                    return Err("Mistral assistant requires content or tool calls".into());
+                }
+                out.push_str(&turn.content);
+                for c in &turn.tool_calls {
+                    out.push_str("[TOOL_CALLS]");
+                    out.push_str(&c.name);
+                    out.push_str("[ARGS]");
+                    if let Some(raw) = &c.raw_arguments {
+                        out.push_str(if raw.is_empty() { "{}" } else { raw });
+                    } else {
+                        py_json(&Val::Obj(c.args.clone()), &mut out);
+                    }
+                }
+                out.push_str("</s>");
+            }
+            "tool" => {
+                out.push_str("[TOOL_RESULTS]");
+                out.push_str(&turn.content);
+                out.push_str("[/TOOL_RESULTS]");
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok(out)
 }

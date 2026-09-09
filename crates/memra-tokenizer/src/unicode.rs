@@ -1643,3 +1643,60 @@ mod tests {
         );
     }
 }
+
+/// Tekken's ordered Unicode alternatives. Rust regex supplies the Unicode general
+/// categories; only the trailing whitespace lookahead needs an explicit equivalent.
+/// Keep the regex recognition in lib.rs exact: nearby patterns are different programs.
+pub fn split_tekken(text: &str) -> Vec<String> {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        let prefix = crate::TEKKEN_PRETOKENIZE_REGEX
+            .split(r"|\s+(?!\S)")
+            .next()
+            .unwrap();
+        regex::Regex::new(&format!("^(?:{prefix})")).expect("Tekken Unicode pattern")
+    });
+    let mut rest = text;
+    let mut out = Vec::new();
+    while !rest.is_empty() {
+        let end = if let Some(m) = re.find(rest) {
+            m.end()
+        } else {
+            let mut end = 0;
+            let mut last = 0;
+            for (i, ch) in rest.char_indices() {
+                if !ch.is_whitespace() {
+                    break;
+                }
+                last = i;
+                end = i + ch.len_utf8();
+            }
+            // \s+(?!\S) backtracks one whitespace when followed by non-space.
+            if end < rest.len() && last > 0 {
+                last
+            } else if end > 0 {
+                end
+            } else {
+                rest.chars().next().unwrap().len_utf8()
+            }
+        };
+        out.push(rest[..end].to_string());
+        rest = &rest[end..];
+    }
+    out
+}
+
+#[cfg(test)]
+mod tekken_tests {
+    use super::split_tekken;
+    #[test]
+    fn case_digits_marks_and_whitespace() {
+        assert_eq!(
+            split_tekken("HTTPServer 123"),
+            ["HTTPServer", " ", "1", "2", "3"]
+        );
+        assert_eq!(split_tekken("שלום שָׁלוֹם"), ["שלום", " שָׁלוֹם"]);
+        assert_eq!(split_tekken("  hello"), [" ", " hello"]);
+        assert_eq!(split_tekken("a\r\n  "), ["a", "\r\n", "  "]);
+    }
+}

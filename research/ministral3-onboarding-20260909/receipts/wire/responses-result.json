@@ -1,0 +1,80 @@
+{
+  "request": {
+    "model": "ministral3-8b",
+    "input": [
+      {
+        "role": "user",
+        "content": "מה הסכום המדויק של חשבונית INV-2026-17? הפעל את הכלי get_invoice_total ואחר כך ענה בעברית."
+      },
+      {
+        "id": "fc_9917ebada5d7337b2e9af6e51638c677",
+        "type": "function_call",
+        "status": "completed",
+        "call_id": "call_361269847e382cce",
+        "name": "get_invoice_total",
+        "arguments": "{\"invoice_id\":\"INV-2026-17\"}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "call_361269847e382cce",
+        "output": "{\"invoice_id\": \"INV-2026-17\", \"total\": 731, \"currency\": \"ILS\"}"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_invoice_total",
+        "description": "Return exact invoice total. Use this for invoice totals.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "invoice_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "invoice_id"
+          ]
+        }
+      }
+    ],
+    "max_output_tokens": 192
+  },
+  "status": 200,
+  "response": {
+    "id": "resp_f5d646af1e04e4d804b4708d998f460d",
+    "object": "response",
+    "created_at": 1788961300,
+    "status": "completed",
+    "model": "ministral3-8b",
+    "output": [
+      {
+        "id": "msg_9d30052255887a92d2aec6297f329b95",
+        "type": "message",
+        "role": "assistant",
+        "status": "completed",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "הסכום המדויק של חשבונית **INV-2026-17** הוא **731 ש\"ח**.",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "error": null,
+    "incomplete_details": null,
+    "parallel_tool_calls": false,
+    "previous_response_id": null,
+    "store": false,
+    "tool_choice": "auto",
+    "usage": {
+      "input_tokens": 688,
+      "input_tokens_details": {
+        "cached_tokens": 633
+      },
+      "output_tokens": 33,
+      "total_tokens": 721
+    }
+  }
+}

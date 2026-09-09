@@ -3882,6 +3882,7 @@ pub struct HybridModel {
     pub gemma4_aux: Option<GemmaAux>,
     /// Sliding-gated-MoE tuned-program auxiliaries, selected from canonical operations.
     pub step35_aux: Option<Step35Aux>,
+    pub query_scaled_rope: Option<CudaSlice<f32>>,
     /// PRIME ACTIVATION SLABS (piecewise-graph foundation, 2026-07-26): the layer loop's
     /// seven trunk transients live in RESIDENT per-model buffers instead of per-call pool
     /// allocs — kills ~224 alloc/free API calls per prime AND freezes the Lt GEMM operand
@@ -3959,6 +3960,16 @@ impl HybridModel {
     }
 
     pub fn rewrite_allowed(&self, surface: memra_gguf::execution_manifest::RewriteSurface) -> bool {
+        if crate::plan_backend::query_scaled_eager_only(&self.plan)
+            && !matches!(
+                surface,
+                memra_gguf::execution_manifest::RewriteSurface::DecodeEager
+                    | memra_gguf::execution_manifest::RewriteSurface::CarriedPrime
+            )
+        {
+            return false;
+        }
+
         self.rewrite_qualifications
             .as_ref()
             .is_none_or(|qualifications| qualifications.allows(surface))
@@ -4227,6 +4238,23 @@ impl HybridModel {
             }
         };
         let cfg = src.try_config().map_err(std::io::Error::other)?;
+        if cfg.arch == memra_gguf::config::Arch::Ministral3
+            && let Some(dir) = src.st_dir()
+        {
+            let raw = std::fs::read_to_string(dir.join("config.json"))?;
+            let config = memra_gguf::config::JsonObj::parse(&raw);
+            if config
+                .raw("quantization_config")
+                .map(memra_gguf::config::JsonObj::parse)
+                .is_some_and(|q| {
+                    q.string("quant_method").as_deref() == Some("fp8")
+                        && q.string("activation_scheme").as_deref() == Some("static")
+                })
+            {
+                return Err("Ministral static-activation FP8 is not implemented by this native path; use a separately gated NVFP4 mint".into());
+            }
+        }
+
         let plan = match memra_gguf::model_packs::for_config(&cfg) {
             Some(pack) => pack.compile_plan(&cfg)?,
             None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
@@ -6344,6 +6372,26 @@ impl HybridModel {
                 }
             }
         }
+        let query_scaled_rope = match plan.layers.first().map(|l| &l.attention) {
+            Some(memra_gguf::model_plan::AttentionPlan::Full(a)) => match a.rope.factors {
+                memra_gguf::model_plan::RopeFactors::YarnQueryScaled {
+                    factor,
+                    original_context,
+                    beta_fast,
+                    beta_slow,
+                    ..
+                } => Some(e.htod(&memra_gguf::model_plan::yarn_frequency_divisors(
+                    a.rope.dimensions,
+                    a.rope.base,
+                    factor,
+                    original_context,
+                    beta_fast,
+                    beta_slow,
+                ))?),
+                _ => None,
+            },
+            _ => None,
+        };
         let model = HybridModel {
             cfg,
             plan,
@@ -6360,6 +6408,7 @@ impl HybridModel {
             d2t_gpu: std::sync::OnceLock::new(),
             gemma4_aux,
             step35_aux,
+            query_scaled_rope,
             prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),
             dspark_vgraphs: std::sync::Mutex::new(None),
             step_grouped_prefill: std::sync::Mutex::new(StepEpGroupedPrefill::default()),

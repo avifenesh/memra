@@ -11232,6 +11232,27 @@ impl Engine {
         Ok(())
     }
 
+    pub fn position_query_scale(
+        &self,
+        q: &mut CudaSlice<f32>,
+        pos: &CudaSlice<i32>,
+        width: usize,
+        rows: usize,
+        original: u32,
+        beta: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let f = self.func("position_query_scale_f32");
+        let cfg = LaunchConfig::for_num_elems((width * rows) as u32);
+        let (w, r, o) = (width as i32, rows as i32, original as i32);
+        let stream = self.gpu.stream();
+        let mut b = stream.launch_builder(&f);
+        b.arg(q).arg(pos).arg(&w).arg(&r).arg(&o).arg(&beta);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     pub fn scale_rows(
         &self,
         y: &mut CudaSlice<f32>,

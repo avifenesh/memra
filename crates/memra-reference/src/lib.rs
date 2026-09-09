@@ -7178,6 +7178,23 @@ fn full_attention(
         rope_mscale,
     );
 
+    if let memra_gguf::model_plan::RopeFactors::YarnQueryScaled {
+        original_context,
+        query_beta,
+        ..
+    } = plan.rope.factors
+    {
+        for (position, row) in query.chunks_mut(q_width).enumerate() {
+            let scale = memra_gguf::model_plan::position_query_scale(
+                position,
+                original_context,
+                query_beta,
+            );
+            for v in row {
+                *v *= scale;
+            }
+        }
+    }
     let mut attended = vec![0.0; tokens * query_heads * value_dim];
     let scale = match plan.scale {
         AttentionScale::InverseSqrtKeyDim => 1.0 / (key_dim as f32).sqrt(),
@@ -7818,6 +7835,23 @@ fn rope_factor_values(
 
     let width = plan.dimensions as usize / 2;
     Ok(match plan.factors {
+        RopeFactors::YarnQueryScaled {
+            factor,
+            original_context,
+            beta_fast,
+            beta_slow,
+            ..
+        } => (
+            Some(memra_gguf::model_plan::yarn_frequency_divisors(
+                plan.dimensions,
+                plan.base,
+                factor,
+                original_context,
+                beta_fast,
+                beta_slow,
+            )),
+            1.0,
+        ),
         RopeFactors::None => (None, 1.0),
         RopeFactors::PartialRotary { factor } => {
             let keep = (width as f32 * factor.clamp(0.0, 1.0)).round() as usize;
@@ -8069,6 +8103,33 @@ mod tests {
             output.state.layers[0],
             ReferenceLayerState::Kv { .. }
         ));
+    }
+
+    #[test]
+    fn ministral3_tiny_executes_and_query_scaling_boundaries() {
+        let plan = memra_gguf::model_packs::ministral3::PACK
+            .compile_tiny_plan()
+            .unwrap();
+        let fixture = deterministic_fixture(&plan).unwrap();
+        let output = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!(output.logits.len(), fixture.token_ids.len() * 32);
+        assert!(output.logits.iter().all(|x| x.is_finite()));
+        for (p, expected) in [
+            (0, 1.0),
+            (16383, 1.0),
+            (16384, 1.0693147),
+            (32768, 1.1098613),
+        ] {
+            assert!(
+                (memra_gguf::model_plan::position_query_scale(p, 16384, 0.1) - expected).abs()
+                    < 1e-7
+            );
+        }
+        let memra_gguf::model_plan::AttentionPlan::Full(a) = &plan.layers[0].attention else {
+            panic!()
+        };
+        let (_, amplitude) = rope_factor_values(&a.rope, &fixture.weights).unwrap();
+        assert_eq!(amplitude, 1.0);
     }
 
     #[test]

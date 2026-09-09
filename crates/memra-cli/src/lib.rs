@@ -104,9 +104,30 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                 .or_else(|| std::env::var_os("MEMRA_NATIVE_CHECKPOINT_RUNNER").map(PathBuf::from))
                 .ok_or("checkpoint parity requires --native-runner or MEMRA_NATIVE_CHECKPOINT_RUNNER; no fallback is allowed")?;
             let native_path = out_dir.join("native-oracle.tsv");
-            run_native_checkpoint(&runner, &request.source, &native_path)?;
-            let runner_hash = hex_sha256(&std::fs::read(&runner)?);
             let expected = parse_checkpoint_oracle(&std::fs::read_to_string(&oracle_path)?)?;
+            let request_path = out_dir.join("oracle-request.tsv");
+            let request_text = std::fs::read_to_string(&request_path)?;
+            let tokens = expected
+                .tokens
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            let request_text = request_text
+                .lines()
+                .map(|line| {
+                    if line.starts_with("tokens\t") {
+                        format!("tokens\t{tokens}")
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n";
+            write_atomic(&request_path, request_text.as_bytes())?;
+            run_native_checkpoint(&runner, &request.source, &native_path, &expected.tokens)?;
+            let runner_hash = hex_sha256(&std::fs::read(&runner)?);
             let actual = parse_checkpoint_oracle(&std::fs::read_to_string(&native_path)?)?;
             let receipt = match compare_checkpoint_oracles(&expected, &actual, gate) {
                 Ok(receipt) => receipt,
@@ -667,6 +688,7 @@ fn run_native_checkpoint(
     runner: &Path,
     source: &str,
     output: &Path,
+    tokens: &[u32],
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !Path::new(source).is_dir() {
         return Err(
@@ -676,7 +698,7 @@ fn run_native_checkpoint(
     }
     let result = Command::new(runner)
         .arg(source)
-        .args(["1", "2", "3", "4"])
+        .args(tokens.iter().map(u32::to_string))
         .env("MEMRA_FULL_PREC", "1")
         .env("MEMRA_ORACLE_OUT", output)
         .output()?;
@@ -2298,6 +2320,35 @@ mod tests {
                 assert!(result.is_err());
             }
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_checkpoint_runner_uses_the_supplied_oracle_tokens() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("memra-oracle-argv-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let runner = root.join("runner.sh");
+        std::fs::write(
+            &runner,
+            b"#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$MEMRA_ORACLE_OUT\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&runner, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let output = root.join("argv.txt");
+        run_native_checkpoint(
+            &runner,
+            root.to_str().unwrap(),
+            &output,
+            &[4580, 2627, 14941],
+        )
+        .unwrap();
+        let args = std::fs::read_to_string(output).unwrap();
+        assert_eq!(
+            args.lines().skip(1).collect::<Vec<_>>(),
+            ["4580", "2627", "14941"]
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

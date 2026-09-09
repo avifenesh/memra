@@ -16,6 +16,7 @@ pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
 pub mod llama_dense;
+pub mod ministral3;
 pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
@@ -134,6 +135,7 @@ pub const PACKS: &[&ModelPack] = &[
     &step35::PACK,
     &hy3::PACK,
     // Last: the plainest dense stack, so a family with its own pack is always matched first.
+    &ministral3::PACK,
     &llama_dense::PACK,
 ];
 

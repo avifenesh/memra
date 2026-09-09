@@ -1,5 +1,5 @@
-//! Native checkpoint-parity runner for `llama_dense` (DictaLM-3.0-24B and any other dense
-//! llama/mistral checkpoint).
+//! Native checkpoint-parity runner for the `llama_dense` and `ministral3` packs.
+//! Each pack supplies its own normalized rotary program and tensor contract.
 //!
 //! Protocol (fixed by `run_native_checkpoint` in memra-cli): argv is
 //! `<checkpoint_dir> <token_id>...`, `MEMRA_ORACLE_OUT` names the output TSV, and the output
@@ -73,7 +73,14 @@ fn run() -> Result<(), Fail> {
 /// deterministic fixture, run through BOTH `execute()` and the streamed path, must agree
 /// bit-for-bit.
 fn self_test() -> Result<(), Fail> {
-    let pack = model_packs::by_alias("llama_dense").ok_or("llama_dense pack is not registered")?;
+    for family in ["llama_dense", "ministral3"] {
+        self_test_pack(family)?;
+    }
+    Ok(())
+}
+
+fn self_test_pack(family: &str) -> Result<(), Fail> {
+    let pack = model_packs::by_alias(family).ok_or("dense pack is not registered")?;
     let plan = pack.compile_tiny_plan()?;
     let fixture = deterministic_fixture(&plan)?;
     let expected = execute(&plan, &fixture.weights, &fixture.token_ids)?;
@@ -140,13 +147,17 @@ fn run_checkpoint(dir: &Path, token_ids: &[u32], out: &Path) -> Result<(), Fail>
     let started = Instant::now();
     let config_text = std::fs::read_to_string(dir.join("config.json"))?;
     let config = ModelConfig::from_hf(&HfConfig::parse(&config_text));
-    if config.arch != Arch::Llama {
-        return Err(format!("checkpoint arch {:?} is not the llama program", config.arch).into());
+    if !matches!(config.arch, Arch::Llama | Arch::Ministral3) {
+        return Err(format!(
+            "checkpoint arch {:?} is not a supported dense program",
+            config.arch
+        )
+        .into());
     }
     let pack = model_packs::for_config(&config).ok_or("no model pack matches this config")?;
-    if pack.family != "llama_dense" {
+    if !matches!(pack.family, "llama_dense" | "ministral3") {
         return Err(format!(
-            "config selects the {} pack, not llama_dense; run that family's runner",
+            "config selects the {} pack, not a supported dense pack; run that family's runner",
             pack.family
         )
         .into());

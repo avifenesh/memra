@@ -235,6 +235,15 @@ pub enum RopeFactors {
     PartialRotary {
         factor: f32,
     },
+    /// YaRN with unit RoPE amplitude and query scaling AFTER rotation, at absolute
+    /// position p: 1 + query_beta * ln(1 + floor(p / original_context)).
+    YarnQueryScaled {
+        factor: f32,
+        original_context: u32,
+        beta_fast: f32,
+        beta_slow: f32,
+        query_beta: f32,
+    },
     Yarn {
         factor: f32,
         original_context: u32,
@@ -289,6 +298,11 @@ pub fn yarn_frequency_divisors(
             (extra / inv) as f32
         })
         .collect()
+}
+
+/// The multiplier applies to the rotated query only, never to cached keys.
+pub fn position_query_scale(position: usize, original_context: u32, beta: f32) -> f32 {
+    1.0 + beta * (1.0 + (position / original_context as usize) as f32).ln()
 }
 
 /// transformers `get_mscale(factor)` — the derived YaRN attention factor multiplied into
@@ -1385,6 +1399,9 @@ impl LayerPlan {
         match &self.attention {
             AttentionPlan::Full(attention) => {
                 operations.push(OperationKind::FullAttention);
+                if matches!(attention.rope.factors, RopeFactors::YarnQueryScaled { .. }) {
+                    operations.push(OperationKind::PositionQueryScale);
+                }
                 push_gate(attention.output_gate, operations);
             }
             AttentionPlan::SlidingWindow { attention, .. } => {
@@ -1895,7 +1912,15 @@ fn attention_geometry(
             // MTP draft (same generic tail, mtp=true) — the draft shares the main rotary
             // semantics (SEMANTICS.md §Rope/§MTP), and the QSA indexer consumes the same
             // cos/sin, so one plan field feeds all three consumers.
-            factors: if let Some(yarn) = cfg.rope_yarn.as_ref() {
+            factors: if cfg.arch == Arch::Ministral3 {
+                RopeFactors::YarnQueryScaled {
+                    factor: 16.0,
+                    original_context: 16384,
+                    beta_fast: 32.0,
+                    beta_slow: 1.0,
+                    query_beta: 0.1,
+                }
+            } else if let Some(yarn) = cfg.rope_yarn.as_ref() {
                 RopeFactors::Yarn {
                     factor: yarn.factor,
                     original_context: yarn.original_context,
@@ -2168,7 +2193,7 @@ fn qk_norm_presence(cfg: &ModelConfig) -> TensorPresence {
         || cfg.step35.is_some()
     {
         TensorPresence::Required
-    } else if matches!(cfg.arch, Arch::Llama | Arch::Other(_)) {
+    } else if matches!(cfg.arch, Arch::Llama | Arch::Ministral3 | Arch::Other(_)) {
         TensorPresence::Absent
     } else {
         TensorPresence::Optional
@@ -2189,6 +2214,7 @@ pub enum OperationKind {
     VisionTokenInjection,
     RmsNorm,
     FullAttention,
+    PositionQueryScale,
     SlidingWindowAttention,
     LatentMlaAttention,
     CompressedMlaAttention,

@@ -1,6 +1,8 @@
 # Ministral 3: native onboarding scope, 2026-09-09
 
-Status: unsupported. Static audit of Memra `182819614874be818ff8bef0cfaf13cb3b8051e1`. No implementation, build, execution gate or support promotion is included here.
+Implementation update: the authorized native lane now has a pack, tokenizer/template parity, and native source-FP32 checkpoint parity. See [the model card](ministral3.md) and `research/ministral3-onboarding-20260909/GATES.md` for the current evidence. The original scoping snapshot below is retained as history.
+
+Original status: unsupported. Static audit of Memra `182819614874be818ff8bef0cfaf13cb3b8051e1`. No implementation, build, execution gate or support promotion is included here.
 
 Source: [Ministral-3-8B-Instruct-2512 config](https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512/blob/5b26027e7b19eeb4b7352e1fed3926375dd2cb4d/config.json), revision `5b26027e7b19eeb4b7352e1fed3926375dd2cb4d`. The wrapper is `mistral3`, the text decoder `ministral3`. Its 34 layers have hidden size 4096, FFN 14336, GQA 32/8, head dimension 128, RMSNorm epsilon 1e-5, SiLU, no projection biases and full causal attention. `sliding_window` is null. Vision can be excluded for text-only execution, with image input refused explicitly.
 

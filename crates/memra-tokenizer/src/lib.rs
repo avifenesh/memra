@@ -4,7 +4,7 @@
 //! `src/unicode.cpp`), Rust glue hand-rolled. Built from the model's own GGUF
 //! tokenizer metadata (`tokenizer.ggml.*`) so it is integer-exact for that model.
 //!
-//! Scope: the `gpt2` vocab model with the `qwen35`/`qwen2`/`deepseek-v3`/`glm4` pre-tokenizers,
+//! Scope: the `gpt2` vocab model with the `qwen35`/`qwen2`/`deepseek-v3`/`glm4`/`tekken` pre-tokenizers,
 //! plus the `gemma4` SPM-style path — see `SUPPORTED_PRETOKENIZERS`. A model declaring anything else
 //! is REFUSED at load (`UnknownPretokenizer`), because an unported pre-tokenizer produces
 //! fluent output with wrong token ids and nothing downstream can see it.
@@ -58,7 +58,10 @@ const GLM4_PRETOKENIZE_REGEX: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\
 
 /// Every `tokenizer.ggml.pre` id memra implements an EXACT split for. This is the allowlist a
 /// load is checked against and the list quoted in the load error, so the two can never drift.
-pub const SUPPORTED_PRETOKENIZERS: &[&str] = &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"];
+const TEKKEN_PRETOKENIZE_REGEX: &str = r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+
+pub const SUPPORTED_PRETOKENIZERS: &[&str] =
+    &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4", "tekken"];
 
 /// Escape hatch for deliberate experimentation with a family whose pre-tokenizer is not ported
 /// yet. Set to `1` to downgrade the hard load error to a loud per-load WARN.
@@ -138,6 +141,8 @@ pub enum PreSplit {
     /// `unicode::split_glm4` — the zai-org GLM-4.x / GLM-5.x line (llama.cpp
     /// `LLAMA_VOCAB_PRE_TYPE_CHATGLM4`). qwen2's pattern with `\p{N}{1,3}` digit grouping.
     Glm4,
+    /// Ministral 3 case-sensitive Unicode splitter, including individual digits.
+    Tekken,
     /// gemma4 SPM-style BPE: `bpe_tokenize` splits whole lines itself and the `pre` id is never
     /// consulted. Requires the `gemma4` vocab model, not just the `pre` string.
     Spm,
@@ -167,6 +172,7 @@ impl PreSplit {
             ("qwen35" | "qwen2", false) => Ok(PreSplit::Qwen35),
             ("deepseek-v3", false) => Ok(PreSplit::DeepseekV3),
             ("glm4", false) => Ok(PreSplit::Glm4),
+            ("tekken", false) => Ok(PreSplit::Tekken),
             ("gemma4", true) => Ok(PreSplit::Spm),
             _ => {
                 let err = UnknownPretokenizer {
@@ -940,6 +946,7 @@ impl Tokenizer {
             // pattern with `\p{N}{1,3}` digit grouping, and literal `\p{L}` letter runs that
             // do NOT fold combining marks the way the qwen35 machine does.
             PreSplit::Glm4 => unicode::split_glm4(text),
+            PreSplit::Tekken => unicode::split_tekken(text),
             // MEMRA_ALLOW_UNKNOWN_PRETOKENIZER=1 — the operator asked for wrong ids. The WARN
             // was printed at load; do not repeat it once per fragment.
             PreSplit::UnknownFallbackQwen35 => unicode::split_qwen35(text),
@@ -1333,6 +1340,7 @@ fn pre_from_split_regexes(regexes: &[String]) -> Option<&'static str> {
         // identifies it, and the one-atom `{1,3}` delta from qwen2 is why the comparison has
         // to stay byte-exact.
         [one] if one == GLM4_PRETOKENIZE_REGEX => Some("glm4"),
+        [one] if one == TEKKEN_PRETOKENIZE_REGEX => Some("tekken"),
         [a, b, c]
             if a == DEEPSEEK_V3_SPLIT_REGEXES[0]
                 && b == DEEPSEEK_V3_SPLIT_REGEXES[1]
@@ -1389,7 +1397,7 @@ mod pretokenizer_tests {
         // what the code accepts
         assert_eq!(
             SUPPORTED_PRETOKENIZERS,
-            &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"]
+            &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4", "tekken"]
         );
     }
 

@@ -2743,25 +2743,18 @@ impl HybridModel {
         k = kn;
         let rope_dims = geometry.n_rot as usize;
         // rope pos from the resident device counter (no per-step host upload).
-        e.rope_neox(
+        self.full_attention_rope(
+            e,
             &mut q,
-            pos_d,
-            head_dim,
-            rope_dims,
-            n_head,
-            1,
-            geometry.rope_base,
-            1.0,
-        )?;
-        e.rope_neox(
             &mut k,
             pos_d,
             head_dim,
             rope_dims,
+            n_head,
             n_head_kv,
             1,
             geometry.rope_base,
-            1.0,
+            il,
         )?;
 
         let kvl = cache.kv[il].as_mut().unwrap();
@@ -3588,25 +3581,18 @@ impl HybridModel {
         e.rms_norm_opt(&k, fa.k_norm_w(), &mut kn, head_dim, n_head_kv, eps)?;
         k = kn;
         let rope_dims = geometry.n_rot as usize;
-        e.rope_neox(
+        self.full_attention_rope(
+            e,
             &mut q,
-            pos_d,
-            head_dim,
-            rope_dims,
-            n_head,
-            1,
-            geometry.rope_base,
-            1.0,
-        )?;
-        e.rope_neox(
             &mut k,
             pos_d,
             head_dim,
             rope_dims,
+            n_head,
             n_head_kv,
             1,
             geometry.rope_base,
-            1.0,
+            il,
         )?;
 
         // append k,v into the RESIDENT GPU QUANTIZED KV cache at the current position (q8_0 K /

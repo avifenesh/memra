@@ -158,6 +158,7 @@ pub struct ToolStreamParser {
     /// Tencent HY3 dialect: reasoning closes with `</think:opensource>` and calls use the
     /// suffixed `<tool_calls:opensource>` protocol.
     hy3: bool,
+    mistral: bool,
     /// Separator-newline budget right after `</think>` (the template emits `</think>\n\n`).
     postthink_nl: u8,
 }
@@ -228,8 +229,108 @@ impl ToolStreamParser {
             dsv4: false,
             glm5: false,
             hy3: false,
+            mistral: false,
             postthink_nl: 0,
         }
+    }
+
+    pub fn mistral() -> Self {
+        let mut p = Self::new(HashMap::new(), false);
+        p.mistral = true;
+        p
+    }
+
+    /// Parse a complete JSON object as soon as its closing brace arrives. EOS ends
+    /// the final call; malformed bytes stay content and never fabricate tool actions.
+    fn push_mistral(&mut self, final_chunk: bool) -> Vec<Piece> {
+        const OPEN: &str = "[TOOL_CALLS]";
+        let mut out = Vec::new();
+        loop {
+            let Some(start) = self.buf.find(OPEN) else {
+                let keep = if final_chunk {
+                    0
+                } else {
+                    partial_suffix_len(&self.buf, OPEN)
+                };
+                let end = self.buf.len() - keep;
+                emit_content(&mut out, self.buf[..end].to_string());
+                self.buf.drain(..end);
+                break;
+            };
+            if start > 0 {
+                emit_content(&mut out, self.buf[..start].to_string());
+                self.buf.drain(..start);
+            }
+            let body = &self.buf[OPEN.len()..];
+            let mut quoted = false;
+            let mut escaped = false;
+            let mut next = None;
+            for (i, c) in body.char_indices() {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if quoted && c == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if c == '"' {
+                    quoted = !quoted;
+                    continue;
+                }
+                if !quoted && body[i..].starts_with(OPEN) {
+                    next = Some(i + OPEN.len());
+                    break;
+                }
+            }
+            let mut consumed = None;
+            if let Some(args) = body.find("[ARGS]") {
+                let name = &body[..args];
+                if !name.is_empty()
+                    && !name
+                        .chars()
+                        .any(|c| c.is_whitespace() || matches!(c, '[' | ']'))
+                {
+                    let offset = OPEN.len() + args + "[ARGS]".len();
+                    let mut json = serde_json::Deserializer::from_str(&self.buf[offset..])
+                        .into_iter::<serde_json::Value>();
+                    if let Some(Ok(value)) = json.next()
+                        && value.is_object()
+                    {
+                        let arguments = serde_json::to_string(&value).unwrap();
+                        let id = format!(
+                            "call_{:016x}",
+                            fnv1a64(&[
+                                &self.n_calls.to_le_bytes(),
+                                name.as_bytes(),
+                                arguments.as_bytes()
+                            ])
+                        );
+                        self.n_calls += 1;
+                        out.push(Piece::Call(ParsedToolCall {
+                            id,
+                            name: name.to_string(),
+                            arguments,
+                        }));
+                        consumed = Some(offset + json.byte_offset());
+                    }
+                }
+            }
+            if let Some(end) = consumed {
+                self.buf.drain(..end);
+                continue;
+            }
+            if let Some(next) = next {
+                emit_content(&mut out, self.buf[..next].to_string());
+                self.buf.drain(..next);
+                continue;
+            }
+            if final_chunk {
+                emit_content(&mut out, std::mem::take(&mut self.buf));
+            }
+            break;
+        }
+        out
     }
 
     /// deepseek-v4 (encoding_dsv4) parser (lane/dsv4-template): reasoning routes to `</think>`
@@ -307,6 +408,9 @@ impl ToolStreamParser {
 
     pub fn push(&mut self, text: &str) -> Vec<Piece> {
         self.buf.push_str(text);
+        if self.mistral {
+            return self.push_mistral(false);
+        }
         let mut out = Vec::new();
         loop {
             match self.state {
@@ -605,6 +709,9 @@ impl ToolStreamParser {
     /// surfaced raw (opening tag restored) — same malformed policy. A generation that ended
     /// still inside the think segment flushes the tail as reasoning (never-closed `</think>`).
     pub fn finish(&mut self) -> Vec<Piece> {
+        if self.mistral {
+            return self.push_mistral(true);
+        }
         let mut out = Vec::new();
         if !self.buf.is_empty() {
             let tail = std::mem::take(&mut self.buf);
@@ -1982,5 +2089,63 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
         ));
         assert!(!tail_ends_with_tool_call("</tool_cal"));
         assert!(!tail_ends_with_tool_call(""));
+    }
+}
+
+#[cfg(test)]
+mod mistral_tests {
+    use super::*;
+    #[test]
+    fn fragmented_multiple_calls_and_json_strings() {
+        let text = r#"שלום[TOOL_CALLS]one[ARGS]{"text":"שלום } [TOOL_CALLS] [ARGS]"}[TOOL_CALLS]two[ARGS]{"n":2}"#;
+        let mut p = ToolStreamParser::mistral();
+        let mut pieces = Vec::new();
+        for c in text.chars() {
+            pieces.extend(p.push(&c.to_string()));
+        }
+        pieces.extend(p.finish());
+        let calls: Vec<_> = pieces
+            .iter()
+            .filter_map(|p| {
+                if let Piece::Call(c) = p {
+                    Some(c)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "one");
+        assert_eq!(calls[1].name, "two");
+        assert_ne!(calls[0].id, calls[1].id);
+        let content: String = pieces
+            .iter()
+            .filter_map(|p| {
+                if let Piece::Content(c) = p {
+                    Some(c.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(content, "שלום");
+    }
+    #[test]
+    fn malformed_is_preserved_and_later_call_survives() {
+        for bad in [
+            "[TOOL_CALLS]x[ARGS]{",
+            "[TOOL_CALLS][ARGS]{}",
+            "[TOOL_CALLS]x[ARGS][]",
+            "[TOOL_CALLS]x[ARGS]{bad}",
+        ] {
+            let mut p = ToolStreamParser::mistral();
+            let mut pieces = p.push(bad);
+            pieces.extend(p.finish());
+            assert_eq!(pieces, vec![Piece::Content(bad.into())]);
+        }
+        let mut p = ToolStreamParser::mistral();
+        let mut pieces = p.push("[TOOL_CALLS]bad[ARGS]{broken[TOOL_CALLS]ok[ARGS]{}");
+        pieces.extend(p.finish());
+        assert!(matches!(pieces.last(),Some(Piece::Call(c)) if c.name=="ok"));
     }
 }

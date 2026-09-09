@@ -749,3 +749,9 @@ Composition receipts: [private Darklanes #535](https://github.com/avifenesh/dark
 capture, both function censuses, eager identity, refusals and five sanity rows.
 Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
 environment policy after the eager OFF oracle. No kernel arithmetic changes.
+
+### Ministral query scaling
+
+| Kernel | Purpose | Type | Architecture | Dispatch | Binding |
+|---|---|---|---|---|---|
+| `position_query_scale_f32` | Query multiplier after YaRN using absolute positions | f32 | all | plan operation `PositionQueryScale` | `Engine::position_query_scale` |

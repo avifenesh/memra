@@ -1,0 +1,11 @@
+warning: memra-engine@0.137.0: nvcc auto-detected CUDA 13.0 at /usr/local/cuda-13.0/bin/nvcc
+   Compiling memra-server v0.137.0 (/workspace/memra/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 16.06s
+     Running unittests src/lib.rs (target/release/deps/memra_server-700bdac3d1767432)
+
+running 2 tests
+test toolcall::mistral_tests::malformed_is_preserved_and_later_call_survives ... ok
+test toolcall::mistral_tests::fragmented_multiple_calls_and_json_strings ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 656 filtered out; finished in 0.00s
+

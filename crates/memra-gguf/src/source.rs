@@ -404,6 +404,7 @@ fn is_quant_auxiliary(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
     [
         ".weight_scale",
         ".weight_scale_inv",
+        ".activation_scale",
         ".weight_scale_2",
         ".weight_global_scale",
         ".input_scale",
@@ -502,6 +503,7 @@ pub fn census_from_safetensors_headers(
                 [
                     format!("{stem}.weight_scale"),
                     format!("{stem}.weight_scale_inv"),
+                    format!("{stem}.activation_scale"),
                     format!("{stem}.weight_scale_2"),
                     format!("{stem}.weight_global_scale"),
                     format!("{stem}.input_scale"),

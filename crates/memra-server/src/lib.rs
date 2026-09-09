@@ -5027,6 +5027,7 @@ fn render_req_tool_call(tc: &ReqToolCall) -> Result<TmplToolCall, String> {
         .map(|(k, v)| (k.clone(), json_to_val(v)))
         .collect();
     Ok(TmplToolCall {
+        raw_arguments: tc.function.arguments.as_str().map(str::to_owned),
         name: tc.function.name.clone(),
         params,
         args,
@@ -7903,7 +7904,11 @@ fn build_chat_request_with_trace(
     let is_hy3 = caps.map(|c| c.hy3).unwrap_or(false);
     let hy3_think_open = is_hy3 && think == ThinkMode::Think;
     let hy3_tools = is_hy3 && !tools_json.is_empty();
-    let parser = if glm5 {
+    let parser = if caps.is_some_and(|c| c.instruct_type.as_deref() == Some("mistral"))
+        && !tools_json.is_empty()
+    {
+        Some(ToolStreamParser::mistral())
+    } else if glm5 {
         Some(ToolStreamParser::glm5(think_open, schemas))
     } else if is_hy3 && (hy3_tools || hy3_think_open) {
         Some(ToolStreamParser::hy3(schemas, hy3_think_open))

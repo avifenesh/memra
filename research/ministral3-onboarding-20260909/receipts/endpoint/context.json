@@ -1,0 +1,21 @@
+{
+  "request": {
+    "model": "ministral3-8b",
+    "messages": [
+      {
+        "role": "user",
+        "content": "שלום"
+      }
+    ],
+    "max_tokens": 9000
+  },
+  "status": 400,
+  "response": {
+    "error": {
+      "message": "a non-streaming request for 9000 tokens on a ~1-token prompt needs an estimated ~150s, which does not fit the 89999 ms timeout_ms deadline (max 90000 ms — a platform ceiling: the fronting proxy fails a non-streaming response whose headers take ~100 s). Refused before any GPU work rather than after the deadline: lower max_tokens to about 5399 for this prompt, or set \"stream\": true — a stream's deadline bounds only the time to first token, so it may run as long as it needs",
+      "type": "invalid_request_error",
+      "param": "max_tokens",
+      "code": "nonstream_deadline_infeasible"
+    }
+  }
+}

@@ -12973,6 +12973,8 @@ pub fn run(
                         Some("deepseek".to_string())
                     } else if memra_tokenizer::chat::template_is_glm5(t) {
                         Some("glm".to_string())
+                    } else if memra_tokenizer::chat::template_is_mistral(t) {
+                        Some("mistral".to_string())
                     } else if t.contains("hy_User") {
                         Some("hy3".to_string())
                     } else {
@@ -13093,7 +13095,7 @@ pub fn run(
             let class = loaded
                 .get(n)
                 .filter(|lm| memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan))
-                .map_or("gemma4 class", |_| "hyper-connections residual");
+                .map_or("native eager plan", |_| "hyper-connections residual");
             eprintln!(
                 "[worker] {n}: EAGER-ONLY serving ({class} — no batched decode arm): \
                    per-session eager decode, monolithic prefill, no graph promotion, \
@@ -22594,6 +22596,9 @@ fn prefill_tick(
 /// qwen-class dc step. One predicate, consumed at every batched entry point, so a future
 /// arch with the same gaps joins by predicate rather than scattered call-site checks.
 fn eager_only_model(lm: &LoadedModel) -> bool {
+    if memra_engine::plan_backend::query_scaled_eager_only(&lm.model.plan) {
+        return true;
+    }
     memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
         == memra_engine::plan_backend::DecodeBatchProgram::Gemma
         || lm.model.is_gemma4_e4b()
