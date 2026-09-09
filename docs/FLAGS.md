@@ -1,5 +1,12 @@
 # Environment flags — the audited catalog
 
+## Speech reference executor, 2026-09-09
+
+| Flag | Contract |
+| --- | --- |
+| `MEMRA_SPEECH_THREADS` | **Default 1 (single-threaded), no decide-by: this is a CPU reference-executor work knob, not a serving door.** Read once per process by `memra-reference`'s speech matrix product; parsed as a decimal count and clamped to 1..64. `1` runs every product on the calling thread, which is what every committed speech receipt was measured with. Above 1, each worker takes a disjoint block of output columns and accumulates it in the same ascending-k four-bank order, so the thread count cannot move a number: `column_blocking_is_bit_identical_so_thread_count_cannot_move_a_number` pins that at unit level, and the real-audio arm re-ran a full 32-block encoder window at 1 and 16 threads for the identical `bc19c45cd4d0b052...` output and identical 91-token clip decode. Rollback: unset. Receipt: `research/asr-modality-20260909/REAL-AUDIO.md`. |
+
+
 ## Qwen carried-prime launch diet, 2026-09-09
 
 | Mechanism | Contract |
