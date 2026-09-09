@@ -3834,6 +3834,8 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
     }
 }
 
+#include "dsv4_dense_m1_exact_tail.cuh"
+
 #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \
     case MM:                                                                         \
         dsv4_gemv_fp8_m_kernel<MM, false><<<(unsigned)n, 128, 0, stream>>>(           \
@@ -3851,6 +3853,11 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
     if (xstride <= 0) xstride = k;
     if (ystride <= 0) ystride = n;
     if (xstride % 8 != 0) return 40011;
+    Dsv4DenseExactTailControlScope control(m != 1);
+    if (dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k))
+        return memra_dsv4_dense_exact_tail_fp8(w_codes, sc_f32, sc_cols, x_bf16,
+            y, m, n, k, xstride, ystride, stream_v);
     if (m > DSV4_TMAX) {
         const uint16_t* x = (const uint16_t*)x_bf16;
         for (int base = 0; base < m; base += 8) {
@@ -4107,6 +4114,10 @@ extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (k % 8 != 0) return 40012;
     if (s < 1) return 40020;
+    Dsv4DenseExactTailControlScope control(s != 1);
+    if (dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_exact_tail_dots_admits(x, w, w_is_bf16, y, s, n, k))
+        return memra_dsv4_dense_exact_tail_dots(x, w, w_is_bf16, y, s, n, k, stream_v);
     if (s > DSV4_TMAX) {
         for (int base = 0; base < s; base += 8) {
             int tile = min(8, s - base);

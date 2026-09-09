@@ -1,0 +1,86 @@
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.0 at /usr/local/cuda-13.0/bin/nvcc
+   Compiling memra-engine v0.136.0 (/root/prefill-fairness-20260908/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 22.01s
+     Running unittests src/lib.rs (/root/target-prefill/release/deps/memra_engine-38136f5f2c1329a0)
+
+running 3 tests
+test prime_walker::tests::error_does_not_advance_or_finalize_the_partial_state ... ok
+test prime_walker::tests::finished_walker_does_no_more_work ... ok
+test prime_walker::tests::yielded_and_drained_execute_identical_frozen_tapes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 470 filtered out; finished in 0.00s
+
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.0 at /usr/local/cuda-13.0/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/lib.rs (/root/target-prefill/release/deps/memra_engine-38136f5f2c1329a0)
+
+running 2 tests
+test spec::prime::tests::stable_captures_preserve_segment_local_ranges_and_tiny_tail_program ... ok
+test spec::prime::tests::tokenwise_override_retains_the_legacy_segment_program ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 471 filtered out; finished in 0.00s
+
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.0 at /usr/local/cuda-13.0/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/lib.rs (/root/target-prefill/release/deps/memra_engine-38136f5f2c1329a0)
+
+running 56 tests
+test dflash::dflash2_tests::an_unfilled_selector_slot_is_refused_by_name_not_clamped ... ok
+test dflash::dflash2_tests::dflash2_harvest_is_census_keyed ... ok
+test dflash::dflash2_tests::max_tokens_caps_the_committed_prefix_not_only_the_visible_slice ... ok
+test dflash::dflash2_tests::rejection_accept_walk_is_the_leviathan_rule ... ok
+test dflash::dflash2_tests::sampled_walk_chains_the_drawn_candidate ... ok
+test dflash::dflash2_tests::sampled_walk_records_the_distribution_it_samples ... ok
+test dflash::dflash2_tests::sampled_walk_tiny_temp_matches_greedy ... ok
+test dflash::dflash2_tests::selector_walk_hidden_gate_participates ... ok
+test dflash::dflash2_tests::selector_walk_is_a_chain_not_per_slot_argmax ... ok
+test dflash::dflash2_tests::selector_walk_unary_term_participates ... ok
+test dflash::dflash2_tests::tail_import_refuses_every_geometry_disagreement_and_accepts_the_exported_shape ... ok
+test dflash::dflash_kv_ring_tests::a_pinned_capture_extends_what_is_kept ... ok
+test dflash::dflash2_tests::the_walk_assert_survives_the_guard - should panic ... ok
+test dflash::dflash_kv_ring_tests::compaction_keeps_exactly_the_trailing_window ... ok
+test dflash::dflash_kv_ring_tests::door_off_geometry_never_compacts ... ok
+test dflash::dflash_kv_ring_tests::fits_until_the_physical_buffer_is_full ... ok
+test dflash::dflash_kv_ring_tests::keep_from_never_drops_below_base ... ok
+test dflash::dflash_kv_ring_tests::resident_bytes_are_constant_under_the_ring_and_linear_without_it ... ok
+test dflash::dflash_precision_tests::default_and_supported_precision_programs_are_explicit ... ok
+test dflash::dflash_precision_tests::q5_and_typos_refuse_instead_of_silently_selecting_q8 ... ok
+test dflash::dflash_tap_oracle_tests::tap_hash_preserves_bits_across_arbitrary_capture_partitions ... ok
+test dflash::dflash_tensor_contract_tests::attention_and_selector_geometry_refuse_before_cuda ... ok
+test dflash::dflash_tensor_contract_tests::named_tensor_contract_refuses_wrong_dtype_rank_and_shape_before_cuda ... ok
+test dflash::draft_source_seam_tests::empty_and_out_of_trunk_taps_refuse_by_name ... ok
+test dflash::draft_source_seam_tests::taps_resolve_and_the_shift_is_the_callers ... ok
+test dflash::dspark_boundary_capture_tests::degenerate_boundaries_fall_back_instead_of_failing ... ok
+test dflash::dspark_boundary_capture_tests::dspark_resume_split_captures_only_a_grid_boundary_strictly_inside_the_suffix ... ok
+test dflash::dspark_boundary_capture_tests::no_boundary_keeps_the_monolithic_prime ... ok
+test dflash::dspark_boundary_capture_tests::off_grid_boundary_is_refused_not_honoured ... ok
+test dflash::dspark_boundary_capture_tests::on_grid_boundary_inside_the_prompt_splits ... ok
+test dflash::dspark_harvest_tests::dflash_strategy_keeps_mask_fill_harvest ... ok
+test dflash::dspark_harvest_tests::dspark_strategy_requires_shifted_harvest ... ok
+test dflash::dspark_harvest_tests::dspark_trained_rows_through_mask_fill_harvest_accept_nothing ... ok
+test dflash::dspark_harvest_tests::env_seam_parses_and_refuses ... ok
+test dflash::dspark_harvest_tests::every_candidate_verifies_the_position_its_row_was_trained_for ... ok
+test dflash::dspark_harvest_tests::ratified_default_harvest_is_strategy_keyed ... ok
+test dflash::dspark_harvest_tests::strategy_census_reads_the_checkpoint_not_the_env ... ok
+test dflash::dspark_harvest_tests::ratified_default_vt_is_confidence_slot_tau_half ... ok
+test dflash::dspark_prefix_capture_tests::a_prompt_below_the_prime_floor_never_enters_the_dspark_route ... ok
+test dflash::dspark_prefix_capture_tests::prompt_end_capture_is_full_prompt_and_one_shot ... ok
+test dflash::dspark_prefix_capture_tests::session_prompt_preflight_matches_dflash2_and_windowed_caps ... ok
+test dflash::dspark_vt_tests::confidence_vt_floor_and_cap ... ok
+test dflash::dspark_vt_tests::confidence_vt_is_cumprod_survival_not_per_slot_threshold ... ok
+test dflash::dspark_vt_tests::raw_score_matches_the_parity_gate_dot ... ok
+test dflash::dspark_vt_tests::slot_arm_truncates_at_first_low_confidence_slot ... ok
+test dflash::emit_budget_tests::accepted_run_never_exceeds_max_new ... ok
+test dflash::dspark_vt_tests::vt_policy_env_seam_parses_and_refuses ... ok
+test dflash::dflash2_tests::the_fullcover_restore_ordering_seam_is_live_in_comment_stripped_source ... ok
+test dflash::dflash2_tests::composition_teeth_inverted_accept_fails ... ok
+test dflash::dflash2_tests::composition_teeth_residual_without_q_fails ... ok
+test dflash::dflash2_tests::sampled_round_composition_matches_the_target ... ok
+test dflash::dflash_tap_oracle_tests::production_carry_preserves_whole_buffer_batches_across_chunks_and_boundary ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_unpenalized_bonus_fails ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_frozen_window_fails ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_unpenalized_residual_fails ... ok
+test dflash::dflash2_tests::penalized_round_composition_matches_the_penalized_chain ... ok
+
+test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 417 filtered out; finished in 0.24s
+

@@ -1,0 +1,39 @@
+{
+  "result": "PASS",
+  "model": "qwen/qwen3.8-27b",
+  "sampling": "vendor defaults, no request sampling parameters",
+  "usage": {
+    "prompt_tokens": 76,
+    "completion_tokens": 512,
+    "total_tokens": 588,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 3.033604641,
+    "spec": {
+      "rounds": 170,
+      "drafted": 546,
+      "accepted": 345,
+      "acceptance_rate": 0.6318681318681318
+    }
+  },
+  "route_receipts": [
+    "[dspark-acc] ctx=76 burst=27/31 cum=27/31=0.871",
+    "[dspark-acc] ctx=108 burst=23/41 cum=50/72=0.694",
+    "[dspark-acc] ctx=143 burst=19/35 cum=69/107=0.645",
+    "[dspark-acc] ctx=175 burst=18/37 cum=87/144=0.604",
+    "[dspark-acc] ctx=207 burst=21/35 cum=108/179=0.603",
+    "[dspark-acc] ctx=239 burst=23/30 cum=131/209=0.627",
+    "[dspark-acc] ctx=272 burst=21/38 cum=152/247=0.615",
+    "[dspark-acc] ctx=304 burst=20/36 cum=172/283=0.608",
+    "[dspark-acc] ctx=338 burst=26/31 cum=198/314=0.631",
+    "[dspark-acc] ctx=372 burst=23/39 cum=221/353=0.626",
+    "[dspark-acc] ctx=407 burst=23/36 cum=244/389=0.627",
+    "[dspark-acc] ctx=441 burst=23/32 cum=267/421=0.634",
+    "[dspark-acc] ctx=473 burst=24/38 cum=291/459=0.634",
+    "[dspark-acc] ctx=508 burst=24/35 cum=315/494=0.638",
+    "[dspark-acc] ctx=544 burst=20/38 cum=335/532=0.630",
+    "[dspark-acc] ctx=576 burst=10/14 cum=345/546=0.632"
+  ],
+  "binary_sha256": "dab92051e3cf3c7bebac56528226b8f29c41b39005e5c46c6a895d11177f09eb"
+}

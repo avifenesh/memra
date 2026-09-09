@@ -1,0 +1,90 @@
+{
+  "boot": "ornith-solo-off",
+  "identity": {
+    "binary_sha256": "19db5df71812eabfa914ba99f58ff676e5d6a860174c0a75084dfad19a89d8e4",
+    "boot_nonce": "d1549aba0fef42acb6ec2dcb4815eb9a",
+    "pid": 549139,
+    "start_ticks": "189611653"
+  },
+  "settings": {
+    "MEMRA_CTX": "262144",
+    "MEMRA_MAX_SESSIONS": "4",
+    "MEMRA_PRIME_CHUNK": "1024",
+    "MEMRA_PRIME_YIELD": "0",
+    "MEMRA_TICK_TRACE": "1",
+    "MEMRA_SPEC_GATE_LOW": "64",
+    "MEMRA_SPEC_GATE_HIGH": "65",
+    "MEMRA_ALLOC_TRACE": "1"
+  },
+  "summary": {
+    "rows": [
+      {
+        "label": "long",
+        "ttft_s": 25.024933388922364,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 127477,
+          "completion_tokens": 64,
+          "total_tokens": 127541,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 25.423678832,
+          "spec": {
+            "rounds": 32,
+            "drafted": 96,
+            "accepted": 33,
+            "acceptance_rate": 0.34375
+          }
+        },
+        "status": 200,
+        "finish": "length",
+        "total_s": 25.744707887992263,
+        "output_sha256": "91a7901518a5eaa380d49d20ab0cfe6e513eac72313eb7b5ce99a865baec8839"
+      },
+      {
+        "label": "small",
+        "ttft_s": 0.22487194510176778,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 925,
+          "completion_tokens": 128,
+          "total_tokens": 1053,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 0.82644511,
+          "spec": {
+            "rounds": 66,
+            "drafted": 198,
+            "accepted": 63,
+            "acceptance_rate": 0.3181818181818182
+          }
+        },
+        "status": 200,
+        "finish": "length",
+        "total_s": 0.8493257930967957,
+        "output_sha256": "916705dcf34cb56e87dc4fdf74e9183232e868c6e0bd4f8d87e93a6a8c068bc9"
+      }
+    ],
+    "yield_count": 0,
+    "metric_delta": {
+      "served_spec": 1,
+      "served_dspark": 0,
+      "served_plain": 0,
+      "step_oom_parks": 0,
+      "admission_vram_defers": 0,
+      "admission_session_defers": 0
+    },
+    "boot_nonce": "d1549aba0fef42acb6ec2dcb4815eb9a"
+  },
+  "cleanup": {
+    "own_pid": 549139,
+    "exit": 0,
+    "gpu_compute_apps_while_lock_held": ""
+  },
+  "request_sha256": {
+    "long-request.json": "a342b6e299cbf21dda0b8c835f449fdb22d5ad3ba3268592a4907d5e48ddff7f",
+    "small-request.json": "1a131376984b5c314138e1a659f8dd4e41c40d0e36b81dfe0dc1555a04578d91"
+  }
+}

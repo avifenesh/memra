@@ -6451,7 +6451,7 @@ impl HybridModel {
     /// `prime_cache` entry), NOT this chunk's end. Chunk-size-invariant by construction; step35's
     /// SWA arm selects on it (see `step35_attn_pre_wo`). Every other arch ignores it.
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-    fn prime_chunk(
+    pub(crate) fn prime_chunk(
         &self,
         e: &Engine,
         tokens: &[u32],

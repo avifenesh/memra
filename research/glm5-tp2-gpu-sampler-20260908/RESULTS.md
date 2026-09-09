@@ -176,3 +176,5 @@ All four new greedy/top-k-one requests produced 160 tokens and the same canonica
 Long jobs ran under nohup/setsid, and each sampled row was copied to the rig and acknowledged before continuing. The stop driver signalled only the owned PID and waited for GPU quiet between processes. The driver required its hard-stop path after the graceful drain message; clean GPU-worker-shutdown markers are not claimed for these four processes. Request completion and usage receipts were retained before stopping.
 
 Raw public requests by SHA, SSE, generated output, tick/sampler windows, paired rows, loop checks and telemetry: `raw/pair-box/`. Full private configuration, stop logs and the excluded startup remain in private custody. No default promotion.
+
+The later binary was built from the source snapshot carried by `66b79c20ebc0422c87b6218e0e9719ff3b755416`; receipt-only commit `ad25ee7229c287c8115bad64266a16458f1ede25` preserves that implementation. Subsequent main integration is checked by hosted CI and does not constitute another performance measurement.

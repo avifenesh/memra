@@ -101,6 +101,7 @@ mod embed_api;
 /// 2026-08-29: "only engine is open, business is private").
 pub mod metering;
 mod prefill_receipt;
+pub mod prime_fairness;
 mod responses_api;
 mod surfaces;
 mod toolcall;

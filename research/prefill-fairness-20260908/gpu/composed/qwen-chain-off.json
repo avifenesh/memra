@@ -1,0 +1,140 @@
+{
+  "boot": "qwen-chain-off",
+  "identity": {
+    "binary_sha256": "997515ac0ba866b308e9514c6b49d70acda70016f3d05953557c7610fa6a0d0e",
+    "boot_nonce": "94fb8530084b481783060a5a863cb039",
+    "pid": 558711,
+    "start_ticks": "189813155"
+  },
+  "settings": {
+    "MEMRA_CTX": "262144",
+    "MEMRA_MAX_SESSIONS": "4",
+    "MEMRA_PRIME_CHUNK": "1024",
+    "MEMRA_PRIME_YIELD": "0",
+    "MEMRA_TICK_TRACE": "1",
+    "MEMRA_SPEC_GATE_LOW": "64",
+    "MEMRA_SPEC_GATE_HIGH": "65",
+    "MEMRA_ALLOC_TRACE": "1"
+  },
+  "summary": {
+    "rows": [
+      {
+        "label": "turn1",
+        "ttft_s": 0.5427779590245336,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 967,
+          "completion_tokens": 99,
+          "total_tokens": 1066,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 1.723054836,
+          "spec": {
+            "rounds": 38,
+            "drafted": 113,
+            "accepted": 61,
+            "acceptance_rate": 0.5398230088495575
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.7252599969506264,
+        "output_sha256": "016c779922d933a61451454d75eb4d37d2edce88083eea337d7ef488b07fc72d"
+      },
+      {
+        "label": "turn2",
+        "ttft_s": 0.18080665590241551,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1098,
+          "completion_tokens": 94,
+          "total_tokens": 1192,
+          "prompt_tokens_details": {
+            "cached_tokens": 928
+          },
+          "elapsed_s": 1.152581042,
+          "spec": {
+            "rounds": 31,
+            "drafted": 104,
+            "accepted": 63,
+            "acceptance_rate": 0.6057692307692307
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.15792584605515,
+        "output_sha256": "2daa9cade4f74cca037b1491a46f68209425a7ebd77eb7812021b8571463bc2e"
+      },
+      {
+        "label": "turn3",
+        "ttft_s": 0.1805338989943266,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1224,
+          "completion_tokens": 83,
+          "total_tokens": 1307,
+          "prompt_tokens_details": {
+            "cached_tokens": 1056
+          },
+          "elapsed_s": 1.316766812,
+          "spec": {
+            "rounds": 37,
+            "drafted": 101,
+            "accepted": 46,
+            "acceptance_rate": 0.45544554455445546
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.3225352191366255,
+        "output_sha256": "0e82b74f2b56f2b077c4fba47e06747d8fd09e9b21f6416388362aa68511092b"
+      },
+      {
+        "label": "turn4",
+        "ttft_s": 0.18166841007769108,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1339,
+          "completion_tokens": 68,
+          "total_tokens": 1407,
+          "prompt_tokens_details": {
+            "cached_tokens": 1184
+          },
+          "elapsed_s": 0.895261108,
+          "spec": {
+            "rounds": 23,
+            "drafted": 79,
+            "accepted": 45,
+            "acceptance_rate": 0.569620253164557
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 0.9013213980942965,
+        "output_sha256": "d81a7f357b5abff4b582ed75490fbd9ff827b8c48cd328e278a1e3b2b310181c"
+      }
+    ],
+    "yield_count": 0,
+    "metric_delta": {
+      "served_spec": 0,
+      "served_dspark": 4,
+      "served_plain": 0,
+      "step_oom_parks": 0,
+      "admission_vram_defers": 0,
+      "admission_session_defers": 0
+    },
+    "boot_nonce": "94fb8530084b481783060a5a863cb039"
+  },
+  "cleanup": {
+    "own_pid": 558711,
+    "exit": 0,
+    "gpu_compute_apps_while_lock_held": ""
+  },
+  "request_sha256": {
+    "turn1-request.json": "ee1ac43f43856ea79ef12b4a27d333a3014d3038d841cd921f69bbf47edf0cfe",
+    "turn2-request.json": "c248424c920eb2d39c5d29b2a09b779ab0611415ec069da1c1a8616f08e71edc",
+    "turn3-request.json": "daf6c1657cd04de1bc1eacf354708414408dac607363a8e7a2fefccdf2dbed3b",
+    "turn4-request.json": "4efc8ac67d5abda85f2a79f6182ad86a180598eb59946689d759eea005e4dc70"
+  }
+}

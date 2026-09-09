@@ -1,0 +1,84 @@
+{
+  "boot": "ornith-pair-on",
+  "identity": {
+    "binary_sha256": "997515ac0ba866b308e9514c6b49d70acda70016f3d05953557c7610fa6a0d0e",
+    "boot_nonce": "f9edaa3a9dda4d578fb19fe03db9d844",
+    "pid": 558549,
+    "start_ticks": "189807447"
+  },
+  "settings": {
+    "MEMRA_CTX": "262144",
+    "MEMRA_MAX_SESSIONS": "4",
+    "MEMRA_PRIME_CHUNK": "1024",
+    "MEMRA_PRIME_YIELD": "1",
+    "MEMRA_TICK_TRACE": "1",
+    "MEMRA_SPEC_GATE_LOW": "64",
+    "MEMRA_SPEC_GATE_HIGH": "65",
+    "MEMRA_ALLOC_TRACE": "1"
+  },
+  "summary": {
+    "rows": [
+      {
+        "label": "long",
+        "ttft_s": 28.105761165963486,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 127477,
+          "completion_tokens": 64,
+          "total_tokens": 127541,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 28.539792595,
+          "spec": {
+            "rounds": 32,
+            "drafted": 96,
+            "accepted": 32,
+            "acceptance_rate": 0.3333333333333333
+          }
+        },
+        "status": 200,
+        "finish": "length",
+        "total_s": 28.86281252792105,
+        "output_sha256": "91a7901518a5eaa380d49d20ab0cfe6e513eac72313eb7b5ce99a865baec8839"
+      },
+      {
+        "label": "small",
+        "ttft_s": 0.2481570017989725,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 925,
+          "completion_tokens": 128,
+          "total_tokens": 1053,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 26.697860199
+        },
+        "status": 200,
+        "finish": "length",
+        "total_s": 26.74729776987806,
+        "output_sha256": "916705dcf34cb56e87dc4fdf74e9183232e868c6e0bd4f8d87e93a6a8c068bc9"
+      }
+    ],
+    "yield_count": 250,
+    "metric_delta": {
+      "served_spec": 2,
+      "served_dspark": 0,
+      "served_plain": 0,
+      "step_oom_parks": 0,
+      "admission_vram_defers": 0,
+      "admission_session_defers": 0
+    },
+    "boot_nonce": "f9edaa3a9dda4d578fb19fe03db9d844"
+  },
+  "cleanup": {
+    "own_pid": 558549,
+    "exit": 0,
+    "gpu_compute_apps_while_lock_held": ""
+  },
+  "request_sha256": {
+    "long-request.json": "a342b6e299cbf21dda0b8c835f449fdb22d5ad3ba3268592a4907d5e48ddff7f",
+    "small-request.json": "1a131376984b5c314138e1a659f8dd4e41c40d0e36b81dfe0dc1555a04578d91"
+  }
+}

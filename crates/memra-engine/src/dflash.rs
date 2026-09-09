@@ -12,6 +12,7 @@
 use crate::Engine;
 use crate::model::GpuTensor;
 use cudarc::driver::CudaSlice;
+use sha2::{Digest, Sha256};
 
 pub struct DflashCfg {
     pub hidden: usize,                // 5376
@@ -54,6 +55,199 @@ pub struct DflashLayer {
     pub ln_post: CudaSlice<f32>, // [hidden]
     pub q_norm: CudaSlice<f32>,  // [hd]
     pub k_norm: CudaSlice<f32>,  // [hd]
+}
+
+/// Synchronized allocation diagnostics under the existing allocation trace instrument.
+pub fn trace_allocation_phase(e: &Engine, phase: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if !crate::alloc_trace_on() {
+        return Ok(());
+    }
+    e.stream().synchronize()?;
+    let (free, total) = e.ctx().mem_get_info()?;
+    let (reserved, used) = e.pool_reserved_used();
+    eprintln!(
+        "[dflash-alloc] phase={phase} driver_free_bytes={free} driver_total_bytes={total} pool_reserved_bytes={reserved} pool_used_bytes={used} graph_pool_bytes={}",
+        e.device_graph_mem_reserved()
+    );
+    Ok(())
+}
+
+fn hash_f32_bits(hash: &mut Sha256, values: &[f32]) {
+    let mut bytes = [0u8; 16384];
+    for part in values.chunks(4096) {
+        for (value, dst) in part.iter().zip(bytes.chunks_exact_mut(4)) {
+            dst.copy_from_slice(&value.to_bits().to_le_bytes());
+        }
+        hash.update(&bytes[..part.len() * 4]);
+    }
+}
+
+#[derive(Default)]
+struct DflashPrimeOracle {
+    taps: Sha256,
+    features: Sha256,
+    positions: Sha256,
+}
+
+impl DflashPrimeOracle {
+    fn record(
+        &mut self,
+        e: &Engine,
+        taps: &CudaSlice<f32>,
+        features: &CudaSlice<f32>,
+        positions: &[i32],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        hash_f32_bits(&mut self.taps, &e.dtoh(taps)?);
+        hash_f32_bits(&mut self.features, &e.dtoh(features)?);
+        for pos in positions {
+            self.positions.update(pos.to_le_bytes());
+        }
+        Ok(())
+    }
+
+    fn finish(
+        self,
+        e: &Engine,
+        rows: usize,
+        logits: &[f32],
+        boundary: Option<&crate::spec::SpecBoundaryCapture>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut output = Sha256::new();
+        hash_f32_bits(&mut output, logits);
+        let mut cut = Sha256::new();
+        if let Some(boundary) = boundary {
+            hash_f32_bits(&mut cut, &boundary.logits);
+        }
+        eprintln!(
+            "[dflash-oracle] rows={rows} taps={:x} features={:x} positions={:x} target_logits={:x} boundary_pos={} boundary_logits={:x} boundary_state={}",
+            self.taps.finalize(),
+            self.features.finalize(),
+            self.positions.finalize(),
+            output.finalize(),
+            boundary.map_or(0, |b| b.pos),
+            cut.finalize(),
+            crate::prime_receipt::capture_digest(
+                e,
+                boundary.map(std::slice::from_ref).unwrap_or(&[])
+            )?,
+        );
+        Ok(())
+    }
+}
+
+fn ingest_tap_batch(
+    e: &Engine,
+    draft: &DflashDraft,
+    dkv: &mut DflashKv,
+    taps: &CudaSlice<f32>,
+    positions: std::ops::Range<usize>,
+    oracle: Option<&mut DflashPrimeOracle>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let rows = positions.len();
+    let features = draft.ctx_features(e, taps, rows)?;
+    let positions: Vec<i32> = positions.map(|pos| pos as i32).collect();
+    if let Some(oracle) = oracle {
+        oracle.record(e, taps, &features, &positions)?;
+    }
+    draft.ingest_ctx(e, dkv, &features, &positions, rows)
+}
+
+/// The production carry schedule, independent of device storage. Source offsets are
+/// chunk-local; ingestion positions are absolute and batches span chunk/boundary cuts.
+enum TapBatchOp {
+    Copy {
+        source: std::ops::Range<usize>,
+        destination: usize,
+    },
+    Ingest(std::ops::Range<usize>),
+}
+
+struct TapBatchCarry {
+    capacity: usize,
+    pending: usize,
+    next_position: usize,
+}
+
+impl TapBatchCarry {
+    fn new(rows: usize, position: usize) -> Self {
+        assert!(rows > 0);
+        Self {
+            capacity: rows.min(256),
+            pending: 0,
+            next_position: position,
+        }
+    }
+
+    fn chunk<E>(
+        &mut self,
+        rows: usize,
+        mut emit: impl FnMut(TapBatchOp) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let mut copied = 0;
+        while copied < rows {
+            let count = (self.capacity - self.pending).min(rows - copied);
+            emit(TapBatchOp::Copy {
+                source: copied..copied + count,
+                destination: self.pending,
+            })?;
+            copied += count;
+            self.pending += count;
+            if self.pending == self.capacity {
+                self.flush(&mut emit)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn flush<E>(&mut self, mut emit: impl FnMut(TapBatchOp) -> Result<(), E>) -> Result<(), E> {
+        if self.pending > 0 {
+            emit(TapBatchOp::Ingest(
+                self.next_position..self.next_position + self.pending,
+            ))?;
+            self.next_position += self.pending;
+            self.pending = 0;
+        }
+        Ok(())
+    }
+}
+
+/// GPU adapter shared by cold and resumed serving. A partial final batch retains
+/// the old physical FC input shape rather than exposing unused carry rows.
+#[allow(clippy::too_many_arguments)]
+fn apply_tap_batch_op(
+    e: &Engine,
+    draft: &DflashDraft,
+    dkv: &mut DflashKv,
+    batch: &mut CudaSlice<f32>,
+    taps: Option<&CudaSlice<f32>>,
+    width: usize,
+    op: TapBatchOp,
+    oracle: Option<&mut DflashPrimeOracle>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match op {
+        TapBatchOp::Copy {
+            source,
+            destination,
+        } => {
+            let taps = taps.expect("copy requires a live chunk sink");
+            e.copy_view_into(
+                batch,
+                destination * width,
+                &taps.slice(source.start * width..source.end * width),
+                source.len() * width,
+            )
+        }
+        TapBatchOp::Ingest(positions) => {
+            let words = positions.len() * width;
+            if words == batch.len() {
+                ingest_tap_batch(e, draft, dkv, batch, positions, oracle)
+            } else {
+                let mut tail = e.uninit(words)?;
+                e.copy_view_into(&mut tail, 0, &batch.slice(..words), words)?;
+                ingest_tap_batch(e, draft, dkv, &tail, positions, oracle)
+            }
+        }
+    }
 }
 
 pub struct DflashDraft {
@@ -1335,6 +1529,7 @@ impl DflashDraft {
     /// Load the backbone-only checkpoint dir (config.json + model.safetensors, bf16).
     /// Config scalars ride a minimal extractor (no json dep in-tree — HfConfig precedent).
     pub fn load(e: &Engine, dir: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+        trace_allocation_phase(e, "draft-weights-before")?;
         let txt = std::fs::read_to_string(dir.join("config.json"))?;
         fn num(txt: &str, key: &str) -> Option<f64> {
             let i = txt.find(&format!("\"{key}\""))?;
@@ -1989,7 +2184,7 @@ impl DflashDraft {
                 _ => "unset",
             },
         );
-        Ok(Self {
+        let draft = Self {
             fc,
             hidden_norm: up("hidden_norm.weight", &[hidden])?,
             norm: up("norm.weight", &[hidden])?,
@@ -1999,7 +2194,9 @@ impl DflashDraft {
             confidence,
             rope_yarn,
             dflash2,
-        })
+        };
+        trace_allocation_phase(e, "draft-weights-after")?;
+        Ok(draft)
     }
 
     /// Rope q or k rows in place: yarn (ff divisors + post-rope mscale) when the config
@@ -3377,7 +3574,10 @@ impl crate::hybrid::HybridModel {
             "DFlash2 drafters ride the qwen-hybrid dspark round (selector + windowed \
              attention); the gemma arm has no consumer for the family's ops"
         );
-        assert_eq!(n_embd, c.hidden, "draft hidden must match target n_embd");
+        assert_eq!(
+            self.cfg.n_embd as usize, c.hidden,
+            "draft hidden must match target n_embd"
+        );
         let b = c.block_size;
         let n_taps = c.target_layer_ids.len();
         let max_ctx = prompt.len() + max_new + b + 8;
@@ -3749,7 +3949,10 @@ impl crate::hybrid::HybridModel {
         let (mut sctr, mut uctr) = (0u32, 0u32);
         let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
-        assert_eq!(n_embd, c.hidden, "draft hidden must match target n_embd");
+        assert_eq!(
+            self.cfg.n_embd as usize, c.hidden,
+            "draft hidden must match target n_embd"
+        );
         let b = c.block_size;
         let n_taps = c.target_layer_ids.len();
         let max_ctx = prompt.len() + max_new + b + 8;
@@ -4547,7 +4750,7 @@ pub fn tail_geometry_ok(
     if tail_len > cap {
         return Err("logical length exceeds the session cap");
     }
-    if tail_base + tail_rows != tail_len {
+    if tail_base.checked_add(tail_rows) != Some(tail_len) {
         return Err("tail does not end at its own logical length");
     }
     if tail_floor > tail_base {
@@ -4589,6 +4792,34 @@ pub struct DflashKvTail {
 }
 
 impl DflashKvTail {
+    /// Validate before allocating the destination. Admission and import share this check.
+    pub fn validate_restore(&self, cfg: &DflashCfg, cap: usize) -> Result<(), &'static str> {
+        tail_geometry_ok(
+            self.layers.len(),
+            self.row_bytes,
+            self.base,
+            self.rows,
+            self.len,
+            self.floor,
+            cfg.n_layer,
+            cfg.n_kv * cfg.head_dim * std::mem::size_of::<f32>(),
+            cfg.sliding_window.saturating_add(cfg.block_size),
+            cap,
+        )?;
+        let elements = self
+            .rows
+            .checked_mul(self.row_bytes / std::mem::size_of::<f32>())
+            .ok_or("draft tail size overflow")?;
+        if self
+            .layers
+            .iter()
+            .any(|(k, v)| k.len() != elements || v.len() != elements)
+        {
+            return Err("draft tail storage differs from its geometry");
+        }
+        Ok(())
+    }
+
     pub fn bytes(&self) -> usize {
         self.layers.len() * self.rows * self.row_bytes * 2
     }
@@ -4676,22 +4907,11 @@ impl DflashKv {
     /// below it (the clipped kernel, `d2_windowed_attn`). Full tails keep `floor = 0` and the
     /// pre-lane program exactly.
     pub fn from_tail(e: &Engine, cfg: &DflashCfg, cap: usize, tail: &DflashKvTail) -> Option<Self> {
-        let mut kv = Self::new(e, cfg, cap).ok()?;
-        if let Err(why) = tail_geometry_ok(
-            tail.layers.len(),
-            tail.row_bytes,
-            tail.base,
-            tail.rows,
-            tail.len,
-            tail.floor,
-            kv.k.len(),
-            kv.row_bytes,
-            kv.window_rows,
-            cap,
-        ) {
+        if let Err(why) = tail.validate_restore(cfg, cap) {
             eprintln!("[dspark] tail import refused: {why}");
             return None;
         }
+        let mut kv = Self::new(e, cfg, cap).ok()?;
         // A short tail (rows below the window because the exporter never owned them) makes
         // this KV floor-bearing; a full tail from a floored exporter does not need the floor
         // (every readable row is present) and keeps the pre-lane program.
@@ -4799,7 +5019,361 @@ impl DsparkSpecSession {
     }
 }
 
+/// Owned cold or resumed serving prime. Drop on cancellation/error; never re-park
+/// partially primed caches. Use `dspark_prime_walker` to advance through the shared driver.
+pub struct DsparkPrimeState {
+    taps: DflashTapPrime,
+    mode: DsparkPrimeMode,
+}
+
+enum DsparkPrimeMode {
+    Cold {
+        cache: crate::cache::Cache,
+        dkv: DflashKv,
+        max_ctx: usize,
+        sampling: Option<crate::spec::SpecSampling>,
+        capture: DsparkCapture,
+        boundary_capture: Option<crate::spec::SpecBoundaryCapture>,
+        oracle: Option<DflashPrimeOracle>,
+    },
+    Resume(DsparkSpecSession),
+}
+
+pub struct DsparkPrimeWalker<'a> {
+    model: &'a crate::hybrid::HybridModel,
+    e: &'a Engine,
+    draft: &'a DflashDraft,
+    state: &'a mut Option<DsparkPrimeState>,
+}
+
+impl DsparkPrimeWalker<'_> {
+    fn taps(&mut self) -> Result<DflashTapWalker<'_>, crate::prime_walker::PrimeError> {
+        let state = self
+            .state
+            .as_mut()
+            .ok_or("DFlash prime already finalized")?;
+        let (cache, dkv, boundary, oracle) = match &mut state.mode {
+            DsparkPrimeMode::Cold {
+                cache,
+                dkv,
+                boundary_capture,
+                oracle,
+                ..
+            } => (cache, dkv, boundary_capture, oracle.as_mut()),
+            DsparkPrimeMode::Resume(sess) => (
+                &mut sess.cache,
+                &mut sess.dkv,
+                &mut sess.prefix_capture,
+                None,
+            ),
+        };
+        Ok(DflashTapWalker {
+            model: self.model,
+            e: self.e,
+            draft: self.draft,
+            cache,
+            dkv,
+            state: &mut state.taps,
+            boundary,
+            oracle,
+        })
+    }
+}
+
+impl crate::prime_walker::PrimeWalker for DsparkPrimeWalker<'_> {
+    type Output = DsparkSpecSession;
+
+    fn remaining_chunks(&self) -> usize {
+        self.state
+            .as_ref()
+            .map_or(0, |s| s.taps.ranges.len() - s.taps.cursor)
+    }
+
+    fn advance_chunk(
+        &mut self,
+    ) -> Result<crate::prime_walker::PrimeChunk, crate::prime_walker::PrimeError> {
+        self.taps()?.advance_chunk()
+    }
+
+    fn finish(mut self) -> Result<Self::Output, crate::prime_walker::PrimeError> {
+        let logits = crate::prime_walker::finish_prime(self.taps()?)?;
+        let DsparkPrimeState { taps, mode } =
+            self.state.take().ok_or("DFlash prime already finalized")?;
+        let tokens = taps.tokens;
+        // Drop carry storage before the optional prompt-end snapshot, matching the
+        // synchronous lifetime and avoiding extra retained HBM at finalization.
+        drop(taps.batch);
+        match mode {
+            DsparkPrimeMode::Cold {
+                cache,
+                dkv,
+                max_ctx,
+                sampling,
+                capture,
+                boundary_capture,
+                oracle,
+            } => self.model.finish_dspark_cold_prime(
+                self.e,
+                self.draft,
+                &tokens,
+                cache,
+                dkv,
+                max_ctx,
+                sampling,
+                capture,
+                boundary_capture,
+                oracle,
+                logits,
+            ),
+            DsparkPrimeMode::Resume(mut sess) => {
+                self.model
+                    .finish_dspark_resume_prime(self.e, &mut sess, &tokens, logits)?;
+                Ok(sess)
+            }
+        }
+    }
+}
+
+/// Saved tap-prime state. The 256-row carry and its device storage survive scheduler
+/// returns; an ingestion batch is never flushed merely because a trunk chunk yielded.
+struct DflashTapPrime {
+    tokens: Vec<u32>,
+    ranges: Vec<(usize, usize)>,
+    cursor: usize,
+    split: Option<usize>,
+    pos0: usize,
+    width: usize,
+    carry: TapBatchCarry,
+    batch: CudaSlice<f32>,
+    final_logits: Option<Vec<f32>>,
+    max_chunk: usize,
+}
+
+impl DflashTapPrime {
+    fn new(
+        model: &crate::hybrid::HybridModel,
+        e: &Engine,
+        draft: &DflashDraft,
+        tokens: &[u32],
+        pos0: usize,
+        split: Option<usize>,
+    ) -> Result<Self, crate::prime_walker::PrimeError> {
+        if tokens.is_empty() {
+            return Err("DFlash prime requires a nonempty prompt".into());
+        }
+        let tp = tokens.len();
+        let width = draft.cfg.target_layer_ids.len() * model.cfg.n_embd as usize;
+        let carry = TapBatchCarry::new(tp, pos0);
+        let batch = e.uninit(carry.capacity * width)?;
+        let segments = match split {
+            Some(b) => vec![(0, b), (b, tp)],
+            None => vec![(0, tp)],
+        };
+        let ranges = segments
+            .into_iter()
+            .flat_map(|(lo, hi)| {
+                crate::hybrid_forward::prime_chunk_ranges(
+                    hi - lo,
+                    model.layers.len(),
+                    model.gdn_prime_grid_on(),
+                )
+                .into_iter()
+                .map(move |(start, end)| (lo + start, lo + end))
+            })
+            .collect();
+        Ok(Self {
+            tokens: tokens.to_vec(),
+            ranges,
+            cursor: 0,
+            split,
+            pos0,
+            width,
+            carry,
+            batch,
+            final_logits: None,
+            max_chunk: 0,
+        })
+    }
+}
+
+struct DflashTapWalker<'a> {
+    model: &'a crate::hybrid::HybridModel,
+    e: &'a Engine,
+    draft: &'a DflashDraft,
+    cache: &'a mut crate::cache::Cache,
+    dkv: &'a mut DflashKv,
+    state: &'a mut DflashTapPrime,
+    boundary: &'a mut Option<crate::spec::SpecBoundaryCapture>,
+    oracle: Option<&'a mut DflashPrimeOracle>,
+}
+
+impl crate::prime_walker::PrimeWalker for DflashTapWalker<'_> {
+    type Output = Vec<f32>;
+
+    fn remaining_chunks(&self) -> usize {
+        self.state.ranges.len() - self.state.cursor
+    }
+
+    fn advance_chunk(
+        &mut self,
+    ) -> Result<crate::prime_walker::PrimeChunk, crate::prime_walker::PrimeError> {
+        use crate::cache::DflashTapSink;
+        let (start, end) = *self
+            .state
+            .ranges
+            .get(self.state.cursor)
+            .ok_or("DFlash prime exhausted")?;
+        let e = self.e;
+        let draft = self.draft;
+        let cache = &mut *self.cache;
+        let dkv = &mut *self.dkv;
+        let boundary = &mut *self.boundary;
+        let oracle = &mut self.oracle;
+        let DflashTapPrime {
+            tokens,
+            split,
+            pos0,
+            width,
+            carry,
+            batch,
+            final_logits,
+            max_chunk,
+            ..
+        } = &mut *self.state;
+        let (split, pos0, width) = (*split, *pos0, *width);
+        let tp = tokens.len();
+        let hidden = self.model.cfg.n_embd as usize;
+        let rows = end - start;
+        *max_chunk = (*max_chunk).max(rows);
+        cache.dflash_taps = Some(DflashTapSink {
+            layer_ids: draft.cfg.target_layer_ids.clone(),
+            buf: e.uninit(rows * width)?,
+            hidden,
+            t: rows,
+            base: 0,
+            origin: 0,
+        });
+        let (logits, h_seed, hiddens) =
+            self.model
+                .prime_cache(e, &tokens[start..end], cache, tp - end)?;
+        drop(h_seed);
+        drop(hiddens);
+        if split == Some(end) {
+            *boundary = cache
+                .snapshot(e)
+                .ok()
+                .map(|snap| crate::spec::SpecBoundaryCapture {
+                    snap,
+                    pos: pos0 + end,
+                    logits: logits.clone(),
+                    last_h: Vec::new(),
+                    latent_tails: Vec::new(),
+                });
+            // Streaming ingestion can compact before the suffix ends. Keep
+            // the capture's draft window until the worker exports its tail.
+            dkv.set_pin(boundary.as_ref().map(|b| b.pos));
+        }
+        *final_logits = Some(logits);
+        let taps = cache.dflash_taps.take().expect("prime tap sink missing");
+        carry.chunk(rows, |op| {
+            apply_tap_batch_op(
+                e,
+                draft,
+                dkv,
+                batch,
+                Some(&taps.buf),
+                width,
+                op,
+                oracle.as_deref_mut(),
+            )
+        })?;
+
+        // Draft ingestion follows the trunk readback; complete it before a peer can
+        // reuse shared model/engine scratch on this same stream.
+        e.stream().synchronize()?;
+        self.state.cursor += 1;
+        Ok(crate::prime_walker::PrimeChunk {
+            phase: "dflash-trunk-ingest",
+            rows,
+        })
+    }
+
+    fn finish(self) -> Result<Vec<f32>, crate::prime_walker::PrimeError> {
+        if self.remaining_chunks() != 0 {
+            return Err("DFlash prime incomplete".into());
+        }
+        let Self {
+            e,
+            draft,
+            dkv,
+            state,
+            mut oracle,
+            ..
+        } = self;
+        state.carry.flush(|op| {
+            apply_tap_batch_op(
+                e,
+                draft,
+                dkv,
+                &mut state.batch,
+                None,
+                state.width,
+                op,
+                oracle.as_deref_mut(),
+            )
+        })?;
+        debug_assert_eq!(state.carry.next_position, state.pos0 + state.tokens.len());
+        if crate::alloc_trace_on() {
+            eprintln!(
+                "[dflash-taps] base={} rows={} max_chunk_rows={} chunk_tap_bytes={} carry_bytes={} former_full_tap_bytes={}",
+                state.pos0,
+                state.tokens.len(),
+                state.max_chunk,
+                state.max_chunk * state.width * 4,
+                state.carry.capacity * state.width * 4,
+                state.tokens.len() * state.width * 4
+            );
+        }
+        e.stream().synchronize()?;
+        trace_allocation_phase(e, "draft-ingest-after")?;
+        state
+            .final_logits
+            .take()
+            .ok_or_else(|| "DFlash prime produced no logits".into())
+    }
+}
+
 impl crate::hybrid::HybridModel {
+    /// Serial serving prime shared by cold requests and restored/parked suffixes.
+    /// One chunk sink plus one 256-row carry; the numeric chunk and batch grids
+    /// are unchanged. Standalone generation entry points are outside this helper.
+    #[allow(clippy::too_many_arguments)]
+    fn prime_dflash_taps(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        cache: &mut crate::cache::Cache,
+        dkv: &mut DflashKv,
+        tokens: &[u32],
+        split: Option<usize>,
+        boundary: &mut Option<crate::spec::SpecBoundaryCapture>,
+        oracle: Option<&mut DflashPrimeOracle>,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let mut state = DflashTapPrime::new(self, e, draft, tokens, cache.pos, split)?;
+        let mut walker = DflashTapWalker {
+            model: self,
+            e,
+            draft,
+            cache,
+            dkv,
+            state: &mut state,
+            boundary,
+            oracle,
+        };
+        crate::prime_walker::advance_prime(&mut walker, false, crate::prime_walker::trace_chunk)?;
+        crate::prime_walker::finish_prime(walker)
+    }
+
     /// Turn-1 prime: trunk prefill with taps armed + chunked ctx ingest into the draft KV.
     /// Mirrors generate_spec_dspark's prime block exactly (chunk offsets via sink.base are
     /// handled inside prime_cache's tick loop; the 256-row ingest chunks match the bin arm).
@@ -4811,8 +5385,25 @@ impl crate::hybrid::HybridModel {
         ctx_cap: usize,
         sampling: Option<crate::spec::SpecSampling>,
         capture: DsparkCapture,
-    ) -> Result<DsparkSpecSession, Box<dyn std::error::Error>> {
-        use crate::cache::{Cache, DflashTapSink};
+    ) -> Result<DsparkSpecSession, crate::prime_walker::PrimeError> {
+        let mut state =
+            Some(self.dspark_prime_start(e, draft, prompt, ctx_cap, sampling, capture)?);
+        let mut walker = self.dspark_prime_walker(e, draft, &mut state);
+        crate::prime_walker::advance_prime(&mut walker, false, crate::prime_walker::trace_chunk)?;
+        crate::prime_walker::finish_prime(walker)
+    }
+
+    /// Cold setup owns all allocations before the first chunk. No sampling occurs here.
+    pub fn dspark_prime_start(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        prompt: &[u32],
+        ctx_cap: usize,
+        sampling: Option<crate::spec::SpecSampling>,
+        capture: DsparkCapture,
+    ) -> Result<DsparkPrimeState, crate::prime_walker::PrimeError> {
+        use crate::cache::Cache;
         assert!(
             !self.uses_gemma_program(),
             "gemma4 targets use the assistant-drafter route; dspark is the qwen-hybrid arm"
@@ -4824,11 +5415,12 @@ impl crate::hybrid::HybridModel {
         // penalised argmax (`dspark_accept_greedy_penalized`) and draw their boundary token
         // through `greedy_penalized_boundary_token`; worker admission arms the class under
         // MEMRA_DSPARK_GREEDY_PENALTY and keeps it plain otherwise.
-        let n_embd = self.cfg.n_embd as usize;
         let c = &draft.cfg;
-        assert_eq!(n_embd, c.hidden, "draft hidden must match target n_embd");
+        assert_eq!(
+            self.cfg.n_embd as usize, c.hidden,
+            "draft hidden must match target n_embd"
+        );
         let b = c.block_size;
-        let n_taps = c.target_layer_ids.len();
         // The dspark round is windowless: every position the session will ever hold must
         // fit the draft window. Clamp the session ctx to it and refuse prompts that
         // cannot take even one round — admission falls back to the plain path.
@@ -4848,69 +5440,65 @@ impl crate::hybrid::HybridModel {
             )
             .into());
         }
-        let mut cache = Cache::new(e, &self.cfg, max_ctx)?;
+        trace_allocation_phase(e, "target-kv-before")?;
+        let cache = Cache::new(e, &self.cfg, max_ctx)?;
+        trace_allocation_phase(e, "target-kv-after")?;
         let tp = prompt.len();
-        // Filled by the boundary-split arm below, BEFORE the suffix prime runs.
-        let mut boundary_capture: Option<crate::spec::SpecBoundaryCapture> = None;
-        cache.dflash_taps = Some(DflashTapSink {
-            layer_ids: c.target_layer_ids.clone(),
-            buf: e.uninit(tp * n_taps * n_embd)?,
-            hidden: n_embd,
-            t: tp,
-            base: 0,
-            origin: 0,
-        });
-        // BOUNDARY-SPLIT PRIME (lane/dspark-boundary-capture, memra#248). `capture_at =
-        // Some(b)` with `0 < b < tp` stops the trunk walk at `b`, so the capture below can
-        // snapshot a RENDER-STABLE prefix instead of the prompt end. The suffix then continues
-        // on the same cache, which `prime_cache` has supported since 7700e0b6 (positions carry
-        // the sequence base). `queued_after` is what keeps `seq_end` request-absolute across
-        // both calls — the first call declares the `tp - b` rows still to come, exactly as the
-        // chunk loop's own `seq_end` does, so every windowed arm sees the same request length
-        // it would have seen unsplit.
-        //
-        // BIT-IDENTITY comes from the grid, not from hope: a two-call prime split at `L` is
-        // bit-identical to the monolithic prime when `L % gdn_chunk_size() == 0` and diverges
-        // from row `L` onward when it is not (measured, q38 trunk, research/multiturn-cache-
-        // 20260821/LONGCTX-EXACTNESS-20260821.md). The caller's boundary comes from
-        // `plain_checkpoint_boundary`, which is already grid-aligned; this refuses anything
-        // else rather than trusting it, because an off-grid split is a SILENT numerical
-        // change, not an error.
+        let oracle = crate::alloc_trace_on().then(DflashPrimeOracle::default);
         let split = dspark_boundary_split(capture, tp, Engine::gdn_chunk_size())?;
-        let (logits, _h_seed, _hiddens) = match split {
-            None => self.prime_cache(e, prompt, &mut cache, 0)?,
-            Some(b) => {
-                let (lb, _hb, _xb) = self.prime_cache(e, &prompt[..b], &mut cache, tp - b)?;
-                // The boundary capture is taken HERE, on a cache holding exactly `b` rows and
-                // with `lb` the logits the next token would be drawn from — the two halves
-                // `dspark_spec_session_from_restored` demands of an entry. Nothing between
-                // this point and the suffix prime mutates the trunk.
-                boundary_capture = if let Ok(snap) = cache.snapshot(e) {
-                    Some(crate::spec::SpecBoundaryCapture {
-                        snap,
-                        pos: b,
-                        logits: lb,
-                        last_h: Vec::new(),
-                        latent_tails: Vec::new(),
-                    })
-                } else {
-                    None
-                };
-                // Sink rows for the suffix land at their ABSOLUTE positions: the chunked walk
-                // sets `base = origin + call-local start`, so the whole-prompt buffer fills
-                // exactly as the monolithic prime filled it and the drafter ingest below is
-                // unchanged.
-                if let Some(taps) = cache.dflash_taps.as_mut() {
-                    taps.origin = b;
-                    taps.base = b;
-                }
-                let out = self.prime_cache(e, &prompt[b..], &mut cache, 0)?;
-                if let Some(taps) = cache.dflash_taps.as_mut() {
-                    taps.origin = 0;
-                }
-                out
-            }
-        };
+        let boundary_capture: Option<crate::spec::SpecBoundaryCapture> = None;
+        trace_allocation_phase(e, "draft-kv-before")?;
+        let dkv = DflashKv::new(e, &draft.cfg, max_ctx)?;
+        trace_allocation_phase(e, "draft-kv-after")?;
+
+        let taps = DflashTapPrime::new(self, e, draft, prompt, cache.pos, split)?;
+        Ok(DsparkPrimeState {
+            taps,
+            mode: DsparkPrimeMode::Cold {
+                cache,
+                dkv,
+                max_ctx,
+                sampling,
+                capture,
+                boundary_capture,
+                oracle,
+            },
+        })
+    }
+
+    /// Bind immutable execution context only while advancing. The worker stores the
+    /// owned state, never a self-referential borrow of its model or session.
+    pub fn dspark_prime_walker<'a>(
+        &'a self,
+        e: &'a Engine,
+        draft: &'a DflashDraft,
+        state: &'a mut Option<DsparkPrimeState>,
+    ) -> DsparkPrimeWalker<'a> {
+        DsparkPrimeWalker {
+            model: self,
+            e,
+            draft,
+            state,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish_dspark_cold_prime(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        prompt: &[u32],
+        cache: crate::cache::Cache,
+        dkv: DflashKv,
+        max_ctx: usize,
+        sampling: Option<crate::spec::SpecSampling>,
+        capture: DsparkCapture,
+        boundary_capture: Option<crate::spec::SpecBoundaryCapture>,
+        oracle: Option<DflashPrimeOracle>,
+        logits: Vec<f32>,
+    ) -> Result<DsparkSpecSession, crate::prime_walker::PrimeError> {
+        let tp = prompt.len();
+        let b = draft.cfg.block_size;
         // Boundary token: greedy argmax (byte contract) or the request's own filtered
         // draw through the session Philox stream (the frspec boundary composition) —
         // penalized over the prompt window when the request carries penalties.
@@ -4935,24 +5523,6 @@ impl crate::hybrid::HybridModel {
                 None => crate::forward::argmax(&logits) as u32,
             },
         };
-        let mut dkv = DflashKv::new(e, &draft.cfg, max_ctx)?;
-        {
-            let taps = cache.dflash_taps.take().unwrap();
-            let n_taps_h = n_taps * n_embd;
-            let mut r0 = 0usize;
-            while r0 < tp {
-                let t_c = (tp - r0).min(256);
-                let tv = e.view(&taps.buf, tp * n_taps_h);
-                let win = tv.slice(r0 * n_taps_h..(r0 + t_c) * n_taps_h);
-                let mut chunk = e.uninit(t_c * n_taps_h)?;
-                e.copy_view_into(&mut chunk, 0, &win, t_c * n_taps_h)?;
-                let f = draft.ctx_features(e, &chunk, t_c)?;
-                let pos_c: Vec<i32> = ((r0 as i32)..(r0 + t_c) as i32).collect();
-                draft.ingest_ctx(e, &mut dkv, &f, &pos_c, t_c)?;
-                r0 += t_c;
-            }
-        }
-        e.stream().synchronize()?;
         // WHERE THE ENTRY IS CUT. Prompt-end is the shipped default and the only cut that
         // existed before memra#248: the draft plane derives from trunk hidden FEATURES, so
         // unlike MTP there is no way to rebuild it from a restored trunk prefix, and the
@@ -4974,6 +5544,7 @@ impl crate::hybrid::HybridModel {
         // Mandatory draft-KV allocation + ingest has already succeeded, so the optional
         // snapshot can no longer turn a session that would have fit into a draft-allocation
         // failure. Both arms capture before any speculative burst mutates the recurrent state.
+        trace_allocation_phase(e, "prefix-snapshot-before")?;
         let prefix_capture = if boundary_capture.is_some() {
             boundary_capture
         } else if capture != DsparkCapture::Off {
@@ -4990,6 +5561,10 @@ impl crate::hybrid::HybridModel {
         } else {
             None
         };
+        trace_allocation_phase(e, "prefix-snapshot-after")?;
+        if let Some(oracle) = oracle {
+            oracle.finish(e, tp, &logits, prefix_capture.as_ref())?;
+        }
         // Verify carries [anchor, drafts] = up to n_drafts+1 rows (harvest-dependent;
         // DSPARK-POSTMORTEM-20260820.md; family-keyed for DFlash2, else checkpoint
         // strategy census).
@@ -5211,12 +5786,46 @@ impl crate::hybrid::HybridModel {
         sess: &mut DsparkSpecSession,
         suffix: &[u32],
         capture: DsparkCapture,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        use crate::cache::DflashTapSink;
-        let n_embd = self.cfg.n_embd as usize;
+    ) -> Result<(), crate::prime_walker::PrimeError> {
+        let split = self.validate_dspark_resume(draft, sess, suffix, capture)?;
+        let logits = self.prime_dflash_taps(
+            e,
+            draft,
+            &mut sess.cache,
+            &mut sess.dkv,
+            suffix,
+            split,
+            &mut sess.prefix_capture,
+            None,
+        )?;
+        self.finish_dspark_resume_prime(e, sess, suffix, logits)
+    }
+
+    pub fn dspark_prime_resume_start(
+        &self,
+        e: &Engine,
+        draft: &DflashDraft,
+        sess: DsparkSpecSession,
+        suffix: &[u32],
+        capture: DsparkCapture,
+    ) -> Result<DsparkPrimeState, crate::prime_walker::PrimeError> {
+        let split = self.validate_dspark_resume(draft, &sess, suffix, capture)?;
+        let taps = DflashTapPrime::new(self, e, draft, suffix, sess.cache.pos, split)?;
+        Ok(DsparkPrimeState {
+            taps,
+            mode: DsparkPrimeMode::Resume(sess),
+        })
+    }
+
+    fn validate_dspark_resume(
+        &self,
+        draft: &DflashDraft,
+        sess: &DsparkSpecSession,
+        suffix: &[u32],
+        capture: DsparkCapture,
+    ) -> Result<Option<usize>, crate::prime_walker::PrimeError> {
         let c = &draft.cfg;
         let b = c.block_size;
-        let n_taps = c.target_layer_ids.len();
         let pos0 = sess.cache.pos;
         debug_assert_eq!(
             sess.ctx_len, pos0,
@@ -5263,52 +5872,19 @@ impl crate::hybrid::HybridModel {
             .into());
         }
         let tp = suffix.len();
-        sess.cache.dflash_taps = Some(DflashTapSink {
-            layer_ids: c.target_layer_ids.clone(),
-            buf: e.uninit(tp * n_taps * n_embd)?,
-            hidden: n_embd,
-            t: tp,
-            base: 0,
-            origin: 0,
-        });
-        // memra#257: a restored session used to publish nothing, so the entry stayed frozen at
-        // turn 1's cut and every later turn restored from it with a suffix that grew by one
-        // whole turn each time (13,440 -> 206 -> 311 suffix tokens on the three-turn cell; on
-        // the 105k-168k agent-loop shape that is the re-prefill #248 exists to remove). The
-        // suffix prime is split at the NEW prompt's render-stable boundary, exactly as the
-        // cold prime splits, and the capture lands in `sess.prefix_capture` for the worker's
-        // ordinary publish path (which refuses a key the cache already holds). The taps sink
-        // is one whole-suffix buffer on both arms; `origin`/`base` move it to the second
-        // half's rows for the second call and come back before the ingest loop, which reads
-        // the buffer as a whole. Off-grid boundaries are an error, never a fallback.
-        let split = dspark_resume_split(capture, pos0, tp, Engine::gdn_chunk_size())?;
-        let (logits, _h_seed, _hiddens) = match split {
-            None => self.prime_cache(e, suffix, &mut sess.cache, 0)?,
-            Some(l) => {
-                let (lb, _hb, _xb) = self.prime_cache(e, &suffix[..l], &mut sess.cache, tp - l)?;
-                sess.prefix_capture = match sess.cache.snapshot(e) {
-                    Ok(snap) => Some(crate::spec::SpecBoundaryCapture {
-                        snap,
-                        pos: pos0 + l,
-                        logits: lb,
-                        last_h: Vec::new(),
-                        latent_tails: Vec::new(),
-                    }),
-                    Err(_) => None,
-                };
-                sess.pin_capture();
-                if let Some(taps) = sess.cache.dflash_taps.as_mut() {
-                    taps.origin = l;
-                    taps.base = l;
-                }
-                let out = self.prime_cache(e, &suffix[l..], &mut sess.cache, 0)?;
-                if let Some(taps) = sess.cache.dflash_taps.as_mut() {
-                    taps.origin = 0;
-                    taps.base = 0;
-                }
-                out
-            }
-        };
+        // Keep the same suffix-local chunk grid and capture guards as the old
+        // whole-suffix path; the carry's ingestion positions start at pos0.
+        dspark_resume_split(capture, pos0, tp, Engine::gdn_chunk_size())
+    }
+
+    fn finish_dspark_resume_prime(
+        &self,
+        e: &Engine,
+        sess: &mut DsparkSpecSession,
+        suffix: &[u32],
+        logits: Vec<f32>,
+    ) -> Result<(), crate::prime_walker::PrimeError> {
+        let tp = suffix.len();
         let sp_pen = sess.sampling.filter(|s| s.pen_on());
         if let Some(sp) = sp_pen.as_ref() {
             sess.pen_hist = crate::spec::pen_window_seed(&sess.pen_hist, suffix, sp.penalty_last_n);
@@ -5329,23 +5905,6 @@ impl crate::hybrid::HybridModel {
                 None => crate::forward::argmax(&logits) as u32,
             },
         };
-        {
-            let taps = sess.cache.dflash_taps.take().unwrap();
-            let n_taps_h = n_taps * n_embd;
-            let mut r0 = 0usize;
-            while r0 < tp {
-                let t_c = (tp - r0).min(256);
-                let tv = e.view(&taps.buf, tp * n_taps_h);
-                let win = tv.slice(r0 * n_taps_h..(r0 + t_c) * n_taps_h);
-                let mut chunk = e.uninit(t_c * n_taps_h)?;
-                e.copy_view_into(&mut chunk, 0, &win, t_c * n_taps_h)?;
-                let f = draft.ctx_features(e, &chunk, t_c)?;
-                let pos_c: Vec<i32> = (((pos0 + r0) as i32)..((pos0 + r0 + t_c) as i32)).collect();
-                draft.ingest_ctx(e, &mut sess.dkv, &f, &pos_c, t_c)?;
-                r0 += t_c;
-            }
-        }
-        e.stream().synchronize()?;
         sess.ctx_len += tp;
         sess.last = last;
         sess.done = false;
@@ -5417,6 +5976,10 @@ impl crate::hybrid::HybridModel {
         mut on_commit: Option<crate::glm_spec::CommitHook<'_>>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
         use crate::cache::DflashTapSink;
+        let trace_first = sess.rounds == 0;
+        if trace_first {
+            trace_allocation_phase(e, "first-burst-before")?;
+        }
         // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
         let mut flushed = 0usize;
         let n_embd = self.cfg.n_embd as usize;
@@ -5981,6 +6544,9 @@ impl crate::hybrid::HybridModel {
             on_commit.is_none() || flushed == out.len(),
             "every committed token must have been handed to on_commit"
         );
+        if trace_first {
+            trace_allocation_phase(e, "first-burst-after")?;
+        }
         Ok((out, drafted, accepted_n))
     }
 }
@@ -7182,6 +7748,125 @@ mod dspark_harvest_tests {
 // sigmoid scores, thresholded, anchor + kept drafts, floor 2 / cap vt_cap — and the env
 // seam's refuse-on-ambiguity. Mutating the policy (per-slot threshold instead of
 // survival, off-by-one on the anchor, silent unknown-value fallback) fails HERE.
+#[cfg(test)]
+mod dflash_tap_oracle_tests {
+    use super::{Digest, RingPlan, Sha256, TapBatchCarry, TapBatchOp, hash_f32_bits, ring_plan};
+
+    #[test]
+    fn production_carry_preserves_whole_buffer_batches_across_chunks_and_boundary() {
+        for rows in [
+            16, 255, 256, 257, 4080, 4095, 4096, 4097, 4111, 4112, 8193, 32708, 32760,
+        ] {
+            for pos0 in [0, 32672] {
+                for cut in [None, Some(160), Some(32672), Some(32736)] {
+                    if cut.is_some_and(|cut| cut >= rows) {
+                        continue;
+                    }
+                    let source: Vec<[usize; 3]> =
+                        (pos0..pos0 + rows).map(|r| [r, r ^ 0x5a5a, !r]).collect();
+                    let expected: Vec<_> = source
+                        .chunks(256)
+                        .enumerate()
+                        .map(|(i, batch)| (pos0 + i * 256, batch.to_vec()))
+                        .collect();
+                    let mut carry = TapBatchCarry::new(rows, pos0);
+                    let mut batch = vec![[0; 3]; carry.capacity];
+                    let mut emitted = Vec::new();
+                    let (mut base, mut physical_rows) = (pos0, 640);
+                    let mut ring = Vec::new();
+                    let mut compactions = 0;
+                    let mut pin = None;
+                    let mut apply = |op, chunk: &[[usize; 3]], pin| -> Result<(), ()> {
+                        match op {
+                            TapBatchOp::Copy {
+                                source,
+                                destination,
+                            } => {
+                                batch[destination..destination + source.len()]
+                                    .copy_from_slice(&chunk[source]);
+                            }
+                            TapBatchOp::Ingest(positions) => {
+                                match ring_plan(
+                                    positions.start,
+                                    base,
+                                    physical_rows,
+                                    256,
+                                    positions.len(),
+                                    pin,
+                                ) {
+                                    RingPlan::Fits => {}
+                                    RingPlan::Compact { keep_from } => {
+                                        base = keep_from;
+                                        compactions += 1;
+                                    }
+                                    RingPlan::Grow {
+                                        keep_from,
+                                        phys_rows,
+                                    } => {
+                                        base = keep_from;
+                                        physical_rows = phys_rows;
+                                    }
+                                }
+                                ring.retain(|row: &[usize; 3]| row[0] >= base);
+                                ring.extend_from_slice(&batch[..positions.len()]);
+                                assert_eq!(ring, source[base - pos0..positions.end - pos0]);
+                                emitted.push((positions.start, batch[..positions.len()].to_vec()));
+                            }
+                        }
+                        Ok(())
+                    };
+                    let ends: Vec<_> = cut.into_iter().chain(std::iter::once(rows)).collect();
+                    let mut at = 0;
+                    for end in ends {
+                        // First split a batch at a trunk edge, then at the capture
+                        // boundary. Subsequent 4096-row chunks include folded tails.
+                        while at < end {
+                            let next = if at == 0 && end > 113 {
+                                113
+                            } else {
+                                (at + 4096).min(end)
+                            };
+                            carry
+                                .chunk(next - at, |op| apply(op, &source[at..next], pin))
+                                .unwrap();
+                            at = next;
+                        }
+                        if cut == Some(end) {
+                            pin = Some((pos0 + end).saturating_sub(256).max(pos0));
+                        }
+                    }
+                    carry.flush(|op| apply(op, &[], pin)).unwrap();
+                    assert_eq!(emitted, expected, "rows={rows} pos0={pos0} cut={cut:?}");
+                    assert_eq!(carry.next_position, pos0 + rows);
+                    if rows > 8192 && cut.is_none() {
+                        assert!(compactions > 0);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tap_hash_preserves_bits_across_arbitrary_capture_partitions() {
+        let bits = [0, 0x8000_0000, 0x7fc0_0001, 0x7fc0_002a, 0x3f80_0000];
+        let values: Vec<f32> = bits.iter().copied().map(f32::from_bits).collect();
+        let bytes: Vec<u8> = bits.iter().flat_map(|bits| bits.to_le_bytes()).collect();
+        let expected = Sha256::digest(&bytes);
+        for width in 1..=values.len() {
+            let mut actual = Sha256::new();
+            for part in values.chunks(width) {
+                hash_f32_bits(&mut actual, part);
+            }
+            assert_eq!(actual.finalize(), expected);
+        }
+        let mut positive_zero = Sha256::new();
+        let mut negative_zero = Sha256::new();
+        hash_f32_bits(&mut positive_zero, &[0.0]);
+        hash_f32_bits(&mut negative_zero, &[-0.0]);
+        assert_ne!(positive_zero.finalize(), negative_zero.finalize());
+    }
+}
+
 #[cfg(test)]
 mod dspark_vt_tests {
     use super::{ConfidenceHead, DsparkVtPolicy, dspark_confidence_vt, dspark_slot_confidence_vt};
