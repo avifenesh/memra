@@ -2904,6 +2904,37 @@ int memra_moe_m1_graph_splitk_component(
 // Instrument plus default-OFF door scaffold: one observed six-live CSR per
 // rank/projection supplies derived prefixes 0..6. Also retain the first actual
 // low-live (1..5) CSR per rank/projection, without modifying that route.
+// Verbatim merged wrapper body from 182819614, renamed only for this harness.
+static int splitk_fast_merged_wrapper_control(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off, int n_active, int in_f, int out_f,
+        float limit, int slots, int gu, float* partial, void* stream){
+    if(!table || !ex_ids || !act_f16 || !out || !row_scale || !ex_off || !partial
+       || n_expert < 1 || n_active < 1 || n_active > SK_MAX_G
+       || slots != 6 || slots > n_active || (gu != 0 && gu != 1)
+       || (gu && (!macro_g || !macro_u || !route_w))
+       || (in_f != 4096 && in_f != 2048) || (out_f != 4096 && out_f != 2048))
+        return 40004;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    const int grid = 6 * (out_f / SK_BN) * 16;
+    if(gu) moe_m1_graph_splitk_partial_kernel<2><<<grid, dim3(32,4), 0, st>>>(
+        table,0,n_expert,ex_ids,in_f/2,(const __half*)act_f16,
+        partial,ex_off,n_active,in_f,out_f);
+    else moe_m1_graph_splitk_partial_kernel<1><<<grid, dim3(32,4), 0, st>>>(
+        table,1,n_expert,ex_ids,in_f/2,(const __half*)act_f16,
+        partial,ex_off,n_active,in_f,out_f);
+    cudaError_t e = cudaGetLastError();
+    if(e) return 1000 + int(e);
+    if(gu) moe_m1_graph_splitk_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
+        partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+    else moe_m1_graph_splitk_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(
+        partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+    e = cudaGetLastError();
+    return e ? 1000 + int(e) : 0;
+}
+
 static std::atomic<int> g_splitk_fast_diagnostic_token{-1};
 static std::atomic<bool> g_splitk_fast_diagnostic_done{false};
 static std::string g_splitk_fast_diagnostic_dir;
@@ -3052,18 +3083,31 @@ int memra_moe_m1_splitk_fast_component(
             fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_CONTROL_PASS phase=%s guarded=1 comparison=%s timing_events=0\n",phase,reference?"reference_saved":"bit_equal");
             return 0;
         };
-        phase="production_wrapper_original_operands_no_events";
+        phase="merged_wrapper_original_operands_no_events";
         fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
         int rc=reset(); if(rc) return rc;
-        rc=memra_moe_m1_graph_splitk(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+        rc=splitk_fast_merged_wrapper_control(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
             macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
         if(rc){
-            fprintf(stderr,"SPLITK_FAST_PRODUCTION_WRAPPER_FAILURE rc=%d call=memra_moe_m1_graph_splitk file=%s line=%d\n",rc,__FILE__,__LINE__);
-            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"memra_moe_m1_graph_splitk",__FILE__,__LINE__,phase,device,gu,observed);
+            fprintf(stderr,"SPLITK_FAST_MERGED_DEFAULT_FAILURE_P1 rc=%d call=splitk_fast_merged_wrapper_control file=%s line=%d\n",rc,__FILE__,__LINE__);
+            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"splitk_fast_merged_wrapper_control",__FILE__,__LINE__,phase,device,gu,observed);
             return rc;
         }
         GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
         rc=read_and_guard(true); if(rc) return rc;
+        rc=reset(); if(rc) return rc;
+        phase="scaffold_wrapper_original_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        rc=reset(); if(rc) return rc;
+        rc=memra_moe_m1_graph_splitk(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+            macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
+        if(rc){
+            fprintf(stderr,"SPLITK_FAST_SCAFFOLD_WRAPPER_FAILURE rc=%d call=memra_moe_m1_graph_splitk file=%s line=%d\n",rc,__FILE__,__LINE__);
+            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"memra_moe_m1_graph_splitk",__FILE__,__LINE__,phase,device,gu,observed);
+            return rc;
+        }
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        rc=read_and_guard(false); if(rc) return rc;
         rc=reset(); if(rc) return rc;
         phase="production_partial_original_operands_no_events";
         fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
@@ -3187,7 +3231,7 @@ int memra_moe_m1_splitk_fast_component(
                         }
                         if(arm==1){
                             g_splitk_fast_diagnostic_done.store(true);
-                            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_COMPLETE original_wrapper=pass separate_kernels=pass copied_operands=pass event_path=pass timing_rows=0\n");
+                            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_COMPLETE merged_wrapper=pass scaffold_wrapper=pass separate_kernels=pass copied_operands=pass event_path=pass timing_rows=0\n");
                             return 0;
                         }
                     }
