@@ -704,3 +704,13 @@ candidate with dense-fast. No serving admission or default promotion.
 Rollback uses `MEMRA_DSV4_NORM_FUSE=0` or unset with fresh uncaptured state;
 decide-by 2026-09-23. FFI entry: `memra_dsv4_norm_rope_f32_fixed_order` in
 `src/dsv4_ffi.rs`, dispatched by the t=1 batch attention path in `src/dsv4_gpu.rs`.
+### Dense exact-tail shape diagnostic (2026-09-09)
+
+`tools/dsv4-dense-fast-gate.cu` measures the current dense exact-tail symbols
+on all 13 replay-map shapes, both GPUs, with 50 warm and 50 cold CUDA-event
+rows per shape. Cold rows flush 256 MiB before the event. It reports the
+CUDA occupancy API limit, registers/shared/local bytes and modeled tensor GB/s.
+Disassembly supplies static instruction evidence; neither metric is a hardware
+counter claim. Initial operands are deterministic synthetic inputs, so this
+diagnostic does not replace real-operand equality or model qualification.
+The diagnostic accepts `--reverse` from its first build. No runtime door yet.
