@@ -1064,6 +1064,25 @@ unsafe extern "C" {
         scale: f32,
         stream: *mut c_void,
     ) -> i32;
+    /// Verify-only tiled split-KV numeric class; eight partitions, geometry refusal 40023.
+    pub fn memra_mla_verify_splitkv_f32(
+        q_lat: *const f32,
+        q_pe: *const f32,
+        cache: *const f32,
+        idx: *const i32,
+        o_lat: *mut f32,
+        part_m: *mut f32,
+        part_d: *mut f32,
+        part_acc: *mut f32,
+        n_head: i32,
+        kv_rank: i32,
+        d_rope: i32,
+        t_q: i32,
+        n_slots: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+
     /// B200 decode-arm twin of `memra_mla_attn_gathered_f32` (MEMRA_B200_MLA_DECODE_ARM): same
     /// per-l accumulate chain, its output range [0, kv_rank) split across `split` blocks; the
     /// shared score/softmax tile walk (m, dsum) is recomputed IN FULL, unchanged, by every
@@ -2746,6 +2765,47 @@ impl Engine {
         scale: f32,
     ) -> Res<()> {
         let s = self.stream();
+        // Separate numeric-class admission: the existing decode-only warp arm stays
+        // decode-only. An incompatible geometry uses the current dispatch below.
+        static SPLITKV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let splitkv = *SPLITKV
+            .get_or_init(|| std::env::var("MEMRA_GLM5_MLA_VERIFY_SPLITKV").as_deref() == Ok("1"));
+        if splitkv
+            && cfg!(memra_sm100_tcgen05)
+            && n_head == 64
+            && kv_rank == 512
+            && d_rope == 0
+            && (2..=7).contains(&t_q)
+            && (2048..=2051).contains(&n_slots)
+        {
+            let cells = t_q * n_head * 8;
+            let mut part_m = self.uninit(cells)?;
+            let mut part_d = self.uninit(cells)?;
+            let mut part_acc = self.uninit(cells * kv_rank)?;
+            let rc = unsafe {
+                memra_mla_verify_splitkv_f32(
+                    q_lat.device_ptr(&s).0 as *const f32,
+                    q_pe.device_ptr(&s).0 as *const f32,
+                    cache.device_ptr(&s).0 as *const f32,
+                    idx.device_ptr(&s).0 as *const i32,
+                    o_lat.device_ptr_mut(&s).0 as *mut f32,
+                    part_m.device_ptr_mut(&s).0 as *mut f32,
+                    part_d.device_ptr_mut(&s).0 as *mut f32,
+                    part_acc.device_ptr_mut(&s).0 as *mut f32,
+                    n_head as i32,
+                    kv_rank as i32,
+                    d_rope as i32,
+                    t_q as i32,
+                    n_slots as i32,
+                    scale,
+                    s.cu_stream() as *mut c_void,
+                )
+            };
+            if !mla_dsa_geometry_refusal(rc) {
+                mla_dsa_announce("attn_gathered", t_q, "arm=verify-splitkv chunks=8");
+                return ck("attn_gathered_verify_splitkv", rc);
+            }
+        }
         // MEMRA_B200_DSA_DECODE door, checked FIRST: its arms fight the same 64-CTA t_q=1
         // geometry the output-range split below does, without repeating the slot walk.
         // THE TWO LEVELS DIFFER TODAY, and the difference is this PR's headline: the shipped
