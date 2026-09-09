@@ -1,0 +1,18 @@
+
+running 1 test
+kv-t3 t=128 tkv=128 nh=6 nkv=1 causal=true differences=0
+kv-t3 t=128 tkv=128 nh=6 nkv=1 causal=false differences=0
+kv-t3 t=129 tkv=161 nh=6 nkv=1 causal=true differences=0
+kv-t3 t=129 tkv=161 nh=6 nkv=1 causal=false differences=0
+kv-t3 t=192 tkv=4097 nh=6 nkv=1 causal=true differences=0
+kv-t3 t=192 tkv=4097 nh=6 nkv=1 causal=false differences=0
+kv-t3 t=992 tkv=32768 nh=6 nkv=1 causal=true differences=0
+kv-t3 t=992 tkv=32768 nh=6 nkv=1 causal=false differences=0
+kv-t3 t=1024 tkv=131070 nh=6 nkv=1 causal=true differences=0
+kv-t3 t=1024 tkv=131070 nh=6 nkv=1 causal=false differences=0
+kv-t3 t=4096 tkv=8192 nh=24 nkv=4 causal=true differences=0
+kv-t3 t=4096 tkv=8192 nh=24 nkv=4 causal=false differences=0
+test three_plane_staging_preserves_quantized_attention_bytes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.30s
+

@@ -1,5 +1,11 @@
 # Kernel inventory
 
+## Qwen attention prime staging, 2026-09-09
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `fa_prefill_qw_t3` | Two K staging planes plus one V plane, register P operands; unchanged head-dim 256 prime arithmetic | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_T3`, default OFF | `Engine::fa_prefill_view_ws` |
+
 ## DSV4 small-kernel diet, 2026-09-07
 
 Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use

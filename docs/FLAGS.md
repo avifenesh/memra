@@ -1,5 +1,15 @@
 # Environment flags — the audited catalog
 
+## Qwen attention prime staging, 2026-09-09
+
+| Flag | Contract |
+| --- | --- |
+| `MEMRA_PRIME_KV_T3` | **OFF (default), decide-by: 2026-09-23.** Strict `1` selects three-plane BF16 KV staging for head-dim 256, t>=128, double-buffered quantized-KV prime. `0`/unset uses the existing four-plane kernel. Two K buffers and one V buffer replace four KV buffers; P operands stay in registers with the same scalar RN conversions, MMA and softmax order. Shared memory 69888 -> 49152 bytes. Decode and other head dimensions are unchanged. Rollback: unset or `0`. Receipt: `research/qwen-prefill-20260909/`; all 12 direct byte cells pass, 1024-row attention at depth 131070 changes 29.090 -> 24.019 ms. Final 12-cell typed and real 32k/131070 boundary byte gates pass, K=1..8 exact, canonical margin flips=0, greedy restore exact. Fresh 131070 cold TTFT 68.295 -> 63.450 s at unchanged chunk 1024, N=3 interleaved boots/arm. Global default remains OFF pending clearance of the separately recorded accumulated-state failure; see RESULTS.md for the scoped default proposal. |
+
+### Removed experiments in this lane
+
+`MEMRA_PRIME_QW8`: removed before merge. Exact but flat at chunk 1024 (29.082/29.145 ms at 131070 depth); a 4096-only serving control subsequently OOMed after prefix publication. Superseded by the three-plane staging candidate at unchanged chunk 1024. Probability-fragment load reuse alone was also flat and removed. Receipts: `research/qwen-prefill-20260909/`.
+
 ## DSV4 small-kernel diet
 
 | Flag | Default, arms, gate and rollback |

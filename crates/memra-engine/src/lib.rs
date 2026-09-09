@@ -29209,13 +29209,25 @@ impl Engine {
             .map(|v| v != "0")
             .unwrap_or(true);
         {
+            // Same row program, three KV staging planes and register-resident P operands.
+            let triple = db
+                && head_dim == 256
+                && t >= 128
+                && std::env::var("MEMRA_PRIME_KV_T3").as_deref() == Ok("1");
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(
                 "fa_prefill_qw{}{hd_sfx}",
-                if db { "_db" } else { "" }
+                if triple {
+                    "_t3"
+                } else if db {
+                    "_db"
+                } else {
+                    ""
+                }
             ));
-            let shmem = if db {
-                // 4x KV tile buffers (bf16) + sP (bf16) + sL (f32)
+            let shmem = if triple {
+                (2 * 3 * BK * head_dim) as u32
+            } else if db {
                 (2 * (4 * BK * head_dim + BLOCK_Q * BK) + 4 * BLOCK_Q) as u32
             } else {
                 (2 * (2 * BK * head_dim + BLOCK_Q * BK) + 4 * (BLOCK_Q * BK + 2 * BLOCK_Q)) as u32
