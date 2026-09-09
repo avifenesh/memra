@@ -43,6 +43,20 @@ use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
 use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
+unsafe extern "C" {
+    fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+    fn memra_dsv4_hc_dot_split(
+        x: *const f32,
+        w: *const f32,
+        partial: *mut f32,
+        partial_len: i32,
+        y: *mut f32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+}
+
 type Res<T> = Result<T, String>;
 
 /// Cadence selection for the already-admitted full-token replay path. Set before
@@ -917,6 +931,7 @@ pub struct StepWs {
     pub h_rx: CudaSlice<f32>, // [hc*hidden] boundary RX slot (peer TX writes here)
     pub emb: CudaSlice<f32>, // [hidden]
     pub mixes: CudaSlice<f32>, // [(2+hc)*hc]
+    pub hc_dot_partial: CudaSlice<f32>, // [24*32], state/rank owned, capture-stable
     pub pre: CudaSlice<f32>, // [hc]
     pub post: CudaSlice<f32>, // [hc]
     pub comb: CudaSlice<f32>, // [hc*hc]
@@ -7017,6 +7032,7 @@ impl Dsv4Gpu {
                 h_rx: f(hc * hidden)?,
                 emb: f(hidden)?,
                 mixes: f((2 + hc) * hc)?,
+                hc_dot_partial: f(24 * 32)?,
                 pre: f(hc)?,
                 post: f(hc)?,
                 comb: f(hc * hc)?,
@@ -8509,6 +8525,7 @@ impl Dsv4Gpu {
         base_dev: &CudaSlice<f32>,
         scale_dev: &CudaSlice<f32>,
         mixes: &mut CudaSlice<f32>,
+        hc_dot_partial: &mut CudaSlice<f32>,
         pre: &mut CudaSlice<f32>,
         post: &mut CudaSlice<f32>,
         comb: &mut CudaSlice<f32>,
@@ -8522,7 +8539,29 @@ impl Dsv4Gpu {
         let stream = st.gpu.stream();
         let w = hc * hidden;
         let rows = (2 + hc) * hc;
-        self.dots_dev(st, h, fn_w, 1, w, rows, mixes)?;
+        if self.dots_f32
+            && rows == 24
+            && w == 16384
+            && unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0
+        {
+            unsafe {
+                ck(
+                    "HC24 split dots",
+                    memra_dsv4_hc_dot_split(
+                        dpf!(h, &stream),
+                        dpf!(fn_w, &stream),
+                        dpm!(*hc_dot_partial, &stream),
+                        hc_dot_partial.len() as i32,
+                        dpm!(*mixes, &stream),
+                        rows as i32,
+                        w as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        } else {
+            self.dots_dev(st, h, fn_w, 1, w, rows, mixes)?;
+        }
         unsafe {
             ck(
                 "rowsq_scale dev",
@@ -8790,6 +8829,7 @@ impl Dsv4Gpu {
                 h_a,
                 h_rx,
                 mixes,
+                hc_dot_partial,
                 pre,
                 post,
                 comb,
@@ -8806,6 +8846,7 @@ impl Dsv4Gpu {
                 &layer.hc_attn_base_dev,
                 &layer.hc_attn_scale_dev,
                 mixes,
+                hc_dot_partial,
                 pre,
                 post,
                 comb,
@@ -9352,6 +9393,7 @@ impl Dsv4Gpu {
             let StepWs {
                 h_b,
                 mixes,
+                hc_dot_partial,
                 pre,
                 post,
                 comb,
@@ -9367,6 +9409,7 @@ impl Dsv4Gpu {
                 &layer.hc_ffn_base_dev,
                 &layer.hc_ffn_scale_dev,
                 mixes,
+                hc_dot_partial,
                 pre,
                 post,
                 comb,

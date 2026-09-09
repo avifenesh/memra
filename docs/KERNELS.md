@@ -749,3 +749,26 @@ Composition receipts: [private Darklanes #535](https://github.com/avifenesh/dark
 capture, both function censuses, eager identity, refusals and five sanity rows.
 Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
 environment policy after the eager OFF oracle. No kernel arithmetic changes.
+
+## HC24 split dots numeric class (experimental, default OFF)
+
+`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_hc_dot_split_partial_kernel<S>`
+and `dsv4_hc_dot_split_reduce_kernel<S>` for S=8/16/32. Only the device HC-24
+pre-attention/pre-FFN sites with F32 N=24,K=16384 dispatch this pair. Other
+dots shapes retain their current kernel. Existing CUDA kernels are unchanged.
+
+Each of 24*S blocks has 128 threads. A contiguous K slice retains increasing
+eight-element per-lane multiply/add order and the exact-tail 128-leaf tree.
+S=32 has 64 zero leaves because its slice has 512 elements. One 32-thread
+second-stage block sums each row's partials in ascending slice order with
+explicit round-to-nearest f32 adds. No atomics or fused multiply-add.
+This is the **HC24 split dots** numeric class, not bit-identity with the
+exact-tail dots class: restarting accumulators and summing slices changes
+association. Each S is a distinct class and must be pinned in its receipt.
+
+Scratch is 24*32 F32 elements per decode state and rank, allocated before
+capture. Every call writes all partials it reads, both stages use the same
+stream, and graphs retain stable scratch addresses. `MEMRA_DSV4_HC_DOT_SPLIT`
+is OFF with decide-by 2026-09-23. Component, sanitizer, retained variant,
+determinism, refusal, drift and sampled ABBA gates are pending in private
+Darklanes `research/dsv4f-hc-dot-split-20260909/`.
