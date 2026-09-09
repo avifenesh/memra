@@ -279,6 +279,7 @@ jobs:
         run: |
           cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate --bin dsv4_tp_ep_tf_drift_gate --bin dsv4_compose_cadence_dense_gate --bin dsv4_compose_densefast_normfuse_gate --bin dsv4_densefast_normfuse_default_gate
           cargo test --release -p memra-engine --lib norm_fuse_default_tests
+          CARGO_TARGET_DIR="$PWD/target" bash tools/test-dsv4-dense-control-policy.sh
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"

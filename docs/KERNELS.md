@@ -671,7 +671,7 @@ Composition confirmation is directly recorded in
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
-### KV RMSNorm and RoPE gate-only composition door, 2026-09-09
+### KV RMSNorm and RoPE default with rollback, 2026-09-09
 
 `dsv4_norm_rope_f32_fixed_order_kernel` is the default-ON (admitted TP/EP f32x)
 `MEMRA_DSV4_NORM_FUSE` arm. It replaces the adjacent KV norm and rotary launches

@@ -56,6 +56,22 @@ explicitly before capture. The historical cadence/dense and graph split-K
 | Full-token profile harness | Preserve real unset/explicit-0 policy; log both selectors and assert their actual DOT nodes and total counts |
 | New dense-fast/norm-fuse engagement gate | Actual unset/0 program against eager both OFF |
 
+The non-Rust audit also covers standalone CUDA/C++ harnesses and their include
+chains. `tools/dsv4-dense-exact-tail-gate.cu` forces dense-fast OFF before its
+first CUDA call, preserving exact-tail enqueue and function-name assertions.
+The dense-TC probe and its R4/R7/R8/R9 drivers pin the same control once before
+timing. The dense-fast component already explicitly chooses OFF/ON per case.
+Other DSV4 CUDA components call routing, index, cache, RMSNorm or RoPE functions
+directly; they do not consume the Rust norm-fuse model policy. The R5/R6 driver-only conversion probes load pinned cubins and do not traverse
+the dense-fast host dispatcher; R7/R8/R9 controls are covered by the pin above.
+Shell/Python build wrappers delegate to the audited entry points; no second
+non-Rust norm-fuse environment reader or model-policy owner exists.
+
+`tools/test-dsv4-dense-control-policy.sh` compiles the two actual base harnesses
+and invokes `--check-controls` under unset, forced ON and explicit zero. These
+modes assert the actual override and return before device discovery or CUDA
+allocation; no GPU work is launched. Included dense-TC drivers use the same startup helper.
+
 CPU tests cover dense-fast initial C++ thread-local defaults and restore behavior
 in isolated unset/zero child processes, norm-fuse unset/zero with admitted and
 unsupported topologies, and profile census totals for ON and rollback. Hosted

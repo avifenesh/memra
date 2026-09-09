@@ -245,6 +245,10 @@ static int run_case(CUfunction function, int rows, int k, bool full) {
 } // namespace dsv4_dense_tc_gate_r7
 
 int main(int argc, char** argv) {
+    dsv4_dense_tc_gate::pin_control_policy();
+    if (argc == 2 && std::strcmp(argv[1], "--check-controls") == 0) {
+        std::puts("PASS dense_tc_control dense_fast=0 cpu_policy_only=true"); return 0;
+    }
     using namespace dsv4_dense_tc_gate_r7;
     if (argc < 2 || argc > 4) {
         std::fprintf(stderr, "usage: %s [--basis] <r7.cubin> [rows k]\n", argv[0]);

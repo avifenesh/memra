@@ -348,6 +348,10 @@ static int run_basis_r4() {
 } // namespace dsv4_dense_tc_gate_r4
 
 int main(int argc, char** argv) {
+    dsv4_dense_tc_gate::pin_control_policy();
+    if (argc == 2 && std::strcmp(argv[1], "--check-controls") == 0) {
+        std::puts("PASS dense_tc_control dense_fast=0 cpu_policy_only=true"); return 0;
+    }
     using namespace dsv4_dense_tc_gate;
     using namespace dsv4_dense_tc_gate_r4;
     if (argc > 1 && std::strcmp(argv[1], "--basis") == 0) return run_basis_r4();
