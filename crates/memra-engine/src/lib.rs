@@ -29220,7 +29220,10 @@ impl Engine {
             && head_dim == 256
             && n_head == 24
             && n_head_kv == 4
-            && (128..=1024).contains(&t)
+            // A restored suffix can be as short as PRIME_MIN_T. Tiny final tails
+            // merge into the previous 1024-row chunk, widening it by up to 15.
+            // Every such prefill must retain the same attention numerical class.
+            && (crate::hybrid_forward::PRIME_MIN_T..=1024 + crate::hybrid_forward::PRIME_MIN_T - 1).contains(&t)
             && scale == 1.0 / 16.0
             && causal
             && !g

@@ -4,7 +4,7 @@
 
 | Flag | Contract |
 | --- | --- |
-| `MEMRA_PRIME_ATTN_FA2` | **OFF (default), decide-by: 2026-09-23.** Strict `1` selects Memra-owned GQA-packed FA2-class quantized-KV prefill on the 170-SM sm_120a target, 24 Q / 4 KV / d256, causal t=128..1024. BF16 MMA, FP32 direct PV accumulation and BF16-rounded softmax denominator change numerical order. Other shapes use the existing kernel; decode is unchanged. Graphs key the numerical class and resolve true depth through the replay table. Rollback: unset or `0`. Standalone receipt: `research/qwen-prefill-attn-20260909/fa2/CHECKPOINT.md`; serving quality and timing gates pending. A failed numerical gate removes the door and its exclusive kernels in this PR. |
+| `MEMRA_PRIME_ATTN_FA2` | **OFF (default), decide-by: 2026-09-23.** Strict `1` selects Memra-owned GQA-packed FA2-class quantized-KV prefill on the 170-SM sm_120a target, 24 Q / 4 KV / d256, causal t=16..1039, including short restored suffixes and widened 1024-row tails. BF16 MMA, FP32 direct PV accumulation and BF16-rounded softmax denominator change numerical order. Other shapes use the existing kernel; decode is unchanged. Graphs key the numerical class and resolve true depth through the replay table. Rollback: unset or `0`. Standalone receipt: `research/qwen-prefill-attn-20260909/fa2/CHECKPOINT.md`; serving quality and timing gates pending. A failed numerical gate removes the door and its exclusive kernels in this PR. |
 
 ## Qwen carried-prime launch diet, 2026-09-09
 
