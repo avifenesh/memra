@@ -105,6 +105,11 @@ impl ArmAgg {
 }
 
 fn main() {
+    // Freeze the historical numeric class before any model or worker exists.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
+    }
+
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
         eprintln!(

@@ -10,7 +10,7 @@ use std::{
     time::Instant,
 };
 
-const SLICES: i32 = 16; // Provisional until the real-operand component selection.
+const SLICES: i32 = 16; // Owner accepted 2026-09-09.
 unsafe extern "C" {
     fn memra_dsv4_hc_dot_split_set_for_gate(slices: i32) -> i32;
     fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
@@ -146,14 +146,47 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                 [expected; 2],
                 "HC24 census rank={rank} variant={segment}"
             );
-            if segment != 1 {
-                assert_eq!(
-                    count_kernel(&dot, "dsv4_dense_fast_dots_kernel"),
+            let forward = segment != 1;
+            let expert = if forward { 86 } else { 0 };
+            assert_eq!(
+                count_kernel(&dot, "moe_m1_graph_splitk_partial_kernel"),
+                expert
+            );
+            assert_eq!(
+                count_kernel(&dot, "moe_m1_graph_splitk_reduce_kernel"),
+                expert
+            );
+            assert_eq!(
+                count_kernel(&dot, "dsv4_dense_fast_fp8_kernel"),
+                if forward { 494 } else { 0 }
+            );
+            assert_eq!(
+                count_kernel(&dot, "dsv4_dense_fast_dots_kernel"),
+                if forward {
                     if on { 167 } else { 253 }
-                );
-                assert_eq!(count_kernel(&dot, "moe_m1_graph_splitk_partial_kernel"), 86);
-                assert_eq!(count_kernel(&dot, "moe_m1_graph_splitk_reduce_kernel"), 86);
-            }
+                } else if rank == 1 {
+                    2
+                } else {
+                    0
+                }
+            );
+            assert_eq!(
+                count_kernel(&dot, "dsv4_norm_rope_f32_fixed_order_kernel"),
+                if forward { 43 } else { 0 }
+            );
+            let norms = match segment {
+                0 => 86,
+                2 => 128,
+                3 => 148,
+                _ => usize::from(rank == 1),
+            };
+            assert_eq!(count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel"), norms);
+            assert_eq!(
+                count_kernel(&dot, "dsv4_rope_kernel"),
+                if forward { 107 } else { 0 }
+            );
+            assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_fp8_kernel"), 0);
+            assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_dots_kernel"), 0);
             *hash = format!("{:x}", Sha256::digest(dot.as_bytes()));
             println!(
                 "GRAPH_CENSUS on={on} rank={rank} segment={segment} partial={partial} reduce={reduce} sha256={:x}",
@@ -219,7 +252,12 @@ fn refusals(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg, inputs: &[u
         }
     }
 }
-fn qualify_arm(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg) {
+fn qualify_arm(
+    gpu: &Dsv4Gpu,
+    prompt: &[u32],
+    output: &Path,
+    cfg: Dsv4SampleCfg,
+) -> (String, Identity, u32) {
     let mut prefix = state(gpu);
     gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
         .unwrap();
@@ -275,6 +313,7 @@ fn qualify_arm(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg)
             ident.1,
             ident.2
         );
+        (sha_tokens(&inputs), ident, carry)
     }
 }
 
@@ -440,12 +479,36 @@ fn main() {
         evidence::run();
         return;
     }
+    let defaults = args.get(4).is_some_and(|v| v == "--defaults");
+    if defaults {
+        let value = std::env::var("MEMRA_DSV4_HC_DOT_SPLIT").ok();
+        assert!(
+            value.is_none() || value.as_deref() == Some("0"),
+            "default engagement requires unset or explicit 0"
+        );
+        assert_eq!(
+            unsafe { memra_dsv4_hc_dot_split_slices_for_gate() },
+            if value.is_none() { SLICES } else { 0 },
+            "actual initial HC policy"
+        );
+        println!(
+            "DEFAULT_POLICY before_override=true hc_dot_split={} slices={}",
+            hc_on(),
+            unsafe { memra_dsv4_hc_dot_split_slices_for_gate() }
+        );
+    } else {
+        // Historical comparison arms select S16 explicitly after startup.
+        assert_eq!(unsafe { memra_dsv4_hc_dot_split_set_for_gate(0) }, 0);
+    }
     default_program();
     assert!(
         args.len() == 4
             || (args.len() == 5
-                && matches!(args[4].as_str(), "--qualify" | "--reverse" | "--drift")),
-        "usage: dsv4_hc_dot_split_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--reverse|--drift]"
+                && matches!(
+                    args[4].as_str(),
+                    "--qualify" | "--reverse" | "--drift" | "--defaults"
+                )),
+        "usage: dsv4_hc_dot_split_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--reverse|--drift|--defaults]"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     for (name, value) in [
@@ -473,7 +536,7 @@ fn main() {
     // Deliberately keep the graph environment default for --defaults.
     // Scored ABBA selects each graph policy explicitly after model creation.
     memra_engine::set_moe_m1_splitk_for_gate(false);
-    println!("GRAPH_SPLITK_POLICY on={}", hc_on());
+    println!("HC_DOT_SPLIT_POLICY on={}", hc_on());
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
@@ -516,7 +579,20 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
-    if args.get(4).is_some_and(|v| v == "--qualify") {
+    if defaults {
+        // No HC setter is called in this path. Eager, prefix and every capture
+        // observe the actual process policy, independently in unset and 0 runs.
+        let reference = qualify_arm(&gpu, &prompt[..PRIME], &output, cfg);
+        let mut arm = ScoredArm::new_current(&gpu, &prompt[..PRIME], cfg);
+        arm.reference = Some(reference);
+        for row in 0..5 {
+            scored_row(&gpu, &mut arm, &tokenizer, &output, row, false);
+        }
+        println!(
+            "PASS defaults hc_dot_split={} identity_steps=256 refusals=8 sanity_rows=5 first_capture_rows=1 performance_claim=false",
+            hc_on()
+        );
+    } else if args.get(4).is_some_and(|v| v == "--qualify") {
         for on in [false, true] {
             select_arm(&gpu, on);
             let dir = output.join(if on { "on" } else { "off" });
@@ -538,6 +614,59 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hc_policy_child() {
+        let value = std::env::var("MEMRA_DSV4_HC_DOT_SPLIT").ok();
+        let expected = match value.as_deref() {
+            None | Some("1" | "16") => 16,
+            Some("8") => 8,
+            Some("32") => 32,
+            _ => 0,
+        };
+        assert_eq!(
+            unsafe { memra_dsv4_hc_dot_split_slices_for_gate() },
+            expected
+        );
+        assert_eq!(unsafe { memra_dsv4_hc_dot_split_set_for_gate(0) }, 0);
+        assert_eq!(unsafe { memra_dsv4_hc_dot_split_slices_for_gate() }, 0);
+        assert_eq!(unsafe { memra_dsv4_hc_dot_split_set_for_gate(7) }, 40075);
+        assert_eq!(unsafe { memra_dsv4_hc_dot_split_slices_for_gate() }, 0);
+        assert_eq!(
+            std::thread::spawn(|| unsafe { memra_dsv4_hc_dot_split_slices_for_gate() })
+                .join()
+                .unwrap(),
+            expected
+        );
+    }
+    #[test]
+    fn hc_unset_zero_and_explicit_slices_use_process_policy() {
+        for value in [
+            None,
+            Some("0"),
+            Some("1"),
+            Some("16"),
+            Some("8"),
+            Some("32"),
+            Some("7"),
+            Some(""),
+            Some("true"),
+        ] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child.args(["--exact", "tests::hc_policy_child", "--nocapture"]);
+            if let Some(value) = value {
+                child.env("MEMRA_DSV4_HC_DOT_SPLIT", value);
+            } else {
+                child.env_remove("MEMRA_DSV4_HC_DOT_SPLIT");
+            }
+            let output = child.output().unwrap();
+            assert!(
+                output.status.success(),
+                "policy {value:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        }
+    }
     #[test]
     fn abba_reverse_keeps_ten_rows_per_arm() {
         assert_eq!(block_order(false), [true, false, false, true]);

@@ -641,7 +641,7 @@ receipts: `research/kernel-dedup-20260821/RECEIPTS.md`; every modified TU × arc
   m64n64k16.bf16 wrapper. Still local by design: fa3's `_tb` (transpose-B imm) and
   templated wait, qmatvec's m64n64k32.s8 form and raw asm statements.
 
-## HC24 split dots numeric class (experimental, default OFF)
+## HC24 split dots numeric class (owner accepted default ON, S16)
 
 `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_hc_dot_split_partial_kernel<S>`
 and `dsv4_hc_dot_split_reduce_kernel<S>` for S=8/16/32. Only the device HC-24
@@ -660,8 +660,10 @@ association. Each S is a distinct class and must be pinned in its receipt.
 Scratch is 24*32 F32 elements per decode state and rank, allocated before
 capture. Every call writes all partials it reads, both stages use the same
 stream, and graphs retain stable scratch addresses. `MEMRA_DSV4_HC_DOT_SPLIT`
-is OFF with decide-by: 2026-09-23; exact `1` selects the owner-chosen S=16.
-Unset or `0` restores the current dots after a fresh process/state capture.
+is ON when unset; exact `1` or `16` also selects the owner-chosen S=16.
+Explicit `0` restores sequential dots after a fresh process/state capture.
+S8 and S32 remain explicit opt-in classes; other strings select OFF.
+Rollback seam decide-by: 2026-09-23, owner accepted 2026-09-09.
 S32 was component-fastest but its 1.407% advantage over S16 did not justify
 rebuilding and re-review; only S16 has the model campaign receipts.
 
@@ -673,12 +675,20 @@ nodes per rank in each of the three forward variants; OFF and commit segments
 have zero. Source `d42196214`, binary
 `d9ca7ac0bb6417fcd99e176cd6e2244d9e9d8b6b837a08d73b27fc0a7bd2dc5c`.
 
-KEEP door: sampled pooled +2.701174% forward / +2.591532% reverse,20 eligible
+KEEP default ON: sampled pooled +2.701174% forward / +2.591532% reverse,20 eligible
 rows per order with first capture timed. All128 DRIFT-R3 input hashes match:
 49/2048 top1 changes (2.392578%), KL OFF-to-ON mean/max
 0.005672511/0.421308907 and ON-to-OFF0.005758277/0.483190648; greedy16/64
-identical and2099/4096 matching tokens. This is a new numeric class. Default-ON
-remains the owner's drift decision; this integration keeps the door OFF.
+identical and2099/4096 matching tokens. This is a distinct numeric class,
+not token-identical to the sequential dot. The owner accepted default ON
+on 2026-09-09, also informed by [drift mechanism #534](https://github.com/avifenesh/darklanes/pull/534)
+and [task accuracy #545](https://github.com/avifenesh/darklanes/pull/545):
+control 177/300, split-K + HC 177/300, McNemar p=1.00.
+`dsv4_hc_dot_split_gate --defaults` observes unset/0 without an HC override,
+checks every default census, 256-step eager identity within the selected class,
+eight refusals and five retained-graph sanity rows. Historical Rust and CUDA
+controls pin HC OFF before discovery or model creation. Profile and default
+engagement paths retain the environment policy.
 The source rebase does not relabel the pinned binary receipts as a new build.
 
 ## DSV4 segmented replay component, 2026-09-08
