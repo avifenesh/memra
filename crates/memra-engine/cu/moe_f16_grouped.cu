@@ -3083,18 +3083,40 @@ int memra_moe_m1_splitk_fast_component(
             fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_CONTROL_PASS phase=%s guarded=1 comparison=%s timing_events=0\n",phase,reference?"reference_saved":"bit_equal");
             return 0;
         };
-        phase="merged_wrapper_original_operands_no_events";
+        // Use the actual production output/scratch first, so a private
+        // allocation error cannot be mislabeled as a merged-default defect.
+        phase="before_caller_workspace_control";
+        GS_CHECK(cudaPeekAtLastError());
+        phase="merged_wrapper_caller_workspace_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        int caller_rc=splitk_fast_merged_wrapper_control(table,n_expert,ex_ids,act_f16,out,row_scale,
+            macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,6,gu,partial,stream);
+        if(caller_rc){
+            fprintf(stderr,"SPLITK_FAST_MERGED_DEFAULT_FAILURE_P1 rc=%d original_output=1 original_scratch=1\n",caller_rc);
+            if(caller_rc>=1000 && caller_rc<2000) splitk_fast_cuda_failure(cudaError_t(caller_rc-1000),"splitk_fast_merged_wrapper_control(original workspace)",__FILE__,__LINE__,phase,device,gu,observed);
+            return caller_rc;
+        }
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        std::vector<float> caller_reference(n);
+        GS_CHECK(cudaMemcpyAsync(caller_reference.data(),out,n*4,cudaMemcpyDeviceToHost,st));
+        GS_CHECK(cudaStreamSynchronize(st));
+        for(float v:caller_reference) if(!std::isfinite(v)) return 40006;
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_CONTROL_PASS phase=%s original_output=1 original_scratch=1 timing_events=0\n",phase);
+        phase="merged_wrapper_guarded_workspace_no_events";
         fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
         int rc=reset(); if(rc) return rc;
         rc=splitk_fast_merged_wrapper_control(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
             macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
         if(rc){
-            fprintf(stderr,"SPLITK_FAST_MERGED_DEFAULT_FAILURE_P1 rc=%d call=splitk_fast_merged_wrapper_control file=%s line=%d\n",rc,__FILE__,__LINE__);
+            fprintf(stderr,"SPLITK_FAST_GUARDED_WORKSPACE_FAILURE rc=%d call=splitk_fast_merged_wrapper_control file=%s line=%d\n",rc,__FILE__,__LINE__);
             if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"splitk_fast_merged_wrapper_control",__FILE__,__LINE__,phase,device,gu,observed);
             return rc;
         }
         GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
         rc=read_and_guard(true); if(rc) return rc;
+        if(std::memcmp(diagnostic_reference.data(),caller_reference.data(),n*4)){
+            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BIT_MISMATCH phase=caller_vs_guarded_workspace\n"); return 40008;
+        }
         rc=reset(); if(rc) return rc;
         phase="scaffold_wrapper_original_operands_no_events";
         fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
