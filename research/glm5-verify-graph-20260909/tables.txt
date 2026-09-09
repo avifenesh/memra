@@ -1,0 +1,50 @@
+| Arm | K | N | Accepted/round | HTTP ms/round | Tick ms/token | HTTP tok/s |
+|---|---:|---:|---:|---:|---:|---:|
+| plain | 0 | 3 | - | - | 12.318750 | 79.957362 |
+| K6-off | 6 | 3 | 1.772973 | 33.269985 | 12.310029 | 80.209701 |
+| K6-on | 6 | 3 | 1.647668 | 34.175333 | 12.497502 | 79.191090 |
+| auto-on | auto | 3 | 1.480583 | 30.420813 | 12.186221 | 81.254014 |
+{
+  "oracles": [
+    {
+      "kind": "greedy",
+      "k": 3,
+      "equal": true,
+      "tokens": 160,
+      "rounds": 62,
+      "logit_rounds": 62,
+      "token_sha256": "c3d1c394e342f07841b0dece697e40d4db74d2a3dfe92d4640507e4a7d949b33"
+    },
+    {
+      "kind": "greedy",
+      "k": 6,
+      "equal": true,
+      "tokens": 160,
+      "rounds": 54,
+      "logit_rounds": 54,
+      "token_sha256": "c3d1c394e342f07841b0dece697e40d4db74d2a3dfe92d4640507e4a7d949b33"
+    },
+    {
+      "kind": "sampled",
+      "k": 3,
+      "equal": true,
+      "tokens": 160,
+      "rounds": 68,
+      "logit_rounds": 68,
+      "token_sha256": "786e12f5fc90aaa09732ea56c412484f99d46e0780887ea8839cd2cdcc56dafe"
+    },
+    {
+      "kind": "sampled",
+      "k": 6,
+      "equal": true,
+      "tokens": 160,
+      "rounds": 52,
+      "logit_rounds": 52,
+      "token_sha256": "f7776eb629945ac9d00d8eb71902e12b15ce9a3f0816dd4886ff07687293d16f"
+    }
+  ],
+  "gain_vs_plain_pct": -0.9583507790817847,
+  "http_ms_per_round_saved": -0.9053476700314604,
+  "verify_ms_per_round_saved": -1.119820218064696,
+  "verdict": "NEGATIVE"
+}
