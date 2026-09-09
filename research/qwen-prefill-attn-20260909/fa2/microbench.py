@@ -38,7 +38,7 @@ resources = {}
 for name in names:
     f = C.c_void_p()
     ck(d.cuModuleGetFunction(C.byref(f), module, name.encode()))
-    smem = 69888 if name == "fa_prefill_qw_db" else 32768
+    smem = 69888 if name == "fa_prefill_qw_db" else (49152 if "32_rotate" in name else 32768)
     ck(d.cuFuncSetAttribute(f, 8, smem))
     regs, local, resident = C.c_int(), C.c_int(), C.c_int()
     ck(d.cuFuncGetAttribute(C.byref(regs), 4, f))
