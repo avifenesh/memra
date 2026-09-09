@@ -1,0 +1,119 @@
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.136.0 (/root/wt-glm5-prime-yield-20260909/crates/memra-server)
+    Checking memra-engine v0.136.0 (/root/wt-glm5-prime-yield-20260909/crates/memra-engine)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.97s
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.136.0 (/root/wt-glm5-prime-yield-20260909/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.95s
+     Running unittests src/lib.rs (/root/glm5-prime-yield-target/debug/deps/memra_engine-fe48329ef2b16c37)
+
+running 33 tests
+test dflash::dspark_boundary_capture_tests::no_boundary_keeps_the_monolithic_prime ... ok
+test dflash::dspark_prefix_capture_tests::a_prompt_below_the_prime_floor_never_enters_the_dspark_route ... ok
+test dsv4_gpu::prefill_work_policy_tests::tail_prime_has_the_same_final_ring_as_every_suffix_row ... ok
+test glm_spec::prime::tests::anchor_and_first_token_keep_their_tape_position_off_and_on ... ok
+test glm_spec::prime::tests::draft_phase_ranges_keep_the_original_tail_and_offsets ... ok
+test hybrid_forward::glm5_prime::tests::both_ranks_acknowledge_before_peer_service ... ok
+test hybrid_forward::glm5_prime::tests::numeric_environment_snapshot_is_immutable ... ok
+test hybrid_forward::page_prefetch_tests::grouped_worker_prefetch_primes_first_then_each_known_next_once ... ok
+test hybrid_forward::page_prefetch_tests::rolling_worker_prefetch_primes_current_and_each_future_expert_once ... ok
+test hybrid_forward::prime_chunk_schedule_tests::active_matrix_prefix_scopes_reused_prime_slabs ... ok
+test hybrid_forward::prime_chunk_schedule_tests::auto_prime_ranges_align_to_the_gdn_grid ... ok
+test hybrid_forward::prime_chunk_schedule_tests::capped_monolithic_ranges_are_identical_below_the_wall_and_legal_above ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_covers_exactly_and_shrinks_after_fill ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_matches_registered_shapes ... ok
+test hybrid_forward::prime_chunk_schedule_tests::fixed_schedule_retains_measured_geometry ... ok
+test hybrid_forward::prime_chunk_schedule_tests::monolithic_prime_chunk_caps_at_the_cuda_launch_wall ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_cache_partition_moves_and_restores_every_layer ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_wave_credit_requires_the_exact_oldest_wave_and_slot ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_wave_signal_reports_order_error_injected_error_and_closure ... ok
+test hybrid_forward::prime_chunk_schedule_tests::prime_workspace_shape_is_chunk_bounded_and_prompt_scaled_when_monolithic ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_grouped_path_is_eager_single_token_only ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_grouped_prefill_door_is_strict_and_capacity_bounded ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_batch_refuses_before_scheduler_fallback ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_door_is_strict_and_default_off ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_requires_a_qualified_even_rank_shape ... ok
+test pp::host_bounce_tests::step37_geometry_sizes_each_slot_from_the_prime_cap ... ok
+test prime_walker::tests::error_does_not_advance_or_finalize_the_partial_state ... ok
+test prime_walker::tests::finished_walker_does_no_more_work ... ok
+test prime_walker::tests::yielded_and_drained_execute_identical_frozen_tapes ... ok
+test progress::tests::the_prime_walks_actually_call_the_odometer ... ok
+test spec::prime::tests::stable_captures_preserve_segment_local_ranges_and_tiny_tail_program ... ok
+test spec::prime::tests::tokenwise_override_retains_the_legacy_segment_program ... ok
+test spec::prime_trows_width_tests::width_defaults_to_eight_and_refuses_invalid_operator_values ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 444 filtered out; finished in 0.04s
+
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.136.0 (/root/wt-glm5-prime-yield-20260909/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 24.30s
+     Running tests/glm5_dflash_session_gpu.rs (/root/glm5-prime-yield-target/debug/deps/glm5_dflash_session_gpu-ebac021c1eb9da29)
+
+running 2 tests
+test gpu_glm5_prime_plain_segment_preserves_suffix_and_queued_after ... [loader-law] WARNING: token_embd.weight loads as 2D Float ne=[128, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_gate.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_a.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_b.weight loads as 2D Float ne=[16, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_kv_a_mqa.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[32, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 190.77GB (expert budget 188.77GB) -> RESIDENT
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[hc-fused-pre] engaged streams=4 hidden=128 t=41 arm=2 kernel=hc_pre_fused_v3 block=512 sinkhorn=registers (one launch replaces rowsq_scale + sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE=2, MEMRA_HC_PRE_BLOCK=512)
+[moe-grouped-prefill] flag=on t=41 il=1 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[moe-grouped-prefill] DECLINED t=41 il=1: an expert projection qtype/shape is outside the grouped f16 GEMM class -> the sequential per-token dispatch serves this prime (logged once per process)
+[glm5-plain-prime-gate] yielded=false yields=0 prefix=41 suffix=73 queued_after=9 boundary=identical
+[glm5-plain-prime-gate] yielded=true yields=1 prefix=41 suffix=73 queued_after=9 boundary=identical
+ok
+test gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer ... [mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 190.66GB (expert budget 188.66GB) -> RESIDENT
+[mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[mla-b200-dsa-decode] engaged attn_gathered t=4 arm=single-pass class=bit-identical (sm_100a; MEMRA_B200_DSA_DECODE)
+[glm5-prime-gate] restored=false arm=0 turns=4 yields=0 K=3 boundary=identical
+[glm5-prime-gate] restored=false arm=1 turns=4 yields=17 K=3 boundary=identical
+[glm5-prime-gate] restored=false arm=2 turns=4 yields=17 K=3 boundary=identical
+[glm5-spec] RESTORED session: 73 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-spec] RESTORED session: 114 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-spec] RESTORED session: 155 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-prime-gate] restored=true arm=0 turns=4 yields=0 K=3 boundary=identical
+[glm5-spec] RESTORED session: 73 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-spec] RESTORED session: 114 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-spec] RESTORED session: 155 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-prime-gate] restored=true arm=1 turns=4 yields=2 K=3 boundary=identical
+[glm5-spec] RESTORED session: 73 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-spec] RESTORED session: 114 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-spec] RESTORED session: 155 prefix tokens + 41 suffix from cache; arm suffix-prime
+[glm5-prime-gate] restored=true arm=2 turns=4 yields=2 K=3 boundary=identical
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 5.73s
+
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.136.0 (/root/wt-glm5-prime-yield-20260909/crates/memra-server)
+   Compiling memra-engine v0.136.0 (/root/wt-glm5-prime-yield-20260909/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 42.08s
