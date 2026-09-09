@@ -24,3 +24,23 @@ Target only the fold. Keep the two exact INT8 K16 dots. If adjacent decoded weig
 The proof for an eligible pair is narrow: abs(INT32 K16 dot) <= 16*12*128 = 24576; their sum is <=49152. E4M3 weights have a four-bit significand, so the products and sum at a common power-of-two exponent fit exactly in FP32. Positive scales avoid a changed negative-zero result when opposite integer dots cancel. The final activation-scale multiplication and running FP32 accumulation keep the original order. The CUDA bitwise oracle, not this argument alone, decides acceptance.
 
 Two seeded fixtures per shape: the original varied finite E4M3 scales, and all scales equal as an eligibility upper-bound control. The latter is not substituted for the original acceptance fixture. No K32 MMA is introduced: merging distinct per-16 scales changes the program, and keeping the current fold with a single K32 result is not possible.
+
+
+## Final result: exact but negative
+
+| Shape | Scale fixture | Current tok/s | Equal-scale candidate tok/s | Throughput change | Bit mismatches |
+| --- | --- | ---: | ---: | ---: | ---: |
+| M1024 K5120 N17408 | varied scales | 1,395,711 | 1,077,434 | -22.80% | 0 / 17,825,792 |
+| M1024 K17408 N5120 | varied scales | 1,390,999 | 1,075,197 | -22.70% | 0 / 5,242,880 |
+| M1024 K5120 N17408 | all equal | 1,399,987 | 1,121,030 | -19.93% | 0 / 17,825,792 |
+| M1024 K17408 N5120 | all equal | 1,397,458 | 1,119,186 | -19.91% | 0 / 5,242,880 |
+
+N=6 interleaved samples per arm, 20 calls/sample. The candidate is exact over all 46,137,344 compared outputs across the four fixtures; max absolute deviation and relative L2 are zero, with no nonfinite results. The 10% improvement requirement fails on both original shapes. Even the all-equal eligibility control loses, so rare equal-scale pairs are not the sole reason.
+
+ptxas reports 254 registers and zero stack/spills for the current pipelined RP kernel. The candidate uses 255 registers, an 88-byte stack, and 84 bytes of spill stores/loads. This is a concrete compiler cost introduced by the conditional fold path, not a measured stall-counter attribution. Both kernel symbols and the exact binary hashes are in final-binary-evidence.txt; full compiler logs and raw timing/identity rows are retained.
+
+Decision: CLOSED AS MEASURED. No engine integration, runtime door, default change, release or fleet deployment. No model, quality, restore or HTTP timing gate runs because the candidate fails the owner's GEMM admission bar. FP4 activations and the fused FP4 quantizer remain refused. K32 remains excluded for unequal per-16 scales. FP8 is not pursued because INT8 is not near the measured K16 roof. The owner's one-additional-iteration limit is complete.
+
+A future lane needs accessible hardware counters tied to SASS to resolve the remaining schedule/overlap gap, and a change that exceeds 10% on both exact GEMM shapes before paying for model gates. This bounded negative result does not claim a hardware wall or that the 51% ideal-loop gap is recoverable. The banked serving baseline and SGLang bar remain unchanged in the private companion.
+
+Delivery: results-only memra PR #411 and private companion PR #543. No local rig gates ran; pushes use MEMRA_SKIP_PERF_CI=1 with hooks disabled under the owner's no-local-gates rule. Hosted checks gate the receipt merges. Scoped cleanup and PID/GPU readback are in the private companion.

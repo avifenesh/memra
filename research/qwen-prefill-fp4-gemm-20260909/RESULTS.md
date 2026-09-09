@@ -1,4 +1,6 @@
-# FP4 activation ceiling: refused, 2026-09-09
+# Qwen prefill GEMM: closed as measured, no runtime change
+
+Final verdict: the one additional exact equal-scale fold candidate is bitwise identical but -22.80%/-22.70% throughput. No model gates, door or runtime integration. [Full attribution and final result](ATTRIBUTION.md).
 
 The existing SM120 K64 FP4 program is 2.538x / 2.250x faster than the current repacked-weight W4A8 control at the two requested chunk-1024 GEMMs. Activation quantization is included. This is a synthetic kernel result, not a Qwen quality or serving result.
 
@@ -28,10 +30,10 @@ Current W4A8 uses the production split-plane repack with RP=1 and default pipeli
 No build cache was used. `RUSTC_WRAPPER=` and direct nvcc compile/link avoid the bundled-static-library sccache trap. `raw/symbols.txt` contains the new `fp4gemm_quant<false/true>` symbols, absent from the unchanged W4A8 object. SASS contains `OMMA.SF.16864.F32.E2M1.E2M1.UE4M3.4X` and `IMMA.16816.S8.S8`. First build failure is retained: W4A8's object also references the separate f8f4 quantizer; adding that existing translation unit fixed the link. It is linked but not called by the benchmark.
 
 Binary SHA256: `5e745e013ac6a6681275a9ca1d5413d66e29dd20665ba5c8e655f54f5d8f58c5`.
-Engine base: `182819614874be818ff8bef0cfaf13cb3b8051e1`. All changes at this checkpoint are under this research directory. Issue #408 is active; no PR, hosted CI, merge, release, fleet change or deployment has occurred. The local rig ran no gates or builds.
+Engine base: `182819614874be818ff8bef0cfaf13cb3b8051e1`. All changes at this checkpoint are under this research directory. At the first checkpoint issue #408 was active and no PR had been opened. Final delivery is recorded in ATTRIBUTION.md. The local rig ran no gates or builds.
 
-The job held the canonical GPU lock, checked an empty compute list before launching, and released the lock when done. Post-job compute list was empty. Operational identity and lock/PID readback are in the private companion. Worktrees and scratch are retained because the owner requested a steering checkpoint before integration; this is not lane closure.
+The job held the canonical GPU lock, checked an empty compute list before launching, and released the lock when done. Post-job compute list was empty. Operational identity and lock/PID readback are in the private companion. Worktrees and scratch were retained at that checkpoint. Final closure and cleanup are recorded in the private companion.
 
 ## INT8 pivot checkpoint
 
-See [ROOF.md](ROOF.md) for the published 838 dense INT8 TOP/s peak, measured 515.116 TOP/s K16 roof, 48.92% profile attainment, and six byte-identical tile variants that all lose to current dispatch. FP8 was not built: INT8 is not near its measured roof. The lane remains in same-program INT8 research, before integration.
+See [ROOF.md](ROOF.md) for the published 838 dense INT8 TOP/s peak, measured 515.116 TOP/s K16 roof, 48.92% profile attainment, and six byte-identical tile variants that all lose to current dispatch. FP8 was not built: INT8 is not near its measured roof. The final same-program experiment also loses; the lane closes without integration. See ATTRIBUTION.md.
