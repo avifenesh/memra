@@ -1282,6 +1282,10 @@ pub fn kda_scan_replay(
     Ok(())
 }
 
+/// Candidate engagement counter, checked by the real-input oracle.
+pub static GLM5_VERIFY_E4M3_FUSED6_DISPATCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 impl Engine {
     /// Per-plane causal short conv + SiLU over a T-token chunk (cu/kda.cu).
     #[allow(clippy::too_many_arguments)]
@@ -1706,8 +1710,9 @@ impl Engine {
         // be the shipped one (MEMRA_FAST=0, no MMVQ support for the qtype, or the
         // MEMRA_E4M3_DUAL=0 rollback that restores per-tensor launches).
         //
-        // m=1 ONLY. `qmatvec_e4m3_mmvq_fused6` pins the token index at 0, matching the
-        // `e4m3_mmvq_row1` body it shares with the pair and triple. t>1 keeps the caller's arm.
+        // The existing m=1 six-group pins the token index at 0. At t2..8 the
+        // default-OFF verify fusion below uses the current batched dot body and
+        // rounded macro-scale stores; without that door t>1 keeps the caller's arm.
         let e4m3 = |w: &GpuTensor| -> Option<(usize, usize, f32)> {
             match w {
                 GpuTensor::Quant {
@@ -2341,7 +2346,3 @@ mod kda_conv3_default_tests {
         assert!(!kda_conv3_on_from(Some("0"), "100a"));
     }
 }
-
-/// Candidate engagement counter, checked by the real-input oracle.
-pub static GLM5_VERIFY_E4M3_FUSED6_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);

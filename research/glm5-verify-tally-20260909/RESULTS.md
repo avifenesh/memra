@@ -102,3 +102,7 @@ fusion archive; its hash and member manifest accompany this result.
 publicity: skipped - maintenance research record.
 
 Full fusion archive SHA256: `b1710dde9b4ab697c67a72a470bf7da1e26b44c7ec29c6d41dc025a366fa1164`.
+
+Hosted all-targets Clippy found the engagement counter after a test module.
+The declaration was moved before tests; kernel arithmetic and measured
+source/binary receipts are unchanged. Hosted checks run on the final PR head.
