@@ -76,3 +76,39 @@ fn the_real_whisper_vocabulary_decodes_hebrew_when_the_checkpoint_is_present() {
     assert!(d.is_special(50258));
     assert_eq!(d.decode(&[50258]), "");
 }
+
+/// The Hebrew RNNT successor's SentencePiece model, inside its `.nemo` archive.
+const NEMO: &str = "/home/avifenesh/hebrew-asr-data/models/campaign-20260908/clean-step-21959.nemo";
+
+fn spm_model() -> Option<Vec<u8>> {
+    let archive = std::fs::read(NEMO).ok()?;
+    let members = memra_gguf::nemo::tar_members(&archive).ok()?;
+    let member = members
+        .iter()
+        .find(|m| m.name.ends_with("_tokenizer.model"))?;
+    Some(archive[member.offset..member.offset + member.size].to_vec())
+}
+
+#[test]
+fn the_real_sentencepiece_model_decodes_the_pinned_hebrew_tokens() {
+    let Some(bytes) = spm_model() else {
+        eprintln!("skipping: {NEMO} is not on this machine");
+        return;
+    };
+    let spm = SpmDetokenizer::from_proto(&bytes).unwrap();
+    assert_eq!(spm.vocab_size(), 13087);
+    // The ids the native streaming session emits for the pinned 2-second clip.
+    let ids = [2u32, 3225, 6, 2, 1270, 3155, 3235, 1273, 3158];
+    assert_eq!(spm.decode(&ids), "כן, אני ומתן");
+    // The word boundary is a character in the vocabulary, not a space.
+    assert_eq!(spm.piece(2), Some("\u{2581}"));
+    assert_eq!(spm.kind(0), Some(SpmPieceKind::Unknown));
+}
+
+#[test]
+fn a_truncated_or_foreign_proto_is_refused() {
+    assert!(SpmDetokenizer::from_proto(&[0x0a, 0x40]).is_err());
+    // Wire type 3 (group start) is not something this reader will walk past.
+    assert!(SpmDetokenizer::from_proto(&[0x0b, 0x00]).is_err());
+    assert!(SpmDetokenizer::from_proto(&[]).is_err());
+}

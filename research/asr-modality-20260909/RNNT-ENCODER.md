@@ -151,3 +151,31 @@ pre-encoded rows the carry already produced.
 What a session still does not have: partial and final revision semantics, cancellation, reset,
 reconnect, concurrency, admission, a tokenizer inside the engine, and any GPU path. The
 transcript here is produced by the checker's tokenizer, not by Memra.
+
+## Stage 10: the text, in the engine
+
+The streaming session now ends in Hebrew rather than in ids. `rnnt-stage stream` reads the
+archive's own SentencePiece model out of the same mapped bytes the weights came from and writes
+`transcript.txt`: for the pinned clip, `כן, אני ומתן`, equal to the reference session's own
+transcript. The stream gate compares it.
+
+`SpmDetokenizer` parses the serialized `ModelProto` with a minimal length-delimited reader:
+field 1 is the repeated piece record, field 1 inside it is the text and field 3 is the type.
+An unrecognized wire type is an error, not a skip.
+
+Two details that would have been silent if guessed:
+
+- The piece-type enum is NORMAL 1, UNKNOWN 2, CONTROL 3, USER_DEFINED 4, **UNUSED 5, BYTE 6**.
+  The obvious reading puts BYTE at 5, which would turn byte fallbacks into dropped pieces and
+  unused slots into raw bytes.
+- The word boundary is `U+2581`, a character in the vocabulary, and the decode convention drops
+  exactly one leading space after converting it. Without that the transcript begins with a
+  space and never matches.
+
+The Whisper path got the same treatment from the other direction: byte-level BPE through
+`Detokenizer`, which has no `encode` at all, because `Tokenizer::from_hf_dir` rightly refuses a
+checkpoint whose pre-tokenizer memra has not ported and that refusal is about encoding. On the
+eight HF-oracle clips the engine's transcript agrees with the checker's transformers tokenizer
+on 8 of 8.
+
+Neither path now needs offline tooling to produce text.

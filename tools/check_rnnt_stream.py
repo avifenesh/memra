@@ -3,7 +3,8 @@
 
 Not a stage gate: this is audio in, tokens out, with the encoder caches and the predictor
 hypothesis carried across 26 chunks. It compares the running token sequence after *every*
-chunk, so a session that reaches the right final answer by a wrong path fails.
+chunk, so a session that reaches the right final answer by a wrong path fails, and it compares
+the transcript the engine's own vocabulary produced against the reference's.
 """
 import argparse, hashlib, json
 from pathlib import Path
@@ -57,6 +58,18 @@ def main():
             rows[-1]["first_divergent_index"] = first
             print(f"chunk {index:3d} DIFFERS at token {first}", flush=True)
 
+    engine_transcript = None
+    transcript_matches = None
+    path = args.native / "transcript.txt"
+    if path.exists():
+        engine_transcript = path.read_text()
+        transcript_matches = engine_transcript == manifest["final_transcript"]
+        passed &= transcript_matches
+        print(
+            f"engine transcript {'equal' if transcript_matches else 'DIFFERS'}: "
+            f"{engine_transcript!r} against {manifest['final_transcript']!r}"
+        )
+
     native_final = [int(t) for t in (args.native / "tokens.txt").read_text().split()]
     reference_final = [int(t) for t in manifest["final_tokens"]]
     final_equal = native_final == reference_final
@@ -71,6 +84,8 @@ def main():
         "final_token_count": len(reference_final),
         "final_tokens": reference_final,
         "final_transcript": manifest["final_transcript"],
+        "engine_transcript": engine_transcript,
+        "engine_transcript_matches": transcript_matches,
         "language": manifest["language"],
         "att_context_size": manifest["att_context_size"],
         "samples": manifest["samples"],

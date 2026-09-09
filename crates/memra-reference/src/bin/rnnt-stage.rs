@@ -9,6 +9,7 @@ use memra_gguf::model_packs::nemotron_rnnt::{
 use memra_reference::speech::fastconformer::FastConformerEncoder;
 use memra_reference::speech::rnnt_frontend::RnntFrontend;
 use memra_reference::speech::rnnt_head::RnntHead;
+use memra_tokenizer::detokenize::SpmDetokenizer;
 use std::path::{Path, PathBuf};
 
 fn write_f32(path: &Path, values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
@@ -139,6 +140,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cursor += take;
             index += 1;
         }
+        // The transcript, in the engine. The vocabulary is the archive's own SentencePiece
+        // model, read from the same mapped bytes the weights came from.
+        let spm = archive
+            .checkpoint
+            .members
+            .iter()
+            .find(|(name, _, _)| name.ends_with("_tokenizer.model"))
+            .ok_or("archive has no tokenizer model")?;
+        let vocabulary = SpmDetokenizer::from_proto(&archive.bytes()[spm.1..spm.1 + spm.2])?;
+        let transcript = vocabulary.decode(&emitted);
+        std::fs::write(out.join("transcript.txt"), &transcript)?;
         std::fs::write(out.join("chunks.tsv"), summary)?;
         std::fs::write(
             out.join("tokens.txt"),
@@ -149,7 +161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .join(" "),
         )?;
         println!(
-            "stream chunks={index} samples={} tokens={} elapsed={:.3}",
+            "stream chunks={index} samples={} tokens={} text={transcript:?} elapsed={:.3}",
             pcm.len(),
             emitted.len(),
             started.elapsed().as_secs_f64()
