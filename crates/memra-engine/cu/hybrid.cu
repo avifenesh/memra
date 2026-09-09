@@ -2818,3 +2818,79 @@ extern "C" __global__ void moe_prime_join_scatter_f32(
     }
     out[i] = acc;
 }
+
+// Carried-prime replay twins. Table is refreshed before every replay; arithmetic matches the scalar entry.
+extern "C" __global__ void ssm_conv1d_gdn_state_f32_prime_table(
+        const float* __restrict__ qkv_tm, const unsigned long long* __restrict__ table,
+        const float* __restrict__ w,
+        float* __restrict__ q_g, float* __restrict__ k_g, float* __restrict__ v_g,
+        int conv_dim, int T, int d_conv, int d_state, int num_v, int num_k, int key_dim,
+        int hk) {
+    float* conv_state = (float*)table[3];
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    int t = blockIdx.y;
+    if (c >= conv_dim || t >= T) return;
+    int pad = d_conv - 1;
+    const float* wc = w + (size_t)c * d_conv;
+    const float* st = conv_state + (size_t)c * pad;
+    float acc = 0.0f;
+    #pragma unroll
+    for (int j = 0; j < 8; j++) {
+        if (j < d_conv) {
+            int tt = t - pad + j;
+            float xv = (tt >= 0) ? qkv_tm[(size_t)tt * conv_dim + c] : st[pad + tt];
+            acc += xv * wc[j];
+        }
+    }
+    float val = silu(acc);
+    if (c < 2 * key_dim) {
+        int cc = (c < key_dim) ? c : c - key_dim;
+        float* dst = (c < key_dim) ? q_g : k_g;
+        int kh = cc / d_state;
+        int i  = cc % d_state;
+        for (int vh = kh; vh < hk; vh += num_k) {
+            dst[((size_t)t * hk + vh) * d_state + i] = val;
+        }
+    } else {
+        int cc = c - 2 * key_dim;
+        int vh = cc / d_state;
+        int i  = cc % d_state;
+        v_g[((size_t)t * num_v + vh) * d_state + i] = val;
+    }
+}
+
+extern "C" __global__ void ssm_conv_ring_update_f32_prime_table(
+        const float* __restrict__ qkv_tm, const unsigned long long* __restrict__ table,
+        int conv_dim, int T, int d_conv) {
+    float* conv_state = (float*)table[3];
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int pad = d_conv - 1;
+    if (idx >= conv_dim * pad) return;
+    int c = idx / pad;
+    int j = idx % pad;
+    int tt = T - pad + j;                     // >= 0 by the host T>=pad guarantee
+    conv_state[(size_t)c * pad + j] = qkv_tm[(size_t)tt * conv_dim + c];
+}
+
+extern "C" __global__ void __launch_bounds__(256, 2)
+gdn_chunk_state_mma_prime_table(const __nv_bfloat16* __restrict__ kb16, const float* __restrict__ gcum,
+                     const float* __restrict__ beta,
+                     const float* __restrict__ U, const __nv_bfloat16* __restrict__ Wb16,
+                     __half* __restrict__ Y, __half* __restrict__ Ssnap,
+                     const unsigned long long* __restrict__ table, unsigned long long unused,
+                     int H, int T, int C, int hk) {
+    const float* state_in = (const float*)table[4];
+    float* state_out = (float*)table[5];
+    gdn_k4_body(kb16, gcum, beta, U, Wb16, Y, Ssnap, state_in, state_out,
+                H, T, C, blockIdx.x, blockIdx.y * 32, hk);
+}
+
+extern "C" __global__ void prime_tap_table(const float* x,
+        const unsigned long long* table, int hidden, int rows) {
+    if (!table[8]) return;
+    float* out = (float*)table[8];
+    for (unsigned long long i = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x;
+         i < (unsigned long long)hidden * rows; i += (unsigned long long)gridDim.x * blockDim.x) {
+        out[table[9] + (i / hidden) * table[10] + i % hidden] = x[i];
+    }
+}

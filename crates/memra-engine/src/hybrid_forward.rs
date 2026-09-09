@@ -279,6 +279,7 @@ impl<'a> PrimeCacheStages<'a> {
                     // state pointers of the cache it was captured against, and this one is new.
                     glm5_decode_graph: None,
                     glm5_tp_sym_graph: None,
+                    qwen_prime_graph: None,
                 })
             })
             .collect();
@@ -6518,17 +6519,32 @@ impl HybridModel {
             // one law, and the splice point cannot drift between arms.
             ov.splice_into(e, &mut x_embed, chunk_off, t, self.cfg.n_embd as usize)?;
         }
-        let x = self.prime_layers(
-            e,
-            x_embed,
-            0,
-            self.layers.len(),
-            &pos_d,
-            t,
-            base,
-            cache,
-            seq_end,
-        )?;
+        let graph = crate::qwen_prime_graph::eligible(self, e, cache, t, base, seq_end);
+        let x = if graph {
+            crate::qwen_prime_graph::run(self, e, x_embed, &pos_d, t, base, cache, seq_end)?
+        } else {
+            if cache.qwen_prime_graph.is_some() && !crate::spec::graph_launch_headroom_ok(e) {
+                e.stream().synchronize()?;
+                cache.qwen_prime_graph = None;
+                e.trim_device_graph_mem()?;
+            }
+            self.prime_layers(
+                e,
+                x_embed,
+                0,
+                self.layers.len(),
+                &pos_d,
+                t,
+                base,
+                cache,
+                seq_end,
+            )?
+        };
+        if base + t == seq_end && cache.qwen_prime_graph.is_some() {
+            e.stream().synchronize()?;
+            cache.qwen_prime_graph = None;
+            e.trim_device_graph_mem()?;
+        }
         self.prime_chunk_epilogue(e, x, t, cache)
     }
 
@@ -6548,7 +6564,7 @@ impl HybridModel {
     ///   - the S-glue/S-mid capture path requires the FULL range (its lookahead fuses
     ///     `self.layers[il+1]` unconditionally) — `use_seg` gains `lo == 0 && hi == n_layers`.
     #[allow(clippy::too_many_arguments)]
-    fn prime_layers(
+    pub(crate) fn prime_layers(
         &self,
         e: &Engine,
         x_in: CudaSlice<f32>,
@@ -6784,6 +6800,7 @@ impl HybridModel {
             };
         }
         for il in lo..hi {
+            crate::qwen_prime_graph::set_layer(il);
             let layer = &self.layers[il];
             let hx16 = if f16fuse { Some(&*h16) } else { None };
             if use_seg {
@@ -8803,7 +8820,9 @@ impl HybridModel {
             )?;
             kvl.len += t;
             let new_len = kvl.len as i32;
-            e.set_i32_one(&mut kvl.len_d, new_len)?;
+            if crate::qwen_prime_graph::current().is_none() {
+                e.set_i32_one(&mut kvl.len_d, new_len)?;
+            }
         }
 
         let base_len = {
@@ -25173,6 +25192,9 @@ impl HybridModel {
         let Some(slot) = taps.layer_ids.iter().position(|&l| l == il) else {
             return Ok(());
         };
+        if let Some((table, _)) = crate::qwen_prime_graph::current() {
+            return e.prime_tap_table(x, table, self.cfg.n_embd as usize, t);
+        }
         let h = taps.hidden;
         let n_taps = taps.layer_ids.len();
         let base = taps.base;
@@ -25181,6 +25203,17 @@ impl HybridModel {
             "tap window {base}+{t} exceeds sink {}",
             taps.t
         );
+        if t >= 128 && crate::qwen_prime_graph::supported(self, e) {
+            return e.copy_2d_dtod_async(
+                &mut taps.buf,
+                base * n_taps * h + slot * h,
+                n_taps * h,
+                x,
+                h,
+                h,
+                t,
+            );
+        }
         let xv = e.view(x, t * h);
         for r in 0..t {
             let row = xv.slice(r * h..(r + 1) * h);

@@ -882,6 +882,7 @@ pub mod glm5_tp_sampler;
 pub mod mmq_ffi;
 pub mod moe_cache;
 pub mod prime_graph;
+pub mod qwen_prime_graph;
 pub mod spill;
 mod spill_pread;
 
@@ -6981,7 +6982,10 @@ impl Engine {
             }
             return Ok(());
         }
-        let f = if g {
+        let live = crate::qwen_prime_graph::current();
+        let f = if live.is_some() {
+            self.func("append_quantize_kv_q8_0_q5_1_rows_prime_table")
+        } else if g {
             self.func_g("append_quantize_kv_q8_0_q5_1_rows")
         } else {
             self.func("append_quantize_kv_q8_0_q5_1_rows")
@@ -6996,15 +7000,15 @@ impl Engine {
         let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
-        b.arg(k_rows)
-            .arg(v_rows)
-            .arg(kc)
-            .arg(vc)
-            .arg(&t0i)
-            .arg(&kdk)
-            .arg(&kdv)
-            .arg(&ktb)
-            .arg(&vtb);
+        let table = live.map_or(0, |a| a.0);
+        let unused = 0u64;
+        b.arg(k_rows).arg(v_rows);
+        if live.is_some() {
+            b.arg(&table).arg(&unused);
+        } else {
+            b.arg(kc).arg(vc);
+        }
+        b.arg(&t0i).arg(&kdk).arg(&kdv).arg(&ktb).arg(&vtb);
         unsafe {
             b.launch(cfg)?;
         }
@@ -13591,11 +13595,11 @@ impl Engine {
             srcDevice: sp,
             srcArray: std::ptr::null_mut(),
             srcPitch: src_pitch_floats * f,
-            dstXInBytes: dst_off_floats * f,
+            dstXInBytes: 0,
             dstY: 0,
             dstMemoryType: cudarc::driver::sys::CUmemorytype_enum::CU_MEMORYTYPE_DEVICE,
             dstHost: std::ptr::null_mut(),
-            dstDevice: dp,
+            dstDevice: dp + (dst_off_floats * f) as u64,
             dstArray: std::ptr::null_mut(),
             dstPitch: dst_pitch_floats * f,
             WidthInBytes: width_floats * f,
@@ -29140,6 +29144,9 @@ impl Engine {
                 v_tok_bytes,
             );
         }
+        let live = crate::qwen_prime_graph::current();
+        let table = live.map_or(0, |a| a.0);
+        let unused = 0u64;
         const BLOCK_Q: usize = 64;
         const BK: usize = 32;
         let kv_dim_k = n_head_kv * head_dim;
@@ -29167,15 +29174,23 @@ impl Engine {
         // pass 1: dequant K+V once into the bf16 workspace (grid-stride, 1 thread/elem)
         {
             // only THIS pass parses KV bytes — pass 2 reads the bf16 workspace (format-free).
-            let f = if g {
+            let f = if live.is_some() {
+                self.func("fa_dequant_kv_ws_bf16_prime_table")
+            } else if g {
                 self.func_g("fa_dequant_kv_ws_bf16")
             } else {
                 self.func("fa_dequant_kv_ws_bf16")
             };
-            let total = (t_kv * (kv_dim_k + kv_dim_v)) as u64;
+            let total = (live.map_or(t_kv, |a| a.1) * (kv_dim_k + kv_dim_v)) as u64;
             #[allow(clippy::manual_div_ceil)]
             // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
-            let nblk = ((total + 255) / 256).min(65535 * 16) as u32;
+            let nblk = if live.is_some() {
+                // A fixed grid-stride launch avoids empty capacity-sized grids.
+                // Each destination element still receives its original scalar conversion.
+                ((total + 255) / 256).min(self.sm_count() as u64 * 8) as u32
+            } else {
+                ((total + 255) / 256).min(65535 * 16) as u32
+            };
             let cfg = LaunchConfig {
                 grid_dim: (nblk.max(1), 1, 1),
                 block_dim: (256, 1, 1),
@@ -29185,9 +29200,12 @@ impl Engine {
             let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
-            b.arg(k)
-                .arg(v)
-                .arg(&mut *kw)
+            if live.is_some() {
+                b.arg(&table).arg(&unused);
+            } else {
+                b.arg(k).arg(v);
+            }
+            b.arg(&mut *kw)
                 .arg(&mut *vw)
                 .arg(&kdk)
                 .arg(&kdv)
@@ -29216,14 +29234,15 @@ impl Engine {
                 && std::env::var("MEMRA_PRIME_KV_T3").as_deref() == Ok("1");
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(
-                "fa_prefill_qw{}{hd_sfx}",
+                "fa_prefill_qw{}{hd_sfx}{}",
                 if triple {
                     "_t3"
                 } else if db {
                     "_db"
                 } else {
                     ""
-                }
+                },
+                if live.is_some() { "_prime_table" } else { "" }
             ));
             let shmem = if triple {
                 (2 * 3 * BK * head_dim) as u32
@@ -29264,12 +29283,13 @@ impl Engine {
                 .arg(&hd)
                 .arg(&nh)
                 .arg(&nhkv)
-                .arg(&ti)
-                .arg(&tkvi)
-                .arg(&scale)
-                .arg(&cz)
-                .arg(&kdk)
-                .arg(&kdv);
+                .arg(&ti);
+            if live.is_some() {
+                b.arg(&table);
+            } else {
+                b.arg(&tkvi);
+            }
+            b.arg(&scale).arg(&cz).arg(&kdk).arg(&kdv);
             unsafe {
                 b.launch(cfg)?;
             }
@@ -33455,8 +33475,14 @@ impl Engine {
             t >= d_conv - 1,
             "fused state conv requires T >= pad (PRIME_MIN_T gates)"
         );
+        let live = crate::qwen_prime_graph::current();
+        let table = live.map_or(0, |a| a.0);
         {
-            let f = self.func("ssm_conv1d_gdn_state_f32");
+            let f = self.func(if live.is_some() {
+                "ssm_conv1d_gdn_state_f32_prime_table"
+            } else {
+                "ssm_conv1d_gdn_state_f32"
+            });
             let cfg = LaunchConfig {
                 grid_dim: (((conv_dim + 255) / 256) as u32, t as u32, 1),
                 block_dim: (256, 1, 1),
@@ -33472,9 +33498,13 @@ impl Engine {
             );
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
-            b.arg(qkv_tm)
-                .arg(&*conv_state)
-                .arg(w)
+            b.arg(qkv_tm);
+            if live.is_some() {
+                b.arg(&table);
+            } else {
+                b.arg(&*conv_state);
+            }
+            b.arg(w)
                 .arg(q_g)
                 .arg(k_g)
                 .arg(v_g)
@@ -33504,13 +33534,23 @@ impl Engine {
                 }
             }
             None => {
-                let f = self.func("ssm_conv_ring_update_f32");
+                let f = self.func(if live.is_some() {
+                    "ssm_conv_ring_update_f32_prime_table"
+                } else {
+                    "ssm_conv_ring_update_f32"
+                });
                 let n = conv_dim * (d_conv - 1);
                 let cfg = LaunchConfig::for_num_elems(n as u32);
                 let (cd, ti, dc) = (conv_dim as i32, t as i32, d_conv as i32);
                 let __s_b = self.gpu.stream();
                 let mut b = __s_b.launch_builder(&f);
-                b.arg(qkv_tm).arg(conv_state).arg(&cd).arg(&ti).arg(&dc);
+                b.arg(qkv_tm);
+                if live.is_some() {
+                    b.arg(&table);
+                } else {
+                    b.arg(conv_state);
+                }
+                b.arg(&cd).arg(&ti).arg(&dc);
                 unsafe {
                     b.launch(cfg)?;
                 }
@@ -34144,7 +34184,14 @@ impl Engine {
             let mut y16 = self.alloc_u8_uninit(nc * h * c * D * 2)?;
             let mut ssnap16 = self.alloc_u8_uninit(nc * h * D * D * 2)?;
             {
-                let f = self.func("gdn_chunk_state_mma");
+                let live = crate::qwen_prime_graph::current();
+                let table = live.map_or(0, |a| a.0);
+                let unused = 0u64;
+                let f = self.func(if live.is_some() {
+                    "gdn_chunk_state_mma_prime_table"
+                } else {
+                    "gdn_chunk_state_mma"
+                });
                 let cfg = LaunchConfig {
                     grid_dim: (h as u32, NSPLIT, 1),
                     block_dim: (256, 1, 1),
@@ -34159,13 +34206,13 @@ impl Engine {
                     .arg(&u)
                     .arg(&wb16)
                     .arg(&mut y16)
-                    .arg(&mut ssnap16)
-                    .arg(state_in)
-                    .arg(&mut *state_out)
-                    .arg(&hi)
-                    .arg(&ti)
-                    .arg(&ci)
-                    .arg(&hki);
+                    .arg(&mut ssnap16);
+                if live.is_some() {
+                    b.arg(&table).arg(&unused);
+                } else {
+                    b.arg(state_in).arg(&mut *state_out);
+                }
+                b.arg(&hi).arg(&ti).arg(&ci).arg(&hki);
                 unsafe {
                     b.launch(cfg)?;
                 }
