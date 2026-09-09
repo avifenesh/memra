@@ -508,6 +508,8 @@ fn main() {
         );
     }
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
+    // Deliberately keep the graph environment default for --defaults.
+    // Scored ABBA selects each graph policy explicitly after model creation.
     memra_engine::set_moe_m1_splitk_for_gate(false);
     println!(
         "GRAPH_SPLITK_POLICY on={}",
