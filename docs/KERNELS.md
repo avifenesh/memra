@@ -13,6 +13,26 @@ The measured numeric programs and bounds are in
 | `gelu_erf` | Owned evaluation of A&S 7.1.26 matching the pinned HF CPU vector program | FP32 fused polynomial, final destination rounding | `crates/memra-reference/src/speech/encoder.rs` |
 | Speech reference matrix product | Four fixed FMA partial sums; AVX2 vectorizes independent time rows | Same scalar/AVX2 FP32 reduction order | `crates/memra-reference/src/speech/matrix.rs` |
 
+
+## Carried Qwen prime replay, 2026-09-09
+
+All entries are Memra-owned twins. The qualified Qwen geometry on the 170-SM
+sm_120a target uses carried-prime replay as its default, without a runtime door.
+Session addresses and absolute depth come from the refreshed replay table.
+Numerical bodies preserve the corresponding eager entry's operation order.
+
+| Symbol | Purpose | Binding |
+| --- | --- | --- |
+| `append_quantize_kv_q8_0_q5_1_rows_prime_table` | Quantized KV append and live length publication | `Engine::append_kv_quantized_rows` |
+| `fa_dequant_kv_ws_bf16_prime_table` | True-depth dequantization into stable BF16 workspace | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_db_prime_table` | Existing four-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_t3_prime_table` | Existing three-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
+| `ssm_conv1d_gdn_state_f32_prime_table` | Carried convolution reads the live ring | `Engine::ssm_conv1d_gdn_state_pad` |
+| `ssm_conv_ring_update_f32_prime_table` | Publishes the live convolution ring | `Engine::ssm_conv1d_gdn_state_pad` |
+| `gdn_chunk_state_mma_prime_table` | Chunked GDN reads/writes live ping-pong state | `Engine::gdn_scan_chunked` |
+| `prime_tap_table` | Bulk copy of exact residual bits to live strided tap destination | `Engine::prime_tap_table` |
+
+
 ## Qwen attention prime staging, 2026-09-09
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
@@ -627,6 +647,56 @@ receipts: `research/kernel-dedup-20260821/RECEIPTS.md`; every modified TU × arc
   include `wgmma_common.cuh` for the smem descriptor builder, fence/commit, and the
   m64n64k16.bf16 wrapper. Still local by design: fa3's `_tb` (transpose-B imm) and
   templated wait, qmatvec's m64n64k32.s8 form and raw asm statements.
+
+## HC24 split dots numeric class (owner accepted default ON, S16)
+
+`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_hc_dot_split_partial_kernel<S>`
+and `dsv4_hc_dot_split_reduce_kernel<S>` for S=8/16/32. Only the device HC-24
+pre-attention/pre-FFN sites with F32 N=24,K=16384 dispatch this pair. Other
+dots shapes retain their current kernel. Existing CUDA kernels are unchanged.
+
+Each of 24*S blocks has 128 threads. A contiguous K slice retains increasing
+eight-element per-lane multiply/add order and the exact-tail 128-leaf tree.
+S=32 has 64 zero leaves because its slice has 512 elements. One 32-thread
+second-stage block sums each row's partials in ascending slice order with
+explicit round-to-nearest f32 adds. No atomics or fused multiply-add.
+This is the **HC24 split dots** numeric class, not bit-identity with the
+exact-tail dots class: restarting accumulators and summing slices changes
+association. Each S is a distinct class and must be pinned in its receipt.
+
+Scratch is 24*32 F32 elements per decode state and rank, allocated before
+capture. Every call writes all partials it reads, both stages use the same
+stream, and graphs retain stable scratch addresses. `MEMRA_DSV4_HC_DOT_SPLIT`
+is ON when unset; exact `1` or `16` also selects the owner-chosen S=16.
+Explicit `0` restores sequential dots after a fresh process/state capture.
+S8 and S32 remain explicit opt-in classes; other strings select OFF.
+Rollback seam decide-by: 2026-09-23, owner accepted 2026-09-09.
+S32 was component-fastest but its 1.407% advantage over S16 did not justify
+rebuilding and re-review; only S16 has the model campaign receipts.
+
+[Darklanes #538](https://github.com/avifenesh/darklanes/pull/538) banks both-rank
+S8/16/32 components and zero-error memcheck/synccheck, two fresh process
+observations per arm with external token/logit/cache/hidden equality, AR epochs
+and eight refusals per arm per process. ON census is 86 partial plus86 reducer
+nodes per rank in each of the three forward variants; OFF and commit segments
+have zero. Source `d42196214`, binary
+`d9ca7ac0bb6417fcd99e176cd6e2244d9e9d8b6b837a08d73b27fc0a7bd2dc5c`.
+
+KEEP default ON: sampled pooled +2.701174% forward / +2.591532% reverse,20 eligible
+rows per order with first capture timed. All128 DRIFT-R3 input hashes match:
+49/2048 top1 changes (2.392578%), KL OFF-to-ON mean/max
+0.005672511/0.421308907 and ON-to-OFF0.005758277/0.483190648; greedy16/64
+identical and2099/4096 matching tokens. This is a distinct numeric class,
+not token-identical to the sequential dot. The owner accepted default ON
+on 2026-09-09, also informed by [drift mechanism #534](https://github.com/avifenesh/darklanes/pull/534)
+and [task accuracy #545](https://github.com/avifenesh/darklanes/pull/545):
+control 177/300, split-K + HC 177/300, McNemar p=1.00.
+`dsv4_hc_dot_split_gate --defaults` observes unset/0 without an HC override,
+checks every default census, 256-step eager identity within the selected class,
+eight refusals and five retained-graph sanity rows. Historical Rust and CUDA
+controls pin HC OFF before discovery or model creation. Profile and default
+engagement paths retain the environment policy.
+The source rebase does not relabel the pinned binary receipts as a new build.
 
 ## DSV4 segmented replay component, 2026-09-08
 

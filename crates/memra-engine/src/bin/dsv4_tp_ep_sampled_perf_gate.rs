@@ -536,6 +536,7 @@ fn main() {
     if !replay_profile {
         // Preserve historical OFF controls; profile keeps real unset/0 policy.
         unsafe {
+            std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
             std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
             std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
         }

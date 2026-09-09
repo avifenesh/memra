@@ -1,5 +1,11 @@
 # Environment flags — the audited catalog
 
+## Qwen carried-prime launch diet, 2026-09-09
+
+| Mechanism | Contract |
+| --- | --- |
+| Carried-prime graph, no runtime door | Naked default on the qualified 170-SM sm_120a Qwen geometry. Live replay tables preserve session state and true KV depth; unsupported shapes, one-off tails and low headroom use the existing eager program. Chunk 1024 and PrimeWalker yields remain unchanged. `MEMRA_PRIME_CHUNK_GRAPH` was a development-only comparison switch and was removed before merge: exact cold TTFT improves 2.24%, 2.94% and 2.59% at 8k/32k/131k, three boots per arm. No active decide-by door remains. Receipt: `research/qwen-prefill-attn-20260909/MECHANISM.md`. |
+
 ## Qwen attention prime staging, 2026-09-09
 
 | Flag | Contract |
@@ -1824,6 +1830,12 @@ in this PR's history. Raw evidence is private in Darklanes:
 `research/dsv4f-devpair-20260905/compressor-paired-copy-20260908.md`, receipt namespace
 `compressor-paired-copy-3d011dc-r1`.
 
+## HC-24 dot split experiment
+
+| Flag | Default | Contract |
+| --- | --- | --- |
+| `MEMRA_DSV4_HC_DOT_SPLIT` | **ON when unset, S=16**, rollback seam decide-by: 2026-09-23 | Unset, exact `1` or `16` selects HC24 S16 split dots. Explicit `0` restores sequential dots; `8` and `32` are explicit opt-in numeric classes, other strings stay OFF. Only f32 device HC pre-attention/pre-FFN sites with N=24,K=16384 are eligible. Rollback: set `0` before process initialization and create fresh uncaptured states; host-thread policy initializes once and retained graphs keep their captured kernels. Gate override admits 0/8/16/32 before capture. Each S is a distinct numeric class, not token-identical to the sequential dot. **KEEP default ON, owner accepted 2026-09-09**: sampled pooled +2.701174% / +2.591532%, 20 rows per order with first captures timed; drift 49/2048 top-1 (2.392578%), KL mean/max 0.005672511/0.421308907. Task accuracy control 177/300, split-K + HC 177/300, McNemar p=1.00; no detectable aggregate change, not an equivalence claim. Receipts: [performance #538](https://github.com/avifenesh/darklanes/pull/538), [drift mechanism #534](https://github.com/avifenesh/darklanes/pull/534), [task accuracy #545](https://github.com/avifenesh/darklanes/pull/545). Measured source `d42196214`, binary `d9ca7ac0bb6417fcd99e176cd6e2244d9e9d8b6b837a08d73b27fc0a7bd2dc5c`. Historical Rust and CUDA harness controls pin OFF at startup; profile/default observers retain environment policy. Default engagement: `dsv4_hc_dot_split_gate --defaults`, separate unset/0 processes, 86 partial + 86 reducer nodes per rank/forward when ON, absent OFF, all other default censuses, 256-step eager identity within each class, eight refusals and five sanity rows. |
+
 ## Dense M=1 exact-tree transport experiment, 2026-09-08
 
 | Control | Default | Both arms, rollback and evidence |
@@ -1859,3 +1871,68 @@ Component KEEP OFF, unserved, code removed 2026-09-09. The byte-exact
 they do not qualify a served pair. Re-derive from
 `7c3ddf0db45295dcd2ec67c963f3295ec8d8c14b`.
 Receipt: `research/glm5-verify-tally-20260909/RESULTS.md`; rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (MLA verify split-KV component)
+
+`MEMRA_GLM5_MLA_VERIFY_SPLITKV`, its dispatch and workspace allocation,
+`memra_mla_verify_splitkv_kernel`, `memra_mla_verify_splitkv_f32`, the Rust FFI
+and dedicated oracle/bench are removed. The shared partial-combine kernel
+remains for existing callers. Component KEEP OFF, unserved, code removed
+2026-09-09. Real latent rows passed argmax and the fixed band; gathered inputs
+were byte-exact. The p32k t=4 component saved 3.091277122 ms/round.
+Re-derive from `c776611e78291aa8ff36c7323d5c216eab961fa7`.
+Receipt: `research/glm5-mla-verify-20260909/RESULTS.md`; rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (F16 verify rows numeric no-go)
+
+`MEMRA_MOE_ROWS_F16` and its bench-only class were removed after the real-input
+complete-chain oracle failed at t=4, layer 20, output row 3: current argmax 4,
+F16 argmax 1819. The f64 error band passed (current normalized mean
+9.048931134194e-4, F16 5.290322992813e-5), but the required argmax gate failed.
+T=2 passed all 42 layers; t=4 stopped at layer 20. No timing or t=7 real-input
+cell ran after the failure, so the >=0.5 ms saving threshold is unmeasured.
+
+Removed the F16 and acc32 CUDA twins, lane-major converter, Rust launchers,
+synthetic/real gate code, bench arms, executable cell driver and active FLAGS/
+KERNELS rows. No serving dispatch had been installed. The measured source is
+bc89f4d22; the initial harness-only layout-reference mistake and its correction
+are preserved with the raw receipts. Verdict: NEGATIVE, numeric no-go.
+Receipt: `research/moe-rows-f16-20260909/RESULTS.md`. rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (GLM verify shared-expert dual)
+
+- `MEMRA_GLM5_SHEXP_DUAL`: NEGATIVE against the fixed >=0.5 ms weighted
+  saving criterion. Existing decode-exact dual gate/up at t2..4 was byte-exact
+  on all42 real-input layers at t2/4/7, including composed routed+shared FFN;
+  t7 retained the current path. Warmed ABBAx5 saved 0.327543050/0.236696805/
+  0.000874255 ms across42 layers at t2/4/7. Weighted 48/162,103/162,11/162:
+  0.247601569 ms/round; with unchanged t7 control credited zero: 0.247542206.
+  The default-OFF door, dispatch, diagnostic counter/helper and executable
+  gate/bench driver are removed. No new kernels were introduced; the existing
+  shared decode-exact dual remains for its other callers. Measured source
+  41ba71861353b66a8c7807ff882b5b7ed11de930; receipt:
+  `research/glm5-shexp-dual-20260909/RESULTS.md`. rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (GLM KDA verify rows, never introduced)
+
+| Flag | Former default | Removal receipt |
+|---|---|---|
+| `MEMRA_GLM5_KDA_VERIFY_ROWS` | Never introduced (proposed OFF; decide-by: 2026-09-23) | SUPERSEDED MECHANISM: current batched GLM verify already runs one `memra_kda_scan_s128` at T=K+1 per KDA layer with register-resident state; partial reject already uses one T=keep replay. 1 -> 1 launches at t2/4/7, 34 KDA layers. No new env read, dispatch, kernel, oracle or timing. Weighted saving unmeasured; not a measured flat verdict. `research/glm5-kda-verify-20260909/RESULTS.md`, source dcfeab7c7. rev: 2026-09-23. |
+
+## Removed doors, 2026-09-09 (DFlash2 causal PMIN)
+
+`MEMRA_GLM5_SPEC_CAUSAL_PMIN`, its env read, selector-confidence helper,
+dispatch arm and two CPU regression tests are removed from runtime.
+The selected-token cutoff still biases the target distribution. The documented
+fix is unserved; re-derive from `f197eb413f6c23ab1e05eb41316c8d5f8e61dc5c`
+and `research/glm5-dflash-rootcause-20260909/causal-pmin.patch`.
+Receipt: `research/glm5-dflash-rootcause-20260909/DIAGNOSIS.md` and
+`research/glm5-dflash-rootcause-20260909/AGREEMENT.md`. Follow-up: [#412](https://github.com/avifenesh/memra/issues/412).
+Code removed 2026-09-09; rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (GLM PP1 verify graph)
+
+| Removed door | Verdict and receipt |
+|---|---|
+| `MEMRA_GLM5_SPEC_VERIFY_GRAPH` | NEGATIVE; candidate `6e073bd5a`, default OFF, decide-by 2026-09-23. PP1 p32k N=3: K6 graph ON 79.191090 tok/s vs plain 79.957362 (-0.958351%) and K6 graph OFF 80.209701. HTTP signed saving -0.905348 ms/round. Greedy and fixed-seed sampled K3/K6 logits and 160-token tapes identical. Removed new env read, dispatch and dedicated lifecycle additions; pre-lane graph code unchanged. `research/glm5-verify-graph-20260909/RESULTS.md`; rev: 2026-09-23. |
+

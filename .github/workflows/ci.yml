@@ -277,7 +277,7 @@ jobs:
       # they never create a CUDA context or run the gates' main functions.
       - name: DSV4 sampled, drift and composition CPU contract tests
         run: |
-          cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate --bin dsv4_tp_ep_tf_drift_gate --bin dsv4_compose_cadence_dense_gate --bin dsv4_compose_densefast_normfuse_gate --bin dsv4_densefast_normfuse_default_gate
+          cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate --bin dsv4_tp_ep_tf_drift_gate --bin dsv4_compose_cadence_dense_gate --bin dsv4_compose_densefast_normfuse_gate --bin dsv4_densefast_normfuse_default_gate --bin dsv4_hc_dot_split_gate
           cargo test --release -p memra-engine --lib norm_fuse_default_tests
           CARGO_TARGET_DIR="$PWD/target" bash tools/test-dsv4-dense-control-policy.sh
         env:
