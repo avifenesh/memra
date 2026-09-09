@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 name=${1:?cell binary name required}
-case "$name" in int8-roof|int8-tiles) ;; *) exit 2;; esac
+case "$name" in int8-roof|int8-tiles|ablation-bench|exact-bench) ;; *) exit 2;; esac
 lane=/tmp/qwen-prefill-fp4-gemm-20260909
 out=$lane/$name
 mkdir -p "$out"
