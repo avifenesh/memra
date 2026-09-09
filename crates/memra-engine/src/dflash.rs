@@ -1818,6 +1818,7 @@ impl DflashDraft {
                     blk: None,
                     rp4: None,
                     f16: None,
+                    a4: None,
                 });
             }
             let q = encode_q8_0(&f32s);
@@ -1834,6 +1835,7 @@ impl DflashDraft {
                 blk: None,
                 rp4: None,
                 f16: None,
+                a4: None,
             })
         };
         let hidden = cfg.hidden as u64;
@@ -1898,6 +1900,7 @@ impl DflashDraft {
                     blk: None,
                     rp4: None,
                     f16: None,
+                    a4: None,
                 }
             };
             Some(MarkovHead {

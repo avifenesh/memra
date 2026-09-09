@@ -813,6 +813,27 @@ unsafe extern "C" {
         out_scale: f32,
         rp: i32,
     ) -> i32;
+    /// Run the CALIBRATED NVFP4 prefill GEMM (qwen35-prefill-nvfp4-a4-v1): FP4 activations with
+    /// dynamic per-16 UE4M3 block scales around a per-linear CALIBRATED global multiplier
+    /// (`input_scale` = amax/(6*448) fitted offline), against the same untouched NVFP4 weight
+    /// bytes. This is the W4A4 tile the uncalibrated arm was refused on (relative L2 ~0.086,
+    /// research/qwen-prefill-fp4-gemm-20260909); the global scale is what makes the activation
+    /// range representable. Reserved for PREFILL: decode and speculative verify never call it.
+    /// `rp` selects the weight layout exactly as in memra_mmq_nvfp4_w4a8.
+    /// Returns 0, 2902 (bad shape/scale), 2901 (unbuilt) or (1000 + cudaError).
+    pub fn memra_mmq_nvfp4_calibrated_prefill(
+        w_nvfp4_blocks: *const core::ffi::c_void,
+        act_f32: *const f32,
+        y: *mut f32,
+        in_f: i32,
+        out_f: i32,
+        n_tokens: i32,
+        act_scratch: *mut core::ffi::c_void,
+        stream: *mut core::ffi::c_void,
+        weight_scale: f32,
+        input_scale: f32,
+        rp: i32,
+    ) -> i32;
     /// Bytes for the block_e4m3_mmq activation scratch (footprint-identical to block_q8_1_mmq).
     pub fn memra_mmq_nvfp4_f8f4_act_bytes(in_f: i32, n_tokens: i32) -> usize;
     /// R-B W4A8-FP8 MMQ prefill GEMM (research/prefill-mxf8f6f4-design.md): NVFP4 per-16 scales
@@ -2190,6 +2211,61 @@ impl Engine {
             };
             if rc != 0 {
                 return Err(format!("memra_mmq_nvfp4_w4a8(f8f4={f8f4}) rc={rc}").into());
+            }
+        }
+        Ok(y)
+    }
+
+    /// CALIBRATED A4 PREFILL GEMM. Only reachable through `matmul_prefill`, and only for a weight
+    /// the artifact stamped with a calibrated multiplier, so decode and speculative verify cannot
+    /// land here at any row count. Scratch is the W4A8 footprint (the quantizer writes the same
+    /// block_fp4_mmq slab plus one f32 per padded row).
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn qmatvec_mmq_nvfp4_calibrated_prefill(
+        &self,
+        bytes: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        weight_scale: f32,
+        input_scale: f32,
+        rp: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        // The kernel refuses these itself (rc 2902); refusing here keeps the caller's fallback
+        // decision in Rust instead of turning a shape mismatch into a launch error.
+        if !in_f.is_multiple_of(512) || !input_scale.is_finite() || input_scale <= 0.0 {
+            return Err(format!(
+                "calibrated A4 prefill needs in_f % 512 == 0 and a finite positive scale, got in_f={in_f} scale={input_scale}"
+            )
+            .into());
+        }
+        let act_bytes = unsafe { memra_mmq_nvfp4_w4a8_act_bytes(in_f as i32, m as i32) };
+        let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        {
+            let stream = self.gpu.stream();
+            let (w_p, _gw) = bytes.device_ptr(&stream);
+            let (x_p, _gx) = x.device_ptr(&stream);
+            let (y_p, _gy) = y.device_ptr_mut(&stream);
+            let (s_p, _gs) = scratch.device_ptr_mut(&stream);
+            let rc = unsafe {
+                memra_mmq_nvfp4_calibrated_prefill(
+                    w_p as *const core::ffi::c_void,
+                    x_p as *const f32,
+                    y_p as *mut f32,
+                    in_f as i32,
+                    out_f as i32,
+                    m as i32,
+                    s_p as *mut core::ffi::c_void,
+                    stream.cu_stream() as *mut core::ffi::c_void,
+                    weight_scale,
+                    input_scale,
+                    rp as i32,
+                )
+            };
+            if rc != 0 {
+                return Err(format!("memra_mmq_nvfp4_calibrated_prefill rc={rc}").into());
             }
         }
         Ok(y)

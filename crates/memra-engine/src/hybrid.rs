@@ -376,6 +376,12 @@ fn load_mixer_kind(
     step_runtimes: &mut StepParallelRuntimeRegistry,
 ) -> Result<Mixer, Box<dyn std::error::Error>> {
     let p = |s: &str| format!("blk.{il}.{s}");
+    // Shadow the plain loader: every mixer projection this artifact's activation program names
+    // gets its calibrated multiplier stamped here, and every projection it does not name (the
+    // narrow alpha/beta pair, and every layer of a legacy artifact) stays W4A8 by getting nothing.
+    let load_t = |e: &Engine, src: &dyn TensorSource, name: &str| {
+        GpuTensor::load_from_source_calibrated(e, src, cfg, name)
+    };
     Ok(match attention {
         AttentionPlan::Mla(mla) => Mixer::Mla(MlaAttnLayer::load(e, src, il, mla)?),
         AttentionPlan::Full(full)
@@ -457,6 +463,10 @@ pub(crate) fn load_ffn(
     step_runtimes: &mut StepParallelRuntimeRegistry,
 ) -> Result<Ffn, Box<dyn std::error::Error>> {
     let p = |s: &str| format!("blk.{il}.{s}");
+    // Same shadowing as load_mixer_kind: ffn_gate/up/down are 192 of the program's 400 names.
+    let load_t = |e: &Engine, src: &dyn TensorSource, name: &str| {
+        GpuTensor::load_from_source_calibrated(e, src, cfg, name)
+    };
     // ARTIFACT-DENSE OVERRIDE (restores the pre-plan nuance d143604b0a removed): Step3.7-flash
     // ships its MTP blocks (blk.45/46/47) with `ffn_gate/up/down.weight` and NO
     // `ffn_gate_inp`/`ffn_*_exps`, while the config carries the TRUNK's expert hparams — so a
@@ -469,9 +479,9 @@ pub(crate) fn load_ffn(
         && src.has(&p("ffn_gate.weight"));
     Ok(if artifact_dense {
         Ffn::Dense {
-            ffn_gate: GpuTensor::load_from_source(e, src, &p("ffn_gate.weight"))?,
-            ffn_up: GpuTensor::load_from_source(e, src, &p("ffn_up.weight"))?,
-            ffn_down: GpuTensor::load_from_source(e, src, &p("ffn_down.weight"))?,
+            ffn_gate: load_t(e, src, &p("ffn_gate.weight"))?,
+            ffn_up: load_t(e, src, &p("ffn_up.weight"))?,
+            ffn_down: load_t(e, src, &p("ffn_down.weight"))?,
             // AWQ artifacts only (memra#253); absent everywhere else.
             ffn_down_pqs: GpuTensor::load_opt_from_source(e, src, &p("ffn_down.pre_quant_scale"))?,
         }
@@ -6212,6 +6222,7 @@ impl HybridModel {
                                 qtype,
                                 ne,
                                 f16: None,
+                                a4: None,
                                 ..
                             } if ne.len() == 2
                                 && matches!(

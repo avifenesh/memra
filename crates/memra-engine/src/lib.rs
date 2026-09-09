@@ -16468,6 +16468,7 @@ impl Engine {
             blk: None,
             rp4: None,
             f16: None,
+            a4: None,
         }))
     }
 
@@ -17726,6 +17727,49 @@ impl Engine {
     }
 
     /// Unified weight-tensor matmul: dispatches quant tensors to qmatvec (weights packed) and
+    /// PREFILL-PHASE matmul. Identical to `matmul` for every weight EXCEPT one the artifact
+    /// stamped with a calibrated activation multiplier (`Quant.a4`), which takes the calibrated
+    /// NVFP4 A4 tile instead of W4A8.
+    ///
+    /// The phase is the CALL SITE, deliberately not a row count: prefill tails and restored
+    /// suffixes of one row still belong to the prefill program, and a 1..8-row speculative verify
+    /// does not. Decode and verify call `matmul`, which never reads `a4`, so the precision islands
+    /// (narrow alpha/beta, MTP, Q5_K head, drafter) and both non-prefill phases keep W4A8 by
+    /// construction rather than by a guard someone can forget.
+    ///
+    /// A stamped weight whose shape the kernel refuses is an artifact/plan disagreement, so it
+    /// fails closed here instead of silently serving a second numerical program.
+    pub fn matmul_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if let GpuTensor::Quant {
+            bytes,
+            qtype,
+            scale,
+            rp,
+            a4: Some(input_scale),
+            ..
+        } = w
+            && *qtype == QT_NVFP4
+        {
+            return self.qmatvec_mmq_nvfp4_calibrated_prefill(
+                bytes,
+                x,
+                m,
+                w.in_features(),
+                w.out_features(),
+                *scale,
+                *input_scale,
+                *rp,
+            );
+        }
+        self.matmul(w, x, m)
+    }
+
     /// float tensors to cuBLASLt. y[m,out] = x[m,in] @ W[out,in]^T.
     pub fn matmul(
         &self,
@@ -21758,6 +21802,7 @@ impl Engine {
             fp8: None,
             blk: None,
             f16: None,
+            a4: None,
             rp4: None,
         };
         // Recursion terminates: `tmp` is QT_Q8_0 with `blk: None`, so it cannot re-enter this arm.
