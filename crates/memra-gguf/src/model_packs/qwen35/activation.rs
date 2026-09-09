@@ -19,10 +19,24 @@ pub enum LinearActivation {
     CalibratedNvfp4 { multiplier: f32 },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct PrefillFp4 {
     /// GGUF weight names, with calibrated activation dequantization multipliers.
     scales: BTreeMap<String, f32>,
+}
+
+/// A plan receipt has to say WHICH calibration it is holding, not just that it holds one, or two
+/// artifacts calibrated from different corpora read identically in the log. The derived Debug
+/// would dump 400 lines to do that, so the digest stands in for the map: same 400 names and same
+/// 400 bit patterns, same digest.
+impl std::fmt::Debug for PrefillFp4 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PrefillFp4")
+            .field("program", &PROGRAM)
+            .field("scales", &self.scales.len())
+            .field("digest", &format_args!("{:016x}", self.digest()))
+            .finish()
+    }
 }
 
 /// The 400 large projections. Narrow alpha/beta, MTP, head and drafter are absent
@@ -128,6 +142,23 @@ impl PrefillFp4 {
     pub fn scales(&self) -> &BTreeMap<String, f32> {
         &self.scales
     }
+
+    /// FNV-1a over every (name, IEEE-754 bits) pair in BTreeMap order. Bits, not float equality:
+    /// two multipliers that differ in the last mantissa bit are two different calibrations.
+    pub fn digest(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut eat = |bytes: &[u8]| {
+            for b in bytes {
+                h ^= u64::from(*b);
+                h = h.wrapping_mul(0x100_0000_01b3);
+            }
+        };
+        for (name, multiplier) in &self.scales {
+            eat(name.as_bytes());
+            eat(&multiplier.to_bits().to_le_bytes());
+        }
+        h
+    }
 }
 
 /// Used by runtime dispatch. Row count is deliberately not an input: one-row
@@ -151,6 +182,51 @@ pub fn select_activation(
 mod tests {
     use super::*;
 
+    fn program(multiplier: f32) -> PrefillFp4 {
+        PrefillFp4 {
+            scales: projection_names()
+                .into_iter()
+                .map(|n| (n, multiplier))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn digest_separates_two_calibrations_and_the_receipt_carries_it() {
+        let a = program(0.125);
+        let b = program(0.125);
+        assert_eq!(
+            a.digest(),
+            b.digest(),
+            "same 400 pairs must digest the same"
+        );
+
+        // One multiplier, one mantissa bit apart: a different calibration, a different digest.
+        let mut c = program(0.125);
+        let name = projection_names()[7].clone();
+        c.scales
+            .insert(name.clone(), f32::from_bits(0.125f32.to_bits() + 1));
+        assert_ne!(a.digest(), c.digest());
+
+        // Same 400 multipliers under a DIFFERENT name is also a different program.
+        let mut d = program(0.125);
+        d.scales.remove(&name);
+        d.scales.insert("blk.0.ssm_alpha.weight".into(), 0.125);
+        assert_ne!(a.digest(), d.digest());
+
+        let receipt = format!("{a:?}");
+        assert!(receipt.contains(PROGRAM), "{receipt}");
+        assert!(receipt.contains("400"), "{receipt}");
+        assert!(
+            receipt.contains(&format!("{:016x}", a.digest())),
+            "the plan receipt must carry the digest, not just the count: {receipt}"
+        );
+        assert!(
+            !receipt.contains("blk.0.ffn_gate"),
+            "the receipt must not dump 400 scale lines: {receipt}"
+        );
+    }
+
     #[test]
     fn scale_less_artifact_never_selects_a4() {
         for phase in [
@@ -169,9 +245,7 @@ mod tests {
 
     #[test]
     fn scaled_artifact_is_prefill_only_and_preserves_precision_islands() {
-        let program = PrefillFp4 {
-            scales: projection_names().into_iter().map(|n| (n, 0.125)).collect(),
-        };
+        let program = program(0.125);
         assert_eq!(program.scales.len(), 400);
         for name in projection_names() {
             assert_eq!(

@@ -14,7 +14,9 @@ pub struct ModelPlan {
     /// Speech semantics. Text layers are empty for speech-only plans; execution may be unsupported.
     pub speech: Option<WhisperPlan>,
     pub arch: Arch,
-    /// Included in serialized plan/debug receipts and their identity hash.
+    /// Carried on the plan so a receipt names WHICH calibration is loaded: its Debug renders the
+    /// program name, the scale count and a digest over the 400 (name, bits) pairs. There is no
+    /// separate plan identity hash in this engine, so do not claim one.
     pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
     pub hidden_size: u32,
     pub vocab_size: u32,
