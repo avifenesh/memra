@@ -615,6 +615,46 @@ receipts: `research/kernel-dedup-20260821/RECEIPTS.md`; every modified TU × arc
   m64n64k16.bf16 wrapper. Still local by design: fa3's `_tb` (transpose-B imm) and
   templated wait, qmatvec's m64n64k32.s8 form and raw asm statements.
 
+## HC24 split dots numeric class (experimental, default OFF)
+
+`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_hc_dot_split_partial_kernel<S>`
+and `dsv4_hc_dot_split_reduce_kernel<S>` for S=8/16/32. Only the device HC-24
+pre-attention/pre-FFN sites with F32 N=24,K=16384 dispatch this pair. Other
+dots shapes retain their current kernel. Existing CUDA kernels are unchanged.
+
+Each of 24*S blocks has 128 threads. A contiguous K slice retains increasing
+eight-element per-lane multiply/add order and the exact-tail 128-leaf tree.
+S=32 has 64 zero leaves because its slice has 512 elements. One 32-thread
+second-stage block sums each row's partials in ascending slice order with
+explicit round-to-nearest f32 adds. No atomics or fused multiply-add.
+This is the **HC24 split dots** numeric class, not bit-identity with the
+exact-tail dots class: restarting accumulators and summing slices changes
+association. Each S is a distinct class and must be pinned in its receipt.
+
+Scratch is 24*32 F32 elements per decode state and rank, allocated before
+capture. Every call writes all partials it reads, both stages use the same
+stream, and graphs retain stable scratch addresses. `MEMRA_DSV4_HC_DOT_SPLIT`
+is OFF with decide-by: 2026-09-23; exact `1` selects the owner-chosen S=16.
+Unset or `0` restores the current dots after a fresh process/state capture.
+S32 was component-fastest but its 1.407% advantage over S16 did not justify
+rebuilding and re-review; only S16 has the model campaign receipts.
+
+[Darklanes #538](https://github.com/avifenesh/darklanes/pull/538) banks both-rank
+S8/16/32 components and zero-error memcheck/synccheck, two fresh process
+observations per arm with external token/logit/cache/hidden equality, AR epochs
+and eight refusals per arm per process. ON census is 86 partial plus86 reducer
+nodes per rank in each of the three forward variants; OFF and commit segments
+have zero. Source `d42196214`, binary
+`d9ca7ac0bb6417fcd99e176cd6e2244d9e9d8b6b837a08d73b27fc0a7bd2dc5c`.
+
+KEEP door: sampled pooled +2.701174% forward / +2.591532% reverse,20 eligible
+rows per order with first capture timed. All128 DRIFT-R3 input hashes match:
+49/2048 top1 changes (2.392578%), KL OFF-to-ON mean/max
+0.005672511/0.421308907 and ON-to-OFF0.005758277/0.483190648; greedy16/64
+identical and2099/4096 matching tokens. This is a new numeric class. Default-ON
+remains the owner's drift decision; this integration keeps the door OFF.
+The source rebase does not relabel the pinned binary receipts as a new build.
+
 ## DSV4 segmented replay component, 2026-09-08
 
 | Source | Kernel | Contract / dispatch |
