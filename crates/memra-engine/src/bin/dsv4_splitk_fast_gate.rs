@@ -1,4 +1,4 @@
-//! Same-class split-K byte movement: real components and sampled replay ABBA.
+//! Split-K instrument plus default-OFF door scaffold and sampled replay ABBA.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
 use memra_gguf::dsv4_forward::ActQuantVariant;
@@ -524,15 +524,25 @@ fn main() {
             gpu.decode_step_device_logits(token, &mut work).unwrap();
             let mask = unsafe { memra_moe_m1_splitk_fast_component_mask() };
             println!("GRAPH_COMPONENT_COVERAGE token={i} mask={mask}");
-            if mask == 15 {
+            if mask == 255 {
                 break;
             }
         }
         assert_eq!(
-            unsafe { memra_moe_m1_splitk_fast_component_mask() },
+            unsafe { memra_moe_m1_splitk_fast_component_mask() } & 15,
             15,
-            "need real six-live operands on both projections and ranks"
+            "need observed six-live CSR on both projections and ranks"
         );
+        let low_mask = unsafe { memra_moe_m1_splitk_fast_component_mask() } >> 4;
+        println!(
+            "SPLITK_FAST_COMPONENT_OBSERVED_COVERAGE low_mask={low_mask} derived_cases=prefixes_of_one_six_live_CSR_per_rank_projection"
+        );
+        if low_mask != 15 {
+            println!(
+                "SPLITK_FAST_COMPONENT_OBSERVED_LIMIT low_mask={low_mask} searched_decode_tokens={} reason=no_additional_low_live_CSR_seen_in_bounded_capture",
+                PRIME - 1
+            );
+        }
         memra_engine::set_moe_m1_splitk_component_for_gate(false);
         return;
     }

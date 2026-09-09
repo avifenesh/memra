@@ -2881,8 +2881,9 @@ int memra_moe_m1_graph_splitk_component(
     return 0;
 }
 
-// Gate-only real-operand census: wait for a six-live route on each rank and
-// projection, then replay all prefixes 0..6 without recapturing either kernel.
+// Instrument plus default-OFF door scaffold: one observed six-live CSR per
+// rank/projection supplies derived prefixes 0..6. Also retain the first actual
+// low-live (1..5) CSR per rank/projection, without modifying that route.
 static std::atomic<unsigned> g_splitk_fast_component_mask{0};
 unsigned memra_moe_m1_splitk_fast_component_mask(){ return g_splitk_fast_component_mask.load(); }
 int memra_moe_m1_splitk_fast_component(
@@ -2901,11 +2902,19 @@ int memra_moe_m1_splitk_fast_component(
         cudaPointerAttributes attr{}; GS_CHECK(cudaPointerGetAttributes(&attr,ptr));
         if(attr.device!=device || attr.type!=cudaMemoryTypeDevice) return 40012;
     }
-    const unsigned bit = 1u << (device*2+gu);
-    if(g_splitk_fast_component_mask.load() & bit) return 0;
+    const unsigned key = 1u << (device*2+gu);
+    const unsigned mask = g_splitk_fast_component_mask.load();
+    if((mask & (key | (key<<4))) == (key | (key<<4))) return 0;
     GS_CHECK(cudaMemcpyAsync(&observed,ex_off+n_active,4,cudaMemcpyDeviceToHost,st));
     GS_CHECK(cudaStreamSynchronize(st));
-    if(observed != 6) return 0;
+    if(observed<0 || observed>6) return 40005;
+    if(observed==0) return 0;
+    const bool derived = observed==6;
+    const unsigned bit = derived ? key : key<<4;
+    if(mask & bit) return 0;
+    const char* origin = derived ? "derived_prefix" : "observed_low";
+    printf("SPLITK_FAST_BANDWIDTH_MODEL modeled effective weight GB/s (unique codes + scales / partial time); 1792 GB/s is a nominal peak, not achieved DRAM bandwidth\n");
+    printf("SPLITK_FAST_COMPONENT_ROUTE device=%d gu=%d route_origin=%s source_live=%d independent_route=1\n",device,gu,origin,observed);
     for(int arm=0;arm<2;++arm){
         const void* kernel=gu
             ? (arm ? (const void*)moe_m1_splitk_fast_partial_kernel<2> : (const void*)moe_m1_graph_splitk_partial_kernel<2>)
@@ -2913,7 +2922,7 @@ int memra_moe_m1_splitk_fast_component(
         cudaFuncAttributes attr{}; int blocks=0;
         GS_CHECK(cudaFuncGetAttributes(&attr,kernel));
         GS_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blocks,kernel,128,0));
-        printf("SPLITK_FAST_RESOURCE device=%d gu=%d arm=%s threads=128 registers=%d shared_bytes=%zu local_bytes=%zu blocks_per_sm=%d\n",device,gu,arm?"on":"off",attr.numRegs,attr.sharedSizeBytes,attr.localSizeBytes,blocks);
+        printf("SPLITK_FAST_RESOURCE device=%d gu=%d route_origin=%s source_live=%d arm=%s threads=128 registers=%d shared_bytes=%zu local_bytes=%zu blocks_per_sm=%d\n",device,gu,origin,observed,arm?"on":"off",attr.numRegs,attr.sharedSizeBytes,attr.localSizeBytes,blocks);
     }
     struct Buffers {
         float *a=nullptr,*b=nullptr,*p=nullptr;
@@ -2943,7 +2952,7 @@ int memra_moe_m1_splitk_fast_component(
     if(offsets[0]!=0) return 40005;
     for(int g=0;g<n_active;++g){
         if(offsets[g+1]-offsets[g]<0 || offsets[g+1]-offsets[g]>1) return 40005;
-        if(offsets[g+1]!=offsets[g]) printf("SPLITK_FAST_COMPONENT_OPERAND device=%d gu=%d row=%d expert=%d\n",device,gu,offsets[g],ids[g]);
+        if(offsets[g+1]!=offsets[g]) printf("SPLITK_FAST_COMPONENT_OPERAND device=%d gu=%d route_origin=%s source_live=%d row=%d expert=%d\n",device,gu,origin,observed,offsets[g],ids[g]);
     }
     auto launch = [&](int arm,int live){
         GS_CHECK(cudaEventRecord(b.begin,st));
@@ -2980,9 +2989,9 @@ int memra_moe_m1_splitk_fast_component(
             GS_CHECK(end);
             GS_CHECK(cudaGraphInstantiate(&controls.execs[arm],controls.graphs[arm],nullptr,nullptr,0));
         }
-    for(int live=0;live<=6;++live){
+    for(int live=derived?0:observed;live<=observed;++live){
         std::vector<int> prefix=offsets;
-        for(auto& v:prefix) v=std::min(v,live);
+        if(derived) for(auto& v:prefix) v=std::min(v,live);
         GS_CHECK(cudaMemcpyAsync(b.offsets,prefix.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
         std::vector<float> reference(n), candidate(n), first(n);
         std::vector<unsigned> first_partial(pn), current_partial(pn);
@@ -3036,7 +3045,7 @@ int memra_moe_m1_splitk_fast_component(
             const size_t activation=size_t(live)*(out_f/SK_BN)*in_f*16*2*(gu?2:1);
             for(int arm : {1,2}){
                 const double pus=partial_us[arm]/20, rus=reduce_us[arm]/20;
-                printf("SPLITK_FAST_COMPONENT device=%d gu=%d live=%d slices=%d cold=%d arm=%s flush_bytes=%zu codes_bytes=%zu scales_bytes=%zu weight_bytes=%zu activation_issued_bytes=%zu scratch_write_bytes=%zu partial_us=%.6f reduce_us=%.6f total_us=%.6f weight_GBs=%.6f weight_pct_1792=%.6f measurements=20 bit_equal=1 deterministic=1 canaries=1 candidate_capture_count=1 all_timed_arms=replay\n",device,gu,live,slices,cold,arm==2?"on":"off",cold?flush_bytes:0,codes,scales,codes+scales,activation,scratch,pus,rus,totals[arm]/20,(codes+scales)/pus/1000,(codes+scales)/pus/1000/1792*100);
+                printf("SPLITK_FAST_COMPONENT device=%d gu=%d route_origin=%s source_live=%d live=%d slices=%d cold=%d arm=%s flush_bytes=%zu codes_bytes=%zu scales_bytes=%zu weight_bytes=%zu activation_issued_bytes=%zu scratch_write_bytes=%zu partial_us=%.6f reduce_us=%.6f total_us=%.6f modeled_effective_weight_GBs=%.6f pct_nominal_peak_1792=%.6f measurements=20 bit_equal=1 deterministic=1 canaries=1 candidate_capture_count=1 all_timed_arms=replay\n",device,gu,origin,observed,live,slices,cold,arm==2?"on":"off",cold?flush_bytes:0,codes,scales,codes+scales,activation,scratch,pus,rus,totals[arm]/20,(codes+scales)/pus/1000,(codes+scales)/pus/1000/1792*100);
             }
         }
         // The down projection is the consumer of rowwise-packed GU output.
@@ -3051,7 +3060,7 @@ int memra_moe_m1_splitk_fast_component(
             if(std::memcmp(first.data(),poisoned.data(),n*4)) return 40010;
             GS_CHECK(cudaMemcpyAsync(b.activation,act_f16,6ull*in_f*sizeof(__half),cudaMemcpyDeviceToDevice,st));
         }
-        printf("SPLITK_FAST_COMPONENT_TAIL device=%d gu=%d live=%d zero_output_rows=%d inactive_activation_poison_ignored=1\n",device,gu,live,6-live);
+        printf("SPLITK_FAST_COMPONENT_TAIL device=%d gu=%d route_origin=%s source_live=%d live=%d zero_output_rows=%d inactive_activation_poison_ignored=1\n",device,gu,origin,observed,live,6-live);
     }
     fflush(stdout); // Keep complete C++ receipt rows ahead of Rust coverage logs.
     g_splitk_fast_component_mask.fetch_or(bit);
