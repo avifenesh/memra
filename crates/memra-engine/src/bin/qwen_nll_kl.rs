@@ -44,10 +44,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     std::fs::create_dir_all(&dir)?;
 
+    // CONTROL (b): load the calibrated artifact but DROP its activation program, so the same file
+    // scores through the served W4A8 path. If that is not bitwise equal to the served arm, the two
+    // arms are not scoring the same thing (window alignment, positions, chunking, an off-by-one
+    // logits row) and THAT is the finding, not a quantization delta.
+    let no_a4 = std::env::var_os("MEMRA_A4_DISABLE").is_some();
     let e = Engine::new(0)?;
     let g = GgufFile::open(&model_path)?;
     let tok = memra_tokenizer::Tokenizer::from_gguf(&g)?;
-    let model = HybridModel::load(&e, &g)?;
+    let mut model = HybridModel::load(&e, &g)?;
+    if no_a4 {
+        model.cfg.prefill_activation = None;
+        println!("MEMRA_A4_DISABLE: activation program dropped; this file scores as W4A8");
+    }
     println!(
         "artifact {model_path}: activation program {:?}",
         model.cfg.prefill_activation
@@ -154,6 +163,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let mean_nll = nll / window as f64;
         let mean_kl = kl / window as f64;
+        // CONTROL (c): does the PRIME path agree with the DECODE path on this same artifact?
+        // The teacher-forced argmax over the first positions of the window is produced by the
+        // prime + decode chain here; a free greedy continuation from the identical prefix uses
+        // the serving generate path. Disagreement between them is an artifact-internal
+        // inconsistency, independent of any comparison to the served mint.
+        if std::env::var_os("MEMRA_A4_PRIME_VS_DECODE").is_some() {
+            let probe = 64.min(window);
+            let mut fresh = memra_engine::pp::new_cache(&e, &model.cfg, ctx + probe + 8)?;
+            model.prime_cache(&e, &ids[..ctx], &mut fresh, 0)?;
+            let generated = model.generate(&e, &ids[..ctx], probe)?;
+            let forced: Vec<u32> = (0..probe).map(|i| ids[ctx + i]).collect();
+            let same = generated
+                .iter()
+                .zip(forced.iter())
+                .take_while(|(a, b)| a == b)
+                .count();
+            println!(
+                "  prime-vs-decode: greedy continuation matches the teacher-forced tokens for \
+                 {same} of {probe} positions (a low number is expected when the text is not what \
+                 the model would have written; the point is that it is the SAME on both arms)"
+            );
+        }
         println!(
             "{name}: ctx {ctx} window {window} | NLL {mean_nll:.6} | ppl {:.4}{}",
             mean_nll.exp(),
