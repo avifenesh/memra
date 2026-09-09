@@ -128,7 +128,9 @@ pub(crate) fn eligible(
         .qwen_prime_graph
         .as_ref()
         .and_then(|p| p.downcast_ref::<ChunkGraph>())
-        .is_some_and(|p| p.rows == t && p.capacity >= seq_end && p.attention_fa2 == e.prime_attn_fa2_enabled());
+        .is_some_and(|p| {
+            p.rows == t && p.capacity >= seq_end && p.attention_fa2 == e.prime_attn_fa2_enabled()
+        });
     supported(m, e)
         && crate::spec::graph_launch_headroom_ok(e)
         // A one-off restored suffix or boundary tail cannot amortize capture.

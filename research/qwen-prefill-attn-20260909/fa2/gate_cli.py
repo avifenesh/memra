@@ -10,7 +10,7 @@ import time
 import uuid
 
 p = argparse.ArgumentParser()
-p.add_argument("kind", choices=["margin", "spec", "eval"])
+p.add_argument("kind", choices=["margin", "spec", "eval", "layers"])
 p.add_argument("--arm", choices=["0", "1"], default="1")
 p.add_argument("--profile", action="store_true")
 p.add_argument("--version", default="v2")
@@ -28,6 +28,8 @@ if a.kind == "margin":
 elif a.kind == "spec":
     cmd = [str(root / ("fa2-src/run-spec-" + a.version)), model]
     env.update(MEMRA_PROMPT_FILE=str(root / "gate-prompt.txt"), MEMRA_CHAT="1", MEMRA_NGEN="64")
+elif a.kind == "layers":
+    cmd = [str(root / ("fa2-src/qwen-fa2-layer-probe-" + a.version)), model, str(root / "margin-board-2048.txt")]
 else:
     cmd = [str(root / ("fa2-src/concat-prime-probe-" + a.version)), model, "nllwin", "--prompt-a", "@" + str(root / "fa2-serving-src/research/fp8st-20260804/mmq-v2/nll-window.txt"), "--window", "1024", "--chunk", "1024", "--jsonl", str(out / "per-token.jsonl")]
 binary = pathlib.Path(cmd[0])

@@ -1869,7 +1869,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 sum += token_nll;
                 if let Some(file) = per_token.as_mut() {
                     use std::io::Write;
-                    writeln!(file, "{{\"position\":{p},\"token\":{},\"nll\":{token_nll}}}", ids[p])?;
+                    writeln!(
+                        file,
+                        "{{\"position\":{p},\"token\":{},\"nll\":{token_nll}}}",
+                        ids[p]
+                    )?;
                 }
             }
             let nll = sum / (t - 1) as f64;

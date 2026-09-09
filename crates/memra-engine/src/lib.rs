@@ -29228,7 +29228,11 @@ impl Engine {
             && causal
             && !g
         {
-            let name = if live.is_some() { "fa_prefill_qw_fa2_prime_table" } else { "fa_prefill_qw_fa2" };
+            let name = if live.is_some() {
+                "fa_prefill_qw_fa2_prime_table"
+            } else {
+                "fa_prefill_qw_fa2"
+            };
             let f = self.func(name);
             f.set_attribute(cudarc::driver::sys::CUfunction_attribute_enum::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 49152)?;
             let cfg = LaunchConfig {
@@ -29240,8 +29244,14 @@ impl Engine {
             let (ti, tkvi) = (t as i32, t_kv as i32);
             let mut b = stream.launch_builder(&f);
             b.arg(q).arg(&*kw).arg(&*vw).arg(o).arg(&ti);
-            if live.is_some() { b.arg(&table); } else { b.arg(&tkvi); }
-            unsafe { b.launch(cfg)?; }
+            if live.is_some() {
+                b.arg(&table);
+            } else {
+                b.arg(&tkvi);
+            }
+            unsafe {
+                b.launch(cfg)?;
+            }
             return Ok(());
         }
         // pass 2: the bf16-workspace prefill twin (same tile sizes/loop structure as fa_prefill_q).
