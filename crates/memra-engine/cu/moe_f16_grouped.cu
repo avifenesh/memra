@@ -2021,7 +2021,150 @@ static __global__ void moe_m1_graph_splitk_reduce_kernel(
     moe_m1_splitk_reduce_body<Projections>(partial, out, row_scale, macro_g, macro_u, route_w, slots, out_f, limit, ex_off, n_active);
 }
 
-// Baseline instrument: same bodies until the per-live bandwidth cell is measured.
+// Candidate 1: paired weight loads only; the slice/MMA/reduction program is unchanged.
+// Same ModelOpt E2M1/E4M3 windows as two kq_fetch calls. The admitted
+// row strides and 64-value K boundaries align codes to 16 B and scales to 2 B.
+// Explicit vector PTX keeps one code load rather than scalarized struct reads.
+static __device__ __forceinline__ void moe_m1_splitk_fast_fetch_pair(
+        const uint8_t* wrow, const uint8_t* scrow, int k0v, KqRaw& lo, KqRaw& hi){
+    const uint8_t* codes=wrow+(k0v>>1);
+    const uint8_t* scales=scrow+(k0v>>4);
+    uint16_t scale_pair;
+    asm volatile("ld.global.v4.u32 {%0,%1,%2,%3}, [%4];"
+        : "=r"(lo.q[0]),"=r"(lo.q[1]),"=r"(hi.q[0]),"=r"(hi.q[1]) : "l"(codes));
+    asm volatile("ld.global.u16 %0, [%1];" : "=h"(scale_pair) : "l"(scales));
+    lo.f1=g_e4m3fn_to_float(static_cast<uint8_t>(scale_pair));
+    hi.f1=g_e4m3fn_to_float(static_cast<uint8_t>(scale_pair>>8));
+    lo.f2=hi.f2=0.0f;
+    lo.sel=hi.sel=0;
+}
+
+template<int Projections>
+static __device__ __forceinline__ void
+moe_m1_splitk_fast_partial_body(
+        const unsigned long long* __restrict__ table, int proj, int n_expert,
+        const int* __restrict__ ex_ids, long row_bytes,
+        const __half* __restrict__ A,
+        float* __restrict__ partial,
+        const int* __restrict__ ex_off, int n_active,
+        int in_f, int out_f){
+    constexpr int QT = QT_NVFP4_MODELOPT;
+    constexpr bool M1 = true, PackedStore = true;
+    __shared__ __align__(16) __half As[SKT_STAGES][16][SKT_STRIDE];
+    // Only warps 0/2 consume A rows 0..15 in M1; rows 16..31 were unused.
+    // Removing those stages lowers static shared storage without changing MMA.
+    __shared__ __align__(16) __half Bs[SK_BN][SKT_STRIDE];   // single buffer
+    __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
+    __shared__ uint32_t packed_h2[256];
+    const int ntx = (out_f + SK_BN - 1) / SK_BN;
+    kq_stage_codebook<QT>(s_cb);
+    kq_stage_half2_lut<PackedStore>(packed_h2);
+    __syncthreads();
+    const int live = ex_off[n_active];
+    const int slices = moe_m1_slices(live, out_f, Projections == 2);
+    const int split = blockIdx.x % slices;
+    const int tile = blockIdx.x / slices;
+    const int slot = tile / ntx;
+    if(slot >= live) return;
+
+    const int lane = threadIdx.x, warp = threadIdx.y;
+    const int tid  = warp * 32 + lane;                        // 0..127
+    const int total_kb = in_f / SKT_BK;
+    const int begin_kb = split * total_kb / slices;
+    const int end_kb = (split + 1) * total_kb / slices;
+    const int nkb = end_kb - begin_kb;
+    const int kbase = begin_kb * SKT_BK;
+    const int wm = (warp & 1) * 16, wn = (warp >> 1) * 32;
+    const int brow = tid >> 1, bc0 = (tid & 1) * 32;          // 2 threads/row, 32 values each
+
+    {
+        // M=1 makes the CSR row offsets the tile map. Seven binary-search
+        // reads replace rebuilding a 128-expert prefix in every slice CTA.
+        const int g = sk_tile_group(ex_off, n_active, slot);
+        const int lo = ex_off[g], m_e = ex_off[g+1] - lo;
+        const int m0 = 0;
+        const int n0 = (tile % ntx) * SK_BN;
+
+        const __half* Ag = A + (size_t)lo * in_f + kbase;
+        const int eid = ex_ids[g];
+        for(int p = 0; p < Projections; ++p){
+        const int qplane = Projections == 2 ? p * 4 : 2 * proj;
+        const uint8_t* Wq = (const uint8_t*)table[(size_t)qplane*n_expert + eid];
+        const uint8_t* Wsc = (QT == QT_NVFP4_MODELOPT)
+            ? (const uint8_t*)table[(size_t)(qplane + 1)*n_expert + eid] : nullptr;
+        const int bn = min(n0 + brow, out_f - 1);
+        const uint8_t* wrow = Wq + (size_t)bn * row_bytes + kbase / 2;
+        const uint8_t* scrow = Wsc ? Wsc + (size_t)bn * (in_f / 16) + kbase / 16 : nullptr;
+
+        const __half* agp[2]; int asr[2], asc[2];
+        #pragma unroll
+        for(int i = 0; i < 2; i++){
+            const int c = tid + i * 128;
+            asr[i] = c >> 3; asc[i] = (c & 7) * 8;
+            const int am = min(m0 + asr[i], m_e - 1);
+            agp[i] = Ag + (size_t)am * in_f + asc[i];
+        }
+        #define KQT_LOAD_A(st, k0) do { \
+            _Pragma("unroll") \
+            for(int i = 0; i < 2; i++) if(!M1 || i == 0) \
+                sk_cp16(&As[st][asr[i]][asc[i]], agp[i] + (k0)); \
+            asm volatile("cp.async.commit_group;"); \
+        } while(0)
+
+        KQT_LOAD_A(0, 0);
+        if(nkb > 1) KQT_LOAD_A(1, SKT_BK);
+        KqRaw braw0, braw1;
+        moe_m1_splitk_fast_fetch_pair(wrow,scrow,bc0,braw0,braw1);
+
+        float acc[4][4] = {};
+        for(int kb = 0; kb < nkb; kb++){
+            const int cur = kb % SKT_STAGES;
+            if(kb + 2 < nkb) KQT_LOAD_A((kb + 2) % SKT_STAGES, (kb + 2) * SKT_BK);
+            // B tile for THIS kb from the pre-fetched registers (previous kb's trailing
+            // __syncthreads fences the overwrite), then issue kb+1's raw fetches so those
+            // global reads fly behind this kb's mma.
+            kq_store_variant<QT, PackedStore>(braw0, &Bs[brow][bc0], s_cb, packed_h2);
+            kq_store_variant<QT, PackedStore>(braw1, &Bs[brow][bc0 + 16], s_cb, packed_h2);
+            if(kb + 1 < nkb){
+                moe_m1_splitk_fast_fetch_pair(wrow,scrow,(kb + 1) * SKT_BK + bc0,braw0,braw1);
+            }
+            if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
+            else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
+            else                  asm volatile("cp.async.wait_group 0;");
+            __syncthreads();
+            if(!M1 || ((warp & 1) == 0)) {
+                #pragma unroll
+                for(int kk = 0; kk < 4; kk++){
+                    unsigned a[4], b0[4], b1[4];
+                    sk_ldm16x16(a,  &As[cur][wm][kk*16],  SKT_STRIDE);
+                    sk_ldm16x16(b0, &Bs[wn][kk*16],       SKT_STRIDE);
+                    sk_ldm16x16(b1, &Bs[wn + 16][kk*16],  SKT_STRIDE);
+                    sk_mma(acc[0], a, b0[0], b0[2]);
+                    sk_mma(acc[1], a, b0[1], b0[3]);
+                    sk_mma(acc[2], a, b1[0], b1[2]);
+                    sk_mma(acc[3], a, b1[1], b1[3]);
+                }
+            }
+            __syncthreads();
+        }
+        #undef KQT_LOAD_A
+
+        const int r0 = m0 + wm + lane / 4;
+        const int cb = n0 + wn + (lane % 4) * 2;
+        if(r0 == 0){
+            float* dst = partial + ((size_t(lo) * Projections + p) * 16 + split) * out_f;
+            #pragma unroll
+            for(int nb = 0; nb < 4; ++nb){
+                const int c = cb + nb * 8;
+                dst[c] = acc[nb][0];
+                dst[c + 1] = acc[nb][1];
+            }
+        }
+        __syncthreads();
+        } // projection
+
+    }
+}
 template<int Projections>
 static __global__ void __launch_bounds__(128)
 moe_m1_splitk_fast_partial_kernel(
@@ -2035,7 +2178,7 @@ moe_m1_splitk_fast_partial_kernel(
     const int live = ex_off[n_active];
     const int slices = moe_m1_slices(live, out_f, Projections == 2);
     if(blockIdx.x >= live * ((out_f + SK_BN - 1) / SK_BN) * slices) return;
-    moe_m1_splitk_partial_body<Projections>(table, proj, n_expert, ex_ids, row_bytes, A, partial, ex_off, n_active, in_f, out_f);
+    moe_m1_splitk_fast_partial_body<Projections>(table, proj, n_expert, ex_ids, row_bytes, A, partial, ex_off, n_active, in_f, out_f);
 }
 
 template<int Projections>
