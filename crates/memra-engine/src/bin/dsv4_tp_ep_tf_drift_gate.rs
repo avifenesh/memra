@@ -385,6 +385,8 @@ fn main() {
     let start = Instant::now();
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(true);
+    // Pin the historical control program independently of the graph default.
+    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
     memra_engine::set_moe_m1_splitk_for_gate(false);
     let gpu = Dsv4Gpu::load(
         Path::new(&args[1]),

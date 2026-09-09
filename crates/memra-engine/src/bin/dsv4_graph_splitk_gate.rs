@@ -280,6 +280,10 @@ struct ScoredArm {
 impl ScoredArm {
     fn new(gpu: &Dsv4Gpu, prompt: &[u32], cfg: Dsv4SampleCfg, on: bool) -> Self {
         select_arm(gpu, on);
+        Self::new_current(gpu, prompt, cfg)
+    }
+    fn new_current(gpu: &Dsv4Gpu, prompt: &[u32], cfg: Dsv4SampleCfg) -> Self {
+        let on = memra_engine::moe_m1_graph_splitk_on();
         let mut prefix = state(gpu);
         gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
             .unwrap();
@@ -325,72 +329,110 @@ fn run_abba(
         assert_eq!(arm.on, on);
         select_arm(gpu, on);
         for _ in 0..5 {
-            if arm.rows > 0 {
-                gpu.restore_full_token_prefix_for_gate(&mut arm.graph, &arm.prefix)
-                    .unwrap();
-            }
-            let before = gpu.full_token_replay_counts_for_gate(&arm.graph).unwrap();
-            assert_eq!(before, [[arm.rows * OUTPUT as u64; 2]; 2]);
-            let captures_before = gpu.full_token_replay_captures_for_gate(&arm.graph).unwrap();
-            assert_eq!(captures_before, if arm.rows == 0 { [0, 0] } else { [3, 1] });
-            let before_epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
-            let mut carry = arm.first;
-            let mut tokens = Vec::with_capacity(OUTPUT);
-            let start = Instant::now();
-            for _ in 0..OUTPUT {
-                tokens.push(carry);
-                carry = gpu
-                    .decode_sample_full_token_for_gate(carry, &mut arm.graph)
-                    .unwrap();
-            }
-            let ns = start.elapsed().as_nanos();
-            epochs(gpu, &before_epochs, OUTPUT as u32);
-            let after = gpu.full_token_replay_counts_for_gate(&arm.graph).unwrap();
-            assert_eq!(
-                after,
-                [[(arm.rows + 1) * OUTPUT as u64; 2]; 2],
-                "retained replay progression"
-            );
-            let captures = gpu.full_token_replay_captures_for_gate(&arm.graph).unwrap();
-            assert_eq!(captures, [3, 1], "one capture per arm only");
-            let expected =
-                expected_variants(true, PRIME, PRIME + OUTPUT, true).map(|n| n * (arm.rows + 1));
-            assert_eq!(
-                gpu.full_token_replay_variant_counts_for_gate(&arm.graph)
-                    .unwrap(),
-                [expected; 2]
-            );
-            let hash = sha_tokens(&tokens);
-            let ident = identity(gpu, &arm.graph);
-            let current = (hash.clone(), ident.clone(), carry);
-            if let Some(reference) = &arm.reference {
-                assert_eq!(&current, reference, "within-arm repeat");
-            } else {
-                arm.reference = Some(current);
-            }
-            assert!(!tokens.contains(&tokenizer.eos_id()), "early EOS");
-            let looped = looped(&tokens);
-            let graphs = census(gpu, &arm.graph, &output.join(format!("row-{row}-graphs")));
-            if let Some(reference) = &arm.graphs {
-                assert_eq!(&graphs, reference, "retained graph identity");
-            } else {
-                arm.graphs = Some(graphs);
-            }
-            println!(
-                "MEASURE {{\"row\":{row},\"arm_row\":{},\"reverse\":{reverse},\"graph_splitk\":{on},\"generated_tokens\":{OUTPUT},\"decode_wall_ns\":{ns},\"decode_tok_s\":{},\"eligible\":{},\"looped\":{looped},\"generated_sha256\":\"{hash}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"first_capture_inside_timing\":{},\"captures_before\":{captures_before:?},\"captures\":{captures:?},\"device_replays\":{after:?}}}",
-                arm.rows,
-                OUTPUT as f64 * 1e9 / ns as f64,
-                !looped,
-                ident.0,
-                ident.1,
-                ident.2,
-                arm.rows == 0
-            );
-            arm.rows += 1;
+            scored_row(gpu, arm, tokenizer, output, row, reverse);
             row += 1;
         }
     }
     assert_eq!([arms[0].rows, arms[1].rows], [10, 10]);
+}
+
+fn scored_row(
+    gpu: &Dsv4Gpu,
+    arm: &mut ScoredArm,
+    tokenizer: &Tokenizer,
+    output: &Path,
+    row: usize,
+    reverse: bool,
+) {
+    let on = arm.on;
+    assert_eq!(memra_engine::moe_m1_graph_splitk_on(), on);
+    if arm.rows > 0 {
+        gpu.restore_full_token_prefix_for_gate(&mut arm.graph, &arm.prefix)
+            .unwrap();
+    }
+    let before = gpu.full_token_replay_counts_for_gate(&arm.graph).unwrap();
+    assert_eq!(before, [[arm.rows * OUTPUT as u64; 2]; 2]);
+    let captures_before = gpu.full_token_replay_captures_for_gate(&arm.graph).unwrap();
+    assert_eq!(captures_before, if arm.rows == 0 { [0, 0] } else { [3, 1] });
+    let before_epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
+    let mut carry = arm.first;
+    let mut tokens = Vec::with_capacity(OUTPUT);
+    let start = Instant::now();
+    for _ in 0..OUTPUT {
+        tokens.push(carry);
+        carry = gpu
+            .decode_sample_full_token_for_gate(carry, &mut arm.graph)
+            .unwrap();
+    }
+    let ns = start.elapsed().as_nanos();
+    epochs(gpu, &before_epochs, OUTPUT as u32);
+    let after = gpu.full_token_replay_counts_for_gate(&arm.graph).unwrap();
+    assert_eq!(
+        after,
+        [[(arm.rows + 1) * OUTPUT as u64; 2]; 2],
+        "retained replay progression"
+    );
+    let captures = gpu.full_token_replay_captures_for_gate(&arm.graph).unwrap();
+    assert_eq!(captures, [3, 1], "one capture per arm only");
+    let expected = expected_variants(true, PRIME, PRIME + OUTPUT, true).map(|n| n * (arm.rows + 1));
+    assert_eq!(
+        gpu.full_token_replay_variant_counts_for_gate(&arm.graph)
+            .unwrap(),
+        [expected; 2]
+    );
+    let hash = sha_tokens(&tokens);
+    let ident = identity(gpu, &arm.graph);
+    let current = (hash.clone(), ident.clone(), carry);
+    if let Some(reference) = &arm.reference {
+        assert_eq!(&current, reference, "within-arm repeat");
+    } else {
+        arm.reference = Some(current);
+    }
+    assert!(!tokens.contains(&tokenizer.eos_id()), "early EOS");
+    let looped = looped(&tokens);
+    let graphs = census(gpu, &arm.graph, &output.join(format!("row-{row}-graphs")));
+    if let Some(reference) = &arm.graphs {
+        assert_eq!(&graphs, reference, "retained graph identity");
+    } else {
+        arm.graphs = Some(graphs);
+    }
+    println!(
+        "MEASURE {{\"row\":{row},\"arm_row\":{},\"reverse\":{reverse},\"graph_splitk\":{on},\"generated_tokens\":{OUTPUT},\"decode_wall_ns\":{ns},\"decode_tok_s\":{},\"eligible\":{},\"looped\":{looped},\"generated_sha256\":\"{hash}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"first_capture_inside_timing\":{},\"captures_before\":{captures_before:?},\"captures\":{captures:?},\"device_replays\":{after:?}}}",
+        arm.rows,
+        OUTPUT as f64 * 1e9 / ns as f64,
+        !looped,
+        ident.0,
+        ident.1,
+        ident.2,
+        arm.rows == 0
+    );
+    arm.rows += 1;
+}
+fn default_engagement(
+    gpu: &Dsv4Gpu,
+    prompt: &[u32],
+    tokenizer: &Tokenizer,
+    output: &Path,
+    cfg: Dsv4SampleCfg,
+) {
+    // No graph selector override: observe and execute the actual environment.
+    let on = memra_engine::moe_m1_graph_splitk_on();
+    println!(
+        "DEFAULT_POLICY raw={:?} graph_splitk={on}",
+        std::env::var("MEMRA_DSV4_MOE_M1_SPLITK").ok()
+    );
+    qualify_arm(gpu, prompt, output, cfg);
+    assert_eq!(memra_engine::moe_m1_graph_splitk_on(), on);
+    let mut arm = ScoredArm::new_current(gpu, prompt, cfg);
+    for row in 0..5 {
+        scored_row(gpu, &mut arm, tokenizer, output, row, false);
+    }
+    assert_eq!(arm.rows, 5);
+    println!(
+        "DEFAULT_ENGAGEMENT_PASS graph_splitk={on} identity_steps=256 refusal_cells=8 sanity_rows=5 captures={:?} replays={:?}",
+        gpu.full_token_replay_captures_for_gate(&arm.graph).unwrap(),
+        gpu.full_token_replay_counts_for_gate(&arm.graph).unwrap()
+    );
 }
 
 fn teacher_forcing(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg) {
@@ -439,9 +481,9 @@ fn main() {
             || (args.len() == 5
                 && matches!(
                     args[4].as_str(),
-                    "--qualify" | "--component" | "--tf" | "--reverse"
+                    "--qualify" | "--component" | "--tf" | "--reverse" | "--defaults"
                 )),
-        "usage: dsv4_graph_splitk_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component|--tf|--reverse]"
+        "usage: dsv4_graph_splitk_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component|--tf|--reverse|--defaults]"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     for (name, value) in [
@@ -513,6 +555,10 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
+    if args.get(4).is_some_and(|v| v == "--defaults") {
+        default_engagement(&gpu, &prompt[..PRIME], &tokenizer, &output, cfg);
+        return;
+    }
     if args.get(4).is_some_and(|v| v == "--tf") {
         teacher_forcing(&gpu, &prompt, &output, cfg);
         return;

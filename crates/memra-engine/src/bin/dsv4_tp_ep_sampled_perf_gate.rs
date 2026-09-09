@@ -563,6 +563,8 @@ fn main() {
             || full_replay,
         "unknown gate arm"
     );
+    // Pin the historical control program independently of the graph default.
+    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
     memra_engine::set_moe_m1_splitk_for_gate(splitk);
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,

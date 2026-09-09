@@ -314,6 +314,8 @@ fn main() {
         args.len() == 3 || splitk || component || paired,
         "unknown gate arm"
     );
+    // Pin the historical control program independently of the graph default.
+    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
     memra_engine::set_moe_m1_splitk_for_gate(splitk);
     memra_engine::set_moe_m1_splitk_component_for_gate(component);
     println!(

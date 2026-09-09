@@ -308,22 +308,65 @@ static MOE_M1_GRAPH_SPLITK_GATE: AtomicI8 = AtomicI8::new(-1);
 pub fn set_moe_m1_graph_splitk_for_gate(enabled: bool) {
     MOE_M1_GRAPH_SPLITK_GATE.store(i8::from(enabled), Ordering::Release);
 }
-/// The environment default is frozen on first use. The gate override affects
-/// future eager enqueues and captures, never an already retained graph.
+fn graph_splitk_policy(raw: Option<&str>) -> Result<bool, String> {
+    match raw {
+        None | Some("graph") => Ok(true),
+        Some("0") => Ok(false),
+        Some(value) => Err(format!(
+            "invalid MEMRA_DSV4_MOE_M1_SPLITK policy: {value:?}"
+        )),
+    }
+}
+fn graph_splitk_override(host_adaptive: bool, graph_gate: i8) -> Option<bool> {
+    if host_adaptive {
+        // Preserve the explicit historical adaptive control under default ON.
+        Some(false)
+    } else if graph_gate >= 0 {
+        Some(graph_gate != 0)
+    } else {
+        None
+    }
+}
+/// Graph split-K defaults ON. Explicit 0 is the sktail rollback. The process
+/// gate override affects future enqueues/captures, never retained graphs;
+/// explicit host-adaptive control takes priority and remains replay-refused.
 pub fn moe_m1_graph_splitk_on() -> bool {
-    let gate = MOE_M1_GRAPH_SPLITK_GATE.load(Ordering::Acquire);
-    if gate >= 0 {
-        return gate != 0;
+    if let Some(enabled) = graph_splitk_override(
+        moe_m1_host_splitk_on(),
+        MOE_M1_GRAPH_SPLITK_GATE.load(Ordering::Acquire),
+    ) {
+        return enabled;
     }
     static GRAPH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *GRAPH.get_or_init(
-        || match std::env::var("MEMRA_DSV4_MOE_M1_SPLITK").as_deref() {
-            Err(std::env::VarError::NotPresent) | Ok("0") => false,
-            Ok("graph") => true,
-            other => panic!("invalid MEMRA_DSV4_MOE_M1_SPLITK policy: {other:?}"),
-        },
-    )
+    *GRAPH.get_or_init(|| {
+        let value = match std::env::var("MEMRA_DSV4_MOE_M1_SPLITK") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(error) => panic!("invalid MEMRA_DSV4_MOE_M1_SPLITK: {error}"),
+        };
+        graph_splitk_policy(value.as_deref()).unwrap_or_else(|error| panic!("{error}"))
+    })
 }
+#[cfg(test)]
+mod graph_splitk_policy_tests {
+    use super::{graph_splitk_override, graph_splitk_policy};
+    #[test]
+    fn unset_zero_and_graph_have_explicit_policies() {
+        assert_eq!(graph_splitk_policy(None), Ok(true));
+        assert_eq!(graph_splitk_policy(Some("0")), Ok(false));
+        assert_eq!(graph_splitk_policy(Some("graph")), Ok(true));
+        assert!(graph_splitk_policy(Some("adaptive")).is_err());
+    }
+    #[test]
+    fn gate_controls_preserve_the_historical_adaptive_arm() {
+        assert_eq!(graph_splitk_override(true, -1), Some(false));
+        assert_eq!(graph_splitk_override(true, 1), Some(false));
+        assert_eq!(graph_splitk_override(false, 0), Some(false));
+        assert_eq!(graph_splitk_override(false, 1), Some(true));
+        assert_eq!(graph_splitk_override(false, -1), None);
+    }
+}
+
 pub(crate) fn moe_m1_host_splitk_on() -> bool {
     MOE_M1_SPLITK.load(Ordering::Acquire) != 0
 }
