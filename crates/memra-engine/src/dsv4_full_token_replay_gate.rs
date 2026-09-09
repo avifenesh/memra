@@ -52,10 +52,20 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
         }
     }
 }
-fn forward_kernel_census(graph_splitk: bool, norm_fuse: bool) -> [(usize, u64); 3] {
+fn forward_kernel_census(
+    graph_splitk: bool,
+    norm_fuse: bool,
+    norm_fuse2: bool,
+) -> [(usize, u64); 3] {
     // Each of 43 layers replaces one GU and one down node with two passes each.
     let extra = if graph_splitk { 86 + 86 - 43 - 43 } else { 0 };
-    let removed = if norm_fuse { 43 } else { 0 };
+    // norm_fuse removes the 43 separate norm/RoPE chains. norm_fuse2 packs the
+    // remaining entry-boundary activation chains into 172 fused nodes while
+    // removing 387, a net 215 fewer forward launches per rank and forward
+    // variant, exactly as docs/FLAGS.md and docs/KERNELS.md record. Without this
+    // term the census refuses the door's own arm: memra #428 observed left 2655
+    // against right 2870, which is this 215 with the HC term already added.
+    let removed = (if norm_fuse { 43 } else { 0 }) + (if norm_fuse2 { 215 } else { 0 });
     [
         (0, 2741 + extra - removed),
         (2, 3140 + extra - removed),
@@ -123,6 +133,7 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
             for (slot, kernels) in forward_kernel_census(
                 memra_engine::moe_m1_graph_splitk_on(),
                 gpu.norm_fuse_enabled_for_gate(),
+                gpu.norm_fuse2_enabled_for_gate(),
             ) {
                 assert_eq!(
                     rank[slot][1],
@@ -721,11 +732,11 @@ mod profile_census_tests {
     #[test]
     fn forward_census_keeps_off_and_replaces_both_expert_nodes_on() {
         assert_eq!(
-            forward_kernel_census(false, false),
+            forward_kernel_census(false, false, false),
             [(0, 2741), (2, 3140), (3, 3240)]
         );
         assert_eq!(
-            forward_kernel_census(true, false),
+            forward_kernel_census(true, false, false),
             [(0, 2827), (2, 3226), (3, 3326)]
         );
     }
@@ -733,13 +744,51 @@ mod profile_census_tests {
     #[test]
     fn profile_census_tracks_norm_fusion_and_its_zero_twin() {
         assert_eq!(
-            forward_kernel_census(true, true),
+            forward_kernel_census(true, true, false),
             [(0, 2784), (2, 3183), (3, 3283)]
         );
         assert_eq!(
-            forward_kernel_census(false, true),
+            forward_kernel_census(false, true, false),
             [(0, 2698), (2, 3097), (3, 3197)]
         );
+    }
+
+    #[test]
+    fn profile_census_tracks_the_norm2_activation_pack_door() {
+        // Assert in the shape capture_once uses, so the red arms below exercise
+        // the same comparison the gate makes rather than a weaker inequality.
+        fn expect(policy: (bool, bool, bool), want: [(usize, u64); 3]) {
+            assert_eq!(
+                forward_kernel_census(policy.0, policy.1, policy.2),
+                want,
+                "forward census for {policy:?}"
+            );
+        }
+        const ON: [(usize, u64); 3] = [(0, 2569), (2, 2968), (3, 3068)];
+        const OFF: [(usize, u64); 3] = [(0, 2784), (2, 3183), (3, 3283)];
+        expect((true, true, true), ON);
+        expect((true, true, false), OFF);
+        // Crosswise red arms: each arm's expectation must fail against the other
+        // arm's policy. Before memra #428 the ON policy was scored against OFF
+        // and the gate panicked with left 2655, right 2870.
+        assert!(std::panic::catch_unwind(|| expect((true, true, false), ON)).is_err());
+        assert!(std::panic::catch_unwind(|| expect((true, true, true), OFF)).is_err());
+        // The door's own term is the documented net 215, in every variant and
+        // independently of the split-K and norm-fuse terms.
+        for splitk in [false, true] {
+            for norm_fuse in [false, true] {
+                let on = forward_kernel_census(splitk, norm_fuse, true);
+                let off = forward_kernel_census(splitk, norm_fuse, false);
+                for (slot, off_kernels) in off {
+                    let on_kernels = on.into_iter().find(|(s, _)| *s == slot).unwrap().1;
+                    assert_eq!(
+                        off_kernels - on_kernels,
+                        215,
+                        "net norm2 forward launch reduction, slot {slot}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
