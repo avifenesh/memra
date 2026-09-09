@@ -769,6 +769,23 @@ association. Each S is a distinct class and must be pinned in its receipt.
 Scratch is 24*32 F32 elements per decode state and rank, allocated before
 capture. Every call writes all partials it reads, both stages use the same
 stream, and graphs retain stable scratch addresses. `MEMRA_DSV4_HC_DOT_SPLIT`
-is OFF with decide-by 2026-09-23. Component, sanitizer, retained variant,
-determinism, refusal, drift and sampled ABBA gates are pending in private
-Darklanes `research/dsv4f-hc-dot-split-20260909/`.
+is OFF with decide-by: 2026-09-23; exact `1` selects the owner-chosen S=16.
+Unset or `0` restores the current dots after a fresh process/state capture.
+S32 was component-fastest but its 1.407% advantage over S16 did not justify
+rebuilding and re-review; only S16 has the model campaign receipts.
+
+[Darklanes #538](https://github.com/avifenesh/darklanes/pull/538) banks both-rank
+S8/16/32 components and zero-error memcheck/synccheck, two fresh process
+observations per arm with external token/logit/cache/hidden equality, AR epochs
+and eight refusals per arm per process. ON census is 86 partial plus86 reducer
+nodes per rank in each of the three forward variants; OFF and commit segments
+have zero. Source `d42196214`, binary
+`d9ca7ac0bb6417fcd99e176cd6e2244d9e9d8b6b837a08d73b27fc0a7bd2dc5c`.
+
+KEEP door: sampled pooled +2.701174% forward / +2.591532% reverse,20 eligible
+rows per order with first capture timed. All128 DRIFT-R3 input hashes match:
+49/2048 top1 changes (2.392578%), KL OFF-to-ON mean/max
+0.005672511/0.421308907 and ON-to-OFF0.005758277/0.483190648; greedy16/64
+identical and2099/4096 matching tokens. This is a new numeric class. Default-ON
+remains the owner's drift decision; this integration keeps the door OFF.
+The source rebase does not relabel the pinned binary receipts as a new build.
