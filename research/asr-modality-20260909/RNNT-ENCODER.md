@@ -63,3 +63,32 @@ refused here: they buy accuracy with future audio.
 
 `NativeReference` for the RNNT path is not claimed by this. It needs the frontend, the
 predictor, the joint, the prompt slot and greedy decoding, each against its own pinned capture.
+
+## Stage 7: the frontend, and the two composed
+
+The native log-mel now runs from PCM. It is a different program from the Whisper frontend, not
+the same one with different constants: a 512-point transform over a 400-sample window, a 0.97
+pre-emphasis filter ahead of it, the checkpoint's own window and filterbank buffers rather than
+recomputed ones, an additive `2^-24` log guard instead of a dynamic-range clamp, and no
+normalization (`normalize: NA` reaches the reference's no-op branch).
+
+| Gate | Max abs | Bound |
+| --- | ---: | ---: |
+| Frontend, 2 s clip, [128, 201] | 5.34058e-05 | 1e-3 |
+| Encoder on the reference's chunk windows | 2.533197403e-07 | 1e-3 |
+| Encoder on chunk windows cut from the **native** mel | 2.086162567e-07 | 1e-3 |
+
+The third row is the frontend and the encoder measured as one path: the streaming windows are
+cut out of Memra's own features, not the reference's, and the 26-chunk sequence still lands
+2.1e-07 from the reference. Receipts `stage7-rnnt-frontend.json` and
+`stage7-rnnt-composed.json`.
+
+The padding convention was the whole difference. Reflect padding, which is torch's default and
+what the Whisper frontend uses, left exactly three columns wrong out of 201: column 0 at 0.251,
+column 1 at 0.0017, and the last valid column 199 at 1.833, with the interior at 1.1e-05. The
+reference asks for constant padding explicitly. A one-word difference in a call, and only the
+frames that touch an edge can see it.
+
+Still missing for the RNNT path: the prompt kernel, the predictor, the joint, greedy decoding,
+and a streaming session lifecycle. The encoder is fed chunk windows by a checker, not by a
+native streaming driver.

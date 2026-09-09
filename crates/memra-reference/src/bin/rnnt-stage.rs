@@ -7,6 +7,7 @@ use memra_gguf::model_packs::nemotron_rnnt::{
     HEBREW_GEOMETRY, MappedNemo, QUALIFIED_CONTEXT, bind,
 };
 use memra_reference::speech::fastconformer::FastConformerEncoder;
+use memra_reference::speech::rnnt_frontend::RnntFrontend;
 use std::path::{Path, PathBuf};
 
 fn read_f32(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
@@ -22,9 +23,32 @@ fn read_f32(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 5 && args[1] == "frontend" {
+        let started = std::time::Instant::now();
+        let archive = MappedNemo::open(Path::new(&args[2]))?;
+        let bound = bind(HEBREW_GEOMETRY, &archive.checkpoint.census)?;
+        let frontend = RnntFrontend::from_bound(
+            HEBREW_GEOMETRY,
+            &bound,
+            archive.bytes(),
+            &archive.checkpoint.storages,
+        )?;
+        let pcm = read_f32(Path::new(&args[3]))?;
+        let (mel, frames) = frontend.compute(&pcm)?;
+        let bytes: Vec<u8> = mel.iter().flat_map(|x| x.to_le_bytes()).collect();
+        std::fs::write(Path::new(&args[4]), bytes)?;
+        println!(
+            "frontend samples={} frames={frames} valid={} elapsed={:.3}",
+            pcm.len(),
+            frontend.valid_frames(pcm.len()),
+            started.elapsed().as_secs_f64()
+        );
+        return Ok(());
+    }
     if args.len() != 6 || args[1] != "encoder" {
         return Err(
-            "usage: rnnt-stage encoder ARCHIVE.nemo ORACLE_DIR OUTPUT_DIR DROP_EXTRA_PRE_ENCODED"
+            "usage: rnnt-stage encoder ARCHIVE.nemo ORACLE_DIR OUTPUT_DIR \
+             DROP_EXTRA_PRE_ENCODED | rnnt-stage frontend ARCHIVE.nemo PCM.f32 OUT.f32"
                 .into(),
         );
     }
