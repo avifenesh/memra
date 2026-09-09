@@ -521,9 +521,12 @@ fn select_dense_policy(profile: bool) {
 }
 
 fn select_expert_policy(profile: bool, host_splitk: bool) {
-    // Profile inherits the environment default. Historical scored controls stay OFF.
+    // Profile inherits the environment default, including which split-K entry
+    // symbols it captures. Historical scored controls stay OFF and pin the base
+    // graph split-K entries so their captured class does not move with the door.
     if !profile {
         memra_engine::set_moe_m1_graph_splitk_for_gate(false);
+        memra_engine::set_moe_m1_splitk_fast_for_gate(false);
     }
     memra_engine::set_moe_m1_splitk_for_gate(host_splitk);
 }

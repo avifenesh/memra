@@ -369,6 +369,63 @@ mod graph_splitk_policy_tests {
     }
 }
 
+unsafe extern "C" {
+    fn memra_moe_m1_splitk_fast_set_for_gate(enabled: i32);
+    fn memra_moe_m1_splitk_fast_on() -> i32;
+}
+
+/// Gate-only selector for the paired-fetch split-K partial/reduce entries.
+/// Takes priority over the environment policy for future enqueues and captures,
+/// never for retained graphs. Drain both ranks before switching. A historical
+/// control that must keep measuring the base graph split-K partial pins `false`
+/// here rather than relying on the default.
+pub fn set_moe_m1_splitk_fast_for_gate(enabled: bool) {
+    unsafe { memra_moe_m1_splitk_fast_set_for_gate(i32::from(enabled)) }
+}
+
+/// Selected paired-fetch entry state: the gate override when one is set,
+/// otherwise the environment policy (unset selects the paired-fetch entries).
+pub fn moe_m1_splitk_fast_on() -> bool {
+    unsafe { memra_moe_m1_splitk_fast_on() != 0 }
+}
+
+#[cfg(test)]
+mod splitk_fast_policy_tests {
+    unsafe extern "C" {
+        /// Pure paired-fetch split-K entry policy, owned by
+        /// `cu/moe_f16_grouped.cu`. Takes the raw value instead of reading the
+        /// environment, so one process can exercise every arm. Returns 1 ON,
+        /// 0 OFF, -1 for an unusable value. The engine itself calls it from the
+        /// same translation unit, so this declaration is test-only.
+        fn memra_moe_m1_splitk_fast_policy(raw: *const core::ffi::c_char) -> i32;
+    }
+    fn policy(raw: Option<&str>) -> i32 {
+        let owned = raw.map(|value| std::ffi::CString::new(value).unwrap());
+        let ptr = owned
+            .as_ref()
+            .map_or(std::ptr::null(), |value| value.as_ptr());
+        unsafe { memra_moe_m1_splitk_fast_policy(ptr) }
+    }
+    #[test]
+    fn unset_selects_the_paired_fetch_entries() {
+        assert_eq!(policy(None), 1);
+    }
+    #[test]
+    fn explicit_zero_is_the_rollback_seam() {
+        assert_eq!(policy(Some("0")), 0);
+    }
+    #[test]
+    fn explicit_one_selects_them_too() {
+        assert_eq!(policy(Some("1")), 1);
+    }
+    #[test]
+    fn anything_else_is_unusable() {
+        for value in ["graph", "", "true", "2", "00"] {
+            assert_eq!(policy(Some(value)), -1, "{value:?}");
+        }
+    }
+}
+
 pub(crate) fn moe_m1_host_splitk_on() -> bool {
     MOE_M1_SPLITK.load(Ordering::Acquire) != 0
 }

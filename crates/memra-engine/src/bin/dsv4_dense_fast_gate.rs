@@ -730,6 +730,10 @@ fn main() {
     memra_engine::set_moe_m1_splitk_for_gate(false);
     memra_engine::set_moe_m1_graph_splitk_for_gate(true);
     assert!(memra_engine::moe_m1_graph_splitk_on());
+    // Default-ON paired-fetch entries would change this control's captured
+    // class, so this historical gate pins the base graph split-K partial.
+    memra_engine::set_moe_m1_splitk_fast_for_gate(false);
+    assert!(!memra_engine::moe_m1_splitk_fast_on());
     memra_engine::dsv4_gpu::set_dense_exact_tail_for_gate(true).unwrap();
     let programs = PROGRAMS;
     let cfg = Dsv4SampleCfg {

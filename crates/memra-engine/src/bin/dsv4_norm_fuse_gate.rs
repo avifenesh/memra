@@ -669,6 +669,10 @@ fn main() {
         memra_engine::moe_m1_graph_splitk_on(),
         "graph split-K default required"
     );
+    // Default-ON paired-fetch entries would change this control's captured
+    // class, so this historical gate pins the base graph split-K partial.
+    memra_engine::set_moe_m1_splitk_fast_for_gate(false);
+    assert!(!memra_engine::moe_m1_splitk_fast_on());
     assert!(memra_engine::dsv4_gpu::dsv4_replay_cadence_default());
     assert!(memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate());
     let programs = PROGRAMS;
