@@ -36,6 +36,31 @@ That attempt is retained as `ornith-seed-incomplete` in the private archive;
 the fresh boot used identical settings and a new nonce. Neither failure is
 silently folded into the eligible decision medians.
 
-Correctness cells continue independently of this retained capacity failure.
-Their final results and the eight-turn sampled cache twin are recorded in the
-composed receipt directory. No Qwen launcher or shared engine default is flipped.
+## Correctness and sampled cache twin: pass
+
+The durable controller completed all remaining cells and wrote `CAMPAIGN_PASS`.
+After the app-server restart, the saved bytes and full boundary-oracle line
+multisets were checked again: `BYTE_AND_BOUNDARY_GATES_PASS`. Existing completed
+cells were banked, not relaunched.
+
+| Gate | Ornith | Qwen |
+|---|---|---|
+| c1 four-turn OFF/ON bytes | 4/4 equal | 4/4 equal |
+| c2 long/small versus own c1 bytes | 2/2 equal | 2/2 equal |
+| Pair yields, LOW/HIGH=64/65 | 250 | 129 |
+| Pair route counts | 2 MTP, 0 plain | 2 DFlash, 0 plain |
+| Small c1 / c2 TTFT, seconds | 0.226 / 0.248 | 0.550 / 1.185 |
+| Logits and actual boundary captures | equal | equal |
+
+DFlash tap, feature and position hashes also match. See
+[gpu/composed/byte-boundary.json](gpu/composed/byte-boundary.json).
+
+The vendor-default sampled cache twin ran eight turns OFF and eight ON on each
+model: 32/32 complete streams, every turn on the model's speculative route,
+zero OOM, zero admission deferrals, and cached tokens on all 28 follow-ups.
+Sampling fields and raised spec gates were absent from those requests/profiles.
+Outputs are not compared across sampled timing, and no greedy or token-capped
+output is used to manufacture a throughput statistic.
+
+These correctness results do not turn the retained Qwen capacity failure into
+a pass. No Qwen launcher or shared engine default is flipped.
