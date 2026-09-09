@@ -105,4 +105,10 @@ for model in ('ornith', 'qwen'):
                         '--binary', binary, '--sha', sha, '--out', str(root/label),
                         '--arm', arm, '--mode', 'chunk', '--chunk', '1024',
                         '--long-request', longs[model]], False)
+for model in ('ornith', 'qwen'):
+    for arm in ('off', 'on'):
+        label = f'{model}-sampled-chain-{arm}'
+        execute(label, ['python3', str(script/'gate_http.py'), '--source', profiles[model],
+                        '--binary', binary, '--sha', sha, '--out', str(root/label),
+                        '--arm', arm, '--mode', 'sampled-chain', '--chunk', '1024'], False)
 print('CAMPAIGN_PASS',flush=True)

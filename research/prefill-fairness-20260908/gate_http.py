@@ -21,7 +21,7 @@ p.add_argument('--binary', required=True)
 p.add_argument('--sha', required=True)
 p.add_argument('--out', required=True)
 p.add_argument('--arm', choices=['off', 'on'], required=True)
-p.add_argument('--mode', choices=['chain', 'solo', 'pair', 'chunk'], required=True)
+p.add_argument('--mode', choices=['chain', 'sampled-chain', 'solo', 'pair', 'chunk'], required=True)
 p.add_argument('--chunk', type=int, default=1024)
 p.add_argument('--long-request')
 p.add_argument('--oracle', action='store_true')
@@ -49,7 +49,7 @@ profile.update(MEMRA_ADDR=f'127.0.0.1:{port}', MEMRA_MODEL_METADATA=str(out / 'm
                MEMRA_PRIME_CHUNK=str(a.chunk), MEMRA_PRIME_YIELD=str(int(a.arm == 'on')),
                MEMRA_MAX_SESSIONS='4', MEMRA_TICK_TRACE='1', MEMRA_TTFT_TRACE='1')
 profile.pop('MEMRA_REQUEST_LEDGER', None)  # public engine build
-if a.mode != 'chunk':
+if a.mode in ('chain', 'solo', 'pair'):
     profile.update(MEMRA_SPEC_GATE_LOW='64', MEMRA_SPEC_GATE_HIGH='65')
 if a.oracle:
     profile['MEMRA_ALLOC_TRACE'] = '1'
@@ -71,7 +71,7 @@ def request(path, body=None, timeout=300):
 
 def call(label, payload, greedy=True):
     body = dict(payload)
-    body.update(model=model, stream=True, stream_options={'include_usage': True}, cache_salt='gate-chain' if a.mode == 'chain' else 'gate-' + label)
+    body.update(model=model, stream=True, stream_options={'include_usage': True}, cache_salt='gate-chain' if a.mode in ('chain', 'sampled-chain') else 'gate-' + label)
     if greedy:
         body.update(temperature=0, seed=42, top_p=1, top_k=0, min_p=0,
                     presence_penalty=0, frequency_penalty=0, repetition_penalty=1)
@@ -133,10 +133,10 @@ try:
     small = {'messages': [{'role': 'user', 'content': 'Garden records. ' +
              'Morning sun reaches two beds. Volunteers water seedlings and record soil moisture. '*60 +
              '\nGive one practical next step in one short sentence.'}], 'max_tokens': 128}
-    if a.mode == 'chain':
+    if a.mode in ('chain', 'sampled-chain'):
         messages = small['messages'].copy()
-        for turn in range(1, 5):
-            row = call(f'turn{turn}', {'messages': messages, 'max_tokens': 256})
+        for turn in range(1, 9 if a.mode == 'sampled-chain' else 5):
+            row = call(f'turn{turn}', {'messages': messages, 'max_tokens': 256}, greedy=a.mode == 'chain')
             rows.append(row)
             answer = ('<think>' + row['reasoning'] + '</think>\n' if row['reasoning'] else '') + row['content']
             messages = messages + [{'role': 'assistant', 'content': answer},
