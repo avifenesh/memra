@@ -9843,3 +9843,48 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod speech_refusal_tests {
+    use super::*;
+
+    #[test]
+    fn speech_cannot_execute_as_an_empty_text_trunk() {
+        let plan = memra_gguf::model_packs::whisper::PACK
+            .compile_plan(
+                r#"{"model_type":"whisper","activation_function":"gelu",
+            "is_encoder_decoder":true,"scale_embedding":false,"torch_dtype":"float32",
+            "d_model":1280,"encoder_layers":32,"decoder_layers":32,
+            "encoder_attention_heads":20,"decoder_attention_heads":20,
+            "encoder_ffn_dim":5120,"decoder_ffn_dim":5120,"max_source_positions":1500,
+            "max_target_positions":448,"num_mel_bins":128,"vocab_size":51866,
+            "decoder_start_token_id":50258,"eos_token_id":50257}"#,
+                r#"{"feature_extractor_type":"WhisperFeatureExtractor","feature_size":128,
+            "sampling_rate":16000,"n_fft":400,"hop_length":160,"n_samples":480000,
+            "nb_max_frames":3000,"chunk_length":30,"padding_side":"right","padding_value":0.0}"#,
+            )
+            .unwrap();
+        let weights = ReferenceWeights::new();
+        assert!(matches!(
+            execute(&plan, &weights, &[50258]),
+            Err(ReferenceError::UnsupportedOperation {
+                operation: "native speech execution pending",
+                ..
+            })
+        ));
+        assert!(matches!(
+            StreamedTrunkExecution::begin(&plan, &weights, &[50258]),
+            Err(ReferenceError::UnsupportedOperation {
+                operation: "native speech execution pending",
+                ..
+            })
+        ));
+        assert!(matches!(
+            deterministic_fixture(&plan),
+            Err(ReferenceError::UnsupportedOperation {
+                operation: "native speech execution pending",
+                ..
+            })
+        ));
+    }
+}

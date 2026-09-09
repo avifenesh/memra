@@ -316,15 +316,15 @@ fn census_entry(name: &str, info: &StInfo) -> Result<TensorCensusEntry, String> 
 }
 
 fn bind(plan: &ModelPlan, census: &[TensorCensusEntry]) -> Result<BoundTensorContract, String> {
-    TensorContract::for_plan(
+    let contract = TensorContract::for_plan(
         plan,
         CheckpointDialect::HfSafetensors,
         ContractOptions {
             output_head: OutputHead::TiedToEmbedding,
         },
     )
-    .and_then(|c| c.bind(census))
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    contract.bind(census).map_err(|e| e.to_string())
 }
 
 /// Inspect actual safetensors range headers without manufacturing a multi-GB weight file.

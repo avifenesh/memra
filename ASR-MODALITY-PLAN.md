@@ -230,8 +230,8 @@ by this bounded assignment. Add the speech inspector CLI before checkpoint execu
 weights with explicit accumulation/norm precision; only introduce INT8 after a separately
 receipted quality and latency win. Generic Q8_0 is not CT2 per-row INT8.
 
-No rental is needed for this skeleton. All rig work is CPU-only and niced. No local gates, CI,
-smoke servers or inference were run. Push uses `MEMRA_SKIP_PERF_CI=1`; hosted CI is required.
+No rental is needed for this skeleton. All rig work is CPU-only and niced. No local cargo tests, runtime gates, CI,
+smoke servers or inference were run. Required text-only pre-push checks ran under nice. Push uses `MEMRA_SKIP_PERF_CI=1`; hosted CI is required.
 Later GPU work must use an explicitly nonproduction lane-owned rental, validate CUDA allocation,
 keep useful work queued, and destroy it with inventory readback at lane completion. Existing
 production and training hosts are outside this lane. A release follows `docs/RELEASING.md` after
