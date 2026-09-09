@@ -20,6 +20,10 @@ use memra_gguf::GgufFile;
 
 /// log-softmax in f64, returned as f32 rows: the vocabulary is 248k wide and the tail matters
 /// for KL, so the reduction is not done in f32.
+fn escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 fn log_softmax(logits: &[f32]) -> Vec<f32> {
     let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
     let sum: f64 = logits.iter().map(|v| (*v as f64 - max).exp()).sum();
@@ -97,10 +101,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut nll = 0.0f64;
         let mut kl = 0.0f64;
+        // PER-POSITION, because a window mean cannot carry a confidence interval and the absolute
+        // perplexity of these transcripts swings by three orders of magnitude between positions.
+        // The analysis (paired dNLL bootstrap, KL band, top-1 agreement, the ppl sanity filter)
+        // needs the positions, not the summary.
+        let mut per_nll: Vec<f64> = Vec::with_capacity(window);
+        let mut per_kl: Vec<f64> = Vec::with_capacity(window);
+        let mut per_top1: Vec<u32> = Vec::with_capacity(window);
         for step in 0..window {
             let truth = ids[ctx + step];
             let lsm = log_softmax(&logits);
             nll -= lsm[truth as usize] as f64;
+            per_nll.push(-(lsm[truth as usize] as f64));
+            per_top1.push(
+                lsm.iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                    .map(|(i, _)| i as u32)
+                    .unwrap_or(0),
+            );
             if let Some(w) = writer.as_mut() {
                 use std::io::Write;
                 for v in &lsm {
@@ -119,6 +138,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     sum += lp_ref.exp() * (lp_ref - lsm[v] as f64);
                 }
                 kl += sum;
+                per_kl.push(sum);
+            }
+            if reference.is_none() {
+                per_kl.push(0.0);
             }
             let mut caches = [&mut cache];
             logits = model
@@ -140,15 +163,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format!(" | KL(ref||cand) {mean_kl:.6e}")
             }
         );
+        let join = |v: &[f64]| {
+            v.iter()
+                .map(|x| format!("{x:.6e}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
         slices.push(format!(
-            "    {{\"slice\": \"{name}\", \"ctx\": {ctx}, \"window\": {window}, \
-             \"nll\": {mean_nll:.8}, \"ppl\": {:.6}, \"kl\": {}}}",
+            "    {{\"slice\": \"{name}\", \"file\": \"{}\", \"ctx\": {ctx}, \"window\": {window}, \
+             \"nll\": {mean_nll:.8}, \"ppl\": {:.6}, \"kl\": {}, \
+             \"per_nll\": [{}], \"per_kl\": [{}], \"per_top1\": [{}]}}",
+            escape(file),
             mean_nll.exp(),
             if dumping {
                 "null".into()
             } else {
                 format!("{mean_kl:.8e}")
-            }
+            },
+            join(&per_nll),
+            join(&per_kl),
+            per_top1
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
         ));
     }
 
