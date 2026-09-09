@@ -2326,6 +2326,28 @@ impl Engine {
                 return Err(format!("memra_mmq_nvfp4_calibrated_prefill rc={rc}").into());
             }
         }
+        // Gate-harness capture: the first launch per armed slot at or above the row threshold.
+        {
+            let mut guard = A4_CAPTURE.lock().unwrap();
+            if let Some(state) = guard.as_mut()
+                && state.slots.contains(&slot)
+                && m >= state.min_rows
+                && !state.taken.iter().any(|c| c.slot == slot)
+            {
+                state.taken.push(A4Capture {
+                    slot,
+                    m,
+                    in_f,
+                    out_f,
+                    weight_scale,
+                    input_scale,
+                    rp,
+                    x: self.dtoh(x)?,
+                    scratch: self.dtoh_u8(scratch)?,
+                    y: self.dtoh(&y)?,
+                });
+            }
+        }
         A4_PREFILL_LAUNCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if let Some(counter) = A4_PREFILL_SLOTS.get(slot as usize) {
             counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -3187,6 +3209,51 @@ pub fn a4_prefill_launches() -> u64 {
 /// Reset the calibrated-A4 launch counter and return its previous value.
 pub fn a4_prefill_launches_reset() -> u64 {
     A4_PREFILL_LAUNCHES.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// One captured A4 GEMM: the REAL activations, the quantizer's emitted scratch and the kernel's
+/// output, taken from a live prime. The arithmetic oracle cannot use synthetic inputs -- the whole
+/// question is whether the kernel implements the intended program on the activations this model
+/// actually produces.
+pub struct A4Capture {
+    pub slot: u32,
+    pub m: usize,
+    pub in_f: usize,
+    pub out_f: usize,
+    pub weight_scale: f32,
+    pub input_scale: f32,
+    pub rp: bool,
+    pub x: Vec<f32>,
+    pub scratch: Vec<u8>,
+    pub y: Vec<f32>,
+}
+
+#[derive(Default)]
+pub struct A4CaptureState {
+    pub slots: Vec<u32>,
+    pub min_rows: usize,
+    pub taken: Vec<A4Capture>,
+}
+
+static A4_CAPTURE: std::sync::Mutex<Option<A4CaptureState>> = std::sync::Mutex::new(None);
+
+/// Arm the capture for these program slots. Gate-harness only; nothing arms it while serving.
+pub fn a4_capture_arm(slots: Vec<u32>, min_rows: usize) {
+    *A4_CAPTURE.lock().unwrap() = Some(A4CaptureState {
+        slots,
+        min_rows,
+        taken: Vec::new(),
+    });
+}
+
+/// Disarm and return whatever the prime captured.
+pub fn a4_capture_take() -> Vec<A4Capture> {
+    A4_CAPTURE
+        .lock()
+        .unwrap()
+        .take()
+        .map(|s| s.taken)
+        .unwrap_or_default()
 }
 
 /// u64 counters per program slot in the clipping-diagnostic buffer: 0 values seen, 1 values at
