@@ -64,6 +64,24 @@ baseline CUDA entry symbols remain, with only the two FA2 entries added. Remote
 Clippy, fmt, flags and fatbin checks pass; engine/server/ModelPlan/reference/runtime
 libraries report 467/652/229/30/1 passing tests. Ignored GPU tests are not counted.
 
+## Post-qualification review narrowing
+
+Self-review of the PR head found the dispatch guard admitting t=16..1039 against a
+hardcoded 1024, independent of the deployment's actual prime chunk. At
+`MEMRA_PRIME_CHUNK=2048` or 4096 every full chunk would stay on the legacy class
+while only the folded final tail took FA2, so one prime would mix numerical classes
+and a restored suffix would stop matching its cold twin: the same defect class as
+the integration v1 t<128 failure. `prime_attn_fa2_enabled` now also requires
+`MEMRA_PRIME_CHUNK=1024`.
+
+This narrowing is a no-op on every sealed arm. `fa2/gate_cli.py` builds each gate's
+environment from `requal-profile.json`, which pins `MEMRA_PRIME_CHUNK=1024`, and the
+serving campaign derives the same profile. No ON arm in this receipt loses its FA2
+dispatch, and no OFF arm changes. The change touches only `lib.rs`; the kernel source
+SHA256 `d54c1061a548ffedcff86df02050946f0943ea070f2967af078fb19fd7dffb92` is unchanged
+and the fatbin is unchanged. The same review moved the door read behind the shape
+predicates so a non-Qwen prefill on a 120a build no longer reads the environment.
+
 Server binary SHA256:
 `989d8f618a7f4d4567e4c976ddd2e9799904afa39a892f4e576f342b38c4b460`.
 The qualified Qwen runtime is `cad2b21ba`; subsequent formatting, diagnostic-only
