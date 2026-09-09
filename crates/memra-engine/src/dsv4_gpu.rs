@@ -8339,29 +8339,27 @@ impl Dsv4Gpu {
         if (n == 512 || n == 1024)
             && kdim == 4096
             && unsafe { memra_dsv4_fp8_ksplit_slices_for_gate() } != 0
-        {
-            if let DW::Fp8 {
+            && let DW::Fp8 {
                 codes,
                 scales,
                 sc_cols,
             } = w
-            {
-                return ck("FP8 K-split", unsafe {
-                    memra_dsv4_fp8_ksplit(
-                        codes,
-                        scales,
-                        sc_cols,
-                        xb_ptr,
-                        partial.device_ptr_mut(&stream).0 as *mut f32,
-                        partial.len() as i32,
-                        y_ptr,
-                        1,
-                        n as i32,
-                        kdim as i32,
-                        sp(&stream),
-                    )
-                });
-            }
+        {
+            return ck("FP8 K-split", unsafe {
+                memra_dsv4_fp8_ksplit(
+                    codes,
+                    scales,
+                    sc_cols,
+                    xb_ptr,
+                    partial.device_ptr_mut(&stream).0 as *mut f32,
+                    partial.len() as i32,
+                    y_ptr,
+                    1,
+                    n as i32,
+                    kdim as i32,
+                    sp(&stream),
+                )
+            });
         }
         unsafe {
             match w {
@@ -13983,29 +13981,27 @@ impl Dsv4Gpu {
             && (n == 512 || n == 1024)
             && kdim == 4096
             && unsafe { memra_dsv4_fp8_ksplit_slices_for_gate() } != 0
-        {
-            if let DW::Fp8 {
+            && let DW::Fp8 {
                 codes,
                 scales,
                 sc_cols,
             } = w
-            {
-                return ck("FP8 K-split", unsafe {
-                    memra_dsv4_fp8_ksplit(
-                        codes,
-                        scales,
-                        sc_cols,
-                        x_ptr,
-                        partial.device_ptr_mut(&stream).0 as *mut f32,
-                        partial.len() as i32,
-                        y_ptr,
-                        1,
-                        n as i32,
-                        kdim as i32,
-                        sp(&stream),
-                    )
-                });
-            }
+        {
+            return ck("FP8 K-split", unsafe {
+                memra_dsv4_fp8_ksplit(
+                    codes,
+                    scales,
+                    sc_cols,
+                    x_ptr,
+                    partial.device_ptr_mut(&stream).0 as *mut f32,
+                    partial.len() as i32,
+                    y_ptr,
+                    1,
+                    n as i32,
+                    kdim as i32,
+                    sp(&stream),
+                )
+            });
         }
         unsafe {
             match w {

@@ -75,8 +75,8 @@ fn main() {
         std::env::var("MEMRA_DSV4_HC_DOT_SPLIT").unwrap(),
         slices.to_string()
     );
-    // The experimental env parser maps only "1" to 16. Use its existing gate
-    // selector explicitly, on the same host thread that executes every decode.
+    // Preserve the original A/B/C classes after HC became default ON. Select
+    // explicitly on the same host thread that executes every decode.
     unsafe {
         assert_eq!(memra_dsv4_hc_dot_split_set_for_gate(slices), 0);
         assert_eq!(memra_dsv4_hc_dot_split_slices_for_gate(), slices);
