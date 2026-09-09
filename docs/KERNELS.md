@@ -749,9 +749,3 @@ Composition receipts: [private Darklanes #535](https://github.com/avifenesh/dark
 capture, both function censuses, eager identity, refusals and five sanity rows.
 Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
 environment policy after the eager OFF oracle. No kernel arithmetic changes.
-
-## Verify E4M3 six-group candidate, 2026-09-09
-
-| Kernel | Purpose | Dispatch | Binding |
-|---|---|---|---|
-| `qmatvec_e4m3_verify_fused6_b2`, `qmatvec_e4m3_verify_fused6_b4`, `qmatvec_e4m3_verify_fused6_b8` | One block-offset grid for six E4M3 projections, current Q8 activation and dot order, rounded macro-scale store | `MEMRA_GLM5_VERIFY_E4M3_FUSED6=1`, default OFF, t2..8; decide-by: 2026-09-23 | `Engine::e4m3_verify_fused6_into`, `cu/qmatvec.cu`; receipt `research/glm5-verify-tally-20260909/RESULTS.md` |

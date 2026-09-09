@@ -483,4 +483,4 @@ glm5-tp2-gpu-sampler-20260908 | Current five-pair medians: 81.317 to 91.250 wall
 
 - release-v0.137.0 owner go: #378 merged default OFF; full source-bound battery receipts attached to #391. See [GO-QUALIFICATION](release-v0.137.0-20260909/GO-QUALIFICATION.md).
 
-glm5-verify-tally-20260909 | "KEEP, 1.789758071 ms/round weighted saving" | glm5-verify-tally-20260909/RESULTS.md
+glm5-verify-tally-20260909 | "Component KEEP OFF, unserved, code removed 2026-09-09; 1.789758071 ms/round weighted saving" | glm5-verify-tally-20260909/RESULTS.md

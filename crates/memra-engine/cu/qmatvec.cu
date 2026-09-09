@@ -3813,11 +3813,11 @@ extern "C" __global__ void qmatvec_e4m3_mmvq_fused3(
 // the standard blockIdx.x mapping, the FUSED multi-tensor twins below pass the block-offset-split
 // mapping (the fused2/fused3 m=1 recipe applied to the batched tier), exactly as the Q8_0 family
 // does via q8_0_mmvq_batched_row.
-template<int MCOLS, bool SCALED = false>
+template<int MCOLS>
 __device__ __forceinline__ void e4m3_mmvq_batched_row(
         const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
         const float* __restrict__ ad, float* __restrict__ y,
-        int in_f, int out_f, int m, long row_bytes, int o, float ws = 1.0f) {
+        int in_f, int out_f, int m, long row_bytes, int o) {
     if (o >= out_f) return;
     int lane = threadIdx.x;
     int nblk = in_f / 32;
@@ -3872,7 +3872,7 @@ __device__ __forceinline__ void e4m3_mmvq_batched_row(
     for (int c = 0; c < MCOLS; c++) {
         if (c >= m) break;
         float a = warp_reduce_sum(acc[c]);
-        if (lane == 0) y[(size_t)c * out_f + o] = SCALED ? __fmul_rn(a, ws) : a;
+        if (lane == 0) y[(size_t)c * out_f + o] = a;
     }
 }
 template<int MCOLS>
@@ -14673,61 +14673,4 @@ extern "C" __global__ void nvfp4_expert_split_repack(
     sc[0] = sb[0];
     #pragma unroll
     for (int k = 0; k < 8; k++) q[k] = sb[1 + k];
-}
-
-
-// Verify six-group: current batched dot order, one input quantization and in-store scale.
-template<int MCOLS>
-__device__ __forceinline__ void e4m3_verify_fused6_body(
-        const unsigned char* W0, const unsigned char* W1, const unsigned char* W2,
-        const unsigned char* W3, const unsigned char* W4, const unsigned char* W5,
-        const signed char* aq, const float* ad,
-        float* y0, float* y1, float* y2, float* y3, float* y4, float* y5,
-        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
-        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5, int m) {
-    const unsigned char* const weights[6] = {W0,W1,W2,W3,W4,W5};
-    float* const outputs[6] = {y0,y1,y2,y3,y4,y5};
-    const int dims[6] = {out0,out1,out2,out3,out4,out5};
-    const float scales[6] = {ws0,ws1,ws2,ws3,ws4,ws5};
-    int b = blockIdx.x;
-    #pragma unroll
-    for (int i=0; i<6; ++i) {
-        int blocks = (dims[i]+MEMRA_MMVQ_ROWS-1)/MEMRA_MMVQ_ROWS;
-        if (b < blocks) {
-            int row = b*MEMRA_MMVQ_ROWS + threadIdx.y;
-            e4m3_mmvq_batched_row<MCOLS,true>(weights[i],aq,ad,outputs[i],in_f,dims[i],m,row_bytes,row,scales[i]);
-            return;
-        }
-        b -= blocks;
-    }
-}
-extern "C" __global__ void qmatvec_e4m3_verify_fused6_b2(
-        const unsigned char* W0, const unsigned char* W1, const unsigned char* W2,
-        const unsigned char* W3, const unsigned char* W4, const unsigned char* W5,
-        const signed char* aq, const float* ad,
-        float* y0, float* y1, float* y2, float* y3, float* y4, float* y5,
-        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
-        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5, int m) {
-    e4m3_verify_fused6_body<2>(W0,W1,W2,W3,W4,W5,aq,ad,y0,y1,y2,y3,y4,y5,
-        in_f,out0,out1,out2,out3,out4,out5,row_bytes,ws0,ws1,ws2,ws3,ws4,ws5,m);
-}
-extern "C" __global__ void qmatvec_e4m3_verify_fused6_b4(
-        const unsigned char* W0, const unsigned char* W1, const unsigned char* W2,
-        const unsigned char* W3, const unsigned char* W4, const unsigned char* W5,
-        const signed char* aq, const float* ad,
-        float* y0, float* y1, float* y2, float* y3, float* y4, float* y5,
-        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
-        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5, int m) {
-    e4m3_verify_fused6_body<4>(W0,W1,W2,W3,W4,W5,aq,ad,y0,y1,y2,y3,y4,y5,
-        in_f,out0,out1,out2,out3,out4,out5,row_bytes,ws0,ws1,ws2,ws3,ws4,ws5,m);
-}
-extern "C" __global__ void qmatvec_e4m3_verify_fused6_b8(
-        const unsigned char* W0, const unsigned char* W1, const unsigned char* W2,
-        const unsigned char* W3, const unsigned char* W4, const unsigned char* W5,
-        const signed char* aq, const float* ad,
-        float* y0, float* y1, float* y2, float* y3, float* y4, float* y5,
-        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
-        long row_bytes, float ws0, float ws1, float ws2, float ws3, float ws4, float ws5, int m) {
-    e4m3_verify_fused6_body<8>(W0,W1,W2,W3,W4,W5,aq,ad,y0,y1,y2,y3,y4,y5,
-        in_f,out0,out1,out2,out3,out4,out5,row_bytes,ws0,ws1,ws2,ws3,ws4,ws5,m);
 }
