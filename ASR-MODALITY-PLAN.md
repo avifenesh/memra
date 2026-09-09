@@ -286,15 +286,24 @@ binding. Everything above them is bring-up evidence, not production permission.
 
 ### Nemotron 3.5 streaming RNNT, Hebrew successor
 
+The whole path executes: `rnnt-stage stream` takes PCM and returns token ids for the `[56, 0]`
+arm, matching the reference session chunk by chunk. Receipts in `RNNT-ENCODER.md`.
+
 | Piece | State |
 | --- | --- |
 | Archive layout, census and contract bind | Done on the real `clean-step-21959.nemo`: 657 tensors, 638,030,384 elements, nothing missing or extra, no aliased storage |
-| `[56, 0]` streaming state contract | Done as a typed shape contract: 2,951,680 state elements per session, causal, other arms expressible and not admitted |
+| `[56, 0]` streaming state contract | Done: 1,575,424 state elements per session, causal, driver constants measured, other arms expressible and not admitted |
+| NeMo oracle captures | Done on the rig: encoder, head and whole-session references for a real 2-second Hebrew clip, CPU FP32, dither off, one thread |
+| Frontend | Done. 5.34058e-05 against the reference, bound 1e-3 |
+| FastConformer subsampler and 24 blocks, cache-aware | Done. 26 of 26 chunks at 2.533197403e-07, and 2.086162567e-07 when fed the native mel |
+| Prompt kernel, predictor, joint | Done. 4.768371582e-07, 7.748603821e-07, 9.155273438e-05 |
+| Greedy RNNT | Done. 9 of 9 token ids identical |
+| Streaming session | Done. 26 of 26 chunk partials identical, final identical |
 | Shared `TensorContract` and `ModelPlan` integration | **Missing on purpose.** Needs a torch-zip `CheckpointDialect`, which touches every text builder that matches on the dialect |
-| FastConformer frontend, subsampler, blocks | **Missing.** No execution at all |
-| Predictor, joint, prompt kernel, greedy RNNT | **Missing.** No execution at all |
-| Streaming session lifecycle | **Missing.** Contract only |
-| NeMo oracle captures | **Missing.** The private oracle lane has not produced per-chunk NeMo captures for this successor |
+| Tokenizer and detokenizer in the engine | **Missing.** The transcript is produced by the checker's tokenizer |
+| More than one clip and one arm | **Missing.** One 2-second clip, one `[56, 0]` session. No corpus, no silence, no long continuation, no interleaved sessions |
+| Session lifecycle beyond a single run | **Missing.** No revision semantics, cancellation, reset, reconnect, concurrency or admission |
+| GPU execution | **Missing.** Every number is a CPU reference |
 
 ## Stage 1 receipt, 2026-09-09
 

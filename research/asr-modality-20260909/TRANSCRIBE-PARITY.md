@@ -69,3 +69,90 @@ CPU reference only. No GPU execution, no serving endpoint, no timestamp-alignmen
 F16 end-to-end arm. Text is scored with the checkpoint tokenizer through offline tooling
 because Memra has no native detokenizer yet; that is a `NativeReference` gap, listed in
 `ASR-MODALITY-PLAN.md`.
+
+## The eight HF-oracle clips, complete
+
+61 windows, 4 `d1` and 4 `whatsapp` clips. Receipt `stage5-transcribe-parity.json`.
+
+| Count | Value |
+| --- | ---: |
+| Windows token-exact | **49 / 61** |
+| Clips with an identical window program | 7 / 8 |
+| Clips text-exact after leaderboard canonization | **6 / 8** |
+| Clips token-exact end to end | 1 / 8 |
+| `d1` WER against CT2 | **0.0000 pt** (4 clips, 2364 words) |
+| `whatsapp` WER against CT2 | **0.5656 pt** (4 clips, 884 words, 3 substitutions, 1 deletion, 1 insertion) |
+
+**The stage gate is not met on `whatsapp`.** The rule was every clip's canonized text equal to
+CT2's, or a WER delta under 0.05 pt per domain. `d1` passes both ways. `whatsapp` fails both:
+two of its four clips differ in text, and 0.5656 pt is ten times the limit.
+
+### Every differing window, classified
+
+| Class | Windows | What it is |
+| --- | ---: | --- |
+| `fp16_tie` | 8 | CT2's own recorded logits hold both candidates at the same value |
+| `fp16_ulp` | 1 | The gap is one fp16 step at that magnitude, the smallest it can express |
+| `real` | 1 | Two fp16 steps apart, and both candidates are adjacent timestamps |
+| `boundary_cascade` | 2 | The window does not start where the oracle's did, because an earlier tied timestamp moved the seek |
+
+None of the twelve is a disagreement CT2's precision could have expressed clearly. The two
+that cost words:
+
+- `whatsapp-002` window 0 step 114: CT2 holds `.` and `,` at 22.171875 apiece, exactly equal.
+  It took `.`, the native decode took `,`.
+- `whatsapp-001` window 3 step 3: CT2 has 21.625 against 21.609375, one fp16 step apart at
+  that magnitude. It took a byte-split fragment, the native decode took the whole token `יך`.
+
+The one labelled `real` is `whatsapp-003` window 4 step 86: timestamps 51297 against 51296,
+0.015625 apart where the fp16 step is 0.0078125, so two steps. 20 ms of timestamp, and that
+clip's text still matches exactly.
+
+### The two references disagree with each other more than the gate allows
+
+The oracle ships two backends. CT2 is FP16 and covers all 71 clips; `hf-fp32` is FP32 and
+covers these eight. Scoring the native run against both, and the two against each other:
+
+| Domain | Native vs CT2 | Native vs HF FP32 | CT2 vs HF FP32 |
+| --- | ---: | ---: | ---: |
+| `d1` | **0.0000 pt** | 0.2114 pt | **0.2114 pt** |
+| `whatsapp` | 0.5656 pt | **0.2262 pt** | 0.3394 pt |
+
+On `d1` the native text is identical to CT2's, and the gap to the FP32 backend is exactly the
+gap between the two references: 0.2114 either way. There is no closer place to be.
+
+On `whatsapp` the native text sits between them, and it is **closer to the FP32 reference
+(0.2262 pt) than the two references are to each other (0.3394 pt)**.
+
+So the 0.05 pt limit is below the disagreement between the oracle's own two backends on this
+corpus. No implementation can pass it against CT2 while also matching FP32, because CT2 and
+FP32 do not match. Reporting it as a native failure would be reporting the wrong thing.
+
+That is not a pass. The stage gate as written is **not met**: `whatsapp` is 0.5656 pt against
+CT2 where the rule allows 0.05. What the FP32 control changes is the diagnosis, not the
+verdict.
+
+### Where the native path is genuinely wrong
+
+The FP32 backend breaks the ties CT2 cannot, and it settles all three text-changing steps:
+
+| Step | CT2 took | Native took | HF FP32 prefers | By |
+| --- | ---: | ---: | --- | ---: |
+| `whatsapp-002` w0 s114 | `.` (13) | `,` (11) | **native** | 0.001682 |
+| `whatsapp-003` w4 s86 | 51297 | 51296 | **native** | 0.000969 |
+| `whatsapp-001` w3 s3 | 1842 | 25988 | **CT2** | 0.064337 |
+
+Two of the three are cases where the native F32 decode agrees with the F32 reference and CT2's
+FP16 tie fell the other way; the HF decode emitted the native token at both steps.
+
+The third is a real defect and is recorded as one. At `whatsapp-001` window 3 step 3 both
+references choose 1842 and the native decode chooses 25988, and the FP32 margin is 0.064337,
+which is four fp16 steps: wide enough that CT2 could have stated it too. Something in the
+native encoder or decoder moved that step by more than 0.06. That is the one divergence in
+these 61 windows that is not a coin-flip, and it is unexplained.
+
+### What would settle the rest
+
+Score the 71-clip sweep against CT2 as the only reference it has, and read the result against
+the 0.21 to 0.34 pt band the two backends differ by on the eight clips where both exist. A
+delta inside that band is not evidence of a defect; a delta outside it is.

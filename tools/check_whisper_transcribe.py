@@ -62,6 +62,12 @@ def main():
 
     manifest = json.loads((args.oracle / "MANIFEST.json").read_text())
     ct2 = next(b for b in manifest["backends"] if b["backend"] == "ct2")
+    # The FP32 backend covers only part of the corpus, but where it does it is the reference
+    # whose precision matches the native path's. A tie CT2 cannot break, it can.
+    fp32 = next(
+        (b for b in manifest["backends"] if b["backend"] == "hf-fp32"), {"clips": []}
+    )
+    fp32_clips = {c["clip_id"]: c for c in fp32["clips"]}
     tokenizer = WhisperTokenizerFast.from_pretrained(str(args.checkpoint))
 
     clips, rows = [], []
@@ -173,8 +179,31 @@ def main():
                 for chunk in chunks
             )
 
+        # Same clip against the FP32 backend, where it exists.
+        reference32 = fp32_clips.get(clip["clip_id"])
+        if reference32:
+            matched32 = 0
+            windows32 = min(len(reference32["windows"]), len(native_ids))
+            ids32 = []
+            for position in range(windows32):
+                entry32 = reference32["windows"][position]["token_ids"]
+                path32 = args.oracle / entry32["path"]
+                if sha(path32) != entry32["sha256"]:
+                    raise SystemExit("fp32 token hash mismatch: " + clip["clip_id"])
+                want32 = np.fromfile(path32, dtype="<i4")
+                ids32.append(want32)
+                got32 = native_ids[position]
+                if got32.size == want32.size and bool((got32 == want32).all()):
+                    matched32 += 1
+            row["fp32_windows"] = windows32
+            row["fp32_windows_token_exact"] = matched32
+            row["fp32_ids"] = ids32
+
         row["native_text"] = text(native_ids)
         row["oracle_text"] = text(oracle_ids)
+        if "fp32_ids" in row:
+            row["fp32_text"] = text(row.pop("fp32_ids"))
+            row["fp32_text_matches"] = canon(row["native_text"]) == canon(row["fp32_text"])
         row["text_matches"] = canon(row["native_text"]) == canon(row["oracle_text"])
         row["oracle_text_matches_manifest_transcript"] = canon(row["oracle_text"]) == canon(
             clip["transcript"]
@@ -205,6 +234,24 @@ def main():
             "reference_words": len(oracle.split()),
             "within_limit": measure.wer * 100.0 <= args.wer_delta_limit,
         }
+        with32 = [r for r in picked if "fp32_text" in r]
+        if with32:
+            native32 = canon(" ".join(r["native_text"] for r in with32))
+            reference32 = canon(" ".join(r["fp32_text"] for r in with32))
+            measure32 = jiwer.process_words(reference32, native32)
+            # Control: how far the two references are from each other on the same clips. It
+            # bounds what agreeing with one of them can mean.
+            oracle32 = canon(" ".join(r["oracle_text"] for r in with32))
+            between = jiwer.process_words(reference32, oracle32)
+            domains[domain].update(
+                {
+                    "fp32_clips": len(with32),
+                    "wer_percent_native_vs_fp32": measure32.wer * 100.0,
+                    "fp32_reference_words": len(reference32.split()),
+                    "fp32_within_limit": measure32.wer * 100.0 <= args.wer_delta_limit,
+                    "wer_percent_ct2_vs_fp32": between.wer * 100.0,
+                }
+            )
 
     exact_text = sum(r["text_matches"] for r in rows)
     classes = {}
@@ -234,6 +281,10 @@ def main():
         "windows_token_exact": window_match,
         "clips_token_exact": sum(r["tokens_match"] for r in rows),
         "clips_text_exact": exact_text,
+        "clips_text_exact_vs_fp32": sum(r.get("fp32_text_matches", False) for r in rows),
+        "clips_with_fp32_reference": sum("fp32_text" in r for r in rows),
+        "windows_token_exact_vs_fp32": sum(r.get("fp32_windows_token_exact", 0) for r in rows),
+        "windows_with_fp32_reference": sum(r.get("fp32_windows", 0) for r in rows),
         "clips_oracle_text_matches_transcript": sum(
             r["oracle_text_matches_manifest_transcript"] for r in rows
         ),
@@ -255,7 +306,14 @@ def main():
     if classes:
         print("  divergence classes: " + ", ".join(f"{k}={v}" for k, v in sorted(classes.items())))
     for domain, value in domains.items():
-        print(f"  {domain}: WER vs CT2 {value['wer_percent_native_vs_ct2']:.4f} pt")
+        line = f"  {domain}: WER vs CT2 {value['wer_percent_native_vs_ct2']:.4f} pt"
+        if "wer_percent_native_vs_fp32" in value:
+            line += (
+                f", vs HF FP32 {value['wer_percent_native_vs_fp32']:.4f} pt, "
+                f"CT2 vs HF FP32 {value['wer_percent_ct2_vs_fp32']:.4f} pt "
+                f"({value['fp32_clips']} clips)"
+            )
+        print(line)
     raise SystemExit(0 if receipt["status"] == "passed" else 1)
 
 

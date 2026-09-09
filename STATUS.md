@@ -1,6 +1,6 @@
 # ASR lane status
 
-Updated 2026-09-09 (decode stage, real-audio sweep in flight, RNNT loader).
+Updated 2026-09-09 (Whisper clip parity on the HF subset, whole RNNT streaming path, 71-clip sweep in flight).
 Worktree `~/projects/memra/wt-asr-modality`, branch `lane/asr-modality-20260909`.
 Draft PR https://github.com/avifenesh/memra/pull/416, issue #414 remains claimed.
 
@@ -10,8 +10,10 @@ Whisper: native log-mel (padded and clip programs), both convolutions, all 32 en
 the cached decoder, the beam-1 transcription policy and the clip window program all execute in
 the CPU reference path. `whisper-stage transcribe` takes PCM and returns token ids.
 
-Nemotron RNNT: the `.nemo` archive reader, tensor census, contract bind and `[56, 0]` streaming
-state contract are committed. No RNNT execution exists.
+Nemotron RNNT: the whole streaming path executes. `rnnt-stage stream` takes PCM and returns
+token ids: native log-mel, cache-aware FastConformer over the `[56, 0]` arm, prompt
+conditioning, the two-layer LSTM predictor, the joint and greedy decoding, with encoder caches
+and the predictor hypothesis carried across chunks.
 
 | Stage | Comparison | Result | Bound |
 | --- | --- | ---: | ---: |
@@ -22,12 +24,23 @@ state contract are committed. No RNNT execution exists.
 | Decoder FP32 | Native vs HF FP32 | 0.0000143051 | 0.001 |
 | Decoder FP16 | Native vs HF FP16 | 0.015625 | 0.0345668793 |
 | Window program | Native rule vs 364 pinned boundaries | 364 of 364 | exact |
-| Clip parity, d1-000 | Native ids vs CT2 beam-1 | 9 of 11 windows | see below |
+| Clip parity, 8 HF clips | Native ids vs CT2 beam-1 | 49 of 61 windows | see below |
+| Clip text, 8 HF clips | Native vs CT2, canonized | 6 of 8 clips | see below |
 | RNNT census | Contract vs `clean-step-21959.nemo` | 657 of 657 tensors | exact |
+| RNNT frontend | Native log-mel vs NeMo CPU FP32 | 0.0000534058 | 0.001 |
+| RNNT encoder, [56,0] | 26 chunks vs NeMo CPU FP32 | 0.0000002533 | 0.001 |
+| RNNT encoder on native mel | 26 chunks, frontend composed | 0.0000002086 | 0.001 |
+| RNNT head | Prompt, predictor, joint | 0.0000915527 | 0.001 |
+| RNNT greedy | Token ids | 9 of 9 identical | exact |
+| RNNT session | 26 chunk partials plus final | 26 of 26 identical | exact |
 
-The two differing Whisper windows differ at one timestamp token each, at a point where CT2's
-own recorded logits hold both candidates at the same fp16 value. A plain argmax over CT2's own
-logits picks what the native decoder picked. Text is unchanged. Full numbers:
+Whisper text parity on the eight HF-oracle clips: `d1` 0.0000 pt against CT2 over 4 clips,
+`whatsapp` 0.5656 pt. The stage gate wanted every clip equal or under 0.05 pt per domain, so
+it is **not met on `whatsapp`**. The oracle's own two backends differ by 0.2114 pt on `d1` and
+0.3394 pt on `whatsapp` over the same clips, and the native text is inside that band on both
+(0.2114 and 0.2262 against the FP32 backend). One divergence is a genuine defect and is not
+explained by precision: `whatsapp-001` window 3 step 3, where both references choose 1842 by an
+FP32 margin of 0.064337 and the native decode chooses 25988. Full analysis:
 `research/asr-modality-20260909/TRANSCRIBE-PARITY.md`.
 
 The speech matrix product is cache-blocked and optionally threaded; both are bit-identical by
@@ -37,7 +50,10 @@ construction and re-proved on the real checkpoint. One encoder window fell 122.9
 ## In flight
 
 The 71-clip end-to-end sweep is running on the rig, one process, `nice -n 15`, pinned to the
-efficiency cores, ~82 s per window, 364 windows:
+efficiency cores, ~82 s per window, 364 windows. It is ordered so the eight HF-oracle clips
+come first and then `d1` and `whatsapp` interleave, so both domains grow together and a stop
+at any point still has both. It is stopped at 22:30 UTC by an armed timer if it has not
+finished:
 
 ```
 tools/whisper_transcribe_sweep.sh ~/hebrew-asr-data/oracle/whisper-large-v3-ivrit \
@@ -66,12 +82,16 @@ The checker scores only clips that have finished, so it is safe to run mid-sweep
 
 ## Next executable stage
 
-1. Finish the sweep, bank `stage5-transcribe-parity.json`, and record per-domain WER against
-   CT2 in `TRANSCRIBE-PARITY.md`.
-2. Native detokenizer and tokenizer binding. Until then `NativeReference` cannot be claimed:
-   text numbers depend on offline tooling.
-3. RNNT execution: FastConformer frontend and subsampler, then blocks against a NeMo oracle
-   the private lane has not captured yet.
+1. Explain `whatsapp-001` window 3 step 3. It is the one Whisper divergence in 61 windows that
+   precision does not explain: both references choose 1842 by an FP32 margin of 0.064337 and
+   the native decode chooses 25988. Re-run that window with per-step logits banked and compare
+   against the HF FP32 row that is already pinned.
+2. Finish or stop the sweep at 22:30 UTC, bank `stage5-transcribe-parity.json`, and read the
+   per-domain delta against the 0.21 to 0.34 pt band the two oracle backends differ by.
+3. Native detokenizer and tokenizer binding, for both paths. Until then `NativeReference`
+   cannot be claimed: every text number depends on offline tooling.
+4. RNNT beyond one clip and one arm: more audio, the `[56,3]`/`[56,6]`/`[56,13]` arms if they
+   are ever wanted, session revision semantics, cancellation and reset.
 
 The measured ladder, including everything `NativeReference` and `NativeQualified` still need,
 is the "Measured status ladder" section of `ASR-MODALITY-PLAN.md`.
@@ -110,9 +130,16 @@ Mel: `whisper-stage mel|mel-clip CHECKPOINT PCM.f32 OUT.f32`.
 Encoder: `whisper-stage encoder CHECKPOINT MEL.f32 NEW_OUT f32|f16` (output dir must not exist).
 Decoder: `whisper-stage decoder CHECKPOINT ENCODER.f32 TOKENS.txt NEW_OUT f32|f16`.
 Transcribe: `whisper-stage transcribe CHECKPOINT PCM.f32 NEW_OUT f32|f16`.
+RNNT: `rnnt-stage frontend|encoder|head|stream ARCHIVE ... ` built into
+`.lane-asr-stage3/target` so the sweep binary is never rebuilt under it.
 Gates: `tools/check_whisper_stages.py`, `tools/check_whisper_decoder.py`,
-`tools/check_whisper_real_audio.py`, `tools/check_whisper_transcribe.py`.
+`tools/check_whisper_real_audio.py`, `tools/check_whisper_transcribe.py`,
+`tools/check_rnnt_frontend.py`, `tools/check_rnnt_encoder.py`, `tools/check_rnnt_head.py`,
+`tools/check_rnnt_stream.py`.
+Captures: `tools/nemo_encoder_oracle.py`, `tools/nemo_rnnt_oracle.py`,
+`tools/nemo_stream_oracle.py`.
 Run every gate from the worktree root; the receipts hash source paths relative to it.
 
-Clean `.lane-asr-stage2/` scratch at handoff after preserving the binary and receipts.
+Clean `.lane-asr-stage2/` and `.lane-asr-stage3/` scratch at handoff after preserving the
+binary and receipts.
 Both root checkouts stay on main. Keep this worktree/branch for the open PR.
