@@ -486,3 +486,5 @@ glm5-tp2-gpu-sampler-20260908 | Current five-pair medians: 81.317 to 91.250 wall
 glm5-verify-tally-20260909 | "Component KEEP OFF, unserved, code removed 2026-09-09; 1.789758071 ms/round weighted saving" | glm5-verify-tally-20260909/RESULTS.md
 
 moe-rows-f16-20260909 | NEGATIVE numeric no-go: t4 layer20 full-chain row3 argmax current4 vs F16 1819; t2 all42 layers pass; timing refused and door removed. | moe-rows-f16-20260909/RESULTS.md
+
+glm5-kda-verify-20260909 | SUPERSEDED MECHANISM: one t-row register-state scan already runs per KDA layer; 1 -> 1 launches, no new candidate or timing. rev: 2026-09-23. | glm5-kda-verify-20260909/RESULTS.md

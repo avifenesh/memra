@@ -1900,3 +1900,9 @@ Receipt: `research/moe-rows-f16-20260909/RESULTS.md`. rev: 2026-09-23.
   shared decode-exact dual remains for its other callers. Measured source
   41ba71861353b66a8c7807ff882b5b7ed11de930; receipt:
   `research/glm5-shexp-dual-20260909/RESULTS.md`. rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (GLM KDA verify rows, never introduced)
+
+| Flag | Former default | Removal receipt |
+|---|---|---|
+| `MEMRA_GLM5_KDA_VERIFY_ROWS` | Never introduced (proposed OFF; decide-by: 2026-09-23) | SUPERSEDED MECHANISM: current batched GLM verify already runs one `memra_kda_scan_s128` at T=K+1 per KDA layer with register-resident state; partial reject already uses one T=keep replay. 1 -> 1 launches at t2/4/7, 34 KDA layers. No new env read, dispatch, kernel, oracle or timing. Weighted saving unmeasured; not a measured flat verdict. `research/glm5-kda-verify-20260909/RESULTS.md`, source dcfeab7c7. rev: 2026-09-23. |
