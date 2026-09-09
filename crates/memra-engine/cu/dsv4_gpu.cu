@@ -6162,6 +6162,7 @@ static __global__ void dsv4_sink_scores_tiled32_f32acc_kernel(const float* __res
     const int tid = threadIdx.x;
     const int h0 = blockIdx.y * DSV4_SCORE_HT;
     const int k0 = blockIdx.x * DSV4_SCORE_KT;
+    if (k0 >= slots) return; // Uniform CTA refusal before any shared-memory barrier.
     const int p = blockIdx.z;
     extern __shared__ float tile[];
     float* qs = tile;

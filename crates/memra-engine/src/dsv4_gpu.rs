@@ -15459,7 +15459,7 @@ impl Dsv4Gpu {
             unsafe {
                 observer(
                     st.dev,
-                    layer.il,
+                    layer.il as usize,
                     layer.ratio,
                     slots,
                     dpf!(vws.q, &stream),

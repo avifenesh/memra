@@ -77,7 +77,7 @@ static void cell(int nq,int slots,float scale,bool bench){
             check(cudaStreamSynchronize(stream));reference.equal(candidate);
         }
     }
-    for(auto shape:std::vector<std::vector<int>>{{0,32,512,slots,stride},{513,32,512,slots,stride},{1,63,512,slots,stride},
+    for(auto shape:std::vector<std::vector<int>>{{0,32,512,slots,stride},{513,32,512,slots,stride},{1,63,512,slots,stride},{1,64,512,slots,stride},
             {1,32,511,slots,stride},{1,32,512,0,stride},{1,32,512,slots,slots-1}})
         if(memra_dsv4_sink_scores_tiled32_f32acc(q.p,kv.p,ids.p,candidate.scores.p,
             shape[0],shape[1],shape[2],shape[3],shape[4],scale,stream)!=40010)throw std::runtime_error("invalid shape not refused");
