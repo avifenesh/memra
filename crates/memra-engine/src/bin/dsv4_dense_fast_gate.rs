@@ -425,6 +425,7 @@ fn refusal_cells(
         }
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn run(
     gpu: &Dsv4Gpu,
     prompt: &[u32],
