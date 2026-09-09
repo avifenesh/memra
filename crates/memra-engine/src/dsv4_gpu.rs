@@ -12545,6 +12545,7 @@ pub struct VerifyWs {
     h_rx: CudaSlice<f32>,
     emb: CudaSlice<f32>,
     mixes: CudaSlice<f32>,
+    hc_dot_partial: CudaSlice<f32>, // [24*32], stable across retained variants
     pre: CudaSlice<f32>,
     post: CudaSlice<f32>,
     comb: CudaSlice<f32>,
@@ -13588,6 +13589,7 @@ impl Dsv4Gpu {
                 h_rx: f(tmax * hc * hidden)?,
                 emb: f(tmax * hidden)?,
                 mixes: f(tmax * (2 + hc) * hc)?,
+                hc_dot_partial: f(24 * 32)?,
                 pre: f(tmax * hc)?,
                 post: f(tmax * hc)?,
                 comb: f(tmax * hc * hc)?,
@@ -14112,16 +14114,39 @@ impl Dsv4Gpu {
         let stream = st.gpu.stream();
         let w = hc * hidden;
         let rows = (2 + hc) * hc;
-        self.dots_m_dev(
-            st,
-            h_ptr,
-            fn_w.device_ptr(&stream).0 as *const c_void,
-            0,
-            t,
-            w,
-            rows,
-            vws.mixes.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
+        if t == 1
+            && self.dots_f32
+            && rows == 24
+            && w == 16384
+            && unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0
+        {
+            unsafe {
+                ck(
+                    "HC24 split dots batch",
+                    memra_dsv4_hc_dot_split(
+                        h_ptr,
+                        dpf!(fn_w, &stream),
+                        dpm!(vws.hc_dot_partial, &stream),
+                        vws.hc_dot_partial.len() as i32,
+                        dpm!(vws.mixes, &stream),
+                        rows as i32,
+                        w as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        } else {
+            self.dots_m_dev(
+                st,
+                h_ptr,
+                fn_w.device_ptr(&stream).0 as *const c_void,
+                0,
+                t,
+                w,
+                rows,
+                vws.mixes.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+        }
         if t == 1 && !host_math && self.small_component_claim(st.dev, 0) {
             self.small_component_hc(
                 st, h_ptr, &vws.mixes, scale_dev, base_dev, hidden, iters, hc_eps,
