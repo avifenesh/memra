@@ -11,12 +11,15 @@ import time
 p = argparse.ArgumentParser()
 p.add_argument('--repo', default='/root/prefill-fairness-20260908')
 p.add_argument('--root', default='/root/prefill-fairness-gpu-20260909')
+p.add_argument('--binary', default='/root/target-prefill/release/memra-server')
+p.add_argument('--sha', default='19db5df71812eabfa914ba99f58ff676e5d6a860174c0a75084dfad19a89d8e4')
+p.add_argument('--repetitions', type=int, default=3)
+p.add_argument('--skip-chunk-probes', action='store_true')
 a = p.parse_args()
 repo, root = pathlib.Path(a.repo), pathlib.Path(a.root)
 script = repo / 'research/prefill-fairness-20260908'
 base = pathlib.Path('/tmp/qwen-ornith-5090-capacity-20260908')
-binary = '/root/target-prefill/release/memra-server'
-sha = '19db5df71812eabfa914ba99f58ff676e5d6a860174c0a75084dfad19a89d8e4'
+binary, sha = a.binary, a.sha
 profiles = {'ornith': str(base/'ornith-361-composed-private-sampled'), 'qwen': str(base/'qwen-32k-host-cap1')}
 longs = {'ornith': str(root/'ornith-r1-off-v2/0-request.json'), 'qwen': str(base/'qwen-128k-chunk1024-cap1/turn1-request.json')}
 
@@ -62,7 +65,7 @@ def execute(label, command, mixed):
     print('PASS', label, flush=True)
 
 for model in ('ornith', 'qwen'):
-    for repetition in range(1,4):
+    for repetition in range(1,a.repetitions+1):
         for arm in ('off','on'):
             label=f'{model}-r{repetition}-{arm}'
             if label=='ornith-r1-off':label+='-v2'
@@ -73,7 +76,7 @@ for model in ('ornith', 'qwen'):
             execute(label,command,True)
 
 for model in ('ornith','qwen'):
-    for arm in ('off','on'):
+    for arm in (() if a.skip_chunk_probes else ('off','on')):
         label=f'{model}-4096-{arm}'
         execute(label,['python3',str(script/'gate_http.py'),'--source',profiles[model],
                        '--binary',binary,'--sha',sha,'--out',str(root/label),
@@ -96,7 +99,7 @@ for model in ('ornith','qwen'):
 # Isolate the 1024-row wall measurements too. Mixed cells include peer work and
 # cannot substitute for a one-request early/middle/late comparison with 4096.
 for model in ('ornith', 'qwen'):
-    for arm in ('off', 'on'):
+    for arm in (() if a.skip_chunk_probes else ('off', 'on')):
         label = f'{model}-1024-{arm}'
         execute(label, ['python3', str(script/'gate_http.py'), '--source', profiles[model],
                         '--binary', binary, '--sha', sha, '--out', str(root/label),
