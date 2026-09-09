@@ -1886,3 +1886,9 @@ KERNELS rows. No serving dispatch had been installed. The measured source is
 bc89f4d22; the initial harness-only layout-reference mistake and its correction
 are preserved with the raw receipts. Verdict: NEGATIVE, numeric no-go.
 Receipt: `research/moe-rows-f16-20260909/RESULTS.md`. rev: 2026-09-23.
+
+## HC-24 dot split experiment
+
+| Flag | Default | Contract |
+| --- | --- | --- |
+| `MEMRA_DSV4_HC_DOT_SPLIT` | **OFF**, decide-by: 2026-09-23 | Exact `1` selects the HC24 split numeric class, provisionally S=16 pending component selection. Unset, `0`, and other values retain current dots. Only f32 device HC pre sites with N=24,K=16384 are eligible. Host-thread policy initializes once; fresh processes and graphs are required for rollback. Gate override admits 0/8/16/32 before capture. Captured kernels never read the selector. This changes association and is not bit-identical to exact-tail dots. Owner decides promotion from drift; no default flip in this lane. Receipt namespace: private Darklanes `research/dsv4f-hc-dot-split-20260909/`, gates pending. |
