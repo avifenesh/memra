@@ -26,6 +26,20 @@ struct LstmLayer {
     hidden_bias: Vec<f32>,
 }
 
+/// A greedy decode in progress. Its predictor state and last token are what make a streamed
+/// session different from a run of independent frames.
+pub struct GreedySession {
+    predictor: PredictorState,
+    last: Option<u32>,
+    started: bool,
+}
+
+impl GreedySession {
+    pub fn last_token(&self) -> Option<u32> {
+        self.last
+    }
+}
+
 /// One LSTM cell state, per layer.
 #[derive(Clone)]
 pub struct PredictorState {
@@ -234,6 +248,53 @@ impl RnntHead {
         Ok(apply_linear(&sum, 1, &self.joint_out, WhisperNumeric::F32))
     }
 
+    /// A greedy session: the predictor state and the last emitted token, carried across
+    /// chunks. A streaming decode that reset this per chunk would be a different program.
+    pub fn new_greedy(&self) -> GreedySession {
+        GreedySession {
+            predictor: self.new_state(),
+            last: None,
+            started: false,
+        }
+    }
+
+    /// One frame through the greedy loop, returning what it emitted for that frame.
+    pub fn greedy_frame(
+        &self,
+        frame: &[f32],
+        session: &mut GreedySession,
+        max_symbols: usize,
+    ) -> Result<Vec<u32>, String> {
+        let mut emitted = Vec::new();
+        let mut symbols = 0usize;
+        let mut blank = false;
+        while !blank && symbols < max_symbols {
+            let token = if session.started { session.last } else { None };
+            let (row, next) = self.predict(token, &session.predictor)?;
+            let logits = self.joint(frame, &row)?;
+            let mut best = 0u32;
+            let mut value = f32::NEG_INFINITY;
+            for (id, &logit) in logits.iter().enumerate() {
+                if logit > value {
+                    value = logit;
+                    best = id as u32;
+                }
+            }
+            if best == self.blank {
+                blank = true;
+            } else {
+                emitted.push(best);
+                session.predictor = next;
+                session.last = Some(best);
+                session.started = true;
+            }
+            // The counter advances on a blank as well, so this bounds work per frame and not
+            // only emissions.
+            symbols += 1;
+        }
+        Ok(emitted)
+    }
+
     /// Greedy RNNT decode over prompted encoder frames.
     ///
     /// The symbol counter advances on a blank as well as on an emission, so `max_symbols`
@@ -249,35 +310,10 @@ impl RnntHead {
             return Err("greedy input is not [frames, width]".into());
         }
         let mut emitted: Vec<u32> = Vec::new();
-        let mut state = self.new_state();
-        let mut last: Option<u32> = None;
-        let mut started = false;
+        let mut session = self.new_greedy();
         for frame in 0..frames {
             let f = &prompted[frame * width..(frame + 1) * width];
-            let mut symbols = 0usize;
-            let mut blank = false;
-            while !blank && symbols < max_symbols {
-                let token = if started { last } else { None };
-                let (row, next) = self.predict(token, &state)?;
-                let logits = self.joint(f, &row)?;
-                let mut best = 0u32;
-                let mut value = f32::NEG_INFINITY;
-                for (id, &logit) in logits.iter().enumerate() {
-                    if logit > value {
-                        value = logit;
-                        best = id as u32;
-                    }
-                }
-                if best == self.blank {
-                    blank = true;
-                } else {
-                    emitted.push(best);
-                    state = next;
-                    last = Some(best);
-                    started = true;
-                }
-                symbols += 1;
-            }
+            emitted.extend(self.greedy_frame(f, &mut session, max_symbols)?);
         }
         Ok(emitted)
     }

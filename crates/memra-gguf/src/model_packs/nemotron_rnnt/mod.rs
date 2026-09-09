@@ -153,6 +153,16 @@ pub struct StreamingStateContract {
     /// Predictor hidden and cell state, per LSTM layer.
     pub predictor_state_width: u32,
     pub predictor_layers: u32,
+    /// Mel frames the first step consumes. It is not a normal step: it carries no history and
+    /// still produces one encoder frame.
+    pub first_chunk_mel_frames: u32,
+    /// Mel frames every later step consumes on top of the carry.
+    pub chunk_mel_frames: u32,
+    /// Mel frames of the previous chunk each later step re-reads so the subsampling stem sees
+    /// the context its kernels need.
+    pub pre_encode_carry_mel_frames: u32,
+    /// Pre-encoded rows each later step drops, because the carry already produced them.
+    pub drop_extra_pre_encoded: u32,
 }
 
 impl StreamingStateContract {
@@ -177,6 +187,12 @@ impl StreamingStateContract {
             chunk_frames: chunk_frames.max(1),
             predictor_state_width: geometry.predictor_width,
             predictor_layers: geometry.predictor_layers,
+            // Measured from the reference's own streaming configuration for this arm:
+            // chunk_size [1, 8], pre_encode_cache_size [0, 9], drop_extra_pre_encoded 2.
+            first_chunk_mel_frames: 1,
+            chunk_mel_frames: geometry.subsample_factor,
+            pre_encode_carry_mel_frames: geometry.subsample_factor + 1,
+            drop_extra_pre_encoded: 2,
         })
     }
 

@@ -30,6 +30,132 @@ fn read_f32(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 6 && args[1] == "stream" {
+        // usage: stream ARCHIVE PCM.f32 OUT_DIR PROMPT_SLOT
+        let out = PathBuf::from(&args[4]);
+        let slot: u32 = args[5].parse()?;
+        std::fs::create_dir(&out)?;
+        let started = std::time::Instant::now();
+        let archive = MappedNemo::open(Path::new(&args[2]))?;
+        let bound = bind(HEBREW_GEOMETRY, &archive.checkpoint.census)?;
+        let frontend = RnntFrontend::from_bound(
+            HEBREW_GEOMETRY,
+            &bound,
+            archive.bytes(),
+            &archive.checkpoint.storages,
+        )?;
+        let encoder = FastConformerEncoder::load(
+            HEBREW_GEOMETRY,
+            QUALIFIED_CONTEXT,
+            &bound,
+            archive.bytes(),
+            &archive.checkpoint.storages,
+        )?;
+        let head = RnntHead::load(
+            HEBREW_GEOMETRY,
+            &bound,
+            archive.bytes(),
+            &archive.checkpoint.storages,
+        )?;
+        let contract = encoder.contract();
+        let bins = HEBREW_GEOMETRY.mel_bins as usize;
+        let width = HEBREW_GEOMETRY.encoder_width as usize;
+
+        let pcm = read_f32(Path::new(&args[3]))?;
+        let (mel, frames) = frontend.compute(&pcm)?;
+        let valid = frontend.valid_frames(pcm.len());
+
+        let mut state = encoder.new_state();
+        let mut session = head.new_greedy();
+        let mut emitted: Vec<u32> = Vec::new();
+        let mut summary = String::from(
+            "chunk	mel_start	mel_frames	drop	emitted	total
+",
+        );
+        let mut cursor = 0usize;
+        let mut index = 0usize;
+        while cursor < valid {
+            let first = index == 0;
+            let take = if first {
+                contract.first_chunk_mel_frames as usize
+            } else {
+                contract.chunk_mel_frames as usize
+            };
+            let carry = if first {
+                0
+            } else {
+                contract.pre_encode_carry_mel_frames as usize
+            };
+            let drop = if first {
+                0
+            } else {
+                contract.drop_extra_pre_encoded as usize
+            };
+            let start = cursor.saturating_sub(carry);
+            let lead = carry - (cursor - start);
+            let end = (cursor + take).min(frames);
+            let window_frames = lead + (end - start);
+            // Frames before the audio began are zero, which is what the reference's own
+            // streaming buffer pads with.
+            let mut window = vec![0.0f32; bins * window_frames];
+            for bin in 0..bins {
+                for frame in start..end {
+                    window[bin * window_frames + lead + (frame - start)] =
+                        mel[bin * frames + frame];
+                }
+            }
+            let (encoded, count) = encoder.stream_step(&window, window_frames, drop, &mut state)?;
+            // The encoder banks [width, frames]; the head consumes [frames, width].
+            let mut rows = vec![0.0f32; count * width];
+            for frame in 0..count {
+                for channel in 0..width {
+                    rows[frame * width + channel] = encoded[channel * count + frame];
+                }
+            }
+            let prompted = head.prompt(&rows, count, slot)?;
+            let mut chunk_tokens = 0usize;
+            for frame in 0..count {
+                let step = head.greedy_frame(
+                    &prompted[frame * width..(frame + 1) * width],
+                    &mut session,
+                    10,
+                )?;
+                chunk_tokens += step.len();
+                emitted.extend(step);
+            }
+            summary.push_str(&format!(
+                "{index}	{start}	{window_frames}	{drop}	{chunk_tokens}	{}
+",
+                emitted.len()
+            ));
+            std::fs::write(
+                out.join(format!("chunk-{index:03}-tokens.txt")),
+                emitted
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )?;
+            cursor += take;
+            index += 1;
+        }
+        std::fs::write(out.join("chunks.tsv"), summary)?;
+        std::fs::write(
+            out.join("tokens.txt"),
+            emitted
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
+        )?;
+        println!(
+            "stream chunks={index} samples={} tokens={} elapsed={:.3}",
+            pcm.len(),
+            emitted.len(),
+            started.elapsed().as_secs_f64()
+        );
+        return Ok(());
+    }
     if args.len() == 6 && args[1] == "head" {
         // usage: head ARCHIVE ENCODER_ORACLE OUT_DIR PROMPT_SLOT
         let oracle = PathBuf::from(&args[3]);

@@ -14,7 +14,9 @@ Three independent things are checked per clip:
 
 Where a window's ids differ, the first divergent step is reported with the oracle's own margin
 at that step: the recorded post-suppression logit gap between the id CT2 took and the id the
-native decode took. Both are conditioned on the identical prefix, so the gap is comparable.
+native decode took. Both are conditioned on the identical prefix, so the gap is comparable. A
+gap of zero is a tie the oracle's fp16 logits cannot break; a gap at or under one fp16 step at
+that magnitude is the smallest difference its precision can express at all.
 
 Detokenization uses the checkpoint's tokenizer through transformers. A native detokenizer is
 not built yet, so text numbers here are gated on offline tooling and say so in the receipt.
@@ -148,12 +150,18 @@ def main():
                             ),
                         }
                     )
+                    # How far apart fp16 can hold two numbers of this size. The oracle's
+                    # logits are fp16 values widened to f32, so a gap at or under one step is
+                    # the smallest difference its precision can express at all.
+                    step_size = float(np.spacing(np.float16(abs(taken))))
+                    record["oracle_fp16_step_at_magnitude"] = step_size
                     if record["divergence_class"] is None:
-                        # Margin zero means the reference's own recorded logits hold both
-                        # candidates at the same value: its precision cannot separate them.
-                        record["divergence_class"] = (
-                            "fp16_tie" if margin == 0.0 else "real"
-                        )
+                        if margin == 0.0:
+                            record["divergence_class"] = "fp16_tie"
+                        elif margin <= step_size:
+                            record["divergence_class"] = "fp16_ulp"
+                        else:
+                            record["divergence_class"] = "real"
                 else:
                     record["divergence"] = "length only"
                     record["divergence_class"] = record["divergence_class"] or "length"

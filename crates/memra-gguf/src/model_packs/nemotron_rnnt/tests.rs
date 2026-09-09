@@ -103,6 +103,13 @@ fn the_qualified_streaming_arm_never_reads_future_audio() {
     assert_eq!(state.last_time_frames, 8);
     assert_eq!(state.layers, 24);
     assert_eq!(state.chunk_frames, 1);
+    // The driver constants, measured from the reference's streaming configuration rather than
+    // derived: the first step is one mel frame with no carry, later steps are eight new frames
+    // on top of a nine-frame carry and drop the two rows the carry already produced.
+    assert_eq!(state.first_chunk_mel_frames, 1);
+    assert_eq!(state.chunk_mel_frames, 8);
+    assert_eq!(state.pre_encode_carry_mel_frames, 9);
+    assert_eq!(state.drop_extra_pre_encoded, 2);
     // 24 layers x 56 frames x 1024 of cached layer input, plus 24 x 8 x 1024 convolution
     // history, plus two LSTM layers of hidden and cell state. The attention term is not
     // doubled: the reference caches the layer input, not separate keys and values, which the

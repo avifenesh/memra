@@ -128,3 +128,26 @@ a version that only counted emissions would run longer on a frame that keeps pre
 Still missing: a native streaming session lifecycle (the head is handed a finished run of
 encoder frames, not driven chunk by chunk with partial results), the tokenizer inside the
 engine, and everything about serving.
+
+## Stage 9: the session
+
+`rnnt-stage stream` takes PCM and returns token ids. It computes its own log-mel, cuts its own
+streaming windows, steps the encoder with its own caches, prompts each frame and runs the
+greedy loop with a predictor state that persists across chunks.
+
+26 of 26 chunk partials identical to the reference session, final sequence identical: the same
+9 ids, the same `כן, אני ומתן`. 13.1 s for 2 seconds of audio on one niced core. Receipt
+`stage9-rnnt-stream.json`.
+
+Comparing partials at every chunk and not only the final sequence is the point of this gate. A
+session that carries the wrong state can still land on the right final answer, and one that
+resets its predictor per chunk usually does on short audio.
+
+The driver constants are now part of the state contract, measured from the reference's own
+streaming configuration rather than derived: the first step is one mel frame with no carry,
+later steps are eight new frames on a nine-frame carry, and each later step drops the two
+pre-encoded rows the carry already produced.
+
+What a session still does not have: partial and final revision semantics, cancellation, reset,
+reconnect, concurrency, admission, a tokenizer inside the engine, and any GPU path. The
+transcript here is produced by the checker's tokenizer, not by Memra.

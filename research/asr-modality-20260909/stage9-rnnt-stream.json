@@ -1,0 +1,192 @@
+{
+  "schema": "memra-rnnt-stream-v1",
+  "status": "passed",
+  "chunks": 26,
+  "chunks_partial_exact": 26,
+  "final_tokens_equal": true,
+  "final_token_count": 9,
+  "final_tokens": [
+    2,
+    3225,
+    6,
+    2,
+    1270,
+    3155,
+    3235,
+    1273,
+    3158
+  ],
+  "final_transcript": "כן, אני ומתן",
+  "language": "he-IL",
+  "att_context_size": [
+    56,
+    0
+  ],
+  "samples": 32000,
+  "binary_sha256": "864564ef51860b9e20a2b4f2a223b7c53625d4d8d8d69db9416fe3f050574582",
+  "archive_sha256": "585c40f214a53e8b5ba565c6176aa6cb548c7c8ab2f7ec5dc6dd45dbdff46ee4",
+  "oracle_manifest_sha256": "06b4b5e168c82fb0d6e57e68f347def00cab20f419cbc2ef311b20a01997a4c4",
+  "reference": {
+    "torch": "2.14.0+cu130",
+    "nemo": "3.1.0+ea1ebf55b"
+  },
+  "rows": [
+    {
+      "index": 0,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 1,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 2,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 3,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 4,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 5,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 6,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 7,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 8,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 9,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 10,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 11,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 12,
+      "reference_tokens": 0,
+      "native_tokens": 0,
+      "partial_matches": true
+    },
+    {
+      "index": 13,
+      "reference_tokens": 2,
+      "native_tokens": 2,
+      "partial_matches": true
+    },
+    {
+      "index": 14,
+      "reference_tokens": 2,
+      "native_tokens": 2,
+      "partial_matches": true
+    },
+    {
+      "index": 15,
+      "reference_tokens": 3,
+      "native_tokens": 3,
+      "partial_matches": true
+    },
+    {
+      "index": 16,
+      "reference_tokens": 5,
+      "native_tokens": 5,
+      "partial_matches": true
+    },
+    {
+      "index": 17,
+      "reference_tokens": 6,
+      "native_tokens": 6,
+      "partial_matches": true
+    },
+    {
+      "index": 18,
+      "reference_tokens": 6,
+      "native_tokens": 6,
+      "partial_matches": true
+    },
+    {
+      "index": 19,
+      "reference_tokens": 7,
+      "native_tokens": 7,
+      "partial_matches": true
+    },
+    {
+      "index": 20,
+      "reference_tokens": 7,
+      "native_tokens": 7,
+      "partial_matches": true
+    },
+    {
+      "index": 21,
+      "reference_tokens": 7,
+      "native_tokens": 7,
+      "partial_matches": true
+    },
+    {
+      "index": 22,
+      "reference_tokens": 8,
+      "native_tokens": 8,
+      "partial_matches": true
+    },
+    {
+      "index": 23,
+      "reference_tokens": 8,
+      "native_tokens": 8,
+      "partial_matches": true
+    },
+    {
+      "index": 24,
+      "reference_tokens": 9,
+      "native_tokens": 9,
+      "partial_matches": true
+    },
+    {
+      "index": 25,
+      "reference_tokens": 9,
+      "native_tokens": 9,
+      "partial_matches": true
+    }
+  ],
+  "scope": "native streaming session, audio to token ids over the [56,0] arm, against a pinned CPU FP32 NeMo session. Partial output is compared at every chunk. No GPU, no endpoint, no admission or concurrency behaviour."
+}
