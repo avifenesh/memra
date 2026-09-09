@@ -5,6 +5,11 @@ use crate::{GgmlType, GgufFile};
 
 pub const PROGRAM: &str = "qwen35-prefill-nvfp4-a4-v1";
 pub const PROGRAM_KEY: &str = "memra.activation_program";
+/// OUR suffix, deliberately not ".input_scale": that one is a reserved quant auxiliary
+/// (`QuantAuxTensor::InputScale`, and `is_quant_auxiliary` on the safetensors source)
+/// meaning a ModelOpt static W4A8 activation scale. Reusing it would make the census
+/// describe a checkpoint we did not mint.
+pub const SCALE_SUFFIX: &str = ".a4_input_scale";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinearPhase {
@@ -116,7 +121,7 @@ impl PrefillFp4 {
                 ));
             }
             let stem = name.strip_suffix(".weight").unwrap();
-            let auxiliary = format!("{stem}.input_scale");
+            let auxiliary = format!("{stem}{SCALE_SUFFIX}");
             let tensor = g
                 .find(&auxiliary)
                 .ok_or_else(|| format!("missing {auxiliary}"))?;
@@ -136,7 +141,7 @@ impl PrefillFp4 {
             scales.insert(name, multiplier);
         }
         for tensor in &g.tensors {
-            if let Some(stem) = tensor.name.strip_suffix(".input_scale")
+            if let Some(stem) = tensor.name.strip_suffix(SCALE_SUFFIX)
                 && !scales.contains_key(&format!("{stem}.weight"))
             {
                 return Err(format!("unexpected activation scale {}", tensor.name));

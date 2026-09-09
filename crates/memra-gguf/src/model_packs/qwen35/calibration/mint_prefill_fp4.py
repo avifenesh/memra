@@ -13,6 +13,12 @@ import struct
 
 from calibrate_prefill_fp4 import PROGRAM, projections, sha
 
+# NOT ".input_scale": that suffix is a RESERVED quant auxiliary in the tensor contract
+# (QuantAuxTensor::InputScale) and in the safetensors source's is_quant_auxiliary list,
+# where it means a ModelOpt static W4A8 activation scale. Minting our scalars under it
+# hands the census a different claim about the checkpoint than the one we mean.
+SCALE_SUFFIX = ".a4_input_scale"
+
 SOURCE_SHA = "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a"
 
 
@@ -81,7 +87,7 @@ def main():
     if args.output.exists() or args.output.resolve() == args.source.resolve():
         raise ValueError("mint requires a new output path")
     record = json.loads(args.scales.read_text())
-    expected = {name+".input_scale" for name in projections().values()}
+    expected = {name+SCALE_SUFFIX for name in projections().values()}
     if record["program"] != PROGRAM or set(record["scales"]) != expected:
         raise ValueError("activation program must carry exactly 400 declared scalars")
     if sha(args.source) != SOURCE_SHA:
