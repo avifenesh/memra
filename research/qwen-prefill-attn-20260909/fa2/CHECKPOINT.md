@@ -1,6 +1,6 @@
 # Standalone FA2 checkpoint, 2026-09-09
 
-Holding before serving integration. The native grouped-head candidate clears
+Historical checkpoint before serving integration; current qualification is in `../FA2.md`. The native grouped-head candidate clears
 140 TF/s at 32k and 131k, but misses at 8k. Real final-chunk logit deviation needs
 diagnosis before a quality decision.
 
@@ -32,7 +32,7 @@ Nsight Compute counters are unavailable on the box (ERR_NVGPUCTRPERM).
 No FA2 serving door or dispatch is integrated. The numerics-changing serving
 protocol remains pending. No local rig gates ran, and no push has occurred yet.
 
-Sources and offline snapshot patch are committed here. Detailed receipts are
+Standalone sources and the offline snapshot patch are banked in the companion research archive; only the selected implementation and reusable gates remain in this PR. Detailed receipts are
 banked in the companion research lane at commit `d03a9c2ae`. The GPU compute list
 is empty and the shared lock is free. Scratch and worktrees are retained for the
 checkpoint decision.
