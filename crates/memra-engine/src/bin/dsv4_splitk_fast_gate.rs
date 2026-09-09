@@ -13,6 +13,8 @@ unsafe extern "C" {
     fn memra_moe_m1_splitk_fast_on() -> i32;
     fn memra_moe_m1_splitk_fast_component_set_for_gate();
     fn memra_moe_m1_splitk_fast_component_mask() -> u32;
+    fn memra_moe_m1_splitk_fast_diagnose_for_gate(token: i32, dir: *const std::ffi::c_char);
+    fn memra_moe_m1_splitk_fast_diagnostic_done() -> i32;
 }
 fn fast_on() -> bool {
     unsafe { memra_moe_m1_splitk_fast_on() != 0 }
@@ -440,8 +442,11 @@ fn main() {
     assert!(
         args.len() == 4
             || (args.len() == 5
-                && matches!(args[4].as_str(), "--qualify" | "--component" | "--reverse")),
-        "usage: dsv4_splitk_fast_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component|--reverse]"
+                && matches!(
+                    args[4].as_str(),
+                    "--qualify" | "--component" | "--reverse" | "--diagnose-four-live"
+                )),
+        "usage: dsv4_splitk_fast_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component|--reverse|--diagnose-four-live]"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     for (name, value) in [
@@ -468,7 +473,11 @@ fn main() {
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
     // Graph split-K stays ON. ABBA explicitly forces the fast door OFF for arm A.
     memra_engine::set_moe_m1_splitk_for_gate(false);
-    println!("GRAPH_SPLITK_POLICY on={}", fast_on());
+    println!(
+        "SPLITK_FAST_POLICY fast_door={} graph_splitk={}",
+        fast_on(),
+        memra_engine::moe_m1_graph_splitk_on()
+    );
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
@@ -511,7 +520,14 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
-    if args.get(4).is_some_and(|v| v == "--component") {
+    let diagnose = args.get(4).is_some_and(|v| v == "--diagnose-four-live");
+    if diagnose || args.get(4).is_some_and(|v| v == "--component") {
+        let dump = output.join("diagnostic");
+        let dump_c = std::ffi::CString::new(dump.to_str().unwrap()).unwrap();
+        if diagnose {
+            assert!(!fast_on(), "production control explicitly OFF");
+            std::fs::create_dir(&dump).unwrap();
+        }
         unsafe {
             memra_moe_m1_splitk_fast_component_set_for_gate();
         }
@@ -521,7 +537,22 @@ fn main() {
         memra_engine::set_moe_m1_splitk_component_for_gate(true);
         for (i, &token) in prompt[1..PRIME].iter().enumerate() {
             memra_engine::set_moe_m1_splitk_component_token_for_gate(i);
+            if diagnose {
+                unsafe {
+                    memra_moe_m1_splitk_fast_diagnose_for_gate(i as i32, dump_c.as_ptr());
+                }
+            }
             gpu.decode_step_device_logits(token, &mut work).unwrap();
+            if diagnose {
+                assert_ne!(
+                    unsafe { memra_moe_m1_splitk_fast_diagnostic_done() },
+                    0,
+                    "r1 route must be diagnosed on the first decode token"
+                );
+                memra_engine::set_moe_m1_splitk_component_for_gate(false);
+                println!("DIAGNOSTIC_COMPLETE timing_rows=0");
+                return;
+            }
             let mask = unsafe { memra_moe_m1_splitk_fast_component_mask() };
             println!("GRAPH_COMPONENT_COVERAGE token={i} mask={mask}");
             if mask == 255 {

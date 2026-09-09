@@ -30,6 +30,8 @@
 #include <cmath>
 #include <algorithm>
 #include <cstring>
+#include <string>
+#include <utility>
 
 #define QT_IQ4_XS 5
 #define QT_IQ3_S  6
@@ -2661,6 +2663,20 @@ int memra_moe_m1_splitk_fast_on(){
     }();
     return enabled;
 }
+// Harness-only failures retain the returned status before inspecting/clearing
+// CUDA's last-error slot. Normal production launches do not call this logger.
+static int splitk_fast_cuda_failure(cudaError_t error, const char* call,
+        const char* file, int line, const char* phase, int device, int gu, int live){
+    const cudaError_t peek=cudaPeekAtLastError();
+    const cudaError_t last=cudaGetLastError();
+    fflush(stdout);
+    fprintf(stderr,"SPLITK_FAST_CUDA_FAILURE phase=%s file=%s line=%d device=%d gu=%d live=%d call=%s returned=%d/%s/%s peek=%d/%s/%s last=%d/%s/%s\n",
+        phase,file,line,device,gu,live,call,int(error),cudaGetErrorName(error),cudaGetErrorString(error),
+        int(peek),cudaGetErrorName(peek),cudaGetErrorString(peek),
+        int(last),cudaGetErrorName(last),cudaGetErrorString(last));
+    fflush(stderr);
+    return 1000+int(error);
+}
 // Fixed graph geometry. Neither launch depends on host routing observations.
 static int moe_m1_splitk_fast_launch(
         const unsigned long long* table, int n_expert, const int* ex_ids,
@@ -2693,8 +2709,11 @@ static int moe_m1_splitk_fast_launch(
         partial,ex_off,n_active,in_f,out_f);
     }
     cudaError_t e = cudaGetLastError();
-    if(e) return 1000 + int(e);
-    if(middle){ e=cudaEventRecord(middle,st); if(e) return 1000+int(e); }
+    if(e){
+        if(middle) return splitk_fast_cuda_failure(e,"cudaGetLastError after partial",__FILE__,__LINE__,"instrument_launch",-1,gu,-1);
+        return 1000+int(e);
+    }
+    if(middle){ e=cudaEventRecord(middle,st); if(e) return splitk_fast_cuda_failure(e,"cudaEventRecord(middle,st)",__FILE__,__LINE__,"instrument_launch",-1,gu,-1); }
     if(gu) {
         if(fast) moe_m1_splitk_fast_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
         partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
@@ -2708,6 +2727,7 @@ static int moe_m1_splitk_fast_launch(
         partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
     }
     e = cudaGetLastError();
+    if(e && middle) return splitk_fast_cuda_failure(e,"cudaGetLastError after reducer",__FILE__,__LINE__,"instrument_launch",-1,gu,-1);
     return e ? 1000 + int(e) : 0;
 }
 
@@ -2884,6 +2904,14 @@ int memra_moe_m1_graph_splitk_component(
 // Instrument plus default-OFF door scaffold: one observed six-live CSR per
 // rank/projection supplies derived prefixes 0..6. Also retain the first actual
 // low-live (1..5) CSR per rank/projection, without modifying that route.
+static std::atomic<int> g_splitk_fast_diagnostic_token{-1};
+static std::atomic<bool> g_splitk_fast_diagnostic_done{false};
+static std::string g_splitk_fast_diagnostic_dir;
+void memra_moe_m1_splitk_fast_diagnose_for_gate(int token, const char* dir){
+    g_splitk_fast_diagnostic_dir=dir;
+    g_splitk_fast_diagnostic_token.store(token);
+}
+int memra_moe_m1_splitk_fast_diagnostic_done(){ return g_splitk_fast_diagnostic_done.load(); }
 static std::atomic<unsigned> g_splitk_fast_component_mask{0};
 unsigned memra_moe_m1_splitk_fast_component_mask(){ return g_splitk_fast_component_mask.load(); }
 int memra_moe_m1_splitk_fast_component(
@@ -2892,9 +2920,12 @@ int memra_moe_m1_splitk_fast_component(
         const float* macro_g, const float* macro_u, const float* route_w,
         const int* ex_off, int n_active, int in_f, int out_f,
         float limit, int slots, int gu, float* partial, void* stream){
-    int device=0, observed=0;
+    int device=-1, observed=-1;
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
-    #define GS_CHECK(call) do { cudaError_t e=(call); if(e) return 1000+int(e); } while(0)
+    const bool diagnostic=g_splitk_fast_diagnostic_token.load()>=0;
+    const char* phase="entry";
+    #define GS_CHECK(call) do { cudaError_t e=(call); if(e) return splitk_fast_cuda_failure(e,#call,__FILE__,__LINE__,phase,device,gu,observed); } while(0)
+    GS_CHECK(cudaPeekAtLastError());
     GS_CHECK(cudaStreamGetDevice(st,&device));
     int ambient=-1; GS_CHECK(cudaGetDevice(&ambient));
     if(ambient!=device) return 40012;
@@ -2902,19 +2933,21 @@ int memra_moe_m1_splitk_fast_component(
         cudaPointerAttributes attr{}; GS_CHECK(cudaPointerGetAttributes(&attr,ptr));
         if(attr.device!=device || attr.type!=cudaMemoryTypeDevice) return 40012;
     }
+    if(diagnostic && (device!=0 || !gu || g_splitk_fast_diagnostic_done.load())) return 0;
     const unsigned key = 1u << (device*2+gu);
     const unsigned mask = g_splitk_fast_component_mask.load();
     if((mask & (key | (key<<4))) == (key | (key<<4))) return 0;
     GS_CHECK(cudaMemcpyAsync(&observed,ex_off+n_active,4,cudaMemcpyDeviceToHost,st));
     GS_CHECK(cudaStreamSynchronize(st));
     if(observed<0 || observed>6) return 40005;
-    if(observed==0) return 0;
+    if(observed==0 && !diagnostic) return 0;
     const bool derived = observed==6;
     const unsigned bit = derived ? key : key<<4;
     if(mask & bit) return 0;
     const char* origin = derived ? "derived_prefix" : "observed_low";
     printf("SPLITK_FAST_BANDWIDTH_MODEL modeled effective weight GB/s (unique codes + scales / partial time); 1792 GB/s is a nominal peak, not achieved DRAM bandwidth\n");
     printf("SPLITK_FAST_COMPONENT_ROUTE device=%d gu=%d route_origin=%s source_live=%d independent_route=1\n",device,gu,origin,observed);
+    phase="resource_query";
     for(int arm=0;arm<2;++arm){
         const void* kernel=gu
             ? (arm ? (const void*)moe_m1_splitk_fast_partial_kernel<2> : (const void*)moe_m1_graph_splitk_partial_kernel<2>)
@@ -2938,6 +2971,7 @@ int memra_moe_m1_splitk_fast_component(
             if(activation) cudaFree(activation);
             if(offsets) cudaFree(offsets); if(flush) cudaFree(flush); }
     } b;
+    phase="allocation_and_operand_copy";
     const size_t n=size_t(6)*out_f, pn=n*16*(gu?2:1), flush_bytes=256ull<<20;
     GS_CHECK(cudaMalloc(&b.a,(n+128)*4)); GS_CHECK(cudaMalloc(&b.b,(n+128)*4));
     GS_CHECK(cudaMalloc(&b.p,(pn+128)*4)); GS_CHECK(cudaMalloc(&b.offsets,(n_active+1)*4));
@@ -2954,12 +2988,119 @@ int memra_moe_m1_splitk_fast_component(
         if(offsets[g+1]-offsets[g]<0 || offsets[g+1]-offsets[g]>1) return 40005;
         if(offsets[g+1]!=offsets[g]) printf("SPLITK_FAST_COMPONENT_OPERAND device=%d gu=%d route_origin=%s source_live=%d row=%d expert=%d\n",device,gu,origin,observed,offsets[g],ids[g]);
     }
+    std::vector<float> diagnostic_reference(n);
+    std::vector<unsigned> diagnostic_partial(pn);
+    if(diagnostic){
+        phase="route_dump";
+        std::vector<int> live_ids;
+        for(int g=0;g<n_active;++g) if(offsets[g+1]!=offsets[g]) live_ids.push_back(ids[g]);
+        FILE* route=fopen((g_splitk_fast_diagnostic_dir+"/route.txt").c_str(),"wb");
+        if(!route){ perror("splitk route dump"); return 40014; }
+        fprintf(route,"device=%d gu=%d token=%d observed=%d caller_component_slots=%d launch_slots=6 n_expert=%d n_active=%d in_f=%d out_f=%d limit=%.9g partial_grid=%d partial_block=32x4 reduce_grid=%zu reduce_block=256 output_allocation_bytes=%zu scratch_allocation_bytes=%zu\n",
+            device,gu,g_splitk_fast_diagnostic_token.load(),observed,slots,n_expert,n_active,in_f,out_f,limit,
+            6*(out_f/SK_BN)*16,(n+255)/256,(n+128)*4,(pn+128)*4);
+        fprintf(route,"offsets="); for(int v:offsets) fprintf(route,"%d,",v);
+        fprintf(route,"\nids="); for(int v:ids) fprintf(route,"%d,",v);
+        fprintf(route,"\nselected="); for(int v:live_ids) fprintf(route,"%d,",v);
+        fprintf(route,"\n"); fclose(route);
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_ROUTE device=%d gu=%d token=%d observed=%d selected=",device,gu,g_splitk_fast_diagnostic_token.load(),observed);
+        for(int v:live_ids) fprintf(stderr,"%d,",v);
+        fprintf(stderr," dump=%s/route.txt\n",g_splitk_fast_diagnostic_dir.c_str());
+        if(g_splitk_fast_diagnostic_token.load()!=0 || observed!=4 || live_ids!=std::vector<int>({90,93,95,104})
+           || in_f!=4096 || out_f!=2048 || memra_moe_m1_splitk_fast_on()){
+            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_ROUTE_MISMATCH no_forced_route no_kernel_controls\n");
+            return 40013;
+        }
+        auto dump = [&](const char* name,const void* ptr,size_t bytes){
+            std::vector<unsigned char> data(bytes);
+            GS_CHECK(cudaMemcpyAsync(data.data(),ptr,bytes,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaStreamSynchronize(st));
+            FILE* f=fopen((g_splitk_fast_diagnostic_dir+"/"+name).c_str(),"wb");
+            if(!f){ perror("splitk operand dump"); return 40014; }
+            const bool ok=fwrite(data.data(),1,bytes,f)==bytes;
+            const int closed=fclose(f);
+            return ok && closed==0 ? 0 : 40014;
+        };
+        for(auto entry : {std::pair<const char*,const void*>{"activation.f16",act_f16},
+                          {"row_scale.f32",row_scale},{"macro_g.f32",macro_g},
+                          {"macro_u.f32",macro_u},{"route_weight.f32",route_w}}){
+            int rc=dump(entry.first,entry.second,entry.second==act_f16 ? 6ull*in_f*2 : 6ull*4);
+            if(rc) return rc;
+        }
+        auto reset = [&](){
+            GS_CHECK(cudaMemsetAsync(b.a,0xff,(n+128)*4,st));
+            GS_CHECK(cudaMemsetAsync(b.p,0xff,(pn+128)*4,st));
+            return 0;
+        };
+        auto read_and_guard = [&](bool reference){
+            std::vector<float> values(n); std::vector<unsigned> partials(pn);
+            GS_CHECK(cudaMemcpyAsync(values.data(),b.a+64,n*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaMemcpyAsync(partials.data(),b.p+64,pn*4,cudaMemcpyDeviceToHost,st));
+            unsigned guards[256];
+            GS_CHECK(cudaMemcpyAsync(guards,b.a,64*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaMemcpyAsync(guards+64,b.a+64+n,64*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaMemcpyAsync(guards+128,b.p,64*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaMemcpyAsync(guards+192,b.p+64+pn,64*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaStreamSynchronize(st));
+            for(unsigned v:guards) if(v!=0xffffffffu){ fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_CANARY_FAILURE phase=%s\n",phase); return 40009; }
+            for(float v:values) if(!std::isfinite(v)) return 40006;
+            for(size_t i=size_t(observed)*out_f;i<n;++i) if(values[i]!=0.0f) return 40007;
+            if(reference){ diagnostic_reference=values; diagnostic_partial=partials; }
+            else if(std::memcmp(values.data(),diagnostic_reference.data(),n*4) || partials!=diagnostic_partial){
+                fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BIT_MISMATCH phase=%s\n",phase); return 40008;
+            }
+            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_CONTROL_PASS phase=%s guarded=1 comparison=%s timing_events=0\n",phase,reference?"reference_saved":"bit_equal");
+            return 0;
+        };
+        phase="production_wrapper_original_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        int rc=reset(); if(rc) return rc;
+        rc=memra_moe_m1_graph_splitk(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+            macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
+        if(rc){
+            fprintf(stderr,"SPLITK_FAST_PRODUCTION_WRAPPER_FAILURE rc=%d call=memra_moe_m1_graph_splitk file=%s line=%d\n",rc,__FILE__,__LINE__);
+            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"memra_moe_m1_graph_splitk",__FILE__,__LINE__,phase,device,gu,observed);
+            return rc;
+        }
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        rc=read_and_guard(true); if(rc) return rc;
+        rc=reset(); if(rc) return rc;
+        phase="production_partial_original_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        moe_m1_graph_splitk_partial_kernel<2><<<6*(out_f/SK_BN)*16,dim3(32,4),0,st>>>(
+            table,0,n_expert,ex_ids,in_f/2,(const __half*)act_f16,b.p+64,ex_off,n_active,in_f,out_f);
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_KERNEL_PASS phase=%s\n",phase);
+        phase="production_reducer_original_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        moe_m1_graph_splitk_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
+            b.p+64,b.a+64,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        rc=read_and_guard(false); if(rc) return rc;
+        phase="production_wrapper_copied_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        GS_CHECK(cudaMemcpyAsync(b.offsets,offsets.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
+        rc=reset(); if(rc) return rc;
+        rc=memra_moe_m1_graph_splitk(table,n_expert,ex_ids,b.activation,b.a+64,row_scale,
+            macro_g,macro_u,route_w,b.offsets,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
+        if(rc){
+            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"memra_moe_m1_graph_splitk(copied operands)",__FILE__,__LINE__,phase,device,gu,observed);
+            return rc;
+        }
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        rc=read_and_guard(false); if(rc) return rc;
+        fflush(stdout); fflush(stderr);
+    }
+    phase="instrument_capture_on";
     auto launch = [&](int arm,int live){
         GS_CHECK(cudaEventRecord(b.begin,st));
         int rc=moe_m1_splitk_fast_launch(table,n_expert,ex_ids,b.activation,
             (arm==2?b.b:b.a)+64,row_scale,macro_g,macro_u,route_w,b.offsets,
             n_active,in_f,out_f,limit,6,gu,b.p+64,stream,arm==2,b.middle);
-        if(rc) return rc;
+        if(rc){
+            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"moe_m1_splitk_fast_launch with middle event",__FILE__,__LINE__,phase,device,gu,observed);
+            return rc;
+        }
         GS_CHECK(cudaEventRecord(b.end,st));
         return 0;
     };
@@ -2979,9 +3120,11 @@ int memra_moe_m1_splitk_fast_component(
                 if(graphs[arm]) cudaGraphDestroy(graphs[arm]); } }
         } controls;
         for(int arm=1;arm<2;++arm){
-            // Initialize the control launcher's device attributes before capture.
+            // Reproduce r1's uncaptured warmup and subsequent capture unchanged.
+            phase="instrument_uncaptured_control_with_events";
             int rc=launch(arm,6); if(rc) return rc;
             GS_CHECK(cudaStreamSynchronize(st));
+            phase="instrument_capture_off";
             GS_CHECK(cudaStreamBeginCapture(st,cudaStreamCaptureModeThreadLocal));
             rc=launch(arm,6);
             cudaError_t end=cudaStreamEndCapture(st,&controls.graphs[arm]);
@@ -3004,12 +3147,16 @@ int memra_moe_m1_splitk_fast_component(
                     GS_CHECK(cudaMemsetAsync(b.b,0xff,(n+128)*4,st));
                     GS_CHECK(cudaMemsetAsync(b.p,0xff,(pn+128)*4,st));
                     if(cold) GS_CHECK(cudaMemsetAsync(b.flush,repeat+3,flush_bytes,st));
+                    phase=arm==2?"instrument_replay_on":"instrument_replay_off";
                     GS_CHECK(cudaGraphLaunch(arm==2?b.exec:controls.execs[arm],st));
                     GS_CHECK(cudaEventSynchronize(b.end));
+                    phase="instrument_elapsed_total";
                     float ms=0; GS_CHECK(cudaEventElapsedTime(&ms,b.begin,b.end));
-                    if(repeat>=0){
+                    if(diagnostic || repeat>=0){
                         totals[arm]+=ms*1000;
+                        phase="instrument_elapsed_partial";
                         GS_CHECK(cudaEventElapsedTime(&ms,b.begin,b.middle)); partial_us[arm]+=ms*1000;
+                        phase="instrument_elapsed_reduce";
                         GS_CHECK(cudaEventElapsedTime(&ms,b.middle,b.end)); reduce_us[arm]+=ms*1000;
                     }
                     auto& host=arm==2?candidate:reference;
@@ -3033,6 +3180,16 @@ int memra_moe_m1_splitk_fast_component(
                         GS_CHECK(cudaMemcpyAsync(guard+64,base+64+len,64*4,cudaMemcpyDeviceToHost,st));
                         GS_CHECK(cudaStreamSynchronize(st));
                         for(unsigned v:guard) if(v!=0xffffffffu) return 40009;
+                    }
+                    if(diagnostic){
+                        if(std::memcmp(host.data(),diagnostic_reference.data(),n*4) || current_partial!=diagnostic_partial){
+                            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BIT_MISMATCH phase=instrument_replay\n"); return 40008;
+                        }
+                        if(arm==1){
+                            g_splitk_fast_diagnostic_done.store(true);
+                            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_COMPLETE original_wrapper=pass separate_kernels=pass copied_operands=pass event_path=pass timing_rows=0\n");
+                            return 0;
+                        }
                     }
                 }
             }
