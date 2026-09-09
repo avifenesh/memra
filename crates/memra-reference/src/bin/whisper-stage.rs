@@ -36,7 +36,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if args.len() < 5 || !["mel", "encoder", "norm", "decoder"].contains(&args[1].as_str()) {
+    if args.len() < 5
+        || !["mel", "mel-clip", "encoder", "norm", "decoder"].contains(&args[1].as_str())
+    {
         return Err("usage: whisper-stage mel CHECKPOINT_DIR PCM.f32 OUTPUT.f32 | encoder CHECKPOINT_DIR MEL.f32 OUTPUT_DIR f32|f16".into());
     }
     let dir = Path::new(&args[2]);
@@ -106,12 +108,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(out.join("steps.tsv"), summary)?;
         return Ok(());
     }
-    if args[1] == "mel" {
+    if args[1] == "mel" || args[1] == "mel-clip" {
         if args.len() != 5 {
             return Err("mel takes exactly three arguments".into());
         }
         let pcm = read_f32(Path::new(&args[3]))?;
-        let output = WhisperFrontend::new(&speech.frontend)?.compute(&pcm)?;
+        let frontend = WhisperFrontend::new(&speech.frontend)?;
+        let output = if args[1] == "mel-clip" {
+            frontend.compute_clip(&pcm)?
+        } else {
+            frontend.compute(&pcm)?
+        };
         write_f32(Path::new(&args[4]), &output.data)?;
         println!(
             "stage=mel shape={:?} input_samples={} numeric=f32",

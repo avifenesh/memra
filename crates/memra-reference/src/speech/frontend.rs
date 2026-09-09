@@ -92,7 +92,38 @@ impl WhisperFrontend {
         {
             return Err("Whisper PCM must be nonempty, finite and within the padded window".into());
         }
-        let frames = self.plan.max_frames as usize;
+        self.features(
+            pcm,
+            self.plan.max_frames as usize,
+            self.plan.max_samples as usize,
+        )
+    }
+
+    /// Clip-scoped features, the shape faster-whisper actually decodes from. It builds one
+    /// feature array per utterance, so both the centered reflection boundary and the
+    /// dynamic-range clamp floor belong to the clip. Slicing 30-second windows out of this is
+    /// not the same program as calling `compute` on each isolated window: the clamp floor
+    /// moves and the frame at a window edge loses the audio that follows it.
+    pub fn compute_clip(&self, pcm: &[f32]) -> Result<ReferenceTensor, String> {
+        const MAX_CLIP_SAMPLES: usize = 16000 * 60 * 60;
+        if pcm.is_empty() || pcm.len() > MAX_CLIP_SAMPLES || pcm.iter().any(|x| !x.is_finite()) {
+            return Err("Whisper clip PCM must be nonempty, finite and at most one hour".into());
+        }
+        if pcm.len() <= self.plan.fft_size as usize / 2 {
+            return Err("Whisper clip is too short for reflect padding".into());
+        }
+        let frames = pcm.len() / self.plan.hop_length as usize + 1;
+        // The reference extractor reflects only at the start of the utterance. Past the last
+        // sample it reads zeros, the same way `compute` treats the tail of a padded window.
+        self.features(pcm, frames, usize::MAX)
+    }
+
+    fn features(
+        &self,
+        pcm: &[f32],
+        frames: usize,
+        reflect_len: usize,
+    ) -> Result<ReferenceTensor, String> {
         let n = self.plan.fft_size as usize;
         let bins = n / 2 + 1;
         let mels = self.plan.mel_bins as usize;
@@ -107,8 +138,8 @@ impl WhisperFrontend {
                 if index < 0 {
                     index = -index;
                 }
-                if index >= self.plan.max_samples as isize {
-                    index = 2 * self.plan.max_samples as isize - 2 - index;
+                if reflect_len != usize::MAX && index >= reflect_len as isize {
+                    index = 2 * reflect_len as isize - 2 - index;
                 }
                 *value = pcm.get(index as usize).copied().unwrap_or(0.0) * self.window[j];
             }
@@ -196,6 +227,62 @@ mod tests {
             .map(|(a, b)| (a - b).abs())
             .fold(0.0f32, f32::max);
         assert!(max_abs <= 1e-3, "mel max_abs={max_abs}, threshold=0.001");
+    }
+
+    /// Clip features are not window features stitched together. The rental oracle only agrees
+    /// with the clip program: all 364 real windows match at 1.1920929e-7 when each window is
+    /// sliced out of `compute_clip`, and the last window of a clip disagrees by up to 0.2507
+    /// when the clip end reflects instead of reading zeros.
+    #[test]
+    fn clip_features_use_a_clip_wide_clamp_and_read_zeros_past_the_last_sample() {
+        let mut full = plan(128);
+        full.max_samples = 480000;
+        full.max_frames = 3000;
+        let frontend = WhisperFrontend::new(&full).unwrap();
+
+        // A quiet tone inside the first window and a loud burst past it. The clip-wide maximum
+        // then comes from audio the first window never sees, which is what moves the clamp.
+        let mut pcm = vec![0.0f32; 480000 + 96000];
+        for (i, x) in pcm[8000..16000].iter_mut().enumerate() {
+            *x = ((i as f32) * 0.05).sin() * 0.002;
+        }
+        for (i, x) in pcm[500000..508000].iter_mut().enumerate() {
+            *x = ((i as f32) * 0.05).sin() * 0.8;
+        }
+        let clip = frontend.compute_clip(&pcm).unwrap();
+        assert_eq!(clip.shape, vec![128, pcm.len() / 160 + 1]);
+
+        // The clamp floor is a property of the whole clip, so the quiet tail is held at the
+        // clip-wide floor rather than being renormalized against its own local maximum.
+        let frames = clip.shape[1];
+        let floor = clip.data.iter().copied().fold(f32::INFINITY, f32::min);
+        let tail: Vec<f32> = (0..128)
+            .map(|m| clip.data[m * frames + frames - 2])
+            .collect();
+        assert!(
+            tail.iter().all(|&x| (x - floor).abs() < 1e-6),
+            "silent tail should sit on the clip floor {floor}, got {:?}",
+            &tail[..4]
+        );
+
+        // Isolating the first window is a different program and must not be assumed equal.
+        let window = frontend.compute(&pcm[..480000]).unwrap();
+        let widest = (0..128 * 3000)
+            .map(|i| {
+                let (m, f) = (i / 3000, i % 3000);
+                (window.data[m * 3000 + f] - clip.data[m * frames + f]).abs()
+            })
+            .fold(0.0f32, f32::max);
+        assert!(
+            widest > 1e-3,
+            "a window computed in isolation matched the clip slice at {widest}; if the reference \
+             program changed, re-derive the rental-oracle contract before relaxing this"
+        );
+
+        // Past the final sample the clip reads zeros. Reflecting there moved the real oracle's
+        // last window by up to 0.2507, so a silent run-out must stay on the floor.
+        let silent = frontend.compute_clip(&vec![0.0; 32000]).unwrap();
+        assert!(silent.data.iter().all(|&x| x == -1.5));
     }
 
     #[test]
