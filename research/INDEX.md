@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+release-v0.137.0-20260909 | PREPARED CANDIDATE ONLY. No tag or deployment is authorized by this record. | RESULTS.md
+
 dflash-retained-admission-20260908 | PASS: the exact recorded 128k cold/1024-output request followed by its warm continuation now admits with 131040 cached tokens, DFlash engaged and zero OOM/retries. | README.md
 
 gpuwatch-startup-20260908 | The candidate recovered after two startup hangs and returned HTTP 200; the old binary stayed HTTP 503 after probes resumed. | RESULTS.md
