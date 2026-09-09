@@ -891,7 +891,7 @@ fn main() {
 mod default_policy_tests {
     #[test]
     fn profile_inherits_graph_splitk_policy() {
-        const CHILD: &str = "MEMRA_TEST_PROFILE_SPLITK_CHILD";
+        const CHILD: &str = "MEMRA_TEST_DSV4_DEFAULT_CHILD";
         if let Ok(expected) = std::env::var(CHILD) {
             super::select_expert_policy(true, false);
             assert_eq!(memra_engine::moe_m1_graph_splitk_on(), expected == "1");
