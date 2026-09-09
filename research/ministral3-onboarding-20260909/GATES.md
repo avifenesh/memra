@@ -21,10 +21,10 @@ tests or GPU work. Pushes use `MEMRA_SKIP_PERF_CI=1` under the owner restriction
 | NVFP4 mint and census | PASS: 238 quantized projections; 309 semantic tensors | `receipts/mint.log`, `receipts/nvfp4-final/` |
 | run-gen | PASS: prefill/decode argmax=6008 and Hebrew output; cross-phase max logit difference 0.4207, not a byte-identity claim | `receipts/run-gen.log` |
 | run-spec | REFUSED: checkpoint has no MTP/NextN head | `receipts/run-spec.log` |
-| Vendor-shaped sampled HTTP | PASS c=1 and four concurrent clients, each with real tool call/result and eight continuation turns; sampling fields omitted | `receipts/serve/SUMMARY.json` |
-| Anthropic and Responses | PASS: real tool round trips and Hebrew final answer | `receipts/wire/`, `receipts/wire-gate.log` |
+| Vendor-shaped sampled HTTP | PASS c=1 and four concurrent clients, each with real tool call/result and eight continuation turns; sampling fields omitted | `receipts/serve-committed/SUMMARY.json` |
+| Anthropic and Responses | PASS: real tool round trips and Hebrew final answer | `receipts/wire-committed/`, `receipts/wire-committed.log` |
 | Streaming and refusals | PASS: streamed tool call; unknown model, disabled image input, and 262145-token prompt rejected | `receipts/endpoint/` |
-| Stop/rollback | PASS: exact server PID stopped and health connection closed | `receipts/rollback-stop.json` |
+| Stop/rollback | PASS: exact server PID stopped and health connection closed | `receipts/rollback-committed.json` |
 | Regression/lint | PASS: 654 server tests; memra-gguf/reference/tokenizer suites; Clippy | `receipts/server-unit-2.log`, `receipts/unit.log`, `receipts/clippy-3.log` |
 | CONTRIBUTING interleaved model/performance battery | NOT RUN | No PR eligibility claim |
 | Sealed tuned rewrite bundle | NOT PRODUCED | NativeReference only |
@@ -49,7 +49,7 @@ serving gates do not assert lossless equality to the source-FP32 checkpoint.
 - Serving config: `8c35abc33b251dd04dcb4c4a97b4360f16d08be35a39af4e122ce7550b08a343`.
 - Tokenizer: `99cf274236c60277fcfad861a5a1007518687ad06ba8938760f50b55ffa0b1ef`.
 - Template: `74eeb55fd3341286ec3fd44e902b7120721acc81cd394e96b431f85e93a1ea56`.
-- Server binary: `a5e4e1b7c337f7cd16c47be68b07342b439e677c7dd6c2b5382358d18ff4ab0d`,
+- Server binary: `e32d4de1460bf27898784cd75d2e7daa7027a53bfb2c782e170713dfa7979fc7`,
   content ID `memra-0.137.0-88a124f2db78`, Ubuntu 22.04/glibc 2.35 build.
 
 GPU eager and carried-prime paths implement the query-scaled YaRN operation.
@@ -57,3 +57,9 @@ Batch, graph, speculative and pipeline rewrites remain refused for this operatio
 concurrent HTTP sessions use independent eager execution. No environment flag was added.
 `MEMRA_CTX=8192` is an initial allocation setting, not a hard ceiling. The configured
 262144 cap is enforced, but this lane does not claim long-context serving qualification.
+
+The final server was built from committed source `c597728ce50af395f819f37e9884cd55a5c5be9a`
+(`v0.137.0-13-gc597728c`), based on the lane-start main revision
+`9fb394f63a9bdadf29f7095749221776c89b1f98`. Its compiled content ID is unchanged
+from the earlier server. Sampled c=1/c=4 and both compatibility-wire tool gates
+were repeated on this committed-source binary; earlier receipts remain alongside them.

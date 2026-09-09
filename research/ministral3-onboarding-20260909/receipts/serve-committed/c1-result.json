@@ -1,0 +1,84 @@
+{
+  "path": "/v1/chat/completions",
+  "request": {
+    "model": "ministral3-8b",
+    "messages": [
+      {
+        "role": "system",
+        "content": "אתה עוזר בעברית. השתמש בכלי כדי לקבל את סכום החשבונית. אל תנחש סכומים. לאחר תוצאת הכלי ענה במשפט קצר בעברית."
+      },
+      {
+        "role": "user",
+        "content": "מה הסכום המדויק של חשבונית INV-2026-17? הפעל את הכלי get_invoice_total."
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_361269847e382cce",
+            "type": "function",
+            "function": {
+              "name": "get_invoice_total",
+              "arguments": "{\"invoice_id\":\"INV-2026-17\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_361269847e382cce",
+        "content": "{\"invoice_id\": \"INV-2026-17\", \"total\": 731, \"currency\": \"ILS\"}"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_invoice_total",
+          "description": "Return the exact invoice total by invoice number. Always use this tool for invoice totals.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "invoice_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "invoice_id"
+            ]
+          }
+        }
+      }
+    ],
+    "max_tokens": 192
+  },
+  "http_status": 200,
+  "elapsed_seconds": 0.38464061077684164,
+  "response": {
+    "object": "chat.completion",
+    "model": "ministral3-8b",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "סכום החשבונית INV-2026-17 הוא 731 ש\"ח."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 213,
+      "completion_tokens": 26,
+      "total_tokens": 239,
+      "prompt_tokens_details": {
+        "cached_tokens": 158
+      },
+      "elapsed_s": 0.381059468
+    },
+    "id": "chatcmpl-9e1577a684cfbd4a8429c833ee4fe6af",
+    "created": 1788962789,
+    "system_fingerprint": "memra-0.137.0-88a124f2db78"
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "path": "/v1/chat/completions",
+  "request": {
+    "model": "ministral3-8b",
+    "messages": [
+      {
+        "role": "system",
+        "content": "אתה עוזר בעברית. השתמש בכלי כדי לקבל את סכום החשבונית. אל תנחש סכומים. לאחר תוצאת הכלי ענה במשפט קצר בעברית."
+      },
+      {
+        "role": "user",
+        "content": "מה הסכום המדויק של חשבונית INV-2026-17? הפעל את הכלי get_invoice_total."
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_361269847e382cce",
+            "type": "function",
+            "function": {
+              "name": "get_invoice_total",
+              "arguments": "{\"invoice_id\":\"INV-2026-17\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_361269847e382cce",
+        "content": "{\"invoice_id\": \"INV-2026-17\", \"total\": 731, \"currency\": \"ILS\"}"
+      },
+      {
+        "role": "assistant",
+        "content": "סכום החשבונית INV-2026-17 הוא 731 ש\"ח."
+      },
+      {
+        "role": "user",
+        "content": "סבב 1: כתוב במשפט קצר בעברית את מספר החשבונית ואת הסכום 731 שקלים שכבר קיבלנו. אין צורך בכלי נוסף."
+      }
+    ],
+    "max_tokens": 128
+  },
+  "http_status": 200,
+  "elapsed_seconds": 0.2013415703549981,
+  "response": {
+    "object": "chat.completion",
+    "model": "ministral3-8b",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "החשבונית **INV-2026-17** כוללת סכום של **731 שקלים**."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 211,
+      "completion_tokens": 30,
+      "total_tokens": 241,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 0.198280632
+    },
+    "id": "chatcmpl-048ac678c5875d785e2a103230c241ed",
+    "created": 1788962789,
+    "system_fingerprint": "memra-0.137.0-88a124f2db78"
+  }
+}
