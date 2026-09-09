@@ -1,4 +1,4 @@
-//! Dense-fast plus norm-fuse composition on the default split-K/cadence program.
+//! Actual unset/zero policy engagement for dense-fast plus norm-fuse defaults.
 //! OFF eager, OFF replay and ON replay must match at every step.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_pos_uniform, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
@@ -26,6 +26,8 @@ const CONTROL_DOTS: &str = "dsv4_dense_exact_tail_dots_kernel";
 // capture; captured functions never read it. No runtime/serving interface added.
 unsafe extern "C" {
     fn memra_dsv4_dense_fast_set_for_gate(enabled: c_int) -> c_int;
+    fn memra_dsv4_dense_fast_enabled_for_gate() -> c_int;
+    fn memra_dsv4_dense_fast_restore_default_for_gate() -> c_int;
     fn memra_dsv4_dense_fast_counts_for_gate(fp8: *mut u64, dots: *mut u64) -> c_int;
 }
 fn enqueues() -> [u64; 2] {
@@ -56,23 +58,6 @@ struct Program {
     cadence: bool,
     dense: bool,
     norm: bool,
-}
-// The two complete programs are fixed before model creation. Only the enqueue
-// selector is chosen before a new state's first capture; no retained graph reads it.
-const PROGRAMS: [Program; 2] = [
-    Program {
-        cadence: true,
-        dense: false,
-        norm: false,
-    },
-    Program {
-        cadence: true,
-        dense: true,
-        norm: true,
-    },
-];
-fn block_arms(reverse: bool) -> [usize; 4] {
-    if reverse { [1, 0, 0, 1] } else { [0, 1, 1, 0] }
 }
 fn sha_f32(row: &[f32]) -> String {
     assert!(row.iter().all(|v| v.is_finite()), "finite final logits");
@@ -313,7 +298,17 @@ impl Arm {
             .unwrap();
         let first = captures == [0, 0];
         if first {
-            select(gpu, self.program.dense);
+            drain(gpu);
+            assert_eq!(
+                unsafe { memra_dsv4_dense_fast_restore_default_for_gate() } != 0,
+                self.program.dense,
+                "actual dense-fast environment policy"
+            );
+            assert_eq!(
+                gpu.restore_norm_fuse_default_for_gate().unwrap(),
+                self.program.norm,
+                "actual norm-fuse environment policy"
+            );
         } else {
             assert_eq!(captures, [if self.program.cadence { 3 } else { 1 }, 1]);
         }
@@ -452,16 +447,13 @@ fn refusal_cells(
         }
     }
 }
-#[allow(clippy::too_many_arguments)]
 fn run(
     gpu: &Dsv4Gpu,
     prompt: &[u32],
     tokenizer: &Tokenizer,
     output: &Path,
-    programs: [Program; 2],
+    program: Program,
     cfg: Dsv4SampleCfg,
-    reverse: bool,
-    qualify_only: bool,
 ) {
     select(gpu, false);
     let mut prefix = state(gpu);
@@ -469,185 +461,101 @@ fn run(
         .expect("prime first");
     for &token in &prompt[1..PRIME] {
         gpu.decode_step_device_logits(token, &mut prefix)
-            .expect("prime");
+            .expect("prime control");
     }
     let mut sampler = gpu.device_sampler().unwrap();
     let first = gpu
         .sample_device_logits(&prefix, &mut sampler, &cfg, &[], None)
-        .expect("initial carry draw");
+        .expect("initial carry");
     assert_eq!(prefix.pos, PRIME);
     assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
     let prefix_identity = identity(gpu, &prefix);
     let mut eager = state(gpu);
     gpu.restore_full_token_prefix_for_gate(&mut eager, &prefix)
         .unwrap();
-    let mut control = Arm::new(gpu, &prefix, cfg, programs[0]);
-    let mut candidate = Arm::new(gpu, &prefix, cfg, programs[1]);
+    let mut selected = Arm::new(gpu, &prefix, cfg, program);
     let mut inputs = Vec::with_capacity(OUTPUT);
     let mut carry = first;
     for step in 0..OUTPUT {
-        assert_ne!(carry, tokenizer.eos_id(), "correctness early EOS");
+        assert_ne!(carry, tokenizer.eos_id(), "default correctness early EOS");
         inputs.push(carry);
-        let before_epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
+        let before = gpu.full_token_ar_epochs_for_gate().unwrap();
         let next = eager_step(gpu, &mut eager, &mut sampler, &cfg, carry);
-        epochs(gpu, &before_epochs, 1);
-        assert_eq!(eager.pos, PRIME + step + 1);
-        for arm in [&mut control, &mut candidate] {
-            let capturing = arm.prepare(gpu);
-            let host = enqueues();
-            let arm_epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
-            let actual = gpu
-                .decode_sample_full_token_for_gate(carry, &mut arm.state)
-                .expect("correctness full replay");
-            assert_eq!(
-                actual, next,
-                "first/changing sample step={step} on={}",
-                arm.program.dense
-            );
-            arm.check_enqueues(host, capturing);
-            epochs(gpu, &arm_epochs, 1);
-            assert_eq!(arm.state.pos, PRIME + step + 1);
-            assert_eq!(
-                identity(gpu, &arm.state),
-                identity(gpu, &eager),
-                "logits/cache/hidden step={step}"
-            );
-            assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
-            assert_eq!(
-                gpu.full_token_replay_counts_for_gate(&arm.state).unwrap(),
-                [[step as u64 + 1; 2]; 2]
-            );
-            captures_once(gpu, &arm.state, arm.program.dense);
-            assert_eq!(
-                gpu.full_token_replay_variant_counts_for_gate(&arm.state)
-                    .unwrap(),
-                [expected_variants(arm.program.dense, PRIME, PRIME + step + 1, true); 2]
-            );
-            if step == 0 {
-                arm.census(
-                    gpu,
-                    &output.join(if arm.program.dense {
-                        "qual-on"
-                    } else {
-                        "qual-off"
-                    }),
-                );
-            }
+        epochs(gpu, &before, 1);
+        let capture = selected.prepare(gpu);
+        let host = enqueues();
+        let before = gpu.full_token_ar_epochs_for_gate().unwrap();
+        let actual = gpu
+            .decode_sample_full_token_for_gate(carry, &mut selected.state)
+            .expect("environment replay");
+        assert_eq!(actual, next, "default/eager sampled identity step={step}");
+        selected.check_enqueues(host, capture);
+        epochs(gpu, &before, 1);
+        assert_eq!(selected.state.pos, PRIME + step + 1);
+        assert_eq!(selected.state.pos, eager.pos);
+        assert_eq!(
+            identity(gpu, &selected.state),
+            identity(gpu, &eager),
+            "default/eager state step={step}"
+        );
+        assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
+        assert_eq!(
+            gpu.full_token_replay_counts_for_gate(&selected.state)
+                .unwrap(),
+            [[step as u64 + 1; 2]; 2]
+        );
+        assert_eq!(
+            gpu.full_token_replay_variant_counts_for_gate(&selected.state)
+                .unwrap(),
+            [expected_variants(program.dense, PRIME, PRIME + step + 1, true); 2]
+        );
+        captures_once(gpu, &selected.state, program.norm);
+        if step == 0 {
+            selected.census(gpu, &output.join("default-qual"));
         }
         carry = next;
-        if step == 0 || (PRIME + step + 1).is_multiple_of(4) {
-            println!(
-                "EXACT position={} next_token={carry} eager_off_graph_off_graph_on_identical=true",
-                PRIME + step + 1
-            );
-        }
+        println!(
+            r#"DEFAULT_EXACT {{"step":{step},"position":{},"eager_identity":true,"token":{carry},"dense_fast_on":{},"norm_fuse_on":{}}}"#,
+            selected.state.pos, program.dense, program.norm
+        );
     }
     assert!(!looped(&inputs));
     let expected_tokens = sha_tokens(&inputs);
     let expected_identity = identity(gpu, &eager);
     let expected_next = carry;
-    // Restore into the SAME captured allocations, then replay the changing tape
-    // once more to prove stable reset independently of the timed rows.
-    for arm in [&mut control, &mut candidate] {
-        gpu.restore_full_token_prefix_for_gate(&mut arm.state, &prefix)
-            .unwrap();
-        assert_eq!(identity(gpu, &arm.state), prefix_identity);
-        let counts = gpu.full_token_replay_counts_for_gate(&arm.state).unwrap();
-        let variants = gpu
-            .full_token_replay_variant_counts_for_gate(&arm.state)
-            .unwrap();
-        let before_epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
-        let host = enqueues();
-        let mut token = first;
-        for &expected in &inputs {
-            assert_eq!(token, expected);
-            token = gpu
-                .decode_sample_full_token_for_gate(token, &mut arm.state)
-                .unwrap();
-        }
-        assert_eq!(token, expected_next);
-        assert_eq!(identity(gpu, &arm.state), expected_identity);
-        assert_eq!(enqueues(), host);
-        replay_delta(gpu, &arm.state, counts, OUTPUT as u64);
-        variant_delta(
-            gpu,
-            &arm.state,
-            variants,
-            expected_variants(arm.program.dense, PRIME, PRIME + OUTPUT, true),
-        );
-        epochs(gpu, &before_epochs, OUTPUT as u32);
-        arm.census(
-            gpu,
-            &output.join(if arm.program.dense {
-                "qual-reset-on"
-            } else {
-                "qual-reset-off"
-            }),
-        );
-    }
-    drop(control);
-    drop(candidate);
+    drop(selected);
     drop(eager);
-    refusal_cells(gpu, &prefix, cfg, &inputs, programs[0], output);
-    refusal_cells(gpu, &prefix, cfg, &inputs, programs[1], output);
+    refusal_cells(gpu, &prefix, cfg, &inputs, program, output);
     println!(
-        "PASS composed dense-fast/norm-fuse model correctness, two retained resets, and 16 live refusal cells"
+        "PASS environment-selected identity steps=256 refusal_cells=8; five sanity rows follow"
     );
-    if qualify_only {
-        select(gpu, false);
-        println!("QUALIFY_PASS identity_steps=256 arms=2 refusal_cells=16");
-        println!(
-            r#"SUMMARY {{"mode":"qualify","rows":0,"identity":true,"identity_steps":256,"refusal_cells":16,"retained_resets":2,"both_censuses":true}}"#
-        );
-        return;
-    }
 
-    // BOTH scored arms are new and uncaptured, independent of qualification.
-    // First ON row and first OFF row each include their actual graph-capture cost.
-    let mut arms = [
-        Arm::new(gpu, &prefix, cfg, programs[0]),
-        Arm::new(gpu, &prefix, cfg, programs[1]),
-    ];
-    let mut walls = [0u128; 2];
-    let mut rates = [Vec::new(), Vec::new()];
-    let mut first_capture_rows = [0usize; 2];
-    let blocks = block_arms(reverse);
-    let schedule = if reverse { "B A A B" } else { "A B B A" };
-    println!(
-        "PROTOCOL blocks={schedule:?} rows_per_block=5 rows=20 prime=256 output=256 both_full_replay=true device_sampler=true diet=true splitk=graph cadence_A=true cadence_B=true dense_fast_A=false dense_fast_B=true norm_fuse_A=false norm_fuse_B=true gu_n32=false first_capture_each_arm_inside_timing=true initial_carry_outside_timing=true final_next_draw_inside_timing=true timing_scope=sample_plus_forward_envelope control_hash_provenance=host_reconstructed_intended_sequence"
-    );
-    for row in 0..20 {
-        let index = blocks[row / 5];
-        let on = programs[index].dense;
-        let arm_name = if on { "B" } else { "A" };
-        let active = &mut arms[index];
+    // Fresh environment-armed state; first forward/commit captures stay timed.
+    let mut active = Arm::new(gpu, &prefix, cfg, program);
+    let mut total_wall = 0u128;
+    for row in 0..5 {
         gpu.restore_full_token_prefix_for_gate(&mut active.state, &prefix)
-            .expect("stable row restore");
+            .unwrap();
         assert_eq!(identity(gpu, &active.state), prefix_identity);
         let first_capture = active.prepare(gpu);
-        let arm_row = rates[index].len();
-        assert_eq!(
-            first_capture,
-            arm_row == 0,
-            "exactly the first arm row captures"
-        );
+        assert_eq!(first_capture, row == 0);
         let host = enqueues();
-        let before_counts = gpu
+        let counts = gpu
             .full_token_replay_counts_for_gate(&active.state)
             .unwrap();
-        let before_variants = gpu
+        let variants = gpu
             .full_token_replay_variant_counts_for_gate(&active.state)
             .unwrap();
-        let before_epochs = gpu.full_token_ar_epochs_for_gate().unwrap();
+        let before = gpu.full_token_ar_epochs_for_gate().unwrap();
         let mut carry = first;
         let mut tokens = Vec::with_capacity(OUTPUT);
         let start = Instant::now();
         for _ in 0..OUTPUT {
-            assert_ne!(carry, tokenizer.eos_id(), "early EOS row");
+            assert_ne!(carry, tokenizer.eos_id(), "sanity early EOS");
             tokens.push(carry);
             carry = gpu
                 .decode_sample_full_token_for_gate(carry, &mut active.state)
-                .expect("scored replay");
+                .expect("default sanity replay");
         }
         drain(gpu);
         let wall = start.elapsed().as_nanos();
@@ -658,76 +566,54 @@ fn run(
         assert_eq!(identity(gpu, &active.state), expected_identity);
         assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
         active.check_enqueues(host, first_capture);
-        let counts = replay_delta(gpu, &active.state, before_counts, OUTPUT as u64);
-        epochs(gpu, &before_epochs, OUTPUT as u32);
-        captures_once(gpu, &active.state, on);
+        let counts = replay_delta(gpu, &active.state, counts, OUTPUT as u64);
         let variants = variant_delta(
             gpu,
             &active.state,
-            before_variants,
-            expected_variants(on, PRIME, PRIME + OUTPUT, true),
+            variants,
+            expected_variants(program.dense, PRIME, PRIME + OUTPUT, true),
         );
-        let capture_counts = gpu
-            .full_token_replay_captures_for_gate(&active.state)
-            .unwrap();
-        // Dump once after first capture and again after the arm's final reset.
-        // All rows still assert captures/replays/epochs; no repeated DOT I/O is timed.
-        if first_capture || rates[index].len() == 9 {
-            active.census(
-                gpu,
-                &output.join(format!("row-{row:02}-{}", if on { "on" } else { "off" })),
-            );
+        epochs(gpu, &before, OUTPUT as u32);
+        captures_once(gpu, &active.state, program.norm);
+        if row == 0 || row == 4 {
+            active.census(gpu, &output.join(format!("default-row-{row}")));
         }
-        first_capture_rows[index] += usize::from(first_capture);
-        walls[index] += wall;
-        let rate = OUTPUT as f64 * 1e9 / wall as f64;
-        rates[index].push(rate);
-        let mut h = Sha256::new();
+        let mut control_hash = Sha256::new();
         for (i, &token) in tokens.iter().enumerate() {
-            h.update((u64::from(token) | (((PRIME + i) as u64) << 32)).to_le_bytes());
-            h.update(
+            control_hash.update((u64::from(token) | (((PRIME + i) as u64) << 32)).to_le_bytes());
+            control_hash.update(
                 dsv4_pos_uniform(cfg.seed, PRIME + i + 1)
                     .to_bits()
                     .to_le_bytes(),
             );
-            h.update(0u64.to_le_bytes());
+            control_hash.update(0u64.to_le_bytes());
         }
+        total_wall += wall;
         println!(
-            r#"MEASURE {{"row":{row},"arm_row":{arm_row},"arm":"{arm_name}","cadence_on":true,"dense_fast_on":{on},"norm_fuse_on":{on},"sampler":"device","generated_tokens":256,"decode_wall_ns":{wall},"decode_tok_s":{rate},"first_capture":{first_capture},"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"splitk":true,"generated_sha256":"{expected_tokens}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"captures":{capture_counts:?},"variant_device_counts":{variants:?},"control_sha256":"{:x}"}}"#,
+            r#"DEFAULT_SANITY {{"row":{row},"rows":5,"dense_fast_on":{},"norm_fuse_on":{},"generated_tokens":256,"decode_wall_ns":{wall},"decode_tok_s":{},"first_capture":{first_capture},"timing_scope":"sample_plus_forward_envelope","sanity_only":true,"eligible":true,"identity":true,"generated_sha256":"{expected_tokens}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"variant_device_counts":{variants:?},"control_sha256":"{:x}","control_hash_provenance":"host_reconstructed_intended_sequence"}}"#,
+            program.dense,
+            program.norm,
+            256e9 / wall as f64,
             expected_identity.0,
             expected_identity.1,
             expected_identity.2,
-            h.finalize()
+            control_hash.finalize()
         );
     }
-    assert_eq!(first_capture_rows, [1, 1]);
-    assert_eq!([rates[0].len(), rates[1].len()], [10, 10]);
-    let pooled = walls.map(|w| 10.0 * OUTPUT as f64 * 1e9 / w as f64);
-    let means = rates.map(|r| r.iter().sum::<f64>() / r.len() as f64);
     println!(
-        r#"SUMMARY {{"rows":20,"off_pooled_tok_s":{},"on_pooled_tok_s":{},"off_mean_tok_s":{},"on_mean_tok_s":{},"pooled_delta_pct":{},"mean_delta_pct":{},"first_capture_rows_per_arm":[1,1],"identity":true,"decision":"return to root; no automatic merge or promotion"}}"#,
-        pooled[0],
-        pooled[1],
-        means[0],
-        means[1],
-        100.0 * (pooled[1] / pooled[0] - 1.0),
-        100.0 * (means[1] / means[0] - 1.0)
+        r#"SUMMARY {{"rows":5,"dense_fast_on":{},"norm_fuse_on":{},"pooled_tok_s":{},"identity":true,"first_capture_rows":1,"sanity_only":true,"performance_claim":false,"environment_arming":true}}"#,
+        program.dense,
+        program.norm,
+        1280e9 / total_wall as f64
     );
-    select(gpu, false);
 }
-fn main() {
-    // Freeze this historical instrument independently of the newer defaults.
-    // This is process startup, before any model or worker threads exist.
-    unsafe {
-        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
-        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
-    }
 
+fn main() {
     let args: Vec<_> = std::env::args().collect();
-    assert!(
-        args.len() == 4
-            || (args.len() == 5 && matches!(args[4].as_str(), "--reverse" | "--qualify")),
-        "usage: dsv4_compose_densefast_normfuse_gate <model-dir> <source.txt> <new-output-dir> [--reverse|--qualify]"
+    assert_eq!(
+        args.len(),
+        4,
+        "usage: dsv4_densefast_normfuse_default_gate <model-dir> <source.txt> <new-output-dir>"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     assert_ne!(
@@ -736,9 +622,6 @@ fn main() {
         "profiling rejected"
     );
     for (name, value) in [
-        // Require explicit OFF before load, independent of future runtime defaults.
-        ("MEMRA_DSV4_DENSE_FAST", "0"),
-        ("MEMRA_DSV4_NORM_FUSE", "0"),
         ("MEMRA_DSV4_DECODE_PATH", "device"),
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
@@ -764,17 +647,25 @@ fn main() {
     memra_engine::set_moe_m1_graph_splitk_for_gate(true);
     assert!(memra_engine::moe_m1_graph_splitk_on());
     memra_engine::dsv4_gpu::set_dense_exact_tail_for_gate(true).unwrap();
-    let programs = PROGRAMS;
+    let dense_env = std::env::var("MEMRA_DSV4_DENSE_FAST").ok();
+    let norm_env = std::env::var("MEMRA_DSV4_NORM_FUSE").ok();
+    assert!(
+        (dense_env.is_none() && norm_env.is_none())
+            || (dense_env.as_deref() == Some("0") && norm_env.as_deref() == Some("0")),
+        "engagement requires both unset or both explicit zero"
+    );
+    let dense_initial = unsafe { memra_dsv4_dense_fast_enabled_for_gate() } != 0;
+    assert_eq!(
+        dense_initial,
+        dense_env.is_none(),
+        "initial policy before any gate override"
+    );
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
         top_k: 0,
         seed: 20260907,
     };
-    set_dense(false);
-    println!(
-        "COMPOSE_PROGRAMS before_model_creation=true arms={programs:?} sampler=device sampling_fixed=true dense_selector=capture_only norm_selector=capture_only"
-    );
     // GU N32 is absent from the pinned source; the controller must bind it.
     let source = std::fs::read_to_string(&args[2]).expect("source tape");
     assert_eq!(
@@ -812,101 +703,58 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
-    run(
-        &gpu,
-        &prompt[..PRIME],
-        &tokenizer,
-        &output,
-        programs,
-        cfg,
-        args.get(4).is_some_and(|arg| arg == "--reverse"),
-        args.get(4).is_some_and(|arg| arg == "--qualify"),
+    let program = Program {
+        cadence: true,
+        dense: dense_initial,
+        norm: gpu.norm_fuse_enabled_for_gate(),
+    };
+    assert_eq!(
+        program.norm,
+        norm_env.is_none(),
+        "loaded norm policy before override"
     );
+    println!(
+        "DEFAULT_POLICY before_override=true dense_fast_on={} norm_fuse_on={} rows=5",
+        program.dense, program.norm
+    );
+    run(&gpu, &prompt[..PRIME], &tokenizer, &output, program, cfg);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    // Invoked in fresh processes by the parent test below, so environment and
+    // C++ thread-local initialization cannot leak between OFF and unset.
     #[test]
-    fn both_orders_include_first_capture_and_ten_rows_per_arm() {
-        assert_eq!(block_arms(false), [0, 1, 1, 0]);
-        assert_eq!(block_arms(true), [1, 0, 0, 1]);
-        for reverse in [false, true] {
-            let blocks = block_arms(reverse);
-            let rows: Vec<_> = (0..20).map(|row| blocks[row / 5]).collect();
-            for arm in 0..2 {
-                assert_eq!(rows.iter().filter(|&&v| v == arm).count(), 10);
-                assert_eq!(
-                    rows.iter().position(|&v| v == arm),
-                    Some(if arm == blocks[0] { 0 } else { 5 })
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn both_doors_are_explicit_in_the_immutable_arm_table() {
+    fn dense_policy_child() {
+        let expected = std::env::var("MEMRA_DSV4_DENSE_FAST").map_or(true, |v| v == "1");
         assert_eq!(
-            PROGRAMS[0],
-            Program {
-                cadence: true,
-                dense: false,
-                norm: false
-            }
+            unsafe { memra_dsv4_dense_fast_enabled_for_gate() } != 0,
+            expected
         );
+        set_dense(!expected);
         assert_eq!(
-            PROGRAMS[1],
-            Program {
-                cadence: true,
-                dense: true,
-                norm: true
-            }
+            unsafe { memra_dsv4_dense_fast_restore_default_for_gate() } != 0,
+            expected
         );
-        unsafe extern "C" {
-            fn memra_dsv4_dense_fast_enabled_for_gate() -> i32;
-        }
-        std::thread::spawn(|| {
-            set_dense(true);
-            set_dense(PROGRAMS[0].dense);
-            assert_eq!(unsafe { memra_dsv4_dense_fast_enabled_for_gate() }, 0);
-            set_dense(PROGRAMS[1].dense);
-            assert_eq!(unsafe { memra_dsv4_dense_fast_enabled_for_gate() }, 1);
-        })
-        .join()
-        .unwrap();
     }
-
     #[test]
-    fn union_refusals_cover_ordinary_c4_c128_and_wrap_without_commit() {
-        assert_eq!(REFUSALS, [(258, 0), (259, 0), (383, 21), (511, 42)]);
-        for on in [false, true] {
-            assert_eq!(
-                expected_variants(on, PRIME, PRIME + OUTPUT, true),
-                [192, 256, 62, 2]
-            );
-            for ((position, _), expected) in
-                REFUSALS
-                    .into_iter()
-                    .zip([[1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 1]])
-            {
-                assert_eq!(
-                    expected_variants(on, position, position + 1, false),
-                    expected
-                );
+    fn dense_unset_and_zero_use_actual_process_policy() {
+        for value in [None, Some("0")] {
+            let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+            cmd.args(["--exact", "tests::dense_policy_child", "--nocapture"]);
+            if let Some(value) = value {
+                cmd.env("MEMRA_DSV4_DENSE_FAST", value);
+            } else {
+                cmd.env_remove("MEMRA_DSV4_DENSE_FAST");
             }
-        }
-    }
-
-    #[test]
-    fn composition_census_counts_function_records_only() {
-        for symbol in [FP8_NODES, DOT_NODES, CONTROL_FP8, CONTROL_DOTS, FUSED] {
-            let dot = format!("label={symbol}\n| {{ID | 1}} {symbol}\n{symbol} -> end\n");
-            assert_eq!(count_kernel(&dot, symbol), 1);
-            assert_eq!(
-                count_kernel(&format!("label={symbol}\n{symbol} -> end\n"), symbol),
-                0
+            let output = cmd.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
             );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
         }
     }
 }

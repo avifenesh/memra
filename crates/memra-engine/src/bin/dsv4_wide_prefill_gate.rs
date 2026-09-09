@@ -93,6 +93,13 @@ fn run(gpu: &Dsv4Gpu, prompt: &[u32], width: usize) -> Vec<u8> {
     hash.finalize().to_vec()
 }
 fn main() {
+    // Freeze this historical instrument independently of the newer defaults.
+    // This is process startup, before any model or worker threads exist.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
+    }
+
     let args: Vec<String> = std::env::args().collect();
     assert_eq!(
         args.len(),

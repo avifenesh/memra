@@ -52,10 +52,15 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
         }
     }
 }
-fn forward_kernel_census(graph_splitk: bool) -> [(usize, u64); 3] {
+fn forward_kernel_census(graph_splitk: bool, norm_fuse: bool) -> [(usize, u64); 3] {
     // Each of 43 layers replaces one GU and one down node with two passes each.
     let extra = if graph_splitk { 86 + 86 - 43 - 43 } else { 0 };
-    [(0, 2741 + extra), (2, 3140 + extra), (3, 3240 + extra)]
+    let removed = if norm_fuse { 43 } else { 0 };
+    [
+        (0, 2741 + extra - removed),
+        (2, 3140 + extra - removed),
+        (3, 3240 + extra - removed),
+    ]
 }
 
 fn check_expert_nodes(dot: &str, graph_splitk: bool, forward: bool) {
@@ -99,7 +104,10 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
             .full_token_replay_variant_census_for_gate(state)
             .unwrap()
         {
-            for (slot, kernels) in forward_kernel_census(memra_engine::moe_m1_graph_splitk_on()) {
+            for (slot, kernels) in forward_kernel_census(
+                memra_engine::moe_m1_graph_splitk_on(),
+                gpu.norm_fuse_enabled_for_gate(),
+            ) {
                 assert_eq!(rank[slot][1], kernels, "cadence kernel census slot {slot}");
                 assert_eq!(
                     [rank[slot][2], rank[slot][3], rank[slot][4], rank[slot][6]],
@@ -495,6 +503,11 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     let cadence = memra_engine::dsv4_gpu::dsv4_replay_cadence_default();
     let dense = memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate();
     let graph_splitk = memra_engine::moe_m1_graph_splitk_on();
+    let norm_fuse = gpu.norm_fuse_enabled_for_gate();
+    unsafe extern "C" {
+        fn memra_dsv4_dense_fast_enabled_for_gate() -> i32;
+    }
+    let dense_fast = unsafe { memra_dsv4_dense_fast_enabled_for_gate() } != 0;
     assert_eq!(std::env::var("MEMRA_DSV4_NVTX").as_deref(), Ok("1"));
     assert_ne!(
         std::env::var("MEMRA_DSV4_ROUND_PROFILE").as_deref(),
@@ -525,7 +538,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     }
     assert_eq!(prefix.pos, 368);
     println!(
-        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"graph_splitk_on":{graph_splitk},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
+        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"graph_splitk_on":{graph_splitk},"dense_fast_on":{dense_fast},"norm_fuse_on":{norm_fuse},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
         sha256_tokens(&prefix_tape)
     );
     let mut control = state(gpu);
@@ -553,6 +566,33 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             ))
             .unwrap();
             check_expert_nodes(&dot, graph_splitk, segment != 1);
+            let count = |name: &str| {
+                dot.lines()
+                    .filter(|line| line.trim_start().starts_with("| {ID |") && line.contains(name))
+                    .count()
+            };
+            let forward = segment != 1;
+            assert_eq!(
+                count("dsv4_norm_rope_f32_fixed_order_kernel"),
+                if norm_fuse && forward { 43 } else { 0 }
+            );
+            let fast = dense && dense_fast;
+            assert_eq!(
+                count("dsv4_dense_fast_fp8_kernel"),
+                if fast && forward { 494 } else { 0 }
+            );
+            assert_eq!(
+                count("dsv4_dense_fast_dots_kernel"),
+                if !fast {
+                    0
+                } else if forward {
+                    253
+                } else if rank == 1 {
+                    2
+                } else {
+                    0
+                }
+            );
             println!(
                 "PROFILE_CENSUS rank={rank} segment={segment} graph_splitk={graph_splitk} passed=true"
             );
@@ -627,7 +667,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             oracle = Some(result);
         }
         println!(
-            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"graph_splitk_on":{graph_splitk},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
+            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"graph_splitk_on":{graph_splitk},"dense_fast_on":{dense_fast},"norm_fuse_on":{norm_fuse},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
             if graph_arm { "graph" } else { "eager" },
             sha256_tokens(&tokens)
         );
@@ -649,12 +689,24 @@ mod profile_census_tests {
     #[test]
     fn forward_census_keeps_off_and_replaces_both_expert_nodes_on() {
         assert_eq!(
-            forward_kernel_census(false),
+            forward_kernel_census(false, false),
             [(0, 2741), (2, 3140), (3, 3240)]
         );
         assert_eq!(
-            forward_kernel_census(true),
+            forward_kernel_census(true, false),
             [(0, 2827), (2, 3226), (3, 3326)]
+        );
+    }
+
+    #[test]
+    fn profile_census_tracks_norm_fusion_and_its_zero_twin() {
+        assert_eq!(
+            forward_kernel_census(true, true),
+            [(0, 2784), (2, 3183), (3, 3283)]
+        );
+        assert_eq!(
+            forward_kernel_census(false, true),
+            [(0, 2698), (2, 3097), (3, 3197)]
         );
     }
 

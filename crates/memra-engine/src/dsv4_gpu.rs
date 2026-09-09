@@ -1650,6 +1650,21 @@ fn f32_to_bf16_exact(name: &str, v: &[f32]) -> Vec<u8> {
     out
 }
 
+// Default ON only in the qualified TP/EP f32 domain. An explicit unsupported
+// ON request still refuses instead of silently admitting an unqualified path.
+fn norm_fuse_environment_policy(
+    value: Result<&str, &std::env::VarError>,
+    admitted: bool,
+) -> Res<bool> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(admitted),
+        Ok("0") => Ok(false),
+        Ok("1") if admitted => Ok(true),
+        Ok("1") => Err("norm fusion requires TP/EP f32x".into()),
+        _ => Err("MEMRA_DSV4_NORM_FUSE requires 0 or 1".into()),
+    }
+}
+
 impl Dsv4Gpu {
     pub fn device_verify_topk_calls(&self) -> u64 {
         self.device_verify_topk_calls
@@ -3194,14 +3209,10 @@ impl Dsv4Gpu {
         if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
             return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
         }
-        let norm_fuse = match std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref() {
-            Err(std::env::VarError::NotPresent) | Ok("0") => false,
-            Ok("1") => true,
-            _ => return Err("MEMRA_DSV4_NORM_FUSE requires 0 or 1".into()),
-        };
-        if norm_fuse && (!topology.is_tp_ep() || !chains_f32) {
-            return Err("norm fusion requires TP/EP f32x".into());
-        }
+        let norm_fuse = norm_fuse_environment_policy(
+            std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
+            topology.is_tp_ep() && chains_f32,
+        )?;
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -14005,6 +14016,16 @@ impl Dsv4Gpu {
         self.norm_fuse.load(Ordering::Relaxed)
     }
 
+    /// Restore the actual environment policy after the eager OFF oracle drains.
+    pub fn restore_norm_fuse_default_for_gate(&self) -> Res<bool> {
+        let enabled = norm_fuse_environment_policy(
+            std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
+            self.topology.is_tp_ep() && self.chains_f32,
+        )?;
+        self.norm_fuse.store(enabled, Ordering::Relaxed);
+        Ok(enabled)
+    }
+
     pub fn small_kernel_diet_enabled(&self) -> bool {
         self.small_kernel_diet
     }
@@ -19530,5 +19551,20 @@ mod dense_wo_a_grouped_fp8_component_tests {
         println!(
             "PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused"
         );
+    }
+}
+
+#[cfg(test)]
+mod norm_fuse_default_tests {
+    use super::norm_fuse_environment_policy;
+    #[test]
+    fn unset_selects_qualified_path_and_zero_rolls_back() {
+        let absent = std::env::VarError::NotPresent;
+        assert!(norm_fuse_environment_policy(Err(&absent), true).unwrap());
+        assert!(!norm_fuse_environment_policy(Ok("0"), true).unwrap());
+        assert!(!norm_fuse_environment_policy(Err(&absent), false).unwrap());
+        assert!(!norm_fuse_environment_policy(Ok("0"), false).unwrap());
+        assert!(norm_fuse_environment_policy(Ok("1"), false).is_err());
+        assert!(norm_fuse_environment_policy(Ok("invalid"), true).is_err());
     }
 }

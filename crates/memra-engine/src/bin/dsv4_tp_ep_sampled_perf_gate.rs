@@ -525,6 +525,13 @@ fn main() {
     let replay_profile = args
         .get(3)
         .is_some_and(|a| a == "--full-token-replay-profile");
+    if !replay_profile {
+        // Preserve historical OFF controls; profile keeps real unset/0 policy.
+        unsafe {
+            std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+            std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
+        }
+    }
     select_dense_policy(replay_profile);
     if args.get(1).is_some_and(|a| a == "--sampler-component") {
         sampler_component();

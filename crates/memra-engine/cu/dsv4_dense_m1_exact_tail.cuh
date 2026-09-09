@@ -35,10 +35,10 @@ extern "C" int memra_dsv4_dense_exact_tail_counts_for_gate(uint64_t* fp8, uint64
     *dots = dsv4_dense_exact_tail_enqueues[1];
     return 0;
 }
-// Default-OFF host policy is frozen into selected graph function identities.
+// Default-ON host policy is frozen into selected graph function identities.
 static bool dsv4_dense_fast_environment_default() {
     const char* value = std::getenv("MEMRA_DSV4_DENSE_FAST");
-    return value && std::strcmp(value, "1") == 0;
+    return !value || std::strcmp(value, "1") == 0;
 }
 static thread_local bool dsv4_dense_fast_enabled = dsv4_dense_fast_environment_default();
 static thread_local uint64_t dsv4_dense_fast_enqueues[2] = {};
@@ -48,6 +48,10 @@ extern "C" int memra_dsv4_dense_fast_set_for_gate(int enabled) {
     return 0;
 }
 extern "C" int memra_dsv4_dense_fast_enabled_for_gate() {
+    return dsv4_dense_fast_enabled ? 1 : 0;
+}
+extern "C" int memra_dsv4_dense_fast_restore_default_for_gate() {
+    dsv4_dense_fast_enabled = dsv4_dense_fast_environment_default();
     return dsv4_dense_fast_enabled ? 1 : 0;
 }
 extern "C" int memra_dsv4_dense_fast_counts_for_gate(uint64_t* fp8, uint64_t* dots) {

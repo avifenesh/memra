@@ -155,6 +155,13 @@ fn schedule(compare: Option<&str>) -> Result<Vec<usize>, &'static str> {
 }
 
 fn main() {
+    // Freeze this historical instrument independently of the newer defaults.
+    // This is process startup, before any model or worker threads exist.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
+    }
+
     let args: Vec<String> = std::env::args().collect();
     assert!(
         matches!(args.len(), 3 | 4 | 6),

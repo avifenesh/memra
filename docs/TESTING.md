@@ -20,6 +20,64 @@ fresh and uncaptured, with each arm's first capture inside its row 0.
 Profiling is rejected. CPU schedule, arm, refusal-boundary and DOT-parser
 contracts run in hosted CI. This gate changes no runtime default or kernel.
 
+## DSV4 dense-fast/norm-fuse default engagement and control audit
+
+`dsv4_densefast_normfuse_default_gate <model-dir> <source.txt> <new-output-dir>`
+runs separately with both door variables unset, then with both explicitly `0`.
+It reads initial policies before overrides, restores actual environment policy
+before each fresh capture, checks dense-fast names and 43 fused norm nodes in
+every ON forward variant (absent OFF), and compares 256 sampled steps against
+eager OFF per mode. Eight refusal cases and five fresh-state sanity rows run
+per invocation. The first sanity row includes capture; later resets retain
+identical graph hashes. This is an engagement gate, not a new performance claim.
+
+The default flip audits all 35 pre-existing DSV4 gate bins: 33 load models and
+now explicitly force both new doors OFF before model creation. The sampler-sort
+and HC-grid component gates do not consume these selectors and are unchanged.
+The separately named GPU-greedy fixture driver also pins both OFF; fixed
+decode-profile attribution arms do the same. The environment-driven decode
+bench, current decode profile and drafted-corpus comparison intentionally
+follow one shared current program; their explicit-0 inputs remain honored. The
+bf16-only decode probe does not enter the admitted norm or FP8 dense path.
+Candidate arms in the dense-fast, norm-fuse and composed gates still select ON
+explicitly before capture. The historical cadence/dense and graph split-K
+`--defaults` modes retain their original subjects with these newer doors OFF.
+
+| Required instrument | Control policy for these two doors |
+| --- | --- |
+| Full-token replay and cadence gate modules | OFF via sampled gate startup |
+| Compose cadence+dense, including its default engagement | Both OFF before model creation |
+| Compose dense-fast+norm-fuse | A both OFF, B both ON, explicit startup OFF |
+| Dense-fast single | Norm OFF; dense-fast A OFF/B ON |
+| Norm-fuse single | Dense-fast OFF; norm A OFF/B ON |
+| Sampled perf gate | Both OFF in historical scored modes |
+| Launch-boundary diagnostic | Both OFF before wrapper/model initialization |
+| Graph split-K gate, including `--defaults` | Both OFF in every arm |
+| Full-token profile harness | Preserve real unset/explicit-0 policy; log both selectors and assert their actual DOT nodes and total counts |
+| New dense-fast/norm-fuse engagement gate | Actual unset/0 program against eager both OFF |
+
+The non-Rust audit also covers standalone CUDA/C++ harnesses and their include
+chains. `tools/dsv4-dense-exact-tail-gate.cu` forces dense-fast OFF before its
+first CUDA call, preserving exact-tail enqueue and function-name assertions.
+The dense-TC probe and its R4/R7/R8/R9 drivers pin the same control once before
+timing. The dense-fast component already explicitly chooses OFF/ON per case.
+Other DSV4 CUDA components call routing, index, cache, RMSNorm or RoPE functions
+directly; they do not consume the Rust norm-fuse model policy. The R5/R6 driver-only conversion probes load pinned cubins and do not traverse
+the dense-fast host dispatcher; R7/R8/R9 controls are covered by the pin above.
+Shell/Python build wrappers delegate to the audited entry points; no second
+non-Rust norm-fuse environment reader or model-policy owner exists.
+
+`tools/test-dsv4-dense-control-policy.sh` compiles the two actual base harnesses
+and invokes `--check-controls` under unset, forced ON and explicit zero. These
+modes assert the actual override and return before device discovery or CUDA
+allocation; no GPU work is launched. Included dense-TC drivers use the same startup helper.
+
+CPU tests cover dense-fast initial C++ thread-local defaults and restore behavior
+in isolated unset/zero child processes, norm-fuse unset/zero with admitted and
+unsupported topologies, and profile census totals for ON and rollback. Hosted
+CI runs them. Same numeric class, token-identical to the prior default is backed
+by [composition receipts #535](https://github.com/avifenesh/darklanes/pull/535).
+
 ## Target-aware release evidence
 
 The local RTX 5090 battery is the blocking performance gate for generic kernels and defaults

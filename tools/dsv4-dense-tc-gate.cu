@@ -61,6 +61,16 @@ static void check_rc(int rc, const char* what) {
     }
 }
 
+// Shared by this probe and the R4/R7/R8/R9 include-based drivers. Pin once
+// before any CUDA call/timing, so the control's measured envelope is unchanged.
+static void pin_control_policy() {
+    check_rc(::memra_dsv4_dense_fast_set_for_gate(0), "dense-fast control OFF");
+    if (::memra_dsv4_dense_fast_enabled_for_gate() != 0) {
+        std::fprintf(stderr, "dense-fast control override did not hold\n");
+        std::exit(2);
+    }
+}
+
 static float e4m3(uint8_t x) {
     const unsigned mag = x & 0x7fu;
     if (mag == 0u || mag == 0x7fu) return 0.0f;
@@ -451,6 +461,10 @@ static void validate_numeric_band(const std::vector<float>& control,
 } // namespace dsv4_dense_tc_gate
 
 int main(int argc, char** argv) {
+    dsv4_dense_tc_gate::pin_control_policy();
+    if (argc == 2 && std::strcmp(argv[1], "--check-controls") == 0) {
+        std::puts("PASS dense_tc_control dense_fast=0 cpu_policy_only=true"); return 0;
+    }
     using namespace dsv4_dense_tc_gate;
     if (argc > 1 && std::strcmp(argv[1], "--basis") == 0) return run_basis();
     const int rows = argc > 1 ? std::atoi(argv[1]) : kDefaultRows;

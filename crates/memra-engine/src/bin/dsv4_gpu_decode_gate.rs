@@ -104,6 +104,13 @@ fn band_violations(dec: &[f32], rl: &[f32], k: usize, band: f64) -> (usize, usiz
 
 #[allow(clippy::manual_checked_ops)] // allow: the explicit zero guard names the degenerate-ratio case; checked ops would hide the sentinel
 fn main() {
+    // Freeze this historical instrument independently of the newer defaults.
+    // This is process startup, before any model or worker threads exist.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
+    }
+
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 5 {
         eprintln!(
