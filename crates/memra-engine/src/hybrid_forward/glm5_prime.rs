@@ -195,6 +195,14 @@ impl Glm5TrunkPrime {
                 .into());
             }
         }
+        // WHAT ACTUALLY ENFORCES THE RENDEZVOUS is the fence above plus the frontier check:
+        // `glm5_prime_fence` synchronizes every PP stage engine's own stream and calls
+        // `Glm5TpRt::prime_completion_fence`, which syncs both TP ranks and reads
+        // `barrier_errors`, and the loop above refuses a chunk whose per-layer latent
+        // frontier does not match. `PrimeRendezvous` is bookkeeping on top of that: this
+        // acknowledge loop runs on one thread with every rank already current, so it cannot
+        // fail here. Its red arms (stale, missing and repeated rank) live in the unit tests
+        // below and exist so a future per-rank caller cannot commit a partial chunk.
         for rank in 0..self.rendezvous.completed.len() {
             self.rendezvous.acknowledge(rank, self.cursor + 1)?;
         }

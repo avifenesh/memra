@@ -744,3 +744,53 @@ the temporary ref was deleted with an exact lease and absence readback. It remai
 a draft. Rebase continuation and the receipt commit bypass local hooks because
 those invoke cargo on the rig; validation ran remotely. The rewritten branch is
 pushed with MEMRA_SKIP_PERF_CI=1 and force-with-lease pinned to its prior head.
+
+### Review pass and what is still owed
+
+2026-09-09, reviewer lane (memra #389 review comment). Findings fixed on the branch:
+
+- `glm_spec/prime.rs`: the test module sat in the middle of the file, so
+  `clippy::items_after_test_module` failed hosted clippy under `-D warnings`. Test module
+  moved to the end; no code change.
+- `dflash.rs`: the memra#95 wiring gate
+  (`the_fullcover_restore_ordering_seam_is_live_in_comment_stripped_source`) anchored on
+  `let (logits_s, tap_rows, prefix_capture) = if suffix.is_empty()`, a string this refactor
+  moved into `Glm5PrimeState::restored`. The gate failed on its own anchor while the seam it
+  guards was intact. Repointed at the production entry `glm5_prime_restored_start`: the
+  ordering must sit between the head-engine binding and the `Glm5PrimeState::restored`
+  handoff, must be unconditional at body indentation, and the suffix branch must be present
+  in the state constructor downstream of it. Both halves fail if either moves.
+- `worker.rs`: `step_session` now refuses `glm5_plain_prime` alongside `glm5`/`glm5_prime`.
+  A suspended plain hyper segment holds the cache for the same reason a spec session does.
+- `hybrid_forward/glm5_prime.rs`: named what actually enforces the rendezvous. The barrier is
+  `glm5_prime_fence` (PP stage stream syncs, `Glm5TpRt::prime_completion_fence` and its
+  `barrier_errors` read) plus the per-layer latent frontier check. `PrimeRendezvous` is
+  bookkeeping whose red arms live in the unit tests; its production acknowledge loop cannot
+  fail because one thread acknowledges every rank.
+- `run-validation.sh` / `run-rebase-validation.sh`: clippy is `--all-targets`, not `--lib`,
+  and the engine lib suite runs unfiltered. The library-only clippy and the `prime` name
+  filter (33 of 490 tests) made both hosted-CI failures structurally invisible to the script
+  that declared the rebase validated.
+- `docs/FLAGS.md`: the GLM5 slot now states that the model-scale HTTP rows bind the earlier
+  binary and were not re-run on the merged head, and lists the queued cells by name.
+
+Still owed, on the pair, before any GLM5 default-ON proposal and before `decide-by:
+2026-09-22`:
+
+1. PP-2 serial, PP-2 pipeline and TP-2 exactness: c1 four-turn cold/restored/full-cover
+   chains OFF vs ON, c2 pair against each request's own c1 oracle with a nonzero yield count
+   and K pinned at LOW/HIGH 64/128, resumed-boundary logits and capture bitwise equal.
+2. Rank rendezvous under a delayed device and a one-rank collective fault. The PP-1 fixtures
+   do not exercise either; `check_glm5_prime_walker` and `BOXP_MODE=prime-walker` are the
+   harness, not the receipt.
+3. `MEMRA_SPEC_FIRST_TOKEN_EAGER=0` twin. Both HTTP boots ran with it at 1
+   (`pp1-profile.json:67`), so the handoff's "same tape point OFF vs ON" is currently proved
+   only by the CPU `PreparationOrder` fake, not on the route.
+4. 256k and 1M cold prime plus small requests at 0.20 req/s for 100 s, three interleaved
+   boots per arm, boot nonce identity, vendor-default sampling with K>0 receipts, chunk wall
+   C at the served chunk size, and the 8-turn cache-on twin.
+
+Hardware note for whoever picks this up: `glm5b200` carries `glm53-api`, `api` and
+`glm53-tx` since the 2026-09-09 cutover and is production; `glm53tx` is the pinned rollback
+stack. Neither is a lane box. The pair cells need an explicitly non-production box under the
+box rental rule.

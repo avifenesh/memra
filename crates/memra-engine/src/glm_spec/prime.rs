@@ -575,82 +575,6 @@ impl PrimeWalker for Glm5PrimeWalker<'_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn anchor_and_first_token_keep_their_tape_position_off_and_on() {
-        struct Fake {
-            order: PreparationOrder,
-            tape: Vec<&'static str>,
-        }
-        impl PrimeWalker for Fake {
-            type Output = Vec<&'static str>;
-            fn remaining_chunks(&self) -> usize {
-                self.order.remaining()
-            }
-            fn advance_chunk(&mut self) -> Res<PrimeChunk> {
-                let phase = if self.order.completed < self.order.trunk {
-                    "trunk"
-                } else {
-                    "draft"
-                };
-                self.tape.push(phase);
-                self.order.complete_chunk()?;
-                if self.order.completed == self.order.trunk {
-                    self.order.draw_anchor()?;
-                    self.tape.push("anchor");
-                }
-                Ok(PrimeChunk { phase, rows: 1 })
-            }
-            fn finish(mut self) -> Res<Self::Output> {
-                if self.order.trunk == 0 && !self.order.anchor {
-                    self.order.draw_anchor()?;
-                    self.tape.push("anchor");
-                }
-                if !self.order.ready() {
-                    return Err("not ready".into());
-                }
-                self.tape.push("first-token");
-                Ok(self.tape)
-            }
-        }
-        for (trunk, draft) in [(3, 2), (1, 0), (2, 0), (0, 0)] {
-            let mut tapes = Vec::new();
-            for yielded in [false, true] {
-                let mut f = Fake {
-                    order: PreparationOrder::new(trunk, draft),
-                    tape: Vec::new(),
-                };
-                while f.remaining_chunks() > 0 {
-                    crate::prime_walker::advance_prime(&mut f, yielded, |_, _| {}).unwrap();
-                    assert!(!f.tape.contains(&"first-token"));
-                }
-                tapes.push(crate::prime_walker::finish_prime(f).unwrap());
-            }
-            assert_eq!(tapes[0], tapes[1]);
-            assert_eq!(tapes[0][trunk], "anchor");
-            assert_eq!(tapes[0].last(), Some(&"first-token"));
-        }
-        let mut order = PreparationOrder::new(2, 1);
-        assert!(order.draw_anchor().is_err());
-        order.complete_chunk().unwrap();
-        order.complete_chunk().unwrap();
-        assert!(order.complete_chunk().is_err());
-        order.draw_anchor().unwrap();
-        assert!(order.draw_anchor().is_err());
-    }
-    #[test]
-    fn draft_phase_ranges_keep_the_original_tail_and_offsets() {
-        assert_eq!(
-            fill_ranges(1025, 512),
-            [(0, 512), (512, 1024), (1024, 1025)]
-        );
-        assert_eq!(fill_ranges(257, 256), [(0, 256), (256, 257)]);
-        assert!(fill_ranges(0, 256).is_empty());
-    }
-}
-
 /// Plain carried hyper segments retain the prefill tick's original range and
 /// queued_after. Ownership is identical to the speculative trunk adapter.
 pub struct Glm5PlainPrimeState {
@@ -727,5 +651,81 @@ impl PrimeWalker for Glm5PlainPrimeWalker<'_> {
             .take()
             .ok_or("plain hyper prime already finished")?;
         Ok((s.cache, s.trunk.logits, s.trunk.hiddens))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn anchor_and_first_token_keep_their_tape_position_off_and_on() {
+        struct Fake {
+            order: PreparationOrder,
+            tape: Vec<&'static str>,
+        }
+        impl PrimeWalker for Fake {
+            type Output = Vec<&'static str>;
+            fn remaining_chunks(&self) -> usize {
+                self.order.remaining()
+            }
+            fn advance_chunk(&mut self) -> Res<PrimeChunk> {
+                let phase = if self.order.completed < self.order.trunk {
+                    "trunk"
+                } else {
+                    "draft"
+                };
+                self.tape.push(phase);
+                self.order.complete_chunk()?;
+                if self.order.completed == self.order.trunk {
+                    self.order.draw_anchor()?;
+                    self.tape.push("anchor");
+                }
+                Ok(PrimeChunk { phase, rows: 1 })
+            }
+            fn finish(mut self) -> Res<Self::Output> {
+                if self.order.trunk == 0 && !self.order.anchor {
+                    self.order.draw_anchor()?;
+                    self.tape.push("anchor");
+                }
+                if !self.order.ready() {
+                    return Err("not ready".into());
+                }
+                self.tape.push("first-token");
+                Ok(self.tape)
+            }
+        }
+        for (trunk, draft) in [(3, 2), (1, 0), (2, 0), (0, 0)] {
+            let mut tapes = Vec::new();
+            for yielded in [false, true] {
+                let mut f = Fake {
+                    order: PreparationOrder::new(trunk, draft),
+                    tape: Vec::new(),
+                };
+                while f.remaining_chunks() > 0 {
+                    crate::prime_walker::advance_prime(&mut f, yielded, |_, _| {}).unwrap();
+                    assert!(!f.tape.contains(&"first-token"));
+                }
+                tapes.push(crate::prime_walker::finish_prime(f).unwrap());
+            }
+            assert_eq!(tapes[0], tapes[1]);
+            assert_eq!(tapes[0][trunk], "anchor");
+            assert_eq!(tapes[0].last(), Some(&"first-token"));
+        }
+        let mut order = PreparationOrder::new(2, 1);
+        assert!(order.draw_anchor().is_err());
+        order.complete_chunk().unwrap();
+        order.complete_chunk().unwrap();
+        assert!(order.complete_chunk().is_err());
+        order.draw_anchor().unwrap();
+        assert!(order.draw_anchor().is_err());
+    }
+    #[test]
+    fn draft_phase_ranges_keep_the_original_tail_and_offsets() {
+        assert_eq!(
+            fill_ranges(1025, 512),
+            [(0, 512), (512, 1024), (1024, 1025)]
+        );
+        assert_eq!(fill_ranges(257, 256), [(0, 256), (256, 257)]);
+        assert!(fill_ranges(0, 256).is_empty());
     }
 }

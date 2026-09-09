@@ -23333,10 +23333,15 @@ fn step_session(
     }
     // Same refusal class for the glm5 route: a glm5 session owns its cache (s.cache is
     // None), so a plain step over it would decode coherent garbage from an empty context.
-    if s.glm5.is_some() || s.glm5_prime.is_some() {
+    // A SUSPENDED prime is the same shape: both the speculative walker state and the plain
+    // hyper segment walker hold the cache between chunks, so s.cache is None for exactly
+    // the same reason. Decode is gated on prefill_done and prefill_done cannot be set while
+    // the queue still holds the segment, so neither is reachable today; this refusal exists
+    // because "unreachable" is what the pre-glm5 version of this comment also said.
+    if s.glm5.is_some() || s.glm5_prime.is_some() || s.glm5_plain_prime.is_some() {
         return Err(
-            "plain step_session received a session holding a glm5 spec session — \
-             dispatch flag disagrees with the installed session"
+            "plain step_session received a session holding a glm5 spec session or a \
+             suspended glm5 prime: dispatch flag disagrees with the installed session"
                 .into(),
         );
     }

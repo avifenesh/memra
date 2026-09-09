@@ -17,8 +17,11 @@ sha256sum crates/memra-engine/src/glm_spec.rs \
   crates/memra-engine/src/glm5_tp.rs crates/memra-server/src/worker.rs \
   crates/memra-engine/tests/glm5_dflash_session_gpu.rs \
   crates/memra-engine/src/bin/glm5_tp2_box_probe.rs > "$out/source.sha256"
-cargo clippy -p memra-engine -p memra-server --lib -j 16 -- -D warnings
-cargo test -p memra-engine --lib prime -j 16 -- --test-threads=1
+# --all-targets, not --lib: items_after_test_module and every other lint that
+# only fires in test targets is a hosted-CI failure the library pass cannot see.
+cargo clippy -p memra-engine -p memra-server --all-targets -j 16 -- -D warnings
+# Unfiltered: a `prime` name filter ran 33 of 490 and hid the dflash wiring gate.
+cargo test -p memra-engine --lib -j 16 -- --test-threads=1
 cargo test -p memra-server --lib -j 16 -- --test-threads=1
 cargo build -p memra-server -p memra-engine --bin memra-server --bin glm5-tp2-box-probe -j 16
 sha256sum "$CARGO_TARGET_DIR/debug/memra-server" \
