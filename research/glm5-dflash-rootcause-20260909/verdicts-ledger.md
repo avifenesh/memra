@@ -1,0 +1,1 @@
+VERDICT:glm5-causal-pmin | correction documented OFF, unserved, code removed 2026-09-09 | re-derive from f197eb413f6c23ab1e05eb41316c8d5f8e61dc5c | src: DIAGNOSIS.md, AGREEMENT.md, causal-pmin.patch; issue #412 | rev: 2026-09-23

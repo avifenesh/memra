@@ -488,3 +488,5 @@ glm5-verify-tally-20260909 | "Component KEEP OFF, unserved, code removed 2026-09
 moe-rows-f16-20260909 | NEGATIVE numeric no-go: t4 layer20 full-chain row3 argmax current4 vs F16 1819; t2 all42 layers pass; timing refused and door removed. | moe-rows-f16-20260909/RESULTS.md
 
 glm5-kda-verify-20260909 | SUPERSEDED MECHANISM: one t-row register-state scan already runs per KDA layer; 1 -> 1 launches, no new candidate or timing. rev: 2026-09-23. | glm5-kda-verify-20260909/RESULTS.md
+
+- `glm5-dflash-rootcause-20260909` | "PP1 p32k vendor K6 71.850085 tok/s versus plain 80.635647; verify 81.8% of engine round, needs 2.192253 accepted/round versus 1.850000. Selected-q PMIN bias reproduced; causal cutoff stays OFF." | [DIAGNOSIS](glm5-dflash-rootcause-20260909/DIAGNOSIS.md) | rev: 2026-12-08
