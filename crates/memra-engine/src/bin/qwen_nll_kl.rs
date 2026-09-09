@@ -85,6 +85,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .to_string_lossy()
         );
 
+        // EXTERNAL-ORACLE HANDOFF: dump the exact token ids so SGLang scores the identical
+        // sequence through its native input_ids path. Re-tokenizing the text on the other side
+        // would make a tokenizer difference look like a model difference.
+        if let Some(dir) = std::env::var_os("MEMRA_DUMP_IDS_DIR") {
+            let out = std::path::Path::new(&dir).join(format!("{name}.ids"));
+            std::fs::create_dir_all(&dir)?;
+            let mut bytes = Vec::with_capacity(ids.len() * 4);
+            for id in &ids {
+                bytes.extend_from_slice(&id.to_le_bytes());
+            }
+            std::fs::write(&out, bytes)?;
+            println!("  wrote {} ids to {}", ids.len(), out.display());
+        }
+
         // The prompt takes the A4 prefill; the window is scored one teacher-forced step at a time.
         let mut cache = memra_engine::pp::new_cache(&e, &model.cfg, ids.len() + 8)?;
         let (mut logits, _, _) = model.prime_cache(&e, &ids[..ctx], &mut cache, 0)?;
