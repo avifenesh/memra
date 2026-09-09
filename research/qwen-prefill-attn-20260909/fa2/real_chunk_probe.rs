@@ -21,7 +21,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // This last chunk must execute the diagnostic dispatch, not replay a prefix graph.
     cache.qwen_prime_graph = None;
     unsafe {
-        std::env::set_var("FA2_PROBE_ACTIVE", "1");
+        if let Ok(chunk) = std::env::var("FA2_PROBE_FINAL_CHUNK") {
+            std::env::set_var("MEMRA_PRIME_CHUNK", chunk);
+            std::env::set_var("FA2_PROBE_ACTIVE", "0");
+        } else {
+            std::env::set_var("FA2_PROBE_ACTIVE", "1");
+        }
     }
     let (logits, _, _) = model.prime_cache(&e, &tokens[split..], &mut cache, 0)?;
     e.stream().synchronize()?;
