@@ -1826,3 +1826,9 @@ Shape/alignment/M>1 guards remain intact. This dispatch exposure is separate fro
 serving admission. Direct composition evidence is
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, in addition to dense #507 and cadence #508.
+
+## DSV4 KV norm fusion, 2026-09-09
+
+| Door | Default | Contract and gate |
+| --- | --- | --- |
+| `MEMRA_DSV4_NORM_FUSE` | **OFF**, decide-by: 2026-09-23 | Candidate KV RMSNorm followed immediately by RoPE in the t=1 f32 device batch path, including each newly captured cadence variant. `1` selects fusion; `0`/unset keeps the unfused pair. The normalized intermediate stays in shared memory. Same 128-thread, eight-load f32 sum order, same binary f32 rounding and rotary expressions; no new numerical class intended. FP8/BF16 conversion kernels, HC, dense and expert kernels are unchanged. Rollback requires a fresh uncaptured state. Component real-operand raw-bit/sanitizer gates, 256-step eager/OFF/ON identity, retained census/refusals and both 20-row sampled orders are pending. Receipt namespace: companion private `research/dsv4f-norm-fuse-20260909/`. No performance or admission claim. |

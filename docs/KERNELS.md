@@ -670,3 +670,24 @@ Both rollback seams have decide-by 2026-09-22 for removal review.
 Composition confirmation is directly recorded in
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, alongside the standalone cadence #508 and dense #507 receipts.
+
+### KV RMSNorm and RoPE candidate, 2026-09-09
+
+`dsv4_norm_rope_f32_fixed_order_kernel` is the planned default-OFF
+`MEMRA_DSV4_NORM_FUSE` arm. It replaces the adjacent KV norm and rotary launches
+in each t=1 device batch attention layer (SWA, CSA and HCA). The 128-thread
+RMSNorm reduction is unchanged; only shared-memory transport replaces the
+normalized f32 global-memory intermediate. The subsequent QAT is unchanged.
+Expected removal: 43 launches per rank per forward step, pending actual census.
+
+Attention-entry norm feeds Q and KV projections and, in compressed layers,
+f32 compressor/indexer projections. Q norm/pack is already fused by the diet.
+MoE-entry norm feeds router logits before activation quantization and grouped
+FP8-to-half gathering; shared experts also consume its BF16 pack. Those are
+not one adjacent norm/gather/convert chain. Compressor emission norm feeds
+RoPE then Hadamard/FP4 (indexer) or QAT (attention), but its replay wrappers
+are outside this lane. Final norm feeds f32 head dots. No fusion of these
+fan-out chains or modification of their reduction trees is proposed.
+
+Gate and performance receipts are pending in companion private
+`research/dsv4f-norm-fuse-20260909/`. This row is a design, not qualification.
