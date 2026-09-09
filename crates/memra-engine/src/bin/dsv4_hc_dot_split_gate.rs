@@ -34,6 +34,16 @@ fn default_program() {
         memra_engine::moe_m1_graph_splitk_on(),
         "default graph split-K required"
     );
+    // This bin reads the environment rather than pinning it, so the default-OFF
+    // norm2 door has to be refused explicitly or an exported 1 would silently
+    // change what these rows measure.
+    assert!(
+        matches!(
+            std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
+            Err(_) | Ok("0")
+        ),
+        "default OFF required: MEMRA_DSV4_NORM_FUSE2"
+    );
 }
 const PRIME: usize = 256;
 const OUTPUT: usize = 256;

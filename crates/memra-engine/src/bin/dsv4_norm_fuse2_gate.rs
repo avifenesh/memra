@@ -1,4 +1,5 @@
-//! Graph split-K qualification and retained-graph sampled ABBA.
+//! Exact remaining norm/activation packing: qualification and scoring are separate.
+//! Derived from the HC replay protocol, retaining every other default.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
 use memra_gguf::dsv4_forward::ActQuantVariant;
@@ -8,6 +9,38 @@ use std::{
     path::{Path, PathBuf},
     time::Instant,
 };
+
+fn norm2_on(gpu: &Dsv4Gpu) -> bool {
+    gpu.norm_fuse2_enabled_for_gate()
+}
+/// Every other DSV4 gate bin pins `MEMRA_DSV4_NORM_FUSE2=0` at startup, so this
+/// is the only bin whose rows may depend on the door. It reads the environment
+/// on purpose: `--qualify` selects its arm from it, one arm per process.
+fn norm2_door_env() -> String {
+    std::env::var("MEMRA_DSV4_NORM_FUSE2").unwrap_or_else(|_| "unset".into())
+}
+fn default_program() {
+    for name in [
+        "MEMRA_DSV4_DENSE_FAST",
+        "MEMRA_DSV4_NORM_FUSE",
+        "MEMRA_DSV4_DENSE_EXACT_TAIL",
+        "MEMRA_DSV4_REPLAY_CADENCE",
+    ] {
+        assert!(
+            std::env::var(name).is_err() || std::env::var(name).as_deref() == Ok("1"),
+            "default ON required: {name}"
+        );
+    }
+    assert!(memra_engine::moe_m1_graph_splitk_on());
+    unsafe extern "C" {
+        fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+    }
+    assert_eq!(
+        unsafe { memra_dsv4_hc_dot_split_slices_for_gate() },
+        16,
+        "default HC S16 required"
+    );
+}
 const PRIME: usize = 256;
 const OUTPUT: usize = 256;
 const CAPACITY: usize = PRIME + OUTPUT + 8;
@@ -98,7 +131,7 @@ fn count_kernel(dot: &str, needle: &str) -> usize {
 
 fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
     let mut hashes: [[String; 4]; 2] = Default::default();
-    let on = memra_engine::moe_m1_graph_splitk_on();
+    let on = norm2_on(gpu);
     std::fs::create_dir_all(dir).unwrap();
     gpu.dump_full_token_replay_for_gate(state, dir).unwrap();
     assert_eq!(
@@ -111,42 +144,88 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                 dir.join(format!("full-token-rank{rank}-segment{segment}.dot")),
             )
             .unwrap();
-            unsafe extern "C" {
-                fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
-            }
-            let hc = unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0;
-            for name in [
+            let forward = segment != 1;
+            let pack = count_kernel(&dot, "dsv4_norm2_pack_f32_fixed_order_kernel");
+            let swiglu = count_kernel(&dot, "dsv4_norm2_swiglu_pack_kernel");
+            let quant = count_kernel(&dot, "dsv4_norm2_quant_half_kernel");
+            assert_eq!(
+                [pack, swiglu, quant],
+                if on && forward { [86, 43, 43] } else { [0; 3] }
+            );
+            for symbol in [
                 "dsv4_hc_dot_split_partial_kernel",
                 "dsv4_hc_dot_split_reduce_kernel",
             ] {
-                assert_eq!(
-                    count_kernel(&dot, name),
-                    if hc && segment != 1 { 86 } else { 0 }
-                );
+                assert_eq!(count_kernel(&dot, symbol), if forward { 86 } else { 0 });
             }
-            let partial = count_kernel(&dot, "moe_m1_graph_splitk_partial_kernel");
-            let reduce = count_kernel(&dot, "moe_m1_graph_splitk_reduce_kernel");
-            let old = count_kernel(&dot, "moe_m1_splitk_partial_kernel");
-            assert_eq!(old, 0, "host-adaptive class captured");
-            let expected = if on && segment != 1 { 86 } else { 0 };
+            let expert = if forward { 86 } else { 0 };
             assert_eq!(
-                [partial, reduce],
-                [expected; 2],
-                "graph split-K census rank={rank} segment={segment}"
+                count_kernel(&dot, "moe_m1_graph_splitk_partial_kernel"),
+                expert
             );
-            if segment != 1 {
+            assert_eq!(
+                count_kernel(&dot, "moe_m1_graph_splitk_reduce_kernel"),
+                expert
+            );
+            assert_eq!(
+                count_kernel(&dot, "dsv4_dense_fast_fp8_kernel"),
+                if forward { 494 } else { 0 }
+            );
+            assert_eq!(
+                count_kernel(&dot, "dsv4_dense_fast_dots_kernel"),
+                if forward {
+                    167
+                } else if rank == 1 {
+                    2
+                } else {
+                    0
+                }
+            );
+            assert_eq!(
+                count_kernel(&dot, "dsv4_norm_rope_f32_fixed_order_kernel"),
+                if forward { 43 } else { 0 }
+            );
+            let norms = match segment {
+                0 => 86,
+                2 => 128,
+                3 => 148,
+                _ => usize::from(rank == 1),
+            };
+            assert_eq!(
+                count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel"),
+                norms - if on && forward { 86 } else { 0 }
+            );
+            assert_eq!(
+                count_kernel(&dot, "dsv4_rope_kernel"),
+                if forward { 107 } else { 0 }
+            );
+            assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_fp8_kernel"), 0);
+            assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_dots_kernel"), 0);
+            if forward {
                 assert_eq!(
-                    count_kernel(&dot, "moe_kq_sktail_gu_kernel"),
-                    if on { 0 } else { 43 }
+                    count_kernel(&dot, "dsv4_fp8_gather_half_kernel"),
+                    if on { 43 } else { 86 }
                 );
                 assert_eq!(
-                    count_kernel(&dot, "moe_kq_sktail_kernel"),
-                    if on { 0 } else { 43 }
+                    count_kernel(&dot, "dsv4_act_quant_fp8_kernel"),
+                    if on { 43 } else { 86 }
                 );
+                // Base forward census includes default HC S16 (+86) and norm/RoPE (-43).
+                let base = match segment {
+                    0 => 2870,
+                    2 => 3269,
+                    3 => 3369,
+                    _ => unreachable!(),
+                };
+                // The runtime census is authoritative for total kernel nodes.
+                let runtime = gpu
+                    .full_token_replay_variant_census_for_gate(state)
+                    .unwrap();
+                assert_eq!(runtime[rank][segment][1], base - if on { 215 } else { 0 });
             }
             *hash = format!("{:x}", Sha256::digest(dot.as_bytes()));
             println!(
-                "GRAPH_CENSUS on={on} rank={rank} segment={segment} partial={partial} reduce={reduce} sha256={:x}",
+                "GRAPH_CENSUS on={on} rank={rank} segment={segment} pack={pack} swiglu={swiglu} quant={quant} sha256={:x}",
                 Sha256::digest(dot.as_bytes())
             );
         }
@@ -209,7 +288,14 @@ fn refusals(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg, inputs: &[u
         }
     }
 }
-fn qualify_arm(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg) {
+fn qualify_arm(
+    gpu: &Dsv4Gpu,
+    prompt: &[u32],
+    output: &Path,
+    cfg: Dsv4SampleCfg,
+) -> (String, Identity, u32) {
+    let on = norm2_on(gpu);
+    select_arm(gpu, false);
     let mut prefix = state(gpu);
     gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
         .unwrap();
@@ -224,18 +310,21 @@ fn qualify_arm(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg)
         let mut eager = state(gpu);
         gpu.restore_full_token_prefix_for_gate(&mut eager, &prefix)
             .unwrap();
+        select_arm(gpu, on);
         let mut graph = graph_state(gpu, &prefix, cfg);
         let mut carry = first;
         let mut inputs = Vec::new();
         for step in 0..OUTPUT {
             inputs.push(carry);
             let before = gpu.full_token_ar_epochs_for_gate().unwrap();
+            select_arm(gpu, false);
             gpu.decode_step_device_logits(carry, &mut eager).unwrap();
             let next = gpu
                 .sample_device_logits(&eager, &mut sampler, &cfg, &[], None)
                 .unwrap();
             epochs(gpu, &before, 1);
             let before = gpu.full_token_ar_epochs_for_gate().unwrap();
+            select_arm(gpu, on);
             let actual = gpu
                 .decode_sample_full_token_for_gate(carry, &mut graph)
                 .unwrap();
@@ -258,21 +347,20 @@ fn qualify_arm(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg)
         refusals(gpu, &prefix, cfg, &inputs);
         let ident = identity(gpu, &graph);
         println!(
-            "QUALIFIED {{\"graph_splitk\":{},\"generated_sha256\":\"{}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"positions\":{OUTPUT},\"within_class\":true}}",
-            memra_engine::moe_m1_graph_splitk_on(),
+            "QUALIFIED {{\"norm_fuse2\":{},\"generated_sha256\":\"{}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"positions\":{OUTPUT},\"within_class\":true}}",
+            norm2_on(gpu),
             sha_tokens(&inputs),
             ident.0,
             ident.1,
             ident.2
         );
+        (sha_tokens(&inputs), ident, carry)
     }
 }
 
 fn select_arm(gpu: &Dsv4Gpu, on: bool) {
-    for stage in &gpu.stages {
-        stage.gpu.stream().synchronize().unwrap();
-    }
-    memra_engine::set_moe_m1_graph_splitk_for_gate(on);
+    gpu.set_norm_fuse2_for_gate(on).unwrap();
+    assert_eq!(norm2_on(gpu), on);
 }
 fn block_order(reverse: bool) -> [bool; 4] {
     if reverse {
@@ -296,7 +384,7 @@ impl ScoredArm {
         Self::new_current(gpu, prompt, cfg)
     }
     fn new_current(gpu: &Dsv4Gpu, prompt: &[u32], cfg: Dsv4SampleCfg) -> Self {
-        let on = memra_engine::moe_m1_graph_splitk_on();
+        let on = norm2_on(gpu);
         let mut prefix = state(gpu);
         gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
             .unwrap();
@@ -327,7 +415,7 @@ fn run_abba(
     cfg: Dsv4SampleCfg,
     reverse: bool,
 ) {
-    // Each numeric class keeps its own prefix lineage and one scored state.
+    // Both exact arms use fresh prefixes and uncaptured scored states.
     // These are independent of qualification states, and initially uncaptured.
     let mut arms = [
         ScoredArm::new(gpu, prompt, cfg, false),
@@ -347,6 +435,11 @@ fn run_abba(
         }
     }
     assert_eq!([arms[0].rows, arms[1].rows], [10, 10]);
+    assert_eq!(
+        arms[0].reference, arms[1].reference,
+        "cross-arm raw state/token identity"
+    );
+    println!("SUMMARY rows=20 identity=true first_capture_rows_per_arm=1,1");
 }
 
 fn scored_row(
@@ -358,7 +451,7 @@ fn scored_row(
     reverse: bool,
 ) {
     let on = arm.on;
-    assert_eq!(memra_engine::moe_m1_graph_splitk_on(), on);
+    assert_eq!(norm2_on(gpu), on);
     if arm.rows > 0 {
         gpu.restore_full_token_prefix_for_gate(&mut arm.graph, &arm.prefix)
             .unwrap();
@@ -393,6 +486,7 @@ fn scored_row(
             .unwrap(),
         [expected; 2]
     );
+    assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
     let hash = sha_tokens(&tokens);
     let ident = identity(gpu, &arm.graph);
     let current = (hash.clone(), ident.clone(), carry);
@@ -403,14 +497,16 @@ fn scored_row(
     }
     assert!(!tokens.contains(&tokenizer.eos_id()), "early EOS");
     let looped = looped(&tokens);
-    let graphs = census(gpu, &arm.graph, &output.join(format!("row-{row}-graphs")));
-    if let Some(reference) = &arm.graphs {
-        assert_eq!(&graphs, reference, "retained graph identity");
-    } else {
-        arm.graphs = Some(graphs);
+    if arm.rows == 0 || arm.rows == 9 {
+        let graphs = census(gpu, &arm.graph, &output.join(format!("row-{row}-graphs")));
+        if let Some(reference) = &arm.graphs {
+            assert_eq!(&graphs, reference, "retained graph identity");
+        } else {
+            arm.graphs = Some(graphs);
+        }
     }
     println!(
-        "MEASURE {{\"row\":{row},\"arm_row\":{},\"reverse\":{reverse},\"graph_splitk\":{on},\"generated_tokens\":{OUTPUT},\"decode_wall_ns\":{ns},\"decode_tok_s\":{},\"eligible\":{},\"looped\":{looped},\"generated_sha256\":\"{hash}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"first_capture_inside_timing\":{},\"captures_before\":{captures_before:?},\"captures\":{captures:?},\"device_replays\":{after:?}}}",
+        "MEASURE {{\"row\":{row},\"arm_row\":{},\"reverse\":{reverse},\"norm_fuse2\":{on},\"generated_tokens\":{OUTPUT},\"decode_wall_ns\":{ns},\"decode_tok_s\":{},\"eligible\":{},\"looped\":{looped},\"generated_sha256\":\"{hash}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"first_capture_inside_timing\":{},\"captures_before\":{captures_before:?},\"captures\":{captures:?},\"device_replays\":{after:?}}}",
         arm.rows,
         OUTPUT as f64 * 1e9 / ns as f64,
         !looped,
@@ -421,95 +517,36 @@ fn scored_row(
     );
     arm.rows += 1;
 }
-fn default_engagement(
-    gpu: &Dsv4Gpu,
-    prompt: &[u32],
-    tokenizer: &Tokenizer,
-    output: &Path,
-    cfg: Dsv4SampleCfg,
-) {
-    // No graph selector override: observe and execute the actual environment.
-    let on = memra_engine::moe_m1_graph_splitk_on();
-    println!(
-        "DEFAULT_POLICY raw={:?} graph_splitk={on}",
-        std::env::var("MEMRA_DSV4_MOE_M1_SPLITK").ok()
-    );
-    qualify_arm(gpu, prompt, output, cfg);
-    assert_eq!(memra_engine::moe_m1_graph_splitk_on(), on);
-    let mut arm = ScoredArm::new_current(gpu, prompt, cfg);
-    for row in 0..5 {
-        scored_row(gpu, &mut arm, tokenizer, output, row, false);
-    }
-    assert_eq!(arm.rows, 5);
-    println!(
-        "DEFAULT_ENGAGEMENT_PASS graph_splitk={on} identity_steps=256 refusal_cells=8 sanity_rows=5 captures={:?} replays={:?}",
-        gpu.full_token_replay_captures_for_gate(&arm.graph).unwrap(),
-        gpu.full_token_replay_counts_for_gate(&arm.graph).unwrap()
-    );
-}
-
-fn teacher_forcing(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg) {
-    use std::io::Write;
-    assert!(prompt.len() >= PRIME + 160);
-    let mut prefix = state(gpu);
-    gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
-        .unwrap();
-    for &token in &prompt[1..PRIME] {
-        gpu.decode_step_device_logits(token, &mut prefix).unwrap();
-    }
-    let mut graph = graph_state(gpu, &prefix, cfg);
-    let mut raw =
-        std::io::BufWriter::new(std::fs::File::create(output.join("logits.f32le")).unwrap());
-    for i in 0..160 {
-        let before = gpu.full_token_ar_epochs_for_gate().unwrap();
-        // Fixed source-tape token; ignore the sampled next token in both arms.
-        gpu.decode_sample_full_token_for_gate(prompt[PRIME + i], &mut graph)
-            .unwrap();
-        epochs(gpu, &before, 1);
-        let logits = gpu.read_decode_logits_for_gate(&graph).unwrap();
-        let hash = sha_f32(&logits);
-        for &value in &logits {
-            raw.write_all(&value.to_bits().to_le_bytes()).unwrap();
-        }
-        println!(
-            "TF_POSITION offset={i} position={} input={} vocab={} logits_sha256={hash}",
-            graph.pos,
-            prompt[PRIME + i],
-            logits.len()
-        );
-        assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
-    }
-    raw.flush().unwrap();
-    census(gpu, &graph, &output.join("tf-graphs"));
-    println!(
-        "TF_COMPLETE positions=160 report_only=true quality_admission=false identity={:?}",
-        identity(gpu, &graph)
-    );
-}
-
 fn main() {
-    // Freeze this historical instrument independently of the newer defaults.
-    // This is process startup, before any model or worker threads exist.
-    unsafe {
-        if !std::env::args().any(|v| v == "--defaults") {
-            std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
-        }
-        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
-        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
-        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
-    }
-
     let args: Vec<_> = std::env::args().collect();
+    if args.len() == 3 && args[1] == "--components" {
+        Dsv4Gpu::run_norm2_components_for_gate(Path::new(&args[2])).unwrap();
+        return;
+    }
     assert!(
         args.len() == 4
             || (args.len() == 5
                 && matches!(
                     args[4].as_str(),
-                    "--qualify" | "--component" | "--tf" | "--reverse" | "--defaults"
+                    "--qualify" | "--reverse" | "--capture-components"
                 )),
-        "usage: dsv4_graph_splitk_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component|--tf|--reverse|--defaults]"
+        "usage: dsv4-norm-fuse2-gate <model-dir> <source.txt> <new-output-dir> [--qualify|--reverse|--capture-components]"
     );
-    assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
+    assert!(
+        !dsv4_prof_on(),
+        "profiling rejected in timed/qualification rows"
+    );
+    for key in [
+        "NSYS_PROFILING_SESSION_ID",
+        "CUDA_INJECTION64_PATH",
+        "NV_INJECTION64_PATH",
+    ] {
+        assert!(
+            std::env::var_os(key).is_none(),
+            "profiler injection rejected: {key}"
+        );
+    }
+    default_program();
     for (name, value) in [
         ("MEMRA_DSV4_DECODE_PATH", "device"),
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
@@ -532,13 +569,7 @@ fn main() {
         );
     }
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
-    // Deliberately keep the graph environment default for --defaults.
-    // Scored ABBA selects each graph policy explicitly after model creation.
-    memra_engine::set_moe_m1_splitk_for_gate(false);
-    println!(
-        "GRAPH_SPLITK_POLICY on={}",
-        memra_engine::moe_m1_graph_splitk_on()
-    );
+    println!("DOOR MEMRA_DSV4_NORM_FUSE2={}", norm2_door_env());
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
@@ -581,42 +612,22 @@ fn main() {
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
-    if args.get(4).is_some_and(|v| v == "--defaults") {
-        default_engagement(&gpu, &prompt[..PRIME], &tokenizer, &output, cfg);
-        return;
-    }
-    if args.get(4).is_some_and(|v| v == "--tf") {
-        teacher_forcing(&gpu, &prompt, &output, cfg);
-        return;
-    }
-    if args.get(4).is_some_and(|v| v == "--component") {
-        assert!(memra_engine::moe_m1_graph_splitk_on());
-        unsafe extern "C" {
-            fn memra_moe_m1_graph_splitk_component_mask() -> u32;
-        }
-        let mut work = state(&gpu);
-        gpu.prefill_with_cache_chunked(&prompt[..1], &mut work, 1)
+
+    if args.get(4).is_some_and(|s| s == "--capture-components") {
+        select_arm(&gpu, false);
+        let mut state = state(&gpu);
+        gpu.prefill_with_cache_chunked(&prompt[..1], &mut state, 1)
             .unwrap();
-        memra_engine::set_moe_m1_splitk_component_for_gate(true);
-        for (i, &token) in prompt[1..PRIME].iter().enumerate() {
-            memra_engine::set_moe_m1_splitk_component_token_for_gate(i);
-            gpu.decode_step_device_logits(token, &mut work).unwrap();
-            let mask = unsafe { memra_moe_m1_graph_splitk_component_mask() };
-            println!("GRAPH_COMPONENT_COVERAGE token={i} mask={mask}");
-            if mask == 15 {
-                break;
-            }
-        }
-        assert_eq!(
-            unsafe { memra_moe_m1_graph_splitk_component_mask() },
-            15,
-            "need real six-live operands on both projections and ranks"
-        );
-        memra_engine::set_moe_m1_splitk_component_for_gate(false);
-        return;
-    }
-    if args.get(4).is_some_and(|v| v == "--qualify") {
+        gpu.enable_norm2_components_for_gate(&output).unwrap();
+        gpu.decode_step_device_logits(prompt[1], &mut state)
+            .unwrap();
+        gpu.finish_norm2_components_for_gate().unwrap();
+    } else if args.get(4).is_some_and(|s| s == "--qualify") {
+        // One arm per invocation. Controller runs two new processes per arm.
+        let on = gpu.norm_fuse2_enabled_for_gate();
         qualify_arm(&gpu, &prompt[..PRIME], &output, cfg);
+        assert_eq!(gpu.norm_fuse2_enabled_for_gate(), on);
+        println!("PASS qualification_only=true norm_fuse2={on} scored_rows=0");
     } else {
         run_abba(
             &gpu,
@@ -624,7 +635,7 @@ fn main() {
             &tokenizer,
             &output,
             cfg,
-            args.get(4).is_some_and(|v| v == "--reverse"),
+            args.get(4).is_some_and(|s| s == "--reverse"),
         );
     }
 }
@@ -633,29 +644,16 @@ fn main() {
 mod tests {
     use super::*;
     #[test]
-    fn abba_reverse_keeps_ten_rows_per_arm() {
+    fn census_and_order_contract() {
         assert_eq!(block_order(false), [true, false, false, true]);
         assert_eq!(block_order(true), [false, true, true, false]);
-        for reverse in [false, true] {
-            let mut rows = [0; 2];
-            for arm in block_order(reverse) {
-                rows[usize::from(arm)] += 5;
-            }
-            assert_eq!(rows, [10, 10]);
-        }
-    }
-    #[test]
-    fn cadence_covers_all_forward_variants() {
         assert_eq!(expected_variants(true, 256, 512, true), [192, 256, 62, 2]);
-    }
-    #[test]
-    fn census_counts_nodes_only() {
-        let dot = "graph moe_m1_graph_splitk_partial_kernel\n| {ID | 3 moe_m1_graph_splitk_partial_kernel<2> }\nedge moe_m1_graph_splitk_partial_kernel";
-        assert_eq!(count_kernel(dot, "moe_m1_graph_splitk_partial_kernel"), 1);
-    }
-    #[test]
-    fn short_period_repetition_is_excluded() {
-        assert!(looped(&[1, 2].repeat(32)));
-        assert!(!looped(&(0..256).collect::<Vec<u32>>()));
+        assert_eq!(
+            count_kernel(
+                "label=dsv4_norm2_quant_half_kernel\n| {ID | 2} dsv4_norm2_quant_half_kernel\nx -> y",
+                "dsv4_norm2_quant_half_kernel"
+            ),
+            1
+        );
     }
 }

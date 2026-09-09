@@ -7,6 +7,33 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_dsv4_norm2_pack(
+        x: *const f32,
+        w: *const f32,
+        dst: *mut f32,
+        packed: *mut c_void,
+        n: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_norm2_swiglu_pack(
+        gate: *const f32,
+        up: *const f32,
+        packed: *mut c_void,
+        n: i32,
+        limit: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_norm2_quant_half(
+        x: *const f32,
+        out: *mut c_void,
+        scale: *mut f32,
+        status: *mut i32,
+        rows: i32,
+        cols: i32,
+        stream: *mut c_void,
+    ) -> i32;
+
     pub fn memra_dsv4_replay_compressor_emit(
         pending_kv: *mut f32,
         pending_score: *mut f32,

@@ -252,6 +252,8 @@ pub(crate) struct GroupedWork {
     pub intermediate: HalfMirror,
     pub contribution: CudaSlice<f32>,
     pub bytes: u64,
+    pub(crate) norm2: bool,
+    pub(crate) norm2_capture: Option<(std::path::PathBuf, usize, usize)>,
     plain_single: bool,
     gu_fuse: bool,
     phase: MatrixPhase,
@@ -402,6 +404,8 @@ impl GroupedWork {
                 .alloc_zeros::<f32>(contribution_len)
                 .map_err(|e| format!("grouped contribution allocation: {e}"))?,
             bytes,
+            norm2: false,
+            norm2_capture: None,
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
@@ -714,22 +718,55 @@ impl GroupedWork {
                     )?;
                 }
             }
-            unsafe {
-                dsv4_ffi::ck(
-                    "matrix intermediate FP8",
-                    dsv4_ffi::memra_dsv4_act_quant_fp8(
-                        out.h.device_ptr(&s).0 as *const f32,
-                        out.hq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
-                        out.hs.device_ptr_mut(&s).0 as *mut f32,
-                        live as i32,
-                        self.intermediate.cols as i32,
-                        s.cu_stream().cast(),
-                    ),
+            if let Some((dir, rank, layer)) = &self.norm2_capture {
+                let h = s
+                    .clone_dtoh(&out.h.slice(..live * self.intermediate.cols))
+                    .map_err(|e| format!("norm2 intermediate capture: {e}"))?;
+                crate::dsv4_gpu::norm2_component_gate::capture_words(
+                    dir,
+                    *rank,
+                    *layer,
+                    3,
+                    &h,
+                    &[],
+                    self.intermediate.cols,
+                    live,
+                    0.0,
                 )?;
+            }
+            if !self.norm2_transport(live) {
+                unsafe {
+                    dsv4_ffi::ck(
+                        "matrix intermediate FP8",
+                        dsv4_ffi::memra_dsv4_act_quant_fp8(
+                            out.h.device_ptr(&s).0 as *const f32,
+                            out.hq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                            out.hs.device_ptr_mut(&s).0 as *mut f32,
+                            live as i32,
+                            self.intermediate.cols as i32,
+                            s.cu_stream().cast(),
+                        ),
+                    )?;
+                }
             }
         }
         self.phase = MatrixPhase::UpQueued;
         Ok(())
+    }
+
+    /// Whether the fused quantize-and-gather transport actually covers this step's
+    /// geometry. The door alone is not enough: the kernel is written for the
+    /// single-token DSV4F shape, and the half mirror has its own row capacity. A
+    /// shape outside that domain falls back to the unfused pair, exactly as the
+    /// other three sites do, instead of failing the step. `queue_up` and `down`
+    /// both read this from the same `routes.live_slots`, so the quantizer and the
+    /// gather can never disagree about which arm produced the codes.
+    fn norm2_transport(&self, live: usize) -> bool {
+        self.norm2
+            && self.plain_single
+            && self.intermediate.cols == 2048
+            && (1..=6).contains(&live)
+            && live <= self.intermediate.rows
     }
 
     pub fn down(&mut self, gpu: &Gpu, table: &CudaSlice<u64>, out: &mut EpCompute<'_>) -> Res<()> {
@@ -741,7 +778,33 @@ impl GroupedWork {
         let s = gpu.stream();
         let live = self.routes.live_slots;
         if live > 0 {
-            self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
+            if self.norm2_transport(live) {
+                unsafe {
+                    dsv4_ffi::ck(
+                        "norm2 quant half",
+                        dsv4_ffi::memra_dsv4_norm2_quant_half(
+                            out.h.device_ptr(&s).0 as *const f32,
+                            self.intermediate.half.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                            self.intermediate.scale.device_ptr_mut(&s).0 as *mut f32,
+                            self.intermediate.status.device_ptr_mut(&s).0 as *mut i32,
+                            live as i32,
+                            self.intermediate.cols as i32,
+                            s.cu_stream().cast(),
+                        ),
+                    )?;
+                }
+                if mirror_validation_enabled() {
+                    let status = s
+                        .clone_dtoh(&self.intermediate.status.slice(..live))
+                        .map_err(|e| format!("norm2 mirror read: {e}"))?;
+                    if status.iter().any(|&v| v != 0) {
+                        return Err("norm2 FP8-QAT half mirror is not lossless".into());
+                    }
+                }
+            } else {
+                self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
+            }
+
             let component = self.plain_single && splitk_component_claim(gpu, false);
             let splitk = self.plain_single && crate::moe_m1_splitk_on();
             let output = self.contribution.device_ptr_mut(&s).0;
