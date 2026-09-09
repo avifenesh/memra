@@ -28,7 +28,7 @@ elif a.kind == "spec":
     cmd = [str(root / "fa2-src/run-spec-final"), model]
     env.update(MEMRA_PROMPT_FILE=str(root / "gate-prompt.txt"), MEMRA_CHAT="1", MEMRA_NGEN="64")
 else:
-    cmd = [str(root / "fa2-src/concat-prime-probe-final"), model, "nllwin", "--prompt-a", "@" + str(root / "fa2-serving-src/research/fp8st-20260804/mmq-v2/nll-window.txt"), "--window", "1024", "--chunk", "1024"]
+    cmd = [str(root / "fa2-src/concat-prime-probe-final"), model, "nllwin", "--prompt-a", "@" + str(root / "fa2-serving-src/research/fp8st-20260804/mmq-v2/nll-window.txt"), "--window", "1024", "--chunk", "1024", "--jsonl", str(out / "per-token.jsonl")]
 binary = pathlib.Path(cmd[0])
 receipt = dict(kind=a.kind, arm=a.arm, nonce=uuid.uuid4().hex, binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(), profile_sha256=hashlib.sha256((root / "requal-profile.json").read_bytes()).hexdigest(), command=cmd, profile=profile)
 if a.profile:
