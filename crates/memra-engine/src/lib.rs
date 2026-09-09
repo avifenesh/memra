@@ -29221,11 +29221,13 @@ impl Engine {
             && n_head == 24
             && n_head_kv == 4
             && (128..=1024).contains(&t)
+            && scale == 1.0 / 16.0
             && causal
             && !g
         {
             let name = if live.is_some() { "fa_prefill_qw_fa2_prime_table" } else { "fa_prefill_qw_fa2" };
             let f = self.func(name);
+            f.set_attribute(cudarc::driver::sys::CUfunction_attribute_enum::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 49152)?;
             let cfg = LaunchConfig {
                 grid_dim: ((t * 6).div_ceil(64) as u32, 4, 1),
                 block_dim: (32, 4, 1),
