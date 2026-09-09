@@ -107,6 +107,9 @@ impl Dsv4Gpu {
         println!(
             "COMPONENT_PROTOCOL door=MEMRA_DSV4_NORM2_WIDE class=same tiles={tiles} block=128 sites=172 repeats_per_cell={REPEATS} warmup={WARMUP} cells=warm,cold"
         );
+        // First read of a site establishes the reference; every later read is an
+        // actual comparison. Counted apart so the PASS line cannot overstate.
+        let mut references = 0usize;
         let mut comparisons = 0usize;
         for rank in 0..2 {
             let ctx = cudarc::driver::CudaContext::new(rank).map_err(e("norm2 wide context"))?;
@@ -142,8 +145,8 @@ impl Dsv4Gpu {
                             if on { Some(tiles) } else { None },
                         )?;
                         let bytes = Self::norm2_wide_read_outputs(&stream, &yd, &pack)?;
-                        comparisons += 1;
                         if let Some(expected) = &reference {
+                            comparisons += 1;
                             if expected != &bytes {
                                 return Err(format!(
                                     "norm2 wide raw-bit mismatch rank={} layer={} site={} cold={cold} on={on} repeat={repeat}",
@@ -151,6 +154,7 @@ impl Dsv4Gpu {
                                 ));
                             }
                         } else {
+                            references += 1;
                             reference = Some(bytes);
                         }
                         if repeat >= WARMUP {
@@ -188,7 +192,7 @@ impl Dsv4Gpu {
             }
         }
         println!(
-            "COMPONENT_PASS door=MEMRA_DSV4_NORM2_WIDE sites=172 comparisons={comparisons} bits_equal=true class=same"
+            "COMPONENT_PASS door=MEMRA_DSV4_NORM2_WIDE sites=172 references={references} comparisons={comparisons} bits_equal=true class=same"
         );
         Ok(())
     }
