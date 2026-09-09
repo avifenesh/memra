@@ -1852,6 +1852,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             let logits = cx.e.matmul(&cx.model.output, &hn, t)?;
             let all = cx.e.dtoh(&logits)?;
+            let mut per_token = arg(&rest, "--jsonl")
+                .map(std::fs::File::create)
+                .transpose()?;
             let mut sum = 0.0f64;
             for p in 1..t {
                 let row = &all[(p - 1) * n_vocab..p * n_vocab];
@@ -1862,7 +1865,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .map(|&v| ((v as f64) - mx).exp())
                         .sum::<f64>()
                         .ln();
-                sum += lse - row[ids[p] as usize] as f64;
+                let token_nll = lse - row[ids[p] as usize] as f64;
+                sum += token_nll;
+                if let Some(file) = per_token.as_mut() {
+                    use std::io::Write;
+                    writeln!(
+                        file,
+                        "{{\"position\":{p},\"token\":{},\"nll\":{token_nll}}}",
+                        ids[p]
+                    )?;
+                }
             }
             let nll = sum / (t - 1) as f64;
             println!(
