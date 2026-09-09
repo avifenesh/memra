@@ -4,6 +4,22 @@ Two regimes, one rule: **the full battery gates every merge and tag, unchanged; 
 accelerates the dev loop between battery points.** Nothing in this document weakens the
 merge/tag bar: a fast-gate green is a *keep going* signal, never a *ship* signal.
 
+## DSV4 dense-fast plus norm-fuse composition
+
+`dsv4_compose_densefast_normfuse_gate <model-dir> <source.txt> <new-output-dir>`
+compares explicit both-OFF A with both-ON B on the split-K/cadence/exact-tail
+program. Require `MEMRA_DSV4_DENSE_FAST=0` and `MEMRA_DSV4_NORM_FUSE=0` before
+model loading. The immutable arm table chooses the existing gate selectors
+before fresh captures; retained graphs do not read the host selectors.
+
+`--qualify` runs 256 sampled token/logit/cache/hidden/AR-epoch comparisons
+against eager, both retained reset proofs, composed kernel censuses, and the
+16-cell union of both single-door refusal sets. Normal timing repeats those
+checks then runs A5/B5/B5/A5; `--reverse` runs B5/A5/A5/B5. Scored states are
+fresh and uncaptured, with each arm's first capture inside its row 0.
+Profiling is rejected. CPU schedule, arm, refusal-boundary and DOT-parser
+contracts run in hosted CI. This gate changes no runtime default or kernel.
+
 ## Target-aware release evidence
 
 The local RTX 5090 battery is the blocking performance gate for generic kernels and defaults
