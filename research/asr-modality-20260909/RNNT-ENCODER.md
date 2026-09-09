@@ -55,9 +55,9 @@ Both fire; neither is injected noise.
 
 ## Scope
 
-Encoder only, CPU only, one arm. No frontend (the reference's own log-mel feeds the chunks; a
-native NeMo-geometry frontend is separate work with a separate FFT-512 contract), no prompt
-kernel, no predictor, no joint, no RNNT decoding, no GPU, no serving surface. The wider
+Encoder only, CPU only, one arm, at the time this stage landed: the reference's own log-mel fed
+the chunks. Stage 7 below adds the native frontend and composes the two. No prompt kernel, no
+predictor, no joint, no RNNT decoding, no GPU, no serving surface. The wider
 `[56, 3]`, `[56, 6]` and `[56, 13]` arms stay expressible in the state contract and are
 refused here: they buy accuracy with future audio.
 
@@ -92,3 +92,39 @@ frames that touch an edge can see it.
 Still missing for the RNNT path: the prompt kernel, the predictor, the joint, greedy decoding,
 and a streaming session lifecycle. The encoder is fed chunk windows by a checker, not by a
 native streaming driver.
+
+## Stage 8: the head, and a Hebrew transcript
+
+The RNNT head runs natively: prompt conditioning, the two-layer LSTM predictor, the joint, and
+greedy decoding with the reference's own `max_symbols` of 10.
+
+| Gate | Result | Bound |
+| --- | ---: | ---: |
+| Prompted encoder, 26 frames | 4.768371582e-07 | 1e-3 |
+| Predictor rows, 7-token walk plus the start row | 7.748603821e-07 worst | 1e-3 |
+| Joint logits, 26 frames against two predictor rows | 9.155273438e-05 worst | 1e-3 |
+| Greedy token ids | **9 of 9 identical** | exact |
+
+The tokens are `2 3225 6 2 1270 3155 3235 1273 3158`, which the checkpoint's tokenizer reads as
+`כן, אני ומתן`. Receipt `stage8-rnnt-head.json`.
+
+Three things the reference settled that guessing would have got wrong:
+
+- The prompt is not a token. It is a one-hot language slot, he-IL is 64 of 128, concatenated
+  onto **every** encoder row and pushed through a 1152 -> 2048 -> 1024 kernel. A prepended
+  token would have been a different model.
+- The predictor's start step is a zero row, not an embedded blank. The embedding has 13088
+  rows and the blank is 13087, so embedding the blank is available and wrong.
+- The joint's own output is device-dependent in the reference: it log-normalizes on CPU and
+  returns raw logits on GPU, by an explicit device check. The native joint returns logits
+  everywhere and the checker normalizes, rather than making Memra's output depend on where it
+  ran. This showed up as a 38.7 gap on the joint rows while the greedy tokens matched exactly,
+  which is the signature of a monotone transform rather than a numerical fault.
+
+The greedy loop's symbol counter advances on a blank as well as on an emission, so
+`max_symbols` bounds work per frame and not only emissions. That is the reference's loop, and
+a version that only counted emissions would run longer on a frame that keeps predicting blank.
+
+Still missing: a native streaming session lifecycle (the head is handed a finished run of
+encoder frames, not driven chunk by chunk with partial results), the tokenizer inside the
+engine, and everything about serving.

@@ -8,7 +8,14 @@ use memra_gguf::model_packs::nemotron_rnnt::{
 };
 use memra_reference::speech::fastconformer::FastConformerEncoder;
 use memra_reference::speech::rnnt_frontend::RnntFrontend;
+use memra_reference::speech::rnnt_head::RnntHead;
 use std::path::{Path, PathBuf};
+
+fn write_f32(path: &Path, values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
+    let bytes: Vec<u8> = values.iter().flat_map(|x| x.to_le_bytes()).collect();
+    std::fs::write(path, bytes)?;
+    Ok(())
+}
 
 fn read_f32(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     let bytes = std::fs::read(path)?;
@@ -23,6 +30,96 @@ fn read_f32(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 6 && args[1] == "head" {
+        // usage: head ARCHIVE ENCODER_ORACLE OUT_DIR PROMPT_SLOT
+        let oracle = PathBuf::from(&args[3]);
+        let out = PathBuf::from(&args[4]);
+        let slot: u32 = args[5].parse()?;
+        std::fs::create_dir(&out)?;
+        let started = std::time::Instant::now();
+        let archive = MappedNemo::open(Path::new(&args[2]))?;
+        let bound = bind(HEBREW_GEOMETRY, &archive.checkpoint.census)?;
+        let head = RnntHead::load(
+            HEBREW_GEOMETRY,
+            &bound,
+            archive.bytes(),
+            &archive.checkpoint.storages,
+        )?;
+        let width = HEBREW_GEOMETRY.encoder_width as usize;
+
+        // Encoder frames come from the already-gated capture, banked one chunk per file as
+        // [width, frames]; the head consumes [frames, width].
+        let mut frames = Vec::new();
+        let mut index = 0usize;
+        loop {
+            let path = oracle.join(format!("chunk-{index:03}-encoder.f32.bin"));
+            if !path.exists() {
+                break;
+            }
+            let chunk = read_f32(&path)?;
+            let count = chunk.len() / width;
+            for frame in 0..count {
+                for channel in 0..width {
+                    frames.push(chunk[channel * count + frame]);
+                }
+            }
+            index += 1;
+        }
+        if frames.is_empty() {
+            return Err("encoder oracle holds no chunk outputs".into());
+        }
+        let count = frames.len() / width;
+        let prompted = head.prompt(&frames, count, slot)?;
+        write_f32(&out.join("prompted-encoder.f32"), &prompted)?;
+
+        // The pinned predictor walk, banked step by step with its state.
+        let walk: [u32; 7] = [0, 5, 61, 137, 900, 4321, 13086];
+        let mut state = head.new_state();
+        let mut last_row = Vec::new();
+        for (step, token) in walk.iter().enumerate() {
+            let (row, next) = head.predict(Some(*token), &state)?;
+            write_f32(&out.join(format!("predictor-{step:02}-out.f32")), &row)?;
+            for layer in 0..HEBREW_GEOMETRY.predictor_layers as usize {
+                write_f32(
+                    &out.join(format!("predictor-{step:02}-hidden-{layer}.f32")),
+                    next.hidden(layer),
+                )?;
+                write_f32(
+                    &out.join(format!("predictor-{step:02}-cell-{layer}.f32")),
+                    next.cell(layer),
+                )?;
+            }
+            last_row = row;
+            state = next;
+        }
+        let (start_row, _) = head.predict(None, &head.new_state())?;
+        write_f32(&out.join("predictor-start-out.f32"), &start_row)?;
+
+        for (label, row) in [("start", &start_row), ("walk", &last_row)] {
+            let mut logits = Vec::new();
+            for frame in 0..count {
+                logits.extend(head.joint(&prompted[frame * width..(frame + 1) * width], row)?);
+            }
+            write_f32(&out.join(format!("joint-{label}.f32")), &logits)?;
+        }
+
+        let emitted = head.greedy(&prompted, count, 10)?;
+        std::fs::write(
+            out.join("greedy.txt"),
+            emitted
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
+        )?;
+        println!(
+            "head frames={count} prompt_slot={slot} blank={} greedy={} elapsed={:.3}",
+            head.blank(),
+            emitted.len(),
+            started.elapsed().as_secs_f64()
+        );
+        return Ok(());
+    }
     if args.len() == 5 && args[1] == "frontend" {
         let started = std::time::Instant::now();
         let archive = MappedNemo::open(Path::new(&args[2]))?;
