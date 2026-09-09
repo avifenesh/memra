@@ -1870,3 +1870,19 @@ remains for existing callers. Component KEEP OFF, unserved, code removed
 were byte-exact. The p32k t=4 component saved 3.091277122 ms/round.
 Re-derive from `c776611e78291aa8ff36c7323d5c216eab961fa7`.
 Receipt: `research/glm5-mla-verify-20260909/RESULTS.md`; rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (F16 verify rows numeric no-go)
+
+`MEMRA_MOE_ROWS_F16` and its bench-only class were removed after the real-input
+complete-chain oracle failed at t=4, layer 20, output row 3: current argmax 4,
+F16 argmax 1819. The f64 error band passed (current normalized mean
+9.048931134194e-4, F16 5.290322992813e-5), but the required argmax gate failed.
+T=2 passed all 42 layers; t=4 stopped at layer 20. No timing or t=7 real-input
+cell ran after the failure, so the >=0.5 ms saving threshold is unmeasured.
+
+Removed the F16 and acc32 CUDA twins, lane-major converter, Rust launchers,
+synthetic/real gate code, bench arms, executable cell driver and active FLAGS/
+KERNELS rows. No serving dispatch had been installed. The measured source is
+bc89f4d22; the initial harness-only layout-reference mistake and its correction
+are preserved with the raw receipts. Verdict: NEGATIVE, numeric no-go.
+Receipt: `research/moe-rows-f16-20260909/RESULTS.md`. rev: 2026-09-23.
