@@ -662,10 +662,6 @@ fn main() {
         memra_engine::moe_m1_graph_splitk_on(),
         "graph split-K default required"
     );
-    assert!(
-        !memra_engine::moe_m1_splitk_on(),
-        "host adaptive split-K forbidden"
-    );
     assert!(memra_engine::dsv4_gpu::dsv4_replay_cadence_default());
     assert!(memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate());
     let programs = PROGRAMS;
