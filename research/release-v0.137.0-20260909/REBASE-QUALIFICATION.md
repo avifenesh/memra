@@ -12,4 +12,28 @@ Base main: `16071ff480fdea92c38f2c825c564562fff25710`. No tag is authorized by t
 
 After the orchestrator go and final gates, merge #391 first, fetch main, obtain #391's `mergeCommit.oid` from GitHub, and verify that it is the actual current `origin/main` commit and appears in its first-parent history. Tag v0.137.0 on that merged commit only, never on the release branch. Push the tag, fetch tags/main, then require `git describe --tags origin/main` to equal exactly `v0.137.0` before building. If main has advanced, stop the build and resolve the release boundary with the orchestrator; do not move a published tag or label an untagged build as the release.
 
-The full battery on this rebased composition is pending in this preparation record until its attached receipt is committed. Existing staged GGUF hashes remain the pinned inputs. All Cargo and GPU cells run on the non-serving single B200, under nohup and the shared GPU lock. Doc commits use --no-verify and local hooks remain disabled. No tag is created in this preparation task.
+## Full battery PASS
+
+Measured head: `72d424979c0e1a6c499a4017a2a36f64e6215730`, rebased onto main `16071ff48` and including #379/#392. The receipt-only follow-up changes no Rust, CUDA or Cargo source. The existing nohup job survived the Relay restart; it was inspected and collected, not relaunched.
+
+Pinned GGUFs were rehashed on the box before the build. `cargo build --release --bins` passed in 253.13 s. `cargo fmt --all -- --check`, diff check and flags census passed; the census found 844 runtime literal reads and zero uncovered names.
+
+The full unchanged roster ran under `/tmp/memra-gpu.lock` from 2026-09-09T02:02:33Z to 02:04:09Z, 96.37 s, exit 0:
+
+```text
+kernel-check PASS: ALL GREEN (95 cells, 22 skipped)
+Ornith argmax-margin PASS: SUMMARY flips=1 bad=0
+Ornith run-spec PASS: K=1..8 self-consistency, identical to plain target
+Qwen argmax-margin PASS: SUMMARY flips=0 bad=0
+Qwen run-spec PASS: K=1..8 self-consistency, identical to plain target
+```
+
+Server SHA256: `4e722f2e92655f3926573088b352b68d9166f5b608402d317b54845c7bb79b60`.
+[Raw receipt archive](rebase-receipts.tar.gz): 4,649 bytes, SHA256 `9f224e0ac8294124324a51a3ae2c0c63461d430fd56cb5a589f02247eaa34c33`. It contains exact source, model and binary hashes, commands, build/gate logs, timestamps, exit codes and a per-file checksum manifest.
+
+## Builder merge and handoff
+
+Darklanes #526 was self-reviewed against current main with all exact-head checks green and no open threads, then squash-merged as `2f72fff36898bf61c661239475eb3273d75bdcae` at 2026-09-09T01:57:47Z. Its branch/worktree were removed. Both local root checkouts remain on main and were synced, including submodules, while preserving unrelated dirty work.
+
+No tag or serving-pair access occurred. The staged GGUFs and installed PRoot remain for the final tag gate. Doc commits use --no-verify; local hooks stay disabled under the no-rig-gates instruction. Hosted checks must be green on the receipt head before handoff; the live exact-head status is recorded in PR #391. The pending #378 decision and final-composition/pair gates remain with the orchestrator.
+
