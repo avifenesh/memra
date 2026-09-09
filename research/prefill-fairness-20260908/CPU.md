@@ -1,5 +1,16 @@
 # CPU checkpoint, 2026-09-08 UTC
 
+The historical checkpoint below preceded handoff. GPU results are now in
+[RESULTS.md](RESULTS.md). Latest-main composition at runtime source
+`b0fa08d93526969c759b0448c49db9bc3dd2c238` also passes fmt, all-target release
+clippy, the same 61 targeted engine tests, and 652 server tests. Four existing
+manual/GPU fixtures are ignored: the proxy fixture, two GLM device fixtures and
+the DFlash retained-plan GPU fault matrix. The composed server SHA-256 is
+`997515ac0ba866b308e9514c6b49d70acda70016f3d05953557c7610fa6a0d0e`.
+Logs are in `cpu/composed/`; all cargo commands ran on the authorized box at
+nice 19 with the same architecture and target settings. An initial shell lacked
+Cargo in PATH, stopped before execution, and is retained as `path-bootstrap.log`.
+
 Current code commit `41f15a8618c37ba1e1c845ee03ebcbc0049d5189`, after adapter commit
 `f604518caf15db72a80d52b10941f9fd243b2972` and shared seam
 `534040262e86d3009ba298ebdfbf79acb48b93d1`. Source hashes were read back from the
