@@ -482,3 +482,5 @@ prefill-fairness-20260908 | Exact resumable prime: Ornith small p95 15.125 -> 0.
 glm5-tp2-gpu-sampler-20260908 | Current five-pair medians: 81.317 to 91.250 wall tok/s (+12.22%), server decode 11.894 to 10.610 ms/token; original three and later two windows reported separately. Greedy twins exact, door OFF. | glm5-tp2-gpu-sampler-20260908/RESULTS.md
 
 - release-v0.137.0 owner go: #378 merged default OFF; full source-bound battery receipts attached to #391. See [GO-QUALIFICATION](release-v0.137.0-20260909/GO-QUALIFICATION.md).
+
+glm5-verify-tally-20260909 | "KEEP, 1.789758071 ms/round weighted saving" | glm5-verify-tally-20260909/RESULTS.md
