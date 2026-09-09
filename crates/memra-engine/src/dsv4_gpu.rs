@@ -14711,7 +14711,10 @@ impl Dsv4Gpu {
                 )
                 || self.indexer_score != Dsv4IndexerScore::Scalar)
         {
-            return Err("full-token attention requires t=1 scalar f32 device-cache program".into());
+            return Err(
+                "full-token attention requires t=1 scalar or tiled32 f32 device-cache program"
+                    .into(),
+            );
         }
         let LayerCache {
             kvc,
