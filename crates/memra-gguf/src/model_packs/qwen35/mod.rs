@@ -1,6 +1,8 @@
 use super::*;
 use crate::config::HfConfig;
 
+pub mod activation;
+
 pub static PACK: ModelPack = ModelPack {
     family: "qwen35",
     aliases: &[

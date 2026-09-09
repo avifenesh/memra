@@ -54,6 +54,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
     };
     Ok(ModelPlan {
         speech: None,
+        prefill_activation: None,
         // glm5_next's mHC exit is its own program; the qwen4_exp exit-mixer field stays unset.
         exit_mixer: None,
         arch: Arch::Glm5Next,

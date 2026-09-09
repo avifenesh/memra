@@ -216,10 +216,10 @@ static constexpr __device__ int mmq_get_granularity_device(const int mmq_x) {
 }
 
 // ======================= load_tiles_nvfp4_nvfp4 (mmq.cuh:945) =======================
-template <int mmq_y, bool need_check>
+template <int mmq_y, bool need_check, bool rp = false>
 static __device__ __forceinline__ void load_tiles_nvfp4_nvfp4(
         const char * __restrict__ x, int * __restrict__ x_tile, const int kbx0, const int i_max,
-        const int stride) {
+        const int stride, const int nrows = 0) {
     constexpr int nwarps = MMQ_NWARPS;
     constexpr int warp_size = MMQ_WARP_SIZE;
     constexpr int iter_k = MMQ_ITER_K_FP4;
@@ -244,13 +244,21 @@ static __device__ __forceinline__ void load_tiles_nvfp4_nvfp4(
         const int row_base = i * MMQ_MMA_TILE_X_K_FP4;
         const int q_base = row_base + 8 * kbx;
 
-        const uint32_t * src_qs = reinterpret_cast<const uint32_t *>(bxi->qs);
+        const int64_t index = int64_t(kbx0) + kbx + int64_t(i) * stride;
+        const uint32_t * src_qs = rp
+            ? reinterpret_cast<const uint32_t *>(x + index * 32)
+            : reinterpret_cast<const uint32_t *>(bxi->qs);
 #pragma unroll
         for (int sub = 0; sub < QK_NVFP4 / QK_NVFP4_SUB; ++sub) {
             x_u32[q_base + 2 * sub + 0] = src_qs[2 * sub + 0];
             x_u32[q_base + 2 * sub + 1] = src_qs[2 * sub + 1];
         }
-        x_u32_scale[row_base] = get_int_b4(bxi->d, 0);
+        if constexpr (rp) {
+            x_u32_scale[row_base] = *reinterpret_cast<const uint32_t *>(
+                x + int64_t(nrows) * stride * 32 + index * 4);
+        } else {
+            x_u32_scale[row_base] = get_int_b4(bxi->d, 0);
+        }
     }
 }
 
@@ -359,14 +367,14 @@ static __device__ __forceinline__ void mmq_write_back_nvfp4(
 }
 
 // ======================= mul_mat_q_process_tile (mmq.cuh:3447, NVFP4) =======================
-template <int mmq_x, bool need_check>
+template <int mmq_x, bool need_check, bool rp = false>
 static __device__ __forceinline__ void mul_mat_q_process_tile_nvfp4(
         const char * __restrict__ x, const int offset_x, const int * __restrict__ y,
         const int * __restrict__ ids_dst, float * __restrict__ dst,
         const float * __restrict__ y_scale,
         const int stride_row_x, const int ncols_y, const int stride_col_dst,
         const int tile_x_max_i, const int tile_y_max_j, const int kb0_start, const int kb0_stop,
-        const float out_scale) {
+        const float out_scale, const int nrows_x = 0) {
     constexpr int warp_size = MMQ_WARP_SIZE;
     constexpr int nwarps    = MMQ_NWARPS;
     constexpr int qk        = QK_NVFP4;
@@ -386,7 +394,7 @@ static __device__ __forceinline__ void mul_mat_q_process_tile_nvfp4(
     constexpr int sz = sizeof(block_q8_1_mmq) / sizeof(int); // == MMQ_TILE_Y_K (36)
 
     for (int kb0 = kb0_start; kb0 < kb0_stop; kb0 += blocks_per_iter) {
-        load_tiles_nvfp4_nvfp4<mmq_y, need_check>(x, tile_x, offset_x + kb0, tile_x_max_i, stride_row_x);
+        load_tiles_nvfp4_nvfp4<mmq_y, need_check, rp>(x, tile_x, offset_x + kb0, tile_x_max_i, stride_row_x, nrows_x);
         {
             const int * by0 = y + ncols_y * (kb0 * qk / ne_block) * sz;
 #pragma unroll
@@ -418,7 +426,7 @@ static __device__ __forceinline__ void mul_mat_q_process_tile_nvfp4(
 // ======================= mul_mat_q (conventional xy-tiling, NVFP4) =======================
 // Grid: (nty = ceil(nrows_x/mmq_y), ntx = ceil(ncols_dst/mmq_x), 1). One tile per CTA, fixup=false.
 // (2D plain GEMM: 1 channel, 1 sample -> all the stride_channel/sample/expert plumbing drops out.)
-template <int mmq_x, bool need_check>
+template <int mmq_x, bool need_check, bool rp = false>
 __launch_bounds__(MMQ_WARP_SIZE * MMQ_NWARPS, 1)
 static __global__ void mul_mat_q_nvfp4(
         const char * __restrict__ x, const int * __restrict__ y, float * __restrict__ dst,
@@ -456,9 +464,9 @@ static __global__ void mul_mat_q_nvfp4(
     // advance the base pointer by this tile's first token.
     const float * y_scale_tile = y_scale ? y_scale + jt * mmq_x : nullptr;
 
-    mul_mat_q_process_tile_nvfp4<mmq_x, need_check>(
+    mul_mat_q_process_tile_nvfp4<mmq_x, need_check, rp>(
         x, offset_x, y + offset_y, ids_dst_shared, dst + offset_dst, y_scale_tile, stride_row_x,
-        ncols_y, stride_col_dst, tile_x_max_i, tile_y_max_j, 0, blocks_per_ne00, out_scale);
+        ncols_y, stride_col_dst, tile_x_max_i, tile_y_max_j, 0, blocks_per_ne00, out_scale, nrows_x);
 }
 #endif // !MEMRA_SM100_TCGEN05
 
@@ -1237,6 +1245,49 @@ static __global__ void nvfp4_residual_correct_kernel(
     }
 }
 
+#if CUDART_VERSION >= 12080 && !defined(MEMRA_SM100_TCGEN05)
+// Artifact v1: fixed per-linear global multiplier, dynamic per-16 UE4M3.
+// No row-global scale fit, residual correction, or fused SiLU program.
+static __global__ void quantize_calibrated_prefill_nvfp4(
+        const float * x, block_fp4_mmq * q, float * scales,
+        int k, int rows, int padded_rows, float global) {
+    const int row = blockIdx.x;
+    if (threadIdx.x == 0) { scales[row] = global; }
+    const int padded_k = GGML_PAD(k, 512);
+    for (int i = threadIdx.x * 4; i < padded_k; i += blockDim.x * 4) {
+        float values[4];
+        float maximum = 0.f;
+        #pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            values[j] = row < rows && i+j < k ? x[size_t(row)*k+i+j] : 0.f;
+            maximum = fmaxf(maximum, fabsf(values[j]));
+        }
+        maximum = fmaxf(maximum, __shfl_xor_sync(0xffffffff, maximum, 1, 4));
+        maximum = fmaxf(maximum, __shfl_xor_sync(0xffffffff, maximum, 2, 4));
+        const __nv_fp8_e4m3 micro(fminf(448.f, __fdiv_rn(maximum, __fmul_rn(6.f, global))));
+        const float denominator = __fmul_rn(global, float(micro));
+        #pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            values[j] = denominator > 0.f ? __fdiv_rn(values[j], denominator) : 0.f;
+        }
+        const __nv_fp4x4_e2m1 packed(make_float4(values[0], values[1], values[2], values[3]));
+        const unsigned bits = packed.__x;
+        const unsigned pair = __shfl_xor_sync(0xffffffff, bits, 2, 4);
+        const int sub = (i % 256) / 16;
+        block_fp4_mmq * out = q + size_t(i/256)*padded_rows + row;
+        if ((threadIdx.x & 3) == 0) { reinterpret_cast<uint8_t *>(out->d4)[sub] = micro.__x; }
+        if ((threadIdx.x & 3) < 2) {
+            uint32_t bytes = 0;
+            #pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                bytes |= (((bits >> (4*j)) & 15) | (((pair >> (4*j)) & 15) << 4)) << (8*j);
+            }
+            reinterpret_cast<uint32_t *>(out->qs)[2*sub+(threadIdx.x & 1)] = bytes;
+        }
+    }
+}
+#endif
+
 // ======================= C-ABI host launcher =======================
 extern "C" {
 
@@ -1455,6 +1506,44 @@ int memra_mmq_nvfp4(const void * W_nvfp4_blocks, const float * act_f32, float * 
                    float out_scale) {
     return memra_mmq_nvfp4_ex2(W_nvfp4_blocks, act_f32, y, in_f, out_f, n_tokens, act_scratch,
                                stream, out_scale, /*per_token_scale=*/1, /*residual_k=*/0);
+}
+
+int memra_mmq_nvfp4_calibrated_prefill(
+        const void * weights, const float * input, float * output,
+        int in_f, int out_f, int rows, void * scratch, void * stream,
+        float weight_scale, float input_scale, int rp) {
+#if CUDART_VERSION >= 12080 && !defined(MEMRA_SM100_TCGEN05)
+    if (in_f <= 0 || in_f % 512 || out_f <= 0 || out_f % MMQ_Y || rows <= 0
+            || !isfinite(input_scale) || input_scale <= 0.f) { return 2902; }
+    constexpr int width = 128;
+    const int padded_rows = GGML_PAD(rows, width);
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    float * scales = mmq_nvfp4_scale_ptr(scratch, in_f, padded_rows);
+    quantize_calibrated_prefill_nvfp4<<<padded_rows, 256, 0, st>>>(
+        input, static_cast<block_fp4_mmq *>(scratch), scales, in_f, rows, padded_rows, input_scale);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) { return 1000 + int(err); }
+    const dim3 grid(out_f/MMQ_Y, (rows+width-1)/width, 1);
+    const dim3 threads(MMQ_WARP_SIZE, MMQ_NWARPS, 1);
+    const size_t smem = mmq_nvfp4_nbytes_shared();
+    if (rp) {
+        err = cudaFuncSetAttribute(mul_mat_q_nvfp4<width, false, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        if (err != cudaSuccess) { return 1000 + int(err); }
+        mul_mat_q_nvfp4<width, false, true><<<grid, threads, smem, st>>>(
+            static_cast<const char *>(weights), static_cast<const int *>(scratch), output,
+            scales, out_f, rows, in_f/64, padded_rows, out_f, in_f/64, weight_scale);
+    } else {
+        err = cudaFuncSetAttribute(mul_mat_q_nvfp4<width, false>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        if (err != cudaSuccess) { return 1000 + int(err); }
+        mul_mat_q_nvfp4<width, false><<<grid, threads, smem, st>>>(
+            static_cast<const char *>(weights), static_cast<const int *>(scratch), output,
+            scales, out_f, rows, in_f/64, padded_rows, out_f, in_f/64, weight_scale);
+    }
+    err = cudaGetLastError();
+    return err == cudaSuccess ? 0 : 1000 + int(err);
+#else
+    return 2901;
+#endif
 }
 
 } // extern "C"

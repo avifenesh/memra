@@ -1101,6 +1101,7 @@ impl MlaConfig {
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub arch: Arch,
+    pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
     pub name: String,
     pub n_layer: u32,
     pub n_embd: u32,
@@ -1559,6 +1560,8 @@ impl ModelConfig {
 
         ModelConfig {
             arch,
+            prefill_activation: crate::model_packs::qwen35::activation::PrefillFp4::from_gguf(g)
+                .unwrap_or_else(|error| panic!("{error}")),
             window_hint: u("attention.sliding_window"),
             // GGUF spells llama3 rope scaling as per-frequency factors, not a type string;
             // `rope_factors` carries them and the packs that read them declare it.
@@ -2292,6 +2295,7 @@ impl ModelConfig {
 
         ModelConfig {
             arch,
+            prefill_activation: None,
             window_hint: c.sliding_window,
             rope_scaling_hint: c.rope_scaling_type.clone(),
             name: c.name.clone().unwrap_or_default(),

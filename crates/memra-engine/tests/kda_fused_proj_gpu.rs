@@ -117,6 +117,7 @@ fn one_kda_layer_plan() -> ModelPlan {
     };
     ModelPlan {
         speech: None,
+        prefill_activation: None,
         arch: memra_gguf::config::Arch::Glm5Next,
         hidden_size: HIDDEN as u32,
         vocab_size: 32,

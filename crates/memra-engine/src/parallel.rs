@@ -1620,6 +1620,7 @@ mod tests {
             .collect();
         ModelConfig {
             arch: Arch::Step35,
+            prefill_activation: None,
             // step35 parses its own window into `step35.sliding_window`; the hints are for
             // packs whose plan does not consume one (see ModelConfig::window_hint).
             window_hint: None,
