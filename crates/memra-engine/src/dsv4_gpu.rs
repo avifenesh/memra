@@ -1692,7 +1692,8 @@ fn norm_fuse2_environment_policy(
     admitted: bool,
 ) -> Res<bool> {
     match value {
-        Err(std::env::VarError::NotPresent) | Ok("0") => Ok(false),
+        Err(std::env::VarError::NotPresent) => Ok(admitted),
+        Ok("0") => Ok(false),
         Ok("1") if admitted => Ok(true),
         Ok("1") => Err("norm fusion2 requires TP/EP f32x".into()),
         _ => Err("MEMRA_DSV4_NORM_FUSE2 requires 0 or 1".into()),
@@ -19816,14 +19817,20 @@ mod norm_fuse_default_tests {
 mod norm_fuse2_policy_tests {
     use super::norm_fuse2_environment_policy;
     #[test]
-    fn default_off_and_explicit_admission() {
+    fn unset_selects_qualified_path_and_zero_rolls_back() {
         let absent = std::env::VarError::NotPresent;
-        for admitted in [false, true] {
-            assert!(!norm_fuse2_environment_policy(Err(&absent), admitted).unwrap());
-            assert!(!norm_fuse2_environment_policy(Ok("0"), admitted).unwrap());
-            assert!(norm_fuse2_environment_policy(Ok("invalid"), admitted).is_err());
-        }
+        // Unset now engages inside the admitted topology and stays off outside it.
+        assert!(norm_fuse2_environment_policy(Err(&absent), true).unwrap());
+        assert!(!norm_fuse2_environment_policy(Err(&absent), false).unwrap());
+        // Explicit zero is the rollback seam on both sides of admission.
+        assert!(!norm_fuse2_environment_policy(Ok("0"), true).unwrap());
+        assert!(!norm_fuse2_environment_policy(Ok("0"), false).unwrap());
+        // Explicit one still refuses outside the admitted topology, and junk always refuses.
         assert!(norm_fuse2_environment_policy(Ok("1"), true).unwrap());
         assert!(norm_fuse2_environment_policy(Ok("1"), false).is_err());
+        for admitted in [false, true] {
+            assert!(norm_fuse2_environment_policy(Ok("invalid"), admitted).is_err());
+            assert!(norm_fuse2_environment_policy(Ok(""), admitted).is_err());
+        }
     }
 }

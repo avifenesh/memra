@@ -622,6 +622,12 @@ fn run(
 }
 
 fn main() {
+    // This bin observes the dense-fast and norm-fuse defaults deliberately. The
+    // separate norm2 door is not part of that observation and would move the rows,
+    // so pin it off before any model or worker thread exists.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+    }
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(
         args.len(),
@@ -671,15 +677,11 @@ fn main() {
             || (dense_env.as_deref() == Some("0") && norm_env.as_deref() == Some("0")),
         "engagement requires both unset or both explicit zero"
     );
-    // This bin observes the dense-fast and norm-fuse policy on purpose. The
-    // separate default-OFF norm2 door is not part of that observation and must
-    // not be inherited from the caller.
-    assert!(
-        matches!(
-            std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
-            Err(_) | Ok("0")
-        ),
-        "default OFF required: MEMRA_DSV4_NORM_FUSE2"
+    // main() pinned this door off at startup. Verify the pin took.
+    assert_eq!(
+        std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
+        Ok("0"),
+        "explicit OFF required: MEMRA_DSV4_NORM_FUSE2"
     );
     let dense_initial = unsafe { memra_dsv4_dense_fast_enabled_for_gate() } != 0;
     assert_eq!(

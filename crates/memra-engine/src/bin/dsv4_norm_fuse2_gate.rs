@@ -528,9 +528,9 @@ fn main() {
             || (args.len() == 5
                 && matches!(
                     args[4].as_str(),
-                    "--qualify" | "--reverse" | "--capture-components"
+                    "--qualify" | "--reverse" | "--capture-components" | "--defaults"
                 )),
-        "usage: dsv4-norm-fuse2-gate <model-dir> <source.txt> <new-output-dir> [--qualify|--reverse|--capture-components]"
+        "usage: dsv4-norm-fuse2-gate <model-dir> <source.txt> <new-output-dir> [--qualify|--reverse|--capture-components|--defaults]"
     );
     assert!(
         !dsv4_prof_on(),
@@ -622,6 +622,32 @@ fn main() {
         gpu.decode_step_device_logits(prompt[1], &mut state)
             .unwrap();
         gpu.finish_norm2_components_for_gate().unwrap();
+    } else if args.get(4).is_some_and(|s| s == "--defaults") {
+        // Default engagement. The arm comes from the environment policy at load, not
+        // from a gate setter, so this is the only cell that proves what an ordinary
+        // process gets. One mode per invocation: unset must engage, explicit 0 must
+        // restore the unfused chains.
+        let env = std::env::var("MEMRA_DSV4_NORM_FUSE2").ok();
+        assert!(
+            env.is_none() || env.as_deref() == Some("0"),
+            "default engagement requires unset or explicit 0, got {env:?}"
+        );
+        let engaged = gpu.norm_fuse2_enabled_for_gate();
+        assert_eq!(
+            engaged,
+            env.is_none(),
+            "initial policy before any gate override: unset must engage, 0 must not"
+        );
+        qualify_arm(&gpu, &prompt[..PRIME], &output, cfg);
+        assert_eq!(
+            gpu.norm_fuse2_enabled_for_gate(),
+            engaged,
+            "arm restored after qualification"
+        );
+        println!(
+            "DEFAULT_ENGAGEMENT norm_fuse2={engaged} env={} scored_rows=0",
+            env.as_deref().unwrap_or("unset")
+        );
     } else if args.get(4).is_some_and(|s| s == "--qualify") {
         // One arm per invocation. Controller runs two new processes per arm.
         let on = gpu.norm_fuse2_enabled_for_gate();
