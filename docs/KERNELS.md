@@ -704,3 +704,35 @@ candidate with dense-fast. No serving admission or default promotion.
 Rollback uses `MEMRA_DSV4_NORM_FUSE=0` or unset with fresh uncaptured state;
 decide-by 2026-09-23. FFI entry: `memra_dsv4_norm_rope_f32_fixed_order` in
 `src/dsv4_ffi.rs`, dispatched by the t=1 batch attention path in `src/dsv4_gpu.rs`.
+
+### Dense-fast exact-tree kernels and qualification (default OFF, 2026-09-09)
+
+`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
+and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
+launchers by `MEMRA_DSV4_DENSE_FAST`. FP8 uses 256 threads for two independent
+rows sharing the identical E4M3 table; each row keeps 128 leaves. Dots retain
+128 threads, existing 16-byte operand loads and four-iteration loop unrolling.
+Leaf t consumes K positions 8*t+1024*j+[0..7] in ascending j/element order.
+The final tree is ((p[t]+p[t+64])+(p[t+32]+p[t+96])) followed by guarded
+16/8/4/2/1 warp shuffles, all F32 additions. FMAD stays disabled. Ragged tile
+rows participate in barriers without out-of-range operand loads or stores.
+
+`tools/dsv4-dense-fast-gate.cu` checks raw bits, guards, operand immutability
+and actual retained graph functions. All 24 real rank/shape cases, 36 boundary
+cases and two cancellation witnesses pass in normal, memcheck and synccheck;
+both sanitizers report zero errors. Each real case has 50 warm and 50 cold
+CUDA-event samples per arm; cold flushes 256 MiB. GB/s is modeled unique tensor
+traffic, not measured DRAM bandwidth. Resource APIs report static occupancy
+limits; disassembly reports static instructions. The captured operand callback
+is null in normal work and verifies registered stream and allocation ownership.
+
+`src/bin/dsv4_dense_fast_gate.rs` forces A OFF and B ON on the default
+split-K/cadence/device sampler/diet program, checks 256 per-step identities,
+retained resets, every forward variant's functions and 16 live refusals.
+Its 20-row ON/OFF/OFF/ON and single reverse twin include each scored arm's first
+capture. Pooled gains are +1.551526% and +1.459516%; all 40 rows are eligible
+and share token/logit/cache/hidden identity. KEEP as a default-OFF composition
+door, decide-by 2026-09-23. Source `711165799`, model binary SHA256
+`4be3e8084bb7d589abb8d2250c06f8c12f1edb713a66e2390bc90ed91821d5fd`.
+Receipts: [private Darklanes #529](https://github.com/avifenesh/darklanes/pull/529).
+Norm-fuse composition remains unmeasured. No serving admission or 120 tok/s claim.
