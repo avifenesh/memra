@@ -1,6 +1,6 @@
 # Native ASR modality plan
 
-Status: native CPU mel and encoder stage gates passed; cached decoding is the next stage. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
+Status: native CPU mel, encoder, cached decoder, beam-1 policy and clip window program all execute; end-to-end clip parity against the pinned rental oracle is in flight. See the measured status ladder below. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
 Engine baseline: `1657a5a80`; lane `lane/asr-modality-20260909`.
 
 Build both native speech paths now. Memra owns model math, frontend, state and decoding.
@@ -244,6 +244,57 @@ qualification; this draft is not a fleet rollout or a support declaration.
 - [Pinned NeMo archive](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/blob/1c8deaecc64b91f034d73e08dd8b64625eb3395d/nemotron-3.5-asr-streaming-0.6b.nemo), locally verified SHA256 and restricted tensor census.
 - [OpenAI Whisper audio/model sources](https://github.com/openai/whisper), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [NeMo](https://github.com/NVIDIA/NeMo): exact reading revisions in `research/asr-modality-20260909/semantic-sources.json`. Reading does not license vendoring kernels.
 - Private requirements read at Darklanes `ae42664bed248cd91124a9cf76829637734b0a2f`, sections 1/2/3/6 of the two-tier program, and its model-onboarding checklist. No private corpus or customer content is copied here.
+
+## Measured status ladder, 2026-09-09
+
+Where the two paths actually stand after the decode stage. Every "done" row below is bound to
+a receipt in `research/asr-modality-20260909/`; every "missing" row is work, not a formality.
+
+### Whisper large-v3, Hebrew transcription
+
+| Piece | State |
+| --- | --- |
+| Log-mel, padded single-window | Done. 5.6743622e-5 vs HF FP32, bound 1e-3 |
+| Log-mel, real clip program | Done. 364 of 364 real 30-second windows at 1.1920928955078125e-7, bound 1e-3 |
+| Conv stem and 32 encoder blocks | Done in F32 and strict F16. 0.0002231598 vs HF F32; F16 at the measured HF F16 floor |
+| Cached decoder, self and cross KV | Done in F32 and strict F16, argmax 12 of 12 against the FP32 truth |
+| Window program (seek, extent, advance) | Done. Reproduces all 364 pinned window boundaries across 71 clips |
+| Beam-1 policy (suppression, timestamps, forced timestamp, caps) | Done. Replays the oracle's own decodes step for step on its raw logits |
+| End-to-end clip parity vs CT2 beam-1 | In flight. Sweeping all 71 clips on the rig |
+| Native detokenizer | **Missing.** `transcribe` emits ids; WER is scored with the checkpoint tokenizer through offline tooling |
+| Tokenizer and vocabulary bound in the engine | **Missing.** Ids are pinned as plan constants and gated against the checkpoint's generation config, but no byte-level BPE lives in Memra yet |
+| Timestamp and word-alignment gate | **Missing.** Parity is token-level; a timestamp that lands one unit off is currently only visible as a token difference |
+| No-speech and temperature fallback | **Missing by design in this arm.** The deterministic beam-1 program has no fallback; a product arm needs its own pinned policy |
+| Speech plans in the reference executor and `model inspect` | **Missing.** The executor still refuses speech plans; the speech pack is not in the text `PACKS` registry |
+| F16 end-to-end sweep | **Missing.** The 71-clip sweep runs F32; the F16 arm has stage receipts but no clip parity |
+
+`NativeReference` needs the sweep to land plus the native detokenizer and the tokenizer
+binding. Everything above them is bring-up evidence, not production permission.
+
+`NativeQualified` additionally needs, none of it started:
+
+- A GPU execution path. Every number in this lane is a CPU reference measured on efficiency
+  cores. There is no CUDA kernel for the speech operations, no residency plan and no
+  performance receipt, and the CPU reference is not evidence for any of them.
+- An audio endpoint shape in `memra serve`: readiness, model id, the request/response contract
+  for a bounded utterance, streaming partials, concurrency, admission and context limits,
+  cancellation, reconnect and rollback, each with a receipt bound to one binary and one plan.
+- The integrated acceptance battery in the runtime contract section above, timed from the last
+  owned speech sample.
+- Optional INT8. CT2 serves per-row INT8; generic Q8_0 is not that. It stays optional until a
+  separately receipted quality and latency win exists, and it is not a prerequisite for FP16.
+
+### Nemotron 3.5 streaming RNNT, Hebrew successor
+
+| Piece | State |
+| --- | --- |
+| Archive layout, census and contract bind | Done on the real `clean-step-21959.nemo`: 657 tensors, 638,030,384 elements, nothing missing or extra, no aliased storage |
+| `[56, 0]` streaming state contract | Done as a typed shape contract: 2,951,680 state elements per session, causal, other arms expressible and not admitted |
+| Shared `TensorContract` and `ModelPlan` integration | **Missing on purpose.** Needs a torch-zip `CheckpointDialect`, which touches every text builder that matches on the dialect |
+| FastConformer frontend, subsampler, blocks | **Missing.** No execution at all |
+| Predictor, joint, prompt kernel, greedy RNNT | **Missing.** No execution at all |
+| Streaming session lifecycle | **Missing.** Contract only |
+| NeMo oracle captures | **Missing.** The private oracle lane has not produced per-chunk NeMo captures for this successor |
 
 ## Stage 1 receipt, 2026-09-09
 
