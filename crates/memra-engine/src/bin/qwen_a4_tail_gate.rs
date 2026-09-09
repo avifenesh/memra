@@ -22,8 +22,12 @@ use memra_engine::model::GpuTensor;
 use memra_gguf::GgufFile;
 use memra_gguf::model_packs::qwen35::activation::PrefillFp4;
 
-const ROWS: &[usize] = &[1, 2, 3, 17, 33, 64, 127, 128, 129, 255, 1024];
+const ROWS: &[usize] = &[1, 2, 3, 17, 33, 48, 64, 127, 128, 129, 255, 1024];
 const CANARY: u8 = 0xA4;
+/// Poison patterns for the PADDED region INSIDE the declared footprint. 0xA4 repeated is a small
+/// finite f32, so it cannot show a NaN leak; these can. A 48-row suffix prime pads to 128, and
+/// the question is whether the 48 real rows depend on what the other 80 rows contain.
+const POISONS: &[(&str, u32)] = &[("nan", 0x7FC0_0000), ("inf", 0x7F80_0000)];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args()

@@ -3202,6 +3202,14 @@ pub const A4_CLIP_STRIDE: usize = 8;
 pub static A4_PREFILL_SLOTS: [std::sync::atomic::AtomicU64; PROGRAM_SLOTS] =
     [const { std::sync::atomic::AtomicU64::new(0) }; PROGRAM_SLOTS];
 
+/// Read every slot counter without zeroing, for a per-call delta.
+pub fn a4_prefill_slots_snapshot() -> Vec<u64> {
+    A4_PREFILL_SLOTS
+        .iter()
+        .map(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+        .collect()
+}
+
 /// Snapshot every slot counter and zero them.
 pub fn a4_prefill_slots_reset() -> Vec<u64> {
     A4_PREFILL_SLOTS

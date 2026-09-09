@@ -5528,11 +5528,42 @@ impl HybridModel {
         // session per call, so under the wave shape that produced memra#50 this alone already
         // beats between sessions.
         let events_before = crate::progress::events();
+        let a4_before = self.a4_prime_receipt_begin();
         let out = self.prime_cache_overlaid_inner(e, tokens, cache, queued_after, overlay);
         if out.is_ok() && crate::progress::events() == events_before {
             crate::progress::note_prime_rows(tokens.len());
         }
+        self.a4_prime_receipt_end("prime", tokens.len(), a4_before);
         out
+    }
+
+    /// Snapshot the calibrated-A4 slot counters if this model declares the activation program.
+    ///
+    /// A cold prime and a restored SUFFIX prime are two different walks of the trunk, and the
+    /// question that matters for the restore fence is whether they run the same 400 projections
+    /// through the same arithmetic. Without a per-prime receipt the only evidence is the answer
+    /// text, which cannot say WHICH walk differed.
+    fn a4_prime_receipt_begin(&self) -> Option<Vec<u64>> {
+        self.cfg
+            .prefill_activation
+            .as_ref()
+            .map(|_| crate::mmq_ffi::a4_prefill_slots_snapshot())
+    }
+
+    fn a4_prime_receipt_end(&self, kind: &str, rows: usize, before: Option<Vec<u64>>) {
+        let Some(before) = before else { return };
+        let after = crate::mmq_ffi::a4_prefill_slots_snapshot();
+        let ran = before
+            .iter()
+            .zip(after.iter())
+            .filter(|(b, a)| *a > *b)
+            .count();
+        let launches: u64 = before
+            .iter()
+            .zip(after.iter())
+            .map(|(b, a)| a.saturating_sub(*b))
+            .sum();
+        eprintln!("[a4-{kind}] rows={rows} a4_launches={launches} projections={ran} of 400");
     }
 
     #[allow(clippy::type_complexity)] // allow: mirrors `prime_cache_overlaid`'s signature
@@ -8054,10 +8085,16 @@ impl HybridModel {
         // covered, while the fast batched arm was not. Same rule as the other entry: if
         // nothing below stamped, the call's own completion is the honest progress point.
         let events_before = crate::progress::events();
+        let a4_before = self.a4_prime_receipt_begin();
         let out = self.prime_cache_batch_inner(e, prompts, caches);
         if out.is_ok() && crate::progress::events() == events_before {
             crate::progress::note_prime_rows(prompts.iter().map(|p| p.len()).sum());
         }
+        self.a4_prime_receipt_end(
+            "prime-batch",
+            prompts.iter().map(|p| p.len()).sum(),
+            a4_before,
+        );
         out
     }
 
