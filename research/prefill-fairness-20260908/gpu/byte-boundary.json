@@ -1,0 +1,147 @@
+{
+  "ornith": {
+    "pass": true,
+    "chains": [
+      {
+        "turn": 1,
+        "output_sha256": "acd269b5db511e7fdfa45d00008c3fb0e5a7a7aaec10fe0a8d2c44bda7576cd8",
+        "cached_tokens": 0
+      },
+      {
+        "turn": 2,
+        "output_sha256": "12a791e90b63c2ddd00ef35ccad47d889ef6fb1678a8edeb28c1bfbc3a040081",
+        "cached_tokens": 896
+      },
+      {
+        "turn": 3,
+        "output_sha256": "7e9a6bda8044c15e535bcacc1af36f9e52295fa277038f35be0795c67f546b2a",
+        "cached_tokens": 1120
+      },
+      {
+        "turn": 4,
+        "output_sha256": "906f576807ec0d085c4405cdf1c20c41d99df20b75543d47f06c5c7240f0c812",
+        "cached_tokens": 1344
+      }
+    ],
+    "pairs": [
+      {
+        "request": "long",
+        "output_sha256": "91a7901518a5eaa380d49d20ab0cfe6e513eac72313eb7b5ce99a865baec8839",
+        "c1_ttft_s": 25.024933388922364,
+        "c2_ttft_s": 28.102100542047992
+      },
+      {
+        "request": "small",
+        "output_sha256": "916705dcf34cb56e87dc4fdf74e9183232e868c6e0bd4f8d87e93a6a8c068bc9",
+        "c1_ttft_s": 0.22487194510176778,
+        "c2_ttft_s": 0.23598939995281398
+      }
+    ],
+    "pair_yields": 250,
+    "spec_gate_low_high": [
+      64,
+      65
+    ],
+    "pair_routes": {
+      "served_spec": 2,
+      "served_dspark": 0,
+      "served_plain": 0,
+      "step_oom_parks": 0,
+      "admission_vram_defers": 0,
+      "admission_session_defers": 0
+    },
+    "boundary_comparisons": [
+      {
+        "off": "chain-off",
+        "on": "chain-on",
+        "equal_oracle_lines": [
+          "[mtp-prime-oracle] base=0 rows=4096 target_logits=aa813d9f36588ff93a904531b78afeaabf3ef0c224faaacc460e88932d95aea6 boundary_count=0 boundary_state=af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+          "[mtp-prime-oracle] base=0 rows=925 target_logits=784a0709009f5521d69915a4838b253a3d0cd503c93fef5129f04fdb6376b52f boundary_count=1 boundary_state=00d13549d1bbafb4174095ec8dfab102332618e0b751b0cdfe4a81b7524ca9de",
+          "[mtp-prime-oracle] base=896 rows=241 target_logits=0d18200e620ddbf947a38878c32668586fc5ab82e9000a4338e9c744dacaab6c boundary_count=1 boundary_state=9dc6b0844d8be6521039741ab1e381f98a3800b8bd5b5d11a95047a072e24115",
+          "[mtp-prime-oracle] base=1120 rows=252 target_logits=309ee5371ae77550548189cec01a039345d3108bd716098297507140829a49cb boundary_count=1 boundary_state=c41b21ced1266cbfecd98cf176e07bc1c3f4307c0f9c49bda90872d6d9ace2d8",
+          "[mtp-prime-oracle] base=1344 rows=207 target_logits=835e66822630ebf66f181b1ad2b35ef5bd0d7d0af539358e4b0fc13239aa0868 boundary_count=1 boundary_state=187aca9313cfe425eb3bd37ff6291ced62ff62d12dc37c5b01ea0222d40ae882"
+        ]
+      },
+      {
+        "off": "solo-off",
+        "on": "pair-on",
+        "equal_oracle_lines": [
+          "[mtp-prime-oracle] base=0 rows=4096 target_logits=aa813d9f36588ff93a904531b78afeaabf3ef0c224faaacc460e88932d95aea6 boundary_count=0 boundary_state=af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+          "[mtp-prime-oracle] base=0 rows=127477 target_logits=8a75dbc41fa4ca36d64030b0b1724fae5104606761ed7ce3dc216dec68838d4b boundary_count=1 boundary_state=f3e2a665fab29dd6ab915d73b46a6ff2b23d8b9fedc57014bc63729bb7eaa671",
+          "[mtp-prime-oracle] base=0 rows=925 target_logits=784a0709009f5521d69915a4838b253a3d0cd503c93fef5129f04fdb6376b52f boundary_count=1 boundary_state=00d13549d1bbafb4174095ec8dfab102332618e0b751b0cdfe4a81b7524ca9de"
+        ]
+      }
+    ]
+  },
+  "qwen": {
+    "pass": true,
+    "chains": [
+      {
+        "turn": 1,
+        "output_sha256": "016c779922d933a61451454d75eb4d37d2edce88083eea337d7ef488b07fc72d",
+        "cached_tokens": 0
+      },
+      {
+        "turn": 2,
+        "output_sha256": "2daa9cade4f74cca037b1491a46f68209425a7ebd77eb7812021b8571463bc2e",
+        "cached_tokens": 928
+      },
+      {
+        "turn": 3,
+        "output_sha256": "0e82b74f2b56f2b077c4fba47e06747d8fd09e9b21f6416388362aa68511092b",
+        "cached_tokens": 1056
+      },
+      {
+        "turn": 4,
+        "output_sha256": "d81a7f357b5abff4b582ed75490fbd9ff827b8c48cd328e278a1e3b2b310181c",
+        "cached_tokens": 1184
+      }
+    ],
+    "pairs": [
+      {
+        "request": "long",
+        "output_sha256": "b5065a7403d5413135852a4cce0326057c2200672c36b5f53f8f7f18b728942c",
+        "c1_ttft_s": 75.81002126983367,
+        "c2_ttft_s": 77.74320935900323
+      },
+      {
+        "request": "small",
+        "output_sha256": "016c779922d933a61451454d75eb4d37d2edce88083eea337d7ef488b07fc72d",
+        "c1_ttft_s": 0.5520352709572762,
+        "c2_ttft_s": 1.1822689350228757
+      }
+    ],
+    "pair_yields": 129,
+    "spec_gate_low_high": [
+      64,
+      65
+    ],
+    "pair_routes": {
+      "served_spec": 0,
+      "served_dspark": 2,
+      "served_plain": 0,
+      "step_oom_parks": 0,
+      "admission_vram_defers": 0,
+      "admission_session_defers": 0
+    },
+    "boundary_comparisons": [
+      {
+        "off": "chain-off",
+        "on": "chain-on",
+        "equal_oracle_lines": [
+          "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 boundary_state=af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+          "[dflash-oracle] rows=967 taps=24486a6b6610ea63333b7594f639326e989dcd33b17008ba4e5e80139eca250d features=5708a63bad1a80070772da5c87706c8fb4a5c3cf688c7d99c9fddb7d60c2901a positions=f72e6fd98e609766ea153eaf51f0de0736a7db53bc9824d3ca68fb27897c4a91 target_logits=584da03ed6ee05ccfd0d1a9f38c29987b80036669143a0968a84108ea07f614e boundary_pos=928 boundary_logits=6e28f77d36bd04ce05be779f8f6c689c6ab45d534c01ed4bcab73ff5147a6269 boundary_state=19d6b3f5d5f6adb301e1cc856c2b7e42c6ede48023e3516ee8d698f46eeb92b7"
+        ]
+      },
+      {
+        "off": "solo-off",
+        "on": "pair-on",
+        "equal_oracle_lines": [
+          "[dflash-oracle] rows=4096 taps=1b659287cdffeeb31d870ade92d78bd2a5e02ff9521ec63ab0503cb685a93081 features=6d4ad9776389c3548e084740abd2d134b6792db70795c399e4a9b2d1c46666bf positions=6b0751ba5e64fc9c13ddfb44778fa7d6a1f7d7aa9d6a5e38a1f0a1502c3fb9e3 target_logits=a10fb543bfea2050bfe09bbb97d1b68394859ccae79cc256029b8f5a2f5794d6 boundary_pos=0 boundary_logits=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 boundary_state=af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+          "[dflash-oracle] rows=131070 taps=40c51482e9a12d73ecb53ed32cd305cd85789a156b682497cf6f090bc5a4663c features=24f45ee3bd4fa6423f0e8a329a180fb7fc783bef01019c777909e632c27878fd positions=cac1c8c9555c16a14f0e3265a3bb171bebbcdecfbf0f3834b4159610a8c428f0 target_logits=1182c1f68c33f3b9cc25ac895f971a10176a99068ab21a3968ba98ea7fb16007 boundary_pos=131040 boundary_logits=f7564a2647fdcc27528ccbcef9a8edd349de720ab35dd1bed74b474884820db7 boundary_state=a43e6d86d993b5f7bcdb5ac7d1aecaed452bb1fa49b03512417a4ef61765ded1",
+          "[dflash-oracle] rows=967 taps=24486a6b6610ea63333b7594f639326e989dcd33b17008ba4e5e80139eca250d features=5708a63bad1a80070772da5c87706c8fb4a5c3cf688c7d99c9fddb7d60c2901a positions=f72e6fd98e609766ea153eaf51f0de0736a7db53bc9824d3ca68fb27897c4a91 target_logits=584da03ed6ee05ccfd0d1a9f38c29987b80036669143a0968a84108ea07f614e boundary_pos=928 boundary_logits=6e28f77d36bd04ce05be779f8f6c689c6ab45d534c01ed4bcab73ff5147a6269 boundary_state=19d6b3f5d5f6adb301e1cc856c2b7e42c6ede48023e3516ee8d698f46eeb92b7"
+        ]
+      }
+    ]
+  }
+}

@@ -474,3 +474,5 @@ dsv4f-moe-m1-splitk-20260907 | Adaptive M1 split-K accepted: no observed compone
 mtp-head-nonresident-capture-20260908 | "The 10 GiB squeeze reproduced #263 on main `dd8cc9c74`." | mtp-head-nonresident-capture-20260908/RESULTS.md
 
 release-v0.134.0-20260908 | "Full release battery: PASS" | release-v0.134.0-20260908/RESULTS.md
+
+prefill-fairness-20260908 | Exact resumable prime: Ornith small p95 15.125 -> 0.977 s (+1.756 s long TTFT); Qwen 60.452 -> 48.042 s (+3.664 s), admitted-peer exactness passes but session-cap queue persists. Default OFF; propose Ornith launcher enable. | prefill-fairness-20260908/RESULTS.md

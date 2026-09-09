@@ -1,0 +1,90 @@
+{
+  "boot": "qwen-solo-off",
+  "identity": {
+    "binary_sha256": "19db5df71812eabfa914ba99f58ff676e5d6a860174c0a75084dfad19a89d8e4",
+    "boot_nonce": "819a6436b51045e5b851269e8bf1497a",
+    "pid": 550108,
+    "start_ticks": "189645661"
+  },
+  "settings": {
+    "MEMRA_CTX": "262144",
+    "MEMRA_MAX_SESSIONS": "4",
+    "MEMRA_PRIME_CHUNK": "1024",
+    "MEMRA_PRIME_YIELD": "0",
+    "MEMRA_TICK_TRACE": "1",
+    "MEMRA_SPEC_GATE_LOW": "64",
+    "MEMRA_SPEC_GATE_HIGH": "65",
+    "MEMRA_ALLOC_TRACE": "1"
+  },
+  "summary": {
+    "rows": [
+      {
+        "label": "long",
+        "ttft_s": 75.81002126983367,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 131070,
+          "completion_tokens": 64,
+          "total_tokens": 131134,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 76.775401575,
+          "spec": {
+            "rounds": 24,
+            "drafted": 73,
+            "accepted": 41,
+            "acceptance_rate": 0.5616438356164384
+          }
+        },
+        "status": 200,
+        "finish": "length",
+        "total_s": 76.93291743798181,
+        "output_sha256": "b5065a7403d5413135852a4cce0326057c2200672c36b5f53f8f7f18b728942c"
+      },
+      {
+        "label": "small",
+        "ttft_s": 0.5520352709572762,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 967,
+          "completion_tokens": 99,
+          "total_tokens": 1066,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 1.741332961,
+          "spec": {
+            "rounds": 38,
+            "drafted": 113,
+            "accepted": 61,
+            "acceptance_rate": 0.5398230088495575
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.7472778169903904,
+        "output_sha256": "016c779922d933a61451454d75eb4d37d2edce88083eea337d7ef488b07fc72d"
+      }
+    ],
+    "yield_count": 0,
+    "metric_delta": {
+      "served_spec": 0,
+      "served_dspark": 2,
+      "served_plain": 0,
+      "step_oom_parks": 0,
+      "admission_vram_defers": 0,
+      "admission_session_defers": 0
+    },
+    "boot_nonce": "819a6436b51045e5b851269e8bf1497a"
+  },
+  "cleanup": {
+    "own_pid": 550108,
+    "exit": 0,
+    "gpu_compute_apps_while_lock_held": ""
+  },
+  "request_sha256": {
+    "long-request.json": "297bf4d9b09b8d053aa4acd0b5cf17d71b4686924c76392951e0e8298c76d10b",
+    "small-request.json": "2e6d85a01f36c1c711e1bfb6bf5e891ad44984855b4fadd63975575852c19f05"
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "boot": "ornith-chain-off",
+  "identity": {
+    "binary_sha256": "997515ac0ba866b308e9514c6b49d70acda70016f3d05953557c7610fa6a0d0e",
+    "boot_nonce": "e9ad97feef134479a694917f2482606f",
+    "pid": 558193,
+    "start_ticks": "189795134"
+  },
+  "settings": {
+    "MEMRA_CTX": "262144",
+    "MEMRA_MAX_SESSIONS": "4",
+    "MEMRA_PRIME_CHUNK": "1024",
+    "MEMRA_PRIME_YIELD": "0",
+    "MEMRA_TICK_TRACE": "1",
+    "MEMRA_SPEC_GATE_LOW": "64",
+    "MEMRA_SPEC_GATE_HIGH": "65",
+    "MEMRA_ALLOC_TRACE": "1"
+  },
+  "summary": {
+    "rows": [
+      {
+        "label": "turn1",
+        "ttft_s": 0.20568512589670718,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 925,
+          "completion_tokens": 184,
+          "total_tokens": 1109,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 1.038702597,
+          "spec": {
+            "rounds": 104,
+            "drafted": 312,
+            "accepted": 92,
+            "acceptance_rate": 0.2948717948717949
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.0441876188851893,
+        "output_sha256": "acd269b5db511e7fdfa45d00008c3fb0e5a7a7aaec10fe0a8d2c44bda7576cd8"
+      },
+      {
+        "label": "turn2",
+        "ttft_s": 0.191588374087587,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1137,
+          "completion_tokens": 207,
+          "total_tokens": 1344,
+          "prompt_tokens_details": {
+            "cached_tokens": 896
+          },
+          "elapsed_s": 0.906145903,
+          "spec": {
+            "rounds": 114,
+            "drafted": 342,
+            "accepted": 114,
+            "acceptance_rate": 0.3333333333333333
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 0.9310763070825487,
+        "output_sha256": "12a791e90b63c2ddd00ef35ccad47d889ef6fb1678a8edeb28c1bfbc3a040081"
+      },
+      {
+        "label": "turn3",
+        "ttft_s": 0.1879049891140312,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1372,
+          "completion_tokens": 151,
+          "total_tokens": 1523,
+          "prompt_tokens_details": {
+            "cached_tokens": 1120
+          },
+          "elapsed_s": 2.30471464,
+          "spec": {
+            "rounds": 79,
+            "drafted": 395,
+            "accepted": 82,
+            "acceptance_rate": 0.20759493670886076
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 2.3294778880663216,
+        "output_sha256": "7e9a6bda8044c15e535bcacc1af36f9e52295fa277038f35be0795c67f546b2a"
+      },
+      {
+        "label": "turn4",
+        "ttft_s": 0.18523342302069068,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1551,
+          "completion_tokens": 113,
+          "total_tokens": 1664,
+          "prompt_tokens_details": {
+            "cached_tokens": 1344
+          },
+          "elapsed_s": 1.9289873640000001,
+          "spec": {
+            "rounds": 65,
+            "drafted": 325,
+            "accepted": 64,
+            "acceptance_rate": 0.19692307692307692
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.9542737531010062,
+        "output_sha256": "906f576807ec0d085c4405cdf1c20c41d99df20b75543d47f06c5c7240f0c812"
+      }
+    ],
+    "yield_count": 0,
+    "metric_delta": {
+      "served_spec": 3,
+      "served_dspark": 0,
+      "served_plain": 0,
+      "step_oom_parks": 0,
+      "admission_vram_defers": 0,
+      "admission_session_defers": 0
+    },
+    "boot_nonce": "e9ad97feef134479a694917f2482606f"
+  },
+  "cleanup": {
+    "own_pid": 558193,
+    "exit": 0,
+    "gpu_compute_apps_while_lock_held": ""
+  },
+  "request_sha256": {
+    "turn1-request.json": "8610cf7cb1569b38a9853a7db56a098eeaac4d283bd10b63d6f195cad81b9a9a",
+    "turn2-request.json": "642f6fb302ba233ef0019878a9a9c021e23ef0aded0fabedcc07091f1fc2a727",
+    "turn3-request.json": "3cec122c188434f386b638118121e68c6bb3fe8457b09edd6b535bb41823b647",
+    "turn4-request.json": "86476d0f305adb96d93e0149fc7ab70bc1291a193ef3be82a310900195d85ac9"
+  }
+}
