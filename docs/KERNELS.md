@@ -713,7 +713,7 @@ CUDA occupancy API limit, registers/shared/local bytes and modeled tensor GB/s.
 Disassembly supplies static instruction evidence; neither metric is a hardware
 counter claim. Initial operands are deterministic synthetic inputs, so this
 diagnostic does not replace real-operand equality or model qualification.
-The diagnostic accepts `--reverse` from its first build. No runtime door yet.
+The diagnostic accepts `--reverse` from its first build.
 
 ### Dense-fast candidate (default OFF)
 

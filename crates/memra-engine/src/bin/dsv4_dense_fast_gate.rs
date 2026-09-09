@@ -433,6 +433,7 @@ fn run(
     programs: [Program; 2],
     cfg: Dsv4SampleCfg,
     reverse: bool,
+    qualify_only: bool,
 ) {
     select(gpu, false);
     let mut prefix = state(gpu);
@@ -561,9 +562,12 @@ fn run(
     drop(eager);
     refusal_cells(gpu, &prefix, cfg, &inputs, programs[0], output);
     refusal_cells(gpu, &prefix, cfg, &inputs, programs[1], output);
-    println!(
-        "PASS composed model correctness, two retained resets, and 16 live refusal cells; timing begins"
-    );
+    println!("PASS dense-fast model correctness, two retained resets, and 16 live refusal cells");
+    if qualify_only {
+        select(gpu, false);
+        println!("QUALIFY_PASS identity_steps=256 arms=2 refusal_cells=16");
+        return;
+    }
 
     // BOTH scored arms are new and uncaptured, independent of qualification.
     // First ON row and first OFF row each include their actual graph-capture cost.
@@ -686,8 +690,9 @@ fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert!(
         args.len() == 4
-            || (args.len() == 5 && matches!(args[4].as_str(), "--reverse" | "--capture")),
-        "usage: dsv4_dense_fast_gate <model-dir> <source.txt> <new-output-dir> [--reverse|--capture]"
+            || (args.len() == 5
+                && matches!(args[4].as_str(), "--reverse" | "--capture" | "--qualify")),
+        "usage: dsv4_dense_fast_gate <model-dir> <source.txt> <new-output-dir> [--reverse|--capture|--qualify]"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     for (name, value) in [
@@ -776,6 +781,7 @@ fn main() {
         programs,
         cfg,
         args.get(4).is_some_and(|arg| arg == "--reverse"),
+        args.get(4).is_some_and(|arg| arg == "--qualify"),
     );
 }
 
@@ -785,6 +791,7 @@ use std::{collections::BTreeSet, ffi::c_void, io::Write, sync::Mutex};
 struct Capture {
     dir: PathBuf,
     seen: BTreeSet<(i32, i32, i32, i32)>,
+    stream_ranks: [(usize, i32); 2],
 }
 static CAPTURE: Mutex<Option<Capture>> = Mutex::new(None);
 type Observer = unsafe extern "C" fn(
@@ -800,8 +807,16 @@ type Observer = unsafe extern "C" fn(
 unsafe extern "C" {
     fn memra_dsv4_dense_fast_observe_for_gate(observer: Option<Observer>);
     fn cudaGetDevice(device: *mut i32) -> i32;
+    fn cudaStreamGetDevice(stream: *mut c_void, device: *mut i32) -> i32;
     fn cudaStreamSynchronize(stream: *mut c_void) -> i32;
     fn cudaMemcpy(dst: *mut c_void, src: *const c_void, count: usize, kind: i32) -> i32;
+}
+fn capture_stream_rank(stream_ranks: &[(usize, i32); 2], stream: usize) -> i32 {
+    stream_ranks
+        .iter()
+        .find(|(handle, _)| *handle == stream)
+        .map(|(_, rank)| *rank)
+        .expect("capture stream belongs to this model")
 }
 unsafe extern "C" fn observe(
     kind: i32,
@@ -814,10 +829,17 @@ unsafe extern "C" fn observe(
     stream: *mut c_void,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
-        let mut rank = -1;
-        assert_eq!(unsafe { cudaGetDevice(&mut rank) }, 0);
         let mut guard = CAPTURE.lock().unwrap();
         let cap = guard.as_mut().expect("capture active");
+        // Rank belongs to the supplied stream, not the host thread's ambient
+        // device after a paired collective. Check the registered model owner.
+        let rank = capture_stream_rank(&cap.stream_ranks, stream as usize);
+        let mut stream_device = -1;
+        assert_eq!(
+            unsafe { cudaStreamGetDevice(stream, &mut stream_device) },
+            0
+        );
+        assert_eq!(stream_device, rank, "stream device versus model rank");
         let key = (rank, kind, n, k);
         if cap.seen.contains(&key) {
             return;
@@ -847,6 +869,23 @@ unsafe extern "C" fn observe(
         };
         if !wanted {
             return;
+        }
+        let mut ambient_device = -1;
+        assert_eq!(unsafe { cudaGetDevice(&mut ambient_device) }, 0);
+        for ptr in [w, x].into_iter().chain((kind == 0).then_some(sc.cast())) {
+            let mut owner: i32 = -1;
+            assert_eq!(
+                unsafe {
+                    cudarc::driver::sys::cuPointerGetAttribute(
+                        (&mut owner as *mut i32).cast(),
+                        cudarc::driver::sys::CUpointer_attribute::CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL,
+                        ptr as cudarc::driver::sys::CUdeviceptr,
+                    )
+                },
+                cudarc::driver::sys::CUresult::CUDA_SUCCESS,
+                "capture operand allocation owner"
+            );
+            assert_eq!(owner, rank, "operand allocation versus stream rank");
         }
         assert_eq!(unsafe { cudaStreamSynchronize(stream) }, 0);
         let path = cap.dir.join(format!("rank{rank}-kind{kind}-n{n}-k{k}.bin"));
@@ -888,7 +927,7 @@ unsafe extern "C" fn observe(
         file.sync_all().unwrap();
         cap.seen.insert(key);
         println!(
-            "CAPTURE rank={rank} kind={kind} n={n} k={k} count={}",
+            "CAPTURE rank={rank} kind={kind} n={n} k={k} stream_device={stream_device} ambient_device={ambient_device} operand_owner_verified=true count={}",
             cap.seen.len()
         );
     });
@@ -896,9 +935,20 @@ unsafe extern "C" fn observe(
 }
 fn capture_operands(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg) {
     select(gpu, false);
+    let stream_ranks = std::array::from_fn(|rank| {
+        (
+            gpu.stages[rank].gpu.stream().cu_stream() as usize,
+            rank as i32,
+        )
+    });
+    assert_ne!(
+        stream_ranks[0].0, stream_ranks[1].0,
+        "distinct rank streams"
+    );
     *CAPTURE.lock().unwrap() = Some(Capture {
         dir: output.to_path_buf(),
         seen: BTreeSet::new(),
+        stream_ranks,
     });
     unsafe {
         memra_dsv4_dense_fast_observe_for_gate(Some(observe));
@@ -948,6 +998,25 @@ fn capture_operands(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4Sampl
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn paired_tail_captures_distinct_stream_owners_under_one_ambient_device() {
+        let streams = [(0x1000, 0), (0x2000, 1)];
+        let mut keys = BTreeSet::new();
+        // Both calls may follow the rank-1 side of a paired collective.
+        let ambient_devices = [1, 1];
+        for ((stream, _), _ambient) in streams.into_iter().zip(ambient_devices) {
+            keys.insert((capture_stream_rank(&streams, stream), 0, 2048, 4096));
+        }
+        assert_eq!(
+            keys,
+            BTreeSet::from([(0, 0, 2048, 4096), (1, 0, 2048, 4096)])
+        );
+    }
+    #[test]
+    #[should_panic(expected = "capture stream belongs to this model")]
+    fn capture_refuses_an_unregistered_stream() {
+        capture_stream_rank(&[(0x1000, 0), (0x2000, 1)], 0x3000);
+    }
     #[test]
     fn arm_a_forces_dense_fast_off() {
         assert!(!PROGRAMS[0].dense && PROGRAMS[0].cadence);
