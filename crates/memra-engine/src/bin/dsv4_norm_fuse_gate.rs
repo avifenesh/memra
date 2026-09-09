@@ -281,10 +281,8 @@ fn eager_step(
     select(gpu, false);
     gpu.decode_step_device_logits(token, s)
         .expect("eager control forward");
-    let next = gpu
-        .sample_device_logits(s, sampler, cfg, &[], None)
-        .expect("eager control sample");
-    next
+    gpu.sample_device_logits(s, sampler, cfg, &[], None)
+        .expect("eager control sample")
 }
 fn refusal_cells(
     gpu: &Dsv4Gpu,
