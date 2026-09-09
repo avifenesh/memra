@@ -506,22 +506,46 @@ fn run_once(
     }
 }
 
+fn select_legacy_dense_control() {
+    // This historical instrument owns its frozen dense control program. The
+    // composition/default gate measures the ON program explicitly.
+    memra_engine::dsv4_gpu::set_dense_exact_tail_for_gate(false).expect("dense control selection");
+}
+
+fn select_dense_policy(profile: bool) {
+    if profile {
+        memra_engine::dsv4_gpu::restore_dense_exact_tail_default_for_gate();
+    } else {
+        select_legacy_dense_control();
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let replay_profile = args
+        .get(3)
+        .is_some_and(|a| a == "--full-token-replay-profile");
+    select_dense_policy(replay_profile);
     if args.get(1).is_some_and(|a| a == "--sampler-component") {
         sampler_component();
         return;
     }
-    let replay_reverse = args.get(3).is_some_and(|a| a == "--full-token-replay-baab");
-    let replay_profile = args
+    let cadence_reverse = args
         .get(3)
-        .is_some_and(|a| a == "--full-token-replay-profile");
-    let full_replay =
-        args.get(3).is_some_and(|a| a == "--full-token-replay") || replay_reverse || replay_profile;
+        .is_some_and(|a| a == "--full-token-replay-cadence-baab");
+    let replay_cadence = args
+        .get(3)
+        .is_some_and(|a| a == "--full-token-replay-cadence")
+        || cadence_reverse;
+    let replay_reverse = args.get(3).is_some_and(|a| a == "--full-token-replay-baab");
+    let full_replay = args.get(3).is_some_and(|a| a == "--full-token-replay")
+        || replay_reverse
+        || replay_profile
+        || replay_cadence;
     let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile]"
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile|--full-token-replay-cadence|--full-token-replay-cadence-baab]"
     );
     let components = args
         .get(3)
@@ -651,7 +675,9 @@ fn main() {
         );
         gpu.set_small_kernel_diet_for_gate(true)
             .expect("replay diet");
-        if replay_profile {
+        if replay_cadence {
+            full_token_replay::cadence(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer, cadence_reverse);
+        } else if replay_profile {
             full_token_replay::profile(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer);
         } else {
             full_token_replay::run(&gpu, &prompt[..PROMPT_TOKENS], &tokenizer, replay_reverse);
@@ -844,6 +870,81 @@ fn main() {
     }
     Dsv4Gpu::set_attention_tp_for_gate(false);
     Dsv4Gpu::set_tp_ep_topology_for_gate(false);
+}
+
+#[cfg(test)]
+mod default_policy_tests {
+    #[test]
+    fn environment_defaults_and_explicit_gate_rollback() {
+        use memra_engine::dsv4_gpu::{
+            dense_exact_tail_enabled_for_gate, dsv4_replay_cadence_default,
+            set_dense_exact_tail_for_gate,
+        };
+        const CHILD: &str = "MEMRA_TEST_DSV4_DEFAULT_CHILD";
+        if let Ok(expected) = std::env::var(CHILD) {
+            let (cadence, dense) = expected.split_once(':').unwrap();
+            assert_eq!(dsv4_replay_cadence_default(), cadence == "1");
+            assert_eq!(dense_exact_tail_enabled_for_gate(), dense == "1");
+            // The real profile initialization restores the environment policy,
+            // even after an explicit override. Other CLI modes stay frozen OFF.
+            set_dense_exact_tail_for_gate(dense != "1").unwrap();
+            super::select_dense_policy(true);
+            assert_eq!(dense_exact_tail_enabled_for_gate(), dense == "1");
+            super::select_dense_policy(false);
+            assert!(!dense_exact_tail_enabled_for_gate());
+            // Exercise the real legacy gate initialization with an ON override.
+            set_dense_exact_tail_for_gate(true).unwrap();
+            super::select_legacy_dense_control();
+            assert!(!dense_exact_tail_enabled_for_gate());
+            assert_eq!(
+                memra_engine::dsv4_gpu::restore_dense_exact_tail_default_for_gate(),
+                dense == "1"
+            );
+            assert_eq!(dense_exact_tail_enabled_for_gate(), dense == "1");
+            // The override is thread-local; a new host thread sees its env default.
+            assert_eq!(
+                std::thread::spawn(dense_exact_tail_enabled_for_gate)
+                    .join()
+                    .unwrap(),
+                dense == "1"
+            );
+            return;
+        }
+        for cadence in [None, Some("0"), Some("1")] {
+            for dense in [None, Some("0"), Some("1")] {
+                let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+                child.args([
+                    "--exact",
+                    "default_policy_tests::environment_defaults_and_explicit_gate_rollback",
+                    "--nocapture",
+                ]);
+                for (name, value) in [
+                    ("MEMRA_DSV4_REPLAY_CADENCE", cadence),
+                    ("MEMRA_DSV4_DENSE_EXACT_TAIL", dense),
+                ] {
+                    if let Some(value) = value {
+                        child.env(name, value);
+                    } else {
+                        child.env_remove(name);
+                    }
+                }
+                child.env(
+                    CHILD,
+                    format!(
+                        "{}:{}",
+                        u8::from(cadence != Some("0")),
+                        u8::from(dense != Some("0"))
+                    ),
+                );
+                let out = child.output().unwrap();
+                assert!(
+                    out.status.success(),
+                    "cadence={cadence:?} dense={dense:?}: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+        }
+    }
 }
 
 /// Invert the position-keyed SplitMix64 map to place a draw on a chosen

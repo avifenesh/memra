@@ -1,0 +1,12 @@
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.0 at /usr/local/cuda-13.0/bin/nvcc
+   Compiling memra-engine v0.136.0 (/root/prefill-fairness-20260908/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 24.54s
+     Running unittests src/lib.rs (/root/target-prefill/release/deps/memra_engine-38136f5f2c1329a0)
+
+running 3 tests
+test prime_walker::tests::error_does_not_advance_or_finalize_the_partial_state ... ok
+test prime_walker::tests::finished_walker_does_no_more_work ... ok
+test prime_walker::tests::yielded_and_drained_execute_identical_frozen_tapes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 478 filtered out; finished in 0.00s
+

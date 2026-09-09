@@ -1,0 +1,105 @@
+{
+  "recorded_utc": "2026-09-08T22:46:32.452746+00:00",
+  "code_commit": "41f15a8618c37ba1e1c845ee03ebcbc0049d5189",
+  "shared_seam_commit": "534040262e86d3009ba298ebdfbf79acb48b93d1",
+  "source_tree": "0ddaf045bb69c72d1f0f0371c889ad3f3dbae175",
+  "execution": "authorized non-production remote CPU; no GPU process launched",
+  "nice": 19,
+  "jobs": 2,
+  "rustc": "1.97.1 (8bab26f4f 2026-07-14)",
+  "cargo": "1.97.1 (c980f4866 2026-06-30)",
+  "cuda_compiler": "13.0",
+  "env": {
+    "MEMRA_CUDA_ARCH": "120a",
+    "CARGO_TARGET_DIR": "/root/target-prefill"
+  },
+  "checks": [
+    {
+      "command": "cargo fmt --all -- --check",
+      "exit": 0
+    },
+    {
+      "command": "cargo clippy --release --all-targets -- -D warnings",
+      "exit": 0
+    },
+    {
+      "command": "cargo test --release -p memra-engine --lib prime_walker::",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "command": "cargo test --release -p memra-engine --lib spec::prime::",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "command": "cargo test --release -p memra-engine --lib dflash::",
+      "passed": 56,
+      "failed": 0
+    },
+    {
+      "command": "cargo test --release -p memra-server --lib",
+      "passed": 638,
+      "failed": 0,
+      "ignored": 1,
+      "ignored_test": "prefill_proxy_fixture: manual loopback fixture for external proxy qualification"
+    },
+    {
+      "command": "cargo build --release -p memra-server --bin memra-server",
+      "exit": 0
+    },
+    {
+      "command": "cargo build --release -p memra-engine --bin run-spec",
+      "exit": 0
+    },
+    {
+      "command": "python3 -m py_compile research/prefill-fairness-20260908/mixed_load.py",
+      "exit": 0
+    }
+  ],
+  "inputs_sha256": {
+    "Cargo.toml": "9430fe86f6b4ac75ca845f2898b84f83da661ca14ba9790a274010fcf1d68fb9",
+    "Cargo.lock": "405cecce62d56c2ce4a4af1890d7af8ab75d7474cd812495ddeec69203cbc55d",
+    "crates/memra-engine/src/lib.rs": "c33f9885ee7cbb8b2589a10e9e6683e3cde0db5a0affb87edeb262101378e716",
+    "crates/memra-engine/src/prime_walker.rs": "00e8481c2997c051f47c5e45bc83652db675ca301fa6ba78f6352f8fa69995c0",
+    "crates/memra-engine/src/prime_receipt.rs": "5ba47f84bf22170aa28c05742e28045a73aa0d07bb933abb40f80a884b51271e",
+    "crates/memra-engine/src/dflash.rs": "aeb41425690ecbb4a5f2e7d77b13d9f3bf63cebed5a9deadf2f706d63054e17d",
+    "crates/memra-engine/src/hybrid_forward.rs": "0dcdb002ba63e271d8d9c67e5d5149ad33c55183d14f5b5927efff316353d469",
+    "crates/memra-engine/src/spec.rs": "410b9d2efaed914fafa12ee875edf4a3b112a0c6e75eba775d8161a68460ff47",
+    "crates/memra-engine/src/spec/prime.rs": "f31ebc3b7497c1d80926e059e2830ecd24dc8c7996f7a15afde52fa50dee5111",
+    "crates/memra-engine/src/bin/run_spec.rs": "defd6dd20f352b5709f27780f216886cd542713e77155cfd17305de1181822ff",
+    "crates/memra-server/src/lib.rs": "554f903d29cb5b9d3fcbf5c9c387a2be8ac1c095020f4854d2a1c03e3331fa33",
+    "crates/memra-server/src/prime_fairness.rs": "8cd6f28912efa04a1bb19e301990929dae240b4731b8c5f38b1f9939e0c5ad5d",
+    "crates/memra-server/src/worker.rs": "fe6256e30d959af54eb508cdaeebdbe07d72b6a0ae17bc2ba3c88dcf3b33b929"
+  },
+  "binaries": [
+    {
+      "remote_path": "/root/target-prefill/release/memra-server",
+      "sha256": "19db5df71812eabfa914ba99f58ff676e5d6a860174c0a75084dfad19a89d8e4"
+    },
+    {
+      "remote_path": "/root/target-prefill/release/run-spec",
+      "sha256": "23b74c97675adc3ed74fd1c878d8ad136b220118924eeafa56a78ccbaf5e8d95"
+    }
+  ],
+  "gpu_qualification": "pending explicit GPU handoff; no latency or byte-identity result claimed",
+  "logs_sha256": {
+    "research/prefill-fairness-20260908/cpu/cpu-continuation-build.log": "a481294a47520da688d2f78919472de0cb33ea5f42161447e58d5d6657112d16",
+    "research/prefill-fairness-20260908/cpu/cpu-continuation-clippy.log": "adfb69811b26a93fd79a766c46fa632eb466fca98c5b63064cf8cb72a2e27bf2",
+    "research/prefill-fairness-20260908/cpu/cpu-continuation-server.log": "9a46c918c0aa66fe07ccbc54132b7562a870b7842365a95c3494dbda62376c6e",
+    "research/prefill-fairness-20260908/cpu/cpu-delivery-build.log": "98a4fa1912b95f5cf4dcadf66e552325b941651741b6610c77b023e5aa09f9dd",
+    "research/prefill-fairness-20260908/cpu/cpu-delivery-clippy.log": "b5cb0e195a244f76569dd9640192ea6421f79b0436c71b71f9ed1015cc4d940d",
+    "research/prefill-fairness-20260908/cpu/cpu-delivery-engine.log": "e311add70c55032f2c0b877d3d68d57992325f9afde9767c7f753fa03fbfd41f",
+    "research/prefill-fairness-20260908/cpu/cpu-delivery-server.log": "df906775b6f19aeb13138f5b805da989a2ae45979a9680207d502f6d54a43337",
+    "research/prefill-fairness-20260908/cpu/cpu-pinned-build.log": "61118b976093da41cd04be926ece0317225d2dc6a7b3d0e2021382127d4dd256"
+  },
+  "adapter_commit": "f604518caf15db72a80d52b10941f9fd243b2972",
+  "followup": "Mark empty-suffix MTP restores and continuations as prefilled; full server suite and all-target release clippy repeated successfully. Engine inputs unchanged.",
+  "previous_server_binary_sha256": "f28dc7fec215c7335227600e01168720f4f2f7393910deda2928281341561f4a",
+  "qwen_long_template": {
+    "remote_path": "/tmp/qwen-ornith-5090-capacity-20260908/qwen-128k-chunk1024-cap1/turn1-request.json",
+    "sha256": "324cc7205e985469e1f6903a7ca19bd620e78601fca45a712aed0081cb2d7021",
+    "sampling_overrides": false,
+    "content_chars": 641994
+  }
+}

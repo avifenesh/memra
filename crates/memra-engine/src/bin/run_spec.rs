@@ -297,6 +297,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if p.is_empty() { vec![55u32] } else { p }
     };
     println!("prompt tokens: {prompt:?}");
+    if std::env::args().any(|arg| arg == "--prime-walker-check") {
+        let k = std::env::var("MEMRA_SPEC_K")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(3);
+        model.check_mtp_prime_walker(&e, &prompt, k)?;
+    }
 
     let n_new = std::env::var("MEMRA_NGEN")
         .ok()

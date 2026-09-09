@@ -15,6 +15,9 @@
 //! interleave: a long generation and a freshly-admitted one make forward progress in the same loop,
 //! so the second produces tokens before the first finishes (not serialized end-to-end).
 
+mod host_glm;
+mod host_memory;
+
 use std::collections::{HashMap, VecDeque};
 use std::io::Write as _;
 use std::sync::Arc;
@@ -4185,6 +4188,11 @@ fn prefix_cache_protected_bytes(budget: usize, protected_pct: usize) -> usize {
 /// operator sets an explicit per-stack budget; the MemAvailable x 0.6 boot clamp below is a
 /// backstop against a fat-fingered value (the 2026-08-17 swap-storm law), NEVER the sizing
 /// mechanism. Pinned RAM is not reclaimable by the kernel once allocated.
+// Unqualified GLM host images remain opt-in; device-prefix support is independent.
+fn glm5_tp_kv_host_on() -> bool {
+    std::env::var("MEMRA_GLM5_TP_KV_HOST").as_deref() == Ok("1")
+}
+
 fn kv_host_budget_bytes() -> usize {
     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *B.get_or_init(|| {
@@ -4193,8 +4201,8 @@ fn kv_host_budget_bytes() -> usize {
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0)
             .saturating_mul(1024 * 1024);
-        if requested == 0 {
-            return 0;
+        if requested == 0 || glm5_tp_kv_host_on() {
+            return requested;
         }
         let avail = std::fs::read_to_string("/proc/meminfo")
             .ok()
@@ -6550,6 +6558,39 @@ impl PrefixCache {
         .then_some(entry.pos)
     }
 
+    fn admission_dflash_restore(
+        &self,
+        pin: &PrefixPin,
+        prompt: &[u32],
+        cfg: &memra_engine::dflash::DflashCfg,
+        is_dflash2: bool,
+        ctx_cap: usize,
+        vocab: usize,
+    ) -> Option<AdmissionRestoreRoute> {
+        let rows = self.admission_restore_rows(pin, prompt)?;
+        let entry = &self.entries.get(&pin.key)?[self.id_index(pin)?];
+        let tail = entry.dspark_draft.as_ref()?;
+        if !dspark_prefix_restore_on()
+            || entry.draft.is_some()
+            || tail.len != rows
+            || entry.last_logits.len() != vocab
+            || entry.last_logits.iter().any(|v| !v.is_finite())
+            || tail.validate_restore(cfg, ctx_cap).is_err()
+            || !memra_engine::dflash::dspark_spec_prompt_fits(
+                prompt.len(), ctx_cap, cfg.block_size,
+                cfg.sliding_window, is_dflash2,
+            )
+            // from_tail allocates at ctx_cap; the legacy session clamps to its window.
+            || (!is_dflash2 && ctx_cap > cfg.sliding_window)
+        {
+            return None;
+        }
+        Some(AdmissionRestoreRoute::Dflash {
+            ctx_cap,
+            suffix: DflashRestoreSuffix::new(rows, prompt.len(), dspark_partial_restore_on())?,
+        })
+    }
+
     /// Release one session lease. The last release makes the entry evictable again and
     /// treats the protected fanout interval as recent use.
     fn unpin(&mut self, pin: &PrefixPin) -> bool {
@@ -6585,10 +6626,19 @@ impl PrefixCache {
             .sum()
     }
 
-    /// Bytes a pinned admission may reclaim without crossing the protected share. Existing
-    /// probation is immediately eligible. A multi-participant fanout also promotes the incoming
+    /// Bytes a pinned admission may reclaim under the selected eviction policy. LRU may
+    /// reclaim either segment, but never a leased entry. SLRU preserves its protected share.
+    /// Existing probation is immediately eligible. A multi-participant fanout also promotes the incoming
     /// entry, so only the protected LRU bytes that promotion would demote back to probation count.
-    fn pinned_admission_reclaimable_bytes(&self, incoming_bytes: usize, promotes: bool) -> usize {
+    fn pinned_admission_reclaimable_bytes(
+        &self,
+        incoming_bytes: usize,
+        promotes: bool,
+        slru: bool,
+    ) -> usize {
+        if !slru {
+            return self.total_bytes.saturating_sub(self.pinned_bytes());
+        }
         let mut reclaimable = self
             .probation_lru
             .values()
@@ -6800,6 +6850,34 @@ impl PrefixCache {
     fn insert_with_budget_pins_and_pct(
         &mut self,
         key: &PoolKey,
+        e: PrefixEntry,
+        why: &str,
+        budget: usize,
+        protected_pct: usize,
+        initial_pins: usize,
+        // HOST-TIER DEMOTE SINK (lane/kv-host-spill-20260830): capacity-evicted entries are
+        // handed here still holding their device bytes; the sink D2H-copies them into the
+        // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
+        // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
+        demote: Option<&mut dyn FnMut(PrefixEntry)>,
+    ) -> Option<u64> {
+        self.insert_with_budget_pins_and_policy(
+            key,
+            e,
+            why,
+            budget,
+            protected_pct,
+            initial_pins,
+            demote,
+            prefix_cache_slru_enabled(),
+        )
+    }
+
+    /// Explicit policy seam keeps admission and victim selection on the same arm in tests.
+    #[allow(clippy::too_many_arguments)] // allow: mirrors the existing insertion seam plus its policy
+    fn insert_with_budget_pins_and_policy(
+        &mut self,
+        key: &PoolKey,
         mut e: PrefixEntry,
         why: &str,
         budget: usize,
@@ -6810,6 +6888,7 @@ impl PrefixCache {
         // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
         // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
         mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
+        slru: bool,
     ) -> Option<u64> {
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
@@ -6858,7 +6937,8 @@ impl PrefixCache {
                 .total_bytes
                 .saturating_add(e.bytes)
                 .saturating_sub(budget);
-            let reclaimable = self.pinned_admission_reclaimable_bytes(e.bytes, initial_pins > 1);
+            let reclaimable =
+                self.pinned_admission_reclaimable_bytes(e.bytes, initial_pins > 1, slru);
             if needed > reclaimable {
                 self.record_budget_skip(true);
                 eprintln!(
@@ -6905,7 +6985,7 @@ impl PrefixCache {
             self.rebalance_protected();
         }
         while self.total_bytes > budget {
-            let Some((k, i)) = self.capacity_victim() else {
+            let Some((k, i)) = self.capacity_victim_with(slru) else {
                 break;
             };
             let Some(dead) = self.remove_at(&k, i) else {
@@ -6939,7 +7019,13 @@ impl PrefixCache {
     /// Reserve publication room before allocating its device snapshot. Leases and the
     /// selected eviction policy remain authoritative. Refuse without evicting anything
     /// when the eligible entries cannot make room; publication must never fail a request.
-    fn prepare_snapshot(&mut self, bytes: usize, budget: usize, slru: bool) -> bool {
+    fn prepare_snapshot(
+        &mut self,
+        bytes: usize,
+        budget: usize,
+        slru: bool,
+        mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
+    ) -> bool {
         if bytes > budget {
             return false;
         }
@@ -6972,9 +7058,15 @@ impl PrefixCache {
                 key.0,
                 ns_suffix(&key.1),
             );
-            // Drop device planes before the replacement allocates. Like admission reclaim,
-            // do not stall the request by demoting gigabytes into the optional host tier.
-            drop(dead);
+            // Preserve the reservation and victim policy, but publication preflight
+            // must feed the same host sink as insert-time capacity eviction.
+            // Failed/disabled demotion still retires this unleased victim; it
+            // never publishes a half host entry or weakens the device ceiling.
+            if let Some(sink) = demote.as_mut() {
+                sink(dead);
+            } else {
+                drop(dead);
+            }
         }
         true
     }
@@ -7071,8 +7163,8 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
 // `prefix_restore_at`. Byte-lossless by construction, and `MEMRA_KV_HOST_MB=0` (the default)
 // is byte-identical to today because nothing ever reaches the tier.
 //
-// Model exclusions ride the upstream refusals for free: step37's SWA ring and glm5's latent
-// planes are refused at `prefix_snapshot`, so no such entry can ever exist to demote.
+// SWA-ring exclusions remain upstream. GLM images are opt-in and process-lifetime;
+// the old deploy-handoff frame skips them, so a deploy loses GLM host warmth.
 //
 // v1 keeps every copy on the CUDA owner thread (the HY3 spill law) and instruments each
 // demote/promote duration so the pod tick-stall cell has its receipt. The overlapped
@@ -7087,11 +7179,62 @@ struct HostPlane {
     v_tok_bytes: usize,
 }
 
+/// Legacy pageable state only exists with the arena OFF. Every f32 payload in
+/// an armed host image consumes the same pre-reserved lease as its K/V planes.
+enum HostF32 {
+    Heap(Vec<f32>),
+    Pinned(memra_engine::PinnedHostBuf),
+}
+impl HostF32 {
+    fn down(p: &CudaSlice<f32>, planes: &mut HostPlaneLeases) -> Result<Self, String> {
+        if planes.0.is_none() {
+            return host_glm::read_f32(p).map(Self::Heap);
+        }
+        let mut data = planes.take(p.len() * 4)?;
+        data.copy_from_device_f32(p).map_err(|e| e.to_string())?;
+        Ok(Self::Pinned(data))
+    }
+    fn from_slice(p: &[f32], planes: &mut HostPlaneLeases) -> Result<Self, String> {
+        if planes.0.is_none() {
+            return Ok(Self::Heap(p.to_vec()));
+        }
+        let mut data = planes.take(p.len() * 4)?;
+        data.copy_from_slice(f32s_as_bytes(p))
+            .map_err(|e| e.to_string())?;
+        Ok(Self::Pinned(data))
+    }
+    fn as_slice(&self) -> &[f32] {
+        match self {
+            Self::Heap(p) => p,
+            Self::Pinned(p) => p.as_f32_slice(),
+        }
+    }
+}
+impl std::ops::Deref for HostF32 {
+    type Target = [f32];
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+fn host_image_bytes(device_bytes: usize, toks: &[u32], logits: &[f32]) -> Result<usize, String> {
+    // Token IDs are ordinary unpinned indexing metadata, not CUDA planes; charge
+    // their bytes too. The snapshot ledger already includes last_h; logits
+    // are the remaining boundary plane. Both have arena backing.
+    [toks.len(), logits.len()]
+        .into_iter()
+        .try_fold(device_bytes, |n, len| {
+            len.checked_mul(4)
+                .and_then(|bytes| n.checked_add(bytes))
+                .ok_or_else(|| "pinned arena admission refused: image byte count overflow".into())
+        })
+}
+
 /// Host copy of a `DflashKvTail` (device f32 layer pairs pulled D2H). Small beside the trunk
 /// planes (~85 MB at the flagship shape) and required for losslessness: a promoted entry must
 /// be field-for-field the entry that was demoted, or a dspark restore silently downgrades.
 struct HostDflashTail {
-    layers: Vec<(Vec<f32>, Vec<f32>)>,
+    layers: Vec<(HostF32, HostF32)>,
     base: usize,
     rows: usize,
     len: usize,
@@ -7103,17 +7246,20 @@ struct HostDflashTail {
 /// mismatched version is REFUSED at both insert and promote: the identity rule the
 /// PREFIX_ENTRY_LAYOUT_VERSION comment reserved for exactly this tier.
 struct HostPrefixEntry {
+    model_generation: Option<Arc<()>>,
+    glm: Option<host_glm::HostGlmState>,
     layout_version: u32,
     pool_key: PoolKey,
     toks: Vec<u32>,
     kv: Vec<Option<HostPlane>>,
-    conv: Vec<Option<Vec<f32>>>,
-    ssm: Vec<Option<Vec<f32>>>,
+    conv: Vec<Option<HostF32>>,
+    ssm: Vec<Option<HostF32>>,
     pos: usize,
-    last_logits: Vec<f32>,
+    last_logits: HostF32,
     draft: Option<HostPlane>,
     dspark_draft: Option<HostDflashTail>,
-    last_h: Vec<f32>,
+    last_h: HostF32,
+    device_bytes: usize,
     bytes: usize,
     last_use: Instant,
     id: u64,
@@ -7128,6 +7274,9 @@ struct HostPrefixEntry {
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
 #[derive(Default)]
 struct HostPrefixCache {
+    arena: Option<memra_engine::PinnedHostArena>,
+    arena_reserve_ms: f64,
+    model_generations: HashMap<String, Arc<()>>,
     entries: HashMap<PoolKey, Vec<HostPrefixEntry>>,
     /// (last_use, id) -> (pool key, index); same deterministic tie-break as the device LRU.
     lru: std::collections::BTreeMap<(Instant, u64), (PoolKey, usize)>,
@@ -7192,6 +7341,62 @@ impl HostPrefixCache {
             budget,
             tenant_pct: kv_host_tenant_pct(),
             ..Default::default()
+        }
+    }
+
+    fn generation_current(&self, entry: &HostPrefixEntry) -> bool {
+        entry.model_generation.as_ref().is_none_or(|saved| {
+            self.model_generations
+                .get(&entry.pool_key.0)
+                .is_some_and(|active| Arc::ptr_eq(saved, active))
+        }) && (entry.glm.is_none() || entry.model_generation.is_some())
+    }
+
+    fn log_arena(&self, event: &str) {
+        if let Some(arena) = &self.arena {
+            let (capacity, leased, free) = arena.bytes();
+            let (alloc_ms, fill_ms) = arena.reserve_timings_ms();
+            eprintln!(
+                "[prefix-host DEBUG] arena {event}: reserve_ms={:.3} alloc_ms={alloc_ms:.3} fill_ms={fill_ms:.3} capacity={capacity} leased={leased} free={free}",
+                self.arena_reserve_ms
+            );
+        }
+    }
+
+    // Logical image bytes govern tenancy/LRU; arena bytes are physical backing,
+    // never an additional charge against the same budget.
+    fn reserve_image(
+        &mut self,
+        key: &PoolKey,
+        toks: &[u32],
+        bytes: usize,
+        sizes: &[usize],
+    ) -> Result<HostPlaneLeases, String> {
+        let Some(arena) = self.arena.clone() else {
+            return Ok(HostPlaneLeases(None));
+        };
+        if bytes > self.budget || self.tenant_cap_would_evaporate(key, toks, bytes) {
+            return Err("pinned arena admission refused: image exceeds host/tenant budget".into());
+        }
+        // Credit and recycle the exact twin before reserving its replacement.
+        if let Some(i) = self.key_index(key, toks) {
+            drop(self.remove_at(key, i));
+            self.log_arena("replace eviction");
+        }
+        loop {
+            match arena.try_reserve_planes(sizes) {
+                Ok(planes) => return Ok(HostPlaneLeases(Some(planes.into_iter()))),
+                Err(err) => {
+                    let Some((key, i)) = self.lru.values().next().cloned() else {
+                        self.rejected_allocs += 1;
+                        self.log_arena("admission refusal");
+                        return Err(format!("pinned arena admission refused: {err}"));
+                    };
+                    drop(self.remove_at(&key, i));
+                    self.evictions += 1;
+                    self.log_arena("LRU eviction");
+                }
+            }
         }
     }
 
@@ -7418,6 +7623,8 @@ impl HostPrefixCache {
                 victim_key.0,
                 ns_suffix(&victim_key.1)
             );
+            drop(dead);
+            self.log_arena("LRU eviction");
         }
         true
     }
@@ -7460,12 +7667,31 @@ impl HostPrefixCache {
     }
 }
 
+// Some means the entire image was reserved before the first copy. Exhaustion
+// can never fall through to CUDA allocation. None is the unchanged OFF path.
+struct HostPlaneLeases(Option<std::vec::IntoIter<memra_engine::PinnedHostBuf>>);
+impl HostPlaneLeases {
+    fn take(&mut self, bytes: usize) -> Result<memra_engine::PinnedHostBuf, String> {
+        match &mut self.0 {
+            Some(planes) => {
+                let plane = planes.next().ok_or("pinned image layout exhausted")?;
+                if plane.len() != bytes {
+                    return Err("pinned image plane length mismatch".into());
+                }
+                Ok(plane)
+            }
+            None => memra_engine::PinnedHostBuf::new(bytes).map_err(|e| e.to_string()),
+        }
+    }
+}
+
 /// D2H one device plane into pinned cacheable host memory. Alloc failures LATCH THE TIER OFF
 /// (loud, no pageable fallback); copy failures drop the entry and count, without latching.
 fn host_plane_from_device(
     engine: &Engine,
     host: &mut HostPrefixCache,
     p: &PrefixPlane,
+    planes: &mut HostPlaneLeases,
 ) -> Result<HostPlane, String> {
     let kb = p.len * p.k_tok_bytes;
     let vb = p.len * p.v_tok_bytes;
@@ -7473,22 +7699,29 @@ fn host_plane_from_device(
         let attempt = if kv_host_fault() == "alloc-fail" {
             Err("injected failure (MEMRA_KV_HOST_FAULT=alloc-fail)".to_string())
         } else {
-            memra_engine::PinnedHostBuf::new(n).map_err(|err| err.to_string())
+            planes.take(n)
         };
         attempt.map_err(|err| {
             host.rejected_allocs += 1;
-            host.disable(&format!("pinned host alloc of {n} B failed: {err}"));
+            if host.arena.is_none() {
+                host.disable(&format!("pinned host alloc of {n} B failed: {err}"));
+            }
             format!("pinned host alloc of {n} B failed: {err}")
         })
     };
     let mut k = alloc(kb)?;
     let mut v = alloc(vb)?;
-    if kb > 0 {
+    if host.arena.is_some() {
+        k.copy_from_device_u8(&p.k)
+            .map_err(|e| format!("K plane D2H failed: {e}"))?;
+        v.copy_from_device_u8(&p.v)
+            .map_err(|e| format!("V plane D2H failed: {e}"))?;
+    } else if kb > 0 {
         engine
             .dtoh_u8_into_pinned(&p.k, &mut k, kb)
             .map_err(|err| format!("K plane D2H failed: {err}"))?;
     }
-    if vb > 0 {
+    if host.arena.is_none() && vb > 0 {
         engine
             .dtoh_u8_into_pinned(&p.v, &mut v, vb)
             .map_err(|err| format!("V plane D2H failed: {err}"))?;
@@ -7510,11 +7743,71 @@ fn host_entry_from_device(
     dead: &PrefixEntry,
     verify_digest: Option<String>,
 ) -> Result<HostPrefixEntry, String> {
+    let is_glm = dead.tp.is_some() || dead.latent.iter().any(Option::is_some);
+    if dead.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
+        return Err("host image layout version mismatch".into());
+    }
+    let model_generation = if is_glm {
+        if host.arena.is_none() {
+            return Err("GLM host image requires startup pinned arena".into());
+        }
+        Some(
+            host.model_generations
+                .get(&dead.pool_key.0)
+                .cloned()
+                .ok_or("GLM host image has no loaded model generation")?,
+        )
+    } else {
+        None
+    };
+    let mut sizes = if is_glm {
+        host_glm::HostGlmState::plane_sizes(dead)
+    } else {
+        Vec::new()
+    };
+    for p in dead.kv.iter().flatten() {
+        sizes.extend([p.len * p.k_tok_bytes, p.len * p.v_tok_bytes]);
+    }
+    if !is_glm {
+        sizes.extend(
+            dead.conv
+                .iter()
+                .chain(&dead.ssm)
+                .flatten()
+                .map(|p| p.len() * 4),
+        );
+    }
+    if let Some(p) = &dead.draft {
+        sizes.extend([p.len * p.k_tok_bytes, p.len * p.v_tok_bytes]);
+    }
+    if !is_glm && let Some(t) = &dead.dspark_draft {
+        for (k, v) in &t.layers {
+            sizes.extend([k.len() * 4, v.len() * 4]);
+        }
+    }
+    if sizes
+        .iter()
+        .try_fold(dead.last_h.len() * 4, |n, b| n.checked_add(*b))
+        != Some(dead.bytes)
+    {
+        return Err(format!(
+            "pinned arena admission refused: host byte census does not match snapshot accounting {}",
+            dead.bytes
+        ));
+    }
+    sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
+    let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
+    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, bytes, &sizes)?;
+    let glm = if is_glm {
+        Some(host_glm::HostGlmState::down(engine, dead, &mut planes)?)
+    } else {
+        None
+    };
     let mut kv = Vec::with_capacity(dead.kv.len());
     for plane in &dead.kv {
         kv.push(match plane {
-            Some(p) => Some(host_plane_from_device(engine, host, p)?),
-            None => None,
+            Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
+            _ => None,
         });
     }
     // Diagnostic fault door (see kv_host_fault): corrupt one demoted byte AFTER the demote
@@ -7531,40 +7824,44 @@ fn host_entry_from_device(
     }
     let mut conv = Vec::with_capacity(dead.conv.len());
     for c in &dead.conv {
+        if glm.is_some() {
+            conv.push(None);
+            continue;
+        }
         conv.push(match c {
             Some(c) => Some(
-                engine
-                    .dtoh(c)
+                HostF32::down(c, &mut planes)
                     .map_err(|err| format!("conv state D2H failed: {err}"))?,
             ),
-            None => None,
+            _ => None,
         });
     }
     let mut ssm = Vec::with_capacity(dead.ssm.len());
     for s in &dead.ssm {
+        if glm.is_some() {
+            ssm.push(None);
+            continue;
+        }
         ssm.push(match s {
             Some(s) => Some(
-                engine
-                    .dtoh(s)
+                HostF32::down(s, &mut planes)
                     .map_err(|err| format!("ssm state D2H failed: {err}"))?,
             ),
-            None => None,
+            _ => None,
         });
     }
     let draft = match &dead.draft {
-        Some(p) => Some(host_plane_from_device(engine, host, p)?),
-        None => None,
+        Some(p) => Some(host_plane_from_device(engine, host, p, &mut planes)?),
+        _ => None,
     };
     let dspark_draft = match &dead.dspark_draft {
-        Some(t) => {
+        Some(t) if glm.is_none() => {
             let mut layers = Vec::with_capacity(t.layers.len());
             for (k, v) in &t.layers {
                 layers.push((
-                    engine
-                        .dtoh(k)
+                    HostF32::down(k, &mut planes)
                         .map_err(|err| format!("draft tail K D2H failed: {err}"))?,
-                    engine
-                        .dtoh(v)
+                    HostF32::down(v, &mut planes)
                         .map_err(|err| format!("draft tail V D2H failed: {err}"))?,
                 ));
             }
@@ -7577,9 +7874,11 @@ fn host_entry_from_device(
                 floor: t.floor,
             })
         }
-        None => None,
+        _ => None,
     };
-    Ok(HostPrefixEntry {
+    let entry = HostPrefixEntry {
+        model_generation,
+        glm,
         layout_version: dead.layout_version,
         pool_key: dead.pool_key.clone(),
         toks: dead.toks.clone(),
@@ -7587,15 +7886,40 @@ fn host_entry_from_device(
         conv,
         ssm,
         pos: dead.pos,
-        last_logits: dead.last_logits.clone(),
+        last_logits: HostF32::from_slice(&dead.last_logits, &mut planes)?,
         draft,
         dspark_draft,
-        last_h: dead.last_h.clone(),
-        bytes: dead.bytes,
+        last_h: HostF32::from_slice(&dead.last_h, &mut planes)?,
+        device_bytes: dead.bytes,
+        bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest,
-    })
+    };
+    if let Some(glm) = &entry.glm {
+        let plane_bytes = |p: &HostPlane| p.len * (p.k_tok_bytes + p.v_tok_bytes);
+        let bytes = glm.state_bytes()
+            + entry.last_h.len() * 4
+            + entry.kv.iter().flatten().map(plane_bytes).sum::<usize>()
+            + entry
+                .conv
+                .iter()
+                .chain(&entry.ssm)
+                .flatten()
+                .map(|p| p.len() * 4)
+                .sum::<usize>()
+            + entry.draft.as_ref().map_or(0, plane_bytes)
+            + entry.dspark_draft.as_ref().map_or(0, |d| {
+                d.layers.iter().map(|(k, v)| (k.len() + v.len()) * 4).sum()
+            });
+        if bytes != dead.bytes {
+            return Err(format!(
+                "GLM host byte census {bytes} != device snapshot accounting {}",
+                dead.bytes
+            ));
+        }
+    }
+    Ok(entry)
 }
 
 /// What one demotion attempt did with the source entry's bytes, so callers that still OWN
@@ -7630,6 +7954,14 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, dead: P
 /// device state is still live (a parked session, a resident prefix entry) removes it only
 /// after `Demoted`/`Evaporated`: the entry stays until the host copy publishes, which is
 /// what makes a demote racing the next request lose cleanly.
+fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String, String> {
+    if entry.tp.is_some() || entry.latent.iter().any(Option::is_some) {
+        host_glm::digest(entry)
+    } else {
+        prefix_entry_state_digest(engine, entry, entry.pos).map_err(|e| e.to_string())
+    }
+}
+
 fn host_demote_prefix_ref(
     engine: &Engine,
     host: &mut HostPrefixCache,
@@ -7638,13 +7970,9 @@ fn host_demote_prefix_ref(
     if !host.armed() {
         return HostDemoteOutcome::Off; // tier off (or latched off): byte-identical to today
     }
-    // LATENT (MLA/DSA) planes cannot be expressed in the host tier yet (`HostPrefixEntry`
-    // carries no latent slot — extending it is its own lane's work, not this seam's). A
-    // latent-bearing entry refuses BEFORE any copy: `Failed` keeps live device state at the
-    // pause-demote caller (fail closed), and the SLRU sink's dying entry drops exactly as it
-    // did before the tier existed. Silently demoting would strip the planes and the restore
-    // guard (`unsupported_prefix_restore`) would then refuse every promote-hit anyway.
-    if dead.tp.is_some() {
+    // GLM host images are opt-in. OFF preserves the old refusal; ON copies
+    // all current model-owned planes, with byte census before publication.
+    if dead.tp.is_some() && !glm5_tp_kv_host_on() {
         eprintln!(
             "[prefix-host] demote refused: entry carries glm5 TP rank shards the host tier \
              cannot hold ({} tokens, model {}{})",
@@ -7654,7 +7982,7 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Failed;
     }
-    if dead.latent.iter().any(Option::is_some) {
+    if dead.latent.iter().any(Option::is_some) && !glm5_tp_kv_host_on() {
         eprintln!(
             "[prefix-host] demote refused: entry carries latent (MLA/DSA) planes the host \
              tier cannot hold ({} tokens, model {}{})",
@@ -7664,17 +7992,24 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Failed;
     }
+    let host_bytes = match host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
+            return HostDemoteOutcome::Failed;
+        }
+    };
     // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT), checked BEFORE the D2H copy: a
     // demotion that would evaporate at insert must skip the PCIe trip entirely, not
     // pay gigabytes of synchronous copy for an entry the pool then refuses.
-    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, dead.bytes) {
+    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes) {
         host.tenant_rejects += 1;
         eprintln!(
             "[prefix-host] demote evaporated at the tenant share cap before the D2H \
              copy: {} tokens, {:.1}MB ({}% of {:.0}MB, MEMRA_KV_HOST_TENANT_PCT; \
              model {}{})",
             dead.toks.len(),
-            dead.bytes as f64 / 1e6,
+            host_bytes as f64 / 1e6,
             host.tenant_pct,
             host.budget as f64 / 1e6,
             dead.pool_key.0,
@@ -7684,7 +8019,7 @@ fn host_demote_prefix_ref(
     }
     let t0 = Instant::now();
     let verify_digest = if kv_host_verify_on() {
-        match prefix_entry_state_digest(engine, dead, dead.pos) {
+        match host_roundtrip_digest(engine, dead) {
             Ok(d) => Some(d),
             Err(err) => {
                 eprintln!("[prefix-host] demote digest failed ({err}); nothing demoted");
@@ -7700,6 +8035,7 @@ fn host_demote_prefix_ref(
             let bytes = e.bytes;
             if host.insert(&dead.pool_key, e) {
                 let ms = t0.elapsed().as_secs_f64() * 1e3;
+                host.log_arena("demotion");
                 host.demotions += 1;
                 host.demote_ms_total += ms;
                 eprintln!(
@@ -7905,6 +8241,12 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             src.layout_version, PREFIX_ENTRY_LAYOUT_VERSION,
         ));
     }
+    if let Some(glm) = &src.glm {
+        if !glm5_tp_kv_host_on() {
+            return Err("GLM host restore door is off".into());
+        }
+        glm.validate_owner(engine, &src.pool_key)?;
+    }
     let plane_up = |p: &HostPlane| -> Result<PrefixPlane, String> {
         let kb = p.len * p.k_tok_bytes;
         let vb = p.len * p.v_tok_bytes;
@@ -7942,22 +8284,14 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
     let mut conv = Vec::with_capacity(src.conv.len());
     for c in &src.conv {
         conv.push(match c {
-            Some(c) => Some(
-                engine
-                    .htod(c)
-                    .map_err(|err| format!("conv state H2D failed: {err}"))?,
-            ),
+            Some(c) => Some(engine.htod(c).map_err(|e| e.to_string())?),
             None => None,
         });
     }
     let mut ssm = Vec::with_capacity(src.ssm.len());
     for s in &src.ssm {
         ssm.push(match s {
-            Some(s) => Some(
-                engine
-                    .htod(s)
-                    .map_err(|err| format!("ssm state H2D failed: {err}"))?,
-            ),
+            Some(s) => Some(engine.htod(s).map_err(|e| e.to_string())?),
             None => None,
         });
     }
@@ -7970,12 +8304,8 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
             let mut layers = Vec::with_capacity(t.layers.len());
             for (k, v) in &t.layers {
                 layers.push((
-                    engine
-                        .htod(k)
-                        .map_err(|err| format!("draft tail K H2D failed: {err}"))?,
-                    engine
-                        .htod(v)
-                        .map_err(|err| format!("draft tail V H2D failed: {err}"))?,
+                    engine.htod(k).map_err(|e| e.to_string())?,
+                    engine.htod(v).map_err(|e| e.to_string())?,
                 ));
             }
             Some(memra_engine::dflash::DflashKvTail {
@@ -7994,18 +8324,32 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         pool_key: src.pool_key.clone(),
         toks: src.toks.clone(),
         kv,
-        conv,
-        ssm,
-        // Latent-bearing entries refuse demotion at `host_demote_prefix_ref`, so every host
-        // entry is latent-free by construction and each promoted slot is legitimately absent.
-        latent: (0..src.kv.len()).map(|_| None).collect(),
-        tp: None,
+        conv: match &src.glm {
+            Some(g) => g.conv_up()?,
+            None => conv,
+        },
+        ssm: match &src.glm {
+            Some(g) => g.ssm_up()?,
+            None => ssm,
+        },
+        // Ordinary entries have no latent planes; GLM images restore all owners.
+        latent: match &src.glm {
+            Some(g) => g.latent_up()?,
+            None => (0..src.kv.len()).map(|_| None).collect(),
+        },
+        tp: match &src.glm {
+            Some(g) => g.tp_up()?,
+            None => None,
+        },
         pos: src.pos,
-        last_logits: src.last_logits.clone(),
+        last_logits: src.last_logits.to_vec(),
         draft,
-        dspark_draft,
-        last_h: src.last_h.clone(),
-        bytes: src.bytes,
+        dspark_draft: match &src.glm {
+            Some(g) => g.draft_up()?,
+            None => dspark_draft,
+        },
+        last_h: src.last_h.to_vec(),
+        bytes: src.device_bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by PrefixCache::insert
         segment: PrefixSegment::Probation,
@@ -8050,6 +8394,14 @@ fn host_promote_prefix_hit(
     device_best_len: usize,
 ) -> Option<(usize, PrefixPin)> {
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
+    let candidate = &host.entries[pool_key][hi];
+    if !host.generation_current(candidate) {
+        drop(host.remove_at(pool_key, hi));
+        host.log_arena("stale generation eviction");
+        eprintln!("[prefix-host] promote refused: stale GLM model/artifact instance");
+        return None;
+    }
+
     let (host_len, expected_digest) = {
         let e = &host.entries[pool_key][hi];
         (e.toks.len(), e.verify_digest.clone())
@@ -8064,7 +8416,7 @@ fn host_promote_prefix_hit(
         }
     };
     if let Some(expected) = expected_digest {
-        match prefix_entry_state_digest(engine, &e, e.pos) {
+        match host_roundtrip_digest(engine, &e) {
             Ok(actual) if actual == expected => {
                 eprintln!(
                     "[prefix-host] verify ok: promoted state digest matches demote digest \
@@ -8093,6 +8445,7 @@ fn host_promote_prefix_hit(
     let pin = px.insert_pinned_demoting(pool_key, e, "host-promote", 1, engine, host)?;
     let i = px.id_index(&pin)?;
     let ms = t0.elapsed().as_secs_f64() * 1e3;
+    host.log_arena("promotion");
     host.promotions += 1;
     host.promote_ms_total += ms;
     eprintln!(
@@ -8439,8 +8792,8 @@ struct HandoffEntryRef<'a> {
     ns: &'a str,
     toks: &'a [u32],
     kv: Vec<Option<HandoffPlaneRef<'a>>>,
-    conv: &'a [Option<Vec<f32>>],
-    ssm: &'a [Option<Vec<f32>>],
+    conv: Vec<Option<&'a [f32]>>,
+    ssm: Vec<Option<&'a [f32]>>,
     pos: usize,
     last_logits: &'a [f32],
     draft: Option<HandoffPlaneRef<'a>>,
@@ -8510,8 +8863,8 @@ impl HandoffEntryOwned {
             ns: &self.ns,
             toks: &self.toks,
             kv: self.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-            conv: &self.conv,
-            ssm: &self.ssm,
+            conv: self.conv.iter().map(|p| p.as_deref()).collect(),
+            ssm: self.ssm.iter().map(|p| p.as_deref()).collect(),
             pos: self.pos,
             last_logits: &self.last_logits,
             draft: self.draft.as_ref().map(plane),
@@ -8551,8 +8904,8 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
         ns: &e.pool_key.1,
         toks: &e.toks,
         kv: e.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-        conv: &e.conv,
-        ssm: &e.ssm,
+        conv: e.conv.iter().map(|p| p.as_deref()).collect(),
+        ssm: e.ssm.iter().map(|p| p.as_deref()).collect(),
         pos: e.pos,
         last_logits: &e.last_logits,
         draft: e.draft.as_ref().map(plane),
@@ -8569,7 +8922,7 @@ fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
             floor: t.floor,
         }),
         last_h: &e.last_h,
-        bytes: e.bytes,
+        bytes: e.device_bytes,
         verify_digest: e.verify_digest.as_deref(),
     }
 }
@@ -8706,7 +9059,7 @@ fn handoff_entry_wire_len(e: &HandoffEntryRef) -> u64 {
     for p in &e.kv {
         n += 1 + p.as_ref().map_or(0, plane_len);
     }
-    for class in [e.conv, e.ssm] {
+    for class in [&e.conv, &e.ssm] {
         n += 8;
         for c in class {
             n += 1 + c.as_ref().map_or(0, |v| f32s_len(v));
@@ -8764,7 +9117,7 @@ fn handoff_write_entry<W: std::io::Write>(out: &mut W, e: &HandoffEntryRef) -> R
             None => w.put_u8(0)?,
         }
     }
-    for class in [e.conv, e.ssm] {
+    for class in [&e.conv, &e.ssm] {
         w.put_u64(class.len() as u64)?;
         for c in class {
             match c {
@@ -9006,11 +9359,14 @@ fn handoff_read_entry<R: std::io::Read>(
 /// Pinned-host twin of a parsed plane. Alloc failures are the ONLY error class here
 /// (shapes were validated at parse), and the caller treats them with the tier's latch
 /// posture: pinned RAM exhaustion aborts the import loudly.
-fn host_plane_from_owned(p: HandoffPlaneOwned) -> Result<HostPlane, String> {
-    let mut k = memra_engine::PinnedHostBuf::new(p.k.len()).map_err(|e| e.to_string())?;
-    k.as_mut_slice().copy_from_slice(&p.k);
-    let mut v = memra_engine::PinnedHostBuf::new(p.v.len()).map_err(|e| e.to_string())?;
-    v.as_mut_slice().copy_from_slice(&p.v);
+fn host_plane_from_owned(
+    p: HandoffPlaneOwned,
+    planes: &mut HostPlaneLeases,
+) -> Result<HostPlane, String> {
+    let mut k = planes.take(p.k.len())?;
+    k.copy_from_slice(&p.k).map_err(|e| e.to_string())?;
+    let mut v = planes.take(p.v.len())?;
+    v.copy_from_slice(&p.v).map_err(|e| e.to_string())?;
     Ok(HostPlane {
         k,
         v,
@@ -9020,38 +9376,103 @@ fn host_plane_from_owned(p: HandoffPlaneOwned) -> Result<HostPlane, String> {
     })
 }
 
-fn host_entry_from_owned(e: HandoffEntryOwned) -> Result<HostPrefixEntry, String> {
+fn host_entry_from_owned(
+    e: HandoffEntryOwned,
+    host: &mut HostPrefixCache,
+) -> Result<HostPrefixEntry, String> {
+    if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
+        return Err("host handoff layout version mismatch".into());
+    }
+    let mut sizes: Vec<_> =
+        e.kv.iter()
+            .flatten()
+            .chain(e.draft.iter())
+            .flat_map(|p| [p.k.len(), p.v.len()])
+            .collect();
+    sizes.extend(e.conv.iter().chain(&e.ssm).flatten().map(|p| p.len() * 4));
+    if let Some(t) = &e.dspark {
+        for (k, v) in &t.layers {
+            sizes.extend([k.len() * 4, v.len() * 4]);
+        }
+    }
+    if sizes
+        .iter()
+        .try_fold(e.last_h.len() * 4, |n, b| n.checked_add(*b))
+        != Some(e.bytes)
+    {
+        return Err("pinned arena admission refused: handoff image byte census mismatch".into());
+    }
+    sizes.extend([e.last_logits.len() * 4, e.last_h.len() * 4]);
+    let bytes = host_image_bytes(e.bytes, &e.toks, &e.last_logits)?;
+    let mut planes =
+        host.reserve_image(&(e.model.clone(), e.ns.clone()), &e.toks, bytes, &sizes)?;
     let mut kv = Vec::with_capacity(e.kv.len());
     for p in e.kv {
         kv.push(match p {
-            Some(p) => Some(host_plane_from_owned(p)?),
+            Some(p) => Some(host_plane_from_owned(p, &mut planes)?),
             None => None,
         });
     }
     let draft = match e.draft {
-        Some(p) => Some(host_plane_from_owned(p)?),
+        Some(p) => Some(host_plane_from_owned(p, &mut planes)?),
         None => None,
     };
+    let conv = e
+        .conv
+        .iter()
+        .map(|p| {
+            p.as_ref()
+                .map(|p| HostF32::from_slice(p, &mut planes))
+                .transpose()
+        })
+        .collect::<Result<_, _>>()?;
+    let ssm = e
+        .ssm
+        .iter()
+        .map(|p| {
+            p.as_ref()
+                .map(|p| HostF32::from_slice(p, &mut planes))
+                .transpose()
+        })
+        .collect::<Result<_, _>>()?;
+    let dspark_draft = e
+        .dspark
+        .map(|t| -> Result<_, String> {
+            Ok(HostDflashTail {
+                layers: t
+                    .layers
+                    .iter()
+                    .map(|(k, v)| {
+                        Ok((
+                            HostF32::from_slice(k, &mut planes)?,
+                            HostF32::from_slice(v, &mut planes)?,
+                        ))
+                    })
+                    .collect::<Result<_, String>>()?,
+                base: t.base,
+                rows: t.rows,
+                len: t.len,
+                row_bytes: t.row_bytes,
+                floor: t.floor,
+            })
+        })
+        .transpose()?;
     Ok(HostPrefixEntry {
+        model_generation: None,
+        glm: None,
         layout_version: e.layout_version,
         pool_key: (e.model, e.ns),
         toks: e.toks,
         kv,
-        conv: e.conv,
-        ssm: e.ssm,
+        conv,
+        ssm,
         pos: e.pos,
-        last_logits: e.last_logits,
+        last_logits: HostF32::from_slice(&e.last_logits, &mut planes)?,
         draft,
-        dspark_draft: e.dspark.map(|t| HostDflashTail {
-            layers: t.layers,
-            base: t.base,
-            rows: t.rows,
-            len: t.len,
-            row_bytes: t.row_bytes,
-            floor: t.floor,
-        }),
-        last_h: e.last_h,
-        bytes: e.bytes,
+        dspark_draft,
+        last_h: HostF32::from_slice(&e.last_h, &mut planes)?,
+        device_bytes: e.bytes,
+        bytes,
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest: e.verify_digest,
@@ -9105,6 +9526,12 @@ fn host_handoff_export(
     let mut selected: Vec<(PoolKey, usize)> = Vec::new();
     let (mut sel_bytes, mut skipped_over_cap) = (0u64, 0u64);
     for (key, i) in hpx.lru.values().rev() {
+        if hpx.entries[key][*i].glm.is_some() {
+            eprintln!(
+                "[prefix-host] handoff skip: GLM model-owned planes need a new handoff frame"
+            );
+            continue;
+        }
         let b = hpx.entries[key][*i].bytes as u64;
         if cap_bytes > 0 && sel_bytes + b > cap_bytes as u64 {
             skipped_over_cap += 1;
@@ -9254,7 +9681,7 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
             }
             let t0 = Instant::now();
             let key: PoolKey = (e.model.clone(), e.ns.clone());
-            match host_entry_from_owned(e) {
+            match host_entry_from_owned(e, hpx) {
                 Ok(entry) => {
                     let (toks, bytes) = (entry.toks.len(), entry.bytes);
                     // Ordinary insert: identity/version re-checked, budget LRU and tenant
@@ -9284,7 +9711,9 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
                 Err(err) => {
                     // Pinned alloc failure: the tier's no-pageable-fallback latch posture.
                     hpx.rejected_allocs += 1;
-                    hpx.disable(&format!("handoff import pinned alloc failed: {err}"));
+                    if hpx.arena.is_none() {
+                        hpx.disable(&format!("handoff import pinned alloc failed: {err}"));
+                    }
                     eprintln!(
                         "[prefix-host] handoff import ABORTED at frame {} of {}: {err}; \
                          {} entries already imported stay resident, the rest serves cold",
@@ -9549,6 +9978,60 @@ fn prefix_snapshot(
 struct AdmissionPrefixRestore {
     pin: PrefixPin,
     rows: usize,
+    route: AdmissionRestoreRoute,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AdmissionRestoreRoute {
+    Native,
+    Dflash {
+        ctx_cap: usize,
+        suffix: DflashRestoreSuffix,
+    },
+}
+
+impl AdmissionRestoreRoute {
+    fn with_dflash_admission(self, admission: DsparkColdPrefixAdmission) -> Option<Self> {
+        match self {
+            Self::Native => Some(self),
+            Self::Dflash { .. } => dspark_prefers_cold_over_prefix(admission).then_some(self),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DflashRestoreSuffix {
+    FullCover,
+    Prime(usize),
+}
+
+impl DflashRestoreSuffix {
+    fn new(rows: usize, prompt: usize, partial: bool) -> Option<Self> {
+        match prompt.checked_sub(rows)? {
+            0 => Some(Self::FullCover),
+            n if partial && n >= memra_engine::hybrid_forward::PRIME_MIN_T => Some(Self::Prime(n)),
+            _ => None,
+        }
+    }
+}
+
+/// A consumed carrier cannot reach cold prime on a suffix-only charge. Release the
+/// serving lease here; run() owns and unconditionally releases the admission lease.
+fn finish_planned_dflash_conversion(
+    route: Option<AdmissionRestoreRoute>,
+    converted: bool,
+    px: &mut PrefixCache,
+    serving_pin: &mut Option<PrefixPin>,
+) -> Result<(), EngineError> {
+    if matches!(route, Some(AdmissionRestoreRoute::Dflash { .. })) && !converted {
+        if let Some(pin) = serving_pin.take() {
+            px.unpin(&pin);
+        }
+        return Err(EngineError::rate_limit(
+            "retained DFlash conversion failed; cold admission required",
+        ));
+    }
+    Ok(())
 }
 
 /// Deep-copy the first `restore_len` tokens of an entry INTO a freshly allocated session cache:
@@ -10493,10 +10976,12 @@ fn prefix_insert_from_session(
     if px.has_key(&pool_key, &s.fed) {
         return;
     }
+    let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     if !px.prepare_snapshot(
         prefix_snapshot_bytes(cache),
         prefix_cache_budget_bytes(),
         prefix_cache_slru_enabled(),
+        Some(&mut demote),
     ) {
         static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -11318,6 +11803,7 @@ fn vision_spans(
 }
 
 struct Session {
+    prime_service: crate::prime_fairness::PrimeService,
     model: String,
     /// Request-owned speculative depth. Zero means this session is on the plain path.
     /// Positive values are fixed for the request and consumed by every spec round.
@@ -11345,6 +11831,7 @@ struct Session {
     /// allocation on this path (kept to avoid restructuring admit; ~small VRAM overhead until
     /// a follow-up drops it). committed == every token whose state the spec caches hold.
     spec: Option<memra_engine::spec::SpecSession>,
+    mtp_prime: Option<memra_engine::spec::MtpPrimeState>,
     /// STEP-OOM PARK (lane/admit-oom): how many times this session has been parked back to
     /// the queue after a step-time CUDA OOM. Bounded by STEP_OOM_MAX_RETRIES before the
     /// honest error — a session that cannot make progress must not retry forever.
@@ -11394,6 +11881,7 @@ struct Session {
     ///   sampled, gate-off, and positive-K-pinned regimes keep solo admission because they do not
     ///   demote; K=0 refuses admission.
     dspark: Option<memra_engine::dflash::DsparkSpecSession>,
+    dspark_prime: Option<memra_engine::dflash::DsparkPrimeState>,
     /// Marks the session as dspark-routed even before `dspark` exists (the pre-prime
     /// window) — scheduler filters key on this, mirroring gspec_k's role.
     dspark_on: bool,
@@ -13032,11 +13520,46 @@ pub fn run(
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
     // kv_host_budget_bytes). Feeds the device cache only: the restore path is untouched.
     let mut hpx = HostPrefixCache::new(kv_host_budget_bytes());
+    if glm5_tp_kv_host_on() {
+        let reserve = (|| -> Result<(), String> {
+            // Parse afresh and fail rather than silently clamp, shrink or disarm.
+            let mib = std::env::var("MEMRA_KV_HOST_MB")
+                .map_err(|e| format!("MEMRA_KV_HOST_MB: {e}"))?
+                .parse::<usize>()
+                .map_err(|e| format!("MEMRA_KV_HOST_MB: {e}"))?;
+            let bytes = mib
+                .checked_mul(1 << 20)
+                .filter(|n| *n > 0)
+                .ok_or("MEMRA_KV_HOST_MB must be positive and fit in bytes")?;
+            host_memory::check_headroom(bytes)?;
+            let start = Instant::now();
+            let arena = memra_engine::PinnedHostArena::reserve(engine.ctx().clone(), bytes)
+                .map_err(|e| format!("startup pinned arena reserve failed: budget={bytes}: {e}"))?;
+            let (alloc_ms, fill_ms) = arena.reserve_timings_ms();
+            hpx.arena = Some(arena);
+            hpx.budget = bytes;
+            hpx.arena_reserve_ms = start.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "[prefix-host DEBUG] arena startup: reserve_ms={:.3} alloc_ms={alloc_ms:.3} fill_ms={fill_ms:.3} capacity={bytes} leased=0 free={bytes} request_pin_count=0",
+                start.elapsed().as_secs_f64() * 1000.0
+            );
+            Ok(())
+        })();
+        if let Err(err) = reserve {
+            let _ = ready_tx.send(Err(err));
+            return;
+        }
+    }
+    // All models load before this point and are immutable throughout run().
+    // A worker reload creates a new map/cache/context. Tokens bind images to
+    // these exact loaded instances, even if names and device ordinals repeat.
+    hpx.model_generations = loaded.keys().map(|k| (k.clone(), Arc::new(()))).collect();
+
     if hpx.budget > 0 {
         if prefix_cache_budget_bytes() > 0 && serve_batching() {
             eprintln!(
                 "[prefix-host] on: budget {:.0}MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, \
-                 boot-clamped to MemAvailable x 0.6), plain byte-LRU, demote on device \
+                 startup budget policy), plain byte-LRU, demote on device \
                  capacity eviction, promote on exact-prefix probe; verify={} \
                  (MEMRA_KV_HOST_VERIFY); tenant share cap {}% = {:.0}MB \
                  (MEMRA_KV_HOST_TENANT_PCT)",
@@ -13224,6 +13747,7 @@ pub fn run(
     // a dspark-armed model is probed through the dspark session, never the MTP spec arm
     // it has disabled — the receipt names the route it measured.
     run_boot_calibration(&engine, &loaded, &dspark_drafts, &mut admission_costs);
+    let mut prime_policy = crate::prime_fairness::PrimePolicy::default();
 
     // ---- serving counters + engine-truth step stats (30s percentile window) ----
     // Lane machinery (x-lane QoS gate, lane/dl-metering port): policy from env; step_stats
@@ -14412,7 +14936,6 @@ pub fn run(
                             && req.gemma_images.is_empty()
                             && req.glm5_images.is_empty()
                             && req.step_images.is_empty()
-                            && !dspark_drafts.contains_key(&model_key)
                             && !gemma_drafts.contains_key(&model_key)
                             && model.hyper.is_none()
                             && !(memra_engine::cache::swa_ring_on()
@@ -14426,9 +14949,78 @@ pub fn run(
                                 )
                             })
                             .flatten();
-                        let planned_cost = restored.and_then(|rows| {
+                        let route = restored.and_then(|_| match dspark_drafts.get(&model_key) {
+                            Some(draft) if estimate_spec => px
+                                .admission_dflash_restore(
+                                    &pin,
+                                    req.prepared_prompt.as_ref().unwrap(),
+                                    &draft.cfg,
+                                    draft.dflash2.is_some(),
+                                    shape.ctx_cap,
+                                    model.cfg.n_vocab as usize,
+                                )
+                                .and_then(|route| {
+                                    let sampler = Sampler::new(req.sampler_cfg.clone());
+                                    let greedy = sampler.is_greedy();
+                                    // Nomination must use the same DFlash decision as consume.
+                                    // A route veto leaves the full charge and normal queue/defer
+                                    // policy intact, rather than committing a plan that must 429.
+                                    route.with_dflash_admission(DsparkColdPrefixAdmission {
+                                        route_ready: serve_spec_enabled()
+                                            && peer_probe_allows_spec
+                                            && !memra_engine::pp::pp_host_bounce_active()
+                                            && memra_engine::plan_backend::gdn_dspark_compatible(
+                                                &model.plan,
+                                            ),
+                                        // The validated source already proved full-prompt fit.
+                                        prime_feasible: true,
+                                        greedy,
+                                        greedy_penalized: greedy
+                                            && (sampler.penalty_repeat() != 1.0
+                                                || sampler.penalty_freq() != 0.0
+                                                || sampler.penalty_present() != 0.0),
+                                        sampled: sampler.temperature() > 0.0,
+                                        // can_plan excludes these shapes, and a committed plan
+                                        // suppresses every continuation donor.
+                                        constrained: false,
+                                        vision: false,
+                                        cold: true,
+                                        gate_on: spec_gate_on(),
+                                        pin: spec_k_pin(),
+                                        projected_wave: projected_admission_wave(
+                                            active.len(),
+                                            queue.len() + requeue.len(),
+                                        ),
+                                        low: spec_gate_low(),
+                                        n_active: active.len(),
+                                        has_live_non_demotable: active.iter().any(|s| {
+                                            dspark_blocks_greedy_widening(
+                                                s.dspark_on,
+                                                s.sampler.is_greedy(),
+                                                s.constraint.is_some(),
+                                            )
+                                        }),
+                                        prompt_len,
+                                        decode_budget: shape.budget,
+                                        hit_available: true,
+                                        hit_restorable: dspark_partial_restore_on(),
+                                    })
+                                }),
+                            Some(_) => None,
+                            None => Some(AdmissionRestoreRoute::Native),
+                        });
+                        let planned_cost = restored.zip(route).and_then(|(rows, route)| {
                             let model = &admission_costs[&model_key];
-                            model.cost_after_prefix_restore(cost, prompt_len, rows)
+                            // Keep one minimum prime workspace even for a full cover:
+                            // boundary sampling/conversion transients still need funding.
+                            let workspace_rows = match route {
+                                AdmissionRestoreRoute::Native => rows,
+                                AdmissionRestoreRoute::Dflash { .. } => rows.min(
+                                    prompt_len
+                                        .saturating_sub(memra_engine::hybrid_forward::PRIME_MIN_T),
+                                ),
+                            };
+                            model.cost_after_prefix_restore(cost, prompt_len, workspace_rows)
                         });
                         if let Some((rows, next_cost)) = restored.zip(planned_cost)
                             && !headroom.sufficient(required)
@@ -14448,7 +15040,11 @@ pub fn run(
                             required = admission_required(cost, reserve);
                             required_eager =
                                 admission_required(cost.saturating_sub(draft_state_bytes), reserve);
-                            admission_restore = Some(AdmissionPrefixRestore { pin, rows });
+                            admission_restore = Some(AdmissionPrefixRestore {
+                                pin,
+                                rows,
+                                route: route.unwrap(),
+                            });
                         } else {
                             px.unpin(&pin);
                         }
@@ -14731,7 +15327,18 @@ pub fn run(
                 step_tower.as_ref(),
             );
             if let Some(plan) = admission_restore {
-                px.unpin(&plan.pin);
+                let released = px.unpin(&plan.pin);
+                let source_pins = px
+                    .id_index(&plan.pin)
+                    .map(|i| px.entries[&plan.pin.key][i].pins)
+                    .unwrap_or(0);
+                eprintln!(
+                    "[admission] retained prefix result: route={:?} admitted={} admission_lease_released={released} source_pins={source_pins} pinned_bytes={} pool_used_bytes={}",
+                    plan.route,
+                    admitted.is_ok(),
+                    px.pinned_bytes(),
+                    engine.pool_reserved_used().1,
+                );
             }
             match admitted {
                 Ok(mut s) => {
@@ -15014,6 +15621,11 @@ pub fn run(
             // next request. Keeping this sweep inside the demotion branch made MEMRA_SPEC_K=3
             // exact but permanently cache-cold.
             for s in active.iter_mut() {
+                // A saved prime is not a committed decode/park boundary. Its adapter
+                // owns the partial captures until finalization succeeds.
+                if s.prime_service.pending {
+                    continue;
+                }
                 let mtp_captures = s
                     .spec
                     .as_mut()
@@ -15070,6 +15682,9 @@ pub fn run(
                     // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
                     for i in 0..active.len() {
                         if finished.contains(&i) {
+                            continue;
+                        }
+                        if active[i].prime_service.pending {
                             continue;
                         }
                         // DSPARK TICK DEMOTION (lane/dspark-spec-gate-demote, 2026-08-24).
@@ -15333,12 +15948,20 @@ pub fn run(
             if admit_yield_on {
                 spec_order.sort_by_key(|&i| !active[i].generated.is_empty());
             }
+            if memra_engine::prime_walker::prime_yield_enabled() {
+                prime_policy.order(&mut spec_order, |i| active[i].prime_service.pending);
+            }
             let mut dspark_phase_captures: Vec<(usize, memra_engine::spec::SpecBoundaryCapture)> =
                 Vec::new();
             for i in spec_order {
                 if finished.contains(&i) {
                     continue;
                 }
+                // Re-read after each prime step: a peer later in this same tick already
+                // owes bounded service when an earlier route has just yielded.
+                active[i].prime_service.peer_quantum =
+                    memra_engine::prime_walker::prime_yield_enabled()
+                        && active.iter().any(|s| s.prime_service.pending);
                 let generated_before = active[i].generated.len();
                 let lane = active[i].lane;
                 let step_started = Instant::now();
@@ -16462,7 +17085,7 @@ pub fn run(
                 oom_teardowns += 1;
                 continue;
             }
-            if !retire_may_park(s.aborted, s.oom_teardown) {
+            if s.prime_service.pending || !retire_may_park(s.aborted, s.oom_teardown) {
                 continue;
             }
             // AGENT-PAUSE DEMOTE ARM (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831,
@@ -18786,7 +19409,9 @@ fn admit(
     // hybrid/GDN trunk `gdn_dspark_compatible` selects — so for this route a full-prefix entry
     // is the whole set. Third and final granularity of the defect review chased across three
     // rounds: the veto must never fire without a hit to take the cold prime's place.
-    let mut consumable_hit = if prefix_on {
+    let mut consumable_hit = if let Some(plan) = admission_restore {
+        px.id_index(&plan.pin)
+    } else if prefix_on {
         px.lookup(&pool_key, &prompt)
     } else {
         None
@@ -18906,7 +19531,25 @@ fn admit(
     if let Some(plan) = admission_restore {
         if !prefix_on
             || reused.is_some()
-            || dspark_prefers_cold
+            || match plan.route {
+                AdmissionRestoreRoute::Native => dspark_prefers_cold,
+                AdmissionRestoreRoute::Dflash {
+                    ctx_cap: paid_cap, ..
+                } => {
+                    !dspark_prefers_cold
+                        || paid_cap != ctx_cap
+                        || dspark_draft.is_none_or(|draft| {
+                            px.admission_dflash_restore(
+                                &plan.pin,
+                                &prompt,
+                                &draft.cfg,
+                                draft.dflash2.is_some(),
+                                ctx_cap,
+                                lm.model.cfg.n_vocab as usize,
+                            ) != Some(plan.route)
+                        })
+                }
+            }
             || px.admission_restore_rows(&plan.pin, &prompt) != Some(plan.rows)
         {
             return Err((
@@ -19394,7 +20037,7 @@ fn admit(
                 let republish_at =
                     plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
                         .filter(|&b| b > fed_len);
-                match lm.model.spec_session_from_restored(
+                match lm.model.spec_session_from_restored_deferred(
                     engine,
                     carrier_cache,
                     fed.clone(),
@@ -19410,6 +20053,7 @@ fn admit(
                     full_cover,
                     cap,
                     republish_at,
+                    lm.model.mtp_prime_walk_supported(),
                 ) {
                     Ok(sess) => {
                         eprintln!(
@@ -19419,6 +20063,8 @@ fn admit(
                             prompt.len(),
                             if full_cover {
                                 " [continuation]"
+                            } else if lm.model.mtp_prime_walk_supported() {
+                                " [suffix queued]"
                             } else {
                                 " [suffix fed]"
                             },
@@ -19569,14 +20215,14 @@ fn admit(
                         }
                         Err(why) => {
                             eprintln!(
-                                "[prefix-cache] dspark restore declined ({why}); request                                  cold-primes (model {})",
+                                "[prefix-cache] dspark restore declined ({why}); cold admission required (model {})",
                                 req.model,
                             );
                         }
                     }
                 }
                 None => eprintln!(
-                    "[prefix-cache] dspark restore: tail does not cover the drafter window;                      request cold-primes (model {})",
+                    "[prefix-cache] dspark restore: tail does not cover the drafter window;                      cold admission required (model {})",
                     req.model,
                 ),
             }
@@ -19586,11 +20232,18 @@ fn admit(
             // a prefill saving. Drop the carrier (the entry itself stays published) and let
             // the cold prime happen exactly as before this lane.
             eprintln!(
-                "[prefix-cache] dspark: hit cannot re-arm the drafter; keeping the cold prime \
-                 rather than downgrading to plain (model {})",
+                "[prefix-cache] dspark: hit cannot re-arm the drafter; cold admission required (model {})",
                 req.model,
             );
         }
+    }
+    if let Err(error) = finish_planned_dflash_conversion(
+        admission_restore.map(|plan| plan.route),
+        dspark_prefix_restored.is_some(),
+        px,
+        &mut prefix_pin,
+    ) {
+        return Err((req.tx, error));
     }
     // GLM5 SPEC RESTORE, half 1 of 2 (lane/glm5-prefix-latent2, 2026-09-01): rebuild the
     // DFlash2 drafter KV from the entry's tail HERE, while the PrefixCache is borrowable
@@ -19855,7 +20508,7 @@ fn admit(
         // before this lane, so the pool tiers keep exactly the shapes they already serve.
         spec_resumed = sess.committed.len();
         Some(sess)
-    } else if spec_eligible && seed_fed.is_empty() {
+    } else if spec_eligible && seed_fed.is_empty() && admission_restore.is_none() {
         // POOL RESUME: a parked spec session whose committed sequence exactly prefixes this
         // prompt (with cache room) resumes — only the suffix primes; equal-length = pure burst.
         // Match order: exact token prefix (bit-clean), else TEXT prefix (survives BPE boundary
@@ -20439,7 +21092,8 @@ fn admit(
     // costs a re-prime on the NEXT extension turn but never a wrong stream).
     let mut dspark_resume: Option<(memra_engine::dflash::DsparkSpecSession, Vec<u32>, Vec<u32>)> =
         None; // (session, pre-fed stream, suffix to prime)
-    if dspark_draft_ready
+    if admission_restore.is_none()
+        && dspark_draft_ready
         && dspark_prefers_cold
         && spec.is_none()
         && gspec_k == 0
@@ -21031,6 +21685,7 @@ fn admit(
     };
 
     let mut s = Session {
+        prime_service: crate::prime_fairness::PrimeService::default(),
         model: req.model,
         spec_k,
         cache_ns: req.cache_ns,
@@ -21039,6 +21694,7 @@ fn admit(
         cache,
         sampler,
         spec,
+        mtp_prime: None,
         oom_retries: req_oom_retries,
         vision_memory,
         replay,
@@ -21051,6 +21707,7 @@ fn admit(
         gspec_k,
         gspec_ctx: ctx_cap,
         dspark: dspark_resume_sess,
+        dspark_prime: None,
         // ROOT CAUSE of the "tiny-budget hazard" (bench repro 2026-08-27, closed): this field
         // routes the tick dispatch, and it used to carry the value computed BEFORE the
         // prefix-restore fold — so a restored session installed with dspark_on=false was
@@ -22654,15 +23311,100 @@ fn step_session(
         // The engine target is a scheduler cadence, not a public-output cap. Session mode may
         // return a cache-authoritative surplus token past this target; expose it when the request
         // still has room so worker generated/sampler/fed state stays aligned with SpecSession.
-        let burst_target = request_room.min(burst_t);
-        let suffix: Vec<u32> = s.prefill_queue.drain(..).collect();
-        s.prefill_done = true;
+        let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
+        let cooperative_prime = memra_engine::prime_walker::prime_yield_enabled()
+            && lm.model.mtp_prime_walk_supported();
+        let suffix: Vec<u32> = if cooperative_prime {
+            s.prefill_queue.iter().copied().collect()
+        } else {
+            s.prefill_queue.drain(..).collect()
+        };
         if suffix.is_empty() && spec.next_pred.is_none() && spec.pending_tok.is_none() {
             // nothing primed and nothing to prime — shouldn't happen (admit rejects empty prompts)
             finish(s, StopReason::MaxNew);
             return Ok(false);
         }
         let sampling = spec_sampling_for(&s.sampler);
+        // Cold speculative sessions must enter decode with the same prompt state as the plain
+        // policy they replace. Plain affinity stops at the stable live-turn boundary and primes
+        // a sub-floor tail tokenwise; a monolithic spec prime can select different Step35 bytes.
+        // Mirror that cold boundary — and, under the stable-boundary door
+        // (lane/frspec-multiturn-cache, 2026-08-21), the WARM one too: an affinity-rewound or
+        // pool-resumed session priming its own delta stops at the new turn's stable boundary
+        // exactly like a resumed plain session's prefill tick does (`ckpt_at` filter
+        // `b > seed_fed.len()`). Warm sessions skip the nominatable predicate — a session that
+        // was parked and resumed has already proven nomination, and the suffix alone
+        // undercounts the conversation's segments. Empty-suffix continuation bursts remain
+        // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
+        let cold = spec.committed.is_empty();
+        let boundary = if !suffix.is_empty()
+            && affinity_enabled()
+            && (cold
+                && (s.affinity.is_some()
+                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)))
+                || !cold)
+        {
+            plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+        } else {
+            None
+        };
+        // SPEC-TIER TURN CHECKPOINT at the stable boundary (the plain tier's 2026-08-09 law,
+        // ported): the engine captures `turn_ckpt` at this stop instead of prompt-end, so the
+        // next re-rendered turn's byte diff lands ON the checkpoint instead of diverging
+        // inside the live generation header 2 tokens below it. Absolute position, `capture_at`
+        // convention.
+        spec.ckpt_at = boundary.map(|b| spec.committed.len() + b).or(spec.ckpt_at);
+        let prime_split = boundary;
+        // PREFIX-CACHE capture boundary (lane/spec-prefix-cache): a cold burst with an armed
+        // mid-prompt capture boundary must actually SPLIT the prime there, or the capture
+        // never fires (the engine compares capture_at == split). When affinity also wants a
+        // split, the EARLIER boundary wins — both are legal prime stops, and the engine's
+        // PRIME_MIN_T law vetoes sub-floor splits on its own. A seed boundary (== suffix
+        // length) is not a split; the engine's post-prime seed capture handles it. (Under the
+        // stable boundary the affinity stop is re-armed via `ckpt_at` above, so taking
+        // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
+        // plain prefill tick's snapshot_at/ckpt_at pair.)
+        let prime_split = if cold {
+            match (prime_split, spec.capture_at.filter(|&b| b < suffix.len())) {
+                (Some(a), Some(c)) => Some(a.min(c)),
+                (None, Some(c)) => Some(c),
+                (a, None) => a,
+            }
+        } else {
+            prime_split
+        };
+        if cooperative_prime && !suffix.is_empty() {
+            if s.mtp_prime.is_none() {
+                s.mtp_prime = Some(lm.model.mtp_prime_start(
+                    engine,
+                    spec,
+                    &suffix,
+                    k,
+                    sampling,
+                    prime_split,
+                )?);
+            }
+            let mut grammar = s
+                .constraint
+                .as_mut()
+                .map(|c| crate::constrained::SpecGrammar::new(c, lm.eos_id));
+            let mut walker = lm.model.mtp_prime_walker(
+                engine,
+                spec,
+                &mut s.mtp_prime,
+                grammar
+                    .as_mut()
+                    .map(|g| g as &mut dyn memra_engine::spec::SpecConstraint),
+            );
+            if !s.prime_service.advance(&mut walker)? {
+                return Ok(true);
+            }
+            s.prime_service.finish(walker)?;
+            s.prefill_queue.clear();
+        }
+        // Empty-suffix restores/continuations are already primed too. A pending
+        // walker returned above, so every path reaching decode has completed prefill.
+        s.prefill_done = true;
         // SPEC x CONSTRAINED: greedy constrained bursts carry the grammar hook — verify-side
         // truncation + masked-argmax cut slots (engine contract; sampled never gets here).
         // Telemetry (lane/accept-telemetry): the session's counters are LIFETIME (a pool
@@ -22734,54 +23476,6 @@ fn step_session(
             None
         } else {
             Some(&mut flush_cb)
-        };
-        // Cold speculative sessions must enter decode with the same prompt state as the plain
-        // policy they replace. Plain affinity stops at the stable live-turn boundary and primes
-        // a sub-floor tail tokenwise; a monolithic spec prime can select different Step35 bytes.
-        // Mirror that cold boundary — and, under the stable-boundary door
-        // (lane/frspec-multiturn-cache, 2026-08-21), the WARM one too: an affinity-rewound or
-        // pool-resumed session priming its own delta stops at the new turn's stable boundary
-        // exactly like a resumed plain session's prefill tick does (`ckpt_at` filter
-        // `b > seed_fed.len()`). Warm sessions skip the nominatable predicate — a session that
-        // was parked and resumed has already proven nomination, and the suffix alone
-        // undercounts the conversation's segments. Empty-suffix continuation bursts remain
-        // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
-        let cold = spec.committed.is_empty();
-        let boundary = if !suffix.is_empty()
-            && affinity_enabled()
-            && (cold
-                && (s.affinity.is_some()
-                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)))
-                || !cold)
-        {
-            plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
-        } else {
-            None
-        };
-        // SPEC-TIER TURN CHECKPOINT at the stable boundary (the plain tier's 2026-08-09 law,
-        // ported): the engine captures `turn_ckpt` at this stop instead of prompt-end, so the
-        // next re-rendered turn's byte diff lands ON the checkpoint instead of diverging
-        // inside the live generation header 2 tokens below it. Absolute position, `capture_at`
-        // convention.
-        spec.ckpt_at = boundary.map(|b| spec.committed.len() + b);
-        let prime_split = boundary;
-        // PREFIX-CACHE capture boundary (lane/spec-prefix-cache): a cold burst with an armed
-        // mid-prompt capture boundary must actually SPLIT the prime there, or the capture
-        // never fires (the engine compares capture_at == split). When affinity also wants a
-        // split, the EARLIER boundary wins — both are legal prime stops, and the engine's
-        // PRIME_MIN_T law vetoes sub-floor splits on its own. A seed boundary (== suffix
-        // length) is not a split; the engine's post-prime seed capture handles it. (Under the
-        // stable boundary the affinity stop is re-armed via `ckpt_at` above, so taking
-        // the min here no longer forfeits it — the engine stops at BOTH, exactly like the
-        // plain prefill tick's snapshot_at/ckpt_at pair.)
-        let prime_split = if cold {
-            match (prime_split, spec.capture_at.filter(|&b| b < suffix.len())) {
-                (Some(a), Some(c)) => Some(a.min(c)),
-                (None, Some(c)) => Some(c),
-                (a, None) => a,
-            }
-        } else {
-            prime_split
         };
         let (burst, d, a) = match s.constraint.as_mut() {
             Some(c) => {
@@ -23263,7 +23957,7 @@ fn step_gemma_spec(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
-    let burst_target = request_room.min(burst_t);
+    let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
     let sess = s.gspec.as_mut().unwrap();
     let rounds_before = sess.rounds;
     let (burst, dr, ac) =
@@ -23379,6 +24073,53 @@ fn step_dspark_spec(
         finish(s, StopReason::MaxNew);
         return Ok(false);
     }
+    // Cooperative cold/resumed adapter. Keep the request queue intact until the
+    // whole prime finalizes, and retain the DFlash route while its caches are owned
+    // by the pending state. A yield is neither a decode boundary nor a park boundary.
+    if memra_engine::prime_walker::prime_yield_enabled()
+        && (s.dspark_prime.is_some() || !s.prefill_queue.is_empty())
+    {
+        if s.dspark_prime.is_none() {
+            if let Some(trace) = s.ttft.as_ref() {
+                trace.mark_prime_start();
+            }
+            let tokens: Vec<u32> = s.prefill_queue.iter().copied().collect();
+            let capture = match (s.dspark_capture_prefix, s.dspark_capture_at) {
+                (false, _) => memra_engine::dflash::DsparkCapture::Off,
+                (true, Some(b)) => memra_engine::dflash::DsparkCapture::Boundary(b),
+                (true, None) if s.dspark.is_none() => {
+                    memra_engine::dflash::DsparkCapture::PromptEnd
+                }
+                _ => memra_engine::dflash::DsparkCapture::Off,
+            };
+            s.dspark_prime = Some(match s.dspark.take() {
+                Some(sess) => lm
+                    .model
+                    .dspark_prime_resume_start(engine, d, sess, &tokens, capture)?,
+                None => lm.model.dspark_prime_start(
+                    engine,
+                    d,
+                    &tokens,
+                    s.gspec_ctx,
+                    dspark_spec_sampling_for(&s.sampler),
+                    capture,
+                )?,
+            });
+        }
+        let mut walker = lm.model.dspark_prime_walker(engine, d, &mut s.dspark_prime);
+        if !s.prime_service.advance(&mut walker)? {
+            return Ok(true);
+        }
+        s.dspark = Some(s.prime_service.finish(walker)?);
+        for tok in s.prefill_queue.drain(..) {
+            s.fed.push(tok);
+            s.sampler.accept(tok);
+        }
+        s.prefill_done = true;
+        if let Some(trace) = s.ttft.as_ref() {
+            trace.mark_prime_end();
+        }
+    }
     // POOL RESUME (lane/dflash2-session-reuse): a resumed session arrives with its
     // parked state in s.dspark and the new turn's suffix in prefill_queue — prime ONLY
     // that delta (dspark_spec_session_resume), then burst. Empty-suffix exact
@@ -23468,7 +24209,7 @@ fn step_dspark_spec(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
-    let burst_target = request_room.min(burst_t);
+    let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
     // FIRST-TOKEN EAGER, dspark twin (lane/dspark-first-token-eager, memra#249 lever 22b,
     // the same `MEMRA_SPEC_FIRST_TOKEN_EAGER` door the glm5 route reads). This route emitted
     // at BURST cadence and said so in its own comment: the first `Event::Token` of a request
@@ -23736,7 +24477,7 @@ fn step_glm5_spec(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
-    let burst_target = request_room.min(burst_t);
+    let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
     // FIRST-TOKEN EAGER door (lane/b200-spec-ttft-20260902, `MEMRA_SPEC_FIRST_TOKEN_EAGER`,
     // DEFAULT ON, `=0` = rollback): publish at ROUND cadence instead of burst cadence — the
     // qwen route's sse-cadence shape (2026-08-05) ported to this session. OFF (the pre-lane
@@ -29257,6 +29998,236 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires an exclusively locked CUDA device and DFlash restore profile"]
+    fn dflash_retained_gpu_plan_fault_matrix() {
+        use memra_engine::dflash::{DflashCfg, DflashKvTail};
+        assert!(super::dspark_prefix_restore_on());
+        assert!(super::dspark_partial_restore_on());
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let cfg = DflashCfg {
+            hidden: 4,
+            n_head: 2,
+            n_kv: 1,
+            head_dim: 2,
+            n_ff: 8,
+            n_layer: 1,
+            eps: 1e-6,
+            rope_theta: 1e6,
+            block_size: 8,
+            mask_token_id: 4,
+            target_layer_ids: vec![0],
+            sliding_window: 16,
+            layer_sliding: vec![true],
+            strategy_dspark: false,
+            is_causal: None,
+        };
+        for fault in [
+            "full",
+            "boundary",
+            "missing-tail",
+            "short-tail",
+            "storage",
+            "tail-position",
+            "logits",
+            "nonfinite-logits",
+            "short-suffix",
+            "source-position",
+            "source-layout",
+            "source-key",
+            "lost-source",
+            "capacity",
+        ] {
+            let k = key("tenant");
+            let mut px = PrefixCache::default();
+            let tokens = toks(PREFIX_CACHE_MIN_TOKENS);
+            let rows = tokens.len();
+            let mut donor = entry(&k, tokens.clone());
+            donor.pos = rows;
+            donor.dspark_draft = Some(DflashKvTail {
+                layers: vec![(engine.zeros(48).unwrap(), engine.zeros(48).unwrap())],
+                base: rows - 24,
+                rows: 24,
+                len: rows,
+                row_bytes: 8,
+                floor: 0,
+            });
+            px.insert_with_budget(&k, donor, "source", 2);
+            let (pin, _) = px.pin_prompt_prefix(&k, &tokens).unwrap();
+            let mut prompt = tokens.clone();
+            let cap = rows + 1024;
+            assert!(
+                px.admission_dflash_restore(&pin, &prompt, &cfg, true, cap, 1)
+                    .is_some()
+            );
+            let en = &mut px.entries.get_mut(&k).unwrap()[0];
+            match fault {
+                "full" => {}
+                "boundary" => prompt.extend([42; memra_engine::hybrid_forward::PRIME_MIN_T]),
+                "missing-tail" => en.dspark_draft = None,
+                "short-tail" => {
+                    let tail = en.dspark_draft.as_mut().unwrap();
+                    tail.rows -= 1;
+                    tail.base += 1;
+                }
+                "storage" => {
+                    en.dspark_draft.as_mut().unwrap().layers[0].0 = engine.zeros(1).unwrap()
+                }
+                "tail-position" => en.dspark_draft.as_mut().unwrap().len -= 1,
+                "logits" => en.last_logits.clear(),
+                "nonfinite-logits" => en.last_logits[0] = f32::NAN,
+                "short-suffix" => prompt.push(42),
+                "source-position" => en.pos -= 1,
+                "source-layout" => en.layout_version += 1,
+                "source-key" => en.pool_key = key("other"),
+                "lost-source" => {
+                    assert!(px.unpin(&pin));
+                    assert_eq!(px.evict_all(), 1);
+                }
+                "capacity" => {}
+                _ => unreachable!(),
+            }
+            let decision = px.admission_dflash_restore(
+                &pin,
+                &prompt,
+                &cfg,
+                true,
+                if fault == "capacity" { rows } else { cap },
+                1,
+            );
+            assert_eq!(
+                decision.is_some(),
+                matches!(fault, "full" | "boundary"),
+                "{fault}"
+            );
+            if fault != "lost-source" {
+                assert!(px.unpin(&pin));
+            }
+            assert_eq!(px.pinned_bytes(), 0, "{fault}: leaked lease");
+            px.evict_all();
+            assert_eq!(px.total_bytes, 0, "{fault}: retained source after release");
+            engine.stream().synchronize().unwrap();
+            eprintln!(
+                "[retained-plan-test] {fault}: validated={} pins=0 source_bytes=0",
+                decision.is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn dflash_retained_plan_checks_route_before_discounting() {
+        use super::{AdmissionRestoreRoute, DflashRestoreSuffix, DsparkColdPrefixAdmission};
+        let route = AdmissionRestoreRoute::Dflash {
+            ctx_cap: 34_000,
+            suffix: DflashRestoreSuffix::Prime(64),
+        };
+        let admitted = DsparkColdPrefixAdmission {
+            route_ready: true,
+            prime_feasible: true,
+            greedy: false,
+            greedy_penalized: false,
+            sampled: true,
+            constrained: false,
+            vision: false,
+            cold: true,
+            gate_on: true,
+            pin: None,
+            projected_wave: 1,
+            low: 2,
+            n_active: 0,
+            has_live_non_demotable: false,
+            prompt_len: 32_768,
+            decode_budget: 1024,
+            hit_available: true,
+            hit_restorable: true,
+        };
+        assert_eq!(route.with_dflash_admission(admitted), Some(route));
+        // MTP may still estimate positive K in these shapes. DFlash must refuse the
+        // plan before reducing the charge, so pressure retains the normal defer path.
+        for veto in [
+            DsparkColdPrefixAdmission {
+                gate_on: false,
+                n_active: 1,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                pin: Some(8),
+                n_active: 1,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                projected_wave: 3,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                route_ready: false,
+                ..admitted
+            },
+            DsparkColdPrefixAdmission {
+                hit_restorable: false,
+                decode_budget: 64,
+                ..admitted
+            },
+        ] {
+            assert_eq!(
+                route.with_dflash_admission(veto),
+                None,
+                "a metadata-valid source must not bypass the live DFlash route policy"
+            );
+        }
+    }
+
+    #[test]
+    fn dflash_retained_suffix_distinguishes_full_boundary_and_unsupported_suffix() {
+        use super::DflashRestoreSuffix::{self, FullCover, Prime};
+        let rows = PREFIX_CACHE_MIN_TOKENS;
+        let min = memra_engine::hybrid_forward::PRIME_MIN_T;
+        assert_eq!(DflashRestoreSuffix::new(rows, rows, false), Some(FullCover));
+        assert_eq!(
+            DflashRestoreSuffix::new(rows, rows + min, true),
+            Some(Prime(min))
+        );
+        assert_eq!(DflashRestoreSuffix::new(rows, rows + min - 1, true), None);
+        assert_eq!(DflashRestoreSuffix::new(rows, rows + min, false), None);
+        assert_eq!(DflashRestoreSuffix::new(rows, rows - 1, true), None);
+    }
+
+    #[test]
+    fn dflash_retained_consumed_carrier_failure_releases_serving_lease_and_refuses_cold() {
+        use super::{AdmissionRestoreRoute, DflashRestoreSuffix, finish_planned_dflash_conversion};
+        let k = key("tenant");
+        let mut px = PrefixCache::default();
+        let tokens = toks(PREFIX_CACHE_MIN_TOKENS);
+        let mut donor = entry(&k, tokens.clone());
+        donor.pos = tokens.len();
+        px.insert_with_budget(&k, donor, "source", 2);
+        let (admission_pin, rows) = px.pin_prompt_prefix(&k, &tokens).unwrap();
+        let mut serving_pin = px.pin(&k, 0);
+        let route = AdmissionRestoreRoute::Dflash {
+            ctx_cap: rows + 1024,
+            suffix: DflashRestoreSuffix::FullCover,
+        };
+        assert!(
+            finish_planned_dflash_conversion(Some(route), true, &mut px, &mut serving_pin).is_ok()
+        );
+        assert_eq!(px.entries[&k][0].pins, 2);
+        // Engine failure can consume the entire carrier. The production barrier must
+        // reject before the next cold allocation becomes reachable.
+        let result =
+            finish_planned_dflash_conversion(Some(route), false, &mut px, &mut serving_pin);
+        assert!(
+            result.is_err(),
+            "a consumed carrier must never authorize cold prime"
+        );
+        assert!(serving_pin.is_none());
+        assert_eq!(px.entries[&k][0].pins, 1);
+        assert_eq!(px.evict_all(), 0);
+        assert!(px.unpin(&admission_pin));
+        assert_eq!(px.pinned_bytes(), 0);
+        assert_eq!(px.evict_all(), 1);
+        assert_eq!(px.total_bytes, 0);
+    }
+
+    #[test]
     fn retained_restore_cost_keeps_context_draft_residual_and_reserve_paid() {
         let model = super::AdmissionCostModel {
             plain_bytes_per_token: 9280,
@@ -31209,6 +32180,8 @@ mod tests {
 
     fn host_entry(pool_key: &PoolKey, toks: Vec<u32>, bytes: usize) -> HostPrefixEntry {
         HostPrefixEntry {
+            model_generation: None,
+            glm: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: pool_key.clone(),
             toks,
@@ -31216,15 +32189,39 @@ mod tests {
             conv: Vec::new(),
             ssm: Vec::new(),
             pos: 0,
-            last_logits: vec![0.0],
+            last_logits: super::HostF32::Heap(vec![0.0]),
             draft: None,
             dspark_draft: None,
-            last_h: Vec::new(),
+            last_h: super::HostF32::Heap(Vec::new()),
+            device_bytes: bytes,
             bytes,
             last_use: next_instant(),
             id: 0,
             verify_digest: None,
         }
+    }
+
+    #[test]
+    fn host_image_accounts_boundary_planes_and_token_metadata() {
+        assert_eq!(
+            super::host_image_bytes(72, &[1, 2, 3], &[0.5, 0.25]).unwrap(),
+            92
+        );
+        assert!(super::host_image_bytes(usize::MAX, &[1], &[]).is_err());
+    }
+
+    #[test]
+    fn host_cache_stale_generation_refused_before_promotion() {
+        let key = key("tenant-generation");
+        let mut h = HostPrefixCache::new(1024);
+        let mut entry = host_entry(&key, toks(super::PREFIX_CACHE_MIN_TOKENS), 64);
+        let generation = Arc::new(());
+        entry.model_generation = Some(generation.clone());
+        assert!(!h.generation_current(&entry));
+        h.model_generations.insert(key.0.clone(), generation);
+        assert!(h.generation_current(&entry));
+        h.model_generations.insert(key.0.clone(), Arc::new(()));
+        assert!(!h.generation_current(&entry));
     }
 
     #[test]
@@ -32696,6 +33693,80 @@ mod tests {
     }
 
     #[test]
+    fn prefix_cache_host_promote_pinned_admission_follows_policy_and_leases() {
+        // A host promotion takes one lease before restore. A prior reused device entry
+        // remains Protected after its lease ends, even under LRU's 100% share.
+        for slru in [false, true] {
+            let k = key("host-promote");
+            let mut px = PrefixCache::default();
+            px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, 0, 8),
+                "seed",
+                10,
+                100,
+                0,
+                None,
+                slru,
+            )
+            .unwrap();
+            let lease = px.pin(&k, 0).unwrap();
+            assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
+            let mut demoted = Vec::new();
+            assert!(
+                px.insert_with_budget_pins_and_policy(
+                    &k,
+                    entry_b(&k, 1, 8),
+                    "host-promote",
+                    10,
+                    100,
+                    1,
+                    Some(&mut |dead| demoted.push(dead.toks[0])),
+                    slru,
+                )
+                .is_none(),
+                "an active lease must refuse promotion under either policy"
+            );
+            assert!(demoted.is_empty());
+            assert_eq!(px_survivors(&px), vec![0]);
+            assert!(px.unpin(&lease));
+            assert_eq!(px.entries[&k][0].segment, PrefixSegment::Protected);
+            let promoted = px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, 1, 8),
+                "host-promote",
+                10,
+                100,
+                1,
+                Some(&mut |dead| demoted.push(dead.toks[0])),
+                slru,
+            );
+            if slru {
+                assert!(
+                    promoted.is_none(),
+                    "SLRU must retain bytes below its protected share"
+                );
+                assert!(demoted.is_empty());
+                assert_eq!(px_survivors(&px), vec![0]);
+                assert_eq!(px.evictions, 0);
+            } else {
+                let id = promoted.expect("LRU must reclaim protected but unleased bytes");
+                assert_eq!(
+                    demoted,
+                    vec![0],
+                    "the victim must reach the host demote sink"
+                );
+                assert_eq!(px_survivors(&px), vec![1]);
+                assert_eq!(px.entries[&k][0].id, id);
+                assert_eq!(px.entries[&k][0].pins, 1);
+                assert_eq!(px.evictions, 1);
+            }
+            assert_eq!(px.total_bytes, 8);
+            assert_prefix_cache_accounting(&px);
+        }
+    }
+
+    #[test]
     fn prefix_cache_still_refuses_an_entry_larger_than_total_budget() {
         let mut px = PrefixCache::default();
         px.insert_with_budget(&key(""), entry_b(&key(""), 0, 11), "test", 10);
@@ -32899,7 +33970,7 @@ mod tests {
             px.entries[&k][0].pins, 1,
             "the other session keeps its lease"
         );
-        assert!(!px.prepare_snapshot(size, budget, false));
+        assert!(!px.prepare_snapshot(size, budget, false, None));
         assert_eq!(px_survivors(&px), vec![0]);
         assert_eq!(
             px.evictions, 0,
@@ -32909,7 +33980,7 @@ mod tests {
         let mut other_session_pin = Some(pin.clone());
         retire_prefix_pin(&mut px, &mut other_session_pin);
         assert_eq!(px.capacity_victim_with(false), Some((k.clone(), 0)));
-        assert!(px.prepare_snapshot(size, budget, false));
+        assert!(px.prepare_snapshot(size, budget, false, None));
         assert_eq!(px.total_bytes, 0, "source drops before snapshot allocation");
         assert!(px.id_index(&pin).is_none());
         px.insert_with_budget(&k, entry_b(&k, 1, size), "deeper", budget);
@@ -34061,6 +35132,18 @@ mod host_handoff_tests {
             entries: 2,
             resident_bytes: 24690,
         }
+    }
+
+    #[test]
+    fn host_handoff_refuses_bad_plane_census_before_allocation() {
+        let mut pool = super::HostPrefixCache::new(1 << 20);
+        let error = super::host_entry_from_owned(handoff_fixture("m", "ns", 7), &mut pool)
+            .err()
+            .unwrap();
+        assert!(
+            error.contains("pinned arena admission refused: handoff image byte census mismatch")
+        );
+        assert_eq!(pool.total_bytes, 0);
     }
 
     #[test]

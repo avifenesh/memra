@@ -1,0 +1,237 @@
+{
+  "boot": "qwen-sampled-chain-off",
+  "identity": {
+    "binary_sha256": "997515ac0ba866b308e9514c6b49d70acda70016f3d05953557c7610fa6a0d0e",
+    "boot_nonce": "6e48accacd0c4d08831db9ff923b1d0d",
+    "pid": 559593,
+    "start_ticks": "189844340"
+  },
+  "settings": {
+    "MEMRA_CTX": "262144",
+    "MEMRA_MAX_SESSIONS": "4",
+    "MEMRA_PRIME_CHUNK": "1024",
+    "MEMRA_PRIME_YIELD": "0",
+    "MEMRA_TICK_TRACE": "1"
+  },
+  "summary": {
+    "rows": [
+      {
+        "label": "turn1",
+        "ttft_s": 0.3636398760136217,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 967,
+          "completion_tokens": 96,
+          "total_tokens": 1063,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 0.997950397,
+          "spec": {
+            "rounds": 37,
+            "drafted": 107,
+            "accepted": 59,
+            "acceptance_rate": 0.5514018691588785
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.000076096970588,
+        "output_sha256": "7a2ac5bcf0c98ee4b0c8cf8136049dcba4ca67d5063e7dedbc9881817c554b31"
+      },
+      {
+        "label": "turn2",
+        "ttft_s": 0.1622646579053253,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1095,
+          "completion_tokens": 70,
+          "total_tokens": 1165,
+          "prompt_tokens_details": {
+            "cached_tokens": 928
+          },
+          "elapsed_s": 0.637301742,
+          "spec": {
+            "rounds": 28,
+            "drafted": 81,
+            "accepted": 42,
+            "acceptance_rate": 0.5185185185185185
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 0.6409531249664724,
+        "output_sha256": "7ecb6080455d80b687e489dbe9a7f76bdbbacf3ac9033e1045163646a046b4b4"
+      },
+      {
+        "label": "turn3",
+        "ttft_s": 0.1608051210641861,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1197,
+          "completion_tokens": 101,
+          "total_tokens": 1298,
+          "prompt_tokens_details": {
+            "cached_tokens": 1056
+          },
+          "elapsed_s": 0.837406661,
+          "spec": {
+            "rounds": 39,
+            "drafted": 113,
+            "accepted": 62,
+            "acceptance_rate": 0.5486725663716814
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 0.8411355309654027,
+        "output_sha256": "05e4218a65055fd3c36764728f858cafcc82e45e4ada2864c9856084d55c92f8"
+      },
+      {
+        "label": "turn4",
+        "ttft_s": 0.17759955092333257,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1330,
+          "completion_tokens": 65,
+          "total_tokens": 1395,
+          "prompt_tokens_details": {
+            "cached_tokens": 1152
+          },
+          "elapsed_s": 0.670866417,
+          "spec": {
+            "rounds": 29,
+            "drafted": 78,
+            "accepted": 36,
+            "acceptance_rate": 0.46153846153846156
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 0.6745678139850497,
+        "output_sha256": "255723532b011f62221f00fae53df21620709c3a1c901b722e190685a16a3115"
+      },
+      {
+        "label": "turn5",
+        "ttft_s": 0.1605905641335994,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1427,
+          "completion_tokens": 136,
+          "total_tokens": 1563,
+          "prompt_tokens_details": {
+            "cached_tokens": 1312
+          },
+          "elapsed_s": 1.06739166,
+          "spec": {
+            "rounds": 51,
+            "drafted": 150,
+            "accepted": 85,
+            "acceptance_rate": 0.5666666666666667
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.07135761808604,
+        "output_sha256": "f3d75dbfb1c4b9907153758dd927ea744094b87dd0a18c2aca44fc1418e03bb3"
+      },
+      {
+        "label": "turn6",
+        "ttft_s": 0.18002803600393236,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1595,
+          "completion_tokens": 51,
+          "total_tokens": 1646,
+          "prompt_tokens_details": {
+            "cached_tokens": 1408
+          },
+          "elapsed_s": 0.522026812,
+          "spec": {
+            "rounds": 20,
+            "drafted": 59,
+            "accepted": 31,
+            "acceptance_rate": 0.5254237288135594
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 0.5259824011009187,
+        "output_sha256": "6c42b544f3b7256680d53a99316ec63bc5f14f185a8595731aceefc01be618bc"
+      },
+      {
+        "label": "turn7",
+        "ttft_s": 0.1610786789096892,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1678,
+          "completion_tokens": 143,
+          "total_tokens": 1821,
+          "prompt_tokens_details": {
+            "cached_tokens": 1568
+          },
+          "elapsed_s": 1.440093864,
+          "spec": {
+            "rounds": 56,
+            "drafted": 158,
+            "accepted": 87,
+            "acceptance_rate": 0.5506329113924051
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.444246337050572,
+        "output_sha256": "1994b4cfaefd8aaa1d7891bed1fa6351806a3c3773f72504c4cb92405b49530a"
+      },
+      {
+        "label": "turn8",
+        "ttft_s": 0.18407266307622194,
+        "done": true,
+        "usage": {
+          "prompt_tokens": 1853,
+          "completion_tokens": 134,
+          "total_tokens": 1987,
+          "prompt_tokens_details": {
+            "cached_tokens": 1632
+          },
+          "elapsed_s": 1.36953434,
+          "spec": {
+            "rounds": 53,
+            "drafted": 150,
+            "accepted": 81,
+            "acceptance_rate": 0.54
+          }
+        },
+        "status": 200,
+        "finish": "stop",
+        "total_s": 1.374967209994793,
+        "output_sha256": "630c9887581c154110398c2e605a415a4f3c89ea1e50fbd7612fd483f5cb0579"
+      }
+    ],
+    "yield_count": 0,
+    "metric_delta": {
+      "served_spec": 0,
+      "served_dspark": 8,
+      "served_plain": 0,
+      "step_oom_parks": 0,
+      "admission_vram_defers": 0,
+      "admission_session_defers": 0
+    },
+    "boot_nonce": "6e48accacd0c4d08831db9ff923b1d0d"
+  },
+  "cleanup": {
+    "own_pid": 559593,
+    "exit": 0,
+    "gpu_compute_apps_while_lock_held": ""
+  },
+  "request_sha256": {
+    "turn1-request.json": "2c8be36c50b662f5ad0363c64efd087c35d9409f337d130d4928bcd85179a464",
+    "turn2-request.json": "2dbe468d1388d1c1d841c1aad32f52e028cdd1b51bc6a56da1da7683ff75e4a6",
+    "turn3-request.json": "b777c2831c03035c2c8d717aea99d97b7c14d0ce883ac951daae80de77f63e40",
+    "turn4-request.json": "85221dc5db0719f5c2cb9a3a5fad8cd8eaf33b53112f378018eac09f1a480cd2",
+    "turn5-request.json": "4288b0d6552a63cdf197b64e3390a47f0e1ad18b8a6c3b03b17a8008c5a0f9cf",
+    "turn6-request.json": "2496a7310aec497ae3e5d19cc7d06ed371916d1ef7cc49decd109ada9b106f8f",
+    "turn7-request.json": "202884e6eb0366c9315cff27e5e51990c1e59ad86ab81fb72f3a9b95a59211f1",
+    "turn8-request.json": "9d6141235fc850d2d533376ef6c7c4c0e26e0ccffc696f935b00703267c956ef"
+  }
+}

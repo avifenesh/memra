@@ -47,3 +47,5 @@ Every completed row was copied to the rig before the next cell. One completed 1M
 This is a greedy mechanism and identity receipt. Vendor-default sampled serving and TC composition are outside this matrix; there is no default promotion. No cargo, benchmark, smoke server or test ran on the local rig. Push uses `MEMRA_SKIP_PERF_CI=1`; hosted CI remains required.
 
 Public log copies normalize the deployment model-path prefix. Original logs and operation receipts are retained in the private lane; `receipts/pair-box/path-normalization.json` binds original and public file hashes. Numeric fields and token IDs are unchanged.
+
+The measured source snapshot was banked in `5c73a12f967ec0f26afa53454e9e3aeae74309f6` before integration with current main. Binary hashes and source manifests above bind the measurements; hosted CI checks the integrated branch. No new performance measurement is inferred from that merge.

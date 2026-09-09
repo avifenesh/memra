@@ -63,6 +63,8 @@ pub mod hybrid;
 pub mod hybrid_forward;
 pub mod hyper;
 pub mod model;
+mod prime_receipt;
+pub mod prime_walker;
 pub mod sigrouter_contract;
 pub mod vision;
 pub mod vision_gemma;
@@ -301,8 +303,34 @@ pub const MOE_M1_SPLITK_NUMERIC_CLASS: &str = "moe_m1_adaptive_splitk_f32_fixed_
 pub fn set_moe_m1_splitk_for_gate(enabled: bool) -> bool {
     MOE_M1_SPLITK.swap(enabled as i8, Ordering::AcqRel) != 0
 }
-pub fn moe_m1_splitk_on() -> bool {
+pub const MOE_M1_GRAPH_SPLITK_NUMERIC_CLASS: &str = "moe_m1_graph_splitk_f32_fixed_order";
+static MOE_M1_GRAPH_SPLITK_GATE: AtomicI8 = AtomicI8::new(-1);
+/// Gate-only enqueue selector. Drain both ranks before switching. Retained
+/// graphs keep their captured functions and must keep their original prefix.
+pub fn set_moe_m1_graph_splitk_for_gate(enabled: bool) {
+    MOE_M1_GRAPH_SPLITK_GATE.store(i8::from(enabled), Ordering::Release);
+}
+/// The environment default is frozen on first use. The gate override affects
+/// future eager enqueues and captures, never an already retained graph.
+pub fn moe_m1_graph_splitk_on() -> bool {
+    let gate = MOE_M1_GRAPH_SPLITK_GATE.load(Ordering::Acquire);
+    if gate >= 0 {
+        return gate != 0;
+    }
+    static GRAPH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GRAPH.get_or_init(
+        || match std::env::var("MEMRA_DSV4_MOE_M1_SPLITK").as_deref() {
+            Err(std::env::VarError::NotPresent) | Ok("0") => false,
+            Ok("graph") => true,
+            other => panic!("invalid MEMRA_DSV4_MOE_M1_SPLITK policy: {other:?}"),
+        },
+    )
+}
+pub(crate) fn moe_m1_host_splitk_on() -> bool {
     MOE_M1_SPLITK.load(Ordering::Acquire) != 0
+}
+pub fn moe_m1_splitk_on() -> bool {
+    moe_m1_host_splitk_on() || moe_m1_graph_splitk_on()
 }
 pub static MOE_M1_SPLITK_GU_DISPATCHES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -2051,44 +2079,8 @@ impl PinnedHtodArena {
     }
 }
 
-/// Owned page-locked CACHEABLE host buffer (flags=0, deliberately NOT write-combined) for the
-/// prefix-cache host tier (lane/kv-host-spill-20260830). Same allocation class as `PinnedStage`
-/// above and for the same reason: `ctx().alloc_pinned` is CU_MEMHOSTALLOC_WRITECOMBINED, which
-/// is right for H2D-only staging but pathologically slow for host READS (see the HostBuf CAVEAT
-/// in model.rs), and these bytes are CPU-read by the MEMRA_KV_HOST_VERIFY digest arm. Public
-/// because the server's host-tier cache owns these buffers across requests.
-pub struct PinnedHostBuf {
-    ptr: *mut u8,
-    len: usize,
-}
-// Safety: the allocation is process-wide page-locked host memory; the raw pointer is owned by
-// this struct alone and freed exactly once in Drop (identical justification to PinnedStage).
-unsafe impl Send for PinnedHostBuf {}
-impl PinnedHostBuf {
-    /// Allocate `len` pinned cacheable bytes (a zero-length request still pins one byte so the
-    /// pointer stays valid, mirroring the device planes' `alloc_u8(kb.max(1))` convention).
-    pub fn new(len: usize) -> Result<Self, Box<dyn std::error::Error>> {
-        let ptr = unsafe { cudarc::driver::result::malloc_host(len.max(1), 0)? } as *mut u8;
-        Ok(PinnedHostBuf { ptr, len })
-    }
-    pub fn len(&self) -> usize {
-        self.len
-    }
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-    pub fn as_slice(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
-    }
-}
-impl Drop for PinnedHostBuf {
-    fn drop(&mut self) {
-        let _ = unsafe { cudarc::driver::result::free_host(self.ptr as _) };
-    }
-}
+mod pinned_host;
+pub use pinned_host::{PinnedHostArena, PinnedHostBuf};
 
 /// Number of pass-1 blocks for the parallel argmax (fan-out across SMs to saturate HBM). 256 blocks
 /// x 256 threads = 65536 threads covering the 248K-vocab scan in ~4 strided loads/thread.

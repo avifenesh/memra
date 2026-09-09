@@ -1,0 +1,11 @@
+warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.0 at /usr/local/cuda-13.0/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.07s
+     Running unittests src/lib.rs (/root/target-prefill/release/deps/memra_engine-38136f5f2c1329a0)
+
+running 3 tests
+test spec::prime::tests::stable_captures_preserve_segment_local_ranges_and_tiny_tail_program ... ok
+test spec::prime::tests::tokenwise_override_retains_the_legacy_segment_program ... ok
+test spec::prime_trows_width_tests::width_defaults_to_eight_and_refuses_invalid_operator_values ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 478 filtered out; finished in 0.00s
+

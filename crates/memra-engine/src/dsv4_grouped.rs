@@ -55,8 +55,50 @@ fn splitk_component_claim(gpu: &Gpu, gu: bool) -> bool {
     if crate::MOE_M1_SPLITK_COMPONENT.load(Ordering::Acquire) == 0 {
         return false;
     }
+    if crate::moe_m1_graph_splitk_on() {
+        // Search real routes across layers until the C++ gate has a six-live
+        // operand set for this rank/projection. Its completion mask skips all
+        // subsequent calls. The historical adaptive gate still samples once.
+        return true;
+    }
     let bit = 1u64 << (gpu.ctx.ordinal() * 2 + usize::from(gu));
     SPLITK_COMPONENT_SEEN.fetch_or(bit, Ordering::AcqRel) & bit == 0
+}
+
+fn graph_splitk_inactive_rows_for_gate(offsets: &[i32], pairs: &[i32]) -> Res<usize> {
+    let live = *offsets.last().ok_or("empty component CSR")?;
+    if pairs.len() < 6
+        || !(0..=6).contains(&live)
+        || offsets[0] != 0
+        || offsets.windows(2).any(|p| p[0] > p[1] || p[1] > live)
+        || pairs[live as usize..6].iter().any(|&p| p != -1)
+        || pairs[..live as usize].iter().any(|&p| !(0..6).contains(&p))
+    {
+        return Err("graph split-K inactive output rows are not consumer-masked".into());
+    }
+    Ok(live as usize)
+}
+
+#[cfg(test)]
+mod graph_splitk_tail_tests {
+    use super::graph_splitk_inactive_rows_for_gate;
+    #[test]
+    fn graph_splitk_inactive_rows_contract() {
+        assert_eq!(
+            graph_splitk_inactive_rows_for_gate(&[0, 0, 1, 2], &[4, 2, -1, -1, -1, -1]),
+            Ok(2)
+        );
+        assert_eq!(
+            graph_splitk_inactive_rows_for_gate(&[0, 0], &[-1; 6]),
+            Ok(0)
+        );
+        assert_eq!(
+            graph_splitk_inactive_rows_for_gate(&[0, 6], &[0, 1, 2, 3, 4, 5]),
+            Ok(6)
+        );
+        assert!(graph_splitk_inactive_rows_for_gate(&[0, 2], &[4, 2, 0, -1, -1, -1]).is_err());
+        assert!(graph_splitk_inactive_rows_for_gate(&[0, 2, 1], &[0, -1, -1, -1, -1, -1]).is_err());
+    }
 }
 
 static MIRROR_VALIDATE: AtomicBool = AtomicBool::new(true);
@@ -337,6 +379,21 @@ impl GroupedWork {
             .bytes
             .checked_add(extra_bytes as u64)
             .ok_or("grouped workspace byte overflow")?;
+        // Allocate both projections' maximum workspace before any capture.
+        let splitk_len = if crate::moe_m1_graph_splitk_on() && slots == 6 {
+            slots * (inter * 32).max(hidden * 16)
+        } else {
+            0
+        };
+        let splitk_scratch = if splitk_len > 0 {
+            Some(
+                s.alloc_zeros::<f32>(splitk_len)
+                    .map_err(|e| format!("graph split-K scratch: {e}"))?,
+            )
+        } else {
+            None
+        };
+        let bytes = bytes + (splitk_len * 4) as u64;
         Ok(Self {
             routes,
             input: HalfMirror::new(s, slots, hidden)?,
@@ -348,7 +405,7 @@ impl GroupedWork {
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
-            splitk_scratch: None,
+            splitk_scratch,
         })
     }
 
@@ -368,7 +425,28 @@ impl GroupedWork {
         } else {
             (&self.intermediate, self.input.cols)
         };
-        let live = self.routes.live_slots;
+        if component && crate::moe_m1_graph_splitk_on() {
+            // The reducer zeroes [CSR live, 6). Down's scatter must ignore
+            // exactly that region; GU's downstream projection uses this CSR.
+            let offsets = s
+                .clone_dtoh(&self.routes.offsets)
+                .map_err(|e| format!("component CSR read: {e}"))?;
+            let pairs = s
+                .clone_dtoh(&self.routes.pairs)
+                .map_err(|e| format!("component scatter mask read: {e}"))?;
+            s.synchronize()
+                .map_err(|e| format!("component mask drain: {e}"))?;
+            let live = graph_splitk_inactive_rows_for_gate(&offsets, &pairs)?;
+            println!(
+                "GRAPH_COMPONENT_CONSUMER rank={} gu={gu} live={live} inactive_scatter_ids=-1 csr_excludes_tail=true",
+                gpu.ctx.ordinal()
+            );
+        }
+        let graph = !component && crate::moe_m1_graph_splitk_on();
+        let live = if graph { 6 } else { self.routes.live_slots };
+        if graph && (self.input.rows != 6 || self.intermediate.rows != 6) {
+            return Err("graph split-K requires six-slot M=1 storage".into());
+        }
         if table.len() != self.routes.experts * 6
             || crate::moe_f16g_mode() < 2
             || crate::moe_f16g_sk_params().0 < 0
@@ -389,6 +467,9 @@ impl GroupedWork {
                 .as_ref()
                 .is_none_or(|p| p.len() < needed)
         {
+            if graph {
+                return Err("graph split-K scratch must be allocated before capture".into());
+            }
             let old_bytes = self.splitk_scratch.as_ref().map_or(0, |p| p.len() * 4);
             self.splitk_scratch = Some(
                 s.alloc_zeros::<f32>(needed)
@@ -400,8 +481,12 @@ impl GroupedWork {
             .splitk_scratch
             .as_mut()
             .map_or(std::ptr::null_mut(), |p| p.device_ptr_mut(&s).0 as *mut f32);
-        let launch = if component {
+        let launch = if component && crate::moe_m1_graph_splitk_on() {
+            crate::mmq_ffi::memra_moe_m1_graph_splitk_component
+        } else if component {
             crate::mmq_ffi::memra_moe_m1_splitk_component
+        } else if graph {
+            crate::mmq_ffi::memra_moe_m1_graph_splitk
         } else {
             crate::mmq_ffi::memra_moe_m1_splitk
         };
