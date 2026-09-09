@@ -2504,6 +2504,40 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        self.decode_step_hyper_output(e, token, cache, false)
+    }
+
+    /// The device sampler is eligible only for the root-owned GLM TP-2 head.
+    /// Inspect loaded sidecars, not the requested TP environment string.
+    pub fn glm5_tp_device_sample_supported(&self) -> bool {
+        self.hyper.is_some()
+            && self.glm5_tp_rank_count() == Some(2)
+            && crate::pp::pp_cuts(self.layers.len()).is_none()
+    }
+
+    /// Plain TP-2 decode with the unchanged trunk/head program. Retain the full
+    /// logits allocation on the root engine stream for sampling and cache parking.
+    pub fn decode_step_glm5_tp_device_logits(
+        &self,
+        e: &Engine,
+        token: u32,
+        cache: &mut Cache,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        cache.ensure_usable("decode_step_glm5_tp_device_logits")?;
+        if !self.glm5_tp_device_sample_supported() {
+            return Err("device logits require GLM TP-2 without pipeline stages".into());
+        }
+        self.decode_step_hyper_output(e, token, cache, true)?;
+        Ok(())
+    }
+
+    fn decode_step_hyper_output(
+        &self,
+        e: &Engine,
+        token: u32,
+        cache: &mut Cache,
+        device_logits: bool,
+    ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         let topology = *self
             .hyper
             .as_ref()
@@ -2528,7 +2562,14 @@ impl HybridModel {
         x = self.hyper_range_decode(e, &topology, x, 0, self.layers.len(), &pos_d, pos, cache)?;
 
         // SHARED EXIT with the ppN twin (see `forward_hyper`'s note).
-        self.hyper_decode_tail(e, &topology, &x, n_embd, eps, cache)
+        if device_logits {
+            let (logits, h_seed) = self.hyper_decode_tail_logits(e, &topology, &x, n_embd, eps)?;
+            cache.last_logits_dev = Some(logits);
+            cache.pos += 1;
+            Ok((Vec::new(), h_seed))
+        } else {
+            self.hyper_decode_tail(e, &topology, &x, n_embd, eps, cache)
+        }
     }
 
     /// One hc layer RANGE `[lo, hi)` of the STATELESS prefill walk, driven by engine `e`.
@@ -5086,6 +5127,21 @@ impl HybridModel {
         eps: f32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let (logits, h_seed) = self.hyper_decode_tail_logits(e, topology, x, n_embd, eps)?;
+        let host = e.dtoh(&logits)?;
+        cache.pos += 1;
+        Ok((host, h_seed))
+    }
+
+    #[allow(clippy::type_complexity)] // The two outputs are the head row and its pre-norm seed.
+    fn hyper_decode_tail_logits(
+        &self,
+        e: &Engine,
+        topology: &crate::hyper::HyperTopology,
+        x: &CudaSlice<f32>,
+        n_embd: usize,
+        eps: f32,
+    ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         let h_seed = crate::hyper::collapse(e, topology, self.hyper_head.as_ref(), x, 1, n_embd)?;
         let mut hn = e.uninit(n_embd)?;
         e.rms_norm(
@@ -5097,9 +5153,7 @@ impl HybridModel {
             eps,
         )?;
         let logits = e.matmul(&self.output, &hn, 1)?;
-        let host = e.dtoh(&logits)?;
-        cache.pos += 1;
-        Ok((host, h_seed))
+        Ok((logits, h_seed))
     }
 
     /// Prefill forward over `tokens`; returns logits [T, n_vocab] (host f32).

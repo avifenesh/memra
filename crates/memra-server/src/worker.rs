@@ -11858,6 +11858,9 @@ struct Session {
     /// rows: penalties/top-k/top-p/min-p configs; non-batched paths). Dropped un-consumed
     /// when a session finishes — same semantics as an unsampled last_logits.
     device_next: Option<u32>,
+    /// Default-OFF GLM TP-2 plain sampler, owned by this request. Decode retains
+    /// its root-stream logits in cache.last_logits_dev until the next sample.
+    glm5_device_sampler: Option<memra_engine::glm5_tp_sampler::Glm5TpDeviceSampler>,
     /// GEMMA SPEC route (lane/gemma-batched stage 2, 2026-08-17): burst-scoped assistant-
     /// drafter session (engine `GemmaSpecSession`). Some = this session decodes in
     /// `gemma_spec_session_burst` bursts via `step_gemma_spec`; it owns its trunk cache
@@ -21703,6 +21706,7 @@ fn admit(
         spec_rounds: 0,
         last_logits: seed_logits,
         device_next: None,
+        glm5_device_sampler: None,
         gspec: None,
         gspec_k,
         gspec_ctx: ctx_cap,
@@ -21775,6 +21779,42 @@ fn admit(
         ttft: req.ttft,
         t0: Instant::now(),
     };
+    if memra_engine::glm5_tp_sampler::requested() {
+        use memra_engine::glm5_tp_sampler::{Glm5TpDeviceSampler, Glm5TpSampleConfig};
+        let plain = s.spec_k == 0
+            && s.spec.is_none()
+            && s.gspec_k == 0
+            && !s.dspark_on
+            && !s.glm5_on
+            && s.cache.is_some()
+            && lm.model.glm5_tp_device_sample_supported();
+        // HTTP logprobs requests currently refuse before worker admission.
+        // Full-row consumers must always select the host arm here.
+        let cfg = Glm5TpSampleConfig::for_request(
+            &s.replay.sampler_cfg,
+            plain,
+            s.constraint.is_some() || s.capture.is_some(),
+        );
+        match cfg {
+            Ok(cfg) => match Glm5TpDeviceSampler::new(engine, lm.model.cfg.n_vocab as usize, cfg) {
+                Ok(sampler) => {
+                    eprintln!(
+                        "[glm5-tp-device-sample] armed model={} request={}",
+                        s.model, s.request_id
+                    );
+                    s.glm5_device_sampler = Some(sampler);
+                }
+                Err(err) => eprintln!(
+                    "[glm5-tp-device-sample] refused: {err}; host fallback request={}",
+                    s.request_id
+                ),
+            },
+            Err(reason) => eprintln!(
+                "[glm5-tp-device-sample] refused: {reason}; host fallback request={}",
+                s.request_id
+            ),
+        }
+    }
     // Admission has finalized the carrier. Conversion/drafter paths retain their leases;
     // fanout acquires its own leases later and never passes through this release point.
     if s.prefix_pin.is_some()
@@ -23758,7 +23798,7 @@ fn step_session(
                 .map_err(|e| format!("constraint mask: {e}"))?;
             s.sampler.sample(&row)
         }
-        (None, None) => s.sampler.sample(&s.last_logits),
+        (None, None) => sample_glm5_tp_plain(engine, s)?,
     };
     s.sampler.accept(next);
     s.generated.push(next);
@@ -23807,11 +23847,57 @@ fn step_session(
     }
 
     // produce next logits (the ONE decode_step that advances this session).
-    s.last_logits = lm
-        .model
-        .decode_step(engine, next, s.cache.as_mut().unwrap())?;
+    if s.glm5_device_sampler.is_some() {
+        lm.model
+            .decode_step_glm5_tp_device_logits(engine, next, s.cache.as_mut().unwrap())?;
+        s.last_logits.clear();
+    } else {
+        s.last_logits = lm
+            .model
+            .decode_step(engine, next, s.cache.as_mut().unwrap())?;
+    }
     s.fed.push(next);
     Ok(true)
+}
+
+/// Sample retained GLM logits or the existing host row. On a sampler refusal,
+/// recover that same row and disable the device arm for the rest of the request.
+fn sample_glm5_tp_plain(
+    engine: &Engine,
+    s: &mut Session,
+) -> Result<u32, Box<dyn std::error::Error>> {
+    if let Some(sampler) = &mut s.glm5_device_sampler {
+        let cache = s.cache.as_ref().ok_or("GLM device sampler has no cache")?;
+        let result = if s.last_logits.is_empty() {
+            let row = cache
+                .last_logits_dev
+                .as_ref()
+                .ok_or("GLM device sampler has no logits")?;
+            sampler.sample(engine, row, cache.pos)
+        } else {
+            sampler.sample_host_row(engine, &s.last_logits, cache.pos)
+        };
+        match result {
+            Ok(token) => return Ok(token),
+            Err(err) => {
+                eprintln!(
+                    "[glm5-tp-device-sample] refused after {} draws: {err}; host fallback request={}",
+                    sampler.engagements(),
+                    s.request_id
+                );
+                if s.last_logits.is_empty() {
+                    s.last_logits = engine.dtoh(
+                        cache
+                            .last_logits_dev
+                            .as_ref()
+                            .ok_or("missing fallback logits")?,
+                    )?;
+                }
+                s.glm5_device_sampler = None;
+            }
+        }
+    }
+    Ok(s.sampler.sample(&s.last_logits))
 }
 
 fn confidence_trace_enabled() -> bool {
@@ -25178,6 +25264,14 @@ fn postthink_unclosed_error(reason: StopReason, think_tokens: u64) -> EngineErro
 
 fn finish(s: &Session, reason: StopReason) {
     let elapsed = s.t0.elapsed().as_secs_f64();
+    if let Some(sampler) = &s.glm5_device_sampler {
+        eprintln!(
+            "[glm5-tp-device-sample] request={} device_draws={} generated={}",
+            s.request_id,
+            sampler.engagements(),
+            s.generated.len()
+        );
+    }
     assert_eq!(
         s.tokens_emitted,
         s.generated.len(),
