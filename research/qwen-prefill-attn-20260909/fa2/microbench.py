@@ -10,6 +10,8 @@ import subprocess
 p = argparse.ArgumentParser()
 p.add_argument("fatbin")
 p.add_argument("--output", required=True)
+p.add_argument("--shape", type=int)
+p.add_argument("--kernels", default="fa_prefill_qw_db,fa2_gqa16,fa2_gqa16_log2")
 p.add_argument("--real", help="torch file with real q/k/v tensors")
 args = p.parse_args()
 assert not subprocess.check_output(
@@ -19,6 +21,7 @@ import torch
 
 torch.manual_seed(5183)
 torch.cuda.init()
+context_anchor = torch.empty(1, device="cuda")
 d = C.CDLL("libcuda.so.1")
 
 
@@ -29,13 +32,13 @@ def ck(status):
 
 module = C.c_void_p()
 ck(d.cuModuleLoad(C.byref(module), args.fatbin.encode()))
-names = ["fa_prefill_qw_db", "fa2_gqa16", "fa2_gqa16_skip", "fa2_qw16_skip"]
+names = args.kernels.split(",")
 functions = {}
 resources = {}
 for name in names:
     f = C.c_void_p()
     ck(d.cuModuleGetFunction(C.byref(f), module, name.encode()))
-    smem = 69888 if name == names[0] else 32768
+    smem = 69888 if name == "fa_prefill_qw_db" else 32768
     ck(d.cuFuncSetAttribute(f, 8, smem))
     regs, local, resident = C.c_int(), C.c_int(), C.c_int()
     ck(d.cuFuncGetAttribute(C.byref(regs), 4, f))
@@ -48,7 +51,7 @@ for name in names:
 def launch(name, q, k, v, out):
     rows, depth = q.shape[0], k.shape[0]
     values = [C.c_void_p(t.data_ptr()) for t in (q, k, v, out)]
-    if name == names[0]:
+    if name == "fa_prefill_qw_db":
         values += [C.c_int(x) for x in (256, 24, 4, rows, depth)]
         values += [C.c_float(1 / 16)] + [C.c_int(x) for x in (1, 1024, 1024)]
         grid = ((rows + 63) // 64, 24)
@@ -63,6 +66,8 @@ def launch(name, q, k, v, out):
 result = dict(fatbin_sha256=hashlib.sha256(pathlib.Path(args.fatbin).read_bytes()).hexdigest(),
               resources=resources, seed=5183, rows=[])
 shapes = [(129, 161), (1024, 8192), (1024, 32768), (1024, 131070)]
+if args.shape:
+    shapes = [(1024, args.shape)]
 real = torch.load(args.real, weights_only=True) if args.real else None
 if real:
     shapes = [(real["q"].shape[0], real["k"].shape[0])]

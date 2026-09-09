@@ -20,9 +20,9 @@ __device__ __forceinline__ void fa2_stage(__nv_bfloat16* sk, __nv_bfloat16* sv,
     cp_async_commit();
 }
 
-template<bool PACKED, bool SKIP_SCALE>
-__device__ __forceinline__ void fa2_body(const float* q, const __nv_bfloat16* k,
-        const __nv_bfloat16* v, float* out, int rows, int depth) {
+template<bool PACKED, bool SKIP_SCALE, bool LOG2 = false>
+__device__ __forceinline__ void fa2_body(const float* __restrict__ q, const __nv_bfloat16* __restrict__ k,
+        const __nv_bfloat16* __restrict__ v, float* __restrict__ out, int rows, int depth) {
     constexpr int TILE = 16;
     int lane = threadIdx.x, warp = threadIdx.y;
     int base = blockIdx.x * 64, wr = base + warp * 16;
@@ -77,15 +77,15 @@ __device__ __forceinline__ void fa2_body(const float* q, const __nv_bfloat16* k,
             #pragma unroll
             for (int j = 0; j < 4; ++j) {
                 int key = tile * TILE + i * 8 + (lane % 4) * 2 + (j & 1);
-                float x = scores[i].x[j] * (1.0f / 16);
+                float x = scores[i].x[j] * (LOG2 ? LOG2E / 16 : 1.0f / 16);
                 if (key >= depth || key > (j < 2 ? pos_l : pos_h)) x = NEG_INF;
                 scores[i].x[j] = x;
                 if (j < 2) tl = fmaxf(tl, x); else th = fmaxf(th, x);
             }
         }
         float nl = fmaxf(ml, row_max4(tl)), nh = fmaxf(mh, row_max4(th));
-        float al = ml == NEG_INF ? 0 : exp2f((ml - nl) * LOG2E);
-        float ah = mh == NEG_INF ? 0 : exp2f((mh - nh) * LOG2E);
+        float al = ml == NEG_INF ? 0 : exp2f((ml - nl) * (LOG2 ? 1.0f : LOG2E));
+        float ah = mh == NEG_INF ? 0 : exp2f((mh - nh) * (LOG2 ? 1.0f : LOG2E));
         ml = nl; mh = nh;
         float pl = 0, ph = 0;
         #pragma unroll
@@ -93,7 +93,7 @@ __device__ __forceinline__ void fa2_body(const float* q, const __nv_bfloat16* k,
             #pragma unroll
             for (int j = 0; j < 4; ++j) {
                 float x = scores[i].x[j];
-                float p = x == NEG_INF ? 0 : exp2f((x - (j < 2 ? nl : nh)) * LOG2E);
+                float p = x == NEG_INF ? 0 : exp2f((x - (j < 2 ? nl : nh)) * (LOG2 ? 1.0f : LOG2E));
                 // FA2 class: denominator sums the same BF16 probabilities used by PV.
                 p = __bfloat162float(__float2bfloat16_rn(p));
                 scores[i].x[j] = p;
@@ -142,3 +142,7 @@ extern "C" __global__ __launch_bounds__(128, 2) void NAME( \
 FA2_STAMP(fa2_gqa16, true, false)
 FA2_STAMP(fa2_gqa16_skip, true, true)
 FA2_STAMP(fa2_qw16_skip, false, true)
+
+extern "C" __global__ __launch_bounds__(128, 2) void fa2_gqa16_log2(
+        const float* q, const __nv_bfloat16* k, const __nv_bfloat16* v, float* out,
+        int rows, int depth) { fa2_body<true, false, true>(q, k, v, out, rows, depth); }
