@@ -48,15 +48,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // scores through the served W4A8 path. If that is not bitwise equal to the served arm, the two
     // arms are not scoring the same thing (window alignment, positions, chunking, an off-by-one
     // logits row) and THAT is the finding, not a quantization delta.
-    let no_a4 = std::env::var_os("MEMRA_A4_DISABLE").is_some();
     let e = Engine::new(0)?;
     let g = GgufFile::open(&model_path)?;
     let tok = memra_tokenizer::Tokenizer::from_gguf(&g)?;
-    let mut model = HybridModel::load(&e, &g)?;
-    if no_a4 {
-        model.cfg.prefill_activation = None;
-        println!("MEMRA_A4_DISABLE: activation program dropped; this file scores as W4A8");
-    }
+    // MEMRA_A4_DISABLE is honoured inside PrefillFp4::from_gguf, i.e. BEFORE the weights are
+    // stamped. Dropping the config here instead would leave every weight stamped and measure the
+    // A4 arm twice.
+    let model = HybridModel::load(&e, &g)?;
     println!(
         "artifact {model_path}: activation program {:?}",
         model.cfg.prefill_activation

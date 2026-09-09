@@ -72,6 +72,13 @@ pub fn projection_names() -> Vec<String> {
 
 impl PrefillFp4 {
     pub fn from_gguf(g: &GgufFile) -> Result<Option<Self>, String> {
+        // GATE-HARNESS ONLY (MEMRA_A4_DISABLE): refuse the program HERE, before the weights are
+        // loaded. Clearing `cfg.prefill_activation` after `HybridModel::load` does nothing --
+        // every weight has already been stamped and `matmul_prefill` reads the STAMP, not the
+        // config -- so a control written that way silently measures the A4 arm twice.
+        if std::env::var_os("MEMRA_A4_DISABLE").is_some() {
+            return Ok(None);
+        }
         let Some(value) = g.metadata.get(PROGRAM_KEY) else {
             return Ok(None);
         };
