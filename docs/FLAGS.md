@@ -1917,3 +1917,10 @@ and `research/glm5-dflash-rootcause-20260909/causal-pmin.patch`.
 Receipt: `research/glm5-dflash-rootcause-20260909/DIAGNOSIS.md` and
 `research/glm5-dflash-rootcause-20260909/AGREEMENT.md`. Follow-up: [#412](https://github.com/avifenesh/memra/issues/412).
 Code removed 2026-09-09; rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (GLM PP1 verify graph)
+
+| Removed door | Verdict and receipt |
+|---|---|
+| `MEMRA_GLM5_SPEC_VERIFY_GRAPH` | NEGATIVE; candidate `6e073bd5a`, default OFF, decide-by 2026-09-23. PP1 p32k N=3: K6 graph ON 79.191090 tok/s vs plain 79.957362 (-0.958351%) and K6 graph OFF 80.209701. HTTP signed saving -0.905348 ms/round. Greedy and fixed-seed sampled K3/K6 logits and 160-token tapes identical. Removed new env read, dispatch and dedicated lifecycle additions; pre-lane graph code unchanged. `research/glm5-verify-graph-20260909/RESULTS.md`; rev: 2026-09-23. |
+
