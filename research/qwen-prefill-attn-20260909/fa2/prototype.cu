@@ -1,0 +1,144 @@
+// Standalone numeric experiment. No runtime dispatch or serving integration.
+// Reuse Memra's own validated lane maps and baseline, never external kernels.
+#include "../../../crates/memra-engine/cu/flash_attn.cu"
+
+template<int TILE>
+__device__ __forceinline__ void fa2_stage(__nv_bfloat16* sk, __nv_bfloat16* sv,
+        const __nv_bfloat16* k, const __nv_bfloat16* v, int start, int depth, int head) {
+    for (int i = threadIdx.y * 32 + threadIdx.x; i < TILE * 32; i += 128) {
+        int row = i / 32, col = i % 32;
+        int dst = row * 256 + (col ^ (row & 7)) * 8;
+        size_t src = (size_t)(start + row) * 1024 + head * 256 + col * 8;
+        if (start + row < depth) {
+            cp_async_16(sk + dst, k + src);
+            cp_async_16(sv + dst, v + src);
+        } else {
+            *(uint4*)(sk + dst) = make_uint4(0,0,0,0);
+            *(uint4*)(sv + dst) = make_uint4(0,0,0,0);
+        }
+    }
+    cp_async_commit();
+}
+
+template<bool PACKED, bool SKIP_SCALE>
+__device__ __forceinline__ void fa2_body(const float* q, const __nv_bfloat16* k,
+        const __nv_bfloat16* v, float* out, int rows, int depth) {
+    constexpr int TILE = 16;
+    int lane = threadIdx.x, warp = threadIdx.y;
+    int base = blockIdx.x * 64, wr = base + warp * 16;
+    int kh = PACKED ? blockIdx.y : blockIdx.y / 6;
+    extern __shared__ __align__(16) unsigned char raw[];
+    auto s = reinterpret_cast<__nv_bfloat16*>(raw);
+    auto sq = s + warp * 16 * 256;
+    for (int i = lane; i < 16 * 256; i += 32) {
+        int row = i / 256, col = i % 256;
+        int token = PACKED ? (wr + row) / 6 : wr + row;
+        int head = PACKED ? kh * 6 + (wr + row) % 6 : blockIdx.y;
+        float x = token < rows ? q[((size_t)token * 24 + head) * 256 + col] : 0;
+        sq[row * 256 + ((col / 8) ^ (row & 7)) * 8 + col % 8] = __float2bfloat16_rn(x);
+    }
+    __syncwarp();
+    ATile qf[16];
+    #pragma unroll
+    for (int i = 0; i < 16; ++i) ld_A_sw(qf[i], sq, 0, i * 2, 32);
+    __syncthreads();
+    CTile accum[32];
+    #pragma unroll
+    for (int i = 0; i < 32; ++i)
+        #pragma unroll
+        for (int j = 0; j < 4; ++j) accum[i].x[j] = 0;
+    float ml = NEG_INF, mh = NEG_INF, ll = 0, lh = 0;
+    int pos_l = depth - rows + (PACKED ? (wr + lane / 4) / 6 : wr + lane / 4);
+    int pos_h = depth - rows + (PACKED ? (wr + lane / 4 + 8) / 6 : wr + lane / 4 + 8);
+    int end = min(depth, depth - rows + (PACKED ? (base + 63) / 6 : base + 63) + 1);
+    int tiles = (end + TILE - 1) / TILE;
+    fa2_stage<TILE>(s, s + TILE * 512, k, v, 0, depth, kh);
+    for (int tile = 0; tile < tiles; ++tile) {
+        auto sk = s + (tile & 1) * TILE * 256;
+        auto sv = sk + TILE * 512;
+        if (tile + 1 < tiles) {
+            fa2_stage<TILE>(s + ((tile + 1) & 1) * TILE * 256,
+                           s + ((tile + 1) & 1) * TILE * 256 + TILE * 512,
+                           k, v, (tile + 1) * TILE, depth, kh);
+            cp_async_wait_1();
+        } else cp_async_wait_0();
+        __syncthreads();
+        CTile scores[2] = {};
+        #pragma unroll
+        for (int i = 0; i < 16; ++i) {
+            ATile b; ld_A_sw(b, sk, 0, i * 2, 32);
+            BTile b0{{b.x[0], b.x[2]}}, b1{{b.x[1], b.x[3]}};
+            mma_bf16(scores[0], qf[i], b0);
+            mma_bf16(scores[1], qf[i], b1);
+        }
+        float tl = NEG_INF, th = NEG_INF;
+        #pragma unroll
+        for (int i = 0; i < 2; ++i) {
+            #pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                int key = tile * TILE + i * 8 + (lane % 4) * 2 + (j & 1);
+                float x = scores[i].x[j] * (1.0f / 16);
+                if (key >= depth || key > (j < 2 ? pos_l : pos_h)) x = NEG_INF;
+                scores[i].x[j] = x;
+                if (j < 2) tl = fmaxf(tl, x); else th = fmaxf(th, x);
+            }
+        }
+        float nl = fmaxf(ml, row_max4(tl)), nh = fmaxf(mh, row_max4(th));
+        float al = ml == NEG_INF ? 0 : exp2f((ml - nl) * LOG2E);
+        float ah = mh == NEG_INF ? 0 : exp2f((mh - nh) * LOG2E);
+        ml = nl; mh = nh;
+        float pl = 0, ph = 0;
+        #pragma unroll
+        for (int i = 0; i < 2; ++i) {
+            #pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                float x = scores[i].x[j];
+                float p = x == NEG_INF ? 0 : exp2f((x - (j < 2 ? nl : nh)) * LOG2E);
+                // FA2 class: denominator sums the same BF16 probabilities used by PV.
+                p = __bfloat162float(__float2bfloat16_rn(p));
+                scores[i].x[j] = p;
+                if (j < 2) pl += p; else ph += p;
+            }
+        }
+        ll = ll * al + row_sum4(pl); lh = lh * ah + row_sum4(ph);
+        ATile p;
+        p.x[0] = __floats2bfloat162_rn(scores[0].x[0], scores[0].x[1]);
+        p.x[1] = __floats2bfloat162_rn(scores[0].x[2], scores[0].x[3]);
+        p.x[2] = __floats2bfloat162_rn(scores[1].x[0], scores[1].x[1]);
+        p.x[3] = __floats2bfloat162_rn(scores[1].x[2], scores[1].x[3]);
+        if (!SKIP_SCALE || __any_sync(0xffffffff, al != 1 || ah != 1)) {
+            #pragma unroll
+            for (int i = 0; i < 32; ++i) {
+                accum[i].x[0] *= al; accum[i].x[1] *= al;
+                accum[i].x[2] *= ah; accum[i].x[3] *= ah;
+            }
+        }
+        #pragma unroll
+        for (int i = 0; i < 16; ++i) {
+            ATile b; ld_A_trans_sw(b, sv, 0, i * 2, 32);
+            BTile b0{{b.x[0], b.x[2]}}, b1{{b.x[1], b.x[3]}};
+            mma_bf16(accum[i * 2], p, b0);
+            mma_bf16(accum[i * 2 + 1], p, b1);
+        }
+        __syncthreads();
+    }
+    #pragma unroll
+    for (int i = 0; i < 32; ++i) {
+        #pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            int row = wr + CTile::get_i(j);
+            int token = PACKED ? row / 6 : row;
+            int head = PACKED ? kh * 6 + row % 6 : blockIdx.y;
+            if (token < rows) out[((size_t)token * 24 + head) * 256 + i * 8 + CTile::get_j(j)] =
+                accum[i].x[j] / (j < 2 ? ll : lh);
+        }
+    }
+}
+
+#define FA2_STAMP(NAME, PACKED, SKIP) \
+extern "C" __global__ __launch_bounds__(128, 2) void NAME( \
+        const float* q, const __nv_bfloat16* k, const __nv_bfloat16* v, float* out, \
+        int rows, int depth) { fa2_body<PACKED, SKIP>(q, k, v, out, rows, depth); }
+FA2_STAMP(fa2_gqa16, true, false)
+FA2_STAMP(fa2_gqa16_skip, true, true)
+FA2_STAMP(fa2_qw16_skip, false, true)
