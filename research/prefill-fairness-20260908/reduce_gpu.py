@@ -34,6 +34,9 @@ for run in sorted(root.iterdir()):
         scored_log=log[start:] if start >= 0 else ''
         engagement=[line for line in scored_log.splitlines()
                     if re.match(r'\[(?:dspark|spec)-acc\]', line)]
+        before_long_token=scored_log.split('[ttft] id='+long[0]['request_id'])[0] if long else ''
+        peer_walls=[float(w) for slot,w in re.findall(
+            r'^\[tick-spec\].*? slot=(\d+).*? wall_ms=([\d.]+)',before_long_token,re.M) if int(slot)!=0]
         eligible=summary['counts']=={'completed':21} and not summary['aborted'] and not summary['faults'] and len(long)==1
         row={'run':run.name,'eligible':eligible,'boot_nonce':identity['boot_nonce'],
              'binary_sha256':identity.get('sha256',identity.get('binary_sha256')),
@@ -45,6 +48,7 @@ for run in sorted(root.iterdir()):
              'long_input_tokens':long[0].get('usage',{}).get('prompt_tokens') if long else None,
              'server_delta':summary['server_delta'],'queue_peak':summary['queue_peak'],
              'engagement_log_lines':len(engagement),'engagement_examples':engagement[:2],
+             'peer_spec_service_max_before_long_token_ms':max(peer_walls,default=0),
              'yield_count':len(re.findall(r'^\[prime-yield\]',log,re.M))}
         result['mixed'].append(row)
         if not eligible:result['failures'].append({'run':run.name,'summary':summary})
@@ -63,7 +67,13 @@ for run in sorted(root.iterdir()):
                     subset=values[len(values)*part//3:len(values)*(part+1)//3]
                     walls=[v['wall_ms'] for v in subset]
                     parts[phase][('early','middle','late')[part]]={'n':len(walls),'median_ms':statistics.median(walls) if walls else None,'p95_ms':percentile(walls),'max_ms':max(walls,default=0)}
-            result['chunks'].append({'run':run.name,'phases':parts,'requests':summary['rows'],'yield_count':summary['yield_count']})
+            finalization={}
+            for walker,wall in re.findall(r'^\[prime-finalize\] walker=(\S+) wall_ms=([\d.]+)',relevant,re.M):
+                finalization[walker]=max(finalization.get(walker,0),float(wall))
+            holds=[float(w) for w in re.findall(r'^\[tick-spec\].*? wall_ms=([\d.]+) generated=0->',relevant,re.M)]
+            result['chunks'].append({'run':run.name,'phases':parts,'requests':summary['rows'],'yield_count':summary['yield_count'],
+                'finalization_max_ms':finalization,'prime_worker_service_max_ms':max(holds,default=0),
+                'first_prime_worker_service_ms':holds[0] if holds else None})
         else:result['byte_gates'].append({'run':run.name,**summary})
     elif (run/'cleanup.json').exists():
         result['failures'].append({'run':run.name,'error':(run/'error.txt').read_text() if (run/'error.txt').exists() else 'no final summary'})
