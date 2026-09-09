@@ -673,7 +673,7 @@ fn main() {
     };
 
     println!(
-        "COMPOSE_PROGRAMS before_model_creation=true arms={programs:?} sampler=device sampling_fixed=true dense_selector=capture_only"
+        "NORM_PROGRAMS before_model_creation=true arms={programs:?} sampler=device sampling_fixed=true norm_selector=capture_only"
     );
     // GU N32 is absent from the pinned source; the controller must bind it.
     let source = std::fs::read_to_string(&args[2]).expect("source tape");
@@ -713,10 +713,12 @@ fn main() {
     gpu.set_dense_wo_a_grouped_for_gate(false);
     gpu.set_index_topk_radix_for_gate(true);
     if args.get(4).is_some_and(|arg| arg == "--capture-components") {
-        gpu.enable_norm_components_for_gate(&output).unwrap();
         let mut s = state(&gpu);
         gpu.prefill_with_cache_chunked(&prompt[..1], &mut s, 1)
             .unwrap();
+        // Position zero has identity RoPE. Capture the next real producer so
+        // every site exercises nonzero sine coefficients in the bit gate.
+        gpu.enable_norm_components_for_gate(&output).unwrap();
         gpu.decode_step_device_logits(prompt[1], &mut s).unwrap();
         gpu.finish_norm_components_for_gate().unwrap();
     } else {

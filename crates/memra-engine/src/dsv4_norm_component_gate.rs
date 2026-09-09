@@ -62,8 +62,8 @@ impl Dsv4Gpu {
         let input = dtoh_f32(&stream, kv)?;
         let weight = dtoh_f32(&stream, &layer.kv_norm)?;
         let pos = stream.clone_dtoh(positions).map_err(e("norm positions"))?[0];
-        if pos < 0 {
-            return Err("negative norm position".into());
+        if pos <= 0 {
+            return Err("norm capture requires nonzero rotary position".into());
         }
         let mut cs = upload_f32(&stream, &[0f32; 64])?;
         // Copy the exact selected rotary row without reconstructing trig values.
@@ -122,6 +122,11 @@ impl Dsv4Gpu {
                 if x.len() != 512 || w.len() != 512 || cs.len() != 64 {
                     return Err("bad operand lengths".into());
                 }
+                if !cs.chunks_exact(2).any(|pair| pair[1] != 0.0)
+                    || x.iter().chain(&w).chain(&cs).any(|v| !v.is_finite())
+                {
+                    return Err("vacuous rotary tape or nonfinite operand".into());
+                }
                 let meta =
                     std::fs::read_to_string(site.join("meta.txt")).map_err(|e| e.to_string())?;
                 let eps = meta
@@ -160,11 +165,11 @@ impl Dsv4Gpu {
                                     "component fused",
                                     k::memra_dsv4_norm_rope_f32_fixed_order(
                                         xp,
-                                        dpf!(wd, &stream),
+                                        wd.device_ptr(&stream).0 as *const f32,
                                         512,
                                         f32::from_bits(eps),
                                         64,
-                                        dpf!(cd, &stream),
+                                        cd.device_ptr(&stream).0 as *const f32,
                                         pd.device_ptr(&stream).0 as *const i32,
                                         sp(&stream),
                                     ),
@@ -174,7 +179,7 @@ impl Dsv4Gpu {
                                     "component norm",
                                     k::memra_dsv4_rmsnorm_f32acc(
                                         xp,
-                                        dpf!(wd, &stream),
+                                        wd.device_ptr(&stream).0 as *const f32,
                                         xp,
                                         1,
                                         512,
@@ -190,7 +195,7 @@ impl Dsv4Gpu {
                                         1,
                                         512,
                                         64,
-                                        dpf!(cd, &stream),
+                                        cd.device_ptr(&stream).0 as *const f32,
                                         pd.device_ptr(&stream).0 as *const i32,
                                         0,
                                         sp(&stream),
@@ -246,7 +251,9 @@ impl Dsv4Gpu {
                 }
             }
         }
-        println!("COMPONENT_PASS sites=86 comparisons=6880 launches_removed_per_rank_step=43");
+        println!(
+            "COMPONENT_PASS sites=86 calls=6880 comparisons=6794 launches_removed_per_rank_step=43"
+        );
         Ok(())
     }
 }
