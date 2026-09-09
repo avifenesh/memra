@@ -21,11 +21,19 @@ for run in sorted(root.iterdir()):
         summary=json.loads((run/'stage0-summary.json').read_text())
         rows=[json.loads(x) for x in (run/'requests.jsonl').read_text().splitlines()]
         rows=[r for r in rows if r.get('stage')=='stage0']
+        traces={}
+        for line in log.splitlines():
+            if line.startswith('[ttft] '):
+                rid=re.search(r' id=(\S+)',line)
+                if rid:traces[rid.group(1)]={k:float(v) for k,v in re.findall(r'([a-z_]+_ms)=([\d.]+)',line)}
         small=[r for r in rows if r.get('class')!='longprefill']
+        post_queue=[(traces[r['request_id']]['total_ms']-traces[r['request_id']]['tokenize_start_ms'])/1000 for r in small if r.get('request_id') in traces]
+        queue=[traces[r['request_id']]['queue_wait_ms']/1000 for r in small if r.get('request_id') in traces]
         long=[r for r in rows if r.get('class')=='longprefill']
         eligible=summary['counts']=={'completed':21} and not summary['aborted'] and not summary['faults'] and len(long)==1
         row={'run':run.name,'eligible':eligible,'boot_nonce':identity['boot_nonce'],
              'binary_sha256':identity.get('sha256',identity.get('binary_sha256')),
+             'small_post_worker_queue_p95_s':percentile(post_queue),'small_worker_queue_p95_s':percentile(queue),
              'small_n':len(small),'small_p95_ttft_s':percentile([r['ttft_s'] for r in small if r.get('ttft_s') is not None]),
              'small_max_ttft_s':max((r.get('ttft_s') or 0 for r in small),default=0),
              'partial_p95_ttft_s':summary.get('classes',{}).get('1066-partial-target',{}).get('p95_ttft_s'),
