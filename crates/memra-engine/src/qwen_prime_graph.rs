@@ -457,7 +457,7 @@ mod tests {
         e.prime_tap_table(&input, pointer, 3, 2)?;
         let graph = e
             .stream()
-            .end_capture(sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_UPLOAD)?
+            .end_capture(sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH)?
             .ok_or("tap test capture returned no graph")?;
         let mut expected_a = vec![sentinel; 18];
         for (destination, offset, stride) in [(&a, 2, 5), (&b, 1, 6)] {
