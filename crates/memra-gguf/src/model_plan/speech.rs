@@ -99,6 +99,16 @@ pub struct AsrDecodePlan {
     pub task_token: u32,
     pub no_timestamps_token: u32,
     pub eos_token: u32,
+    /// First timestamp token; every id at or above it carries a time, not text.
+    pub timestamp_begin: u32,
+    /// The single leading-space token the first generated step suppresses.
+    pub blank_token: u32,
+    /// Highest initial timestamp offset the first generated step may take.
+    pub max_initial_timestamp_index: u32,
+    /// Hard cap on generated tokens for one window, including the terminating EOS.
+    pub max_generated_tokens: u32,
+    /// Always-suppressed ids. Ascending, deduplicated, all below `timestamp_begin`.
+    pub suppress_tokens: &'static [u32],
     /// Decode policy, suppression and timestamp handling still need oracle qualification.
     pub generation_policy_qualified: bool,
 }

@@ -6,4 +6,5 @@ pub mod frontend;
 pub mod encoder;
 mod matrix;
 
+pub mod decode;
 pub mod decoder;

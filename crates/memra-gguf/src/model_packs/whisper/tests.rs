@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 const CONFIG: &str = include_str!("fixtures/config.json");
 const FRONTEND: &str = include_str!("fixtures/preprocessor_config.json");
 const INDEX: &str = include_str!("fixtures/model.safetensors.index.json");
+const GENERATION: &str = include_str!("fixtures/generation_config.json");
 const HEADER1: &[u8] = include_bytes!("fixtures/model-00001-of-00002.safetensors.header");
 const HEADER2: &[u8] = include_bytes!("fixtures/model-00002-of-00002.safetensors.header");
 
@@ -232,4 +233,60 @@ fn mmap_loader_validates_real_checkpoint_metadata_without_weight_download() {
         vec![1280, 128, 3]
     );
     drop(checkpoint);
+}
+
+#[test]
+fn decode_constants_come_from_the_pinned_generation_config() {
+    let plan = PACK.compile_plan(CONFIG, FRONTEND).unwrap();
+    let decode = plan.speech.as_ref().unwrap().decode;
+    let generation = JsonObj::parse(GENERATION);
+    assert_eq!(
+        generation.raw("max_initial_timestamp_index"),
+        Some(decode.max_initial_timestamp_index.to_string().as_str())
+    );
+    assert_eq!(
+        generation.raw("no_timestamps_token_id"),
+        Some(decode.no_timestamps_token.to_string().as_str())
+    );
+    assert_eq!(
+        generation.raw("eos_token_id"),
+        Some(decode.eos_token.to_string().as_str())
+    );
+    // The checkpoint suppresses exactly the leading-space id and EOS at the first step.
+    assert_eq!(
+        generation.u32_array("begin_suppress_tokens"),
+        Some(vec![decode.blank_token, decode.eos_token])
+    );
+    // Timestamps are the last 1501 ids: <|0.00|> through <|30.00|>.
+    assert_eq!(
+        decode.timestamp_begin,
+        plan.speech.as_ref().unwrap().vocab_size - 1501
+    );
+    assert!(decode.max_generated_tokens <= plan.speech.as_ref().unwrap().target_positions);
+}
+
+#[test]
+fn suppressed_ids_are_sorted_unique_and_never_timestamps() {
+    let plan = PACK.compile_plan(CONFIG, FRONTEND).unwrap();
+    let decode = plan.speech.as_ref().unwrap().decode;
+    assert_eq!(decode.suppress_tokens.len(), 89);
+    assert!(decode.suppress_tokens.windows(2).all(|w| w[0] < w[1]));
+    assert!(
+        decode
+            .suppress_tokens
+            .iter()
+            .all(|&id| id < decode.timestamp_begin)
+    );
+    // The control ids the transcription program must never emit as text.
+    for id in [
+        decode.no_timestamps_token,
+        decode.start_token,
+        decode.task_token,
+    ] {
+        assert!(decode.suppress_tokens.contains(&id), "control id {id} free");
+    }
+    // The language id and EOS are not suppressed: the prefix uses one and the window ends
+    // on the other.
+    assert!(!decode.suppress_tokens.contains(&decode.language_token));
+    assert!(!decode.suppress_tokens.contains(&decode.eos_token));
 }

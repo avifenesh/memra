@@ -170,12 +170,35 @@ impl WhisperPack {
                 task_token: 50360,
                 no_timestamps_token: 50364,
                 eos_token: 50257,
+                // 51866 ids with 1501 timestamps last, so <|0.00|> is 50365.
+                timestamp_begin: 50365,
+                blank_token: 220,
+                max_initial_timestamp_index: 50,
+                // The oracle stopped every unterminated window at exactly 224 generated tokens,
+                // 11 of 364, which is half the checkpoint's 448 max_length. The number is pinned
+                // from those receipts; the upstream reason for the halving is not established here.
+                max_generated_tokens: 224,
+                suppress_tokens: SUPPRESS_TOKENS,
                 generation_policy_qualified: false,
             },
         }
         .into_model_plan())
     }
 }
+
+/// Ids the pinned beam-1 program suppresses at every generated step. Measured, not guessed:
+/// this is exactly the set the pinned CT2 oracle holds at negative infinity in every one of its
+/// 55,834 recorded decode steps across 364 windows, and `suppress_set_matches_pinned_oracle`
+/// re-derives it from those receipts. It is the checkpoint's non-speech set plus the task,
+/// previous-context, language-model, transcript-start and no-timestamp control ids.
+pub const SUPPRESS_TOKENS: &[u32] = &[
+    1, 2, 7, 8, 9, 10, 14, 25, 26, 27, 28, 29, 31, 58, 59, 60, 61, 62, 63, 90, 91, 92, 93, 359,
+    503, 522, 542, 873, 893, 902, 918, 922, 931, 1350, 1853, 1982, 2460, 2627, 3246, 3253, 3268,
+    3536, 3846, 3961, 4183, 4667, 6585, 6647, 7273, 9061, 9383, 10428, 10929, 11938, 12033, 12331,
+    12562, 13793, 14157, 14635, 15265, 15618, 16553, 16604, 18362, 18956, 20075, 21675, 22520,
+    26130, 26161, 26435, 28279, 29464, 31650, 32302, 32470, 36865, 42863, 47425, 49870, 50254,
+    50258, 50359, 50360, 50361, 50362, 50363, 50364,
+];
 
 #[allow(clippy::result_large_err)] // allow: keep the shared tensor contract diagnostic type
 pub fn tensor_contract(

@@ -2,6 +2,7 @@
 use memra_gguf::model_packs::whisper::PACK;
 use memra_gguf::safetensors::StModel;
 use memra_reference::ReferenceTensor;
+use memra_reference::speech::decode::{WhisperWindow, transcribe_clip};
 use memra_reference::speech::decoder::WhisperDecoder;
 use memra_reference::speech::encoder::{WhisperEncoder, WhisperNumeric};
 use memra_reference::speech::frontend::WhisperFrontend;
@@ -37,7 +38,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.len() < 5
-        || !["mel", "mel-clip", "encoder", "norm", "decoder"].contains(&args[1].as_str())
+        || ![
+            "mel",
+            "mel-clip",
+            "encoder",
+            "norm",
+            "decoder",
+            "transcribe",
+        ]
+        .contains(&args[1].as_str())
     {
         return Err("usage: whisper-stage mel CHECKPOINT_DIR PCM.f32 OUTPUT.f32 | encoder CHECKPOINT_DIR MEL.f32 OUTPUT_DIR f32|f16".into());
     }
@@ -106,6 +115,74 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         std::fs::write(out.join("steps.tsv"), summary)?;
+        return Ok(());
+    }
+    if args[1] == "transcribe" {
+        if args.len() != 6 {
+            return Err(
+                "usage: whisper-stage transcribe CHECKPOINT_DIR PCM.f32 OUTPUT_DIR f32|f16".into(),
+            );
+        }
+        let numeric = match args[5].as_str() {
+            "f32" => WhisperNumeric::F32,
+            "f16" => WhisperNumeric::F16,
+            _ => return Err("numeric class must be f32 or f16".into()),
+        };
+        let pcm = read_f32(Path::new(&args[3]))?;
+        let out = Path::new(&args[4]);
+        std::fs::create_dir(out)?;
+        let source = StModel::open(dir)?;
+        let started = std::time::Instant::now();
+        let frontend = WhisperFrontend::new(&speech.frontend)?;
+        let encoder = WhisperEncoder::load(speech, &source, numeric)?;
+        let decoder = WhisperDecoder::load(speech, &source, numeric)?;
+        println!(
+            "loaded transcribe numeric={numeric:?} samples={} elapsed={:.3}",
+            pcm.len(),
+            started.elapsed().as_secs_f64()
+        );
+        // Bank each window as it finishes: a sweep that is interrupted keeps what it proved.
+        let bank = |window: &WhisperWindow| -> Result<(), String> {
+            let bytes: Vec<u8> = window
+                .tokens
+                .iter()
+                .flat_map(|t| (*t as i32).to_le_bytes())
+                .collect();
+            std::fs::write(
+                out.join(format!("window-{:03}-tokens.i32.bin", window.index)),
+                bytes,
+            )
+            .map_err(|e| e.to_string())?;
+            println!(
+                "window={} seek={} segment={} tokens={} capped={} elapsed={:.3}",
+                window.index,
+                window.seek_frame,
+                window.segment_frames,
+                window.tokens.len(),
+                window.reached_cap,
+                started.elapsed().as_secs_f64()
+            );
+            Ok(())
+        };
+        let windows = transcribe_clip(&frontend, &encoder, &decoder, speech, &pcm, bank)?;
+        let mut summary = String::from("index\tseek_frame\tsegment_frames\ttokens\treached_cap\n");
+        for w in &windows {
+            summary.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\n",
+                w.index,
+                w.seek_frame,
+                w.segment_frames,
+                w.tokens.len(),
+                w.reached_cap
+            ));
+        }
+        std::fs::write(out.join("windows.tsv"), summary)?;
+        std::fs::write(out.join("numeric.txt"), format!("{numeric:?}\n"))?;
+        println!(
+            "transcribe windows={} elapsed={:.3}",
+            windows.len(),
+            started.elapsed().as_secs_f64()
+        );
         return Ok(());
     }
     if args[1] == "mel" || args[1] == "mel-clip" {
