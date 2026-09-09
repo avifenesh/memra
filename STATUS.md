@@ -32,7 +32,8 @@ and the predictor hypothesis carried across chunks.
 | RNNT encoder on native mel | 26 chunks, frontend composed | 0.0000002086 | 0.001 |
 | RNNT head | Prompt, predictor, joint | 0.0000915527 | 0.001 |
 | RNNT greedy | Token ids | 9 of 9 identical | exact |
-| RNNT session | 26 chunk partials plus final | 26 of 26 identical | exact |
+| RNNT session, 2 s | 26 chunk partials plus final | 26 of 26 identical | exact |
+| RNNT session, 15.8 s | 199 chunk partials, final, transcript | 199 of 199 identical | exact |
 
 Whisper text parity, 71-clip sweep checkpoint at 17 clips and 125 windows:
 **106/125 windows token-exact, 15/17 clips text-exact**, `d1` 0.0000 pt and

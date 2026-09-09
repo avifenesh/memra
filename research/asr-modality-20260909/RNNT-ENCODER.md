@@ -179,3 +179,22 @@ eight HF-oracle clips the engine's transcript agrees with the checker's transfor
 on 8 of 8.
 
 Neither path now needs offline tooling to produce text.
+
+## Stage 11: a longer session
+
+The same driver over the whole 15.8-second clip rather than its first two seconds:
+**199 of 199 chunk partials identical**, final sequence identical, 107 tokens, and the engine's
+transcript equal to the reference's character for character:
+
+> כן, אני ומתן היינו אז א' היה לו מין מכשיר כזה שבודק מזהה גז באוויר, מכשיר שלו לא תפס כלום הוא
+> ניסה לעצמי אותו לכל הצינורות, לכל החיבורים המכשירות הפלוס.
+
+83.1 s of CPU on one niced core for 15.8 s of audio, so the reference runs at about 5.3x slower
+than real time. That is a CPU reference-executor number and not a serving claim.
+
+Eight times the audio of the first session gate, 199 chunks instead of 26, 107 emitted tokens
+instead of 9, and the attention cache actually fills: the first gate never reached its 56-frame
+capacity, so the oldest-row eviction path had never run against a reference. Receipt
+`stage11-rnnt-stream-15s.json`.
+
+What is still one of: one clip, one language slot, one arm.
