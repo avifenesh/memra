@@ -87,8 +87,12 @@ def main():
     if args.output.exists() or args.output.resolve() == args.source.resolve():
         raise ValueError("mint requires a new output path")
     record = json.loads(args.scales.read_text())
+    # The calibration RECORD is keyed the way the fitting script wrote it; the minted
+    # TENSOR carries our own suffix. Keeping the two separate means a re-mint under a
+    # different tensor name does not require re-running the fit.
+    record_keys = {name+".input_scale" for name in projections().values()}
     expected = {name+SCALE_SUFFIX for name in projections().values()}
-    if record["program"] != PROGRAM or set(record["scales"]) != expected:
+    if record["program"] != PROGRAM or set(record["scales"]) != record_keys:
         raise ValueError("activation program must carry exactly 400 declared scalars")
     if sha(args.source) != SOURCE_SHA:
         raise ValueError("served weight artifact hash mismatch")
@@ -110,7 +114,8 @@ def main():
     offset = (old_length+alignment-1)//alignment*alignment
     additions, payload = [], bytearray(offset-old_length)
     for name in sorted(expected):
-        multiplier = record["scales"][name]["multiplier"]
+        record_key = name[: -len(SCALE_SUFFIX)] + ".input_scale"
+        multiplier = record["scales"][record_key]["multiplier"]
         if not 0 < multiplier < float("inf"):
             raise ValueError(f"invalid multiplier: {name}")
         encoded = struct.pack("<f", multiplier)
