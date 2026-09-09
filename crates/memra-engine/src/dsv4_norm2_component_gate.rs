@@ -3,6 +3,7 @@ use super::*;
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn capture_words(
     dir: &Path,
     rank: usize,
