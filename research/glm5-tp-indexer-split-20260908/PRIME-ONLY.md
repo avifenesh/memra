@@ -53,3 +53,20 @@ The pre-commit fmt hook uses the matching remote receipt for this commit. Push u
 `MEMRA_SKIP_PERF_CI=1`; hosted CI remains required. The existing lane worktree stays open
 with the draft PR; this task's remote build directory and local scratch are removed after
 receipt collection.
+
+## Current-main integration
+
+The first push could not start PR CI because `research/INDEX.md` conflicted with current
+main. Merge main `9396a817e85ce2c724ef85a3284de6329ccdd7b9`, preserving both index entries. Engine files
+merged without conflicts; the prime-only dispatch patch is unchanged.
+
+The integrated v0.137.0 tree passed remote fmt, release build (3m46s), full-workspace clippy
+`-D warnings` (3m31s), the CPU target (4 passed), engine library suite (466 passed,
+20 ignored), and server suite (652 passed, 4 ignored). Single-device GPU merge and RP=1/2
+range bit-identity each passed again, with final exit 0. Raw logs and matching source hashes:
+[receipts/prime-only-integration-20260909](receipts/prime-only-integration-20260909/).
+
+The first server run passed 636 tests and failed 16 because the isolated copy omitted tracked
+DSV4, Gemma, GLM and OpenRouter schema fixtures. After copying those files from this same
+lane, the full server suite passed. The staging-failure log is retained; no source change
+was needed. This integration still makes no new pair performance claim.

@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+release-v0.137.0-20260909 | PREPARED CANDIDATE ONLY. No tag or deployment is authorized by this record. | RESULTS.md
+
 dflash-retained-admission-20260908 | PASS: the exact recorded 128k cold/1024-output request followed by its warm continuation now admits with 131040 cached tokens, DFlash engaged and zero OOM/retries. | README.md
 
 gpuwatch-startup-20260908 | The candidate recovered after two startup hangs and returned HTTP 200; the old binary stayed HTTP 503 after probes resumed. | RESULTS.md
@@ -477,4 +479,8 @@ release-v0.134.0-20260908 | "Full release battery: PASS" | release-v0.134.0-2026
 
 prefill-fairness-20260908 | Exact resumable prime: Ornith small p95 15.125 -> 0.977 s (+1.756 s long TTFT); Qwen 60.452 -> 48.042 s (+3.664 s), admitted-peer exactness passes but session-cap queue persists. Default OFF; propose Ornith launcher enable. | prefill-fairness-20260908/RESULTS.md
 
-glm5-tp-indexer-split-20260908 | "Decode NEGATIVE at 128k and FLAT at 1M; merge cost is the blocker. Prime improves 10.3%/34.6%; exact 160-ID twins. Owner retains code, door OFF." | glm5-tp-indexer-split-20260908/RESULTS.md
+glm5-tp-indexer-split-20260908 | "Decode NEGATIVE at 128k and FLAT at 1M; merge cost is the blocker. Prime improves 10.3%/34.6%; exact 160-ID twins. Prime-only door OFF, decide-by 2026-09-22; decode split deleted." | glm5-tp-indexer-split-20260908/RESULTS.md
+
+glm5-tp2-gpu-sampler-20260908 | Current five-pair medians: 81.317 to 91.250 wall tok/s (+12.22%), server decode 11.894 to 10.610 ms/token; original three and later two windows reported separately. Greedy twins exact, door OFF. | glm5-tp2-gpu-sampler-20260908/RESULTS.md
+
+- release-v0.137.0 owner go: #378 merged default OFF; full source-bound battery receipts attached to #391. See [GO-QUALIFICATION](release-v0.137.0-20260909/GO-QUALIFICATION.md).

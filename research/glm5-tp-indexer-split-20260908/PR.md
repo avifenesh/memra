@@ -6,7 +6,9 @@ Decode split is rejected: 128k falls from 69.852 to 66.947 tok/s (-4.2%); 1M is 
 
 Required post-deploy pair cell on this binary: 1M prime OFF/ON, then 1M decode OFF/ON interleaved x3, with byte-identical IDs in every arm. Confirm the prime win and no decode regression. Vendor-default sampled requests and eight-turn cache-on continuation remain serving gates. This follow-up does not claim a new model-scale result or promote the default.
 
-Remote validation passed: release build, fmt, full-workspace clippy `-D warnings`, 463 engine library tests, 4 CPU target tests, the single-device GPU merge gate and RP=1/2 range bit-identity gates. Raw logs and source hashes are recorded in `research/glm5-tp-indexer-split-20260908/PRIME-ONLY.md`. The CPU regression exercises the production flag helper with unset/OFF/ON values and the retired flag ON, before and after the prime latch. Single-device GPU merge checks compare emitted indices to both the replicated selector and CPU oracle; two-device transport remains a separate pair gate.
+Remote validation passed: release build, fmt, full-workspace clippy `-D warnings`, 466 engine library tests, 652 server tests, 4 CPU target tests, the single-device GPU merge gate and RP=1/2 range bit-identity gates. Raw logs and source hashes are recorded in `research/glm5-tp-indexer-split-20260908/PRIME-ONLY.md`. The CPU regression exercises the production flag helper with unset/OFF/ON values and the retired flag ON, before and after the prime latch. Single-device GPU merge checks compare emitted indices to both the replicated selector and CPU oracle; two-device transport remains a separate pair gate.
+
+Current main is integrated; the research index conflict was resolved by preserving both entries, and the integrated v0.137.0 source passed the remote checks again.
 
 No cargo, tests or benchmarks ran on the rig. The pre-commit cargo-fmt hook is replaced for this commit by the matching remote fmt receipt. Push uses `MEMRA_SKIP_PERF_CI=1`; hosted CI remains required.
 

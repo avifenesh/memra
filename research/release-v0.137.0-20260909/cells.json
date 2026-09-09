@@ -1,0 +1,414 @@
+[
+  {
+    "cell": "arch-census",
+    "exit": 0,
+    "start": "2026-09-09T00:32:52Z",
+    "end": "2026-09-09T00:32:52Z",
+    "tail": [
+      "arch-census: OK \u2014 release builds [120a ], ci compiles [100a 120a 100a], build.rs accepts [120a 100a 90a 89 ], advisory [none]",
+      "real 0.01",
+      "user 0.00",
+      "sys 0.02"
+    ]
+  },
+  {
+    "cell": "artifact",
+    "exit": 1,
+    "start": "2026-09-09T00:32:11Z",
+    "end": "2026-09-09T00:32:11Z",
+    "tail": [
+      "serving/build-artifact.sh: line 87: docker: command not found",
+      "build-artifact: the pinned CUDA image is amd64-only",
+      "real 0.01",
+      "user 0.00",
+      "sys 0.01"
+    ]
+  },
+  {
+    "cell": "battery-structure",
+    "exit": 127,
+    "start": "2026-09-09T00:32:53Z",
+    "end": "2026-09-09T00:32:53Z",
+    "tail": [
+      "bash: tools/test_release_battery_roster.sh: No such file or directory",
+      "real 0.00",
+      "user 0.00",
+      "sys 0.00"
+    ]
+  },
+  {
+    "cell": "build",
+    "exit": 0,
+    "start": "2026-09-09T00:23:56Z",
+    "end": "2026-09-09T00:28:14Z",
+    "tail": [
+      "   Compiling toml v0.8.23",
+      "   Compiling memra-lanes v0.136.0 (/root/wt-release-v0137/crates/memra-lanes)",
+      "   Compiling hyper v1.10.1",
+      "   Compiling hyper-util v0.1.20",
+      "   Compiling axum v0.7.9",
+      "warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc",
+      "    Finished `release` profile [optimized] target(s) in 4m 17s",
+      "real 257.99",
+      "user 842.30",
+      "sys 64.00"
+    ]
+  },
+  {
+    "cell": "candidate-boundary",
+    "exit": 0,
+    "start": "2026-09-09T00:32:38Z",
+    "end": "2026-09-09T00:33:59Z",
+    "tail": [
+      "public-boundary: 578 matches (578 grandfathered, 0 new).",
+      "real 80.97",
+      "user 118.40",
+      "sys 4.42"
+    ]
+  },
+  {
+    "cell": "candidate-clippy",
+    "exit": 0,
+    "start": "2026-09-09T00:33:59Z",
+    "end": "2026-09-09T00:37:42Z",
+    "tail": [
+      "    Checking memra-tokenizer v0.137.0 (/root/wt-release-v0137-candidate/crates/memra-tokenizer)",
+      "    Checking memra-reference v0.137.0 (/root/wt-release-v0137-candidate/crates/memra-reference)",
+      "    Checking memra-runtime v0.137.0 (/root/wt-release-v0137-candidate/crates/memra-runtime)",
+      "    Checking memra-kv v0.137.0 (/root/wt-release-v0137-candidate/crates/memra-kv)",
+      "    Checking memra-cli v0.137.0 (/root/wt-release-v0137-candidate/crates/memra-cli)",
+      "warning: memra-engine@0.137.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc",
+      "    Finished `release` profile [optimized] target(s) in 3m 42s",
+      "real 223.03",
+      "user 274.36",
+      "sys 22.95"
+    ]
+  },
+  {
+    "cell": "candidate-diff",
+    "exit": 0,
+    "start": "2026-09-09T00:32:37Z",
+    "end": "2026-09-09T00:32:38Z",
+    "tail": [
+      "real 0.56",
+      "user 0.45",
+      "sys 0.26"
+    ]
+  },
+  {
+    "cell": "candidate-flags",
+    "exit": 0,
+    "start": "2026-09-09T00:32:35Z",
+    "end": "2026-09-09T00:32:37Z",
+    "tail": [
+      "check-flags: runtime literal reads=842",
+      "check-flags: no uncovered runtime names",
+      "check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)",
+      "real 1.97",
+      "user 1.55",
+      "sys 0.55"
+    ]
+  },
+  {
+    "cell": "candidate-fmt",
+    "exit": 0,
+    "start": "2026-09-09T00:32:31Z",
+    "end": "2026-09-09T00:32:35Z",
+    "tail": [
+      "real 3.78",
+      "user 3.63",
+      "sys 0.15"
+    ]
+  },
+  {
+    "cell": "candidate-guard",
+    "exit": 0,
+    "start": "2026-09-09T00:32:37Z",
+    "end": "2026-09-09T00:32:37Z",
+    "tail": [
+      "release-guard: v0.137.0 OK \u2014 workspace 0.137.0 matches, 9 internal pins match, claim branch present on origin",
+      "real 0.14",
+      "user 0.03",
+      "sys 0.01"
+    ]
+  },
+  {
+    "cell": "candidate-lock",
+    "exit": 0,
+    "start": "2026-09-09T00:33:59Z",
+    "end": "2026-09-09T00:33:59Z",
+    "tail": [
+      "     Locking 0 packages to latest compatible versions",
+      "note: pass `--verbose` to see 1 unchanged dependencies behind latest",
+      "real 0.16",
+      "user 0.10",
+      "sys 0.05"
+    ]
+  },
+  {
+    "cell": "clippy",
+    "exit": 0,
+    "start": "2026-09-09T00:28:18Z",
+    "end": "2026-09-09T00:31:57Z",
+    "tail": [
+      "    Checking h2 v0.4.19",
+      "    Checking memra-cli v0.136.0 (/root/wt-release-v0137/crates/memra-cli)",
+      "    Checking hyper v1.10.1",
+      "    Checking hyper-util v0.1.20",
+      "    Checking axum v0.7.9",
+      "warning: memra-engine@0.136.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc",
+      "    Finished `release` profile [optimized] target(s) in 3m 38s",
+      "real 218.87",
+      "user 297.57",
+      "sys 26.05"
+    ]
+  },
+  {
+    "cell": "cuda-allocation",
+    "exit": 0,
+    "start": "2026-09-09T00:36:29Z",
+    "end": "2026-09-09T00:36:30Z",
+    "tail": [
+      "CUDA_ACCEPT gpu=0 cudaMalloc=4096 memset=PASS sync=PASS free=PASS",
+      "real 0.83",
+      "user 0.01",
+      "sys 0.79"
+    ]
+  },
+  {
+    "cell": "dflash-fault",
+    "exit": 0,
+    "start": "2026-09-09T00:43:51Z",
+    "end": "2026-09-09T00:43:52Z",
+    "tail": [
+      "[retained-plan-test] lost-source: validated=false pins=0 source_bytes=0",
+      "[prefix-cache] insert probation (source): 64 tokens, 0.0MB (resident 0.0MB / 0MB, model m, ns \"tenant\")",
+      "[retained-plan-test] capacity: validated=false pins=0 source_bytes=0",
+      "ok",
+      "",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 651 filtered out; finished in 0.64s",
+      "",
+      "real 0.90",
+      "user 0.03",
+      "sys 0.86"
+    ]
+  },
+  {
+    "cell": "engine-lib",
+    "exit": 0,
+    "start": "2026-09-09T00:32:27Z",
+    "end": "2026-09-09T00:32:50Z",
+    "tail": [
+      "skip-census: running: cargo test --release -p memra-engine --lib -- --test-threads=1 --nocapture",
+      "skip-census: 457 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 1 binaries",
+      "real 23.61",
+      "user 49.70",
+      "sys 3.71"
+    ]
+  },
+  {
+    "cell": "engine-single-all",
+    "exit": 0,
+    "start": "2026-09-09T00:43:45Z",
+    "end": "2026-09-09T00:43:51Z",
+    "tail": [
+      "[spill-pread] enabled: depth=2 buffer_bytes=64 total_pinned_bytes=128 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)",
+      "[spill-pread] reads=8 bytes=175 errors=1 short_reads=1 fallbacks=0 buffer_waits=5 ring_full=21",
+      "ok",
+      "test vision::tests::a_foreign_context_overlay_is_refused_not_dereferenced ... ok",
+      "",
+      "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 458 filtered out; finished in 5.52s",
+      "",
+      "real 5.81",
+      "user 3.23",
+      "sys 2.52"
+    ]
+  },
+  {
+    "cell": "flags",
+    "exit": 0,
+    "start": "2026-09-09T00:32:50Z",
+    "end": "2026-09-09T00:32:52Z",
+    "tail": [
+      "check-flags: runtime literal reads=842",
+      "check-flags: no uncovered runtime names",
+      "check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)",
+      "real 2.02",
+      "user 1.52",
+      "sys 0.61"
+    ]
+  },
+  {
+    "cell": "fmt",
+    "exit": 0,
+    "start": "2026-09-09T00:28:14Z",
+    "end": "2026-09-09T00:28:18Z",
+    "tail": [
+      "real 3.60",
+      "user 3.47",
+      "sys 0.12"
+    ]
+  },
+  {
+    "cell": "gpu-overlay",
+    "exit": 0,
+    "start": "2026-09-09T00:36:31Z",
+    "end": "2026-09-09T00:36:33Z",
+    "tail": [
+      "",
+      "running 1 test",
+      "test vision::tests::a_foreign_context_overlay_is_refused_not_dereferenced ... ok",
+      "",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 475 filtered out; finished in 0.95s",
+      "",
+      "real 1.22",
+      "user 0.03",
+      "sys 1.16"
+    ]
+  },
+  {
+    "cell": "gpu-qgate",
+    "exit": 0,
+    "start": "2026-09-09T00:36:33Z",
+    "end": "2026-09-09T00:36:33Z",
+    "tail": [
+      "",
+      "running 1 test",
+      "test fused_gate_bounds_tests::q_gate_split_refuses_a_separate_gate_wq_instead_of_reading_past_it ... ok",
+      "",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 475 filtered out; finished in 0.62s",
+      "",
+      "real 0.88",
+      "user 0.03",
+      "sys 0.84"
+    ]
+  },
+  {
+    "cell": "gpu-spill",
+    "exit": 0,
+    "start": "2026-09-09T00:36:33Z",
+    "end": "2026-09-09T00:36:34Z",
+    "tail": [
+      "test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... [spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback",
+      "[spill-pread] enabled: depth=2 buffer_bytes=64 total_pinned_bytes=128 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)",
+      "[spill-pread] reads=8 bytes=175 errors=1 short_reads=1 fallbacks=0 buffer_waits=5 ring_full=7",
+      "ok",
+      "",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 475 filtered out; finished in 0.65s",
+      "",
+      "real 0.91",
+      "user 0.03",
+      "sys 0.86"
+    ]
+  },
+  {
+    "cell": "host-generic",
+    "exit": 0,
+    "start": "2026-09-09T00:36:30Z",
+    "end": "2026-09-09T00:36:31Z",
+    "tail": [
+      "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+      "[prefix-host DEBUG] arena admission refusal: reserve_ms=0.000 alloc_ms=0.907 fill_ms=0.000 capacity=4096 leased=4020 free=76",
+      "[prefix-host DEBUG] arena admission refusal: reserve_ms=0.000 alloc_ms=0.907 fill_ms=0.000 capacity=4096 leased=4020 free=76",
+      "ok",
+      "",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 651 filtered out; finished in 1.20s",
+      "",
+      "real 1.56",
+      "user 0.03",
+      "sys 1.13"
+    ]
+  },
+  {
+    "cell": "pp1",
+    "exit": 0,
+    "start": null,
+    "end": null,
+    "tail": [
+      "GPU_LOCK_ACQUIRED 2026-09-09T00:28:15Z",
+      "plain READY 108.0848835289944",
+      "{\"shape\": \"plain\", \"cell\": \"cold\", \"http\": 200, \"wall_s\": 4.989631468022708, \"done\": true, \"usage\": {\"prompt_tokens\": 991, \"completion_tokens\": 256, \"total_tokens\": 1247, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"elapsed_s\": 4.972168014}}",
+      "{\"shape\": \"plain\", \"cell\": \"repeat\", \"http\": 200, \"wall_s\": 4.067173050018027, \"done\": true, \"usage\": {\"prompt_tokens\": 991, \"completion_tokens\": 256, \"total_tokens\": 1247, \"prompt_tokens_details\": {\"cached_tokens\": 960}, \"elapsed_s\": 4.060608131}}",
+      "{\"shape\": \"plain\", \"cell\": \"continuation\", \"http\": 200, \"wall_s\": 4.104461315029766, \"done\": true, \"usage\": {\"prompt_tokens\": 1013, \"completion_tokens\": 256, \"total_tokens\": 1269, \"prompt_tokens_details\": {\"cached_tokens\": 960}, \"elapsed_s\": 4.092258007}}",
+      "dflash2 READY 114.0440814550384",
+      "{\"shape\": \"dflash2\", \"cell\": \"cold\", \"http\": 200, \"wall_s\": 4.1636986620142125, \"done\": true, \"usage\": {\"prompt_tokens\": 991, \"completion_tokens\": 256, \"total_tokens\": 1247, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"elapsed_s\": 4.146370308, \"spec\": {\"rounds\": 96, \"drafted\": 218, \"accepted\": 160, \"acceptance_rate\": 0.7339449541284404}}}",
+      "{\"shape\": \"dflash2\", \"cell\": \"repeat\", \"http\": 200, \"wall_s\": 3.2777458099881187, \"done\": true, \"usage\": {\"prompt_tokens\": 991, \"completion_tokens\": 256, \"total_tokens\": 1247, \"prompt_tokens_details\": {\"cached_tokens\": 991}, \"elapsed_s\": 3.271385891}}",
+      "{\"shape\": \"dflash2\", \"cell\": \"continuation\", \"http\": 200, \"wall_s\": 3.5239460919983685, \"done\": true, \"usage\": {\"prompt_tokens\": 1013, \"completion_tokens\": 256, \"total_tokens\": 1269, \"prompt_tokens_details\": {\"cached_tokens\": 991}, \"elapsed_s\": 3.5165996379999998, \"spec\": {\"rounds\": 106, \"drafted\": 231, \"accepted\": 149, \"acceptance_rate\": 0.645021645021645}}}",
+      "PP1_DONE"
+    ]
+  },
+  {
+    "cell": "release-battery",
+    "exit": 1,
+    "start": "2026-09-09T00:36:34Z",
+    "end": "2026-09-09T00:36:34Z",
+    "tail": [
+      "kernel-check           REFUSED   no roster model present on this rig",
+      "ornith-ai/ornith-1.5-35b-a3b  REFUSED   OWN model absent from this rig: /data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf",
+      "qwen/qwen3.8-27b  REFUSED   vendor model absent: /data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf (pass --allow-missing-vendor to accept)",
+      "",
+      "REFUSED: an OWN model was not tested (absent file, or no own row in /root/wt-release-v0137/tools/release-roster.tsv). Neither is skippable.",
+      "RELEASE BATTERY FAILED",
+      "real 0.00",
+      "user 0.00",
+      "sys 0.00"
+    ]
+  },
+  {
+    "cell": "release-guard-tests",
+    "exit": 0,
+    "start": "2026-09-09T00:32:53Z",
+    "end": "2026-09-09T00:32:53Z",
+    "tail": [
+      "release-guard fixture: 9 arms PASS",
+      "real 0.16",
+      "user 0.05",
+      "sys 0.10"
+    ]
+  },
+  {
+    "cell": "server-tests",
+    "exit": 0,
+    "start": "2026-09-09T00:31:57Z",
+    "end": "2026-09-09T00:32:27Z",
+    "tail": [
+      "",
+      "   Doc-tests memra_server",
+      "",
+      "running 0 tests",
+      "",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "",
+      "real 30.21",
+      "user 105.73",
+      "sys 5.82"
+    ]
+  },
+  {
+    "cell": "stub-census",
+    "exit": 0,
+    "start": "2026-09-09T00:32:52Z",
+    "end": "2026-09-09T00:32:53Z",
+    "tail": [
+      "stub-abi-census: cu/mmq_fp4_stub.cu vs cu/mmq_fp4.cu: ok (4 exported, 0 missing-and-referenced)",
+      "stub-abi-census: cu/mmq_fp8_blk_stub.cu vs cu/mmq_fp8_blk.cu: ok (9 exported, 0 missing-and-referenced, 2 missing-but-unreferenced: memra_fp8_blk_nsm, memra_sm100_fp8_opted_in)",
+      "stub-abi-census: cu/mmq_nvfp4_w4a8_stub.cu vs cu/mmq_nvfp4_w4a8.cu: ok (3 exported, 0 missing-and-referenced)",
+      "stub-abi-census: OK \u2014 3 stub pair(s), every real export mirrored",
+      "real 0.24",
+      "user 0.22",
+      "sys 0.01"
+    ]
+  },
+  {
+    "cell": "workspace-census",
+    "exit": 0,
+    "start": "2026-09-09T00:32:53Z",
+    "end": "2026-09-09T00:32:53Z",
+    "tail": [
+      "publish-census: OK \u2014 11 publishable members, 11 listed, order topological, unpublishable: memra-probe",
+      "real 0.07",
+      "user 0.03",
+      "sys 0.07"
+    ]
+  }
+]

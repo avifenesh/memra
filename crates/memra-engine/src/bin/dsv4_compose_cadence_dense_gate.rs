@@ -756,6 +756,8 @@ fn main() {
         );
     }
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
+    // Pin the historical control program independently of the graph default.
+    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
     memra_engine::set_moe_m1_splitk_for_gate(false);
     assert!(!memra_engine::moe_m1_splitk_on());
     let programs = PROGRAMS;
