@@ -132,27 +132,68 @@ That is not a pass. The stage gate as written is **not met**: `whatsapp` is 0.56
 CT2 where the rule allows 0.05. What the FP32 control changes is the diagnosis, not the
 verdict.
 
-### Where the native path is genuinely wrong
+### The one divergence that looked real, and was not
 
-The FP32 backend breaks the ties CT2 cannot, and it settles all three text-changing steps:
+The FP32 backend breaks ties CT2 cannot, and it settles all three text-changing steps. Two of
+them go the native way outright:
 
-| Step | CT2 took | Native took | HF FP32 prefers | By |
+| Step | CT2 took | Native took | FP32 prefers | By |
 | --- | ---: | ---: | --- | ---: |
 | `whatsapp-002` w0 s114 | `.` (13) | `,` (11) | **native** | 0.001682 |
 | `whatsapp-003` w4 s86 | 51297 | 51296 | **native** | 0.000969 |
-| `whatsapp-001` w3 s3 | 1842 | 25988 | **CT2** | 0.064337 |
+| `whatsapp-001` w3 s3 | 1842 | 25988 | see below | |
 
-Two of the three are cases where the native F32 decode agrees with the F32 reference and CT2's
-FP16 tie fell the other way; the HF decode emitted the native token at both steps.
+The third looked like a real defect: the banked FP32 logits prefer CT2's 1842 by 0.064337,
+four fp16 steps, wide enough that CT2 could have stated it. It is not a defect. **The banked
+FP32 window is a different program.**
 
-The third is a real defect and is recorded as one. At `whatsapp-001` window 3 step 3 both
-references choose 1842 and the native decode chooses 25988, and the FP32 margin is 0.064337,
-which is four fp16 steps: wide enough that CT2 could have stated it too. Something in the
-native encoder or decoder moved that step by more than 0.06. That is the one divergence in
-these 61 windows that is not a coin-flip, and it is unexplained.
+`whatsapp-001` window 3 is the clip's last window: 1061 real frames of a 3000-frame field. The
+CT2 program zero-fills the rest in feature space. The HF backend pads in waveform space, so its
+mel pad region carries the analytic silence floor, between -0.393 and -0.564, where CT2's is
+exactly 0. The two references are not looking at the same input, and the encoders show it:
+
+| Comparison, window 3 encoder | Max abs | Mean abs |
+| --- | ---: | ---: |
+| Banked HF FP32 vs native | 20.896336 | 0.150301 |
+| Banked HF FP32 vs CT2 | 20.896292 | 0.150240 |
+| Native vs CT2 | 1.995950 | 0.001751 |
+
+Recomputing an FP32 reference on the **CT2 window**, with the checkpoint's own weights through
+transformers on this machine, settles it:
+
+| Comparison, matched program | Max abs | Mean abs |
+| --- | ---: | ---: |
+| Matched FP32 vs native | **0.002001** | **0.00000118** |
+| Matched FP32 vs CT2 | 1.994110 | 0.001751 |
+
+And at the step itself the matched FP32 reference has 1842 at 21.639971 against 25988 at
+21.691929: it **prefers the native token by 0.051958**, six digits from the native decode's own
+21.639973 and 21.691919. CT2's FP16 encoder moves that step by enough to flip it.
+
+Correction: an earlier version of this receipt, and the commit that carried it, called this a
+genuine native defect. It is not. The evidence for that claim was a reference computed on a
+differently padded window. `WHATSAPP-001-W3-DIAGNOSIS.json` has the numbers.
+
+So there is **no window in these 61 where the native path disagrees with a same-program
+reference**. Every one of the twelve differing windows is a CT2 FP16 precision effect: a tie,
+a one- or two-step separation, or a boundary cascade from one of those.
+
+### What this does to the FP32 control
+
+The domain numbers above compare native text against the banked FP32 text, and every clip's
+last window is padded, so each of those comparisons includes one window where the two
+references ran different programs. The `CT2 vs HF FP32` column measures that difference as much
+as it measures precision. The direction of the conclusion does not change, because the native
+text is inside the band either way, but the band is partly an artefact of the padding
+convention and should not be quoted as a pure precision figure.
 
 ### What would settle the rest
 
-Score the 71-clip sweep against CT2 as the only reference it has, and read the result against
-the 0.21 to 0.34 pt band the two backends differ by on the eight clips where both exist. A
-delta inside that band is not evidence of a defect; a delta outside it is.
+Score the 71-clip sweep against CT2, the only reference it has, and read the result against the
+0.21 to 0.34 pt band the two backends differ by on the eight clips where both exist. A delta
+inside that band is not evidence of a defect; a delta outside it is.
+
+The cheaper and sharper instrument is the one this diagnosis used: recompute an FP32 reference
+on the CT2 window for any step that flips, with the checkpoint's own weights on this machine.
+One window took about two minutes and turned a suspected defect into a measured agreement to
+1.2e-06. Any future divergence in this lane gets that treatment before it gets a verdict.

@@ -38,10 +38,12 @@ Whisper text parity on the eight HF-oracle clips: `d1` 0.0000 pt against CT2 ove
 `whatsapp` 0.5656 pt. The stage gate wanted every clip equal or under 0.05 pt per domain, so
 it is **not met on `whatsapp`**. The oracle's own two backends differ by 0.2114 pt on `d1` and
 0.3394 pt on `whatsapp` over the same clips, and the native text is inside that band on both
-(0.2114 and 0.2262 against the FP32 backend). One divergence is a genuine defect and is not
-explained by precision: `whatsapp-001` window 3 step 3, where both references choose 1842 by an
-FP32 margin of 0.064337 and the native decode chooses 25988. Full analysis:
-`research/asr-modality-20260909/TRANSCRIBE-PARITY.md`.
+(0.2114 and 0.2262 against the FP32 backend). No divergence in these 61 windows is a native
+defect: the one that looked like one, `whatsapp-001` window 3 step 3, was diagnosed against a
+reference computed on a differently padded window. On the CT2 window a matched FP32 reference
+agrees with the native encoder to 1.2e-06 mean and prefers the native token by 0.051958, while
+CT2's FP16 encoder flips it. Full analysis: `research/asr-modality-20260909/TRANSCRIBE-PARITY.md`
+and `WHATSAPP-001-W3-DIAGNOSIS.json`.
 
 The speech matrix product is cache-blocked and optionally threaded; both are bit-identical by
 construction and re-proved on the real checkpoint. One encoder window fell 122.950 s to
@@ -82,12 +84,11 @@ The checker scores only clips that have finished, so it is safe to run mid-sweep
 
 ## Next executable stage
 
-1. Explain `whatsapp-001` window 3 step 3. It is the one Whisper divergence in 61 windows that
-   precision does not explain: both references choose 1842 by an FP32 margin of 0.064337 and
-   the native decode chooses 25988. Re-run that window with per-step logits banked and compare
-   against the HF FP32 row that is already pinned.
-2. Finish or stop the sweep at 22:30 UTC, bank `stage5-transcribe-parity.json`, and read the
-   per-domain delta against the 0.21 to 0.34 pt band the two oracle backends differ by.
+1. Finish or stop the sweep at 22:30 UTC, bank `stage5-transcribe-parity.json`, and read the
+   per-domain delta against the 0.21 to 0.34 pt band the two oracle backends differ by. Any
+   window that flips gets a matched-program FP32 reference before it gets a verdict: the banked
+   `hf-fp32` windows pad in waveform space and the CT2 program zero-fills in feature space, so
+   on any padded window the two references are not the same program.
 3. Native detokenizer and tokenizer binding, for both paths. Until then `NativeReference`
    cannot be claimed: every text number depends on offline tooling.
 4. RNNT beyond one clip and one arm: more audio, the `[56,3]`/`[56,6]`/`[56,13]` arms if they
