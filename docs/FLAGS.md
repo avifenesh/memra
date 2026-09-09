@@ -1859,3 +1859,14 @@ Component KEEP OFF, unserved, code removed 2026-09-09. The byte-exact
 they do not qualify a served pair. Re-derive from
 `7c3ddf0db45295dcd2ec67c963f3295ec8d8c14b`.
 Receipt: `research/glm5-verify-tally-20260909/RESULTS.md`; rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (MLA verify split-KV component)
+
+`MEMRA_GLM5_MLA_VERIFY_SPLITKV`, its dispatch and workspace allocation,
+`memra_mla_verify_splitkv_kernel`, `memra_mla_verify_splitkv_f32`, the Rust FFI
+and dedicated oracle/bench are removed. The shared partial-combine kernel
+remains for existing callers. Component KEEP OFF, unserved, code removed
+2026-09-09. Real latent rows passed argmax and the fixed band; gathered inputs
+were byte-exact. The p32k t=4 component saved 3.091277122 ms/round.
+Re-derive from `c776611e78291aa8ff36c7323d5c216eab961fa7`.
+Receipt: `research/glm5-mla-verify-20260909/RESULTS.md`; rev: 2026-09-23.
