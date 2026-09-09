@@ -30,6 +30,8 @@
 #include <cmath>
 #include <algorithm>
 #include <cstring>
+#include <string>
+#include <utility>
 
 #define QT_IQ4_XS 5
 #define QT_IQ3_S  6
@@ -2019,6 +2021,174 @@ static __global__ void moe_m1_graph_splitk_reduce_kernel(
     moe_m1_splitk_reduce_body<Projections>(partial, out, row_scale, macro_g, macro_u, route_w, slots, out_f, limit, ex_off, n_active);
 }
 
+// Candidate 1: paired weight loads only; the slice/MMA/reduction program is unchanged.
+// Same ModelOpt E2M1/E4M3 windows as two kq_fetch calls. The admitted
+// row strides and 64-value K boundaries align codes to 16 B and scales to 2 B.
+// Explicit vector PTX keeps one code load rather than scalarized struct reads.
+static __device__ __forceinline__ void moe_m1_splitk_fast_fetch_pair(
+        const uint8_t* wrow, const uint8_t* scrow, int k0v, KqRaw& lo, KqRaw& hi){
+    const uint8_t* codes=wrow+(k0v>>1);
+    const uint8_t* scales=scrow+(k0v>>4);
+    uint16_t scale_pair;
+    asm volatile("ld.global.v4.u32 {%0,%1,%2,%3}, [%4];"
+        : "=r"(lo.q[0]),"=r"(lo.q[1]),"=r"(hi.q[0]),"=r"(hi.q[1]) : "l"(codes));
+    asm volatile("ld.global.u16 %0, [%1];" : "=h"(scale_pair) : "l"(scales));
+    lo.f1=g_e4m3fn_to_float(static_cast<uint8_t>(scale_pair));
+    hi.f1=g_e4m3fn_to_float(static_cast<uint8_t>(scale_pair>>8));
+    lo.f2=hi.f2=0.0f;
+    lo.sel=hi.sel=0;
+}
+
+template<int Projections>
+static __device__ __forceinline__ void
+moe_m1_splitk_fast_partial_body(
+        const unsigned long long* __restrict__ table, int proj, int n_expert,
+        const int* __restrict__ ex_ids, long row_bytes,
+        const __half* __restrict__ A,
+        float* __restrict__ partial,
+        const int* __restrict__ ex_off, int n_active,
+        int in_f, int out_f){
+    constexpr int QT = QT_NVFP4_MODELOPT;
+    constexpr bool M1 = true, PackedStore = true;
+    __shared__ __align__(16) __half As[SKT_STAGES][16][SKT_STRIDE];
+    // Only warps 0/2 consume A rows 0..15 in M1; rows 16..31 were unused.
+    // Removing those stages lowers static shared storage without changing MMA.
+    __shared__ __align__(16) __half Bs[SK_BN][SKT_STRIDE];   // single buffer
+    __shared__ uint32_t s_cb[KQ_CB_WORDS(QT)];
+    __shared__ uint32_t packed_h2[256];
+    const int ntx = (out_f + SK_BN - 1) / SK_BN;
+    kq_stage_codebook<QT>(s_cb);
+    kq_stage_half2_lut<PackedStore>(packed_h2);
+    __syncthreads();
+    const int live = ex_off[n_active];
+    const int slices = moe_m1_slices(live, out_f, Projections == 2);
+    const int split = blockIdx.x % slices;
+    const int tile = blockIdx.x / slices;
+    const int slot = tile / ntx;
+    if(slot >= live) return;
+
+    const int lane = threadIdx.x, warp = threadIdx.y;
+    const int tid  = warp * 32 + lane;                        // 0..127
+    const int total_kb = in_f / SKT_BK;
+    const int begin_kb = split * total_kb / slices;
+    const int end_kb = (split + 1) * total_kb / slices;
+    const int nkb = end_kb - begin_kb;
+    const int kbase = begin_kb * SKT_BK;
+    const int wm = (warp & 1) * 16, wn = (warp >> 1) * 32;
+    const int brow = tid >> 1, bc0 = (tid & 1) * 32;          // 2 threads/row, 32 values each
+
+    {
+        // M=1 makes the CSR row offsets the tile map. Seven binary-search
+        // reads replace rebuilding a 128-expert prefix in every slice CTA.
+        const int g = sk_tile_group(ex_off, n_active, slot);
+        const int lo = ex_off[g], m_e = ex_off[g+1] - lo;
+        const int m0 = 0;
+        const int n0 = (tile % ntx) * SK_BN;
+
+        const __half* Ag = A + (size_t)lo * in_f + kbase;
+        const int eid = ex_ids[g];
+        for(int p = 0; p < Projections; ++p){
+        const int qplane = Projections == 2 ? p * 4 : 2 * proj;
+        const uint8_t* Wq = (const uint8_t*)table[(size_t)qplane*n_expert + eid];
+        const uint8_t* Wsc = (QT == QT_NVFP4_MODELOPT)
+            ? (const uint8_t*)table[(size_t)(qplane + 1)*n_expert + eid] : nullptr;
+        const int bn = min(n0 + brow, out_f - 1);
+        const uint8_t* wrow = Wq + (size_t)bn * row_bytes + kbase / 2;
+        const uint8_t* scrow = Wsc ? Wsc + (size_t)bn * (in_f / 16) + kbase / 16 : nullptr;
+
+        const __half* agp[2]; int asr[2], asc[2];
+        #pragma unroll
+        for(int i = 0; i < 2; i++){
+            const int c = tid + i * 128;
+            asr[i] = c >> 3; asc[i] = (c & 7) * 8;
+            const int am = min(m0 + asr[i], m_e - 1);
+            agp[i] = Ag + (size_t)am * in_f + asc[i];
+        }
+        #define KQT_LOAD_A(st, k0) do { \
+            _Pragma("unroll") \
+            for(int i = 0; i < 2; i++) if(!M1 || i == 0) \
+                sk_cp16(&As[st][asr[i]][asc[i]], agp[i] + (k0)); \
+            asm volatile("cp.async.commit_group;"); \
+        } while(0)
+
+        KQT_LOAD_A(0, 0);
+        if(nkb > 1) KQT_LOAD_A(1, SKT_BK);
+        KqRaw braw0, braw1;
+        moe_m1_splitk_fast_fetch_pair(wrow,scrow,bc0,braw0,braw1);
+
+        float acc[4][4] = {};
+        for(int kb = 0; kb < nkb; kb++){
+            const int cur = kb % SKT_STAGES;
+            if(kb + 2 < nkb) KQT_LOAD_A((kb + 2) % SKT_STAGES, (kb + 2) * SKT_BK);
+            // B tile for THIS kb from the pre-fetched registers (previous kb's trailing
+            // __syncthreads fences the overwrite), then issue kb+1's raw fetches so those
+            // global reads fly behind this kb's mma.
+            kq_store_variant<QT, PackedStore>(braw0, &Bs[brow][bc0], s_cb, packed_h2);
+            kq_store_variant<QT, PackedStore>(braw1, &Bs[brow][bc0 + 16], s_cb, packed_h2);
+            if(kb + 1 < nkb){
+                moe_m1_splitk_fast_fetch_pair(wrow,scrow,(kb + 1) * SKT_BK + bc0,braw0,braw1);
+            }
+            if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
+            else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");
+            else                  asm volatile("cp.async.wait_group 0;");
+            __syncthreads();
+            if(!M1 || ((warp & 1) == 0)) {
+                #pragma unroll
+                for(int kk = 0; kk < 4; kk++){
+                    unsigned a[4], b0[4], b1[4];
+                    sk_ldm16x16(a,  &As[cur][wm][kk*16],  SKT_STRIDE);
+                    sk_ldm16x16(b0, &Bs[wn][kk*16],       SKT_STRIDE);
+                    sk_ldm16x16(b1, &Bs[wn + 16][kk*16],  SKT_STRIDE);
+                    sk_mma(acc[0], a, b0[0], b0[2]);
+                    sk_mma(acc[1], a, b0[1], b0[3]);
+                    sk_mma(acc[2], a, b1[0], b1[2]);
+                    sk_mma(acc[3], a, b1[1], b1[3]);
+                }
+            }
+            __syncthreads();
+        }
+        #undef KQT_LOAD_A
+
+        const int r0 = m0 + wm + lane / 4;
+        const int cb = n0 + wn + (lane % 4) * 2;
+        if(r0 == 0){
+            float* dst = partial + ((size_t(lo) * Projections + p) * 16 + split) * out_f;
+            #pragma unroll
+            for(int nb = 0; nb < 4; ++nb){
+                const int c = cb + nb * 8;
+                dst[c] = acc[nb][0];
+                dst[c + 1] = acc[nb][1];
+            }
+        }
+        __syncthreads();
+        } // projection
+
+    }
+}
+template<int Projections>
+static __global__ void __launch_bounds__(128)
+moe_m1_splitk_fast_partial_kernel(
+        const unsigned long long* __restrict__ table, int proj, int n_expert,
+        const int* __restrict__ ex_ids, long row_bytes,
+        const __half* __restrict__ A,
+        float* __restrict__ partial,
+        const int* __restrict__ ex_off, int n_active,
+        int in_f, int out_f){
+    // Uniform CTA exit before shared-memory staging or synchronization.
+    const int live = ex_off[n_active];
+    const int slices = moe_m1_slices(live, out_f, Projections == 2);
+    if(blockIdx.x >= live * ((out_f + SK_BN - 1) / SK_BN) * slices) return;
+    moe_m1_splitk_fast_partial_body<Projections>(table, proj, n_expert, ex_ids, row_bytes, A, partial, ex_off, n_active, in_f, out_f);
+}
+
+template<int Projections>
+static __global__ void moe_m1_splitk_fast_reduce_kernel(
+        const float* partial, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        int slots, int out_f, float limit, const int* ex_off, int n_active){
+    moe_m1_splitk_reduce_body<Projections>(partial, out, row_scale, macro_g, macro_u, route_w, slots, out_f, limit, ex_off, n_active);
+}
+
 // Per-QT direct-from-quant launch (lane/iq-direct-loaders: the Q4_K/Q6_K if/else ladder
 // became a template — each instantiation keeps its OWN occupancy/attribute statics, since
 // the bodies register-differ per quant class). Guards live in memra_moe_kq_gemm_sk.
@@ -2619,13 +2789,44 @@ int memra_moe_m1_splitk(
     return moe_m1_splitk_launch(table,n_expert,ex_ids,act_f16,out,row_scale,
         macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,slots,gu,partial,stream,nullptr);
 }
+// Gate override is changed only after both rank streams have drained.
+static std::atomic<int> g_splitk_fast_override{-1};
+static std::atomic<bool> g_splitk_fast_component_enabled{false};
+void memra_moe_m1_splitk_fast_set_for_gate(int enabled){ g_splitk_fast_override.store(enabled); }
+void memra_moe_m1_splitk_fast_component_set_for_gate(){ g_splitk_fast_component_enabled.store(true); }
+int memra_moe_m1_splitk_fast_on(){
+    const int override=g_splitk_fast_override.load();
+    if(override>=0) return override;
+    static const bool enabled=[](){
+        const char* raw=std::getenv("MEMRA_DSV4_SPLITK_FAST");
+        if(!raw || std::strcmp(raw,"0")==0) return false;
+        if(std::strcmp(raw,"1")==0) return true;
+        std::fprintf(stderr,"MEMRA_DSV4_SPLITK_FAST requires 0 or 1\n");
+        std::abort();
+    }();
+    return enabled;
+}
+// Harness-only failures retain the returned status before inspecting/clearing
+// CUDA's last-error slot. Normal production launches do not call this logger.
+static int splitk_fast_cuda_failure(cudaError_t error, const char* call,
+        const char* file, int line, const char* phase, int device, int gu, int live){
+    const cudaError_t peek=cudaPeekAtLastError();
+    const cudaError_t last=cudaGetLastError();
+    fflush(stdout);
+    fprintf(stderr,"SPLITK_FAST_CUDA_FAILURE phase=%s file=%s line=%d device=%d gu=%d live=%d call=%s returned=%d/%s/%s peek=%d/%s/%s last=%d/%s/%s\n",
+        phase,file,line,device,gu,live,call,int(error),cudaGetErrorName(error),cudaGetErrorString(error),
+        int(peek),cudaGetErrorName(peek),cudaGetErrorString(peek),
+        int(last),cudaGetErrorName(last),cudaGetErrorString(last));
+    fflush(stderr);
+    return 1000+int(error);
+}
 // Fixed graph geometry. Neither launch depends on host routing observations.
-int memra_moe_m1_graph_splitk(
+static int moe_m1_splitk_fast_launch(
         const unsigned long long* table, int n_expert, const int* ex_ids,
         const void* act_f16, float* out, const float* row_scale,
         const float* macro_g, const float* macro_u, const float* route_w,
         const int* ex_off, int n_active, int in_f, int out_f,
-        float limit, int slots, int gu, float* partial, void* stream){
+        float limit, int slots, int gu, float* partial, void* stream, bool fast){
     if(!table || !ex_ids || !act_f16 || !out || !row_scale || !ex_off || !partial
        || n_expert < 1 || n_active < 1 || n_active > SK_MAX_G
        || slots != 6 || slots > n_active || (gu != 0 && gu != 1)
@@ -2634,21 +2835,58 @@ int memra_moe_m1_graph_splitk(
         return 40004;
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
     const int grid = 6 * (out_f / SK_BN) * 16;
-    if(gu) moe_m1_graph_splitk_partial_kernel<2><<<grid, dim3(32,4), 0, st>>>(
+    if(gu) {
+        if(fast) moe_m1_splitk_fast_partial_kernel<2><<<grid, dim3(32,4), 0, st>>>(
         table,0,n_expert,ex_ids,in_f/2,(const __half*)act_f16,
         partial,ex_off,n_active,in_f,out_f);
-    else moe_m1_graph_splitk_partial_kernel<1><<<grid, dim3(32,4), 0, st>>>(
+        else moe_m1_graph_splitk_partial_kernel<2><<<grid, dim3(32,4), 0, st>>>(
+        table,0,n_expert,ex_ids,in_f/2,(const __half*)act_f16,
+        partial,ex_off,n_active,in_f,out_f);
+    }
+    else {
+        if(fast) moe_m1_splitk_fast_partial_kernel<1><<<grid, dim3(32,4), 0, st>>>(
         table,1,n_expert,ex_ids,in_f/2,(const __half*)act_f16,
         partial,ex_off,n_active,in_f,out_f);
+        else moe_m1_graph_splitk_partial_kernel<1><<<grid, dim3(32,4), 0, st>>>(
+        table,1,n_expert,ex_ids,in_f/2,(const __half*)act_f16,
+        partial,ex_off,n_active,in_f,out_f);
+    }
     cudaError_t e = cudaGetLastError();
-    if(e) return 1000 + int(e);
-    if(gu) moe_m1_graph_splitk_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
+    if(e) return 1000+int(e);
+    if(gu) {
+        if(fast) moe_m1_splitk_fast_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
         partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
-    else moe_m1_graph_splitk_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(
+        else moe_m1_graph_splitk_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
         partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+    }
+    else {
+        if(fast) moe_m1_splitk_fast_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(
+        partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+        else moe_m1_graph_splitk_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(
+        partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+    }
     e = cudaGetLastError();
     return e ? 1000 + int(e) : 0;
 }
+
+// Fixed graph geometry. Neither launch depends on host routing observations.
+int memra_moe_m1_graph_splitk(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off, int n_active, int in_f, int out_f,
+        float limit, int slots, int gu, float* partial, void* stream){
+    return moe_m1_splitk_fast_launch(table,n_expert,ex_ids,act_f16,out,row_scale,
+        macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,slots,gu,partial,stream,
+        memra_moe_m1_splitk_fast_on());
+}
+
+int memra_moe_m1_splitk_fast_component(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off, int n_active, int in_f, int out_f,
+        float limit, int slots, int gu, float* partial, void* stream);
 
 // Gate-only real-operand census: wait for a six-live route on each rank and
 // projection, then replay all prefixes 0..6 without recapturing either kernel.
@@ -2660,6 +2898,9 @@ int memra_moe_m1_graph_splitk_component(
         const float* macro_g, const float* macro_u, const float* route_w,
         const int* ex_off, int n_active, int in_f, int out_f,
         float limit, int slots, int gu, float* partial, void* stream){
+    if(g_splitk_fast_component_enabled.load()) return memra_moe_m1_splitk_fast_component(
+        table,n_expert,ex_ids,act_f16,out,row_scale,macro_g,macro_u,route_w,
+        ex_off,n_active,in_f,out_f,limit,slots,gu,partial,stream);
     int device=0, observed=0;
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
     #define GS_CHECK(call) do { cudaError_t e=(call); if(e) return 1000+int(e); } while(0)
@@ -2794,6 +3035,404 @@ int memra_moe_m1_graph_splitk_component(
     }
     fflush(stdout); // Keep complete C++ receipt rows ahead of Rust coverage logs.
     g_graph_splitk_component_mask.fetch_or(bit);
+    #undef GS_CHECK
+    return 0;
+}
+
+// Instrument plus default-OFF door scaffold: one observed six-live CSR per
+// rank/projection supplies derived prefixes 0..6. Also retain the first actual
+// low-live (1..5) CSR per rank/projection, without modifying that route.
+// Verbatim merged wrapper body from 182819614, renamed only for this harness.
+static int splitk_fast_merged_wrapper_control(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off, int n_active, int in_f, int out_f,
+        float limit, int slots, int gu, float* partial, void* stream){
+    if(!table || !ex_ids || !act_f16 || !out || !row_scale || !ex_off || !partial
+       || n_expert < 1 || n_active < 1 || n_active > SK_MAX_G
+       || slots != 6 || slots > n_active || (gu != 0 && gu != 1)
+       || (gu && (!macro_g || !macro_u || !route_w))
+       || (in_f != 4096 && in_f != 2048) || (out_f != 4096 && out_f != 2048))
+        return 40004;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    const int grid = 6 * (out_f / SK_BN) * 16;
+    if(gu) moe_m1_graph_splitk_partial_kernel<2><<<grid, dim3(32,4), 0, st>>>(
+        table,0,n_expert,ex_ids,in_f/2,(const __half*)act_f16,
+        partial,ex_off,n_active,in_f,out_f);
+    else moe_m1_graph_splitk_partial_kernel<1><<<grid, dim3(32,4), 0, st>>>(
+        table,1,n_expert,ex_ids,in_f/2,(const __half*)act_f16,
+        partial,ex_off,n_active,in_f,out_f);
+    cudaError_t e = cudaGetLastError();
+    if(e) return 1000 + int(e);
+    if(gu) moe_m1_graph_splitk_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
+        partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+    else moe_m1_graph_splitk_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(
+        partial,out,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+    e = cudaGetLastError();
+    return e ? 1000 + int(e) : 0;
+}
+
+static std::atomic<int> g_splitk_fast_diagnostic_token{-1};
+static std::atomic<bool> g_splitk_fast_diagnostic_done{false};
+static std::string g_splitk_fast_diagnostic_dir;
+void memra_moe_m1_splitk_fast_diagnose_for_gate(int token, const char* dir){
+    g_splitk_fast_diagnostic_dir=dir;
+    g_splitk_fast_diagnostic_token.store(token);
+}
+int memra_moe_m1_splitk_fast_diagnostic_done(){ return g_splitk_fast_diagnostic_done.load(); }
+static std::atomic<unsigned> g_splitk_fast_component_mask{0};
+unsigned memra_moe_m1_splitk_fast_component_mask(){ return g_splitk_fast_component_mask.load(); }
+int memra_moe_m1_splitk_fast_component(
+        const unsigned long long* table, int n_expert, const int* ex_ids,
+        const void* act_f16, float* out, const float* row_scale,
+        const float* macro_g, const float* macro_u, const float* route_w,
+        const int* ex_off, int n_active, int in_f, int out_f,
+        float limit, int slots, int gu, float* partial, void* stream){
+    int device=-1, observed=-1;
+    cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
+    const bool diagnostic=g_splitk_fast_diagnostic_token.load()>=0;
+    const char* phase="entry";
+    #define GS_CHECK(call) do { cudaError_t e=(call); if(e) return splitk_fast_cuda_failure(e,#call,__FILE__,__LINE__,phase,device,gu,observed); } while(0)
+    GS_CHECK(cudaPeekAtLastError());
+    GS_CHECK(cudaStreamGetDevice(st,&device));
+    int ambient=-1; GS_CHECK(cudaGetDevice(&ambient));
+    if(ambient!=device) return 40012;
+    for(const void* ptr : {(const void*)table,(const void*)ex_ids,act_f16,(const void*)ex_off}){
+        cudaPointerAttributes attr{}; GS_CHECK(cudaPointerGetAttributes(&attr,ptr));
+        if(attr.device!=device || attr.type!=cudaMemoryTypeDevice) return 40012;
+    }
+    if(diagnostic && (device!=0 || !gu || g_splitk_fast_diagnostic_done.load())) return 0;
+    const unsigned key = 1u << (device*2+gu);
+    const unsigned mask = g_splitk_fast_component_mask.load();
+    if((mask & (key | (key<<4))) == (key | (key<<4))) return 0;
+    GS_CHECK(cudaMemcpyAsync(&observed,ex_off+n_active,4,cudaMemcpyDeviceToHost,st));
+    GS_CHECK(cudaStreamSynchronize(st));
+    if(observed<0 || observed>6) return 40005;
+    if(observed==0 && !diagnostic) return 0;
+    const bool derived = observed==6;
+    const unsigned bit = derived ? key : key<<4;
+    if(mask & bit) return 0;
+    const char* origin = derived ? "derived_prefix" : "observed_low";
+    printf("SPLITK_FAST_BANDWIDTH_MODEL modeled effective weight GB/s (unique codes + scales / partial time); 1792 GB/s is a nominal peak, not achieved DRAM bandwidth\n");
+    printf("SPLITK_FAST_COMPONENT_ROUTE device=%d gu=%d route_origin=%s source_live=%d independent_route=1\n",device,gu,origin,observed);
+    phase="resource_query";
+    for(int arm=0;arm<2;++arm){
+        const void* kernel=gu
+            ? (arm ? (const void*)moe_m1_splitk_fast_partial_kernel<2> : (const void*)moe_m1_graph_splitk_partial_kernel<2>)
+            : (arm ? (const void*)moe_m1_splitk_fast_partial_kernel<1> : (const void*)moe_m1_graph_splitk_partial_kernel<1>);
+        cudaFuncAttributes attr{}; int blocks=0;
+        GS_CHECK(cudaFuncGetAttributes(&attr,kernel));
+        GS_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blocks,kernel,128,0));
+        printf("SPLITK_FAST_RESOURCE device=%d gu=%d route_origin=%s source_live=%d arm=%s threads=128 registers=%d shared_bytes=%zu local_bytes=%zu blocks_per_sm=%d\n",device,gu,origin,observed,arm?"on":"off",attr.numRegs,attr.sharedSizeBytes,attr.localSizeBytes,blocks);
+    }
+    struct Buffers {
+        float *a=nullptr,*b=nullptr,*p=nullptr;
+        __half* activation=nullptr;
+        int* offsets=nullptr;
+        void* flush=nullptr;
+        cudaEvent_t begin=nullptr,middle=nullptr,end=nullptr;
+        cudaGraph_t graphs[3][2]={};
+        cudaGraphExec_t execs[3][2]={};
+        ~Buffers(){ for(int arm=1;arm<=2;++arm) for(int part=0;part<2;++part){
+                if(execs[arm][part]) cudaGraphExecDestroy(execs[arm][part]);
+                if(graphs[arm][part]) cudaGraphDestroy(graphs[arm][part]); }
+            if(begin) cudaEventDestroy(begin); if(middle) cudaEventDestroy(middle); if(end) cudaEventDestroy(end);
+            if(a) cudaFree(a); if(b) cudaFree(b); if(p) cudaFree(p);
+            if(activation) cudaFree(activation);
+            if(offsets) cudaFree(offsets); if(flush) cudaFree(flush); }
+    } b;
+    phase="allocation_and_operand_copy";
+    const size_t n=size_t(6)*out_f, pn=n*16*(gu?2:1), flush_bytes=256ull<<20;
+    GS_CHECK(cudaMalloc(&b.a,(n+128)*4)); GS_CHECK(cudaMalloc(&b.b,(n+128)*4));
+    GS_CHECK(cudaMalloc(&b.p,(pn+128)*4)); GS_CHECK(cudaMalloc(&b.offsets,(n_active+1)*4));
+    GS_CHECK(cudaMalloc(&b.flush,flush_bytes));
+    GS_CHECK(cudaMalloc(&b.activation,6ull*in_f*sizeof(__half)));
+    GS_CHECK(cudaMemcpyAsync(b.activation,act_f16,6ull*in_f*sizeof(__half),cudaMemcpyDeviceToDevice,st));
+    GS_CHECK(cudaEventCreate(&b.begin)); GS_CHECK(cudaEventCreate(&b.middle)); GS_CHECK(cudaEventCreate(&b.end));
+    std::vector<int> offsets(n_active+1), ids(n_active);
+    GS_CHECK(cudaMemcpyAsync(offsets.data(),ex_off,(n_active+1)*4,cudaMemcpyDeviceToHost,st));
+    GS_CHECK(cudaMemcpyAsync(ids.data(),ex_ids,n_active*4,cudaMemcpyDeviceToHost,st));
+    GS_CHECK(cudaStreamSynchronize(st));
+    if(offsets[0]!=0) return 40005;
+    for(int g=0;g<n_active;++g){
+        if(offsets[g+1]-offsets[g]<0 || offsets[g+1]-offsets[g]>1) return 40005;
+        if(offsets[g+1]!=offsets[g]) printf("SPLITK_FAST_COMPONENT_OPERAND device=%d gu=%d route_origin=%s source_live=%d row=%d expert=%d\n",device,gu,origin,observed,offsets[g],ids[g]);
+    }
+    std::vector<float> diagnostic_reference(n);
+    std::vector<unsigned> diagnostic_partial(pn);
+    if(diagnostic){
+        phase="route_dump";
+        std::vector<int> live_ids;
+        for(int g=0;g<n_active;++g) if(offsets[g+1]!=offsets[g]) live_ids.push_back(ids[g]);
+        FILE* route=fopen((g_splitk_fast_diagnostic_dir+"/route.txt").c_str(),"wb");
+        if(!route){ perror("splitk route dump"); return 40014; }
+        fprintf(route,"device=%d gu=%d token=%d observed=%d caller_component_slots=%d launch_slots=6 n_expert=%d n_active=%d in_f=%d out_f=%d limit=%.9g partial_grid=%d partial_block=32x4 reduce_grid=%zu reduce_block=256 output_allocation_bytes=%zu scratch_allocation_bytes=%zu\n",
+            device,gu,g_splitk_fast_diagnostic_token.load(),observed,slots,n_expert,n_active,in_f,out_f,limit,
+            6*(out_f/SK_BN)*16,(n+255)/256,(n+128)*4,(pn+128)*4);
+        fprintf(route,"offsets="); for(int v:offsets) fprintf(route,"%d,",v);
+        fprintf(route,"\nids="); for(int v:ids) fprintf(route,"%d,",v);
+        fprintf(route,"\nselected="); for(int v:live_ids) fprintf(route,"%d,",v);
+        fprintf(route,"\n"); fclose(route);
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_ROUTE device=%d gu=%d token=%d observed=%d selected=",device,gu,g_splitk_fast_diagnostic_token.load(),observed);
+        for(int v:live_ids) fprintf(stderr,"%d,",v);
+        fprintf(stderr," dump=%s/route.txt\n",g_splitk_fast_diagnostic_dir.c_str());
+        if(g_splitk_fast_diagnostic_token.load()!=0 || observed!=4 || live_ids!=std::vector<int>({90,93,95,104})
+           || in_f!=4096 || out_f!=2048 || memra_moe_m1_splitk_fast_on()){
+            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_ROUTE_MISMATCH no_forced_route no_kernel_controls\n");
+            return 40013;
+        }
+        auto dump = [&](const char* name,const void* ptr,size_t bytes){
+            std::vector<unsigned char> data(bytes);
+            GS_CHECK(cudaMemcpyAsync(data.data(),ptr,bytes,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaStreamSynchronize(st));
+            FILE* f=fopen((g_splitk_fast_diagnostic_dir+"/"+name).c_str(),"wb");
+            if(!f){ perror("splitk operand dump"); return 40014; }
+            const bool ok=fwrite(data.data(),1,bytes,f)==bytes;
+            const int closed=fclose(f);
+            return ok && closed==0 ? 0 : 40014;
+        };
+        for(auto entry : {std::pair<const char*,const void*>{"activation.f16",act_f16},
+                          {"row_scale.f32",row_scale},{"macro_g.f32",macro_g},
+                          {"macro_u.f32",macro_u},{"route_weight.f32",route_w}}){
+            int rc=dump(entry.first,entry.second,entry.second==act_f16 ? 6ull*in_f*2 : 6ull*4);
+            if(rc) return rc;
+        }
+        auto reset = [&](){
+            GS_CHECK(cudaMemsetAsync(b.a,0xff,(n+128)*4,st));
+            GS_CHECK(cudaMemsetAsync(b.p,0xff,(pn+128)*4,st));
+            return 0;
+        };
+        auto read_and_guard = [&](bool reference){
+            std::vector<float> values(n); std::vector<unsigned> partials(pn);
+            GS_CHECK(cudaMemcpyAsync(values.data(),b.a+64,n*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaMemcpyAsync(partials.data(),b.p+64,pn*4,cudaMemcpyDeviceToHost,st));
+            unsigned guards[256];
+            GS_CHECK(cudaMemcpyAsync(guards,b.a,64*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaMemcpyAsync(guards+64,b.a+64+n,64*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaMemcpyAsync(guards+128,b.p,64*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaMemcpyAsync(guards+192,b.p+64+pn,64*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaStreamSynchronize(st));
+            for(unsigned v:guards) if(v!=0xffffffffu){ fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_CANARY_FAILURE phase=%s\n",phase); return 40009; }
+            for(float v:values) if(!std::isfinite(v)) return 40006;
+            for(size_t i=size_t(observed)*out_f;i<n;++i) if(values[i]!=0.0f) return 40007;
+            if(reference){ diagnostic_reference=values; diagnostic_partial=partials; }
+            else if(std::memcmp(values.data(),diagnostic_reference.data(),n*4) || partials!=diagnostic_partial){
+                fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BIT_MISMATCH phase=%s\n",phase); return 40008;
+            }
+            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_CONTROL_PASS phase=%s guarded=1 comparison=%s timing_events=0\n",phase,reference?"reference_saved":"bit_equal");
+            return 0;
+        };
+        // Use the actual production output/scratch first, so a private
+        // allocation error cannot be mislabeled as a merged-default defect.
+        phase="before_caller_workspace_control";
+        GS_CHECK(cudaPeekAtLastError());
+        phase="merged_wrapper_caller_workspace_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        int caller_rc=splitk_fast_merged_wrapper_control(table,n_expert,ex_ids,act_f16,out,row_scale,
+            macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,6,gu,partial,stream);
+        if(caller_rc){
+            fprintf(stderr,"SPLITK_FAST_MERGED_DEFAULT_FAILURE_P1 rc=%d original_output=1 original_scratch=1\n",caller_rc);
+            if(caller_rc>=1000 && caller_rc<2000) splitk_fast_cuda_failure(cudaError_t(caller_rc-1000),"splitk_fast_merged_wrapper_control(original workspace)",__FILE__,__LINE__,phase,device,gu,observed);
+            return caller_rc;
+        }
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        std::vector<float> caller_reference(n);
+        GS_CHECK(cudaMemcpyAsync(caller_reference.data(),out,n*4,cudaMemcpyDeviceToHost,st));
+        GS_CHECK(cudaStreamSynchronize(st));
+        for(float v:caller_reference) if(!std::isfinite(v)) return 40006;
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_CONTROL_PASS phase=%s original_output=1 original_scratch=1 timing_events=0\n",phase);
+        phase="merged_wrapper_guarded_workspace_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        int rc=reset(); if(rc) return rc;
+        rc=splitk_fast_merged_wrapper_control(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+            macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
+        if(rc){
+            fprintf(stderr,"SPLITK_FAST_GUARDED_WORKSPACE_FAILURE rc=%d call=splitk_fast_merged_wrapper_control file=%s line=%d\n",rc,__FILE__,__LINE__);
+            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"splitk_fast_merged_wrapper_control",__FILE__,__LINE__,phase,device,gu,observed);
+            return rc;
+        }
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        rc=read_and_guard(true); if(rc) return rc;
+        if(std::memcmp(diagnostic_reference.data(),caller_reference.data(),n*4)){
+            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BIT_MISMATCH phase=caller_vs_guarded_workspace\n"); return 40008;
+        }
+        rc=reset(); if(rc) return rc;
+        phase="scaffold_wrapper_original_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        rc=reset(); if(rc) return rc;
+        rc=memra_moe_m1_graph_splitk(table,n_expert,ex_ids,act_f16,b.a+64,row_scale,
+            macro_g,macro_u,route_w,ex_off,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
+        if(rc){
+            fprintf(stderr,"SPLITK_FAST_SCAFFOLD_WRAPPER_FAILURE rc=%d call=memra_moe_m1_graph_splitk file=%s line=%d\n",rc,__FILE__,__LINE__);
+            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"memra_moe_m1_graph_splitk",__FILE__,__LINE__,phase,device,gu,observed);
+            return rc;
+        }
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        rc=read_and_guard(false); if(rc) return rc;
+        rc=reset(); if(rc) return rc;
+        phase="production_partial_original_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        moe_m1_graph_splitk_partial_kernel<2><<<6*(out_f/SK_BN)*16,dim3(32,4),0,st>>>(
+            table,0,n_expert,ex_ids,in_f/2,(const __half*)act_f16,b.p+64,ex_off,n_active,in_f,out_f);
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_KERNEL_PASS phase=%s\n",phase);
+        phase="production_reducer_original_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        moe_m1_graph_splitk_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(
+            b.p+64,b.a+64,row_scale,macro_g,macro_u,route_w,6,out_f,limit,ex_off,n_active);
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        rc=read_and_guard(false); if(rc) return rc;
+        phase="production_wrapper_copied_operands_no_events";
+        fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BEGIN phase=%s\n",phase);
+        GS_CHECK(cudaMemcpyAsync(b.offsets,offsets.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
+        rc=reset(); if(rc) return rc;
+        rc=memra_moe_m1_graph_splitk(table,n_expert,ex_ids,b.activation,b.a+64,row_scale,
+            macro_g,macro_u,route_w,b.offsets,n_active,in_f,out_f,limit,6,gu,b.p+64,stream);
+        if(rc){
+            if(rc>=1000 && rc<2000) splitk_fast_cuda_failure(cudaError_t(rc-1000),"memra_moe_m1_graph_splitk(copied operands)",__FILE__,__LINE__,phase,device,gu,observed);
+            return rc;
+        }
+        GS_CHECK(cudaPeekAtLastError()); GS_CHECK(cudaStreamSynchronize(st));
+        rc=read_and_guard(false); if(rc) return rc;
+        fflush(stdout); fflush(stderr);
+    }
+    // Kernel-only graphs: timing events are recorded on the replay stream,
+    // never captured. Separate retained graphs keep the two intervals distinct.
+    auto launch_kernel = [&](int arm,int part){
+        const int grid=6*(out_f/SK_BN)*16;
+        if(part==0){
+            if(gu){
+                if(arm==2) moe_m1_splitk_fast_partial_kernel<2><<<grid,dim3(32,4),0,st>>>(table,0,n_expert,ex_ids,in_f/2,b.activation,b.p+64,b.offsets,n_active,in_f,out_f);
+                else moe_m1_graph_splitk_partial_kernel<2><<<grid,dim3(32,4),0,st>>>(table,0,n_expert,ex_ids,in_f/2,b.activation,b.p+64,b.offsets,n_active,in_f,out_f);
+            } else {
+                if(arm==2) moe_m1_splitk_fast_partial_kernel<1><<<grid,dim3(32,4),0,st>>>(table,1,n_expert,ex_ids,in_f/2,b.activation,b.p+64,b.offsets,n_active,in_f,out_f);
+                else moe_m1_graph_splitk_partial_kernel<1><<<grid,dim3(32,4),0,st>>>(table,1,n_expert,ex_ids,in_f/2,b.activation,b.p+64,b.offsets,n_active,in_f,out_f);
+            }
+        } else {
+            float* target=(arm==2?b.b:b.a)+64;
+            if(gu){
+                if(arm==2) moe_m1_splitk_fast_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(b.p+64,target,row_scale,macro_g,macro_u,route_w,6,out_f,limit,b.offsets,n_active);
+                else moe_m1_graph_splitk_reduce_kernel<2><<<(6*out_f+255)/256,256,0,st>>>(b.p+64,target,row_scale,macro_g,macro_u,route_w,6,out_f,limit,b.offsets,n_active);
+            } else {
+                if(arm==2) moe_m1_splitk_fast_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(b.p+64,target,row_scale,macro_g,macro_u,route_w,6,out_f,limit,b.offsets,n_active);
+                else moe_m1_graph_splitk_reduce_kernel<1><<<(6*out_f+255)/256,256,0,st>>>(b.p+64,target,row_scale,macro_g,macro_u,route_w,6,out_f,limit,b.offsets,n_active);
+            }
+        }
+        GS_CHECK(cudaPeekAtLastError());
+        return 0;
+    };
+    GS_CHECK(cudaMemcpyAsync(b.offsets,offsets.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
+    GS_CHECK(cudaStreamSynchronize(st));
+    for(int arm=1;arm<=2;++arm) for(int part=0;part<2;++part){
+        phase=part==0?"instrument_capture_partial":"instrument_capture_reduce";
+        GS_CHECK(cudaStreamBeginCapture(st,cudaStreamCaptureModeThreadLocal));
+        int rc=launch_kernel(arm,part);
+        cudaError_t ended=cudaStreamEndCapture(st,&b.graphs[arm][part]);
+        if(rc) return rc;
+        GS_CHECK(ended);
+        size_t count=0; GS_CHECK(cudaGraphGetNodes(b.graphs[arm][part],nullptr,&count));
+        if(count!=1){ fprintf(stderr,"SPLITK_FAST_CAPTURE_FAILURE phase=%s nodes=%zu expected=1\n",phase,count); return 40016; }
+        cudaGraphNode_t node; GS_CHECK(cudaGraphGetNodes(b.graphs[arm][part],&node,&count));
+        cudaGraphNodeType type; GS_CHECK(cudaGraphNodeGetType(node,&type));
+        if(type!=cudaGraphNodeTypeKernel) return 40016;
+        GS_CHECK(cudaGraphInstantiate(&b.execs[arm][part],b.graphs[arm][part],nullptr,nullptr,0));
+        fprintf(stderr,"SPLITK_FAST_CAPTURE_PASS arm=%d part=%d kernel_nodes=1 event_nodes=0\n",arm,part);
+    }
+    for(int live=derived?0:observed;live<=observed;++live){
+        std::vector<int> prefix=offsets;
+        if(derived) for(auto& v:prefix) v=std::min(v,live);
+        GS_CHECK(cudaMemcpyAsync(b.offsets,prefix.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
+        std::vector<float> reference(n), candidate(n), first(n);
+        std::vector<unsigned> first_partial(pn), current_partial(pn);
+        bool have_first=false;
+        for(int cold=0;cold<2;++cold){
+            double totals[3]={}, partial_us[3]={}, reduce_us[3]={};
+            for(int repeat=-2;repeat<10;++repeat){
+                for(int arm : {2,1,1,2}){
+                    GS_CHECK(cudaMemsetAsync(b.a,0xff,(n+128)*4,st));
+                    GS_CHECK(cudaMemsetAsync(b.b,0xff,(n+128)*4,st));
+                    GS_CHECK(cudaMemsetAsync(b.p,0xff,(pn+128)*4,st));
+                    if(cold) GS_CHECK(cudaMemsetAsync(b.flush,repeat+3,flush_bytes,st));
+                    phase=arm==2?"instrument_replay_on":"instrument_replay_off";
+                    GS_CHECK(cudaEventRecord(b.begin,st));
+                    GS_CHECK(cudaGraphLaunch(b.execs[arm][0],st));
+                    GS_CHECK(cudaEventRecord(b.middle,st));
+                    GS_CHECK(cudaGraphLaunch(b.execs[arm][1],st));
+                    GS_CHECK(cudaEventRecord(b.end,st));
+                    GS_CHECK(cudaEventSynchronize(b.end));
+                    phase="instrument_elapsed_total";
+                    float ms=0; GS_CHECK(cudaEventElapsedTime(&ms,b.begin,b.end));
+                    if(diagnostic || repeat>=0){
+                        totals[arm]+=ms*1000;
+                        phase="instrument_elapsed_partial";
+                        GS_CHECK(cudaEventElapsedTime(&ms,b.begin,b.middle)); partial_us[arm]+=ms*1000;
+                        phase="instrument_elapsed_reduce";
+                        GS_CHECK(cudaEventElapsedTime(&ms,b.middle,b.end)); reduce_us[arm]+=ms*1000;
+                    }
+                    auto& host=arm==2?candidate:reference;
+                    GS_CHECK(cudaMemcpyAsync(host.data(),(arm==2?b.b:b.a)+64,n*4,cudaMemcpyDeviceToHost,st));
+                    GS_CHECK(cudaStreamSynchronize(st));
+                    GS_CHECK(cudaMemcpyAsync(current_partial.data(),b.p+64,pn*4,cudaMemcpyDeviceToHost,st));
+                    GS_CHECK(cudaStreamSynchronize(st));
+                    if(arm==2) first_partial=current_partial;
+                    else if(current_partial!=first_partial) return 40011;
+                    if(arm==2){
+                        for(float v:host) if(!std::isfinite(v)) return 40006;
+                        for(size_t i=size_t(live)*out_f;i<n;++i) if(host[i]!=0.0f) return 40007;
+                        if(have_first && std::memcmp(first.data(),host.data(),n*4)) return 40007;
+                        first=host; have_first=true;
+                    } else if(arm==1 && std::memcmp(first.data(),host.data(),n*4)) return 40008;
+                    for(int which=0;which<3;++which){
+                        float* base=which==0?b.a:which==1?b.b:b.p;
+                        size_t len=which==2?pn:n;
+                        unsigned guard[128];
+                        GS_CHECK(cudaMemcpyAsync(guard,base,64*4,cudaMemcpyDeviceToHost,st));
+                        GS_CHECK(cudaMemcpyAsync(guard+64,base+64+len,64*4,cudaMemcpyDeviceToHost,st));
+                        GS_CHECK(cudaStreamSynchronize(st));
+                        for(unsigned v:guard) if(v!=0xffffffffu) return 40009;
+                    }
+                    if(diagnostic){
+                        if(std::memcmp(host.data(),diagnostic_reference.data(),n*4) || current_partial!=diagnostic_partial){
+                            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_BIT_MISMATCH phase=instrument_replay\n"); return 40008;
+                        }
+                        if(arm==1){
+                            g_splitk_fast_diagnostic_done.store(true);
+                            fprintf(stderr,"SPLITK_FAST_DIAGNOSTIC_COMPLETE merged_wrapper=pass scaffold_wrapper=pass separate_kernels=pass copied_operands=pass event_path=pass timing_rows=0\n");
+                            return 0;
+                        }
+                    }
+                }
+            }
+            const int slices=moe_m1_slices(live,out_f,gu);
+            const size_t codes=size_t(live)*out_f*in_f*(gu?2:1)/2;
+            const size_t scales=codes/8;
+            const size_t scratch=size_t(live)*out_f*slices*(gu?2:1)*4;
+            // Requested weight bandwidth uses unique code+scale bytes. The
+            // activation count is issued cp.async bytes including M1 row replication.
+            const size_t activation=size_t(live)*(out_f/SK_BN)*in_f*16*2*(gu?2:1);
+            for(int arm : {1,2}){
+                const double pus=partial_us[arm]/20, rus=reduce_us[arm]/20;
+                printf("SPLITK_FAST_COMPONENT device=%d gu=%d route_origin=%s source_live=%d live=%d slices=%d cold=%d arm=%s flush_bytes=%zu codes_bytes=%zu scales_bytes=%zu weight_bytes=%zu activation_issued_bytes=%zu scratch_write_bytes=%zu partial_us=%.6f reduce_us=%.6f total_us=%.6f modeled_effective_weight_GBs=%.6f pct_nominal_peak_1792=%.6f measurements=20 bit_equal=1 deterministic=1 canaries=1 candidate_capture_count=1 graphs_per_arm=2 events_outside_capture=1 all_timed_arms=replay\n",device,gu,origin,observed,live,slices,cold,arm==2?"on":"off",cold?flush_bytes:0,codes,scales,codes+scales,activation,scratch,pus,rus,totals[arm]/20,(codes+scales)/pus/1000,(codes+scales)/pus/1000/1792*100);
+            }
+        }
+        // The down projection is the consumer of rowwise-packed GU output.
+        // Poison only inactive activation rows in a private real-operand copy:
+        // the actual captured projection must ignore them through the CSR.
+        if(live < 6){
+            GS_CHECK(cudaMemsetAsync(b.activation+size_t(live)*in_f,0x7b,size_t(6-live)*in_f*sizeof(__half),st));
+            GS_CHECK(cudaGraphLaunch(b.execs[2][0],st));
+            GS_CHECK(cudaGraphLaunch(b.execs[2][1],st));
+            std::vector<float> poisoned(n);
+            GS_CHECK(cudaMemcpyAsync(poisoned.data(),b.b+64,n*4,cudaMemcpyDeviceToHost,st));
+            GS_CHECK(cudaStreamSynchronize(st));
+            if(std::memcmp(first.data(),poisoned.data(),n*4)) return 40010;
+            GS_CHECK(cudaMemcpyAsync(b.activation,act_f16,6ull*in_f*sizeof(__half),cudaMemcpyDeviceToDevice,st));
+        }
+        printf("SPLITK_FAST_COMPONENT_TAIL device=%d gu=%d route_origin=%s source_live=%d live=%d zero_output_rows=%d inactive_activation_poison_ignored=1\n",device,gu,origin,observed,live,6-live);
+    }
+    fflush(stdout); // Keep complete C++ receipt rows ahead of Rust coverage logs.
+    g_splitk_fast_component_mask.fetch_or(bit);
     #undef GS_CHECK
     return 0;
 }
