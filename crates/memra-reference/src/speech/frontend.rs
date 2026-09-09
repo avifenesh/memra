@@ -20,7 +20,7 @@ impl WhisperFrontend {
             || ![80, 128].contains(&plan.mel_bins)
             || plan.max_samples == 0
             || plan.max_samples > 480000
-            || plan.max_samples % plan.hop_length != 0
+            || !plan.max_samples.is_multiple_of(plan.hop_length)
             || plan.max_frames != plan.max_samples / plan.hop_length
             || !plan.periodic_hann
             || !plan.centered_reflect_padding

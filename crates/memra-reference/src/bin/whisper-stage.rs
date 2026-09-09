@@ -5,7 +5,7 @@ use std::path::Path;
 
 fn read_f32(path: &Path) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     let bytes = std::fs::read(path)?;
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err("f32 input byte length is not divisible by four".into());
     }
     Ok(bytes
