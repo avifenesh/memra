@@ -36,7 +36,7 @@ without changing serving defaults or claiming an ON-arm model qualification.
   `instrumentation.patch`; binary SHA256
   `18e42b7e083456a7cfe790b1dda27a0f4ac7ab3898377bc7bdf72587ed35d59e`.
   The PMIN correction was added to the source after this executable was built;
-  it is absent from the scored executable, and remains default OFF in the PR.
+  it is absent from the scored executable. The archived correction was later removed.
 - One B200, sm_100a, CUDA 13.1.115, one successful `memra-server` boot. All GPU
   phases held the shared lock. Build used an isolated target, nice 19, -j16.
   No cargo, GPU gate, benchmark or server ran on the local rig; the authorized
