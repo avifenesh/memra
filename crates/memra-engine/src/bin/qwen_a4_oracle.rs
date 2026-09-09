@@ -205,6 +205,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cap.m.min(64)
         );
 
+        // ---------- CALIBRATION POINT: is the fitted scale for THIS tensor? ----------
+        // input_scale = amax_fit / (6*448), so the fit's amax is recoverable. If the activations
+        // the engine actually feeds this projection have a systematically different amax, the
+        // global scale was fitted at a different point in the graph than it is applied at -- the
+        // one failure the GEMM oracle cannot see, because the GEMM is self-consistent either way.
+        let fitted_amax = cap.input_scale * 6.0 * 448.0;
+        let measured_amax = cap.x.iter().fold(0f32, |m, v| m.max(v.abs()));
+        let mut sorted: Vec<f32> = cap.x.iter().map(|v| v.abs()).collect();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p999 = sorted[(sorted.len() as f64 * 0.999) as usize];
+        println!(
+            "CALIB {name}: fitted amax {fitted_amax:.4}  measured amax {measured_amax:.4}  \
+             ratio {:.4}  |  measured p99.9 {p999:.4} (ratio {:.4})",
+            measured_amax / fitted_amax,
+            p999 / fitted_amax
+        );
+
         // ---------- ORACLE 2: the GEMM ----------
         let v = g.find(name).expect("the weight");
         let w =
