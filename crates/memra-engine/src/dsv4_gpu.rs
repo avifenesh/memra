@@ -43,6 +43,27 @@ use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
 use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
+/// Read-only operand observer used by the standalone sink gate, outside capture.
+pub type Dsv4SinkObserver = unsafe fn(
+    usize,
+    usize,
+    usize,
+    usize,
+    *const f32,
+    *const f32,
+    *const i32,
+    *const f32,
+    usize,
+    f32,
+    *mut c_void,
+) -> Result<(), String>;
+static SINK_OBSERVER_ON: AtomicBool = AtomicBool::new(false);
+static SINK_OBSERVER: std::sync::Mutex<Option<Dsv4SinkObserver>> = std::sync::Mutex::new(None);
+pub fn set_sink_observer_for_gate(observer: Option<Dsv4SinkObserver>) {
+    *SINK_OBSERVER.lock().unwrap() = observer;
+    SINK_OBSERVER_ON.store(observer.is_some(), Ordering::Release);
+}
+
 type Res<T> = Result<T, String>;
 
 /// Cadence selection for the already-admitted full-token replay path. Set before
@@ -615,6 +636,7 @@ pub enum Dsv4SinkScore {
     #[default]
     Scalar,
     Tiled,
+    Tiled32,
 }
 
 impl Dsv4SinkScore {
@@ -622,8 +644,9 @@ impl Dsv4SinkScore {
         match value {
             None | Some("") | Some("scalar") => Ok(Self::Scalar),
             Some("tiled") => Ok(Self::Tiled),
+            Some("tiled32") => Ok(Self::Tiled32),
             Some(other) => Err(format!(
-                "MEMRA_DSV4_SINK_SCORE '{other}' unknown (scalar | tiled)"
+                "MEMRA_DSV4_SINK_SCORE '{other}' unknown (scalar | tiled | tiled32)"
             )),
         }
     }
@@ -641,7 +664,11 @@ mod sink_score_tests {
             Dsv4SinkScore::resolve(Some("tiled")),
             Ok(Dsv4SinkScore::Tiled)
         );
-        for raw in ["TILED", "1", "auto", "tiled "] {
+        assert_eq!(
+            Dsv4SinkScore::resolve(Some("tiled32")),
+            Ok(Dsv4SinkScore::Tiled32)
+        );
+        for raw in ["tiled32 ", "TILED32", "TILED", "1", "auto", "tiled "] {
             assert!(Dsv4SinkScore::resolve(Some(raw)).is_err());
         }
     }
@@ -844,6 +871,7 @@ pub struct Dsv4Gpu {
     /// Chosen per model, never a process-global mutable test switch.
     indexer_score: Dsv4IndexerScore,
     sink_score: Dsv4SinkScore,
+    sink_tile32_override: std::sync::atomic::AtomicU8,
     sink_tiled_calls: std::sync::atomic::AtomicU64,
     verify_topk: Dsv4VerifyTopk,
     device_verify_topk_calls: std::sync::atomic::AtomicU64,
@@ -2307,7 +2335,59 @@ impl Dsv4Gpu {
 
     /// Exclusive gate seam; persistent graph users must key/rebuild on this arm.
     /// Dynamic shared-memory attributes are configured before any capture.
+    fn sink_score_arm(&self) -> Dsv4SinkScore {
+        match self.sink_tile32_override.load(Ordering::Relaxed) {
+            1 => Dsv4SinkScore::Scalar,
+            2 => Dsv4SinkScore::Tiled32,
+            _ => self.sink_score,
+        }
+    }
+
+    /// Gate-only enqueue selection. Drain both ranks before selecting a new
+    /// uncaptured state. Retained graphs keep their captured kernel addresses.
+    pub fn set_sink_tile32_for_gate(&self, enabled: bool) -> Res<()> {
+        if !self.topology.is_tp_ep()
+            || self.stages.len() != 2
+            || self.attention_tp.is_none()
+            || self.model.mc.n_head != 64
+            || self.model.cfg().head_dim != 512
+            || !self.chains_f32
+            || self.decode_path != (DecodePath::Device { host_math: false })
+        {
+            return Err("tiled32 sink requires device f32x TP2 with 32x512 heads per rank".into());
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind sink tile32"))?;
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .map_err(e("drain sink tile32"))?;
+            if enabled {
+                crate::dsv4_grouped::bind_matrix(&stage.gpu)?;
+                unsafe {
+                    ck(
+                        "initialize sink tile32",
+                        k::memra_dsv4_sink_scores_tiled32_init(),
+                    )?;
+                }
+            }
+        }
+        self.sink_tile32_override
+            .store(if enabled { 2 } else { 1 }, Ordering::Relaxed);
+        Ok(())
+    }
+
     pub fn set_sink_score_for_gate(&mut self, arm: Dsv4SinkScore) -> Res<Dsv4SinkScore> {
+        if arm == Dsv4SinkScore::Tiled32 {
+            let previous = self.sink_score_arm();
+            self.set_sink_tile32_for_gate(true)?;
+            return Ok(previous);
+        }
         if arm == Dsv4SinkScore::Tiled
             && (!matches!(self.decode_path, DecodePath::Device { host_math: false })
                 || !self.chains_f32
@@ -2339,7 +2419,8 @@ impl Dsv4Gpu {
                 }
             }
         }
-        let previous = self.sink_score;
+        let previous = self.sink_score_arm();
+        self.sink_tile32_override.store(0, Ordering::Relaxed);
         self.sink_score = arm;
         Ok(previous)
     }
@@ -3257,6 +3338,7 @@ impl Dsv4Gpu {
             dspark_fused_moe,
             indexer_score,
             sink_score: Dsv4SinkScore::Scalar,
+            sink_tile32_override: std::sync::atomic::AtomicU8::new(0),
             sink_tiled_calls: std::sync::atomic::AtomicU64::new(0),
             verify_topk,
             device_verify_topk_calls: std::sync::atomic::AtomicU64::new(0),
@@ -3625,6 +3707,9 @@ impl Dsv4Gpu {
         }
         if sink_score == Dsv4SinkScore::Tiled {
             me.set_sink_score_for_gate(sink_score)?;
+        } else if sink_score == Dsv4SinkScore::Tiled32 {
+            me.set_sink_tile32_for_gate(true)?;
+            me.sink_score = sink_score;
         }
         eprintln!("[load] sink score: {:?}", me.sink_score);
         if ep_requested {
@@ -7883,7 +7968,10 @@ impl Dsv4Gpu {
             || !self.dense_fp8
             || !self.small_kernel_diet
             || self.variant != ActQuantVariant::RefFp8Round
-            || self.sink_score != Dsv4SinkScore::Scalar
+            || !matches!(
+                self.sink_score_arm(),
+                Dsv4SinkScore::Scalar | Dsv4SinkScore::Tiled32
+            )
             || self.indexer_score != Dsv4IndexerScore::Scalar
             || self.verify_topk != Dsv4VerifyTopk::Device
             || (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) != 43
@@ -8450,8 +8538,16 @@ impl Dsv4Gpu {
     ) -> i32 {
         unsafe {
             if self.chains_f32 {
-                if self.sink_score == Dsv4SinkScore::Tiled {
-                    let rc = k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
+                if matches!(
+                    self.sink_score_arm(),
+                    Dsv4SinkScore::Tiled | Dsv4SinkScore::Tiled32
+                ) {
+                    let launch = if self.sink_score_arm() == Dsv4SinkScore::Tiled32 {
+                        k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled32
+                    } else {
+                        k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
+                    };
+                    let rc = launch(
                         q,
                         kv,
                         idxs,
@@ -14609,7 +14705,10 @@ impl Dsv4Gpu {
                 || host_math
                 || cache.c4_host.is_some()
                 || !self.chains_f32
-                || self.sink_score != Dsv4SinkScore::Scalar
+                || !matches!(
+                    self.sink_score_arm(),
+                    Dsv4SinkScore::Scalar | Dsv4SinkScore::Tiled32
+                )
                 || self.indexer_score != Dsv4IndexerScore::Scalar)
         {
             return Err("full-token attention requires t=1 scalar f32 device-cache program".into());
@@ -15351,6 +15450,28 @@ impl Dsv4Gpu {
             )
         };
         let scale = (hd as f64).powf(-0.5) as f32;
+        if SINK_OBSERVER_ON.load(Ordering::Acquire)
+            && let Some(observer) = *SINK_OBSERVER.lock().map_err(|err| err.to_string())?
+        {
+            if replay_pos.is_some() || t != 1 || heads != 32 || hd != 512 {
+                return Err("sink operand capture requires eager t=1 TP2 32x512".into());
+            }
+            unsafe {
+                observer(
+                    st.dev,
+                    layer.il,
+                    layer.ratio,
+                    slots,
+                    dpf!(vws.q, &stream),
+                    attention_kv,
+                    attention_indices,
+                    sink,
+                    vws.idx_stride,
+                    scale,
+                    sp(&stream),
+                )?;
+            }
+        }
         unsafe {
             if let Some(pos_dev) = replay_pos {
                 let topk = layer.idx.as_ref().map_or(i32::MAX, |ix| ix.topk as i32);
@@ -15359,9 +15480,14 @@ impl Dsv4Gpu {
                         .replay_limit
                         .checked_div(layer.ratio)
                         .map_or(0, |n| n.min(topk as usize));
+                let launch = if self.sink_score_arm() == Dsv4SinkScore::Tiled32 {
+                    k::memra_dsv4_replay_attention_tiled32
+                } else {
+                    k::memra_dsv4_replay_attention
+                };
                 ck(
                     "replay attention",
-                    k::memra_dsv4_replay_attention(
+                    launch(
                         dpf!(vws.q, &stream),
                         attention_kv,
                         attention_indices,
@@ -15383,7 +15509,9 @@ impl Dsv4Gpu {
                     ),
                 )?;
             } else if self.chains_f32 {
-                let launch = if self.sink_score == Dsv4SinkScore::Tiled {
+                let launch = if self.sink_score_arm() == Dsv4SinkScore::Tiled32 {
+                    k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled32
+                } else if self.sink_score_arm() == Dsv4SinkScore::Tiled {
                     k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
                 } else {
                     k::memra_dsv4_sink_attn_dec_mq_f32acc
@@ -15408,7 +15536,7 @@ impl Dsv4Gpu {
                         sp(&stream),
                     ),
                 )?;
-                if self.sink_score == Dsv4SinkScore::Tiled {
+                if self.sink_score_arm() == Dsv4SinkScore::Tiled {
                     self.sink_tiled_calls
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }

@@ -527,6 +527,18 @@ score layout. Rust FFI: `dsv4_ffi.rs`; dispatch: `MEMRA_DSV4_SINK_SCORE`, defaul
 scalar. Component gate: `tools/dsv4-sink-score-tiled-gate.cu`; full model:
 `dsv4_sink_score_gate`. Receipt: `research/dsv4f-2card-1m-20260904/sink-score-tiled.md`.
 
+Rank-local tile32: `dsv4_sink_scores_tiled32_f32acc_kernel` retains the 8x32
+score storage pattern, 84096-byte opt-in shared allocation and ordered 512-term
+sum. `dsv4_sink_out_tiled32_f32acc_kernel` shares each 32x8 KV slab across
+32 heads with the scalar ascending slot order and zero skips. The softmax kernel
+is unchanged. Bindings `memra_dsv4_sink_scores_tiled32_init`,
+`memra_dsv4_sink_attn_dec_mq_f32acc_tiled32` and
+`memra_dsv4_replay_attention_tiled32` cover eager and device-position replay.
+Door `MEMRA_DSV4_SINK_SCORE=tiled32` is OFF, decide-by: 2026-09-23.
+Gate: `dsv4_sink_tile32_gate`, component: `tools/dsv4-sink-tile32-gate.cu`.
+Target correctness and performance receipts are pending; no default promotion.
+
+
 | dispatch | purpose | flag | gate |
 |---|---|---|---|
 | `verify_batch_dev_output` -> existing `head_logits_dev` | Preserve every trunk layer and cache transaction, discard unused intermediate head work, and compute the final row with existing single-row head kernels. Public verification still returns all requested rows/argmaxes. | `MEMRA_DSV4_PREFILL_HEAD=all/last`, default all | `dsv4_prefill_work_gate`: full live cache, logits, sampled DSpark output, public API result shape and head-call counters. |

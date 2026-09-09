@@ -6154,6 +6154,47 @@ static __global__ void dsv4_sink_scores_tiled_f32acc_kernel(const float* __restr
     }
 }
 
+static __global__ void dsv4_sink_scores_tiled32_f32acc_kernel(const float* __restrict__ q,
+    const float* __restrict__ kv, const int* __restrict__ idxs,
+    float* __restrict__ scores, int slots, int idx_stride, float scale, const int* replay_pos = nullptr,
+    int replay_win = 0, int replay_ratio = 0, int replay_topk = 512) {
+    if (replay_pos) slots = replay_win + (replay_ratio ? min((*replay_pos + 1) / replay_ratio, replay_topk) : 0);
+    const int tid = threadIdx.x;
+    const int h0 = blockIdx.y * DSV4_SCORE_HT;
+    const int k0 = blockIdx.x * DSV4_SCORE_KT;
+    const int p = blockIdx.z;
+    extern __shared__ float tile[];
+    float* qs = tile;
+    float* ks = qs + DSV4_SCORE_HT * DSV4_SCORE_HD;
+    int* selected = reinterpret_cast<int*>(ks + DSV4_SCORE_HD * (DSV4_SCORE_KT + 1));
+    if (tid < DSV4_SCORE_KT)
+        selected[tid] = k0 + tid < slots ? idxs[(long)p * idx_stride + k0 + tid] : -1;
+    for (int i = tid; i < DSV4_SCORE_HT * DSV4_SCORE_HD; i += 256)
+        qs[i] = q[((long)p * 32 + h0) * DSV4_SCORE_HD + i];
+    __syncthreads();
+    for (int i = tid; i < DSV4_SCORE_KT * DSV4_SCORE_HD; i += 256) {
+        int key = i / DSV4_SCORE_HD;
+        int d = i % DSV4_SCORE_HD;
+        int ix = selected[key];
+        ks[d * (DSV4_SCORE_KT + 1) + key] = ix < 0 ? 0.0f : kv[(long)ix * DSV4_SCORE_HD + d];
+    }
+    __syncthreads();
+    int h = tid / DSV4_SCORE_KT;
+    int key = tid % DSV4_SCORE_KT;
+    int slot = k0 + key;
+    if (slot < slots) {
+        float score = -INFINITY;
+        if (selected[key] >= 0) {
+            float acc = 0.0f;
+            #pragma unroll 1
+            for (int d = 0; d < DSV4_SCORE_HD; ++d)
+                acc += qs[h * DSV4_SCORE_HD + d] * ks[d * (DSV4_SCORE_KT + 1) + key];
+            score = acc * scale;
+        }
+        scores[((long)p * 32 + h0 + h) * slots + slot] = score;
+    }
+}
+
 // Call explicitly before graph capture. No lazy attribute mutation in the launch.
 extern "C" int memra_dsv4_sink_scores_tiled_init() {
     int dev = 0, available = 0;
@@ -6176,6 +6217,32 @@ extern "C" int memra_dsv4_sink_scores_tiled_f32acc(const float* q, const float* 
     dim3 grid((unsigned)(slots / DSV4_SCORE_KT + (slots % DSV4_SCORE_KT != 0)),
         64 / DSV4_SCORE_HT, (unsigned)nq);
     dsv4_sink_scores_tiled_f32acc_kernel<<<grid, 256, DSV4_SCORE_SMEM, (cudaStream_t)stream_v>>>(
+        q, kv, idxs, scores, slots, idx_stride, scale);
+    DSV4_ERR();
+    return 0;
+}
+
+extern "C" int memra_dsv4_sink_scores_tiled32_init() {
+    int dev = 0, available = 0;
+    cudaError_t rc = cudaGetDevice(&dev);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    rc = cudaDeviceGetAttribute(&available, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    if (available < DSV4_SCORE_SMEM) return 40009;
+    rc = cudaFuncSetAttribute(dsv4_sink_scores_tiled32_f32acc_kernel,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, DSV4_SCORE_SMEM);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    return 0;
+}
+
+extern "C" int memra_dsv4_sink_scores_tiled32_f32acc(const float* q, const float* kv,
+    const int* idxs, float* scores, int nq, int heads, int hd, int slots,
+    int idx_stride, float scale, void* stream_v) {
+    if (!q || !kv || !idxs || !scores || nq < 1 || nq > 512 || heads != 32
+        || hd != DSV4_SCORE_HD || slots < 1 || idx_stride < slots) return 40010;
+    dim3 grid((unsigned)(slots / DSV4_SCORE_KT + (slots % DSV4_SCORE_KT != 0)),
+        32 / DSV4_SCORE_HT, (unsigned)nq);
+    dsv4_sink_scores_tiled32_f32acc_kernel<<<grid, 256, DSV4_SCORE_SMEM, (cudaStream_t)stream_v>>>(
         q, kv, idxs, scores, slots, idx_stride, scale);
     DSV4_ERR();
     return 0;
@@ -6284,6 +6351,50 @@ extern "C" __global__ void dsv4_sink_out_mq_f32acc_kernel(const float* __restric
     if (x < hd && h < heads) o[(long)h * hd + x] = acc / den[h];
 }
 
+extern "C" __global__ void dsv4_sink_out_tiled32_f32acc_kernel(const float* __restrict__ kv,
+                                                          const int* __restrict__ idxs_all,
+                                                          const float* __restrict__ evals_all,
+                                                          const float* __restrict__ den_all,
+                                                          float* __restrict__ o_all, int heads,
+                                                          int hd, int slots, int idx_stride, const int* replay_pos = nullptr,
+    int replay_win = 0, int replay_ratio = 0, int replay_topk = 512) {
+    if (replay_pos) slots = replay_win + (replay_ratio ? min((*replay_pos + 1) / replay_ratio, replay_topk) : 0);
+    const int XC = 8, HC = 32;
+    int x0 = blockIdx.x * XC;
+    int h0 = blockIdx.y * HC;
+    int p = blockIdx.z;
+    const int* idxs = idxs_all + (long)p * idx_stride;
+    const float* evals = evals_all + (long)p * heads * slots;
+    const float* den = den_all + (long)p * heads;
+    float* o = o_all + (long)p * heads * hd;
+    int tx = threadIdx.x % XC;
+    int th = threadIdx.x / XC;
+    int x = x0 + tx;
+    int h = h0 + th;
+    __shared__ float kvt[32 * XC];
+    float acc = 0.0f;
+    for (int t0 = 0; t0 < slots; t0 += 32) {
+        int tl = min(32, slots - t0);
+        for (int i = threadIdx.x; i < tl * XC; i += blockDim.x) {
+            int sl = t0 + i / XC;
+            int xx = x0 + i % XC;
+            int ix = idxs[sl];
+            kvt[i] = (ix < 0 || xx >= hd) ? 0.0f : kv[(long)ix * hd + xx];
+        }
+        __syncthreads();
+        if (x < hd && h < heads) {
+            const float* erow = evals + (long)h * slots;
+            for (int i = 0; i < tl; i++) {
+                float ev = erow[t0 + i];
+                if (ev == 0.0f) continue;
+                acc += ev * kvt[i * XC + tx];
+            }
+        }
+        __syncthreads();
+    }
+    if (x < hd && h < heads) o[(long)h * hd + x] = acc / den[h];
+}
+
 extern "C" int memra_dsv4_sink_attn_dec_mq_f32acc(const float* q, const float* kv,
                                                   const int* idxs, const float* sink,
                                                   float* scores, float* evals, float* den,
@@ -6321,6 +6432,24 @@ extern "C" int memra_dsv4_sink_attn_dec_mq_f32acc_tiled(const float* q, const fl
     DSV4_ERR();
     dim3 g3((unsigned)((hd + 7) / 8), (unsigned)((heads + 7) / 8), (unsigned)nq);
     dsv4_sink_out_mq_f32acc_kernel<<<g3, 64, 0, stream>>>(kv, idxs, evals, den, o, heads, hd, slots, idx_stride);
+    DSV4_ERR();
+    return 0;
+}
+
+extern "C" int memra_dsv4_sink_attn_dec_mq_f32acc_tiled32(const float* q, const float* kv,
+    const int* idxs, const float* sink, float* scores, float* evals, float* den,
+    float* o, int nq, int heads, int hd, int slots, int idx_stride, float scale,
+    void* stream_v) {
+    if (!sink || !evals || !den || !o) return 40010;
+    int rc = memra_dsv4_sink_scores_tiled32_f32acc(q, kv, idxs, scores, nq, heads, hd,
+        slots, idx_stride, scale, stream_v);
+    if (rc != 0) return rc;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    dim3 g2((unsigned)heads, (unsigned)nq);
+    dsv4_sink_soft_mq_f32acc_kernel<<<g2, 128, 0, stream>>>(scores, sink, evals, den, heads, slots);
+    DSV4_ERR();
+    dim3 g3((unsigned)((hd + 7) / 8), (unsigned)((heads + 31) / 32), (unsigned)nq);
+    dsv4_sink_out_tiled32_f32acc_kernel<<<g3, 256, 0, stream>>>(kv, idxs, evals, den, o, heads, hd, slots, idx_stride);
     DSV4_ERR();
     return 0;
 }
@@ -6736,6 +6865,25 @@ extern "C" int memra_dsv4_replay_attention(const float* q, const float* kv, cons
         score, sink, eval, den, heads, slots_max, pos, win, ratio, topk);
     DSV4_ERR();
     dsv4_sink_out_mq_f32acc_kernel<<<dim3((hd + 7) / 8, (heads + 7) / 8, 1), 64, 0, stream>>>(
+        kv, idx, eval, den, out, heads, hd, slots_max, stride, pos, win, ratio, topk);
+    DSV4_ERR();
+    return 0;
+}
+
+extern "C" int memra_dsv4_replay_attention_tiled32(const float* q, const float* kv, const int* idx,
+    const float* sink, float* score, float* eval, float* den, float* out, const int* pos,
+    int heads, int hd, int slots_max, int stride, float scale, int win, int ratio,
+    int topk, void* raw_stream) {
+    if (!pos || heads != 32 || hd != 512 || slots_max < win || stride < slots_max ||
+        (ratio != 0 && ratio != 4 && ratio != 128)) return 40074;
+    auto stream = (cudaStream_t)raw_stream;
+    dsv4_sink_scores_tiled32_f32acc_kernel<<<dim3((slots_max + 31) / 32, 4, 1), 256, DSV4_SCORE_SMEM, stream>>>(
+        q, kv, idx, score, slots_max, stride, scale, pos, win, ratio, topk);
+    DSV4_ERR();
+    dsv4_sink_soft_mq_f32acc_kernel<<<dim3(heads, 1), 128, 0, stream>>>(
+        score, sink, eval, den, heads, slots_max, pos, win, ratio, topk);
+    DSV4_ERR();
+    dsv4_sink_out_tiled32_f32acc_kernel<<<dim3((hd + 7) / 8, 1, 1), 256, 0, stream>>>(
         kv, idx, eval, den, out, heads, hd, slots_max, stride, pos, win, ratio, topk);
     DSV4_ERR();
     return 0;

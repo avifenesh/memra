@@ -130,6 +130,26 @@ unsafe extern "C" {
         topk: i32,
         stream: *mut c_void,
     ) -> i32;
+    pub fn memra_dsv4_replay_attention_tiled32(
+        q: *const f32,
+        kv: *const f32,
+        idx: *const i32,
+        sink: *const f32,
+        score: *mut f32,
+        eval: *mut f32,
+        den: *mut f32,
+        out: *mut f32,
+        pos: *const i32,
+        heads: i32,
+        hd: i32,
+        slots_max: i32,
+        stride: i32,
+        scale: f32,
+        win: i32,
+        ratio: i32,
+        topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_sample_device(
         logits: *const f32,
         values: *mut f32,
@@ -150,7 +170,25 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_sink_scores_tiled_init() -> i32;
+    pub fn memra_dsv4_sink_scores_tiled32_init() -> i32;
     pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        sink: *const f32,
+        scores: *mut f32,
+        evals: *mut f32,
+        den: *mut f32,
+        o: *mut f32,
+        nq: i32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        idx_stride: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled32(
         q: *const f32,
         kv: *const f32,
         idxs: *const i32,
