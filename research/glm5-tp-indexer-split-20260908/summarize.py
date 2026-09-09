@@ -18,7 +18,9 @@ for path in sorted(root.glob('*/rows.jsonl')):
         ids_path = cell / (row['tag'] + suffix + '.ids')
         ids = ids_path.read_bytes()
         row.update(cell=cell.name, ids_sha256=hashlib.sha256(ids).hexdigest(),
-                   split=int(env['MEMRA_GLM5_TP_INDEXER_SPLIT']),
+                   split=int(env['MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME']
+                             if 'MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME' in env
+                             else env['MEMRA_GLM5_TP_INDEXER_SPLIT']),
                    tc=int(env['MEMRA_DSA_SCORE_TC']),
                    profile=env['BOXP_PROFILE_PHASE'])
         if len(ids.split()) != row['out_tokens']:

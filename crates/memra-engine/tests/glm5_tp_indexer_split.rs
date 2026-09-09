@@ -1,6 +1,36 @@
 //! Pool-split membership, emission order, arithmetic and two-device transport gates.
-//! GPU tests are ignored and must run on the lane's non-serving pair under its GPU lock.
+//! GPU tests are ignored; run on non-serving hardware under its GPU lock.
 use memra_engine::{Engine, tp_ar::ArLink};
+
+#[test]
+fn decode_ignores_prime_split_door() {
+    const CHILD: &str = "GLM5_INDEXER_PRIME_TEST_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        let prime = std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME").as_deref() == Ok("1");
+        // Exercise decode both before and after the process-local prime latch is set.
+        for t in [0, 1, 2, 128, 1] {
+            assert_eq!(
+                memra_engine::glm5_tp_indexer_split_prime_on(t),
+                t > 1 && prime
+            );
+        }
+        return;
+    }
+    // Separate processes avoid env mutation races and reset the production OnceLock.
+    for value in [None, Some("0"), Some("1")] {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+        child
+            .args(["--exact", "decode_ignores_prime_split_door", "--nocapture"])
+            .env(CHILD, "1")
+            .env_remove("MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME")
+            .env("MEMRA_GLM5_TP_INDEXER_SPLIT", "1");
+        if let Some(value) = value {
+            child.env("MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME", value);
+        }
+        let output = child.output().unwrap();
+        assert!(output.status.success(), "{value:?}: {output:?}");
+    }
+}
 
 fn select(mut candidates: Vec<(f32, usize)>, k: usize) -> Vec<(f32, usize)> {
     candidates.retain(|(s, _)| s.is_finite());
@@ -78,6 +108,19 @@ fn gpu_pool_split_matches_replicated_selection_and_cpu() {
     memra_engine::tp::grant_peer_access(&b, &a, "indexer split gate").unwrap();
     let devs = [&a, &b];
     let mut link = ArLink::new(&devs).unwrap();
+    check_pool_split(&devs, Some(&mut link));
+}
+
+#[test]
+#[ignore = "needs one CUDA device; candidate transport is covered by the pair test"]
+fn gpu_pool_split_merge_matches_replicated_selection_and_cpu() {
+    let a = Engine::new(0).expect("CUDA device");
+    check_pool_split(&[&a, &a], None);
+}
+
+fn check_pool_split(devs: &[&Engine; 2], mut link: Option<&mut ArLink>) {
+    let a = devs[0];
+    let b = devs[1];
     // Includes the single/multi-CTA crossover on each HALF, odd counts, ragged k,
     // the 1M pool plane, fewer finite candidates than k and all-equal cross-rank ties.
     for (n, k, rows) in [
@@ -152,8 +195,16 @@ fn gpu_pool_split_matches_replicated_selection_and_cpu() {
                 let span = 2 * rows * k;
                 let mut x = a.uninit_i32(2 * span).unwrap();
                 let mut y = b.uninit_i32(2 * span).unwrap();
-                link.gather_i32(&devs, &[&parts[0], &parts[1]], &mut [&mut x, &mut y], span)
-                    .unwrap();
+                if let Some(link) = link.as_mut() {
+                    link.gather_i32(devs, &[&parts[0], &parts[1]], &mut [&mut x, &mut y], span)
+                        .unwrap();
+                } else {
+                    // Stage the exact rank-major transport payload on a single device.
+                    let mut words = a.dtoh_i32(&parts[0]).unwrap();
+                    words.extend(b.dtoh_i32(&parts[1]).unwrap());
+                    x = a.htod_i32(&words).unwrap();
+                    y = b.htod_i32(&words).unwrap();
+                }
                 let merged = [
                     a.mla_kpool_merge(&x, rows, k, pool, width, first_pos)
                         .unwrap(),
@@ -167,7 +218,9 @@ fn gpu_pool_split_matches_replicated_selection_and_cpu() {
                         "rank={r}, pools={n}, k={k}, pattern={pattern}"
                     );
                 }
-                assert_eq!(link.barrier_errors(&devs).unwrap(), [0, 0]);
+                if let Some(link) = link.as_ref() {
+                    assert_eq!(link.barrier_errors(devs).unwrap(), [0, 0]);
+                }
             }
         }
     }

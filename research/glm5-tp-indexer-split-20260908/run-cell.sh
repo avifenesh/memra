@@ -13,7 +13,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
 source /root/tunebox/env.sh
 source research/glm5-tp-indexer-split-20260908/posture.sh
-export MEMRA_GLM5_TP_INDEXER_SPLIT=$split MEMRA_DSA_SCORE_TC=$tc
+export MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME=$split MEMRA_DSA_SCORE_TC=$tc
 export MEMRA_GLM5_TP_INDEXER_SPLIT_CHECK=$check BOXP_SAMPLED=$sampled
 export BOXP_PROFILE_PHASE=$phase
 # Re-exec under the kernel lock. Merely finding the file never means it is held.

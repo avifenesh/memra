@@ -2831,13 +2831,16 @@ pub fn glm5_tp_split_prime_hostdiet_level() -> u8 {
     }
 }
 
-/// `MEMRA_GLM5_TP_INDEXER_SPLIT=1` (default OFF, decide-by: 2026-09-22): each TP rank
-/// scores half the pools for every query. Local top-k candidate exchange uses device-side
-/// signals; an exact global merge preserves the replicated selector's full index sequence.
-/// Prime and symmetric decode engage; scalar-position MID stays eager between graph pieces.
-pub fn glm5_tp_indexer_split_on() -> bool {
+/// `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME=1` (default OFF, decide-by: 2026-09-22):
+/// grouped-prime chunks (t > 1) score half the pools per TP rank. Exact candidate
+/// exchange and merge preserve the replicated selector's full index sequence.
+/// Decode rejects the door before reading it and keeps the replicated kernel sequence.
+pub fn glm5_tp_indexer_split_prime_on(t: usize) -> bool {
+    if t <= 1 {
+        return false;
+    }
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT").as_deref() == Ok("1"))
+    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME").as_deref() == Ok("1"))
 }
 
 /// `MEMRA_GLM5_TP_INDEXER_SPLIT_CHECK=1`: diagnostic. Every split call ALSO runs the replicated

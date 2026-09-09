@@ -2,7 +2,7 @@
 
 Implementation baseline: memra `15f4bf96f` (origin/main, 2026-09-08; advanced from `001c09e5d` before remote build).
 Branch: `lane/glm5-tp-indexer-split-20260908`.
-Status: paired f32 model identity PASS; prime wins at 128k/1M, decode NEGATIVE at 128k and FLAT at 1M. Merge cost is the decode blocker. Owner retains the code with the door OFF. Complete rows and kernel tallies: [RESULTS.md](RESULTS.md).
+Status: paired f32 model identity PASS; prime wins at 128k/1M, decode NEGATIVE at 128k and FLAT at 1M. Merge cost is the decode blocker. The prime-only door `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME` stays OFF, decide-by 2026-09-22; decode split dispatch and workspace handling are deleted. Pair receipt: darklanes #527. Complete rows and kernel tallies: [RESULTS.md](RESULTS.md).
 No cargo, CPU/GPU test, benchmark or smoke server was run on the rig.
 
 ## Selection and cost
@@ -16,7 +16,7 @@ is 15.7x. These are byte counts, not measured latency or bandwidth claims.
 
 Each rank computes all query rows over its contiguous pool half; rank 0 owns ceil(P/2).
 Pool-key pointer offset and subtracting offset*pool from first_pos reuse the same f32 scorer,
-including the head-blocked decode RP arm and tiled prime arm. The score arithmetic is unchanged;
+including the tiled prime arm. The range arithmetic remains covered by the head-blocked RP gates. The score arithmetic is unchanged;
 negative relative positions mask the peer's not-yet-visible pools during early prime chunks.
 State and complete-pool key appends stay replicated. TC levels 1 and 2 passed the scorer range
 bit-identity gate on the target pair, including early-prime causal boundaries; both are now admitted
@@ -45,24 +45,26 @@ plane on BOTH ranks, with host readback only in diagnostic cells.
 
 ## Runtime and capture boundary
 
-The same existing door now selects pool splitting instead of the older prime-only query split.
-It reaches `mla_tp_attn_cached`, `mla_tp_attn_cached_sym`, and `sym_mla_mid_eager`. The latter
-consumes the PRE graph's existing stable workspace and returns that SAME workspace before the
-next PRE replay. It writes attention output to the existing FFN graph handoff buffers.
+`MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME=1` selects pool splitting only in the grouped-prime
+walk through `mla_tp_attn_cached`, for chunks with `t>1`. The old door name is not read.
+`mla_tp_attn_cached_sym` and `sym_mla_mid_eager` have no split dispatch. The common admission
+helper rejects `t<=1` before reading the prime flag, so decode keeps its replicated kernel
+sequence for either door value. Rows-exact verification also stays replicated.
 
-The middle stays eager. Score lengths, pool halves, select-k, and tail width derive from the
-host cache length; baking them into a captured piece would replay stale geometry. This lane
-adds no live-position middle twin. The exchange itself is device-signalled and contains no
-host synchronization or cross-stream CUDA events. Full capture has not been attempted or
-claimed; PRE/FFN and KDA graph replay must remain engaged in the on-box receipt.
+The decode arm's scalar PRE workspace take/restore code was deleted with its dispatch.
+No separate decode door remains: the pair receipt measured merge at about 128 ms/GPU over
+159 steps, plus 36-40 ms exchange, consuming the score/select saving. Shared range scoring,
+candidate packing, exchange and merge kernels remain reachable from grouped prime.
+Prime keeps the same owned PRE, score, select, exact exchange/merge and POST sequence as the
+identity-qualified arm. No live-position middle or numeric twin is added.
 
 All admission checks run before either cache is moved or a barrier is queued. Unsupported
 shapes stay replicated: missing/mismatched indexers, invalid bounds, fewer than two pools,
 k outside 1..2048, non-peer-access/two-device groups and rows-exact verification.
 Odd P is supported. Once work starts, allocation/CUDA failures remain errors; a barrier timeout
 traps to prevent unwritten candidate memory from reaching attention. No retry of an already
-mutated cache is attempted. Both placeholders are allocated before moving either cache; PRE
-workspaces and resident planes are restored after a fallible middle.
+mutated cache is attempted. Both placeholders are allocated before moving either cache; resident
+planes are restored after a fallible middle.
 
 No change to Glm5TpGlue replication or the by-name refused-door list is required: the indexer
 weights and state remain replicated; only score/select work is partitioned.
@@ -156,3 +158,16 @@ retrieved. No completed lane OFF row was retrieved. The last observed phase was 
 Per the latest owner instruction, completed rows are preserved and the stop is reported;
 no restart is attempted in this window. Resume the rig-side controller after the target is
 available: it will keep the completed CHECK/control rows and retry the interrupted OFF cell.
+
+## Prime-only follow-up, 2026-09-09
+
+The prior pair receipt proves the prime arm's identical IDs, not the newly scoped binary's
+full-model performance. Required post-deploy pair cell: 1M prime OFF/ON, 1M decode OFF/ON x3,
+and byte-identical IDs in every arm. Vendor-default sampled requests and the cache-on
+continuation remain serving gates. No pair is touched by this source/test follow-up.
+
+`decode_ignores_prime_split_door` runs the production dispatch helper in isolated CPU child
+processes with unset/OFF/ON prime flag, before and after its latch, and the retired flag ON.
+The single-device GPU merge test stages the exact rank-major candidate words and compares
+all emitted indices to the replicated selector and CPU oracle. It does not replace the
+separate two-device signal/exchange test.

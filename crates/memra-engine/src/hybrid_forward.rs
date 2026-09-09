@@ -3532,28 +3532,6 @@ impl HybridModel {
                 &mut cache.glm5_tp_latent_peer[il],
             )?;
         }
-        if Self::mla_tp_indexer_split_ready(mla, tp, cache, il, 1) {
-            e.mla_pre_done.store(true, Relaxed);
-            peer.mla_pre_done.store(true, Relaxed);
-            let result = self.mla_tp_attn_indexer_split(
-                e,
-                mla,
-                tp,
-                &[&ws.h, &ws_peer.h],
-                &[pos_d, pos_peer],
-                1,
-                il,
-                cache,
-                max_ctx,
-            );
-            e.mla_pre_done.store(false, Relaxed);
-            peer.mla_pre_done.store(false, Relaxed);
-            let a = result?;
-            e.copy_into(a_root, 0, &a[0], a[0].len())?;
-            let _main = peer.gpu.enter_main()?;
-            peer.copy_into(a_peer, 0, &a[1], a[1].len())?;
-            return Ok(());
-        }
         {
             let lat = cache.latent[il].as_mut().unwrap();
             e.mla_pre_done.store(true, Relaxed);
@@ -11154,11 +11132,11 @@ impl HybridModel {
         il: usize,
         t: usize,
     ) -> bool {
-        if !crate::glm5_tp_indexer_split_on() {
+        if !crate::glm5_tp_indexer_split_prime_on(t) {
             return false;
         }
         let ready = (|| {
-            if t == 0 || !mla.tp_shard || tp.rt.ranks() != 2 || !tp.rt.ar_1stage_available() {
+            if !mla.tp_shard || tp.rt.ranks() != 2 || !tp.rt.ar_1stage_available() {
                 return None;
             }
             let ig = mla.index.as_ref()?.geom;
@@ -11218,7 +11196,7 @@ impl HybridModel {
     /// Score disjoint pool ranges on two ranks, exchange local top-k candidates through
     /// MemraArSignal, then merge the global top-k in ascending pool order before attention.
     /// State and key appends remain replicated. Rank zero owns the extra pool at odd counts.
-    /// The scalar-position middle is eager between the symmetric PRE and FFN graph pieces.
+    /// Only grouped-prime chunks reach this arm; decode keeps its replicated middle.
     #[allow(clippy::too_many_arguments)]
     fn mla_tp_attn_indexer_split(
         &self,
@@ -11240,7 +11218,6 @@ impl HybridModel {
             pools_ready: usize,
             ring: usize,
             pre: Option<MlaPreOut>,
-            ws_sig: Option<(usize, usize, usize, usize, usize)>,
             half: Option<(CudaSlice<i32>, usize, Option<CudaSlice<i32>>)>,
         }
         let rt = &tp.rt;
@@ -11278,7 +11255,6 @@ impl HybridModel {
                 pools_ready: layer.index_pools_ready,
                 ring: layer.index_ring_rows.unwrap_or(0),
                 pre: None,
-                ws_sig: None,
                 half: None,
             });
         }
@@ -11291,56 +11267,9 @@ impl HybridModel {
                     let _main = dev.gpu.enter_main()?;
                     let shard = shards[r];
                     let s = &mut st[r];
-                    let pre = if t == 1 && Engine::mla_seg_ws_on() {
-                        let g = shard.geom;
-                        let mut ws = dev.mla_seg_ws_take(
-                            g.n_head,
-                            g.d_nope,
-                            g.d_rope,
-                            g.kv_rank,
-                            shard.wq_b.in_features(),
-                        )?;
-                        if !dev
-                            .mla_pre_done
-                            .swap(false, std::sync::atomic::Ordering::Relaxed)
-                            && let Err(err) = self.mla_seg_pre(
-                                dev,
-                                shard,
-                                h_by_rank[r],
-                                pos_by_rank[r],
-                                t,
-                                il,
-                                false,
-                                Some(&mut ws),
-                            )
-                        {
-                            dev.mla_seg_ws_put(ws);
-                            return Err(err);
-                        }
-                        s.ws_sig = Some(ws.sig);
-                        MlaPreOut {
-                            q_nope: ws.q_nope,
-                            q_pe: ws.q_pe,
-                            q_an: ws.q_an,
-                            c_kv_n: ws.c_kv_n,
-                            k_pe: ws.k_pe,
-                            h_q8: ws.h_q8,
-                            q_q8: ws.q_q8,
-                        }
-                    } else {
-                        self.mla_seg_pre(
-                            dev,
-                            shard,
-                            h_by_rank[r],
-                            pos_by_rank[r],
-                            t,
-                            il,
-                            false,
-                            None,
-                        )?
-                        .expect("owned PRE")
-                    };
-                    // Own PRE before a fallible MID, so workspace addresses are restored on error.
+                    let pre = self
+                        .mla_seg_pre(dev, shard, h_by_rank[r], pos_by_rank[r], t, il, false, None)?
+                        .expect("owned PRE");
                     s.pre = Some(pre);
                     let pre = s.pre.as_ref().expect("set above");
                     let slot = s.slot;
@@ -11468,18 +11397,6 @@ impl HybridModel {
         // walk does).
         for (r, s) in st.into_iter().enumerate() {
             let _main = devs[r].gpu.enter_main()?;
-            if let (Some(sig), Some(pre)) = (s.ws_sig, s.pre) {
-                devs[r].mla_seg_ws_put(MlaSegWs {
-                    q_nope: pre.q_nope,
-                    q_pe: pre.q_pe,
-                    q_an: pre.q_an,
-                    c_kv_n: pre.c_kv_n,
-                    k_pe: pre.k_pe,
-                    h_q8: pre.h_q8,
-                    q_q8: pre.q_q8,
-                    sig,
-                });
-            }
             let layer = &mut *layers[r];
             layer.rows = s.rows;
             layer.index_rows = s.index_rows;
@@ -11512,13 +11429,12 @@ impl HybridModel {
             }
         }
         let out = out?;
-        static SAID: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-        let shape = if t == 1 { 1 } else { 2 };
-        if SAID.fetch_or(shape, std::sync::atomic::Ordering::Relaxed) & shape == 0 {
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
             eprintln!(
                 "[glm5-tp-indexer-split] engaged indexer=pool-split layer={il} t={t} \
                  pools={n_pools} rank0={p0} candidates={k} exchange=device-signal \
-                 capture=eager-middle"
+                 phase=prime"
             );
         }
         Ok(out)
@@ -11577,25 +11493,6 @@ impl HybridModel {
                 canonical,
                 &mut cache.glm5_tp_latent_peer[il],
             )?;
-        }
-        if Self::mla_tp_indexer_split_ready(mla, tp, cache, il, t) {
-            let attn = self.mla_tp_attn_indexer_split(
-                e,
-                mla,
-                tp,
-                h_by_rank,
-                pos_by_rank,
-                t,
-                il,
-                cache,
-                max_ctx,
-            )?;
-            let mut a = e.matmul(&mla.wo, &attn[0], t)?;
-            let mut b = rt.peers[0].matmul(&tp.peers[0].wo, &attn[1], t)?;
-            if !rt.ar_1stage(e, &mut [&mut a, &mut b], t * n_embd)? {
-                return Err("indexer split: one-shot declined after preflight".into());
-            }
-            return Ok(vec![a, b]);
         }
         let mut partials: Vec<CudaSlice<f32>> = Vec::with_capacity(ranks);
         // Root first here (its plane is the canonical one); order cannot change bytes since the
@@ -11693,7 +11590,7 @@ impl HybridModel {
         // (lane/glm5-composition) riding the same rows-exact classes as the unsharded
         // verify walk.
         let mut attn: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        // Pool-split indexer for prime/decode; verify and unsupported shapes stay replicated.
+        // Pool-split indexer for grouped prime; decode and verify stay replicated.
         if !rows_exact && Self::mla_tp_indexer_split_ready(mla, tp, cache, il, t) {
             let parts = self.mla_tp_attn_indexer_split(
                 e,

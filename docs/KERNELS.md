@@ -2,11 +2,11 @@
 
 ## GLM TP pool-split indexer, 2026-09-08
 
-Measured f32 TP-2 receipt: prime improves 10.3% at 128k and 34.6% at 1M. Decode is NEGATIVE at 128k and FLAT at 1M; merge plus exchange consumes score/select savings. Code retained by owner for the prime win, door OFF. See `research/glm5-tp-indexer-split-20260908/RESULTS.md`.
+Measured f32 TP-2 receipt: prime improves 10.3% at 128k and 34.6% at 1M. Decode is NEGATIVE at 128k and FLAT at 1M; merge plus exchange consumes score/select savings. Decode split dispatch was deleted. Shared kernels remain for grouped prime (`t>1`), door OFF; decode (`t=1`) stays replicated. See `research/glm5-tp-indexer-split-20260908/RESULTS.md`.
 
 | CUDA entry / kernel | Contract | Dispatch and FFI |
 |---|---|---|
-| `memra_mla_kpool_candidates_f32` / `memra_mla_kpool_candidates_kernel` | Packs existing selector output as original f32 score bits plus global pool id; invalid slots use id -1. No arithmetic on scores. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_candidates`; `MEMRA_GLM5_TP_INDEXER_SPLIT`, default OFF. |
+| `memra_mla_kpool_candidates_f32` / `memra_mla_kpool_candidates_kernel` | Packs existing selector output as original f32 score bits plus global pool id; invalid slots use id -1. No arithmetic on scores. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_candidates`; `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`, default OFF. |
 | `memra_mla_kpool_merge_f32` / `memra_mla_kpool_merge_kernel` | Exact score-desc/id-asc key ordering over both ranks' candidates, then ascending selected pool ids, raw-token expansion, causal tail and -1 padding. Canonical signed zero and nonfinite exclusion use the existing selector helper. One CTA/query, up to 2,048 candidates/rank. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_merge`; same door. |
 | `memra_tp_ar_gather_i32` / `memra_tp_ar_gather_i32_kernel` | Opaque candidate words gathered in global rank order through `MemraArSignal` start/end barriers. Two distinct peer-access devices; timeout traps, no host synchronization. | `cu/tp_ar.cu`, `tp_ar.rs::ArLink::gather_i32`; same door. |
 

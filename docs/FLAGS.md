@@ -1106,7 +1106,7 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
 
 | flag | default | arms, rollback and evidence |
 |---|---|---|
-| `MEMRA_GLM5_TP_INDEXER_SPLIT` | **OFF; decide-by: 2026-09-22** | `=1`: both TP ranks score every query against disjoint pool ranges; rank 0 takes the extra pool at odd counts. Existing local selectors emit k candidates, `MemraArSignal` exchanges exact score bits and global ids, and one merge kernel emits the global top-k in ascending pool order with the original tail and padding. Applies to prime, symmetric decode, and the eager middle between `MEMRA_GLM5_TP_SYM_GRAPH` PRE/FFN pieces. Preconditions are checked before state mutation: two peer-access shards, matching resident indexers/cache lengths, >=2 pools, 1<=k<=2048, supported integer bounds. Scorer range gates cover f32 and TC levels 1/2. Rows-exact verify, unavailable links and other unsupported shapes remain replicated. `=0` or unset restores the replicated score/select. Timeout traps instead of consuming unwritten candidates. Replaces the previous query-row split under this door. Design and box receipts: `research/glm5-tp-indexer-split-20260908/DESIGN.md`; unit/GPU gates: `tests/glm5_tp_indexer_split.rs`. Announces `indexer=pool-split`, `exchange=device-signal`, `capture=eager-middle`. Twelve f32 timed rows and both decode profiles have exact 160 IDs. 128k prime -10.3%, decode -4.2%; 1M prime -34.6%, decode FLAT (+0.4%). Merge plus exchange consumes decode savings. Owner retains code for the prime win; door OFF. Receipt: `research/glm5-tp-indexer-split-20260908/RESULTS.md`. |
+| `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME` | **OFF; decide-by: 2026-09-22** | `=1`: grouped-prime chunks (`t>1`) score disjoint pool ranges on the two TP ranks, exchange exact score bits/global ids and merge the global top-k in the replicated selector's order, including causal tail and padding. Rank 0 owns the extra pool at odd counts. Decode (`t=1`) ignores the door and keeps the replicated kernel sequence, including the symmetric PRE/FFN middle; decode split dispatch and workspace handling were deleted. Rows-exact verify and unsupported shapes remain replicated. Preconditions before state mutation: two peer-access shards, matching resident indexers/cache lengths, >=2 pools, 1<=k<=2048, supported integer bounds. Timeout traps rather than consuming unwritten candidates. `=0` or unset restores replicated prime; the old `MEMRA_GLM5_TP_INDEXER_SPLIT` name is no longer read. CHECK remains diagnostic only. Prior f32 pair receipt: prime -10.3% at 128k, -34.6% at 1M, all IDs identical. Default stays OFF pending the prime-only pair cell: 1M prime OFF/ON, 1M decode OFF/ON x3 and IDs. Receipt: [darklanes #527](https://github.com/avifenesh/darklanes/pull/527), `research/glm5-tp-indexer-split-20260908/RESULTS.md`; CPU/GPU gates: `tests/glm5_tp_indexer_split.rs`. |
 | `MEMRA_GLM5_TP_INDEXER_SPLIT_CHECK` | OFF diagnostic | `=1`: additionally scores/selects the full replicated plane on each rank and compares every merged index byte, including tail and padding. A mismatch names layer, rank and element. Uses host readback and is excluded from timing. Rollback: unset. Same receipt namespace as the split door. |
 
 ## 5. Experimental doors (opt-in, documented block)
@@ -1830,3 +1830,13 @@ Shape/alignment/M>1 guards remain intact. This dispatch exposure is separate fro
 serving admission. Direct composition evidence is
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, in addition to dense #507 and cadence #508.
+
+## Removed doors, 2026-09-09 (GLM TP indexer decode split)
+
+`MEMRA_GLM5_TP_INDEXER_SPLIT` was replaced by `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`.
+The decode dispatch arms and scalar workspace handling were deleted; no future decode door
+is retained. Shared score/candidate/exchange/merge kernels remain reachable through prime.
+The decode receipt was negative at 128k (-4.2%) and flat at 1M (+0.4%): merge cost was about
+128 ms per GPU over 159 steps, plus 36-40 ms exchange. Prime won at both depths with identical
+IDs. Receipt: [darklanes #527](https://github.com/avifenesh/darklanes/pull/527) and
+`research/glm5-tp-indexer-split-20260908/RESULTS.md`.

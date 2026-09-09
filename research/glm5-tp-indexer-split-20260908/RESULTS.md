@@ -2,6 +2,10 @@
 
 Decode verdict: NEGATIVE at 128k and FLAT at 1M. Merge cost is the named blocker: about 128 ms per GPU plus 36 to 40 ms exchange across 159 decode steps consumes most score/select savings. Prime wins at both contexts. The owner explicitly retains the code for the prime benefit; the door stays OFF, decide-by 2026-09-22. rev:2026-09-22.
 
+Follow-up: the decode split is deleted and the retained prime-only door is
+`MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`. See [PRIME-ONLY.md](PRIME-ONLY.md) for the new
+source/test receipt; the rows below remain the original combined-door measurements.
+
 ## Timed rows
 
 One 2x B200 pair, one GPU process at a time, fresh process per row, f32 indexer (`MEMRA_DSA_SCORE_TC=0`, RP=1), TP-2 expert split, symmetric graphs with eager MLA middles, grouped prime and host diet. Plain route, 160-token greedy identity instrument, NVFP4 latent cache OFF. All six pairs are interleaved OFF then ON. Compiler processes were absent during scoring. `MEMRA_ST_REPACK_DISK=0` matches the served loader and avoids a second on-disk repack copy. Source manifest and per-row binary/prompt/env/GPU receipts are retained.
