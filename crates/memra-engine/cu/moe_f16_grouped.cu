@@ -2894,7 +2894,13 @@ int memra_moe_m1_splitk_fast_component(
     int device=0, observed=0;
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
     #define GS_CHECK(call) do { cudaError_t e=(call); if(e) return 1000+int(e); } while(0)
-    GS_CHECK(cudaGetDevice(&device));
+    GS_CHECK(cudaStreamGetDevice(st,&device));
+    int ambient=-1; GS_CHECK(cudaGetDevice(&ambient));
+    if(ambient!=device) return 40012;
+    for(const void* ptr : {(const void*)table,(const void*)ex_ids,act_f16,(const void*)ex_off}){
+        cudaPointerAttributes attr{}; GS_CHECK(cudaPointerGetAttributes(&attr,ptr));
+        if(attr.device!=device || attr.type!=cudaMemoryTypeDevice) return 40012;
+    }
     const unsigned bit = 1u << (device*2+gu);
     if(g_splitk_fast_component_mask.load() & bit) return 0;
     GS_CHECK(cudaMemcpyAsync(&observed,ex_off+n_active,4,cudaMemcpyDeviceToHost,st));
@@ -2940,9 +2946,13 @@ int memra_moe_m1_splitk_fast_component(
         if(offsets[g+1]!=offsets[g]) printf("SPLITK_FAST_COMPONENT_OPERAND device=%d gu=%d row=%d expert=%d\n",device,gu,offsets[g],ids[g]);
     }
     auto launch = [&](int arm,int live){
-        return moe_m1_splitk_fast_launch(table,n_expert,ex_ids,b.activation,
+        GS_CHECK(cudaEventRecord(b.begin,st));
+        int rc=moe_m1_splitk_fast_launch(table,n_expert,ex_ids,b.activation,
             (arm==2?b.b:b.a)+64,row_scale,macro_g,macro_u,route_w,b.offsets,
             n_active,in_f,out_f,limit,6,gu,b.p+64,stream,arm==2,b.middle);
+        if(rc) return rc;
+        GS_CHECK(cudaEventRecord(b.end,st));
+        return 0;
     };
     GS_CHECK(cudaMemcpyAsync(b.offsets,offsets.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
     GS_CHECK(cudaStreamSynchronize(st));
@@ -2952,30 +2962,28 @@ int memra_moe_m1_splitk_fast_component(
     if(capture_rc) return capture_rc;
     GS_CHECK(ended);
     GS_CHECK(cudaGraphInstantiate(&b.exec,b.graph,nullptr,nullptr,0));
-    for(int live=0;live<=6;++live){
-        std::vector<int> prefix=offsets;
-        for(auto& v:prefix) v=std::min(v,live);
-        GS_CHECK(cudaMemcpyAsync(b.offsets,prefix.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
-        // Match replay launch geometry in the timing table. The host-adaptive
-        // control may capture a different grid per live count; the candidate
-        // above retains ONE capture across the complete 0..6 sweep.
+        // Both fixed-grid arms retain one capture across the entire CSR sweep.
         struct Controls {
             cudaGraph_t graphs[2]={}; cudaGraphExec_t execs[2]={};
             ~Controls(){ for(int arm=0;arm<2;++arm){
                 if(execs[arm]) cudaGraphExecDestroy(execs[arm]);
                 if(graphs[arm]) cudaGraphDestroy(graphs[arm]); } }
         } controls;
-        for(int arm=0;arm<2;++arm){
+        for(int arm=1;arm<2;++arm){
             // Initialize the control launcher's device attributes before capture.
-            int rc=launch(arm,live); if(rc) return rc;
+            int rc=launch(arm,6); if(rc) return rc;
             GS_CHECK(cudaStreamSynchronize(st));
             GS_CHECK(cudaStreamBeginCapture(st,cudaStreamCaptureModeThreadLocal));
-            rc=launch(arm,live);
+            rc=launch(arm,6);
             cudaError_t end=cudaStreamEndCapture(st,&controls.graphs[arm]);
             if(rc) return rc;
             GS_CHECK(end);
             GS_CHECK(cudaGraphInstantiate(&controls.execs[arm],controls.graphs[arm],nullptr,nullptr,0));
         }
+    for(int live=0;live<=6;++live){
+        std::vector<int> prefix=offsets;
+        for(auto& v:prefix) v=std::min(v,live);
+        GS_CHECK(cudaMemcpyAsync(b.offsets,prefix.data(),(n_active+1)*4,cudaMemcpyHostToDevice,st));
         std::vector<float> reference(n), candidate(n), first(n);
         std::vector<unsigned> first_partial(pn), current_partial(pn);
         bool have_first=false;
@@ -2987,9 +2995,8 @@ int memra_moe_m1_splitk_fast_component(
                     GS_CHECK(cudaMemsetAsync(b.b,0xff,(n+128)*4,st));
                     GS_CHECK(cudaMemsetAsync(b.p,0xff,(pn+128)*4,st));
                     if(cold) GS_CHECK(cudaMemsetAsync(b.flush,repeat+3,flush_bytes,st));
-                    GS_CHECK(cudaEventRecord(b.begin,st));
                     GS_CHECK(cudaGraphLaunch(arm==2?b.exec:controls.execs[arm],st));
-                    GS_CHECK(cudaEventRecord(b.end,st)); GS_CHECK(cudaEventSynchronize(b.end));
+                    GS_CHECK(cudaEventSynchronize(b.end));
                     float ms=0; GS_CHECK(cudaEventElapsedTime(&ms,b.begin,b.end));
                     if(repeat>=0){
                         totals[arm]+=ms*1000;
