@@ -5549,10 +5549,7 @@ impl HybridModel {
     /// through the same arithmetic. Without a per-prime receipt the only evidence is the answer
     /// text, which cannot say WHICH walk differed.
     fn a4_prime_receipt_begin(&self) -> Option<Vec<u64>> {
-        self.cfg
-            .prefill_activation
-            .as_ref()
-            .map(|_| crate::mmq_ffi::a4_prefill_slots_snapshot())
+        Some(crate::mmq_ffi::a4_prefill_slots_snapshot())
     }
 
     fn a4_prime_receipt_end(
@@ -5603,8 +5600,11 @@ impl HybridModel {
                 best.1 - second
             )
         });
+        // The row receipt is emitted for EVERY model, not only calibrated ones. Without the
+        // served artifact's own rows there is no control: "the restored prime row differs" is
+        // only a finding about A4 if the artifact without A4 keeps its rows identical.
         eprintln!(
-            "[a4-{kind}] rows={rows} a4_launches={launches} projections={ran} of 400{}",
+            "[prime-row] kind={kind} rows={rows} a4_launches={launches} a4_projections={ran}{}",
             row.unwrap_or_default()
         );
     }
