@@ -1,5 +1,7 @@
 # v0.137.0 release preparation
 
+Current owner-go membership includes #378, merged `ff0937dd0`; the release was rebased onto it. See [GO-QUALIFICATION.md](GO-QUALIFICATION.md) for current source-bound receipts. The following sections preserve the earlier preparation snapshots.
+
 PREPARED CANDIDATE ONLY. No tag or deployment is authorized by this record.
 
 Current composition: rebased onto `16071ff480fdea92c38f2c825c564562fff25710` including #379 and #392. The rebased full battery passed on `72d424979`; its receipt is recorded in `REBASE-QUALIFICATION.md`. Earlier passes/refusals below remain bound to their stated source and do not qualify this rebase. No tag or pair qualification is implied.

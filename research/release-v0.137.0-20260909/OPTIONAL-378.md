@@ -1,4 +1,6 @@
-# Prepared alternate, only after #378 go and merge
+# Prepared alternate, applied after owner go
+
+Applied 2026-09-09 after #378 merged at `ff0937dd0`. The text below is the historical decision recipe; current membership and receipts are in GO-QUALIFICATION.md.
 
 Not release membership or an enablement decision. Draft source inspected: `66b79c20ebc0422c87b6218e0e9719ff3b755416`.
 
