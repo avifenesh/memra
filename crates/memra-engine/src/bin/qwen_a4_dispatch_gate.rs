@@ -112,6 +112,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "PASS arm1 prime: {primed} A4 GEMMs over {t} tokens = all {PROGRAM_LINEARS} projections x {chunks} prime chunks"
     );
 
+    // ---- arm 1b: the BATCHED multi-sequence prime runs the same whole program ----
+    //
+    // `prime_cache_batch_inner` is a second, independent walk of the trunk (concatenated
+    // sequences, varlen cores, out-GEMMs written straight into a shared slab). It is the path
+    // the four-session capacity cell takes, and its call sites are threaded by hand too. Arm 1
+    // over one sequence says nothing about it.
+    {
+        let a = prompt(t, model.cfg.n_vocab);
+        let b: Vec<u32> = prompt(t / 2, model.cfg.n_vocab).into_iter().rev().collect();
+        let mut ca = memra_engine::pp::new_cache(&e, &model.cfg, a.len() + 64)?;
+        let mut cb = memra_engine::pp::new_cache(&e, &model.cfg, b.len() + 64)?;
+        let mut refs: Vec<&mut memra_engine::cache::Cache> = vec![&mut ca, &mut cb];
+        a4_prefill_launches_reset();
+        a4_prefill_slots_reset();
+        model.prime_cache_batch(&e, &[&a, &b], &mut refs)?;
+        let batched = a4_prefill_launches_reset();
+        let slots = a4_prefill_slots_reset();
+        let runs = *slots.iter().max().expect("the program has 400 slots");
+        let missing: Vec<(&str, u64)> = names
+            .iter()
+            .zip(slots.iter())
+            .filter(|(_, ran)| **ran != runs)
+            .map(|(name, ran)| (*name, *ran))
+            .collect();
+        if runs == 0 {
+            fail("the batched prime issued ZERO calibrated A4 GEMMs");
+        }
+        if !missing.is_empty() {
+            eprintln!(
+                "batched prime: {} of {PROGRAM_LINEARS} projections did not run {runs} times:",
+                missing.len()
+            );
+            for (name, ran) in missing.iter().take(24) {
+                eprintln!("  {name}: {ran} of {runs}");
+            }
+            fail("the batched prime path is missing a call site the single-sequence path has");
+        }
+        println!(
+            "PASS arm1b batched prime: {batched} A4 GEMMs over 2 sequences = all \
+             {PROGRAM_LINEARS} projections x {runs}"
+        );
+    }
+
     // ---- arm 2: decode is W4A8 at every batch size ----
     for batch in [1usize, 4] {
         let mut caches: Vec<memra_engine::cache::Cache> = (0..batch)

@@ -17771,6 +17771,60 @@ impl Engine {
         self.matmul(w, x, m)
     }
 
+    /// True when the artifact stamped this weight with a calibrated prefill activation scale.
+    pub fn a4_stamped(w: &crate::model::GpuTensor) -> bool {
+        matches!(w, crate::model::GpuTensor::Quant { a4: Some(_), .. })
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre`. A stamped weight refuses the f16 mirror: that mirror is
+    /// a different numerical program from the one its global activation scale was fitted against,
+    /// and taking it would silently run two arithmetics for one declared program. Every unstamped
+    /// weight behaves exactly as before.
+    ///
+    /// This exists as a named helper because the guard was spelled inline, three different ways,
+    /// at the first three call sites that needed it -- and the sites that needed it and did not
+    /// have it are precisely the ones the dispatch gate caught.
+    pub fn try_f16_gemm_pre_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(None);
+        }
+        self.try_f16_gemm_pre(w, xh, m)
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre_into`; same refusal as `try_f16_gemm_pre_prefill`.
+    pub fn try_f16_gemm_pre_into_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+        dst: &mut CudaSlice<f32>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(false);
+        }
+        self.try_f16_gemm_pre_into(w, xh, m, dst)
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre_into_off`; same refusal as `try_f16_gemm_pre_prefill`.
+    pub fn try_f16_gemm_pre_into_off_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+        dst: &mut CudaSlice<f32>,
+        off: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(false);
+        }
+        self.try_f16_gemm_pre_into_off(w, xh, m, dst, off)
+    }
+
     /// float tensors to cuBLASLt. y[m,out] = x[m,in] @ W[out,in]^T.
     pub fn matmul(
         &self,
