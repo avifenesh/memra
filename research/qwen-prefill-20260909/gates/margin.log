@@ -1,0 +1,4 @@
+argmax-margin-gate: model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf prompt=margin-board-2048.txt window=12 canary=0
+  SUMMARY flips=0 bad=0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: /root/qwen-prefill-20260909/t3-margin-canonical/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-margin-board-2048.log
