@@ -480,3 +480,5 @@ release-v0.134.0-20260908 | "Full release battery: PASS" | release-v0.134.0-2026
 prefill-fairness-20260908 | Exact resumable prime: Ornith small p95 15.125 -> 0.977 s (+1.756 s long TTFT); Qwen 60.452 -> 48.042 s (+3.664 s), admitted-peer exactness passes but session-cap queue persists. Default OFF; propose Ornith launcher enable. | prefill-fairness-20260908/RESULTS.md
 
 glm5-tp2-gpu-sampler-20260908 | Current five-pair medians: 81.317 to 91.250 wall tok/s (+12.22%), server decode 11.894 to 10.610 ms/token; original three and later two windows reported separately. Greedy twins exact, door OFF. | glm5-tp2-gpu-sampler-20260908/RESULTS.md
+
+- release-v0.137.0 owner go: #378 merged default OFF; full source-bound battery receipts attached to #391. See [GO-QUALIFICATION](release-v0.137.0-20260909/GO-QUALIFICATION.md).
