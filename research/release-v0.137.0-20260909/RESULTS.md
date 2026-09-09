@@ -2,7 +2,7 @@
 
 PREPARED CANDIDATE ONLY. No tag or deployment is authorized by this record.
 
-Current status: both preparation blockers are cleared by [the full roster and artifact receipts](BLOCKER-CLOSURE.md). Earlier refusals below remain historical evidence. No tag or pair qualification is implied.
+Current composition: rebased onto `16071ff480fdea92c38f2c825c564562fff25710` including #379 and #392. The next full-battery receipt is recorded in `REBASE-QUALIFICATION.md`. Earlier passes/refusals below remain bound to their stated source and do not qualify this rebase. No tag or pair qualification is implied.
 
 Base main: `6285210078609c7e11aa23ae070ad581c184c153`. Required member #325: `dcfeab7c7`. Conditional #378 remains excluded pending the orchestrator decision and reviewed merge. The source already includes #377; it is inherited, although it is not a plain TP-2 cutover dependency.
 
