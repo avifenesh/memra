@@ -54,6 +54,10 @@ keep working.
 
 ### In progress
 
+Whisper large-v3 has a [native speech plan and metadata pack skeleton](../ASR-MODALITY-PLAN.md).
+The source census is bound, but speech execution is not implemented and has no native support
+state. FastConformer/RNNT remains planned. Neither path is admitted for serving.
+
 Tensor parallel, P2P and 3-stage pipeline parallel are being built now and are close, which is
 exactly why they are named here as unfinished rather than listed as features. When each one has
 its gates it moves into the table.

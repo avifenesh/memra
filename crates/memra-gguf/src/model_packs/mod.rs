@@ -22,6 +22,8 @@ pub mod qwen35_moe;
 pub mod qwen3_moe;
 pub mod qwen4_exp;
 pub mod step35;
+/// Speech packs use their own config normalization until the CLI accepts audio artifacts.
+pub mod whisper;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigLayout {

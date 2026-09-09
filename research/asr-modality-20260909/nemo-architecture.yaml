@@ -1,0 +1,84 @@
+preprocessor:
+  _target_: nemo.collections.asr.modules.AudioToMelSpectrogramPreprocessor
+  sample_rate: 16000
+  normalize: NA
+  window_size: 0.025
+  window_stride: 0.01
+  window: hann
+  features: 128
+  n_fft: 512
+  log: true
+  frame_splicing: 1
+  dither: 1.0e-05
+  pad_to: 0
+  pad_value: 0.0
+spec_augment:
+  _target_: nemo.collections.asr.modules.SpectrogramAugmentation
+  freq_masks: 2
+  time_masks: 10
+  freq_width: 27
+  time_width: 0.05
+encoder:
+  _target_: nemo.collections.asr.modules.ConformerEncoder
+  feat_in: 128
+  feat_out: -1
+  n_layers: 24
+  d_model: 1024
+  use_bias: false
+  subsampling: dw_striding
+  subsampling_factor: 8
+  subsampling_conv_channels: 256
+  causal_downsampling: true
+  reduction: null
+  reduction_position: null
+  reduction_factor: 1
+  ff_expansion_factor: 4
+  self_attention_model: rel_pos
+  n_heads: 8
+  att_context_size:
+  - - 56
+    - 3
+  - - 56
+    - 0
+  - - 56
+    - 6
+  - - 56
+    - 13
+  att_context_style: chunked_limited
+  xscaling: false
+  untie_biases: true
+  pos_emb_max_len: 5000
+  conv_kernel_size: 9
+  conv_norm_type: layer_norm
+  conv_context_size: causal
+  dropout: 0.1
+  dropout_pre_encoder: 0.1
+  dropout_emb: 0.0
+  dropout_att: 0.1
+  stochastic_depth_drop_prob: 0.0
+  stochastic_depth_mode: linear
+  stochastic_depth_start_layer: 1
+decoder:
+  _target_: nemo.collections.asr.modules.RNNTDecoder
+  normalization_mode: null
+  random_state_sampling: false
+  blank_as_pad: true
+  prednet:
+    pred_hidden: 640
+    pred_rnn_layers: 2
+    t_max: null
+    dropout: 0.2
+  vocab_size: 13087
+joint:
+  _target_: nemo.collections.asr.modules.RNNTJoint
+  log_softmax: null
+  preserve_memory: false
+  fuse_loss_wer: true
+  fused_batch_size: 2
+  jointnet:
+    joint_hidden: 640
+    activation: relu
+    dropout: 0.2
+    encoder_hidden: 1024
+    pred_hidden: 640
+  num_classes: 13087

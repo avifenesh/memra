@@ -1174,6 +1174,7 @@ mod tests {
             weight_transform: WeightTransform::Identity,
         };
         let plan = ModelPlan {
+            speech: None,
             arch: Arch::Glm5Next,
             hidden_size: 256,
             vocab_size: 32,

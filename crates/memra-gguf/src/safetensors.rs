@@ -116,7 +116,7 @@ fn validate_tensor_extent(name: &str, info: &StInfo, payload_len: usize) -> std:
     Ok(())
 }
 
-fn validate_tensor_extents(
+pub(crate) fn validate_tensor_extents(
     infos: &HashMap<String, StInfo>,
     payload_len: usize,
 ) -> std::io::Result<()> {

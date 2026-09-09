@@ -157,7 +157,7 @@ jobs:
       - name: Fatbin-lookup census teeth
         run: tools/test_fatbin_lookup_census.sh
 
-      # UNIT SUITES with no CUDA dependency at all. These four crates declare no cudarc
+      # UNIT SUITES with no CUDA dependency at all. These crates declare no cudarc
       # dependency (checked, not assumed: grep cudarc crates/*/Cargo.toml). --lib and no
       # filter, deliberately: a filtered suite prints a green "0 passed; N filtered out" the
       # day the name moves. Through the SKIP CENSUS (GATE-INTEGRITY-20260819 section 10):
@@ -178,7 +178,7 @@ jobs:
             --crate memra-tokenizer --crate memra-validate --crate memra-sampling
           MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 130 \
-            -- cargo test -p memra-gguf -p memra-tokenizer -p memra-validate -p memra-sampling --lib
+            -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
 
   # ── public boundary: what the public repository is permitted to publish ─────────────────────
   # Its own job because the two steps together are ~250 s and share nothing with the fixtures

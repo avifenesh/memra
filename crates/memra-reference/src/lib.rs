@@ -241,6 +241,12 @@ impl std::fmt::Display for ReferenceError {
 impl std::error::Error for ReferenceError {}
 
 pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
+    if plan.speech.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "native speech execution pending",
+        });
+    }
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     if hidden == 0 || vocab < 2 || hidden > 256 || vocab > 262_144 {
@@ -1919,6 +1925,12 @@ pub fn execute(
     weights: &ReferenceWeights,
     token_ids: &[u32],
 ) -> Result<ReferenceOutput, ReferenceError> {
+    if plan.speech.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "native speech execution pending",
+        });
+    }
     if token_ids.is_empty() {
         return Err(ReferenceError::EmptyInput);
     }
@@ -1935,6 +1947,12 @@ pub fn execute_multimodal(
     token_ids: &[u32],
     vision_input: &ReferenceVisionInput,
 ) -> Result<ReferenceMultimodalOutput, ReferenceError> {
+    if plan.speech.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "native speech execution pending",
+        });
+    }
     if token_ids.is_empty() {
         return Err(ReferenceError::EmptyInput);
     }
@@ -2252,6 +2270,12 @@ impl<'a> StreamedTrunkExecution<'a> {
         globals: &ReferenceWeights,
         token_ids: &[u32],
     ) -> Result<Self, ReferenceError> {
+        if plan.speech.is_some() {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: None,
+                operation: "native speech execution pending",
+            });
+        }
         if token_ids.is_empty() {
             return Err(ReferenceError::EmptyInput);
         }
