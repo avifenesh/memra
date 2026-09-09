@@ -1,6 +1,8 @@
 # DFlash prime adapter
 
-GPU qualification pending explicit handoff. Default remains OFF.
+5090 exactness and admitted-peer gates passed. Default remains OFF by design.
+The overall 0.20 req/s mixed-load latency goal is not qualified: session slots
+remain occupied during slow peer decode. See [RESULTS.md](RESULTS.md).
 
 `dflash.rs` owns `DsparkPrimeState`: cold cache/draft KV or a resumed session,
 the frozen trunk ranges, final logits, capture state, and `DflashTapPrime`.
@@ -22,5 +24,10 @@ state. Finalization releases carry storage before optional prompt-end capture.
 
 CPU validation: 56 DFlash tests passed, including the production carry oracle
 across chunk and capture cuts. See `CPU.md` for the final source-bound check set.
-The greedy c1/c2 and boundary-oracle GPU receipts are still required; compilation
-and the carry tests establish no serving or latency qualification.
+The greedy four-turn chain and c2 pair passed; the pair logged 129 yields and
+both outputs matched their own c1 outputs. Taps, features, positions, logits and
+actual boundary snapshots matched the serial oracle. The pair's small TTFT was
+1.182 seconds versus 0.552 alone. Full mixed p95 improved from 60.452 to 48.042
+seconds, with a 3.664-second long TTFT penalty, but later arrivals still wait at
+the four-session cap. This is a positive mechanism result with an unresolved
+admission/peer-throughput limit, not a shared-card service SLO qualification.

@@ -32,6 +32,7 @@
         "[spec-acc] ctx=127478 burst=15/51 cum=15/51=0.294",
         "[spec-acc] ctx=127511 burst=17/39 cum=32/90=0.356"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 0
     },
     {
@@ -66,6 +67,7 @@
         "[spec-acc] ctx=127478 burst=14/54 cum=14/54=0.259",
         "[spec-acc] ctx=127511 burst=17/45 cum=31/99=0.313"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 275
     },
     {
@@ -100,6 +102,7 @@
         "[spec-acc] ctx=127478 burst=15/51 cum=15/51=0.294",
         "[spec-acc] ctx=127511 burst=10/18 cum=25/69=0.362"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 0
     },
     {
@@ -134,6 +137,7 @@
         "[spec-acc] ctx=127478 burst=19/39 cum=19/39=0.487",
         "[spec-acc] ctx=127511 burst=17/45 cum=36/84=0.429"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 279
     },
     {
@@ -168,6 +172,7 @@
         "[spec-acc] ctx=127478 burst=16/48 cum=16/48=0.333",
         "[spec-acc] ctx=127511 burst=11/24 cum=27/72=0.375"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 0
     },
     {
@@ -202,6 +207,7 @@
         "[spec-acc] ctx=127478 burst=16/48 cum=16/48=0.333",
         "[spec-acc] ctx=127511 burst=20/39 cum=36/87=0.414"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 267
     },
     {
@@ -236,6 +242,7 @@
         "[dspark-acc] ctx=131070 burst=22/37 cum=22/37=0.595",
         "[dspark-acc] ctx=131104 burst=27/35 cum=49/72=0.681"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 0
     },
     {
@@ -270,6 +277,7 @@
         "[dspark-acc] ctx=954 burst=3/7 cum=3/7=0.429",
         "[dspark-acc] ctx=958 burst=0/4 cum=3/11=0.273"
       ],
+      "peer_spec_service_max_before_long_token_ms": 119.024,
       "yield_count": 140
     },
     {
@@ -304,6 +312,7 @@
         "[dspark-acc] ctx=131070 burst=25/38 cum=25/38=0.658",
         "[dspark-acc] ctx=131105 burst=21/37 cum=46/75=0.613"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 0
     },
     {
@@ -338,6 +347,7 @@
         "[dspark-acc] ctx=954 burst=2/7 cum=2/7=0.286",
         "[dspark-acc] ctx=957 burst=3/3 cum=5/10=0.500"
       ],
+      "peer_spec_service_max_before_long_token_ms": 118.889,
       "yield_count": 139
     },
     {
@@ -372,6 +382,7 @@
         "[dspark-acc] ctx=131070 burst=23/35 cum=23/35=0.657",
         "[dspark-acc] ctx=131103 burst=22/33 cum=45/68=0.662"
       ],
+      "peer_spec_service_max_before_long_token_ms": 0,
       "yield_count": 0
     },
     {
@@ -406,10 +417,177 @@
         "[dspark-acc] ctx=954 burst=3/7 cum=3/7=0.429",
         "[dspark-acc] ctx=958 burst=4/4 cum=7/11=0.636"
       ],
+      "peer_spec_service_max_before_long_token_ms": 118.868,
       "yield_count": 140
     }
   ],
   "chunks": [
+    {
+      "run": "ornith-1024-off",
+      "phases": {
+        "mtp-trunk": {
+          "rows": 127477,
+          "chunks": 126,
+          "all_max_ms": 280.351,
+          "early": {
+            "n": 42,
+            "median_ms": 121.293,
+            "p95_ms": 149.697,
+            "max_ms": 152.563
+          },
+          "middle": {
+            "n": 42,
+            "median_ms": 186.461,
+            "p95_ms": 214.993,
+            "max_ms": 217.916
+          },
+          "late": {
+            "n": 42,
+            "median_ms": 248.1925,
+            "p95_ms": 277.01,
+            "max_ms": 280.351
+          }
+        },
+        "mtp-draft-fill": {
+          "rows": 127477,
+          "chunks": 125,
+          "all_max_ms": 6.558,
+          "early": {
+            "n": 41,
+            "median_ms": 6.548,
+            "p95_ms": 6.554,
+            "max_ms": 6.558
+          },
+          "middle": {
+            "n": 42,
+            "median_ms": 6.547,
+            "p95_ms": 6.552,
+            "max_ms": 6.552
+          },
+          "late": {
+            "n": 42,
+            "median_ms": 6.547,
+            "p95_ms": 6.551,
+            "max_ms": 6.552
+          }
+        }
+      },
+      "requests": [
+        {
+          "label": "long",
+          "ttft_s": 24.34172390308231,
+          "done": true,
+          "usage": {
+            "prompt_tokens": 127477,
+            "completion_tokens": 328,
+            "total_tokens": 127805,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "elapsed_s": 27.568433327,
+            "spec": {
+              "rounds": 183,
+              "drafted": 549,
+              "accepted": 135,
+              "acceptance_rate": 0.2459016393442623
+            }
+          },
+          "status": 200,
+          "finish": "stop",
+          "total_s": 27.870518140029162,
+          "output_sha256": "3a90f19ce887f34722f463fab7435faed5ee6faaf378cf5d24d84d13ccfe37d3"
+        }
+      ],
+      "yield_count": 0,
+      "finalization_max_ms": {
+        "memra_engine::spec::prime::MtpPrimeWalker<'_>": 0.001
+      },
+      "prime_worker_service_max_ms": 24395.43,
+      "first_prime_worker_service_ms": 24395.43
+    },
+    {
+      "run": "ornith-1024-on",
+      "phases": {
+        "mtp-trunk": {
+          "rows": 127477,
+          "chunks": 126,
+          "all_max_ms": 280.304,
+          "early": {
+            "n": 42,
+            "median_ms": 121.44149999999999,
+            "p95_ms": 150.045,
+            "max_ms": 153.03
+          },
+          "middle": {
+            "n": 42,
+            "median_ms": 186.6635,
+            "p95_ms": 215.049,
+            "max_ms": 217.919
+          },
+          "late": {
+            "n": 42,
+            "median_ms": 248.27499999999998,
+            "p95_ms": 277.075,
+            "max_ms": 280.304
+          }
+        },
+        "mtp-draft-fill": {
+          "rows": 127477,
+          "chunks": 125,
+          "all_max_ms": 6.562,
+          "early": {
+            "n": 41,
+            "median_ms": 6.548,
+            "p95_ms": 6.553,
+            "max_ms": 6.562
+          },
+          "middle": {
+            "n": 42,
+            "median_ms": 6.548,
+            "p95_ms": 6.553,
+            "max_ms": 6.557
+          },
+          "late": {
+            "n": 42,
+            "median_ms": 6.549,
+            "p95_ms": 6.553,
+            "max_ms": 6.554
+          }
+        }
+      },
+      "requests": [
+        {
+          "label": "long",
+          "ttft_s": 24.44316366990097,
+          "done": true,
+          "usage": {
+            "prompt_tokens": 127477,
+            "completion_tokens": 246,
+            "total_tokens": 127723,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "elapsed_s": 26.879750636,
+            "spec": {
+              "rounds": 141,
+              "drafted": 423,
+              "accepted": 114,
+              "acceptance_rate": 0.2695035460992908
+            }
+          },
+          "status": 200,
+          "finish": "stop",
+          "total_s": 27.195896381977946,
+          "output_sha256": "a4b695f92ce7d21c3758fe33ec8cf5c83c8d19fd5f7fe88c51f69b5849bb5107"
+        }
+      ],
+      "yield_count": 250,
+      "finalization_max_ms": {
+        "memra_engine::spec::prime::MtpPrimeWalker<'_>": 0.001
+      },
+      "prime_worker_service_max_ms": 280.501,
+      "first_prime_worker_service_ms": 96.882
+    },
     {
       "run": "ornith-4096-off",
       "phases": {
@@ -486,7 +664,12 @@
           "output_sha256": "cbec43ab320f5cb8d3b7e8018282468d321318dc4e972092e70e8f3884836d54"
         }
       ],
-      "yield_count": 0
+      "yield_count": 0,
+      "finalization_max_ms": {
+        "memra_engine::spec::prime::MtpPrimeWalker<'_>": 0.001
+      },
+      "prime_worker_service_max_ms": 20370.646,
+      "first_prime_worker_service_ms": 20370.646
     },
     {
       "run": "ornith-4096-on",
@@ -564,7 +747,134 @@
           "output_sha256": "1d35dea07cddebb5e719c2ab40d47c1626cb3b42883050b8b580b4f729af7f9a"
         }
       ],
-      "yield_count": 64
+      "yield_count": 64,
+      "finalization_max_ms": {
+        "memra_engine::spec::prime::MtpPrimeWalker<'_>": 0.001
+      },
+      "prime_worker_service_max_ms": 933.146,
+      "first_prime_worker_service_ms": 288.183
+    },
+    {
+      "run": "qwen-1024-off",
+      "phases": {
+        "dflash-trunk-ingest": {
+          "rows": 131070,
+          "chunks": 129,
+          "all_max_ms": 764.268,
+          "early": {
+            "n": 43,
+            "median_ms": 369.611,
+            "p95_ms": 440.557,
+            "max_ms": 448.24
+          },
+          "middle": {
+            "n": 43,
+            "median_ms": 530.412,
+            "p95_ms": 602.398,
+            "max_ms": 609.537
+          },
+          "late": {
+            "n": 43,
+            "median_ms": 689.093,
+            "p95_ms": 760.443,
+            "max_ms": 764.268
+          }
+        }
+      },
+      "requests": [
+        {
+          "label": "long",
+          "ttft_s": 68.18811718304642,
+          "done": true,
+          "usage": {
+            "prompt_tokens": 131070,
+            "completion_tokens": 786,
+            "total_tokens": 131856,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "elapsed_s": 81.643551022,
+            "spec": {
+              "rounds": 281,
+              "drafted": 835,
+              "accepted": 505,
+              "acceptance_rate": 0.6047904191616766
+            }
+          },
+          "status": 200,
+          "finish": "stop",
+          "total_s": 81.80532216397114,
+          "output_sha256": "5464b2ad6dd654004efaefde8eee38ec87fe7015ca85db7b267e922e8dc52628"
+        }
+      ],
+      "yield_count": 0,
+      "finalization_max_ms": {
+        "memra_engine::dflash::DflashTapWalker<'_>": 1.232,
+        "memra_engine::dflash::DsparkPrimeWalker<'_>": 1.544
+      },
+      "prime_worker_service_max_ms": 68487.055,
+      "first_prime_worker_service_ms": 68487.055
+    },
+    {
+      "run": "qwen-1024-on",
+      "phases": {
+        "dflash-trunk-ingest": {
+          "rows": 131070,
+          "chunks": 129,
+          "all_max_ms": 764.869,
+          "early": {
+            "n": 43,
+            "median_ms": 370.273,
+            "p95_ms": 441.543,
+            "max_ms": 449.233
+          },
+          "middle": {
+            "n": 43,
+            "median_ms": 531.585,
+            "p95_ms": 603.326,
+            "max_ms": 610.698
+          },
+          "late": {
+            "n": 43,
+            "median_ms": 690.624,
+            "p95_ms": 760.693,
+            "max_ms": 764.869
+          }
+        }
+      },
+      "requests": [
+        {
+          "label": "long",
+          "ttft_s": 68.3134892268572,
+          "done": true,
+          "usage": {
+            "prompt_tokens": 131070,
+            "completion_tokens": 605,
+            "total_tokens": 131675,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "elapsed_s": 78.865850226,
+            "spec": {
+              "rounds": 225,
+              "drafted": 647,
+              "accepted": 380,
+              "acceptance_rate": 0.5873261205564142
+            }
+          },
+          "status": 200,
+          "finish": "stop",
+          "total_s": 79.02466912288219,
+          "output_sha256": "c8e82d835b1b840fcfc1747da153a349a6f2755919b54d88da741f28275d6d60"
+        }
+      ],
+      "yield_count": 128,
+      "finalization_max_ms": {
+        "memra_engine::dflash::DflashTapWalker<'_>": 1.235,
+        "memra_engine::dflash::DsparkPrimeWalker<'_>": 1.554
+      },
+      "prime_worker_service_max_ms": 764.913,
+      "first_prime_worker_service_ms": 289.438
     },
     {
       "run": "qwen-4096-off",
@@ -619,7 +929,13 @@
           "output_sha256": "6f5a23a009c0fd3af247d509d46005d566a4c7a15060a07638bc60bd924f9a3c"
         }
       ],
-      "yield_count": 0
+      "yield_count": 0,
+      "finalization_max_ms": {
+        "memra_engine::dflash::DflashTapWalker<'_>": 1.236,
+        "memra_engine::dflash::DsparkPrimeWalker<'_>": 1.549
+      },
+      "prime_worker_service_max_ms": 63944.535,
+      "first_prime_worker_service_ms": 63944.535
     },
     {
       "run": "qwen-4096-on",
@@ -674,7 +990,13 @@
           "output_sha256": "2f655d4a344960c3949dd89f52eee7714548ef9c2518f82557d66f2c095a47e7"
         }
       ],
-      "yield_count": 32
+      "yield_count": 32,
+      "finalization_max_ms": {
+        "memra_engine::dflash::DflashTapWalker<'_>": 1.231,
+        "memra_engine::dflash::DsparkPrimeWalker<'_>": 1.549
+      },
+      "prime_worker_service_max_ms": 2751.719,
+      "first_prime_worker_service_ms": 1198.215
     }
   ],
   "byte_gates": [

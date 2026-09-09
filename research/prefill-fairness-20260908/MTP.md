@@ -1,6 +1,8 @@
 # MTP prime adapter
 
-GPU qualification pending explicit handoff. Default remains OFF.
+5090 exactness and latency gates passed. Default remains OFF by design; propose
+ON in the qualified Ornith launcher at the next owner-batched rollout. See
+[RESULTS.md](RESULTS.md) and [CHUNKS.md](CHUNKS.md).
 
 `spec/prime.rs` owns the frozen segment/range program, trunk cursor, full hidden
 stack, capture positions, and subsequent draft-fill cursor. A temporary
@@ -33,5 +35,7 @@ capacity and request output budgets stay intact.
 
 CPU schedule tests cover distinct capture stops, non-divisible tokenwise tails,
 and the legacy tokenwise override's segment behavior. See `CPU.md` for the check
-set. GPU c1/c2 bytes and boundary/capture equivalence remain mandatory before a
-latency or exactness verdict.
+set. GPU c1 four-turn bytes, c2 per-request bytes (250 yields), actual boundary
+hashes and the separate 5,961-row run-spec walker oracle all passed. The mixed
+small p95 median fell from 15.125 to 0.977 seconds, with a 1.756-second long TTFT
+penalty. Session-cap outliers remain; this is not a universal HTTP latency bound.
