@@ -382,6 +382,11 @@ fn load_mixer_kind(
     let load_t = |e: &Engine, src: &dyn TensorSource, name: &str| {
         GpuTensor::load_from_source_calibrated(e, src, cfg, name)
     };
+    // The OPTIONAL loader needs the same shadow: attn_v is read optionally by every family
+    // (gemma4's global layers have no v_proj) and it IS one of the program's 400 names.
+    let load_opt_t = |e: &Engine, src: &dyn TensorSource, name: &str| {
+        GpuTensor::load_opt_from_source_calibrated(e, src, cfg, name)
+    };
     Ok(match attention {
         AttentionPlan::Mla(mla) => Mixer::Mla(MlaAttnLayer::load(e, src, il, mla)?),
         AttentionPlan::Full(full)
@@ -395,7 +400,7 @@ fn load_mixer_kind(
                 // output pre-rope (llama gemma4.cpp: `Vcur = wv ? mm(wv,cur) : Kcur`). Loading
                 // wv := wk reproduces that exactly with zero forward changes; the gemma forward
                 // adds the weightless V rms_norm (R7 part 2).
-                wv: match load_opt(e, src, &p("attn_v.weight"))? {
+                wv: match load_opt_t(e, src, &p("attn_v.weight"))? {
                     Some(v) => v,
                     None => load_t(e, src, &p("attn_k.weight"))?,
                 },

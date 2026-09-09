@@ -680,6 +680,33 @@ impl GpuTensor {
         Ok(())
     }
 
+    /// `load_opt_from_source` + the same stamping as `load_from_source_calibrated`.
+    ///
+    /// A projection loaded through the OPTIONAL loader is still a projection: qwen35's `attn_v`
+    /// takes this path (gemma4 global layers ship no v_proj, so every family reads it optionally),
+    /// and loading it through the unstamped loader is exactly how 16 declared A4 projections ran
+    /// W4A8 while the artifact said otherwise.
+    pub fn load_opt_from_source_calibrated(
+        e: &Engine,
+        src: &dyn TensorSource,
+        cfg: &ModelConfig,
+        name: &str,
+    ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
+        let Some(mut t) = Self::load_opt_from_source(e, src, name)? else {
+            return Ok(None);
+        };
+        if let Some(program) = &cfg.prefill_activation
+            && let Some(multiplier) = program.scales().get(name)
+        {
+            let slot = program
+                .slot(name)
+                .expect("a name found in the program has a slot in the program");
+            t.stamp_prefill_a4(*multiplier, slot)
+                .map_err(|error| format!("{name}: {error}"))?;
+        }
+        Ok(Some(t))
+    }
+
     /// Load a weight and stamp it if the artifact's activation program names it. Every projection
     /// the program does NOT name keeps `a4: None` and therefore W4A8 in every phase.
     pub fn load_from_source_calibrated(
