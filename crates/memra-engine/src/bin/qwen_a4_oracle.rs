@@ -155,10 +155,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut checked = 0usize;
         for row in 0..cap.m.min(64) {
             for blk in 0..blocks_per_row {
-                // block_fp4_mmq = { u32 d4[4]; i8 qs[128] } = 272 B, laid out [in_f/256][padded_rows]
-                let off = (blk * padded_rows + row) * 272;
+                // block_fp4_mmq = { u32 d4[4]; i8 qs[4*32] } = 16 + 128 = 144 B, and the slab is
+                // laid out [in_f/256][padded_rows] (block-major over the K groups, row-minor).
+                const BLOCK: usize = 144;
+                let off = (blk * padded_rows + row) * BLOCK;
                 let d4 = &cap.scratch[off..off + 16];
-                let qs = &cap.scratch[off + 16..off + 144];
+                let qs = &cap.scratch[off + 16..off + BLOCK];
                 for sub in 0..16 {
                     let base = blk * 256 + sub * 16;
                     let vals: Vec<f32> =
@@ -173,9 +175,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for j in 0..16 {
                         let q = if denom > 0.0 { vals[j] / denom } else { 0.0 };
                         let want = f32_to_e2m1(q);
-                        // packing: two values per byte, low nibble = lane value, high = its pair
-                        let byte = qs[sub * 8 + j / 2] as u8;
-                        let got = if j % 2 == 0 { byte & 0x0F } else { byte >> 4 };
+                        // PACKING, from the kernel: four lanes own the 16 values, four each
+                        // (L0=0..3, L1=4..7, L2=8..11, L3=12..15). Lane 0 writes u32 2*sub+0 with
+                        // its own value in the LOW nibble and lane 2's in the HIGH; lane 1 writes
+                        // u32 2*sub+1 the same way against lane 3. So the pair sharing a byte is
+                        // (v, v+8) within each half, not (v, v+1).
+                        let (u32_idx, byte_idx, high) = match j {
+                            0..=3 => (2 * sub, j, false),
+                            4..=7 => (2 * sub + 1, j - 4, false),
+                            8..=11 => (2 * sub, j - 8, true),
+                            _ => (2 * sub + 1, j - 12, true),
+                        };
+                        let byte = qs[u32_idx * 4 + byte_idx];
+                        let got = if high { byte >> 4 } else { byte & 0x0F };
                         if got != want {
                             bad_nibbles += 1;
                         }
