@@ -520,6 +520,14 @@ fn select_dense_policy(profile: bool) {
     }
 }
 
+fn select_expert_policy(profile: bool, host_splitk: bool) {
+    // Profile inherits the environment default. Historical scored controls stay OFF.
+    if !profile {
+        memra_engine::set_moe_m1_graph_splitk_for_gate(false);
+    }
+    memra_engine::set_moe_m1_splitk_for_gate(host_splitk);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let replay_profile = args
@@ -570,9 +578,7 @@ fn main() {
             || full_replay,
         "unknown gate arm"
     );
-    // Pin the historical control program independently of the graph default.
-    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
-    memra_engine::set_moe_m1_splitk_for_gate(splitk);
+    select_expert_policy(replay_profile, splitk);
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
         Ok("1") => true,
@@ -883,6 +889,32 @@ fn main() {
 
 #[cfg(test)]
 mod default_policy_tests {
+    #[test]
+    fn profile_inherits_graph_splitk_policy() {
+        const CHILD: &str = "MEMRA_TEST_PROFILE_SPLITK_CHILD";
+        if let Ok(expected) = std::env::var(CHILD) {
+            super::select_expert_policy(true, false);
+            assert_eq!(memra_engine::moe_m1_graph_splitk_on(), expected == "1");
+            super::select_expert_policy(false, false);
+            assert!(!memra_engine::moe_m1_graph_splitk_on());
+            return;
+        }
+        for value in [None, Some("0"), Some("graph")] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child.args([
+                "--exact",
+                "default_policy_tests::profile_inherits_graph_splitk_policy",
+            ]);
+            child.env(CHILD, if value == Some("0") { "0" } else { "1" });
+            if let Some(value) = value {
+                child.env("MEMRA_DSV4_MOE_M1_SPLITK", value);
+            } else {
+                child.env_remove("MEMRA_DSV4_MOE_M1_SPLITK");
+            }
+            assert!(child.status().unwrap().success());
+        }
+    }
+
     #[test]
     fn environment_defaults_and_explicit_gate_rollback() {
         use memra_engine::dsv4_gpu::{
