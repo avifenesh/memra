@@ -1,0 +1,40 @@
+{
+  "off": {
+    "window_ms": 69566.439228,
+    "gpu_busy_ms": 68047.694627,
+    "gpu_idle_ms": 1518.744601,
+    "gpu_idle_fraction": 0.02183157019180473,
+    "phase_ms": {
+      "attention": 31096.980652,
+      "ffn_gemm": 18228.974783,
+      "projection_gemm": 8226.754172,
+      "other_kernels": 2760.204964,
+      "gdn_scan_conv": 2612.071161,
+      "norm_quantize": 1684.145957,
+      "attention_dequant": 997.119431,
+      "draft_gemm": 573.756904
+    },
+    "memcpy_ms": 1848.606224,
+    "memcpy_bytes": 1388313723952,
+    "chunks": 129
+  },
+  "on": {
+    "window_ms": 67880.22388,
+    "gpu_busy_ms": 67656.029212,
+    "gpu_idle_ms": 224.194668,
+    "gpu_idle_fraction": 0.003302798004855372,
+    "phase_ms": {
+      "attention": 30934.935477,
+      "ffn_gemm": 18393.10017,
+      "projection_gemm": 8307.858415,
+      "other_kernels": 2783.962916,
+      "gdn_scan_conv": 2602.187096,
+      "norm_quantize": 1678.705324,
+      "attention_dequant": 884.452911,
+      "draft_gemm": 574.203704
+    },
+    "memcpy_ms": 1496.534686,
+    "memcpy_bytes": 1385698622544,
+    "chunks": 129
+  }
+}

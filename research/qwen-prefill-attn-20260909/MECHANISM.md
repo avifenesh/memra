@@ -67,10 +67,18 @@ Both use Rust 1.97.1 and CUDA 13.0. The control runtime is `15820202c`; later
 integration changes are recorded separately. Kernel edits were rebuilt with
 `RUSTC_WRAPPER=` and symbol census preserves every original CUDA entry.
 
-Earlier diagnostic Nsight idle totals included allocation-trace tap hashing.
-Without that hashing, the pilot 131k prime had 1.519 s idle, reduced to 0.267 s
-by replay. This is not an 8.8 s serving launch budget. Final binary profiling,
-cache/decode controls and hosted CI are recorded at delivery.
+Final binary Nsight 2026.1.3, with node tracing and allocation hashing OFF:
+131k prime idle falls from 1518.745 to 224.195 ms (2.183% to 0.330%). Attention
+is 31.097 to 30.935 s; no attention-kernel speedup is claimed. The prime window
+is 69.566 to 67.880 s under tracing. The old 8.8 s idle figure included diagnostic
+tap hashing and was not a recoverable serving launch budget.
+
+All 15 seeded decode output pairs match, median paired throughput ratio 0.999928.
+The eight-turn cache twin has 21 warm turns per arm, all restoring at least 8160
+tokens, with median warm TTFT 0.187092/0.187206 s. Four greedy restore turns match
+exactly. The GPU destination/stride relocation test passes with the production
+instantiate flags; its initial UPLOAD-only fixture was refused and is retained
+as a failed test attempt. Hosted checks gate the final PR head.
 
 No local rig gates or CI ran. Pushes use `MEMRA_SKIP_PERF_CI=1` with local hooks
 disabled under the owner's temporary restriction. Hosted CI still gates merge.
