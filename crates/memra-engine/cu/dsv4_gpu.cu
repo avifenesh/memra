@@ -3892,6 +3892,7 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
 }
 
 #include "dsv4_dense_m1_exact_tail.cuh"
+#include "dsv4_fp8_ksplit.cuh"
 
 #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \
     case MM:                                                                         \

@@ -818,3 +818,9 @@ Composition receipts: [private Darklanes #535](https://github.com/avifenesh/dark
 capture, both function censuses, eager identity, refusals and five sanity rows.
 Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
 environment policy after the eager OFF oracle. No kernel arithmetic changes.
+
+## DSV4 FP8 K-split candidate
+
+| Numeric class | Scope | Program and evidence |
+| --- | --- | --- |
+| `dsv4_fp8_ksplit_f32_fixed_order_s2`, `_s4`, `_s8` | FP8 M1 N512/N1024 K4096 only | Distinct classes, not token-identical to dense exact-tail. Original E4M3 decode, scale multiply and eight-element leaf order within a contiguous K slice; original leaf identity and 128-leaf tree; one writer per (row,slice), separate same-stream ascending reducer. Fixed N*S partial grid. State-owned 1024x8 scratch before capture. `MEMRA_DSV4_FP8_KSPLIT` default OFF, decide-by: 2026-09-23. Component, sanitizer, replay census/refusal, drift and sampled evidence pending in private `research/dsv4f-fp8-ksplit-20260909/`. |

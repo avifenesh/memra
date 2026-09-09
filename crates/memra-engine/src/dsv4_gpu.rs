@@ -44,6 +44,20 @@ pub use crate::dsv4_graph::Dsv4LayerCapture;
 use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
 unsafe extern "C" {
+    fn memra_dsv4_fp8_ksplit_slices_for_gate() -> i32;
+    fn memra_dsv4_fp8_ksplit(
+        w: *const c_void,
+        sc: *const f32,
+        sc_cols: i32,
+        x: *const c_void,
+        partial: *mut f32,
+        partial_len: i32,
+        y: *mut f32,
+        m: i32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
     fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
     fn memra_dsv4_hc_dot_split(
         x: *const f32,
@@ -931,6 +945,7 @@ pub struct StepWs {
     pub h_rx: CudaSlice<f32>, // [hc*hidden] boundary RX slot (peer TX writes here)
     pub emb: CudaSlice<f32>, // [hidden]
     pub mixes: CudaSlice<f32>, // [(2+hc)*hc]
+    pub fp8_ksplit_partial: CudaSlice<f32>, // [1024*8], state/rank owned before capture
     pub hc_dot_partial: CudaSlice<f32>, // [24*32], state/rank owned, capture-stable
     pub pre: CudaSlice<f32>, // [hc]
     pub post: CudaSlice<f32>, // [hc]
@@ -7032,6 +7047,7 @@ impl Dsv4Gpu {
                 h_rx: f(hc * hidden)?,
                 emb: f(hidden)?,
                 mixes: f((2 + hc) * hc)?,
+                fp8_ksplit_partial: f(1024 * 8)?,
                 hc_dot_partial: f(24 * 32)?,
                 pre: f(hc)?,
                 post: f(hc)?,
@@ -8281,6 +8297,7 @@ impl Dsv4Gpu {
     #[allow(clippy::too_many_arguments)]
     fn gemm_dev(
         st: &Stage,
+        partial: &mut CudaSlice<f32>,
         x_f32: *const f32,
         xb: &mut CudaSlice<u8>,
         w: DW,
@@ -8303,7 +8320,7 @@ impl Dsv4Gpu {
             )?;
         }
         let xb_ptr = xb.device_ptr(&stream).0 as *const c_void;
-        Self::gemv_pre_dev(st, xb_ptr, w, n, kdim, y_ptr)
+        Self::gemv_pre_dev(st, partial, xb_ptr, w, n, kdim, y_ptr)
     }
 
     /// GEMV from an already-bf16 activation buffer (device decode path, m = 1).
@@ -8311,6 +8328,7 @@ impl Dsv4Gpu {
     /// pair through the bit-identical twin.
     fn gemv_pre_dev(
         st: &Stage,
+        partial: &mut CudaSlice<f32>,
         xb_ptr: *const c_void,
         w: DW,
         n: usize,
@@ -8318,6 +8336,33 @@ impl Dsv4Gpu {
         y_ptr: *mut f32,
     ) -> Res<()> {
         let stream = st.gpu.stream();
+        if (n == 512 || n == 1024)
+            && kdim == 4096
+            && unsafe { memra_dsv4_fp8_ksplit_slices_for_gate() } != 0
+        {
+            if let DW::Fp8 {
+                codes,
+                scales,
+                sc_cols,
+            } = w
+            {
+                return ck("FP8 K-split", unsafe {
+                    memra_dsv4_fp8_ksplit(
+                        codes,
+                        scales,
+                        sc_cols,
+                        xb_ptr,
+                        partial.device_ptr_mut(&stream).0 as *mut f32,
+                        partial.len() as i32,
+                        y_ptr,
+                        1,
+                        n as i32,
+                        kdim as i32,
+                        sp(&stream),
+                    )
+                });
+            }
+        }
         unsafe {
             match w {
                 DW::Bf16(w_ptr) => ck(
@@ -8876,6 +8921,7 @@ impl Dsv4Gpu {
         // q path
         Self::gemm_dev(
             st,
+            &mut ws.fp8_ksplit_partial,
             ws.x.device_ptr(&stream).0 as *const f32,
             &mut ws.gemm_xb,
             dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
@@ -8909,6 +8955,7 @@ impl Dsv4Gpu {
         }
         Self::gemv_pre_dev(
             st,
+            &mut ws.fp8_ksplit_partial,
             ws.qr_b.device_ptr(&stream).0 as *const c_void,
             dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
             heads * hd,
@@ -8944,6 +8991,7 @@ impl Dsv4Gpu {
         // shared K==V latent row + window QAT + ring write
         Self::gemm_dev(
             st,
+            &mut ws.fp8_ksplit_partial,
             ws.x.device_ptr(&stream).0 as *const f32,
             &mut ws.gemm_xb,
             dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
@@ -9007,6 +9055,7 @@ impl Dsv4Gpu {
                 // indexer q
                 Self::gemv_pre_dev(
                     st,
+                    &mut ws.fp8_ksplit_partial,
                     ws.qr_b.device_ptr(&stream).0 as *const c_void,
                     dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
                     ix.heads * ix.hd,
@@ -9103,6 +9152,7 @@ impl Dsv4Gpu {
                 if nb > 0 {
                     Self::gemm_dev(
                         st,
+                        &mut ws.fp8_ksplit_partial,
                         ws.x.device_ptr(&stream).0 as *const f32,
                         &mut ws.gemm_xb,
                         dwsel(
@@ -9340,6 +9390,7 @@ impl Dsv4Gpu {
         for g in 0..o_groups {
             Self::gemv_pre_dev(
                 st,
+                &mut ws.fp8_ksplit_partial,
                 (ws.o_b.device_ptr(&stream).0 as usize + g * gw * 2) as *const c_void,
                 wo_a_dw.offset_rows(g * o_lora, gw),
                 o_lora,
@@ -9349,6 +9400,7 @@ impl Dsv4Gpu {
         }
         Self::gemm_dev(
             st,
+            &mut ws.fp8_ksplit_partial,
             ws.og.device_ptr(&stream).0 as *const f32,
             &mut ws.gemm_xb,
             dwsel(self.dense_fp8, &stream, &layer.wo_b, &layer.wo_b_fp8),
@@ -9685,6 +9737,7 @@ impl Dsv4Gpu {
         let sh_inter = ws.sg1.len();
         Self::gemv_pre_dev(
             st,
+            &mut ws.fp8_ksplit_partial,
             ws.xb.device_ptr(&stream).0 as *const c_void,
             dwsel(
                 self.dense_fp8,
@@ -9698,6 +9751,7 @@ impl Dsv4Gpu {
         )?;
         Self::gemv_pre_dev(
             st,
+            &mut ws.fp8_ksplit_partial,
             ws.xb.device_ptr(&stream).0 as *const c_void,
             dwsel(
                 self.dense_fp8,
@@ -9735,6 +9789,7 @@ impl Dsv4Gpu {
         }
         Self::gemv_pre_dev(
             st,
+            &mut ws.fp8_ksplit_partial,
             ws.shb16.device_ptr(&stream).0 as *const c_void,
             dwsel(
                 self.dense_fp8,
@@ -12545,7 +12600,8 @@ pub struct VerifyWs {
     h_rx: CudaSlice<f32>,
     emb: CudaSlice<f32>,
     mixes: CudaSlice<f32>,
-    hc_dot_partial: CudaSlice<f32>, // [24*32], stable across retained variants
+    fp8_ksplit_partial: CudaSlice<f32>, // [1024*8], stable across retained variants
+    hc_dot_partial: CudaSlice<f32>,     // [24*32], stable across retained variants
     pre: CudaSlice<f32>,
     post: CudaSlice<f32>,
     comb: CudaSlice<f32>,
@@ -13589,6 +13645,7 @@ impl Dsv4Gpu {
                 h_rx: f(tmax * hc * hidden)?,
                 emb: f(tmax * hidden)?,
                 mixes: f(tmax * (2 + hc) * hc)?,
+                fp8_ksplit_partial: f(1024 * 8)?,
                 hc_dot_partial: f(24 * 32)?,
                 pre: f(tmax * hc)?,
                 post: f(tmax * hc)?,
@@ -13911,6 +13968,7 @@ impl Dsv4Gpu {
     #[allow(clippy::too_many_arguments)]
     fn gemv_m_dev(
         st: &Stage,
+        partial: &mut CudaSlice<f32>,
         w: DW,
         x_ptr: *const c_void,
         y_ptr: *mut f32,
@@ -13921,6 +13979,34 @@ impl Dsv4Gpu {
         ystride: usize,
     ) -> Res<()> {
         let stream = st.gpu.stream();
+        if m == 1
+            && (n == 512 || n == 1024)
+            && kdim == 4096
+            && unsafe { memra_dsv4_fp8_ksplit_slices_for_gate() } != 0
+        {
+            if let DW::Fp8 {
+                codes,
+                scales,
+                sc_cols,
+            } = w
+            {
+                return ck("FP8 K-split", unsafe {
+                    memra_dsv4_fp8_ksplit(
+                        codes,
+                        scales,
+                        sc_cols,
+                        x_ptr,
+                        partial.device_ptr_mut(&stream).0 as *mut f32,
+                        partial.len() as i32,
+                        y_ptr,
+                        1,
+                        n as i32,
+                        kdim as i32,
+                        sp(&stream),
+                    )
+                });
+            }
+        }
         unsafe {
             match w {
                 DW::Bf16(w_ptr) => ck(
@@ -13965,6 +14051,7 @@ impl Dsv4Gpu {
     #[allow(clippy::too_many_arguments)]
     fn gemm_m_dev(
         st: &Stage,
+        partial: &mut CudaSlice<f32>,
         x_f32: *const f32,
         xb: &mut CudaSlice<u8>,
         w: DW,
@@ -13987,6 +14074,7 @@ impl Dsv4Gpu {
         }
         Self::gemv_m_dev(
             st,
+            partial,
             w,
             xb.device_ptr(&stream).0 as *const c_void,
             y_ptr,
@@ -14734,6 +14822,7 @@ impl Dsv4Gpu {
         // q path (weights read once for all t rows)
         Self::gemm_m_dev(
             st,
+            &mut vws.fp8_ksplit_partial,
             vws.x.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
             dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
@@ -14789,6 +14878,7 @@ impl Dsv4Gpu {
         }
         Self::gemv_m_dev(
             st,
+            &mut vws.fp8_ksplit_partial,
             shard.map_or_else(
                 || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
                 |(_, bank)| packed_dense(&bank.wq_b, &stream),
@@ -14831,6 +14921,7 @@ impl Dsv4Gpu {
         // shared K==V latent rows + window QAT, then the TRANSIENT ring write
         Self::gemm_m_dev(
             st,
+            &mut vws.fp8_ksplit_partial,
             vws.x.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
             dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
@@ -14924,6 +15015,7 @@ impl Dsv4Gpu {
                 // indexer q, batched
                 Self::gemv_m_dev(
                     st,
+                    &mut vws.fp8_ksplit_partial,
                     dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
                     vws.qr_b.device_ptr(&stream).0 as *const c_void,
                     vws.qi.device_ptr_mut(&stream).0 as *mut f32,
@@ -14973,6 +15065,7 @@ impl Dsv4Gpu {
                 // indexer weights projection, batched
                 Self::gemm_m_dev(
                     st,
+                    &mut vws.fp8_ksplit_partial,
                     vws.x.device_ptr(&stream).0 as *const f32,
                     &mut vws.gemm_xb,
                     dwsel(
@@ -15557,6 +15650,7 @@ impl Dsv4Gpu {
             for g in 0..o_groups {
                 Self::gemv_m_dev(
                     st,
+                    &mut vws.fp8_ksplit_partial,
                     wo_a_dw.offset_rows(g * o_lora, gw),
                     (vws.o_b.device_ptr(&stream).0 as usize + g * gw * 2) as *const c_void,
                     (vws.og.device_ptr_mut(&stream).0 as usize + g * o_lora * 4) as *mut f32,
@@ -15570,6 +15664,7 @@ impl Dsv4Gpu {
         }
         Self::gemm_m_dev(
             st,
+            &mut vws.fp8_ksplit_partial,
             vws.og.device_ptr(&stream).0 as *const f32,
             &mut vws.gemm_xb,
             shard.map_or_else(
@@ -15886,6 +15981,7 @@ impl Dsv4Gpu {
         let sh_inter = vws.sg1.len() / vws.tmax;
         Self::gemv_m_dev(
             st,
+            &mut vws.fp8_ksplit_partial,
             dwsel(
                 self.dense_fp8,
                 &stream,
@@ -15902,6 +15998,7 @@ impl Dsv4Gpu {
         )?;
         Self::gemv_m_dev(
             st,
+            &mut vws.fp8_ksplit_partial,
             dwsel(
                 self.dense_fp8,
                 &stream,
@@ -15942,6 +16039,7 @@ impl Dsv4Gpu {
         }
         Self::gemv_m_dev(
             st,
+            &mut vws.fp8_ksplit_partial,
             dwsel(
                 self.dense_fp8,
                 &stream,
