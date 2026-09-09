@@ -1886,3 +1886,17 @@ KERNELS rows. No serving dispatch had been installed. The measured source is
 bc89f4d22; the initial harness-only layout-reference mistake and its correction
 are preserved with the raw receipts. Verdict: NEGATIVE, numeric no-go.
 Receipt: `research/moe-rows-f16-20260909/RESULTS.md`. rev: 2026-09-23.
+
+## Removed doors, 2026-09-09 (GLM verify shared-expert dual)
+
+- `MEMRA_GLM5_SHEXP_DUAL`: NEGATIVE against the fixed >=0.5 ms weighted
+  saving criterion. Existing decode-exact dual gate/up at t2..4 was byte-exact
+  on all42 real-input layers at t2/4/7, including composed routed+shared FFN;
+  t7 retained the current path. Warmed ABBAx5 saved 0.327543050/0.236696805/
+  0.000874255 ms across42 layers at t2/4/7. Weighted 48/162,103/162,11/162:
+  0.247601569 ms/round; with unchanged t7 control credited zero: 0.247542206.
+  The default-OFF door, dispatch, diagnostic counter/helper and executable
+  gate/bench driver are removed. No new kernels were introduced; the existing
+  shared decode-exact dual remains for its other callers. Measured source
+  41ba71861353b66a8c7807ff882b5b7ed11de930; receipt:
+  `research/glm5-shexp-dual-20260909/RESULTS.md`. rev: 2026-09-23.
