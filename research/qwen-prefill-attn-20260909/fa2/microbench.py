@@ -11,6 +11,7 @@ p = argparse.ArgumentParser()
 p.add_argument("fatbin")
 p.add_argument("--output", required=True)
 p.add_argument("--shape", type=int)
+p.add_argument("--reference", action="store_true")
 p.add_argument("--kernels", default="fa_prefill_qw_db,fa2_gqa16,fa2_gqa16_log2")
 p.add_argument("--real", help="torch file with real q/k/v tensors")
 args = p.parse_args()
@@ -97,6 +98,18 @@ for rows, depth in shapes:
                    tflops=flops / ms / 1e9, finite=bool(out.isfinite().all()),
                    max_attention_output_deviation=float(diff.abs().max()),
                    relative_l2=float(diff.norm() / baseline.norm()))
+        if args.reference:
+            torch.backends.cuda.matmul.allow_tf32 = False
+            indices = torch.tensor([0, 255, 256, rows - 2, rows - 1], device="cuda")
+            qh = q[indices].bfloat16().float().transpose(0, 1)
+            kh = k.float().repeat_interleave(6, dim=1).transpose(0, 1)
+            vh = v.float().repeat_interleave(6, dim=1).transpose(0, 1)
+            scores = qh @ kh.transpose(1, 2) / 16
+            mask = torch.arange(depth, device="cuda")[None, :] > (depth - rows + indices)[:, None]
+            ref = (scores.masked_fill(mask, -float("inf")).softmax(-1) @ vh).transpose(0, 1)
+            row["reference_query_rows"] = indices.tolist()
+            row["max_vs_fp32_reference"] = float((out[indices] - ref).abs().max())
+            row["relative_l2_vs_fp32_reference"] = float((out[indices] - ref).norm() / ref.norm())
         if rows == 129:
             # Independent small-shape FP32 oracle with explicit offset causal mask.
             qh = q.bfloat16().float().transpose(0, 1)
