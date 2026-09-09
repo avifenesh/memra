@@ -4941,6 +4941,38 @@ fn mtp_skip_no_drafter_verdict(serve_spec_env: Option<&str>) -> Result<String, S
     }
 }
 
+/// MEMRA_GEMMA_SPEC_SAMPLED (lane/gemma-sampled-spec, 2026-09-09): admit VENDOR-SAMPLED
+/// requests to the gemma assistant-drafter route through the rejection-sampling verify
+/// (`gemma_spec_session_burst_sampled`).
+///
+/// WHY IT EXISTS: the route shipped greedy-only, and this family's vendor default is
+/// temp 1.0 / top_p 0.95 / top_k 64 — so every served request declined speculation and the
+/// attached drafter did nothing. The perf-page cell (darklanes
+/// research/hebrew-agentic-base-20260909/perf-page) priced that as Gemma decoding 133.5 tok/s
+/// against Qwen's 266.5 with MTP engaged, and the greedy instrument on the same office prompt
+/// reads 0.617 acceptance and 197 tok/s, so the whole gap was an admission predicate.
+///
+/// Default OFF at landing (an unmeasured feature never defaults ON), decide-by 2026-09-23:
+/// the flip is the lane's own sampled receipt on the office cell plus `gemma_sample_gate`
+/// (T=0 identity, tiny-temperature continuity, per-position chi-square vs plain sampling).
+/// `=0` is the rollback seam and restores the greedy-only admission byte for byte.
+/// Penalized requests are NOT admitted on either arm: the sampled burst refuses them loudly
+/// (the dspark route's incremental-penalty verify is unmeasured on this family), and this
+/// family's vendor default carries no penalty.
+fn gemma_sampled_spec_on() -> bool {
+    static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *S.get_or_init(
+        || match std::env::var("MEMRA_GEMMA_SPEC_SAMPLED").as_deref() {
+            Ok("1") => true,
+            Ok("0") | Err(_) => false,
+            Ok(other) => panic!(
+                "MEMRA_GEMMA_SPEC_SAMPLED={other:?}: expected 0 or 1 (a mis-typed seam must not \
+             silently pick a serving path)"
+            ),
+        },
+    )
+}
+
 fn gemma4_spec_k_env() -> usize {
     static K: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *K.get_or_init(|| match std::env::var("MEMRA_GEMMA4_SPEC").as_deref() {
@@ -13161,9 +13193,14 @@ pub fn run(
                 // Log text only; the route, K, and posture are unchanged.
                 eprintln!(
                     "[worker] {n}: GEMMA SPEC route armed (K={}, assistant drafter attached \
-                     ({dpath}); greedy/unconstrained/text-only/solo-admission; \
+                     ({dpath}); {}/unconstrained/text-only/solo-admission; \
                      MEMRA_GEMMA4_SPEC=0 = off)",
-                    gemma4_spec_k_env()
+                    gemma4_spec_k_env(),
+                    if gemma_sampled_spec_on() {
+                        "greedy + sampled (MEMRA_GEMMA_SPEC_SAMPLED=1, unpenalized)"
+                    } else {
+                        "greedy"
+                    }
                 );
                 gemma_drafts.insert(n.clone(), d);
             }
@@ -21052,7 +21089,14 @@ fn admit(
             == memra_engine::plan_backend::DecodeBatchProgram::Gemma
         && !lm.model.is_gemma4_e4b()
         && spec.is_none()
-        && sampler.is_greedy()
+        // GREEDY, or (MEMRA_GEMMA_SPEC_SAMPLED=1) the vendor-sampled shape through the
+        // rejection-sampling verify. Penalties are refused on both arms.
+        && (sampler.is_greedy()
+            || (gemma_sampled_spec_on()
+                && sampler.temperature() > 0.0
+                && sampler.penalty_repeat() == 1.0
+                && sampler.penalty_freq() == 0.0
+                && sampler.penalty_present() == 0.0))
         && !greedy_penalized
         && constraint.is_none()
         && !vision_req
@@ -24021,13 +24065,27 @@ fn step_gemma_spec(
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_start();
         }
+        // The prime's boundary token is drawn under the SAME config the bursts will use, so
+        // a sampled session never opens with one greedy token (`spec_sampling_for` is the one
+        // Sampler -> SpecSampling seam; `None` keeps the greedy argmax byte for byte).
+        let boundary =
+            spec_sampling_for(&s.sampler).filter(|sp| gemma_sampled_spec_on() && !sp.pen_on());
         let sess = match s.cache.take() {
-            Some(restored) => lm
-                .model
-                .gemma_spec_session_from_restored(engine, d, restored, &s.fed, &queued)?,
-            None => lm
-                .model
-                .gemma_spec_session_new(engine, d, &queued, s.gspec_ctx)?,
+            Some(restored) => lm.model.gemma_spec_session_from_restored(
+                engine,
+                d,
+                restored,
+                &s.fed,
+                &queued,
+                boundary.as_ref(),
+            )?,
+            None => lm.model.gemma_spec_session_new(
+                engine,
+                d,
+                &queued,
+                s.gspec_ctx,
+                boundary.as_ref(),
+            )?,
         };
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
@@ -24046,9 +24104,25 @@ fn step_gemma_spec(
     let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
     let sess = s.gspec.as_mut().unwrap();
     let rounds_before = sess.rounds;
-    let (burst, dr, ac) =
-        lm.model
-            .gemma_spec_session_burst(engine, d, sess, burst_target, k, &s.params.eos)?;
+    // ARM CHOICE, once per burst and stable for the request's lifetime: the request's
+    // sampler is fixed at admission, so a session never switches walks mid-stream. `None`
+    // (temperature 0) is the greedy burst, byte-unchanged. A `Some` that carries penalties
+    // cannot reach here — admission refuses it on both arms.
+    let gsampling = spec_sampling_for(&s.sampler).filter(|sp| !sp.pen_on());
+    let (burst, dr, ac) = match gsampling.as_ref() {
+        Some(sp) if gemma_sampled_spec_on() => lm.model.gemma_spec_session_burst_sampled(
+            engine,
+            d,
+            sess,
+            burst_target,
+            k,
+            &s.params.eos,
+            sp,
+        )?,
+        _ => lm
+            .model
+            .gemma_spec_session_burst(engine, d, sess, burst_target, k, &s.params.eos)?,
+    };
     let rounds_delta = s.gspec.as_ref().unwrap().rounds - rounds_before;
     s.spec_rounds += rounds_delta as u64;
     s.spec_drafted += dr;
