@@ -1,5 +1,28 @@
 # Environment flags — the audited catalog
 
+## Memory-shaped admission for a high session ceiling, 2026-09-09
+
+Lane: `lane/glm5-memory-admission-20260909` (memra#365). Motivation, in the owner's words on
+2026-09-09: "host kv is a must" and the 4-session cap must go. The GLM-5.3-Flash 1M route on the
+2x B200 pair (vast 49626183, memra v0.137.0, TP-2 plain, host tier armed at
+`MEMRA_KV_HOST_MB=294912` / `MEMRA_KV_HOST_TENANT_PCT=100`) serves behind `MEMRA_MAX_SESSIONS=4`
+because the launcher sizes every slot as if it held a full 1M session (~13 GB of latent KV). The
+post-cutover sweep read `verdict=reject-slot reason=tenant-p95 inflight=4 cap=4` while short
+probes queued past the client's 10 s pre-header budget behind four long generations, against a
+catalog advertising `capacity.concurrency 8` (darklanes
+`research/glm5-1m-b200-ship-20260906/RESULTS-CUTOVER.md` addendum).
+
+| Flag | Default, arms, rollback and receipt |
+| --- | --- |
+| `MEMRA_ADMIT_BY_MEMORY` | **OFF (default `0`), decide-by: 2026-09-23.** Strict `1` arms memory-shaped admission on the batched worker's own admission seam, in three parts. (a) OPEN-OUTPUT CHARGE: a request bounding neither `max_tokens` nor `max_ctx` is charged `prompt + MEMRA_ADMIT_OPEN_OUTPUT_TOKENS + 8`, clamped to the model's trained context, instead of `request_ctx_cap`'s `MEMRA_CTX` envelope arm; on the 1M route that is 12,200 charged tokens instead of 1,048,576 for the same 4k request, 85.9x less KV booked. A registry that pins `default_output_length`/`max_output_length` bounds `max_new` at the HTTP layer first and never reaches this arm; every other arm of `request_ctx_cap` (a given `max_tokens`, a given `max_ctx`) is byte-identical under the door. (b) HOST-TIER DEMOTION: the admission reclaim ladder's device prefix flush demotes entries into the pinned host tier (`host_demote_prefix_ref`, the existing `#325` path) before dropping them, bounded by THIS arrival's shortfall so a tick never stalls behind more synchronous D2H than the admission needs; entries the tier refuses (off, latched off, tenant share cap, copy failure) and everything past the budget are dropped exactly as today, so the flush always frees what it was called to free. Off the door this is byte-identical to `PrefixCache::evict_all`. (c) BOUNDED DEFER: a memory-deferred request keeps requeuing FIFO while either tier could still make room or its defer budget is unspent, and once BOTH tiers are exhausted AND `MEMRA_ADMIT_DEFER_BUDGET_MS` is spent it is refused with a 429 + `Retry-After` (the earliest predicted in-flight completion, clamped to the shed contract's 1..=60 s window; 5 s when unknown) instead of dying as a pre-header timeout. RECEIPT: every decision emits one grep-stable `[admit-mem] id=… verdict=admit\|demote-then-admit\|defer\|refuse … est_bytes=… est_context=… est_fixed=… device_free=… host_free=… demotable=… short_by=… waited_ms=… retry_after_s=…` line, and the boot log carries `[admit-mem] door=ON open_output_tokens=… defer_budget_ms=…`. RED ARM: `MEMRA_ADMIT_BY_MEMORY` unset or `0` restores today's behaviour on all three parts. ROLLBACK: unset and redeploy the launcher (which must also restore `MEMRA_MAX_SESSIONS=4`; the two move together). GATE: CPU `cargo test -p memra-server admit_memory` plus the worker wiring tests, and the card cell `cargo test -p memra-server memory_admission_admits -- --ignored` (1 x 900k + 8 x 4k concurrently admissible on one B200 against live `mem_get_info`, with the tenth 900k arrival refusing). Receipt pointer: darklanes `research/glm5-1m-b200-ship-20260906/` (requalification cell for the production pair) and this PR. |
+| `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` | **8192 (default), read only when `MEMRA_ADMIT_BY_MEMORY=1`.** The output a naked open-output request is charged. 8192 is the `default_output_length` the fleet's registries already pin for the large models, so the naked path agrees with the registry path instead of disagreeing by two orders of magnitude. A deployment whose advertised `max_output` differs sets this to that number: the qualification-env law means it is DERIVED from the registry the launcher ships, never hand-typed to a different value. Rollback: unset (8192) or unset the door. |
+| `MEMRA_ADMIT_DEFER_BUDGET_MS` | **8000 (default), read only when `MEMRA_ADMIT_BY_MEMORY=1`.** How long one arrival may sit memory-deferred before a refusal is preferred to silence. 8 s sits inside the 10 s pre-header budget the darklanes edge gives a request, so the client reads a 429 it can retry rather than a timeout it cannot. `0` disables the refusal arm entirely and restores today's unbounded FIFO defer while keeping (a) and (b). The stamp is LATCHED on the FIRST memory defer of a request and carried across a step-OOM park replay: a per-tick stamp would reset the budget forever and bound nothing. |
+
+Companion launcher change (darklanes, same lane): `deploy/glm5b200/glm5b200_serve_launch.sh`
+raises `MEMRA_MAX_SESSIONS` from 4 to 32 and arms this door, gated on the binary carrying the
+`MEMRA_ADMIT_BY_MEMORY` marker, so the current fleet pin (which lacks the door) keeps serving at
+4 until the requalification cell passes on the pair.
+
 ## Qwen FA2 attention experiment, 2026-09-09
 
 | Flag | Contract |
