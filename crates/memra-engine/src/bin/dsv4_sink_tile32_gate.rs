@@ -838,8 +838,12 @@ unsafe fn observe(
 fn capture_operands(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path) {
     select(gpu, false);
     let mut state = state(gpu);
-    gpu.prefill_with_cache_chunked(&prompt[..PRIME], &mut state, 1)
+    gpu.prefill_with_cache_chunked(&prompt[..1], &mut state, 1)
         .unwrap();
+    for &token in &prompt[1..PRIME] {
+        gpu.decode_step_device_logits(token, &mut state).unwrap();
+    }
+    assert_eq!(state.pos, PRIME);
     *CAPTURE.lock().unwrap() = Some((output.to_path_buf(), [0, 0]));
     memra_engine::dsv4_gpu::set_sink_observer_for_gate(Some(observe));
     gpu.decode_step_device_logits(prompt[PRIME], &mut state)
