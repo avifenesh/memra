@@ -176,10 +176,12 @@ static void admission(){
 }
 int main(int argc, char** argv) try {
     // This gate measures exact-tail, not the newer dense-fast implementation.
+    api(memra_dsv4_hc_dot_split_set_for_gate(0));
+    insist(memra_dsv4_hc_dot_split_slices_for_gate()==0,"HC split control override");
     api(memra_dsv4_dense_fast_set_for_gate(0));
     insist(memra_dsv4_dense_fast_enabled_for_gate()==0,"dense-fast control override");
     if(argc==2 && !strcmp(argv[1],"--check-controls")) {
-        puts("PASS exact_tail_control dense_fast=0 cpu_policy_only=true"); return 0;
+        puts("PASS exact_tail_control dense_fast=0 hc_split=0 cpu_policy_only=true"); return 0;
     }
     int n=0;ck(cudaGetDeviceCount(&n));insist(n==2,"requires exact visible pair");
     for(int rank=0;rank<2;++rank){ck(cudaSetDevice(rank));tree_case();admission();
