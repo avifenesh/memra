@@ -831,3 +831,21 @@ Composition receipts: [private Darklanes #535](https://github.com/avifenesh/dark
 capture, both function censuses, eager identity, refusals and five sanity rows.
 Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
 environment policy after the eager OFF oracle. No kernel arithmetic changes.
+
+### Remaining DSV4 activation packing (experimental, 2026-09-09)
+
+`MEMRA_DSV4_NORM_FUSE2` is default OFF, decide-by: 2026-09-23.
+`dsv4_norm2_pack_f32_fixed_order_kernel` uses the original 128-thread norm
+reduction and f32 epilogue, emits BF16 RNE as well as retained f32, and permits
+attention Q_a/KV to share one unchanged pack. FFN routing and quantization keep
+the f32 row. `dsv4_norm2_swiglu_pack_kernel` preserves clamp, sigmoid and f32
+multiply rounding before BF16 RNE. `dsv4_norm2_quant_half_kernel` uses four
+64-thread teams to repeat the original per-128 FP8 max tree, power-of-two scale,
+E4M3 rounding and zero-sign canonicalization, then the original 256-thread
+row-scale tree and lossless half/status expressions. Intermediate codes/scales
+are shared-memory transport. No expert GEMV, split-K, dense kernel, HC or rotary
+kernel changes. Counts per rank and forward variant: 86 norm/pack, 43 shared
+SwiGLU/pack, 43 quant/half, removing 215 launches. Commit has none. OFF has zero
+new symbols. FFI: `src/dsv4_ffi.rs`; component capture and raw-bit gate:
+`src/dsv4_norm2_component_gate.rs`; replay gate: `dsv4-norm-fuse2-gate`.
+Evidence pending under `research/dsv4f-norm-fuse2-20260909/`; default stays OFF.
