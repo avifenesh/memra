@@ -30,6 +30,10 @@ for run in sorted(root.iterdir()):
         post_queue=[(traces[r['request_id']]['total_ms']-traces[r['request_id']]['tokenize_start_ms'])/1000 for r in small if r.get('request_id') in traces]
         queue=[traces[r['request_id']]['queue_wait_ms']/1000 for r in small if r.get('request_id') in traces]
         long=[r for r in rows if r.get('class')=='longprefill']
+        start=log.find('[meter] admit id='+long[0]['request_id']) if long else -1
+        scored_log=log[start:] if start >= 0 else ''
+        engagement=[line for line in scored_log.splitlines()
+                    if re.match(r'\[(?:dspark|spec)-acc\]', line)]
         eligible=summary['counts']=={'completed':21} and not summary['aborted'] and not summary['faults'] and len(long)==1
         row={'run':run.name,'eligible':eligible,'boot_nonce':identity['boot_nonce'],
              'binary_sha256':identity.get('sha256',identity.get('binary_sha256')),
@@ -40,6 +44,7 @@ for run in sorted(root.iterdir()):
              'long_ttft_s':long[0].get('ttft_s') if long else None,'long_total_s':long[0].get('e2e_s') if long else None,
              'long_input_tokens':long[0].get('usage',{}).get('prompt_tokens') if long else None,
              'server_delta':summary['server_delta'],'queue_peak':summary['queue_peak'],
+             'engagement_log_lines':len(engagement),'engagement_examples':engagement[:2],
              'yield_count':len(re.findall(r'^\[prime-yield\]',log,re.M))}
         result['mixed'].append(row)
         if not eligible:result['failures'].append({'run':run.name,'summary':summary})
