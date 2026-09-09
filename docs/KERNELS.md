@@ -697,7 +697,7 @@ forward run confirms +0.499856%. Each order has 20 sampled rows with first
 capture included. All 86 component sites pass raw-bit comparison, memcheck
 and synccheck report zero errors, and every 256-step identity/census/reset
 and 16-refusal invocation passes. Receipts: [private Darklanes #530](https://github.com/avifenesh/darklanes/pull/530),
-`research/dsv4f-norm-fuse-20260909/RESULTS.md`, source `511f0e663`,
+the report and raw manifests linked there, source `511f0e663`,
 binary `e36c98b0bd80cd8f1c6895f7193e68ebf9120327e437b5fab07c1945cad5761c`.
 This is below serving relevance alone and remains a default-OFF composition
 candidate with dense-fast. No serving admission or default promotion.
