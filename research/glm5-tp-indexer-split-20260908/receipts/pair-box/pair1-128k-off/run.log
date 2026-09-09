@@ -1,0 +1,104 @@
+[tp2-probe] mode=timed max_new=160 logit_steps=0 sampled=false seed=20260831 temp=1 top_p=0.95 eos=[154820, 154827, 154829] MEMRA_GLM5_TP=Some("all@0,1") MEMRA_PP_STAGES=None MEMRA_MOE_RESIDENT=None MEMRA_MOE_SLOTS=None MEMRA_BF16_MMV=None GATE_RED=None
+[tp2-probe] GPU0: NVIDIA B200
+[tp2-probe] engine up at 1.6s
+[nvfp4-scale] layout=Swizzle32x4x4 from /data/models/glm53-b200-mint/LAYOUT.json — per-16 scale planes are unswizzled at load; repack caches are keyed -swz32x4x4
+[tp2-probe] source open at 2.0s
+[glm5-tp-transport] device-push byte-integrity ladder PASS: directions=2 byte_ladder=[16384, 65536, 1048576, 67108864] mismatches=0 same_device_gate=false census_excluded=arm-time-ladder-traffic
+[glm5-tp-transport] armed transport=device-push shape=consumer-issued cuMemcpyDtoDAsync, event-published, atomics-free same_device_gate=false performance_claim=false
+[glm5-tp-preflight] armed ranks=2 devices=[0, 1] layers=45 kda_shard=34 mla_shard=11 moe_ep=42 kda_heads_per_rank=32 mla_heads_per_rank=32 experts_per_rank=144 transport=device-push weights_loaded=false performance_claim=false
+[glm5-tp-kda] head shard armed: ranks=2 heads_per_rank=32 head_dim=128 wo=column-over-gather transport=device-push performance_claim=false
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (dev0): experts 187.54GB + trunk 0.00GB vs free 189.63GB (expert budget 124.00GB) -> SLRU cache
+[glm5-tp-mla] head shard armed: ranks=2 heads_per_rank=32 kv_rank=512 latent=replicated indexer-state=replicated indexer=runtime-selected wo=row-parallel-partial-sums transport=device-push performance_claim=false
+[glm5-tp-split] expert TENSOR-parallel armed: every rank holds half of ALL 288 experts, half_ff=1024 (whole-expert ownership pays the busier rank: E[max]=5.094 of 8, a 1.571x expert half where the split is a deterministic 2x) transport=device-push performance_claim=false
+[tp2-probe] loaded in 82.0s: n_layer=46 n_embd=4096 n_vocab=154880 mtp_loaded=false
+[tp2-probe] vram-post-load dev-root: free=92.77 GiB / total=178.35 GiB
+[tp2-probe] long: 550000 chars -> 128847 tokens
+[prime-v2] arm1 engaged t=128847 chunk=4096 chunks=32 widths=[4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 1871] (natural chunk replaces the PRIME_PIPE_MICROBATCHES geometry; MEMRA_B200_PRIME_V2, logged once per process)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=32, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-sk-form] dev=1 qt=7 sms=148 occ128=2 occ32=8 occt=7 cross=64 xcross=64 bdb=0 in_f=4096 out_f=1024 n_active=288 max_m=778
+[glm5-tp-split-grouped-prime] execute layer=3 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=4 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=5 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=6 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=7 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=8 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=9 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=10 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=11 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=12 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=13 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=14 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=15 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=16 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=17 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=18 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=19 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=20 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=21 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=22 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=23 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=24 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=25 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=26 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=27 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=28 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=29 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=30 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=31 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=32 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=33 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=34 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=35 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=36 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=37 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=38 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=39 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=40 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=41 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=42 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=43 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-tp-split-grouped-prime] execute layer=44 tokens=4096 provenance=split-half-slabs router=sigmoid-host-oracle epilogue=pre-clamped combine=rank-partial-add transport=device-push host_diet=1 performance_claim=false (logged once per layer)
+[glm5-decode-graph] eager: layer 0 is glm5-TP sharded
+[hc-decode-ws] engaged streams=4 hidden=4096 (persistent hc-glue workspace, per-engine pool; MEMRA_HC_DECODE_WS=1)
+[glm5-tp-sym] engaged: both ranks run the hc glue and the norms from their own copy; mixer and MoE meet in one-shot all-reduces (two crossings per layer)
+[hc-mixes-kernel] engaged in_f=16384 out_f=24 (native hc_mixes_gemv_f32 in place of cuBLASLt dot+reduce; MEMRA_HC_MIXES_KERNEL=1, numeric class)
+[kda-fused6] engaged arm=e4m3 in_f=4096 out=[4096, 4096, 4096, 128, 128, 32] t=1 (one launch replaces the six per-tensor e4m3 projections and their six redundant activation quantizes; MEMRA_KDA_FUSED_PROJ=1 MEMRA_ST_E4M3=1)
+[kda-conv3] engaged: the three KDA conv+SiLU decode planes run as one launch (MEMRA_KDA_CONV3=1)
+[nvfp4-row-ilp] engaged: split-plane NVFP4 trunk matvec with four groups' loads per lane ahead of the dp4a chains (MEMRA_NVFP4_ROW_ILP=1, mr=1)
+[mla-seg-ws] engaged: the T=1 MLA PRE segment writes the session's stable handoff buffers (MEMRA_MLA_SEG_WS=1)
+[f32-gemv-kernel] engaged: f32 linear at m<=16 rides gemv_f32_rows instead of cuBLASLt (MEMRA_F32_GEMV_KERNEL=1; first shape 4096->128 m=1)
+[mla-b200-dsa-decode] engaged kpool_score t=1 arm=head-blocked heads=32 pools=32212 class=bit-identical (sm_100a; MEMRA_B200_DSA_DECODE)
+[moe-vrows-dev-tables] engaged: pointer/scale tables built on device from the router's own sel/w; the per-layer pinned readback and its cuStreamSynchronize are skipped (MEMRA_MOE_VROWS_DEV_TABLES=1)
+[moe-vrows-ilp] engaged: verify-rows MoE pair with four groups' loads per lane hoisted ahead of their math (MEMRA_MOE_VROWS_ILP=1, packed=false)
+[glm5-vrows] verify MoE batched across rows: pairs=8 (t=1 x 8), one gate/up+preclamp launch + one down/FMA launch per layer-call (rides MEMRA_GLM5_VERIFY_BATCH); arm doors: pack=false dedup_order=false b200_matvec=true dev_tables=true (env MEMRA_MOE_VROWS_DEV_TABLES=true) — the `_rows` pair has several dispatch twins and only the plain one has ever run at t=1, so a box log has to say which it took. `dev_tables` is THIS CALL's provenance, not the env: the decode-graph door owns both halves and routes the tables through the device build whatever `MEMRA_MOE_VROWS_DEV_TABLES` says (run 7B printed the env and read false while the door was building on device, which cost a box window)
+[glm5-tp-shexp] engaged: the shared expert is split across the ranks (gate/up row halves, down column halves); each half's output is a partial the one-shot sums
+[glm5-tp-sym-graph] engaged: 12 graph piece(s) over 56 segment(s) recorded per rank in both ping-pong phases over layers [0, 45); 11 MLA middle(s) eager between pieces, 0 whole layer(s) eager
+{"tag":"long","arm":"greedy","prompt_tokens":128847,"out_tokens":160,"prime_s":36.6011,"ttft_s":36.6250,"gen_wall_s":2.2775,"decode_tok_s":69.812,"finish":"length","seed":20260831,"tape_sha16":"f44054f64a912489"}
+[tp2-probe] ep-peer-slot-dispatches=0
+[tp2-probe] done: /root/wt-glm5-indexer-split/receipts/pair1-128k-off/rows.jsonl
+	Command being timed: "/root/wt-glm5-indexer-split/target/release/glm5-tp2-box-probe /data/models/glm53-b200-mint /root/out-tpprime5/p128k /root/wt-glm5-indexer-split/receipts/pair1-128k-off"
+	User time (seconds): 399.35
+	System time (seconds): 376.93
+	Percent of CPU this job got: 587%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:12.19
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 350336668
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 97187686
+	Voluntary context switches: 24802
+	Involuntary context switches: 5382
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 104
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

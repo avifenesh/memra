@@ -1,0 +1,90 @@
+device,category,kernel,launches,total_ns
+0,other,dsv4_hc_sinkhorn_m_kernel,14310,293488343
+0,other,"memra_tp_ar_1stage_hcpost_kernel(const float *, const float *, const float *, const float *, const float *, float *, int, int, MemraArSignal *, MemraArSignal *, int, int *, long long)",13822,242987234
+0,select,memra_mla_kpool_select_hist_kernel,3498,231257915
+0,score,"void memra_mla_kpool_score_dsa_kernel<(int)32, (int)1, (int)32>(const float *, const float *, const float *, float *, int, int, int, int, float, float)",1749,213891178
+0,other,qmatvec_q8_0_mmvq,24963,127864189
+0,other,moe_gate_up_preclamp8_q8_rows_ilp,6678,124428115
+0,other,memra_mla_absorb_q_kernel,1749,123723239
+0,other,memra_mla_decompress_v_kernel,1749,123569690
+0,other,moe_down8_fma_q8_rows_ilp,6678,111247904
+0,other,qmatvec_e4m3_mmvq_fused6,5406,97683305
+0,other,"void memra_mla_dsa_attn_warp_kernel<(int)16, (int)0>(const float *, const float *, const float *, const int *, float *, float *, float *, int, int, int, int, int, int, int, float)",1749,85790637
+0,other,quantize_q8_1,41817,83973712
+0,other,dsv4_rowsq_scale_kernel,14310,68005346
+0,select,memra_mla_kpool_select_tie_kernel,1749,61922750
+0,other,hc_mixes_gemv_f32,14310,56268145
+0,select,memra_mla_kpool_select_count_kernel,1749,49187593
+0,other,moe_router_sigmoid_topk_f32,6678,47383509
+0,other,rms_norm_f32_v2,10812,42889874
+0,other,qmatvec_nvfp4_mmvq_fused2_rp_g2,6678,42422271
+0,other,qmatvec_nvfp4_mmvq_rp_ilp,8109,40283830
+0,other,rms_norm_zq8_f32_v2,7155,29344888
+0,other,router_gemv_f32_w8,6678,28452626
+0,other,dsv4_hc_collapse_kernel,14310,24408091
+0,other,qmatvec_q5_K_mmvq_il,159,17442745
+0,other,gemv_f32_rows,5247,16944657
+0,other,memra_kda_conv_silu_decode3_f32,5406,16638417
+0,other,moe_vrows_tables_from_sel,6678,14378772
+0,other,memra_kda_scan_s128,5406,14281944
+0,other,memra_mla_dsa_attn_combine_kernel,1749,12592619
+0,other,swiglu_preclamped_mul_scaled_f32,7155,12233975
+0,other,add_scaled_rows_f32,6678,11967771
+0,other,memra_kda_gated_rmsnorm_f32,5406,11456033
+0,other,memra_kda_gate_beta_f32,5406,10658151
+0,select,memra_mla_kpool_select_emit_kernel,1749,9372662
+0,other,l2_norm2_f32,5406,9210841
+0,other,layer_norm_bias_f32,1749,7370878
+0,other,memra_mla_split_latent_kernel,3498,5218072
+0,select,memra_mla_kpool_select_clear_kernel,1749,3748842
+0,other,memra_mla_append_latent_kernel,1749,3596657
+0,other,"memra_tp_ar_1stage_kernel(const float *, const float *, float *, MemraArSignal *, MemraArSignal *, int, long, int *, long long, const unsigned long long *, int)",11,2981803
+0,other,memra_mla_index_append_ring_kernel,1749,2932942
+0,other,i32_set_k,1749,2533289
+0,other,memra_mla_kpool_pool_keys_kernel,429,1766630
+0,other,"memra_tp_ar_push_2d_kernel(const float *, float *, long, long, long, long)",318,1666402
+0,other,dsv4_hc_post_kernel,488,1129349
+0,other,dsv4_hc_mean_kernel,159,324098
+0,other,dsv4_hc_expand_kernel,159,316193
+1,other,dsv4_hc_sinkhorn_m_kernel,14310,289087830
+1,other,"memra_tp_ar_1stage_hcpost_kernel(const float *, const float *, const float *, const float *, const float *, float *, int, int, MemraArSignal *, MemraArSignal *, int, int *, long long)",13822,234924434
+1,select,memra_mla_kpool_select_hist_kernel,3498,231274314
+1,score,"void memra_mla_kpool_score_dsa_kernel<(int)32, (int)1, (int)32>(const float *, const float *, const float *, float *, int, int, int, int, float, float)",1749,213227079
+1,other,qmatvec_q8_0_mmvq,24963,127487455
+1,other,moe_gate_up_preclamp8_q8_rows_ilp,6678,124048859
+1,other,memra_mla_absorb_q_kernel,1749,123630147
+1,other,memra_mla_decompress_v_kernel,1749,123504329
+1,other,moe_down8_fma_q8_rows_ilp,6678,109141032
+1,other,quantize_q8_1,55014,105906415
+1,other,qmatvec_e4m3_mmvq_fused6,5406,97623796
+1,other,"void memra_mla_dsa_attn_warp_kernel<(int)16, (int)0>(const float *, const float *, const float *, const int *, float *, float *, float *, int, int, int, int, int, int, int, float)",1749,86439450
+1,other,dsv4_rowsq_scale_kernel,14310,65285670
+1,other,rms_norm_f32_v2,17808,62111042
+1,select,memra_mla_kpool_select_tie_kernel,1749,61539572
+1,other,hc_mixes_gemv_f32,14310,55939728
+1,other,moe_router_sigmoid_topk_f32,6678,44840858
+1,other,qmatvec_nvfp4_mmvq_fused2_rp_g2,6678,42149001
+1,select,memra_mla_kpool_select_count_kernel,1749,40694054
+1,other,qmatvec_nvfp4_mmvq_rp_ilp,8109,40162406
+1,other,router_gemv_f32_w8,6678,28124244
+1,other,dsv4_hc_collapse_kernel,14310,25111859
+1,other,gemv_f32_rows,5247,16827447
+1,other,memra_kda_conv_silu_decode3_f32,5406,16373587
+1,other,memra_kda_scan_s128,5406,14167434
+1,other,moe_vrows_tables_from_sel,6678,13041421
+1,other,memra_mla_dsa_attn_combine_kernel,1749,12370144
+1,other,memra_kda_gated_rmsnorm_f32,5406,11255923
+1,other,add_scaled_rows_f32,6678,10910331
+1,other,swiglu_preclamped_mul_scaled_f32,7155,10883378
+1,other,memra_kda_gate_beta_f32,5406,10759768
+1,select,memra_mla_kpool_select_emit_kernel,1749,9418889
+1,other,l2_norm2_f32,5406,9072781
+1,other,layer_norm_bias_f32,1749,6964386
+1,other,memra_mla_split_latent_kernel,3498,4493913
+1,select,memra_mla_kpool_select_clear_kernel,1749,3559122
+1,other,memra_mla_append_latent_kernel,1749,3107891
+1,other,memra_mla_index_append_ring_kernel,1749,2567187
+1,other,i32_set_k,1749,2110802
+1,other,memra_mla_kpool_pool_keys_kernel,429,1690344
+1,other,dsv4_hc_post_kernel,488,1153349
+1,other,"memra_tp_ar_1stage_kernel(const float *, const float *, float *, MemraArSignal *, MemraArSignal *, int, long, int *, long long, const unsigned long long *, int)",11,137504

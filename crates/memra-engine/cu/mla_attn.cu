@@ -4006,3 +4006,92 @@ extern "C" int memra_mla_kpool_select_dsa_redarm_f32(const float* score, int* id
     MLA_ERR();
     return 0;
 }
+
+// TP pool split: local selection uses the existing selector with pool=1, which emits
+// ascending local pool ids. Candidates carry the ORIGINAL score bits and GLOBAL pool id.
+__global__ void memra_mla_kpool_candidates_kernel(const float* score, const int* local,
+                                                  int2* out, int pools, int offset, int k) {
+    int row = blockIdx.x;
+    for (int j = threadIdx.x; j < k; j += blockDim.x) {
+        int p = local[(long)row * k + j];
+        out[(long)row * k + j] = p < 0 ? make_int2(0, -1)
+            : make_int2(__float_as_int(score[(long)row * pools + p]), offset + p);
+    }
+}
+extern "C" int memra_mla_kpool_candidates_f32(const float* score, const int* local, int* out,
+                                              int rows, int pools, int offset, int k,
+                                              void* stream_v) {
+    if (rows <= 0 || pools <= 0 || offset < 0 || k <= 0 || k > 2048) return 40024;
+    memra_mla_kpool_candidates_kernel<<<rows, MLA_THREADS, 0, (cudaStream_t)stream_v>>>(
+        score, local, (int2*)out, pools, offset, k);
+    MLA_ERR();
+    return 0;
+}
+
+// The exchange holds [rank][query][k] pairs. Sort 2k exact order keys, retain k, then
+// sort their pool ids: attention needs ascending pool order, not score order. Nonfinite
+// candidates are skipped and -0 canonicalization is the SAME helper as the selector.
+__device__ void memra_kpool_sort_keys(unsigned long long* keys, int n) {
+    for (int size = 2; size <= n; size <<= 1) {
+        for (int step = size >> 1; step; step >>= 1) {
+            for (int i = threadIdx.x; i < n; i += blockDim.x) {
+                int j = i ^ step;
+                if (j > i) {
+                    unsigned long long a = keys[i], b = keys[j];
+                    bool ascending = (i & size) == 0;
+                    if ((a > b) == ascending) { keys[i] = b; keys[j] = a; }
+                }
+            }
+            __syncthreads();
+        }
+    }
+}
+__global__ void memra_mla_kpool_merge_kernel(const int2* candidates, int* idx, int rows,
+                                            int k, int n, int pool, int width, int first_pos) {
+    extern __shared__ unsigned long long keys[];
+    const unsigned long long invalid = ~0ull;
+    int row = blockIdx.x;
+    for (int j = threadIdx.x; j < n; j += blockDim.x) {
+        unsigned long long key = invalid;
+        if (j < 2 * k) {
+            int rank = j / k, slot = j % k;
+            int2 c = candidates[((long)rank * rows + row) * k + slot];
+            float score = __int_as_float(c.x);
+            if (c.y >= 0 && isfinite(score)) key = memra_kpool_key(score, c.y);
+        }
+        keys[j] = key;
+    }
+    __syncthreads();
+    memra_kpool_sort_keys(keys, n);
+    for (int j = threadIdx.x; j < n; j += blockDim.x)
+        keys[j] = j < k && keys[j] != invalid ? (unsigned)keys[j] : invalid;
+    __syncthreads();
+    memra_kpool_sort_keys(keys, n);
+    __shared__ int count;
+    if (threadIdx.x == 0) {
+        int c = 0;
+        while (c < k && keys[c] != invalid) ++c;
+        count = c;
+    }
+    __syncthreads();
+    int visible = first_pos + row + 1;
+    int tail = visible % pool;
+    int filled = count * pool;
+    int* out = idx + (long)row * width;
+    for (int j = threadIdx.x; j < width; j += blockDim.x) {
+        out[j] = j < filled ? (int)keys[j / pool] * pool + j % pool
+               : j < filled + tail ? visible - tail + j - filled : -1;
+    }
+}
+extern "C" int memra_mla_kpool_merge_f32(const int* candidates, int* idx, int rows, int k,
+                                         int pool, int width, int first_pos, void* stream_v) {
+    if (rows <= 0 || k <= 0 || k > 2048 || pool <= 0 || first_pos < 0 ||
+        width < k * pool + pool - 1) return 40024;
+    int n = 1;
+    while (n < 2 * k) n <<= 1;
+    memra_mla_kpool_merge_kernel<<<rows, MLA_THREADS, n * sizeof(unsigned long long),
+                                    (cudaStream_t)stream_v>>>(
+        (const int2*)candidates, idx, rows, k, n, pool, width, first_pos);
+    MLA_ERR();
+    return 0;
+}

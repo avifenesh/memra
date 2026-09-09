@@ -1,5 +1,21 @@
 # Kernel inventory
 
+## GLM TP pool-split indexer, 2026-09-08
+
+Measured f32 TP-2 receipt: prime improves 10.3% at 128k and 34.6% at 1M. Decode is NEGATIVE at 128k and FLAT at 1M; merge plus exchange consumes score/select savings. Code retained by owner for the prime win, door OFF. See `research/glm5-tp-indexer-split-20260908/RESULTS.md`.
+
+| CUDA entry / kernel | Contract | Dispatch and FFI |
+|---|---|---|
+| `memra_mla_kpool_candidates_f32` / `memra_mla_kpool_candidates_kernel` | Packs existing selector output as original f32 score bits plus global pool id; invalid slots use id -1. No arithmetic on scores. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_candidates`; `MEMRA_GLM5_TP_INDEXER_SPLIT`, default OFF. |
+| `memra_mla_kpool_merge_f32` / `memra_mla_kpool_merge_kernel` | Exact score-desc/id-asc key ordering over both ranks' candidates, then ascending selected pool ids, raw-token expansion, causal tail and -1 padding. Canonical signed zero and nonfinite exclusion use the existing selector helper. One CTA/query, up to 2,048 candidates/rank. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_merge`; same door. |
+| `memra_tp_ar_gather_i32` / `memra_tp_ar_gather_i32_kernel` | Opaque candidate words gathered in global rank order through `MemraArSignal` start/end barriers. Two distinct peer-access devices; timeout traps, no host synchronization. | `cu/tp_ar.cu`, `tp_ar.rs::ArLink::gather_i32`; same door. |
+
+Scoring reuses `memra_mla_kpool_score_f32` and `memra_mla_kpool_score_dsa_f32`, including
+the RP arm, through `mla_ffi.rs::mla_kpool_score_range`. Key-pointer offset and relative
+causal position restrict the pool domain without introducing a numeric twin. Existing
+`__fmaf_rn`, `__fmul_rn` and `__fadd_rn` define the arithmetic. The TC scorer range passed the same bit-identity gate at levels 1 and 2. No live-position/captured-middle twin is added.
+Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md` (target-box gates pending).
+
 ## DSV4 small-kernel diet, 2026-09-07
 
 Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`, and use

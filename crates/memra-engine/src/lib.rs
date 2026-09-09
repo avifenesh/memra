@@ -2839,11 +2839,10 @@ pub fn glm5_tp_split_prime_hostdiet_level() -> u8 {
     }
 }
 
-/// `MEMRA_GLM5_TP_INDEXER_SPLIT=1` (lane/glm5-tp-indexer-split-20260907, default OFF, decide-by
-/// 2026-09-21): at prefill widths (`t >= 8`) each TP rank scores and selects HALF of the chunk's
-/// queries against the whole k-pool and the ranks exchange their `idx` rows, instead of both
-/// ranks scoring every query. Pure movement joins the halves, so the merged plane is
-/// byte-identical to the replicated one.
+/// `MEMRA_GLM5_TP_INDEXER_SPLIT=1` (default OFF, decide-by: 2026-09-22): each TP rank
+/// scores half the pools for every query. Local top-k candidate exchange uses device-side
+/// signals; an exact global merge preserves the replicated selector's full index sequence.
+/// Prime and symmetric decode engage; scalar-position MID stays eager between graph pieces.
 pub fn glm5_tp_indexer_split_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT").as_deref() == Ok("1"))

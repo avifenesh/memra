@@ -472,3 +472,5 @@ dsv4f-moe-m1-splitk-20260907 | Adaptive M1 split-K accepted: no observed compone
 mtp-head-nonresident-capture-20260908 | "The 10 GiB squeeze reproduced #263 on main `dd8cc9c74`." | mtp-head-nonresident-capture-20260908/RESULTS.md
 
 release-v0.134.0-20260908 | "Full release battery: PASS" | release-v0.134.0-20260908/RESULTS.md
+
+glm5-tp-indexer-split-20260908 | "Decode NEGATIVE at 128k and FLAT at 1M; merge cost is the blocker. Prime improves 10.3%/34.6%; exact 160-ID twins. Owner retains code, door OFF." | glm5-tp-indexer-split-20260908/RESULTS.md

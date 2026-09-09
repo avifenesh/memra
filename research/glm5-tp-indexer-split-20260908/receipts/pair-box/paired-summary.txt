@@ -1,0 +1,38 @@
+| Context | Pair | OFF prime s | ON prime s | OFF decode tok/s | ON decode tok/s | IDs |
+|---|---:|---:|---:|---:|---:|---|
+| 128k | 1 | 36.6011 | 32.8148 | 69.812 | 66.947 | identical |
+| 128k | 2 | 36.5982 | 32.8214 | 70.036 | 66.574 | identical |
+| 128k | 3 | 36.5895 | 32.8982 | 69.852 | 66.968 | identical |
+| 1m | 1 | 719.6012 | 470.6716 | 59.625 | 59.670 | identical |
+| 1m | 2 | 719.8124 | 470.6359 | 59.824 | 59.860 | identical |
+| 1m | 3 | 719.4553 | 470.6511 | 59.554 | 59.872 | identical |
+{
+  "128k": {
+    "off": {
+      "n": 3,
+      "prime_s": 36.5982,
+      "decode_tok_s": 69.852
+    },
+    "on": {
+      "n": 3,
+      "prime_s": 32.8214,
+      "decode_tok_s": 66.947
+    },
+    "prime_time_change_pct": -10.319633206004674,
+    "decode_rate_change_pct": -4.158792876367179
+  },
+  "1m": {
+    "off": {
+      "n": 3,
+      "prime_s": 719.6012,
+      "decode_tok_s": 59.625
+    },
+    "on": {
+      "n": 3,
+      "prime_s": 470.6511,
+      "decode_tok_s": 59.86
+    },
+    "prime_time_change_pct": -34.595564876767845,
+    "decode_rate_change_pct": 0.39412997903562896
+  }
+}

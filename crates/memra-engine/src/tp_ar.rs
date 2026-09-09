@@ -23,6 +23,19 @@ use cudarc::driver::{CudaEvent, CudaSlice, DevicePtr, DevicePtrMut};
 use std::os::raw::c_void;
 
 unsafe extern "C" {
+    pub fn memra_tp_ar_gather_i32(
+        in0: *const i32,
+        in1: *const i32,
+        out: *mut i32,
+        self_sg: *mut c_void,
+        peer_sg: *mut c_void,
+        rank: i32,
+        n: i64,
+        err: *mut i32,
+        spin_limit: i64,
+        blocks: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_tp_ar_1stage_replay(
         in_rank0: *const f32,
         in_rank1: *const f32,
@@ -518,6 +531,71 @@ impl ArLink {
             };
             if rc != 0 {
                 return Err(format!("memra_tp_ar_1stage rc {rc} on rank {r}").into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Gather opaque i32 candidate words in global rank order through device-side signals.
+    /// Outputs have 2*n words; inputs have n. No host sync or cross-stream event is used.
+    pub fn gather_i32(
+        &mut self,
+        engines: &[&Engine],
+        inputs: &[&CudaSlice<i32>],
+        outs: &mut [&mut CudaSlice<i32>],
+        n: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if engines.len() != 2 || inputs.len() != 2 || outs.len() != 2 {
+            return Err("tp candidate gather (into): this arm is two ranks".into());
+        }
+        if n == 0 {
+            return Err("tp candidate gather needs a non-zero element count".into());
+        }
+        if inputs.iter().any(|b| b.len() < n) || outs.iter().any(|b| b.len() < 2 * n) {
+            return Err(format!(
+                "tp candidate gather (into): inputs need {n} words and outputs need twice that"
+            )
+            .into());
+        }
+        let mut inp = [std::ptr::null::<i32>(); 2];
+        let mut outp = [std::ptr::null_mut::<i32>(); 2];
+        let mut sig = [std::ptr::null_mut::<std::ffi::c_void>(); 2];
+        let mut errp = [std::ptr::null_mut::<i32>(); 2];
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let s = e.stream();
+            inp[r] = inputs[r].device_ptr(&s).0 as *const i32;
+            outp[r] = outs[r].device_ptr_mut(&s).0 as *mut i32;
+            sig[r] = self.sig[r].device_ptr(&s).0 as *mut std::ffi::c_void;
+            errp[r] = self.err[r].device_ptr(&s).0 as *mut i32;
+            if std::ptr::eq(inp[r], outp[r]) {
+                return Err("tp candidate gather (into): the output aliases an input".into());
+            }
+        }
+        let blocks = ar_blocks_for(n);
+        for r in 0..2 {
+            let e = engines[r];
+            let _main = e.gpu.enter_main()?;
+            let st = e.stream();
+            // SAFETY: peer access is granted both ways; every buffer is sized and checked above.
+            let rc = unsafe {
+                memra_tp_ar_gather_i32(
+                    inp[0],
+                    inp[1],
+                    outp[r],
+                    sig[r],
+                    sig[1 - r],
+                    r as i32,
+                    n as i64,
+                    errp[r],
+                    AR_SPIN_LIMIT,
+                    blocks,
+                    st.cu_stream() as *mut c_void,
+                )
+            };
+            if rc != 0 {
+                return Err(format!("memra_tp_ar_gather_i32 rc {rc} on rank {r}").into());
             }
         }
         Ok(())
