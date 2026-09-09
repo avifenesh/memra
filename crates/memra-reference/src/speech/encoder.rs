@@ -546,6 +546,7 @@ pub fn gelu_erf(x: f32) -> f32 {
 
 /// Blockwise Welford moments. Short strided accumulators and weighted merges keep
 /// cancellation in long LayerNorm rows from entering the residual stream.
+#[allow(clippy::needless_range_loop)] // allow: explicit lane/level coordinates preserve the pinned moment reduction order
 fn row_moments(values: &[f32], reduced: bool) -> (f32, f32) {
     #[derive(Clone, Copy, Default)]
     struct Moments {
@@ -576,8 +577,7 @@ fn row_moments(values: &[f32], reduced: bool) -> (f32, f32) {
     let vector_width = if reduced { 2 * LANES } else { LANES };
     let vectors = values.len() / vector_width;
     let mut stack = [[Moments::default(); LANES]; 8];
-    let mut groups = 0usize;
-    for start in (0..vectors).step_by(16) {
+    for (group, start) in (0..vectors).step_by(16).enumerate() {
         let mut low = [Moments::default(); LANES];
         let mut high = [Moments::default(); LANES];
         for v in start..(start + 16).min(vectors) {
@@ -594,8 +594,7 @@ fn row_moments(values: &[f32], reduced: bool) -> (f32, f32) {
                 stack[0][lane].merge(high[lane]);
             }
         }
-        groups += 1;
-        let mut carries = groups;
+        let mut carries = group + 1;
         let mut level = 1;
         while carries.is_multiple_of(2) && level < stack.len() {
             for lane in 0..LANES {
