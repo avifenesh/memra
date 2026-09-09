@@ -2257,7 +2257,7 @@ impl Engine {
             )
             .into());
         }
-        let scratch = self.alloc_uninit::<u8>(act_bytes)?;
+        let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
         self.qmatvec_mmq_nvfp4_calibrated_prefill_into(
             bytes,
             x,
@@ -2268,7 +2268,7 @@ impl Engine {
             input_scale,
             slot,
             rp,
-            scratch,
+            &mut scratch,
         )
     }
 
