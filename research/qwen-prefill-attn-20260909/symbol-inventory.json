@@ -1,0 +1,24 @@
+{
+  "crates/memra-engine/cu/hybrid.cu": {
+    "main_count": 75,
+    "candidate_count": 79,
+    "removed": [],
+    "added": [
+      "gdn_chunk_state_mma_prime_table",
+      "prime_tap_table",
+      "ssm_conv1d_gdn_state_f32_prime_table",
+      "ssm_conv_ring_update_f32_prime_table"
+    ]
+  },
+  "crates/memra-engine/cu/flash_attn.cu": {
+    "main_count": 95,
+    "candidate_count": 99,
+    "removed": [],
+    "added": [
+      "append_quantize_kv_q8_0_q5_1_rows_prime_table",
+      "fa_dequant_kv_ws_bf16_prime_table",
+      "fa_prefill_qw_db_prime_table",
+      "fa_prefill_qw_t3_prime_table"
+    ]
+  }
+}

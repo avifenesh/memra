@@ -10004,3 +10004,73 @@ extern "C" __global__ void append_quantize_kv_q8_0_q5_1_dcw(
         quant_V_block(x, lane, V + (size_t)t * v_tok_bytes + (size_t)b * V_BLK_B);
     }
 }
+
+// Carried-prime replay twins. Only table lookup and the launch bound differ.
+extern "C" __global__ void append_quantize_kv_q8_0_q5_1_rows_prime_table(
+        const float* __restrict__ k_rows, const float* __restrict__ v_rows,
+        const unsigned long long* __restrict__ table, unsigned long long unused,
+        int unused_base, int kv_dim_k, int kv_dim_v,
+        long k_tok_bytes, long v_tok_bytes)
+{
+    uint8_t* K = (uint8_t*)table[0];
+    uint8_t* V = (uint8_t*)table[1];
+    if (blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0) *((int*)table[2]) = (int)table[7];
+    const int b    = blockIdx.x;
+    const int tt   = blockIdx.y;
+    const int lane = threadIdx.x;
+    const int eidx = b * 32 + lane;
+    const int t    = (int)table[6] + tt;
+    if (b * 32 < kv_dim_k) {
+        float x = (eidx < kv_dim_k) ? k_rows[(size_t)tt * kv_dim_k + eidx] : 0.0f;
+        quant_K_block(x, lane, K + (size_t)t * k_tok_bytes + (size_t)b * K_BLK_B);
+    }
+    if (b * 32 < kv_dim_v) {
+        float x = (eidx < kv_dim_v) ? v_rows[(size_t)tt * kv_dim_v + eidx] : 0.0f;
+        quant_V_block(x, lane, V + (size_t)t * v_tok_bytes + (size_t)b * V_BLK_B);
+    }
+}
+
+extern "C" __global__ void fa_dequant_kv_ws_bf16_prime_table(
+        const unsigned long long* __restrict__ table, unsigned long long unused,
+        __nv_bfloat16* __restrict__ Kw, __nv_bfloat16* __restrict__ Vw,
+        int kv_dim_k, int kv_dim_v, int unused_depth,
+        long k_tok_bytes, long v_tok_bytes)
+{
+    const uint8_t* K = (const uint8_t*)table[0];
+    const uint8_t* V = (const uint8_t*)table[1];
+    const int t_kv = (int)table[7];
+    const long nk = (long)t_kv * kv_dim_k;
+    const long nv = (long)t_kv * kv_dim_v;
+    const long total = nk + nv;
+    for (long idx = (long)blockIdx.x * blockDim.x + threadIdx.x; idx < total;
+         idx += (long)gridDim.x * blockDim.x) {
+        if (idx < nk) {
+            const long t = idx / kv_dim_k; const int e = (int)(idx % kv_dim_k);
+            Kw[idx] = __float2bfloat16(DQ_K_ELEM(K, t, k_tok_bytes, e));
+        } else {
+            const long j = idx - nk;
+            const long t = j / kv_dim_v; const int e = (int)(j % kv_dim_v);
+            Vw[j] = __float2bfloat16(DQ_V_ELEM(V, t, v_tok_bytes, e));
+        }
+    }
+}
+
+extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 1) fa_prefill_qw_db_prime_table(
+        const float* __restrict__ Q, const __nv_bfloat16* __restrict__ Kw,
+        const __nv_bfloat16* __restrict__ Vw, float* __restrict__ O,
+        int head_dim, int n_head, int n_head_kv, int T, const unsigned long long* table,
+        float scale, int causal, int kv_dim_k, int kv_dim_v)
+{
+    const int T_kv = (int)table[7];
+    fa_prefill_qw_db_body<256>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                               scale, causal, kv_dim_k, kv_dim_v);
+}
+
+extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_t3_prime_table(
+        const float* Q, const __nv_bfloat16* Kw, const __nv_bfloat16* Vw, float* O,
+        int head_dim, int n_head, int n_head_kv, int T, const unsigned long long* table,
+        float scale, int causal, int kv_dim_k, int kv_dim_v) {
+    const int T_kv = (int)table[7];
+    fa_prefill_qw_db_body<256, true>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                                      scale, causal, kv_dim_k, kv_dim_v);
+}

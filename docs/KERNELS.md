@@ -1,5 +1,24 @@
 # Kernel inventory
 
+## Carried Qwen prime replay, 2026-09-09
+
+All entries are Memra-owned twins. The qualified Qwen geometry on the 170-SM
+sm_120a target uses carried-prime replay as its default, without a runtime door.
+Session addresses and absolute depth come from the refreshed replay table.
+Numerical bodies preserve the corresponding eager entry's operation order.
+
+| Symbol | Purpose | Binding |
+| --- | --- | --- |
+| `append_quantize_kv_q8_0_q5_1_rows_prime_table` | Quantized KV append and live length publication | `Engine::append_kv_quantized_rows` |
+| `fa_dequant_kv_ws_bf16_prime_table` | True-depth dequantization into stable BF16 workspace | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_db_prime_table` | Existing four-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_t3_prime_table` | Existing three-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
+| `ssm_conv1d_gdn_state_f32_prime_table` | Carried convolution reads the live ring | `Engine::ssm_conv1d_gdn_state_pad` |
+| `ssm_conv_ring_update_f32_prime_table` | Publishes the live convolution ring | `Engine::ssm_conv1d_gdn_state_pad` |
+| `gdn_chunk_state_mma_prime_table` | Chunked GDN reads/writes live ping-pong state | `Engine::gdn_scan_chunked` |
+| `prime_tap_table` | Bulk copy of exact residual bits to live strided tap destination | `Engine::prime_tap_table` |
+
+
 ## Qwen attention prime staging, 2026-09-09
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
