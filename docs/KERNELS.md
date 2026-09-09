@@ -1,5 +1,18 @@
 # Kernel inventory
 
+## Whisper CPU reference operators, 2026-09-09
+
+These are native reference operations, not CUDA support or serving qualification.
+The measured numeric programs and bounds are in
+[the encoder receipt](../research/asr-modality-20260909/ENCODER-NUMERICS.md).
+
+| Operator | Program | Numeric class | Source |
+| --- | --- | --- | --- |
+| `WhisperFrontend::compute` | Periodic Hann, direct real DFT, Slaney filters and Whisper log normalization | F32 PCM/output; reference DFT accumulation | `crates/memra-reference/src/speech/frontend.rs` |
+| `WhisperEncoder::encode` | Biased strided convolution, positions, LayerNorm, full attention and residual FFNs | F32 or binary16 values with FP32 accumulation; no external executor | `crates/memra-reference/src/speech/encoder.rs` |
+| `gelu_erf` | Owned evaluation of A&S 7.1.26 matching the pinned HF CPU vector program | FP32 fused polynomial, final destination rounding | `crates/memra-reference/src/speech/encoder.rs` |
+| Speech reference matrix product | Four fixed FMA partial sums; AVX2 vectorizes independent time rows | Same scalar/AVX2 FP32 reduction order | `crates/memra-reference/src/speech/matrix.rs` |
+
 ## Qwen attention prime staging, 2026-09-09
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |

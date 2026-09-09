@@ -1,0 +1,15 @@
+{
+  "source": "HF CPU layer20 fc1 of pinned ivrit large-v3, same two-second synthetic clip",
+  "selection": "every 1875th flat value, no error-based selection",
+  "torch_git": "08187d9e0fba026dc8217405802ab5381dc88d90",
+  "files": {
+    "gelu-hf-vector-input.f32": {
+      "sha256": "3b48babf1e8622f238af13eb888ff53c130ef18e73a75f5632d5a3dc864b89aa",
+      "elements": 4096
+    },
+    "gelu-hf-vector-expected.f32": {
+      "sha256": "82fc3dba55ce449f0e274baf98fc9e9ac4cd85e45a08287d324fd3614b2d0c48",
+      "elements": 4096
+    }
+  }
+}

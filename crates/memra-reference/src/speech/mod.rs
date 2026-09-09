@@ -2,3 +2,6 @@
 //! completing an encoder does not admit an ASR generation or serving surface.
 
 pub mod frontend;
+
+pub mod encoder;
+mod matrix;

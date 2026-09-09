@@ -1,6 +1,6 @@
 # Native ASR modality plan
 
-Status: native CPU mel frontend passed its first oracle gate; encoder and decoding remain in progress. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
+Status: native CPU mel and encoder stage gates passed; cached decoding is the next stage. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
 Engine baseline: `1657a5a80`; lane `lane/asr-modality-20260909`.
 
 Build both native speech paths now. Memra owns model math, frontend, state and decoding.
@@ -258,3 +258,14 @@ The owner explicitly allowed this follow-up's tiny, niced, single-process CPU or
 gates on the rig. No GPU was opened, and no local workspace CI or general battery was run.
 `tools/whisper_cpu_oracle.py` is offline capture tooling only. The stage runner consumes binary
 fixtures and source safetensors; it never calls that tool as an execution backend.
+
+## Stage 2 encoder receipt, 2026-09-09
+
+The native reference now executes both strided convolutions and every encoder block in F32
+or strict F16 arithmetic (FP32 accumulators, binary16 weights/activation values). The CPU
+reference stores half values in f32 carriers; this is not a GPU residency or speed claim.
+F32 max abs **0.0002231598** against HF F32 passes 1e-3. Native F16 max abs **0.25** against
+HF F16 passes the owner-amended, same-fixture HF F16-vs-F32 floor **0.2771682739**.
+See `research/asr-modality-20260909/ENCODER-NUMERICS.md` and its raw JSON receipts.
+The original 1e-2 F16-vs-F32 gate and all failed diagnostics remain explicitly recorded.
+Native support stays unset until the remaining decoder/policy and qualification gates pass.
