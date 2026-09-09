@@ -467,6 +467,8 @@ fn run_impl(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, reverse: bool,
 /// after its independent unprofiled BAAB has completed successfully.
 pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     use memra_engine::dsv4_gpu::Dsv4Phase;
+    let cadence = memra_engine::dsv4_gpu::dsv4_replay_cadence_default();
+    let dense = memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate();
     assert_eq!(std::env::var("MEMRA_DSV4_NVTX").as_deref(), Ok("1"));
     assert_ne!(
         std::env::var("MEMRA_DSV4_ROUND_PROFILE").as_deref(),
@@ -497,7 +499,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     }
     assert_eq!(prefix.pos, 368);
     println!(
-        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
+        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
         sha256_tokens(&prefix_tape)
     );
     let mut control = state(gpu);
@@ -507,14 +509,17 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     gpu.restore_full_token_prefix_for_gate(&mut candidate, &prefix)
         .unwrap();
     // Safety: gpu/weights/config remain borrowed and unchanged until both states drop.
-    unsafe { gpu.arm_full_token_replay_mode_for_gate(&mut candidate, cfg, false) }.unwrap();
+    unsafe { gpu.arm_full_token_replay_for_gate(&mut candidate, cfg) }.unwrap();
     let expected = eager_step(gpu, &mut control, &mut sampler, &cfg, first);
     let actual = gpu
         .decode_sample_full_token_for_gate(first, &mut candidate)
         .unwrap();
     assert_eq!(actual, expected);
     assert_eq!(identity(gpu, &candidate), identity(gpu, &control));
-    capture_once(gpu, &candidate, false);
+    capture_once(gpu, &candidate, cadence);
+    std::fs::create_dir_all("profile-graphs").unwrap();
+    gpu.dump_full_token_replay_for_gate(&candidate, Path::new("profile-graphs"))
+        .unwrap();
     let mut oracle = None;
     for graph_arm in [false, true] {
         let active = if graph_arm {
@@ -525,6 +530,10 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
         gpu.restore_full_token_prefix_for_gate(active, &prefix)
             .unwrap();
         let before = gpu.full_token_ar_epochs_for_gate().unwrap();
+        let before_variants = graph_arm.then(|| {
+            gpu.full_token_replay_variant_counts_for_gate(active)
+                .unwrap()
+        });
         let mut carry = first;
         let mut tokens = Vec::with_capacity(32);
         super::drain(gpu);
@@ -558,7 +567,20 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
         let result = (tokens.clone(), carry, identity(gpu, active));
         if graph_arm {
             assert_eq!(Some(result), oracle, "profile arms differ");
-            capture_once(gpu, active, false);
+            capture_once(gpu, active, cadence);
+            let after_variants = gpu
+                .full_token_replay_variant_counts_for_gate(active)
+                .unwrap();
+            let expected = if cadence {
+                [24, 32, 7, 1]
+            } else {
+                [32, 32, 0, 0]
+            };
+            for (rank, after) in after_variants.iter().enumerate() {
+                for (slot, count) in expected.iter().enumerate() {
+                    assert_eq!(after[slot] - before_variants.unwrap()[rank][slot], *count);
+                }
+            }
             assert_eq!(
                 gpu.full_token_replay_counts_for_gate(active).unwrap(),
                 [[33, 33], [33, 33]]
@@ -567,10 +589,17 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             oracle = Some(result);
         }
         println!(
-            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
+            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
             if graph_arm { "graph" } else { "eager" },
             sha256_tokens(&tokens)
         );
+        for (step, token) in tokens.iter().enumerate() {
+            println!(
+                "PROFILE_STEP arm={} position={} token={token}",
+                if graph_arm { "graph" } else { "eager" },
+                368 + step
+            );
+        }
     }
     println!("PASS separate profile-only eager/replay windows; no scored rate");
 }
