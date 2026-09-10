@@ -25077,6 +25077,25 @@ impl HybridModel {
         Ok((vam, hn))
     }
 
+    /// SAMPLED verify (lane/gemma-sampled-spec): the verify columns themselves, SOFTCAPPED,
+    /// plus the post-output_norm hidden stack. The greedy twin above skips the softcap because
+    /// tanh is monotonic and a per-row argmax cannot see it; a rejection walk reads
+    /// PROBABILITIES, where the cap changes every mass in the row, so this arm applies it.
+    /// Tokens live in `tok_d[0..t]`; nothing but the logits crosses to the host.
+    pub(crate) fn gemma4_decode_step_t_logits_dev(
+        &self,
+        e: &Engine,
+        tok_d: &CudaSlice<u32>,
+        t: usize,
+        pos0: usize,
+        cache: &mut Cache,
+    ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let (mut ld, hn) = self.gemma4_verify_trunk(e, &vec![0u32; t], pos0, cache, Some(tok_d))?;
+        let cap = self.cfg.gemma4.as_ref().unwrap().final_logit_softcapping;
+        e.softcap(&mut ld, cap, t * self.output.out_features())?;
+        Ok((ld, hn))
+    }
+
     /// gemma4 verify + the POST-output_norm hidden stack [t, n_embd] (the drafter's h input —
     /// llama's h_nextn convention).
     pub(crate) fn gemma4_decode_step_t_h(

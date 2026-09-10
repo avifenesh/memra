@@ -7,7 +7,12 @@ use crate::tensor_contract::{
 
 pub static PACK: ModelPack = ModelPack {
     family: "gemma4_dense",
-    aliases: &["gemma4", "gemma4_text"],
+    aliases: &[
+        "gemma4",
+        "gemma4_text",
+        "gemma4_unified",
+        "gemma4_unified_text",
+    ],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[
         TokenizerSource::TokenizerJson,
@@ -235,6 +240,45 @@ mod tests {
             "rms_norm_eps":0.000001,"standardize":true,"use_clipped_linears":false,
             "hidden_activation":"gelu_pytorch_tanh","rope_parameters":{"rope_theta":100}}}"#,
         ))
+    }
+
+    /// The 12B "Unified" checkpoint (`gemma4_unified` / `gemma4_unified_text`) is the same
+    /// text program as the tower-based gemma4 dense models and must land on this pack, with
+    /// its encoder-free multimodal front end DROPPED rather than read through the factored
+    /// tower's key names. Red arm: before the alias + vision dispatch landed, `Arch::parse`
+    /// returned `Other("gemma4_unified")`, no pack matched, and the checkpoint did not load.
+    fn unified_config() -> ModelConfig {
+        ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"gemma4_unified","text_config":{"model_type":"gemma4_unified_text",
+            "num_hidden_layers":4,"hidden_size":8,"num_attention_heads":8,
+            "num_key_value_heads":4,"num_global_key_value_heads":4,"head_dim":32,
+            "global_head_dim":64,"intermediate_size":64,"vocab_size":262144,
+            "max_position_embeddings":262144,"rms_norm_eps":0.000001,
+            "sliding_window":1024,"final_logit_softcapping":30,
+            "layer_types":["sliding_attention","full_attention","sliding_attention","full_attention"],
+            "rope_parameters":{"full_attention":{"rope_theta":1000000,
+            "partial_rotary_factor":0.25},"sliding_attention":{"rope_theta":10000}}},
+            "vision_config":{"model_type":"gemma4_unified_vision","mm_embed_dim":8,
+            "mm_posemb_size":1120,"model_patch_size":48,"num_soft_tokens":280,
+            "output_proj_dims":8,"patch_size":16,"pooling_kernel_size":3,
+            "rms_norm_eps":0.000001},
+            "audio_config":{"model_type":"gemma4_unified_audio","audio_embed_dim":640,
+            "hidden_size":640,"output_proj_dims":640,"rms_norm_eps":0.000001}}"#,
+        ))
+    }
+
+    #[test]
+    fn unified_12b_lands_on_the_dense_pack_as_a_text_only_plan() {
+        let config = unified_config();
+        assert_eq!(for_config(&config).unwrap().family, "gemma4_dense");
+        assert!(
+            config.vision.is_none(),
+            "the encoder-free unified front end must be dropped, never read through the \
+             factored tower's key names"
+        );
+        let plan = PACK.compile_plan(&config).unwrap();
+        assert!(plan.vision.is_none());
+        assert_eq!(plan.layers.len(), 4);
     }
 
     #[test]
