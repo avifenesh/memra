@@ -1598,6 +1598,12 @@ pub struct Request {
     /// verdict at its FIRST decisive admission consideration and never again: defer
     /// ticks and step-OOM park replays must not multiply one arrival into many rows.
     pub(crate) admit_predict_logged: bool,
+    /// MEMORY-SHAPED ADMISSION (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): when this request
+    /// FIRST deferred on memory. Latched once, never restamped, because the whole point is to
+    /// bound the total wait against the client's own pre-header budget; a per-tick stamp would
+    /// reset the budget forever and bound nothing. `None` off the door and until the first
+    /// memory defer.
+    pub(crate) memory_defer_since: Option<Instant>,
     /// Optional provider-declared prompt ceiling. The HTTP layer copies this from the
     /// model metadata; the worker enforces it after rendering/tokenization, before cache
     /// lookup, admission accounting, or any GPU work.
@@ -7212,6 +7218,19 @@ impl PrefixCache {
         n
     }
 
+    /// Device bytes currently held by UNLEASED entries: exactly what [`Self::evict_all`]
+    /// would free, and therefore what the memory-admission door may offer an arrival as
+    /// `Tiers::demotable_device_bytes`. Leased entries are absent from both LRUs by
+    /// construction, so they cannot be promised here and then refuse to move.
+    fn evictable_bytes(&self) -> u64 {
+        self.probation_lru
+            .values()
+            .chain(self.protected_lru.values())
+            .filter_map(|(key, i)| self.entries.get(key).and_then(|row| row.get(*i)))
+            .map(|e| e.bytes as u64)
+            .sum()
+    }
+
     /// TENANT LIFECYCLE PURGE, device half (lane/kv-tenancy-compaction-20260831): drop
     /// every UNPINNED entry in the tenant's PC-ISO namespaces so a later capacity
     /// eviction cannot DEMOTE the purged bytes back into the host tier. Same namespace
@@ -8050,6 +8069,54 @@ enum HostDemoteOutcome {
 fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, dead: PrefixEntry) {
     let _ = host_demote_prefix_ref(engine, host, &dead);
     // `dead` drops here whatever happened: it was already evicted from the device tier.
+}
+
+/// MEMORY-ADMISSION FLUSH (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): the admission reclaim
+/// ladder's device-prefix flush, DEMOTING into the pinned host tier instead of dropping.
+///
+/// [`host_demote_prefix_entry`]'s own doc names this seam: "the emergency `evict_all` flush
+/// still DROPS bytes rather than stalling an alloc-pressure tick behind gigabytes of
+/// synchronous D2H; that flush is a named seam for a copy-stream follow-up, not an oversight".
+/// The reason to take that seam now is the ceiling: with `MEMRA_MAX_SESSIONS` raised from 4 to
+/// 32 the ladder fires far more often, and on the 1M route a single dropped entry is up to
+/// 43,514 MB of prime the next turn has to redo (darklanes
+/// `research/glm5-1m-b200-ship-20260906`, the qual132 re-prime at 225 s with
+/// `cached_tokens=0`). Input tokens are 79-83% of revenue and the cache hit rate is the
+/// latency moat, so a flush that trades cache warmth for one admission is the expensive arm,
+/// not the safe one.
+///
+/// The D2H stall is bounded, not ignored: `demote_budget_bytes` is the arrival's SHORTFALL,
+/// so a tick copies only what the admission actually needs. Past the budget, and for every
+/// entry the tier refuses (off, latched off, tenant share cap, copy failure), the entry is
+/// DROPPED exactly as today — the flush never fails to free the bytes it was called to free.
+///
+/// Returns `(entries removed, entries demoted, bytes demoted)`.
+fn evict_all_demoting(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    host: &mut HostPrefixCache,
+    demote_budget_bytes: u64,
+) -> (usize, usize, u64) {
+    let (mut removed, mut demoted, mut demoted_bytes) = (0usize, 0usize, 0u64);
+    while let Some((key, i)) = px.oldest_evictable() {
+        if host.armed() && demoted_bytes < demote_budget_bytes {
+            let entry = &px.entries[&key][i];
+            let bytes = entry.bytes as u64;
+            if matches!(
+                host_demote_prefix_ref(engine, host, entry),
+                HostDemoteOutcome::Demoted
+            ) {
+                demoted += 1;
+                demoted_bytes = demoted_bytes.saturating_add(bytes);
+            }
+        }
+        let Some(_dead) = px.remove_at(&key, i) else {
+            break;
+        };
+        removed += 1;
+    }
+    px.evictions += removed as u64;
+    (removed, demoted, demoted_bytes)
 }
 
 /// By-reference demote body shared by the SLRU sink above and the pause sweep
@@ -12098,6 +12165,10 @@ struct Session {
     request_id: String,
     /// The request's `[admit-predict]` one-shot latch, carried across a park replay.
     admit_predict_logged: bool,
+    /// The request's memory-defer stamp (`MEMRA_ADMIT_BY_MEMORY`), carried across a park
+    /// replay: a replayed request has already spent that wait, and re-zeroing it would hand
+    /// a step-OOM park a fresh defer budget the client never got.
+    memory_defer_since: Option<Instant>,
     /// The request's wire first-token deadline, carried across a step-OOM park replay so
     /// the first-token deadline gate can judge the retry against the REAL remaining
     /// deadline (the handler's 408 watch is still armed on the original stream).
@@ -13992,6 +14063,13 @@ pub fn run(
         admit_predict_cfg.resolve_budget(derived);
     }
     let admit_predict_cfg = admit_predict_cfg;
+    // MEMORY-SHAPED ADMISSION (memra#365, door MEMRA_ADMIT_BY_MEMORY, default OFF). Read
+    // once here so the door cannot arm or disarm mid-process, and state the resolved policy
+    // in the boot log beside the predictor's own armed line: a launcher that raises
+    // MEMRA_MAX_SESSIONS is trusting THIS door to hold the card, so its knobs belong in the
+    // same receipt the qualification env is derived from.
+    let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();
+    eprintln!("{}", admit_memory_cfg.boot_line());
     let mut admission_book = crate::admit_predict::AdmissionBook::default();
     let mut completion_history = crate::admit_predict::CompletionHistory::default();
     // AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, Arc E):
@@ -14466,14 +14544,15 @@ pub fn run(
                 ))));
                 continue;
             }
-            let shape = match prepare_request(&loaded, &mut req) {
-                Ok(shape) => shape,
-                Err(err) => {
-                    release_admission_reservation(req.lane);
-                    let _ = req.tx.send(Event::Error(err));
-                    continue;
-                }
-            };
+            let shape =
+                match prepare_request(&loaded, &mut req, admit_memory_cfg.open_output_charge()) {
+                    Ok(shape) => shape,
+                    Err(err) => {
+                        release_admission_reservation(req.lane);
+                        let _ = req.tx.send(Event::Error(err));
+                        continue;
+                    }
+                };
             let model_key = req.model.clone();
             let prompt_len = req.prepared_prompt.as_ref().unwrap().len();
             // FIRST-TOKEN DEADLINE GATE (lane/bench-debts-20260901; darklanes
@@ -15012,7 +15091,51 @@ pub fn run(
                     if !headroom.sufficient(required) {
                         // Drop unleased snapshots before deciding to queue or reject. The
                         // incoming prompt's donor and other sessions' leases stay protected.
-                        let evicted_prefix = px.evict_all();
+                        //
+                        // MEMORY-ADMISSION DOOR (memra#365): armed, the same entries are
+                        // DEMOTED into the pinned host tier on the way out instead of being
+                        // dropped, bounded by this arrival's own shortfall so a tick never
+                        // stalls behind more D2H than the admission needs. Off, this is
+                        // byte-identical to `px.evict_all()`.
+                        let (evicted_prefix, demoted_prefix, demoted_prefix_bytes) =
+                            if admit_memory_cfg.armed {
+                                // The SAME decision rule the defer site uses, taken here
+                                // against the pre-flush readings: it answers both "is a
+                                // demotion what this arrival needs" and "how many bytes may
+                                // this tick copy". A full or absent host tier yields a 0
+                                // budget, i.e. today's drop, rather than a copy with nowhere
+                                // to land.
+                                let tiers = crate::admit_memory::Tiers {
+                                    device_free_bytes: headroom.limiting_free_bytes() as u64,
+                                    demotable_device_bytes: px.evictable_bytes(),
+                                    host_free_bytes: if hpx.armed() {
+                                        (hpx.budget.saturating_sub(hpx.total_bytes)) as u64
+                                    } else {
+                                        0
+                                    },
+                                };
+                                let budget = crate::admit_memory::demote_budget_bytes(
+                                    crate::admit_memory::decide(
+                                        required as u64,
+                                        &tiers,
+                                        0,
+                                        admit_memory_cfg.defer_budget_ms,
+                                    ),
+                                );
+                                evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                            } else {
+                                (px.evict_all(), 0, 0)
+                            };
+                        if demoted_prefix > 0 {
+                            eprintln!(
+                                "[admit-mem] reclaim demoted {demoted_prefix} of \
+                                 {evicted_prefix} device prefix entries to the host tier \
+                                 ({:.0}MB kept warm; host {:.0}MB of {:.0}MB resident)",
+                                demoted_prefix_bytes as f64 / 1e6,
+                                hpx.total_bytes as f64 / 1e6,
+                                hpx.budget as f64 / 1e6,
+                            );
+                        }
                         if evicted_prefix > 0
                             && let Some(next_headroom) =
                                 admission_headroom(&engine, &loaded, device_requirements.as_deref())
@@ -15361,6 +15484,99 @@ pub fn run(
                                         queue.len() + requeue.len()
                                     );
                                 }
+                            }
+                        }
+                        // BOUNDED MEMORY DEFER (memra#365, door MEMRA_ADMIT_BY_MEMORY).
+                        // Today's defer is unbounded: a request the gate cannot fit requeues
+                        // FIFO forever unless `active` is empty, so it does not get refused,
+                        // it gets to die as a pre-header timeout at the edge (the 2026-09-09
+                        // 1M cutover sweep: short probes queued past the client's 10 s
+                        // budget behind four long generations). Armed, the wait is bounded
+                        // against that budget: the arrival keeps deferring while either tier
+                        // could still make room or its budget is unspent, and once BOTH
+                        // tiers are exhausted AND the budget is spent it gets a bounded 429
+                        // with Retry-After. Every arm logs one `[admit-mem]` line carrying
+                        // the estimate, the device reading and the host reading, so the
+                        // requalification cell greps the decision instead of inferring it.
+                        if admit_memory_cfg.armed {
+                            let since = *req.memory_defer_since.get_or_insert_with(Instant::now);
+                            let waited_ms = crate::admit_memory::waited_ms(Some(since));
+                            let device_free = headroom.limiting_free_bytes() as u64;
+                            let need = required as u64;
+                            // The context-linear term at this request's own charged context;
+                            // everything else the gate charged (prefill workspace, measured
+                            // activations, draft plane, transient reserve, verify-graph pool
+                            // debt) is the fixed residual, so est_bytes IS `required`.
+                            let mut est = crate::admit_memory::estimate(
+                                admission_cap,
+                                bytes_per_token as u64,
+                                ring_bytes_per_token as u64,
+                                ring_rows as u64,
+                                0,
+                            );
+                            est.fixed_bytes = need.saturating_sub(est.context_bytes);
+                            let tiers = crate::admit_memory::Tiers {
+                                device_free_bytes: device_free,
+                                demotable_device_bytes: px.evictable_bytes(),
+                                host_free_bytes: if hpx.armed() {
+                                    (hpx.budget.saturating_sub(hpx.total_bytes)) as u64
+                                } else {
+                                    0
+                                },
+                            };
+                            let verdict = crate::admit_memory::decide(
+                                need,
+                                &tiers,
+                                waited_ms,
+                                admit_memory_cfg.defer_budget_ms,
+                            );
+                            let refusing = matches!(
+                                verdict,
+                                crate::admit_memory::MemoryVerdict::Refuse { .. }
+                            );
+                            let retry_after_s = refusing.then(|| {
+                                crate::admit_memory::clamp_retry_after_s(
+                                    crate::admit_predict::earliest_completion_retry_s(
+                                        active.iter().map(|s| {
+                                            (s.shadow_pred_total, s.generated.len() as u64)
+                                        }),
+                                        step_stats.p(50.0).unwrap_or(0.0),
+                                    ),
+                                )
+                            });
+                            // One line per DECISION, not per tick: a refusal and a first
+                            // defer are both decisions a receipt reader needs; the repeated
+                            // defers of one arrival are the `[admit-oom] VRAM defer` line's
+                            // job and stay throttled there.
+                            if refusing || waited_ms == 0 {
+                                eprintln!(
+                                    "{}",
+                                    crate::admit_memory::memory_line(
+                                        &crate::admit_memory::MemoryLine {
+                                            request_id: &req.request_id,
+                                            model: &req.model,
+                                            verdict,
+                                            prompt_tokens: prompt_len,
+                                            output_bound: (req.params.max_new
+                                                != MAX_NEW_CTX_BOUNDED)
+                                                .then_some(req.params.max_new),
+                                            estimate: est,
+                                            tiers,
+                                            inflight: admission_book.inflight(&req.model),
+                                            cap: cap as u64,
+                                            waited_ms,
+                                            retry_after_s,
+                                        }
+                                    )
+                                );
+                            }
+                            if refusing {
+                                release_admission_reservation(req.lane);
+                                let _ = req.tx.send(Event::Error(EngineError::rate_limit_after(
+                                    crate::admit_memory::MEMORY_REFUSE_MESSAGE,
+                                    retry_after_s.unwrap_or(5),
+                                )));
+                                continue;
                             }
                         }
                         vram_defers += 1;
@@ -18091,7 +18307,6 @@ pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String>
     }
 }
 
-
 /// `resolve_ctx` against the process environment. A non-Unicode value is treated like any other
 /// unusable value: it refuses, it does not silently become a default.
 pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
@@ -18104,27 +18319,46 @@ pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
     }
 }
 
+/// `open_output_tokens` is the memory-admission door's open-output charge
+/// (`MEMRA_ADMIT_BY_MEMORY`, `MemoryAdmitConfig::open_output_charge`): `None` off the door,
+/// which keeps the `MEMRA_CTX` arm below byte-identical. ON, a request that bounds NEITHER
+/// `max_tokens` nor `max_ctx` is charged its prompt plus that output instead of the server's
+/// whole context envelope. On the 1M route the difference is the whole door: `MEMRA_CTX` is
+/// 1,048,576 there, so the naked arm booked ~13 GB of latent KV for a request that emits a few
+/// hundred tokens, and a session cap of 4 was the only thing standing between that charge and
+/// the card. Deployments whose registry pins `default_output_length`/`max_output_length` never
+/// reach this arm (the HTTP layer bounds `max_new` first); this makes the naked path agree with
+/// them instead of disagreeing by two orders of magnitude.
 fn request_ctx_cap(
     server_ctx: usize,
     model_ctx: usize,
     prompt_len: usize,
     max_ctx: Option<usize>,
     max_new: usize,
+    open_output_tokens: Option<usize>,
 ) -> usize {
     let requested = match (max_ctx, max_new) {
         // A request-supplied hard cap is authoritative. In particular, a 128k request on a
         // 256k-default server must allocate and be charged as 128k, not inherit the default.
         (Some(c), _) => c,
-        (None, MAX_NEW_CTX_BOUNDED) => {
-            // With no output bound, use the server context default. A prompt that does not fit
-            // grows to prompt + one default window of room, capped at the model's trained
-            // context when it is known.
-            let mut cap = server_ctx;
-            if prompt_len.saturating_add(16) > cap {
-                cap = prompt_len.saturating_add(server_ctx);
+        (None, MAX_NEW_CTX_BOUNDED) => match open_output_tokens {
+            // Door ON: charge the output this request will plausibly emit, not the envelope.
+            // `charged_ctx_tokens` applies the same `+8` slack and the same model-context
+            // clamp the bounded arm below applies, and never lands under the prompt itself.
+            Some(open) => {
+                return crate::admit_memory::charged_ctx_tokens(prompt_len, None, open, model_ctx);
             }
-            cap
-        }
+            // Door OFF: with no output bound, use the server context default. A prompt that
+            // does not fit grows to prompt + one default window of room, capped at the
+            // model's trained context when it is known.
+            None => {
+                let mut cap = server_ctx;
+                if prompt_len.saturating_add(16) > cap {
+                    cap = prompt_len.saturating_add(server_ctx);
+                }
+                cap
+            }
+        },
         (None, max_new) => prompt_len.saturating_add(max_new).saturating_add(8),
     };
     if model_ctx > 0 {
@@ -18153,6 +18387,7 @@ fn enforce_prompt_limit(
 fn prepare_request(
     loaded: &HashMap<String, LoadedModel>,
     req: &mut Request,
+    open_output_tokens: Option<usize>,
 ) -> Result<RequestShape, EngineError> {
     let lm = &loaded[&req.model];
     if let Some(error) = prompt_source_limit_error(req) {
@@ -18258,6 +18493,7 @@ fn prepare_request(
         prompt_len,
         req.params.max_ctx,
         req.params.max_new,
+        open_output_tokens,
     );
     if prompt_len >= ctx_cap {
         return Err(EngineError::context_length(format!(
@@ -18935,6 +19171,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         // A park replay is the SAME arrival: its shadow verdict (if any) was already
         // logged, and the latch rides along so re-admission cannot log a second row.
         admit_predict_logged: s.admit_predict_logged,
+        memory_defer_since: s.memory_defer_since,
         max_prompt_tokens: p.max_prompt_tokens,
         cache_ns: s.cache_ns.clone(),
         affinity: s.affinity.clone(),
@@ -21989,6 +22226,7 @@ fn admit(
         trace_id: req.trace_id,
         request_id: req.request_id,
         admit_predict_logged: req.admit_predict_logged,
+        memory_defer_since: req.memory_defer_since,
         wire_deadline: req.wire_deadline,
         // Booked by the worker loop at active.push (the admission charge is computed
         // there); zero until then so a test-constructed Session books nothing.
@@ -26051,14 +26289,14 @@ mod tests {
         AdsdDetector,
     };
     use super::{
-        AdmissionCostModel, AdmissionDeviceHeadroom, AdmissionHeadroom, MAX_NEW_CTX_BOUNDED,
-        MAX_PROMPT_SOURCE_BYTES, ParkedCandidate, ParkedPool, Request, ReuseMetrics,
-        SPEC_SHRINK_RESERVE, admission_required, admission_reserve,
+        AdmissionCostModel, AdmissionDeviceHeadroom, AdmissionHeadroom, ENGINE_MAX_CTX,
+        MAX_NEW_CTX_BOUNDED, MAX_PROMPT_SOURCE_BYTES, ParkedCandidate, ParkedPool, Request,
+        ReuseMetrics, SPEC_SHRINK_RESERVE, admission_required, admission_reserve,
         alloc_with_single_reclaim_retry, calibration_transient_floor, enforce_prompt_limit,
         is_cuda_oom, oldest_parked_candidate, parallel_device_requirements, parked_entry_count,
         pp_admission_stage_count, pp_boundary_slot_bytes, pp_boundary_token_cap_resolve,
         pp_device_requirements, pp_stage_admissions, pp_stage_observed_residuals, prepare_park,
-        ENGINE_MAX_CTX, prompt_source_limit_error, request_ctx_cap, resolve_ctx,
+        prompt_source_limit_error, request_ctx_cap, resolve_ctx,
     };
     use super::{
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
@@ -26199,6 +26437,7 @@ mod tests {
             prepared_prompt: None,
             request_id: String::new(),
             admit_predict_logged: false,
+            memory_defer_since: None,
             ttft: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
@@ -26580,6 +26819,7 @@ mod tests {
             prepared_prompt: None,
             request_id: String::new(),
             admit_predict_logged: false,
+            memory_defer_since: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
             glm5_images: Vec::new(),
@@ -27652,16 +27892,27 @@ mod tests {
     /// The resolution must survive the request path, not only the resolver: an unbounded request
     /// against a 1M checkpoint with no `MEMRA_CTX` must be admitted at the checkpoint's window.
     /// With the old 8192 fallback this cap came out at `prompt + 8192`.
+    ///
+    /// `open_output_tokens: None` is the memory-admission door OFF, which is what this row is
+    /// about: it pins the `MEMRA_CTX` envelope behaviour the door later replaces, so the two
+    /// arms stay separately testable.
     #[test]
     fn an_unbounded_request_on_an_unset_ctx_is_capped_by_the_checkpoint_not_by_8192() {
         let server_ctx = resolve_ctx(None, 1_048_576).expect("declared context resolves");
         assert_eq!(
-            request_ctx_cap(server_ctx, 1_048_576, 600_000, None, MAX_NEW_CTX_BOUNDED),
+            request_ctx_cap(
+                server_ctx,
+                1_048_576,
+                600_000,
+                None,
+                MAX_NEW_CTX_BOUNDED,
+                None
+            ),
             1_048_576,
             "a 600k prompt with no max_tokens must reach the checkpoint's window",
         );
         assert_eq!(
-            request_ctx_cap(8_192, 1_048_576, 600_000, None, MAX_NEW_CTX_BOUNDED),
+            request_ctx_cap(8_192, 1_048_576, 600_000, None, MAX_NEW_CTX_BOUNDED, None),
             608_192,
             "the pre-fix constant is what this row pins, so the delta is visible in the test",
         );
@@ -27670,23 +27921,26 @@ mod tests {
     #[test]
     fn admission_request_context_uses_the_requests_own_bound() {
         assert_eq!(
-            request_ctx_cap(262_144, 262_144, 128, Some(131_072), 64),
+            request_ctx_cap(262_144, 262_144, 128, Some(131_072), 64, None),
             131_072,
             "an explicit 128k request must not inherit the 262k server default",
         );
-        assert_eq!(request_ctx_cap(8_192, 262_144, 128, Some(4_096), 64), 4_096);
         assert_eq!(
-            request_ctx_cap(8_192, 262_144, 200_000, None, 131_072),
+            request_ctx_cap(8_192, 262_144, 128, Some(4_096), 64, None),
+            4_096
+        );
+        assert_eq!(
+            request_ctx_cap(8_192, 262_144, 200_000, None, 131_072, None),
             262_144,
             "finite prompt plus output must never allocate beyond trained context",
         );
         assert_eq!(
-            request_ctx_cap(8_192, 262_144, 128, Some(524_288), 64),
+            request_ctx_cap(8_192, 262_144, 128, Some(524_288), 64, None),
             262_144,
             "an explicit max_ctx above trained context must remain model-capped",
         );
         assert_eq!(
-            request_ctx_cap(8_192, 262_144, 260_000, None, MAX_NEW_CTX_BOUNDED),
+            request_ctx_cap(8_192, 262_144, 260_000, None, MAX_NEW_CTX_BOUNDED, None),
             262_144,
             "omitted max_tokens uses the server default and remains model-capped",
         );
@@ -27695,11 +27949,11 @@ mod tests {
     #[test]
     fn admission_finite_request_does_not_inherit_large_server_default() {
         assert_eq!(
-            request_ctx_cap(262_144, 262_144, 8_120, None, 64),
+            request_ctx_cap(262_144, 262_144, 8_120, None, 64, None),
             8_192,
             "a finite 8k request must be charged from prompt + output + margin",
         );
-        assert_eq!(request_ctx_cap(8_192, 262_144, 128, None, 64), 200);
+        assert_eq!(request_ctx_cap(8_192, 262_144, 128, None, 64, None), 200);
         let shape = super::RequestShape {
             ctx_cap: 45_466,
             budget: 32_768,
@@ -29340,8 +29594,8 @@ mod tests {
         // The early verdict must therefore leave prefix lookup/plain fallback live instead of
         // admitting a session the engine will deterministically refuse at prime.
         let prompt_len = 96;
-        let short_ctx = super::request_ctx_cap(8_192, 8_192, prompt_len, None, 1);
-        let block_ctx = super::request_ctx_cap(8_192, 8_192, prompt_len, None, 7);
+        let short_ctx = super::request_ctx_cap(8_192, 8_192, prompt_len, None, 1, None);
+        let block_ctx = super::request_ctx_cap(8_192, 8_192, prompt_len, None, 7, None);
         assert!(!memra_engine::dflash::dspark_spec_prompt_fits(
             prompt_len, short_ctx, 7, 2_048, true,
         ));
@@ -30517,6 +30771,254 @@ mod tests {
         assert_eq!(px.admission_restore_rows(&pin, &tokens), None);
     }
 
+    /// GAP 1 AT THE REAL SEAM (memra#365). `request_ctx_cap`'s open-output arm is where a
+    /// naked request inherits the whole `MEMRA_CTX` envelope. Off the door that behaviour is
+    /// byte-identical to before; on it, the same request is charged its prompt plus the
+    /// open-output budget. On the 1M route these two answers differ by 118x.
+    #[test]
+    fn the_open_output_arm_charges_the_envelope_off_the_door_and_the_output_on_it() {
+        // The glm5b200 shape: MEMRA_CTX=1048576, model trained at 1048576.
+        let off = super::request_ctx_cap(
+            1_048_576,
+            1_048_576,
+            4_000,
+            None,
+            super::MAX_NEW_CTX_BOUNDED,
+            None,
+        );
+        assert_eq!(off, 1_048_576, "off the door the envelope arm is unchanged");
+        let on = super::request_ctx_cap(
+            1_048_576,
+            1_048_576,
+            4_000,
+            None,
+            super::MAX_NEW_CTX_BOUNDED,
+            Some(8_192),
+        );
+        assert_eq!(on, 4_000 + 8_192 + 8);
+        // 1,048,576 charged tokens against 12,200: 85.9x.
+        assert_eq!(off / on, 85);
+        // The door touches ONLY that arm: a bounded request and a max_ctx request are
+        // byte-identical with the door on and off.
+        for open in [None, Some(8_192)] {
+            assert_eq!(
+                super::request_ctx_cap(1_048_576, 1_048_576, 4_000, None, 512, open),
+                4_520
+            );
+            assert_eq!(
+                super::request_ctx_cap(1_048_576, 1_048_576, 4_000, Some(65_536), 512, open),
+                65_536
+            );
+        }
+        // The model's trained length still clamps the door's own arm.
+        assert_eq!(
+            super::request_ctx_cap(
+                1_048_576,
+                1_048_576,
+                1_045_000,
+                None,
+                super::MAX_NEW_CTX_BOUNDED,
+                Some(8_192)
+            ),
+            1_048_576
+        );
+    }
+
+    /// THE CALLERS (the a-pass-means-nothing-until-it-has-a-caller law). Every piece of the
+    /// door is reached from the worker's own admission seam, not merely defined: the charge
+    /// is threaded into `prepare_request`, the reclaim flush takes the demoting path, and the
+    /// defer site consults the decision and can refuse through it.
+    #[test]
+    fn the_memory_admission_door_is_wired_at_the_admission_seam() {
+        let code = include_str!("worker.rs");
+        // Read once at worker start, and stated in the boot log.
+        assert!(
+            code.contains(
+                "let admit_memory_cfg = crate::admit_memory::MemoryAdmitConfig::from_env();"
+            ),
+            "the door must be read once at worker start"
+        );
+        assert!(
+            code.contains("eprintln!(\"{}\", admit_memory_cfg.boot_line());"),
+            "the resolved policy must appear in the boot log"
+        );
+        // Gap 1: the charge reaches request_ctx_cap through prepare_request.
+        assert!(
+            code.contains("admit_memory_cfg.open_output_charge()"),
+            "the open-output charge must be handed to prepare_request"
+        );
+        // Gap 2: the reclaim flush demotes before dropping.
+        assert!(
+            code.contains("evict_all_demoting(&engine, &mut px, &mut hpx, budget)"),
+            "the reclaim ladder must take the demoting flush when armed"
+        );
+        assert!(
+            code.contains("crate::admit_memory::demote_budget_bytes("),
+            "the flush's D2H budget must come from the door's own decision rule"
+        );
+        assert!(
+            code.contains("(px.evict_all(), 0, 0)"),
+            "and must keep the byte-identical drop when the door is off"
+        );
+        // Gap 3: the defer is bounded and can refuse.
+        let defer = code
+            .split("// BOUNDED MEMORY DEFER (memra#365")
+            .nth(1)
+            .expect("the bounded-defer seam exists");
+        let defer = &defer[..defer
+            .find("requeue.push_back(req); // waits (FIFO), never rejected")
+            .expect("the defer seam ends at the requeue")];
+        for anchor in [
+            ".memory_defer_since",
+            "crate::admit_memory::decide(",
+            "px.evictable_bytes()",
+            "hpx.budget.saturating_sub(hpx.total_bytes)",
+            "crate::admit_memory::memory_line(",
+            "EngineError::rate_limit_after(",
+            "crate::admit_memory::MEMORY_REFUSE_MESSAGE",
+        ] {
+            assert!(
+                defer.contains(anchor),
+                "the bounded-defer seam must consult {anchor}"
+            );
+        }
+        // The stamp is LATCHED, never restamped: a per-tick stamp bounds nothing.
+        assert!(
+            defer.contains(".get_or_insert_with(Instant::now)"),
+            "the defer stamp must latch on the FIRST memory defer"
+        );
+        // And the whole seam is behind the door.
+        assert!(
+            defer.starts_with(", door MEMRA_ADMIT_BY_MEMORY)")
+                || defer.contains("if admit_memory_cfg.armed {"),
+            "the bounded defer must be behind the door"
+        );
+    }
+
+    /// THE MIXED-LOAD ADMISSION CELL, on a real card (memra#365).
+    ///
+    /// The claim the door has to carry on the GLM-5.3-Flash 1M route is that ONE 900k
+    /// conversation and EIGHT 4k probes are concurrently admissible on one card, because a 4k
+    /// probe costs 0.4% of what a 900k one costs and only a slot cap ever made them equal.
+    /// This asserts it against the driver's OWN free reading rather than a fixture: each
+    /// admitted session's estimate is then really allocated on the device, so session N+1 is
+    /// judged against a free reading that N has already shrunk. A fixture cannot fail the way
+    /// a card can (fragmentation, a co-tenant, a pool that has not returned bytes), which is
+    /// why this one is here and `#[ignore]`d rather than folded into the CPU tests.
+    ///
+    /// The RED ARM is the last assertion: once the nine are resident, a TENTH 900k-class
+    /// request must NOT read `admit`. A gate that only ever says yes says nothing.
+    ///
+    /// Geometry is the B200 mint's own (darklanes `research/glm5-b200-mint-20260904`): a 1M
+    /// session's latent KV is ~13 GB, i.e. ~13,312 B/token with no ring class, plus the
+    /// ~155 MB fixed per-entry residual the glm5b200 launcher's cache arithmetic uses.
+    /// Run it with the lane's GPU lock held:
+    ///   MEMRA_CUDA_ARCH=100a MEMRA_GPU_LOCK=/tmp/memra-gpu.lock \
+    ///     cargo test -p memra-server memory_admission_admits -- --ignored --nocapture
+    #[test]
+    #[ignore = "requires an exclusively locked CUDA device with >= 32 GiB free (the mixed-load admission cell)"]
+    fn memory_admission_admits_one_900k_and_eight_4k_on_one_card() {
+        use crate::admit_memory::{
+            DEFAULT_DEFER_BUDGET_MS, DEFAULT_OPEN_OUTPUT_TOKENS, MemoryVerdict, Tiers,
+            charged_ctx_tokens, decide, estimate,
+        };
+        const BPT: u64 = 13_312;
+        const FIXED: u64 = 155_000_000;
+        const MODEL_CTX: usize = 1_048_576;
+
+        let engine = memra_engine::Engine::new(0).unwrap();
+        // Reserve nothing for a model here: the cell judges the ADMISSION ARITHMETIC against
+        // whatever this card really has free, so it is honest on a shared box too.
+        let (free_at_start, _) =
+            super::effective_free_bytes(&engine).expect("the card must answer mem_get_info");
+        let long = estimate(
+            charged_ctx_tokens(900_000, Some(32_768), DEFAULT_OPEN_OUTPUT_TOKENS, MODEL_CTX),
+            BPT,
+            0,
+            0,
+            FIXED,
+        );
+        let short = estimate(
+            charged_ctx_tokens(4_000, Some(512), DEFAULT_OPEN_OUTPUT_TOKENS, MODEL_CTX),
+            BPT,
+            0,
+            0,
+            FIXED,
+        );
+        let mixed_total = long.total_bytes() + 8 * short.total_bytes();
+        assert!(
+            free_at_start as u64 > mixed_total,
+            "this cell needs {:.1} GiB free on device 0; the card reports {:.1} GiB",
+            mixed_total as f64 / 1073741824.0,
+            free_at_start as f64 / 1073741824.0,
+        );
+
+        // Hold the allocations for the whole walk so each decision sees the previous ones.
+        let mut resident = Vec::new();
+        for (i, est) in std::iter::once(long)
+            .chain(std::iter::repeat_n(short, 8))
+            .enumerate()
+        {
+            let (free, _) = super::effective_free_bytes(&engine).expect("mem_get_info");
+            let tiers = Tiers {
+                device_free_bytes: free as u64,
+                // Device-only on purpose: the claim is that these nine fit WITHOUT costing
+                // the prefix cache a single demotion.
+                demotable_device_bytes: 0,
+                host_free_bytes: 0,
+            };
+            let verdict = decide(est.total_bytes(), &tiers, 0, DEFAULT_DEFER_BUDGET_MS);
+            assert_eq!(
+                verdict,
+                MemoryVerdict::Admit,
+                "session {i} ({} charged tokens, {:.2} GiB) must admit on device alone; \
+                 the card had {:.2} GiB free",
+                est.charged_ctx,
+                est.total_bytes() as f64 / 1073741824.0,
+                free as f64 / 1073741824.0,
+            );
+            // f32 slots: the estimate is bytes, and `zeros` allocates 4 bytes each.
+            resident.push(
+                engine
+                    .zeros((est.total_bytes() / 4) as usize)
+                    .unwrap_or_else(|e| panic!("session {i} allocation failed on the card: {e}")),
+            );
+        }
+        let (free_after, _) = super::effective_free_bytes(&engine).expect("mem_get_info");
+        eprintln!(
+            "[cell] 1x900k + 8x4k resident: free {:.2} -> {:.2} GiB ({:.2} GiB charged)",
+            free_at_start as f64 / 1073741824.0,
+            free_after as f64 / 1073741824.0,
+            mixed_total as f64 / 1073741824.0,
+        );
+
+        // RED ARM. A tenth 900k-class arrival, judged against the real post-load reading,
+        // must NOT admit once the card genuinely cannot hold it. Nothing can be demoted and
+        // the host tier is off, so the honest verdict is a defer inside the budget and a
+        // bounded refusal past it.
+        let starved = Tiers {
+            device_free_bytes: long.total_bytes() - 1,
+            demotable_device_bytes: 0,
+            host_free_bytes: 0,
+        };
+        assert_eq!(
+            decide(long.total_bytes(), &starved, 0, DEFAULT_DEFER_BUDGET_MS),
+            MemoryVerdict::Defer { short_by: 1 },
+            "a request one byte past the card must not admit"
+        );
+        assert_eq!(
+            decide(
+                long.total_bytes(),
+                &starved,
+                DEFAULT_DEFER_BUDGET_MS,
+                DEFAULT_DEFER_BUDGET_MS
+            ),
+            MemoryVerdict::Refuse { short_by: 1 },
+            "past its defer budget with both tiers exhausted it must refuse, not queue"
+        );
+        drop(resident);
+    }
+
     #[test]
     #[ignore = "requires an exclusively locked CUDA device and DFlash restore profile"]
     fn dflash_retained_gpu_plan_fault_matrix() {
@@ -31220,9 +31722,16 @@ mod tests {
         let shed_at = code
             .find("kv_flex.shed(&mut px, false, \"admission headroom\")")
             .expect("the headroom shed invocation exists");
+        // memra#365 moved the spelling, not the position: the flush is now a door-aware
+        // binding whose OFF arm is `px.evict_all()` verbatim. The invariant this test guards
+        // (borrowed-first shed immediately upstream of the nuclear ladder) is unchanged.
         let evict_at = code[shed_at..]
-            .find("let evicted_prefix = px.evict_all();")
-            .expect("the evict_all ladder exists downstream of the shed");
+            .find("let (evicted_prefix, demoted_prefix, demoted_prefix_bytes) =")
+            .expect("the reclaim flush exists downstream of the shed");
+        assert!(
+            code[shed_at + evict_at..].contains("(px.evict_all(), 0, 0)"),
+            "the door-off arm of the flush must remain the verbatim evict_all ladder"
+        );
         assert!(
             evict_at < 2500,
             "the borrowed-first shed must sit immediately upstream of the evict_all ladder"
@@ -33697,6 +34206,7 @@ mod tests {
             prepared_prompt: None,
             request_id: String::new(),
             admit_predict_logged: false,
+            memory_defer_since: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
             glm5_images: Vec::new(),

@@ -68,6 +68,11 @@ pub(crate) mod health;
 pub(crate) mod lanes {
     pub use memra_lanes::*;
 }
+/// Memory-shaped admission for a high session ceiling (`MEMRA_ADMIT_BY_MEMORY`, default 0):
+/// the per-session KV estimate keyed on prompt + output rather than the server context
+/// envelope, the host-tier demotion the reclaim flush takes before dropping cache bytes, and
+/// the bounded 429 a memory defer becomes once it has outlived the client's own budget.
+mod admit_memory;
 /// Predictive-admission SHADOW instrumentation (darklanes Arc D2 engine gaps,
 /// lane/d2-engine-gaps-20260831): the per-model in-flight book, the rolling
 /// completion-length history, and the `[admit-predict]` receipt line behind
@@ -7476,6 +7481,7 @@ fn build_request_with_trace(
         // does not see the envelope).
         request_id: String::new(),
         admit_predict_logged: false,
+        memory_defer_since: None,
         max_prompt_tokens: None,
         cache_ns: cache_namespace(&req.cache_salt),
         affinity,
@@ -7973,6 +7979,7 @@ fn build_chat_request_with_trace(
             // builder does not see the envelope).
             request_id: String::new(),
             admit_predict_logged: false,
+            memory_defer_since: None,
             max_prompt_tokens: None,
             cache_ns: cache_namespace(&req.cache_salt),
             affinity,
