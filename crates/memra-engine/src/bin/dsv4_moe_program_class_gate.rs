@@ -299,6 +299,10 @@ fn capture(gpu: &Dsv4Gpu, tokens: &[u32], prefix: usize) -> Vec<Vec<f32>> {
     bank
 }
 
+fn sub2(after: [u64; 2], before: [u64; 2]) -> [u64; 2] {
+    std::array::from_fn(|i| after[i] - before[i])
+}
+
 fn bitwise_same(a: &[Vec<f32>], b: &[Vec<f32>]) -> bool {
     a.len() == b.len()
         && a.iter().zip(b).all(|(x, y)| {
@@ -689,7 +693,9 @@ fn main() {
                 gpu.set_matrix_moe_for_gate(false).expect("arm A");
             }
             set_hc(false);
+            let launches_a0 = gpu.small_kernel_launches();
             let a1 = capture(&gpu, tape, *prefix);
+            let launches_a = sub2(gpu.small_kernel_launches(), launches_a0);
             assert_eq!(
                 before,
                 gpu.grouped_device_route_calls(),
@@ -699,7 +705,9 @@ fn main() {
                 gpu.set_matrix_moe_for_gate(true).expect("arm B");
             }
             set_hc(true);
+            let launches_b0 = gpu.small_kernel_launches();
             let b1 = capture(&gpu, tape, *prefix);
+            let launches_b = sub2(gpu.small_kernel_launches(), launches_b0);
             if refusals_b.is_none() {
                 refusals_b = Some(refusal_ordering());
             }
@@ -739,6 +747,18 @@ fn main() {
             println!(
                 "IDENTITY panel={} armA_repeat_bit_identical=true armB_repeat_bit_identical=true rows={SCORED_ROWS} mode=class_cell axis={axis} ep={ep}",
                 panel.name
+            );
+            // The POSITIVE half of the engagement check. On the hc_dot_split axis the split
+            // door replaces one sequential dot kernel with a partial plus a reducer
+            // (`dsv4_hc_dot_split_partial_kernel` and `..._reduce_kernel`), so the small
+            // kernel launch counts must MOVE between the arms. Printed rather than asserted
+            // here because the counters bucket several small kernels together; the assertion
+            // that actually has teeth is the run-level one below.
+            println!(
+                "ARM_LAUNCHES panel={} axis={axis} armA={launches_a:?} armB={launches_b:?} \
+                 moved={}",
+                panel.name,
+                launches_a != launches_b
             );
             (Some(a1), b1)
         };
@@ -851,6 +871,22 @@ fn main() {
         overall.rows
     );
     println!("{}", overall.line("all"));
+    // THE OTHER HALF OF THE ENGAGEMENT CHECK, and the reason this cell cannot pass while
+    // measuring nothing. HC S16's own FLAGS row says each S is a distinct numeric class and
+    // NOT token-identical to the sequential dot, so on a path the door reaches, arm B's
+    // logits must differ from arm A's. Total bit-equality on this axis therefore means the
+    // door never engaged, which is a REFUSAL and not a finding of sameness: a cell that
+    // reported "same class" there would be a vacuous pass dressed as a clean result.
+    //
+    // The door lives in `dsv4_dense_m1_exact_tail.cuh` behind
+    // `Dsv4DenseExactTailControlScope control(m != 1)`, so it reaches the single-row decode
+    // steps that produce every scored row here, and not the multi-row prime.
+    assert!(
+        !(hc_axis && overall.bits_equal == overall.rows),
+        "hc_dot_split axis: all {} rows are bit-identical, so the S={HC_SLICES} door never \
+         engaged on this path. That is a non-engagement refusal, NOT a same-class result",
+        overall.rows
+    );
     let class = if overall.bits_equal == overall.rows {
         "same_class_candidate"
     } else {
