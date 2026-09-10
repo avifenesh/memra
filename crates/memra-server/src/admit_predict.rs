@@ -167,13 +167,32 @@ impl ShadowConfig {
                 None => "unset(boot free-VRAM query failed; KV arm stays unarmed)".to_string(),
             }
         };
-        eprintln!(
+        eprintln!("{}", self.boot_line(&source));
+    }
+
+    /// The `[admit-predict]` boot line, as a string so a test can read it.
+    ///
+    /// It STATES WHICH ARM IT IS IN. The line used to end, unconditionally, with
+    /// "(logging only, nothing is rejected; enforcement is a separate flip)" and never
+    /// printed `enforce=` at all -- so a box running `MEMRA_ADMIT_PREDICT_ENFORCE=1`
+    /// (which darklanes' ornith launcher does, memra#153) printed the one line an
+    /// operator reads to check admission and it said nothing is rejected. The claim was
+    /// hardcoded rather than derived from the config, and no test read the text, so
+    /// there was nothing to catch it drifting away from the behaviour.
+    fn boot_line(&self, source: &str) -> String {
+        let arm = if self.enforce {
+            "ENFORCING: a request whose predicted KV exceeds the arm is REJECTED before device work"
+        } else {
+            "logging only, nothing is rejected; enforcement is a separate flip"
+        };
+        format!(
             "[admit-predict] shadow armed: budget_bytes={} budget_src={} exempt_tenants={} \
-             (logging only, nothing is rejected; enforcement is a separate flip)",
+             enforce={} ({arm})",
             self.budget_bytes.map_or("unset".into(), |b| b.to_string()),
             source,
             self.exempt.len(),
-        );
+            self.enforce,
+        )
     }
 
     fn parse_exempt(raw: &str) -> Vec<String> {
@@ -987,6 +1006,48 @@ mod tests {
             admission_reserve_bytes: 1,
         };
         assert_eq!(d.budget_bytes(), 0);
+    }
+
+    /// The boot line must NAME the arm it is in. Red arm included: the enforcing config
+    /// must NOT print the logging-only sentence, which is exactly the text that shipped
+    /// on every enforcing box before this was fixed.
+    #[test]
+    fn boot_line_states_the_enforcement_arm() {
+        let shadow_only = ShadowConfig {
+            armed: true,
+            enforce: false,
+            budget_bytes: Some(5_558_814_648),
+            exempt: Vec::new(),
+        };
+        let line = shadow_only.boot_line("derived(x)");
+        assert!(line.contains("enforce=false"), "{line}");
+        assert!(line.contains("logging only, nothing is rejected"), "{line}");
+        assert!(!line.contains("ENFORCING"), "{line}");
+
+        let enforcing = ShadowConfig {
+            armed: true,
+            enforce: true,
+            budget_bytes: Some(5_558_814_648),
+            exempt: Vec::new(),
+        };
+        let line = enforcing.boot_line("derived(x)");
+        assert!(line.contains("enforce=true"), "{line}");
+        assert!(line.contains("ENFORCING"), "{line}");
+        assert!(line.contains("REJECTED before device work"), "{line}");
+        // The red arm. This assertion is the whole point: an enforcing box must never
+        // print the sentence that says nothing is rejected.
+        assert!(
+            !line.contains("logging only, nothing is rejected"),
+            "an enforcing box printed the logging-only sentence: {line}"
+        );
+
+        // The budget value and its source still travel on the line in both arms, so the
+        // fix does not cost the receipt its arithmetic.
+        for cfg in [&shadow_only, &enforcing] {
+            let line = cfg.boot_line("derived(effective_free_bytes=1 - x=2 - y=3)");
+            assert!(line.contains("budget_bytes=5558814648"), "{line}");
+            assert!(line.contains("effective_free_bytes=1"), "{line}");
+        }
     }
 
     /// The env override wins over the derivation; unset env + derivation fills in;
