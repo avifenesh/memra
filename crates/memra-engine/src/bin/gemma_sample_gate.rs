@@ -33,8 +33,15 @@
 //!
 //! RED ARM (how this gate was shown to fail before it was trusted): run it with
 //! `MEMRA_GSG_RED=boundary` and the sampled prime draws its boundary token from the argmax
-//! instead of the filtered row. (2) then reports a divergence at position 0 and (3)'s pos 0
-//! chi-square blows past the bound, while the unset run passes — the check is non-vacuous.
+//! instead of the filtered row. (3) then breaks its bound at EVERY position while the unset
+//! run passes — measured X2 380.7 / 246.0 / 142.5 / 163.9 against bounds 24.5 / 39.4 / 37.8 /
+//! 43.9, so the check is non-vacuous.
+//!
+//! (2) is NOT the arm that catches this, and the distinction is worth stating because the
+//! first draft of this file claimed it was: at T=1e-6 the sampled boundary collapses onto the
+//! same argmax the greedy boundary takes, so tiny-T continuity is structurally blind to the
+//! boundary seam and passes under the red arm. It gates the OTHER sampled arms (draft draw,
+//! accept walk, bonus, residual). Only the distribution arm can see the boundary.
 use memra_engine::Engine;
 use memra_engine::gemma_spec::GemmaDraft;
 use memra_engine::hybrid::HybridModel;
@@ -197,8 +204,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if red_boundary() {
         println!(
             "RED ARM ACTIVE (MEMRA_GSG_RED=boundary): the sampled prime draws its boundary \
-             token from the argmax. tiny-T and hist pos 0 are EXPECTED to fail; a PASS here \
-             means the gate cannot see the seam it claims to gate."
+             token from the argmax. The HIST arm is expected to fail; a pass there means the \
+             gate cannot see the seam it claims to gate. tiny-T is expected to still PASS — \
+             at T=1e-6 both boundaries collapse onto the same argmax, so that arm is blind \
+             to this seam by construction and gates the other sampled arms instead."
         );
     }
     let mut fails = 0usize;
