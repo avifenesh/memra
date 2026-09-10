@@ -2794,15 +2794,26 @@ static std::atomic<int> g_splitk_fast_override{-1};
 static std::atomic<bool> g_splitk_fast_component_enabled{false};
 void memra_moe_m1_splitk_fast_set_for_gate(int enabled){ g_splitk_fast_override.store(enabled); }
 void memra_moe_m1_splitk_fast_component_set_for_gate(){ g_splitk_fast_component_enabled.store(true); }
+// Pure policy, no environment read, so a CPU test can exercise every input in
+// one process: unset is the paired-fetch default, explicit 0 is the rollback
+// seam back to the base graph split-K partial, 1 is the explicit selection.
+// Returns 1 ON, 0 OFF, -1 for an unusable value.
+int memra_moe_m1_splitk_fast_policy(const char* raw){
+    if(!raw) return 1;
+    if(std::strcmp(raw,"0")==0) return 0;
+    if(std::strcmp(raw,"1")==0) return 1;
+    return -1;
+}
 int memra_moe_m1_splitk_fast_on(){
     const int override=g_splitk_fast_override.load();
     if(override>=0) return override;
     static const bool enabled=[](){
-        const char* raw=std::getenv("MEMRA_DSV4_SPLITK_FAST");
-        if(!raw || std::strcmp(raw,"0")==0) return false;
-        if(std::strcmp(raw,"1")==0) return true;
-        std::fprintf(stderr,"MEMRA_DSV4_SPLITK_FAST requires 0 or 1\n");
-        std::abort();
+        const int policy=memra_moe_m1_splitk_fast_policy(std::getenv("MEMRA_DSV4_SPLITK_FAST"));
+        if(policy<0){
+            std::fprintf(stderr,"MEMRA_DSV4_SPLITK_FAST requires 0 or 1\n");
+            std::abort();
+        }
+        return policy!=0;
     }();
     return enabled;
 }

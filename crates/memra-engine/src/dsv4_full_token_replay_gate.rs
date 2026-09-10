@@ -63,7 +63,10 @@ fn forward_kernel_census(graph_splitk: bool, norm_fuse: bool) -> [(usize, u64); 
     ]
 }
 
-fn check_expert_nodes(dot: &str, graph_splitk: bool, forward: bool) {
+/// `splitk_fast` selects which entry symbol the graph split-K class captures:
+/// the paired-fetch entries when the door is on, the base entries when it is
+/// off. Both are the same numeric class, so only the symbol moves.
+fn check_expert_nodes(dot: &str, graph_splitk: bool, splitk_fast: bool, forward: bool) {
     let count = |name: &str| {
         dot.lines()
             .filter(|line| line.contains("| {ID |") && line.contains(name))
@@ -71,8 +74,15 @@ fn check_expert_nodes(dot: &str, graph_splitk: bool, forward: bool) {
     };
     let splitk_nodes = if forward && graph_splitk { 86 } else { 0 };
     let sktail_nodes = if forward && !graph_splitk { 43 } else { 0 };
-    assert_eq!(count("moe_m1_graph_splitk_partial_kernel"), splitk_nodes);
-    assert_eq!(count("moe_m1_graph_splitk_reduce_kernel"), splitk_nodes);
+    let (base, fast) = if splitk_fast {
+        (0, splitk_nodes)
+    } else {
+        (splitk_nodes, 0)
+    };
+    assert_eq!(count("moe_m1_graph_splitk_partial_kernel"), base);
+    assert_eq!(count("moe_m1_graph_splitk_reduce_kernel"), base);
+    assert_eq!(count("moe_m1_splitk_fast_partial_kernel"), fast);
+    assert_eq!(count("moe_m1_splitk_fast_reduce_kernel"), fast);
     assert_eq!(count("moe_kq_sktail_gu_kernel"), sktail_nodes);
     assert_eq!(count("moe_kq_sktail_kernel"), sktail_nodes);
     assert_eq!(
@@ -575,7 +585,12 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                 "profile-graphs/full-token-rank{rank}-segment{segment}.dot"
             ))
             .unwrap();
-            check_expert_nodes(&dot, graph_splitk, segment != 1);
+            check_expert_nodes(
+                &dot,
+                graph_splitk,
+                memra_engine::moe_m1_splitk_fast_on(),
+                segment != 1,
+            );
             let count = |name: &str| {
                 dot.lines()
                     .filter(|line| line.trim_start().starts_with("| {ID |") && line.contains(name))
@@ -732,17 +747,38 @@ mod profile_census_tests {
         let off =
             "| {ID | 1 moe_kq_sktail_gu_kernel }\n| {ID | 2 moe_kq_sktail_kernel }\n".repeat(43);
         let on = "| {ID | 1 moe_m1_graph_splitk_partial_kernel }\n| {ID | 2 moe_m1_graph_splitk_reduce_kernel }\n".repeat(86);
-        check_expert_nodes(&off, false, true);
-        check_expert_nodes(&on, true, true);
-        assert!(std::panic::catch_unwind(|| check_expert_nodes(&off, true, true)).is_err());
-        assert!(std::panic::catch_unwind(|| check_expert_nodes(&on, false, true)).is_err());
+        let fast = "| {ID | 1 moe_m1_splitk_fast_partial_kernel }\n| {ID | 2 moe_m1_splitk_fast_reduce_kernel }\n".repeat(86);
+        check_expert_nodes(&off, false, false, true);
+        check_expert_nodes(&on, true, false, true);
+        check_expert_nodes(&fast, true, true, true);
+        assert!(std::panic::catch_unwind(|| check_expert_nodes(&off, true, false, true)).is_err());
+        assert!(std::panic::catch_unwind(|| check_expert_nodes(&on, false, false, true)).is_err());
+        // The two entry symbols are not interchangeable in either direction.
+        assert!(std::panic::catch_unwind(|| check_expert_nodes(&on, true, true, true)).is_err());
+        assert!(std::panic::catch_unwind(|| check_expert_nodes(&fast, true, false, true)).is_err());
         let missing_reduce = on.replacen("| {ID | 2", "edge 2", 1);
         assert!(
-            std::panic::catch_unwind(|| check_expert_nodes(&missing_reduce, true, true)).is_err()
+            std::panic::catch_unwind(|| check_expert_nodes(&missing_reduce, true, false, true))
+                .is_err()
         );
         for policy in [false, true] {
-            check_expert_nodes("graph moe_m1_graph_splitk_partial_kernel\n", policy, false);
-            assert!(std::panic::catch_unwind(|| check_expert_nodes(&on, policy, false)).is_err());
+            for fast_policy in [false, true] {
+                check_expert_nodes(
+                    "graph moe_m1_graph_splitk_partial_kernel\n",
+                    policy,
+                    fast_policy,
+                    false,
+                );
+                assert!(
+                    std::panic::catch_unwind(|| check_expert_nodes(
+                        &on,
+                        policy,
+                        fast_policy,
+                        false
+                    ))
+                    .is_err()
+                );
+            }
         }
     }
 }

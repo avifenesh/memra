@@ -429,6 +429,10 @@ fn default_engagement(
     cfg: Dsv4SampleCfg,
 ) {
     // No graph selector override: observe and execute the actual environment.
+    // The paired-fetch door is pinned off: this gate's census names the base
+    // graph split-K entry symbols, which is the class it exists to qualify.
+    memra_engine::set_moe_m1_splitk_fast_for_gate(false);
+    assert!(!memra_engine::moe_m1_splitk_fast_on());
     let on = memra_engine::moe_m1_graph_splitk_on();
     println!(
         "DEFAULT_POLICY raw={:?} graph_splitk={on}",

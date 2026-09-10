@@ -567,6 +567,10 @@ fn main() {
     let output = PathBuf::from(&args[3]);
     std::fs::create_dir(&output).expect("new output directory");
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
+    // Default-ON paired-fetch entries would change this control's captured
+    // class, so this historical gate pins the base graph split-K partial.
+    memra_engine::set_moe_m1_splitk_fast_for_gate(false);
+    assert!(!memra_engine::moe_m1_splitk_fast_on());
     Dsv4Gpu::set_attention_tp_for_gate(true);
     let gpu = Box::new(
         Dsv4Gpu::load(

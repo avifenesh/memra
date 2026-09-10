@@ -276,6 +276,40 @@ fn qualify_arm(gpu: &Dsv4Gpu, prompt: &[u32], output: &Path, cfg: Dsv4SampleCfg)
     }
 }
 
+/// Default-engagement mode: no arm override before the measurement. The door
+/// state comes from the environment policy alone (unset selects the paired-fetch
+/// entries, explicit `0` is the rollback seam), and the census inside
+/// `qualify_arm` names the entry symbol that policy must have selected.
+fn default_engagement(
+    gpu: &Dsv4Gpu,
+    prompt: &[u32],
+    tokenizer: &Tokenizer,
+    output: &Path,
+    cfg: Dsv4SampleCfg,
+) {
+    let raw = std::env::var("MEMRA_DSV4_SPLITK_FAST").ok();
+    let on = fast_on();
+    assert_eq!(
+        on,
+        raw.as_deref() != Some("0"),
+        "environment policy selects the arm"
+    );
+    println!("DEFAULT_POLICY raw={raw:?} splitk_fast={on}");
+    qualify_arm(gpu, prompt, output, cfg);
+    assert_eq!(fast_on(), on, "policy unchanged by the qualification arm");
+    let mut arm = ScoredArm::new_current(gpu, prompt, cfg);
+    assert_eq!(arm.on, on);
+    for row in 0..5 {
+        scored_row(gpu, &mut arm, tokenizer, output, row, false);
+    }
+    assert_eq!(arm.rows, 5);
+    println!(
+        "DEFAULT_ENGAGEMENT_PASS splitk_fast={on} identity_steps=256 refusal_cells=8 sanity_rows=5 captures={:?} replays={:?}",
+        gpu.full_token_replay_captures_for_gate(&arm.graph).unwrap(),
+        gpu.full_token_replay_counts_for_gate(&arm.graph).unwrap()
+    );
+}
+
 fn select_arm(gpu: &Dsv4Gpu, on: bool) {
     for stage in &gpu.stages {
         stage.gpu.stream().synchronize().unwrap();
@@ -444,9 +478,13 @@ fn main() {
             || (args.len() == 5
                 && matches!(
                     args[4].as_str(),
-                    "--qualify" | "--component" | "--reverse" | "--diagnose-four-live"
+                    "--qualify"
+                        | "--component"
+                        | "--reverse"
+                        | "--defaults"
+                        | "--diagnose-four-live"
                 )),
-        "usage: dsv4_splitk_fast_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component|--reverse|--diagnose-four-live]"
+        "usage: dsv4_splitk_fast_gate <model-dir> <source.txt> <new-output-dir> [--qualify|--component|--reverse|--defaults|--diagnose-four-live]"
     );
     assert!(!dsv4_prof_on(), "unprofiled sampled envelope only");
     for (name, value) in [
@@ -473,10 +511,12 @@ fn main() {
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
     // Graph split-K stays ON. ABBA explicitly forces the fast door OFF for arm A.
     memra_engine::set_moe_m1_splitk_for_gate(false);
+    let defaults = args.get(4).is_some_and(|v| v == "--defaults");
     println!(
-        "SPLITK_FAST_POLICY fast_door={} graph_splitk={}",
+        "SPLITK_FAST_POLICY fast_door={} graph_splitk={} raw={:?} observes_environment={defaults}",
         fast_on(),
-        memra_engine::moe_m1_graph_splitk_on()
+        memra_engine::moe_m1_graph_splitk_on(),
+        std::env::var("MEMRA_DSV4_SPLITK_FAST").ok()
     );
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
@@ -577,7 +617,9 @@ fn main() {
         memra_engine::set_moe_m1_splitk_component_for_gate(false);
         return;
     }
-    if args.get(4).is_some_and(|v| v == "--qualify") {
+    if defaults {
+        default_engagement(&gpu, &prompt[..PRIME], &tokenizer, &output, cfg);
+    } else if args.get(4).is_some_and(|v| v == "--qualify") {
         qualify_arm(&gpu, &prompt[..PRIME], &output, cfg);
     } else {
         run_abba(
