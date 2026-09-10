@@ -247,7 +247,9 @@ threshold its own precision cannot express. The checker's docstring now carries 
 
 ### What would settle the rest
 
-Run the remaining 35 clips and read the domain deltas against the same 0.21 to 0.34 pt band.
+The sweep is closed at 36 clips (owner decision, 2026-09-10): the partial-sweep verdict
+stands, and this section is the instrument for any future reopening, not queued work. Run the
+remaining 35 clips and read the domain deltas against the same 0.21 to 0.34 pt band.
 The sharper instrument for any new flip stays the one this receipt used twice: recompute an
 FP32 reference on the CT2 window with the checkpoint's own weights, and compare the decision
 variable, not the candidate margin. Each window costs about two minutes.

@@ -1,7 +1,8 @@
 # ASR lane status
 
-Updated 2026-09-10 (71-clip sweep stopped clean at 36 clips, both `real` divergences diagnosed
-as CT2 fp16 threshold effects, engine detokenizer agreement extended to 36/36).
+Updated 2026-09-10 (sweep closed at 36 of 71 clips, partial-sweep verdict stands by owner
+decision; both `real` divergences diagnosed as CT2 fp16 threshold effects; engine detokenizer
+agreement 36/36; scratch disposed, stop receipt banked).
 Worktree `~/projects/memra/wt-asr-modality`, branch `lane/asr-modality-20260909`.
 Draft PR https://github.com/avifenesh/memra/pull/416, issue #414 remains claimed.
 
@@ -58,54 +59,32 @@ The speech matrix product is cache-blocked and optionally threaded; both are bit
 construction and re-proved on the real checkpoint. One encoder window fell 122.950 s to
 60.477 s single-threaded, and one clip end to end fell 117.2 s to 60.9 s at 16 threads.
 
-## Sweep stopped, resumable
+## Sweep closed at 36 clips: the partial verdict stands
 
-The 71-clip sweep is stopped. The previous worker's session died at ~22:21 UTC 2026-09-09 with
-its 22:30 timer gone with it; the takeover killed the parent script at 23:08:51Z and let the
-in-flight `d1-013` bank itself at 23:17:58Z. 36 clips are done (`d1-000..013`,
-`whatsapp-000..021`); the remaining 35 are `d1-014..016` and `whatsapp-022..053`, about 4 h of
-wall at 16 threads. Sweep CPU: 1050.8 CPU-minutes over 36 clips (62230 s user + 820 s system),
-18:13:36Z start. Resume with the same invocation; finished clips are skipped by their
-`windows.tsv`:
+The 71-clip sweep is closed and will not be resumed (owner decision, 2026-09-10: the
+partial-sweep verdict stands; no further rig CPU-hours on it). History: the previous worker's
+session died at ~22:21 UTC 2026-09-09 with its 22:30 timer gone with it; the takeover killed
+the parent script at 23:08:51Z and let the in-flight `d1-013` bank itself at 23:17:58Z. 36
+clips are banked (`d1-000..013`, `whatsapp-000..021`); the unswept 35 are `d1-014..016` and
+`whatsapp-022..053`. Sweep CPU: 1050.8 CPU-minutes over 36 clips (62230 s user + 820 s
+system), 18:13:36Z start. Stop receipt:
+`research/asr-modality-20260909/sweep-stop-20260909.json`.
 
-```
-tools/whisper_transcribe_sweep.sh ~/hebrew-asr-data/oracle/whisper-large-v3-ivrit \
-  ~/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9 \
-  "$PWD/.lane-asr-stage2/sweep-binary/whisper-stage" "$PWD/.lane-asr-stage2/sweep" f32 \
-  $(cd ~/hebrew-asr-data/oracle/whisper-large-v3-ivrit/ct2 && ls -1d * | sed 's:/*$::')
-```
-
-The banked binary is `.lane-asr-stage2/sweep-binary/whisper-stage`,
-sha256 `baf38cb6ada267058cb1f8b776ab72303c4fb0c284417ecbfa3d6e25a7eb590c`, and
-`.lane-asr-stage2/target/release/whisper-stage` hashes the same, so one binary stands behind
-all 36 banked clips. After any resume, extend the engine-text pass to the new clips and
-re-score:
-
-```
-for d in .lane-asr-stage2/sweep/*-*; do
-  [ -f "$d/windows.tsv" ] && [ ! -f "$d/transcript.txt" ] &&
-    .lane-asr-stage3/target/release/speech-text \
-      ~/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9 "$d"
-done
-~/hebrew-asr-data/venv-nemo/bin/python tools/check_whisper_transcribe.py \
-  --oracle ~/hebrew-asr-data/oracle/whisper-large-v3-ivrit \
-  --native .lane-asr-stage2/sweep \
-  --checkpoint ~/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9 \
-  --binary .lane-asr-stage2/sweep-binary/whisper-stage --threads 16 \
-  --receipt research/asr-modality-20260909/stage5-transcribe-parity.json
-```
-
-The checker scores only clips that have finished and exits nonzero while the gate is unmet;
-the receipt is still written.
+The one binary that stands behind all 36 banked clips is pinned by sha256
+`baf38cb6ada267058cb1f8b776ab72303c4fb0c284417ecbfa3d6e25a7eb590c` in that stop receipt and
+in `stage5-transcribe-parity.json`, so the banked clips stay attributable after the scratch
+copies were deleted at handoff. If the last 35 clips are ever wanted, that is a new lane:
+rebuild the binary from this branch (Commands below), record its hash beside the old one, and
+score only under the new hash's name.
 
 ## Next executable stage
 
-1. Resume the sweep for the remaining 35 clips (about 4 h wall), re-score, and read the
-   per-domain delta against the 0.21 to 0.34 pt band the two oracle backends differ by. Any
-   window that flips gets a matched-program FP32 reference before it gets a verdict, comparing
-   the decision variable (see `D1-013-W6-DIAGNOSIS.json`): the banked `hf-fp32` windows pad in
-   waveform space and the CT2 program zero-fills in feature space, so on any padded window the
-   two references are not the same program.
+1. The sweep is closed at 36 clips and stays closed. If the remaining 35 are ever reopened,
+   run them as a new lane with a fresh binary hash recorded beside the old one, and give any
+   flipping window a matched-program FP32 reference before a verdict, comparing the decision
+   variable, not the candidate margin (see `D1-013-W6-DIAGNOSIS.json`): the banked `hf-fp32`
+   windows pad in waveform space and the CT2 program zero-fills in feature space, so on any
+   padded window the two references are not the same program.
 2. Tokenizer encoding and vocabulary binding in the engine for the Whisper path (the detokenizer
    exists and agrees 36/36; `Tokenizer::from_hf_dir` still refuses this checkpoint's
    pre-tokenizer, and no BPE encode is ported).
@@ -161,6 +140,9 @@ Captures: `tools/nemo_encoder_oracle.py`, `tools/nemo_rnnt_oracle.py`,
 `tools/nemo_stream_oracle.py`.
 Run every gate from the worktree root; the receipts hash source paths relative to it.
 
-Clean `.lane-asr-stage2/` and `.lane-asr-stage3/` scratch at handoff after preserving the
-binary and receipts.
+Scratch `.lane-asr-stage2/` and `.lane-asr-stage3/` was disposed at handoff (2026-09-10):
+`sweep-stop-20260909.json` moved to `research/asr-modality-20260909/`; sweep checkpoints,
+both `target/` trees, the sweep binary and all diagnostic scratch deleted. `/tmp` ASR scratch
+(`/tmp/asr-real`, `/tmp/asr-wt-backup`, `/tmp/asr-redarm-dir.txt`, `/tmp/asr-redarm-3144124`,
+`/tmp/nemo-census-21959.json`) deleted with it; the binary hash stays pinned in the receipts.
 Both root checkouts stay on main. Keep this worktree/branch for the open PR.

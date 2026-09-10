@@ -1,6 +1,6 @@
 # Native ASR modality plan
 
-Status: native CPU mel, encoder, cached decoder, beam-1 policy and clip window program all execute; end-to-end clip parity is measured on 36 of the 71 oracle clips (stopped clean, resumable). See the measured status ladder below. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
+Status: native CPU mel, encoder, cached decoder, beam-1 policy and clip window program all execute; end-to-end clip parity is measured on 36 of the 71 oracle clips (stopped clean; sweep closed 2026-09-10, partial-sweep verdict stands). See the measured status ladder below. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
 Engine baseline: `1657a5a80`; lane `lane/asr-modality-20260909`.
 
 Build both native speech paths now. Memra owns model math, frontend, state and decoding.
@@ -260,7 +260,7 @@ a receipt in `research/asr-modality-20260909/`; every "missing" row is work, not
 | Cached decoder, self and cross KV | Done in F32 and strict F16, argmax 12 of 12 against the FP32 truth |
 | Window program (seek, extent, advance) | Done. Reproduces all 364 pinned window boundaries across 71 clips |
 | Beam-1 policy (suppression, timestamps, forced timestamp, caps) | Done. Replays the oracle's own decodes step for step on its raw logits |
-| End-to-end clip parity vs CT2 beam-1 | 36 of 71 clips swept (stopped clean, resumable): 213/259 windows token-exact, 27/36 clips text-exact, `d1` 0.0739 pt and `whatsapp` 0.2237 pt WER vs CT2, both inside the 0.21-0.34 pt band the oracle's own backends disagree by; every divergent window diagnosed as a CT2 fp16 threshold effect, none a native defect |
+| End-to-end clip parity vs CT2 beam-1 | 36 of 71 clips swept (stopped clean; sweep closed 2026-09-10, partial-sweep verdict stands): 213/259 windows token-exact, 27/36 clips text-exact, `d1` 0.0739 pt and `whatsapp` 0.2237 pt WER vs CT2, both inside the 0.21-0.34 pt band the oracle's own backends disagree by; every divergent window diagnosed as a CT2 fp16 threshold effect, none a native defect |
 | Native detokenizer | Done. Byte-level BPE through `Detokenizer` and the RNNT SentencePiece reader; the engine's transcript agrees with the scorer's tokenizer on 36/36 clips |
 | Tokenizer and vocabulary bound in the engine | **Encode direction missing.** Ids are pinned as plan constants and gated against the checkpoint's generation config; the BPE decode direction is native (`Detokenizer`), but no byte-level BPE encode lives in Memra yet |
 | Timestamp and word-alignment gate | **Missing.** Parity is token-level; a timestamp that lands one unit off is currently only visible as a token difference |
@@ -268,9 +268,11 @@ a receipt in `research/asr-modality-20260909/`; every "missing" row is work, not
 | Speech plans in the reference executor and `model inspect` | **Missing.** The executor still refuses speech plans; the speech pack is not in the text `PACKS` registry |
 | F16 end-to-end sweep | **Missing.** The 71-clip sweep runs F32; the F16 arm has stage receipts but no clip parity |
 
-`NativeReference` needs the remaining 35 sweep clips, the tokenizer's encode direction and
-vocabulary binding inside the engine (the detokenize direction is done and agrees 36/36), and
-the speech plans wired into the reference executor and `model inspect`. Everything above them
+`NativeReference` needs the tokenizer's encode direction and vocabulary binding inside the
+engine (the detokenize direction is done and agrees 36/36), and the speech plans wired into
+the reference executor and `model inspect`. The sweep stays closed at 36 of 71 clips (owner
+decision, 2026-09-10): its verdict stands on the partial sweep, and the remaining 35 clips
+are optional new evidence, not a requirement. Everything above them
 is bring-up evidence, not production permission.
 
 `NativeQualified` additionally needs, none of it started:
