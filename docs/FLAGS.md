@@ -2074,7 +2074,7 @@ disjoint in both, within-arm spread 0.9-1.2% on a box that reproduces to
 the DSpark rings and a 16-token sampled speculative continuation, launch ratio
 exactly `4.0000`, both red arms firing. Banked in darklanes
 `research/dsv4f-dense-tile-20260910/` ([private Darklanes
-#613](https://github.com/avifenesh/darklanes/pull/613), removal receipts in #619).
+#613](https://github.com/avifenesh/darklanes/pull/613), removal receipts in [private Darklanes #620](https://github.com/avifenesh/darklanes/pull/620)).
 
 **Rollback is `git revert`, not a variable.** Nothing here needs a runtime
 switch: the two arms are the same numeric class by construction, so there is no
