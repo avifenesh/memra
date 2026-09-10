@@ -28,7 +28,8 @@
 //!    fails `cargo test`, which is the only place this family has ever been
 //!    caught.
 
-use crate::Res;
+/// Same error type the rest of the DSV4 admission path uses.
+pub type Res<T> = Result<T, String>;
 
 /// The shapes a door can be on for. Two of the engaged doors are `m == 1` only,
 /// which is decode; prefill is 95-97% of a request's GPU seconds at this
