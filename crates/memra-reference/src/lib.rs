@@ -4,6 +4,7 @@
 //! external engine fallback. Unsupported canonical operations return a named error.
 
 pub mod hidden_trace;
+pub mod speech;
 
 use memra_gguf::config::AttentionGateKind;
 use memra_gguf::model_plan::{
@@ -241,6 +242,12 @@ impl std::fmt::Display for ReferenceError {
 impl std::error::Error for ReferenceError {}
 
 pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
+    if plan.speech.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "native speech execution pending",
+        });
+    }
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     if hidden == 0 || vocab < 2 || hidden > 256 || vocab > 262_144 {
@@ -1919,6 +1926,12 @@ pub fn execute(
     weights: &ReferenceWeights,
     token_ids: &[u32],
 ) -> Result<ReferenceOutput, ReferenceError> {
+    if plan.speech.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "native speech execution pending",
+        });
+    }
     if token_ids.is_empty() {
         return Err(ReferenceError::EmptyInput);
     }
@@ -1935,6 +1948,12 @@ pub fn execute_multimodal(
     token_ids: &[u32],
     vision_input: &ReferenceVisionInput,
 ) -> Result<ReferenceMultimodalOutput, ReferenceError> {
+    if plan.speech.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "native speech execution pending",
+        });
+    }
     if token_ids.is_empty() {
         return Err(ReferenceError::EmptyInput);
     }
@@ -2252,6 +2271,12 @@ impl<'a> StreamedTrunkExecution<'a> {
         globals: &ReferenceWeights,
         token_ids: &[u32],
     ) -> Result<Self, ReferenceError> {
+        if plan.speech.is_some() {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: None,
+                operation: "native speech execution pending",
+            });
+        }
         if token_ids.is_empty() {
             return Err(ReferenceError::EmptyInput);
         }
@@ -9816,6 +9841,51 @@ mod tests {
                 reason: "k-pool selection produced an empty candidate set for a query",
                 ..
             }
+        ));
+    }
+}
+
+#[cfg(test)]
+mod speech_refusal_tests {
+    use super::*;
+
+    #[test]
+    fn speech_cannot_execute_as_an_empty_text_trunk() {
+        let plan = memra_gguf::model_packs::whisper::PACK
+            .compile_plan(
+                r#"{"model_type":"whisper","activation_function":"gelu",
+            "is_encoder_decoder":true,"scale_embedding":false,"torch_dtype":"float32",
+            "d_model":1280,"encoder_layers":32,"decoder_layers":32,
+            "encoder_attention_heads":20,"decoder_attention_heads":20,
+            "encoder_ffn_dim":5120,"decoder_ffn_dim":5120,"max_source_positions":1500,
+            "max_target_positions":448,"num_mel_bins":128,"vocab_size":51866,
+            "decoder_start_token_id":50258,"eos_token_id":50257}"#,
+                r#"{"feature_extractor_type":"WhisperFeatureExtractor","feature_size":128,
+            "sampling_rate":16000,"n_fft":400,"hop_length":160,"n_samples":480000,
+            "nb_max_frames":3000,"chunk_length":30,"padding_side":"right","padding_value":0.0}"#,
+            )
+            .unwrap();
+        let weights = ReferenceWeights::new();
+        assert!(matches!(
+            execute(&plan, &weights, &[50258]),
+            Err(ReferenceError::UnsupportedOperation {
+                operation: "native speech execution pending",
+                ..
+            })
+        ));
+        assert!(matches!(
+            StreamedTrunkExecution::begin(&plan, &weights, &[50258]),
+            Err(ReferenceError::UnsupportedOperation {
+                operation: "native speech execution pending",
+                ..
+            })
+        ));
+        assert!(matches!(
+            deterministic_fixture(&plan),
+            Err(ReferenceError::UnsupportedOperation {
+                operation: "native speech execution pending",
+                ..
+            })
         ));
     }
 }

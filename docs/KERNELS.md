@@ -12,6 +12,20 @@ t=16..1039 on the 170-SM sm_120a target with `MEMRA_PRIME_CHUNK=1024`.
 | `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23 | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same door; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
 
+## Whisper CPU reference operators, 2026-09-09
+
+These are native reference operations, not CUDA support or serving qualification.
+The measured numeric programs and bounds are in
+[the encoder receipt](../research/asr-modality-20260909/ENCODER-NUMERICS.md).
+
+| Operator | Program | Numeric class | Source |
+| --- | --- | --- | --- |
+| `WhisperFrontend::compute` | Periodic Hann, direct real DFT, Slaney filters and Whisper log normalization | F32 PCM/output; reference DFT accumulation | `crates/memra-reference/src/speech/frontend.rs` |
+| `WhisperEncoder::encode` | Biased strided convolution, positions, LayerNorm, full attention and residual FFNs | F32 or binary16 values with FP32 accumulation; no external executor | `crates/memra-reference/src/speech/encoder.rs` |
+| `gelu_erf` | Owned evaluation of A&S 7.1.26 matching the pinned HF CPU vector program | FP32 fused polynomial, final destination rounding | `crates/memra-reference/src/speech/encoder.rs` |
+| Speech reference matrix product | Four fixed FMA partial sums; AVX2 vectorizes independent time rows; rows are packed into cache-resident groups and output columns split across `MEMRA_SPEECH_THREADS` workers | Same scalar/AVX2 FP32 reduction order at every group size and thread count, bit-identical by construction | `crates/memra-reference/src/speech/matrix.rs` |
+| `WhisperDecoder::step` and `speech::decode` | Cached self and cross attention, tied logits, then the pinned beam-1 suppression, timestamp grammar and forced-timestamp rules | Same F32 or binary16 class as the encoder | `crates/memra-reference/src/speech/decoder.rs`, `decode.rs` |
+
 ## Carried Qwen prime replay, 2026-09-09
 
 All entries are Memra-owned twins. The qualified Qwen geometry on the 170-SM

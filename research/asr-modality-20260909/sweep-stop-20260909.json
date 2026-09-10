@@ -1,0 +1,23 @@
+{
+  "schema": "memra-whisper-sweep-stop-v1",
+  "stopped_at_utc": "2026-09-09T23:17:58Z",
+  "stop_reason": "previous worker session died at ~22:21Z with its 22:30Z timer; takeover killed the sweep parent at 23:08:51Z and let the in-flight d1-013 finish its clip boundary",
+  "last_banked_clip": "d1-013",
+  "clips_done": 36,
+  "clips_total": 71,
+  "clips_remaining": ["d1-014", "d1-015", "d1-016", "whatsapp-022..053"],
+  "windows_scored": 259,
+  "windows_token_exact": 213,
+  "clips_text_exact": 27,
+  "clips_window_program_exact": 31,
+  "clips_token_exact": 12,
+  "engine_detokenizer_agreement": "36/36",
+  "wer_vs_ct2_percent": {"d1": 0.07391893556732783, "whatsapp": 0.22367194780987884},
+  "wer_limit_percent": 0.05,
+  "gate_verdict": "failed (both domains over 0.05 pt); both deltas inside the 0.21-0.34 pt band the oracle's own CT2 and HF FP32 backends disagree by; all 46 divergent windows diagnosed as CT2 fp16 threshold effects, none a native defect",
+  "divergence_classes": {"fp16_tie": 29, "boundary_cascade": 13, "fp16_ulp": 2, "real": 2},
+  "real_diagnoses": ["research/asr-modality-20260909/WHATSAPP-001-W3-DIAGNOSIS.json is whatsapp-001 w3; the two real-class windows are whatsapp-003 w4 (FP32 prefers native) and d1-013 w6 (timestamp-forcing threshold inside one fp16 step; FP32 prefers the native branch; research/asr-modality-20260909/D1-013-W6-DIAGNOSIS.json)"],
+  "sweep_cpu": {"user_seconds": 62230.0, "system_seconds": 819.9, "cpu_minutes_total": 1050.8, "start_utc": "2026-09-09T18:13:36Z"},
+  "binary_sha256": "baf38cb6ada267058cb1f8b776ab72303c4fb0c284417ecbfa3d6e25a7eb590c",
+  "receipt": "research/asr-modality-20260909/stage5-transcribe-parity.json"
+}

@@ -16,12 +16,15 @@ pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
 pub mod llama_dense;
+/// Speech packs use their own config normalization until the CLI accepts audio artifacts.
+pub mod nemotron_rnnt;
 pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
 pub mod qwen3_moe;
 pub mod qwen4_exp;
 pub mod step35;
+pub mod whisper;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigLayout {

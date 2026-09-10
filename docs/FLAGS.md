@@ -6,6 +6,12 @@
 | --- | --- |
 | `MEMRA_PRIME_ATTN_FA2` | **OFF (default), decide-by: 2026-09-23.** Strict `1` selects Memra-owned GQA-packed FA2-class quantized-KV prefill on the 170-SM sm_120a target, 24 Q / 4 KV / d256, causal t=16..1039, including short restored suffixes and widened 1024-row tails. The door also requires the qualified prime geometry, `MEMRA_PRIME_CHUNK=1024`: a wider deployment chunk would leave full chunks on the legacy class and hand only the folded tail to FA2, mixing numerical classes inside one prime and breaking cold/restored identity. Any other build architecture, SM count or chunk setting fails closed to the existing kernel with no environment read on the non-120a build. BF16 MMA, FP32 direct PV accumulation and BF16-rounded softmax denominator change numerical order. Other shapes use the existing kernel; decode is unchanged. Graphs key the numerical class and resolve true depth through the replay table. Rollback: unset or `0`. Receipt: `research/qwen-prefill-attn-20260909/FA2.md` and `fa2-receipt.json`. Corrected same-binary ON K1-8, 0/24 margin flips, four-turn cold/restore, boundary, eval, decode and cache gates pass. N=3 cold TTFT 8k/32k/131k improves 0.60%/3.43%/9.19%. Initial t<128/tail fallback defect is fixed by preserving the class through t=16..1039. Default remains OFF; proposed enablement is owner-batched. |
 
+## Speech reference executor, 2026-09-09
+
+| Flag | Contract |
+| --- | --- |
+| `MEMRA_SPEECH_THREADS` | **Default 1 (single-threaded), no decide-by: this is a CPU reference-executor work knob, not a serving door.** Read once per process by `memra-reference`'s speech matrix product; parsed as a decimal count and clamped to 1..64. `1` runs every product on the calling thread, which is what every committed speech receipt was measured with. Above 1, each worker takes a disjoint block of output columns and accumulates it in the same ascending-k four-bank order, so the thread count cannot move a number: `column_blocking_is_bit_identical_so_thread_count_cannot_move_a_number` pins that at unit level, and the real-audio arm re-ran a full 32-block encoder window at 1 and 16 threads for the identical `bc19c45cd4d0b052...` output and identical 91-token clip decode. Rollback: unset. Receipt: `research/asr-modality-20260909/REAL-AUDIO.md`. |
+
 ## Qwen carried-prime launch diet, 2026-09-09
 
 | Mechanism | Contract |

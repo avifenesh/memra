@@ -1,0 +1,35 @@
+{
+  "schema": "memra-rnnt-frontend-v1",
+  "status": "passed",
+  "bound_abs": 0.001,
+  "max_abs": 5.340576171875e-05,
+  "mean_abs": 7.916274284980318e-07,
+  "worst_column": 70,
+  "worst_column_max_abs": 5.340576171875e-05,
+  "frames": 201,
+  "valid_frames": 194,
+  "binary_sha256": "82c21c57356b79a82ad136d25066ef69ec6659e000b453236c2b08404a90950e",
+  "archive_sha256": "585c40f214a53e8b5ba565c6176aa6cb548c7c8ab2f7ec5dc6dd45dbdff46ee4",
+  "oracle_manifest_sha256": "89061cd58f155ebb6f55ec1f83d1fcc57f2c16043094d07445fc1ecc151e807e",
+  "reference": {
+    "torch": "2.14.0+cu130",
+    "nemo": "3.1.0+ea1ebf55b",
+    "dither": 0.0,
+    "preprocessor": {
+      "sample_rate": 16000,
+      "normalize": "NA",
+      "window_size": 0.025,
+      "window_stride": 0.01,
+      "window": "hann",
+      "features": 128,
+      "n_fft": 512,
+      "log": true,
+      "frame_splicing": 1,
+      "dither": 0.0,
+      "pad_to": 0,
+      "pad_value": 0.0
+    }
+  },
+  "composed_chunks": null,
+  "scope": "native RNNT log-mel against a pinned CPU FP32 NeMo capture. Frontend only: no encoder, no decoding, no GPU, no serving surface."
+}

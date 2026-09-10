@@ -1,0 +1,38 @@
+{
+  "schema": "memra-whisper-divergence-diagnosis-v1",
+  "clip": "whatsapp-001",
+  "window": 3,
+  "generated_step": 3,
+  "seek_frame": 8698,
+  "segment_frames": 1061,
+  "question": "The native decode took 25988 where both banked references took 1842. Is that a native defect?",
+  "answer": "No. The banked hf-fp32 window is a different program: it pads in waveform space, so its mel pad region carries the analytic silence floor (-0.393 to -0.564) while the CT2 window program zero-fills in feature space. Recomputing an FP32 reference on the CT2 window makes the native choice the correct one.",
+  "window_mel": {
+    "hf_vs_ct2_max_abs_content": 1.6689300537109375e-05,
+    "hf_pad_region_max": -0.39318597316741943,
+    "hf_pad_region_min": -0.5638220310211182,
+    "ct2_pad_region_max": 0.0,
+    "ct2_pad_region_min": 0.0,
+    "native_vs_ct2_max_abs_content": 1.1920928955078125e-07
+  },
+  "encoder_on_the_ct2_window": {
+    "matched_fp32_vs_native_max_abs": 0.00200081,
+    "matched_fp32_vs_native_mean_abs": 1.17581e-06,
+    "matched_fp32_vs_ct2_max_abs": 1.99411,
+    "matched_fp32_vs_ct2_mean_abs": 0.00175107,
+    "banked_hf_fp32_vs_native_max_abs": 20.89633560180664,
+    "banked_hf_fp32_vs_native_mean_abs": 0.15030068159103394
+  },
+  "step_logits": {
+    "candidates": [1842, 25988],
+    "native_f32": [21.639972686767578, 21.691919326782227],
+    "matched_fp32": [21.639971, 21.691929],
+    "ct2_fp16": [21.625, 21.609375],
+    "matched_fp32_prefers": 25988,
+    "matched_fp32_margin": 0.051958,
+    "ct2_prefers": 1842,
+    "ct2_margin": 0.015625
+  },
+  "verdict": "The native path agrees with a matched-program FP32 reference to 1.2e-06 mean on the encoder and to six digits on the step logits. CT2's FP16 encoder moves that step by enough to flip it. No native defect is established by this window.",
+  "scope": "One window of one clip, diagnosed on the rig with the checkpoint's own FP32 weights through transformers. CPU only."
+}

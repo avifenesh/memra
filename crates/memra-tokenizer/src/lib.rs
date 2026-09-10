@@ -10,6 +10,7 @@
 //! fluent output with wrong token ids and nothing downstream can see it.
 
 pub mod chat;
+pub mod detokenize;
 pub mod json;
 mod unicode;
 mod unicode_data;

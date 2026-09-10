@@ -485,6 +485,9 @@ impl TensorContract {
         dialect: CheckpointDialect,
         options: ContractOptions,
     ) -> Result<Self, TensorContractError> {
+        if let Some(speech) = &plan.speech {
+            return crate::model_packs::whisper::tensor_contract(speech, dialect);
+        }
         let mut builder = ContractBuilder::new(dialect);
         builder.weight(
             TensorId::TokenEmbedding,

@@ -1,0 +1,24 @@
+{
+  "openai/whisper": {
+    "revision": "86098128c0b4f24f0e2aa2994de830614b474227",
+    "files": [
+      "whisper/audio.py",
+      "whisper/model.py"
+    ]
+  },
+  "SYSTRAN/faster-whisper": {
+    "revision": "ed9a06cd89a93e47838f564998a6c09b655d7f43",
+    "files": [
+      "faster_whisper/transcribe.py"
+    ]
+  },
+  "NVIDIA/NeMo": {
+    "revision": "6ad981f26ec1e7156a73fad78b1b9c9c7ec0f463",
+    "files": [
+      "nemo/collections/asr/modules/conformer_encoder.py",
+      "nemo/collections/asr/modules/rnnt.py",
+      "nemo/collections/asr/models/rnnt_bpe_models.py",
+      "nemo/collections/asr/models/rnnt_bpe_models_prompt.py"
+    ]
+  }
+}

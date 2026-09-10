@@ -74,6 +74,7 @@ fn one_kda_layer_plan() -> ModelPlan {
         weight_transform: WeightTransform::Identity,
     };
     ModelPlan {
+        speech: None,
         arch: memra_gguf::config::Arch::Glm5Next,
         hidden_size: HIDDEN as u32,
         vocab_size: 32,
