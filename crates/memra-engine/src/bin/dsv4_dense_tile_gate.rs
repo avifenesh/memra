@@ -1,4 +1,4 @@
-//! Dense wide-prefill TILING INVARIANT (memra #470): a wide transaction's value
+//! Dense wide-prefill TILING INVARIANT (memra #471): a wide transaction's value
 //! does not depend on how the dense entry points cut it into tiles.
 //!
 //! This is a check, not a door. The tile width is `DSV4_TMAX` in the code and

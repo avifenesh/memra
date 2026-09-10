@@ -12,12 +12,12 @@ t=16..1039 on the 170-SM sm_120a target with `MEMRA_PRIME_CHUNK=1024`.
 | `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23 | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same door; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
 
-## DSV4 dense wide-prefill tiling, 2026-09-10 (memra #463, #468, #470)
+## DSV4 dense wide-prefill tiling, 2026-09-10 (memra #463, #468, #471)
 
 No new kernel and no changed kernel body. Above `DSV4_TMAX` the dense entry
 points decompose a transaction into tiles of `DSV4_TMAX` rows and relaunch,
 which selects the widest `M` instantiation the dispatch switches already carry.
-The width was a hard-coded 8 until #470; it is now the constant itself, and
+The width was a hard-coded 8 until #471; it is now the constant itself, and
 there is no door.
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |

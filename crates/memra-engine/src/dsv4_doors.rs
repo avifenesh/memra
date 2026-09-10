@@ -413,7 +413,7 @@ pub fn doors_without_evidence_in_either_direction(
     floor_pct: f64,
 ) -> Vec<&'static str> {
     rows.iter()
-        // The complaint is about a door DEFAULTING ON with nothing to justify
+        // memra #470. The complaint is about a door DEFAULTING ON with nothing to justify
         // it. A default-OFF door is off by decision, so its magnitude is its
         // evidence rather than a missing justification, and including it would
         // also break this function's own invariant: at a floor above every
@@ -1290,7 +1290,7 @@ mod tests {
         // code, so the registry is not expected to carry a default-OFF door for
         // long, and a check that only has teeth while one happens to exist is a
         // check that quietly stops having them. `MEMRA_DSV4_DENSE_TILE` was the
-        // door that exposed the defect and it is gone (memra #470); this row
+        // door that exposed the defect and it is gone (memra #471); this row
         // stands in for the next one, inert and below any floor.
         const OFF_DOOR: &[DoorRow] = &[DoorRow {
             name: "a default-OFF door, inert and unmeasurable",

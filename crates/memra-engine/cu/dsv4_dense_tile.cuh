@@ -10,7 +10,7 @@
 // would do. Tiling at `DSV4_TMAX` is bit-identical (M decides only how many
 // independent accumulators a block keeps in registers, never one accumulator's
 // add order or its 128-leaf tree) and measured +3.94% / +4.10% on the served
-// program, so it is the code rather than a door (memra #463, #468, #470;
+// program, so it is the code rather than a door (memra #463, #468, #471;
 // darklanes `research/dsv4f-dense-tile-20260910/`).
 //
 // What survives is this counter, which is an instrument and not a switch: it is

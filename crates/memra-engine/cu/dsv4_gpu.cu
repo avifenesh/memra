@@ -3925,7 +3925,7 @@ extern "C" int memra_dsv4_gemv_bf16_m(const void* w_bf16, const void* x_bf16, fl
         //
         // The tile is DSV4_TMAX, the widest instantiation the switch below carries,
         // and it is written as that constant rather than as a number of its own so
-        // the two cannot drift apart. It was a hard-coded 8 until memra #470: the
+        // the two cannot drift apart. It was a hard-coded 8 until memra #471: the
         // served 64-row chunk then issued eight launches per dense call instead of
         // two, for +3.94% / +4.10% of served prefill and no numeric change at all
         // (M decides how many accumulators a block keeps, never one accumulator's

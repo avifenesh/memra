@@ -95,7 +95,7 @@ pub fn restore_dense_exact_tail_default_for_gate() -> bool {
 
 /// Tiled dense decompositions issued so far on this host thread, as
 /// `[decompositions, tiles]`. An instrument, not a switch: the tile width is
-/// `DSV4_TMAX` in the code and nothing selects it at runtime (memra #470). This
+/// `DSV4_TMAX` in the code and nothing selects it at runtime (memra #471). This
 /// is how `dsv4_dense_tile_gate` proves a transaction reached the tiled path,
 /// so a byte-identity assertion cannot pass vacuously on an untiled walk.
 pub fn dense_tile_counts_for_gate() -> [u64; 2] {
