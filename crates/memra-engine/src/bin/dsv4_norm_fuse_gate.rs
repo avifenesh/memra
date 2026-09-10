@@ -629,6 +629,7 @@ fn main() {
         std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
         std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
         std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
     }
 
     let args: Vec<_> = std::env::args().collect();

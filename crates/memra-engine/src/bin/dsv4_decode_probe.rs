@@ -102,6 +102,7 @@ fn main() {
     unsafe {
         std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
         std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
     }
 
     // item 3 boot refusal (hermes a4e3d9a8eab4cf17 shape): this probe's instrument

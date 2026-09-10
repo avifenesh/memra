@@ -1,5 +1,15 @@
-//! Exact remaining norm/activation packing: qualification and scoring are separate.
-//! Derived from the HC replay protocol, retaining every other default.
+//! Wide norm2 pack: qualification and scoring are separate.
+//! Derived from `dsv4_norm_fuse2_gate`, retaining every other default.
+//!
+//! Both arms of this bin run with `MEMRA_DSV4_NORM_FUSE2=1`: the wide pack has no
+//! call site without the norm2 door, so the door under test here is
+//! `MEMRA_DSV4_NORM2_WIDE` on top of it. The rewrite is same-class by
+//! construction (identical 128-thread reduction tree, epilogue columns split
+//! across CTAs), so every cross-arm check below is raw-bit equality, not a
+//! tolerance. The census red arm is the symbol swap: 86 packs per forward
+//! variant either way, `dsv4_norm2_pack_f32_fixed_order_kernel` OFF and
+//! `dsv4_norm2_pack_f32_fixed_order_wide_kernel` ON, never both and never
+//! neither.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
 use memra_gguf::dsv4_forward::ActQuantVariant;
@@ -10,14 +20,14 @@ use std::{
     time::Instant,
 };
 
-fn norm2_on(gpu: &Dsv4Gpu) -> bool {
-    gpu.norm_fuse2_enabled_for_gate()
+fn wide_on(gpu: &Dsv4Gpu) -> bool {
+    gpu.norm2_wide_enabled_for_gate()
 }
-/// Every other DSV4 gate bin pins `MEMRA_DSV4_NORM_FUSE2=0` at startup, so this
+/// Every other DSV4 gate bin pins `MEMRA_DSV4_NORM2_WIDE=0` at startup, so this
 /// is the only bin whose rows may depend on the door. It reads the environment
 /// on purpose: `--qualify` selects its arm from it, one arm per process.
-fn norm2_door_env() -> String {
-    std::env::var("MEMRA_DSV4_NORM_FUSE2").unwrap_or_else(|_| "unset".into())
+fn wide_door_env() -> String {
+    std::env::var("MEMRA_DSV4_NORM2_WIDE").unwrap_or_else(|_| "unset".into())
 }
 fn default_program() {
     for name in [
@@ -31,17 +41,13 @@ fn default_program() {
             "default ON required: {name}"
         );
     }
-    // The wide norm2 pack now defaults ON under the admitted norm2 door. This
-    // bin measures the single-CTA program, so it pins the rollback seam
-    // explicitly and refuses an exported 1 rather than inheriting the default.
-    assert_ne!(
-        std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
+    // The composed door. Both arms of this bin carry it: the wide pack replaces a
+    // norm2 kernel, so with norm2 OFF there would be nothing to score.
+    assert_eq!(
+        std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
         Ok("1"),
-        "MEMRA_DSV4_NORM2_WIDE=1 is not this bin's arm"
+        "MEMRA_DSV4_NORM_FUSE2=1 required in both arms"
     );
-    unsafe {
-        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
-    }
     assert!(memra_engine::moe_m1_graph_splitk_on());
     unsafe extern "C" {
         fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
@@ -142,7 +148,7 @@ fn count_kernel(dot: &str, needle: &str) -> usize {
 
 fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
     let mut hashes: [[String; 4]; 2] = Default::default();
-    let on = norm2_on(gpu);
+    let on = wide_on(gpu);
     std::fs::create_dir_all(dir).unwrap();
     gpu.dump_full_token_replay_for_gate(state, dir).unwrap();
     assert_eq!(
@@ -156,12 +162,26 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
             )
             .unwrap();
             let forward = segment != 1;
-            let pack = count_kernel(&dot, "dsv4_norm2_pack_f32_fixed_order_kernel");
+            // The two pack symbols do not overlap as substrings: the wide name is
+            // `..._fixed_order_wide_kernel`, so the narrow needle `..._fixed_order_kernel`
+            // never matches it. `symbols_do_not_overlap` below is the red arm for that.
+            let narrow = count_kernel(&dot, "dsv4_norm2_pack_f32_fixed_order_kernel");
+            let wide = count_kernel(&dot, "dsv4_norm2_pack_f32_fixed_order_wide_kernel");
             let swiglu = count_kernel(&dot, "dsv4_norm2_swiglu_pack_kernel");
             let quant = count_kernel(&dot, "dsv4_norm2_quant_half_kernel");
             assert_eq!(
-                [pack, swiglu, quant],
-                if on && forward { [86, 43, 43] } else { [0; 3] }
+                [narrow + wide, swiglu, quant],
+                if forward { [86, 43, 43] } else { [0; 3] },
+                "norm2 census is door-independent in total"
+            );
+            assert_eq!(
+                [narrow, wide],
+                match (on, forward) {
+                    (_, false) => [0, 0],
+                    (false, true) => [86, 0],
+                    (true, true) => [0, 86],
+                },
+                "exactly one pack symbol per arm"
             );
             for symbol in [
                 "dsv4_hc_dot_split_partial_kernel",
@@ -204,7 +224,7 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
             };
             assert_eq!(
                 count_kernel(&dot, "dsv4_rmsnorm_f32acc_kernel"),
-                norms - if on && forward { 86 } else { 0 }
+                norms - if forward { 86 } else { 0 }
             );
             assert_eq!(
                 count_kernel(&dot, "dsv4_rope_kernel"),
@@ -213,14 +233,8 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
             assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_fp8_kernel"), 0);
             assert_eq!(count_kernel(&dot, "dsv4_dense_exact_tail_dots_kernel"), 0);
             if forward {
-                assert_eq!(
-                    count_kernel(&dot, "dsv4_fp8_gather_half_kernel"),
-                    if on { 43 } else { 86 }
-                );
-                assert_eq!(
-                    count_kernel(&dot, "dsv4_act_quant_fp8_kernel"),
-                    if on { 43 } else { 86 }
-                );
+                assert_eq!(count_kernel(&dot, "dsv4_fp8_gather_half_kernel"), 43);
+                assert_eq!(count_kernel(&dot, "dsv4_act_quant_fp8_kernel"), 43);
                 // Base forward census includes default HC S16 (+86) and norm/RoPE (-43).
                 let base = match segment {
                     0 => 2870,
@@ -232,11 +246,13 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                 let runtime = gpu
                     .full_token_replay_variant_census_for_gate(state)
                     .unwrap();
-                assert_eq!(runtime[rank][segment][1], base - if on { 215 } else { 0 });
+                // Norm2 is ON in both arms, so the 215 it removes is constant here
+                // and the wide door moves no launch count at all.
+                assert_eq!(runtime[rank][segment][1], base - 215);
             }
             *hash = format!("{:x}", Sha256::digest(dot.as_bytes()));
             println!(
-                "GRAPH_CENSUS on={on} rank={rank} segment={segment} pack={pack} swiglu={swiglu} quant={quant} sha256={:x}",
+                "GRAPH_CENSUS norm2_wide={on} rank={rank} segment={segment} pack_narrow={narrow} pack_wide={wide} swiglu={swiglu} quant={quant} sha256={:x}",
                 Sha256::digest(dot.as_bytes())
             );
         }
@@ -305,7 +321,7 @@ fn qualify_arm(
     output: &Path,
     cfg: Dsv4SampleCfg,
 ) -> (String, Identity, u32) {
-    let on = norm2_on(gpu);
+    let on = wide_on(gpu);
     select_arm(gpu, false);
     let mut prefix = state(gpu);
     gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
@@ -358,8 +374,8 @@ fn qualify_arm(
         refusals(gpu, &prefix, cfg, &inputs);
         let ident = identity(gpu, &graph);
         println!(
-            "QUALIFIED {{\"norm_fuse2\":{},\"generated_sha256\":\"{}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"positions\":{OUTPUT},\"within_class\":true}}",
-            norm2_on(gpu),
+            "QUALIFIED {{\"norm2_wide\":{},\"generated_sha256\":\"{}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"positions\":{OUTPUT},\"within_class\":true}}",
+            wide_on(gpu),
             sha_tokens(&inputs),
             ident.0,
             ident.1,
@@ -370,8 +386,10 @@ fn qualify_arm(
 }
 
 fn select_arm(gpu: &Dsv4Gpu, on: bool) {
-    gpu.set_norm_fuse2_for_gate(on).unwrap();
-    assert_eq!(norm2_on(gpu), on);
+    // The composed norm2 door never moves: only the wide arm is toggled.
+    assert!(gpu.norm_fuse2_enabled_for_gate(), "norm2 door must stay ON");
+    gpu.set_norm2_wide_for_gate(on).unwrap();
+    assert_eq!(wide_on(gpu), on);
 }
 fn block_order(reverse: bool) -> [bool; 4] {
     if reverse {
@@ -395,7 +413,7 @@ impl ScoredArm {
         Self::new_current(gpu, prompt, cfg)
     }
     fn new_current(gpu: &Dsv4Gpu, prompt: &[u32], cfg: Dsv4SampleCfg) -> Self {
-        let on = norm2_on(gpu);
+        let on = wide_on(gpu);
         let mut prefix = state(gpu);
         gpu.prefill_with_cache_chunked(&prompt[..1], &mut prefix, 1)
             .unwrap();
@@ -433,7 +451,7 @@ fn run_abba(
         ScoredArm::new(gpu, prompt, cfg, true),
     ];
     println!(
-        "ABBA_PROTOCOL reverse={reverse} rows=20 rows_per_arm=10 first_capture_inside_arm_row_0_only=true retained_graphs=true"
+        "ABBA_PROTOCOL door=MEMRA_DSV4_NORM2_WIDE reverse={reverse} rows=20 rows_per_arm=10 first_capture_inside_arm_row_0_only=true retained_graphs=true"
     );
     let mut row = 0;
     for on in block_order(reverse) {
@@ -462,7 +480,7 @@ fn scored_row(
     reverse: bool,
 ) {
     let on = arm.on;
-    assert_eq!(norm2_on(gpu), on);
+    assert_eq!(wide_on(gpu), on);
     if arm.rows > 0 {
         gpu.restore_full_token_prefix_for_gate(&mut arm.graph, &arm.prefix)
             .unwrap();
@@ -517,7 +535,7 @@ fn scored_row(
         }
     }
     println!(
-        "MEASURE {{\"row\":{row},\"arm_row\":{},\"reverse\":{reverse},\"norm_fuse2\":{on},\"generated_tokens\":{OUTPUT},\"decode_wall_ns\":{ns},\"decode_tok_s\":{},\"eligible\":{},\"looped\":{looped},\"generated_sha256\":\"{hash}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"first_capture_inside_timing\":{},\"captures_before\":{captures_before:?},\"captures\":{captures:?},\"device_replays\":{after:?}}}",
+        "MEASURE {{\"row\":{row},\"arm_row\":{},\"reverse\":{reverse},\"norm2_wide\":{on},\"generated_tokens\":{OUTPUT},\"decode_wall_ns\":{ns},\"decode_tok_s\":{},\"eligible\":{},\"looped\":{looped},\"generated_sha256\":\"{hash}\",\"final_logits_sha256\":\"{}\",\"final_cache_digest\":{:?},\"final_hidden_digest\":{:?},\"first_capture_inside_timing\":{},\"captures_before\":{captures_before:?},\"captures\":{captures:?},\"device_replays\":{after:?}}}",
         arm.rows,
         OUTPUT as f64 * 1e9 / ns as f64,
         !looped,
@@ -530,8 +548,13 @@ fn scored_row(
 }
 fn main() {
     let args: Vec<_> = std::env::args().collect();
-    if args.len() == 3 && args[1] == "--components" {
-        Dsv4Gpu::run_norm2_components_for_gate(Path::new(&args[2])).unwrap();
+    if args.len() >= 3 && args[1] == "--components" {
+        let sweep = args.get(3).is_some_and(|s| s == "--sweep");
+        assert!(
+            args.len() == 3 || sweep,
+            "usage: --components <dir> [--sweep]"
+        );
+        Dsv4Gpu::run_norm2_wide_components_for_gate(Path::new(&args[2]), sweep).unwrap();
         return;
     }
     assert!(
@@ -539,9 +562,9 @@ fn main() {
             || (args.len() == 5
                 && matches!(
                     args[4].as_str(),
-                    "--qualify" | "--reverse" | "--capture-components" | "--defaults"
+                    "--qualify" | "--reverse" | "--capture-components"
                 )),
-        "usage: dsv4-norm-fuse2-gate <model-dir> <source.txt> <new-output-dir> [--qualify|--reverse|--capture-components|--defaults]"
+        "usage: dsv4-norm2-wide-gate <model-dir> <source.txt> <new-output-dir> [--qualify|--reverse|--capture-components]"
     );
     assert!(
         !dsv4_prof_on(),
@@ -580,7 +603,12 @@ fn main() {
         );
     }
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
-    println!("DOOR MEMRA_DSV4_NORM_FUSE2={}", norm2_door_env());
+    println!(
+        "DOOR MEMRA_DSV4_NORM2_WIDE={} composed_on MEMRA_DSV4_NORM_FUSE2={} tiles={}",
+        wide_door_env(),
+        std::env::var("MEMRA_DSV4_NORM_FUSE2").unwrap_or_else(|_| "unset".into()),
+        Dsv4Gpu::norm2_wide_tiles_for_gate()
+    );
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
         top_p: 1.0,
@@ -633,38 +661,12 @@ fn main() {
         gpu.decode_step_device_logits(prompt[1], &mut state)
             .unwrap();
         gpu.finish_norm2_components_for_gate().unwrap();
-    } else if args.get(4).is_some_and(|s| s == "--defaults") {
-        // Default engagement. The arm comes from the environment policy at load, not
-        // from a gate setter, so this is the only cell that proves what an ordinary
-        // process gets. One mode per invocation: unset must engage, explicit 0 must
-        // restore the unfused chains.
-        let env = std::env::var("MEMRA_DSV4_NORM_FUSE2").ok();
-        assert!(
-            env.is_none() || env.as_deref() == Some("0"),
-            "default engagement requires unset or explicit 0, got {env:?}"
-        );
-        let engaged = gpu.norm_fuse2_enabled_for_gate();
-        assert_eq!(
-            engaged,
-            env.is_none(),
-            "initial policy before any gate override: unset must engage, 0 must not"
-        );
-        qualify_arm(&gpu, &prompt[..PRIME], &output, cfg);
-        assert_eq!(
-            gpu.norm_fuse2_enabled_for_gate(),
-            engaged,
-            "arm restored after qualification"
-        );
-        println!(
-            "DEFAULT_ENGAGEMENT norm_fuse2={engaged} env={} scored_rows=0",
-            env.as_deref().unwrap_or("unset")
-        );
     } else if args.get(4).is_some_and(|s| s == "--qualify") {
         // One arm per invocation. Controller runs two new processes per arm.
-        let on = gpu.norm_fuse2_enabled_for_gate();
+        let on = gpu.norm2_wide_enabled_for_gate();
         qualify_arm(&gpu, &prompt[..PRIME], &output, cfg);
-        assert_eq!(gpu.norm_fuse2_enabled_for_gate(), on);
-        println!("PASS qualification_only=true norm_fuse2={on} scored_rows=0");
+        assert_eq!(gpu.norm2_wide_enabled_for_gate(), on);
+        println!("PASS qualification_only=true norm2_wide={on} scored_rows=0");
     } else {
         run_abba(
             &gpu,
@@ -692,5 +694,21 @@ mod tests {
             ),
             1
         );
+    }
+    /// The census counts the two pack symbols independently, which is only sound
+    /// because neither name contains the other. Red arm: a wide-only DOT must read
+    /// as 0 narrow and 1 wide, and a narrow-only DOT the reverse.
+    #[test]
+    fn pack_symbols_do_not_overlap() {
+        const NARROW: &str = "dsv4_norm2_pack_f32_fixed_order_kernel";
+        const WIDE: &str = "dsv4_norm2_pack_f32_fixed_order_wide_kernel";
+        assert!(!WIDE.contains(NARROW) && !NARROW.contains(WIDE));
+        for (symbol, expect) in [(NARROW, [1, 0]), (WIDE, [0, 1])] {
+            let dot = format!("| {{ID | 0}} {symbol}\nx -> y\n");
+            assert_eq!(
+                [count_kernel(&dot, NARROW), count_kernel(&dot, WIDE)],
+                expect
+            );
+        }
     }
 }
