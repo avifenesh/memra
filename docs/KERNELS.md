@@ -563,9 +563,12 @@ teacher-forced source windows and does not grant admission, and
 first from real rows, then paired rows carrying bit equality, top-1 per arm, KL
 mean AND max in both directions, and a seeded draw, with the sampler stream and
 the resume-refusal name sequence checked apart from drift. Receipts:
-`research/dsv4f-2card-1m-20260904/matrix-request-program.md`,
-`research/dsv4f-2card-1m-20260904/matrix-distribution.md`, and darklanes
-`research/dsv4f-matrix-class-20260910/LANE.md` (memra #461).
+`research/dsv4f-2card-1m-20260904/matrix-request-program.md` and
+`research/dsv4f-2card-1m-20260904/matrix-distribution.md`; the class
+determination and its drift rows are memra #461 (0 bit-equal rows of 448 across
+seven domains, 20 top-1 changes, KL mean 0.011106 / max 0.220805, sampler stream
+and refusal ordering both unchanged), with the private write-up in the darklanes
+`dsv4f-matrix-class-20260910` lane.
 
 The matrix workspace now retains both checked FP8/half mirrors, their scale and
 status buffers, and the CSR contribution plane. Seven explicit GPU scratch
