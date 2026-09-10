@@ -293,9 +293,12 @@ the product does not exist at that tier and K1 fires.
 
 **Step 2, GPU kernels for the RNNT path. ~4-6 GPU-hours.** Take the family that already
 streams end to end and put it on the GPU: frontend, FastConformer subsampler and blocks,
-prompt kernel, predictor, joint. Exit: RTFx > 1 on GPU with **byte identity against the banked
-CPU reference**, cheap and safe precisely because that reference exists. This is the first
-real speed receipt memra has for speech.
+prompt kernel, predictor, joint. Exit, and it is deliberately not "RTFx > 1", which any GPU
+clears instantly and would prove nothing: **byte identity against the banked CPU reference**,
+plus a per-stream RTF measured interleaved against CTranslate2 on the same card in the same
+session. That second half is what feeds K2, so the step that produces the number and the
+criterion that judges it are the same measurement, not two separate ones taken weeks apart.
+The parity half is cheap and safe precisely because the CPU reference already exists.
 
 **Step 3, audio endpoint in `memra serve` plus the G8 battery. ~6-10 GPU-hours.** Readiness,
 model id, streaming partial/final/revision contract, concurrency ladder, typed admission
