@@ -1375,7 +1375,11 @@ mod declared_context_tests {
     #[test]
     fn a_checkpoint_that_declares_nothing_refuses_as_undeclared() {
         for raw in [r#"{}"#, r#"{"max_position_embeddings":null}"#] {
-            assert_eq!(declared_context_from_config(&cfg(raw)), DeclaredContext::Absent, "{raw}");
+            assert_eq!(
+                declared_context_from_config(&cfg(raw)),
+                DeclaredContext::Absent,
+                "{raw}"
+            );
         }
         let refusal = resolve_ctx(None, 0).expect_err("undeclared must refuse");
         assert!(

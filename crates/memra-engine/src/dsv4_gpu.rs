@@ -5959,7 +5959,7 @@ impl Dsv4Gpu {
                 state.capacity
             ));
         }
-        let width = chunk.min(suffix.len());
+        let width = dsv4_chunk_width_avoiding_single_row_tail(chunk, suffix.len());
         let mut vstate = self.alloc_prefill_state_for(state.capacity, width)?;
         let mut last_logits = None;
         for (i, toks) in suffix.chunks(width).enumerate() {
@@ -20135,5 +20135,193 @@ mod norm2_wide_policy_tests {
         // Launcher contract: tiles in 1..=n/128 and 128*tiles divides 4096.
         assert!((1..=4096 / 128).contains(&NORM2_WIDE_TILES));
         assert_eq!(4096 % (128 * NORM2_WIDE_TILES), 0);
+    }
+}
+
+/// Pick the transaction width that avoids leaving a SINGLE-ROW tail.
+///
+/// A one-row transaction is a different numeric class from a multi-row one, and not merely a
+/// different tile shape: it takes the m=1 decode-shaped kernels AND engages two default-ON
+/// doors, dense exact-tail and dense-fast, which are suppressed at m != 1
+/// (`Dsv4DenseExactTailControlScope control(m != 1)` in `cu/dsv4_gpu.cu`, declared
+/// `DoorShape::DecodeOnlyM1` in `dsv4_doors.rs`). So a chunked prefill whose final transaction
+/// carries exactly one row commits different logits from an unchunked prefill of the same
+/// prompt, while every other prompt is bit-identical. That made the chunk door a quality
+/// decision for roughly one prompt length in every `chunk` values.
+///
+/// Every multi-row width is bit-identical to every other (measured: widths 32 and 63 both
+/// reproduce width 64 exactly on a 1024-row suffix; width 31 is exact on a 999-row suffix), so
+/// shrinking the width to dodge a 1-row tail costs nothing numerically. Pick the LARGEST such
+/// width so the memory and batching behaviour stays as close to the requested chunk as
+/// possible.
+///
+/// Exceptions, both documented rather than discovered later:
+/// - `suffix_len == 1` is irreducible: one row is all there is. This is reachable only for a
+///   two-token prompt, where the first token is primed on its own.
+/// - When no width in `2..=chunk` avoids the tail, the requested `chunk` is returned unchanged.
+///   That needs `suffix_len % w == 1` for every such `w`, i.e. `w | (suffix_len - 1)` for all
+///   of them, which for `chunk >= 3` requires `suffix_len - 1` to be a multiple of
+///   `lcm(2..=chunk)` and is unreachable at any realistic length. It is genuinely reachable at
+///   `chunk == 2` with an odd suffix, which is why the fallback exists at all.
+pub(crate) fn dsv4_chunk_width_avoiding_single_row_tail(chunk: usize, suffix_len: usize) -> usize {
+    let requested = chunk.min(suffix_len);
+    if requested <= 1 || suffix_len % requested != 1 {
+        return requested;
+    }
+    for w in (2..requested).rev() {
+        if suffix_len % w != 1 {
+            return w;
+        }
+    }
+    requested
+}
+
+#[cfg(test)]
+mod dsv4_chunk_tail_width_tests {
+    use super::dsv4_chunk_width_avoiding_single_row_tail as pick;
+
+    /// A safe width exists unless `suffix_len - 1` is divisible by EVERY candidate width in
+    /// `2..=min(chunk, suffix_len)`, i.e. by their lcm. This is the exact characterisation of
+    /// when the mitigation cannot help, derived rather than guessed, and it is what the tests
+    /// below assert against in BOTH directions.
+    fn no_safe_width_exists(chunk: usize, suffix_len: usize) -> bool {
+        let requested = chunk.min(suffix_len);
+        if requested <= 1 {
+            return true;
+        }
+        (2..=requested).all(|w| suffix_len % w == 1)
+    }
+
+    /// TWO-SIDED. Where a safe width exists the chosen width must not leave a 1-row tail, and
+    /// where none exists the function must fall back to the requested chunk rather than
+    /// inventing something. A one-sided version would pass vacuously if the exception set moved.
+    #[test]
+    fn tail_is_avoided_exactly_when_it_can_be() {
+        let mut shrank = 0usize;
+        let mut hit_the_exception = 0usize;
+        for chunk in 2..=64usize {
+            for suffix_len in 2..=4096usize {
+                let w = pick(chunk, suffix_len);
+                assert!(w >= 1 && w <= chunk.min(suffix_len));
+                if no_safe_width_exists(chunk, suffix_len) {
+                    hit_the_exception += 1;
+                    assert_eq!(
+                        w,
+                        chunk.min(suffix_len),
+                        "must fall back to the requested width"
+                    );
+                } else {
+                    assert_ne!(
+                        suffix_len % w,
+                        1,
+                        "chunk {chunk}, suffix {suffix_len}: width {w} leaves a 1-row tail"
+                    );
+                }
+                if w != chunk.min(suffix_len) {
+                    shrank += 1;
+                }
+            }
+        }
+        // RED ARMS: both branches must actually be exercised or the assertions above are
+        // decoration. Deleting the mitigation makes `shrank` zero and fails here.
+        assert!(
+            shrank > 0,
+            "shrink path never exercised; the tail assertion is vacuous"
+        );
+        assert!(hit_the_exception > 0, "exception path never exercised");
+    }
+
+    /// The requested width is kept whenever it is already safe, so the mitigation cannot
+    /// silently change batching for the prompts that never had a problem.
+    #[test]
+    fn keeps_the_requested_width_when_the_tail_is_not_one_row() {
+        for chunk in 2..=64usize {
+            for suffix_len in 2..=4096usize {
+                let requested = chunk.min(suffix_len);
+                if suffix_len % requested != 1 {
+                    assert_eq!(pick(chunk, suffix_len), requested);
+                }
+            }
+        }
+    }
+
+    /// The shrink is MINIMAL: the largest safe width. A rule that dropped straight to 2 would
+    /// satisfy the property test and still be wrong.
+    #[test]
+    fn shrinks_to_the_largest_safe_width() {
+        for chunk in 3..=64usize {
+            for suffix_len in 2..=4096usize {
+                let w = pick(chunk, suffix_len);
+                for bigger in (w + 1)..=chunk.min(suffix_len) {
+                    assert_eq!(
+                        suffix_len % bigger,
+                        1,
+                        "chunk {chunk}, suffix {suffix_len}: {bigger} was safe and larger than {w}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// AT THE SERVED WIDTH the mitigation is total, which is the claim the door verdict rests
+    /// on. lcm(2..=64) is about 1.18e27, so `suffix_len - 1` cannot be a multiple of it at any
+    /// reachable length: the only failing case is a suffix of exactly one row, reachable only
+    /// for a two-token prompt whose first token is primed on its own.
+    #[test]
+    fn at_the_served_width_the_only_exception_is_a_one_row_suffix() {
+        assert_eq!(pick(64, 1), 1, "one row is all there is");
+        for suffix_len in 2..=8192usize {
+            assert_ne!(
+                suffix_len % pick(64, suffix_len),
+                1,
+                "served width 64 still tailed at 1 for suffix {suffix_len}"
+            );
+        }
+    }
+
+    /// The exception set is REAL but confined to small chunks, and it is pinned here so it stays
+    /// documented rather than being rediscovered as a bug. An earlier draft of this test claimed
+    /// the exception did not extend past chunk 2; the sweep refuted that, and chunk 3 suffix 7
+    /// is the counterexample that killed it.
+    #[test]
+    fn the_exception_set_is_small_chunks_only() {
+        assert!(no_safe_width_exists(2, 7));
+        assert_eq!(pick(2, 7), 2);
+        assert_eq!(
+            7 % pick(2, 7),
+            1,
+            "chunk 2 with an odd suffix still tails at 1"
+        );
+
+        assert!(
+            no_safe_width_exists(3, 7),
+            "7-1=6 is divisible by both 2 and 3"
+        );
+        assert_eq!(pick(3, 7), 3);
+
+        for chunk in 11..=64usize {
+            for suffix_len in 2..=4096usize {
+                assert!(
+                    !no_safe_width_exists(chunk, suffix_len),
+                    "chunk {chunk} suffix {suffix_len} unexpectedly has no safe width"
+                );
+            }
+        }
+    }
+
+    /// Regression pin on the measured gate-1 boundary cases from the darklanes chunk-door lane,
+    /// because they are what established the rule: on a 1024-row suffix widths 31 and 33 each
+    /// leave a 1-row tail and were bit-identical to EACH OTHER and different from 64, while 32
+    /// and 63 do not; on a 999-row suffix width 31 leaves 7 rows and is already safe.
+    #[test]
+    fn pins_the_measured_gate_one_boundary_cases() {
+        assert_eq!(1024 % 31, 1);
+        assert_eq!(1024 % 33, 1);
+        assert_eq!(pick(31, 1024), 30);
+        assert_eq!(pick(33, 1024), 32);
+        assert_eq!(pick(32, 1024), 32);
+        assert_eq!(pick(63, 1024), 63);
+        assert_eq!(pick(64, 1024), 64);
+        assert_eq!(pick(31, 999), 31);
     }
 }
