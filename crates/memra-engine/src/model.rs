@@ -380,10 +380,6 @@ where
     }
 }
 
-/// A weight tensor resident on GPU. Quantized weights stay in GGUF block bytes (`Quant`);
-/// small non-quant tensors (norms, sometimes embed/lm_head) are kept dequantized as f32 (`Float`).
-/// This keeps VRAM ~= on-disk quant size (fixes the f32-on-load OOM).
-#[allow(clippy::large_enum_variant)] // allow: variant size asymmetry is deliberate; these enums live in per-layer tables, not hot moves
 /// The calibrated prefill activation stamp a weight carries: its per-linear global dequant
 /// multiplier and its slot in the 400-linear program. Both travel together because a receipt that
 /// says "400 A4 GEMMs ran" is not the same claim as "these 400 projections ran".
@@ -393,6 +389,10 @@ pub struct A4Stamp {
     pub slot: u32,
 }
 
+/// A weight tensor resident on GPU. Quantized weights stay in GGUF block bytes (`Quant`);
+/// small non-quant tensors (norms, sometimes embed/lm_head) are kept dequantized as f32 (`Float`).
+/// This keeps VRAM ~= on-disk quant size (fixes the f32-on-load OOM).
+#[allow(clippy::large_enum_variant)] // allow: variant size asymmetry is deliberate; these enums live in per-layer tables, not hot moves
 pub enum GpuTensor {
     Quant {
         bytes: CudaSlice<u8>,
