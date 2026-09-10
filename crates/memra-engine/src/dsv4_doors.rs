@@ -667,6 +667,17 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::Off,
         declared_bench: DoorState::Off,
         resolve: resolve_dense_tile,
+        // The call sites are the generic dense entry points, so the served
+        // program reaches them: this door is OFF by DECISION, not by program.
+        admitted_by: AdmittingProgram::ServedProgram,
+        // The only door here measured on the SERVED program rather than the
+        // tuned bench one, and on the prod-candidate box rather than the dev
+        // pair, so DEV_PAIR_INSTRUMENT_FLOOR_PCT is not the floor that applies
+        // to it. Recorded because it clears that floor twice over anyway:
+        // pooled forward (arms A1 then B1) and reverse (B2 then A2), each the
+        // mean of the 981-token and 3,686-token pairs.
+        merged_gain_pct: (4.001640, 4.038455),
+        measured_on: "2x RTX PRO 6000 Blackwell WS prod-candidate pair, served program",
     },
     DoorRow {
         name: "norm2-wide",
@@ -1038,6 +1049,9 @@ mod tests {
             declared_served: DoorState::On(DoorShape::AllRoutedShapes),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
             resolve: resolve_dense_tile,
+            admitted_by: AdmittingProgram::ServedProgram,
+            merged_gain_pct: (4.001640, 4.038455),
+            measured_on: "2x RTX PRO 6000 Blackwell WS prod-candidate pair, served program",
         }];
         let violations = declaration_violations(LIAR);
         assert_eq!(violations.len(), 2, "{violations:?}");
