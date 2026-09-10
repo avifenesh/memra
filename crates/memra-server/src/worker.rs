@@ -178,104 +178,13 @@ fn removed_bank_v2_doors_refusal(
     None
 }
 
-/// SHORT-FIRST prefill policy door (`MEMRA_PREFILL_SHORT_FIRST`, default OFF).
-///
-/// WHAT IT CHANGES. The interactive prefill phase visits sessions in admission-index order
-/// and gives each one `PREFILL_TICK_T` prompt tokens. Both halves are wrong for a mix of one
-/// long prime and several short prompts, and the cost is not small: measured on an RTX 5090
-/// with qwen3.8-27B, a 4,150-token prompt that primes in 1.24 s ALONE takes 43.3 s beside one
-/// 107,200-token cold prime, and every one of eight such shorts lands inside a 4 ms window at
-/// the end rather than finishing when its own work is done.
-///
-/// It is NOT a capacity problem. Aggregate prefill under nine-way concurrency measured
-/// 2,327-2,528 tok/s against 2,347 tok/s solo, so the card does exactly as much prefill work
-/// either way. What is wrong is the ORDER: in that cell the engine issued 97 prime chunks to
-/// the long request and 44 to all eight shorts combined, while the outstanding work was
-/// 99,328 tokens against 34,234.
-///
-/// ON, the phase visits pending prefills by ASCENDING remaining prompt, and a session whose
-/// whole remainder is at or under `SOLO_PREFILL_TICK_T` primes that remainder in one call
-/// instead of slicing it into `PREFILL_TICK_T` pieces across as many tick loops. That bar is
-/// not a new constant: it is already the engine's own notion of a prompt small enough for one
-/// outer prime call.
-///
-/// NO STARVATION, structurally. This reorders and resizes visits WITHIN one pass of the
-/// phase; the pass still visits every session exactly once, so a long prime keeps its
-/// `PREFILL_TICK_T` chunk on every tick no matter how many short prompts keep arriving. The
-/// long request pays exactly the short requests' tokens in added completion time and nothing
-/// else, because aggregate throughput is unchanged.
-///
-/// HOW IT RELATES TO `MEMRA_PRIME_YIELD`, which is an adjacent seam and NOT the same door.
-/// That door is about prime GRANULARITY: it makes a route whose prime would run every chunk
-/// inside a single blocking call yield back to the tick between chunks (ornith-positive,
-/// qwen-weak, and measured NOT to be the lever for memra#442). This door is about prime ORDER
-/// and per-visit SIZE, and it only does anything where that granularity already exists. On
-/// qwen the tick-level chunking is already there, which is exactly why prime yield had
-/// nothing left to give. They compose; neither replaces the other.
-///
-/// THE TWO HALVES ARE SEPARATELY SELECTABLE, and that is not decoration: measured on a
-/// 5090 the two halves do NOT pull the same way, so a single on/off flag would have shipped
-/// or killed them together on a number that belongs to only one of them. `1` is the shipped
-/// shape (whichever halves the receipts qualify); `order` and `budget` select one half each
-/// and exist so a cell can attribute a result to the half that caused it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct ShortFirst {
-    /// Visit pending prefills by ascending remaining prompt instead of admission index.
-    pub order: bool,
-    /// Let a remainder at or under `SOLO_PREFILL_TICK_T` take one call instead of many ticks.
-    pub budget: bool,
-}
-
-impl ShortFirst {
-    pub fn parse(raw: Option<&str>) -> Self {
-        match raw {
-            Some("1") => Self { order: true, budget: true },
-            Some("order") => Self { order: true, budget: false },
-            Some("budget") => Self { order: false, budget: true },
-            // Anything else, including `0` and an unparseable value, is OFF. An unknown
-            // value must not silently select an arm nobody asked for.
-            _ => Self::default(),
-        }
-    }
-}
-
-fn prefill_short_first() -> ShortFirst {
-    static PARSED: std::sync::OnceLock<ShortFirst> = std::sync::OnceLock::new();
-    *PARSED.get_or_init(|| {
-        ShortFirst::parse(std::env::var("MEMRA_PREFILL_SHORT_FIRST").ok().as_deref())
-    })
-}
-
-/// Visit order for the interactive prefill phase.
-///
-/// OFF returns admission-index order, byte-for-byte the previous behaviour. ON returns the
-/// same indices sorted by ascending remaining prompt, ties broken by index so the order is
-/// deterministic and an earlier arrival still wins among equals. EVERY index occurs exactly
-/// once in both arms; this is a permutation, never a filter.
-fn prefill_visit_order(remaining: &[(usize, usize)], short_first: bool) -> Vec<usize> {
-    let mut order: Vec<usize> = remaining.iter().map(|(i, _)| *i).collect();
-    if short_first {
-        let mut keyed: Vec<(usize, usize)> = remaining.to_vec();
-        keyed.sort_by_key(|(i, rem)| (*rem, *i));
-        order = keyed.into_iter().map(|(i, _)| i).collect();
-    }
-    order
-}
-
 fn interactive_prefill_budget(
     configured: usize,
     configured_explicitly: bool,
     sole_unfinished: bool,
     fresh: bool,
     queued: usize,
-    short_first: bool,
 ) -> usize {
-    // SHORT-FIRST: a remainder that already fits one outer prime call takes it, instead of
-    // waiting `queued / PREFILL_TICK_T` more tick loops behind a long prime's chunks. An
-    // explicit `MEMRA_PREFILL_TICK` still wins, as it does for the solo widening below.
-    if short_first && !configured_explicitly && queued <= SOLO_PREFILL_TICK_T {
-        return configured.max(queued);
-    }
     if configured_explicitly || !sole_unfinished || !fresh {
         return configured;
     }
@@ -16938,41 +16847,9 @@ pub fn run(
                     .filter(|(i, _)| !finished.contains(i))
                     .count()
                     == 1;
-            // SHORT-FIRST visit order (`MEMRA_PREFILL_SHORT_FIRST`, default OFF). OFF this is
-            // `0..active.len()` unchanged. ON it is the same set sorted by ascending remaining
-            // prompt, so a short prompt is not made to wait behind a long prime's chunk inside
-            // the same pass. It is a permutation of the same indices in both arms: every
-            // session is still visited exactly once per pass, which is what keeps a long prime
-            // from being starved by an unending stream of short arrivals.
-            let prefill_short_first = prefill_short_first();
-            let prefill_pending: Vec<(usize, usize)> = active
-                .iter()
-                .enumerate()
-                .filter(|(i, s)| {
-                    !finished.contains(i)
-                        && !s.prefill_done
-                        && s.lane == crate::lanes::Lane::Interactive
-                })
-                .map(|(i, s)| (i, s.prefill_queue.len()))
-                .collect();
-            let prefill_order = if prefill_short_first.order {
-                prefill_visit_order(&prefill_pending, true)
-            } else {
-                (0..active.len()).collect::<Vec<usize>>()
-            };
-            if (prefill_short_first.order || prefill_short_first.budget)
-                && prefill_pending.len() > 1
-                && std::env::var("MEMRA_TICK_TRACE").as_deref() == Ok("1")
-            {
-                eprintln!(
-                    "[prefill-order] short-first={:?} pending={} order={:?} remaining={:?}",
-                    prefill_short_first,
-                    prefill_pending.len(),
-                    prefill_order,
-                    prefill_pending
-                );
-            }
-            for i in prefill_order {
+            #[allow(clippy::needless_range_loop)]
+            // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
+            for i in 0..active.len() {
                 if defer_interactive_prefill {
                     continue;
                 }
@@ -17010,7 +16887,6 @@ pub fn run(
                     sole_unfinished,
                     fresh,
                     s.prefill_queue.len(),
-                    prefill_short_first.budget,
                 );
                 // MEMRA_PREFILL_WIDEN_PROBE=1 (diagnostic, default off): name WHICH input
                 // blocks the solo widening. It exists because the multi-term guard hides
@@ -28360,122 +28236,23 @@ mod tests {
     /// reorders unconditionally fails here rather than in a rental.
     ///
     /// RED ARM: with the door OFF this returns admission order, so the ON expectation below
-    /// (the 4,180-token short visited before the 99,328-token prime) fails on the OFF arm.
-    #[test]
-    fn short_first_visits_the_shortest_remaining_prefill_before_a_long_prime() {
-        // Index 0 is a long prime, 1..=3 are short prompts. This is the measured shape:
-        // one 107,200-token cold prompt and short prompts of distinct lengths beside it.
-        let pending = vec![(0usize, 99_328usize), (1, 4180), (2, 4150), (3, 4210)];
-
-        // OFF: admission order over the WHOLE active vector, unchanged.
-        let off = super::prefill_visit_order(&pending, false);
-        assert_eq!(off, vec![0, 1, 2, 3], "OFF must not reorder");
-
-        // ON: ascending remaining prompt, ties broken by index.
-        let on = super::prefill_visit_order(&pending, true);
-        assert_eq!(on, vec![2, 1, 3, 0], "shortest remaining prefill goes first");
-        assert_ne!(on, off, "the door must actually change the visit order");
-
-        // It is a PERMUTATION, never a filter: a session dropped from the order would be a
-        // starved request, so assert the multiset rather than only the first element.
-        let mut sorted_on = on.clone();
-        sorted_on.sort_unstable();
-        assert_eq!(sorted_on, vec![0, 1, 2, 3], "every pending session is visited exactly once");
-
-        // The long prime is still visited in the same pass, which is what bounds its wait to
-        // one pass no matter how many short arrivals keep coming.
-        assert!(on.contains(&0), "the long prime keeps its turn every pass");
-
-        // Deterministic under equal remainders: earlier arrival wins.
-        let tie = vec![(5usize, 2048usize), (2, 2048), (9, 2048)];
-        assert_eq!(super::prefill_visit_order(&tie, true), vec![2, 5, 9]);
-    }
-
-    /// The door's value parsing. An unknown value must be OFF, never a silently selected arm.
-    #[test]
-    fn short_first_parses_its_arms_and_refuses_to_guess() {
-        use super::ShortFirst;
-        assert_eq!(ShortFirst::parse(None), ShortFirst { order: false, budget: false });
-        assert_eq!(ShortFirst::parse(Some("0")), ShortFirst { order: false, budget: false });
-        assert_eq!(ShortFirst::parse(Some("1")), ShortFirst { order: true, budget: true });
-        assert_eq!(ShortFirst::parse(Some("order")), ShortFirst { order: true, budget: false });
-        assert_eq!(ShortFirst::parse(Some("budget")), ShortFirst { order: false, budget: true });
-        // The half-arms exist because the two halves were measured to pull differently; a
-        // typo must not select one of them.
-        assert_eq!(ShortFirst::parse(Some("yes")), ShortFirst { order: false, budget: false });
-        assert_eq!(ShortFirst::parse(Some("ORDER")), ShortFirst { order: false, budget: false });
-        assert_eq!(ShortFirst::parse(Some("")), ShortFirst { order: false, budget: false });
-    }
-
     /// The short-first door's BUDGET half.
     ///
     /// RED ARM: every ON assertion is paired with the same call at `short_first = false`,
     /// which returns the 1024-token tick. A change that widened the budget unconditionally
-    /// would break the OFF assertions.
-    #[test]
-    fn short_first_gives_a_small_remainder_one_call_instead_of_many_ticks() {
-        // The measured shape: a 4,180-token prompt beside a long prime is NOT sole and NOT
-        // widened today, so it takes ceil(4180/1024) = 5 tick loops, each of which also runs
-        // a chunk of every other session.
-        assert_eq!(
-            interactive_prefill_budget(1024, false, false, true, 4180, false),
-            1024,
-            "OFF arm: a short prompt beside a long prime still takes the 1024 tick"
-        );
-        assert_eq!(
-            interactive_prefill_budget(1024, false, false, true, 4180, true),
-            4180,
-            "ON arm: the whole remainder in one call"
-        );
-
-        // The bar is SOLO_PREFILL_TICK_T, already the engine's own notion of a prompt small
-        // enough for one outer prime call. A long prime is above it and keeps round-robin
-        // chunking, so long primes cannot starve each other.
-        assert_eq!(
-            interactive_prefill_budget(1024, false, false, true, super::SOLO_PREFILL_TICK_T, true),
-            super::SOLO_PREFILL_TICK_T,
-            "exactly at the bar still takes one call"
-        );
-        assert_eq!(
-            interactive_prefill_budget(1024, false, false, true, super::SOLO_PREFILL_TICK_T + 1, true),
-            1024,
-            "above the bar keeps the round-robin tick, so long primes stay fair to each other"
-        );
-        assert_eq!(
-            interactive_prefill_budget(1024, false, false, true, 99_328, true),
-            1024,
-            "a 99k remainder is chunked in BOTH arms"
-        );
-
-        // An explicit MEMRA_PREFILL_TICK stays authoritative in both arms, as it already does
-        // for the solo widening.
-        assert_eq!(
-            interactive_prefill_budget(512, true, false, true, 4180, true),
-            512,
-            "an operator's explicit tick wins over the door"
-        );
-
-        // The door never SHRINKS a budget: the solo widening still applies when it is larger.
-        assert_eq!(
-            interactive_prefill_budget(1024, false, true, true, 20_000, true),
-            8192,
-            "a sole fresh long prime keeps its widened outer call"
-        );
-    }
-
     #[test]
     fn naked_solo_fresh_prefill_uses_one_bounded_outer_call() {
         assert_eq!(
-            interactive_prefill_budget(1024, false, true, true, 4107, false),
+            interactive_prefill_budget(1024, false, true, true, 4107),
             4107
         );
         assert_eq!(
-            interactive_prefill_budget(1024, false, true, true, 20_000, false),
+            interactive_prefill_budget(1024, false, true, true, 20_000),
             8192
         );
         // Do not strand a sub-PRIME_MIN_T tail on the tokenwise path.
         assert_eq!(
-            interactive_prefill_budget(1024, false, true, true, 8200, false),
+            interactive_prefill_budget(1024, false, true, true, 8200),
             8200
         );
     }
@@ -28713,8 +28490,7 @@ mod tests {
                 false,
                 true,
                 solo_widen_fresh(0, Some(0), None, Some(1440)),
-                1480,
-                false
+                1480
             ),
             1480
         );
@@ -28727,15 +28503,15 @@ mod tests {
         assert!(!solo_widen_fresh(0, Some(512), None, None));
         assert!(!solo_widen_fresh(0, None, None, None));
         assert_eq!(
-            interactive_prefill_budget(1024, true, true, true, 4107, false),
+            interactive_prefill_budget(1024, true, true, true, 4107),
             1024
         );
         assert_eq!(
-            interactive_prefill_budget(1024, false, false, true, 4107, false),
+            interactive_prefill_budget(1024, false, false, true, 4107),
             1024
         );
         assert_eq!(
-            interactive_prefill_budget(1024, false, true, false, 4107, false),
+            interactive_prefill_budget(1024, false, true, false, 4107),
             1024
         );
     }
