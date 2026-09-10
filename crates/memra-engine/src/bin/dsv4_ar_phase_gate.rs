@@ -387,6 +387,7 @@ fn main() {
         "MEMRA_DSV4_DENSE_FAST",
         "MEMRA_DSV4_NORM_FUSE",
         "MEMRA_DSV4_NORM_FUSE2",
+        "MEMRA_DSV4_NORM2_WIDE",
         "MEMRA_DSV4_DENSE_EXACT_TAIL",
         "MEMRA_DSV4_REPLAY_CADENCE",
     ] {
