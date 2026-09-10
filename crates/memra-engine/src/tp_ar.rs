@@ -845,12 +845,21 @@ mod ar_phase_record_tests {
         // A zero-cycle span cannot calibrate itself, so it reports nothing instead of a scale.
         assert_eq!(record(5, 5, 5, 5, 12_000).nanos_per_cycle(), None);
         assert_eq!(record(0, 20_000, 26_000, 30_000, 0).nanos_per_cycle(), None);
-        // Saturating differences mean a garbled record reads as zero, never as a huge phase.
+        // A tear that stays IN ORDER is the instrument's blind spot, and it is written down here
+        // rather than wished away: a lost `clk_started` collapses the wait phase into the reduce
+        // phase and the record still closes, because closure only knows about ordering and sums.
+        // Saturating differences keep it reading as zero rather than as a huge phase, and what
+        // actually backstops this case is the gate's coverage and per-site epoch checks plus the
+        // red arm, which fails if an injected delay does not land in the wait phase.
         let mut torn = record(0, 20_000, 26_000, 30_000, 12_000);
         torn.clk_started = 0;
         assert_eq!(torn.wait_cycles(), 0);
         assert_eq!(torn.reduce_cycles(), 26_000);
-        assert!(!torn.closes());
+        assert!(torn.closes());
+        // Out of order, it is caught: the same lost stamp below the entry stamp does not close.
+        let mut below_entry = record(10_000, 20_000, 26_000, 30_000, 12_000);
+        below_entry.clk_started = 0;
+        assert!(!below_entry.closes());
     }
 
     #[test]
