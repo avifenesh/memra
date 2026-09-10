@@ -2344,6 +2344,10 @@ impl Dsv4Gpu {
             gate_armed_gu_fuse: crate::dsv4_doors::matrix_splitk_door_armed()
                 || crate::moe_f16g_gu_fuse_on(),
             hc_geometry_24x16384: (2 + hc) * hc == 24 && hc * hidden == 16384,
+            // TP/EP cannot take a customer request: `prefill_with_cache_chunked`
+            // refuses a batched prime under this topology and the topology guard
+            // refuses MTP/DSpark state, independently (memra #457).
+            can_serve: !self.topology.is_tp_ep(),
         }
     }
 
