@@ -35,6 +35,7 @@
 
 use crate::worker::{EngineError, Event, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
+    DSV4_BATCH_WIDTH_MAX as DSV4_KERNEL_BATCH_WIDTH_MAX,
     DSV4_SERVING_BATCH_WIDTH_MAX as DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu,
     Dsv4HostDecodeState, Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row,
     dsv4_sample_row, resolve_vt,
@@ -176,7 +177,32 @@ impl Dsv4Model {
     }
 }
 
-fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, String> {
+/// Gate-only door, default OFF, decide-by 2026-09-24.
+///
+/// The served chunk width is capped at `DSV4_SERVING_BATCH_WIDTH_MAX` (64) while the kernel
+/// admits `DSV4_BATCH_WIDTH_MAX` (512) — two constants one line apart in `dsv4_gpu.rs`, with
+/// the serving one carrying no linked receipt. Prefill throughput is set by that width, and at
+/// this family's real traffic shape prefill is the overwhelming majority of a request's GPU
+/// seconds, so the ceiling is worth measuring rather than inheriting. `=1` raises the ceiling
+/// to the kernel's; anything else keeps 64. Nothing else changes: the launcher still chooses
+/// the chunk, and a width above the kernel's is still refused.
+///
+/// Rollback seam: unset the variable (or set it to `0`).
+fn serve_prefill_width_max(raw: Option<&str>) -> Result<usize, String> {
+    match raw.map(str::trim) {
+        None | Some("") | Some("0") => Ok(DSV4_BATCH_WIDTH_MAX),
+        Some("1") => Ok(DSV4_KERNEL_BATCH_WIDTH_MAX),
+        Some(other) => Err(format!(
+            "MEMRA_DSV4_SERVE_WIDE_PREFILL {other:?} unknown (unset | 0 | 1)"
+        )),
+    }
+}
+
+fn resolve_prefill_chunk(
+    raw: Option<&str>,
+    max_seq: usize,
+    width_max: usize,
+) -> Result<usize, String> {
     let chunk = match raw {
         None => 0,
         Some(raw) => raw.trim().parse::<usize>().map_err(|_| {
@@ -188,9 +214,9 @@ fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, Str
             "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds MEMRA_CTX {max_seq}"
         ));
     }
-    if chunk > DSV4_BATCH_WIDTH_MAX {
+    if chunk > width_max {
         return Err(format!(
-            "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds kernel width {DSV4_BATCH_WIDTH_MAX}"
+            "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds kernel width {width_max}"
         ));
     }
     Ok(chunk)
@@ -378,7 +404,10 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     )?;
     let host_cache_mb = host_cache_bytes / (1024 * 1024);
     let prefill_chunk_raw = configured_env_text("MEMRA_DSV4_PREFILL_CHUNK")?;
-    let prefill_chunk = resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq)?;
+    let wide_prefill_raw = configured_env_text("MEMRA_DSV4_SERVE_WIDE_PREFILL")?;
+    let prefill_width_max = serve_prefill_width_max(wide_prefill_raw.as_deref())?;
+    let prefill_chunk =
+        resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq, prefill_width_max)?;
     let c4_host_raw = configured_env_text("MEMRA_DSV4_C4_HOST_MB")?;
     let c4_host_bytes = resolve_c4_host_bytes(c4_host_raw.as_deref())?;
     if c4_host_bytes > 0 && prefill_chunk == 0 {
@@ -403,6 +432,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     eprintln!(
         "[dsv4-serve] {name}: loaded on devices {devices:?}, contract {variant:?}, \
          max_seq {max_seq}, drafter {}, parked-host-cache {}, chunked-prefill {}, \
+         prefill-width-ceiling {prefill_width_max}, \
          active-C4-host-budget {c4_host_bytes} bytes (0=OFF; separate from parked cache)",
         if spec {
             "RESIDENT (spec route armed)"
@@ -1343,17 +1373,49 @@ mod c4_host_budget_tests {
 
 #[cfg(test)]
 mod prefill_chunk_flag_tests {
-    use super::{resolve_prefill_chunk, use_chunked_prefill};
+    use super::{
+        DSV4_BATCH_WIDTH_MAX, DSV4_KERNEL_BATCH_WIDTH_MAX, resolve_prefill_chunk,
+        serve_prefill_width_max, use_chunked_prefill,
+    };
+
+    const SERVED: usize = DSV4_BATCH_WIDTH_MAX;
 
     #[test]
     fn default_is_off_and_values_are_strictly_bounded() {
-        assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(0));
-        assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576), Ok(0));
-        assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576), Ok(64));
-        assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
-        assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
-        assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
-        assert!(resolve_prefill_chunk(Some("65"), 1_048_576).is_err());
+        assert_eq!(resolve_prefill_chunk(None, 1_048_576, SERVED), Ok(0));
+        assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576, SERVED), Ok(0));
+        assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576, SERVED), Ok(64));
+        assert!(resolve_prefill_chunk(Some("-1"), 1_048_576, SERVED).is_err());
+        assert!(resolve_prefill_chunk(Some("banana"), 1_048_576, SERVED).is_err());
+        assert!(resolve_prefill_chunk(Some("65"), 64, SERVED).is_err());
+        assert!(resolve_prefill_chunk(Some("65"), 1_048_576, SERVED).is_err());
+    }
+
+    /// Both arms of the wide-prefill door, and the red arm that would catch it being
+    /// silently always-on: with the door OFF, 128 must still be refused.
+    #[test]
+    fn wide_prefill_door_has_two_arms() {
+        assert_eq!(serve_prefill_width_max(None), Ok(64));
+        assert_eq!(serve_prefill_width_max(Some("0")), Ok(64));
+        assert_eq!(serve_prefill_width_max(Some("")), Ok(64));
+        assert_eq!(serve_prefill_width_max(Some("1")), Ok(512));
+        assert!(serve_prefill_width_max(Some("yes")).is_err());
+        assert_eq!(DSV4_BATCH_WIDTH_MAX, 64);
+        assert_eq!(DSV4_KERNEL_BATCH_WIDTH_MAX, 512);
+
+        // door OFF: the served ceiling holds
+        let off = serve_prefill_width_max(None).unwrap();
+        assert!(resolve_prefill_chunk(Some("128"), 1_048_576, off).is_err());
+        assert!(resolve_prefill_chunk(Some("512"), 1_048_576, off).is_err());
+
+        // door ON: widths up to the kernel's are admitted, above it still refused
+        let on = serve_prefill_width_max(Some("1")).unwrap();
+        assert_eq!(resolve_prefill_chunk(Some("128"), 1_048_576, on), Ok(128));
+        assert_eq!(resolve_prefill_chunk(Some("512"), 1_048_576, on), Ok(512));
+        assert!(resolve_prefill_chunk(Some("513"), 1_048_576, on).is_err());
+
+        // MEMRA_CTX still bounds it in both arms
+        assert!(resolve_prefill_chunk(Some("512"), 256, on).is_err());
     }
 
     #[test]
