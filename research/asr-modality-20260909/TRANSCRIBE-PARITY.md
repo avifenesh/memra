@@ -187,32 +187,67 @@ as it measures precision. The direction of the conclusion does not change, becau
 text is inside the band either way, but the band is partly an artefact of the padding
 convention and should not be quoted as a pure precision figure.
 
-### 71-clip sweep, checkpoint at 17 clips
+### 71-clip sweep, stopped clean at 36 clips
+
+The sweep ran from 18:13:36Z on one niced process on the efficiency cores. The dead worker's
+22:30 UTC timer never fired, so the takeover worker killed the parent script at 23:08:51Z and
+let the in-flight `d1-013` finish its own clip boundary at 23:17:58Z (11 windows, banked).
+**36 of 71 clips, 259 of 364 windows.** The remaining 35 clips (`d1-014..016`,
+`whatsapp-022..053`) are resumable: the sweep skips clips that already have `windows.tsv`.
+Receipt `stage5-transcribe-parity.json`.
 
 | Count | Value |
 | --- | ---: |
-| Clips scored | 17 of 71 |
-| Windows | 125 of 364 |
-| Windows token-exact | **106 / 125** |
-| Clips text-exact vs CT2 | **15 / 17** |
-| Clips with an identical window program | 15 / 17 |
-| Engine detokenizer agrees with the checker | 17 / 17 |
-| `d1` WER vs CT2 | **0.0000 pt** (7 clips, 4083 words) |
-| `whatsapp` WER vs CT2 | **0.2089 pt** (10 clips, 2393 words) |
-| Divergence classes | boundary_cascade 4, fp16_tie 13, fp16_ulp 1, real 1 |
+| Clips scored | 36 of 71 |
+| Windows | 259 of 364 |
+| Windows token-exact | **213 / 259** |
+| Clips text-exact vs CT2 | **27 / 36** |
+| Clips with an identical window program | 31 / 36 |
+| Clips token-exact end to end | 12 / 36 |
+| Engine detokenizer agrees with the checker | **36 / 36** |
+| `d1` WER vs CT2 | **0.0739 pt** (14 clips, 8117 words; 3 sub, 3 del) |
+| `whatsapp` WER vs CT2 | **0.2237 pt** (22 clips, 5365 words; 10 sub, 1 del, 1 ins) |
+| Divergence classes | fp16_tie 29, boundary_cascade 13, fp16_ulp 2, real 2 |
 
-The `whatsapp` delta falls as the corpus grows: 0.5656 pt at 4 clips, 0.3390 at 7, 0.2089 at
-10. It is converging on the 0.2262 pt the native text sits from the FP32
-backend, which is what a handful of coin-flips diluted by more audio looks like. `d1` has not
-moved off 0.0000.
+**The stage gate is not met:** both domains sit above the 0.05 pt per-domain limit (`d1`
+0.0739, `whatsapp` 0.2237). Both sit inside the 0.21 to 0.34 pt band the oracle's own two
+backends disagree by on the eight clips where both exist: against the banked FP32 text the
+native run is 0.2114 pt on `d1` (exactly the CT2-vs-FP32 gap, so on `d1` the native text is
+identical to CT2's and no closer place exists) and 0.2262 pt on `whatsapp`. The `whatsapp`
+delta moved from 0.2089 at 10 clips to 0.2237 at 22: coin-flip noise around the FP32 offset,
+not a trend. A 0.05 pt limit is below the disagreement between the references on this corpus.
+
+### The second `real`, and it is not one either: d1-013 window 6
+
+The new `real` looked worse than whatsapp-003's: CT2 took Hebrew token 44644, the native
+decode took 51781, and CT2's recorded candidate margin is 0.671875, 43 fp16 steps wide. It is
+not a defect, and the reason is instructive: **the candidate margin is not the decision
+variable.** 51781 is a timestamp (28.34 s into the window), and at that step the deciding rule
+is the timestamp-forcing branch, `log_sum_exp(timestamps) > best_text`. That threshold sits
+inside one fp16 step:
+
+| Reading | best_text | timestamp LSE | mass - best | branch |
+| --- | ---: | ---: | ---: | --- |
+| Native F32 | 22.913361 (44644) | 22.922112 | **+0.008751** | timestamp |
+| Matched FP32 reference | 22.913357 (44644) | 22.922117 | **+0.008760** | timestamp |
+| CT2 fp16, post-suppression | 22.921875 (44644) | 22.921015 | **-0.000860** | text |
+
+The fp16 step at that magnitude is 0.015625; the whole spread between the two engines'
+decisions is 0.0096. The native decode took the FP32-correct branch. The matched FP32
+reference on the CT2 window agrees with the native encoder to 1.40e-06 mean / 0.0032 max,
+while CT2's fp16 encoder sits 1.39 max away, the same shape as the whatsapp-001 diagnosis.
+The window mel itself is byte-identical between the native regeneration and the oracle
+(1.1920929e-07 max), and a forced native decode on the oracle prefix takes 44644, proving the
+decoder math right and pinning the split on the threshold. Full receipt:
+`D1-013-W6-DIAGNOSIS.json`.
+
+So both `real` windows are now diagnosed, and across all 46 divergent windows **none is a
+native defect against a same-program reference**: every flip is CT2's fp16 resolving a
+threshold its own precision cannot express. The checker's docstring now carries this caveat.
 
 ### What would settle the rest
 
-Score the 71-clip sweep against CT2, the only reference it has, and read the result against the
-0.21 to 0.34 pt band the two backends differ by on the eight clips where both exist. A delta
-inside that band is not evidence of a defect; a delta outside it is.
-
-The cheaper and sharper instrument is the one this diagnosis used: recompute an FP32 reference
-on the CT2 window for any step that flips, with the checkpoint's own weights on this machine.
-One window took about two minutes and turned a suspected defect into a measured agreement to
-1.2e-06. Any future divergence in this lane gets that treatment before it gets a verdict.
+Run the remaining 35 clips and read the domain deltas against the same 0.21 to 0.34 pt band.
+The sharper instrument for any new flip stays the one this receipt used twice: recompute an
+FP32 reference on the CT2 window with the checkpoint's own weights, and compare the decision
+variable, not the candidate margin. Each window costs about two minutes.

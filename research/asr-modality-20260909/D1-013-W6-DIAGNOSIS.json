@@ -1,0 +1,59 @@
+{
+ "schema": "memra-whisper-divergence-diagnosis-v1",
+ "clip": "d1-013",
+ "window": 6,
+ "generated_step": 146,
+ "seek_frame": 16696,
+ "segment_frames": 3000,
+ "question": "The native decode took timestamp 51781 (28.34 s) where CT2 took the Hebrew token 44644, and the checker recorded a 0.671875 candidate margin, 43 fp16 steps wide. Is that a native defect?",
+ "answer": "No. The decision at that step is not the 44644-vs-51781 margin the checker measures; it is the policy threshold timestamp_mass > best_text. That threshold sits inside one fp16 step: the native F32 read is +0.008751, the matched FP32 reference +0.008760 (timestamp, the native branch), and CT2's own post-suppression row -0.000860 (text). The whole spread is 0.0096 against an fp16 step of 0.015625 at that magnitude. The native decode took the FP32-correct branch.",
+ "decision_variable": {
+  "rule": "log_sum_exp(timestamp logits) vs max(text logits); mass wins -> all text ids suppressed",
+  "native_f32": {
+   "best_text": "44644",
+   "best_text_logit": 22.913361,
+   "timestamp_lse": 22.922112,
+   "mass_minus_best": 22.92211151123047,
+   "branch": "timestamp"
+  },
+  "matched_fp32": {
+   "best_text_id": 44644,
+   "best_text_logit": 22.91335678100586,
+   "timestamp_lse": 22.922117148526493,
+   "mass_minus_best": 0.008760367520633139,
+   "prefers": "timestamp",
+   "logit_44644": 22.91335678100586,
+   "logit_51781": 22.245849609375
+  },
+  "ct2_fp16_post_suppression": {
+   "best_text_logit": 22.921875,
+   "timestamp_lse": 22.9210147857666,
+   "mass_minus_best": -0.0008602142333984375,
+   "branch": "text"
+  },
+  "fp16_step_at_magnitude": 0.015625,
+  "native_to_matched_fp32_gap": 22.913351143709836
+ },
+ "encoder_on_the_ct2_window": {
+  "matched_fp32_vs_native_max_abs": 0.003193378448486328,
+  "matched_fp32_vs_native_mean_abs": 1.3982237305754097e-06,
+  "matched_fp32_vs_ct2_max_abs": 1.3887112140655518,
+  "matched_fp32_vs_ct2_mean_abs": 0.001644846866838634,
+  "native_vs_ct2_max_abs": 1.3917222023010254,
+  "native_vs_ct2_mean_abs": 0.0016448735259473324
+ },
+ "candidates": {
+  "ct2_token": 44644,
+  "native_token": 51781,
+  "native_token_is_timestamp": true,
+  "native_token_seconds_in_window": 28.34,
+  "native_f32_logit_44644": 22.913361,
+  "native_f32_logit_51781": 22.245838
+ },
+ "provenance": {
+  "window_mel": "oracle window-006-mel.f32.bin, byte-compared to the regenerated native window at 1.1920929e-07 max",
+  "native_forced_decode": "whisper-stage decoder on prompt + oracle tokens[:146], step-148 logits; argmax verified against oracle steps 143-145",
+  "matched_fp32": "transformers 4.x FP32 CPU on the CT2 window mel and the same prefix",
+  "engine": "cpu reference, niced, efficiency cores"
+ }
+}

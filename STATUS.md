@@ -1,6 +1,7 @@
 # ASR lane status
 
-Updated 2026-09-09 (Whisper clip parity on the HF subset, whole RNNT streaming path, 71-clip sweep in flight).
+Updated 2026-09-10 (71-clip sweep stopped clean at 36 clips, both `real` divergences diagnosed
+as CT2 fp16 threshold effects, engine detokenizer agreement extended to 36/36).
 Worktree `~/projects/memra/wt-asr-modality`, branch `lane/asr-modality-20260909`.
 Draft PR https://github.com/avifenesh/memra/pull/416, issue #414 remains claimed.
 
@@ -37,48 +38,55 @@ and the predictor hypothesis carried across chunks.
 | RNNT session, d1-000 15.0 s | 189 chunk partials, final, transcript | 189 of 189 identical | exact |
 | RNNT session, 2 s of silence | 26 chunk partials, both empty | 26 of 26 identical | exact |
 
-Whisper text parity, 71-clip sweep checkpoint at 17 clips and 125 windows:
-**106/125 windows token-exact, 15/17 clips text-exact**, `d1` 0.0000 pt and
-`whatsapp` 0.2089 pt against CT2. The stage gate wanted every clip equal or under
-0.05 pt per domain, so it is **still not met on `whatsapp`**, but the delta is falling as the
-corpus grows (0.5656 at 4 clips, 0.3390 at 7, 0.2089 at 10) toward the 0.2262 pt the
-native text sits from the oracle's FP32 backend. The two oracle backends differ from each other
-by 0.2114 pt on `d1` and 0.3394 pt on `whatsapp`, so 0.05 pt is below the disagreement between
-the references. No divergence is a native defect. The classes are boundary_cascade 4,
-fp16_tie 13, fp16_ulp 1 and real 1; the single `real` is `whatsapp-003` window 4 step 86, two
-adjacent timestamps two fp16 steps apart with the clip's text unchanged, and the one that
-looked like a defect (`whatsapp-001` window 3) turned out to be a differently padded reference
-window. The engine's own
-detokenizer agrees with the checker's tokenizer on 17/17 clips. Full analysis:
-`research/asr-modality-20260909/TRANSCRIBE-PARITY.md` and `WHATSAPP-001-W3-DIAGNOSIS.json`.
+Whisper text parity, sweep stopped clean at 36 of 71 clips and 259 of 364 windows:
+**213/259 windows token-exact, 27/36 clips text-exact**, `d1` 0.0739 pt and
+`whatsapp` 0.2237 pt against CT2. The stage gate wanted every clip equal or under
+0.05 pt per domain, so it is **not met on either domain**; both deltas sit inside the 0.21 to
+0.34 pt band the oracle's own two backends disagree by (native vs the banked FP32 text: 0.2114
+pt on `d1`, exactly the CT2-vs-FP32 gap, and 0.2262 pt on `whatsapp`). No divergence is a
+native defect. The classes are fp16_tie 29, boundary_cascade 13, fp16_ulp 2 and real 2; both
+`real` windows are diagnosed. `whatsapp-003` window 4 step 86 is two adjacent timestamps two
+fp16 steps apart with the clip's text unchanged. `d1-013` window 6 step 146 looked worst (a
+0.671875 candidate margin, 43 fp16 steps) but the decision variable there is the
+timestamp-forcing threshold, which sits inside one fp16 step: native F32 +0.008751, matched
+FP32 +0.008760, CT2 fp16 -0.000860, against an fp16 step of 0.015625. The native branch is
+the FP32-correct one. The engine's own detokenizer agrees with the checker's tokenizer on
+36/36 clips. Full analysis: `research/asr-modality-20260909/TRANSCRIBE-PARITY.md`,
+`WHATSAPP-001-W3-DIAGNOSIS.json` and `D1-013-W6-DIAGNOSIS.json`.
 
 The speech matrix product is cache-blocked and optionally threaded; both are bit-identical by
 construction and re-proved on the real checkpoint. One encoder window fell 122.950 s to
 60.477 s single-threaded, and one clip end to end fell 117.2 s to 60.9 s at 16 threads.
 
-## In flight
+## Sweep stopped, resumable
 
-The 71-clip end-to-end sweep is running on the rig, one process, `nice -n 15`, pinned to the
-efficiency cores, ~82 s per window, 364 windows. It is ordered so the eight HF-oracle clips
-come first and then `d1` and `whatsapp` interleave, so both domains grow together and a stop
-at any point still has both. It is stopped at 22:30 UTC by an armed timer if it has not
-finished:
+The 71-clip sweep is stopped. The previous worker's session died at ~22:21 UTC 2026-09-09 with
+its 22:30 timer gone with it; the takeover killed the parent script at 23:08:51Z and let the
+in-flight `d1-013` bank itself at 23:17:58Z. 36 clips are done (`d1-000..013`,
+`whatsapp-000..021`); the remaining 35 are `d1-014..016` and `whatsapp-022..053`, about 4 h of
+wall at 16 threads. Sweep CPU: 1050.8 CPU-minutes over 36 clips (62230 s user + 820 s system),
+18:13:36Z start. Resume with the same invocation; finished clips are skipped by their
+`windows.tsv`:
 
 ```
 tools/whisper_transcribe_sweep.sh ~/hebrew-asr-data/oracle/whisper-large-v3-ivrit \
   ~/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9 \
-  "$PWD/.lane-asr-stage2/target/release/whisper-stage" "$PWD/.lane-asr-stage2/sweep" f32 CLIPS...
+  "$PWD/.lane-asr-stage2/sweep-binary/whisper-stage" "$PWD/.lane-asr-stage2/sweep" f32 \
+  $(cd ~/hebrew-asr-data/oracle/whisper-large-v3-ivrit/ct2 && ls -1d * | sed 's:/*$::')
 ```
 
-Clip order puts the eight HF-oracle clips first. Each clip banks its own directory and the
-sweep skips clips that already have `windows.tsv`, so an interrupt resumes. Do not rebuild the
-release binary while it runs: the script invokes the binary per clip and a rebuild would put
-two binaries behind one receipt. The banked copy is `.lane-asr-stage2/sweep-binary/`,
-sha256 `baf38cb6ada267058cb1f8b776ab72303c4fb0c284417ecbfa3d6e25a7eb590c`.
-
-Score it when it finishes:
+The banked binary is `.lane-asr-stage2/sweep-binary/whisper-stage`,
+sha256 `baf38cb6ada267058cb1f8b776ab72303c4fb0c284417ecbfa3d6e25a7eb590c`, and
+`.lane-asr-stage2/target/release/whisper-stage` hashes the same, so one binary stands behind
+all 36 banked clips. After any resume, extend the engine-text pass to the new clips and
+re-score:
 
 ```
+for d in .lane-asr-stage2/sweep/*-*; do
+  [ -f "$d/windows.tsv" ] && [ ! -f "$d/transcript.txt" ] &&
+    .lane-asr-stage3/target/release/speech-text \
+      ~/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9 "$d"
+done
 ~/hebrew-asr-data/venv-nemo/bin/python tools/check_whisper_transcribe.py \
   --oracle ~/hebrew-asr-data/oracle/whisper-large-v3-ivrit \
   --native .lane-asr-stage2/sweep \
@@ -87,19 +95,24 @@ Score it when it finishes:
   --receipt research/asr-modality-20260909/stage5-transcribe-parity.json
 ```
 
-The checker scores only clips that have finished, so it is safe to run mid-sweep.
+The checker scores only clips that have finished and exits nonzero while the gate is unmet;
+the receipt is still written.
 
 ## Next executable stage
 
-1. Finish or stop the sweep at 22:30 UTC, bank `stage5-transcribe-parity.json`, and read the
+1. Resume the sweep for the remaining 35 clips (about 4 h wall), re-score, and read the
    per-domain delta against the 0.21 to 0.34 pt band the two oracle backends differ by. Any
-   window that flips gets a matched-program FP32 reference before it gets a verdict: the banked
-   `hf-fp32` windows pad in waveform space and the CT2 program zero-fills in feature space, so
-   on any padded window the two references are not the same program.
-3. Native detokenizer and tokenizer binding, for both paths. Until then `NativeReference`
-   cannot be claimed: every text number depends on offline tooling.
-4. RNNT beyond one clip and one arm: more audio, the `[56,3]`/`[56,6]`/`[56,13]` arms if they
-   are ever wanted, session revision semantics, cancellation and reset.
+   window that flips gets a matched-program FP32 reference before it gets a verdict, comparing
+   the decision variable (see `D1-013-W6-DIAGNOSIS.json`): the banked `hf-fp32` windows pad in
+   waveform space and the CT2 program zero-fills in feature space, so on any padded window the
+   two references are not the same program.
+2. Tokenizer encoding and vocabulary binding in the engine for the Whisper path (the detokenizer
+   exists and agrees 36/36; `Tokenizer::from_hf_dir` still refuses this checkpoint's
+   pre-tokenizer, and no BPE encode is ported).
+3. Speech plans in the reference executor and the `model inspect` CLI; the pack is not in the
+   text `PACKS` registry.
+4. RNNT beyond three clips and one arm: a real corpus, the `[56,3]`/`[56,6]`/`[56,13]` arms if
+   they are ever wanted, session revision semantics, cancellation and reset.
 
 The measured ladder, including everything `NativeReference` and `NativeQualified` still need,
 is the "Measured status ladder" section of `ASR-MODALITY-PLAN.md`.

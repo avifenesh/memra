@@ -18,8 +18,14 @@ native decode took. Both are conditioned on the identical prefix, so the gap is 
 gap of zero is a tie the oracle's fp16 logits cannot break; a gap at or under one fp16 step at
 that magnitude is the smallest difference its precision can express at all.
 
-Detokenization uses the checkpoint's tokenizer through transformers. A native detokenizer is
-not built yet, so text numbers here are gated on offline tooling and say so in the receipt.
+Detokenization for scoring uses the checkpoint's tokenizer through transformers. The engine
+has its own detokenizer since stage 10; where a clip dir carries `transcript.txt` from it,
+the receipt reports agreement with this scorer clip by clip.
+
+The recorded margin is the candidate-vs-candidate gap CT2's own row carries. It is not always
+the decision variable: at a step where the timestamp-forcing branch fires, the decision is
+log_sum_exp(timestamps) vs best text, which can sit inside one fp16 step while the candidates
+sit 43 steps apart (d1-013 window 6; see D1-013-W6-DIAGNOSIS.json).
 """
 import argparse, hashlib, json, os, re, string
 from pathlib import Path
@@ -306,7 +312,7 @@ def main():
         "scope": "native log-mel, window program, encoder, cached decoder and beam-1 policy "
         "against the pinned CT2 rental oracle on real recorded Hebrew audio. CPU reference "
         "only: no GPU execution, no serving endpoint, no timestamp-alignment gate, and "
-        "detokenization is offline tooling because a native detokenizer is not built yet.",
+        "scoring canonizes with the checkpoint tokenizer through transformers; the engine's own detokenizer is compared clip by clip where its transcript.txt is present.",
     }
     args.receipt.write_text(json.dumps(receipt, indent=2) + "\n")
     print(
