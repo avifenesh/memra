@@ -602,6 +602,12 @@ fn scored_row(
     arm.rows += 1;
 }
 fn main() {
+    // The AR phase instrument is gate-only and this is not its gate, so the door is
+    // pinned off here: an exported instrument must never ride along with this arm. Process
+    // startup, before any model or worker thread exists.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
+    }
     let args: Vec<_> = std::env::args().collect();
     assert!(
         args.len() == 4
