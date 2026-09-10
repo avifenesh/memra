@@ -813,6 +813,38 @@ unsafe extern "C" {
         out_scale: f32,
         rp: i32,
     ) -> i32;
+    /// Run the CALIBRATED NVFP4 prefill GEMM (qwen35-prefill-nvfp4-a4-v1): FP4 activations with
+    /// dynamic per-16 UE4M3 block scales around a per-linear CALIBRATED global multiplier
+    /// (`input_scale` = amax/(6*448) fitted offline), against the same untouched NVFP4 weight
+    /// bytes. This is the W4A4 tile the uncalibrated arm was refused on (relative L2 ~0.086,
+    /// research/qwen-prefill-fp4-gemm-20260909); the global scale is what makes the activation
+    /// range representable. Reserved for PREFILL: decode and speculative verify never call it.
+    /// `rp` selects the weight layout exactly as in memra_mmq_nvfp4_w4a8.
+    /// Returns 0, 2902 (bad shape/scale), 2901 (unbuilt) or (1000 + cudaError).
+    pub fn memra_mmq_nvfp4_calibrated_prefill(
+        w_nvfp4_blocks: *const core::ffi::c_void,
+        act_f32: *const f32,
+        y: *mut f32,
+        in_f: i32,
+        out_f: i32,
+        n_tokens: i32,
+        act_scratch: *mut core::ffi::c_void,
+        stream: *mut core::ffi::c_void,
+        weight_scale: f32,
+        input_scale: f32,
+        rp: i32,
+        clip_stats: *mut core::ffi::c_void,
+    ) -> i32;
+    /// Accumulate |x| statistics into one program slot's counter block. Gate-harness only.
+    pub fn memra_a4_stats_accumulate(
+        x: *const f32,
+        n: i64,
+        slot: *mut core::ffi::c_void,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
+    /// Bytes the calibrated prefill quantizer writes for (in_f, rows). NOT interchangeable with
+    /// `memra_mmq_nvfp4_w4a8_act_bytes`: a different block layout over a row count padded to 128.
+    pub fn memra_mmq_nvfp4_calibrated_prefill_act_bytes(in_f: i32, rows: i32) -> usize;
     /// Bytes for the block_e4m3_mmq activation scratch (footprint-identical to block_q8_1_mmq).
     pub fn memra_mmq_nvfp4_f8f4_act_bytes(in_f: i32, n_tokens: i32) -> usize;
     /// R-B W4A8-FP8 MMQ prefill GEMM (research/prefill-mxf8f6f4-design.md): NVFP4 per-16 scales
@@ -2195,6 +2227,141 @@ impl Engine {
         Ok(y)
     }
 
+    /// CALIBRATED A4 PREFILL GEMM. Only reachable through `matmul_prefill`, and only for a weight
+    /// the artifact stamped with a calibrated multiplier, so decode and speculative verify cannot
+    /// land here at any row count. Scratch is the W4A8 footprint (the quantizer writes the same
+    /// block_fp4_mmq slab plus one f32 per padded row).
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn qmatvec_mmq_nvfp4_calibrated_prefill(
+        &self,
+        bytes: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        weight_scale: f32,
+        input_scale: f32,
+        slot: u32,
+        rp: bool,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        // The kernel refuses these itself (rc 2902); refusing here keeps the caller's fallback
+        // decision in Rust instead of turning a shape mismatch into a launch error.
+        if !in_f.is_multiple_of(512) || !input_scale.is_finite() || input_scale <= 0.0 {
+            return Err(format!(
+                "calibrated A4 prefill needs in_f % 512 == 0 and a finite positive scale, got in_f={in_f} scale={input_scale}"
+            )
+            .into());
+        }
+        // The CALIBRATED footprint, not the W4A8 one: this quantizer writes a different block
+        // layout over GGML_PAD(m, 128) rows. Sizing it with the W4A8 helper wrote megabytes past
+        // the end of the allocation on every short prefill.
+        let act_bytes =
+            unsafe { memra_mmq_nvfp4_calibrated_prefill_act_bytes(in_f as i32, m as i32) };
+        if act_bytes == 0 {
+            return Err(format!(
+                "calibrated A4 prefill: no activation scratch size for in_f={in_f} m={m} \
+                 (the kernel is not built into this binary)"
+            )
+            .into());
+        }
+        let mut scratch = self.alloc_uninit::<u8>(act_bytes)?;
+        self.qmatvec_mmq_nvfp4_calibrated_prefill_into(
+            bytes,
+            x,
+            m,
+            in_f,
+            out_f,
+            weight_scale,
+            input_scale,
+            slot,
+            rp,
+            &mut scratch,
+        )
+    }
+
+    /// `qmatvec_mmq_nvfp4_calibrated_prefill` with a CALLER-OWNED scratch, so a gate can poison
+    /// the bytes past the declared footprint and prove the quantizer stayed inside it.
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn qmatvec_mmq_nvfp4_calibrated_prefill_into(
+        &self,
+        bytes: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        m: usize,
+        in_f: usize,
+        out_f: usize,
+        weight_scale: f32,
+        input_scale: f32,
+        slot: u32,
+        rp: bool,
+        scratch: &mut CudaSlice<u8>,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let mut y = self.alloc_uninit::<f32>(m * out_f)?;
+        {
+            let stream = self.gpu.stream();
+            // DIAGNOSTIC ONLY: null while serving, so the quantizer's counter branch is never
+            // taken. A diagnostic run points this at this projection's counters.
+            let stats = self.a4_clip_stats.lock().unwrap();
+            let stats_ptr = match stats.as_ref() {
+                Some(buffer) => {
+                    let (base, _gc) = buffer.device_ptr(&stream);
+                    (base as usize + (slot as usize) * A4_CLIP_STRIDE * std::mem::size_of::<u64>())
+                        as *mut core::ffi::c_void
+                }
+                None => std::ptr::null_mut(),
+            };
+            let (w_p, _gw) = bytes.device_ptr(&stream);
+            let (x_p, _gx) = x.device_ptr(&stream);
+            let (y_p, _gy) = y.device_ptr_mut(&stream);
+            let (s_p, _gs) = scratch.device_ptr_mut(&stream);
+            let rc = unsafe {
+                memra_mmq_nvfp4_calibrated_prefill(
+                    w_p as *const core::ffi::c_void,
+                    x_p as *const f32,
+                    y_p as *mut f32,
+                    in_f as i32,
+                    out_f as i32,
+                    m as i32,
+                    s_p as *mut core::ffi::c_void,
+                    stream.cu_stream() as *mut core::ffi::c_void,
+                    weight_scale,
+                    input_scale,
+                    rp as i32,
+                    stats_ptr,
+                )
+            };
+            if rc != 0 {
+                return Err(format!("memra_mmq_nvfp4_calibrated_prefill rc={rc}").into());
+            }
+        }
+        // Gate-harness capture: the first launch per armed slot at or above the row threshold.
+        {
+            let mut guard = A4_CAPTURE.lock().unwrap();
+            if let Some(state) = guard.as_mut()
+                && state.slots.contains(&slot)
+                && m >= state.min_rows
+                && !state.taken.iter().any(|c| c.slot == slot)
+            {
+                state.taken.push(A4Capture {
+                    slot,
+                    m,
+                    in_f,
+                    out_f,
+                    weight_scale,
+                    input_scale,
+                    rp,
+                    x: self.dtoh(x)?,
+                    scratch: self.dtoh_u8(scratch)?,
+                    y: self.dtoh(&y)?,
+                });
+            }
+        }
+        A4_PREFILL_LAUNCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Some(counter) = A4_PREFILL_SLOTS.get(slot as usize) {
+            counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        Ok(y)
+    }
+
     /// PER-BLOCK FP8 MMQ prefill GEMM (cu/mmq_fp8_blk.cu). `w_e4m3` is the raw checkpoint e4m3
     /// plane [out_f x in_f] and `blk_scales` the device f32 grid [ceil(out_f/128) x
     /// ceil(in_f/128)] — no re-quantization of either.
@@ -3028,4 +3195,118 @@ impl Engine {
         }
         Ok(w_f16)
     }
+}
+
+use memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
+
+/// Count of calibrated-A4 GEMM launches, for the dispatch-completeness gate.
+///
+/// Hand-threading the prefill phase through the prime paths fails SAFE (a missed call site runs
+/// the old W4A8 program) but it fails SILENTLY: the artifact would declare a 400-linear activation
+/// program while the engine executed it on fewer. This counter is what makes that loud -- a prime
+/// over the covered layers must issue exactly the stamped-projection count, and the red arm is
+/// reverting any one call site and watching the number drop.
+pub static A4_PREFILL_LAUNCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Read the calibrated-A4 launch counter.
+pub fn a4_prefill_launches() -> u64 {
+    A4_PREFILL_LAUNCHES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Reset the calibrated-A4 launch counter and return its previous value.
+pub fn a4_prefill_launches_reset() -> u64 {
+    A4_PREFILL_LAUNCHES.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// One captured A4 GEMM: the REAL activations, the quantizer's emitted scratch and the kernel's
+/// output, taken from a live prime. The arithmetic oracle cannot use synthetic inputs -- the whole
+/// question is whether the kernel implements the intended program on the activations this model
+/// actually produces.
+pub struct A4Capture {
+    pub slot: u32,
+    pub m: usize,
+    pub in_f: usize,
+    pub out_f: usize,
+    pub weight_scale: f32,
+    pub input_scale: f32,
+    pub rp: bool,
+    pub x: Vec<f32>,
+    pub scratch: Vec<u8>,
+    pub y: Vec<f32>,
+}
+
+#[derive(Default)]
+pub struct A4CaptureState {
+    pub slots: Vec<u32>,
+    pub min_rows: usize,
+    pub taken: Vec<A4Capture>,
+}
+
+static A4_CAPTURE: std::sync::Mutex<Option<A4CaptureState>> = std::sync::Mutex::new(None);
+
+/// Arm the capture for these program slots. Gate-harness only; nothing arms it while serving.
+pub fn a4_capture_arm(slots: Vec<u32>, min_rows: usize) {
+    *A4_CAPTURE.lock().unwrap() = Some(A4CaptureState {
+        slots,
+        min_rows,
+        taken: Vec::new(),
+    });
+}
+
+/// Disarm and return whatever the prime captured.
+pub fn a4_capture_take() -> Vec<A4Capture> {
+    A4_CAPTURE
+        .lock()
+        .unwrap()
+        .take()
+        .map(|s| s.taken)
+        .unwrap_or_default()
+}
+
+/// u64 counters per program slot in the clipping-diagnostic buffer: 0 values seen, 1 values at
+/// the E2M1 +/-6 grid end, 2 values above 6*448*global, 3 blocks whose raw UE4M3 scale saturated
+/// at 448, 4 blocks seen. 5..8 are padding so one slot's counters do not share a cache line with
+/// the next slot's under the atomics.
+pub const A4_CLIP_STRIDE: usize = 8;
+
+/// u64 slots per projection in the RECALIBRATION buffer: [0] values seen, [1] amax bits,
+/// [2] exact zeros, [8+b] a 64-bin log2 histogram of |x| with bin b covering
+/// [2^(b-40), 2^(b-39)). Wide enough to read a percentile or search an MSE-optimal clip.
+pub const A4_STATS_STRIDE: usize = 72;
+
+static A4_STATS: std::sync::Mutex<Option<CudaSlice<u64>>> = std::sync::Mutex::new(None);
+
+/// True when a recalibration pass is collecting operand statistics. While armed, `matmul_prefill`
+/// accumulates the operand and then takes the ORDINARY W4A8 path, so the statistics describe the
+/// activations the SERVED arithmetic produces rather than A4-perturbed ones.
+pub fn a4_stats_armed() -> bool {
+    A4_STATS.lock().unwrap().is_some()
+}
+
+/// The recalibration buffer, for the Engine methods that arm and drain it.
+pub fn a4_stats_buffer() -> &'static std::sync::Mutex<Option<CudaSlice<u64>>> {
+    &A4_STATS
+}
+
+/// PER-PROJECTION launch counts, indexed by the weight's slot in the activation program.
+///
+/// The aggregate above can only say a count is wrong. This says WHICH projection is missing,
+/// which is the only form of the answer that leads to the unconverted call site.
+pub static A4_PREFILL_SLOTS: [std::sync::atomic::AtomicU64; PROGRAM_SLOTS] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; PROGRAM_SLOTS];
+
+/// Read every slot counter without zeroing, for a per-call delta.
+pub fn a4_prefill_slots_snapshot() -> Vec<u64> {
+    A4_PREFILL_SLOTS
+        .iter()
+        .map(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+        .collect()
+}
+
+/// Snapshot every slot counter and zero them.
+pub fn a4_prefill_slots_reset() -> Vec<u64> {
+    A4_PREFILL_SLOTS
+        .iter()
+        .map(|c| c.swap(0, std::sync::atomic::Ordering::Relaxed))
+        .collect()
 }

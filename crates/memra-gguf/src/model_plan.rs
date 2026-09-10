@@ -14,6 +14,10 @@ pub struct ModelPlan {
     /// Speech semantics. Text layers are empty for speech-only plans; execution may be unsupported.
     pub speech: Option<WhisperPlan>,
     pub arch: Arch,
+    /// Carried on the plan so a receipt names WHICH calibration is loaded: its Debug renders the
+    /// program name, the scale count and a digest over the 400 (name, bits) pairs. There is no
+    /// separate plan identity hash in this engine, so do not claim one.
+    pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
     pub hidden_size: u32,
     pub vocab_size: u32,
     pub context_length: u32,
@@ -978,6 +982,7 @@ impl ModelPlan {
         Ok(Self {
             speech: None,
             arch: cfg.arch.clone(),
+            prefill_activation: cfg.prefill_activation.clone(),
             hidden_size: cfg.n_embd,
             vocab_size: cfg.n_vocab,
             context_length: cfg.context_length,

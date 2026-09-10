@@ -1887,6 +1887,13 @@ pub struct Engine {
     /// MEMRA_MOE_CACHE. `Mutex` makes it multi-agent safe (§E.2); the lock covers only lookup/admit/
     /// memcpy-issue (µs), NOT the GEMM, so streams still overlap. `None` => cache disabled.
     moe_cache: Mutex<Option<crate::moe_cache::MoeSlotCache>>,
+    /// CALIBRATED-A4 CLIPPING DIAGNOSTIC (research/qwen-fp4-activation-mint-20260909). `None`
+    /// while serving, so the quantizer takes a null pointer and does no atomics. When a
+    /// diagnostic run enables it, this is a device buffer of 4 u64 per program slot
+    /// (values, fp4-max hits, global clips, block-scale clips) that the quantizer accumulates
+    /// into. The offline BF16 calibration reported these same three rates against BF16
+    /// activations; this is their twin measured on the artifact the engine actually executes.
+    a4_clip_stats: Mutex<Option<CudaSlice<u64>>>,
     /// MEMRA_STEP_TP_W8, hybrid half: q8_0 mirrors of bf16 GEMV weights that do NOT live in a
     /// TP resident bank (the LM head, the shared expert, the dense-FFN layers), keyed by the
     /// bf16 slab's device pointer and built on first decode use. The mirror is 1.0625 B/w
@@ -3845,6 +3852,7 @@ impl Engine {
             router,
             sample,
             moe_cache: Mutex::new(None),
+            a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
             moe_cache_layout: Mutex::new(None),
@@ -16468,6 +16476,7 @@ impl Engine {
             blk: None,
             rp4: None,
             f16: None,
+            a4: None,
         }))
     }
 
@@ -17726,6 +17735,184 @@ impl Engine {
     }
 
     /// Unified weight-tensor matmul: dispatches quant tensors to qmatvec (weights packed) and
+    /// PREFILL-PHASE matmul. Identical to `matmul` for every weight EXCEPT one the artifact
+    /// stamped with a calibrated activation multiplier (`Quant.a4`), which takes the calibrated
+    /// NVFP4 A4 tile instead of W4A8.
+    ///
+    /// The phase is the CALL SITE, deliberately not a row count: prefill tails and restored
+    /// suffixes of one row still belong to the prefill program, and a 1..8-row speculative verify
+    /// does not. Decode and verify call `matmul`, which never reads `a4`, so the precision islands
+    /// (narrow alpha/beta, MTP, Q5_K head, drafter) and both non-prefill phases keep W4A8 by
+    /// construction rather than by a guard someone can forget.
+    ///
+    /// A stamped weight whose shape the kernel refuses is an artifact/plan disagreement, so it
+    /// fails closed here instead of silently serving a second numerical program.
+    pub fn matmul_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if let GpuTensor::Quant {
+            bytes,
+            qtype,
+            scale,
+            rp,
+            a4: Some(stamp),
+            ..
+        } = w
+            && *qtype == QT_NVFP4
+        {
+            if !self.a4_stats_observe(stamp.slot, x, m * w.in_features())? {
+                return self.matmul(w, x, m);
+            }
+            return self.qmatvec_mmq_nvfp4_calibrated_prefill(
+                bytes,
+                x,
+                m,
+                w.in_features(),
+                w.out_features(),
+                *scale,
+                stamp.multiplier,
+                stamp.slot,
+                *rp,
+            );
+        }
+        self.matmul(w, x, m)
+    }
+
+    /// Arm the calibrated-A4 clipping diagnostic: allocate and zero one counter block per program
+    /// slot. Every A4 GEMM issued afterwards accumulates into its own slot.
+    ///
+    /// This is the ARTIFACT twin of the offline BF16 calibration diagnostic. The offline run
+    /// measured clipping on BF16 activations and its receipt says so
+    /// (`native_mint_diagnostic_required`); this measures the same three definitions on the
+    /// activations the engine actually quantizes, for the artifact it actually executes.
+    pub fn a4_clip_stats_enable(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let slots = memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
+        let zeros = vec![0u64; slots * crate::mmq_ffi::A4_CLIP_STRIDE];
+        let mut buffer = self.alloc_uninit::<u64>(zeros.len())?;
+        self.htod_u64_into(&zeros, &mut buffer)?;
+        *self.a4_clip_stats.lock().unwrap() = Some(buffer);
+        Ok(())
+    }
+
+    /// Read the diagnostic counters back and disarm. `None` when it was never armed.
+    pub fn a4_clip_stats_take(&self) -> Result<Option<Vec<u64>>, Box<dyn std::error::Error>> {
+        let taken = self.a4_clip_stats.lock().unwrap().take();
+        match taken {
+            Some(buffer) => Ok(Some(self.dtoh_u64(&buffer)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Arm the recalibration statistics buffer: one counter block per program slot.
+    pub fn a4_stats_enable(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let slots = memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
+        let zeros = vec![0u64; slots * crate::mmq_ffi::A4_STATS_STRIDE];
+        let mut buffer = self.alloc_uninit::<u64>(zeros.len())?;
+        self.htod_u64_into(&zeros, &mut buffer)?;
+        *crate::mmq_ffi::a4_stats_buffer().lock().unwrap() = Some(buffer);
+        Ok(())
+    }
+
+    /// Read the recalibration statistics back and disarm.
+    pub fn a4_stats_take(&self) -> Result<Option<Vec<u64>>, Box<dyn std::error::Error>> {
+        let taken = crate::mmq_ffi::a4_stats_buffer().lock().unwrap().take();
+        match taken {
+            Some(buffer) => Ok(Some(self.dtoh_u64(&buffer)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Accumulate one projection's operand into its slot, then report whether the caller should
+    /// still take the A4 path. While a recalibration pass is armed the answer is NO: the point is
+    /// to measure the operand the SERVED arithmetic produces.
+    fn a4_stats_observe(
+        &self,
+        slot: u32,
+        x: &CudaSlice<f32>,
+        n: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let guard = crate::mmq_ffi::a4_stats_buffer().lock().unwrap();
+        let Some(buffer) = guard.as_ref() else {
+            return Ok(true);
+        };
+        let stream = self.gpu.stream();
+        let (base, _g) = buffer.device_ptr(&stream);
+        let (x_p, _gx) = x.device_ptr(&stream);
+        let slot_ptr = (base as usize
+            + (slot as usize) * crate::mmq_ffi::A4_STATS_STRIDE * std::mem::size_of::<u64>())
+            as *mut core::ffi::c_void;
+        let rc = unsafe {
+            crate::mmq_ffi::memra_a4_stats_accumulate(
+                x_p as *const f32,
+                n as i64,
+                slot_ptr,
+                stream.cu_stream() as *mut core::ffi::c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("memra_a4_stats_accumulate rc={rc}").into());
+        }
+        Ok(false)
+    }
+
+    /// True when the artifact stamped this weight with a calibrated prefill activation scale.
+    pub fn a4_stamped(w: &crate::model::GpuTensor) -> bool {
+        matches!(w, crate::model::GpuTensor::Quant { a4: Some(_), .. })
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre`. A stamped weight refuses the f16 mirror: that mirror is
+    /// a different numerical program from the one its global activation scale was fitted against,
+    /// and taking it would silently run two arithmetics for one declared program. Every unstamped
+    /// weight behaves exactly as before.
+    ///
+    /// This exists as a named helper because the guard was spelled inline, three different ways,
+    /// at the first three call sites that needed it -- and the sites that needed it and did not
+    /// have it are precisely the ones the dispatch gate caught.
+    pub fn try_f16_gemm_pre_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(None);
+        }
+        self.try_f16_gemm_pre(w, xh, m)
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre_into`; same refusal as `try_f16_gemm_pre_prefill`.
+    pub fn try_f16_gemm_pre_into_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+        dst: &mut CudaSlice<f32>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(false);
+        }
+        self.try_f16_gemm_pre_into(w, xh, m, dst)
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre_into_off`; same refusal as `try_f16_gemm_pre_prefill`.
+    pub fn try_f16_gemm_pre_into_off_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+        dst: &mut CudaSlice<f32>,
+        off: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(false);
+        }
+        self.try_f16_gemm_pre_into_off(w, xh, m, dst, off)
+    }
+
     /// float tensors to cuBLASLt. y[m,out] = x[m,in] @ W[out,in]^T.
     pub fn matmul(
         &self,
@@ -21758,6 +21945,7 @@ impl Engine {
             fp8: None,
             blk: None,
             f16: None,
+            a4: None,
             rp4: None,
         };
         // Recursion terminates: `tmp` is QT_Q8_0 with `blk: None`, so it cannot re-enter this arm.
@@ -23930,6 +24118,56 @@ impl Engine {
     /// whole group instead of once per GEMM (the standalone converts were ~250 launches/prime
     /// of small-kernel gap fuel — nsys 2026-07-26). Any member without a mirror (or with a
     /// different in_f) falls back to its own `matmul` — behavior unchanged.
+    /// PREFILL-PHASE group that also owns the f16-mirror choice. Prefer this at prime call sites
+    /// that would otherwise pick between `matmul_group_xh` and `matmul_group` themselves: a
+    /// stamped weight must not silently take the f16 mirror, which is a different numerical
+    /// program from the one its global scale was calibrated against.
+    pub fn matmul_group_prefill_xh(
+        &self,
+        ws: &[&crate::model::GpuTensor],
+        x: &CudaSlice<f32>,
+        xh: Option<&CudaSlice<u8>>,
+        m: usize,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if ws
+            .iter()
+            .any(|w| matches!(w, GpuTensor::Quant { a4: Some(_), .. }))
+        {
+            return self.matmul_group_prefill(ws, x, m);
+        }
+        match xh {
+            Some(xh) => self.matmul_group_xh(ws, x, xh, m),
+            None => self.matmul_group(ws, x, m),
+        }
+    }
+
+    /// PREFILL-PHASE `matmul_group`. A weight the artifact stamped with a calibrated activation
+    /// multiplier takes the A4 tile; every other weight in the group falls through to the ordinary
+    /// group walk, so a mixed group (stamped gate/up beside an unstamped projection) is fine.
+    ///
+    /// The f16 mirror fast path is deliberately NOT consulted for a stamped weight: that mirror is
+    /// a different numerical program, and the calibrated scale was fitted against this one.
+    pub fn matmul_group_prefill(
+        &self,
+        ws: &[&crate::model::GpuTensor],
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if !ws
+            .iter()
+            .any(|w| matches!(w, GpuTensor::Quant { a4: Some(_), .. }))
+        {
+            return self.matmul_group(ws, x, m);
+        }
+        let mut out = Vec::with_capacity(ws.len());
+        for w in ws {
+            out.push(self.matmul_prefill(w, x, m)?);
+        }
+        Ok(out)
+    }
+
     pub fn matmul_group(
         &self,
         ws: &[&crate::model::GpuTensor],

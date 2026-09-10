@@ -1174,6 +1174,7 @@ mod tests {
     fn plan(residuals: [ResidualTopology; 2]) -> ModelPlan {
         ModelPlan {
             speech: None,
+            prefill_activation: None,
             arch: memra_gguf::config::Arch::Glm5Next,
             hidden_size: 8,
             vocab_size: 16,

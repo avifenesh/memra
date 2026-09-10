@@ -134,6 +134,9 @@ impl WhisperPlan {
 
     pub fn into_model_plan(self) -> ModelPlan {
         ModelPlan {
+            // Whisper has no calibrated prefill activation program and will not get one from
+            // this path; the field exists for the qwen35 A4 pack.
+            prefill_activation: None,
             arch: crate::config::Arch::Other("whisper".into()),
             hidden_size: self.hidden_size,
             vocab_size: self.vocab_size,

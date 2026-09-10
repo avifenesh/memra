@@ -38,6 +38,7 @@ fn q8_tensor(e: &Engine, w: &[f32], in_f: usize, out_f: usize) -> GpuTensor {
         rp4: None,
         blk: None,
         f16: None,
+        a4: None,
     }
 }
 

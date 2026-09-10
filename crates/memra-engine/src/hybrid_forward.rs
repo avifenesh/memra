@@ -2089,9 +2089,17 @@ impl HybridModel {
         z: &CudaSlice<f32>,
         t: usize,
         il: usize,
+        prefill: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let n_ff = ffn_gate.out_features();
-        let mut g2 = e.matmul_group(&[ffn_gate, ffn_up], z, t)?;
+        // Phase, not row count: a one-row prefill tail is still prefill, and the calibrated
+        // scales were fitted against this program. Decode/verify pass prefill=false and get the
+        // untouched W4A8 walk.
+        let mut g2 = if prefill {
+            e.matmul_group_prefill(&[ffn_gate, ffn_up], z, t)?
+        } else {
+            e.matmul_group(&[ffn_gate, ffn_up], z, t)?
+        };
         let up = g2.pop().unwrap();
         let gate = g2.pop().unwrap();
         let mut act = e.uninit(t * n_ff)?;
@@ -2107,7 +2115,12 @@ impl HybridModel {
             t * n_ff,
         )?;
         let __pqs = e.pre_quant_scaled(&act, ffn_down_pqs, ffn_down.in_features(), t)?;
-        e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), t)
+        let down_in = __pqs.as_ref().unwrap_or(&act);
+        if prefill {
+            e.matmul_prefill(ffn_down, down_in, t)
+        } else {
+            e.matmul(ffn_down, down_in, t)
+        }
     }
 
     /// The FFN branch of one hc site, from an already-normed `[t, hidden]` input.
@@ -2145,6 +2158,7 @@ impl HybridModel {
                 z,
                 t,
                 il,
+                prefill,
             ),
             crate::hybrid::Ffn::Moe(m) => {
                 if prefill {
@@ -3512,6 +3526,9 @@ impl HybridModel {
                         &ws_peer.z,
                         1,
                         il,
+                        // Mirrors the root's own `hyper_ffn_branch(.., false, ..)` above: this
+                        // symmetric TP walk is the t=1 decode step, not prefill.
+                        false,
                     )?,
                     None => {
                         let hop = rt.hop(e);
@@ -5241,7 +5258,7 @@ impl HybridModel {
                     // scale when the artifact was calibrated; None leaves the buffer untouched.
                     let __pqs =
                         e.pre_quant_scaled(&act, ffn_down_pqs.as_ref(), ffn_down.in_features(), t)?;
-                    e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), t)?
+                    e.matmul_prefill(ffn_down, __pqs.as_ref().unwrap_or(&act), t)?
                 }
                 crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il_prefill(e, m, &z, t, il as u16)?,
             };
@@ -5511,11 +5528,85 @@ impl HybridModel {
         // session per call, so under the wave shape that produced memra#50 this alone already
         // beats between sessions.
         let events_before = crate::progress::events();
+        let a4_before = self.a4_prime_receipt_begin();
         let out = self.prime_cache_overlaid_inner(e, tokens, cache, queued_after, overlay);
         if out.is_ok() && crate::progress::events() == events_before {
             crate::progress::note_prime_rows(tokens.len());
         }
+        self.a4_prime_receipt_end(
+            "prime",
+            tokens.len(),
+            a4_before,
+            out.as_ref().ok().map(|o| &o.0),
+        );
         out
+    }
+
+    /// Snapshot the calibrated-A4 slot counters if this model declares the activation program.
+    ///
+    /// A cold prime and a restored SUFFIX prime are two different walks of the trunk, and the
+    /// question that matters for the restore fence is whether they run the same 400 projections
+    /// through the same arithmetic. Without a per-prime receipt the only evidence is the answer
+    /// text, which cannot say WHICH walk differed.
+    fn a4_prime_receipt_begin(&self) -> Option<Vec<u64>> {
+        Some(crate::mmq_ffi::a4_prefill_slots_snapshot())
+    }
+
+    fn a4_prime_receipt_end(
+        &self,
+        kind: &str,
+        rows: usize,
+        before: Option<Vec<u64>>,
+        logits: Option<&Vec<f32>>,
+    ) {
+        let Some(before) = before else { return };
+        let after = crate::mmq_ffi::a4_prefill_slots_snapshot();
+        let ran = before
+            .iter()
+            .zip(after.iter())
+            .filter(|(b, a)| *a > *b)
+            .count();
+        let launches: u64 = before
+            .iter()
+            .zip(after.iter())
+            .map(|(b, a)| a.saturating_sub(*b))
+            .sum();
+        // The prime's OUTPUT row, not just its dispatch. A cold prime and a restored prime that
+        // land on the same prompt must produce the same last-position logits; if they do, any
+        // later divergence was born in decode, and if they do not, the restored state is the
+        // thing that differs. The top-2 margin says how near a tie the first sampled token was,
+        // which is what decides whether a tiny state difference can flip a token at all.
+        let row = logits.map(|l| {
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for v in l.iter() {
+                for b in v.to_bits().to_le_bytes() {
+                    hash ^= u64::from(b);
+                    hash = hash.wrapping_mul(0x100_0000_01b3);
+                }
+            }
+            let mut best = (0usize, f32::NEG_INFINITY);
+            let mut second = f32::NEG_INFINITY;
+            for (i, v) in l.iter().enumerate() {
+                if *v > best.1 {
+                    second = best.1;
+                    best = (i, *v);
+                } else if *v > second {
+                    second = *v;
+                }
+            }
+            format!(
+                " logits_sha={hash:016x} top1={} margin={:.6e}",
+                best.0,
+                best.1 - second
+            )
+        });
+        // The row receipt is emitted for EVERY model, not only calibrated ones. Without the
+        // served artifact's own rows there is no control: "the restored prime row differs" is
+        // only a finding about A4 if the artifact without A4 keeps its rows identical.
+        eprintln!(
+            "[prime-row] kind={kind} rows={rows} a4_launches={launches} a4_projections={ran}{}",
+            row.unwrap_or_default()
+        );
     }
 
     #[allow(clippy::type_complexity)] // allow: mirrors `prime_cache_overlaid`'s signature
@@ -6811,10 +6902,8 @@ impl HybridModel {
                 // slab (no copies) -> S-mid segment [add + post-norm] as one graph launch.
                 let (pre, pre16, w_out) = match &layer.mixer {
                     Mixer::Full(fa) => {
-                        let g3 = match hx16 {
-                            Some(xh) => e.matmul_group_xh(&[&fa.wq, &fa.wk, &fa.wv], h, xh, t)?,
-                            None => e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?,
-                        };
+                        let g3 =
+                            e.matmul_group_prefill_xh(&[&fa.wq, &fa.wk, &fa.wv], h, hx16, t)?;
                         let (pre, pre16) =
                             self.full_attn_prime_core_inner(e, fa, g3, pos_d, t, cache, il)?;
                         (pre, pre16, &fa.wo)
@@ -6825,10 +6914,7 @@ impl HybridModel {
                     }
                     Mixer::Linear(la) => {
                         let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-                        let g4 = match hx16 {
-                            Some(xh) => e.matmul_group_xh(&ws, h, xh, t)?,
-                            None => e.matmul_group(&ws, h, t)?,
-                        };
+                        let g4 = e.matmul_group_prefill_xh(&ws, h, hx16, t)?;
                         let (pre, pre16) =
                             self.linear_attn_prime_core_pad_inner(e, la, g4, t, cache, il, None)?;
                         (pre, pre16, &la.ssm_out)
@@ -6841,8 +6927,8 @@ impl HybridModel {
                         Some(x) => x,
                         None => e.f16_act(&pre, t * pre_n)?,
                     };
-                    if !e.try_f16_gemm_pre_into(w_out, &xh_pre, t, mslab)? {
-                        let y = e.matmul(w_out, &pre, t)?;
+                    if !e.try_f16_gemm_pre_into_prefill(w_out, &xh_pre, t, mslab)? {
+                        let y = e.matmul_prefill(w_out, &pre, t)?;
                         e.copy_into(mslab, 0, &y, t * n_embd)?;
                     }
                     if sm[il].is_none() {
@@ -6916,14 +7002,11 @@ impl HybridModel {
                     // the allocating group + copy when a mirror is missing.
                     let mut into_ok = false;
                     if let Some(xh) = zx16 {
-                        into_ok = e.try_f16_gemm_pre_into(ffn_gate, xh, t, sl_gate)?
-                            && e.try_f16_gemm_pre_into(ffn_up, xh, t, sl_up)?;
+                        into_ok = e.try_f16_gemm_pre_into_prefill(ffn_gate, xh, t, sl_gate)?
+                            && e.try_f16_gemm_pre_into_prefill(ffn_up, xh, t, sl_up)?;
                     }
                     if !into_ok {
-                        let mut g2 = match zx16 {
-                            Some(xh) => e.matmul_group_xh(&[ffn_gate, ffn_up], z, xh, t)?,
-                            None => e.matmul_group(&[ffn_gate, ffn_up], z, t)?,
-                        };
+                        let mut g2 = e.matmul_group_prefill_xh(&[ffn_gate, ffn_up], z, zx16, t)?;
                         let up_y = g2.pop().unwrap();
                         let gate_y = g2.pop().unwrap();
                         e.copy_into(sl_gate, 0, &gate_y, t * n_ff)?;
@@ -6970,10 +7053,10 @@ impl HybridModel {
                         Some(x) => x,
                         None => e.f16_act(act, t * n_ff)?,
                     };
-                    if !e.try_f16_gemm_pre_into(ffn_down, &xh_act, t, sl_fo)? {
+                    if !e.try_f16_gemm_pre_into_prefill(ffn_down, &xh_act, t, sl_fo)? {
                         // `act` already carries the AWQ scale (applied above), so both the f16
                         // GEMM and this fallback see the same, scaled input.
-                        let y = e.matmul(ffn_down, &*act, t)?;
+                        let y = e.matmul_prefill(ffn_down, &*act, t)?;
                         e.copy_into(sl_fo, 0, &y, t * n_embd)?;
                     }
                 }
@@ -7411,10 +7494,7 @@ impl HybridModel {
                 Mixer::Kda(_) => crate::hybrid::kda_path_unimplemented("captured prime chunk"),
                 Mixer::Linear(la) => {
                     let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-                    let g4 = match hx16.as_ref() {
-                        Some(xh) => e.matmul_group_xh(&ws, &h, xh, t)?,
-                        None => e.matmul_group(&ws, &h, t)?,
-                    };
+                    let g4 = e.matmul_group_prefill_xh(&ws, &h, hx16.as_ref(), t)?;
                     self.linear_attn_prime_core_pad(e, la, g4, t, cache, il, Some(len_d))?
                 }
             };
@@ -7453,8 +7533,10 @@ impl HybridModel {
                 } => {
                     let n_ff = ffn_gate.out_features();
                     let mut g2 = match &zx16 {
-                        Some(xh) => e.matmul_group_xh(&[ffn_gate, ffn_up], &z, xh, t)?,
-                        None => e.matmul_group(&[ffn_gate, ffn_up], &z, t)?,
+                        Some(xh) => {
+                            e.matmul_group_prefill_xh(&[ffn_gate, ffn_up], &z, Some(xh), t)?
+                        }
+                        None => e.matmul_group_prefill(&[ffn_gate, ffn_up], &z, t)?,
                     };
                     let up = g2.pop().unwrap();
                     let gate = g2.pop().unwrap();
@@ -8046,10 +8128,17 @@ impl HybridModel {
         // covered, while the fast batched arm was not. Same rule as the other entry: if
         // nothing below stamped, the call's own completion is the honest progress point.
         let events_before = crate::progress::events();
+        let a4_before = self.a4_prime_receipt_begin();
         let out = self.prime_cache_batch_inner(e, prompts, caches);
         if out.is_ok() && crate::progress::events() == events_before {
             crate::progress::note_prime_rows(prompts.iter().map(|p| p.len()).sum());
         }
+        self.a4_prime_receipt_end(
+            "prime-batch",
+            prompts.iter().map(|p| p.len()).sum(),
+            a4_before,
+            None,
+        );
         out
     }
 
@@ -8209,7 +8298,12 @@ impl HybridModel {
             let mut mixed = e.uninit(total * n_embd)?;
             match &layer.mixer {
                 Mixer::Full(fa) => {
-                    let g3 = e.matmul_group_xh(&[&fa.wq, &fa.wk, &fa.wv], &h, &hx16, total)?;
+                    let g3 = e.matmul_group_prefill_xh(
+                        &[&fa.wq, &fa.wk, &fa.wv],
+                        &h,
+                        Some(&hx16),
+                        total,
+                    )?;
                     // task #18 (attn side): the WHOLE attn core is varlen for fresh gated
                     // batches — split/QK-norm/RoPE/append (attn_pre_vl8, view inputs: the
                     // q/k/v split copies vanish) + ONE varlen FA. Per-block math identical
@@ -8405,7 +8499,7 @@ impl HybridModel {
                             )?;
                             let mut done = false;
                             if let Some(xh) = &ag16 {
-                                done = e.try_f16_gemm_pre_into_off(
+                                done = e.try_f16_gemm_pre_into_off_prefill(
                                     &fa.wo,
                                     xh,
                                     ts[s],
@@ -8422,7 +8516,11 @@ impl HybridModel {
                                         fa.wo.in_features(),
                                         ts[s],
                                     )?;
-                                    e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), ts[s])
+                                    e.matmul_prefill(
+                                        &fa.wo,
+                                        __wpqs.as_ref().unwrap_or(&attn_g),
+                                        ts[s],
+                                    )
                                 }?;
                                 e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
                             }
@@ -8442,7 +8540,7 @@ impl HybridModel {
                             )?;
                             let mut done = false;
                             if let Some(xh) = &ag16 {
-                                done = e.try_f16_gemm_pre_into_off(
+                                done = e.try_f16_gemm_pre_into_off_prefill(
                                     &fa.wo,
                                     xh,
                                     ts[s],
@@ -8459,7 +8557,11 @@ impl HybridModel {
                                         fa.wo.in_features(),
                                         ts[s],
                                     )?;
-                                    e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), ts[s])
+                                    e.matmul_prefill(
+                                        &fa.wo,
+                                        __wpqs.as_ref().unwrap_or(&attn_g),
+                                        ts[s],
+                                    )
                                 }?;
                                 e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
                             }
@@ -8474,14 +8576,14 @@ impl HybridModel {
                     // itself is BATCHED — per-seq prep/K1-K3, then ONE varlen K4 + ONE
                     // varlen K5 launch for all sequences.
                     let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-                    let g4 = e.matmul_group_xh(&ws, &h, &hx16, total)?;
+                    let g4 = e.matmul_group_prefill_xh(&ws, &h, Some(&hx16), total)?;
                     let outs =
                         self.linear_attn_prime_core_batch(e, la, &g4, &offs, &ts, caches, il)?;
                     for (s, (gn, gn16)) in outs.into_iter().enumerate() {
                         let (o, t) = (offs[s], ts[s]);
                         let mut done = false;
                         if let Some(xh) = &gn16 {
-                            done = e.try_f16_gemm_pre_into_off(
+                            done = e.try_f16_gemm_pre_into_off_prefill(
                                 &la.ssm_out,
                                 xh,
                                 t,
@@ -8490,7 +8592,7 @@ impl HybridModel {
                             )?;
                         }
                         if !done {
-                            let m = e.matmul(&la.ssm_out, &gn, t)?;
+                            let m = e.matmul_prefill(&la.ssm_out, &gn, t)?;
                             e.copy_into(&mut mixed, o * n_embd, &m, t * n_embd)?;
                         }
                     }
@@ -8518,7 +8620,8 @@ impl HybridModel {
                     ffn_down_pqs,
                 } => {
                     let n_ff = ffn_gate.out_features();
-                    let mut g2 = e.matmul_group_xh(&[ffn_gate, ffn_up], &z, &zx16, total)?;
+                    let mut g2 =
+                        e.matmul_group_prefill_xh(&[ffn_gate, ffn_up], &z, Some(&zx16), total)?;
                     let up = g2.pop().unwrap();
                     let gate = g2.pop().unwrap();
                     let mut act = e.uninit(total * n_ff)?;
@@ -8533,7 +8636,7 @@ impl HybridModel {
                         // already converted, so a per-input-channel scale cannot be applied
                         // there. A calibrated artifact takes the f32 arm below, which scales.
                         match if ffn_down_pqs.is_none() {
-                            e.try_f16_gemm_pre(ffn_down, &a16, total)?
+                            e.try_f16_gemm_pre_prefill(ffn_down, &a16, total)?
                         } else {
                             None
                         } {
@@ -8545,7 +8648,7 @@ impl HybridModel {
                                     ffn_down.in_features(),
                                     total,
                                 )?;
-                                e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), total)?
+                                e.matmul_prefill(ffn_down, __pqs.as_ref().unwrap_or(&act), total)?
                             }
                         }
                     } else {
@@ -8568,7 +8671,7 @@ impl HybridModel {
                             ffn_down.in_features(),
                             total,
                         )?;
-                        e.matmul(ffn_down, __pqs.as_ref().unwrap_or(&act), total)?
+                        e.matmul_prefill(ffn_down, __pqs.as_ref().unwrap_or(&act), total)?
                     }
                 }
                 crate::hybrid::Ffn::Moe(m) => {
@@ -8673,10 +8776,7 @@ impl HybridModel {
         // the cross-request batch driver can run it at m = sum_T over concatenated tokens;
         // this single-seq path composes proj+core identically (byte-for-byte the old body).
         // task #14: `hx` = the norm-fused fp16 twin of `h` (skips the convert launch).
-        let g3 = match hx {
-            Some(xh) => e.matmul_group_xh(&[&fa.wq, &fa.wk, &fa.wv], h, xh, t)?,
-            None => e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?,
-        };
+        let g3 = e.matmul_group_prefill_xh(&[&fa.wq, &fa.wk, &fa.wv], h, hx, t)?;
         self.full_attn_prime_core(e, fa, g3, pos_d, t, cache, il)
     }
 
@@ -8699,14 +8799,14 @@ impl HybridModel {
         // scale was never applied to; an artifact carrying one takes the general path.
         if let Some(xh) = &ag16
             && fa.wo_pqs.is_none()
-            && let Some(y) = e.try_f16_gemm_pre(&fa.wo, xh, t)?
+            && let Some(y) = e.try_f16_gemm_pre_prefill(&fa.wo, xh, t)?
         {
             return Ok(y);
         }
         {
             // AWQ (memra#253): o_proj carries its own per-input-channel scale.
             let __wpqs = e.pre_quant_scaled(&attn_g, fa.wo_pqs.as_ref(), fa.wo.in_features(), t)?;
-            e.matmul(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), t)
+            e.matmul_prefill(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), t)
         }
     }
 
@@ -9006,10 +9106,7 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         // PROJ/CORE SPLIT (task #13): see full_attn_prime — same hoist for the GDN 4-tuple.
         let ws = [&la.wqkv, &la.wqkv_gate, &la.ssm_beta, &la.ssm_alpha];
-        let g4 = match hx {
-            Some(xh) => e.matmul_group_xh(&ws, h, xh, t)?,
-            None => e.matmul_group(&ws, h, t)?,
-        };
+        let g4 = e.matmul_group_prefill_xh(&ws, h, hx, t)?;
         self.linear_attn_prime_core(e, la, g4, t, cache, il)
     }
 
@@ -9495,11 +9592,11 @@ impl HybridModel {
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let (gn, gn16) = self.linear_attn_prime_core_pad_inner(e, la, g4, t, cache, il, pad_len)?;
         if let Some(xh) = &gn16
-            && let Some(y) = e.try_f16_gemm_pre(&la.ssm_out, xh, t)?
+            && let Some(y) = e.try_f16_gemm_pre_prefill(&la.ssm_out, xh, t)?
         {
             return Ok(y);
         }
-        e.matmul(&la.ssm_out, &gn, t)
+        e.matmul_prefill(&la.ssm_out, &gn, t)
     }
 
     /// Full-attention mixer with QK-norm, partial RoPE, sigmoid output gate (qwen35 :257-336).

@@ -816,11 +816,19 @@ fn shard_cols(
             rp4,
             blk,
             f16,
+            a4,
             #[cfg(memra_cutlass)]
                 cutlass: _,
         } => {
             if *rp || fp8.is_some() || rp4.is_some() || blk.is_some() || f16.is_some() {
                 return Err("glm5-tp shard cols: a mirror layout is unwired for K slices".into());
+            }
+            if a4.is_some() {
+                return Err(
+                    "glm5-tp shard cols: a calibrated prefill activation scale is unwired \
+                            for K slices — sharding the weight does not shard its global scale"
+                        .into(),
+                );
             }
             if ne.len() != 2 {
                 return Err("glm5-tp shard cols: quantized K slices are 2D-only".into());
@@ -861,6 +869,7 @@ fn shard_cols(
                 rp4: None,
                 blk: None,
                 f16: None,
+                a4: None,
                 #[cfg(memra_cutlass)]
                 cutlass: None,
             })
@@ -917,6 +926,7 @@ fn shard_rows(
             rp4,
             blk,
             f16,
+            a4,
             #[cfg(memra_cutlass)]
             cutlass,
         } => {
@@ -933,6 +943,13 @@ fn shard_rows(
                     "glm5-tp shard: a decode/prefill mirror (fp8/rp4/blk/f16) is present on a \
                      TP-armed tensor — mirrors are unwired for shards in v1; disable the \
                      mirror door for this load"
+                        .into(),
+                );
+            }
+            if a4.is_some() {
+                return Err(
+                    "glm5-tp shard: a calibrated prefill activation scale is unwired for \
+                            shards — sharding the weight does not shard its global scale"
                         .into(),
                 );
             }
@@ -963,6 +980,7 @@ fn shard_rows(
                 rp4: None,
                 blk: None,
                 f16: None,
+                a4: None,
                 #[cfg(memra_cutlass)]
                 cutlass: None,
             })

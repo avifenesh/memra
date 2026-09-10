@@ -397,6 +397,7 @@ impl GemmaDraft {
                             blk: None,
                             rp4: None,
                             f16: None,
+                            a4: None,
                         },
                         Some(d2t),
                         trim_adapt,
