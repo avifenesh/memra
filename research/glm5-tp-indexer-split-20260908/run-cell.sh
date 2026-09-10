@@ -49,8 +49,18 @@ set -e
 if [[ $rc == 0 ]]; then
   grep -F '[glm5-tp-sym-graph] engaged:' "$out/run.log" >/dev/null || rc=91
   if grep -E 'capture refused|capture-error|CUDA_ERROR|^Error:' "$out/run.log" >/dev/null; then rc=92; fi
-  if [[ $split == 1 && $class == lane ]]; then
-    grep -E 'indexer=pool-split .*t=1 ' "$out/run.log" >/dev/null || rc=93
+  # The engagement predicate must match what the door actually prints. This door is PRIME-ONLY
+  # (docs/FLAGS.md: decode ignores it and decode split dispatch was deleted) and its one
+  # announcement is a once-per-process latch reading `t=<chunk> ... phase=prime`. The old
+  # predicate grepped for `t=1 `, a decode shape this door can never emit, so every split=1 lane
+  # row failed rc=93 while engaging correctly. Both halves are checked: ON must announce, and
+  # OFF must NOT (the red half, without which the ON check proves only that grep works).
+  if [[ $class == lane ]]; then
+    if [[ $split == 1 ]]; then
+      grep -E 'indexer=pool-split .*phase=prime' "$out/run.log" >/dev/null || rc=93
+    else
+      grep -F '[glm5-tp-indexer-split]' "$out/run.log" >/dev/null && rc=95
+    fi
   fi
   if [[ $check == 1 ]]; then
     grep -F 'CHECK: merged idx plane byte-identical' "$out/run.log" >/dev/null || rc=94
