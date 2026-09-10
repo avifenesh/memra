@@ -171,7 +171,7 @@ arm has not fired yet are marked, and they are not counted as protection.
 | **G4 decoder / head / greedy** | stage runner; session replay | 12 decoder steps argmax; RNNT 9/9 tokens, 26/26 chunk partials | Yes. 46 divergent windows in the 36-clip sweep, each traced to a cause, 31 of them measured CT2 fp16 precision effects |
 | **G5 tokenizer** | plan compile; generation-config cross-check | Checkpoint generation config, added tokens, suppression list | Partly. Detokenize agrees with the scorer's tokenizer 36/36. **Encode direction is missing, so this gate is currently half-vacuous and is named as such** |
 | **G6 checkpoint parity** | full clip sweep vs pinned oracle | 71 clips, two domains, per-domain WER delta bound 0.05 pt | **Yes, RED today.** 0.0739 `d1` and 0.2237 `whatsapp` against the 0.05 pt limit on the 36-clip partial sweep |
-| **G7 serve parity** | post-deploy probe against the served binary | The exact default decode shape, submitted with no decoding parameters | **Not built.** Blocked on an owner record: the deterministic beam-1/greedy contract this lane uses is a measurement instrument, and which decode default a served ASR endpoint carries is a product decision, not an engine one |
+| **G7 serve decode contract** | registry half: the acceptance gate a candidate passes before it gets traffic, on any entry declaring `task = "transcription"`. Live half: post-deploy probe against the served binary | Both registry shapes we would serve (streaming RNNT, batch Whisper), every shipped registry snapshot, and the pinned RNNT beam decoder itself. Live half: the exact default decode shape, submitted with no decoding parameters, twice | **Registry half: yes, and its red arms are the configs a person actually writes**: an entry that declares nothing (and so inherits faster-whisper's `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` ladder), a text model's vendor-sampling stanza copied across, and beam on a streaming partial path. **Live half: NOT ARMED**, because there is no audio endpoint to probe (§1); it reports `not-armed` and is not counted as protection until step 3. See §5.1 |
 | **G8 streams@SLO battery** | serving battery on a lane-owned box | Readiness, model id, streaming partial/final/revision shape, concurrency ladder c1 → c4 → c16 → c64, admission limit, cancel, reconnect, flush, rollback | **Yes, and it is the best red arm we own.** One A100 holding a resident RNNT student plus a resident large-v3 **shed 54 of 71 streams on incoming-queue overflow at c4** while c1 ran fine. The battery must reproduce that shape and the fix must turn it green |
 | **G9 non-vacuity** | every numeric gate | n/a | Each numeric gate carries a first-divergence log and refuses an empty input set; a sweep that scores zero clips is a failure, not a pass |
 
@@ -183,6 +183,70 @@ Two rules that bind all of them:
 - **Admission must shed with a typed error, not drop.** The c4 collapse was a bounded-queue
   overflow that lost streams. A capacity limit that is reached is a product behaviour; a
   capacity limit that silently eats streams is a defect.
+
+### 5.1 G7, the served decode contract
+
+G7 was recorded NOT BUILT above because a decode default is a product decision. It has
+been made and recorded; the decision and its evidence are private, the contract it puts on
+this engine is not.
+
+**What G7 asserts.** A served ASR endpoint decodes **deterministically, by written
+contract**, in a way that matches the decode its WER was measured on, and it **says which
+decode that is** rather than being silent about it.
+
+That is not a departure from the serving discipline the text models are held to. The rule
+there is *serve the vendor recommendation and verify the shape a client actually sends*;
+the reason it reads as "serve sampled" is that for text generation the vendor
+recommendation happens to be sampled. For speech it happens to be deterministic, in every
+family in §2:
+
+- `openai/whisper` v20250625: `DecodingOptions.temperature: float = 0.0`. Called as a
+  library it is greedy (`beam_size: Optional[int] = None`); the CLI ships
+  `--beam_size` default `5`. Both deterministic.
+- `faster-whisper` 1.2.1 / CTranslate2 4.8.2: `beam_size: int = 5` at temperature 0, and
+  `temperature > 0` is a **different code path** (`sampling_topk: 0`,
+  `sampling_temperature: t`), so temperature 0 means no sampling arguments exist at all.
+- NeMo: `RNNTDecodingConfig.strategy: str = "greedy_batch"`, and
+  `nemotron-3.5-asr-streaming-0.6b`'s own `model_config.yaml` ships
+  `decoding.strategy: greedy_batch`. The only `temperature` in the RNNT decode surface is
+  `softmax_temperature`, which sharpens beam scoring; it draws no sample.
+
+**The temperature-fallback ladder is quality-failure recovery, not a decode default.** Its
+first rung is always 0.0, and a hotter rung is reached only when the previous one failed a
+quality test (`compression_ratio > 2.4`, `avg_logprob < -1.0`); a high no-speech
+probability *cancels* fallback rather than triggering it. An endpoint may serve the ladder,
+but only declared exactly, and only if the response reports the temperature it used.
+
+**Beam is not free for a streaming partial path, and it fails two different ways.** On
+`nemo_toolkit 3.1.0+ea1ebf55b` (`rnnt_beam_decoding.py` sha256
+`6e5a8b190b338717865db2f23d87e28ba5be9a0b1f1559dab1f9c885b4c27e53`), `tsd` (L744), `alsd`
+(L907), `maes` (L1139) and the batched beam wrapper (L1704) each raise
+`NotImplementedError` on a partial hypothesis, and `nsc` is not wired. But
+`default_beam_search` (L591) **accepts** partials and collapses the beam to do it: L624-628
+rebuild `kept_hyps` as a one-element list seeded from `partial_hypotheses.y_sequence[-1]`
+and `dec_state`, score reset to `0.0`, no alternative carried. Served width across a chunk
+boundary is 1 whatever `beam_size` says, so the offline beam WER does not transfer. A
+bring-up that knows only the first failure and reaches for `default` finds that it runs.
+
+**The contract on this engine.** A speech model's registry entry must declare, explicitly:
+whether the decode is deterministic; the strategy by name, with a beam width if it is a
+beam family; the fallback ladder exactly, or `[]` to disable it, with its trigger
+thresholds if non-empty; and whether the entry serves streaming partials. No stochastic
+sampling key may resolve into a transcription request. Silence is a violation, not a
+default. And a transcription response must report the temperature that produced it:
+without that field the contract cannot be checked from the outside at all, which is the
+same reason HTTP 200 is not a receipt for the text models.
+
+**Where the gate lives.** The rule set and the red/green suite are in the private
+repository, wired into the acceptance gate that a candidate passes before it gets traffic
+and into hosted CI. The engine's obligations are the two above: carry the registry keys
+through to the resolved decode, and report the temperature actually used per segment.
+
+**Where G7 does not protect yet.** Everything about the live half (two identical
+no-parameter transcriptions of one clip must return byte-identical text) is written and
+fixture-tested and **cannot fire**, because §1's audio endpoint does not exist. It reports
+`not-armed` rather than passing, and it is not counted as protection until step 3 lands the
+endpoint. Same treatment as G5's missing encode direction, for the same reason.
 
 ---
 
