@@ -180,12 +180,14 @@ impl Dsv4Model {
 /// Gate-only door, default OFF, decide-by 2026-09-24.
 ///
 /// The served chunk width is capped at `DSV4_SERVING_BATCH_WIDTH_MAX` (64) while the kernel
-/// admits `DSV4_BATCH_WIDTH_MAX` (512) — two constants one line apart in `dsv4_gpu.rs`, with
-/// the serving one carrying no linked receipt. Prefill throughput is set by that width, and at
-/// this family's real traffic shape prefill is the overwhelming majority of a request's GPU
-/// seconds, so the ceiling is worth measuring rather than inheriting. `=1` raises the ceiling
-/// to the kernel's; anything else keeps 64. Nothing else changes: the launcher still chooses
-/// the chunk, and a width above the kernel's is still refused.
+/// admits `DSV4_BATCH_WIDTH_MAX` (512); both entered together in `8a52da7c7` (#318), with 512
+/// qualified for the bring-up surface and serving left at 64. `docs/FLAGS.md` says what
+/// qualified 64: widths 1..32 use register-specialized exact twins and 33..64 tile those same
+/// exact row kernels by eight. Above 64 the exactness evidence is `dsv4_wide_prefill_gate`,
+/// which checks widths 32/128/512 byte-equal over logits, every live cache class, DSpark rings
+/// and sampled speculative output, in both grouped arms — engine evidence, not serving
+/// evidence. `=1` raises the ceiling to the kernel's; anything else keeps 64. Nothing else
+/// changes: the launcher still chooses the chunk, and a width above the kernel's is refused.
 ///
 /// Rollback seam: unset the variable (or set it to `0`).
 fn serve_prefill_width_max(raw: Option<&str>) -> Result<usize, String> {
