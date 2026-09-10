@@ -212,9 +212,38 @@ fn removed_bank_v2_doors_refusal(
 /// and per-visit SIZE, and it only does anything where that granularity already exists. On
 /// qwen the tick-level chunking is already there, which is exactly why prime yield had
 /// nothing left to give. They compose; neither replaces the other.
-fn prefill_short_first_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("MEMRA_PREFILL_SHORT_FIRST").as_deref() == Ok("1"))
+///
+/// THE TWO HALVES ARE SEPARATELY SELECTABLE, and that is not decoration: measured on a
+/// 5090 the two halves do NOT pull the same way, so a single on/off flag would have shipped
+/// or killed them together on a number that belongs to only one of them. `1` is the shipped
+/// shape (whichever halves the receipts qualify); `order` and `budget` select one half each
+/// and exist so a cell can attribute a result to the half that caused it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ShortFirst {
+    /// Visit pending prefills by ascending remaining prompt instead of admission index.
+    pub order: bool,
+    /// Let a remainder at or under `SOLO_PREFILL_TICK_T` take one call instead of many ticks.
+    pub budget: bool,
+}
+
+impl ShortFirst {
+    pub fn parse(raw: Option<&str>) -> Self {
+        match raw {
+            Some("1") => Self { order: true, budget: true },
+            Some("order") => Self { order: true, budget: false },
+            Some("budget") => Self { order: false, budget: true },
+            // Anything else, including `0` and an unparseable value, is OFF. An unknown
+            // value must not silently select an arm nobody asked for.
+            _ => Self::default(),
+        }
+    }
+}
+
+fn prefill_short_first() -> ShortFirst {
+    static PARSED: std::sync::OnceLock<ShortFirst> = std::sync::OnceLock::new();
+    *PARSED.get_or_init(|| {
+        ShortFirst::parse(std::env::var("MEMRA_PREFILL_SHORT_FIRST").ok().as_deref())
+    })
 }
 
 /// Visit order for the interactive prefill phase.
@@ -16915,7 +16944,7 @@ pub fn run(
             // the same pass. It is a permutation of the same indices in both arms: every
             // session is still visited exactly once per pass, which is what keeps a long prime
             // from being starved by an unending stream of short arrivals.
-            let prefill_short_first = prefill_short_first_enabled();
+            let prefill_short_first = prefill_short_first();
             let prefill_pending: Vec<(usize, usize)> = active
                 .iter()
                 .enumerate()
@@ -16926,17 +16955,18 @@ pub fn run(
                 })
                 .map(|(i, s)| (i, s.prefill_queue.len()))
                 .collect();
-            let prefill_order = if prefill_short_first {
+            let prefill_order = if prefill_short_first.order {
                 prefill_visit_order(&prefill_pending, true)
             } else {
                 (0..active.len()).collect::<Vec<usize>>()
             };
-            if prefill_short_first
+            if (prefill_short_first.order || prefill_short_first.budget)
                 && prefill_pending.len() > 1
                 && std::env::var("MEMRA_TICK_TRACE").as_deref() == Ok("1")
             {
                 eprintln!(
-                    "[prefill-order] short-first pending={} order={:?} remaining={:?}",
+                    "[prefill-order] short-first={:?} pending={} order={:?} remaining={:?}",
+                    prefill_short_first,
                     prefill_pending.len(),
                     prefill_order,
                     prefill_pending
@@ -16980,7 +17010,7 @@ pub fn run(
                     sole_unfinished,
                     fresh,
                     s.prefill_queue.len(),
-                    prefill_short_first,
+                    prefill_short_first.budget,
                 );
                 // MEMRA_PREFILL_WIDEN_PROBE=1 (diagnostic, default off): name WHICH input
                 // blocks the solo widening. It exists because the multi-term guard hides
@@ -28359,6 +28389,22 @@ mod tests {
         // Deterministic under equal remainders: earlier arrival wins.
         let tie = vec![(5usize, 2048usize), (2, 2048), (9, 2048)];
         assert_eq!(super::prefill_visit_order(&tie, true), vec![2, 5, 9]);
+    }
+
+    /// The door's value parsing. An unknown value must be OFF, never a silently selected arm.
+    #[test]
+    fn short_first_parses_its_arms_and_refuses_to_guess() {
+        use super::ShortFirst;
+        assert_eq!(ShortFirst::parse(None), ShortFirst { order: false, budget: false });
+        assert_eq!(ShortFirst::parse(Some("0")), ShortFirst { order: false, budget: false });
+        assert_eq!(ShortFirst::parse(Some("1")), ShortFirst { order: true, budget: true });
+        assert_eq!(ShortFirst::parse(Some("order")), ShortFirst { order: true, budget: false });
+        assert_eq!(ShortFirst::parse(Some("budget")), ShortFirst { order: false, budget: true });
+        // The half-arms exist because the two halves were measured to pull differently; a
+        // typo must not select one of them.
+        assert_eq!(ShortFirst::parse(Some("yes")), ShortFirst { order: false, budget: false });
+        assert_eq!(ShortFirst::parse(Some("ORDER")), ShortFirst { order: false, budget: false });
+        assert_eq!(ShortFirst::parse(Some("")), ShortFirst { order: false, budget: false });
     }
 
     /// The short-first door's BUDGET half.
