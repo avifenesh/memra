@@ -84,15 +84,13 @@ fn check_expert_nodes(dot: &str, graph_splitk: bool, splitk_fast: bool, forward:
     };
     let splitk_nodes = if forward && graph_splitk { 86 } else { 0 };
     let sktail_nodes = if forward && !graph_splitk { 43 } else { 0 };
-    let (base, fast) = if splitk_fast {
-        (0, splitk_nodes)
-    } else {
-        (splitk_nodes, 0)
-    };
-    assert_eq!(count("moe_m1_graph_splitk_partial_kernel"), base);
-    assert_eq!(count("moe_m1_graph_splitk_reduce_kernel"), base);
-    assert_eq!(count("moe_m1_splitk_fast_partial_kernel"), fast);
-    assert_eq!(count("moe_m1_splitk_fast_reduce_kernel"), fast);
+    // One owner for this policy: every census site resolves the same way, so a
+    // future flip moves one function instead of every gate that names a symbol.
+    let entries = memra_engine::graph_splitk_entry_nodes(splitk_fast, splitk_nodes);
+    assert_eq!(count("moe_m1_graph_splitk_partial_kernel"), entries.base);
+    assert_eq!(count("moe_m1_graph_splitk_reduce_kernel"), entries.base);
+    assert_eq!(count("moe_m1_splitk_fast_partial_kernel"), entries.fast);
+    assert_eq!(count("moe_m1_splitk_fast_reduce_kernel"), entries.fast);
     assert_eq!(count("moe_kq_sktail_gu_kernel"), sktail_nodes);
     assert_eq!(count("moe_kq_sktail_kernel"), sktail_nodes);
     assert_eq!(
