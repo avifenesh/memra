@@ -4952,9 +4952,14 @@ fn mtp_skip_no_drafter_verdict(serve_spec_env: Option<&str>) -> Result<String, S
 /// against Qwen's 266.5 with MTP engaged, and the greedy instrument on the same office prompt
 /// reads 0.617 acceptance and 197 tok/s, so the whole gap was an admission predicate.
 ///
-/// Default OFF at landing (an unmeasured feature never defaults ON), decide-by 2026-09-23:
-/// the flip is the lane's own sampled receipt on the office cell plus `gemma_sample_gate`
-/// (T=0 identity, tiny-temperature continuity, per-position chi-square vs plain sampling).
+/// Landed default OFF (an unmeasured feature never defaults ON) and FLIPPED ON 2026-09-10 on
+/// its own receipts, so the door closes rather than waiting out its decide-by: `gemma_sample_gate`
+/// passes all four arms (prime-boundary kill-switch identity, tiny-T continuity EXACT on three
+/// seeds, per-position chi-square 9.4/19.5/18.8/19.0 against bounds 33.1/45.4/48.4/49.8 at the
+/// vendor row, three refusals by name) with a red arm that breaks the chi-square at every
+/// position; and the served office cell reads 446.5 tok/s median decode at c=1 with acceptance
+/// 0.685 against the 130.9 tok/s the same box measured on the plain path — a 3.4x decode move,
+/// nowhere near noise.
 /// `=0` is the rollback seam and restores the greedy-only admission byte for byte.
 /// Penalized requests are NOT admitted on either arm: the sampled burst refuses them loudly
 /// (the dspark route's incremental-penalty verify is unmeasured on this family), and this
@@ -4963,8 +4968,10 @@ fn gemma_sampled_spec_on() -> bool {
     static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *S.get_or_init(
         || match std::env::var("MEMRA_GEMMA_SPEC_SAMPLED").as_deref() {
-            Ok("1") => true,
-            Ok("0") | Err(_) => false,
+            // DEFAULT ON since 2026-09-10. Landed OFF because it was unmeasured; it is now
+            // measured, so door hygiene flips it rather than leaving a door standing.
+            Ok("1") | Err(_) => true,
+            Ok("0") => false,
             Ok(other) => panic!(
                 "MEMRA_GEMMA_SPEC_SAMPLED={other:?}: expected 0 or 1 (a mis-typed seam must not \
              silently pick a serving path)"
