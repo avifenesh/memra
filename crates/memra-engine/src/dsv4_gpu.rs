@@ -1834,7 +1834,7 @@ pub fn tp_head_split_rows(vocab: usize, rank: usize, red_shift: usize) -> Res<(u
     if rank > 1 {
         return Err(format!("split head is a two-rank door, got rank {rank}"));
     }
-    if vocab == 0 || vocab % 2 != 0 {
+    if vocab == 0 || !vocab.is_multiple_of(2) {
         return Err(format!(
             "split head needs an even non-zero vocabulary, got {vocab}"
         ));
