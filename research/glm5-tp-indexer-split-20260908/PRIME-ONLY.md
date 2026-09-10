@@ -70,3 +70,77 @@ The first server run passed 636 tests and failed 16 because the isolated copy om
 DSV4, Gemma, GLM and OpenRouter schema fixtures. After copying those files from this same
 lane, the full server suite passed. The staging-failure log is retained; no source change
 was needed. This integration still makes no new pair performance claim.
+
+## The pair cell that flipped the default, 2026-09-10
+
+The OFF default carried `decide-by: 2026-09-22` and named the cell it was waiting on: "the
+prime-only pair cell: 1M prime OFF/ON, 1M decode OFF/ON x3 and IDs". That cell ran on
+2026-09-10 on the dev pair, vast 50431646, 2x B200 SXM. Same probe binary sha
+(`ee2a3a003984...`), same artifact, same prompt sha, and one variable between arms; each arm
+writes its own `env.txt` and the OFF/ON pair differs in exactly that variable.
+
+### 1M, n=3 per arm, OFF and ON alternating in wall-clock order
+
+| arm | split | prime_s | decode_tok_s | tape_sha16 |
+| --- | --- | --- | --- | --- |
+| idx-1m-on-a | ON | 484.1133 | 59.199 | b7b8d994ab601e43 |
+| idx-1m-off-b | OFF | 736.3056 | 59.222 | b7b8d994ab601e43 |
+| idx-1m-on-b | ON | 484.1200 | 59.285 | b7b8d994ab601e43 |
+| idx-1m-off-c | OFF | 736.4605 | 59.423 | b7b8d994ab601e43 |
+| idx-1m-on-c | ON | 483.9467 | 59.029 | b7b8d994ab601e43 |
+| idx-1m-off-a2 | OFF | 735.8988 | 59.237 | b7b8d994ab601e43 |
+
+Means: prime 736.2216 s OFF (spread 0.562) against 484.0600 s ON (spread 0.173), **-34.25%**.
+Decode 59.294 against 59.171 tok/s, **-0.21%, flat**.
+
+`idx-1m-off-a2` is the honest exception to the interleave: the third OFF repetition ran an
+hour after the other five because its first attempt was destroyed by a duplicate runner on the
+box. It landed within 0.562 s of the two OFF arms taken an hour earlier, which is itself the
+evidence that the box did not drift across that hour.
+
+### 128k, n=1 per arm
+
+| arm | split | prime_s | decode_tok_s | tape_sha16 |
+| --- | --- | --- | --- | --- |
+| idx-128k-off | OFF | 38.4299 | 69.440 | f44054f64a912489 |
+| idx-128k-on | ON | 34.4500 | 69.641 | f44054f64a912489 |
+
+Prime **-10.36%**, reproducing the combined door's -10.3%. Decode **+0.29%, flat**.
+
+That decode row is the point of the restriction. The combined door measured 128k decode at
+**-4.2%** (69.852 -> 66.947 tok/s), and that is what killed the decode half. With the decode
+split deleted and the door confined to prime, 128k decode returns to flat while the prime win
+is kept in full.
+
+### Identity
+
+Output tapes are byte-identical between OFF and ON at both contexts
+(`b7b8d994ab601e43` at 1M, `f44054f64a912489` at 128k). Two dedicated oracle arms compare the
+planes themselves and both pass:
+
+```
+[glm5-tp-indexer-split] CHECK: merged idx plane byte-identical to the replicated selection (layer 3, t 4096, width 2051)
+```
+
+`idx-1m-check` rc=0 and `idx-128k-check` rc=0. Their own `prime_s` values (1285.4165 s and
+79.7361 s) are the cost of running both planes and comparing them, and are **not** perf rows;
+each receipt says so in its own `NOTE.md`.
+
+### Engagement gate
+
+The cell's first runner marked every ON arm rc=93 against a gate requiring
+`indexer=pool-split .*t=1 `, a decode shape, from this prime-only door. The corrected gate
+matches the shape the door actually engages in, `indexer=pool-split ... phase=prime`, and
+carries the red half: with the door OFF that line must be ABSENT. All three OFF arms and both
+128k arms passed both halves.
+
+### Verdict
+
+Winner at both contexts: prime -34.25% at 1M and -10.36% at 128k, both far past the 3% door
+bar, decode flat at both, output and merged planes byte-identical at both. The default flips
+**ON** with `=0` as the rollback, and the `FLAGS.md` row moves in this PR. `decide-by:
+2026-09-22` is satisfied ahead of its date by exactly the cell it named.
+
+Full lane write-up and per-arm receipts: darklanes
+[#585](https://github.com/avifenesh/darklanes/pull/585),
+`research/glm5-dev-pair-20260910/LANE.md` section "Cell 3" and `receipts/cell3/`.

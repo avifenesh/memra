@@ -1,6 +1,6 @@
 # GLM TP-2 pool-split indexer results
 
-Decode verdict: NEGATIVE at 128k and FLAT at 1M. Merge cost is the named blocker: about 128 ms per GPU plus 36 to 40 ms exchange across 159 decode steps consumes most score/select savings. Prime wins at both contexts. The owner explicitly retains the code for the prime benefit; the door stays OFF, decide-by 2026-09-22. rev:2026-09-22.
+Decode verdict: NEGATIVE at 128k and FLAT at 1M. Merge cost is the named blocker: about 128 ms per GPU plus 36 to 40 ms exchange across 159 decode steps consumes most score/select savings. Prime wins at both contexts. The owner explicitly retains the code for the prime benefit. The decode half was then deleted and the retained prime-only door was measured on a 2x B200 dev pair on 2026-09-10: prime -34.25% at 1M and -10.36% at 128k with decode FLAT at both (-0.21%, +0.29%) and byte-identical output and merged planes, so the door's default flipped **ON** that day, ahead of its decide-by 2026-09-22. See [PRIME-ONLY.md](PRIME-ONLY.md) section "The pair cell that flipped the default". rev:2026-12-10.
 
 Follow-up: the decode split is deleted and the retained prime-only door is
 `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`. See [PRIME-ONLY.md](PRIME-ONLY.md) for the new

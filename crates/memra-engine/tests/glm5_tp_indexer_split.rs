@@ -6,7 +6,10 @@ use memra_engine::{Engine, tp_ar::ArLink};
 fn decode_ignores_prime_split_door() {
     const CHILD: &str = "GLM5_INDEXER_PRIME_TEST_CHILD";
     if std::env::var_os(CHILD).is_some() {
-        let prime = std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME").as_deref() == Ok("1");
+        // The expectation is handed down by the parent, NOT recomputed from the env here, so
+        // this gate pins the default as data. Flipping the production default back without
+        // touching the table below fails the `None` row.
+        let prime = std::env::var("GLM5_INDEXER_PRIME_EXPECT").as_deref() == Ok("1");
         // Exercise decode both before and after the process-local prime latch is set.
         for t in [0, 1, 2, 128, 1] {
             assert_eq!(
@@ -17,11 +20,14 @@ fn decode_ignores_prime_split_door() {
         return;
     }
     // Separate processes avoid env mutation races and reset the production OnceLock.
-    for value in [None, Some("0"), Some("1")] {
+    // (env value, expected prime-door state). Unset is ON: the door became the default on
+    // 2026-09-10 and `=0` is the only way back to the replicated prime.
+    for (value, expect) in [(None, true), (Some("0"), false), (Some("1"), true)] {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap());
         child
             .args(["--exact", "decode_ignores_prime_split_door", "--nocapture"])
             .env(CHILD, "1")
+            .env("GLM5_INDEXER_PRIME_EXPECT", if expect { "1" } else { "0" })
             .env_remove("MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME")
             .env("MEMRA_GLM5_TP_INDEXER_SPLIT", "1");
         if let Some(value) = value {

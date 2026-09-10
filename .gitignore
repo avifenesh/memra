@@ -22,6 +22,11 @@ probe/int8_swizzle_aload
 probe/q4k_transient_decode
 probe/*.o
 lane/
+# Per-worktree lane scratch. Untracked AND ignored: it carries rented box addresses
+# and ssh destinations, and this repo is public. 2026-09-10: a `git add -A` swept nine
+# such files into a commit and the pre-push public-boundary check caught it (sev4,
+# secret_pattern rented_ipv4,ssh_destination).
+.lane/
 *.nsys-rep
 *.ncu-rep
 *.sqlite
