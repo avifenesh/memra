@@ -18030,6 +18030,24 @@ fn constraint_poll_wait(
 /// `model_ctx` is the checkpoint's declared context length (`max_position_embeddings` through
 /// `cfg.context_length`); `0` means "the loader could not determine it", which is exactly the
 /// ambiguity that must fail closed rather than be guessed.
+/// The widest context this engine can CARRY, independent of any hardware. The mainline model
+/// config stores `context_length` as a `u32` (`memra_gguf::model_plan::ModelConfig`), so a window
+/// above `u32::MAX` cannot survive the engine's own representation, and the dsv4 route reads
+/// `max_position_embeddings` straight out of `config.json` as a `u64` where nothing else would
+/// have caught it. This is a REPRESENTATION bound and nothing more: it makes no claim about VRAM,
+/// KV budget or what a given box can actually prime.
+pub const ENGINE_MAX_CTX: usize = u32::MAX as usize;
+
+/// Three outcomes, kept distinct on purpose, because the three cases are different facts about
+/// the deployment and the caller (and an operator reading a boot refusal needs to know which one
+/// they are looking at):
+///
+///   * the checkpoint DECLARES a window this engine can carry -> serve it;
+///   * the checkpoint declares NOTHING usable -> refuse (undeclared);
+///   * the checkpoint declares something BEYOND what the engine can carry -> refuse (ceiling).
+///
+/// An explicit `MEMRA_CTX` overrides the first case and is subject to the third; an unusable
+/// spelling of it is its own refusal.
 pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String> {
     match raw {
         Some(raw) => {
@@ -18043,20 +18061,30 @@ pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String>
                         .to_string(),
                 );
             }
+            if parsed > ENGINE_MAX_CTX {
+                return Err(format!(
+                    "MEMRA_CTX {parsed} is beyond the engine ceiling {ENGINE_MAX_CTX}: this engine cannot carry that context window"
+                ));
+            }
             Ok(parsed)
         }
         None => {
-            if model_ctx > 0 {
-                Ok(model_ctx)
-            } else {
-                Err(
-                    "context window unresolvable: the checkpoint declares no context length and MEMRA_CTX is unset; refusing to guess"
+            if model_ctx == 0 {
+                return Err(
+                    "context window undeclared: the checkpoint declares no context length and MEMRA_CTX is unset; refusing to guess"
                         .to_string(),
-                )
+                );
             }
+            if model_ctx > ENGINE_MAX_CTX {
+                return Err(format!(
+                    "the checkpoint declares {model_ctx} context positions, beyond the engine ceiling {ENGINE_MAX_CTX}: this engine cannot carry that context window, and silently serving a narrower one is what this resolver exists to prevent"
+                ));
+            }
+            Ok(model_ctx)
         }
     }
 }
+
 
 /// `resolve_ctx` against the process environment. A non-Unicode value is treated like any other
 /// unusable value: it refuses, it does not silently become a default.
@@ -25951,7 +25979,7 @@ mod tests {
         is_cuda_oom, oldest_parked_candidate, parallel_device_requirements, parked_entry_count,
         pp_admission_stage_count, pp_boundary_slot_bytes, pp_boundary_token_cap_resolve,
         pp_device_requirements, pp_stage_admissions, pp_stage_observed_residuals, prepare_park,
-        prompt_source_limit_error, request_ctx_cap, resolve_ctx,
+        ENGINE_MAX_CTX, prompt_source_limit_error, request_ctx_cap, resolve_ctx,
     };
     use super::{
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
@@ -27533,6 +27561,13 @@ mod tests {
             resolve_ctx(None, 0).is_err(),
             "an undeclared model context with no MEMRA_CTX must refuse, not guess",
         );
+
+        // And a declaration the engine cannot carry refuses rather than quietly narrowing to
+        // whatever it can: the three refusals are told apart by their text.
+        let beyond = resolve_ctx(None, ENGINE_MAX_CTX + 1).expect_err("beyond ceiling");
+        assert!(beyond.contains("ceiling"), "{beyond}");
+        assert_ne!(resolve_ctx(None, ENGINE_MAX_CTX + 1), Ok(ENGINE_MAX_CTX));
+        assert_eq!(resolve_ctx(None, ENGINE_MAX_CTX), Ok(ENGINE_MAX_CTX));
     }
 
     /// The resolution must survive the request path, not only the resolver: an unbounded request

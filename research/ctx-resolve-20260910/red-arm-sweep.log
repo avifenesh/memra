@@ -1,0 +1,82 @@
+=== INJECTION 1: the pre-fix literal, unset resolves to 8192
+test worker::tests::an_unbounded_request_on_an_unset_ctx_is_capped_by_the_checkpoint_not_by_8192 ... FAILED
+test worker::tests::an_unset_ctx_resolves_to_the_models_own_declared_context_never_a_constant ... FAILED
+test tests::a_ctx_bounded_request_is_not_gated_because_context_is_its_only_limit ... ok
+thread 'worker::tests::an_unbounded_request_on_an_unset_ctx_is_capped_by_the_checkpoint_not_by_8192' (119326) panicked at crates/memra-server/src/worker.rs:27578:9:
+assertion `left == right` failed: a 600k prompt with no max_tokens must reach the checkpoint's window
+  left: 608192
+ right: 1048576
+thread 'worker::tests::an_unset_ctx_resolves_to_the_models_own_declared_context_never_a_constant' (119327) panicked at crates/memra-server/src/worker.rs:27532:9:
+assertion `left == right` failed: DSV4F declares max_position_embeddings 1048576; an unset MEMRA_CTX must serve it
+  left: Ok(8192)
+ right: Ok(1048576)
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 664 filtered out; finished in 0.01s
+test dsv4_serve::declared_context_tests::a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing ... FAILED
+test dsv4_serve::declared_context_tests::a_checkpoint_that_declares_nothing_refuses_as_undeclared ... FAILED
+test dsv4_serve::declared_context_tests::a_present_but_unusable_declaration_refuses_and_names_the_value ... ok
+test dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes ... FAILED
+test dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares ... FAILED
+test dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses ... ok
+thread 'dsv4_serve::declared_context_tests::a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing' (119342) panicked at crates/memra-server/src/dsv4_serve.rs:1434:9:
+assertion `left == right` failed
+  left: Ok(8192)
+ right: Ok(4294967295)
+thread 'dsv4_serve::declared_context_tests::a_checkpoint_that_declares_nothing_refuses_as_undeclared' (119341) panicked at crates/memra-server/src/dsv4_serve.rs:1384:44:
+thread 'dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes' (119346) panicked at crates/memra-server/src/dsv4_serve.rs:1449:47:
+thread 'dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares' (119345) panicked at crates/memra-server/src/dsv4_serve.rs:1362:9:
+assertion `left == right` failed
+  left: Ok(8192)
+ right: Ok(1048576)
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 661 filtered out; finished in 0.00s
+=== INJECTION 2: an undeclared window silently acquires a default
+test dsv4_serve::declared_context_tests::a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing ... ok
+test dsv4_serve::declared_context_tests::a_checkpoint_that_declares_nothing_refuses_as_undeclared ... FAILED
+test dsv4_serve::declared_context_tests::a_present_but_unusable_declaration_refuses_and_names_the_value ... ok
+test dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes ... FAILED
+test dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares ... ok
+test dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses ... ok
+thread 'dsv4_serve::declared_context_tests::a_checkpoint_that_declares_nothing_refuses_as_undeclared' (119657) panicked at crates/memra-server/src/dsv4_serve.rs:1384:44:
+thread 'dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes' (119662) panicked at crates/memra-server/src/dsv4_serve.rs:1449:47:
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 661 filtered out; finished in 0.01s
+=== INJECTION 3: a beyond-ceiling declaration is clamped instead of refused
+test dsv4_serve::declared_context_tests::a_checkpoint_that_declares_nothing_refuses_as_undeclared ... ok
+test dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares ... ok
+test dsv4_serve::declared_context_tests::a_present_but_unusable_declaration_refuses_and_names_the_value ... ok
+test dsv4_serve::declared_context_tests::a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing ... FAILED
+test dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes ... FAILED
+test dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses ... ok
+thread 'dsv4_serve::declared_context_tests::a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing' (119984) panicked at crates/memra-server/src/dsv4_serve.rs:1423:14:
+thread 'dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes' (119988) panicked at crates/memra-server/src/dsv4_serve.rs:1450:60:
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 661 filtered out; finished in 0.00s
+=== INJECTION 4: a present but unusable declaration is treated as absent
+test dsv4_serve::declared_context_tests::a_checkpoint_that_declares_nothing_refuses_as_undeclared ... ok
+test dsv4_serve::declared_context_tests::a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing ... ok
+test dsv4_serve::declared_context_tests::a_present_but_unusable_declaration_refuses_and_names_the_value ... FAILED
+test dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares ... ok
+test dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes ... ok
+test dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses ... FAILED
+thread 'dsv4_serve::declared_context_tests::a_present_but_unusable_declaration_refuses_and_names_the_value' (120297) panicked at crates/memra-server/src/dsv4_serve.rs:1406:26:
+thread 'dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses' (120298) panicked at crates/memra-server/src/dsv4_serve.rs:1493:51:
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 661 filtered out; finished in 0.00s
+=== INJECTION 5: the config read is swallowed
+test dsv4_serve::declared_context_tests::a_checkpoint_that_declares_nothing_refuses_as_undeclared ... ok
+test dsv4_serve::declared_context_tests::a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing ... ok
+test dsv4_serve::declared_context_tests::a_present_but_unusable_declaration_refuses_and_names_the_value ... ok
+test dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares ... ok
+test dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes ... ok
+test dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses ... FAILED
+thread 'dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses' (120624) panicked at crates/memra-server/src/dsv4_serve.rs:1476:18:
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 661 filtered out; finished in 0.00s
+=== RESTORED, green re-run
+test worker::tests::an_unbounded_request_on_an_unset_ctx_is_capped_by_the_checkpoint_not_by_8192 ... ok
+test worker::tests::an_unset_ctx_resolves_to_the_models_own_declared_context_never_a_constant ... ok
+test tests::a_ctx_bounded_request_is_not_gated_because_context_is_its_only_limit ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 664 filtered out; finished in 0.01s
+test dsv4_serve::declared_context_tests::a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing ... ok
+test dsv4_serve::declared_context_tests::a_checkpoint_that_declares_nothing_refuses_as_undeclared ... ok
+test dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares ... ok
+test dsv4_serve::declared_context_tests::the_three_cases_produce_three_distinguishable_outcomes ... ok
+test dsv4_serve::declared_context_tests::a_present_but_unusable_declaration_refuses_and_names_the_value ... ok
+test dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 661 filtered out; finished in 0.01s
+SWEEP-DONE

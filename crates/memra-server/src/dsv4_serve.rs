@@ -55,6 +55,21 @@ pub fn is_dsv4_dir(dir: &Path) -> bool {
     }
 }
 
+/// What a checkpoint's `config.json` says about its context, as three distinct facts rather than
+/// one number. They are different situations for an operator and they get different refusals:
+/// a usable declaration is served, an ABSENT one is the ambiguity that needs an explicit
+/// `MEMRA_CTX`, and a PRESENT BUT UNUSABLE one (a string, a float, a negative, a zero) is a
+/// malformed artifact that no default should paper over.
+#[derive(Debug, PartialEq, Eq)]
+enum DeclaredContext {
+    /// A usable positive count. Kept as `u64` because `config.json` can carry a value wider than
+    /// anything the engine can represent, and that case must reach the ceiling check rather than
+    /// be truncated on the way there.
+    Positions(u64),
+    Absent,
+    Unusable(String),
+}
+
 /// The checkpoint's OWN declared context, read from `config.json`.
 ///
 /// This is the number the serve route must default to. Before this lane the route defaulted to a
@@ -62,24 +77,38 @@ pub fn is_dsv4_dir(dir: &Path) -> bool {
 /// `/v1/models`, so a launcher that omitted `MEMRA_CTX` served 8192 against a checkpoint
 /// declaring `max_position_embeddings: 1048576` and nothing in the response said so.
 ///
-/// `0` means the field is absent or unusable, which makes the window unresolvable without an
-/// explicit `MEMRA_CTX`; `resolve_ctx` turns that into a refusal rather than a guess.
+/// Returns `0` for an ABSENT declaration, which `resolve_ctx` refuses as undeclared; refuses here
+/// for an UNUSABLE one, naming the value; and saturates a beyond-`usize` declaration so it lands
+/// on the engine-ceiling refusal instead of silently wrapping.
 fn dsv4_declared_context(dir: &Path) -> Result<usize, String> {
     let path = dir.join("config.json");
     let text = std::fs::read_to_string(&path)
         .map_err(|e| format!("dsv4 config {} unreadable: {e}", path.display()))?;
     let json: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("dsv4 config {} is not JSON: {e}", path.display()))?;
-    Ok(declared_context_from_config(&json))
+    match declared_context_from_config(&json) {
+        DeclaredContext::Positions(v) => Ok(usize::try_from(v).unwrap_or(usize::MAX)),
+        DeclaredContext::Absent => Ok(0),
+        DeclaredContext::Unusable(raw) => Err(format!(
+            "dsv4 config {}: max_position_embeddings {raw} is not a positive count of positions; \
+             refusing to substitute a context window for a malformed declaration",
+            path.display()
+        )),
+    }
 }
 
-/// `max_position_embeddings` as a servable count. A missing, non-integer, zero or
-/// beyond-`usize` value reads as 0 ("undeclared"), never as a substituted default.
-fn declared_context_from_config(json: &serde_json::Value) -> usize {
-    json.get("max_position_embeddings")
-        .and_then(|v| v.as_u64())
-        .and_then(|v| usize::try_from(v).ok())
-        .unwrap_or(0)
+/// `max_position_embeddings` classified, never substituted.
+fn declared_context_from_config(json: &serde_json::Value) -> DeclaredContext {
+    let Some(value) = json.get("max_position_embeddings") else {
+        return DeclaredContext::Absent;
+    };
+    if value.is_null() {
+        return DeclaredContext::Absent;
+    }
+    match value.as_u64() {
+        Some(0) | None => DeclaredContext::Unusable(value.to_string()),
+        Some(v) => DeclaredContext::Positions(v),
+    }
 }
 
 pub struct Dsv4Model {
@@ -1310,60 +1339,125 @@ fn argmax(v: &[f32]) -> u32 {
 
 #[cfg(test)]
 mod declared_context_tests {
-    use super::{declared_context_from_config, dsv4_declared_context};
-    use crate::worker::resolve_ctx;
+    use super::{DeclaredContext, declared_context_from_config, dsv4_declared_context};
+    use crate::worker::{ENGINE_MAX_CTX, resolve_ctx};
 
-    /// The DSV4F config as it actually ships (`max_position_embeddings: 1048576`), and the
-    /// resolution the serve route now performs on it. RED ARM: with the old literal fallback
-    /// this route resolved 8192 and published it, so the first assertion fails on any revert.
-    #[test]
-    fn the_dsv4_route_serves_the_window_the_checkpoint_declares() {
-        let cfg: serde_json::Value = serde_json::from_str(
-            r#"{"model_type":"deepseek_v4","max_position_embeddings":1048576,
-                "hidden_size":7168,"num_hidden_layers":61}"#,
-        )
-        .expect("fixture parses");
-        assert_eq!(declared_context_from_config(&cfg), 1_048_576);
-        assert_eq!(
-            resolve_ctx(None, declared_context_from_config(&cfg)),
-            Ok(1_048_576)
-        );
-
-        // An explicit deployment pin still wins, and a smaller checkpoint is not widened.
-        assert_eq!(
-            resolve_ctx(Some("131072"), declared_context_from_config(&cfg)),
-            Ok(131_072)
-        );
-        let narrow: serde_json::Value =
-            serde_json::from_str(r#"{"max_position_embeddings":4096}"#).expect("parses");
-        assert_eq!(
-            resolve_ctx(None, declared_context_from_config(&narrow)),
-            Ok(4_096)
-        );
+    fn cfg(raw: &str) -> serde_json::Value {
+        serde_json::from_str(raw).expect("fixture parses")
     }
 
-    /// Undeclared is undeclared: a config with no usable `max_position_embeddings` reads as 0,
-    /// which `resolve_ctx` refuses rather than filling in.
+    /// CASE 1, a checkpoint that DECLARES a window the engine can carry: the route serves that
+    /// window. RED ARM for the shipped defect - with the old literal fallback this resolved 8192
+    /// and published it, against a checkpoint declaring a million positions.
     #[test]
-    fn an_undeclared_or_unusable_field_reads_as_zero_and_then_refuses() {
+    fn the_dsv4_route_serves_the_window_the_checkpoint_declares() {
+        let dsv4f = cfg(
+            r#"{"model_type":"deepseek_v4","max_position_embeddings":1048576,
+                "hidden_size":7168,"num_hidden_layers":61}"#,
+        );
+        assert_eq!(
+            declared_context_from_config(&dsv4f),
+            DeclaredContext::Positions(1_048_576)
+        );
+        assert_eq!(resolve_ctx(None, 1_048_576), Ok(1_048_576));
+
+        // An explicit deployment pin still wins, and a smaller checkpoint is not widened.
+        assert_eq!(resolve_ctx(Some("131072"), 1_048_576), Ok(131_072));
+        assert_eq!(
+            declared_context_from_config(&cfg(r#"{"max_position_embeddings":4096}"#)),
+            DeclaredContext::Positions(4_096)
+        );
+        assert_eq!(resolve_ctx(None, 4_096), Ok(4_096));
+    }
+
+    /// CASE 2, a checkpoint that declares NOTHING: absent and null are the ambiguity, and the
+    /// route refuses as undeclared rather than filling a number in.
+    #[test]
+    fn a_checkpoint_that_declares_nothing_refuses_as_undeclared() {
+        for raw in [r#"{}"#, r#"{"max_position_embeddings":null}"#] {
+            assert_eq!(declared_context_from_config(&cfg(raw)), DeclaredContext::Absent, "{raw}");
+        }
+        let refusal = resolve_ctx(None, 0).expect_err("undeclared must refuse");
+        assert!(
+            refusal.contains("undeclared"),
+            "the undeclared refusal must say so, not blend into the others: {refusal}",
+        );
+        // An explicit pin is how an operator answers the ambiguity.
+        assert_eq!(resolve_ctx(Some("262144"), 0), Ok(262_144));
+    }
+
+    /// CASE 2b, a declaration that is PRESENT but not a count of positions. Distinct from absent:
+    /// the artifact is malformed rather than silent, and the message names the value.
+    #[test]
+    fn a_present_but_unusable_declaration_refuses_and_names_the_value() {
         for raw in [
-            r#"{}"#,
-            r#"{"max_position_embeddings":null}"#,
             r#"{"max_position_embeddings":"1048576"}"#,
             r#"{"max_position_embeddings":-1}"#,
             r#"{"max_position_embeddings":0}"#,
+            r#"{"max_position_embeddings":4096.5}"#,
+            r#"{"max_position_embeddings":[1048576]}"#,
         ] {
-            let cfg: serde_json::Value = serde_json::from_str(raw).expect("fixture parses");
-            assert_eq!(declared_context_from_config(&cfg), 0, "{raw}");
-            assert!(
-                resolve_ctx(None, declared_context_from_config(&cfg)).is_err(),
-                "{raw}: an unresolvable window must refuse, not default",
-            );
+            match declared_context_from_config(&cfg(raw)) {
+                DeclaredContext::Unusable(_) => {}
+                other => panic!("{raw} must classify as unusable, got {other:?}"),
+            }
         }
     }
 
-    /// The reader is the file, not a hand-passed number: a real directory resolves, and a
-    /// missing or malformed config.json refuses by name instead of falling back.
+    /// CASE 3, a checkpoint that declares something THE ENGINE CANNOT HONOUR. The mainline model
+    /// config carries `context_length` as a u32, so a wider window cannot survive the engine's own
+    /// representation; the dsv4 route reads config.json as u64 where nothing else would catch it.
+    /// Refusing is the point: serving a narrower window than the checkpoint declares, without
+    /// saying so, is the defect this whole resolver exists to prevent.
+    #[test]
+    fn a_declaration_beyond_the_engine_ceiling_refuses_instead_of_narrowing() {
+        assert_eq!(
+            declared_context_from_config(&cfg(r#"{"max_position_embeddings":1099511627776}"#)),
+            DeclaredContext::Positions(1_099_511_627_776),
+        );
+        let refusal = resolve_ctx(None, 1_099_511_627_776)
+            .expect_err("a beyond-ceiling declaration must refuse");
+        assert!(
+            refusal.contains("ceiling") && refusal.contains("1099511627776"),
+            "the ceiling refusal must name the ceiling and the declaration: {refusal}",
+        );
+        assert_ne!(
+            resolve_ctx(None, 1_099_511_627_776),
+            Ok(ENGINE_MAX_CTX),
+            "clamping to the ceiling would be exactly the silent narrowing this forbids",
+        );
+        // The boundary itself is servable; one position past it is not.
+        assert_eq!(resolve_ctx(None, ENGINE_MAX_CTX), Ok(ENGINE_MAX_CTX));
+        assert!(resolve_ctx(None, ENGINE_MAX_CTX + 1).is_err());
+        // An explicit MEMRA_CTX is subject to the same ceiling.
+        assert!(resolve_ctx(Some(&(ENGINE_MAX_CTX + 1).to_string()), 262_144).is_err());
+        assert_eq!(
+            resolve_ctx(Some(&ENGINE_MAX_CTX.to_string()), 262_144),
+            Ok(ENGINE_MAX_CTX)
+        );
+    }
+
+    /// The three refusals must be TELLABLE APART. A gate that cannot distinguish "declares
+    /// nothing" from "declares something impossible" hides which one an operator is looking at.
+    #[test]
+    fn the_three_cases_produce_three_distinguishable_outcomes() {
+        let served = resolve_ctx(None, 1_048_576).expect("declared and carryable");
+        let undeclared = resolve_ctx(None, 0).expect_err("undeclared");
+        let beyond = resolve_ctx(None, ENGINE_MAX_CTX + 1).expect_err("beyond ceiling");
+        let unusable_env = resolve_ctx(Some("abc"), 1_048_576).expect_err("unusable MEMRA_CTX");
+
+        assert_eq!(served, 1_048_576);
+        assert!(undeclared.contains("undeclared") && !undeclared.contains("ceiling"));
+        assert!(beyond.contains("ceiling") && !beyond.contains("undeclared"));
+        assert!(unusable_env.contains("MEMRA_CTX") && !unusable_env.contains("ceiling"));
+        assert_ne!(undeclared, beyond);
+        assert_ne!(undeclared, unusable_env);
+        assert_ne!(beyond, unusable_env);
+    }
+
+    /// The reader is the FILE, not a hand-passed number: a real directory resolves, a missing or
+    /// malformed `config.json` refuses by name, and a malformed declaration refuses naming the
+    /// value instead of substituting one.
     #[test]
     fn the_config_file_itself_is_the_source_and_a_broken_one_refuses() {
         let dir = std::env::temp_dir().join(format!(
@@ -1385,6 +1479,24 @@ mod declared_context_tests {
             dsv4_declared_context(&dir)
                 .expect_err("malformed config")
                 .contains("not JSON"),
+        );
+
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"max_position_embeddings":"1048576"}"#,
+        )
+        .expect("write");
+        let refusal = dsv4_declared_context(&dir).expect_err("unusable declaration");
+        assert!(
+            refusal.contains("max_position_embeddings") && refusal.contains("1048576"),
+            "the refusal must name the field and the value it refused: {refusal}",
+        );
+
+        std::fs::write(dir.join("config.json"), r#"{}"#).expect("write");
+        assert_eq!(
+            dsv4_declared_context(&dir),
+            Ok(0),
+            "an absent declaration reads as 0 so the resolver refuses it as undeclared",
         );
 
         std::fs::write(
