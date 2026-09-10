@@ -15,6 +15,11 @@
 //!           count below 128.
 //!   TAIL    the first `rows` rows of a 128-row GEMM must equal a GEMM over just those rows. Row
 //!           quantization is row-independent, so this is bitwise equality, not a tolerance.
+//!   POISON  the same tail comparison with the scratch pre-filled with NaN and with inf instead
+//!           of the finite canary byte. 0xA4 repeated is a small finite f32, so a canary fill
+//!           cannot show a leak from the padded rows INSIDE the declared footprint into the real
+//!           ones; these patterns can. A 48-row prime pads to 128, and the question is whether
+//!           the 48 real rows depend on what the other 80 contain.
 //!
 //! usage: qwen-a4-tail-gate <calibrated.gguf>
 use memra_engine::Engine;
@@ -115,9 +120,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("FAIL finite {name} rows={rows}: output carries non-finite values");
                 failures += 1;
             }
+            // POISON arm: re-run the identical GEMM over scratch filled with a non-finite
+            // pattern. The real rows must not change, which is what proves the padded rows
+            // inside the footprint do not reach them.
+            let mut poisoned = 0usize;
+            for (label, bits) in POISONS {
+                let fill: Vec<u8> = bits
+                    .to_le_bytes()
+                    .iter()
+                    .copied()
+                    .cycle()
+                    .take(declared * 2)
+                    .collect();
+                let mut scratch = e.htod_bytes(&fill)?;
+                let y = e.qmatvec_mmq_nvfp4_calibrated_prefill_into(
+                    bytes,
+                    &x,
+                    rows,
+                    in_f,
+                    out_f,
+                    scale,
+                    multiplier,
+                    slot,
+                    rp,
+                    &mut scratch,
+                )?;
+                let y_poison = e.dtoh(&y)?;
+                let differ = (0..rows * out_f)
+                    .filter(|i| y_poison[*i].to_bits() != y_host[*i].to_bits())
+                    .count();
+                if differ != 0 {
+                    println!(
+                        "FAIL poison({label}) {name} rows={rows}: {differ} of {} values changed \
+                         when the scratch pad held {label} instead of the canary",
+                        rows * out_f
+                    );
+                    failures += 1;
+                }
+                poisoned += differ;
+            }
             println!(
                 "  {name} rows={rows}: declared {declared} B, {dirty} bytes past it, \
-                 {bad} mismatched values"
+                 {bad} mismatched values, {poisoned} pad-poison differences"
             );
         }
     }
