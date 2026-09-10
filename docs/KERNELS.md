@@ -30,7 +30,7 @@ and therefore which already-instantiated `M` the dispatch switch selects. The
 Numeric class SAME across every `M`: the per-row accumulation order and the
 128-leaf reduction tree are properties of the kernel body, not of `M`. Gate:
 `dsv4_dense_tile_gate <model-dir> <real-source.txt>`, byte comparison at the
-served width with two red arms. Receipts: DENSETILE_RECEIPTS_TBD
+served width with two red arms. Receipts: prod-candidate box (vast 50459911, 2x RTX PRO 6000 Blackwell WS), source `ad02b8c9a` plus this lane, gate binary `c0cee4df76e699edbf2b2db636a15d00c75c67d3d1c6a9344654a7904cfc25f4`, server binary `23fc979d56478fd9f84169346c04fd0b4522bcb94a37783e88e0a0a34d247543`. Class: `EXACT tile=32 matches tile=8 over logits/live-cache/DSpark/sampled`, launch ratio `4.0000` (120,576 tiled decompositions become 30,144), both red arms fired. Served arm, ABBA over four fresh servers at SERVING DEFAULTS (`MEMRA_DSV4_MOE_PROGRAM` and `MEMRA_DSV4_EP` unset, PP-2, DSpark resident, chunked prefill 64, vendor-default sampled with spec-engagement rows, first-load request discarded): prefill 133.95 -> 139.23 tok/s at 981 tokens (**+3.94%**) and 134.70 -> 140.23 at 3,686 tokens (**+4.10%**), arms disjoint in both, within-arm spread 0.9-1.2%. Banked in darklanes `research/dsv4f-dense-tile-20260910/` ([private Darklanes #612](https://github.com/avifenesh/darklanes/pull/612)).
 
 ## Whisper CPU reference operators, 2026-09-09
 
