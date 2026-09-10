@@ -1706,15 +1706,20 @@ fn norm_fuse2_environment_policy(
     }
 }
 
-/// The wide pack only has a call site when norm2 is dispatching, so an explicit
-/// `1` without the norm2 door is a configuration error rather than a silent
-/// no-op. `admitted` is the norm2 door's own resolved value.
+/// Default ON under an admitted norm2 door since the 2026-09-10 model campaign
+/// (+5.95% ABBA / +5.76% reverse, disjoint steady ranges in both orders); an
+/// explicit `0` is the rollback seam to the single-CTA kernel. Without the
+/// norm2 door the pack has no call site, so an unset value degrades to OFF
+/// rather than refusing every composed-off launch, while an explicit `1`
+/// without the door stays a configuration error instead of a silent no-op.
+/// `admitted` is the norm2 door's own resolved value.
 fn norm2_wide_environment_policy(
     value: Result<&str, &std::env::VarError>,
     admitted: bool,
 ) -> Res<bool> {
     match value {
-        Err(std::env::VarError::NotPresent) | Ok("0") => Ok(false),
+        Err(std::env::VarError::NotPresent) => Ok(admitted),
+        Ok("0") => Ok(false),
         Ok("1") if admitted => Ok(true),
         Ok("1") => Err("norm2 wide pack requires MEMRA_DSV4_NORM_FUSE2=1".into()),
         _ => Err("MEMRA_DSV4_NORM2_WIDE requires 0 or 1".into()),
@@ -19911,10 +19916,13 @@ mod norm_fuse2_policy_tests {
 mod norm2_wide_policy_tests {
     use super::{NORM2_WIDE_TILES, norm2_wide_environment_policy};
     #[test]
-    fn default_off_and_explicit_admission() {
+    fn default_on_with_explicit_zero_seam() {
         let absent = std::env::VarError::NotPresent;
+        // Unset follows the norm2 door: ON when the pack has a call site,
+        // OFF without one (no call site to select, so no refusal).
+        assert!(norm2_wide_environment_policy(Err(&absent), true).unwrap());
+        assert!(!norm2_wide_environment_policy(Err(&absent), false).unwrap());
         for admitted in [false, true] {
-            assert!(!norm2_wide_environment_policy(Err(&absent), admitted).unwrap());
             assert!(!norm2_wide_environment_policy(Ok("0"), admitted).unwrap());
             for junk in ["invalid", "", " ", "2", "true", "ON", "01", "1 "] {
                 assert!(

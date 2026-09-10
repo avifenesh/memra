@@ -857,10 +857,12 @@ errors, +1.0926% pooled ABBA and +0.9075% pooled reverse on the sampled
 default program. Default is ON when unset in the admitted TP/EP f32x topology; explicit `0` is
 the rollback seam, decide-by: 2026-09-23.
 
-### Wide DSV4 norm2 pack (experimental, 2026-09-09)
+### Wide DSV4 norm2 pack (default ON since 2026-09-10, door opened 2026-09-09)
 
-`MEMRA_DSV4_NORM2_WIDE` is default OFF, decide-by: 2026-09-23, composed on
-`MEMRA_DSV4_NORM_FUSE2`.
+`MEMRA_DSV4_NORM2_WIDE` is default ON under an admitted `MEMRA_DSV4_NORM_FUSE2`
+(flipped 2026-09-10 on the model campaign receipts below); explicit `0` is the
+rollback seam, and unset without the norm2 door degrades to OFF because the wide
+pack has no other call site.
 
 `dsv4_norm2_pack_f32_fixed_order_kernel` launches grid 1 / block 128 over one
 4096-element f32 row. One CTA holds both the reduction and the whole epilogue:
@@ -889,9 +891,12 @@ argmax): per-CTA partial sums combined in a second phase, and a single wider blo
 The price is a redundant row read per CTA. At 4096 f32 that is 16 KB re-read
 `tiles` times, which lands in L2 after the first CTA touches the row, against an
 epilogue that becomes `1/tiles` as wide per CTA. Because every CTA still runs the
-whole reduction, the sweep's asymptote as `tiles` grows IS the reduction floor,
-and the gap between `tiles=1` and that floor is the only thing this door can buy.
-The component gate reports that sweep rather than assuming it.
+whole reduction, the sweep's asymptote as `tiles` grows was expected to BE the
+reduction floor, with the gap between `tiles=1` and that floor the only thing this
+door can buy. The component gate reports that sweep rather than assuming it, and
+what the sweep reported is the instrument's own floor rather than the kernel's:
+see the bound discussion under Evidence below. The real ceiling on the door is the
+1.240690 ms/step the kernel it replaces costs in the live model.
 
 The launcher pins block 128 (the tree is the contract) and requires
 `128 * tiles` to divide `n`, so no CTA is empty and every thread writes the same
@@ -903,5 +908,37 @@ symbol or the other, never both and never neither. No other kernel changes. FFI:
 `src/dsv4_ffi.rs`; component gate: `src/dsv4_norm2_wide_component_gate.rs`;
 replay and sampled gate: `dsv4-norm2-wide-gate`.
 
-Evidence: pending. This door is unmeasured until its component cell and sampled
-ABBA land; the entry moves to a verdict or the door is deleted by 2026-09-23.
+Evidence (2x RTX PRO 6000 Blackwell Max-Q dev pair, head d710438fb, binary
+cb270f66, 2026-09-10): the component cell passed raw-bit equality at all 172 live
+pack sites (13,588 / 13,588 comparisons, warm and cold, tiles 1..32; the warm sweep
+on a sample site runs 12.383 us at tiles=1 down to 6.730 us at tiles=32, 4.63 GB/s
+unique rising to 8.52 GB/s unique at 83.99 GB/s issued, the predicted L2-served
+re-read). The model program on the pinned default shape (PRIME=256, OUTPUT=256):
+wide 55.154288 tok/s vs narrow 52.054319 pooled ABBA (+5.955257%, mean +5.9542%)
+and wide 55.192155 vs narrow 52.191374 pooled reverse (+5.749573%, mean +5.7550%),
+steady ranges disjoint in both orders (3.019 and 2.946 tok/s separation), 40/40
+rows eligible with zero looped rows, and every row in both orders carries the same
+generated/logits/cache/hidden digests as the narrow arm (same-class identity held
+at model scale, not just per-site). Four qualify processes (two per arm) matched
+the same digests. Receipts banked in darklanes
+`research/dsv4f-norm2-wide-20260909/`.
+
+Read the sweep as a BOUND, not a prediction. In the cold sweep, rank 0 `tiles=8`,
+`tiles=16` and `tiles=32` all read 6.141332 us: three CTA counts landing on one
+value to six decimals is the standalone-stream event instrument's floor, not the
+reduction floor this section originally expected the asymptote to be. So 6.730 us
+is an upper bound on the wide kernel and 86 x 5.653 us = 0.486 ms/step is a LOWER
+bound on the model return. The measured return is 1.073033 ms/step forward and
+1.057288 reverse, which is above that bound and below the 1.240690 ms/step the
+single-CTA pack costs in the live model, i.e. below the whole cost of the kernel
+being replaced. Isolated per-launch timing on this path predicts the sign of a
+graph-replay change and not its size: Darklanes #562 measured the same
+non-additivity in the other direction, 0.164670 ms/step of kernel time returning
+-0.026864 ms/step of replay forward.
+
+Not covered by any receipt: `compute-sanitizer` memcheck and synccheck were never
+run against this kernel. The write side is covered by 13,588 raw-bit comparisons
+with poisoned outputs and guard bands on both sides of every buffer, plus a
+launcher that refuses any `n` other than 4096 and any `tiles` where `128 * tiles`
+does not divide `n`. The read side is unproven by a tool. Filed as follow-up cell
+`norm2-wide-sanitizers`.

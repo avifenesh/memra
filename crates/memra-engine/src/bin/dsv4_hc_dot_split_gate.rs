@@ -41,15 +41,17 @@ fn default_program() {
         Ok("0"),
         "explicit OFF required: MEMRA_DSV4_NORM_FUSE2"
     );
-    // Default-OFF wide norm2 pack: this bin reads the environment rather than
-    // pinning it, so an exported 1 has to be refused explicitly.
-    assert!(
-        matches!(
-            std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
-            Err(_) | Ok("0")
-        ),
-        "default OFF required: MEMRA_DSV4_NORM2_WIDE"
+    // The wide norm2 pack now defaults ON under the admitted norm2 door. This
+    // bin measures the narrow norm2 pack, so it pins the rollback seam
+    // explicitly and refuses an exported 1 rather than inheriting the default.
+    assert_ne!(
+        std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
+        Ok("1"),
+        "MEMRA_DSV4_NORM2_WIDE=1 is not this bin's arm"
     );
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
+    }
 }
 const PRIME: usize = 256;
 const OUTPUT: usize = 256;

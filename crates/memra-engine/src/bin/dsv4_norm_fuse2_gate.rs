@@ -31,15 +31,17 @@ fn default_program() {
             "default ON required: {name}"
         );
     }
-    // Default-OFF wide norm2 pack: this bin reads the environment rather than
-    // pinning it, so an exported 1 has to be refused explicitly.
-    assert!(
-        matches!(
-            std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
-            Err(_) | Ok("0")
-        ),
-        "default OFF required: MEMRA_DSV4_NORM2_WIDE"
+    // The wide norm2 pack now defaults ON under the admitted norm2 door. This
+    // bin measures the single-CTA program, so it pins the rollback seam
+    // explicitly and refuses an exported 1 rather than inheriting the default.
+    assert_ne!(
+        std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
+        Ok("1"),
+        "MEMRA_DSV4_NORM2_WIDE=1 is not this bin's arm"
     );
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
+    }
     assert!(memra_engine::moe_m1_graph_splitk_on());
     unsafe extern "C" {
         fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
