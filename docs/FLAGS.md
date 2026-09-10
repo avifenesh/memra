@@ -1449,9 +1449,11 @@ A door's default is a claim about the program a request runs under. Every DSV4F 
 #374 was measured on the TUNED BENCH program that every `dsv4_*_gate` binary pins (attention TP/EP,
 `MEMRA_DSV4_MOE_PROGRAM=matrix`, drafter off, small-kernel diet on, the gate-only fused-GU arm on
 after load). The SERVED program is a different program and the engine refuses their union in two independent
-places: TP/EP refuses MTP/DSpark state (`dsv4_gpu.rs:3066`) and TP/EP refuses a batched prime at all
-("admits only a single-token prime; batched replicated cache hydration is not wired",
-`dsv4_gpu.rs:5907`), so it can neither chunk nor serve. Either refusal alone makes them disjoint. So six of the nine merged default-ON doors
+places: the TP/EP topology guard refuses MTP/DSpark state, and `prefill_with_cache_chunked` refuses
+a batched prime at all under `topology.is_tp_ep()` ("admits only a single-token prime; batched
+replicated cache hydration is not wired"), so TP/EP can neither chunk nor serve. Either refusal alone
+makes them disjoint. Cited by function and refusal text: the line numbers move under every lane that
+touches `dsv4_gpu.rs`. So six of the nine merged default-ON doors
 cannot engage for a customer request, and they went inert SILENTLY, because an unset value resolves
 to `Ok(admitted)` with `admitted == false`.
 

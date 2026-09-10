@@ -9,11 +9,13 @@
 //! whether that program is the one a customer request takes. It is not: the
 //! served program is PP-2 with the reference expert program, a resident DSpark
 //! drafter and chunked prefill, and the engine refuses the union of the two in
-//! two independent places: TP/EP refuses MTP/DSpark state (`dsv4_gpu.rs:3066`),
-//! and TP/EP refuses a batched prime at all, "DSV4 TP/EP vertical slice
-//! currently admits only a single-token prime; batched replicated cache
-//! hydration is not wired" (`dsv4_gpu.rs:5907`), so it can neither chunk nor
-//! serve. Either refusal alone makes the two programs disjoint. Six of the nine
+//! two independent places: the TP/EP topology guard refuses MTP/DSpark state,
+//! and `prefill_with_cache_chunked` refuses a batched prime at all under
+//! `topology.is_tp_ep()`, "DSV4 TP/EP vertical slice currently admits only a
+//! single-token prime; batched replicated cache hydration is not wired". So
+//! TP/EP can neither chunk nor serve, and either refusal alone makes the two
+//! programs disjoint. Both are cited by FUNCTION and refusal text on purpose:
+//! line numbers in this file move under every lane that touches it. Six of the nine
 //! merged default-ON doors, including the two largest wins, cannot engage there,
 //! and they go inert SILENTLY because an unset value resolves to `Ok(admitted)`
 //! with `admitted == false`.
