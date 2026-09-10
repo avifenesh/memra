@@ -191,7 +191,10 @@ fn main() {
         std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
         // The door itself is armed through the gate seam per arm, never inherited.
-        std::env::remove_var("MEMRA_DSV4_DENSE_TILE");
+        // Pinned to the documented OFF value rather than unset: an unset door that
+        // later defaults ON would make the OFF arm silently run the ON arm and the
+        // bit-identity check vacuous (memra #136).
+        std::env::set_var("MEMRA_DSV4_DENSE_TILE", "8");
     }
 
     let args: Vec<String> = std::env::args().collect();
