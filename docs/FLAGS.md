@@ -1443,6 +1443,51 @@ cross-bank GMMA register reads); FA3-TMA-ring k45 rebuild (refuted by compositio
 The remaining single-seq prefill residual (~27% vs vLLM's INT8 GEMM class) is an
 owner-gated accuracy decision (w8a8-class numerics change model outputs).
 
+## Removed doors, 2026-09-10 (the dsv4f split vocab head: the read halves, the step does not)
+
+- `MEMRA_DSV4_TP_HEAD_SPLIT` (memra #433: the door, its environment policy, the
+  `tp_head_split_rows` row plan, the split dispatch arm and its per-rank dispatch/pull
+  counters, the peer pull and its event, the factored `head_prechain_dev`, the gate bin
+  `dsv4-tp-head-split-gate` with its component/identity/replay-refusal/defaults/qualify
+  cells, the CPU policy tests, the 42 pins in the other DSV4 bins and the FLAGS/KERNELS
+  rows): opened and REMOVED on 2026-09-10, on its own first timing receipt. It never
+  reached a default.
+
+  The arithmetic that opened it is still right. The BF16 vocab head 129280x4096 runs once
+  per step on rank 1 alone at 646.792 us and 1638.2 GB/s, 91.4% of the 1792 GB/s nominal,
+  and 99.9496% of its 1,059,595,264 modeled bytes is the weight slab, so the only lever
+  available is a smaller read. Splitting the OUTPUT ROWS halves it to 529,530,880 B per
+  rank and moves 258,560 B as one consumer-issued `cuMemcpyPeerAsync`, adding no
+  all-reduce and no VRAM. The door WORKS: bit equality held over 16,547,840 comparisons at
+  32 committed hidden states with the red arms firing, and a 256-position interleaved
+  identity cell reproduced the same token stream, digests, AR epochs and refusal words with
+  `dispatches=[256, 256] pulls=256`.
+
+  What it does not do is move the step. Dev pair, 2x RTX PRO 6000 Blackwell Max-Q, source
+  `08a509802`, binary `f320822a54f056e09b95d10151434f90804b3bc476bbea115a4b26a78f4435fe`,
+  one arm per process, 5 repeats of 256-token prime plus 256 vendor-shape sampled tokens
+  each, all 40 repeats eligible:
+
+  | Order | OFF pooled tok/s | ON pooled tok/s | Delta |
+  |---|---|---|---|
+  | ABBA forward | 50.714800 | 51.118700 | **+0.7965%** |
+  | ABBA reverse | 52.792400 | 51.688300 | **-2.0913%** |
+  | Both orders pooled | 51.732700 | 51.402100 | **-0.6390%** |
+
+  The sign flips with the order, so there is no receipt beyond noise and door hygiene
+  deletes it. The reason is visible in the same rows: within ONE arm the OFF pooled rows
+  span 50.417848 to 52.936086 tok/s, a 5.0% drift across the run, while the whole lever is
+  bounded by the head's 646.792 us against a ~19.6 ms step, about 1.6% even if the halved
+  read were free. It is not free: both ranks still pay the pre-chain, the step waits for
+  the slower half plus the hop, and the saving is bounded by `max(halves) + pull`, not by
+  half. A lever whose ceiling sits under this instrument's drift cannot be qualified here.
+
+  Receipts: darklanes `research/dsv4f-tp-head-split-20260910/` (RESULTS.md, the r6 CI-shape
+  and gpu-a2 cell logs), memra PR #447, verdict row in
+  `agent-knowledge/gpu/verdicts-ledger.md`. Sanitizer rows were NOT run to completion: the
+  cell was stopped at the memcheck step once the timing rows came back negative, because a
+  door being deleted does not need them.
+
 ## Removed doors, 2026-09-06 (the shared-activation MoE rows kernel: rig win, served-card loss)
 
 - `MEMRA_MOE_ROWS_SHACT` (`moe_gate_up_preclamp8_q8_rows_w4_shact`, the
