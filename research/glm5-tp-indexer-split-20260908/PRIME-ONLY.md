@@ -144,3 +144,41 @@ bar, decode flat at both, output and merged planes byte-identical at both. The d
 Full lane write-up and per-arm receipts: darklanes
 [#585](https://github.com/avifenesh/darklanes/pull/585),
 `research/glm5-dev-pair-20260910/LANE.md` section "Cell 3" and `receipts/cell3/`.
+
+## The lane guard matched a shape this door cannot print (2026-09-10)
+
+`run-cell.sh`'s lane-class engagement guard read:
+
+```
+grep -E 'indexer=pool-split .*t=1 ' "$out/run.log" || rc=93
+```
+
+The door announces once per process from the grouped-prime path, and that line hard-codes
+`phase=prime` with `t` at the chunk width:
+
+```
+[glm5-tp-indexer-split] engaged indexer=pool-split layer=3 t=4096 pools=1024 rank0=512 \
+    candidates=512 exchange=device-signal phase=prime
+```
+
+So `t=1 ` is a DECODE shape, and decode ignores this door by construction (decode split dispatch
+was deleted when `MEMRA_GLM5_TP_INDEXER_SPLIT` became `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`).
+Every `split=1` lane row therefore failed `rc=93` while engaging perfectly. It is a guard that
+could not pass, which is the same class of defect as a check that cannot fail.
+
+Found on the 256k depth cell (darklanes, dev pair vast 50431646, 2026-09-10): four rows, both ON
+arms carrying the engagement line and `Exit status: 0` from the probe itself, and `rc=93` from
+the guard alone.
+
+The repair matches what the door prints AND carries the red half, verified against the four
+already-banked logs with no GPU time:
+
+| row | repaired guard | old guard |
+|---|---|---|
+| `idxsplit-on-a-256k` | passes | fails (this was the rc=93) |
+| `idxsplit-on-b-256k` | passes | fails (this was the rc=93) |
+| `idxsplit-off-a-256k` | red half holds, no announcement | n/a |
+| `idxsplit-off-b-256k` | red half holds, no announcement | n/a |
+
+The OFF rows are what make the ON check mean something: with the door off the engine prints
+`indexer-state=replicated indexer=runtime-selected` and no `[glm5-tp-indexer-split]` line at all.
