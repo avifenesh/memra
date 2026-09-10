@@ -469,7 +469,10 @@ fn main() {
                 ArPhaseDoor::Off,
                 "--disarmed requires MEMRA_DSV4_AR_PHASE unset or 0"
             );
-            assert!(!gpu.ar_phase_instrument_armed_for_gate().unwrap());
+            assert_eq!(
+                gpu.ar_phase_instrument_armed_for_gate().unwrap(),
+                (false, false)
+            );
             let error = gpu
                 .arm_ar_phase_instrument_for_gate(WINDOW, None)
                 .unwrap_err();
@@ -499,7 +502,11 @@ fn main() {
         "--report" => {
             assert_eq!(gpu.ar_phase_door(), ArPhaseDoor::Product);
             gpu.arm_ar_phase_instrument_for_gate(WINDOW, None).unwrap();
-            assert!(gpu.ar_phase_instrument_armed_for_gate().unwrap());
+            assert_eq!(
+                gpu.ar_phase_instrument_armed_for_gate().unwrap(),
+                (true, false),
+                "the product arm must allocate a product-arm instrument"
+            );
             let mut walk = prime(&gpu, prompt, cfg);
             let (tokens, records, ident) = window(&gpu, &mut walk);
             validate(&records, STEPS);
@@ -597,6 +604,11 @@ fn main() {
                 .get(5)
                 .expect("--null needs the product arm's token sha");
             gpu.arm_ar_phase_instrument_for_gate(WINDOW, None).unwrap();
+            assert_eq!(
+                gpu.ar_phase_instrument_armed_for_gate().unwrap(),
+                (true, true),
+                "the null cell must allocate a null-arm instrument"
+            );
             let mut walk = prime(&gpu, prompt, cfg);
             let (tokens, records, ident) = window(&gpu, &mut walk);
             validate(&records, STEPS);

@@ -188,11 +188,16 @@ impl ArPhaseRecord {
     }
     /// The three phases must account for the whole span exactly: the stamps are taken in order on
     /// one thread, so any gap means a stamp was not written where the analysis believes it was.
+    ///
+    /// The two clocks must also agree that time passed. A record claiming thousands of SM cycles
+    /// and zero device nanoseconds is not a fast all-reduce, it is a `%globaltimer` stamp that did
+    /// not land, and the whole point of carrying both clocks is that each one can catch the other.
     pub fn closes(&self) -> bool {
         self.clk_entry <= self.clk_started
             && self.clk_started <= self.clk_reduced
             && self.clk_reduced <= self.clk_exit
             && self.gt_entry <= self.gt_exit
+            && (self.span_cycles() > 0) == (self.span_nanos() > 0)
             && self.wait_cycles() + self.reduce_cycles() + self.tail_cycles() == self.span_cycles()
     }
     pub fn nanos(&self, cycles: u64) -> Option<f64> {

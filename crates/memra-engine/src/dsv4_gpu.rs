@@ -8253,14 +8253,16 @@ impl Dsv4Gpu {
             .drain_instrument(&self.stages[0].gpu, &self.stages[1].gpu, since)
     }
 
-    pub fn ar_phase_instrument_armed_for_gate(&self) -> Res<bool> {
-        Ok(self
+    /// `(allocated, null_arm)`. The gate asserts the ALLOCATION's arm against the door it loaded
+    /// with: a process that loaded `null` and allocated a product-arm instrument would report a
+    /// transport bound taken from a collective that still crossed the fabric.
+    pub fn ar_phase_instrument_armed_for_gate(&self) -> Res<(bool, bool)> {
+        let ar = self
             .tp_ep_ar
             .lock()
-            .map_err(|_| "TP/EP AR mutex poisoned")?
-            .as_ref()
-            .ok_or("TP/EP AR missing")?
-            .instrument_armed())
+            .map_err(|_| "TP/EP AR mutex poisoned")?;
+        let ar = ar.as_ref().ok_or("TP/EP AR missing")?;
+        Ok((ar.instrument_armed(), ar.instrument_null_arm()))
     }
 
     pub fn full_token_ar_epochs_for_gate(&self) -> Res<[Vec<u32>; 2]> {
