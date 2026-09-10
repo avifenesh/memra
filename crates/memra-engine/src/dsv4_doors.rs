@@ -15,7 +15,16 @@
 //! single-token prime; batched replicated cache hydration is not wired". So
 //! TP/EP can neither chunk nor serve, and either refusal alone makes the two
 //! programs disjoint. Both are cited by FUNCTION and refusal text on purpose:
-//! line numbers in this file move under every lane that touches it. Six of the nine
+//! line numbers in this file move under every lane that touches it.
+//!
+//! That has a consequence the first version of this module understated. A door
+//! admitted only under TP/EP is not "inert today", it is PERMANENTLY unreachable
+//! on the served path: the program it needs cannot take a customer request at
+//! all, for two independent structural reasons (memra #457), so no matrix
+//! verdict and no default flip rescues it. A door admitted only by the matrix
+//! expert executor is a different case entirely, because that program CAN serve
+//! and was measured doing so. `AdmittingProgram` is that axis, and
+//! `served_disposition` is where the three futures are decided. Six of the nine
 //! merged default-ON doors, including the two largest wins, cannot engage there,
 //! and they go inert SILENTLY because an unset value resolves to `Ok(admitted)`
 //! with `admitted == false`.
@@ -75,41 +84,72 @@ pub enum DoorState {
     NoServingCaller(&'static str),
 }
 
-/// What the door's state means for what to DO about it. Printed in the load
-/// receipt and pinned per door by the gate, so the three cases cannot collapse
-/// into one recommendation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DoorDisposition {
-    /// Engaged. Nothing to decide.
-    Engaged,
-    /// The default is a claim this program does not honour: port the admission
-    /// predicate to this program, or re-declare the default to match reality.
-    PortAdmissionOrRedeclare,
-    /// The door belongs to another program. It resolves itself if that program
-    /// becomes the default, and leaves with it if it does not.
-    FollowsTheProgramDecision,
-    /// Nothing about a serving program can make this door engage: it is a gate
-    /// instrument's input filed as a product door.
-    ReclassifyAsGateInput,
-    /// Refused at load. The configuration is illegal, not silently degraded.
-    RefusedConfiguration,
-}
-
 impl DoorState {
     pub fn engaged(self) -> bool {
         matches!(self, DoorState::On(_))
     }
-
-    pub fn disposition(self) -> DoorDisposition {
-        match self {
-            DoorState::On(_) => DoorDisposition::Engaged,
-            DoorState::Off => DoorDisposition::PortAdmissionOrRedeclare,
-            DoorState::RefusedAtLoad => DoorDisposition::RefusedConfiguration,
-            DoorState::OffProgram(_) => DoorDisposition::FollowsTheProgramDecision,
-            DoorState::NoServingCaller(_) => DoorDisposition::ReclassifyAsGateInput,
-        }
-    }
 }
+
+/// Which program admits a door at all. This is the axis that decides what to DO
+/// about an inert door, because the three answers have three different futures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AdmittingProgram {
+    /// The served program itself admits it: it engages, or its own predicate
+    /// says no for a reason that has nothing to do with which program we run.
+    ServedProgram,
+    /// Only the matrix expert executor reaches it. That program CAN serve, and a
+    /// sibling lane measured it on the served path at +42% to +140% prefill, so
+    /// whether these doors ever engage is the memra #461 matrix verdict.
+    MatrixExecutor,
+    /// Only the all-layer TP/EP topology admits it, and TP/EP cannot serve a
+    /// customer request at all (memra #457, two independent refusals). No
+    /// foreseeable program decision makes these reachable.
+    TpEpOnly,
+    /// Only a gate binary arming an instrument reaches it. No serving caller
+    /// exists on any program.
+    GateInstrumentOnly,
+}
+
+/// What to DO about a door, given its resolved state and the program that
+/// admits it. Printed in the load receipt and pinned per door by the gate, so
+/// the inert doors cannot collapse into one recommendation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DoorDisposition {
+    /// Engaged on the served program. Nothing to decide.
+    Engaged,
+    /// The program that admits this door cannot serve a request at all, so no
+    /// foreseeable change makes it reachable: removable on its own evidence,
+    /// with no dependency on any other verdict.
+    PermanentlyUnreachable,
+    /// The door belongs to another program that CAN serve. It resolves itself if
+    /// that program becomes the default, and leaves with it if it does not.
+    FollowsTheProgramDecision,
+    /// Nothing about a serving program can make this door engage: it is a gate
+    /// instrument's input filed as a product door.
+    ReclassifyAsGateInput,
+    /// The served program admits it and its own predicate resolved off, so the
+    /// question is about the predicate rather than about programs.
+    PortAdmissionOrRedeclare,
+    /// Refused at load. The configuration is illegal, not silently degraded.
+    RefusedConfiguration,
+}
+
+/// Facts about the programs a door can live on, kept as values rather than baked
+/// into per-door constants, so the red arm can ask what changes if TP/EP ever
+/// learns to serve.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProgramFacts {
+    /// Can the all-layer TP/EP topology take a customer request?
+    pub tp_ep_can_serve: bool,
+    /// Can the matrix expert program take one? Yes, and measured.
+    pub matrix_can_serve: bool,
+}
+
+/// Today's facts: TP/EP is refused twice over, the matrix program serves.
+pub const PROGRAM_FACTS: ProgramFacts = ProgramFacts {
+    tp_ep_can_serve: false,
+    matrix_can_serve: true,
+};
 
 /// A program: the set of admission inputs every DSV4 door reads. Constructed at
 /// load from the resolved configuration, and as a constant for the two programs
@@ -136,6 +176,14 @@ pub struct Dsv4Program {
     pub gate_armed_gu_fuse: bool,
     /// This checkpoint's HC geometry is `rows == 24 && w == 16384`.
     pub hc_geometry_24x16384: bool,
+    /// Whether this program can serve a customer request AT ALL. TP/EP cannot:
+    /// `prefill_with_cache_chunked` refuses a batched prime under
+    /// `topology.is_tp_ep()` ("admits only a single-token prime; batched
+    /// replicated cache hydration is not wired"), and the topology guard
+    /// separately refuses MTP/DSpark state, which the served spec route
+    /// requires. The two refusals are independent: replicating the drafter per
+    /// rank would still leave TP/EP unable to chunk (memra #457).
+    pub can_serve: bool,
 }
 
 /// What a customer request runs today: PP-2 (`Dsv4TopologyPlan::pp_ep`, so
@@ -150,6 +198,7 @@ pub const SERVED_PROGRAM: Dsv4Program = Dsv4Program {
     drafter_resident: true,
     gate_armed_gu_fuse: false,
     hc_geometry_24x16384: true,
+    can_serve: true,
 };
 
 /// What every `dsv4_*_gate` binary pins, and what every merged door was measured
@@ -164,6 +213,8 @@ pub const TUNED_BENCH_PROGRAM: Dsv4Program = Dsv4Program {
     drafter_resident: false,
     gate_armed_gu_fuse: true,
     hc_geometry_24x16384: true,
+    // The whole point: this program cannot take a customer request.
+    can_serve: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -297,6 +348,86 @@ pub struct DoorRow {
     pub declared_bench: DoorState,
     /// Resolution, environment unset, for one program.
     pub resolve: fn(&Dsv4Program) -> DoorState,
+    /// Which program admits this door at all. With `PROGRAM_FACTS` this is what
+    /// turns "inert" into a decision.
+    pub admitted_by: AdmittingProgram,
+    /// The pooled forward and reverse percentages the door merged on, as
+    /// `docs/FLAGS.md` records them. Kept as numbers rather than prose because
+    /// the instrument floor below is a comparison, not an opinion.
+    pub merged_gain_pct: (f64, f64),
+    /// The hardware those percentages were measured on.
+    pub measured_on: &'static str,
+}
+
+/// The dev pair drifts about 5% MONOTONICALLY within one arm across a single
+/// run (OFF rows climbing 50.417848 to 52.936086 on 2026-09-10), so a lever
+/// whose ceiling is under about 2% of step time is below that instrument's
+/// resolution whatever its steady rows looked like. Darklanes
+/// `KNEE:dev-pair-run-drift-swamps-sub-2pct-levers`, the finding that deleted
+/// the split vocab head door (darklanes #595).
+pub const DEV_PAIR_INSTRUMENT_FLOOR_PCT: f64 = 2.0;
+
+/// Whether a door's merged magnitude is below what the pair it was measured on
+/// can resolve. Not a re-litigation of any merge: it is the honest scope of what
+/// the receipt establishes.
+pub fn below_instrument_floor(row: &DoorRow, floor_pct: f64) -> bool {
+    let (forward, reverse) = row.merged_gain_pct;
+    forward.abs() < floor_pct && reverse.abs() < floor_pct
+}
+
+/// What to do about a door on the served path: its resolved state, then the
+/// program that admits it and whether that program can take a request.
+pub fn served_disposition(row: &DoorRow, facts: &ProgramFacts) -> DoorDisposition {
+    let state = (row.resolve)(&SERVED_PROGRAM);
+    if state.engaged() {
+        return DoorDisposition::Engaged;
+    }
+    match state {
+        DoorState::RefusedAtLoad => DoorDisposition::RefusedConfiguration,
+        _ => match row.admitted_by {
+            AdmittingProgram::GateInstrumentOnly => DoorDisposition::ReclassifyAsGateInput,
+            AdmittingProgram::TpEpOnly if !facts.tp_ep_can_serve => {
+                DoorDisposition::PermanentlyUnreachable
+            }
+            AdmittingProgram::MatrixExecutor if facts.matrix_can_serve => {
+                DoorDisposition::FollowsTheProgramDecision
+            }
+            // A door on a program that cannot serve is permanently unreachable
+            // whichever program that is; anything else is about the predicate.
+            AdmittingProgram::MatrixExecutor => DoorDisposition::PermanentlyUnreachable,
+            AdmittingProgram::TpEpOnly | AdmittingProgram::ServedProgram => {
+                DoorDisposition::PortAdmissionOrRedeclare
+            }
+        },
+    }
+}
+
+/// Doors with no evidence for their default in EITHER direction: inert on the
+/// served path, so the default buys nothing, AND measured below the instrument
+/// floor of the pair they were qualified on, so the number that justified the
+/// default is not one that pair can resolve. Strictly stronger than either fact
+/// alone, and a cleaner argument for removal than "we do not use it".
+pub fn doors_without_evidence_in_either_direction(
+    rows: &[DoorRow],
+    facts: &ProgramFacts,
+    floor_pct: f64,
+) -> Vec<&'static str> {
+    rows.iter()
+        .filter(|row| served_disposition(row, facts) != DoorDisposition::Engaged)
+        .filter(|row| below_instrument_floor(row, floor_pct))
+        .map(|row| row.name)
+        .collect()
+}
+
+/// Doors that DO engage on the served path but whose merged magnitude the pair
+/// they were measured on cannot resolve. Their defaults reach a customer; the
+/// evidence for those defaults is what is thin.
+pub fn engaged_but_below_the_floor(rows: &[DoorRow], floor_pct: f64) -> Vec<&'static str> {
+    rows.iter()
+        .filter(|row| (row.resolve)(&SERVED_PROGRAM).engaged())
+        .filter(|row| below_instrument_floor(row, floor_pct))
+        .map(|row| row.name)
+        .collect()
 }
 
 static NOT_PRESENT: std::env::VarError = std::env::VarError::NotPresent;
@@ -401,6 +532,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         ),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
         resolve: resolve_replay_cadence,
+        admitted_by: AdmittingProgram::GateInstrumentOnly,
+        merged_gain_pct: (1.007107, 1.074545),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
     DoorRow {
         name: "dense exact-tail transport",
@@ -410,6 +544,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::On(DoorShape::DecodeOnlyM1),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
         resolve: resolve_dense_exact_tail,
+        admitted_by: AdmittingProgram::ServedProgram,
+        merged_gain_pct: (0.459578, 0.397451),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
     DoorRow {
         name: "graph split-K",
@@ -419,6 +556,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::OffProgram(MATRIX_EXECUTOR_ONLY),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
         resolve: resolve_graph_splitk,
+        admitted_by: AdmittingProgram::MatrixExecutor,
+        merged_gain_pct: (10.226982, 10.023951),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
     DoorRow {
         name: "dense-fast",
@@ -428,6 +568,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::On(DoorShape::DecodeOnlyM1),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
         resolve: resolve_dense_fast,
+        admitted_by: AdmittingProgram::ServedProgram,
+        merged_gain_pct: (1.618979, 1.609496),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with norm-fuse",
     },
     DoorRow {
         name: "norm-fuse",
@@ -437,6 +580,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::Off,
         declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
         resolve: resolve_norm_fuse,
+        admitted_by: AdmittingProgram::TpEpOnly,
+        merged_gain_pct: (1.618979, 1.609496),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with dense-fast",
     },
     DoorRow {
         name: "HC dot split S16",
@@ -446,6 +592,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::On(DoorShape::AllRoutedShapes),
         declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
         resolve: resolve_hc_dot_split,
+        admitted_by: AdmittingProgram::ServedProgram,
+        merged_gain_pct: (2.701174, 2.591532),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
     DoorRow {
         name: "split-K-fast",
@@ -455,6 +604,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::OffProgram(MATRIX_EXECUTOR_ONLY),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
         resolve: resolve_splitk_fast,
+        admitted_by: AdmittingProgram::MatrixExecutor,
+        merged_gain_pct: (1.727312, 1.581907),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
     DoorRow {
         name: "norm-fuse2",
@@ -464,6 +616,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::Off,
         declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
         resolve: resolve_norm_fuse2,
+        admitted_by: AdmittingProgram::TpEpOnly,
+        merged_gain_pct: (1.1022, 0.9839),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
     DoorRow {
         name: "norm2-wide",
@@ -473,6 +628,9 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         declared_served: DoorState::Off,
         declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
         resolve: resolve_norm2_wide,
+        admitted_by: AdmittingProgram::TpEpOnly,
+        merged_gain_pct: (5.955257, 5.749573),
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
 ];
 
@@ -645,7 +803,7 @@ pub fn door_receipt_lines(program: &Dsv4Program) -> Vec<String> {
                 row.merged,
                 row.declared_default,
                 (row.resolve)(program),
-                (row.resolve)(program).disposition()
+                served_disposition(row, &PROGRAM_FACTS)
             )
         })
         .collect()
@@ -684,6 +842,9 @@ mod tests {
             declared_served: DoorState::On(DoorShape::AllRoutedShapes),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
             resolve: resolve_norm2_wide,
+            admitted_by: AdmittingProgram::TpEpOnly,
+            merged_gain_pct: (5.955257, 5.749573),
+            measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
         }];
         let violations = declaration_violations(LIAR);
         assert_eq!(violations.len(), 1, "{violations:?}");
@@ -703,6 +864,9 @@ mod tests {
             declared_served: DoorState::On(DoorShape::AllRoutedShapes),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
             resolve: resolve_dense_fast,
+            admitted_by: AdmittingProgram::ServedProgram,
+            merged_gain_pct: (1.618979, 1.609496),
+            measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
         }];
         assert_eq!(declaration_violations(LIAR).len(), 2);
     }
@@ -924,15 +1088,17 @@ mod tests {
         assert!(door_names_in_source("we read MEMRA_DSV4_ names here").is_empty());
     }
 
-    /// The three not-engaged cases must stay apart: they have three different
-    /// fixes, and collapsing them is how six doors get one recommendation.
+    /// The inert doors must sort into their own futures, not into one
+    /// population: a door whose program cannot serve is removable on its own
+    /// evidence, a door whose program CAN serve waits on that program's verdict,
+    /// and a gate instrument's input is neither.
     #[test]
     fn each_inert_door_carries_its_own_disposition() {
         let disposition = |door: &str| {
             DSV4_DOORS
                 .iter()
                 .find(|row| row.name == door)
-                .map(|row| (row.resolve)(&SERVED_PROGRAM).disposition())
+                .map(|row| served_disposition(row, &PROGRAM_FACTS))
                 .expect(door)
         };
         // Its own FLAGS row says no serving request arms full-token replay.
@@ -940,49 +1106,171 @@ mod tests {
             disposition("replay cadence"),
             DoorDisposition::ReclassifyAsGateInput
         );
-        // These live in the matrix executor: memra #461 decides them.
-        assert_eq!(
-            disposition("graph split-K"),
-            DoorDisposition::FollowsTheProgramDecision
-        );
-        assert_eq!(
-            disposition("split-K-fast"),
-            DoorDisposition::FollowsTheProgramDecision
-        );
-        // These have call sites on the served program and an admission predicate
-        // that says no: porting or re-declaring is the fix.
+        // The matrix executor CAN serve, and was measured serving, so memra #461
+        // decides these two.
+        for door in ["graph split-K", "split-K-fast"] {
+            assert_eq!(
+                disposition(door),
+                DoorDisposition::FollowsTheProgramDecision,
+                "{door}"
+            );
+        }
+        // TP/EP cannot serve at all, so these three are not waiting on anything.
         for door in ["norm-fuse", "norm-fuse2", "norm2-wide"] {
             assert_eq!(
                 disposition(door),
+                DoorDisposition::PermanentlyUnreachable,
+                "{door}"
+            );
+        }
+        for door in [
+            "dense exact-tail transport",
+            "dense-fast",
+            "HC dot split S16",
+        ] {
+            assert_eq!(disposition(door), DoorDisposition::Engaged, "{door}");
+        }
+    }
+
+    /// Red arm for the permanence claim, which is the claim doing the most work
+    /// in the recommendation. "Permanently unreachable" is keyed to a FACT about
+    /// the program (memra #457: TP/EP refuses a batched prime and refuses the
+    /// drafter), not hard-coded per door. Teach TP/EP to serve and the same three
+    /// doors stop being removable on their own evidence and become an ordinary
+    /// admission question.
+    #[test]
+    fn permanence_is_keyed_to_the_program_fact_not_to_the_door() {
+        let if_tp_ep_could_serve = ProgramFacts {
+            tp_ep_can_serve: true,
+            ..PROGRAM_FACTS
+        };
+        for door in ["norm-fuse", "norm-fuse2", "norm2-wide"] {
+            let row = DSV4_DOORS.iter().find(|row| row.name == door).expect(door);
+            assert_eq!(
+                served_disposition(row, &PROGRAM_FACTS),
+                DoorDisposition::PermanentlyUnreachable,
+                "{door}"
+            );
+            assert_eq!(
+                served_disposition(row, &if_tp_ep_could_serve),
                 DoorDisposition::PortAdmissionOrRedeclare,
                 "{door}"
             );
         }
-        // If the matrix program becomes the served expert program, the two
-        // FollowsTheProgramDecision doors resolve themselves, and the other four
-        // do not move. That is the whole reason the cases are kept apart.
+        // And the mirror: if the matrix program could NOT serve, its two doors
+        // would stop being a pending decision and become removable too.
+        let if_matrix_could_not_serve = ProgramFacts {
+            matrix_can_serve: false,
+            ..PROGRAM_FACTS
+        };
+        for door in ["graph split-K", "split-K-fast"] {
+            let row = DSV4_DOORS.iter().find(|row| row.name == door).expect(door);
+            assert_eq!(
+                served_disposition(row, &if_matrix_could_not_serve),
+                DoorDisposition::PermanentlyUnreachable,
+                "{door}"
+            );
+        }
+    }
+
+    /// A served program running the matrix experts moves exactly the two doors
+    /// that follow that decision, and leaves the other four where they are.
+    #[test]
+    fn adopting_the_matrix_program_moves_only_the_matrix_doors() {
         let matrix_served = Dsv4Program {
             name: "served-with-matrix",
             matrix_moe: true,
             ..SERVED_PROGRAM
         };
-        assert_eq!(
+        let resolve = |door: &str, program: &Dsv4Program| {
             (DSV4_DOORS
                 .iter()
-                .find(|row| row.name == "graph split-K")
-                .unwrap()
-                .resolve)(&matrix_served),
-            // Still refused while the fused-GU arm stays gate-only (memra #458),
-            // which is a configuration error an operator can see, not silence.
+                .find(|row| row.name == door)
+                .expect(door)
+                .resolve)(program)
+        };
+        // Still refused while the fused-GU arm stays gate-only (memra #458),
+        // which is a configuration error an operator can see, not silence.
+        assert_eq!(
+            resolve("graph split-K", &matrix_served),
             DoorState::RefusedAtLoad
         );
         assert_eq!(
-            (DSV4_DOORS
-                .iter()
-                .find(|row| row.name == "norm2-wide")
-                .unwrap()
-                .resolve)(&matrix_served),
-            DoorState::Off
+            resolve("split-K-fast", &matrix_served),
+            DoorState::RefusedAtLoad
+        );
+        for door in ["norm-fuse", "norm-fuse2", "norm2-wide"] {
+            assert_eq!(resolve(door, &matrix_served), DoorState::Off, "{door}");
+        }
+        assert!(matches!(
+            resolve("replay cadence", &matrix_served),
+            DoorState::NoServingCaller(_)
+        ));
+    }
+
+    /// The honest scope of what the merged receipts establish. The dev pair
+    /// drifts about 5% within one arm across a run, so a door merged at under
+    /// about 2% is below that instrument's resolution. This is not a
+    /// re-litigation of any merge, it is a list, and the list rots if nobody
+    /// writes it down.
+    #[test]
+    fn the_doors_merged_below_the_dev_pair_instrument_floor_are_named() {
+        let below: Vec<_> = DSV4_DOORS
+            .iter()
+            .filter(|row| below_instrument_floor(row, DEV_PAIR_INSTRUMENT_FLOOR_PCT))
+            .map(|row| row.name)
+            .collect();
+        assert_eq!(
+            below,
+            vec![
+                "replay cadence",
+                "dense exact-tail transport",
+                "dense-fast",
+                "norm-fuse",
+                "split-K-fast",
+                "norm-fuse2",
+            ]
+        );
+        // Above the floor, and so unaffected by the drift finding.
+        for door in ["graph split-K", "HC dot split S16", "norm2-wide"] {
+            let row = DSV4_DOORS.iter().find(|row| row.name == door).expect(door);
+            assert!(
+                !below_instrument_floor(row, DEV_PAIR_INSTRUMENT_FLOOR_PCT),
+                "{door}"
+            );
+        }
+    }
+
+    /// The strongest removal case: no evidence for the default in EITHER
+    /// direction. Inert on the served path, so the default buys nothing, AND
+    /// merged below the floor of the pair it was qualified on, so the number
+    /// that justified it is not one that pair can resolve.
+    #[test]
+    fn doors_with_no_evidence_in_either_direction_are_named() {
+        assert_eq!(
+            doors_without_evidence_in_either_direction(
+                DSV4_DOORS,
+                &PROGRAM_FACTS,
+                DEV_PAIR_INSTRUMENT_FLOOR_PCT
+            ),
+            vec!["replay cadence", "norm-fuse", "split-K-fast", "norm-fuse2"]
+        );
+        // Engaged, but on evidence the pair cannot resolve: a different and
+        // weaker complaint, kept separate so it cannot be quoted as the first.
+        assert_eq!(
+            engaged_but_below_the_floor(DSV4_DOORS, DEV_PAIR_INSTRUMENT_FLOOR_PCT),
+            vec!["dense exact-tail transport", "dense-fast"]
+        );
+        // Red arm: the sets are computed from the floor, not asserted. Drop the
+        // floor below every merged magnitude and both sets must empty out.
+        assert!(
+            doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 0.1).is_empty()
+        );
+        assert!(engaged_but_below_the_floor(DSV4_DOORS, 0.1).is_empty());
+        // And a floor above everything catches every inert door.
+        assert_eq!(
+            doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 100.0).len(),
+            inert_default_on_doors(DSV4_DOORS).len()
         );
     }
 }

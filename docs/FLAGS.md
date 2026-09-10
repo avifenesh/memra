@@ -1493,33 +1493,69 @@ when a door's declared default or served-path state stops matching what the admi
 and it refuses to pass vacuously (a coverage scan requires every `MEMRA_DSV4_*` / `MEMRA_F16G_*` name
 the engine reads to be a declared door or an exempt non-door with a reason).
 
-| door | merged | declared default | on the served program | case | why |
-|---|---|---|---|---|---|
-| replay cadence | #374 | ON | **no serving caller** | reclassify as a gate input | full-token replay is armed per request by a gate binary only; no serving or eager request arms it, on any program |
-| dense exact-tail transport | #374 | ON | ON, `m == 1` only | engaged | generic dense entry, but the control scope suppresses it for every `m > 1`, so prefill chunks never use it |
-| graph split-K | #392 | ON | **off-program** | follows the matrix verdict (memra #461) | the arm lives in the matrix expert executor (`dsv4_grouped.rs`); the served reference program never enters it |
-| dense-fast | #404 | ON | ON, `m == 1` only | engaged | same `m == 1` scope as the dense tail |
-| norm-fuse | #404 | ON | **off** | port the admission or re-declare | admitted only under TP/EP f32x; unset resolves to `Ok(false)` on PP-2, where the call sites do exist |
-| HC dot split S16 | #418 | ON | ON | engaged | gates on `dots_f32 && rows == 24 && w == 16384`, no topology term |
-| split-K-fast | #425 | ON | **off-program** | follows the matrix verdict (memra #461) | it selects a split-K entry family; no split-K call site, no door |
-| norm-fuse2 | #426 | ON | **off** | port the admission or re-declare | same TP/EP admission predicate |
-| norm2-wide | #430 | ON | **off** | port the admission or re-declare | admitted only when norm-fuse2 is |
+| door | merged | merged gain (pooled fwd / rev) | declared default | on the served program | disposition | why |
+|---|---|---:|---|---|---|---|
+| replay cadence | #374 | +1.007107% / +1.074545% | ON | **no serving caller** | reclassify as a gate input | full-token replay is armed per request by a gate binary only; no serving or eager request arms it, on any program |
+| dense exact-tail transport | #374 | +0.459578% / +0.397451% | ON | ON, `m == 1` only | engaged | generic dense entry, but the control scope suppresses it for every `m > 1`, so prefill chunks never use it |
+| graph split-K | #392 | **+10.226982% / +10.023951%** | ON | **off-program** | follows the matrix verdict (memra #461) | the arm lives in the matrix expert executor, which CAN serve and was measured serving; the served reference program does not run it |
+| dense-fast | #404 | +1.618979% / +1.609496% composed | ON | ON, `m == 1` only | engaged | same `m == 1` scope as the dense tail |
+| norm-fuse | #404 | +1.618979% / +1.609496% composed | ON | **off** | **permanently unreachable** | admitted only under TP/EP f32x, and TP/EP cannot serve at all (memra #457) |
+| HC dot split S16 | #418 | +2.701174% / +2.591532% | ON | ON | engaged | gates on `dots_f32 && rows == 24 && w == 16384`, no topology term |
+| split-K-fast | #425 | +1.727312% / +1.581907% | ON | **off-program** | follows the matrix verdict (memra #461) | it selects a split-K entry family; no split-K call site, no door |
+| norm-fuse2 | #426 | +1.1022% / +0.9839% | ON | **off** | **permanently unreachable** | same TP/EP admission predicate |
+| norm2-wide | #430 | **+5.955257% / +5.749573%** | ON | **off** | **permanently unreachable** | admitted only when norm-fuse2 is, so TP/EP again |
 
-The three not-engaged cases are kept apart in `DoorState` and pinned per door by
-`each_inert_door_carries_its_own_disposition`, because they have three different fixes. `Off` is an
-admission predicate saying no on a program that HAS the call site. `OffProgram` is a door whose call
-site exists only on a program we do not serve, so the memra #461 matrix verdict decides it, not door
-hygiene. `NoServingCaller` is a door no serving request can reach on any program.
+### The three futures, and why they are not one population
+
+`AdmittingProgram` is the axis, and `served_disposition` decides:
+
+- **Permanently unreachable** (norm-fuse, norm-fuse2, norm2-wide). TP/EP is the only program that
+  admits them, and TP/EP cannot take a customer request AT ALL: `prefill_with_cache_chunked` refuses
+  a batched prime under `topology.is_tp_ep()` ("admits only a single-token prime; batched replicated
+  cache hydration is not wired"), and the topology guard separately refuses MTP/DSpark state, which
+  the served spec route requires. The refusals are independent, so replicating the drafter per rank
+  would still leave TP/EP unable to chunk (memra #457). No matrix verdict and no default flip
+  rescues these: they are removable on their own evidence.
+- **Follows the matrix verdict** (graph split-K, split-K-fast). The matrix expert executor CAN
+  serve, and a sibling lane measured it on the served path at +42% to +140% prefill, so whether
+  these ever engage is memra #461's question, not door hygiene's.
+- **Reclassify as a gate input** (replay cadence). Its own row above says no automatic arming for
+  serving; no program decision can create a caller.
+
+The permanence claim is keyed to the PROGRAM fact, not hard-coded per door:
+`permanence_is_keyed_to_the_program_fact_not_to_the_door` flips `tp_ep_can_serve` and requires all
+three doors to stop being removable and become an ordinary admission question.
+
+### What the merged receipts actually establish
+
+The dev pair drifts about 5% monotonically within one arm across a single run (darklanes
+`KNEE:dev-pair-run-drift-swamps-sub-2pct-levers`, the finding that deleted the split vocab head
+door), so a door merged at under about 2% is below that instrument's resolution however disjoint its
+steady rows looked. Six of the nine are: **replay cadence, dense exact-tail, dense-fast, norm-fuse,
+split-K-fast, norm-fuse2**. Three are above it: graph split-K (+10.2%), norm2-wide (+5.96%), HC dot
+split (+2.70%, the closest to the line). This re-litigates nothing; it is the honest scope of what we
+know, pinned by `the_doors_merged_below_the_dev_pair_instrument_floor_are_named`.
+
+Four doors are BOTH inert on the served path and below that floor, so there is no evidence for their
+default in either direction: **replay cadence, norm-fuse, split-K-fast, norm-fuse2**. That is a
+stronger case for removal than either fact alone.
+
+`DoorState` records the resolution (`Off`, `OffProgram`, `NoServingCaller`) and
+`served_disposition` turns it into a decision by asking which program admits the door and whether
+that program can serve. Both are pinned per door by
+`each_inert_door_carries_its_own_disposition`.
 
 Two doors that DO engage are `m == 1` only, which is decode; prefill is 95-97% of a request's GPU
 seconds at this family's real input:output ratio. An operator cannot opt in to the inert ones either:
 `MEMRA_DSV4_NORM_FUSE=1` on a serving stack does not enable norm fusion, it refuses at boot with
 "norm fusion requires TP/EP f32x".
 
-No default is flipped and no door is deleted here. The disposition of the six is memra #454 and is
-argued per case in [darklanes #601](https://github.com/avifenesh/darklanes/pull/601), including both
-outcomes of the memra #461 matrix verdict; doors whose removal would move a published performance
-claim are the owner's call.
+No default is flipped and no door is deleted here. The dispositions are argued per case in darklanes
+`research/dsv4f-door-reach-20260910/LANE.md`, including both outcomes of the memra #461 matrix
+verdict for the two doors that depend on it. Removal of the three TP/EP-gated doors needs no other
+verdict, but norm2-wide merged at +5.96% and graph split-K at +10.2%, so those two are the owner's
+call rather than a lane's; norm-fuse2 cannot be removed without norm2-wide, which composes on it, so
+the TP/EP chain is one decision and it contains a headline number.
 
 ## Removed doors, 2026-09-10 (the dsv4f split vocab head: the read halves, the step does not)
 
