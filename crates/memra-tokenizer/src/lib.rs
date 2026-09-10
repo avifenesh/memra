@@ -437,6 +437,129 @@ impl Tokenizer {
         })
     }
 
+    /// VERIFY that this tokenizer carries the same vocabulary as an HF checkpoint
+    /// directory's `tokenizer.json`, id by id.
+    ///
+    /// WHY THIS EXISTS. `from_hf_dir` takes byte-level BPE only, which is a real limit and
+    /// not an oversight: gemma-4 ships a SentencePiece-class `tokenizer.json` (a `Split` on
+    /// `▁` with `byte_fallback`, decoder `Replace`+`ByteFallback`+`Fuse`), so an HF-directory
+    /// checkpoint of that family — an NVFP4 mint of the BF16 source, say — cannot build its
+    /// tokenizer from the directory even though the WEIGHTS load fine. The same vocabulary is
+    /// however already parsed from the family's GGUF (`from_gguf`), which memra serves today.
+    ///
+    /// So the seam is "take the tokenizer from a GGUF that carries the same vocabulary". That
+    /// sentence contains a claim, and this function is what turns it into a check: every id
+    /// in the directory's `tokenizer.json` must map to the byte-identical piece string this
+    /// tokenizer holds for that id, the vocabularies must be the same length, and the eos/bos
+    /// ids must agree. A near-match is a DIFFERENT tokenizer — one shifted id silently
+    /// corrupts every prompt — so there is deliberately no fuzzy path and no "close enough"
+    /// arm. Callers refuse the boot on `Err`.
+    ///
+    /// This reads `model.vocab` and `added_tokens` DIRECTLY and does not run the byte-level
+    /// gate, which is the whole point: the directory being unbuildable by `from_hf_dir` is
+    /// the precondition, not a failure.
+    ///
+    /// On success returns the number of ids compared.
+    pub fn verify_vocab_against_hf_dir(&self, dir: &std::path::Path) -> Result<usize, String> {
+        let tj_path = dir.join("tokenizer.json");
+        let text = std::fs::read_to_string(&tj_path)
+            .map_err(|e| format!("read {}: {e}", tj_path.display()))?;
+        let tj = json::parse(&text).map_err(|e| format!("{}: {e}", tj_path.display()))?;
+        let model = tj.get("model").ok_or("tokenizer.json: missing model")?;
+        let vocab = model
+            .get("vocab")
+            .and_then(|v| v.as_obj())
+            .ok_or("tokenizer.json: missing model.vocab")?;
+
+        // id -> piece, from model.vocab plus added_tokens (which append past the map).
+        let mut hf: HashMap<u32, String> = HashMap::with_capacity(vocab.len());
+        for (piece, v) in vocab.iter() {
+            let id = v
+                .as_u64()
+                .ok_or("tokenizer.json: non-integer id in model.vocab")?;
+            let id = u32::try_from(id).map_err(|_| "tokenizer.json: vocabulary id exceeds u32")?;
+            hf.insert(id, piece.to_string());
+        }
+        let empty: Vec<json::Value> = Vec::new();
+        for v in tj
+            .get("added_tokens")
+            .and_then(|v| v.as_arr())
+            .unwrap_or(&empty)
+        {
+            let (Some(id), Some(content)) = (
+                v.get("id").and_then(|x| x.as_u64()),
+                v.get("content").and_then(|x| x.as_str()),
+            ) else {
+                return Err("tokenizer.json: added_tokens entry without id/content".into());
+            };
+            let id = u32::try_from(id).map_err(|_| "tokenizer.json: added token id exceeds u32")?;
+            hf.insert(id, content.to_string());
+        }
+
+        if hf.len() != self.id_to_token.len() {
+            return Err(format!(
+                "vocab length disagrees: {} ids in {} vs {} in the tokenizer source",
+                hf.len(),
+                tj_path.display(),
+                self.id_to_token.len()
+            ));
+        }
+        // Byte-exact, id by id. Report the first few disagreements rather than just a count:
+        // a whole-vocab offset and a handful of renamed control tokens are different
+        // problems and the message has to let the reader tell them apart.
+        let mut bad: Vec<String> = Vec::new();
+        for (id, piece) in &hf {
+            match self.id_to_token.get(*id as usize) {
+                Some(mine) if mine == piece => {}
+                Some(mine) => {
+                    if bad.len() < 8 {
+                        bad.push(format!("id {id}: {piece:?} (hf) vs {mine:?} (source)"));
+                    }
+                }
+                None => {
+                    if bad.len() < 8 {
+                        bad.push(format!("id {id}: {piece:?} (hf) vs <absent> (source)"));
+                    }
+                }
+            }
+        }
+        if !bad.is_empty() {
+            return Err(format!(
+                "{} of {} ids disagree between {} and the tokenizer source; first: {}",
+                bad.len().min(8),
+                hf.len(),
+                tj_path.display(),
+                bad.join("; ")
+            ));
+        }
+
+        // eos/bos: `tokenizer_config.json` names them by STRING, so resolve through the vocab
+        // that was just proven identical and compare ids.
+        let cfg_path = dir.join("tokenizer_config.json");
+        if let Ok(cfg_text) = std::fs::read_to_string(&cfg_path)
+            && let Ok(cfg) = json::parse(&cfg_text)
+        {
+            for (key, mine) in [("eos_token", Some(self.eos_id)), ("bos_token", self.bos_id)] {
+                let Some(name) = cfg.get(key).and_then(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .or_else(|| v.get("content").and_then(|c| c.as_str()).map(String::from))
+                }) else {
+                    continue;
+                };
+                let hf_id = self.token_to_id.get(&name).copied();
+                if hf_id != mine {
+                    return Err(format!(
+                        "{key} disagrees: {}={name:?} -> id {hf_id:?}, tokenizer source holds \
+                         id {mine:?}",
+                        cfg_path.display()
+                    ));
+                }
+            }
+        }
+        Ok(hf.len())
+    }
+
     /// Build a tokenizer from an HF fast-tokenizer checkpoint directory
     /// (`tokenizer.json` + optional `tokenizer_config.json` / `generation_config.json` /
     /// `chat_template.jinja`). Only byte-level BPE (the gpt2 class — MiniMax-M3, Qwen,

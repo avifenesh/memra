@@ -4973,6 +4973,64 @@ fn gemma_sampled_spec_on() -> bool {
     )
 }
 
+/// MEMRA_TOKENIZER_GGUF (lane/gemma4-full-serving, 2026-09-10): take a DIRECTORY-sourced
+/// model's tokenizer from a GGUF instead of the directory.
+///
+/// Syntax is `name=path[,name=path...]` — model-scoped on purpose, because a multi-model
+/// server has no business inferring which model a bare path was meant for. A bare path, an
+/// empty name and an empty path all REFUSE LOUD (the mis-typed-seam law): a tokenizer is not
+/// a knob where a silent wrong guess is survivable.
+///
+/// Unset (the default) changes nothing: directory models build their tokenizer from the
+/// directory exactly as before.
+fn tokenizer_gguf_override(model: &str) -> Option<String> {
+    static MAP: std::sync::OnceLock<std::collections::HashMap<String, String>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| {
+        let mut out = std::collections::HashMap::new();
+        let Ok(raw) = std::env::var("MEMRA_TOKENIZER_GGUF") else {
+            return out;
+        };
+        for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+            let Some((name, path)) = entry.split_once('=') else {
+                panic!(
+                    "MEMRA_TOKENIZER_GGUF={raw:?}: entry {entry:?} is not name=path (a bare \
+                     path cannot say WHICH model it is the tokenizer for)"
+                );
+            };
+            let (name, path) = (name.trim(), path.trim());
+            if name.is_empty() || path.is_empty() {
+                panic!("MEMRA_TOKENIZER_GGUF={raw:?}: entry {entry:?} has an empty name or path");
+            }
+            if out.insert(name.to_string(), path.to_string()).is_some() {
+                panic!("MEMRA_TOKENIZER_GGUF={raw:?}: model {name:?} named twice");
+            }
+        }
+        out
+    })
+    .get(model)
+    .cloned()
+}
+
+/// Build a tokenizer from `gguf_path` and prove it is the same vocabulary the checkpoint at
+/// `tok_dir` declares, id by id, before returning it. Returns the tokenizer and the number of
+/// ids compared, so the boot line can state the size of the claim rather than assert it.
+fn load_verified_tokenizer(
+    gguf_path: &str,
+    tok_dir: &std::path::Path,
+) -> Result<(Tokenizer, usize), String> {
+    let g = GgufFile::open(gguf_path).map_err(|e| format!("open {gguf_path}: {e}"))?;
+    let tok = Tokenizer::from_gguf(&g)?;
+    let n_ids = tok.verify_vocab_against_hf_dir(tok_dir).map_err(|e| {
+        format!(
+            "MEMRA_TOKENIZER_GGUF names {gguf_path}, but it is not the same tokenizer as {}: \
+             {e}",
+            tok_dir.display()
+        )
+    })?;
+    Ok((tok, n_ids))
+}
+
 fn gemma4_spec_k_env() -> usize {
     static K: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *K.get_or_init(|| match std::env::var("MEMRA_GEMMA4_SPEC").as_deref() {
@@ -12775,12 +12833,38 @@ pub fn run(
                     return;
                 }
             };
-            let tok = match Tokenizer::from_hf_dir(&tok_dir) {
-                Ok(t) => t,
-                Err(err) => {
-                    let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
-                    return;
-                }
+            // TOKENIZER SOURCE OVERRIDE (MEMRA_TOKENIZER_GGUF, lane/gemma4-full-serving):
+            // `from_hf_dir` takes byte-level BPE only, so a SentencePiece-class family cannot
+            // build its tokenizer from an HF directory even when the WEIGHTS load — which is
+            // exactly what an NVFP4 mint of the gemma-4 BF16 source hits. The same vocabulary
+            // is already parsed from that family's GGUF, so this names one.
+            //
+            // The override does NOT trust the operator that the two agree: the GGUF-built
+            // tokenizer is verified id by id against the directory's own `tokenizer.json`
+            // before it is used, and a disagreement is a loud boot failure. Without that,
+            // pointing at the wrong GGUF would silently corrupt every prompt.
+            let tok = match tokenizer_gguf_override(name) {
+                Some(gguf_path) => match load_verified_tokenizer(&gguf_path, &tok_dir) {
+                    Ok((t, n_ids)) => {
+                        eprintln!(
+                            "[tokenizer] {name}: taken from {gguf_path} (MEMRA_TOKENIZER_GGUF), \
+                             VERIFIED against {} — {n_ids} ids byte-identical",
+                            tok_dir.display()
+                        );
+                        t
+                    }
+                    Err(err) => {
+                        let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                        return;
+                    }
+                },
+                None => match Tokenizer::from_hf_dir(&tok_dir) {
+                    Ok(t) => t,
+                    Err(err) => {
+                        let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                        return;
+                    }
+                },
             };
             (model, tok)
         } else {
