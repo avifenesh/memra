@@ -319,13 +319,25 @@ That is the gap.
 Target: **>= 128 concurrent real-time streams at p95 end-of-speech-to-final < 800 ms, on one
 RTX PRO 6000, at the accuracy tier**, i.e. roughly 2x the only comparable published figure.
 
-Where we stand: **streams@SLO = 0.** There is no GPU kernel and no audio endpoint. Our one hard
-local datapoint is a *negative* one: on an A100 with a resident RNNT student plus a resident
-large-v3, **c1 ran fine and c4 shed 54 of 71 streams on bounded-queue overflow**. Whether that
-is a capacity wall or an admission defect is unmeasured, and it is the first thing §7 buys.
+Where we stand: **streams@SLO = 0.** There is no GPU kernel and no audio endpoint.
 
-We are not behind by a percentage. We have not started. The program is worth funding only if
-the first cheap step says the collapse is engineering rather than physics.
+**Step 1 ran on 2026-09-10 and the collapse is engineering, not physics.** On one A100 80GB PCIe,
+profiled at phase level: of a 26.18 ms streaming step only **12.06 ms is kernel execution**, there
+are **2,904 device kernel launches per 80 ms of audio**, and the identical fused step costs
+**31.522 ms at batch 1 and 35.890 ms at batch 32 (+13.9%**, reproduced at +14.7% in a second
+process). A card that is SM-saturated at c4 scales roughly linearly in batch; this one is flat.
+On that same card, in the same session, with the same audio and the same 64-frame bounded queue,
+the drive shape alone decides the outcome: one worker at batch 1 sheds **2 of 4** streams at c4
+with every lane at the queue cap, while one fused batch-N step consuming a frame from every lane
+holds **64 of 64** at max queue depth 3 and 44% step duty.
+
+So the ceiling this program has to beat is not the A100. It is our own scheduler. That is the
+result §7 step 1 was bought to produce, and it clears K1. It does **not** establish a
+`streams@SLO`: the batched arm replays one captured chunk across lanes on a shared batched cache
+with no finalizer, no endpointing and no latency percentile, so it bounds compute capacity and
+nothing else. Turning that bound into a served number is step 3.
+
+Receipts (private): darklanes `research/speech-k1-20260910/RESULTS.md`.
 
 ---
 
@@ -355,7 +367,10 @@ Decides: **is our c4 collapse a capacity wall or an admission defect?** If the c
 and the program is real. If the card is saturated at c4 with an accuracy-tier model resident,
 the product does not exist at that tier and K1 fires.
 
-**Step 2, GPU kernels for the RNNT path. ~4-6 GPU-hours.** Take the family that already
+**Step 2, GPU kernels for the RNNT path. ~4-6 GPU-hours. DEPRIORITISED behind step 3 by the
+2026-09-10 step-1 result**, which found 54% of the streaming step is gap between launches and
+took one card from 4 streams to 64 with a scheduler change and no kernel. Kernels are not where
+the loss is; the serving surface is. Take the family that already
 streams end to end and put it on the GPU: frontend, FastConformer subsampler and blocks,
 prompt kernel, predictor, joint. Exit, and it is deliberately not "RTFx > 1", which any GPU
 clears instantly and would prove nothing: **byte identity against the banked CPU reference**,
@@ -383,15 +398,24 @@ specifically because that is the card the published rows were measured on.
 Registered here before the spend, so the program can be stopped by evidence rather than by
 fatigue.
 
-- **K1, capacity wall.** If step 1 shows the card SM-saturated at c4 with an accuracy-tier
-  model resident, "many concurrent streams on one card at the accuracy tier" is not a thing
-  that exists. Drop to the 0.6B tier, where NVIDIA already publishes 512 streams and we would
-  be a follower, or stop.
-- **K2, no engine advantage.** If step 2's GPU RNNT path lands within noise of CTranslate2's
-  per-stream RTF on the same card after one optimization cycle, memra is not meaningfully
-  faster on throughput and the batch axis is closed permanently. Batch was never the lever;
-  this only confirms it. Streams@SLO can still carry the program, but the "our engine is fast"
-  claim does not.
+- **K1, capacity wall. ANSWERED 2026-09-10: does not fire.** The criterion was: if step 1 shows
+  the card SM-saturated at c4 with an accuracy-tier model resident, "many concurrent streams on
+  one card at the accuracy tier" is not a thing that exists. Step 1 measured the opposite. The
+  card is idle between launches, not saturated (§6.3), and the same card goes from shedding 2 of
+  4 to holding 64 of 64 on a drive-shape change with no kernel written. A resident large-v3
+  finalizer costs the student 30% on the mean step and 2x on p95, which is a real budget item for
+  step 3 and still leaves each stream under half of real time. **K1 does not fire; the program
+  continues.**
+- **K2, no engine advantage. NOT SETTLED, and its decision content has largely expired.** The
+  criterion was: if step 2's GPU RNNT path lands within noise of CTranslate2's per-stream RTF on
+  the same card after one optimization cycle, memra is not meaningfully faster on throughput and
+  the batch axis is closed permanently. That path still has zero lines of code, so there is
+  nothing to compare and no verdict may be issued. Step 1 closed the axis anyway, by price rather
+  than by speed: batch-64 CTranslate2 measured on the pinned clip set costs about $0.015 per
+  audio-hour of compute against a published market price one to two orders of magnitude higher,
+  so engine throughput on the batch axis moves the P&L by a couple of points whatever it turns
+  out to be. **The "our engine is fast on batch transcription" claim should be dropped from this
+  program now rather than after step 2 measures it.** Streams@SLO carries the program alone.
 - **K3, no business.** If step 3's streams@SLO on an RTX PRO 6000 lands below the break-even
   count for that card, the engine costs more per stream-hour than the cheapest published
   streaming price and the program is not a business. Sell the model, not the engine. (The
@@ -402,8 +426,9 @@ fatigue.
   owned by another lane. **Step 4 stays capped until that lane reports**, and speed work must
   not be used as evidence that the model question is settled.
 
-K1 and K2 are answered by ~7 GPU-hours of rented time. That is what it costs to find out
-before funding the program instead of after.
+K1 was answered on 2026-09-10 for about $3.58 of rented A100 time, well inside the ~7 GPU-hour
+estimate, and it cleared. K2 needs step 2 to exist before it can be answered at all, and §6.3's
+result reorders the plan so that step 3 comes first.
 
 ---
 
