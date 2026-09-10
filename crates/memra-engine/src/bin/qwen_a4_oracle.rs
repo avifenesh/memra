@@ -50,7 +50,9 @@ fn ue4m3(b: u8) -> f32 {
 
 fn f32_to_ue4m3(v: f32) -> u8 {
     // round-to-nearest-even over the representable grid, saturating at 448.
-    if !(v > 0.0) {
+    // NaN and non-positive both quantize to zero; spelled through partial_cmp because the
+    // comparison is on a partially ordered type and the negation hid that.
+    if !matches!(v.partial_cmp(&0.0), Some(std::cmp::Ordering::Greater)) {
         return 0;
     }
     let v = v.min(448.0);
@@ -161,19 +163,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let off = (blk * padded_rows + row) * BLOCK;
                 let d4 = &cap.scratch[off..off + 16];
                 let qs = &cap.scratch[off + 16..off + BLOCK];
-                for sub in 0..16 {
+                for (sub, d4_sub) in d4.iter().enumerate() {
                     let base = blk * 256 + sub * 16;
                     let vals: Vec<f32> =
                         (0..16).map(|j| cap.x[row * cap.in_f + base + j]).collect();
                     let amax = vals.iter().fold(0f32, |m, v| m.max(v.abs()));
                     let raw = amax / (6.0 * cap.input_scale);
                     let micro = f32_to_ue4m3(raw.min(448.0));
-                    if micro != d4[sub] {
+                    if micro != *d4_sub {
                         bad_scales += 1;
                     }
                     let denom = cap.input_scale * ue4m3(micro);
-                    for j in 0..16 {
-                        let q = if denom > 0.0 { vals[j] / denom } else { 0.0 };
+                    for (j, val) in vals.iter().enumerate() {
+                        let q = if denom > 0.0 { *val / denom } else { 0.0 };
                         let want = f32_to_e2m1(q);
                         // PACKING, from the kernel: four lanes own the 16 values, four each
                         // (L0=0..3, L1=4..7, L2=8..11, L3=12..15). Lane 0 writes u32 2*sub+0 with

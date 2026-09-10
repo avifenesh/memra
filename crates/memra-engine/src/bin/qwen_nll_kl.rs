@@ -187,12 +187,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // KL(reference || candidate) = sum_v p_ref(v) * (logp_ref(v) - logp_cand(v)).
                 let base = step * vocab * 4;
                 let mut sum = 0.0f64;
-                for v in 0..vocab {
+                for (v, lp_cand) in lsm.iter().enumerate() {
                     let o = base + v * 4;
                     let lp_ref =
                         f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]])
                             as f64;
-                    sum += lp_ref.exp() * (lp_ref - lsm[v] as f64);
+                    sum += lp_ref.exp() * (lp_ref - *lp_cand as f64);
                 }
                 kl += sum;
                 per_kl.push(sum);
