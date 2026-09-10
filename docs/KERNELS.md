@@ -1,5 +1,56 @@
 # Kernel inventory
 
+## Qwen FA2 attention experiment, 2026-09-09
+
+Both entries carry the same numerical body: BF16 MMA, FP32 direct PV accumulation,
+a BF16-rounded MMA denominator and log2-domain online softmax over 32-key tiles.
+The door is qualified only for the Qwen 24 Q / 4 KV / d256 causal prefill at
+t=16..1039 on the 170-SM sm_120a target with `MEMRA_PRIME_CHUNK=1024`.
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23 | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same door; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
+
+## Whisper CPU reference operators, 2026-09-09
+
+These are native reference operations, not CUDA support or serving qualification.
+The measured numeric programs and bounds are in
+[the encoder receipt](../research/asr-modality-20260909/ENCODER-NUMERICS.md).
+
+| Operator | Program | Numeric class | Source |
+| --- | --- | --- | --- |
+| `WhisperFrontend::compute` | Periodic Hann, direct real DFT, Slaney filters and Whisper log normalization | F32 PCM/output; reference DFT accumulation | `crates/memra-reference/src/speech/frontend.rs` |
+| `WhisperEncoder::encode` | Biased strided convolution, positions, LayerNorm, full attention and residual FFNs | F32 or binary16 values with FP32 accumulation; no external executor | `crates/memra-reference/src/speech/encoder.rs` |
+| `gelu_erf` | Owned evaluation of A&S 7.1.26 matching the pinned HF CPU vector program | FP32 fused polynomial, final destination rounding | `crates/memra-reference/src/speech/encoder.rs` |
+| Speech reference matrix product | Four fixed FMA partial sums; AVX2 vectorizes independent time rows; rows are packed into cache-resident groups and output columns split across `MEMRA_SPEECH_THREADS` workers | Same scalar/AVX2 FP32 reduction order at every group size and thread count, bit-identical by construction | `crates/memra-reference/src/speech/matrix.rs` |
+| `WhisperDecoder::step` and `speech::decode` | Cached self and cross attention, tied logits, then the pinned beam-1 suppression, timestamp grammar and forced-timestamp rules | Same F32 or binary16 class as the encoder | `crates/memra-reference/src/speech/decoder.rs`, `decode.rs` |
+
+## Carried Qwen prime replay, 2026-09-09
+
+All entries are Memra-owned twins. The qualified Qwen geometry on the 170-SM
+sm_120a target uses carried-prime replay as its default, without a runtime door.
+Session addresses and absolute depth come from the refreshed replay table.
+Numerical bodies preserve the corresponding eager entry's operation order.
+
+| Symbol | Purpose | Binding |
+| --- | --- | --- |
+| `append_quantize_kv_q8_0_q5_1_rows_prime_table` | Quantized KV append and live length publication | `Engine::append_kv_quantized_rows` |
+| `fa_dequant_kv_ws_bf16_prime_table` | True-depth dequantization into stable BF16 workspace | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_db_prime_table` | Existing four-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
+| `fa_prefill_qw_t3_prime_table` | Existing three-plane attention with live causal depth | `Engine::fa_prefill_view_ws` |
+| `ssm_conv1d_gdn_state_f32_prime_table` | Carried convolution reads the live ring | `Engine::ssm_conv1d_gdn_state_pad` |
+| `ssm_conv_ring_update_f32_prime_table` | Publishes the live convolution ring | `Engine::ssm_conv1d_gdn_state_pad` |
+| `gdn_chunk_state_mma_prime_table` | Chunked GDN reads/writes live ping-pong state | `Engine::gdn_scan_chunked` |
+| `prime_tap_table` | Bulk copy of exact residual bits to live strided tap destination | `Engine::prime_tap_table` |
+
+
+## Qwen attention prime staging, 2026-09-09
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `fa_prefill_qw_t3` | Two K staging planes plus one V plane, register P operands; unchanged head-dim 256 prime arithmetic | BF16 KV, f32 Q/O | existing warp-MMA support | `MEMRA_PRIME_KV_T3`, default OFF | `Engine::fa_prefill_view_ws` |
+
 ## GLM TP pool-split indexer, 2026-09-08
 
 Measured f32 TP-2 receipt: prime improves 10.3% at 128k and 34.6% at 1M. Decode is NEGATIVE at 128k and FLAT at 1M; merge plus exchange consumes score/select savings. Decode split dispatch was deleted. Shared kernels remain for grouped prime (`t>1`), door OFF; decode (`t=1`) stays replicated. See `research/glm5-tp-indexer-split-20260908/RESULTS.md`.
@@ -580,6 +631,7 @@ target-card performance qualification is pending.
 | fp8_blk_dequant.cu | `memra_fp8_blk_q8_0_bytes` (:220), `memra_fp8_blk_dequant_q8_0` (:228) | device-side dequant of block-128 FP8 weights into GGUF Q8_0 blocks at model load | — | MEMRA_FP8_BLK_GPU (fp8_ffi.rs:476) | fp8_ffi.rs:458-474 |
 | fa3_prefill.cu | `memra_fa3_prefill`, `memra_fa3_vl` (+stub twins rc=3, :19-23) | FA3 v10 engine shim, head_dim 256 only | wgmma/TMA sm_90a-only; `-DMEMRA_FA3_STUB` otherwise (build.rs:525-526) | promoted default-ON on hopper 2026-07-27, `MEMRA_FA3=0` reverts; engages only head_dim==256 causal t==t_kv (lib.rs:15399-15409; file header ":1-7 opt-in" is stale) | lib.rs:889-904 |
 | moe_f16_grouped.cu | `memra_moe_m1_graph_splitk`; `moe_m1_graph_splitk_partial_kernel<1/2>`, `moe_m1_graph_splitk_reduce_kernel<1/2>` | Numeric class `moe_m1_graph_splitk_f32_fixed_order`: fixed maximum grid, device CSR slices, original half operands, ascending f32 reduction. **Not token-identical to sktail** because the reduction tree differs. Inactive rows `[CSR live, 6)` become +0: downstream projection excludes them through CSR and scatter ignores `pairs=-1`; component mask/poison assertions cover this contract. Drift row: 3/160 top-1 changes, mean/max KL(control to graph) 0.003669683/0.098539347, report-only. | M=1, 4096/2048, 6 slots, up to 16 slices | `MEMRA_DSV4_MOE_M1_SPLITK` defaults ON (unset/graph); explicit 0 is sktail rollback, seam decide-by: 2026-09-22 | Owner accepted 2026-09-08 with drift 3/160, mean KL 0.0037. Component/replay/refusal gates PASS; +10.226982%/+10.023951% sampled; [receipts #520](https://github.com/avifenesh/darklanes/pull/520), source `1cda33750`, binary `d5a8a69a` |
+| moe_f16_grouped.cu | `moe_m1_splitk_fast_partial_kernel<1/2>`, `moe_m1_splitk_fast_reduce_kernel<1/2>` | Same `moe_m1_graph_splitk_f32_fixed_order` class, unchanged slice assignment and arithmetic order. Instrument + default-OFF door; candidate 1 uses one aligned 16-byte code load plus one 2-byte scale load per 32-value window. Original kernels, slice map, MMA order, reducer, 128-thread layout and one-block prefetch stay unchanged. Report modeled effective weight GB/s (unique codes + scales / partial time), with 1,792 GB/s a nominal peak. Live 0..6 cases are prefixes derived from one observed six-live CSR per rank/projection, plus an independently observed low-live case when seen in the bounded capture. | M=1, 4096/2048, 6 routes, device CSR live 0..6 | Default (unset). Explicit `MEMRA_DSV4_SPLITK_FAST=0` selects the base graph split-K entries; seam decide-by: 2026-09-23 | `dsv4_splitk_fast_gate`: real-route replay components, raw partial/output bits, canaries and modeled byte accounting. Harness-only `--diagnose-four-live` retains the r1 rank-0 GU route, dumps CSR/input/scales, checks the verbatim merged-wrapper control, current scaffold wrapper and separate kernels without events, then verifies separate retained partial/reducer graphs with timing events recorded outside capture on the replay stream; no timing rows in diagnostic mode. The 597969ee diagnostic localized the captured-event host synchronization failure. Each component graph must contain one kernel and zero events. Corrected baseline: 112 derived-prefix plus 16 observed-low rows pass raw-bit/canary/tail checks. Candidate 1 is qualified at `5d2cbc0d4`: component bit equality on all 128 rows with the partial interval improving in 58 of 64 warm/cold live cases (up to +14.93%), memcheck and synccheck 0 errors, four fresh full-model processes byte-identical against the eager oracle, and sampled ABBA +1.848008% forward and +1.702484% reversed with identical output. Occupancy inputs unchanged: 128 threads, 17,152 static shared bytes, 0 local, 5 CTAs/SM; GU registers 84 to 86. [Receipts, Darklanes #542](https://github.com/avifenesh/darklanes/pull/542). |
 | moe_f16_grouped.cu | `memra_moe_m1_splitk`; `moe_m1_splitk_partial_kernel<1>` / `<2>` and `moe_m1_splitk_reduce_kernel<1>` / `<2>` | ModelOpt M=1 down/GU: adaptive 1-16 K slices, original half operands, fixed-order f32 reduction. Existing M1/half2 kernels remain the oracle. | 128-thread partial CTAs, 256-thread reduction; 4096/2048 geometry | Process-local `set_moe_m1_splitk_for_gate`, default OFF | mmq_ffi.rs; `research/dsv4f-moe-m1-splitk-20260907/RESULTS.md` |
 | moe_f16_grouped.cu | `memra_moe_m1_splitk_component`, `memra_moe_m1_splitk_component_token` | Eight-token real-route component gate: per-rank GU/down ABBA, finite/repeat/canary checks, explicit tolerance and per-slot timing summary. | Same candidate and oracle launchers; diagnostic only | Process-local `set_moe_m1_splitk_component_for_gate`, default OFF | mmq_ffi.rs; private receipts named in `research/dsv4f-moe-m1-splitk-20260907/RESULTS.md` |
 | moe_f16_grouped.cu | `memra_moe_f16g_{dequant,gemm,gemm_sk,gather_act,h2f,h2f_scaled,w_bytes,act_bytes}`, `memra_moe_kq_gemm_sk` | per-layer expert dequant to f16 + ONE grouped f16 GEMM per projection over CSR groups; per-qtype dequant kernels for Q4_0/IQ4_XS/IQ3_S/Q6_K/Q4_K/Q3_K (:109-246); "SASS portable across 89/90a/100a/120a" (:336) Per-device cuBLAS handle slots since 2026-09-02 (same B200 finding as f16_prefill.cu). | smem opt-in >48KB, 1 CTA/SM on sm_120a (:483-486) | MEMRA_MOE_F16G (=2 single-kernel, mmq_ffi.rs:394), MEMRA_F16G_SK/_TAIL/_DIRECT/_DEBUG | mmq_ffi.rs:348-424 |
@@ -624,6 +676,56 @@ receipts: `research/kernel-dedup-20260821/RECEIPTS.md`; every modified TU × arc
   include `wgmma_common.cuh` for the smem descriptor builder, fence/commit, and the
   m64n64k16.bf16 wrapper. Still local by design: fa3's `_tb` (transpose-B imm) and
   templated wait, qmatvec's m64n64k32.s8 form and raw asm statements.
+
+## HC24 split dots numeric class (owner accepted default ON, S16)
+
+`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_hc_dot_split_partial_kernel<S>`
+and `dsv4_hc_dot_split_reduce_kernel<S>` for S=8/16/32. Only the device HC-24
+pre-attention/pre-FFN sites with F32 N=24,K=16384 dispatch this pair. Other
+dots shapes retain their current kernel. Existing CUDA kernels are unchanged.
+
+Each of 24*S blocks has 128 threads. A contiguous K slice retains increasing
+eight-element per-lane multiply/add order and the exact-tail 128-leaf tree.
+S=32 has 64 zero leaves because its slice has 512 elements. One 32-thread
+second-stage block sums each row's partials in ascending slice order with
+explicit round-to-nearest f32 adds. No atomics or fused multiply-add.
+This is the **HC24 split dots** numeric class, not bit-identity with the
+exact-tail dots class: restarting accumulators and summing slices changes
+association. Each S is a distinct class and must be pinned in its receipt.
+
+Scratch is 24*32 F32 elements per decode state and rank, allocated before
+capture. Every call writes all partials it reads, both stages use the same
+stream, and graphs retain stable scratch addresses. `MEMRA_DSV4_HC_DOT_SPLIT`
+is ON when unset; exact `1` or `16` also selects the owner-chosen S=16.
+Explicit `0` restores sequential dots after a fresh process/state capture.
+S8 and S32 remain explicit opt-in classes; other strings select OFF.
+Rollback seam decide-by: 2026-09-23, owner accepted 2026-09-09.
+S32 was component-fastest but its 1.407% advantage over S16 did not justify
+rebuilding and re-review; only S16 has the model campaign receipts.
+
+[Darklanes #538](https://github.com/avifenesh/darklanes/pull/538) banks both-rank
+S8/16/32 components and zero-error memcheck/synccheck, two fresh process
+observations per arm with external token/logit/cache/hidden equality, AR epochs
+and eight refusals per arm per process. ON census is 86 partial plus86 reducer
+nodes per rank in each of the three forward variants; OFF and commit segments
+have zero. Source `d42196214`, binary
+`d9ca7ac0bb6417fcd99e176cd6e2244d9e9d8b6b837a08d73b27fc0a7bd2dc5c`.
+
+KEEP default ON: sampled pooled +2.701174% forward / +2.591532% reverse,20 eligible
+rows per order with first capture timed. All128 DRIFT-R3 input hashes match:
+49/2048 top1 changes (2.392578%), KL OFF-to-ON mean/max
+0.005672511/0.421308907 and ON-to-OFF0.005758277/0.483190648; greedy16/64
+identical and2099/4096 matching tokens. This is a distinct numeric class,
+not token-identical to the sequential dot. The owner accepted default ON
+on 2026-09-09, also informed by [drift mechanism #534](https://github.com/avifenesh/darklanes/pull/534)
+and [task accuracy #545](https://github.com/avifenesh/darklanes/pull/545):
+control 177/300, split-K + HC 177/300, McNemar p=1.00.
+`dsv4_hc_dot_split_gate --defaults` observes unset/0 without an HC override,
+checks every default census, 256-step eager identity within the selected class,
+eight refusals and five retained-graph sanity rows. Historical Rust and CUDA
+controls pin HC OFF before discovery or model creation. Profile and default
+engagement paths retain the environment policy.
+The source rebase does not relabel the pinned binary receipts as a new build.
 
 ## DSV4 segmented replay component, 2026-09-08
 
@@ -686,3 +788,204 @@ Both rollback seams have decide-by 2026-09-22 for removal review.
 Composition confirmation is directly recorded in
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, alongside the standalone cadence #508 and dense #507 receipts.
+
+### KV RMSNorm and RoPE default with rollback, 2026-09-09
+
+`dsv4_norm_rope_f32_fixed_order_kernel` is the default-ON (admitted TP/EP f32x)
+`MEMRA_DSV4_NORM_FUSE` arm. It replaces the adjacent KV norm and rotary launches
+in each t=1 device batch attention layer (SWA, CSA and HCA). The 128-thread
+RMSNorm reduction is unchanged; only shared-memory transport replaces the
+normalized f32 global-memory intermediate. The subsequent QAT is unchanged.
+Retained census confirms 43 launches removed per rank per forward step,
+with 43 fused nodes in each ON forward variant and zero in OFF.
+
+Attention-entry norm feeds Q and KV projections and, in compressed layers,
+f32 compressor/indexer projections. Q norm/pack is already fused by the diet.
+MoE-entry norm feeds router logits before activation quantization and grouped
+FP8-to-half gathering; shared experts also consume its BF16 pack. Those are
+not one adjacent norm/gather/convert chain. Compressor emission norm feeds
+RoPE then Hadamard/FP4 (indexer) or QAT (attention), but its replay wrappers
+are outside this lane. Final norm feeds f32 head dots. No fusion of these
+fan-out chains or modification of their reduction trees is proposed.
+
+KEEP small, same numeric class: +0.607010% forward and +0.437574% reverse
+pooled throughput on pinned DSV4F EP+TP2 2x RTX PRO 6000 with full replay,
+cadence, dense exact-tail, graph split-K, device sampler and diet. A second
+forward run confirms +0.499856%. Each order has 20 sampled rows with first
+capture included. All 86 component sites pass raw-bit comparison, memcheck
+and synccheck report zero errors, and every 256-step identity/census/reset
+and 16-refusal invocation passes. Receipts: [private Darklanes #530](https://github.com/avifenesh/darklanes/pull/530),
+the report and raw manifests linked there, source `511f0e663`,
+binary `e36c98b0bd80cd8f1c6895f7193e68ebf9120327e437b5fab07c1945cad5761c`.
+The composition with dense-fast is KEEP at +1.618979% / +1.609496%, with
+40 identity-matched sampled rows, and is now the default in the admitted path.
+Same numeric class, token-identical to the prior default. Rollback uses explicit
+`MEMRA_DSV4_NORM_FUSE=0` with a fresh process/uncaptured state; unset is ON.
+Rollback seam decide-by: 2026-09-23. Composition receipts: [private Darklanes #535](https://github.com/avifenesh/darklanes/pull/535). FFI entry: `memra_dsv4_norm_rope_f32_fixed_order` in
+`src/dsv4_ffi.rs`, dispatched by the t=1 batch attention path in `src/dsv4_gpu.rs`.
+
+### Dense-fast exact-tree kernels and qualification (default ON, 2026-09-09)
+
+`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
+and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
+launchers by `MEMRA_DSV4_DENSE_FAST`. FP8 uses 256 threads for two independent
+rows sharing the identical E4M3 table; each row keeps 128 leaves. Dots retain
+128 threads, existing 16-byte operand loads and four-iteration loop unrolling.
+Leaf t consumes K positions 8*t+1024*j+[0..7] in ascending j/element order.
+The final tree is ((p[t]+p[t+64])+(p[t+32]+p[t+96])) followed by guarded
+16/8/4/2/1 warp shuffles, all F32 additions. FMAD stays disabled. Ragged tile
+rows participate in barriers without out-of-range operand loads or stores.
+
+`tools/dsv4-dense-fast-gate.cu` checks raw bits, guards, operand immutability
+and actual retained graph functions. All 24 real rank/shape cases, 36 boundary
+cases and two cancellation witnesses pass in normal, memcheck and synccheck;
+both sanitizers report zero errors. Each real case has 50 warm and 50 cold
+CUDA-event samples per arm; cold flushes 256 MiB. GB/s is modeled unique tensor
+traffic, not measured DRAM bandwidth. Resource APIs report static occupancy
+limits; disassembly reports static instructions. The captured operand callback
+is null in normal work and verifies registered stream and allocation ownership.
+
+`src/bin/dsv4_dense_fast_gate.rs` forces A OFF and B ON on the default
+split-K/cadence/device sampler/diet program, checks 256 per-step identities,
+retained resets, every forward variant's functions and 16 live refusals.
+Its 20-row ON/OFF/OFF/ON and single reverse twin include each scored arm's first
+capture. Pooled gains are +1.551526% and +1.459516%; all 40 rows are eligible
+and share token/logit/cache/hidden identity. Composition with norm-fuse is KEEP
+at +1.618979% / +1.609496% and defaults ON when unset. Explicit `0` is the
+rollback with fresh uncaptured states; seam decide-by: 2026-09-23.
+Same numeric class, token-identical to the prior default. Source `711165799`, model binary SHA256
+`4be3e8084bb7d589abb8d2250c06f8c12f1edb713a66e2390bc90ed91821d5fd`.
+Receipts: [private Darklanes #529](https://github.com/avifenesh/darklanes/pull/529).
+Composition receipts: [private Darklanes #535](https://github.com/avifenesh/darklanes/pull/535).
+`dsv4_densefast_normfuse_default_gate` checks real unset/0 selection before
+capture, both function censuses, eager identity, refusals and five sanity rows.
+Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
+environment policy after the eager OFF oracle. No kernel arithmetic changes.
+
+### Remaining DSV4 activation packing (experimental, 2026-09-09)
+
+`MEMRA_DSV4_NORM_FUSE2` is default OFF, decide-by: 2026-09-23.
+`dsv4_norm2_pack_f32_fixed_order_kernel` uses the original 128-thread norm
+reduction and f32 epilogue, emits BF16 RNE as well as retained f32, and permits
+attention Q_a/KV to share one unchanged pack. FFN routing and quantization keep
+the f32 row. `dsv4_norm2_swiglu_pack_kernel` preserves clamp, sigmoid and f32
+multiply rounding before BF16 RNE. `dsv4_norm2_quant_half_kernel` uses four
+64-thread teams to repeat the original per-128 FP8 max tree, power-of-two scale,
+E4M3 rounding and zero-sign canonicalization, then the original 256-thread
+row-scale tree and lossless half/status expressions. Intermediate codes/scales
+are shared-memory transport. No expert GEMV, split-K, dense kernel, HC or rotary
+kernel changes. Each site is geometry checked at dispatch and falls back to its unfused chain
+outside the fused domain; the intermediate transport additionally requires the
+half mirror's own row capacity. Counts per rank and forward variant: 86
+norm/pack, 43 shared SwiGLU/pack, 43 quant/half, 387 launches gross for a net
+215 removed. Commit has none. OFF has zero
+new symbols. FFI: `src/dsv4_ffi.rs`; component capture and raw-bit gate:
+`src/dsv4_norm2_component_gate.rs`; replay gate: `dsv4-norm-fuse2-gate`.
+Evidence: [private Darklanes #560](https://github.com/avifenesh/darklanes/pull/560),
+raw-bit identity at all 344 component sites, memcheck and synccheck zero
+errors, +1.0926% pooled ABBA and +0.9075% pooled reverse on the sampled
+default program. Default is ON when unset in the admitted TP/EP f32x topology; explicit `0` is
+the rollback seam, decide-by: 2026-09-23.
+
+### Wide DSV4 norm2 pack (default ON since 2026-09-10, door opened 2026-09-09)
+
+`MEMRA_DSV4_NORM2_WIDE` is default ON under an admitted `MEMRA_DSV4_NORM_FUSE2`
+(flipped 2026-09-10 on the model campaign receipts below); explicit `0` is the
+rollback seam, and unset without the norm2 door degrades to OFF because the wide
+pack has no other call site.
+
+`dsv4_norm2_pack_f32_fixed_order_kernel` launches grid 1 / block 128 over one
+4096-element f32 row. One CTA holds both the reduction and the whole epilogue:
+14.426623 us per launch, 1.240690 ms/step on rank 0 at 86 launches, a provisional
+0.221812% of 1,792 GB/s. That geometry was inherited unchanged from the separate
+pack the norm2 door replaced, so it is not a regression the door introduced, but
+it is the largest single kernel in the fused norm2 family.
+
+`dsv4_norm2_pack_f32_fixed_order_wide_kernel` partitions the EPILOGUE COLUMNS
+across `NORM2_WIDE_TILES` CTAs of 128 threads. Grid X is a column tile, not a
+row: the pack domain is one row of 4096 and the launcher refuses anything else.
+Every CTA repeats, byte for byte, the same eight-load accumulation order and the
+same `dsv4_block_sum_f32` tree over the whole row, so `tot`, `mean` and `rsq` are
+bit-identical in every CTA and identical to the single-CTA kernel. The written
+value is a pure function of (column, rsq), so which CTA writes a column cannot
+move a bit.
+
+**Class: SAME.** The reduction order is the contract the `fixed_order` name
+carries, and nothing here changes it, so this rewrite needs no numerical-drift
+qualification: bit equality is a construction, and the component gate refuses on
+the first differing bit rather than scoring a tolerance. Contrast the two rejected
+shapes, both of which change the summation tree and would therefore be a NEW class
+needing drift rows (Darklanes #534 showed a changed f32 tree flips near-tie
+argmax): per-CTA partial sums combined in a second phase, and a single wider block.
+
+The price is a redundant row read per CTA. At 4096 f32 that is 16 KB re-read
+`tiles` times, which lands in L2 after the first CTA touches the row, against an
+epilogue that becomes `1/tiles` as wide per CTA. Because every CTA still runs the
+whole reduction, the sweep's asymptote as `tiles` grows was expected to BE the
+reduction floor, with the gap between `tiles=1` and that floor the only thing this
+door can buy. The component gate reports that sweep rather than assuming it, and
+what the sweep reports is confirmed as the reduction floor by a
+second card class, see the discussion under Evidence below. The real ceiling on the
+door is the 1.240690 ms/step the kernel it replaces costs in the live model.
+
+The launcher pins block 128 (the tree is the contract) and requires
+`128 * tiles` to divide `n`, so no CTA is empty and every thread writes the same
+number of columns. `tiles = 1` reproduces the original geometry through the wide
+symbol and is the sweep's own red arm.
+
+No launch count moves: 86 packs per rank and forward variant in both arms, one
+symbol or the other, never both and never neither. No other kernel changes. FFI:
+`src/dsv4_ffi.rs`; component gate: `src/dsv4_norm2_wide_component_gate.rs`;
+replay and sampled gate: `dsv4-norm2-wide-gate`.
+
+Evidence (2x RTX PRO 6000 Blackwell Max-Q dev pair, head d710438fb, binary
+cb270f66, 2026-09-10): the component cell passed raw-bit equality at all 172 live
+pack sites (13,588 / 13,588 comparisons, warm and cold, tiles 1..32; the warm sweep
+on a sample site runs 12.383 us at tiles=1 down to 6.730 us at tiles=32, 4.63 GB/s
+unique rising to 8.52 GB/s unique at 83.99 GB/s issued, the predicted L2-served
+re-read). The model program on the pinned default shape (PRIME=256, OUTPUT=256):
+wide 55.154288 tok/s vs narrow 52.054319 pooled ABBA (+5.955257%, mean +5.9542%)
+and wide 55.192155 vs narrow 52.191374 pooled reverse (+5.749573%, mean +5.7550%),
+steady ranges disjoint in both orders (3.019 and 2.946 tok/s separation), 40/40
+rows eligible with zero looped rows, and every row in both orders carries the same
+generated/logits/cache/hidden digests as the narrow arm (same-class identity held
+at model scale, not just per-site). Four qualify processes (two per arm) matched
+the same digests. Receipts banked in darklanes
+`research/dsv4f-norm2-wide-20260909/`.
+
+The sweep's asymptote IS the reduction floor this section predicted, and a first
+reading that called it an instrument floor was withdrawn on 2026-09-10. The test was
+to run the same sweep on a second card class: an instrument overhead is roughly
+constant and would not scale, a computational floor does. It scales. Dev pair Max-Q
+`tiles=1` 10.439-12.854 us with floor 6.084-6.909 us; prod-candidate Workstation 600 W
+`tiles=1` 8.122-8.213 us with floor 3.941-4.087 us. Both absolutes move about a third
+while `floor / tiles=1` stays at 0.5375-0.5883 and 0.4803-0.4987.
+
+So the component number is a real prediction: 86 launches at a 5.653-5.945 us warm
+saving is 0.486-0.511 ms/step (0.370 on the cold rows). The measured model return is
+1.073033 ms/step forward and 1.057288 reverse, i.e. **2.1x to 2.9x the prediction**,
+and below the 1.240690 ms/step the single-CTA pack costs in the live model. The factor
+of two is UNEXPLAINED. The surviving hypothesis is that replay forward span is not
+additive in isolated kernel durations, which Darklanes #562 measured in the other
+direction on this same path: 0.164670 ms/step of kernel time removed returned
+-0.026864 ms/step of replay forward. Isolated per-launch timing on this path predicts
+the sign of a graph-replay change and not its size.
+
+Sanitizers (2026-09-10, on MERGED main `4eaf708e7` rather than the lane head, binary
+`f553bc452ad4398efc90a38216c1972f3254aaabe50c7d34cbb1b017b7830b58`, 2x RTX PRO 6000
+Blackwell Workstation Edition prod-candidate box): `compute-sanitizer --tool memcheck`
+and `--tool synccheck` each report `ERROR SUMMARY: 0 errors` under `--error-exitcode 99`,
+each over 344 `COMPONENT` rows and 13,588 comparisons with the wide kernel engaged at
+`tiles=32`. Non-vacuity is asserted in the controller, not assumed: each sanitizer log
+must carry its own row count and `COMPONENT_PASS` line or the cell fails.
+
+That cell also captured its OWN operands on that box instead of inheriting the
+norm-fuse2 lane's, and reproduced
+`COMPONENT_PASS sites=172 references=172 comparisons=13588 bits_equal=true class=same`
+against them, so the same-class claim now rests on two independent captures taken on two
+different card classes. All 172 captured operand descriptors read `4096 1`: the pack refuses
+any other shape, so 2 sites x 43 layers x 2 ranks is the entire call-site domain rather
+than a sample of it.
+
+These rows are CORRECTNESS ONLY. That box is a different card class from the pair the
+door was scored on, and no absolute timing from it enters this door's verdict.

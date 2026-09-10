@@ -174,7 +174,15 @@ static void admission(){
     insist(counts()==c,"M>1/recursive/grouped used candidate");w.immutable();x.immutable();sc.immutable();api(memra_dsv4_dense_exact_tail_set_for_gate(0));
     printf("PASS admission raw_refusals=1 M2_M33_grouped_control=1 candidate_enqueues=0\n");
 }
-int main() try {
+int main(int argc, char** argv) try {
+    // This gate measures exact-tail, not the newer dense-fast implementation.
+    api(memra_dsv4_hc_dot_split_set_for_gate(0));
+    insist(memra_dsv4_hc_dot_split_slices_for_gate()==0,"HC split control override");
+    api(memra_dsv4_dense_fast_set_for_gate(0));
+    insist(memra_dsv4_dense_fast_enabled_for_gate()==0,"dense-fast control override");
+    if(argc==2 && !strcmp(argv[1],"--check-controls")) {
+        puts("PASS exact_tail_control dense_fast=0 hc_split=0 cpu_policy_only=true"); return 0;
+    }
     int n=0;ck(cudaGetDeviceCount(&n));insist(n==2,"requires exact visible pair");
     for(int rank=0;rank<2;++rank){ck(cudaSetDevice(rank));tree_case();admission();
         for(auto shape:std::vector<std::pair<int,int>>{{1024,4096},{16384,1024},{512,4096},{4096,4096},{2048,4096},{4096,2048},{8192,1024}})fp8_case(shape.first,shape.second,0);

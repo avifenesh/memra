@@ -380,6 +380,15 @@ where
     }
 }
 
+/// The calibrated prefill activation stamp a weight carries: its per-linear global dequant
+/// multiplier and its slot in the 400-linear program. Both travel together because a receipt that
+/// says "400 A4 GEMMs ran" is not the same claim as "these 400 projections ran".
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct A4Stamp {
+    pub multiplier: f32,
+    pub slot: u32,
+}
+
 /// A weight tensor resident on GPU. Quantized weights stay in GGUF block bytes (`Quant`);
 /// small non-quant tensors (norms, sometimes embed/lm_head) are kept dequantized as f32 (`Float`).
 /// This keeps VRAM ~= on-disk quant size (fixes the f32-on-load OOM).
@@ -430,6 +439,15 @@ pub enum GpuTensor {
         /// decode is untouched; the m>=16 prefill dispatch (cuBLASLt FP16 TN, 611-687 TF vs
         /// MMQ's ~200 TF class) reads this. None unless the env is set (VRAM = 2 B/w extra).
         f16: Option<CudaSlice<u8>>,
+        /// CALIBRATED PREFILL ACTIVATION MULTIPLIER (qwen35-prefill-nvfp4-a4-v1). `Some` only for
+        /// the 400 large trunk projections of an artifact whose header declares the activation
+        /// program, and only ever read by the PREFILL dispatch: decode and speculative verify call
+        /// `matmul`, which never looks at this field, so they keep W4A8 at every row count. The
+        /// value is the per-linear global dequant multiplier s = amax/(6*448); the per-16 UE4M3
+        /// block scales stay dynamic and are computed in-kernel. Weight `bytes` are untouched --
+        /// this is a scalar carried alongside them, not a re-quantization. The slot is the
+        /// weight's index in the program, so a runtime receipt can name which projections ran.
+        a4: Option<A4Stamp>,
     },
     Float {
         data: CudaSlice<f32>,
@@ -634,7 +652,80 @@ impl GpuTensor {
             rp4: None,
             blk: None,
             f16: None,
+            a4: None,
         })
+    }
+
+    /// Stamp the artifact's calibrated prefill activation multiplier onto this weight.
+    ///
+    /// Refuses anything that is not a 2-D NVFP4 quant tensor: the activation program is declared
+    /// per weight NAME by the artifact header, so a name/dtype disagreement means the plan and the
+    /// artifact describe different models and must not resolve into a silent W4A8 fallback.
+    pub fn stamp_prefill_a4(&mut self, multiplier: f32, slot: u32) -> Result<(), String> {
+        let GpuTensor::Quant { qtype, ne, a4, .. } = self else {
+            return Err("calibrated prefill activation requires a quantized weight".into());
+        };
+        if *qtype != crate::QT_NVFP4 || ne.len() != 2 {
+            return Err(format!(
+                "calibrated prefill activation requires a 2-D NVFP4 weight, got qtype {qtype} rank {}",
+                ne.len()
+            ));
+        }
+        if !multiplier.is_finite() || multiplier <= 0.0 {
+            return Err(format!(
+                "calibrated multiplier must be finite and positive, got {multiplier}"
+            ));
+        }
+        *a4 = Some(A4Stamp { multiplier, slot });
+        Ok(())
+    }
+
+    /// `load_opt_from_source` + the same stamping as `load_from_source_calibrated`.
+    ///
+    /// A projection loaded through the OPTIONAL loader is still a projection: qwen35's `attn_v`
+    /// takes this path (gemma4 global layers ship no v_proj, so every family reads it optionally),
+    /// and loading it through the unstamped loader is exactly how 16 declared A4 projections ran
+    /// W4A8 while the artifact said otherwise.
+    pub fn load_opt_from_source_calibrated(
+        e: &Engine,
+        src: &dyn TensorSource,
+        cfg: &ModelConfig,
+        name: &str,
+    ) -> Result<Option<Self>, Box<dyn std::error::Error>> {
+        let Some(mut t) = Self::load_opt_from_source(e, src, name)? else {
+            return Ok(None);
+        };
+        if let Some(program) = &cfg.prefill_activation
+            && let Some(multiplier) = program.scales().get(name)
+        {
+            let slot = program
+                .slot(name)
+                .expect("a name found in the program has a slot in the program");
+            t.stamp_prefill_a4(*multiplier, slot)
+                .map_err(|error| format!("{name}: {error}"))?;
+        }
+        Ok(Some(t))
+    }
+
+    /// Load a weight and stamp it if the artifact's activation program names it. Every projection
+    /// the program does NOT name keeps `a4: None` and therefore W4A8 in every phase.
+    pub fn load_from_source_calibrated(
+        e: &Engine,
+        src: &dyn TensorSource,
+        cfg: &ModelConfig,
+        name: &str,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut t = Self::load_from_source(e, src, name)?;
+        if let Some(program) = &cfg.prefill_activation
+            && let Some(multiplier) = program.scales().get(name)
+        {
+            let slot = program
+                .slot(name)
+                .expect("a name found in the program has a slot in the program");
+            t.stamp_prefill_a4(*multiplier, slot)
+                .map_err(|error| format!("{name}: {error}"))?;
+        }
+        Ok(t)
     }
 
     pub fn ne(&self) -> &[u64] {
@@ -743,6 +834,7 @@ impl GpuTensor {
                 fp8: None,
                 blk: None,
                 f16: None,
+                a4: None,
                 rp4: None,
             });
         }
@@ -778,6 +870,7 @@ impl GpuTensor {
                 fp8: None,
                 blk: None,
                 f16: None,
+                a4: None,
                 rp4: None,
             });
         }
@@ -844,6 +937,7 @@ impl GpuTensor {
                             cols: grid.cols,
                         }),
                         f16: None,
+                        a4: None,
                         rp4: None,
                     });
                 }
@@ -894,6 +988,7 @@ impl GpuTensor {
                     fp8: None,
                     blk: None,
                     f16: None,
+                    a4: None,
                     rp4: None,
                 });
             }
@@ -1082,6 +1177,7 @@ impl GpuTensor {
                     blk: None,
                     rp4: None,
                     f16: None,
+                    a4: None,
                 })
             }
             None => {
@@ -1237,6 +1333,7 @@ impl GpuTensor {
             fp8: None,
             blk: None,
             f16: None,
+            a4: None,
             rp4: None,
         })
     }
@@ -1317,6 +1414,7 @@ impl GpuTensor {
             fp8: None,
             blk: None,
             f16: None,
+            a4: None,
             rp4: None,
         }))
     }

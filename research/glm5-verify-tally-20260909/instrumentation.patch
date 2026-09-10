@@ -1,0 +1,120 @@
+diff --git a/crates/memra-engine/src/glm_spec.rs b/crates/memra-engine/src/glm_spec.rs
+index 93bce654..eb78c8ca 100644
+--- a/crates/memra-engine/src/glm_spec.rs
++++ b/crates/memra-engine/src/glm_spec.rs
+@@ -363,6 +363,35 @@ pub fn glm5_spec_prefix_on() -> bool {
+ /// `glm5_dflash_session_gpu` (`MEMRA_GLM5_SPEC_FULLCOVER=1`), and the serving win needs the
+ /// repeated-prompt cell on the glm5 box. Unset restores the pre-lane posture exactly
+ /// (full-cover hits serve plain, now with `reason=full-cover-hit` on the route line).
++// Research-only NVTX attribution. No stream synchronization or math changes.
++fn verify_tally_on() -> bool {
++    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_VERIFY_TALLY").as_deref() == Ok("1"))
++}
++
++pub(crate) struct VerifyTallyRange(bool);
++impl VerifyTallyRange {
++    pub(crate) fn new(name: impl FnOnce() -> String) -> Self {
++        let on = verify_tally_on();
++        if on {
++            let name = std::ffi::CString::new(name()).expect("tally range name");
++            unsafe {
++                crate::dsv4_ffi::memra_dsv4_nvtx_push(name.as_ptr());
++            }
++        }
++        Self(on)
++    }
++}
++impl Drop for VerifyTallyRange {
++    fn drop(&mut self) {
++        if self.0 {
++            unsafe {
++                crate::dsv4_ffi::memra_dsv4_nvtx_pop();
++            }
++        }
++    }
++}
++
+ /// Read PER CALL (the `MEMRA_KDA_FUSED_PROJ` / `MEMRA_GLM5_VERIFY_BATCH` precedent) so one
+ /// gate process can drive both arms. Rollback seam: unset.
+ pub fn glm5_spec_fullcover_on() -> bool {
+@@ -1402,6 +1431,7 @@ impl HybridModel {
+             })
+         };
+         for il in lo..hi {
++            let _tally_layer = VerifyTallyRange::new(|| format!("glm5-layer:il={il}:t={t}"));
+             let layer = &self.layers[il];
+             let hyper = layer.hyper.as_ref().ok_or_else(|| {
+                 format!("layer {il} carries no hyper-connection weights under an hc plan")
+@@ -3717,6 +3747,10 @@ impl HybridModel {
+             crate::spec_phase::spec_trace_on().then(SpecPhaseNs::default);
+         // FIRST-TOKEN PROFILE: the first burst's wall (its tokens are host-visible at
+         // return, so no drain is needed to bound it).
++        if verify_tally_on() {
++            cudarc::driver::safe::profiler_start()
++                .map_err(|err| format!("tally profiler start: {err}"))?;
++        }
+         let first_burst = (!sess.anchor_emitted && sess.prof.is_some())
+             .then(|| (std::time::Instant::now(), sess.rounds));
+         // The hook's own share of the first burst's wall (host-only detext + sends), so
+@@ -3816,6 +3850,12 @@ impl HybridModel {
+             pf.first_burst_rounds = sess.rounds - rounds0;
+             pf.first_burst_tokens = out.len();
+         }
++        if verify_tally_on() {
++            e.stream().synchronize()?;
++            self.glm5_head_engine(e)?.stream().synchronize()?;
++            cudarc::driver::safe::profiler_stop()
++                .map_err(|err| format!("tally profiler stop: {err}"))?;
++        }
+         Ok((out, drafted, accepted))
+     }
+ 
+@@ -3836,6 +3876,7 @@ impl HybridModel {
+         knobs: &mut Glm5SpecKnobs<'_>,
+         mut phase: Option<&mut SpecPhaseNs>,
+     ) -> Res<(Vec<u32>, usize)> {
++        let _tally_round = VerifyTallyRange::new(|| format!("glm5-round:round={}", sess.rounds));
+         let n_vocab = self.output.out_features();
+         let n_embd = self.cfg.n_embd as usize;
+         // The MTP block / DFlash2 drafter, the trunk lm head and the verify walk's returned
+@@ -4043,6 +4084,8 @@ impl HybridModel {
+         let mut rows: Vec<u32> = Vec::with_capacity(drafts.len() + 1);
+         rows.push(sess.anchor);
+         rows.extend_from_slice(&drafts);
++        let tally_verify =
++            VerifyTallyRange::new(|| format!("glm5-verify:round={}:t={}", sess.rounds, rows.len()));
+         let snap_pool = std::mem::take(&mut sess.snap_pool);
+         let (vlogits, collapsed, mut ckpt) = if crate::glm5_verify_graph_on() {
+             self.glm5_verify_rows_graphed(
+@@ -4055,6 +4098,7 @@ impl HybridModel {
+         } else {
+             self.glm5_verify_rows_reusing(e, &rows, &mut sess.cache, snap_pool)?
+         };
++        drop(tally_verify);
+         bump!(verify);
+         plap!(first_verify_ms);
+ 
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index 3da97012..5e70cfa4 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -26333,6 +26333,18 @@ impl Engine {
+         m: usize,
+     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+         use crate::model::GpuTensor;
++        let _tally_weight = crate::glm_spec::VerifyTallyRange::new(|| {
++            let (qt, bytes) = match w {
++                GpuTensor::Quant { qtype, bytes, .. } => (*qtype, bytes.len()),
++                GpuTensor::Float { data, .. } => (QT_F32, data.len() * 4),
++                GpuTensor::FloatBf16 { data, .. } => (QT_BF16, data.len()),
++            };
++            format!(
++                "glm5-weight:in={}:out={}:t={m}:qt={qt}:bytes={bytes}",
++                w.in_features(),
++                w.out_features()
++            )
++        });
+         // MEMRA_GLM5_W8: the glm5 verify-rows walk's KDA/MLA projections take the SAME q8_0
+         // mirror the plain t=1/small-t decode arm uses in `matvec_bf16_rows_into` — placed
+         // BEFORE the tcols check below so the door's own class (not the bf16 tcols class) wins

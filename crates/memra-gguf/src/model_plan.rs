@@ -6,9 +6,18 @@
 
 use crate::config::{Arch, AttentionGateKind, LayerKind, ModelConfig};
 
-#[derive(Debug, Clone, PartialEq)]
+pub mod speech;
+use speech::WhisperPlan;
+
+#[derive(Clone, PartialEq)]
 pub struct ModelPlan {
+    /// Speech semantics. Text layers are empty for speech-only plans; execution may be unsupported.
+    pub speech: Option<WhisperPlan>,
     pub arch: Arch,
+    /// Carried on the plan so a receipt names WHICH calibration is loaded: its Debug renders the
+    /// program name, the scale count and a digest over the 400 (name, bits) pairs. There is no
+    /// separate plan identity hash in this engine, so do not claim one.
+    pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
     pub hidden_size: u32,
     pub vocab_size: u32,
     pub context_length: u32,
@@ -28,6 +37,34 @@ pub struct ModelPlan {
     /// Valid cuts are between complete trunk blocks. Whether a backend can transport every state
     /// crossing one of these cuts is derived from the operations, not from the architecture name.
     pub partition_boundaries: Vec<usize>,
+}
+
+// Plan hashes use Debug serialization. Keep the pre-speech representation unchanged
+// for text/vision artifacts so their existing qualification receipts remain valid.
+impl std::fmt::Debug for ModelPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("ModelPlan");
+        if let Some(speech) = &self.speech {
+            d.field("speech", speech);
+        }
+        d.field("arch", &self.arch);
+        d.field("hidden_size", &self.hidden_size);
+        d.field("vocab_size", &self.vocab_size);
+        d.field("context_length", &self.context_length);
+        d.field("embedding_scale", &self.embedding_scale);
+        d.field("vision", &self.vision);
+        d.field("multimodal", &self.multimodal);
+        d.field("layers", &self.layers);
+        d.field("output_norm", &self.output_norm);
+        d.field("exit_mixer", &self.exit_mixer);
+        d.field("logits", &self.logits);
+        d.field("mtp_blocks", &self.mtp_blocks);
+        d.field("drafter", &self.drafter);
+        d.field("draft_source", &self.draft_source);
+        d.field("sampling_defaults", &self.sampling_defaults);
+        d.field("partition_boundaries", &self.partition_boundaries);
+        d.finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -169,6 +206,8 @@ pub struct NormPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NormKind {
     Rms,
+    /// Biased mean/variance LayerNorm; currently used only by speech plans.
+    LayerNorm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -941,7 +980,9 @@ impl ModelPlan {
         };
 
         Ok(Self {
+            speech: None,
             arch: cfg.arch.clone(),
+            prefill_activation: cfg.prefill_activation.clone(),
             hidden_size: cfg.n_embd,
             vocab_size: cfg.n_vocab,
             context_length: cfg.context_length,
@@ -1040,6 +1081,9 @@ impl ModelPlan {
     }
 
     fn collect_operations(&self, include_mtp: bool, include_frontend: bool) -> Vec<OperationKind> {
+        if let Some(speech) = &self.speech {
+            return speech.operations();
+        }
         let mut operations = Vec::new();
         if include_frontend && let Some(vision) = self.vision.as_ref() {
             match vision {
@@ -2177,6 +2221,16 @@ fn qk_norm_presence(cfg: &ModelConfig) -> TensorPresence {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OperationKind {
+    AudioLogMel,
+    AudioStridedConv,
+    AudioPositionEmbedding,
+    BiasedLayerNorm,
+    GeluErfActivation,
+    AudioEncoderAttention,
+    AudioDecoderSelfAttention,
+    AudioCrossAttention,
+    AudioCrossKvState,
+    AsrDeterministicDecode,
     Embedding,
     VisionPatchEmbedding,
     VisionBidirectionalAttention,

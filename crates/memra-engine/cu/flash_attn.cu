@@ -1152,7 +1152,7 @@ static __device__ __forceinline__ void fa_prefill_f32_pp_body(
                     asm volatile("cp.async.commit_group;");
                 }
             } else {
-                for (int i = bt; i < BK*HEAD_DIM; i += NW*WARP_SZ) {
+                for (int i = bt; i < BK*HEAD_DIM; i += N_WARPS*WARP_SZ) {
                     int kk = i / HEAD_DIM, d = i % HEAD_DIM;
                     float kv = (kk < nk) ? K[((size_t)(k0 + kk) * n_head_kv + kv_head) * head_dim + d] : 0.0f;
                     float vv = (kk < nk) ? V[((size_t)(k0 + kk) * n_head_kv + kv_head) * head_dim + d] : 0.0f;
@@ -4992,6 +4992,19 @@ static __device__ __forceinline__ void stage_kv_tile_async(
 }
 
 template<int HD>
+static __device__ __forceinline__ void stage_kv_plane_async(
+        __nv_bfloat16* dst, const __nv_bfloat16* src,
+        int k0, int nk, int stride, size_t off, int bt) {
+    for (int i = bt; i < BK * (HD / 8); i += N_WARPS * WARP_SZ) {
+        const int row = i / (HD / 8), col = i % (HD / 8);
+        __nv_bfloat16* target = dst + row * HD + (col ^ (row & 7)) * 8;
+        if (row < nk) cp_async_16(target, src + (size_t)(k0 + row) * stride + off + col * 8);
+        else *(uint4*)target = make_uint4(0, 0, 0, 0);
+    }
+    cp_async_commit();
+}
+
+template<int HD, bool TRIPLE = false>
 static __device__ __forceinline__ void fa_prefill_qw_db_body(
         const float* __restrict__ Q, const __nv_bfloat16* __restrict__ Kw,
         const __nv_bfloat16* __restrict__ Vw, float* __restrict__ O,
@@ -4999,13 +5012,14 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
         float scale, int causal, int kv_dim_k, int kv_dim_v, int window = 0)
 {
     constexpr int HEAD_DIM  = HD;
+    constexpr int BQ = BLOCK_Q;
     constexpr int HD_KTILES = HD / K_STEP;
     constexpr int O_NBLK    = HD / N_KEYS;
     const int warp = threadIdx.y;
     const int lane = threadIdx.x;
     const int head    = blockIdx.y;
     const int kv_head = head / (n_head / n_head_kv);
-    const int q_base  = blockIdx.x * BLOCK_Q;
+    const int q_base  = blockIdx.x * BQ;
     const int qrow_base = q_base + warp*M_ROWS;
     if (head >= n_head || q_base >= T) return;
     const int nqw = min(M_ROWS, T - qrow_base);
@@ -5017,11 +5031,11 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
     __nv_bfloat16* sK1 = sK0 + BK*HEAD_DIM;                      // BK*HEAD_DIM
     __nv_bfloat16* sV0 = sK1 + BK*HEAD_DIM;                      // BK*HEAD_DIM
     __nv_bfloat16* sV1 = sV0 + BK*HEAD_DIM;                      // BK*HEAD_DIM
-    __nv_bfloat16* sP  = sV1 + BK*HEAD_DIM;                      // BLOCK_Q*BK
-    float* sL = (float*)(sP + BLOCK_Q*BK);                        // BLOCK_Q f32
-    __nv_bfloat16* sPw = sP + warp*M_ROWS*BK;
-    float* sLw = sL + warp*M_ROWS;
-    // transient Q staging: sK0∪sK1 = 32KB = 4 warps x 16*HEAD_DIM bf16, one slab per warp.
+    __nv_bfloat16* sP  = TRIPLE ? nullptr : sV1 + BK*HEAD_DIM;                      // BQ*BK
+    float* sL = TRIPLE ? nullptr : (float*)(sP + BQ*BK);                        // BQ f32
+    __nv_bfloat16* sPw = TRIPLE ? nullptr : sP + warp*M_ROWS*BK;
+    float* sLw = TRIPLE ? nullptr : sL + warp*M_ROWS;
+    // The initial Q staging uses the two K buffers before the first prefetch.
     __nv_bfloat16* sQstage = sK0 + warp*M_ROWS*HEAD_DIM;
 
     const int causal_i = causal;
@@ -5045,7 +5059,7 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
 
         // tile count, folding the causal early-out into the bound (same tiles as the
         // single-buffer twin's `break`).
-        const int q_pos_max = (T_kv - T) + q_base + (BLOCK_Q - 1);
+        const int q_pos_max = (T_kv - T) + q_base + (BQ - 1);
         int nt = (T_kv + BK - 1) / BK;
         if (causal_i) { int ntc = q_pos_max / BK + 1; nt = min(nt, ntc); }
         // window start (fa_prefill_f32_body's tile-skip folded into the loop BOUND — a
@@ -5059,22 +5073,33 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
             if (oldest > 0) t_start = oldest / BK;
         }
 
-        if (nt > t_start)
-            stage_kv_tile_async<HD, true>((t_start & 1) ? sK1 : sK0, (t_start & 1) ? sV1 : sV0,
-                                    Kw, Vw, t_start * BK, min(BK, T_kv - t_start * BK),
-                                    kv_dim_k, kv_dim_v, kv_off, bt);
+        if (nt > t_start) {
+            if constexpr (TRIPLE) {
+                stage_kv_plane_async<HD>((t_start & 1) ? sK1 : sK0, Kw,
+                    t_start * BK, min(BK, T_kv - t_start * BK), kv_dim_k, kv_off, bt);
+                stage_kv_plane_async<HD>(sV0, Vw,
+                    t_start * BK, min(BK, T_kv - t_start * BK), kv_dim_v, kv_off, bt);
+            } else {
+                stage_kv_tile_async<HD, true>((t_start & 1) ? sK1 : sK0, (t_start & 1) ? sV1 : sV0,
+                    Kw, Vw, t_start * BK, min(BK, T_kv - t_start * BK), kv_dim_k, kv_dim_v, kv_off, bt);
+            }
+        }
 
         for (int ti = t_start; ti < nt; ++ti) {
             const int k0 = ti * BK;
             const int nk = min(BK, T_kv - k0);
             __nv_bfloat16* sK = (ti & 1) ? sK1 : sK0;
-            __nv_bfloat16* sV = (ti & 1) ? sV1 : sV0;
-            // prefetch tile ti+1 into the OTHER buffer (its compute finished last iter)
+            __nv_bfloat16* sV = TRIPLE ? sV0 : ((ti & 1) ? sV1 : sV0);
             if (ti + 1 < nt) {
                 const int k1 = (ti + 1) * BK;
-                stage_kv_tile_async<HD, true>((ti & 1) ? sK0 : sK1, (ti & 1) ? sV0 : sV1,
-                                    Kw, Vw, k1, min(BK, T_kv - k1), kv_dim_k, kv_dim_v, kv_off, bt);
-                cp_async_wait_1();   // tile ti's group done; ti+1 may still be in flight
+                if constexpr (TRIPLE) {
+                    stage_kv_plane_async<HD>((ti & 1) ? sK0 : sK1, Kw,
+                        k1, min(BK, T_kv - k1), kv_dim_k, kv_off, bt);
+                } else {
+                    stage_kv_tile_async<HD, true>((ti & 1) ? sK0 : sK1, (ti & 1) ? sV0 : sV1,
+                        Kw, Vw, k1, min(BK, T_kv - k1), kv_dim_k, kv_dim_v, kv_off, bt);
+                }
+                cp_async_wait_1();
             } else {
                 cp_async_wait_0();
             }
@@ -5146,6 +5171,19 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
             l_hi = l_hi * alpha_hi + l_part_hi;
             m_lo = m_new_lo; m_hi = m_new_hi;
 
+            ATile Pf[BK / K_STEP];
+            if constexpr (TRIPLE) {
+                // C's adjacent output columns are exactly A's bf16-pair layout.
+                // Preserve each scalar RN conversion; no reduction is introduced.
+                #pragma unroll
+                for (int kk = 0; kk < BK; kk += K_STEP) {
+                    const int g = kk / N_KEYS;
+                    Pf[kk / K_STEP].x[0] = __floats2bfloat162_rn(Sc[g].x[0], Sc[g].x[1]);
+                    Pf[kk / K_STEP].x[1] = __floats2bfloat162_rn(Sc[g].x[2], Sc[g].x[3]);
+                    Pf[kk / K_STEP].x[2] = __floats2bfloat162_rn(Sc[g+1].x[0], Sc[g+1].x[1]);
+                    Pf[kk / K_STEP].x[3] = __floats2bfloat162_rn(Sc[g+1].x[2], Sc[g+1].x[3]);
+                }
+            } else {
             // ---- write P to sPw (MANDATORY for PV's A-operand ldmatrix layout) ----
             #pragma unroll
             for (int g = 0; g < BK/N_KEYS; ++g) {
@@ -5158,6 +5196,8 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
                 sPw[r_hi*BK + p_hi + 1] = __float2bfloat16(Sc[g].x[3]);
             }
             __syncwarp();
+
+            }
 
             #pragma unroll
             for (int c = 0; c < O_NBLK; ++c) {
@@ -5172,7 +5212,8 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
                 #pragma unroll
                 for (int kk = 0; kk < BK; kk += K_STEP) {
                     ATile A; ATile Bt;
-                    ld_A_sw4(A, sPw, 0, kk/8, BK/8);
+                    if constexpr (TRIPLE) A = Pf[kk / K_STEP];
+                    else ld_A_sw4(A, sPw, 0, kk/8, BK/8);
                     ld_A_trans_sw(Bt, sV, kk, d0/8, HEAD_DIM/8);
                     BTile Blo; Blo.x[0]=Bt.x[0]; Blo.x[1]=Bt.x[2];
                     BTile Bhi; Bhi.x[0]=Bt.x[1]; Bhi.x[1]=Bt.x[3];
@@ -5184,11 +5225,19 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
                 O_acc[(d0/N_KEYS) + 1].x[0] += Chi.x[0]; O_acc[(d0/N_KEYS) + 1].x[1] += Chi.x[1];
                 O_acc[(d0/N_KEYS) + 1].x[2] += Chi.x[2]; O_acc[(d0/N_KEYS) + 1].x[3] += Chi.x[3];
             }
-            __syncthreads();   // compute on this buffer done before it is re-prefetched
+            __syncthreads();   // all readers release the single V tile before overwrite
+            if constexpr (TRIPLE) {
+                if (ti + 1 < nt) {
+                    const int k1 = (ti + 1) * BK;
+                    stage_kv_plane_async<HD>(sV0, Vw, k1, min(BK, T_kv - k1), kv_dim_v, kv_off, bt);
+                }
+            }
         }
 
-        if (c0 == 0) { sLw[r_lo] = l_lo; sLw[r_hi] = l_hi; }
-        __syncwarp();
+        if constexpr (!TRIPLE) {
+            if (c0 == 0) { sLw[r_lo] = l_lo; sLw[r_hi] = l_hi; }
+            __syncwarp();
+        }
 
         #pragma unroll
         for (int c = 0; c < O_NBLK; ++c) {
@@ -5197,7 +5246,8 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
                 int r = CTile::get_i(l);
                 int d = c*N_KEYS + CTile::get_j(l);
                 if (r < nqw) {
-                    float linv = (sLw[r] > 0.0f) ? (1.0f / sLw[r]) : 0.0f;
+                    const float lv = TRIPLE ? ((l < 2) ? l_lo : l_hi) : sLw[r];
+                    float linv = (lv > 0.0f) ? (1.0f / lv) : 0.0f;
                     O[((size_t)(qrow_base + r) * n_head + head) * head_dim + d] = O_acc[c].x[l] * linv;
                 }
             }
@@ -5215,6 +5265,14 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 1) fa_prefill_qw_d
     fa_prefill_qw_db_body<256>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
                                scale, causal, kv_dim_k, kv_dim_v);
 }
+extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_t3(
+        const float* Q, const __nv_bfloat16* Kw, const __nv_bfloat16* Vw, float* O,
+        int head_dim, int n_head, int n_head_kv, int T, int T_kv,
+        float scale, int causal, int kv_dim_k, int kv_dim_v) {
+    fa_prefill_qw_db_body<256, true>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                                      scale, causal, kv_dim_k, kv_dim_v);
+}
+
 extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 1) fa_prefill_qw_db_hd128(
         const float* __restrict__ Q, const __nv_bfloat16* __restrict__ Kw,
         const __nv_bfloat16* __restrict__ Vw, float* __restrict__ O,
@@ -9945,4 +10003,241 @@ extern "C" __global__ void append_quantize_kv_q8_0_q5_1_dcw(
         float x = (eidx < kv_dim_v) ? v_row[eidx] : 0.0f;
         quant_V_block(x, lane, V + (size_t)t * v_tok_bytes + (size_t)b * V_BLK_B);
     }
+}
+
+// Carried-prime replay twins. Only table lookup and the launch bound differ.
+extern "C" __global__ void append_quantize_kv_q8_0_q5_1_rows_prime_table(
+        const float* __restrict__ k_rows, const float* __restrict__ v_rows,
+        const unsigned long long* __restrict__ table, unsigned long long unused,
+        int unused_base, int kv_dim_k, int kv_dim_v,
+        long k_tok_bytes, long v_tok_bytes)
+{
+    uint8_t* K = (uint8_t*)table[0];
+    uint8_t* V = (uint8_t*)table[1];
+    if (blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0) *((int*)table[2]) = (int)table[7];
+    const int b    = blockIdx.x;
+    const int tt   = blockIdx.y;
+    const int lane = threadIdx.x;
+    const int eidx = b * 32 + lane;
+    const int t    = (int)table[6] + tt;
+    if (b * 32 < kv_dim_k) {
+        float x = (eidx < kv_dim_k) ? k_rows[(size_t)tt * kv_dim_k + eidx] : 0.0f;
+        quant_K_block(x, lane, K + (size_t)t * k_tok_bytes + (size_t)b * K_BLK_B);
+    }
+    if (b * 32 < kv_dim_v) {
+        float x = (eidx < kv_dim_v) ? v_rows[(size_t)tt * kv_dim_v + eidx] : 0.0f;
+        quant_V_block(x, lane, V + (size_t)t * v_tok_bytes + (size_t)b * V_BLK_B);
+    }
+}
+
+extern "C" __global__ void fa_dequant_kv_ws_bf16_prime_table(
+        const unsigned long long* __restrict__ table, unsigned long long unused,
+        __nv_bfloat16* __restrict__ Kw, __nv_bfloat16* __restrict__ Vw,
+        int kv_dim_k, int kv_dim_v, int unused_depth,
+        long k_tok_bytes, long v_tok_bytes)
+{
+    const uint8_t* K = (const uint8_t*)table[0];
+    const uint8_t* V = (const uint8_t*)table[1];
+    const int t_kv = (int)table[7];
+    const long nk = (long)t_kv * kv_dim_k;
+    const long nv = (long)t_kv * kv_dim_v;
+    const long total = nk + nv;
+    for (long idx = (long)blockIdx.x * blockDim.x + threadIdx.x; idx < total;
+         idx += (long)gridDim.x * blockDim.x) {
+        if (idx < nk) {
+            const long t = idx / kv_dim_k; const int e = (int)(idx % kv_dim_k);
+            Kw[idx] = __float2bfloat16(DQ_K_ELEM(K, t, k_tok_bytes, e));
+        } else {
+            const long j = idx - nk;
+            const long t = j / kv_dim_v; const int e = (int)(j % kv_dim_v);
+            Vw[j] = __float2bfloat16(DQ_V_ELEM(V, t, v_tok_bytes, e));
+        }
+    }
+}
+
+extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 1) fa_prefill_qw_db_prime_table(
+        const float* __restrict__ Q, const __nv_bfloat16* __restrict__ Kw,
+        const __nv_bfloat16* __restrict__ Vw, float* __restrict__ O,
+        int head_dim, int n_head, int n_head_kv, int T, const unsigned long long* table,
+        float scale, int causal, int kv_dim_k, int kv_dim_v)
+{
+    const int T_kv = (int)table[7];
+    fa_prefill_qw_db_body<256>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                               scale, causal, kv_dim_k, kv_dim_v);
+}
+
+extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_t3_prime_table(
+        const float* Q, const __nv_bfloat16* Kw, const __nv_bfloat16* Vw, float* O,
+        int head_dim, int n_head, int n_head_kv, int T, const unsigned long long* table,
+        float scale, int causal, int kv_dim_k, int kv_dim_v) {
+    const int T_kv = (int)table[7];
+    fa_prefill_qw_db_body<256, true>(Q, Kw, Vw, O, head_dim, n_head, n_head_kv, T, T_kv,
+                                      scale, causal, kv_dim_k, kv_dim_v);
+}
+
+// Experimental numeric class: GQA-packed rows, FP32 direct PV accumulation,
+// BF16-rounded denominator and log2 softmax. Session state enters through the
+// replay table in captured prime. Qualified only through MEMRA_PRIME_ATTN_FA2.
+__device__ __forceinline__ float fa2_exp2(float x) {
+    float y; asm("ex2.approx.ftz.f32 %0, %1;" : "=f"(y) : "f"(x)); return y;
+}
+
+template<int TILE>
+__device__ __forceinline__ void fa2_stage(__nv_bfloat16* sk, __nv_bfloat16* sv,
+        const __nv_bfloat16* k, const __nv_bfloat16* v, int start, int depth, int head) {
+    for (int i = threadIdx.y * 32 + threadIdx.x; i < TILE * 32; i += 128) {
+        int row = i / 32, col = i % 32;
+        int dst = row * 256 + (col ^ (row & 7)) * 8;
+        size_t src = (size_t)(start + row) * 1024 + head * 256 + col * 8;
+        if (start + row < depth) {
+            cp_async_16(sk + dst, k + src);
+            cp_async_16(sv + dst, v + src);
+        } else {
+            *(uint4*)(sk + dst) = make_uint4(0,0,0,0);
+            *(uint4*)(sv + dst) = make_uint4(0,0,0,0);
+        }
+    }
+    cp_async_commit();
+}
+
+__device__ __forceinline__ void fa_prefill_qw_fa2_body(const float* __restrict__ q, const __nv_bfloat16* __restrict__ k,
+        const __nv_bfloat16* __restrict__ v, float* __restrict__ out, int rows, int depth) {
+    constexpr bool PACKED = true, SKIP_SCALE = false, LOG2 = true, DEN_MMA = true;
+    constexpr int TILE = 32;
+    int lane = threadIdx.x, warp = threadIdx.y;
+    int base = blockIdx.x * 64, wr = base + warp * 16;
+    int kh = PACKED ? blockIdx.y : blockIdx.y / 6;
+    extern __shared__ __align__(16) unsigned char raw[];
+    auto s = reinterpret_cast<__nv_bfloat16*>(raw);
+    auto sq = s + warp * 16 * 256;
+    for (int i = lane; i < 16 * 256; i += 32) {
+        int row = i / 256, col = i % 256;
+        int token = PACKED ? (wr + row) / 6 : wr + row;
+        int head = PACKED ? kh * 6 + (wr + row) % 6 : blockIdx.y;
+        float x = token < rows ? q[((size_t)token * 24 + head) * 256 + col] : 0;
+        sq[row * 256 + ((col / 8) ^ (row & 7)) * 8 + col % 8] = __float2bfloat16_rn(x);
+    }
+    __syncwarp();
+    ATile qf[16];
+    #pragma unroll
+    for (int i = 0; i < 16; ++i) ld_A_sw(qf[i], sq, 0, i * 2, 32);
+    __syncthreads();
+    CTile accum[32];
+    #pragma unroll
+    for (int i = 0; i < 32; ++i)
+        #pragma unroll
+        for (int j = 0; j < 4; ++j) accum[i].x[j] = 0;
+    float ml = NEG_INF, mh = NEG_INF, ll = 0, lh = 0;
+    int pos_l = depth - rows + (PACKED ? (wr + lane / 4) / 6 : wr + lane / 4);
+    int pos_h = depth - rows + (PACKED ? (wr + lane / 4 + 8) / 6 : wr + lane / 4 + 8);
+    int end = min(depth, depth - rows + (PACKED ? (base + 63) / 6 : base + 63) + 1);
+    int tiles = (end + TILE - 1) / TILE;
+    auto sk = s; auto sv = s + TILE * 256; auto spare = s + TILE * 512;
+    fa2_stage<TILE>(sk, sv, k, v, 0, depth, kh);
+    for (int tile = 0; tile < tiles; ++tile) {
+        cp_async_wait_0();
+        __syncthreads();
+        if (tile + 1 < tiles) stage_kv_plane_async<256>(spare, k, (tile + 1) * TILE,
+            min(TILE, depth - (tile + 1) * TILE), 1024, kh * 256, warp * 32 + lane);
+        CTile scores[4] = {};
+        #pragma unroll
+        for (int g = 0; g < 2; ++g) {
+            #pragma unroll
+            for (int i = 0; i < 16; ++i) {
+                ATile b; ld_A_sw(b, sk, g * 16, i * 2, 32);
+                BTile b0{{b.x[0], b.x[2]}}, b1{{b.x[1], b.x[3]}};
+                mma_bf16(scores[g * 2], qf[i], b0);
+                mma_bf16(scores[g * 2 + 1], qf[i], b1);
+            }
+        }
+        __syncthreads();
+        if (tile + 1 < tiles) stage_kv_plane_async<256>(sk, v, (tile + 1) * TILE,
+            min(TILE, depth - (tile + 1) * TILE), 1024, kh * 256, warp * 32 + lane);
+        float tl = NEG_INF, th = NEG_INF;
+        #pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            #pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                int key = tile * TILE + i * 8 + (lane % 4) * 2 + (j & 1);
+                float x = scores[i].x[j] * (LOG2 ? LOG2E / 16 : 1.0f / 16);
+                if (key >= depth || key > (j < 2 ? pos_l : pos_h)) x = NEG_INF;
+                scores[i].x[j] = x;
+                if (j < 2) tl = fmaxf(tl, x); else th = fmaxf(th, x);
+            }
+        }
+        float nl = fmaxf(ml, row_max4(tl)), nh = fmaxf(mh, row_max4(th));
+        float al = ml == NEG_INF ? 0 : fa2_exp2((ml - nl) * (LOG2 ? 1.0f : LOG2E));
+        float ah = mh == NEG_INF ? 0 : fa2_exp2((mh - nh) * (LOG2 ? 1.0f : LOG2E));
+        ml = nl; mh = nh;
+        float pl = 0, ph = 0;
+        #pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            #pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                float x = scores[i].x[j];
+                float p = x == NEG_INF ? 0 : fa2_exp2((x - (j < 2 ? nl : nh)) * (LOG2 ? 1.0f : LOG2E));
+                // FA2 class: denominator sums the same BF16 probabilities used by PV.
+                if constexpr (!DEN_MMA) p = __bfloat162float(__float2bfloat16_rn(p));
+                scores[i].x[j] = p;
+                if constexpr (!DEN_MMA) { if (j < 2) pl += p; else ph += p; }
+            }
+        }
+        if constexpr (!DEN_MMA) { ll = ll * al + row_sum4(pl); lh = lh * ah + row_sum4(ph); }
+        ATile p[2];
+        #pragma unroll
+        for (int g = 0; g < 2; ++g) {
+            p[g].x[0] = __floats2bfloat162_rn(scores[g*2].x[0], scores[g*2].x[1]);
+            p[g].x[1] = __floats2bfloat162_rn(scores[g*2].x[2], scores[g*2].x[3]);
+            p[g].x[2] = __floats2bfloat162_rn(scores[g*2+1].x[0], scores[g*2+1].x[1]);
+            p[g].x[3] = __floats2bfloat162_rn(scores[g*2+1].x[2], scores[g*2+1].x[3]);
+        }
+        if constexpr (DEN_MMA) {
+            CTile denom{{ll * al, ll * al, lh * ah, lh * ah}};
+            BTile ones{{__floats2bfloat162_rn(1, 1), __floats2bfloat162_rn(1, 1)}};
+            mma_bf16(denom, p[0], ones);
+            mma_bf16(denom, p[1], ones);
+            ll = denom.x[0]; lh = denom.x[2];
+        }
+        if (!SKIP_SCALE || __any_sync(0xffffffff, al != 1 || ah != 1)) {
+            #pragma unroll
+            for (int i = 0; i < 32; ++i) {
+                accum[i].x[0] *= al; accum[i].x[1] *= al;
+                accum[i].x[2] *= ah; accum[i].x[3] *= ah;
+            }
+        }
+        #pragma unroll
+        for (int i = 0; i < 16; ++i) {
+            #pragma unroll
+            for (int g = 0; g < 2; ++g) {
+                ATile b; ld_A_trans_sw(b, sv, g * 16, i * 2, 32);
+                BTile b0{{b.x[0], b.x[2]}}, b1{{b.x[1], b.x[3]}};
+                mma_bf16(accum[i * 2], p[g], b0);
+                mma_bf16(accum[i * 2 + 1], p[g], b1);
+            }
+        }
+        __syncthreads();
+        auto old_v = sv; sv = sk; sk = spare; spare = old_v;
+    }
+    #pragma unroll
+    for (int i = 0; i < 32; ++i) {
+        #pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            int row = wr + CTile::get_i(j);
+            int token = PACKED ? row / 6 : row;
+            int head = PACKED ? kh * 6 + row % 6 : blockIdx.y;
+            if (token < rows) out[((size_t)token * 24 + head) * 256 + i * 8 + CTile::get_j(j)] =
+                accum[i].x[j] / (j < 2 ? ll : lh);
+        }
+    }
+}
+
+extern "C" __global__ void __launch_bounds__(128, 2) fa_prefill_qw_fa2(
+        const float* q, const __nv_bfloat16* k, const __nv_bfloat16* v,
+        float* out, int rows, int depth) {
+    fa_prefill_qw_fa2_body(q, k, v, out, rows, depth);
+}
+extern "C" __global__ void __launch_bounds__(128, 2) fa_prefill_qw_fa2_prime_table(
+        const float* q, const __nv_bfloat16* k, const __nv_bfloat16* v,
+        float* out, int rows, const unsigned long long* table) {
+    fa_prefill_qw_fa2_body(q, k, v, out, rows, (int)table[7]);
 }

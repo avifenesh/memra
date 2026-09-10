@@ -1,0 +1,23 @@
+{
+  "stage": "native-whisper-log-mel",
+  "status": "passed",
+  "shape": [
+    128,
+    3000
+  ],
+  "input_samples": 32000,
+  "padded_samples": 480000,
+  "max_abs": 5.6743621826171875e-05,
+  "mean_abs": 4.790987162550664e-08,
+  "threshold_abs": 0.001,
+  "oracle_manifest_sha256": "eb7339d6c16a820a590cc4aea9586303d091af236d05971d641c81a0daaf7fd2",
+  "pcm_sha256": "0922ee34005328549f1d04f89e34a31121f1f5380915db5a636c45472f755eb9",
+  "oracle_output_sha256": "6a9ddd3de5bb388b22d27d86fcdef1c28e85065a58350d4213034fa43a2c423d",
+  "native_output_sha256": "6dac39daa51eb0910b2a4f5c46d81ec9e817377b4c8e8fcf242b767a0559b441",
+  "native_binary_sha256": "0b062c8ed3a379fb80d9ffbbfee7478c75106348886b61de9a1943d6618af074",
+  "native_source_sha256": {
+    "crates/memra-reference/src/speech/frontend.rs": "d223f9356eee1cb6e945cb374b4361037098a6453cf9f14bf7454d2e4951c559",
+    "crates/memra-reference/src/bin/whisper-stage.rs": "7adcbdd27d7c1cef0a9edce22bb0054ee0c6c5b41612482dc731710dd5a9f877"
+  },
+  "scope": "single-process single-thread CPU, synthetic 2-second clip, HF transformers 5.16.1/torch 2.14.0 fp32; no GPU or WER qualification"
+}

@@ -397,6 +397,7 @@ impl GemmaDraft {
                             blk: None,
                             rp4: None,
                             f16: None,
+                            a4: None,
                         },
                         Some(d2t),
                         trim_adapt,
@@ -1566,6 +1567,12 @@ pub struct GemmaSpecSession {
     pub rounds: usize,
     pub drafted: usize,
     pub accepted: usize,
+    /// SAMPLED arm philox counters (lane/gemma-sampled-spec): the session's own draw
+    /// positions for the Gumbel draws (`sctr`) and the rejection-walk uniforms (`uctr`).
+    /// Session-owned exactly like the dspark route's, so randomness never repeats across
+    /// bursts and two concurrent sessions never share a stream position.
+    pub sctr: u32,
+    pub uctr: u32,
 }
 
 impl GemmaSpecSession {
@@ -1577,6 +1584,13 @@ impl GemmaSpecSession {
     /// Context capacity of the session's cache (the server's ContextFull guard).
     pub fn cache_max_ctx(&self) -> usize {
         self.cache.max_ctx
+    }
+    /// The token the prime parked, which the next burst emits first. Read-only, and read by
+    /// `gemma_sample_gate`: the prime BOUNDARY is the one place a `Some(temp == 0)` config
+    /// can still perturb the greedy stream, so the kill-switch identity is stated on this
+    /// token rather than inferred from a stream comparison that cannot fail.
+    pub fn pending_token(&self) -> u32 {
+        self.pending
     }
     /// DEMOTE HANDOFF (stage-2 seam, gated by the session gate's demote case): hand the
     /// trunk cache to the plain path. The cache rows are exactly `committed` (boundary
@@ -1599,6 +1613,7 @@ impl HybridModel {
         d: &mut GemmaDraft,
         prompt: &[u32],
         max_ctx: usize,
+        sp: Option<&crate::spec::SpecSampling>,
     ) -> Result<GemmaSpecSession, Box<dyn std::error::Error>> {
         if self.is_gemma4_e4b() || !self.uses_gemma_program() {
             return Err(
@@ -1638,7 +1653,24 @@ impl HybridModel {
             )?;
             hh
         };
-        let pending = crate::forward::argmax(&pl) as u32;
+        // BOUNDARY TOKEN. The greedy arm's first emitted token is the argmax of the prime's
+        // boundary logits. Under the sampled arm that token has to come from the same
+        // filtered distribution as every token after it, or the stream's first position is
+        // the only greedy one in it (the sampfix-20260805 shape). The prime's logits are
+        // already softcapped and suppress-masked, so they are the same row the round loop
+        // verifies against.
+        let mut sctr: u32 = 0;
+        let pending = match sp {
+            Some(sp) if sp.temp > 0.0 => crate::spec::sample_boundary_token(
+                e,
+                &pl,
+                sp,
+                &[],
+                &mut sctr,
+                "gemma spec prime boundary",
+            )?,
+            _ => crate::forward::argmax(&pl) as u32,
+        };
         Ok(GemmaSpecSession {
             cache,
             committed: prompt.to_vec(),
@@ -1650,6 +1682,8 @@ impl HybridModel {
             rounds: 0,
             drafted: 0,
             accepted: 0,
+            sctr,
+            uctr: 0,
         })
     }
 
@@ -1677,6 +1711,7 @@ impl HybridModel {
         mut cache: Cache,
         prefix: &[u32],
         suffix: &[u32],
+        sp: Option<&crate::spec::SpecSampling>,
     ) -> Result<GemmaSpecSession, Box<dyn std::error::Error>> {
         if self.is_gemma4_e4b() || !self.uses_gemma_program() {
             return Err(
@@ -1719,7 +1754,24 @@ impl HybridModel {
         let row = hvv.slice((t - 1) * n_embd..t * n_embd);
         let mut h = e.uninit(n_embd)?;
         e.copy_view_into(&mut h, 0, &row, n_embd)?;
-        let pending = crate::forward::argmax(&last) as u32;
+        // BOUNDARY TOKEN. The greedy arm's first emitted token is the argmax of the prime's
+        // boundary logits. Under the sampled arm that token has to come from the same
+        // filtered distribution as every token after it, or the stream's first position is
+        // the only greedy one in it (the sampfix-20260805 shape). The prime's logits are
+        // already softcapped and suppress-masked, so they are the same row the round loop
+        // verifies against.
+        let mut sctr: u32 = 0;
+        let pending = match sp {
+            Some(sp) if sp.temp > 0.0 => crate::spec::sample_boundary_token(
+                e,
+                &last,
+                sp,
+                &[],
+                &mut sctr,
+                "gemma spec restore boundary",
+            )?,
+            _ => crate::forward::argmax(&last) as u32,
+        };
         let prompt_len = full.len();
         Ok(GemmaSpecSession {
             cache,
@@ -1732,6 +1784,8 @@ impl HybridModel {
             rounds: 0,
             drafted: 0,
             accepted: 0,
+            sctr,
+            uctr: 0,
         })
     }
 
@@ -1949,6 +2003,208 @@ impl HybridModel {
         }
         sess.kc_next = kc;
         sess.prev_full = prev_full;
+        sess.drafted += drafted;
+        sess.accepted += accepted;
+        Ok((burst_out, drafted, accepted))
+    }
+
+    /// SAMPLED gemma spec burst (lane/gemma-sampled-spec, 2026-09-09).
+    ///
+    /// The greedy burst above is a measurement instrument: it argmaxes the drafter and
+    /// argmaxes the verify, so it can only serve `temperature == 0`, and the serving law
+    /// says production never sees greedy. That is why the perf-page cell measured Gemma
+    /// decoding plain at vendor defaults while the drafter sat attached and idle: the
+    /// admission predicate required `sampler.is_greedy()`, and the vendor default for this
+    /// family is temp 1.0 / top_p 0.95 / top_k 64.
+    ///
+    /// This arm draws each draft from the FILTERED draft distribution and verifies by
+    /// rejection sampling, so the committed stream has the distribution of plain sampling
+    /// from the target under the same filter (Leviathan/Chen). It is a port, not new math:
+    /// the proposal record, the accept walk, the bonus draw and the residual sample are the
+    /// q38 dspark route's shipped machinery (`dspark_propose_sampled`'s `Rows` record and
+    /// `dspark_accept_sampled`), which glm5's DFlash2 route already reuses verbatim. What is
+    /// gemma-specific is upstream of them: the drafter's own logits row per slot, and a
+    /// SOFTCAPPED verify (`gemma4_decode_step_t_logits_dev` — the greedy twin skips the cap
+    /// because argmax cannot see it, and a probability walk can).
+    ///
+    /// Refusals, all loud and all checked here rather than inferred at the call site:
+    /// * `temp <= 0` belongs to the greedy burst (and penalized greedy to the plain path);
+    /// * penalties are NOT admitted yet — the dspark route pays for them with an incremental
+    ///   per-row Keskar pass over the round's own drafts, and nothing has measured that shape
+    ///   on this family. Gemma's vendor default carries no penalty, so the served shape is
+    ///   covered; a penalized request stays on the plain path;
+    /// * an FR-trimmed drafter head (`d2t`) is refused: the trim maps draft rows to target
+    ///   ids, so the recorded q would be a distribution over a different support than the
+    ///   verify row it is tested against.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gemma_spec_session_burst_sampled(
+        &self,
+        e: &Engine,
+        d: &mut GemmaDraft,
+        sess: &mut GemmaSpecSession,
+        target: usize,
+        k: usize,
+        eos: &[u32],
+        sp: &crate::spec::SpecSampling,
+    ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        if sp.temp <= 0.0 {
+            return Err("gemma sampled burst: temp <= 0 is the greedy burst's shape".into());
+        }
+        if sp.pen_on() {
+            return Err("gemma sampled burst: penalties are not admitted on this route".into());
+        }
+        if d.d2t.is_some() {
+            return Err(
+                "gemma sampled burst: an FR-trimmed drafter head has no comparable q".into(),
+            );
+        }
+        let n_embd = self.cfg.n_embd as usize;
+        let n_vocab = self.output.out_features();
+        if d.head.out_features() != n_vocab {
+            return Err("gemma sampled burst: drafter head width != trunk vocab".into());
+        }
+        if target == 0 {
+            return Ok((Vec::new(), 0, 0));
+        }
+        // Depth adaptation is the greedy arm's, unchanged: kc follows the previous round's
+        // accepted length. The pmin/in-round confidence stops are NOT carried — they read the
+        // argmax token's probability, which is not what this arm drafts.
+        let adapt = std::env::var("MEMRA_SPEC_ADAPT").as_deref() != Ok("0");
+        let adapt_floor_default: usize = if self.cfg.n_embd >= 3500 {
+            4
+        } else if self.cfg.n_embd >= 2500 {
+            2
+        } else {
+            1
+        };
+        let adapt_floor: usize = std::env::var("MEMRA_SPEC_ADAPT_FLOOR")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(adapt_floor_default);
+        let cap_max: usize = std::env::var("MEMRA_SPEC_CAPMAX")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7);
+        let k_cap = k.min(cap_max).max(1);
+        let mut kc = sess.kc_next.min(k_cap);
+
+        let mut batch_d = e.stream().alloc_zeros::<u32>(k_cap + 1)?;
+        let mut pos_slots: Vec<CudaSlice<i32>> = (0..k_cap.max(1))
+            .map(|_| e.htod_i32(&[0]))
+            .collect::<Result<_, _>>()?;
+        let mut g_seed = e.zeros(n_embd)?;
+        // The round's draft-logits stack: row j is slot j's raw drafter row, and the accept
+        // walk gathers q from it at the drafted ids. The drafter head carries NO softcap
+        // (module header), so these rows are the drafter's own logits.
+        let mut dl = e.zeros(k_cap * n_vocab)?;
+        let mut pb = e.zeros(n_vocab)?;
+        let (mut th_all, mut z_all, mut mx_all) =
+            (e.zeros(k_cap)?, e.zeros(k_cap)?, e.zeros(k_cap)?);
+        for kvl in sess.cache.kv.iter_mut().flatten() {
+            e.set_i32_one(&mut kvl.len_d, kvl.len as i32)?;
+        }
+
+        let mut burst_out: Vec<u32> = Vec::with_capacity(target + k_cap + 1);
+        let (mut drafted, mut accepted) = (0usize, 0usize);
+        let mut ended = false;
+        while burst_out.len() < target && !ended {
+            let kr = if adapt { kc } else { k_cap };
+            e.u32_set_k(&mut batch_d, sess.pending, 0)?;
+            e.copy_into(&mut g_seed, 0, &sess.h, n_embd)?;
+            for (j, slot) in pos_slots.iter_mut().take(kr).enumerate() {
+                e.set_i32_one(slot, (sess.cache.pos + j) as i32)?;
+            }
+            {
+                let mut hc = e.uninit(n_embd)?;
+                e.copy_into(&mut hc, 0, &g_seed, n_embd)?;
+                for (j, pos_slot) in pos_slots.iter().enumerate().take(kr) {
+                    let tv = batch_d.slice(j..j + 1);
+                    let (hn, h_next) =
+                        self.gemma4_draft_trunk_dev(e, d, &tv, &hc, pos_slot, &sess.cache, None)?;
+                    let ld = e.matmul(&d.head, &hn, 1)?;
+                    let ldv = e.view(&ld, n_vocab);
+                    e.copy_view_into(&mut dl, j * n_vocab, &ldv.slice(0..n_vocab), n_vocab)?;
+                    let rows_j = e.htod_i32(&[j as i32])?;
+                    let (mut th1, mut z1, mut mx1) = (e.zeros(1)?, e.zeros(1)?, e.zeros(1)?);
+                    e.filter_stats(
+                        &dl, n_vocab, &rows_j, &mut th1, &mut z1, &mut mx1, n_vocab, 1, sp.temp,
+                        sp.top_k, sp.top_p, sp.min_p,
+                    )?;
+                    e.gumbel_perturb_filtered_col(
+                        &dl, j, &mut pb, n_vocab, sp.seed, sess.sctr, sp.temp, &mx1, &th1, 0,
+                    )?;
+                    sess.sctr = sess.sctr.wrapping_add(1);
+                    e.argmax_token_device_col(&pb, 0, n_vocab, &mut batch_d, j + 1)?;
+                    e.copy_into(&mut th_all, j, &th1, 1)?;
+                    e.copy_into(&mut z_all, j, &z1, 1)?;
+                    e.copy_into(&mut mx_all, j, &mx1, 1)?;
+                    hc = h_next;
+                }
+            }
+            drafted += kr;
+            sess.rounds += 1;
+            let cand = e.dtoh_u32(&batch_d)?; // [pending, drafts...] — the accept's cand contract
+            let pos0 = sess.cache.pos;
+            let (vlogits, vh) =
+                self.gemma4_decode_step_t_logits_dev(e, &batch_d, kr + 1, pos0, &mut sess.cache)?;
+            let (thv, zv, mxv) = (e.dtoh(&th_all)?, e.dtoh(&z_all)?, e.dtoh(&mx_all)?);
+            let prop = crate::dflash::DsparkDraftSample::Rows {
+                th: e.htod(&thv[..kr])?,
+                z: e.htod(&zv[..kr])?,
+                stats: (0..kr).map(|i| (mxv[i], thv[i], zv[i])).collect(),
+            };
+            let (m, next) = crate::dflash::dspark_accept_sampled(
+                e,
+                &vlogits,
+                &cand[..kr + 1],
+                kr + 1,
+                n_vocab,
+                &dl,
+                &prop,
+                sp,
+                &[],
+                &mut sess.sctr,
+                &mut sess.uctr,
+            )?;
+            let next = crate::spec::guard_vocab_token(
+                next,
+                n_vocab,
+                &format!("gemma sampled verify at round {} j={m}", sess.rounds),
+            )?;
+            accepted += m;
+            // ---- ROUND COMPLETES UNCONDITIONALLY (the boundary law), greedy arm verbatim ----
+            let keep = m + 1;
+            for kvl in sess.cache.kv.iter_mut().flatten() {
+                kvl.len -= (kr + 1) - keep;
+                e.set_i32_one(&mut kvl.len_d, kvl.len as i32)?;
+            }
+            sess.cache.pos -= (kr + 1) - keep;
+            let hv2 = e.view(&vh, (kr + 1) * n_embd);
+            let row = hv2.slice(m * n_embd..(m + 1) * n_embd);
+            let mut hrow = e.uninit(n_embd)?;
+            e.copy_view_into(&mut hrow, 0, &row, n_embd)?;
+            sess.h = hrow;
+            sess.committed.push(sess.pending);
+            burst_out.push(sess.pending);
+            if eos.contains(&sess.pending) {
+                ended = true;
+            }
+            for &dt in &cand[1..=m] {
+                sess.committed.push(dt);
+                if !ended {
+                    burst_out.push(dt);
+                    if eos.contains(&dt) {
+                        ended = true;
+                    }
+                }
+            }
+            sess.pending = next;
+            trim_adapt_learn(e, d, &cand[1..=m])?;
+            if adapt {
+                kc = (m + 1).clamp(adapt_floor.min(k_cap), k_cap);
+            }
+        }
+        sess.kc_next = kc;
         sess.drafted += drafted;
         sess.accepted += accepted;
         Ok((burst_out, drafted, accepted))

@@ -369,6 +369,116 @@ mod graph_splitk_policy_tests {
     }
 }
 
+unsafe extern "C" {
+    fn memra_moe_m1_splitk_fast_set_for_gate(enabled: i32);
+    fn memra_moe_m1_splitk_fast_on() -> i32;
+}
+
+/// Gate-only selector for the paired-fetch split-K partial/reduce entries.
+/// Takes priority over the environment policy for future enqueues and captures,
+/// never for retained graphs. Drain both ranks before switching. A historical
+/// control that must keep measuring the base graph split-K partial pins `false`
+/// here rather than relying on the default.
+pub fn set_moe_m1_splitk_fast_for_gate(enabled: bool) {
+    unsafe { memra_moe_m1_splitk_fast_set_for_gate(i32::from(enabled)) }
+}
+
+/// Selected paired-fetch entry state: the gate override when one is set,
+/// otherwise the environment policy (unset selects the paired-fetch entries).
+pub fn moe_m1_splitk_fast_on() -> bool {
+    unsafe { memra_moe_m1_splitk_fast_on() != 0 }
+}
+
+/// How many graph split-K entry nodes of each symbol family a captured forward
+/// graph must contain, given the resolved paired-fetch door and the class's node
+/// count. The class captures ONE family: the paired-fetch (`..._splitk_fast_...`)
+/// entries when the door is on, the base (`..._graph_splitk_...`) entries when it
+/// is explicitly off. Same numeric class, only the symbol moves.
+///
+/// Every gate that censuses the captured graph resolves its expectation here,
+/// against `moe_m1_splitk_fast_on()`, instead of naming one family and hoping the
+/// default never moves. It moved: the split-K-fast flip made the paired-fetch
+/// entries the default and two gates kept asserting the base symbols, so their
+/// census read 0 against 86 on any tree where the flip had landed.
+pub fn graph_splitk_entry_nodes(splitk_fast: bool, nodes: usize) -> GraphSplitkEntryNodes {
+    if splitk_fast {
+        GraphSplitkEntryNodes {
+            base: 0,
+            fast: nodes,
+        }
+    } else {
+        GraphSplitkEntryNodes {
+            base: nodes,
+            fast: 0,
+        }
+    }
+}
+
+/// Per-family expected node counts for one captured graph. Both fields are
+/// asserted at every census site: the family that must be present, and the one
+/// that must be absent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GraphSplitkEntryNodes {
+    pub base: usize,
+    pub fast: usize,
+}
+
+#[cfg(test)]
+mod graph_splitk_entry_nodes_tests {
+    use super::graph_splitk_entry_nodes;
+    /// Red arm, crosswise both ways: each door state must demand its own family
+    /// AND zero of the other, so a flip cannot make either assert vacuous.
+    #[test]
+    fn each_door_state_demands_one_family_and_forbids_the_other() {
+        let on = graph_splitk_entry_nodes(true, 86);
+        assert_eq!((on.base, on.fast), (0, 86));
+        let off = graph_splitk_entry_nodes(false, 86);
+        assert_eq!((off.base, off.fast), (86, 0));
+        assert_ne!(on, off);
+        // A non-forward segment captures neither family.
+        let none = graph_splitk_entry_nodes(true, 0);
+        assert_eq!((none.base, none.fast), (0, 0));
+        assert_eq!(graph_splitk_entry_nodes(false, 0), none);
+    }
+}
+
+#[cfg(test)]
+mod splitk_fast_policy_tests {
+    unsafe extern "C" {
+        /// Pure paired-fetch split-K entry policy, owned by
+        /// `cu/moe_f16_grouped.cu`. Takes the raw value instead of reading the
+        /// environment, so one process can exercise every arm. Returns 1 ON,
+        /// 0 OFF, -1 for an unusable value. The engine itself calls it from the
+        /// same translation unit, so this declaration is test-only.
+        fn memra_moe_m1_splitk_fast_policy(raw: *const core::ffi::c_char) -> i32;
+    }
+    fn policy(raw: Option<&str>) -> i32 {
+        let owned = raw.map(|value| std::ffi::CString::new(value).unwrap());
+        let ptr = owned
+            .as_ref()
+            .map_or(std::ptr::null(), |value| value.as_ptr());
+        unsafe { memra_moe_m1_splitk_fast_policy(ptr) }
+    }
+    #[test]
+    fn unset_selects_the_paired_fetch_entries() {
+        assert_eq!(policy(None), 1);
+    }
+    #[test]
+    fn explicit_zero_is_the_rollback_seam() {
+        assert_eq!(policy(Some("0")), 0);
+    }
+    #[test]
+    fn explicit_one_selects_them_too() {
+        assert_eq!(policy(Some("1")), 1);
+    }
+    #[test]
+    fn anything_else_is_unusable() {
+        for value in ["graph", "", "true", "2", "00"] {
+            assert_eq!(policy(Some(value)), -1, "{value:?}");
+        }
+    }
+}
+
 pub(crate) fn moe_m1_host_splitk_on() -> bool {
     MOE_M1_SPLITK.load(Ordering::Acquire) != 0
 }
@@ -882,6 +992,7 @@ pub mod glm5_tp_sampler;
 pub mod mmq_ffi;
 pub mod moe_cache;
 pub mod prime_graph;
+pub mod qwen_prime_graph;
 pub mod spill;
 mod spill_pread;
 
@@ -1776,6 +1887,13 @@ pub struct Engine {
     /// MEMRA_MOE_CACHE. `Mutex` makes it multi-agent safe (§E.2); the lock covers only lookup/admit/
     /// memcpy-issue (µs), NOT the GEMM, so streams still overlap. `None` => cache disabled.
     moe_cache: Mutex<Option<crate::moe_cache::MoeSlotCache>>,
+    /// CALIBRATED-A4 CLIPPING DIAGNOSTIC (research/qwen-fp4-activation-mint-20260909). `None`
+    /// while serving, so the quantizer takes a null pointer and does no atomics. When a
+    /// diagnostic run enables it, this is a device buffer of 4 u64 per program slot
+    /// (values, fp4-max hits, global clips, block-scale clips) that the quantizer accumulates
+    /// into. The offline BF16 calibration reported these same three rates against BF16
+    /// activations; this is their twin measured on the artifact the engine actually executes.
+    a4_clip_stats: Mutex<Option<CudaSlice<u64>>>,
     /// MEMRA_STEP_TP_W8, hybrid half: q8_0 mirrors of bf16 GEMV weights that do NOT live in a
     /// TP resident bank (the LM head, the shared expert, the dense-FFN layers), keyed by the
     /// bf16 slab's device pointer and built on first decode use. The mirror is 1.0625 B/w
@@ -3743,6 +3861,7 @@ impl Engine {
             router,
             sample,
             moe_cache: Mutex::new(None),
+            a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
             moe_cache_layout: Mutex::new(None),
@@ -6990,7 +7109,10 @@ impl Engine {
             }
             return Ok(());
         }
-        let f = if g {
+        let live = crate::qwen_prime_graph::current();
+        let f = if live.is_some() {
+            self.func("append_quantize_kv_q8_0_q5_1_rows_prime_table")
+        } else if g {
             self.func_g("append_quantize_kv_q8_0_q5_1_rows")
         } else {
             self.func("append_quantize_kv_q8_0_q5_1_rows")
@@ -7005,15 +7127,15 @@ impl Engine {
         let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
-        b.arg(k_rows)
-            .arg(v_rows)
-            .arg(kc)
-            .arg(vc)
-            .arg(&t0i)
-            .arg(&kdk)
-            .arg(&kdv)
-            .arg(&ktb)
-            .arg(&vtb);
+        let table = live.map_or(0, |a| a.0);
+        let unused = 0u64;
+        b.arg(k_rows).arg(v_rows);
+        if live.is_some() {
+            b.arg(&table).arg(&unused);
+        } else {
+            b.arg(kc).arg(vc);
+        }
+        b.arg(&t0i).arg(&kdk).arg(&kdv).arg(&ktb).arg(&vtb);
         unsafe {
             b.launch(cfg)?;
         }
@@ -13600,11 +13722,11 @@ impl Engine {
             srcDevice: sp,
             srcArray: std::ptr::null_mut(),
             srcPitch: src_pitch_floats * f,
-            dstXInBytes: dst_off_floats * f,
+            dstXInBytes: 0,
             dstY: 0,
             dstMemoryType: cudarc::driver::sys::CUmemorytype_enum::CU_MEMORYTYPE_DEVICE,
             dstHost: std::ptr::null_mut(),
-            dstDevice: dp,
+            dstDevice: dp + (dst_off_floats * f) as u64,
             dstArray: std::ptr::null_mut(),
             dstPitch: dst_pitch_floats * f,
             WidthInBytes: width_floats * f,
@@ -16363,6 +16485,7 @@ impl Engine {
             blk: None,
             rp4: None,
             f16: None,
+            a4: None,
         }))
     }
 
@@ -17621,6 +17744,184 @@ impl Engine {
     }
 
     /// Unified weight-tensor matmul: dispatches quant tensors to qmatvec (weights packed) and
+    /// PREFILL-PHASE matmul. Identical to `matmul` for every weight EXCEPT one the artifact
+    /// stamped with a calibrated activation multiplier (`Quant.a4`), which takes the calibrated
+    /// NVFP4 A4 tile instead of W4A8.
+    ///
+    /// The phase is the CALL SITE, deliberately not a row count: prefill tails and restored
+    /// suffixes of one row still belong to the prefill program, and a 1..8-row speculative verify
+    /// does not. Decode and verify call `matmul`, which never reads `a4`, so the precision islands
+    /// (narrow alpha/beta, MTP, Q5_K head, drafter) and both non-prefill phases keep W4A8 by
+    /// construction rather than by a guard someone can forget.
+    ///
+    /// A stamped weight whose shape the kernel refuses is an artifact/plan disagreement, so it
+    /// fails closed here instead of silently serving a second numerical program.
+    pub fn matmul_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if let GpuTensor::Quant {
+            bytes,
+            qtype,
+            scale,
+            rp,
+            a4: Some(stamp),
+            ..
+        } = w
+            && *qtype == QT_NVFP4
+        {
+            if !self.a4_stats_observe(stamp.slot, x, m * w.in_features())? {
+                return self.matmul(w, x, m);
+            }
+            return self.qmatvec_mmq_nvfp4_calibrated_prefill(
+                bytes,
+                x,
+                m,
+                w.in_features(),
+                w.out_features(),
+                *scale,
+                stamp.multiplier,
+                stamp.slot,
+                *rp,
+            );
+        }
+        self.matmul(w, x, m)
+    }
+
+    /// Arm the calibrated-A4 clipping diagnostic: allocate and zero one counter block per program
+    /// slot. Every A4 GEMM issued afterwards accumulates into its own slot.
+    ///
+    /// This is the ARTIFACT twin of the offline BF16 calibration diagnostic. The offline run
+    /// measured clipping on BF16 activations and its receipt says so
+    /// (`native_mint_diagnostic_required`); this measures the same three definitions on the
+    /// activations the engine actually quantizes, for the artifact it actually executes.
+    pub fn a4_clip_stats_enable(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let slots = memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
+        let zeros = vec![0u64; slots * crate::mmq_ffi::A4_CLIP_STRIDE];
+        let mut buffer = self.alloc_uninit::<u64>(zeros.len())?;
+        self.htod_u64_into(&zeros, &mut buffer)?;
+        *self.a4_clip_stats.lock().unwrap() = Some(buffer);
+        Ok(())
+    }
+
+    /// Read the diagnostic counters back and disarm. `None` when it was never armed.
+    pub fn a4_clip_stats_take(&self) -> Result<Option<Vec<u64>>, Box<dyn std::error::Error>> {
+        let taken = self.a4_clip_stats.lock().unwrap().take();
+        match taken {
+            Some(buffer) => Ok(Some(self.dtoh_u64(&buffer)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Arm the recalibration statistics buffer: one counter block per program slot.
+    pub fn a4_stats_enable(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let slots = memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
+        let zeros = vec![0u64; slots * crate::mmq_ffi::A4_STATS_STRIDE];
+        let mut buffer = self.alloc_uninit::<u64>(zeros.len())?;
+        self.htod_u64_into(&zeros, &mut buffer)?;
+        *crate::mmq_ffi::a4_stats_buffer().lock().unwrap() = Some(buffer);
+        Ok(())
+    }
+
+    /// Read the recalibration statistics back and disarm.
+    pub fn a4_stats_take(&self) -> Result<Option<Vec<u64>>, Box<dyn std::error::Error>> {
+        let taken = crate::mmq_ffi::a4_stats_buffer().lock().unwrap().take();
+        match taken {
+            Some(buffer) => Ok(Some(self.dtoh_u64(&buffer)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Accumulate one projection's operand into its slot, then report whether the caller should
+    /// still take the A4 path. While a recalibration pass is armed the answer is NO: the point is
+    /// to measure the operand the SERVED arithmetic produces.
+    fn a4_stats_observe(
+        &self,
+        slot: u32,
+        x: &CudaSlice<f32>,
+        n: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let guard = crate::mmq_ffi::a4_stats_buffer().lock().unwrap();
+        let Some(buffer) = guard.as_ref() else {
+            return Ok(true);
+        };
+        let stream = self.gpu.stream();
+        let (base, _g) = buffer.device_ptr(&stream);
+        let (x_p, _gx) = x.device_ptr(&stream);
+        let slot_ptr = (base as usize
+            + (slot as usize) * crate::mmq_ffi::A4_STATS_STRIDE * std::mem::size_of::<u64>())
+            as *mut core::ffi::c_void;
+        let rc = unsafe {
+            crate::mmq_ffi::memra_a4_stats_accumulate(
+                x_p as *const f32,
+                n as i64,
+                slot_ptr,
+                stream.cu_stream() as *mut core::ffi::c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("memra_a4_stats_accumulate rc={rc}").into());
+        }
+        Ok(false)
+    }
+
+    /// True when the artifact stamped this weight with a calibrated prefill activation scale.
+    pub fn a4_stamped(w: &crate::model::GpuTensor) -> bool {
+        matches!(w, crate::model::GpuTensor::Quant { a4: Some(_), .. })
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre`. A stamped weight refuses the f16 mirror: that mirror is
+    /// a different numerical program from the one its global activation scale was fitted against,
+    /// and taking it would silently run two arithmetics for one declared program. Every unstamped
+    /// weight behaves exactly as before.
+    ///
+    /// This exists as a named helper because the guard was spelled inline, three different ways,
+    /// at the first three call sites that needed it -- and the sites that needed it and did not
+    /// have it are precisely the ones the dispatch gate caught.
+    pub fn try_f16_gemm_pre_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+    ) -> Result<Option<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(None);
+        }
+        self.try_f16_gemm_pre(w, xh, m)
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre_into`; same refusal as `try_f16_gemm_pre_prefill`.
+    pub fn try_f16_gemm_pre_into_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+        dst: &mut CudaSlice<f32>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(false);
+        }
+        self.try_f16_gemm_pre_into(w, xh, m, dst)
+    }
+
+    /// PREFILL-PHASE `try_f16_gemm_pre_into_off`; same refusal as `try_f16_gemm_pre_prefill`.
+    pub fn try_f16_gemm_pre_into_off_prefill(
+        &self,
+        w: &crate::model::GpuTensor,
+        xh: &CudaSlice<u8>,
+        m: usize,
+        dst: &mut CudaSlice<f32>,
+        off: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if Self::a4_stamped(w) {
+            return Ok(false);
+        }
+        self.try_f16_gemm_pre_into_off(w, xh, m, dst, off)
+    }
+
     /// float tensors to cuBLASLt. y[m,out] = x[m,in] @ W[out,in]^T.
     pub fn matmul(
         &self,
@@ -21653,6 +21954,7 @@ impl Engine {
             fp8: None,
             blk: None,
             f16: None,
+            a4: None,
             rp4: None,
         };
         // Recursion terminates: `tmp` is QT_Q8_0 with `blk: None`, so it cannot re-enter this arm.
@@ -23825,6 +24127,56 @@ impl Engine {
     /// whole group instead of once per GEMM (the standalone converts were ~250 launches/prime
     /// of small-kernel gap fuel — nsys 2026-07-26). Any member without a mirror (or with a
     /// different in_f) falls back to its own `matmul` — behavior unchanged.
+    /// PREFILL-PHASE group that also owns the f16-mirror choice. Prefer this at prime call sites
+    /// that would otherwise pick between `matmul_group_xh` and `matmul_group` themselves: a
+    /// stamped weight must not silently take the f16 mirror, which is a different numerical
+    /// program from the one its global scale was calibrated against.
+    pub fn matmul_group_prefill_xh(
+        &self,
+        ws: &[&crate::model::GpuTensor],
+        x: &CudaSlice<f32>,
+        xh: Option<&CudaSlice<u8>>,
+        m: usize,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if ws
+            .iter()
+            .any(|w| matches!(w, GpuTensor::Quant { a4: Some(_), .. }))
+        {
+            return self.matmul_group_prefill(ws, x, m);
+        }
+        match xh {
+            Some(xh) => self.matmul_group_xh(ws, x, xh, m),
+            None => self.matmul_group(ws, x, m),
+        }
+    }
+
+    /// PREFILL-PHASE `matmul_group`. A weight the artifact stamped with a calibrated activation
+    /// multiplier takes the A4 tile; every other weight in the group falls through to the ordinary
+    /// group walk, so a mixed group (stamped gate/up beside an unstamped projection) is fine.
+    ///
+    /// The f16 mirror fast path is deliberately NOT consulted for a stamped weight: that mirror is
+    /// a different numerical program, and the calibrated scale was fitted against this one.
+    pub fn matmul_group_prefill(
+        &self,
+        ws: &[&crate::model::GpuTensor],
+        x: &CudaSlice<f32>,
+        m: usize,
+    ) -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
+        use crate::model::GpuTensor;
+        if !ws
+            .iter()
+            .any(|w| matches!(w, GpuTensor::Quant { a4: Some(_), .. }))
+        {
+            return self.matmul_group(ws, x, m);
+        }
+        let mut out = Vec::with_capacity(ws.len());
+        for w in ws {
+            out.push(self.matmul_prefill(w, x, m)?);
+        }
+        Ok(out)
+    }
+
     pub fn matmul_group(
         &self,
         ws: &[&crate::model::GpuTensor],
@@ -29149,6 +29501,9 @@ impl Engine {
                 v_tok_bytes,
             );
         }
+        let live = crate::qwen_prime_graph::current();
+        let table = live.map_or(0, |a| a.0);
+        let unused = 0u64;
         const BLOCK_Q: usize = 64;
         const BK: usize = 32;
         let kv_dim_k = n_head_kv * head_dim;
@@ -29176,15 +29531,23 @@ impl Engine {
         // pass 1: dequant K+V once into the bf16 workspace (grid-stride, 1 thread/elem)
         {
             // only THIS pass parses KV bytes — pass 2 reads the bf16 workspace (format-free).
-            let f = if g {
+            let f = if live.is_some() {
+                self.func("fa_dequant_kv_ws_bf16_prime_table")
+            } else if g {
                 self.func_g("fa_dequant_kv_ws_bf16")
             } else {
                 self.func("fa_dequant_kv_ws_bf16")
             };
-            let total = (t_kv * (kv_dim_k + kv_dim_v)) as u64;
+            let total = (live.map_or(t_kv, |a| a.1) * (kv_dim_k + kv_dim_v)) as u64;
             #[allow(clippy::manual_div_ceil)]
             // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
-            let nblk = ((total + 255) / 256).min(65535 * 16) as u32;
+            let nblk = if live.is_some() {
+                // A fixed grid-stride launch avoids empty capacity-sized grids.
+                // Each destination element still receives its original scalar conversion.
+                ((total + 255) / 256).min(self.sm_count() as u64 * 8) as u32
+            } else {
+                ((total + 255) / 256).min(65535 * 16) as u32
+            };
             let cfg = LaunchConfig {
                 grid_dim: (nblk.max(1), 1, 1),
                 block_dim: (256, 1, 1),
@@ -29194,9 +29557,12 @@ impl Engine {
             let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
-            b.arg(k)
-                .arg(v)
-                .arg(&mut *kw)
+            if live.is_some() {
+                b.arg(&table).arg(&unused);
+            } else {
+                b.arg(k).arg(v);
+            }
+            b.arg(&mut *kw)
                 .arg(&mut *vw)
                 .arg(&kdk)
                 .arg(&kdv)
@@ -29206,6 +29572,46 @@ impl Engine {
             unsafe {
                 b.launch(cfg)?;
             }
+        }
+        // Shape first, door last: the door reads the process environment, and every
+        // other model's prefill reaches this line on the same build.
+        if head_dim == 256
+            && n_head == 24
+            && n_head_kv == 4
+            // A restored suffix can be as short as PRIME_MIN_T. Tiny final tails
+            // merge into the previous 1024-row chunk, widening it by up to 15.
+            // Every such prefill must retain the same attention numerical class.
+            && (crate::hybrid_forward::PRIME_MIN_T..=1024 + crate::hybrid_forward::PRIME_MIN_T - 1).contains(&t)
+            && scale == 1.0 / 16.0
+            && causal
+            && !g
+            && self.prime_attn_fa2_enabled()
+        {
+            let name = if live.is_some() {
+                "fa_prefill_qw_fa2_prime_table"
+            } else {
+                "fa_prefill_qw_fa2"
+            };
+            let f = self.func(name);
+            f.set_attribute(cudarc::driver::sys::CUfunction_attribute_enum::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, 49152)?;
+            let cfg = LaunchConfig {
+                grid_dim: ((t * 6).div_ceil(64) as u32, 4, 1),
+                block_dim: (32, 4, 1),
+                shared_mem_bytes: 49152,
+            };
+            let stream = self.gpu.stream();
+            let (ti, tkvi) = (t as i32, t_kv as i32);
+            let mut b = stream.launch_builder(&f);
+            b.arg(q).arg(&*kw).arg(&*vw).arg(o).arg(&ti);
+            if live.is_some() {
+                b.arg(&table);
+            } else {
+                b.arg(&tkvi);
+            }
+            unsafe {
+                b.launch(cfg)?;
+            }
+            return Ok(());
         }
         // pass 2: the bf16-workspace prefill twin (same tile sizes/loop structure as fa_prefill_q).
         // DEFAULT: cp.async double-buffered staging twin (fa_prefill_qw_db, +32KB smem for the
@@ -29218,13 +29624,26 @@ impl Engine {
             .map(|v| v != "0")
             .unwrap_or(true);
         {
+            // Same row program, three KV staging planes and register-resident P operands.
+            let triple = db
+                && head_dim == 256
+                && t >= 128
+                && std::env::var("MEMRA_PRIME_KV_T3").as_deref() == Ok("1");
             let hd_sfx = fa_hd_suffix(head_dim)?;
             let f = self.func(&format!(
-                "fa_prefill_qw{}{hd_sfx}",
-                if db { "_db" } else { "" }
+                "fa_prefill_qw{}{hd_sfx}{}",
+                if triple {
+                    "_t3"
+                } else if db {
+                    "_db"
+                } else {
+                    ""
+                },
+                if live.is_some() { "_prime_table" } else { "" }
             ));
-            let shmem = if db {
-                // 4x KV tile buffers (bf16) + sP (bf16) + sL (f32)
+            let shmem = if triple {
+                (2 * 3 * BK * head_dim) as u32
+            } else if db {
                 (2 * (4 * BK * head_dim + BLOCK_Q * BK) + 4 * BLOCK_Q) as u32
             } else {
                 (2 * (2 * BK * head_dim + BLOCK_Q * BK) + 4 * (BLOCK_Q * BK + 2 * BLOCK_Q)) as u32
@@ -29261,17 +29680,37 @@ impl Engine {
                 .arg(&hd)
                 .arg(&nh)
                 .arg(&nhkv)
-                .arg(&ti)
-                .arg(&tkvi)
-                .arg(&scale)
-                .arg(&cz)
-                .arg(&kdk)
-                .arg(&kdv);
+                .arg(&ti);
+            if live.is_some() {
+                b.arg(&table);
+            } else {
+                b.arg(&tkvi);
+            }
+            b.arg(&scale).arg(&cz).arg(&kdk).arg(&kdv);
             unsafe {
                 b.launch(cfg)?;
             }
         }
         Ok(())
+    }
+
+    /// The FA2 prefill door. Compile-time architecture first, then the cached SM
+    /// count, so a build or a card outside the qualified target never reads the
+    /// environment and never leaves the existing kernel.
+    ///
+    /// The qualified profile primes at exactly `MEMRA_PRIME_CHUNK=1024`, and the
+    /// dispatch guard admits `PRIME_MIN_T..=1039`. A wider deployment chunk would
+    /// leave every full chunk on the legacy class and hand only the folded tail to
+    /// FA2, so a single prime would mix numerical classes and a restored suffix
+    /// would stop matching its cold twin, the exact defect the first integration hit
+    /// at the t<128 boundary. The door therefore requires its qualified chunk.
+    /// Both env reads stay live because `qwen-fa2-margin-gate` toggles the door
+    /// inside one process, and the carried-graph reuse key calls this same helper.
+    pub(crate) fn prime_attn_fa2_enabled(&self) -> bool {
+        env!("MEMRA_BUILT_CUDA_ARCH") == "120a"
+            && self.sm_count() == 170
+            && std::env::var("MEMRA_PRIME_ATTN_FA2").as_deref() == Ok("1")
+            && std::env::var("MEMRA_PRIME_CHUNK").as_deref() == Ok("1024")
     }
 
     /// WINDOWED `fa_prefill_view_ws` twin at head_dim 128 (lane/pp-prefill 2026-08-07):
@@ -33452,8 +33891,14 @@ impl Engine {
             t >= d_conv - 1,
             "fused state conv requires T >= pad (PRIME_MIN_T gates)"
         );
+        let live = crate::qwen_prime_graph::current();
+        let table = live.map_or(0, |a| a.0);
         {
-            let f = self.func("ssm_conv1d_gdn_state_f32");
+            let f = self.func(if live.is_some() {
+                "ssm_conv1d_gdn_state_f32_prime_table"
+            } else {
+                "ssm_conv1d_gdn_state_f32"
+            });
             let cfg = LaunchConfig {
                 grid_dim: (((conv_dim + 255) / 256) as u32, t as u32, 1),
                 block_dim: (256, 1, 1),
@@ -33469,9 +33914,13 @@ impl Engine {
             );
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
-            b.arg(qkv_tm)
-                .arg(&*conv_state)
-                .arg(w)
+            b.arg(qkv_tm);
+            if live.is_some() {
+                b.arg(&table);
+            } else {
+                b.arg(&*conv_state);
+            }
+            b.arg(w)
                 .arg(q_g)
                 .arg(k_g)
                 .arg(v_g)
@@ -33501,13 +33950,23 @@ impl Engine {
                 }
             }
             None => {
-                let f = self.func("ssm_conv_ring_update_f32");
+                let f = self.func(if live.is_some() {
+                    "ssm_conv_ring_update_f32_prime_table"
+                } else {
+                    "ssm_conv_ring_update_f32"
+                });
                 let n = conv_dim * (d_conv - 1);
                 let cfg = LaunchConfig::for_num_elems(n as u32);
                 let (cd, ti, dc) = (conv_dim as i32, t as i32, d_conv as i32);
                 let __s_b = self.gpu.stream();
                 let mut b = __s_b.launch_builder(&f);
-                b.arg(qkv_tm).arg(conv_state).arg(&cd).arg(&ti).arg(&dc);
+                b.arg(qkv_tm);
+                if live.is_some() {
+                    b.arg(&table);
+                } else {
+                    b.arg(conv_state);
+                }
+                b.arg(&cd).arg(&ti).arg(&dc);
                 unsafe {
                     b.launch(cfg)?;
                 }
@@ -34141,7 +34600,14 @@ impl Engine {
             let mut y16 = self.alloc_u8_uninit(nc * h * c * D * 2)?;
             let mut ssnap16 = self.alloc_u8_uninit(nc * h * D * D * 2)?;
             {
-                let f = self.func("gdn_chunk_state_mma");
+                let live = crate::qwen_prime_graph::current();
+                let table = live.map_or(0, |a| a.0);
+                let unused = 0u64;
+                let f = self.func(if live.is_some() {
+                    "gdn_chunk_state_mma_prime_table"
+                } else {
+                    "gdn_chunk_state_mma"
+                });
                 let cfg = LaunchConfig {
                     grid_dim: (h as u32, NSPLIT, 1),
                     block_dim: (256, 1, 1),
@@ -34156,13 +34622,13 @@ impl Engine {
                     .arg(&u)
                     .arg(&wb16)
                     .arg(&mut y16)
-                    .arg(&mut ssnap16)
-                    .arg(state_in)
-                    .arg(&mut *state_out)
-                    .arg(&hi)
-                    .arg(&ti)
-                    .arg(&ci)
-                    .arg(&hki);
+                    .arg(&mut ssnap16);
+                if live.is_some() {
+                    b.arg(&table).arg(&unused);
+                } else {
+                    b.arg(state_in).arg(&mut *state_out);
+                }
+                b.arg(&hi).arg(&ti).arg(&ci).arg(&hki);
                 unsafe {
                     b.launch(cfg)?;
                 }

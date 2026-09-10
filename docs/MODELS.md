@@ -54,6 +54,17 @@ keep working.
 
 ### In progress
 
+Whisper large-v3 has a [native speech plan and metadata pack skeleton](../ASR-MODALITY-PLAN.md).
+The source census is bound, and native CPU mel and encoder stages have passed a 2-second
+HF oracle gate in their documented numeric classes. The complete speech program has no native
+support state. Decoder policy and FastConformer/RNNT remain in progress; neither path is
+admitted for serving.
+
+The speech capability as a program, which families are in scope, what each support state means
+for a speech model, the repeatable onboarding path for a new one, the gate set and the
+performance thesis with its kill criteria, is [docs/SPEECH.md](SPEECH.md). There is no GPU
+execution path and no audio endpoint yet, so no speech model has a speed number of any kind.
+
 Tensor parallel, P2P and 3-stage pipeline parallel are being built now and are close, which is
 exactly why they are named here as unfinished rather than listed as features. When each one has
 its gates it moves into the table.
@@ -409,3 +420,34 @@ flagship at ~259 tok/s single / 238–245 aggregate on one card. The tuning path
 serving-grade — batched decode, PP-2 placement, round-cost work, prefix cache — is
 tracked in [#4](https://github.com/avifenesh/memra/issues/4); until those rows exist,
 do not read this section as a serving recommendation.
+
+## A pack declares WHERE its chat dialect comes from (lane/dsv4-template-contract-20260910)
+
+`TemplateContract` on a `ModelPack` has two arms and no third:
+
+- `ArtifactRequired`: the artifact carries the dialect, as a `tokenizer_config.json`
+  `chat_template` or a `chat_template.jinja`. Absent means the onboarding gate FAILS.
+- `EngineRenderer("<name>")`: the family's dialect is CODE in this engine, because the vendor
+  ships it as code and no artifact in the family carries a template. deepseek-v4 is the case this
+  exists for. Upstream `deepseek-ai/DeepSeek-V4-Flash-0731` at revision `7872f01b…` lists 77
+  entries with zero `.jinja` files and an 801-byte `tokenizer_config.json` with no
+  `chat_template`; the dialect is `encoding/encoding_dsv4.py`. `ArtifactRequired` there refuses a
+  correct artifact forever.
+
+**The renderer arm is not a fallback and must never become one.** Three properties keep it
+honest, and a new family adopting it inherits all three:
+
+1. it is NAMED, and the pack test rejects a nameless renderer, because a nameless renderer is
+   indistinguishable from a fallback;
+2. it is TWO-SIDED. A renderer family also REFUSES an artifact that carries a template of its
+   own, as a franken artifact whose two dialects would disagree silently. Neither arm can go
+   vacuous when a family's distribution changes;
+3. `artifact.lock` records the gate's own judgment through the same function the gate calls, and
+   writes `dialect=<renderer>` with `template_sha256=engine-renderer` rather than a hash of
+   nothing.
+
+The renderer carries its own byte oracle elsewhere in the tree. For `encoding_dsv4` that is the
+vendor's four `encoding/tests` pairs, gated in `memra-server` BOTH through the sentinel template
+and, since this lane, through the shape the serve path actually uses (`chat_template = None` plus
+the config-census `Dsv4Encoding`), with a red arm that drops the dialect and asserts the render
+comes back as ChatML.

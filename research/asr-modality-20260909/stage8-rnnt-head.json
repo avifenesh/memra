@@ -1,0 +1,112 @@
+{
+  "schema": "memra-rnnt-head-v1",
+  "status": "passed",
+  "bound_abs": 0.001,
+  "max_abs": 9.1552734375e-05,
+  "greedy_tokens_equal": true,
+  "greedy_token_count": 9,
+  "greedy_tokens": [
+    2,
+    3225,
+    6,
+    2,
+    1270,
+    3155,
+    3235,
+    1273,
+    3158
+  ],
+  "greedy_text": "כן, אני ומתן",
+  "language": "he-IL",
+  "prompt_index": 64,
+  "blank_index": 13087,
+  "max_symbols": 10,
+  "frames": 26,
+  "binary_sha256": "f35a5c7ddfe853e260d0b800bb71dd9fb6b105419096cb19588f415da725ac39",
+  "archive_sha256": "585c40f214a53e8b5ba565c6176aa6cb548c7c8ab2f7ec5dc6dd45dbdff46ee4",
+  "oracle_manifest_sha256": "31f5029145b3c00464e01e61f5658819c5ea479a1a2c795d79895888871d3adf",
+  "reference": {
+    "torch": "2.14.0+cu130",
+    "nemo": "3.1.0+ea1ebf55b"
+  },
+  "rows": [
+    {
+      "stage": "prompted encoder",
+      "reference": "prompted-encoder",
+      "elements": 26624,
+      "max_abs": 4.76837158203125e-07,
+      "status": "passed"
+    },
+    {
+      "stage": "predictor 0 output",
+      "reference": "predictor-00-out",
+      "elements": 640,
+      "max_abs": 3.5762786865234375e-07,
+      "status": "passed"
+    },
+    {
+      "stage": "predictor 1 output",
+      "reference": "predictor-01-out",
+      "elements": 640,
+      "max_abs": 4.6938657760620117e-07,
+      "status": "passed"
+    },
+    {
+      "stage": "predictor 2 output",
+      "reference": "predictor-02-out",
+      "elements": 640,
+      "max_abs": 6.221234798431396e-07,
+      "status": "passed"
+    },
+    {
+      "stage": "predictor 3 output",
+      "reference": "predictor-03-out",
+      "elements": 640,
+      "max_abs": 4.76837158203125e-07,
+      "status": "passed"
+    },
+    {
+      "stage": "predictor 4 output",
+      "reference": "predictor-04-out",
+      "elements": 640,
+      "max_abs": 7.152557373046875e-07,
+      "status": "passed"
+    },
+    {
+      "stage": "predictor 5 output",
+      "reference": "predictor-05-out",
+      "elements": 640,
+      "max_abs": 5.066394805908203e-07,
+      "status": "passed"
+    },
+    {
+      "stage": "predictor 6 output",
+      "reference": "predictor-06-out",
+      "elements": 640,
+      "max_abs": 7.748603820800781e-07,
+      "status": "passed"
+    },
+    {
+      "stage": "predictor start output",
+      "reference": "predictor-start-out",
+      "elements": 640,
+      "max_abs": 8.940696716308594e-08,
+      "status": "passed"
+    },
+    {
+      "stage": "joint against start row",
+      "reference": "joint-start",
+      "elements": 340288,
+      "max_abs": 8.392333984375e-05,
+      "status": "passed"
+    },
+    {
+      "stage": "joint against walk row",
+      "reference": "joint-walk",
+      "elements": 340288,
+      "max_abs": 9.1552734375e-05,
+      "status": "passed"
+    }
+  ],
+  "scope": "native RNNT prompt, predictor, joint and greedy decode against a pinned CPU FP32 NeMo capture, on already-gated encoder frames. No audio, no GPU, no streaming session lifecycle, no serving surface."
+}

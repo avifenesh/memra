@@ -1,0 +1,168 @@
+
+Fatbin elf code:
+================
+arch = sm_100a
+code version = [1,8]
+host = linux
+compile_size = 64bit
+
+Resource usage:
+ Common:
+  GLOBAL:0
+
+Fatbin ptx code:
+================
+arch = sm_100
+code version = [9,1]
+host = linux
+compile_size = 64bit
+compressed
+ptxasOptions = 
+
+Fatbin elf code:
+================
+arch = sm_100a
+code version = [1,8]
+host = linux
+compile_size = 64bit
+
+Resource usage:
+ Common:
+  GLOBAL:24 CONSTANT[4]:8
+ Function _Z37memra_mla_kpool_score_dsa_live_kernelILi64ELi2ELi32EEvPKfS1_S1_PfiPKiiiiff:
+  REG:180 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z37memra_mla_kpool_score_dsa_live_kernelILi64ELi1ELi32EEvPKfS1_S1_PfiPKiiiiff:
+  REG:102 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z37memra_mla_kpool_score_dsa_live_kernelILi32ELi2ELi32EEvPKfS1_S1_PfiPKiiiiff:
+  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z37memra_mla_kpool_score_dsa_live_kernelILi32ELi1ELi32EEvPKfS1_S1_PfiPKiiiiff:
+  REG:67 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z37memra_mla_kpool_score_dsa_live_kernelILi16ELi2ELi32EEvPKfS1_S1_PfiPKiiiiff:
+  REG:69 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z37memra_mla_kpool_score_dsa_live_kernelILi16ELi1ELi32EEvPKfS1_S1_PfiPKiiiiff:
+  REG:54 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z32memra_mla_kpool_score_dsa_kernelILi64ELi2ELi32EEvPKfS1_S1_Pfiiiiff:
+  REG:180 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z32memra_mla_kpool_score_dsa_kernelILi64ELi1ELi32EEvPKfS1_S1_Pfiiiiff:
+  REG:97 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z32memra_mla_kpool_score_dsa_kernelILi32ELi2ELi32EEvPKfS1_S1_Pfiiiiff:
+  REG:103 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z32memra_mla_kpool_score_dsa_kernelILi32ELi1ELi32EEvPKfS1_S1_Pfiiiiff:
+  REG:67 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z32memra_mla_kpool_score_dsa_kernelILi16ELi2ELi32EEvPKfS1_S1_Pfiiiiff:
+  REG:63 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z32memra_mla_kpool_score_dsa_kernelILi16ELi1ELi32EEvPKfS1_S1_Pfiiiiff:
+  REG:50 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z35memra_mla_dsa_attn_warp_live_kernelILi32ELi2EEvPKfS1_S1_PKiPfS4_S4_iiiS3_iiif:
+  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:992 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z35memra_mla_dsa_attn_warp_live_kernelILi32ELi0EEvPKfS1_S1_PKiPfS4_S4_iiiS3_iiif:
+  REG:127 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:992 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z35memra_mla_dsa_attn_warp_live_kernelILi16ELi2EEvPKfS1_S1_PKiPfS4_S4_iiiS3_iiif:
+  REG:80 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:992 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z35memra_mla_dsa_attn_warp_live_kernelILi16ELi0EEvPKfS1_S1_PKiPfS4_S4_iiiS3_iiif:
+  REG:76 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:992 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z30memra_mla_dsa_attn_warp_kernelILi32ELi2EEvPKfS1_S1_PKiPfS4_S4_iiiiiiif:
+  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z30memra_mla_dsa_attn_warp_kernelILi32ELi0EEvPKfS1_S1_PKiPfS4_S4_iiiiiiif:
+  REG:123 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z30memra_mla_dsa_attn_warp_kernelILi16ELi2EEvPKfS1_S1_PKiPfS4_S4_iiiiiiif:
+  REG:80 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z30memra_mla_dsa_attn_warp_kernelILi16ELi0EEvPKfS1_S1_PKiPfS4_S4_iiiiiiif:
+  REG:76 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z34memra_mla_kpool_score_tiled_kernelILi64ELi1ELi1ELi1ELi16EEvPKfS1_S1_Pfiiiiiiff:
+  REG:31 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z34memra_mla_kpool_score_tiled_kernelILi8ELi16ELi2ELi8ELi16EEvPKfS1_S1_Pfiiiiiiff:
+  REG:56 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z34memra_mla_kpool_score_tiled_kernelILi8ELi16ELi8ELi8ELi16EEvPKfS1_S1_Pfiiiiiiff:
+  REG:162 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z14capture_gatherPKfPKiPfii:
+  REG:18 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:928 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_verify_splitkv_kernel:
+  REG:50 STACK:0 SHARED:10304 LOCAL:0 CONSTANT[0]:972 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_perturb_kernel:
+  REG:8 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:912 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_emit_kernel:
+  REG:32 STACK:0 SHARED:2048 LOCAL:0 CONSTANT[0]:948 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_count_kernel:
+  REG:32 STACK:0 SHARED:1040 LOCAL:0 CONSTANT[0]:924 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_tie_kernel:
+  REG:32 STACK:0 SHARED:6160 LOCAL:0 CONSTANT[0]:924 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_clear_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:912 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_hist_kernel:
+  REG:29 STACK:0 SHARED:3088 LOCAL:0 CONSTANT[0]:932 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_dsa_attn_combine_kernel:
+  REG:32 STACK:0 SHARED:1296 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_attn_gathered_dsa_kernel:
+  REG:54 STACK:0 SHARED:10304 LOCAL:0 CONSTANT[0]:956 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_attn_gathered_split_kernel:
+  REG:32 STACK:0 SHARED:10304 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_attn_gathered_live_kernel:
+  REG:32 STACK:0 SHARED:10304 LOCAL:0 CONSTANT[0]:968 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_attn_gathered_kernel:
+  REG:32 STACK:0 SHARED:10304 LOCAL:0 CONSTANT[0]:956 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_live_kernel:
+  REG:32 STACK:0 SHARED:3120 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_kernel:
+  REG:32 STACK:0 SHARED:3120 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_live_v2_kernel:
+  REG:32 STACK:0 SHARED:2128 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_v2_kernel:
+  REG:40 STACK:0 SHARED:2128 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_select_ref_kernel:
+  REG:32 STACK:0 SHARED:4112 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z31memra_mla_kpool_score_tc_kernelILb0EEvPKtS1_PKfS3_Pfiiiiiff:
+  REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z31memra_mla_kpool_score_tc_kernelILb1EEvPKtS1_PKfS3_Pfiiiiiff:
+  REG:243 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z29memra_mla_q_split_bf16_kernelPKfPtS1_l:
+  REG:17 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:928 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_score_ref_live_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:964 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_score_ref_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:956 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_pool_keys_live_kernel:
+  REG:40 STACK:64 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_kpool_pool_keys_kernel:
+  REG:32 STACK:64 SHARED:1024 LOCAL:0 CONSTANT[0]:940 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_index_append_ring_live_kernel:
+  REG:20 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_index_append_ring_kernel:
+  REG:18 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:940 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_attn_absorbed_live_kernel:
+  REG:32 STACK:0 SHARED:10272 LOCAL:0 CONSTANT[0]:956 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_attn_absorbed_kernel:
+  REG:32 STACK:0 SHARED:10272 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_decompress_v_split_kernel:
+  REG:40 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_absorb_q_split_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_decompress_v_wp_bf16_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_absorb_q_wp_bf16_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_decompress_v_wp_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_absorb_q_wp_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_decompress_v_kernel:
+  REG:42 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:932 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_absorb_q_kernel:
+  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:932 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_append_latent_live_kernel:
+  REG:18 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:940 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_append_latent_kernel:
+  REG:16 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_split_latent_kernel:
+  REG:16 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:932 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function memra_mla_rope_interleaved_kernel:
+  REG:26 STACK:32 SHARED:1024 LOCAL:0 CONSTANT[0]:932 TEXTURE:0 SURFACE:0 SAMPLER:0
+
+Fatbin ptx code:
+================
+arch = sm_100a
+code version = [9,1]
+host = linux
+compile_size = 64bit
+compressed
+ptxasOptions = 

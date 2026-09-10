@@ -43,6 +43,20 @@ use crate::dsv4_ffi::ck;
 pub use crate::dsv4_graph::Dsv4LayerCapture;
 use crate::dsv4_topology::{self, Dsv4TopologyPlan};
 
+unsafe extern "C" {
+    fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+    fn memra_dsv4_hc_dot_split(
+        x: *const f32,
+        w: *const f32,
+        partial: *mut f32,
+        partial_len: i32,
+        y: *mut f32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+}
+
 type Res<T> = Result<T, String>;
 
 /// Cadence selection for the already-admitted full-token replay path. Set before
@@ -79,6 +93,12 @@ pub fn restore_dense_exact_tail_default_for_gate() -> bool {
     unsafe { memra_dsv4_dense_exact_tail_restore_default_for_gate() == 1 }
 }
 
+#[path = "dsv4_norm2_component_gate.rs"]
+pub(crate) mod norm2_component_gate;
+#[path = "dsv4_norm2_wide_component_gate.rs"]
+pub(crate) mod norm2_wide_component_gate;
+#[path = "dsv4_norm_component_gate.rs"]
+mod norm_component_gate;
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
@@ -822,6 +842,19 @@ pub struct Dsv4Gpu {
     pub chains_f32: bool,
     /// Process-local, default OFF; fixed at load, never toggled during a walk.
     small_kernel_diet: bool,
+    norm_fuse: AtomicBool,
+    norm_fuse2: AtomicBool,
+    /// Process-local, default OFF. Widens the norm2 pack epilogue across
+    /// `NORM2_WIDE_TILES` CTAs; the reduction tree is unchanged, so this is a
+    /// same-class door and never a numeric one. Requires norm_fuse2.
+    norm2_wide: AtomicBool,
+    norm2_component_dir: std::sync::Mutex<Option<std::path::PathBuf>>,
+    /// Gate-only capture latch, read before the directory mutex so the OFF arm
+    /// executes main's dispatch with no added lock on any layer.
+    norm2_component_capture: AtomicBool,
+    norm_component_capture: AtomicBool,
+    norm_component_dir: std::sync::Mutex<Option<std::path::PathBuf>>,
+    norm_component_seen: [AtomicU64; 2],
     /// Successful enqueues for HC finish and Q norm/pack, respectively.
     /// Counts launches, not tokens, expected savings, or graph nodes.
     small_kernel_launches: [AtomicU64; 2],
@@ -911,6 +944,7 @@ pub struct StepWs {
     pub h_rx: CudaSlice<f32>, // [hc*hidden] boundary RX slot (peer TX writes here)
     pub emb: CudaSlice<f32>, // [hidden]
     pub mixes: CudaSlice<f32>, // [(2+hc)*hc]
+    pub hc_dot_partial: CudaSlice<f32>, // [24*32], state/rank owned, capture-stable
     pub pre: CudaSlice<f32>, // [hc]
     pub post: CudaSlice<f32>, // [hc]
     pub comb: CudaSlice<f32>, // [hc*hc]
@@ -1643,6 +1677,58 @@ fn f32_to_bf16_exact(name: &str, v: &[f32]) -> Vec<u8> {
     }
     out
 }
+
+// Default ON only in the qualified TP/EP f32 domain. An explicit unsupported
+// ON request still refuses instead of silently admitting an unqualified path.
+fn norm_fuse_environment_policy(
+    value: Result<&str, &std::env::VarError>,
+    admitted: bool,
+) -> Res<bool> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(admitted),
+        Ok("0") => Ok(false),
+        Ok("1") if admitted => Ok(true),
+        Ok("1") => Err("norm fusion requires TP/EP f32x".into()),
+        _ => Err("MEMRA_DSV4_NORM_FUSE requires 0 or 1".into()),
+    }
+}
+
+fn norm_fuse2_environment_policy(
+    value: Result<&str, &std::env::VarError>,
+    admitted: bool,
+) -> Res<bool> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(admitted),
+        Ok("0") => Ok(false),
+        Ok("1") if admitted => Ok(true),
+        Ok("1") => Err("norm fusion2 requires TP/EP f32x".into()),
+        _ => Err("MEMRA_DSV4_NORM_FUSE2 requires 0 or 1".into()),
+    }
+}
+
+/// Default ON under an admitted norm2 door since the 2026-09-10 model campaign
+/// (+5.95% ABBA / +5.76% reverse, disjoint steady ranges in both orders); an
+/// explicit `0` is the rollback seam to the single-CTA kernel. Without the
+/// norm2 door the pack has no call site, so an unset value degrades to OFF
+/// rather than refusing every composed-off launch, while an explicit `1`
+/// without the door stays a configuration error instead of a silent no-op.
+/// `admitted` is the norm2 door's own resolved value.
+fn norm2_wide_environment_policy(
+    value: Result<&str, &std::env::VarError>,
+    admitted: bool,
+) -> Res<bool> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(admitted),
+        Ok("0") => Ok(false),
+        Ok("1") if admitted => Ok(true),
+        Ok("1") => Err("norm2 wide pack requires MEMRA_DSV4_NORM_FUSE2=1".into()),
+        _ => Err("MEMRA_DSV4_NORM2_WIDE requires 0 or 1".into()),
+    }
+}
+
+/// Column tiles for the wide norm2 pack epilogue, pinned from the component
+/// sweep. 4096 must be a whole multiple of `128 * NORM2_WIDE_TILES`.
+const NORM2_WIDE_TILES: i32 = 32;
 
 impl Dsv4Gpu {
     pub fn device_verify_topk_calls(&self) -> u64 {
@@ -3188,6 +3274,18 @@ impl Dsv4Gpu {
         if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
             return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
         }
+        let norm_fuse = norm_fuse_environment_policy(
+            std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
+            topology.is_tp_ep() && chains_f32,
+        )?;
+        let norm_fuse2 = norm_fuse2_environment_policy(
+            std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
+            topology.is_tp_ep() && chains_f32,
+        )?;
+        let norm2_wide = norm2_wide_environment_policy(
+            std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
+            norm_fuse2,
+        )?;
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -3222,6 +3320,14 @@ impl Dsv4Gpu {
             dots_f32,
             chains_f32,
             small_kernel_diet,
+            norm_fuse: AtomicBool::new(norm_fuse),
+            norm_fuse2: AtomicBool::new(norm_fuse2),
+            norm2_wide: AtomicBool::new(norm2_wide),
+            norm2_component_dir: std::sync::Mutex::new(None),
+            norm2_component_capture: AtomicBool::new(false),
+            norm_component_capture: AtomicBool::new(false),
+            norm_component_dir: std::sync::Mutex::new(None),
+            norm_component_seen: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_launches: std::array::from_fn(|_| AtomicU64::new(0)),
             small_kernel_component_mask: AtomicU64::new(u64::MAX),
             dspark_head_f32,
@@ -6988,6 +7094,7 @@ impl Dsv4Gpu {
                 h_rx: f(hc * hidden)?,
                 emb: f(hidden)?,
                 mixes: f((2 + hc) * hc)?,
+                hc_dot_partial: f(24 * 32)?,
                 pre: f(hc)?,
                 post: f(hc)?,
                 comb: f(hc * hc)?,
@@ -8480,6 +8587,7 @@ impl Dsv4Gpu {
         base_dev: &CudaSlice<f32>,
         scale_dev: &CudaSlice<f32>,
         mixes: &mut CudaSlice<f32>,
+        hc_dot_partial: &mut CudaSlice<f32>,
         pre: &mut CudaSlice<f32>,
         post: &mut CudaSlice<f32>,
         comb: &mut CudaSlice<f32>,
@@ -8493,7 +8601,29 @@ impl Dsv4Gpu {
         let stream = st.gpu.stream();
         let w = hc * hidden;
         let rows = (2 + hc) * hc;
-        self.dots_dev(st, h, fn_w, 1, w, rows, mixes)?;
+        if self.dots_f32
+            && rows == 24
+            && w == 16384
+            && unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0
+        {
+            unsafe {
+                ck(
+                    "HC24 split dots",
+                    memra_dsv4_hc_dot_split(
+                        dpf!(h, &stream),
+                        dpf!(fn_w, &stream),
+                        dpm!(*hc_dot_partial, &stream),
+                        hc_dot_partial.len() as i32,
+                        dpm!(*mixes, &stream),
+                        rows as i32,
+                        w as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        } else {
+            self.dots_dev(st, h, fn_w, 1, w, rows, mixes)?;
+        }
         unsafe {
             ck(
                 "rowsq_scale dev",
@@ -8761,6 +8891,7 @@ impl Dsv4Gpu {
                 h_a,
                 h_rx,
                 mixes,
+                hc_dot_partial,
                 pre,
                 post,
                 comb,
@@ -8777,6 +8908,7 @@ impl Dsv4Gpu {
                 &layer.hc_attn_base_dev,
                 &layer.hc_attn_scale_dev,
                 mixes,
+                hc_dot_partial,
                 pre,
                 post,
                 comb,
@@ -9323,6 +9455,7 @@ impl Dsv4Gpu {
             let StepWs {
                 h_b,
                 mixes,
+                hc_dot_partial,
                 pre,
                 post,
                 comb,
@@ -9338,6 +9471,7 @@ impl Dsv4Gpu {
                 &layer.hc_ffn_base_dev,
                 &layer.hc_ffn_scale_dev,
                 mixes,
+                hc_dot_partial,
                 pre,
                 post,
                 comb,
@@ -10238,6 +10372,7 @@ impl Dsv4Gpu {
                             hidden,
                             d.swiglu_limit,
                             true,
+                            false,
                             Some(&ar_outputs[0]),
                         )?;
                         self.moe_verify_common_tail(
@@ -10249,6 +10384,7 @@ impl Dsv4Gpu {
                             hidden,
                             d.swiglu_limit,
                             true,
+                            false,
                             Some(&ar_outputs[1]),
                         )?;
                     }
@@ -12473,6 +12609,7 @@ pub struct VerifyWs {
     h_rx: CudaSlice<f32>,
     emb: CudaSlice<f32>,
     mixes: CudaSlice<f32>,
+    hc_dot_partial: CudaSlice<f32>, // [24*32], stable across retained variants
     pre: CudaSlice<f32>,
     post: CudaSlice<f32>,
     comb: CudaSlice<f32>,
@@ -12499,6 +12636,7 @@ pub struct VerifyWs {
     o_b: CudaSlice<u8>,
     og: CudaSlice<f32>,
     attn_out: CudaSlice<f32>,
+    norm2_xb_ready: bool,
     gemm_xb: CudaSlice<u8>,
     raw: CudaSlice<f32>,
     sel: CudaSlice<i32>,
@@ -13516,6 +13654,7 @@ impl Dsv4Gpu {
                 h_rx: f(tmax * hc * hidden)?,
                 emb: f(tmax * hidden)?,
                 mixes: f(tmax * (2 + hc) * hc)?,
+                hc_dot_partial: f(24 * 32)?,
                 pre: f(tmax * hc)?,
                 post: f(tmax * hc)?,
                 comb: f(tmax * hc * hc)?,
@@ -13541,6 +13680,7 @@ impl Dsv4Gpu {
                 o_b: b(tmax * heads * hd * 2)?,
                 og: f(tmax * o_groups * o_lora)?,
                 attn_out: f(tmax * hidden)?,
+                norm2_xb_ready: false,
                 gemm_xb: b(tmax * max_gemm_k * 2)?,
                 raw: f(tmax * ne)?,
                 sel: i(tmax * topk)?,
@@ -13973,6 +14113,94 @@ impl Dsv4Gpu {
 }
 
 impl Dsv4Gpu {
+    /// Gate selector for fresh eager calls/captures. Drain before switching;
+    /// retained graphs contain fixed functions and do not read this selector.
+    pub fn set_norm_fuse_for_gate(&self, enabled: bool) -> Res<()> {
+        if enabled && (!self.topology.is_tp_ep() || !self.chains_f32) {
+            return Err("norm fusion gate requires TP/EP f32x".into());
+        }
+        self.norm_fuse.store(enabled, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn norm_fuse_enabled_for_gate(&self) -> bool {
+        self.norm_fuse.load(Ordering::Relaxed)
+    }
+
+    /// Restore the actual environment policy after the eager OFF oracle drains.
+    pub fn restore_norm_fuse_default_for_gate(&self) -> Res<bool> {
+        let enabled = norm_fuse_environment_policy(
+            std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
+            self.topology.is_tp_ep() && self.chains_f32,
+        )?;
+        self.norm_fuse.store(enabled, Ordering::Relaxed);
+        Ok(enabled)
+    }
+
+    pub fn set_norm_fuse2_for_gate(&self, enabled: bool) -> Res<()> {
+        if enabled && (!self.topology.is_tp_ep() || !self.chains_f32) {
+            return Err("norm fusion2 requires TP/EP f32x".into());
+        }
+        for st in &self.stages {
+            st.gpu.stream().synchronize().map_err(e("norm2 drain"))?;
+        }
+        self.norm_fuse2.store(enabled, Ordering::Relaxed);
+        Ok(())
+    }
+    pub fn norm_fuse2_enabled_for_gate(&self) -> bool {
+        self.norm_fuse2.load(Ordering::Relaxed)
+    }
+
+    pub fn set_norm2_wide_for_gate(&self, enabled: bool) -> Res<()> {
+        if enabled && !self.norm_fuse2.load(Ordering::Relaxed) {
+            return Err("norm2 wide pack requires MEMRA_DSV4_NORM_FUSE2=1".into());
+        }
+        for st in &self.stages {
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("norm2 wide drain"))?;
+        }
+        self.norm2_wide.store(enabled, Ordering::Relaxed);
+        Ok(())
+    }
+    pub fn norm2_wide_enabled_for_gate(&self) -> bool {
+        self.norm2_wide.load(Ordering::Relaxed)
+    }
+    pub fn norm2_wide_tiles_for_gate() -> i32 {
+        NORM2_WIDE_TILES
+    }
+    /// The single seam both norm2 pack sites dispatch through. The wide arm is a
+    /// same-class rewrite: identical reduction tree, epilogue split across CTAs.
+    /// `norm2_wide` can only be true when `norm2_active` already gated the call.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn norm2_pack_arm(
+        &self,
+        x: *const f32,
+        w: *const f32,
+        dst: *mut f32,
+        packed: *mut c_void,
+        n: i32,
+        eps: f32,
+        sv: *mut c_void,
+    ) -> i32 {
+        unsafe {
+            if self.norm2_wide.load(Ordering::Relaxed) {
+                k::memra_dsv4_norm2_pack_wide(x, w, dst, packed, n, eps, NORM2_WIDE_TILES, sv)
+            } else {
+                k::memra_dsv4_norm2_pack(x, w, dst, packed, n, eps, sv)
+            }
+        }
+    }
+    fn norm2_active(&self, t: usize, host_math: bool) -> bool {
+        self.norm_fuse2.load(Ordering::Relaxed)
+            && self.topology.is_tp_ep()
+            && self.chains_f32
+            && t == 1
+            && !host_math
+            && self.model.mc.n_embd == 4096
+    }
+
     pub fn small_kernel_diet_enabled(&self) -> bool {
         self.small_kernel_diet
     }
@@ -14016,16 +14244,39 @@ impl Dsv4Gpu {
         let stream = st.gpu.stream();
         let w = hc * hidden;
         let rows = (2 + hc) * hc;
-        self.dots_m_dev(
-            st,
-            h_ptr,
-            fn_w.device_ptr(&stream).0 as *const c_void,
-            0,
-            t,
-            w,
-            rows,
-            vws.mixes.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
+        if t == 1
+            && self.dots_f32
+            && rows == 24
+            && w == 16384
+            && unsafe { memra_dsv4_hc_dot_split_slices_for_gate() } != 0
+        {
+            unsafe {
+                ck(
+                    "HC24 split dots batch",
+                    memra_dsv4_hc_dot_split(
+                        h_ptr,
+                        dpf!(fn_w, &stream),
+                        dpm!(vws.hc_dot_partial, &stream),
+                        vws.hc_dot_partial.len() as i32,
+                        dpm!(vws.mixes, &stream),
+                        rows as i32,
+                        w as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        } else {
+            self.dots_m_dev(
+                st,
+                h_ptr,
+                fn_w.device_ptr(&stream).0 as *const c_void,
+                0,
+                t,
+                w,
+                rows,
+                vws.mixes.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+        }
         if t == 1 && !host_math && self.small_component_claim(st.dev, 0) {
             self.small_component_hc(
                 st, h_ptr, &vws.mixes, scale_dev, base_dev, hidden, iters, hc_eps,
@@ -14595,32 +14846,72 @@ impl Dsv4Gpu {
             hc_eps,
             host_math,
         )?;
-        unsafe {
-            ck(
-                "rmsnorm attn batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.y_hc, &stream),
-                    dpf!(layer.attn_norm, &stream),
-                    dpm!(vws.x, &stream),
-                    t as i32,
-                    hidden as i32,
-                    eps,
-                    sp(&stream),
-                ),
+        let norm2 = self.norm2_active(t, host_math);
+        if t == 1 && !host_math && self.norm2_component_capture.load(Ordering::Relaxed) {
+            self.capture_norm2_component(
+                st,
+                layer,
+                0,
+                &vws.y_hc,
+                Some(&layer.attn_norm),
+                hidden,
+                eps,
             )?;
         }
+        if norm2 {
+            unsafe {
+                ck(
+                    "attention norm2 pack",
+                    self.norm2_pack_arm(
+                        dpf!(vws.y_hc, &stream),
+                        dpf!(layer.attn_norm, &stream),
+                        dpm!(vws.x, &stream),
+                        vws.gemm_xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        hidden as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            Self::gemv_m_dev(
+                st,
+                dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+                vws.gemm_xb.device_ptr(&stream).0 as *const c_void,
+                dpm!(vws.qr, &stream),
+                t,
+                q_lora,
+                hidden,
+                0,
+                0,
+            )?;
+        } else {
+            unsafe {
+                ck(
+                    "rmsnorm attn batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.y_hc, &stream),
+                        dpf!(layer.attn_norm, &stream),
+                        dpm!(vws.x, &stream),
+                        t as i32,
+                        hidden as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
 
-        // q path (weights read once for all t rows)
-        Self::gemm_m_dev(
-            st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
-            t,
-            q_lora,
-            hidden,
-            vws.qr.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
+            // q path (weights read once for all t rows)
+            Self::gemm_m_dev(
+                st,
+                vws.x.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                dwsel(self.dense_fp8, &stream, &layer.wq_a, &layer.wq_a_fp8),
+                t,
+                q_lora,
+                hidden,
+                vws.qr.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+        }
         if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
             self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
         }
@@ -14707,44 +14998,85 @@ impl Dsv4Gpu {
             )?;
         }
 
-        // shared K==V latent rows + window QAT, then the TRANSIENT ring write
-        Self::gemm_m_dev(
-            st,
-            vws.x.device_ptr(&stream).0 as *const f32,
-            &mut vws.gemm_xb,
-            dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
-            t,
-            hd,
-            hidden,
-            vws.kv.device_ptr_mut(&stream).0 as *mut f32,
-        )?;
+        // Q_b/head norm/rotary use qr_b and q only. gemm_xb still holds
+        // the attention-entry pack here; compressor scratch reuse starts later.
+        if norm2 {
+            Self::gemv_m_dev(
+                st,
+                dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+                vws.gemm_xb.device_ptr(&stream).0 as *const c_void,
+                dpm!(vws.kv, &stream),
+                t,
+                hd,
+                hidden,
+                0,
+                0,
+            )?;
+        } else {
+            // shared K==V latent rows + window QAT, then the TRANSIENT ring write
+            Self::gemm_m_dev(
+                st,
+                vws.x.device_ptr(&stream).0 as *const f32,
+                &mut vws.gemm_xb,
+                dwsel(self.dense_fp8, &stream, &layer.wkv, &layer.wkv_fp8),
+                t,
+                hd,
+                hidden,
+                vws.kv.device_ptr_mut(&stream).0 as *mut f32,
+            )?;
+        }
+        if t == 1 && !host_math && self.norm_component_capture.load(Ordering::Relaxed) {
+            self.capture_norm_component(st, layer, &vws.kv, hd, rd, eps, fc_dev, &vws.pos_dev)?;
+        }
         unsafe {
-            ck(
-                "rmsnorm kv batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.kv, &stream),
-                    dpf!(layer.kv_norm, &stream),
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    hd as i32,
-                    eps,
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "rope kv batch",
-                k::memra_dsv4_rope(
-                    dpm!(vws.kv, &stream),
-                    t as i32,
-                    1,
-                    hd as i32,
-                    rd as i32,
-                    fc_dev,
-                    vws.pos_dev.device_ptr(&stream).0 as *const i32,
-                    0,
-                    sp(&stream),
-                ),
-            )?;
+            if self.norm_fuse.load(Ordering::Relaxed)
+                && self.chains_f32
+                && !host_math
+                && t == 1
+                && hd == 512
+                && rd == 64
+            {
+                ck(
+                    "KV norm rope f32 fixed order",
+                    k::memra_dsv4_norm_rope_f32_fixed_order(
+                        dpm!(vws.kv, &stream),
+                        dpf!(layer.kv_norm, &stream),
+                        hd as i32,
+                        eps,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        sp(&stream),
+                    ),
+                )?;
+            } else {
+                ck(
+                    "rmsnorm kv batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.kv, &stream),
+                        dpf!(layer.kv_norm, &stream),
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        hd as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "rope kv batch",
+                    k::memra_dsv4_rope(
+                        dpm!(vws.kv, &stream),
+                        t as i32,
+                        1,
+                        hd as i32,
+                        rd as i32,
+                        fc_dev,
+                        vws.pos_dev.device_ptr(&stream).0 as *const i32,
+                        0,
+                        sp(&stream),
+                    ),
+                )?;
+            }
             ck(
                 "act_quant kv batch",
                 k::memra_dsv4_act_quant(
@@ -15511,19 +15843,48 @@ impl Dsv4Gpu {
             hc_eps,
             host_math,
         )?;
-        unsafe {
-            ck(
-                "rmsnorm ffn batch",
-                self.rmsnorm_arm(
-                    dpf!(vws.y_hc, &stream),
-                    dpf!(layer.ffn_norm, &stream),
-                    dpm!(vws.xf, &stream),
-                    t as i32,
-                    hidden as i32,
-                    eps,
-                    sp(&stream),
-                ),
+        if t == 1 && !host_math && self.norm2_component_capture.load(Ordering::Relaxed) {
+            self.capture_norm2_component(
+                st,
+                layer,
+                1,
+                &vws.y_hc,
+                Some(&layer.ffn_norm),
+                hidden,
+                eps,
             )?;
+        }
+        vws.norm2_xb_ready = self.norm2_active(t, host_math);
+        if vws.norm2_xb_ready {
+            unsafe {
+                ck(
+                    "FFN norm2 pack",
+                    self.norm2_pack_arm(
+                        dpf!(vws.y_hc, &stream),
+                        dpf!(layer.ffn_norm, &stream),
+                        dpm!(vws.xf, &stream),
+                        vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        hidden as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        } else {
+            unsafe {
+                ck(
+                    "rmsnorm ffn batch",
+                    self.rmsnorm_arm(
+                        dpf!(vws.y_hc, &stream),
+                        dpf!(layer.ffn_norm, &stream),
+                        dpm!(vws.xf, &stream),
+                        t as i32,
+                        hidden as i32,
+                        eps,
+                        sp(&stream),
+                    ),
+                )?;
+            }
         }
         self.moe_verify_dev(
             st,
@@ -15710,6 +16071,7 @@ impl Dsv4Gpu {
         hidden: usize,
         limit: f32,
         include_hc_post: bool,
+        host_math: bool,
         joined_contribution: Option<&CudaSlice<f32>>,
     ) -> Res<()> {
         let stream = st.gpu.stream();
@@ -15727,15 +16089,17 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
-            ck(
-                "cvt xb batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.xf, &stream),
-                    vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * hidden) as i64,
-                    sp(&stream),
-                ),
-            )?;
+            if !vws.norm2_xb_ready {
+                ck(
+                    "cvt xb batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.xf, &stream),
+                        vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * hidden) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
         }
         let sh_inter = vws.sg1.len() / vws.tmax;
         Self::gemv_m_dev(
@@ -15770,29 +16134,48 @@ impl Dsv4Gpu {
             0,
             0,
         )?;
-        unsafe {
-            ck(
-                "swiglu sh batch",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.sg1, &stream),
-                    dpf!(vws.sg3, &stream),
-                    dpm!(vws.shbuf, &stream),
-                    t as i32,
-                    sh_inter as i32,
-                    limit,
-                    std::ptr::null(),
-                    sp(&stream),
-                ),
-            )?;
-            ck(
-                "cvt sh batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.shbuf, &stream),
-                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * sh_inter) as i64,
-                    sp(&stream),
-                ),
-            )?;
+        if t == 1 && !host_math && self.norm2_component_capture.load(Ordering::Relaxed) {
+            self.capture_norm2_component(st, layer, 2, &vws.sg1, Some(&vws.sg3), sh_inter, limit)?;
+        }
+        if vws.norm2_xb_ready && sh_inter == 2048 {
+            unsafe {
+                ck(
+                    "shared SwiGLU norm2 pack",
+                    k::memra_dsv4_norm2_swiglu_pack(
+                        dpf!(vws.sg1, &stream),
+                        dpf!(vws.sg3, &stream),
+                        vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                        sh_inter as i32,
+                        limit,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        } else {
+            unsafe {
+                ck(
+                    "swiglu sh batch",
+                    k::memra_dsv4_swiglu(
+                        dpf!(vws.sg1, &stream),
+                        dpf!(vws.sg3, &stream),
+                        dpm!(vws.shbuf, &stream),
+                        t as i32,
+                        sh_inter as i32,
+                        limit,
+                        std::ptr::null(),
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "cvt sh batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.shbuf, &stream),
+                        vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * sh_inter) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
         }
         Self::gemv_m_dev(
             st,
@@ -15989,6 +16372,20 @@ impl Dsv4Gpu {
                         hs: &mut vws.hs,
                         contribution: &mut vws.contrib,
                     };
+                    let norm2_dir = if self.norm2_component_capture.load(Ordering::Relaxed) {
+                        self.norm2_component_dir
+                            .lock()
+                            .map_err(|e| e.to_string())?
+                            .clone()
+                    } else {
+                        None
+                    };
+                    let work = vws
+                        .grouped_work
+                        .as_mut()
+                        .ok_or("TP/EP local grouped workspace missing")?;
+                    work.norm2 = self.norm2_active(t, host_math);
+                    work.norm2_capture = norm2_dir.map(|dir| (dir, st.dev, layer.il as usize));
                     let calls = crate::dsv4_ep::execute_matrix_local(
                         &st.gpu,
                         ep,
@@ -16076,7 +16473,8 @@ impl Dsv4Gpu {
                                         return Ok(());
                                     }
                                     self.moe_verify_common_tail(
-                                        st, layer, vws, t, topk, hidden, limit, true, None,
+                                        st, layer, vws, t, topk, hidden, limit, true, host_math,
+                                        None,
                                     )
                                 })
                             }) {
@@ -16289,6 +16687,7 @@ impl Dsv4Gpu {
             hidden,
             limit,
             include_hc_post,
+            host_math,
             None,
         )?;
         Ok(())
@@ -19473,5 +19872,73 @@ mod dense_wo_a_grouped_fp8_component_tests {
         println!(
             "PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused"
         );
+    }
+}
+
+#[cfg(test)]
+mod norm_fuse_default_tests {
+    use super::norm_fuse_environment_policy;
+    #[test]
+    fn unset_selects_qualified_path_and_zero_rolls_back() {
+        let absent = std::env::VarError::NotPresent;
+        assert!(norm_fuse_environment_policy(Err(&absent), true).unwrap());
+        assert!(!norm_fuse_environment_policy(Ok("0"), true).unwrap());
+        assert!(!norm_fuse_environment_policy(Err(&absent), false).unwrap());
+        assert!(!norm_fuse_environment_policy(Ok("0"), false).unwrap());
+        assert!(norm_fuse_environment_policy(Ok("1"), false).is_err());
+        assert!(norm_fuse_environment_policy(Ok("invalid"), true).is_err());
+    }
+}
+
+#[cfg(test)]
+mod norm_fuse2_policy_tests {
+    use super::norm_fuse2_environment_policy;
+    #[test]
+    fn unset_selects_qualified_path_and_zero_rolls_back() {
+        let absent = std::env::VarError::NotPresent;
+        // Unset now engages inside the admitted topology and stays off outside it.
+        assert!(norm_fuse2_environment_policy(Err(&absent), true).unwrap());
+        assert!(!norm_fuse2_environment_policy(Err(&absent), false).unwrap());
+        // Explicit zero is the rollback seam on both sides of admission.
+        assert!(!norm_fuse2_environment_policy(Ok("0"), true).unwrap());
+        assert!(!norm_fuse2_environment_policy(Ok("0"), false).unwrap());
+        // Explicit one still refuses outside the admitted topology, and junk always refuses.
+        assert!(norm_fuse2_environment_policy(Ok("1"), true).unwrap());
+        assert!(norm_fuse2_environment_policy(Ok("1"), false).is_err());
+        for admitted in [false, true] {
+            assert!(norm_fuse2_environment_policy(Ok("invalid"), admitted).is_err());
+            assert!(norm_fuse2_environment_policy(Ok(""), admitted).is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod norm2_wide_policy_tests {
+    use super::{NORM2_WIDE_TILES, norm2_wide_environment_policy};
+    #[test]
+    fn default_on_with_explicit_zero_seam() {
+        let absent = std::env::VarError::NotPresent;
+        // Unset follows the norm2 door: ON when the pack has a call site,
+        // OFF without one (no call site to select, so no refusal).
+        assert!(norm2_wide_environment_policy(Err(&absent), true).unwrap());
+        assert!(!norm2_wide_environment_policy(Err(&absent), false).unwrap());
+        for admitted in [false, true] {
+            assert!(!norm2_wide_environment_policy(Ok("0"), admitted).unwrap());
+            for junk in ["invalid", "", " ", "2", "true", "ON", "01", "1 "] {
+                assert!(
+                    norm2_wide_environment_policy(Ok(junk), admitted).is_err(),
+                    "junk must refuse: {junk:?}"
+                );
+            }
+        }
+        // Explicit 1 needs the norm2 door: the wide pack has no other call site.
+        assert!(norm2_wide_environment_policy(Ok("1"), true).unwrap());
+        assert!(norm2_wide_environment_policy(Ok("1"), false).is_err());
+    }
+    #[test]
+    fn pinned_tiles_divide_the_row() {
+        // Launcher contract: tiles in 1..=n/128 and 128*tiles divides 4096.
+        assert!((1..=4096 / 128).contains(&NORM2_WIDE_TILES));
+        assert_eq!(4096 % (128 * NORM2_WIDE_TILES), 0);
     }
 }

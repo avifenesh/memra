@@ -19,6 +19,9 @@
 //!          BOXP_MAX_NEW steps, dump the tape (<tag>.ids / <tag>.txt) and the first
 //!          BOXP_LOGIT_STEPS decode-step logits (<tag>.step<i>.f32). Byte/band compare
 //!          happens offline against the twin arm's dumps.
+//!   prime-walker  saved prime versus the original hyper loop; interleave a peer
+//!          prime and decode between ranges, require identical boundary logits and
+//!          hidden stack. Pair rendezvous/owned-transfer receipt, no timing claim.
 //!   spec   COMPOSED spec rows (lane/glm5-composition, spec x TP): per prompt — a
 //!          [`Glm5SpecSession`] burst loop at BOXP_SPEC_K (default 3) drafts/verifies to
 //!          BOXP_MAX_NEW; one JSONL row per prompt with spec tok/s, rounds, drafted,
@@ -264,6 +267,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             &["greedy"]
         };
+        if mode == "prime-walker" {
+            model.check_glm5_prime_walker(&e, &ids)?;
+            writeln!(rows, "{{\"tag\":\"{tag}\",\"prime_walker\":\"PASS\"}}")?;
+            rows.flush()?;
+            continue;
+        }
         if mode == "spec" {
             let k = env_usize("BOXP_SPEC_K", 3);
             for &arm in arms {

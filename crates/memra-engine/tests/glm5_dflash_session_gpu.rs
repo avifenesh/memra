@@ -2991,3 +2991,219 @@ fn gpu_penalized_greedy_session_refuses_demotion() {
          reads pen as well as sampling)"
     );
 }
+
+/// The route's saved-prime gate, using the existing native-plan miniature fixture.
+/// This is PP-1 correctness evidence, not a model-scale or pair latency receipt.
+#[test]
+#[ignore = "requires the lane-owned B200 and /tmp/memra-gpu.lock"]
+fn gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer() {
+    use memra_engine::prime_walker::{PrimeWalker, advance_prime, finish_prime};
+    let _gpu = gpu_guard();
+    let _chunk = EnvArm::set("MEMRA_PRIME_CHUNK", "32");
+    let _prefix = EnvArm::set("MEMRA_PREFIX_LATENT", "1");
+    let _capture = EnvArm::set("MEMRA_GLM5_SPEC_PREFIX", "1");
+    let _device = EnvArm::set("MEMRA_GLM5_DRAFT_TAPS_DEVICE", "0");
+    let _lazy = EnvArm::set("MEMRA_GLM5_DRAFT_PRIME_LAZY", "0");
+    let h = Harness::new("prime-walker");
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    let capture_bits = |cap: memra_engine::spec::SpecBoundaryCapture| {
+        let mut out = vec![cap.pos as u32];
+        out.extend(bits(&cap.logits));
+        out.extend(bits(&cap.last_h));
+        for p in cap.snap.conv.iter().chain(&cap.snap.ssm).flatten() {
+            out.extend(bits(&h.engine.dtoh(p).unwrap()));
+        }
+        for tail in cap.latent_tails.into_iter().flatten() {
+            out.extend([
+                tail.len as u32,
+                tail.width as u32,
+                tail.index_width as u32,
+                tail.index_pool as u32,
+                tail.index_pools_ready as u32,
+            ]);
+            if let Some(p) = tail.index_tail {
+                out.extend(bits(&h.engine.dtoh(&p).unwrap()));
+            }
+        }
+        out
+    };
+    for restored in [false, true] {
+        let mut oracles = Vec::new();
+        for arm in 0..3 {
+            let yielded = arm != 0;
+            let interleave = arm == 2;
+            let mut prompt = tokens(73, 911);
+            let mut chain = Vec::new();
+            let mut yields = 0;
+            for turn in 0..4 {
+                let cut = if restored && turn > 0 {
+                    prompt.len() - 41
+                } else {
+                    0
+                };
+                let cap = 512;
+                let mut state = if cut == 0 {
+                    h.model
+                        .glm5_prime_start(&h.engine, &prompt, cap, None)
+                        .unwrap()
+                } else {
+                    let prefix = &prompt[..cut];
+                    let mut donor = h
+                        .model
+                        .glm5_spec_session_new(&h.engine, prefix, cap, None)
+                        .unwrap();
+                    drive_bursts(&h, &mut donor, prefix, 3, 4, 4, &[]);
+                    let tail = donor.export_draft_tail(&h.engine, cut).unwrap();
+                    let dr = h.model.glm5_dflash.as_ref().unwrap();
+                    let dkv = memra_engine::dflash::DflashKv::from_tail(
+                        &h.engine,
+                        &dr.draft.cfg,
+                        cap,
+                        &tail,
+                    )
+                    .unwrap();
+                    drop(donor);
+                    let (cache, logits) = h.fresh_primed(prefix, cap);
+                    h.model
+                        .glm5_prime_restored_start(
+                            &h.engine,
+                            cache,
+                            prefix,
+                            &prompt[cut..],
+                            &logits,
+                            dkv,
+                            cap,
+                            None,
+                        )
+                        .unwrap()
+                };
+                // Independent old hyper-loop boundary oracle, same frozen cut/ranges.
+                let expected = if cut == 0 {
+                    h.fresh_primed(&prompt, cap).1
+                } else {
+                    let (mut cache, _) = h.fresh_primed(&prompt[..cut], cap);
+                    h.model
+                        .prime_cache(&h.engine, &prompt[cut..], &mut cache, 0)
+                        .unwrap()
+                        .0
+                };
+                let small = tokens(17, 19);
+                let small_oracle = h
+                    .model
+                    .glm5_spec_session_new(&h.engine, &small, cap, None)
+                    .unwrap();
+                drop(small_oracle);
+                let mut pending = Some(state);
+                loop {
+                    let mut walker = h.model.glm5_prime_walker(&h.engine, &mut pending);
+                    let progress = advance_prime(&mut walker, yielded, |_, _| {}).unwrap();
+                    if progress.remaining_chunks == 0 {
+                        break;
+                    }
+                    yields += 1;
+                    if interleave {
+                        let mut peer = h
+                            .model
+                            .glm5_spec_session_new(&h.engine, &small, cap, None)
+                            .unwrap();
+                        let (actual, drafted, _, _) =
+                            drive_bursts(&h, &mut peer, &small, 3, 8, 4, &[]);
+                        let mut solo = h
+                            .model
+                            .glm5_spec_session_new(&h.engine, &small, cap, None)
+                            .unwrap();
+                        let (expected, _, _, _) = drive_bursts(&h, &mut solo, &small, 3, 8, 4, &[]);
+                        assert_eq!(actual, expected, "peer own c1 oracle");
+                        assert!(drafted > 0);
+                    }
+                }
+                state = pending.take().unwrap();
+                assert_eq!(
+                    bits(state.boundary_logits()),
+                    bits(&expected),
+                    "resumed boundary logits, turn {turn}"
+                );
+                pending = Some(state);
+                let walker = h.model.glm5_prime_walker(&h.engine, &mut pending);
+                assert_eq!(walker.remaining_chunks(), 0);
+                let mut session = finish_prime(walker).unwrap();
+                let capture = session
+                    .take_prefix_capture()
+                    .expect("non-vacuous prefix capture");
+                let captured = capture_bits(capture);
+                let (tape, drafted, _, _) = drive_bursts(&h, &mut session, &prompt, 3, 12, 4, &[]);
+                assert!(drafted > 0);
+                prompt.extend_from_slice(&tape);
+                prompt.extend(tokens(29, 31 + turn));
+                chain.push((tape, captured));
+            }
+            if yielded {
+                assert!(yields > 0);
+            }
+            eprintln!(
+                "[glm5-prime-gate] restored={restored} arm={arm} turns=4 yields={yields} K=3 boundary=identical"
+            );
+            oracles.push(chain);
+        }
+        assert_eq!(
+            oracles[0], oracles[1],
+            "OFF versus yielded cold/restored chain"
+        );
+        assert_eq!(
+            oracles[0], oracles[2],
+            "c2 interleaving versus own c1 chain"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires the lane-owned B200 and /tmp/memra-gpu.lock"]
+fn gpu_glm5_prime_plain_segment_preserves_suffix_and_queued_after() {
+    use memra_engine::prime_walker::{advance_prime, finish_prime};
+    let _gpu = gpu_guard();
+    let _chunk = EnvArm::set("MEMRA_PRIME_CHUNK", "32");
+    let h = Harness::new("plain-prime-walker");
+    let prefix = tokens(41, 711);
+    let suffix = tokens(73, 719);
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    let (mut oracle, _) = h.fresh_primed(&prefix, 512);
+    let (logits, seed, hidden) = h
+        .model
+        .prime_cache(&h.engine, &suffix, &mut oracle, 9)
+        .unwrap();
+    let expected = (bits(&logits), bits(&h.engine.dtoh(&hidden).unwrap()));
+    drop(seed);
+    drop(hidden);
+    drop(oracle);
+    for yielded in [false, true] {
+        let (cache, _) = h.fresh_primed(&prefix, 512);
+        let mut pending = Some(
+            h.model
+                .glm5_plain_prime_start(&h.engine, cache, &suffix, 9)
+                .unwrap(),
+        );
+        let mut yields = 0;
+        loop {
+            let mut walker = h.model.glm5_plain_prime_walker(&h.engine, &mut pending);
+            let progress = advance_prime(&mut walker, yielded, |_, _| {}).unwrap();
+            if progress.remaining_chunks == 0 {
+                break;
+            }
+            let _peer = h.fresh_primed(&tokens(17, 727), 128);
+            yields += 1;
+        }
+        let walker = h.model.glm5_plain_prime_walker(&h.engine, &mut pending);
+        let (cache, logits, hidden) = finish_prime(walker).unwrap();
+        assert_eq!(cache.pos, prefix.len() + suffix.len());
+        assert_eq!(
+            (bits(&logits), bits(&h.engine.dtoh(&hidden).unwrap())),
+            expected
+        );
+        if yielded {
+            assert!(yields > 0);
+        }
+        eprintln!(
+            "[glm5-plain-prime-gate] yielded={yielded} yields={yields} prefix=41 suffix=73 queued_after=9 boundary=identical"
+        );
+    }
+}

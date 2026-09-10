@@ -72,6 +72,8 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         ple: None,
     };
     Ok(ModelPlan {
+        speech: None,
+        prefill_activation: None,
         arch: Arch::GlmDsa,
         hidden_size: 8,
         vocab_size: 32,

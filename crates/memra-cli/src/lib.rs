@@ -1,6 +1,6 @@
 use memra_gguf::GgufFile;
 use memra_gguf::config::{HfConfig, ModelConfig};
-use memra_gguf::model_packs::{self, Gate, ModelPack, TokenizerSource};
+use memra_gguf::model_packs::{self, Gate, ModelPack, TemplateContract, TokenizerSource};
 use memra_gguf::placement::{LayerPlacementCost, PlacementRequest, plan_contiguous_stages};
 use memra_gguf::safetensors::{
     StInfo, StModel, parse_header_json_checked, parse_index_weight_map_json_checked,
@@ -921,8 +921,16 @@ struct SourceData {
 struct TokenizerEvidence {
     source: TokenizerSource,
     tokenizer_sha256: String,
-    template_sha256: String,
-    template_bytes: usize,
+    /// `None` when the artifact carries no chat dialect of its own. Whether that is a
+    /// failure is the PACK's call (`TemplateContract`), not the loader's: a family whose
+    /// vendor ships the dialect as code has no template to find, and a loader that
+    /// refuses there refuses a correct artifact forever.
+    template: Option<TemplateEvidence>,
+}
+
+struct TemplateEvidence {
+    sha256: String,
+    bytes: usize,
 }
 
 pub fn inspect_model(
@@ -996,22 +1004,28 @@ pub fn inspect_model(
         write_checkpoint_placement_candidates(&request.out_dir, &plan, binding, &plan_hash)?;
     }
     let tokenizer_error = match &source.tokenizer {
-        Ok(evidence) if pack.tokenizer_sources.contains(&evidence.source) => None,
-        Ok(evidence) => Some(format!(
+        Ok(evidence) if !pack.tokenizer_sources.contains(&evidence.source) => Some(format!(
             "model pack {} does not accept tokenizer source {:?}",
             pack.family, evidence.source
         )),
+        Ok(evidence) => template_contract_error(pack, evidence.template.is_some()),
         Err(error) => Some(error.clone()),
     };
-    if let Ok(evidence) = &source.tokenizer {
+    if let Ok(evidence) = &source.tokenizer
+        && tokenizer_error.is_none()
+    {
+        let (dialect, sha, bytes) = match (&evidence.template, pack.template) {
+            (Some(template), _) => ("artifact", template.sha256.clone(), template.bytes),
+            (None, TemplateContract::EngineRenderer(renderer)) => {
+                (renderer, "engine-renderer".to_string(), 0)
+            }
+            (None, TemplateContract::ArtifactRequired) => unreachable!("gated above"),
+        };
         write_atomic(
             &request.out_dir.join("tokenizer-contract.tsv"),
             format!(
-                "status\tpassed\nsource\t{:?}\ntokenizer_sha256\t{}\ntemplate_sha256\t{}\ntemplate_bytes\t{}\n",
-                evidence.source,
-                evidence.tokenizer_sha256,
-                evidence.template_sha256,
-                evidence.template_bytes,
+                "status\tpassed\nsource\t{:?}\ntokenizer_sha256\t{}\ndialect\t{}\ntemplate_sha256\t{}\ntemplate_bytes\t{}\n",
+                evidence.source, evidence.tokenizer_sha256, dialect, sha, bytes,
             )
             .as_bytes(),
         )?;
@@ -1273,8 +1287,10 @@ fn inspect_gguf_tokenizer(gguf: &GgufFile) -> Result<TokenizerEvidence, String> 
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect(),
-        template_sha256: hex_sha256(template.as_bytes()),
-        template_bytes: template.len(),
+        template: Some(TemplateEvidence {
+            sha256: hex_sha256(template.as_bytes()),
+            bytes: template.len(),
+        }),
     })
 }
 
@@ -1286,22 +1302,60 @@ fn inspect_hf_tokenizer_dir(path: &Path) -> Result<TokenizerEvidence, String> {
     Ok(TokenizerEvidence {
         source: TokenizerSource::TokenizerJson,
         tokenizer_sha256: hex_sha256(&tokenizer),
-        template_sha256: hex_sha256(template.as_bytes()),
-        template_bytes: template.len(),
+        template: template.map(|template| TemplateEvidence {
+            sha256: hex_sha256(template.as_bytes()),
+            bytes: template.len(),
+        }),
     })
 }
 
-fn local_hf_template(path: &Path) -> Result<String, String> {
+/// `Ok(None)` means the artifact carries no dialect of its own, which is a legitimate
+/// shape for a family whose vendor ships the dialect as code. An empty or unreadable
+/// template that IS present still errors: absent and broken are different findings.
+/// Judge an artifact's chat dialect against the pack's contract. Two-sided on purpose:
+/// each contract has exactly one acceptable shape and refuses the other, so neither arm
+/// can go vacuous when a family's distribution changes.
+///
+/// `ArtifactRequired` + no template  -> refuse (the artifact owes a dialect it does not carry).
+/// `EngineRenderer` + a template     -> refuse (a franken artifact: a template over an
+///                                      engine-owned dialect renders differently from the
+///                                      engine, and the disagreement is silent).
+///
+/// The permissive-looking arm is not a fallback. `EngineRenderer` names the renderer that
+/// owns the dialect, and that renderer carries its own byte oracle (the vendor's
+/// `encoding/tests` fixtures) elsewhere in the tree. Nothing here ever degrades to a
+/// generic ChatML render.
+fn template_contract_error(pack: &ModelPack, artifact_has_template: bool) -> Option<String> {
+    match (pack.template, artifact_has_template) {
+        (TemplateContract::ArtifactRequired, true) => None,
+        (TemplateContract::ArtifactRequired, false) => Some(format!(
+            "model pack {} requires the artifact to carry a chat dialect: neither a \
+             tokenizer_config.json chat_template nor a chat_template.jinja is present",
+            pack.family
+        )),
+        (TemplateContract::EngineRenderer(_), false) => None,
+        (TemplateContract::EngineRenderer(renderer), true) => Some(format!(
+            "model pack {} owns its chat dialect in the engine ({renderer}), but this \
+             artifact carries a template of its own: renders would disagree silently, so \
+             the artifact is refused rather than one source being preferred",
+            pack.family
+        )),
+    }
+}
+
+fn local_hf_template(path: &Path) -> Result<Option<String>, String> {
     let config_path = path.join("tokenizer_config.json");
     if let Ok(config) = std::fs::read_to_string(&config_path)
         && let Some(template) = template_from_tokenizer_config(&config)
     {
-        return Ok(template);
+        return nonempty_template(template).map(Some);
     }
     let template_path = path.join("chat_template.jinja");
-    std::fs::read_to_string(&template_path)
-        .map_err(|error| format!("read {}: {error}", template_path.display()))
-        .and_then(nonempty_template)
+    match std::fs::read_to_string(&template_path) {
+        Ok(template) => nonempty_template(template).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("read {}: {error}", template_path.display())),
+    }
 }
 
 fn inspect_remote_hf_tokenizer(base: &str) -> Result<TokenizerEvidence, String> {
@@ -1318,16 +1372,15 @@ fn inspect_remote_hf_tokenizer(base: &str) -> Result<TokenizerEvidence, String> 
                 .ok()
                 .flatten()
         })
-        .ok_or_else(|| {
-            "pinned HF model has neither tokenizer_config chat_template nor chat_template.jinja"
-                .to_string()
-        })
-        .and_then(nonempty_template)?;
+        .map(nonempty_template)
+        .transpose()?;
     Ok(TokenizerEvidence {
         source: TokenizerSource::TokenizerJson,
         tokenizer_sha256: hex_sha256(tokenizer.as_bytes()),
-        template_sha256: hex_sha256(template.as_bytes()),
-        template_bytes: template.len(),
+        template: template.map(|template| TemplateEvidence {
+            sha256: hex_sha256(template.as_bytes()),
+            bytes: template.len(),
+        }),
     })
 }
 
@@ -1716,12 +1769,29 @@ fn format_lock(
     writeln!(output, "plan_sha256={plan}").unwrap();
     writeln!(output, "rewrite_manifest_sha256={rewrites}").unwrap();
     writeln!(output, "binding={binding}").unwrap();
+    // The lock records the SAME judgment the gate made, through the same function: a lock
+    // that said `passed` on its own accounting once let a gate failure out of sight.
     match &source.tokenizer {
-        Ok(evidence) if pack.tokenizer_sources.contains(&evidence.source) => {
+        Ok(evidence)
+            if pack.tokenizer_sources.contains(&evidence.source)
+                && template_contract_error(pack, evidence.template.is_some()).is_none() =>
+        {
             writeln!(output, "tokenizer=passed").unwrap();
             writeln!(output, "tokenizer_source={:?}", evidence.source).unwrap();
             writeln!(output, "tokenizer_sha256={}", evidence.tokenizer_sha256).unwrap();
-            writeln!(output, "template_sha256={}", evidence.template_sha256).unwrap();
+            match (&evidence.template, pack.template) {
+                (Some(template), _) => {
+                    writeln!(output, "dialect=artifact").unwrap();
+                    writeln!(output, "template_sha256={}", template.sha256).unwrap();
+                }
+                (None, TemplateContract::EngineRenderer(renderer)) => {
+                    writeln!(output, "dialect={renderer}").unwrap();
+                    writeln!(output, "template_sha256=engine-renderer").unwrap();
+                }
+                (None, TemplateContract::ArtifactRequired) => {
+                    unreachable!("refused by the contract above")
+                }
+            }
         }
         Ok(_) | Err(_) => writeln!(output, "tokenizer=failed").unwrap(),
     }
@@ -2045,6 +2115,50 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Red arm for the template contract, crosswise BOTH ways. Each contract accepts
+    /// exactly one artifact shape and refuses the other; without this, flipping a pack to
+    /// `EngineRenderer` would quietly turn a fail-closed refusal into a permissive pass,
+    /// which is the failure shape the contract exists to prevent.
+    #[test]
+    fn template_contract_refuses_the_wrong_artifact_shape_both_ways() {
+        let artifact = model_packs::by_alias("qwen3").expect("qwen3 pack");
+        assert_eq!(artifact.template, TemplateContract::ArtifactRequired);
+        assert!(template_contract_error(artifact, true).is_none());
+        let missing = template_contract_error(artifact, false).expect("must refuse");
+        assert!(
+            missing.contains("requires the artifact to carry a chat dialect"),
+            "{missing}"
+        );
+
+        let renderer = model_packs::by_alias("deepseek_v4_dspark").expect("dsv4 dspark pack");
+        assert_eq!(
+            renderer.template,
+            TemplateContract::EngineRenderer("encoding_dsv4")
+        );
+        assert!(template_contract_error(renderer, false).is_none());
+        let franken = template_contract_error(renderer, true).expect("must refuse");
+        assert!(
+            franken.contains("owns its chat dialect in the engine"),
+            "{franken}"
+        );
+        assert!(franken.contains("encoding_dsv4"), "{franken}");
+    }
+
+    /// The deepseek-v4 packs are the reason `EngineRenderer` exists: upstream
+    /// `deepseek-ai/DeepSeek-V4-Flash-0731` ships `encoding/encoding_dsv4.py` and no
+    /// template in any form, so `ArtifactRequired` there refuses a correct artifact.
+    #[test]
+    fn deepseek_v4_packs_own_their_dialect_in_the_engine() {
+        for alias in ["deepseek_v4", "deepseek_v4_dspark"] {
+            let pack = model_packs::by_alias(alias).expect(alias);
+            assert_eq!(
+                pack.template,
+                TemplateContract::EngineRenderer("encoding_dsv4"),
+                "{alias}"
+            );
+        }
+    }
 
     #[test]
     fn local_glm_fixture_generates_deterministic_onboarding_artifacts() {

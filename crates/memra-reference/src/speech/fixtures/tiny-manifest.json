@@ -1,0 +1,150 @@
+{
+  "seed": 416,
+  "config": {
+    "transformers_version": "5.16.1",
+    "architectures": null,
+    "output_hidden_states": false,
+    "return_dict": true,
+    "dtype": null,
+    "chunk_size_feed_forward": 0,
+    "is_encoder_decoder": true,
+    "id2label": {
+      "0": "LABEL_0",
+      "1": "LABEL_1"
+    },
+    "label2id": {
+      "LABEL_0": 0,
+      "LABEL_1": 1
+    },
+    "problem_type": null,
+    "vocab_size": 64,
+    "num_mel_bins": 128,
+    "encoder_layers": 2,
+    "encoder_attention_heads": 2,
+    "decoder_layers": 2,
+    "decoder_attention_heads": 2,
+    "decoder_ffn_dim": 32,
+    "encoder_ffn_dim": 32,
+    "encoder_layerdrop": 0.0,
+    "decoder_layerdrop": 0.0,
+    "decoder_start_token_id": 1,
+    "use_cache": true,
+    "activation_function": "gelu",
+    "d_model": 16,
+    "dropout": 0.0,
+    "attention_dropout": 0.0,
+    "activation_dropout": 0.0,
+    "init_std": 0.02,
+    "scale_embedding": false,
+    "max_source_positions": 8,
+    "max_target_positions": 16,
+    "pad_token_id": 0,
+    "bos_token_id": 1,
+    "eos_token_id": 2,
+    "suppress_tokens": null,
+    "begin_suppress_tokens": [
+      220,
+      50256
+    ],
+    "use_weighted_layer_sum": false,
+    "classifier_proj_size": 256,
+    "apply_spec_augment": false,
+    "mask_time_prob": 0.05,
+    "mask_time_length": 10,
+    "mask_time_min_masks": 2,
+    "mask_feature_prob": 0.0,
+    "mask_feature_length": 10,
+    "mask_feature_min_masks": 0,
+    "median_filter_width": 7,
+    "tie_word_embeddings": true,
+    "_name_or_path": "",
+    "model_type": "whisper",
+    "output_attentions": false
+  },
+  "versions": {
+    "torch": "2.14.0+cu130",
+    "transformers": "5.16.1"
+  },
+  "files": {
+    "tiny-mel.f32": {
+      "shape": [
+        128,
+        16
+      ],
+      "sha256": "cdb4ab6507d53ec81e475f9055627a2a90a4db6a6c107d5c92b186a1670a687e"
+    },
+    "tiny-f32-conv1.f32": {
+      "shape": [
+        16,
+        16
+      ],
+      "sha256": "bbee1eef4e588ef55aaa2ed1091336f877e14300229bf47f8e64ef9330f3a584"
+    },
+    "tiny-f32-conv2.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "7da42adc83ffc6193c389b51db4ab98efdbaa52bca328a26cedbb90878fea69c"
+    },
+    "tiny-f32-layer-00.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "0636b277356693da160287b0fc68a9802d0ff7de14dbe6386ee9cea56f254223"
+    },
+    "tiny-f32-layer-01.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "4834e9c968ff3bbd122f7037fce7c08dd7a8aa7e0032f1461f4aa5b9b8dd6e6e"
+    },
+    "tiny-f32-encoder.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "615d9affe12b7f6c653fa2a336c4b33e89bab210a8d49749ab5b46a6d6857262"
+    },
+    "tiny-f16-conv1.f32": {
+      "shape": [
+        16,
+        16
+      ],
+      "sha256": "a619335ffa5e14bcc01a150a200a56ec57763c7ce88e53dcd5dbe16cb33854ce"
+    },
+    "tiny-f16-conv2.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "316c5db9881f7bac3c2d84fed071face72c3f8146ffea0fda873fbfe1ac857e0"
+    },
+    "tiny-f16-layer-00.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "fcd0360a17372a93714e1ea27b93cf5bde39b943dddc197c24cd23fa2d17d6bd"
+    },
+    "tiny-f16-layer-01.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "a7a1b3348d925c320d9e78e717a0182bcbeb5a6e355b25f92812e3557c83bf30"
+    },
+    "tiny-f16-encoder.f32": {
+      "shape": [
+        8,
+        16
+      ],
+      "sha256": "fb9f17a9eaccef428e1280d6925c33c3b533ebb377f325b9300bbf2cd827cfc7"
+    }
+  },
+  "checkpoint_sha256": "7e023f9fe87470f3e04dbbfa22711208c1bc2be67c01ec88532abc3f6c3969d6",
+  "generator_sha256": "b21b29b47b079f99b36bfe362643efd4e6fc1b7f5f348c801699184465be5b8d",
+  "scope": "synthetic topology only, no native support or real-checkpoint qualification"
+}

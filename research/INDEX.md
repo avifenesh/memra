@@ -7,6 +7,8 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+qwen-prefill-attn-20260909 | Exact launch diet: 131070 cold TTFT 68.267276 -> 66.496199 s, N=3; graph default has no runtime door. Attention numerical work remains separate. | qwen-prefill-attn-20260909/MECHANISM.md
+
 release-v0.137.0-20260909 | PREPARED CANDIDATE ONLY. No tag or deployment is authorized by this record. | RESULTS.md
 
 dflash-retained-admission-20260908 | PASS: the exact recorded 128k cold/1024-output request followed by its warm continuation now admits with 131040 cached tokens, DFlash engaged and zero OOM/retries. | README.md
@@ -484,3 +486,13 @@ glm5-tp-indexer-split-20260908 | "Decode NEGATIVE at 128k and FLAT at 1M; merge 
 glm5-tp2-gpu-sampler-20260908 | Current five-pair medians: 81.317 to 91.250 wall tok/s (+12.22%), server decode 11.894 to 10.610 ms/token; original three and later two windows reported separately. Greedy twins exact, door OFF. | glm5-tp2-gpu-sampler-20260908/RESULTS.md
 
 - release-v0.137.0 owner go: #378 merged default OFF; full source-bound battery receipts attached to #391. See [GO-QUALIFICATION](release-v0.137.0-20260909/GO-QUALIFICATION.md).
+
+glm5-verify-tally-20260909 | "Component KEEP OFF, unserved, code removed 2026-09-09; 1.789758071 ms/round weighted saving" | glm5-verify-tally-20260909/RESULTS.md
+
+moe-rows-f16-20260909 | NEGATIVE numeric no-go: t4 layer20 full-chain row3 argmax current4 vs F16 1819; t2 all42 layers pass; timing refused and door removed. | moe-rows-f16-20260909/RESULTS.md
+
+glm5-kda-verify-20260909 | SUPERSEDED MECHANISM: one t-row register-state scan already runs per KDA layer; 1 -> 1 launches, no new candidate or timing. rev: 2026-09-23. | glm5-kda-verify-20260909/RESULTS.md
+
+- `glm5-dflash-rootcause-20260909` | "PP1 p32k vendor K6 71.850085 tok/s versus plain 80.635647; verify 81.8% of engine round, needs 2.192253 accepted/round versus 1.850000. Selected-q PMIN bias reproduced; causal cutoff code removed, bug #412 open." | [DIAGNOSIS](glm5-dflash-rootcause-20260909/DIAGNOSIS.md) | rev: 2026-12-08
+
+| glm5-verify-graph-20260909 | NEGATIVE: K6 graph ON 79.191090 tok/s vs plain 79.957362 (-0.958351%); four exact oracles, N=3 interleaved, door removed. rev: 2026-09-23 | [RESULTS](glm5-verify-graph-20260909/RESULTS.md) |

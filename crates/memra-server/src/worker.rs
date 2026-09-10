@@ -4941,6 +4941,103 @@ fn mtp_skip_no_drafter_verdict(serve_spec_env: Option<&str>) -> Result<String, S
     }
 }
 
+/// MEMRA_GEMMA_SPEC_SAMPLED (lane/gemma-sampled-spec, 2026-09-09): admit VENDOR-SAMPLED
+/// requests to the gemma assistant-drafter route through the rejection-sampling verify
+/// (`gemma_spec_session_burst_sampled`).
+///
+/// WHY IT EXISTS: the route shipped greedy-only, and this family's vendor default is
+/// temp 1.0 / top_p 0.95 / top_k 64 — so every served request declined speculation and the
+/// attached drafter did nothing. The perf-page cell (darklanes
+/// research/hebrew-agentic-base-20260909/perf-page) priced that as Gemma decoding 133.5 tok/s
+/// against Qwen's 266.5 with MTP engaged, and the greedy instrument on the same office prompt
+/// reads 0.617 acceptance and 197 tok/s, so the whole gap was an admission predicate.
+///
+/// Landed default OFF (an unmeasured feature never defaults ON) and FLIPPED ON 2026-09-10 on
+/// its own receipts, so the door closes rather than waiting out its decide-by: `gemma_sample_gate`
+/// passes all four arms (prime-boundary kill-switch identity, tiny-T continuity EXACT on three
+/// seeds, per-position chi-square 9.4/19.5/18.8/19.0 against bounds 33.1/45.4/48.4/49.8 at the
+/// vendor row, three refusals by name) with a red arm that breaks the chi-square at every
+/// position; and the served office cell reads 446.5 tok/s median decode at c=1 with acceptance
+/// 0.685 against the 130.9 tok/s the same box measured on the plain path — a 3.4x decode move,
+/// nowhere near noise.
+/// `=0` is the rollback seam and restores the greedy-only admission byte for byte.
+/// Penalized requests are NOT admitted on either arm: the sampled burst refuses them loudly
+/// (the dspark route's incremental-penalty verify is unmeasured on this family), and this
+/// family's vendor default carries no penalty.
+fn gemma_sampled_spec_on() -> bool {
+    static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *S.get_or_init(
+        || match std::env::var("MEMRA_GEMMA_SPEC_SAMPLED").as_deref() {
+            // DEFAULT ON since 2026-09-10. Landed OFF because it was unmeasured; it is now
+            // measured, so door hygiene flips it rather than leaving a door standing.
+            Ok("1") | Err(_) => true,
+            Ok("0") => false,
+            Ok(other) => panic!(
+                "MEMRA_GEMMA_SPEC_SAMPLED={other:?}: expected 0 or 1 (a mis-typed seam must not \
+             silently pick a serving path)"
+            ),
+        },
+    )
+}
+
+/// MEMRA_TOKENIZER_GGUF (lane/gemma4-full-serving, 2026-09-10): take a DIRECTORY-sourced
+/// model's tokenizer from a GGUF instead of the directory.
+///
+/// Syntax is `name=path[,name=path...]` — model-scoped on purpose, because a multi-model
+/// server has no business inferring which model a bare path was meant for. A bare path, an
+/// empty name and an empty path all REFUSE LOUD (the mis-typed-seam law): a tokenizer is not
+/// a knob where a silent wrong guess is survivable.
+///
+/// Unset (the default) changes nothing: directory models build their tokenizer from the
+/// directory exactly as before.
+fn tokenizer_gguf_override(model: &str) -> Option<String> {
+    static MAP: std::sync::OnceLock<std::collections::HashMap<String, String>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| {
+        let mut out = std::collections::HashMap::new();
+        let Ok(raw) = std::env::var("MEMRA_TOKENIZER_GGUF") else {
+            return out;
+        };
+        for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+            let Some((name, path)) = entry.split_once('=') else {
+                panic!(
+                    "MEMRA_TOKENIZER_GGUF={raw:?}: entry {entry:?} is not name=path (a bare \
+                     path cannot say WHICH model it is the tokenizer for)"
+                );
+            };
+            let (name, path) = (name.trim(), path.trim());
+            if name.is_empty() || path.is_empty() {
+                panic!("MEMRA_TOKENIZER_GGUF={raw:?}: entry {entry:?} has an empty name or path");
+            }
+            if out.insert(name.to_string(), path.to_string()).is_some() {
+                panic!("MEMRA_TOKENIZER_GGUF={raw:?}: model {name:?} named twice");
+            }
+        }
+        out
+    })
+    .get(model)
+    .cloned()
+}
+
+/// Build a tokenizer from `gguf_path` and prove it is the same vocabulary the checkpoint at
+/// `tok_dir` declares, id by id, before returning it. Returns the tokenizer and the number of
+/// ids compared, so the boot line can state the size of the claim rather than assert it.
+fn load_verified_tokenizer(
+    gguf_path: &str,
+    tok_dir: &std::path::Path,
+) -> Result<(Tokenizer, usize), String> {
+    let g = GgufFile::open(gguf_path).map_err(|e| format!("open {gguf_path}: {e}"))?;
+    let tok = Tokenizer::from_gguf(&g)?;
+    let n_ids = tok.verify_vocab_against_hf_dir(tok_dir).map_err(|e| {
+        format!(
+            "MEMRA_TOKENIZER_GGUF names {gguf_path}, but it is not the same tokenizer as {}: \
+             {e}",
+            tok_dir.display()
+        )
+    })?;
+    Ok((tok, n_ids))
+}
+
 fn gemma4_spec_k_env() -> usize {
     static K: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *K.get_or_init(|| match std::env::var("MEMRA_GEMMA4_SPEC").as_deref() {
@@ -11908,6 +12005,8 @@ struct Session {
     /// re-arms via `glm5_spec_session_from_restored`; no demotion-to-park (each a named
     /// follow-up).
     glm5: Option<memra_engine::glm_spec::Glm5SpecSession>,
+    glm5_prime: Option<memra_engine::glm_spec::Glm5PrimeState>,
+    glm5_plain_prime: Option<memra_engine::glm_spec::Glm5PlainPrimeState>,
     /// Marks the session as glm5-routed even before `glm5` exists (the pre-prime window)
     /// — scheduler filters key on this, the dspark_on convention (derived from what
     /// admission actually installs, so dispatch and session can never disagree).
@@ -12743,12 +12842,38 @@ pub fn run(
                     return;
                 }
             };
-            let tok = match Tokenizer::from_hf_dir(&tok_dir) {
-                Ok(t) => t,
-                Err(err) => {
-                    let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
-                    return;
-                }
+            // TOKENIZER SOURCE OVERRIDE (MEMRA_TOKENIZER_GGUF, lane/gemma4-full-serving):
+            // `from_hf_dir` takes byte-level BPE only, so a SentencePiece-class family cannot
+            // build its tokenizer from an HF directory even when the WEIGHTS load — which is
+            // exactly what an NVFP4 mint of the gemma-4 BF16 source hits. The same vocabulary
+            // is already parsed from that family's GGUF, so this names one.
+            //
+            // The override does NOT trust the operator that the two agree: the GGUF-built
+            // tokenizer is verified id by id against the directory's own `tokenizer.json`
+            // before it is used, and a disagreement is a loud boot failure. Without that,
+            // pointing at the wrong GGUF would silently corrupt every prompt.
+            let tok = match tokenizer_gguf_override(name) {
+                Some(gguf_path) => match load_verified_tokenizer(&gguf_path, &tok_dir) {
+                    Ok((t, n_ids)) => {
+                        eprintln!(
+                            "[tokenizer] {name}: taken from {gguf_path} (MEMRA_TOKENIZER_GGUF), \
+                             VERIFIED against {} — {n_ids} ids byte-identical",
+                            tok_dir.display()
+                        );
+                        t
+                    }
+                    Err(err) => {
+                        let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                        return;
+                    }
+                },
+                None => match Tokenizer::from_hf_dir(&tok_dir) {
+                    Ok(t) => t,
+                    Err(err) => {
+                        let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                        return;
+                    }
+                },
             };
             (model, tok)
         } else {
@@ -13161,9 +13286,14 @@ pub fn run(
                 // Log text only; the route, K, and posture are unchanged.
                 eprintln!(
                     "[worker] {n}: GEMMA SPEC route armed (K={}, assistant drafter attached \
-                     ({dpath}); greedy/unconstrained/text-only/solo-admission; \
+                     ({dpath}); {}/unconstrained/text-only/solo-admission; \
                      MEMRA_GEMMA4_SPEC=0 = off)",
-                    gemma4_spec_k_env()
+                    gemma4_spec_k_env(),
+                    if gemma_sampled_spec_on() {
+                        "greedy + sampled (MEMRA_GEMMA_SPEC_SAMPLED=1, unpenalized)"
+                    } else {
+                        "greedy"
+                    }
                 );
                 gemma_drafts.insert(n.clone(), d);
             }
@@ -16469,7 +16599,7 @@ pub fn run(
                     continue; // batch-formation hold
                 }
                 let s = &mut active[i];
-                if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.prefill_done {
+                if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.glm5_on || s.prefill_done {
                     continue;
                 }
                 if s.lane != crate::lanes::Lane::Interactive {
@@ -16944,7 +17074,7 @@ pub fn run(
                     continue;
                 }
                 let s = &mut active[i];
-                if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.prefill_done {
+                if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.glm5_on || s.prefill_done {
                     continue;
                 }
                 let li = s.lane.idx();
@@ -21052,7 +21182,14 @@ fn admit(
             == memra_engine::plan_backend::DecodeBatchProgram::Gemma
         && !lm.model.is_gemma4_e4b()
         && spec.is_none()
-        && sampler.is_greedy()
+        // GREEDY, or (MEMRA_GEMMA_SPEC_SAMPLED=1) the vendor-sampled shape through the
+        // rejection-sampling verify. Penalties are refused on both arms.
+        && (sampler.is_greedy()
+            || (gemma_sampled_spec_on()
+                && sampler.temperature() > 0.0
+                && sampler.penalty_repeat() == 1.0
+                && sampler.penalty_freq() == 0.0
+                && sampler.penalty_present() == 0.0))
         && !greedy_penalized
         && constraint.is_none()
         && !vision_req
@@ -21729,6 +21866,8 @@ fn admit(
         // the dkv below is Some ONLY when glm5_on took the restored carrier, and the
         // first spec tick consumes it together with s.cache + s.fed.
         glm5: None,
+        glm5_prime: None,
+        glm5_plain_prime: None,
         glm5_on,
         glm5_k,
         glm5_restored_dkv: glm5_prefix_restored_dkv,
@@ -22394,13 +22533,17 @@ fn prefill_tick(
         .filter(|&b| b > fed_len)
         .map(|b| b - fed_len)
         .min();
-    if !confidence_trace_enabled()
-        && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
-        && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
-        && !(eager_mono && carried && !suffix_prime)
-        && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T)
+    if s.glm5_plain_prime.is_some()
+        || (!confidence_trace_enabled()
+            && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
+            && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
+            && !(eager_mono && carried && !suffix_prime)
+            && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T))
     {
-        let take = prefill_tick_take(q, budget, eager_mono, bound_rem);
+        let take = s.glm5_plain_prime.as_ref().map_or_else(
+            || prefill_tick_take(q, budget, eager_mono, bound_rem),
+            |state| state.tokens_len(),
+        );
         if eager_mono && carried && suffix_prime {
             // ENGAGEMENT RECEIPT (lane/glm5-prefix-latent2): the deploy gate greps this —
             // a restored-turn TTFT number alone cannot distinguish the prime program from
@@ -22426,27 +22569,49 @@ fn prefill_tick(
                 s.snapshot_at,
             );
         }
-        let chunk: Vec<u32> = s.prefill_queue.drain(..take).collect();
-        // REQUEST-LEVEL seq_end (lane/tick-seg, 2026-08-07): the tokens still queued after this
-        // tick are the SAME request — pass them so the engine's arm selection is keyed to the
-        // request's end, not this tick's. Without it the tick budget (dark lanes: 256 AND
-        // SLO-headroom-capped) and the LCP-split boundary steered step35's prefill arithmetic
-        // (budgets 512/256/64 DIFFER 1.813e0 vs monolithic — tickinv35 gate).
-        // fed_len is this chunk's prompt-relative offset (vision sessions never resume, so
-        // fed counts exactly the prompt tokens already primed) — the overlay window rebases
-        // image spans to call-relative positions.
-        let ov_window = s
-            .vision
-            .as_ref()
-            .and_then(|v| v.overlay.as_ref())
-            .and_then(|o| o.window(fed_len, take));
-        let (l, _h, x) = lm.model.prime_cache_overlaid(
-            engine,
-            &chunk,
-            s.cache.as_mut().unwrap(),
-            s.prefill_queue.len(),
-            ov_window.as_ref(),
-        )?;
+        // Text-only hyper segments use the same saved trunk on both arms.
+        // Keep the queue and capture boundaries intact until this segment finishes.
+        let saved_hyper = s.glm5_plain_prime.is_some()
+            || (hyper_trunk && s.vision.is_none() && s.capture.is_none());
+        let chunk: Vec<u32> = if saved_hyper {
+            s.prefill_queue.iter().take(take).copied().collect()
+        } else {
+            s.prefill_queue.drain(..take).collect()
+        };
+        let (l, x) = if saved_hyper {
+            if s.glm5_plain_prime.is_none() {
+                let cache = s.cache.take().ok_or("hyper prefill missing carrier")?;
+                s.glm5_plain_prime =
+                    Some(
+                        lm.model
+                            .glm5_plain_prime_start(engine, cache, &chunk, q - take)?,
+                    );
+            }
+            let mut walker = lm
+                .model
+                .glm5_plain_prime_walker(engine, &mut s.glm5_plain_prime);
+            if !s.prime_service.advance(&mut walker)? {
+                return Ok(0);
+            }
+            let (cache, l, x) = s.prime_service.finish(walker)?;
+            s.cache = Some(cache);
+            s.prefill_queue.drain(..take);
+            (l, x)
+        } else {
+            let ov_window = s
+                .vision
+                .as_ref()
+                .and_then(|v| v.overlay.as_ref())
+                .and_then(|o| o.window(fed_len, take));
+            let (l, _h, x) = lm.model.prime_cache_overlaid(
+                engine,
+                &chunk,
+                s.cache.as_mut().unwrap(),
+                s.prefill_queue.len(),
+                ov_window.as_ref(),
+            )?;
+            (l, x)
+        };
         s.last_logits = l;
         // PROMPT CAPTURE (lane/embed-serve): this chunk finished the prompt — read the
         // final position off THIS call's hidden stack (later chunks would not exist).
@@ -23303,10 +23468,15 @@ fn step_session(
     }
     // Same refusal class for the glm5 route: a glm5 session owns its cache (s.cache is
     // None), so a plain step over it would decode coherent garbage from an empty context.
-    if s.glm5.is_some() {
+    // A SUSPENDED prime is the same shape: both the speculative walker state and the plain
+    // hyper segment walker hold the cache between chunks, so s.cache is None for exactly
+    // the same reason. Decode is gated on prefill_done and prefill_done cannot be set while
+    // the queue still holds the segment, so neither is reachable today; this refusal exists
+    // because "unreachable" is what the pre-glm5 version of this comment also said.
+    if s.glm5.is_some() || s.glm5_prime.is_some() || s.glm5_plain_prime.is_some() {
         return Err(
-            "plain step_session received a session holding a glm5 spec session — \
-             dispatch flag disagrees with the installed session"
+            "plain step_session received a session holding a glm5 spec session or a \
+             suspended glm5 prime: dispatch flag disagrees with the installed session"
                 .into(),
         );
     }
@@ -24021,13 +24191,27 @@ fn step_gemma_spec(
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_start();
         }
+        // The prime's boundary token is drawn under the SAME config the bursts will use, so
+        // a sampled session never opens with one greedy token (`spec_sampling_for` is the one
+        // Sampler -> SpecSampling seam; `None` keeps the greedy argmax byte for byte).
+        let boundary =
+            spec_sampling_for(&s.sampler).filter(|sp| gemma_sampled_spec_on() && !sp.pen_on());
         let sess = match s.cache.take() {
-            Some(restored) => lm
-                .model
-                .gemma_spec_session_from_restored(engine, d, restored, &s.fed, &queued)?,
-            None => lm
-                .model
-                .gemma_spec_session_new(engine, d, &queued, s.gspec_ctx)?,
+            Some(restored) => lm.model.gemma_spec_session_from_restored(
+                engine,
+                d,
+                restored,
+                &s.fed,
+                &queued,
+                boundary.as_ref(),
+            )?,
+            None => lm.model.gemma_spec_session_new(
+                engine,
+                d,
+                &queued,
+                s.gspec_ctx,
+                boundary.as_ref(),
+            )?,
         };
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
@@ -24046,9 +24230,25 @@ fn step_gemma_spec(
     let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
     let sess = s.gspec.as_mut().unwrap();
     let rounds_before = sess.rounds;
-    let (burst, dr, ac) =
-        lm.model
-            .gemma_spec_session_burst(engine, d, sess, burst_target, k, &s.params.eos)?;
+    // ARM CHOICE, once per burst and stable for the request's lifetime: the request's
+    // sampler is fixed at admission, so a session never switches walks mid-stream. `None`
+    // (temperature 0) is the greedy burst, byte-unchanged. A `Some` that carries penalties
+    // cannot reach here — admission refuses it on both arms.
+    let gsampling = spec_sampling_for(&s.sampler).filter(|sp| !sp.pen_on());
+    let (burst, dr, ac) = match gsampling.as_ref() {
+        Some(sp) if gemma_sampled_spec_on() => lm.model.gemma_spec_session_burst_sampled(
+            engine,
+            d,
+            sess,
+            burst_target,
+            k,
+            &s.params.eos,
+            sp,
+        )?,
+        _ => lm
+            .model
+            .gemma_spec_session_burst(engine, d, sess, burst_target, k, &s.params.eos)?,
+    };
     let rounds_delta = s.gspec.as_ref().unwrap().rounds - rounds_before;
     s.spec_rounds += rounds_delta as u64;
     s.spec_drafted += dr;
@@ -24459,6 +24659,20 @@ fn step_dspark_spec(
 /// per public id, EOS text never streamed, budget clamp via `spec_visible_len` (engine
 /// overshoot stays committed in the session cache, never in the worker's public vectors).
 /// Between bursts the scheduler round-robins batch chunks — the coexistence contract.
+#[derive(Debug, PartialEq, Eq)]
+enum Glm5PrimeSource {
+    Cold,
+    Restored,
+}
+
+fn glm5_prime_source(cache: bool, draft: bool) -> Result<Glm5PrimeSource, &'static str> {
+    match (cache, draft) {
+        (false, false) => Ok(Glm5PrimeSource::Cold),
+        (true, true) => Ok(Glm5PrimeSource::Restored),
+        _ => Err("GLM5 prime admission must carry both restored cache and draft KV"),
+    }
+}
+
 fn step_glm5_spec(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -24492,67 +24706,51 @@ fn step_glm5_spec(
     // restored trunk cache in s.cache (the gemma spec-on-cache-hit shape), and the dkv
     // admission rebuilt from the entry's tail rides s.glm5_restored_dkv.
     if s.glm5.is_none() {
-        let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
-        // An empty prefill queue is a finished request on the COLD arm (nothing to prime).
-        // On the RESTORED arm it is the FULL-COVER hit (memra#74): the whole prompt is
-        // already in `s.fed` and the restored trunk cache, and the boundary row rides
-        // `s.last_logits`, so there is nothing left to prime and the session starts at the
-        // boundary. Admission is what decides that shape is admissible.
-        if queued.is_empty() && s.glm5_restored_dkv.is_none() {
-            finish(s, StopReason::MaxNew);
-            return Ok(false);
-        }
-        if let Some(trace) = s.ttft.as_ref() {
-            trace.mark_prime_start();
-        }
-        // Sampled admission (T>0): the ONE Sampler->SpecSampling seam (spec_sampling_for),
-        // same as the frspec/dspark routes — None = greedy, byte-identical instrument route.
-        // The glm5 twin (`glm5_spec_sampling_for`) additionally carries a GREEDY request's
-        // penalties in (MEMRA_SPEC_PENALTY=1, lane/spec-exclusions-20260902).
-        let sess = match s.glm5_restored_dkv.take() {
-            Some(dkv) => {
-                let restored = s
-                    .cache
-                    .take()
-                    .ok_or("glm5 restored dkv without a carrier cache (admission literal bug)")?;
-                lm.model
-                    .glm5_spec_session_from_restored(
-                        engine,
-                        restored,
-                        &s.fed,
-                        &queued,
-                        &s.last_logits,
-                        dkv,
-                        s.gspec_ctx,
-                        glm5_spec_sampling_for(&s.sampler),
-                    )
-                    // A restored-arm refusal is an invariant break (admission pre-validated
-                    // the shape): fail loudly rather than silently switching numeric
-                    // programs mid-request — the dspark law, same as the cold arm below.
-                    .map_err(|err| format!("glm5 spec restore prime failed: {err}"))?
+        if s.glm5_prime.is_none() {
+            let queued: Vec<u32> = s.prefill_queue.iter().copied().collect();
+            if queued.is_empty() && s.glm5_restored_dkv.is_none() {
+                finish(s, StopReason::MaxNew);
+                return Ok(false);
             }
-            None => match lm.model.glm5_spec_session_new(
-                engine,
-                &queued,
-                s.gspec_ctx,
-                glm5_spec_sampling_for(&s.sampler),
-            ) {
-                Ok(sess) => sess,
-                Err(err) => {
-                    // Prime-time refusal (ctx shape, alloc failure): fail the request loudly
-                    // rather than silently switching numeric programs mid-request — admission
-                    // is where the plain fallback lives (the dspark law).
-                    return Err(format!("glm5 spec prime failed: {err}").into());
-                }
-            },
-        };
+            if let Some(trace) = s.ttft.as_ref() {
+                trace.mark_prime_start();
+            }
+            // Admission supplies the restored carrier; suffix work always enters
+            // this same pending walker, never a nested synchronous constructor.
+            let source = glm5_prime_source(s.cache.is_some(), s.glm5_restored_dkv.is_some())?;
+            s.glm5_prime = Some(match source {
+                Glm5PrimeSource::Restored => lm.model.glm5_prime_restored_start(
+                    engine,
+                    s.cache.take().ok_or("GLM5 restore missing carrier")?,
+                    &s.fed,
+                    &queued,
+                    &s.last_logits,
+                    s.glm5_restored_dkv
+                        .take()
+                        .ok_or("GLM5 restored draft missing")?,
+                    s.gspec_ctx,
+                    glm5_spec_sampling_for(&s.sampler),
+                )?,
+                Glm5PrimeSource::Cold => lm.model.glm5_prime_start(
+                    engine,
+                    &queued,
+                    s.gspec_ctx,
+                    glm5_spec_sampling_for(&s.sampler),
+                )?,
+            });
+        }
+        let mut walker = lm.model.glm5_prime_walker(engine, &mut s.glm5_prime);
+        if !s.prime_service.advance(&mut walker)? {
+            return Ok(true);
+        }
+        let sess = s.prime_service.finish(walker)?;
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
         if prof_on {
             session_ms = Some(t_step.elapsed().as_secs_f64() * 1e3);
         }
-        for &tok in &queued {
+        for tok in s.prefill_queue.drain(..) {
             s.fed.push(tok);
             s.sampler.accept(tok);
         }
@@ -29797,8 +29995,8 @@ mod tests {
             "the session literal must carry the restored drafter KV"
         );
         assert!(
-            live_pre_tests.contains("glm5_spec_session_from_restored("),
-            "the first spec tick must consume the restored carrier via from_restored"
+            live_pre_tests.contains("glm5_prime_restored_start("),
+            "the first spec tick must install a walker over the restored carrier"
         );
         assert!(
             live_pre_tests.contains("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);"),
@@ -35550,5 +35748,23 @@ mod vision_placement_admissibility_tests {
             step_load < call && call < ready,
             "placement is decided after every tower has loaded and before readiness"
         );
+    }
+}
+
+#[cfg(test)]
+mod glm5_prime_routing_tests {
+    use super::*;
+    #[test]
+    fn restored_suffix_keeps_the_carrier_instead_of_cold_priming() {
+        assert_eq!(
+            glm5_prime_source(true, true).unwrap(),
+            Glm5PrimeSource::Restored
+        );
+        assert_eq!(
+            glm5_prime_source(false, false).unwrap(),
+            Glm5PrimeSource::Cold
+        );
+        assert!(glm5_prime_source(true, false).is_err());
+        assert!(glm5_prime_source(false, true).is_err());
     }
 }

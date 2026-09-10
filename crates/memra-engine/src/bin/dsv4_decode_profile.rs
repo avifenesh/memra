@@ -94,6 +94,17 @@ fn main() {
     );
     let arm = ProfileArm::parse(&args);
     let controlled_arm = arm.controlled();
+    if controlled_arm {
+        // Attribution arms hold the historical dense/norm program fixed.
+        unsafe {
+            std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
+            std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+            std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
+            std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+            std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
+        }
+    }
+
     assert_eq!(
         dsv4_sampler_order().expect("sampler order"),
         Dsv4SamplerOrder::Radix

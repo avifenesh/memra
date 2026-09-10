@@ -111,7 +111,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let widths = [1usize, k.saturating_sub(1).max(1), k, k + 1, 32];
     for &w in &widths {
         let mut d = load_draft_isolated(&e, &dpath, ranks, &format!("w{w}"))?;
-        let mut sess = model.gemma_spec_session_new(&e, &mut d, &toks, ctx)?;
+        // greedy battery: no SpecSampling, the boundary token stays argmax (the banked
+        // exactness receipts; the sampled boundary is gemma_sample_gate's own arm).
+        let mut sess = model.gemma_spec_session_new(&e, &mut d, &toks, ctx, None)?;
         let mut stream: Vec<u32> = Vec::new();
         let mut bursts = 0usize;
         while stream.len() < n_new {
@@ -168,7 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---- gate3: demote mid-burst -> plain continuation == plain greedy ----
     {
         let mut d = load_draft_isolated(&e, &dpath, ranks, "demote")?;
-        let mut sess = model.gemma_spec_session_new(&e, &mut d, &toks, ctx)?;
+        let mut sess = model.gemma_spec_session_new(&e, &mut d, &toks, ctx, None)?;
         let (head, _dr, _ac) = model.gemma_spec_session_burst(&e, &mut d, &mut sess, 16, k, &[])?;
         check(
             "gate3 precondition: cache rows == committed at demote",

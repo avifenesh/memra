@@ -98,6 +98,13 @@ fn gemm_m_ab(gpu: &Dsv4Gpu, x_row: &[f32], n: usize, kdim: usize, w_name: &str) 
 }
 
 fn main() {
+    // Freeze the historical numeric class before any model or worker exists.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
+    }
+
     // item 3 boot refusal (hermes a4e3d9a8eab4cf17 shape): this probe's instrument
     // reads the RESIDENT bf16 slabs, which are host-staged under the fp8 dense arm —
     // one-line Err at boot, never a post-load abort. Keyed on the RESOLVED arm, not the

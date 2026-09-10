@@ -1818,6 +1818,7 @@ impl DflashDraft {
                     blk: None,
                     rp4: None,
                     f16: None,
+                    a4: None,
                 });
             }
             let q = encode_q8_0(&f32s);
@@ -1834,6 +1835,7 @@ impl DflashDraft {
                 blk: None,
                 rp4: None,
                 f16: None,
+                a4: None,
             })
         };
         let hidden = cfg.hidden as u64;
@@ -1898,6 +1900,7 @@ impl DflashDraft {
                     blk: None,
                     rp4: None,
                     f16: None,
+                    a4: None,
                 }
             };
             Some(MarkovHead {
@@ -6719,13 +6722,19 @@ mod dflash2_tests {
                 .join("\n")
         };
 
-        // 1. THE CAUSE. `glm5_spec_session_from_restored` orders the head/drafter engine
-        //    behind the caller BEFORE the suffix branch, so it covers the full-cover arm
-        //    (which has no prime, and therefore no incidental host sync, to hide behind).
+        // 1. THE CAUSE. `glm5_prime_restored_start` (what the worker actually calls, and what
+        //    the `glm5_spec_session_from_restored` OFF-arm wrapper drives) orders the
+        //    head/drafter engine behind the caller BEFORE the suffix branch, so it covers the
+        //    full-cover arm (which has no prime, and therefore no incidental host sync, to hide
+        //    behind). Since lane/glm5-prime-yield the branch itself lives one level down, in
+        //    `Glm5PrimeState::restored`, so this gate asserts BOTH halves: nothing in the
+        //    builder branches on the suffix before the ordering, and the branch really is in
+        //    the state constructor the ordering hands off to. Splitting them the other way
+        //    (ordering after the handoff, or a suffix branch reintroduced above it) fails here.
         let glm5 = strip(include_str!("glm_spec.rs"));
         let body = glm5
-            .find("pub fn glm5_spec_session_from_restored(")
-            .expect("the restored-session builder exists");
+            .find("pub fn glm5_prime_restored_start(")
+            .expect("the restored-prime builder exists");
         let end = glm5[body..]
             .find("fn glm5_d2t(")
             .expect("the builder's end anchor exists")
@@ -6737,18 +6746,42 @@ mod dflash2_tests {
         let order = scope
             .find("crate::pp::PpNRt::order_engine_behind(e, eh)?;")
             .expect(
-                "the restored-session builder must order the head engine's own stream behind \
+                "the restored-prime builder must order the head engine's own stream behind \
                  the caller (fence_stages_behind is the WRONG seam: it orders enter-scope \
                  stage streams, and the draft phase never enters a stage)",
             );
-        let branch = scope
-            .find("let (logits_s, tap_rows, prefix_capture) = if suffix.is_empty()")
-            .expect("the full-cover branch exists");
+        let handoff = scope
+            .find("Glm5PrimeState::restored(")
+            .expect("the builder hands the restored halves to the prime state");
         assert!(
-            eh < order && order < branch,
-            "the ordering must sit between the head-engine binding and the full-cover/suffix \
-             branch: after it so it names the right engine, before it so the prime-free arm \
-             is covered"
+            eh < order && order < handoff,
+            "the ordering must sit between the head-engine binding and the handoff into the \
+             prime state: after it so it names the right engine, before it so the prime-free \
+             full-cover arm is covered"
+        );
+        // Unconditional: at the function's own body indentation, never tucked inside the
+        // fullcover-door refusal above it or any other arm. A full-cover-only or suffix-only
+        // ordering is exactly the shape memra#95 fixed.
+        assert!(
+            scope[..order].ends_with("\n        "),
+            "the ordering must be unconditional in the builder body, not nested inside a branch"
+        );
+        let prime = strip(include_str!("glm_spec/prime.rs"));
+        let live_prime = &prime[..prime
+            .find("#[cfg(test)]")
+            .expect("the prime adapter has a test module")];
+        let restored = live_prime
+            .find("pub(super) fn restored(")
+            .expect("the restored prime-state constructor exists");
+        let restored_end = live_prime[restored..]
+            .find("pub fn boundary_logits(")
+            .expect("the constructor's end anchor exists")
+            + restored;
+        assert!(
+            live_prime[restored..restored_end].contains("let trunk = if suffix.is_empty() {"),
+            "the full-cover/suffix branch must live in `Glm5PrimeState::restored`, downstream \
+             of the ordering above; if it moves back up, the `order < handoff` assertion no \
+             longer proves the prime-free arm is covered"
         );
 
         // 1b. The helper it calls really orders the ENGINE streams, not the stage streams.

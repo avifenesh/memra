@@ -188,6 +188,26 @@ pub struct Glm5TpRt {
 }
 
 impl Glm5TpRt {
+    /// Complete both ranks before a saved prime returns to the worker.
+    pub(crate) fn prime_completion_fence(
+        &self,
+        root: &Engine,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let engines: Vec<_> = std::iter::once(root).chain(self.peers.iter()).collect();
+        for e in &engines {
+            let _main = e.gpu.enter_main()?;
+            e.stream().synchronize()?;
+        }
+        let guard = self.ar.lock().map_err(|_| "TP prime AR link poisoned")?;
+        if let Some(link) = guard.as_ref() {
+            let errors = link.barrier_errors(&engines)?;
+            if errors.iter().any(|&e| e != 0) {
+                return Err(format!("GLM5 prime rank rendezvous failed: {errors:?}").into());
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(devices: &[usize]) -> Result<Self, Box<dyn std::error::Error>> {
         let root_dev = devices[0];
         let peer_devs: Vec<usize> = devices[1..].to_vec();
@@ -822,11 +842,19 @@ fn shard_cols(
             rp4,
             blk,
             f16,
+            a4,
             #[cfg(memra_cutlass)]
                 cutlass: _,
         } => {
             if *rp || fp8.is_some() || rp4.is_some() || blk.is_some() || f16.is_some() {
                 return Err("glm5-tp shard cols: a mirror layout is unwired for K slices".into());
+            }
+            if a4.is_some() {
+                return Err(
+                    "glm5-tp shard cols: a calibrated prefill activation scale is unwired \
+                            for K slices — sharding the weight does not shard its global scale"
+                        .into(),
+                );
             }
             if ne.len() != 2 {
                 return Err("glm5-tp shard cols: quantized K slices are 2D-only".into());
@@ -867,6 +895,7 @@ fn shard_cols(
                 rp4: None,
                 blk: None,
                 f16: None,
+                a4: None,
                 #[cfg(memra_cutlass)]
                 cutlass: None,
             })
@@ -923,6 +952,7 @@ fn shard_rows(
             rp4,
             blk,
             f16,
+            a4,
             #[cfg(memra_cutlass)]
             cutlass,
         } => {
@@ -939,6 +969,13 @@ fn shard_rows(
                     "glm5-tp shard: a decode/prefill mirror (fp8/rp4/blk/f16) is present on a \
                      TP-armed tensor — mirrors are unwired for shards in v1; disable the \
                      mirror door for this load"
+                        .into(),
+                );
+            }
+            if a4.is_some() {
+                return Err(
+                    "glm5-tp shard: a calibrated prefill activation scale is unwired for \
+                            shards — sharding the weight does not shard its global scale"
                         .into(),
                 );
             }
@@ -969,6 +1006,7 @@ fn shard_rows(
                 rp4: None,
                 blk: None,
                 f16: None,
+                a4: None,
                 #[cfg(memra_cutlass)]
                 cutlass: None,
             })

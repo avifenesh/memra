@@ -56,6 +56,16 @@ fn census(gpu: &Dsv4Gpu, s: &DecodeState) {
     }
 }
 fn main() {
+    // Freeze this historical instrument independently of the newer defaults.
+    // This is process startup, before any model or worker threads exist.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
+        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
+    }
+
     // Missing wrappers fail before model allocation. They are linked only into this gate.
     let prepare: unsafe extern "C" fn() =
         unsafe { std::mem::transmute(symbol(c"memra_launch_boundary_prepare")) };

@@ -2052,6 +2052,9 @@ impl ResidentTpKvCache {
 }
 
 pub struct Cache {
+    /// Drop first: its engine-owned destructor fences replay before any session
+    /// KV or recurrent allocation is released, including cancellation/error paths.
+    pub qwen_prime_graph: Option<Box<dyn std::any::Any + Send>>,
     pub kv: Vec<Option<KvLayer>>,
     pub recur: Vec<Option<RecurLayer>>,
     /// Per-layer MLA latent KV plane (`StatePlan::LatentKvCache`). `None` on every non-MLA
@@ -2833,6 +2836,7 @@ impl Cache {
             hc_taps: None,
             glm5_decode_graph: None,
             glm5_tp_sym_graph: None,
+            qwen_prime_graph: None,
             last_logits_dev: None,
         })
     }
@@ -3405,6 +3409,7 @@ mod tp_transaction_tests {
             hc_taps: None,
             glm5_decode_graph: None,
             glm5_tp_sym_graph: None,
+            qwen_prime_graph: None,
             last_logits_dev: None,
         };
         assert!(!cache.has_swa_ring());

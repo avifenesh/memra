@@ -16,12 +16,15 @@ pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
 pub mod llama_dense;
+/// Speech packs use their own config normalization until the CLI accepts audio artifacts.
+pub mod nemotron_rnnt;
 pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
 pub mod qwen3_moe;
 pub mod qwen4_exp;
 pub mod step35;
+pub mod whisper;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigLayout {
@@ -37,7 +40,22 @@ pub enum TokenizerSource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TemplateContract {
+    /// The artifact carries its own chat dialect, as a `tokenizer_config.json`
+    /// `chat_template` or a `chat_template.jinja`. Absent means FAIL.
     ArtifactRequired,
+    /// The family's chat dialect is CODE in this engine, because the vendor ships it
+    /// as code and no artifact in the family carries a template.
+    /// deepseek-v4 is the case this exists for: `deepseek-ai/DeepSeek-V4-Flash-0731`
+    /// at its pinned revision ships `encoding/encoding_dsv4.py` and NO template in any
+    /// form, so demanding one from the artifact refuses a correct artifact forever.
+    ///
+    /// This is NOT a fallback and must never become one. It names the renderer that owns
+    /// the dialect, and the gate is two-sided: a family declaring a renderer must also
+    /// refuse an artifact that carries a template of its own, because a template over an
+    /// engine-owned dialect is a franken artifact whose renders silently disagree with
+    /// the engine's. The renderer's own byte oracle is the vendor's `encoding/tests`
+    /// fixtures, gated in memra-server and memra-tokenizer, not here.
+    EngineRenderer(&'static str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -183,7 +201,15 @@ mod tests {
             assert!(!pack.family.is_empty());
             assert!(!pack.aliases.is_empty());
             assert!(!pack.tokenizer_sources.is_empty());
-            assert_eq!(pack.template, TemplateContract::ArtifactRequired);
+            // Every pack declares WHERE its chat dialect comes from, and a renderer arm
+            // must name the renderer rather than leaving it blank: a nameless renderer
+            // contract is indistinguishable from a fallback.
+            match pack.template {
+                TemplateContract::ArtifactRequired => {}
+                TemplateContract::EngineRenderer(renderer) => {
+                    assert!(!renderer.is_empty(), "{}", pack.family)
+                }
+            }
             assert_eq!(
                 pack.gates,
                 &[

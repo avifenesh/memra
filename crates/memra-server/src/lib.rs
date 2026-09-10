@@ -12347,15 +12347,55 @@ mod tests {
         dsv4_run_fixture_dir("fixtures-0731", chat::Dsv4Encoding::V0731, 40);
     }
 
-    #[test]
-    fn dsv4_artifact_fixtures_are_byte_identical() {
-        // The NVFP4 artifact's encoding/tests are AUTHORITATIVE (SEMANTICS.md §6). Case 1 has
-        // a top-level `tools` merged onto messages[0] (test_encoding_dsv4.py); case 3 carries
-        // tools on its developer message; think mode is thinking for 1-3, chat for 4.
-        let base = format!(
+    /// The NVFP4 artifact's `encoding/tests` are AUTHORITATIVE (SEMANTICS.md §6), and are the
+    /// vendor's own bytes: byte-identical between the preview and 0731 artifacts, and to
+    /// upstream `deepseek-ai/DeepSeek-V4-Flash-0731` @7872f01b.
+    fn dsv4_artifact_dir() -> String {
+        format!(
             "{}/../../research/dsv4-template-20260818/ref/artifact-encoding/tests",
             env!("CARGO_MANIFEST_DIR")
-        );
+        )
+    }
+
+    fn dsv4_artifact_input(n: u32) -> serde_json::Value {
+        let path = format!("{}/test_input_{n}.json", dsv4_artifact_dir());
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap())
+            .unwrap_or_else(|e| panic!("parse {path}: {e}"))
+    }
+
+    /// One vendor pair as (turns, expected bytes). Case 1 has a top-level `tools` merged onto
+    /// messages[0] (test_encoding_dsv4.py); case 3 carries tools on its developer message.
+    fn dsv4_artifact_case(n: u32) -> (Vec<TmplTurn>, String) {
+        let td = dsv4_artifact_input(n);
+        let (messages, tools) = if td.is_object() {
+            (td["messages"].clone(), td.get("tools").cloned())
+        } else {
+            (td.clone(), None)
+        };
+        let mut turns: Vec<TmplTurn> = Vec::new();
+        for (i, msg) in messages.as_array().unwrap().iter().enumerate() {
+            let mut t = dsv4_turn(msg);
+            if i == 0
+                && let Some(tl) = &tools
+            {
+                t.tools = tl
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|x| x.get("function").map(json_to_val))
+                    .collect();
+            }
+            turns.push(t);
+        }
+        let expected =
+            std::fs::read_to_string(format!("{}/test_output_{n}.txt", dsv4_artifact_dir()))
+                .unwrap();
+        (turns, expected)
+    }
+
+    #[test]
+    fn dsv4_artifact_fixtures_are_byte_identical() {
+        // Think mode is thinking for 1-3, chat for 4.
         let tmpl = dsv4_sentinel();
         for (n, think) in [
             (1u32, ThinkMode::Think),
@@ -12363,31 +12403,7 @@ mod tests {
             (3, ThinkMode::Think),
             (4, ThinkMode::NoThink),
         ] {
-            let td: serde_json::Value = serde_json::from_str(
-                &std::fs::read_to_string(format!("{base}/test_input_{n}.json")).unwrap(),
-            )
-            .unwrap();
-            let (messages, tools) = if td.is_object() {
-                (td["messages"].clone(), td.get("tools").cloned())
-            } else {
-                (td.clone(), None)
-            };
-            let mut turns: Vec<TmplTurn> = Vec::new();
-            for (i, msg) in messages.as_array().unwrap().iter().enumerate() {
-                let mut t = dsv4_turn(msg);
-                if i == 0
-                    && let Some(tl) = &tools
-                {
-                    t.tools = tl
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .filter_map(|x| x.get("function").map(json_to_val))
-                        .collect();
-                }
-                turns.push(t);
-            }
-            let expected = std::fs::read_to_string(format!("{base}/test_output_{n}.txt")).unwrap();
+            let (turns, expected) = dsv4_artifact_case(n);
             // The 4 authoritative fixtures are byte-identical between the preview and 0731
             // artifacts (verified by diff, ENCODING-DIFF.md) and carry no reasoning_effort,
             // so they must render identically under BOTH encoding revisions.
@@ -12408,6 +12424,154 @@ mod tests {
                     "artifact fixture {n} diverged from the oracle under {encoding:?}"
                 );
             }
+        }
+    }
+
+    /// The four vendor pairs, rendered through the shape a CUSTOMER request actually takes.
+    ///
+    /// The gate above renders them through the SENTINEL template. No artifact in this family
+    /// carries a template: `tiyuvta/DeepSeek-V4-Flash-0731-NVFP4` @bafd09f8 has no
+    /// `chat_template.jinja` and no `tokenizer_config.json` `chat_template` across its whole
+    /// 77-file manifest, and neither does upstream `deepseek-ai/DeepSeek-V4-Flash-0731`
+    /// @7872f01b. The dialect ships as `encoding/encoding_dsv4.py`, so the serve path hands
+    /// the renderer `chat_template = None` plus the config-census `Dsv4Encoding`
+    /// (`Tokenizer::apply_chat_template_tools_ex`, the call `dsv4_serve::prepare` makes), and
+    /// a gate that only ever passes a template proves nothing about what we serve. This one
+    /// pins the no-template shape to the same vendor bytes, and pins the negative directly:
+    /// no ChatML framing in the render, DeepSeek turn markers present.
+    ///
+    /// What these four cover, and what they do not: a full tool cycle with typed DSML
+    /// arguments and a merged tool result (1), multi-turn thinking with the earlier turn's
+    /// reasoning dropped (2), a developer turn carrying its own tools plus a latest_reminder
+    /// (3), chat mode with a latest_reminder and a `task` token (4). They carry NO
+    /// reasoning-effort rung, no response_format, no `wo_eos`, no multi-result call-order
+    /// sorting and no chat-mode tool cycle; those live in the generated matrices
+    /// (`dsv4_0731_fixtures_match_the_oracle`, 40+ cases off the same oracle python).
+    #[test]
+    fn dsv4_artifact_fixtures_render_with_no_template_at_all() {
+        for (n, think) in [
+            (1u32, ThinkMode::Think),
+            (2, ThinkMode::Think),
+            (3, ThinkMode::Think),
+            (4, ThinkMode::NoThink),
+        ] {
+            let (turns, expected) = dsv4_artifact_case(n);
+            for encoding in [chat::Dsv4Encoding::Preview, chat::Dsv4Encoding::V0731] {
+                let got = chat::apply_chat_template_tools_ex(
+                    None,
+                    &turns,
+                    true,
+                    &[],
+                    &[],
+                    think,
+                    None,
+                    Some(encoding),
+                )
+                .unwrap();
+                assert_eq!(
+                    got, expected,
+                    "artifact fixture {n} diverged from the oracle with no template under \
+                     {encoding:?}"
+                );
+                for chatml in ["<|im_start|>", "<|im_end|>"] {
+                    assert!(
+                        !got.contains(chatml),
+                        "artifact fixture {n} rendered the ChatML marker {chatml}: the \
+                         no-template path fell back instead of dispatching on the encoding"
+                    );
+                }
+                assert!(
+                    got.contains("<\u{ff5c}Assistant\u{ff5c}>")
+                        && got.contains("<\u{ff5c}begin\u{2581}of\u{2581}sentence\u{ff5c}>"),
+                    "artifact fixture {n} is missing the DeepSeek turn markers"
+                );
+                if let Some(dir) = std::env::var_os("MEMRA_DSV4_RENDER_DUMP") {
+                    let dir = std::path::Path::new(&dir);
+                    std::fs::create_dir_all(dir).unwrap();
+                    std::fs::write(dir.join(format!("render-{n}-{encoding:?}.txt")), &got).unwrap();
+                }
+            }
+            // RED ARM. Without the encoding there is no dialect to dispatch on and no template
+            // to detect one from, so the renderer produces generic ChatML: fluent bytes in the
+            // wrong wrapper, which is the exact failure this gate exists to catch. If this ever
+            // stops differing, the assertions above have gone vacuous.
+            let chatml =
+                chat::apply_chat_template_tools_ex(None, &turns, true, &[], &[], think, None, None);
+            match chatml {
+                Ok(chatml) => {
+                    assert_ne!(
+                        chatml, expected,
+                        "fixture {n}: the no-dialect render matched the vendor oracle, so the \
+                         gate above proves nothing"
+                    );
+                    assert!(
+                        chatml.contains("<|im_start|>"),
+                        "fixture {n}: the no-dialect render is not the ChatML fallback"
+                    );
+                    if let Some(dir) = std::env::var_os("MEMRA_DSV4_RENDER_DUMP") {
+                        let dir = std::path::Path::new(&dir);
+                        std::fs::create_dir_all(dir).unwrap();
+                        std::fs::write(dir.join(format!("red-arm-{n}.txt")), &chatml).unwrap();
+                    }
+                }
+                // Fixtures carrying tool features are refused outright without a dialect
+                // ("no tools branch"), which is the same finding one step earlier.
+                Err(error) => assert!(
+                    error.contains("tools branch"),
+                    "fixture {n}: unexpected no-dialect error {error}"
+                ),
+            }
+        }
+    }
+
+    /// The same bytes again, but from the OpenAI wire through `build_chat_request` — the whole
+    /// customer path for the two pairs that ARE expressible on our surface. Pairs 3 and 4 are
+    /// not: `developer`-carried tools, `latest_reminder` and the `task` head are internal
+    /// pipeline shapes with no field on the chat-completions surface, so they stay on the
+    /// renderer entry above rather than being faked into a request.
+    #[test]
+    fn dsv4_artifact_tool_cycle_renders_from_the_openai_wire() {
+        let caps = ModelCaps {
+            chat_ok: true,
+            dsv4: true,
+            tools_branch: true,
+            context_length: 1_048_576,
+            ..Default::default()
+        };
+        for n in [1u32, 2] {
+            let td = dsv4_artifact_input(n);
+            let expected =
+                std::fs::read_to_string(format!("{}/test_output_{n}.txt", dsv4_artifact_dir()))
+                    .unwrap();
+            let (messages, tools) = if td.is_object() {
+                (td["messages"].clone(), td.get("tools").cloned())
+            } else {
+                (td.clone(), None)
+            };
+            let mut body = json!({"model": "dsv4", "messages": messages});
+            if let Some(tools) = tools {
+                body["tools"] = tools;
+            }
+            let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
+            let (tx, _rx) = worker::event_channel();
+            let plan =
+                build_chat_request(req, Some(&caps), tx, lanes::Lane::Interactive, None).unwrap();
+            let got = chat::apply_chat_template_tools_ex(
+                None,
+                &plan.request.chat_turns,
+                true,
+                &plan.request.tools_json,
+                &plan.request.tools_struct,
+                plan.request.think,
+                plan.request.reasoning_effort.as_deref(),
+                Some(chat::Dsv4Encoding::V0731),
+            )
+            .unwrap();
+            assert_eq!(
+                got, expected,
+                "artifact fixture {n} diverged from the oracle through the serve pipeline"
+            );
+            assert!(!got.contains("<|im_start|>"), "fixture {n} rendered ChatML");
         }
     }
 

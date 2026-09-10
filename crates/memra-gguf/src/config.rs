@@ -99,7 +99,12 @@ impl Arch {
             // GLM-5.3-Flash (HF `Glm5NextForConditionalGeneration`): the VL wrapper model_type
             // is `glm5_next`, text_config's is `glm5_next_text` — same text architecture.
             "glm5_next" | "glm5_next_text" => "glm5-next",
-            "gemma4" | "gemma4_text" => "gemma4",
+            // Gemma-4 dense text decoder. The 12B "Unified" checkpoint declares
+            // `gemma4_unified` / `gemma4_unified_text`: field-for-field the same text
+            // program (QKNorm, p-RoPE 0.25 on global, V=K globals, 5:1 local:global,
+            // softcap 30) at 48 layers / hidden 3840 / 16 heads. Only its multimodal
+            // front end differs, and that front end is dropped (see the vision dispatch).
+            "gemma4" | "gemma4_text" | "gemma4_unified" | "gemma4_unified_text" => "gemma4",
             // Mistral dense (MistralForCausalLM) is the llama execution program: RMSNorm,
             // GQA full attention, rope over the whole head, SwiGLU, no QK-norm, no biases.
             "llama" | "mistral" => "llama",
@@ -1101,6 +1106,7 @@ impl MlaConfig {
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub arch: Arch,
+    pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
     pub name: String,
     pub n_layer: u32,
     pub n_embd: u32,
@@ -1559,6 +1565,8 @@ impl ModelConfig {
 
         ModelConfig {
             arch,
+            prefill_activation: crate::model_packs::qwen35::activation::PrefillFp4::from_gguf(g)
+                .unwrap_or_else(|error| panic!("{error}")),
             window_hint: u("attention.sliding_window"),
             // GGUF spells llama3 rope scaling as per-frequency factors, not a type string;
             // `rope_factors` carries them and the packs that read them declare it.
@@ -2292,6 +2300,7 @@ impl ModelConfig {
 
         ModelConfig {
             arch,
+            prefill_activation: None,
             window_hint: c.sliding_window,
             rope_scaling_hint: c.rope_scaling_type.clone(),
             name: c.name.clone().unwrap_or_default(),
@@ -3224,6 +3233,21 @@ impl HfConfig {
                 ),
                 video_end_token_id: req_u(top.u32("video_end_token_id"), "video_end_token_id"),
             });
+        } else if top
+            .object("vision_config")
+            .and_then(|v| v.string("model_type"))
+            .as_deref()
+            == Some("gemma4_unified_vision")
+        {
+            // Gemma-4 12B "Unified" is ENCODER-FREE: raw image patches (48px) and audio
+            // waveforms project straight into the decoder through lightweight linear layers,
+            // so its `vision_config` carries mm_embed_dim / num_soft_tokens / output_proj_dims
+            // and NONE of the tower fields the factored gemma-4 tower reads. Reading it through
+            // the tower's key names would fabricate a 16-layer 768-wide tower out of defaults —
+            // the exact silent-wrong-plan class lane/glm5-vision paid for. The unified front end
+            // is a distinct semantic program with no memra implementation, so it is DROPPED
+            // here: the text decoder loads, image/audio input is refused at the surface.
+            cfg.vision = None;
         } else {
             cfg.vision = top.object("vision_config").map(|vision| VisionConfig {
                 hidden_size: vision.u32("hidden_size").unwrap_or(768),

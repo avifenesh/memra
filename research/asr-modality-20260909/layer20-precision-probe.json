@@ -1,0 +1,232 @@
+{
+  "layer": 20,
+  "input_sha256": "80d978dd137d1d79a6dd8bf23190bdcfa8ef85eb9cd5639be9da834174b4bbf2",
+  "input_shape": [
+    1,
+    1500,
+    1280
+  ],
+  "scope": "isolated HF block on fixed synthetic two-second clip, FP32 activations in every arm",
+  "generator_sha256": "e66e26255e63c50e4cbf02d2ce6a690a4d431bee91b316a2dc15fced77faebc9",
+  "profiles": [
+    {
+      "profile": "f32",
+      "rounded_tensors": [],
+      "stages": [
+        {
+          "stage": "self_attn_layer_norm",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.q_proj",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.k_proj",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.v_proj",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.out_proj",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "final_layer_norm",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "fc1",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "fc2",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "output",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        }
+      ]
+    },
+    {
+      "profile": "all_matrix_f16",
+      "rounded_tensors": [
+        "fc1.weight",
+        "fc2.weight",
+        "self_attn.k_proj.weight",
+        "self_attn.out_proj.weight",
+        "self_attn.q_proj.weight",
+        "self_attn.v_proj.weight"
+      ],
+      "stages": [
+        {
+          "stage": "self_attn_layer_norm",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.q_proj",
+          "max_abs": 0.0008552074432373047,
+          "mean_abs": 6.064427725505084e-05
+        },
+        {
+          "stage": "self_attn.k_proj",
+          "max_abs": 0.0014223158359527588,
+          "mean_abs": 7.202873530331999e-05
+        },
+        {
+          "stage": "self_attn.v_proj",
+          "max_abs": 0.0003055483102798462,
+          "mean_abs": 2.2909345716470852e-05
+        },
+        {
+          "stage": "self_attn.out_proj",
+          "max_abs": 7.942318916320801e-05,
+          "mean_abs": 1.0633886631694622e-05
+        },
+        {
+          "stage": "final_layer_norm",
+          "max_abs": 0.00019459426403045654,
+          "mean_abs": 2.1459980416693725e-05
+        },
+        {
+          "stage": "fc1",
+          "max_abs": 0.002193450927734375,
+          "mean_abs": 5.4244585044216365e-05
+        },
+        {
+          "stage": "fc2",
+          "max_abs": 0.09228515625,
+          "mean_abs": 2.086637141474057e-05
+        },
+        {
+          "stage": "output",
+          "max_abs": 0.09228515625,
+          "mean_abs": 2.2940941562410444e-05
+        }
+      ]
+    },
+    {
+      "profile": "attention_f16",
+      "rounded_tensors": [
+        "self_attn.k_proj.weight",
+        "self_attn.out_proj.weight",
+        "self_attn.q_proj.weight",
+        "self_attn.v_proj.weight"
+      ],
+      "stages": [
+        {
+          "stage": "self_attn_layer_norm",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.q_proj",
+          "max_abs": 0.0008552074432373047,
+          "mean_abs": 6.064427725505084e-05
+        },
+        {
+          "stage": "self_attn.k_proj",
+          "max_abs": 0.0014223158359527588,
+          "mean_abs": 7.202873530331999e-05
+        },
+        {
+          "stage": "self_attn.v_proj",
+          "max_abs": 0.0003055483102798462,
+          "mean_abs": 2.2909345716470852e-05
+        },
+        {
+          "stage": "self_attn.out_proj",
+          "max_abs": 7.942318916320801e-05,
+          "mean_abs": 1.0633886631694622e-05
+        },
+        {
+          "stage": "final_layer_norm",
+          "max_abs": 0.00019459426403045654,
+          "mean_abs": 2.1459980416693725e-05
+        },
+        {
+          "stage": "fc1",
+          "max_abs": 0.0007818937301635742,
+          "mean_abs": 2.102998405462131e-05
+        },
+        {
+          "stage": "fc2",
+          "max_abs": 0.01092529296875,
+          "mean_abs": 3.196296347596217e-06
+        },
+        {
+          "stage": "output",
+          "max_abs": 0.01092529296875,
+          "mean_abs": 9.856713404587936e-06
+        }
+      ]
+    },
+    {
+      "profile": "ffn_f16",
+      "rounded_tensors": [
+        "fc1.weight",
+        "fc2.weight"
+      ],
+      "stages": [
+        {
+          "stage": "self_attn_layer_norm",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.q_proj",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.k_proj",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.v_proj",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "self_attn.out_proj",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "final_layer_norm",
+          "max_abs": 0.0,
+          "mean_abs": 0.0
+        },
+        {
+          "stage": "fc1",
+          "max_abs": 0.0022125244140625,
+          "mean_abs": 4.9635476898401976e-05
+        },
+        {
+          "stage": "fc2",
+          "max_abs": 0.09295654296875,
+          "mean_abs": 2.0602779841283336e-05
+        },
+        {
+          "stage": "output",
+          "max_abs": 0.09295654296875,
+          "mean_abs": 2.0602794393198565e-05
+        }
+      ]
+    }
+  ]
+}

@@ -122,8 +122,8 @@ jobs:
           version=$(cargo metadata --format-version 1 --no-deps \
             | python3 -c "import json,sys; m=json.load(sys.stdin); print(next(p['version'] for p in m['packages'] if p['name']=='memra-server'))")
           echo "publishing workspace version $version"
-          for crate in memra-gguf memra-reference memra-kv memra-runtime memra-sampling \
-                       memra-tokenizer memra-validate memra-engine memra-lanes memra-server \
+          for crate in memra-gguf memra-tokenizer memra-reference memra-kv memra-runtime \
+                       memra-sampling memra-validate memra-engine memra-lanes memra-server \
                        memra-cli; do
             if curl -sf "https://crates.io/api/v1/crates/$crate/$version" \
                  -A "memra-publish-workflow (github.com/avifenesh/memra)" | grep -q '"version"'; then

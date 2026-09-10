@@ -1,0 +1,45 @@
+{
+  "verdict": "NEGATIVE",
+  "reason": "numeric no-go",
+  "source": "bc89f4d22",
+  "binary_sha256": "058317b24caf0797d0496a86417676c09fd797643883949e9a225e257dd53c10",
+  "shapes": [
+    {
+      "t": 2,
+      "layers_checked": 42,
+      "rows": 168,
+      "failures": [],
+      "exit": 0,
+      "binary_sha256": "058317b24caf0797d0496a86417676c09fd797643883949e9a225e257dd53c10"
+    },
+    {
+      "t": 4,
+      "layers_checked": 18,
+      "rows": 108,
+      "failures": [
+        {
+          "t": "4",
+          "layer": "20",
+          "tensor_or_arm": "argmax_row_3",
+          "block": "0",
+          "order": "0",
+          "mean_or_us": "1819",
+          "max": "0",
+          "baseline_mean": "4",
+          "baseline_max": "0",
+          "status": "FAIL"
+        }
+      ],
+      "exit": 1,
+      "binary_sha256": "058317b24caf0797d0496a86417676c09fd797643883949e9a225e257dd53c10"
+    }
+  ],
+  "weighted_saving_ms": {
+    "2": null,
+    "4": null,
+    "7": null
+  },
+  "timing": "REFUSED after oracle failure",
+  "real_t7": "NOT RUN",
+  "threshold_ms": 0.5
+}

@@ -11,7 +11,7 @@ pub static PACK: ModelPack = ModelPack {
     aliases: &["deepseek_v4", "deepseek-v4", "deepseek_v4_preview"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
-    template: TemplateContract::ArtifactRequired,
+    template: TemplateContract::EngineRenderer("encoding_dsv4"),
     support: None,
     gates: &[
         Gate::Config,
@@ -38,7 +38,7 @@ pub static DSPARK_PACK: ModelPack = ModelPack {
     aliases: &["deepseek_v4_dspark", "deepseek-v4-dspark"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
-    template: TemplateContract::ArtifactRequired,
+    template: TemplateContract::EngineRenderer("encoding_dsv4"),
     support: Some(NativeSupport::NativeReference),
     gates: &[
         Gate::Config,
