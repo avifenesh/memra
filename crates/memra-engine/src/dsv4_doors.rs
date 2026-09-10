@@ -44,22 +44,64 @@ pub enum DoorShape {
 
 /// What a door resolves to for a given program with the environment unset,
 /// which is the state a default claim is a claim ABOUT.
+///
+/// The three not-engaged states are kept apart on purpose, because they have
+/// three different fixes and the six inert DSV4F doors are not all the same
+/// case. `Off` is an admission predicate saying no on a program that HAS the
+/// call site; `OffProgram` is a door whose call site exists only on a program
+/// we do not serve, which the program decision resolves; `NoServingCaller` is a
+/// door no serving request can reach by construction, whatever we decide about
+/// programs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DoorState {
     /// The door is on and its call sites are reachable on this program.
     On(DoorShape),
-    /// The door resolved off. Its call sites exist on this program.
+    /// The door resolved off. Its call sites exist on this program, so porting
+    /// or widening the admission predicate is a real option.
     Off,
     /// The door refuses this program at load rather than resolving.
     RefusedAtLoad,
-    /// The door's kernels have no call site on this program at all, so its
-    /// default is not a thing this program can have either way.
-    Unreachable(&'static str),
+    /// Reachable, but only on a program this one is not. Names the program that
+    /// does reach it, because that program's fate is this door's fate.
+    OffProgram(&'static str),
+    /// No serving request can reach this door on ANY program: its only caller is
+    /// a gate binary arming an instrument. Dead code on every serving path.
+    NoServingCaller(&'static str),
+}
+
+/// What the door's state means for what to DO about it. Printed in the load
+/// receipt and pinned per door by the gate, so the three cases cannot collapse
+/// into one recommendation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DoorDisposition {
+    /// Engaged. Nothing to decide.
+    Engaged,
+    /// The default is a claim this program does not honour: port the admission
+    /// predicate to this program, or re-declare the default to match reality.
+    PortAdmissionOrRedeclare,
+    /// The door belongs to another program. It resolves itself if that program
+    /// becomes the default, and leaves with it if it does not.
+    FollowsTheProgramDecision,
+    /// Nothing about a serving program can make this door engage: it is a gate
+    /// instrument's input filed as a product door.
+    ReclassifyAsGateInput,
+    /// Refused at load. The configuration is illegal, not silently degraded.
+    RefusedConfiguration,
 }
 
 impl DoorState {
     pub fn engaged(self) -> bool {
         matches!(self, DoorState::On(_))
+    }
+
+    pub fn disposition(self) -> DoorDisposition {
+        match self {
+            DoorState::On(_) => DoorDisposition::Engaged,
+            DoorState::Off => DoorDisposition::PortAdmissionOrRedeclare,
+            DoorState::RefusedAtLoad => DoorDisposition::RefusedConfiguration,
+            DoorState::OffProgram(_) => DoorDisposition::FollowsTheProgramDecision,
+            DoorState::NoServingCaller(_) => DoorDisposition::ReclassifyAsGateInput,
+        }
     }
 }
 
@@ -287,7 +329,7 @@ const MATRIX_EXECUTOR_ONLY: &str = "the arm lives in the matrix expert executor 
 
 fn resolve_graph_splitk(p: &Dsv4Program) -> DoorState {
     if !p.matrix_moe {
-        return DoorState::Unreachable(MATRIX_EXECUTOR_ONLY);
+        return DoorState::OffProgram(MATRIX_EXECUTOR_ONLY);
     }
     // Default ON since #392, and then #458: the plain gate/up arm needs the
     // gate-only fused-GU seam, so an unarmed matrix process refuses at load.
@@ -314,7 +356,7 @@ fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     if p.gate_armed_gu_fuse && p.tp_ep && !p.drafter_resident {
         DoorState::On(DoorShape::DecodeOnlyM1)
     } else {
-        DoorState::Unreachable(
+        DoorState::NoServingCaller(
             "full-token replay is armed per request by a gate binary only; no serving or eager \
              request arms it, so the cadence choice has no caller",
         )
@@ -350,7 +392,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         env: "MEMRA_DSV4_REPLAY_CADENCE",
         merged: "#374",
         declared_default: DeclaredDefault::On,
-        declared_served: DoorState::Unreachable(
+        declared_served: DoorState::NoServingCaller(
             "full-token replay is armed per request by a gate binary only; no serving or eager \
              request arms it, so the cadence choice has no caller",
         ),
@@ -371,7 +413,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         env: "MEMRA_DSV4_MOE_M1_SPLITK",
         merged: "#392",
         declared_default: DeclaredDefault::On,
-        declared_served: DoorState::Unreachable(MATRIX_EXECUTOR_ONLY),
+        declared_served: DoorState::OffProgram(MATRIX_EXECUTOR_ONLY),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
         resolve: resolve_graph_splitk,
     },
@@ -407,7 +449,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         env: "MEMRA_DSV4_SPLITK_FAST",
         merged: "#425",
         declared_default: DeclaredDefault::On,
-        declared_served: DoorState::Unreachable(MATRIX_EXECUTOR_ONLY),
+        declared_served: DoorState::OffProgram(MATRIX_EXECUTOR_ONLY),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
         resolve: resolve_splitk_fast,
     },
@@ -430,6 +472,105 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         resolve: resolve_norm2_wide,
     },
 ];
+
+// ---------------------------------------------------------------------------
+// Door-set derivation. The registry above is an explicit list, and an explicit
+// list is exactly what stops covering doors added later. So the list is not
+// trusted: these functions DERIVE the door-name set from the engine sources
+// that read the environment, and the gate fails until every derived name is
+// either a declared door or an exemption with a written reason. A door added to
+// the engine is covered by construction: the person adding it gets a red test
+// naming their variable.
+// ---------------------------------------------------------------------------
+
+/// Every engine source that could carry a DSV4 door, DERIVED from the tree
+/// rather than listed: `src/dsv4*` and `cu/dsv4*` plus the grouped expert
+/// kernels. Listing files by hand is the same disease as listing doors by hand,
+/// one level up, so the list is a directory read and a new `dsv4_*.rs` file is
+/// scanned the day it lands. Gate binaries are excluded on purpose: a gate
+/// process is allowed to read instruments.
+pub fn door_name_source_files(crate_root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for (dir, prefixes) in [("src", &["dsv4"][..]), ("cu", &["dsv4", "moe_f16"][..])] {
+        let mut entries: Vec<_> = std::fs::read_dir(crate_root.join(dir))
+            .unwrap_or_else(|e| panic!("read {dir}: {e}"))
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file())
+            .filter(|path| {
+                path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    // This file names every door and every exemption, so scanning
+                    // it would make both the coverage check and the stale-exemption
+                    // check pass on their own text.
+                    n != "dsv4_doors.rs" && prefixes.iter().any(|p| n.starts_with(p))
+                })
+            })
+            .collect();
+        entries.sort();
+        out.append(&mut entries);
+    }
+    out
+}
+
+/// Every `MEMRA_DSV4_*` / `MEMRA_F16G_*` / `MEMRA_MOE_F16G*` name that appears
+/// in the given source text. Pure, so the red arm can hand it a source that
+/// contains a door nobody declared.
+pub fn door_names_in_source(text: &str) -> std::collections::BTreeSet<String> {
+    let bytes = text.as_bytes();
+    let mut names = std::collections::BTreeSet::new();
+    let mut i = 0;
+    while let Some(hit) = text[i..].find("MEMRA_") {
+        let start = i + hit;
+        let mut end = start;
+        while end < bytes.len()
+            && (bytes[end].is_ascii_uppercase()
+                || bytes[end].is_ascii_digit()
+                || bytes[end] == b'_')
+        {
+            end += 1;
+        }
+        let name = &text[start..end];
+        let carries_a_suffix = !name.ends_with('_');
+        if carries_a_suffix
+            && (name.starts_with("MEMRA_DSV4_")
+                || name.starts_with("MEMRA_F16G_")
+                || name.starts_with("MEMRA_MOE_F16G"))
+        {
+            names.insert(name.to_string());
+        }
+        i = end.max(start + 1);
+    }
+    names
+}
+
+/// Names the sources read that no `DSV4_DOORS` row declares and no exemption
+/// excuses. Non-empty means the registry has stopped covering the engine.
+pub fn undeclared_door_names(
+    names: &std::collections::BTreeSet<String>,
+    declared: &[&str],
+    exempt: &[(&str, &str)],
+) -> Vec<String> {
+    names
+        .iter()
+        .filter(|name| {
+            !declared.contains(&name.as_str()) && !exempt.iter().any(|(e, _)| e == &name.as_str())
+        })
+        .cloned()
+        .collect()
+}
+
+/// Exemptions that no longer name anything the engine reads. An exemption list
+/// that outlives its reasons is a blanket excuse for the next door.
+pub fn stale_exemptions(
+    names: &std::collections::BTreeSet<String>,
+    exempt: &[(&str, &str)],
+) -> Vec<String> {
+    exempt
+        .iter()
+        .filter(|(name, _)| !names.contains(*name))
+        .map(|(name, _)| name.to_string())
+        .collect()
+}
 
 /// One violation of a declared door claim.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -494,13 +635,14 @@ pub fn door_receipt_lines(program: &Dsv4Program) -> Vec<String> {
         .iter()
         .map(|row| {
             format!(
-                "[dsv4-doors] program={} door={:?} env={} merged={} declared_default={:?} resolved={:?}",
+                "[dsv4-doors] program={} door={:?} env={} merged={} declared_default={:?} resolved={:?} disposition={:?}",
                 program.name,
                 row.name,
                 row.env,
                 row.merged,
                 row.declared_default,
-                (row.resolve)(program)
+                (row.resolve)(program),
+                (row.resolve)(program).disposition()
             )
         })
         .collect()
@@ -646,133 +788,198 @@ mod tests {
         }
     }
 
-    /// Non-vacuity, coverage: every DSV4/F16G environment name the engine reads
-    /// is either a declared door or an explicitly exempt one with a reason. This
-    /// is the trigger that makes the gate fire on work nobody thought to point
-    /// at it: add a door, get a red test until you declare its reach.
-    #[test]
-    fn every_dsv4_door_name_in_the_engine_is_declared_or_exempt() {
-        // Not doors: program selectors, geometry/tuning parameters, gate-only
-        // instruments and diagnostics. Each is here because turning it on is a
-        // choice of program or an instrument, not a merged default that a
-        // performance claim rests on.
-        const EXEMPT: &[(&str, &str)] = &[
-            (
-                "MEMRA_DSV4_AR_PHASE",
-                "gate-only all-reduce phase instrument, refuses to load unarmed",
-            ),
-            ("MEMRA_DSV4_BENCH_PROFILE", "bench profile selector"),
-            ("MEMRA_DSV4_DECODE_PATH", "program selector"),
-            ("MEMRA_DSV4_DENSE_ARM", "program selector"),
-            ("MEMRA_DSV4_DOTS_ARM", "program selector"),
-            ("MEMRA_DSV4_DRAFTER", "program selector"),
-            ("MEMRA_DSV4_DSPARK_CHAIN", "drafter program selector"),
-            ("MEMRA_DSV4_DSPARK_FUSED_MOE", "drafter program selector"),
-            ("MEMRA_DSV4_DSPARK_HEAD_ARM", "drafter program selector"),
-            ("MEMRA_DSV4_DSPARK_MARKOV", "drafter program selector"),
-            ("MEMRA_DSV4_DSPARK_PROPOSAL", "drafter program selector"),
-            ("MEMRA_DSV4_EP", "topology selector"),
-            ("MEMRA_DSV4_EP_ROUTE_STATS", "diagnostic counter"),
-            ("MEMRA_DSV4_EXPERT_ARM", "program selector"),
-            ("MEMRA_DSV4_GROUPED_ROUTE", "program selector"),
-            ("MEMRA_DSV4_HAVE_NVTX", "build-time profiling switch"),
-            ("MEMRA_DSV4_INDEXER_SCORE", "program selector"),
-            (
-                "MEMRA_DSV4_MOE_PROGRAM",
-                "program selector: the disjointness itself",
-            ),
-            ("MEMRA_DSV4_NVTX", "profiling ranges"),
-            ("MEMRA_DSV4_PEER_PROBE_POISON", "gate-only fault injection"),
-            ("MEMRA_DSV4_PREFILL_DRAFT", "program selector"),
-            ("MEMRA_DSV4_PREFILL_HEAD", "program selector"),
-            ("MEMRA_DSV4_PREFILL_MOE", "program selector"),
-            ("MEMRA_DSV4_PREFILL_PROGRESS", "diagnostic"),
-            ("MEMRA_DSV4_ROUND_PROFILE", "profiling"),
-            ("MEMRA_DSV4_SAMPLE_SORT", "program selector"),
-            ("MEMRA_DSV4_SINK_SCORE", "program selector"),
-            (
-                "MEMRA_DSV4_SMALL_KERNEL_DIET",
-                "TP/EP-only program selector, refuses elsewhere",
-            ),
-            ("MEMRA_DSV4_SPEC_DEPTH", "spec parameter"),
-            ("MEMRA_DSV4_VERIFY_TOPK", "program selector"),
-            ("MEMRA_DSV4_VT", "spec threshold parameter"),
-            ("MEMRA_DSV4_VT_FLOOR", "spec threshold parameter"),
-            ("MEMRA_DSV4_VT_TAU", "spec threshold parameter"),
-            ("MEMRA_F16G_BDB", "grouped visitor tuning parameter"),
-            ("MEMRA_F16G_DIRECT", "grouped visitor program selector"),
-            (
-                "MEMRA_F16G_GU_FUSE",
-                "gate-only research arm; #458 is what its gate-only status costs",
-            ),
-            ("MEMRA_F16G_SK", "split-K width parameter"),
-            ("MEMRA_F16G_SK_CROSS", "split-K crossover parameter"),
-            ("MEMRA_F16G_TAIL", "grouped visitor tail form selector"),
-            ("MEMRA_MOE_F16G", "grouped visitor mode selector"),
-        ];
+    /// The exemption list: names the engine reads that are NOT doors. Each is a
+    /// program selector, a geometry or tuning parameter, a gate-only instrument
+    /// or a diagnostic, and each carries the reason it is not a merged default a
+    /// performance claim rests on.
+    const EXEMPT: &[(&str, &str)] = &[
+        (
+            "MEMRA_DSV4_AR_PHASE",
+            "gate-only all-reduce phase instrument, refuses to load unarmed",
+        ),
+        ("MEMRA_DSV4_BENCH_PROFILE", "bench profile selector"),
+        ("MEMRA_DSV4_DECODE_PATH", "program selector"),
+        ("MEMRA_DSV4_DENSE_ARM", "program selector"),
+        ("MEMRA_DSV4_DOTS_ARM", "program selector"),
+        ("MEMRA_DSV4_DRAFTER", "program selector"),
+        ("MEMRA_DSV4_DSPARK_CHAIN", "drafter program selector"),
+        ("MEMRA_DSV4_DSPARK_FUSED_MOE", "drafter program selector"),
+        ("MEMRA_DSV4_DSPARK_HEAD_ARM", "drafter program selector"),
+        ("MEMRA_DSV4_DSPARK_MARKOV", "drafter program selector"),
+        ("MEMRA_DSV4_DSPARK_PROPOSAL", "drafter program selector"),
+        ("MEMRA_DSV4_EP", "topology selector"),
+        ("MEMRA_DSV4_EP_ROUTE_STATS", "diagnostic counter"),
+        ("MEMRA_DSV4_EXPERT_ARM", "program selector"),
+        ("MEMRA_DSV4_GROUPED_ROUTE", "program selector"),
+        ("MEMRA_DSV4_HAVE_NVTX", "build-time profiling switch"),
+        ("MEMRA_DSV4_INDEXER_SCORE", "program selector"),
+        (
+            "MEMRA_DSV4_MOE_PROGRAM",
+            "program selector: the disjointness itself (memra #461)",
+        ),
+        ("MEMRA_DSV4_NVTX", "profiling ranges"),
+        ("MEMRA_DSV4_PEER_PROBE_POISON", "gate-only fault injection"),
+        ("MEMRA_DSV4_PREFILL_DRAFT", "program selector"),
+        ("MEMRA_DSV4_PREFILL_HEAD", "program selector"),
+        ("MEMRA_DSV4_PREFILL_MOE", "program selector"),
+        ("MEMRA_DSV4_PREFILL_PROGRESS", "diagnostic"),
+        ("MEMRA_DSV4_ROUND_PROFILE", "profiling"),
+        ("MEMRA_DSV4_SAMPLER", "program selector"),
+        ("MEMRA_DSV4_SAMPLE_SORT", "program selector"),
+        ("MEMRA_DSV4_SINK_SCORE", "program selector"),
+        (
+            "MEMRA_DSV4_SMALL_KERNEL_DIET",
+            "TP/EP-only program selector, refuses elsewhere",
+        ),
+        ("MEMRA_DSV4_SPEC_DEPTH", "spec parameter"),
+        ("MEMRA_DSV4_VERIFY_TOPK", "program selector"),
+        ("MEMRA_DSV4_VT", "spec threshold parameter"),
+        ("MEMRA_DSV4_VT_FLOOR", "spec threshold parameter"),
+        ("MEMRA_DSV4_VT_TAU", "spec threshold parameter"),
+        ("MEMRA_F16G_BDB", "grouped visitor tuning parameter"),
+        ("MEMRA_F16G_DIRECT", "grouped visitor program selector"),
+        (
+            "MEMRA_F16G_GU_FUSE",
+            "gate-only research arm; memra #458 is what its gate-only status costs",
+        ),
+        ("MEMRA_F16G_SK", "split-K width parameter"),
+        ("MEMRA_F16G_SK_CROSS", "split-K crossover parameter"),
+        ("MEMRA_F16G_TAIL", "grouped visitor tail form selector"),
+        ("MEMRA_MOE_F16G", "grouped visitor mode selector"),
+    ];
+
+    fn declared_env_names() -> Vec<&'static str> {
+        DSV4_DOORS.iter().map(|row| row.env).collect()
+    }
+
+    fn engine_door_names() -> std::collections::BTreeSet<String> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let files = door_name_source_files(root);
+        assert!(
+            files.len() >= 10,
+            "the source derivation found almost no files, so coverage would be vacuous: {files:?}"
+        );
         let mut names = std::collections::BTreeSet::new();
-        for file in [
-            "src/dsv4_gpu.rs",
-            "src/dsv4_grouped.rs",
-            "src/dsv4_ep.rs",
-            "src/dsv4_ep_graph.rs",
-            "cu/moe_f16_grouped.cu",
-            "cu/dsv4_gpu.cu",
-            "cu/dsv4_dense_m1_exact_tail.cuh",
-        ] {
-            let text = std::fs::read_to_string(root.join(file)).expect(file);
-            let bytes = text.as_bytes();
-            let mut i = 0;
-            while let Some(hit) = text[i..].find("MEMRA_") {
-                let start = i + hit;
-                let mut end = start;
-                while end < bytes.len()
-                    && (bytes[end].is_ascii_uppercase()
-                        || bytes[end].is_ascii_digit()
-                        || bytes[end] == b'_')
-                {
-                    end += 1;
-                }
-                let name = &text[start..end];
-                if name.starts_with("MEMRA_DSV4_")
-                    || name.starts_with("MEMRA_F16G_")
-                    || name.starts_with("MEMRA_MOE_F16G")
-                {
-                    names.insert(name.to_string());
-                }
-                i = end.max(start + 1);
-            }
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{file:?}: {e}"));
+            names.append(&mut door_names_in_source(&text));
         }
         assert!(
             names.len() > 30,
-            "source scan found almost nothing, so this check would pass vacuously: {names:?}"
+            "the name scan found almost nothing, so coverage would be vacuous: {names:?}"
         );
-        let declared: std::collections::BTreeSet<_> =
-            DSV4_DOORS.iter().map(|row| row.env.to_string()).collect();
-        let exempt: std::collections::BTreeSet<_> =
-            EXEMPT.iter().map(|(name, _)| name.to_string()).collect();
-        let undeclared: Vec<_> = names
-            .iter()
-            .filter(|name| !declared.contains(*name) && !exempt.contains(*name))
-            .cloned()
-            .collect();
+        names
+    }
+
+    /// Non-vacuity, coverage: every DSV4/F16G environment name the engine reads
+    /// is either a declared door or an explicitly exempt one with a reason. The
+    /// name set is DERIVED from the tree (every `src/dsv4*` and `cu/dsv4*` file
+    /// plus the grouped expert kernels, by directory read), so a door added in a
+    /// new file is covered the day it lands and nobody has to remember to extend
+    /// a list.
+    #[test]
+    fn every_dsv4_door_name_in_the_engine_is_declared_or_exempt() {
+        let names = engine_door_names();
+        let undeclared = undeclared_door_names(&names, &declared_env_names(), EXEMPT);
         assert!(
             undeclared.is_empty(),
-            "DSV4 environment names the engine reads with no door row and no exemption: {undeclared:?}\n\
-             Add a DSV4_DOORS row with its declared default and served-path reach, or an EXEMPT \
-             entry saying why it is not a door."
+            "DSV4 environment names the engine reads with no door row and no exemption: \
+             {undeclared:?}\nAdd a DSV4_DOORS row with its declared default and served-path \
+             reach, or an EXEMPT entry saying why it is not a door."
         );
-        // Red arm for the coverage scan itself: exemptions that no longer name
-        // anything in the engine rot into a list that excuses future doors.
-        let stale: Vec<_> = exempt
-            .iter()
-            .filter(|name| !names.contains(*name))
-            .cloned()
-            .collect();
+        let stale = stale_exemptions(&names, EXEMPT);
         assert!(
             stale.is_empty(),
             "exemptions for names the engine no longer reads: {stale:?}"
+        );
+    }
+
+    /// Red arm for the coverage derivation, and the answer to "does this gate
+    /// stop covering doors added later?". Add a door to a source, change NOTHING
+    /// in the gate, and the gate fails naming the new variable.
+    #[test]
+    fn a_door_added_to_the_engine_is_caught_without_touching_the_gate() {
+        let mut names = engine_door_names();
+        let clean = undeclared_door_names(&names, &declared_env_names(), EXEMPT);
+        assert!(clean.is_empty(), "{clean:?}");
+        // Exactly what a future lane's diff looks like to the scanner.
+        let source = r#"
+            /// A brand new door nobody declared.
+            pub fn dsv4_tomorrows_door_on() -> bool {
+                std::env::var("MEMRA_DSV4_TOMORROWS_DOOR").as_deref() == Ok("1")
+            }
+        "#;
+        let scanned = door_names_in_source(source);
+        assert_eq!(
+            scanned.iter().map(String::as_str).collect::<Vec<_>>(),
+            vec!["MEMRA_DSV4_TOMORROWS_DOOR"]
+        );
+        names.extend(scanned);
+        let undeclared = undeclared_door_names(&names, &declared_env_names(), EXEMPT);
+        assert_eq!(undeclared, vec!["MEMRA_DSV4_TOMORROWS_DOOR".to_string()]);
+        // And the same scan ignores prose that merely mentions the prefix.
+        assert!(door_names_in_source("we read MEMRA_DSV4_ names here").is_empty());
+    }
+
+    /// The three not-engaged cases must stay apart: they have three different
+    /// fixes, and collapsing them is how six doors get one recommendation.
+    #[test]
+    fn each_inert_door_carries_its_own_disposition() {
+        let disposition = |door: &str| {
+            DSV4_DOORS
+                .iter()
+                .find(|row| row.name == door)
+                .map(|row| (row.resolve)(&SERVED_PROGRAM).disposition())
+                .expect(door)
+        };
+        // Its own FLAGS row says no serving request arms full-token replay.
+        assert_eq!(
+            disposition("replay cadence"),
+            DoorDisposition::ReclassifyAsGateInput
+        );
+        // These live in the matrix executor: memra #461 decides them.
+        assert_eq!(
+            disposition("graph split-K"),
+            DoorDisposition::FollowsTheProgramDecision
+        );
+        assert_eq!(
+            disposition("split-K-fast"),
+            DoorDisposition::FollowsTheProgramDecision
+        );
+        // These have call sites on the served program and an admission predicate
+        // that says no: porting or re-declaring is the fix.
+        for door in ["norm-fuse", "norm-fuse2", "norm2-wide"] {
+            assert_eq!(
+                disposition(door),
+                DoorDisposition::PortAdmissionOrRedeclare,
+                "{door}"
+            );
+        }
+        // If the matrix program becomes the served expert program, the two
+        // FollowsTheProgramDecision doors resolve themselves, and the other four
+        // do not move. That is the whole reason the cases are kept apart.
+        let matrix_served = Dsv4Program {
+            name: "served-with-matrix",
+            matrix_moe: true,
+            ..SERVED_PROGRAM
+        };
+        assert_eq!(
+            (DSV4_DOORS
+                .iter()
+                .find(|row| row.name == "graph split-K")
+                .unwrap()
+                .resolve)(&matrix_served),
+            // Still refused while the fused-GU arm stays gate-only (memra #458),
+            // which is a configuration error an operator can see, not silence.
+            DoorState::RefusedAtLoad
+        );
+        assert_eq!(
+            (DSV4_DOORS
+                .iter()
+                .find(|row| row.name == "norm2-wide")
+                .unwrap()
+                .resolve)(&matrix_served),
+            DoorState::Off
         );
     }
 }

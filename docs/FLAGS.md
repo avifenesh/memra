@@ -1461,17 +1461,23 @@ when a door's declared default or served-path state stops matching what the admi
 and it refuses to pass vacuously (a coverage scan requires every `MEMRA_DSV4_*` / `MEMRA_F16G_*` name
 the engine reads to be a declared door or an exempt non-door with a reason).
 
-| door | merged | declared default | on the served program | why |
-|---|---|---|---|---|
-| replay cadence | #374 | ON | **unreachable** | full-token replay is armed per request by a gate binary only; no serving or eager request arms it |
-| dense exact-tail transport | #374 | ON | ON, `m == 1` only | generic dense entry, but the control scope suppresses it for every `m > 1`, so prefill chunks never use it |
-| graph split-K | #392 | ON | **unreachable** | the arm lives in the matrix expert executor (`dsv4_grouped.rs`); the served reference program never enters it |
-| dense-fast | #404 | ON | ON, `m == 1` only | same `m == 1` scope as the dense tail |
-| norm-fuse | #404 | ON | **off** | admitted only under TP/EP f32x; unset resolves to `Ok(false)` on PP-2 |
-| HC dot split S16 | #418 | ON | ON | gates on `dots_f32 && rows == 24 && w == 16384`, no topology term |
-| split-K-fast | #425 | ON | **unreachable** | it selects a split-K entry family; no split-K call site, no door |
-| norm-fuse2 | #426 | ON | **off** | same TP/EP admission predicate |
-| norm2-wide | #430 | ON | **off** | admitted only when norm-fuse2 is |
+| door | merged | declared default | on the served program | case | why |
+|---|---|---|---|---|---|
+| replay cadence | #374 | ON | **no serving caller** | reclassify as a gate input | full-token replay is armed per request by a gate binary only; no serving or eager request arms it, on any program |
+| dense exact-tail transport | #374 | ON | ON, `m == 1` only | engaged | generic dense entry, but the control scope suppresses it for every `m > 1`, so prefill chunks never use it |
+| graph split-K | #392 | ON | **off-program** | follows the matrix verdict (memra #461) | the arm lives in the matrix expert executor (`dsv4_grouped.rs`); the served reference program never enters it |
+| dense-fast | #404 | ON | ON, `m == 1` only | engaged | same `m == 1` scope as the dense tail |
+| norm-fuse | #404 | ON | **off** | port the admission or re-declare | admitted only under TP/EP f32x; unset resolves to `Ok(false)` on PP-2, where the call sites do exist |
+| HC dot split S16 | #418 | ON | ON | engaged | gates on `dots_f32 && rows == 24 && w == 16384`, no topology term |
+| split-K-fast | #425 | ON | **off-program** | follows the matrix verdict (memra #461) | it selects a split-K entry family; no split-K call site, no door |
+| norm-fuse2 | #426 | ON | **off** | port the admission or re-declare | same TP/EP admission predicate |
+| norm2-wide | #430 | ON | **off** | port the admission or re-declare | admitted only when norm-fuse2 is |
+
+The three not-engaged cases are kept apart in `DoorState` and pinned per door by
+`each_inert_door_carries_its_own_disposition`, because they have three different fixes. `Off` is an
+admission predicate saying no on a program that HAS the call site. `OffProgram` is a door whose call
+site exists only on a program we do not serve, so the memra #461 matrix verdict decides it, not door
+hygiene. `NoServingCaller` is a door no serving request can reach on any program.
 
 Two doors that DO engage are `m == 1` only, which is decode; prefill is 95-97% of a request's GPU
 seconds at this family's real input:output ratio. An operator cannot opt in to the inert ones either:
@@ -1479,8 +1485,9 @@ seconds at this family's real input:output ratio. An operator cannot opt in to t
 "norm fusion requires TP/EP f32x".
 
 No default is flipped and no door is deleted here. The disposition of the six is memra #454 and is
-argued in [darklanes #601](https://github.com/avifenesh/darklanes/pull/601); doors whose removal
-would move a published performance claim are the owner's call.
+argued per case in [darklanes #601](https://github.com/avifenesh/darklanes/pull/601), including both
+outcomes of the memra #461 matrix verdict; doors whose removal would move a published performance
+claim are the owner's call.
 
 ## Removed doors, 2026-09-10 (the dsv4f split vocab head: the read halves, the step does not)
 

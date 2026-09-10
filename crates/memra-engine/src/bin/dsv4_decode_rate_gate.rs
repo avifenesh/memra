@@ -357,12 +357,12 @@ fn main() {
         "PROTOCOL engine_decode_only=true HTTP=false counts=[256,8192] new_tokens=256 chunk=512 active_C4=true ABBAx3_N6_each=true gate_repeats={gate_repeats} sampler_ab={sampler_ab} recent_ab={recent_ab} vt_ab={vt_ab} greedy_vt_ab={greedy_vt_ab} mirror_ab={mirror_ab} route_ab={route_ab} gu_ab={gu_ab} gu_compose_ab={gu_compose_ab} m1_tc_compose_ab={m1_tc_compose_ab} best_ab={best_ab} route_stats={route_stats} warmups=each_arm sample_T=1 top_p=1 top_k=0 seed=20260906 EOS=respected loops=excluded source_sha256={:x}",
         Sha256::digest(source.as_bytes())
     );
+    // memra #458: this is a bench process, so it may run the matrix expert program
+    // with the default-ON split-K arm; a serving process cannot arm it and refuses
+    // that combination at load instead of failing every request.
+    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu =
-        // memra #458: this is a bench process, so it may run the matrix expert program
-        // with the default-ON split-K arm; a serving process cannot arm it and refuses
-        // that combination at load instead of failing every request.
-        memra_engine::arm_matrix_splitk_door_for_gate();
-    Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192 + 256 + 96).expect("model");
+        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192 + 256 + 96).expect("model");
     assert!(gpu.matrix_moe_enabled());
     for count in [256, 8192] {
         let prompt = &tokens[..count];
