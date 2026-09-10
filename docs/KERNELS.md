@@ -854,4 +854,5 @@ new symbols. FFI: `src/dsv4_ffi.rs`; component capture and raw-bit gate:
 Evidence: [private Darklanes #560](https://github.com/avifenesh/darklanes/pull/560),
 raw-bit identity at all 344 component sites, memcheck and synccheck zero
 errors, +1.0926% pooled ABBA and +0.9075% pooled reverse on the sampled
-default program. Default stays OFF, decide-by: 2026-09-23.
+default program. Default is ON when unset in the admitted TP/EP f32x topology; explicit `0` is
+the rollback seam, decide-by: 2026-09-23.

@@ -472,6 +472,12 @@ fn scored_row(
 fn main() {
     // Default program stays inherited. Only the splitk-fast door is selected.
     assert!(memra_engine::moe_m1_graph_splitk_on());
+    // Freeze the base this instrument scores its own door against, before any
+    // model or worker thread exists. The norm2 door is a separate lane's
+    // measurement and must not move these rows when its default flips.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+    }
     let args: Vec<_> = std::env::args().collect();
     assert!(
         args.len() == 4

@@ -34,15 +34,12 @@ fn default_program() {
         memra_engine::moe_m1_graph_splitk_on(),
         "default graph split-K required"
     );
-    // This bin reads the environment rather than pinning it, so the default-OFF
-    // norm2 door has to be refused explicitly or an exported 1 would silently
-    // change what these rows measure.
-    assert!(
-        matches!(
-            std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
-            Err(_) | Ok("0")
-        ),
-        "default OFF required: MEMRA_DSV4_NORM_FUSE2"
+    // main() pinned this door off at startup. Verify the pin took rather than
+    // trusting it: an inherited 1 would silently change what these rows measure.
+    assert_eq!(
+        std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
+        Ok("0"),
+        "explicit OFF required: MEMRA_DSV4_NORM_FUSE2"
     );
 }
 const PRIME: usize = 256;
@@ -484,6 +481,12 @@ fn scored_row(
     arm.rows += 1;
 }
 fn main() {
+    // This bin scores the HC door against a frozen base, and its census hard-codes
+    // the rmsnorm counts that the norm2 fusion removes. Pin that door off before any
+    // model or worker thread exists, independently of its default.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+    }
     let args: Vec<_> = std::env::args().collect();
     if args.get(4).is_some_and(|v| v == "--drift") {
         evidence::run();
