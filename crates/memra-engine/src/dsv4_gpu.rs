@@ -17311,8 +17311,11 @@ impl Dsv4Gpu {
         // Both guards are held ACROSS the copy, the `pp.rs` boundary idiom: these are
         // stream-ordered pool allocations and dropping a guard at the end of the
         // expression that produced the pointer would release it while the copy engine is
-        // still reading and writing through it.
-        let (src, _src_guard) = rank0_ws[0].logits.device_ptr(&self.stages[0].gpu.stream());
+        // still reading and writing through it. The stream Arc is bound by name for the
+        // same reason: `stream()` returns an owned Arc, and an inline temporary would be
+        // freed at the end of the statement while the guard still borrows into it.
+        let stream0 = self.stages[0].gpu.stream();
+        let (src, _src_guard) = rank0_ws[0].logits.device_ptr(&stream0);
         let (dst, _dst_guard) = rank1_ws[0].logits.device_ptr_mut(&stream1);
         let bytes = rows * std::mem::size_of::<f32>();
         // SAFETY: peer access is granted both ways at load and both pool grants are set;
