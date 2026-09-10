@@ -111,6 +111,77 @@ pub fn dense_tile_counts_for_gate() -> [u64; 2] {
     counts
 }
 
+/// One dense entry-point launch shape and how often it was issued.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
+pub struct Dsv4DenseCensusRow {
+    /// 0 gemv bf16, 1 gemv fp8, 2 dots f32 (f64 accumulation), 3 dots f32acc.
+    pub entry: i32,
+    pub m: i32,
+    pub n: i32,
+    pub k: i32,
+    pub calls: u64,
+}
+
+/// Turn the dense shape census on or off for this host thread (memra #472). An
+/// instrument: recording changes no dispatch and no kernel, and it is OFF unless
+/// a census binary turns it on.
+pub fn set_dense_census_for_gate(on: bool) -> Res<()> {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_census_set_for_gate(on: i32) -> i32;
+    }
+    ck("dense census arm", unsafe {
+        memra_dsv4_dense_census_set_for_gate(i32::from(on))
+    })
+}
+
+pub fn reset_dense_census_for_gate() -> Res<()> {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_census_reset_for_gate() -> i32;
+    }
+    ck("dense census reset", unsafe {
+        memra_dsv4_dense_census_reset_for_gate()
+    })
+}
+
+/// The census, and the number of calls that found no free slot. A non-zero
+/// overflow means the table is TRUNCATED and the totals below it are a floor,
+/// which is why it is returned rather than hidden.
+pub fn dense_census_for_gate() -> (Vec<Dsv4DenseCensusRow>, u64) {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_census_read_for_gate(
+            out: *mut Dsv4DenseCensusRow,
+            cap: i32,
+            used: *mut i32,
+            overflow: *mut u64,
+        ) -> i32;
+    }
+    const CAP: usize = 256;
+    let mut rows = vec![
+        Dsv4DenseCensusRow {
+            entry: 0,
+            m: 0,
+            n: 0,
+            k: 0,
+            calls: 0
+        };
+        CAP
+    ];
+    let mut used = 0i32;
+    let mut overflow = 0u64;
+    let rc = unsafe {
+        memra_dsv4_dense_census_read_for_gate(
+            rows.as_mut_ptr(),
+            CAP as i32,
+            &mut used,
+            &mut overflow,
+        )
+    };
+    assert_eq!(rc, 0, "dense census read");
+    rows.truncate((used as usize).min(CAP));
+    (rows, overflow)
+}
+
 #[path = "dsv4_norm2_component_gate.rs"]
 pub(crate) mod norm2_component_gate;
 #[path = "dsv4_norm2_wide_component_gate.rs"]
