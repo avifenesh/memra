@@ -1117,6 +1117,26 @@ unsafe extern "C" {
     /// Head-blocked decode pool scorer (`MEMRA_B200_DSA_DECODE>=1`), bit-identical to
     /// `memra_mla_kpool_score_ref_f32`. Returns 40023 when this (heads, d) has no
     /// instantiation, and the caller falls through to the shipped dispatch.
+    pub fn memra_mla_kpool_candidates_f32(
+        score: *const f32,
+        local: *const i32,
+        out: *mut i32,
+        rows: i32,
+        pools: i32,
+        offset: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_mla_kpool_merge_f32(
+        candidates: *const i32,
+        idx: *mut i32,
+        rows: i32,
+        k: i32,
+        pool: i32,
+        width: i32,
+        first_pos: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_mla_kpool_score_dsa_f32(
         q: *const f32,
         pool_keys: *const f32,
@@ -1973,6 +1993,57 @@ impl Engine {
         qk_scale: f32,
         head_scale: f32,
     ) -> Res<()> {
+        self.mla_kpool_score_range(
+            q,
+            pool_keys,
+            head_weights,
+            score,
+            t_q,
+            heads,
+            d,
+            n_pools,
+            0,
+            pool,
+            first_pos,
+            qk_scale,
+            head_scale,
+        )
+    }
+
+    /// Score a contiguous pool range without copying keys. Moving the key base and subtracting
+    /// pool_start * pool from the causal position preserves each dot product and visibility.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_score_range(
+        &self,
+        q: &CudaSlice<f32>,
+        pool_keys: &CudaSlice<f32>,
+        head_weights: &CudaSlice<f32>,
+        score: &mut CudaSlice<f32>,
+        t_q: usize,
+        heads: usize,
+        d: usize,
+        n_pools: usize,
+        pool_start: usize,
+        pool: usize,
+        first_pos: usize,
+        qk_scale: f32,
+        head_scale: f32,
+    ) -> Res<()> {
+        if pool_start
+            .checked_add(n_pools)
+            .and_then(|n| n.checked_mul(d))
+            .is_none_or(|n| n > pool_keys.len())
+            || t_q.checked_mul(n_pools).is_none_or(|n| n > score.len())
+        {
+            return Err("kpool score range exceeds its buffers".into());
+        }
+        let offset = pool_start
+            .checked_mul(pool)
+            .and_then(|n| i64::try_from(n).ok())
+            .ok_or("kpool offset exceeds i64")?;
+        let position = i64::try_from(first_pos).map_err(|_| "kpool position exceeds i64")?;
+        let relative_pos = i32::try_from(position - offset)
+            .map_err(|_| "kpool score relative position exceeds i32")?;
         let s = self.stream();
         // MEMRA_DSA_SCORE_TC door: the prefill scorer on tensor cores. Refusals (4003x) are the
         // kernel's own geometry bounds and fall through to the f32 dispatch below.
@@ -1983,7 +2054,7 @@ impl Engine {
                 memra_mla_kpool_score_tc_f32(
                     q.device_ptr(&s).0 as *const f32,
                     scratch.device_ptr_mut(&s).0 as *mut u16,
-                    pool_keys.device_ptr(&s).0 as *const f32,
+                    (pool_keys.device_ptr(&s).0 as *const f32).add(pool_start * d),
                     head_weights.device_ptr(&s).0 as *const f32,
                     score.device_ptr_mut(&s).0 as *mut f32,
                     t_q as i32,
@@ -1991,7 +2062,7 @@ impl Engine {
                     d as i32,
                     n_pools as i32,
                     pool as i32,
-                    first_pos as i32,
+                    relative_pos,
                     qk_scale,
                     head_scale,
                     tc,
@@ -2023,7 +2094,7 @@ impl Engine {
             let rc = unsafe {
                 memra_mla_kpool_score_dsa_f32(
                     q.device_ptr(&s).0 as *const f32,
-                    pool_keys.device_ptr(&s).0 as *const f32,
+                    (pool_keys.device_ptr(&s).0 as *const f32).add(pool_start * d),
                     head_weights.device_ptr(&s).0 as *const f32,
                     score.device_ptr_mut(&s).0 as *mut f32,
                     t_q as i32,
@@ -2031,7 +2102,7 @@ impl Engine {
                     d as i32,
                     n_pools as i32,
                     pool as i32,
-                    first_pos as i32,
+                    relative_pos,
                     qk_scale,
                     head_scale,
                     dsa_score_rp(),
@@ -2052,7 +2123,7 @@ impl Engine {
                 "kpool_score",
                 memra_mla_kpool_score_f32(
                     q.device_ptr(&s).0 as *const f32,
-                    pool_keys.device_ptr(&s).0 as *const f32,
+                    (pool_keys.device_ptr(&s).0 as *const f32).add(pool_start * d),
                     head_weights.device_ptr(&s).0 as *const f32,
                     score.device_ptr_mut(&s).0 as *mut f32,
                     t_q as i32,
@@ -2060,13 +2131,84 @@ impl Engine {
                     d as i32,
                     n_pools as i32,
                     pool as i32,
-                    first_pos as i32,
+                    relative_pos,
                     qk_scale,
                     head_scale,
                     s.cu_stream() as *mut c_void,
                 ),
             )
         }
+    }
+
+    /// Select and pack the local top-k as (score bits, global pool id) pairs.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_candidates(
+        &self,
+        score: &CudaSlice<f32>,
+        rows: usize,
+        pools: usize,
+        offset: usize,
+        k: usize,
+    ) -> Res<CudaSlice<i32>> {
+        if rows == 0 || pools == 0 || k == 0 || k > 2048 || score.len() < rows * pools {
+            return Err("kpool candidates: unsupported shape".into());
+        }
+        let mut local = self.uninit_i32(rows * k)?;
+        // pool=1 has no partial tail. The existing selector's exact tie rule applies
+        // unchanged because adding a constant to every local id preserves its order.
+        self.mla_kpool_select(score, &mut local, rows, pools, 1, k, k, 0, true)?;
+        let mut out = self.uninit_i32(2 * rows * k)?;
+        let s = self.stream();
+        unsafe {
+            ck(
+                "kpool_candidates",
+                memra_mla_kpool_candidates_f32(
+                    score.device_ptr(&s).0 as *const f32,
+                    local.device_ptr(&s).0 as *const i32,
+                    out.device_ptr_mut(&s).0 as *mut i32,
+                    rows as i32,
+                    pools as i32,
+                    offset as i32,
+                    k as i32,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )?;
+        }
+        Ok(out)
+    }
+
+    /// Merge both ranks' top-k, emitting the replicated selector's complete index row.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mla_kpool_merge(
+        &self,
+        candidates: &CudaSlice<i32>,
+        rows: usize,
+        k: usize,
+        pool: usize,
+        width: usize,
+        first_pos: usize,
+    ) -> Res<CudaSlice<i32>> {
+        if rows == 0 || k == 0 || k > 2048 || candidates.len() < 4 * rows * k {
+            return Err("kpool merge: unsupported shape".into());
+        }
+        let mut out = self.uninit_i32(rows * width)?;
+        let s = self.stream();
+        unsafe {
+            ck(
+                "kpool_merge",
+                memra_mla_kpool_merge_f32(
+                    candidates.device_ptr(&s).0 as *const i32,
+                    out.device_ptr_mut(&s).0 as *mut i32,
+                    rows as i32,
+                    k as i32,
+                    pool as i32,
+                    width as i32,
+                    first_pos as i32,
+                    s.cu_stream() as *mut c_void,
+                ),
+            )?;
+        }
+        Ok(out)
     }
 
     /// The RETAINED reference scorer: block per (query, pool), one thread per head, head sum

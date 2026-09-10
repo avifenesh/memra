@@ -2993,14 +2993,23 @@ pub fn glm5_tp_split_prime_hostdiet_level() -> u8 {
     }
 }
 
-/// `MEMRA_GLM5_TP_INDEXER_SPLIT=1` (lane/glm5-tp-indexer-split-20260907, default OFF, decide-by
-/// 2026-09-21): at prefill widths (`t >= 8`) each TP rank scores and selects HALF of the chunk's
-/// queries against the whole k-pool and the ranks exchange their `idx` rows, instead of both
-/// ranks scoring every query. Pure movement joins the halves, so the merged plane is
-/// byte-identical to the replicated one.
-pub fn glm5_tp_indexer_split_on() -> bool {
+/// `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME` (default **ON** since 2026-09-10; `=0` restores the
+/// replicated prime): grouped-prime chunks (t > 1) score half the pools per TP rank. Exact
+/// candidate exchange and merge preserve the replicated selector's full index sequence.
+/// Decode rejects the door before reading it and keeps the replicated kernel sequence.
+///
+/// Flipped ON by the dev-pair cell of 2026-09-10 (vast 50431646, 2x B200 SXM, TP-2): prime
+/// -34.25% at 1M (736.2216 s -> 484.0600 s, n=3 per arm) and -10.36% at 128k (38.4299 s ->
+/// 34.4500 s), decode flat at both (-0.21% and +0.29%), output tapes byte-identical at both
+/// contexts, and the CHECK oracle reports the merged index plane byte-identical to the
+/// replicated selection at both. Receipt: darklanes #585,
+/// `research/glm5-dev-pair-20260910/LANE.md` section "Cell 3".
+pub fn glm5_tp_indexer_split_prime_on(t: usize) -> bool {
+    if t <= 1 {
+        return false;
+    }
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT").as_deref() == Ok("1"))
+    *ON.get_or_init(|| std::env::var("MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME").as_deref() != Ok("0"))
 }
 
 /// `MEMRA_GLM5_TP_INDEXER_SPLIT_CHECK=1`: diagnostic. Every split call ALSO runs the replicated

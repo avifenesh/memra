@@ -1,0 +1,14 @@
+warning: memra-engine@0.135.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.135.0 (/root/wt-glm5-indexer-split/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 30.07s
+     Running tests/glm5_tp_indexer_split.rs (target/release/deps/glm5_tp_indexer_split-cf1d6139f7af9c61)
+
+running 5 tests
+test gpu_pool_split_matches_replicated_selection_and_cpu ... ignored, needs the lane's two peer-access CUDA devices
+test gpu_range_scores_are_bit_identical_including_causal_boundary ... ignored, needs the lane's CUDA device
+test merge_k_larger_than_candidates_and_empty_ranks ... ok
+test merge_ties_across_ranks_uses_global_index ... ok
+test local_topk_union_contains_global_topk ... ok
+
+test result: ok. 3 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -128,6 +128,31 @@ fn sha16(bytes: &[u8]) -> String {
     format!("{:08x}{:08x}", (a >> 32) as u32, (b >> 32) as u32)
 }
 
+/// Optional nsys capture windows. Set BOXP_PROFILE_PHASE=prime, decode, or both and use
+/// --capture-range=cudaProfilerApi. Calls are outside the measured phase walls.
+fn profile_boundary(phase: &str, start: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let requested = std::env::var("BOXP_PROFILE_PHASE");
+    if requested.as_deref() != Ok(phase) && requested.as_deref() != Ok("both") {
+        return Ok(());
+    }
+    unsafe extern "C" {
+        fn cudaProfilerStart() -> i32;
+        fn cudaProfilerStop() -> i32;
+    }
+    // SAFETY: CUDA contexts are initialized before either instrument boundary.
+    let rc = unsafe {
+        if start {
+            cudaProfilerStart()
+        } else {
+            cudaProfilerStop()
+        }
+    };
+    if rc != 0 {
+        return Err(format!("CUDA profiler {phase} start={start}: rc={rc}").into());
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let model_dir = args
@@ -357,9 +382,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let max_ctx = ids.len() + max_new + 16;
             let mut cache =
                 memra_engine::cache::Cache::new_planned(&e, &model.cfg, &model.plan, max_ctx)?;
+            profile_boundary("prime", true)?;
             let t0 = Instant::now();
             let (logits0, _seed_t, _hiddens) = model.prime_cache(&e, &ids, &mut cache, 0)?;
             let prime_s = t0.elapsed().as_secs_f64();
+            profile_boundary("prime", false)?;
 
             if mode == "tape" && arm == "greedy" {
                 dump_f32(&out_dir.join(format!("{tag}.prime.f32")), &logits0)?;
@@ -397,6 +424,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             own.push(own0);
             let first = forced.as_ref().map(|f| f[0]).unwrap_or(own0);
             tape.push(first);
+            profile_boundary("decode", true)?;
             let mut finish = "length";
             if forced.is_none() && eos.contains(&first) {
                 finish = "stop";
@@ -421,6 +449,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            profile_boundary("decode", false)?;
             if let Some(f) = &forced {
                 let div = own.iter().zip(f.iter()).position(|(a, b)| a != b);
                 eprintln!(

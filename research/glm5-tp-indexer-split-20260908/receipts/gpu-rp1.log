@@ -1,0 +1,9 @@
+
+running 2 tests
+test gpu_pool_split_matches_replicated_selection_and_cpu ... [mla-b200-dsa-select] engaged kpool_select t=1 pools=65537 ctas=257 class=exact (sm_100a; MEMRA_B200_DSA_SELECT=1)
+ok
+test gpu_range_scores_are_bit_identical_including_causal_boundary ... [mla-b200-dsa-decode] engaged kpool_score t=1 arm=head-blocked heads=32 pools=32213 class=bit-identical (sm_100a; MEMRA_B200_DSA_DECODE)
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 2.30s
+

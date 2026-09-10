@@ -313,6 +313,32 @@ impl Glm5TpRt {
         Ok(true)
     }
 
+    /// Device-side candidate exchange, using the same ordered link as the TP graph pieces.
+    pub(crate) fn indexer_gather(
+        &self,
+        root: &Engine,
+        inputs: &[&CudaSlice<i32>],
+        n: usize,
+    ) -> Result<Vec<CudaSlice<i32>>, Box<dyn std::error::Error>> {
+        if !self.ar_1stage_available() {
+            return Err("TP indexer exchange requires a real peer-access two-device link".into());
+        }
+        let engines = [root, &self.peers[0]];
+        let mut guard = self.ar.lock().map_err(|_| "TP indexer link poisoned")?;
+        if guard.is_none() {
+            *guard = Some(crate::tp_ar::ArLink::new(&engines)?);
+        }
+        let mut a = root.uninit_i32(2 * n)?;
+        let mut b = self.peers[0].uninit_i32(2 * n)?;
+        guard.as_mut().expect("built above").gather_i32(
+            &engines,
+            inputs,
+            &mut [&mut a, &mut b],
+            n,
+        )?;
+        Ok(vec![a, b])
+    }
+
     /// The out-of-place one-shot (`ArLink::all_reduce_1stage_into`): no staging copies. Same
     /// availability contract as `ar_1stage`; Ok(false) when the one-shot cannot serve.
     pub fn ar_1stage_into(
@@ -1638,7 +1664,7 @@ pub(crate) fn shard_mla_layer(
         };
         eprintln!(
             "[glm5-tp-mla] head shard armed: ranks={ranks} heads_per_rank={hl} kv_rank={} \
-             latent=replicated indexer=replicated wo={wo_shape} transport={} \
+             latent=replicated indexer-state=replicated indexer=runtime-selected wo={wo_shape} transport={} \
              performance_claim=false",
             g.kv_rank,
             rt.transport.name(),

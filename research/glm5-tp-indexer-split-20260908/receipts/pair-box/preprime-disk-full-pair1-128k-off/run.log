@@ -1,0 +1,131 @@
+[tp2-probe] mode=timed max_new=160 logit_steps=0 sampled=false seed=20260831 temp=1 top_p=0.95 eos=[154820, 154827, 154829] MEMRA_GLM5_TP=Some("all@0,1") MEMRA_PP_STAGES=None MEMRA_MOE_RESIDENT=None MEMRA_MOE_SLOTS=None MEMRA_BF16_MMV=None GATE_RED=None
+[tp2-probe] GPU0: NVIDIA B200
+[tp2-probe] engine up at 1.6s
+[nvfp4-scale] layout=Swizzle32x4x4 from /data/models/glm53-b200-mint/LAYOUT.json — per-16 scale planes are unswizzled at load; repack caches are keyed -swz32x4x4
+[tp2-probe] source open at 2.0s
+[glm5-tp-transport] device-push byte-integrity ladder PASS: directions=2 byte_ladder=[16384, 65536, 1048576, 67108864] mismatches=0 same_device_gate=false census_excluded=arm-time-ladder-traffic
+[glm5-tp-transport] armed transport=device-push shape=consumer-issued cuMemcpyDtoDAsync, event-published, atomics-free same_device_gate=false performance_claim=false
+[glm5-tp-preflight] armed ranks=2 devices=[0, 1] layers=45 kda_shard=34 mla_shard=11 moe_ep=42 kda_heads_per_rank=32 mla_heads_per_rank=32 experts_per_rank=144 transport=device-push weights_loaded=false performance_claim=false
+[glm5-tp-kda] head shard armed: ranks=2 heads_per_rank=32 head_dim=128 wo=column-over-gather transport=device-push performance_claim=false
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk3-gate: 1296 MiB in 0.1s (9552 MiB/s)
+[slab-populate] blk3-up: 1296 MiB in 0.1s (8865 MiB/s)
+[slab-populate] blk3-down: 1296 MiB in 0.1s (9629 MiB/s)
+[moe] resident-experts decision (dev0): experts 187.54GB + trunk 0.00GB vs free 189.63GB (expert budget 124.00GB) -> SLRU cache
+[glm5-tp-mla] head shard armed: ranks=2 heads_per_rank=32 kv_rank=512 latent=replicated indexer-state=replicated indexer=runtime-selected wo=row-parallel-partial-sums transport=device-push performance_claim=false
+[glm5-tp-split] expert TENSOR-parallel armed: every rank holds half of ALL 288 experts, half_ff=1024 (whole-expert ownership pays the busier rank: E[max]=5.094 of 8, a 1.571x expert half where the split is a deterministic 2x) transport=device-push performance_claim=false
+[slab-populate] blk4-gate: 1296 MiB in 0.1s (9601 MiB/s)
+[slab-populate] blk4-up: 1296 MiB in 0.1s (9067 MiB/s)
+[slab-populate] blk4-down: 1296 MiB in 0.2s (7981 MiB/s)
+[slab-populate] blk5-gate: 1296 MiB in 0.2s (7846 MiB/s)
+[slab-populate] blk5-up: 1296 MiB in 0.2s (7957 MiB/s)
+[slab-populate] blk5-down: 1296 MiB in 0.2s (8011 MiB/s)
+[slab-populate] blk6-gate: 1296 MiB in 0.2s (8082 MiB/s)
+[slab-populate] blk6-up: 1296 MiB in 0.2s (8029 MiB/s)
+[slab-populate] blk6-down: 1296 MiB in 0.2s (7876 MiB/s)
+[slab-populate] blk7-gate: 1296 MiB in 0.2s (7593 MiB/s)
+[slab-populate] blk7-up: 1296 MiB in 0.2s (7635 MiB/s)
+[slab-populate] blk7-down: 1296 MiB in 0.2s (7615 MiB/s)
+[slab-populate] blk8-gate: 1296 MiB in 0.2s (7580 MiB/s)
+[slab-populate] blk8-up: 1296 MiB in 0.2s (7521 MiB/s)
+[slab-populate] blk8-down: 1296 MiB in 0.2s (7570 MiB/s)
+[slab-populate] blk9-gate: 1296 MiB in 0.2s (7903 MiB/s)
+[slab-populate] blk9-up: 1296 MiB in 0.2s (8007 MiB/s)
+[slab-populate] blk9-down: 1296 MiB in 0.2s (7924 MiB/s)
+[slab-populate] blk10-gate: 1296 MiB in 0.2s (7777 MiB/s)
+[slab-populate] blk10-up: 1296 MiB in 0.2s (7918 MiB/s)
+[slab-populate] blk10-down: 1296 MiB in 0.2s (7855 MiB/s)
+[slab-populate] blk11-gate: 1296 MiB in 0.2s (7666 MiB/s)
+[slab-populate] blk11-up: 1296 MiB in 0.2s (7773 MiB/s)
+[slab-populate] blk11-down: 1296 MiB in 0.2s (8108 MiB/s)
+[slab-populate] blk12-gate: 1296 MiB in 0.2s (8012 MiB/s)
+[slab-populate] blk12-up: 1296 MiB in 0.2s (8152 MiB/s)
+[slab-populate] blk12-down: 1296 MiB in 0.2s (8069 MiB/s)
+[slab-populate] blk13-gate: 1296 MiB in 0.2s (8029 MiB/s)
+[slab-populate] blk13-up: 1296 MiB in 0.2s (7983 MiB/s)
+[slab-populate] blk13-down: 1296 MiB in 0.2s (8117 MiB/s)
+[slab-populate] blk14-gate: 1296 MiB in 0.2s (8163 MiB/s)
+[slab-populate] blk14-up: 1296 MiB in 0.2s (7924 MiB/s)
+[slab-populate] blk14-down: 1296 MiB in 0.2s (8143 MiB/s)
+[slab-populate] blk15-gate: 1296 MiB in 0.2s (8077 MiB/s)
+[slab-populate] blk15-up: 1296 MiB in 0.2s (8026 MiB/s)
+[slab-populate] blk15-down: 1296 MiB in 0.2s (8114 MiB/s)
+[slab-populate] blk16-gate: 1296 MiB in 0.2s (8083 MiB/s)
+[slab-populate] blk16-up: 1296 MiB in 0.2s (7839 MiB/s)
+[slab-populate] blk16-down: 1296 MiB in 0.2s (8006 MiB/s)
+[slab-populate] blk17-gate: 1296 MiB in 0.2s (8114 MiB/s)
+[slab-populate] blk17-up: 1296 MiB in 0.2s (7592 MiB/s)
+[slab-populate] blk17-down: 1296 MiB in 0.2s (8041 MiB/s)
+[slab-populate] blk18-gate: 1296 MiB in 0.2s (8154 MiB/s)
+[slab-populate] blk18-up: 1296 MiB in 0.2s (8120 MiB/s)
+[slab-populate] blk18-down: 1296 MiB in 0.2s (8103 MiB/s)
+[slab-populate] blk19-gate: 1296 MiB in 0.2s (7742 MiB/s)
+[slab-populate] blk19-up: 1296 MiB in 0.2s (7456 MiB/s)
+[slab-populate] blk19-down: 1296 MiB in 0.2s (7383 MiB/s)
+[slab-populate] blk20-gate: 1296 MiB in 0.2s (7234 MiB/s)
+[slab-populate] blk20-up: 1296 MiB in 0.2s (7401 MiB/s)
+[slab-populate] blk20-down: 1296 MiB in 0.2s (7544 MiB/s)
+[slab-populate] blk21-gate: 1296 MiB in 0.2s (8062 MiB/s)
+[slab-populate] blk21-up: 1296 MiB in 0.2s (8060 MiB/s)
+[slab-populate] blk21-down: 1296 MiB in 0.2s (7989 MiB/s)
+[slab-populate] blk22-gate: 1296 MiB in 0.2s (8032 MiB/s)
+[slab-populate] blk22-up: 1296 MiB in 0.2s (7707 MiB/s)
+[slab-populate] blk22-down: 1296 MiB in 0.2s (7601 MiB/s)
+[slab-populate] blk23-gate: 1296 MiB in 0.2s (7452 MiB/s)
+[slab-populate] blk23-up: 1296 MiB in 0.2s (7420 MiB/s)
+[slab-populate] blk23-down: 1296 MiB in 0.2s (7707 MiB/s)
+[slab-populate] blk24-gate: 1296 MiB in 0.2s (7846 MiB/s)
+[slab-populate] blk24-up: 1296 MiB in 0.2s (8160 MiB/s)
+[slab-populate] blk24-down: 1296 MiB in 0.2s (8008 MiB/s)
+[slab-populate] blk25-gate: 1296 MiB in 0.2s (7963 MiB/s)
+[slab-populate] blk25-up: 1296 MiB in 0.2s (7965 MiB/s)
+[slab-populate] blk25-down: 1296 MiB in 0.2s (7935 MiB/s)
+[slab-populate] blk26-gate: 1296 MiB in 0.2s (7892 MiB/s)
+[slab-populate] blk26-up: 1296 MiB in 0.2s (7869 MiB/s)
+[slab-populate] blk26-down: 1296 MiB in 0.2s (8096 MiB/s)
+[slab-populate] blk27-gate: 1296 MiB in 0.2s (7930 MiB/s)
+[slab-populate] blk27-up: 1296 MiB in 0.2s (7969 MiB/s)
+[slab-populate] blk27-down: 1296 MiB in 0.2s (7972 MiB/s)
+[slab-populate] blk28-gate: 1296 MiB in 0.2s (8097 MiB/s)
+[slab-populate] blk28-up: 1296 MiB in 0.2s (7938 MiB/s)
+[slab-populate] blk28-down: 1296 MiB in 0.2s (7999 MiB/s)
+[slab-populate] blk29-gate: 1296 MiB in 0.2s (7808 MiB/s)
+[slab-populate] blk29-up: 1296 MiB in 0.2s (8081 MiB/s)
+[slab-populate] blk29-down: 1296 MiB in 0.2s (7681 MiB/s)
+[slab-populate] blk30-gate: 1296 MiB in 0.2s (8291 MiB/s)
+[slab-populate] blk30-up: 1296 MiB in 0.2s (8214 MiB/s)
+[slab-populate] blk30-down: 1296 MiB in 0.2s (8129 MiB/s)
+[slab-populate] blk31-gate: 1296 MiB in 0.2s (8090 MiB/s)
+[slab-populate] blk31-up: 1296 MiB in 0.2s (8076 MiB/s)
+[slab-populate] blk31-down: 1296 MiB in 0.2s (8174 MiB/s)
+[slab-populate] blk32-gate: 1296 MiB in 0.2s (8221 MiB/s)
+[slab-populate] blk32-up: 1296 MiB in 0.2s (8304 MiB/s)
+[slab-populate] blk32-down: 1296 MiB in 0.2s (8265 MiB/s)
+[slab-populate] blk33-gate: 1296 MiB in 0.2s (8234 MiB/s)
+Error: Os { code: 28, kind: StorageFull, message: "No space left on device" }
+Command exited with non-zero status 1
+	Command being timed: "/root/wt-glm5-indexer-split/target/release/glm5-tp2-box-probe /data/models/glm53-b200-mint /root/out-tpprime5/p128k /root/wt-glm5-indexer-split/receipts/pair1-128k-off"
+	User time (seconds): 300.63
+	System time (seconds): 214.54
+	Percent of CPU this job got: 287%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:59.39
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 252717112
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 43238241
+	Voluntary context switches: 28017
+	Involuntary context switches: 4152
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 243201096
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

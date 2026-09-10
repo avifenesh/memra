@@ -668,32 +668,6 @@ fn mm_with_pair(
 
 /// The MLA core's PRE segment outputs (lane/glm5-mla-segments-20260904): everything the
 /// append and the attention read from the projections.
-/// A contiguous `[off, off + n)` range of `src` copied into a fresh buffer on `e`'s stream
-/// (the indexer split hands the scorer its rank's query rows this way).
-fn dtod_range_f32(
-    e: &Engine,
-    src: &CudaSlice<f32>,
-    off: usize,
-    n: usize,
-) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    if off + n > src.len() {
-        return Err(format!(
-            "dtod range [{off}, {}) escapes a buffer of {}",
-            off + n,
-            src.len()
-        )
-        .into());
-    }
-    let mut out = e.uninit(n.max(1))?;
-    if n > 0 {
-        let _main = e.gpu.enter_main()?;
-        let mut view = out.slice_mut(0..n);
-        e.stream()
-            .memcpy_dtod(&src.slice(off..off + n), &mut view)?;
-    }
-    Ok(out)
-}
-
 pub(crate) struct MlaPreOut {
     pub q_nope: CudaSlice<f32>,
     pub q_pe: CudaSlice<f32>,
@@ -10049,8 +10023,8 @@ impl HybridModel {
         Ok(out.map(|(idx, width, _)| (idx, width)))
     }
 
-    /// [`Self::mla_seg_mid`] with an optional query-row range for the selection (the indexer
-    /// split across TP ranks); the latent append always covers the whole call.
+    /// [`Self::mla_seg_mid`] with an optional pool range for candidate selection across TP
+    /// ranks. Every query and latent append still covers the whole call.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn mla_seg_mid_rows(
         &self,
@@ -10064,7 +10038,7 @@ impl HybridModel {
         il: usize,
         slot: usize,
         rows_exact: bool,
-        query_rows: Option<(usize, usize)>,
+        pool_range: Option<(usize, usize)>,
     ) -> Result<Option<(CudaSlice<i32>, usize, Option<CudaSlice<i32>>)>, Box<dyn std::error::Error>>
     {
         let g = mla.geom;
@@ -10073,14 +10047,14 @@ impl HybridModel {
         let q_an = planes.q_an;
         let pairs = (planes.h_q8, planes.q_q8);
         let gathered = match (&mla.index, index_plane) {
-            (Some(indexer), Some(plane)) => Some(match query_rows {
+            (Some(indexer), Some(plane)) => Some(match pool_range {
                 None => {
                     let (idx, width) = self.mla_kpool_select(
                         e, indexer, h, q_an, plane, t, slot, il, rows_exact, pairs,
                     )?;
                     (idx, width, None)
                 }
-                Some(rows) => self.mla_kpool_select_rows(
+                Some(rows) => self.mla_kpool_select_pools(
                     e, indexer, h, q_an, plane, t, slot, il, rows_exact, pairs, rows,
                 )?,
             }),
@@ -10779,12 +10753,10 @@ impl HybridModel {
             })
     }
 
-    /// [`Self::mla_kpool_select`] scoring and selecting only the query rows `[r0, r1)` of the
-    /// call (the indexer split across TP ranks); the state append still covers every row.
-    /// Returns the rows' `idx` plane, the width, and, under the CHECK door, the replicated
-    /// full-`t` plane to compare the merged plane against.
+    /// Score this rank's pool range for every query. Return packed (score bits, global id)
+    /// candidates, the final index width, and optionally the replicated full index plane.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    fn mla_kpool_select_rows(
+    fn mla_kpool_select_pools(
         &self,
         e: &Engine,
         indexer: &crate::hybrid::MlaIndexer,
@@ -10796,9 +10768,9 @@ impl HybridModel {
         il: usize,
         rows_exact: bool,
         pairs: (Option<&Q8Pair>, Option<&Q8Pair>),
-        query_rows: (usize, usize),
+        pool_range: (usize, usize),
     ) -> Result<(CudaSlice<i32>, usize, Option<CudaSlice<i32>>), Box<dyn std::error::Error>> {
-        Self::mla_kpool_indices_rows(
+        Self::mla_kpool_indices_pools(
             e,
             indexer,
             h,
@@ -10808,10 +10780,10 @@ impl HybridModel {
             slot,
             rows_exact,
             pairs,
-            Some(query_rows),
+            Some(pool_range),
         )
         .map_err(|source| -> Box<dyn std::error::Error> {
-            format!("layer {il}: DSA k-pool selection (split rows) failed: {source}").into()
+            format!("layer {il}: DSA k-pool selection (split pools) failed: {source}").into()
         })
     }
 
@@ -10860,23 +10832,17 @@ impl HybridModel {
         rows_exact: bool,
         pairs: (Option<&Q8Pair>, Option<&Q8Pair>),
     ) -> Result<(CudaSlice<i32>, usize), Box<dyn std::error::Error>> {
-        let (idx, width, _) = Self::mla_kpool_indices_rows(
+        let (idx, width, _) = Self::mla_kpool_indices_pools(
             e, indexer, h, q_resid, plane, t, slot, rows_exact, pairs, None,
         )?;
         Ok((idx, width))
     }
 
-    /// [`Self::mla_kpool_indices_ex`] with an optional query-row range `[r0, r1)` for steps 3
-    /// and 4 (the indexer split across TP ranks, `MEMRA_GLM5_TP_INDEXER_SPLIT`): the state
-    /// append and the pool-key build (steps 1 and 2) always cover the whole call, since every
-    /// rank holds the full indexer state; only the scorer and the selector run on the range,
-    /// with `first_pos = slot + r0`, the same `n_pools`, `select_k` and `width` as the full
-    /// call. Per (query, pool) the scorer's arithmetic does not depend on which tile computes
-    /// it and the selector is per query, so the range's rows are byte-identical to the same
-    /// rows of the full plane. Under `MEMRA_GLM5_TP_INDEXER_SPLIT_CHECK` the full plane is
-    /// computed too and returned third.
+    /// Optional pool range for steps 3 and 4. Appends and pool-key builds cover every query;
+    /// a range returns local top-k (score bits, global id) pairs for the device-side exchange.
+    /// The CHECK door also returns the replicated selection for full-row byte comparison.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    pub fn mla_kpool_indices_rows(
+    pub fn mla_kpool_indices_pools(
         e: &Engine,
         indexer: &crate::hybrid::MlaIndexer,
         h: &CudaSlice<f32>,
@@ -10886,7 +10852,7 @@ impl HybridModel {
         slot: usize,
         rows_exact: bool,
         pairs: (Option<&Q8Pair>, Option<&Q8Pair>),
-        query_rows: Option<(usize, usize)>,
+        pool_range: Option<(usize, usize)>,
     ) -> Result<(CudaSlice<i32>, usize, Option<CudaSlice<i32>>), Box<dyn std::error::Error>> {
         // quantize-once-share: the PRE segment's q8 pairs of `h` and `q_resid` (= q_an) serve
         // the indexer's projections on the same rows; absent a pair, `matmul` as before.
@@ -11080,25 +11046,36 @@ impl HybridModel {
             )?;
             Ok(idx)
         };
-        match query_rows {
+        match pool_range {
             None => Ok((score_select(&q_index, &head_weights, t, slot)?, width, None)),
-            Some((r0, r1)) => {
-                if r0 >= r1 || r1 > t {
-                    return Err(format!(
-                        "indexer split rows [{r0}, {r1}) escape the call's {t} queries"
-                    )
-                    .into());
+            Some((p0, p1)) => {
+                if p0 >= p1 || p1 > n_pools {
+                    return Err(format!("indexer pool range [{p0}, {p1}) escapes {n_pools}").into());
                 }
-                let t_q = r1 - r0;
-                let q_rows = dtod_range_f32(e, &q_index, r0 * ig.heads * d, t_q * ig.heads * d)?;
-                let hw_rows = dtod_range_f32(e, &head_weights, r0 * ig.heads, t_q * ig.heads)?;
-                let idx = score_select(&q_rows, &hw_rows, t_q, slot + r0)?;
+                let pools = p1 - p0;
+                let mut score = e.uninit(t * pools)?;
+                e.mla_kpool_score_range(
+                    &q_index,
+                    pool_keys,
+                    &head_weights,
+                    &mut score,
+                    t,
+                    ig.heads,
+                    d,
+                    pools,
+                    p0,
+                    ig.pool,
+                    slot,
+                    (d as f32).powf(-0.5),
+                    (ig.heads as f32).powf(-0.5),
+                )?;
+                let candidates = e.mla_kpool_candidates(&score, t, pools, p0, select_k)?;
                 let check = if crate::glm5_tp_indexer_split_check_on() {
                     Some(score_select(&q_index, &head_weights, t, slot)?)
                 } else {
                     None
                 };
-                Ok((idx, width, check))
+                Ok((candidates, width, check))
             }
         }
     }
@@ -11320,23 +11297,79 @@ impl HybridModel {
         Ok(out)
     }
 
-    /// The indexer split across the two TP ranks (`MEMRA_GLM5_TP_INDEXER_SPLIT`,
-    /// lane/glm5-tp-indexer-split-20260907). The replicated walk runs each rank's whole MLA
-    /// core in turn, and in it both ranks score and select EVERY query of the call against the
-    /// whole k-pool: the scorer is the quadratic stage of a long prime (32 of the 107 s at 256k
-    /// on the 2x B200 pair, tptrace8). Here the core runs in three phases across the ranks:
-    ///   1. PRE on both ranks (projections, norms, rope; identical bytes on both),
-    ///   2. MID on both ranks: the latent and indexer-state appends over the WHOLE call (every
-    ///      rank keeps the full replicated state) but the scorer and the selector over this
-    ///      rank's HALF of the query rows (`[0, t/2)` on rank 0, `[t/2, t)` on rank 1),
-    ///   3. the exchange: each rank pushes its `idx` rows to the peer and both assemble the
-    ///      full `[t, width]` plane in query order, pure movement; then POST on both ranks
-    ///      over the assembled plane.
-    ///
-    /// Byte-identical to the replicated walk by construction: per (query, pool) the scorer's
-    /// arithmetic does not depend on which tile computes it and the selector is per query, so
-    /// each half is the same bytes the full plane would hold at those rows. The CHECK door
-    /// proves it per call.
+    /// Refuse to the replicated path BEFORE touching either cache or enqueuing a barrier.
+    fn mla_tp_indexer_split_ready(
+        mla: &crate::hybrid::MlaAttnLayer,
+        tp: &crate::glm5_tp::Glm5TpMla,
+        cache: &Cache,
+        il: usize,
+        t: usize,
+    ) -> bool {
+        if !crate::glm5_tp_indexer_split_prime_on(t) {
+            return false;
+        }
+        let ready = (|| {
+            if !mla.tp_shard || tp.rt.ranks() != 2 || !tp.rt.ar_1stage_available() {
+                return None;
+            }
+            let ig = mla.index.as_ref()?.geom;
+            let peer = tp.peers.first()?;
+            let pg = peer.index.as_ref()?.geom;
+            let a = cache.latent.get(il)?.as_ref()?;
+            let b = cache.glm5_tp_latent_peer.get(il)?.as_ref()?.first()?;
+            if ig.pool == 0
+                || !ig.always_select_tail
+                || ig.pool != pg.pool
+                || ig.top_k != pg.top_k
+                || ig.heads != pg.heads
+                || ig.head_dim != pg.head_dim
+                || ig.always_select_tail != pg.always_select_tail
+                || a.len != b.len
+                || a.width != mla.geom.latent_dim
+                || b.width != peer.geom.latent_dim
+                || a.index_rows.is_none()
+                || b.index_rows.is_none()
+                || a.len.checked_add(t)? > cache.max_ctx
+            {
+                return None;
+            }
+            let n = (a.len + t) / ig.pool;
+            let k = ig.select_k(n);
+            if n < 2
+                || k == 0
+                || k > 2048
+                || t.checked_mul(n)? > i32::MAX as usize
+                || a.len + t > i32::MAX as usize
+            {
+                return None;
+            }
+            for lat in [a, b] {
+                if lat.rows.len() / lat.width < lat.len + t
+                    || (lat.index_pool != 0 && lat.index_pool != ig.pool)
+                    || lat.index_pools_ready > lat.len / ig.pool
+                {
+                    return None;
+                }
+            }
+            Some(())
+        })()
+        .is_some();
+        if !ready {
+            static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "[glm5-tp-indexer-split] refused: requires two peer-access shards, \
+                    matching resident indexers, >=2 pools, k<=2048; indexer=replicated"
+                );
+            }
+        }
+        ready
+    }
+
+    /// Score disjoint pool ranges on two ranks, exchange local top-k candidates through
+    /// MemraArSignal, then merge the global top-k in ascending pool order before attention.
+    /// State and key appends remain replicated. Rank zero owns the extra pool at odd counts.
+    /// Only grouped-prime chunks reach this arm; decode keeps its replicated middle.
     #[allow(clippy::too_many_arguments)]
     fn mla_tp_attn_indexer_split(
         &self,
@@ -11361,8 +11394,11 @@ impl HybridModel {
             half: Option<(CudaSlice<i32>, usize, Option<CudaSlice<i32>>)>,
         }
         let rt = &tp.rt;
-        let t0 = t / 2;
-        let ranges = [(0usize, t0), (t0, t)];
+        let ig = mla.index.as_ref().expect("preflight indexer").geom;
+        let n_pools = (cache.latent[il].as_ref().expect("preflight cache").len + t) / ig.pool;
+        let p0 = n_pools.div_ceil(2);
+        let ranges = [(0usize, p0), (p0, n_pools)];
+        let k = ig.select_k(n_pools);
         let peer_layers = cache.glm5_tp_latent_peer[il]
             .as_mut()
             .ok_or_else(|| format!("layer {il}: indexer split found no peer latent replica"))?;
@@ -11373,45 +11409,20 @@ impl HybridModel {
         let devs: [&Engine; 2] = [e, &rt.peers[0]];
         let shards: [&crate::hybrid::MlaAttnLayer; 2] = [mla, &tp.peers[0]];
 
-        // Take the planes out of both layers first, so a failure anywhere below restores both.
+        // Preflight audited BOTH cache geometries. Allocate BOTH placeholders before moving
+        // either layer, so an allocation failure cannot drop the first rank's resident planes.
+        let mut empty = Vec::with_capacity(2);
+        for dev in devs {
+            let _main = dev.gpu.enter_main()?;
+            empty.push(dev.uninit(0)?);
+        }
         let mut st: Vec<RankState> = Vec::with_capacity(2);
-        for r in 0..2 {
+        for (r, placeholder) in empty.into_iter().enumerate() {
             let layer = &mut *layers[r];
-            let dev = devs[r];
             let slot = layer.len;
-            let width = layer.width;
-            if width != shards[r].geom.latent_dim {
-                return Err(format!(
-                    "layer {il} rank {r}: cache latent width {width} != MlaGeom latent_dim {}",
-                    shards[r].geom.latent_dim
-                )
-                .into());
-            }
-            let capacity = layer.rows.len() / width;
-            if slot + t > capacity {
-                return Err(format!(
-                    "layer {il} rank {r}: latent cache overflow: {slot} + {t} rows exceeds \
-                     capacity {capacity}"
-                )
-                .into());
-            }
-            if layer.index_rows.is_none() {
-                return Err(format!(
-                    "layer {il} rank {r}: the indexer split needs an indexer state plane"
-                )
-                .into());
-            }
-            if r == 1 && layer.len != st[0].slot {
-                return Err(format!(
-                    "layer {il}: the ranks' latent lengths disagree ({} vs {}) before the \
-                     indexer split",
-                    st[0].slot, layer.len
-                )
-                .into());
-            }
             st.push(RankState {
                 slot,
-                rows: std::mem::replace(&mut layer.rows, dev.uninit(0)?),
+                rows: std::mem::replace(&mut layer.rows, placeholder),
                 index_rows: layer.index_rows.take(),
                 pool_keys: layer.index_pool_keys.take(),
                 pools_ready: layer.index_pools_ready,
@@ -11423,14 +11434,17 @@ impl HybridModel {
 
         let run =
             |st: &mut Vec<RankState>| -> Result<Vec<CudaSlice<f32>>, Box<dyn std::error::Error>> {
-                // Phase 1 + 2 on each rank: PRE, then the appends and this rank's half selection.
+                // Enqueue both producers before any exchange can wait for its peer.
                 for r in 0..2 {
                     let dev = devs[r];
+                    let _main = dev.gpu.enter_main()?;
                     let shard = shards[r];
                     let s = &mut st[r];
                     let pre = self
                         .mla_seg_pre(dev, shard, h_by_rank[r], pos_by_rank[r], t, il, false, None)?
-                        .expect("the ws-free PRE segment always returns its own buffers");
+                        .expect("owned PRE");
+                    s.pre = Some(pre);
+                    let pre = s.pre.as_ref().expect("set above");
                     let slot = s.slot;
                     let ring = s.ring;
                     let planes = s.index_rows.as_mut().map(|state| IndexerPlanes {
@@ -11459,7 +11473,6 @@ impl HybridModel {
                         false,
                         Some(ranges[r]),
                     )?;
-                    s.pre = Some(pre);
                     s.half = half;
                 }
                 let width = match (&st[0].half, &st[1].half) {
@@ -11476,35 +11489,27 @@ impl HybridModel {
                         );
                     }
                 };
-                // Phase 3a: the exchange. Each rank's half lands on the peer; both assemble the
-                // full plane in query order on their own stream (ordered after the push landed).
-                let hop = rt.hop(e);
-                let mut full: Vec<CudaSlice<i32>> = Vec::with_capacity(2);
+                // Exchange opaque (score bits, global id) words. Allocate and enqueue BOTH
+                // outputs before any caller reads them; the link holds device-side barriers.
+                let candidates = rt.indexer_gather(
+                    e,
+                    &[
+                        &st[0].half.as_ref().expect("checked above").0,
+                        &st[1].half.as_ref().expect("checked above").0,
+                    ],
+                    2 * t * k,
+                )?;
+                let mut full = Vec::with_capacity(2);
                 for r in 0..2 {
-                    let peer = 1 - r;
-                    let (r0, r1) = ranges[r];
-                    let n_own = (r1 - r0) * width;
-                    let (p0, p1) = ranges[peer];
-                    let n_peer = (p1 - p0) * width;
-                    let own = &st[r].half.as_ref().expect("checked above").0;
-                    let from_peer = crate::tp_transport::move_i32(
-                        &hop,
-                        peer,
-                        &st[peer].half.as_ref().expect("checked above").0,
-                        r,
-                        n_peer,
-                    )?;
-                    let dev = devs[r];
-                    let mut plane = dev.uninit_i32(t * width)?;
-                    {
-                        let _main = dev.gpu.enter_main()?;
-                        let stream = dev.stream();
-                        let mut v = plane.slice_mut(r0 * width..r0 * width + n_own);
-                        stream.memcpy_dtod(&own.slice(0..n_own), &mut v)?;
-                        let mut v = plane.slice_mut(p0 * width..p0 * width + n_peer);
-                        stream.memcpy_dtod(&from_peer.slice(0..n_peer), &mut v)?;
-                    }
-                    full.push(plane);
+                    let _main = devs[r].gpu.enter_main()?;
+                    full.push(devs[r].mla_kpool_merge(
+                        &candidates[r],
+                        t,
+                        k,
+                        ig.pool,
+                        width,
+                        st[r].slot,
+                    )?);
                 }
                 // The CHECK door: the replicated plane was computed alongside; compare bytes.
                 for r in 0..2 {
@@ -11540,6 +11545,7 @@ impl HybridModel {
                 let mut out = Vec::with_capacity(2);
                 for (r, plane) in full.into_iter().enumerate() {
                     let dev = devs[r];
+                    let _main = dev.gpu.enter_main()?;
                     let s = &st[r];
                     let pre = s.pre.as_ref().expect("set above");
                     out.push(self.mla_seg_post(
@@ -11563,6 +11569,7 @@ impl HybridModel {
         // failed call clamps `pools_ready` back under the unchanged length, as the replicated
         // walk does).
         for (r, s) in st.into_iter().enumerate() {
+            let _main = devs[r].gpu.enter_main()?;
             let layer = &mut *layers[r];
             layer.rows = s.rows;
             layer.index_rows = s.index_rows;
@@ -11598,10 +11605,9 @@ impl HybridModel {
         static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
             eprintln!(
-                "[glm5-tp-indexer-split] engaged: each rank scores and selects half of the \
-                 call's queries (layer {il}, t {t}, rows [0, {t0}) | [{t0}, {t})) and the halves \
-                 meet over the {} transport (MEMRA_GLM5_TP_INDEXER_SPLIT)",
-                rt.transport.name()
+                "[glm5-tp-indexer-split] engaged indexer=pool-split layer={il} t={t} \
+                 pools={n_pools} rank0={p0} candidates={k} exchange=device-signal \
+                 phase=prime"
             );
         }
         Ok(out)
@@ -11757,15 +11763,8 @@ impl HybridModel {
         // (lane/glm5-composition) riding the same rows-exact classes as the unsharded
         // verify walk.
         let mut attn: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        // MEMRA_GLM5_TP_INDEXER_SPLIT (prefill widths, two ranks, the prime/decode class): each
-        // rank scores and selects half of the call's queries and the halves meet before the
-        // attention. Anything outside the door's shape takes the replicated walk below.
-        if crate::glm5_tp_indexer_split_on()
-            && ranks == 2
-            && t >= 8
-            && !rows_exact
-            && mla.index.is_some()
-        {
+        // Pool-split indexer for grouped prime; decode and verify stay replicated.
+        if !rows_exact && Self::mla_tp_indexer_split_ready(mla, tp, cache, il, t) {
             let parts = self.mla_tp_attn_indexer_split(
                 e,
                 mla,

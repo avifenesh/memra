@@ -353,6 +353,42 @@ __global__ void __launch_bounds__(512, 1) memra_tp_ar_1stage_kernel(
     }
 }
 
+// Pure bit movement for indexer candidates. Both inputs remain live through the exit
+// barrier. Every block publishes completion on the same MemraArSignal protocol as AR.
+__global__ void memra_tp_ar_gather_i32_kernel(
+    const int* in0, const int* in1, int* out, MemraArSignal* self_sg,
+    MemraArSignal* peer_sg, int rank, long n, int* err, long long spin_limit) {
+    unsigned flag = self_sg->seq[blockIdx.x] + 1;
+    if (memra_ar_barrier(peer_sg->start, self_sg->start, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) {
+            *err = 40043;
+            self_sg->seq[blockIdx.x] = flag;
+            asm volatile("trap;"); // never let a timeout feed uninitialized candidates to attention
+        }
+        return;
+    }
+    for (long i = (long)blockIdx.x * blockDim.x + threadIdx.x; i < n;
+         i += (long)gridDim.x * blockDim.x) {
+        out[i] = in0[i];
+        out[n + i] = in1[i];
+    }
+    if (memra_ar_barrier(peer_sg->end, self_sg->end, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) { *err = 40044; asm volatile("trap;"); }
+    }
+    if (threadIdx.x == 0) self_sg->seq[blockIdx.x] = flag;
+}
+extern "C" int memra_tp_ar_gather_i32(const int* in0, const int* in1, int* out,
+    void* self_sg, void* peer_sg, int rank, long n, int* err, long long spin_limit,
+    int blocks, void* stream_v) {
+    if (n <= 0 || spin_limit <= 0 || rank < 0 || rank >= 2 ||
+        blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40041;
+    memra_tp_ar_gather_i32_kernel<<<blocks, 512, 0, (cudaStream_t)stream_v>>>(
+        in0, in1, out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg,
+        rank, n, err, spin_limit);
+    TP_AR_ERR();
+    return 0;
+}
+
 extern "C" int memra_tp_ar_1stage(const float* in_rank0, const float* in_rank1, float* out,
                                   void* self_sg, void* peer_sg, int rank, long n, int* err,
                                   long long spin_limit, int blocks, void* stream_v) {
