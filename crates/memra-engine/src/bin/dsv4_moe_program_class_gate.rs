@@ -352,7 +352,7 @@ fn refusal_ordering() -> Vec<String> {
         penalty_present: 0.3,
         seed: SEED,
     };
-    let mut mutated: Vec<(&'static str, SamplerConfig)> = vec![("identical", base)];
+    let mut mutated: Vec<(&'static str, SamplerConfig)> = vec![("identical", base.clone())];
     // Coarsest-first, the same order `mismatch` promises. Each entry changes MORE
     // than one field, so a predicate that returned the LAST difference, or a
     // struct-layout artifact, would produce a different sequence here.
@@ -397,7 +397,7 @@ fn refusal_ordering() -> Vec<String> {
         }),
     ];
     for (label, f) in mutations {
-        let mut cfg = base;
+        let mut cfg = base.clone();
         f(&mut cfg);
         mutated.push((label, cfg));
     }
