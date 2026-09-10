@@ -28,6 +28,9 @@ const CAPACITY: usize = PRIME + OUTPUT + 8;
 const SOURCE_SHA: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 const SPLITK_FAST_ENV: &str = "MEMRA_DSV4_SPLITK_FAST";
 const NORM_FUSE2_ENV: &str = "MEMRA_DSV4_NORM_FUSE2";
+/// Flipped default ON by memra #430 after this instrument's rows were taken.
+/// Pinned off here so those rows stay reproducible; see the pin in `main`.
+const NORM2_WIDE_ENV: &str = "MEMRA_DSV4_NORM2_WIDE";
 /// Forward kernel nodes the norm2 door removes per rank and forward variant.
 const NORM_FUSE2_REMOVED: u64 = 215;
 
@@ -562,6 +565,19 @@ fn scored_row(
     arm.rows += 1;
 }
 fn main() {
+    // This bin measured its rows before the norm2-wide door (#430) flipped default
+    // ON. Unset would now engage it under this bin's admitted norm2 door and move
+    // the class the banked receipt describes, so freeze it here, before any model
+    // or worker thread exists. An exported 1 is a caller asking for a different
+    // program and is refused rather than silently pinned away.
+    assert_ne!(
+        std::env::var(NORM2_WIDE_ENV).as_deref(),
+        Ok("1"),
+        "{NORM2_WIDE_ENV}=1 is a different program than this instrument measures"
+    );
+    unsafe {
+        std::env::set_var(NORM2_WIDE_ENV, "0");
+    }
     let args: Vec<_> = std::env::args().collect();
     assert!(
         args.len() == 4
@@ -684,7 +700,18 @@ fn main() {
         fast_initial, norm2_initial,
         "both doors must load on the same side"
     );
-    println!("COMPOSE_LOADED composed_on={norm2_initial} before_override=true");
+    // main pinned this door off at startup. Verify the pin took, and that it
+    // actually resolved off on the loaded model rather than only in the string.
+    assert_eq!(
+        std::env::var(NORM2_WIDE_ENV).as_deref(),
+        Ok("0"),
+        "explicit OFF required: {NORM2_WIDE_ENV}"
+    );
+    assert!(
+        !gpu.norm2_wide_enabled_for_gate(),
+        "norm2-wide must resolve off in this instrument"
+    );
+    println!("COMPOSE_LOADED composed_on={norm2_initial} norm2_wide=false before_override=true");
 
     if args.get(4).is_some_and(|s| s == "--defaults") {
         // The arm comes from the environment policy at load, not from a gate
