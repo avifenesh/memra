@@ -848,6 +848,8 @@ pub struct Dsv4Gpu {
     /// `NORM2_WIDE_TILES` CTAs; the reduction tree is unchanged, so this is a
     /// same-class door and never a numeric one. Requires norm_fuse2.
     norm2_wide: AtomicBool,
+    /// Gate-only all-reduce phase instrument arm, fixed at load. `Off` on every serving process.
+    ar_phase: ArPhaseDoor,
     norm2_component_dir: std::sync::Mutex<Option<std::path::PathBuf>>,
     /// Gate-only capture latch, read before the directory mutex so the OFF arm
     /// executes main's dispatch with no added lock on any layer.
@@ -1690,6 +1692,54 @@ fn norm_fuse_environment_policy(
         Ok("1") if admitted => Ok(true),
         Ok("1") => Err("norm fusion requires TP/EP f32x".into()),
         _ => Err("MEMRA_DSV4_NORM_FUSE requires 0 or 1".into()),
+    }
+}
+
+/// Which arm of the gate-only all-reduce phase instrument this process runs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ArPhaseDoor {
+    /// The ordinary program. No stamps, no null arm, no instrument allocation, and the AR launch
+    /// takes exactly the entry it took before this lane.
+    #[default]
+    Off,
+    /// Stamps on, product arm: the reduce still reads the peer operand across the fabric.
+    Product,
+    /// Stamps on, null arm: same launch shape, same barriers, same epochs and refusal words, own
+    /// operand read twice. The tokens are wrong on purpose. This is a measurement bound and never
+    /// a product arm, so nothing that can serve a request may select it.
+    Null,
+}
+
+/// Set by a gate binary BEFORE `Dsv4Gpu::load`, and by nothing else. It is what makes the phase
+/// instrument gate-only in the strong sense: an unarmed process that exports
+/// `MEMRA_DSV4_AR_PHASE=1` does not silently ignore it and does not silently honour it, it
+/// REFUSES to load. Doors that fail open are how an instrument ends up on a serving box.
+static DSV4_AR_PHASE_ARMED: AtomicBool = AtomicBool::new(false);
+
+/// Permit this process to read `MEMRA_DSV4_AR_PHASE`. Gate binaries call it before load; no
+/// serving path calls it, and there is no environment variable that sets it.
+pub fn arm_ar_phase_door_for_gate() {
+    DSV4_AR_PHASE_ARMED.store(true, Ordering::SeqCst);
+}
+
+pub fn ar_phase_door_armed() -> bool {
+    DSV4_AR_PHASE_ARMED.load(Ordering::SeqCst)
+}
+
+fn ar_phase_environment_policy(
+    value: Result<&str, &std::env::VarError>,
+    armed: bool,
+) -> Res<ArPhaseDoor> {
+    match value {
+        Err(std::env::VarError::NotPresent) | Ok("0") => Ok(ArPhaseDoor::Off),
+        Ok("1") if armed => Ok(ArPhaseDoor::Product),
+        Ok("null") if armed => Ok(ArPhaseDoor::Null),
+        Ok("1") | Ok("null") => Err(
+            "MEMRA_DSV4_AR_PHASE is a gate-only instrument; this process never arms it and will \
+             not run an instrumented or null all-reduce"
+                .into(),
+        ),
+        _ => Err("MEMRA_DSV4_AR_PHASE requires 0, 1 or null".into()),
     }
 }
 
@@ -3286,6 +3336,15 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
             norm_fuse2,
         )?;
+        // Read once at load, like every other door. An unarmed process that exported the name
+        // refuses here rather than loading with an instrument or a null collective in it.
+        let ar_phase = ar_phase_environment_policy(
+            std::env::var("MEMRA_DSV4_AR_PHASE").as_deref(),
+            ar_phase_door_armed(),
+        )?;
+        if ar_phase != ArPhaseDoor::Off && !topology.is_tp_ep() {
+            return Err("MEMRA_DSV4_AR_PHASE requires the all-layer TP/EP topology".into());
+        }
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -3323,6 +3382,7 @@ impl Dsv4Gpu {
             norm_fuse: AtomicBool::new(norm_fuse),
             norm_fuse2: AtomicBool::new(norm_fuse2),
             norm2_wide: AtomicBool::new(norm2_wide),
+            ar_phase,
             norm2_component_dir: std::sync::Mutex::new(None),
             norm2_component_capture: AtomicBool::new(false),
             norm_component_capture: AtomicBool::new(false),
@@ -8126,6 +8186,85 @@ impl Dsv4Gpu {
             .variant_census())
     }
 
+    /// The arm this process loaded with. Fixed at load and never toggled during a walk, because a
+    /// mid-walk change would put two arms' records in one window and neither would be readable.
+    pub fn ar_phase_door(&self) -> ArPhaseDoor {
+        self.ar_phase
+    }
+
+    /// Allocate the phase instrument for `capacity` records per rank. Refuses unless this process
+    /// loaded with the door on, so an armed gate that forgot to export the door gets an error
+    /// instead of an empty window it might read as "the ARs cost nothing".
+    pub fn arm_ar_phase_instrument_for_gate(
+        &self,
+        capacity: usize,
+        delay: Option<(u32, usize, i64)>,
+    ) -> Res<()> {
+        if self.ar_phase == ArPhaseDoor::Off {
+            return Err(
+                "AR phase instrument requires MEMRA_DSV4_AR_PHASE=1 or null at load".into(),
+            );
+        }
+        let _walk = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        self.tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP AR mutex poisoned")?
+            .as_mut()
+            .ok_or("TP/EP AR missing")?
+            .arm_instrument(
+                &self.stages[0].gpu,
+                &self.stages[1].gpu,
+                capacity,
+                self.ar_phase == ArPhaseDoor::Null,
+                delay,
+            )
+    }
+
+    /// Both ranks' record counts, for bracketing a window.
+    pub fn ar_phase_cursor_for_gate(&self) -> Res<[u64; 2]> {
+        let _walk = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        self.tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP AR mutex poisoned")?
+            .as_ref()
+            .ok_or("TP/EP AR missing")?
+            .instrument_cursor(&self.stages[0].gpu, &self.stages[1].gpu)
+    }
+
+    pub fn ar_phase_records_for_gate(
+        &self,
+        since: [u64; 2],
+    ) -> Res<[Vec<crate::tp_ar::ArPhaseRecord>; 2]> {
+        let _walk = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned")?;
+        self.tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP AR mutex poisoned")?
+            .as_ref()
+            .ok_or("TP/EP AR missing")?
+            .drain_instrument(&self.stages[0].gpu, &self.stages[1].gpu, since)
+    }
+
+    /// `(allocated, null_arm)`. The gate asserts the ALLOCATION's arm against the door it loaded
+    /// with: a process that loaded `null` and allocated a product-arm instrument would report a
+    /// transport bound taken from a collective that still crossed the fabric.
+    pub fn ar_phase_instrument_armed_for_gate(&self) -> Res<(bool, bool)> {
+        let ar = self
+            .tp_ep_ar
+            .lock()
+            .map_err(|_| "TP/EP AR mutex poisoned")?;
+        let ar = ar.as_ref().ok_or("TP/EP AR missing")?;
+        Ok((ar.instrument_armed(), ar.instrument_null_arm()))
+    }
+
     pub fn full_token_ar_epochs_for_gate(&self) -> Res<[Vec<u32>; 2]> {
         let _walk = self
             .tp_ep_walk_lock
@@ -10283,6 +10422,7 @@ impl Dsv4Gpu {
                                                 il as i32,
                                             )
                                         }),
+                                        2 * il as u32,
                                     )?;
                                 self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
                                 let injection = if replaying {
@@ -10351,6 +10491,7 @@ impl Dsv4Gpu {
                                     topk * hidden,
                                     capture,
                                     None,
+                                    2 * il as u32 + 1,
                                 )?;
                         }
                         let layer0 = self.stages[0]
@@ -19887,6 +20028,44 @@ mod norm_fuse_default_tests {
         assert!(!norm_fuse_environment_policy(Ok("0"), false).unwrap());
         assert!(norm_fuse_environment_policy(Ok("1"), false).is_err());
         assert!(norm_fuse_environment_policy(Ok("invalid"), true).is_err());
+    }
+}
+
+#[cfg(test)]
+mod ar_phase_policy_tests {
+    use super::{ArPhaseDoor, ar_phase_environment_policy};
+    #[test]
+    fn unarmed_process_refuses_an_exported_instrument() {
+        let absent = std::env::VarError::NotPresent;
+        // Default OFF on both sides of arming: an instrument nobody asked for never allocates.
+        for armed in [false, true] {
+            assert_eq!(
+                ar_phase_environment_policy(Err(&absent), armed).unwrap(),
+                ArPhaseDoor::Off
+            );
+            assert_eq!(
+                ar_phase_environment_policy(Ok("0"), armed).unwrap(),
+                ArPhaseDoor::Off
+            );
+            assert!(ar_phase_environment_policy(Ok("invalid"), armed).is_err());
+            assert!(ar_phase_environment_policy(Ok(""), armed).is_err());
+            assert!(ar_phase_environment_policy(Ok("2"), armed).is_err());
+        }
+        // Armed: both instrument arms are selectable and distinct.
+        assert_eq!(
+            ar_phase_environment_policy(Ok("1"), true).unwrap(),
+            ArPhaseDoor::Product
+        );
+        assert_eq!(
+            ar_phase_environment_policy(Ok("null"), true).unwrap(),
+            ArPhaseDoor::Null
+        );
+        // Unarmed: an exported instrument REFUSES rather than being ignored. A door that fails
+        // open is how an instrument reaches a serving box, so this is the arm that matters.
+        for value in ["1", "null"] {
+            let error = ar_phase_environment_policy(Ok(value), false).unwrap_err();
+            assert!(error.contains("gate-only"), "{error}");
+        }
     }
 }
 

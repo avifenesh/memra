@@ -103,6 +103,9 @@ fn main() {
         std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
         std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
         std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
+        // Gate-only AR phase instrument: pinned off here so no other bin can inherit
+        // an exported instrument or null collective from the environment.
+        std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
     }
 
     // item 3 boot refusal (hermes a4e3d9a8eab4cf17 shape): this probe's instrument

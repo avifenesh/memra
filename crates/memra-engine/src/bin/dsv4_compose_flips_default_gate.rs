@@ -565,6 +565,12 @@ fn scored_row(
     arm.rows += 1;
 }
 fn main() {
+    // The AR phase instrument is gate-only and this is not its gate, so the door is
+    // pinned off here: an exported instrument must never ride along with this arm. Process
+    // startup, before any model or worker thread exists.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
+    }
     // This bin measured its rows before the norm2-wide door (#430) flipped default
     // ON. Unset would now engage it under this bin's admitted norm2 door and move
     // the class the banked receipt describes, so freeze it here, before any model

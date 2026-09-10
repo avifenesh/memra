@@ -180,6 +180,29 @@ pub(crate) struct TpEpArState {
     signal: [CudaSlice<u8>; 2],
     error: [CudaSlice<i32>; 2],
     launches: u64,
+    instrument: Option<ArInstrument>,
+}
+
+/// Gate-only causal instrument for the residual all-reduce pool. Allocated ONLY when the process
+/// armed `MEMRA_DSV4_AR_PHASE` before the model loaded; a serving process never arms it, so the
+/// serving walk keeps `None` here and reaches the ordinary launch entries.
+///
+/// Sized for a whole collection window rather than a ring the analysis has to reason about: the
+/// device cursor is monotone and the host REFUSES a window whose cursor passed the capacity, so a
+/// record is either unaliased or thrown away, never quietly overwritten.
+pub(crate) struct ArInstrument {
+    trace: [CudaSlice<u8>; 2],
+    cursor: [CudaSlice<u64>; 2],
+    capacity: usize,
+    record_bytes: usize,
+    /// 0 = product arm (peer operand read over the fabric). 1 = null arm: same launch shape, same
+    /// barriers, same epochs and refusal words, own operand read twice. The null arm produces
+    /// WRONG tokens by construction and is a measurement bound, never a product arm.
+    null_arm: i32,
+    /// Red arm: `(site, rank, ticks)`. The named rank spins that many SM cycles at that site
+    /// before its start barrier. The instrument is believed only if the delay lands in the OTHER
+    /// rank's start-barrier wait at that same site and nowhere else.
+    delay: Option<(u32, usize, i64)>,
 }
 
 impl TpEpArState {
@@ -217,7 +240,161 @@ impl TpEpArState {
             signal: [signal0, signal1],
             error: [error0, error1],
             launches: 0,
+            instrument: None,
         })
+    }
+
+    /// Arm the gate-only phase instrument. `capacity` is records PER RANK for one collection
+    /// window; the caller sizes it from the window it intends to read (86 ARs per rank per step)
+    /// and the drain refuses rather than reports if the device ran past it.
+    pub(crate) fn arm_instrument(
+        &mut self,
+        owner: &Gpu,
+        peer: &Gpu,
+        capacity: usize,
+        null_arm: bool,
+        delay: Option<(u32, usize, i64)>,
+    ) -> Res<()> {
+        if capacity == 0 {
+            return Err("AR phase instrument needs a nonzero window".into());
+        }
+        if let Some((_, rank, ticks)) = delay
+            && (rank >= 2 || ticks <= 0)
+        {
+            return Err(
+                "AR phase red-arm delay needs rank 0 or 1 and a positive tick count".into(),
+            );
+        }
+        let record_bytes = unsafe { crate::tp_ar::memra_tp_ar_phase_record_bytes() };
+        if record_bytes <= 0 {
+            return Err(format!("AR phase record size {record_bytes}"));
+        }
+        let record_bytes = record_bytes as usize;
+        if record_bytes != std::mem::size_of::<crate::tp_ar::ArPhaseRecord>() {
+            return Err(format!(
+                "AR phase record is {record_bytes} bytes on the device and {} in the host struct",
+                std::mem::size_of::<crate::tp_ar::ArPhaseRecord>()
+            ));
+        }
+        let mut trace = Vec::new();
+        let mut cursor = Vec::new();
+        for gpu in [owner, peer] {
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = gpu.stream();
+            trace.push(
+                stream
+                    .alloc_zeros::<u8>(capacity * record_bytes)
+                    .map_err(|e| format!("AR phase trace: {e}"))?,
+            );
+            cursor.push(
+                stream
+                    .alloc_zeros::<u64>(1)
+                    .map_err(|e| format!("AR phase cursor: {e}"))?,
+            );
+            stream
+                .synchronize()
+                .map_err(|e| format!("AR phase instrument init: {e}"))?;
+        }
+        let [trace1, trace0] = [trace.pop().unwrap(), trace.pop().unwrap()];
+        let [cursor1, cursor0] = [cursor.pop().unwrap(), cursor.pop().unwrap()];
+        self.instrument = Some(ArInstrument {
+            trace: [trace0, trace1],
+            cursor: [cursor0, cursor1],
+            capacity,
+            record_bytes,
+            null_arm: i32::from(null_arm),
+            delay,
+        });
+        Ok(())
+    }
+
+    pub(crate) fn instrument_armed(&self) -> bool {
+        self.instrument.is_some()
+    }
+
+    pub(crate) fn instrument_null_arm(&self) -> bool {
+        self.instrument.as_ref().is_some_and(|i| i.null_arm == 1)
+    }
+
+    /// Read one rank's cursor without disturbing it, so the caller can bracket a window.
+    pub(crate) fn instrument_cursor(&self, owner: &Gpu, peer: &Gpu) -> Res<[u64; 2]> {
+        let instrument = self
+            .instrument
+            .as_ref()
+            .ok_or("AR phase instrument not armed")?;
+        let mut out = [0u64; 2];
+        for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = gpu.stream();
+            let mut one = vec![0u64; 1];
+            stream
+                .memcpy_dtoh(&instrument.cursor[rank], &mut one)
+                .map_err(|e| format!("AR phase cursor read: {e}"))?;
+            stream
+                .synchronize()
+                .map_err(|e| format!("AR phase cursor drain: {e}"))?;
+            out[rank] = one[0];
+        }
+        Ok(out)
+    }
+
+    /// Drain the records the device wrote since `since`. REFUSES a window that ran past the
+    /// allocated capacity instead of returning aliased slots: a wrapped ring reports plausible
+    /// numbers for records that no longer exist, which is exactly the failure this instrument is
+    /// supposed to make impossible.
+    pub(crate) fn drain_instrument(
+        &self,
+        owner: &Gpu,
+        peer: &Gpu,
+        since: [u64; 2],
+    ) -> Res<[Vec<crate::tp_ar::ArPhaseRecord>; 2]> {
+        let instrument = self
+            .instrument
+            .as_ref()
+            .ok_or("AR phase instrument not armed")?;
+        let mut out = [Vec::new(), Vec::new()];
+        for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = gpu.stream();
+            let mut one = vec![0u64; 1];
+            stream
+                .memcpy_dtoh(&instrument.cursor[rank], &mut one)
+                .map_err(|e| format!("AR phase cursor read: {e}"))?;
+            let mut bytes = vec![0u8; instrument.capacity * instrument.record_bytes];
+            stream
+                .memcpy_dtoh(&instrument.trace[rank], &mut bytes)
+                .map_err(|e| format!("AR phase trace read: {e}"))?;
+            stream
+                .synchronize()
+                .map_err(|e| format!("AR phase drain: {e}"))?;
+            let cursor = one[0];
+            if cursor < since[rank] {
+                return Err(format!("AR phase cursor rank {rank} moved backwards"));
+            }
+            let written = cursor - since[rank];
+            if written > instrument.capacity as u64 {
+                return Err(format!(
+                    "AR phase window rank {rank} wrote {written} records into {} slots",
+                    instrument.capacity
+                ));
+            }
+            for index in since[rank]..cursor {
+                let slot = (index % instrument.capacity as u64) as usize * instrument.record_bytes;
+                let mut record = crate::tp_ar::ArPhaseRecord::default();
+                // SAFETY: `record_bytes` is the kernel's own `sizeof(MemraArPhase)` and
+                // `ArPhaseRecord` is `#[repr(C)]` with the same fields in the same order; the
+                // slice is that many bytes at a slot the device wrote whole.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        bytes[slot..slot + instrument.record_bytes].as_ptr(),
+                        (&raw mut record).cast::<u8>(),
+                        instrument.record_bytes,
+                    );
+                }
+                out[rank].push(record);
+            }
+        }
+        Ok(out)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -232,6 +409,10 @@ impl TpEpArState {
         n: usize,
         capture: bool,
         fault: Option<([*const u64; 2], i32)>,
+        // Which of the 86 joins this is: `2 * layer` for the attention join and `2 * layer + 1`
+        // for the expert join. Distinct from the replay fault word's `site`, which is the layer
+        // index and whose meaning the injection gates already depend on.
+        phase_site: u32,
     ) -> Res<()> {
         if n == 0
             || owner_input.len() < n
@@ -271,6 +452,34 @@ impl TpEpArState {
             return Err("TP/EP one-shot reduction output aliases an input".into());
         }
         let blocks = crate::tp_ar::ar_blocks_for(n);
+        // Gate-only instrument pointers, resolved once per join. `None` on every serving process:
+        // `arm_instrument` is reachable only from the armed gate path, so the ordinary walk below
+        // takes exactly the launch entries it took before this lane.
+        type InstrumentPtrs = ([*mut c_void; 2], [*mut c_void; 2], i64, i32, [i64; 2]);
+        let instrument: Option<InstrumentPtrs> = match self.instrument.as_mut() {
+            None => None,
+            Some(state) => {
+                let mut trace = [std::ptr::null_mut(); 2];
+                let mut cursor = [std::ptr::null_mut(); 2];
+                for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+                    gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+                    let stream = gpu.stream();
+                    trace[rank] = state.trace[rank].device_ptr_mut(&stream).0 as *mut c_void;
+                    cursor[rank] = state.cursor[rank].device_ptr_mut(&stream).0 as *mut c_void;
+                }
+                // The delay is keyed on the site AND the rank, so an ordinary site on the delayed
+                // rank is untouched: the red arm must move one wait, not the whole pool.
+                let delay = match state.delay {
+                    Some((site, rank, ticks)) if site == phase_site => {
+                        let mut ticks_by_rank = [0i64; 2];
+                        ticks_by_rank[rank] = ticks;
+                        ticks_by_rank
+                    }
+                    _ => [0i64; 2],
+                };
+                Some((trace, cursor, state.capacity as i64, state.null_arm, delay))
+            }
+        };
         for (rank, gpu, in0, in1, out, self_signal, peer_signal, error) in [
             (
                 0,
@@ -298,7 +507,29 @@ impl TpEpArState {
             }
             let stream = gpu.stream();
             let rc = unsafe {
-                if let Some((inputs, site)) = fault {
+                if let Some((trace, cursor, capacity, null_arm, delay)) = instrument {
+                    crate::tp_ar::memra_tp_ar_1stage_instr(
+                        in0,
+                        in1,
+                        out,
+                        self_signal,
+                        peer_signal,
+                        rank,
+                        n as i64,
+                        error,
+                        crate::tp_ar::AR_SPIN_LIMIT,
+                        blocks,
+                        stream.cu_stream().cast(),
+                        fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank as usize].cast()),
+                        fault.map_or(-1, |(_, site)| site),
+                        trace[rank as usize],
+                        cursor[rank as usize],
+                        capacity,
+                        phase_site,
+                        null_arm,
+                        delay[rank as usize],
+                    )
+                } else if let Some((inputs, site)) = fault {
                     crate::tp_ar::memra_tp_ar_1stage_replay(
                         in0,
                         in1,
