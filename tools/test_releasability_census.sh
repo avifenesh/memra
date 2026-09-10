@@ -12,6 +12,15 @@
 # CPU only: no cargo, no nvcc, no GPU, no network. Runs in ~1 s.
 set -euo pipefail
 
+# NO `echo "$x" | grep -q` IN THIS FILE, and it is not a style preference. `grep -q` exits at
+# its FIRST match, `echo` then takes SIGPIPE writing the rest, and under `pipefail` the
+# pipeline's status is echo's failure, so a SUCCESSFUL match reports as a MISS and the arm
+# fails for the one reason it is not testing. It is size- and scheduling-dependent, so it
+# hides until an input grows: arm 12 greps a whole comments-stripped ci.yml and false-failed
+# on a hosted runner (2026-09-10, `line 203: echo: write error: Broken pipe` immediately
+# before `FAIL: arm 12`) while passing locally on the same bytes. Every check below uses a
+# herestring, which has no pipe and cannot take SIGPIPE.
+
 cd "$(git rev-parse --show-toplevel)"
 census_pub=tools/workspace-publish-census.sh
 census_stub=tools/stub-abi-census.py
@@ -34,12 +43,13 @@ sed -E 's/memra-tokenizer memra-reference/memra-gguf/' "$pub_wf" > "$tmp/no-refe
 # Assert on the LIST, not the file: publish.yml's comments name memra-reference too, so a
 # whole-file grep would match the documentation and hide a no-op sed.
 listed() { sed -n '/for crate in/,/; do/p' "$1" | tr -d '\\\n'; }
-listed "$tmp/no-reference.yml" | grep -q 'memra-reference' \
+listed_out=$(listed "$tmp/no-reference.yml")
+grep -q 'memra-reference' <<<"$listed_out" \
   && fail "arm 1 setup: memra-reference still in the list, the sed did not bite"
 if out=$("$census_pub" Cargo.toml "$tmp/no-reference.yml" 2>&1); then
   fail "arm 1: census accepted a list missing memra-reference: $out"
 fi
-echo "$out" | grep -q 'memra-reference' \
+grep -q 'memra-reference' <<<"$out" \
   || fail "arm 1: refusal does not name the missing member: $out"
 
 # Arm 2 — order: memra-engine listed before its own workspace dep memra-reference.
@@ -48,7 +58,7 @@ sed -E 's/memra-tokenizer memra-reference/memra-gguf/; s/memra-validate memra-en
 if out=$("$census_pub" Cargo.toml "$tmp/bad-order.yml" 2>&1); then
   fail "arm 2: census accepted a non-topological list: $out"
 fi
-echo "$out" | grep -q 'topological' \
+grep -q 'topological' <<<"$out" \
   || fail "arm 2: refusal is not the ordering one: $out"
 
 # Arm 3 — a ghost: a listed crate that is not a workspace member.
@@ -57,7 +67,7 @@ sed -E 's/memra-tokenizer memra-reference/memra-tokenizer memra-ghost memra-refe
 if out=$("$census_pub" Cargo.toml "$tmp/ghost.yml" 2>&1); then
   fail "arm 3: census accepted a ghost crate: $out"
 fi
-echo "$out" | grep -q 'memra-ghost' || fail "arm 3: refusal does not name the ghost: $out"
+grep -q 'memra-ghost' <<<"$out" || fail "arm 3: refusal does not name the ghost: $out"
 
 # Arm 4 — a publish = false crate in the list (memra-probe is the real one).
 sed -E 's/memra-tokenizer memra-reference/memra-tokenizer memra-probe memra-reference/' "$pub_wf" \
@@ -65,12 +75,12 @@ sed -E 's/memra-tokenizer memra-reference/memra-tokenizer memra-probe memra-refe
 if out=$("$census_pub" Cargo.toml "$tmp/probe.yml" 2>&1); then
   fail "arm 4: census accepted memra-probe (publish = false) in the list: $out"
 fi
-echo "$out" | grep -q 'publish = false' \
+grep -q 'publish = false' <<<"$out" \
   || fail "arm 4: refusal is not the publish=false one: $out"
 
 # Arm 5 — the REAL repo must pass.
 out=$("$census_pub" 2>&1) || fail "arm 5: census refused the real workspace: $out"
-echo "$out" | grep -q 'publish-census: OK' || fail "arm 5: no OK line: $out"
+grep -q 'publish-census: OK' <<<"$out" || fail "arm 5: no OK line: $out"
 
 # ── stub ABI census ───────────────────────────────────────────────────────────────────────
 # Arm 6 — THE OTHER DEFECT: strip the two entry points 58ce746ad3 added, exactly the state that
@@ -92,7 +102,7 @@ PY
 if out=$("$census_stub" "$mirror" 2>&1); then
   fail "arm 6: census accepted a stub missing two Rust-referenced symbols: $out"
 fi
-echo "$out" | grep -q 'memra_mmq_fp8_blk_grouped' \
+grep -q 'memra_mmq_fp8_blk_grouped' <<<"$out" \
   || fail "arm 6: refusal does not name the missing symbol: $out"
 
 # Arm 7 — a stub whose real twin does not exist.
@@ -104,11 +114,11 @@ cp crates/memra-engine/cu/mmq_fp8_blk_stub.cu "$mirror2/cu/orphan_stub.cu"
 if out=$("$census_stub" "$mirror2" 2>&1); then
   fail "arm 7: census accepted a stub with no real twin: $out"
 fi
-echo "$out" | grep -q 'no real twin' || fail "arm 7: wrong refusal: $out"
+grep -q 'no real twin' <<<"$out" || fail "arm 7: wrong refusal: $out"
 
 # Arm 8 — the REAL crate must pass.
 out=$("$census_stub" 2>&1) || fail "arm 8: census refused the real crate: $out"
-echo "$out" | grep -q 'stub-abi-census: OK' || fail "arm 8: no OK line: $out"
+grep -q 'stub-abi-census: OK' <<<"$out" || fail "arm 8: no OK line: $out"
 
 # ── arch matrix census ────────────────────────────────────────────────────────────────────
 # Arm 9 — THE HOLE: a ci.yml that does not compile an arch the release matrix builds. This is
@@ -117,7 +127,7 @@ grep -v 'cuda_arch' "$ci" | grep -v 'MEMRA_CUDA_ARCH' > "$tmp/ci-no-arch.yml"
 if out=$("$census_arch" "$tmp/ci-no-arch.yml" "$rel_wf" 2>&1); then
   fail "arm 9: census accepted a ci.yml that compiles no release arch: $out"
 fi
-echo "$out" | grep -q 'never compiles' || fail "arm 9: wrong refusal: $out"
+grep -q 'never compiles' <<<"$out" || fail "arm 9: wrong refusal: $out"
 
 # Arm 10 — an arch build.rs does not accept (typo protection).
 # Inject the bad arch into whatever the matrix currently holds, rather than matching a literal
@@ -128,11 +138,11 @@ grep -q '77z' "$tmp/rel-bad-arch.yml" || fail "arm 10 setup: sed did not bite"
 if out=$("$census_arch" "$ci" "$tmp/rel-bad-arch.yml" 2>&1); then
   fail "arm 10: census accepted an arch build.rs rejects: $out"
 fi
-echo "$out" | grep -q '77z' || fail "arm 10: refusal does not name the bad arch: $out"
+grep -q '77z' <<<"$out" || fail "arm 10: refusal does not name the bad arch: $out"
 
 # Arm 11 — the REAL workflows must pass.
 out=$("$census_arch" 2>&1) || fail "arm 11: census refused the real workflows: $out"
-echo "$out" | grep -q 'arch-census: OK' || fail "arm 11: no OK line: $out"
+grep -q 'arch-census: OK' <<<"$out" || fail "arm 11: no OK line: $out"
 
 # Arm 12 — THE INVARIANT THAT MAKES "advisory" SAFE: an arch whose fatbin census is
 #          non-blocking must never appear in release.yml's matrix. Without this, the advisory
@@ -145,7 +155,7 @@ printf '120a  # pretend advisory\n' > "$tmp/adv-shipped.txt"
 if out=$("$census_arch" "$ci" "$rel_wf" "$build_rs" "$tmp/adv-shipped.txt" 2>&1); then
   fail "arm 12: census allowed an advisory arch to stay in release.yml's matrix: $out"
 fi
-echo "$out" | grep -q 'panics at Engine::func' \
+grep -q 'panics at Engine::func' <<<"$out" \
   || fail "arm 12: refusal does not name the runtime consequence: $out"
 
 # Arm 13 — the other direction: an advisory arch nobody compiles is a dead entry measuring
@@ -162,7 +172,8 @@ sed -e 's/cuda_arch: \["100a"\]/cuda_arch: ["120a"]/' \
     -e 's/"100a", //' \
     -e 's/MEMRA_CUDA_ARCH: "100a"/MEMRA_CUDA_ARCH: "120a"/' \
     "$ci" > "$tmp/ci-no-100a.yml"
-if grep -m1 'cuda_arch:' "$tmp/ci-no-100a.yml" | grep -q '"100a"' \
+first_arch=$(grep -m1 'cuda_arch:' "$tmp/ci-no-100a.yml" || true)
+if grep -q '"100a"' <<<"$first_arch" \
    || grep -qE 'MEMRA_CUDA_ARCH:[[:space:]]*"?100a"?' "$tmp/ci-no-100a.yml"; then
   fail "arm 13 setup: sed did not remove 100a compile coverage"
 fi
@@ -170,14 +181,14 @@ printf '100a  # advisory but uncompiled\n' > "$tmp/adv-dead.txt"
 if out=$("$census_arch" "$tmp/ci-no-100a.yml" "$rel_wf" "$build_rs" "$tmp/adv-dead.txt" 2>&1); then
   fail "arm 13: census allowed an advisory arch that ci never compiles: $out"
 fi
-echo "$out" | grep -q 'measures nothing' || fail "arm 13: wrong refusal: $out"
+grep -q 'measures nothing' <<<"$out" || fail "arm 13: wrong refusal: $out"
 
 # Arm 14 — the REAL files must satisfy the invariant. Asserts the invariant HOLDS, not a
 # particular advisory list: sm_89 was advisory for part of 2026-08-23 and is not any more (its
 # census hits turned out to be declared-and-reasoned, not defects), and a fixture pinned to that
 # transient content would have failed for the right thing happening.
 out=$("$census_arch" 2>&1) || fail "arm 14: real workflows violate the advisory invariant: $out"
-echo "$out" | grep -q 'advisory \[' \
+grep -q 'advisory \[' <<<"$out" \
   || fail "arm 14: OK line does not report the advisory set at all: $out"
 
 # ── wiring ────────────────────────────────────────────────────────────────────────────────
@@ -200,12 +211,13 @@ for needed in \
   "synthetic_fixture_covers_codes_scales_and_exact_activation_blocks" \
   "arch-coverage:"
 do
-  echo "$live" | grep -qF "$needed" \
+  grep -qF "$needed" <<<"$live" \
     || fail "arm 12: $ci does not invoke '$needed' (comments stripped) — the census exists but nothing runs it"
 done
 # And the two tag workflows must run the structural censuses before they spend a matrix on it.
 for wf in "$rel_wf" "$pub_wf"; do
-  grep -vE '^\s*#' "$wf" | grep -qF 'tools/workspace-publish-census.sh' \
+  wf_live=$(grep -vE '^\s*#' "$wf" || true)
+  grep -qF 'tools/workspace-publish-census.sh' <<<"$wf_live" \
     || fail "arm 12: $wf does not run the publish census"
 done
 
