@@ -3841,6 +3841,7 @@ extern "C" int memra_dsv4_build_idx_redirect_m(
 
 #define DSV4_TMAX 32  // DSpark uses <=6; bounded prefill prices widths through 32
 #include "dsv4_dense_tile.cuh"
+#include "dsv4_dense_census.cuh"
 
 // ---- batched bf16 GEMV: y[m, n] = x[m, k] @ W[n, k]^T, weight row loaded once.
 // Per (t, row): thread tid owns contiguous 8-element chunks at (tid*8 + j*8*blockDim),
@@ -3943,6 +3944,7 @@ extern "C" int memra_dsv4_gemv_bf16_m(const void* w_bf16, const void* x_bf16, fl
         dsv4_dense_tile_count(launches);
         return 0;
     }
+    dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_BF16, m, n, k);
     switch (m) {
         DSV4_GEMV_M_CASE(1)
         DSV4_GEMV_M_CASE(2)
@@ -4136,6 +4138,7 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
         dsv4_dense_tile_count(launches);
         return 0;
     }
+    dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
     switch (m) {
         DSV4_GEMV_FP8_M_CASE(1)
         DSV4_GEMV_FP8_M_CASE(2)
@@ -4260,6 +4263,7 @@ extern "C" int memra_dsv4_dots_f32_mrow(const float* x, const void* w, int w_is_
         dsv4_dense_tile_count(launches);
         return 0;
     }
+    dsv4_dense_census_note(DSV4_DENSE_ENTRY_DOTS_F32, s, n, k);
     int threads = 128;
     switch (s) {
         DSV4_DOTS_F32_MROW_CASE(1)
@@ -4401,6 +4405,7 @@ extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_
         dsv4_dense_tile_count(launches);
         return 0;
     }
+    dsv4_dense_census_note(DSV4_DENSE_ENTRY_DOTS_F32ACC, s, n, k);
     int threads = 128;
     switch (s) {
         DSV4_DOTS_F32ACC_MROW_CASE(1)
