@@ -53,11 +53,11 @@ Numerical bodies preserve the corresponding eager entry's operation order.
 
 ## GLM TP pool-split indexer, 2026-09-08
 
-Measured f32 TP-2 receipt: prime improves 10.3% at 128k and 34.6% at 1M. Decode is NEGATIVE at 128k and FLAT at 1M; merge plus exchange consumes score/select savings. Decode split dispatch was deleted. Shared kernels remain for grouped prime (`t>1`), door OFF; decode (`t=1`) stays replicated. See `research/glm5-tp-indexer-split-20260908/RESULTS.md`.
+Measured f32 TP-2 receipt (combined door): prime improves 10.3% at 128k and 34.6% at 1M. Decode is NEGATIVE at 128k and FLAT at 1M; merge plus exchange consumes score/select savings. Decode split dispatch was deleted. These kernels serve grouped prime (`t>1`) only; decode (`t=1`) stays replicated, and the rows-exact verify walk never enters the door. `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME` is **ON by default since 2026-09-10**, on the prime-only pair cell the OFF default was waiting for: 1M prime -34.25%, 128k prime -10.36%, decode flat at both (-0.21% and +0.29%), tapes byte-identical at both contexts and both CHECK arms byte-identical to the replicated selection. `=0` restores the replicated prime. See `research/glm5-tp-indexer-split-20260908/RESULTS.md`; the flip's receipt is the dev-pair lane in [darklanes #585](https://github.com/avifenesh/darklanes/pull/585), section "Cell 3".
 
 | CUDA entry / kernel | Contract | Dispatch and FFI |
 |---|---|---|
-| `memra_mla_kpool_candidates_f32` / `memra_mla_kpool_candidates_kernel` | Packs existing selector output as original f32 score bits plus global pool id; invalid slots use id -1. No arithmetic on scores. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_candidates`; `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`, default OFF. |
+| `memra_mla_kpool_candidates_f32` / `memra_mla_kpool_candidates_kernel` | Packs existing selector output as original f32 score bits plus global pool id; invalid slots use id -1. No arithmetic on scores. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_candidates`; `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`, default ON since 2026-09-10. |
 | `memra_mla_kpool_merge_f32` / `memra_mla_kpool_merge_kernel` | Exact score-desc/id-asc key ordering over both ranks' candidates, then ascending selected pool ids, raw-token expansion, causal tail and -1 padding. Canonical signed zero and nonfinite exclusion use the existing selector helper. One CTA/query, up to 2,048 candidates/rank. | `cu/mla_attn.cu`, `mla_ffi.rs::mla_kpool_merge`; same door. |
 | `memra_tp_ar_gather_i32` / `memra_tp_ar_gather_i32_kernel` | Opaque candidate words gathered in global rank order through `MemraArSignal` start/end barriers. Two distinct peer-access devices; timeout traps, no host synchronization. | `cu/tp_ar.cu`, `tp_ar.rs::ArLink::gather_i32`; same door. |
 
@@ -65,7 +65,7 @@ Scoring reuses `memra_mla_kpool_score_f32` and `memra_mla_kpool_score_dsa_f32`, 
 the RP arm, through `mla_ffi.rs::mla_kpool_score_range`. Key-pointer offset and relative
 causal position restrict the pool domain without introducing a numeric twin. Existing
 `__fmaf_rn`, `__fmul_rn` and `__fadd_rn` define the arithmetic. The TC scorer range passed the same bit-identity gate at levels 1 and 2. No live-position/captured-middle twin is added.
-Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md` (target-box gates pending).
+Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md`, and the 2026-09-10 dev-pair cell on vast 50431646 (2x B200 SXM, TP-2) that flipped the door ON.
 
 ## DSV4 small-kernel diet, 2026-09-07
 
