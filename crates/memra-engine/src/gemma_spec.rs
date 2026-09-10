@@ -1584,6 +1584,13 @@ impl GemmaSpecSession {
     pub fn cache_max_ctx(&self) -> usize {
         self.cache.max_ctx
     }
+    /// The token the prime parked, which the next burst emits first. Read-only, and read by
+    /// `gemma_sample_gate`: the prime BOUNDARY is the one place a `Some(temp == 0)` config
+    /// can still perturb the greedy stream, so the kill-switch identity is stated on this
+    /// token rather than inferred from a stream comparison that cannot fail.
+    pub fn pending_token(&self) -> u32 {
+        self.pending
+    }
     /// DEMOTE HANDOFF (stage-2 seam, gated by the session gate's demote case): hand the
     /// trunk cache to the plain path. The cache rows are exactly `committed` (boundary
     /// law), and the pending token is returned as the plain path's device_next-equivalent
