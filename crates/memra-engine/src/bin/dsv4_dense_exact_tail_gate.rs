@@ -558,6 +558,15 @@ fn main() {
         // Gate-only AR phase instrument: pinned off here so no other bin can inherit
         // an exported instrument or null collective from the environment.
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
+        // memra #433 door MEMRA_DSV4_TP_HEAD_SPLIT, default OFF, decide-by 2026-09-24.
+        // Not this bin's arm: pin the resolved state rather than inherit whatever the
+        // caller exported, and refuse an exported 1 instead of scoring under it.
+        assert_ne!(
+            std::env::var("MEMRA_DSV4_TP_HEAD_SPLIT").as_deref(),
+            Ok("1"),
+            "MEMRA_DSV4_TP_HEAD_SPLIT=1 is not this bin's arm"
+        );
+        std::env::set_var("MEMRA_DSV4_TP_HEAD_SPLIT", "0");
     }
 
     let args: Vec<_> = std::env::args().collect();

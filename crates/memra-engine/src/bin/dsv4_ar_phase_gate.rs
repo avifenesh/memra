@@ -385,6 +385,16 @@ fn main() {
             "requires {name}={value}"
         );
     }
+    // memra #433 door MEMRA_DSV4_TP_HEAD_SPLIT, default OFF, decide-by 2026-09-24.
+    // Not this bin's arm: pin the resolved state rather than inherit whatever the caller
+    // exported, and refuse an exported 1 instead of phasing all-reduces under a split head.
+    assert_ne!(
+        std::env::var("MEMRA_DSV4_TP_HEAD_SPLIT").as_deref(),
+        Ok("1"),
+        "MEMRA_DSV4_TP_HEAD_SPLIT=1 is not this bin's arm"
+    );
+    // SAFETY: single-threaded process start, before any engine state exists.
+    unsafe { std::env::set_var("MEMRA_DSV4_TP_HEAD_SPLIT", "0") };
     // The instrument measures the DEFAULT program or it measures nothing anyone serves. Doors that
     // are ON by default must be unset or explicitly 1 here; nothing may be pinned OFF.
     for name in [

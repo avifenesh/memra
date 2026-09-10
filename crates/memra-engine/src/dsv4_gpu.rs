@@ -899,6 +899,26 @@ pub struct Dsv4Gpu {
     /// lane 8: cross-stage boundary events (peer transport), one per boundary,
     /// created in the TX stage's context (cuEventRecord requires event ctx == stream ctx).
     boundary_ev: Vec<cudarc::driver::CudaEvent>,
+    /// #433 door `MEMRA_DSV4_TP_HEAD_SPLIT`, DEFAULT OFF, decide-by 2026-09-24. The
+    /// eager TP/EP decode vocab head reads the whole 1,059,061,760-byte bf16 slab on
+    /// rank 1 alone (646.792 us, 1638 GB/s = 91.4% of nominal on the 2026-09-09 replay
+    /// map). Splitting the OUTPUT ROW range halves that read per rank; each row's
+    /// K-reduction is untouched, so the door is same-class and owes bit equality, not
+    /// drift rows. Never armed under replay capture: a retained graph bakes the
+    /// single-rank head and this door would change its node set.
+    tp_head_split: AtomicBool,
+    /// Successful split-head vocab dots enqueued per rank, and completed rank-0 to
+    /// rank-1 logits pulls. Launches, not tokens or predicted savings; the door's
+    /// non-vacuity evidence.
+    tp_head_split_dispatches: [AtomicU64; 2],
+    tp_head_split_pulls: AtomicU64,
+    /// Gate-only RED ARM: slide rank 0's owned row range off its true rows by this many
+    /// rows so the composed vector is provably wrong and the bit-equality component must
+    /// refuse on the first differing bit. Non-zero ONLY inside a red-arm gate step.
+    tp_head_split_red_shift: AtomicU64,
+    /// One event per rank-0 head half, in stage 0's context so `cuEventRecord` is legal
+    /// there; rank 1's stream waits it before issuing the consumer-side pull.
+    head_split_ev: Option<cudarc::driver::CudaEvent>,
     hc_head_base: Vec<f32>,
     hc_head_scale: Vec<f32>,
 }
@@ -1779,6 +1799,56 @@ fn norm2_wide_environment_policy(
 /// Column tiles for the wide norm2 pack epilogue, pinned from the component
 /// sweep. 4096 must be a whole multiple of `128 * NORM2_WIDE_TILES`.
 const NORM2_WIDE_TILES: i32 = 32;
+/// #433 `MEMRA_DSV4_TP_HEAD_SPLIT`. DEFAULT OFF: this is a door, not a flip, so an
+/// absent variable never arms it. An explicit "1" outside the admitted TP/EP two-rank
+/// device program refuses rather than silently serving the single-rank head.
+fn tp_head_split_environment_policy(
+    value: Result<&str, &std::env::VarError>,
+    admitted: bool,
+) -> Res<bool> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(false),
+        Ok("0") => Ok(false),
+        Ok("1") if admitted => Ok(true),
+        Ok("1") => Err(
+            "MEMRA_DSV4_TP_HEAD_SPLIT requires the two-rank all-layer TP/EP f32x device program"
+                .into(),
+        ),
+        _ => Err("MEMRA_DSV4_TP_HEAD_SPLIT requires 0 or 1".into()),
+    }
+}
+
+/// The vocab OUTPUT ROW range rank `rank` owns under the split-head door, as
+/// `(first_row, rows)`.
+///
+/// Rank 1 keeps the HIGH half so its rows already sit at their final offset in the
+/// logits vector it samples from; only rank 0's low half crosses the fabric, and it
+/// lands at offset 0. Splitting `N` leaves every row's K-reduction, accumulator and
+/// rounding point exactly where the unsplit kernel put them, which is the whole reason
+/// this door is same-class.
+///
+/// `red_shift` is the gate-only red arm: a non-zero value slides rank 0's range off the
+/// rows it is supposed to own, so the composed vector differs from the OFF arm and the
+/// bit-equality component MUST refuse. A check that has never failed is not a check.
+pub fn tp_head_split_rows(vocab: usize, rank: usize, red_shift: usize) -> Res<(usize, usize)> {
+    if rank > 1 {
+        return Err(format!("split head is a two-rank door, got rank {rank}"));
+    }
+    if vocab == 0 || vocab % 2 != 0 {
+        return Err(format!(
+            "split head needs an even non-zero vocabulary, got {vocab}"
+        ));
+    }
+    let half = vocab / 2;
+    let first = if rank == 0 { red_shift } else { half };
+    if first + half > vocab {
+        return Err(format!(
+            "split head rank {rank} range {first}..{} leaves the {vocab}-row head",
+            first + half
+        ));
+    }
+    Ok((first, half))
+}
 
 impl Dsv4Gpu {
     pub fn device_verify_topk_calls(&self) -> u64 {
@@ -3345,6 +3415,13 @@ impl Dsv4Gpu {
         if ar_phase != ArPhaseDoor::Off && !topology.is_tp_ep() {
             return Err("MEMRA_DSV4_AR_PHASE requires the all-layer TP/EP topology".into());
         }
+        let tp_head_split = tp_head_split_environment_policy(
+            std::env::var("MEMRA_DSV4_TP_HEAD_SPLIT").as_deref(),
+            topology.is_tp_ep()
+                && chains_f32
+                && stages.len() == 2
+                && matches!(decode_path, DecodePath::Device { host_math: false }),
+        )?;
         let mut me = Dsv4Gpu {
             topology,
             attention_tp,
@@ -3383,6 +3460,11 @@ impl Dsv4Gpu {
             norm_fuse2: AtomicBool::new(norm_fuse2),
             norm2_wide: AtomicBool::new(norm2_wide),
             ar_phase,
+            tp_head_split: AtomicBool::new(tp_head_split),
+            tp_head_split_dispatches: std::array::from_fn(|_| AtomicU64::new(0)),
+            tp_head_split_pulls: AtomicU64::new(0),
+            tp_head_split_red_shift: AtomicU64::new(0),
+            head_split_ev: None,
             norm2_component_dir: std::sync::Mutex::new(None),
             norm2_component_capture: AtomicBool::new(false),
             norm_component_capture: AtomicBool::new(false),
@@ -3533,6 +3615,19 @@ impl Dsv4Gpu {
                     .new_event(None)
                     .map_err(e("boundary event"))?;
                 me.boundary_ev.push(ev);
+            }
+            if me.topology.is_tp_ep() && me.stages.len() == 2 {
+                // #433: rank 1 pulls rank 0's logits half on its OWN stream, so the
+                // ordering event has to live in stage 0's context. Allocated whenever the
+                // topology could arm the door, never conditioned on the door's current
+                // value: a gate flips it after load.
+                me.head_split_ev = Some(
+                    me.stages[0]
+                        .gpu
+                        .ctx
+                        .new_event(None)
+                        .map_err(e("split head event"))?,
+                );
             }
             // PEER BYTE-INTEGRITY PROBE (lane/hermes-perf-fixes, 2026-08-23): enable +
             // pool grants alone prove ADDRESSABILITY, not integrity — see the probe
@@ -8455,6 +8550,50 @@ impl Dsv4Gpu {
     }
 
     /// Gate-only final identity read, outside the sampled envelope.
+    /// #433 bit-equality seam: re-run ONLY the head on the state's already-committed
+    /// hidden state, under the chosen arm, and return the full logits row.
+    ///
+    /// This is the component instrument the door owes. Both arms read the SAME `h_a` on
+    /// the same two ranks in the same process, so a differing bit is the door and nothing
+    /// else: no fresh prefix, no second sampler draw, no cross-process variability. It
+    /// re-runs the head instead of the step, so no cache, position, epoch or RNG state
+    /// moves and the arms can be interleaved ABBA inside one walk.
+    ///
+    /// Refuses under armed replay, where the head lives inside a retained graph.
+    ///
+    /// # Safety
+    /// The caller must hold the same model/weight lifetime lease the other gate-only
+    /// entry points require, and must not run a walk concurrently.
+    pub unsafe fn rehead_logits_for_gate(
+        &self,
+        state: &mut DecodeState,
+        split: bool,
+    ) -> Res<Vec<f32>> {
+        if !self.topology.is_tp_ep() || self.stages.len() != 2 {
+            return Err("the split-head component requires the two-rank TP/EP program".into());
+        }
+        let work = state
+            .matrix_step
+            .as_mut()
+            .ok_or("TP/EP matrix workspace missing")?;
+        if work.failed || work.verify.open.is_some() {
+            return Err("the split-head component cannot re-head an unfinished transaction".into());
+        }
+        if work.replay.is_some() {
+            return Err("the split-head component is eager-only; disarm full-token replay".into());
+        }
+        if split {
+            if !self.head_split_active(1, false) {
+                return Err("the split arm was requested with the door disarmed".into());
+            }
+            self.head_logits_split_dev(&mut work.verify.ws, false)?;
+        } else {
+            self.head_logits_batch_dev(&mut work.verify.ws[1], 1, false)?;
+        }
+        let stream = self.stages[1].gpu.stream();
+        dtoh_f32(&stream, &work.verify.ws[1].logits)
+    }
+
     pub fn read_decode_logits_for_gate(&self, state: &DecodeState) -> Res<Vec<f32>> {
         dtoh_f32(
             &self.stages.last().expect("head rank").gpu.stream(),
@@ -10213,6 +10352,17 @@ impl Dsv4Gpu {
                 return Err("replay owner/position/token mismatch".into());
             }
             let capture = work.replay.as_ref().is_some_and(|p| !p.ready);
+            if replaying && self.tp_head_split.load(Ordering::Relaxed) {
+                // #433 is an EAGER-ONLY door. A retained graph bakes the single-rank head
+                // and its sampler enqueue; arming the split under capture would change the
+                // captured node set behind every census that pins this door 0, and arming
+                // it under replay would be a no-op the counters would still report. Refuse
+                // instead of either lie.
+                return Err(
+                    "MEMRA_DSV4_TP_HEAD_SPLIT is eager-only: drain and clear the door before arming full-token replay"
+                        .into(),
+                );
+            }
             let DecodePath::Device { host_math: false } = self.decode_path else {
                 return Err("TP/EP vertical slice requires device math".into());
             };
@@ -10724,15 +10874,21 @@ impl Dsv4Gpu {
             )?;
             drop(commit_phase);
             let head_phase = full_token_profile_phase("FULL_TOKEN_EAGER_HEAD_SUBMIT\0");
-            let head_ws = &mut work.verify.ws[1];
-            self.head_logits_batch_dev(head_ws, 1, false)?;
+            if self.head_split_active(1, false) {
+                // #433 door ON: both ranks own half the vocab rows; rank 1 ends up
+                // holding the identical full vector it would have computed alone.
+                self.head_logits_split_dev(&mut work.verify.ws, false)?;
+            } else {
+                let head_ws = &mut work.verify.ws[1];
+                self.head_logits_batch_dev(head_ws, 1, false)?;
+            }
             drop(head_phase);
             let stream = self.stages[1].gpu.stream();
             if device_logits {
                 state.pos = pos0 + 1;
                 return Ok((None, 0));
             }
-            let logits = dtoh_f32(&stream, &head_ws.logits)?;
+            let logits = dtoh_f32(&stream, &work.verify.ws[1].logits)?;
             let mut best = 0usize;
             for i in 1..logits.len() {
                 if logits[i] > logits[best] {
@@ -14333,6 +14489,80 @@ impl Dsv4Gpu {
             }
         }
     }
+
+    /// #433 split-head door. Drains both ranks before moving the process-local policy:
+    /// the ON and OFF arms enqueue different launch sets on different streams, so a
+    /// mid-flight flip would compose halves from two arms.
+    pub fn set_tp_head_split_for_gate(&self, enabled: bool) -> Res<()> {
+        if enabled
+            && (!self.topology.is_tp_ep()
+                || !self.chains_f32
+                || self.stages.len() != 2
+                || self.head_split_ev.is_none())
+        {
+            return Err(
+                "the split-head door requires the two-rank all-layer TP/EP f32x device program"
+                    .into(),
+            );
+        }
+        for st in &self.stages {
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("split head drain"))?;
+        }
+        self.tp_head_split.store(enabled, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn tp_head_split_enabled_for_gate(&self) -> bool {
+        self.tp_head_split.load(Ordering::Relaxed)
+    }
+
+    /// Restore the actual environment policy after a gate's arms drain.
+    pub fn restore_tp_head_split_default_for_gate(&self) -> Res<bool> {
+        let enabled = tp_head_split_environment_policy(
+            std::env::var("MEMRA_DSV4_TP_HEAD_SPLIT").as_deref(),
+            self.topology.is_tp_ep()
+                && self.chains_f32
+                && self.stages.len() == 2
+                && self.head_split_ev.is_some(),
+        )?;
+        for st in &self.stages {
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("split head restore drain"))?;
+        }
+        self.tp_head_split.store(enabled, Ordering::Relaxed);
+        Ok(enabled)
+    }
+
+    /// Successful split-head vocab dots per rank. Launch counts: the door's non-vacuity
+    /// evidence, never a saving.
+    pub fn tp_head_split_dispatches(&self) -> [u64; 2] {
+        std::array::from_fn(|r| self.tp_head_split_dispatches[r].load(Ordering::Relaxed))
+    }
+
+    /// Completed rank-0 to rank-1 logits pulls.
+    pub fn tp_head_split_pulls(&self) -> u64 {
+        self.tp_head_split_pulls.load(Ordering::Relaxed)
+    }
+
+    /// Gate-only RED ARM. Slides the weight rows rank 0 reads off the rows it owns, so
+    /// the composed logits vector must differ from the OFF arm and the bit-equality
+    /// component must refuse. Drains first for the same reason the door does.
+    pub fn set_tp_head_split_red_shift_for_gate(&self, rows: usize) -> Res<()> {
+        for st in &self.stages {
+            st.gpu
+                .stream()
+                .synchronize()
+                .map_err(e("split head red drain"))?;
+        }
+        self.tp_head_split_red_shift
+            .store(rows as u64, Ordering::Relaxed);
+        Ok(())
+    }
     fn norm2_active(&self, t: usize, host_math: bool) -> bool {
         self.norm_fuse2.load(Ordering::Relaxed)
             && self.topology.is_tp_ep()
@@ -16834,22 +17064,27 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    /// Head for T rows: the `head_logits_dev` program with the row count, and the vocab
-    /// dots on the batched island kernel so the 1.06 GiB head slab is read ONCE per round
-    /// instead of once per verified position.
-    fn head_logits_batch_dev(&self, vws: &mut VerifyWs, t: usize, host_math: bool) -> Res<()> {
+    /// Everything the head does BEFORE the vocab dots, for T rows on one named stage:
+    /// hc_head projection, row-square scale, the hc_head pre gate, the collapse and the
+    /// trunk norm. Factored out of `head_logits_batch_dev` by #433 so the split-head
+    /// door runs the SAME kernels in the SAME order on rank 0 as rank 1 does, by
+    /// construction rather than by a copied block that can drift.
+    fn head_prechain_dev(
+        &self,
+        st: &Stage,
+        vws: &mut VerifyWs,
+        t: usize,
+        host_math: bool,
+    ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
         let hc = d.hc_mult as usize;
         let hidden = mc.n_embd as usize;
         let eps = mc.rms_eps;
-        let last = self.stages.len() - 1;
-        let st = &self.stages[last];
         let stream = st.gpu.stream();
         let w = hc * hidden;
         let fn_w = st.hc_head_fn.as_ref().expect("hc_head_fn");
         let norm = st.trunk_norm.as_ref().expect("trunk norm");
-        let vocab = vws.logits.len() / vws.tmax;
         self.dots_m_dev(
             st,
             vws.h_a.device_ptr(&stream).0 as *const f32,
@@ -16943,6 +17178,19 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
+        Ok(())
+    }
+
+    /// Head for T rows: the `head_logits_dev` program with the row count, and the vocab
+    /// dots on the batched island kernel so the 1.06 GiB head slab is read ONCE per round
+    /// instead of once per verified position.
+    fn head_logits_batch_dev(&self, vws: &mut VerifyWs, t: usize, host_math: bool) -> Res<()> {
+        let hidden = self.model.mc.n_embd as usize;
+        let last = self.stages.len() - 1;
+        let st = &self.stages[last];
+        let stream = st.gpu.stream();
+        let vocab = vws.logits.len() / vws.tmax;
+        self.head_prechain_dev(st, vws, t, host_math)?;
         let head_ptr = st.head.as_ref().expect("head").device_ptr(&stream).0 as *const c_void;
         self.dots_m_dev(
             st,
@@ -16954,6 +17202,133 @@ impl Dsv4Gpu {
             vocab,
             vws.logits.device_ptr_mut(&stream).0 as *mut f32,
         )?;
+        Ok(())
+    }
+
+    /// Is the #433 split-head door armed for THIS call? Door value AND the pinned shape
+    /// it was measured and proved on. `t == 1` because the row split is a pointer offset
+    /// into a `[t, vocab]` output, which is only contiguous per rank at one row; the
+    /// batched spec/verify head already reads the slab once per ROUND, so it is not this
+    /// door's target anyway.
+    fn head_split_active(&self, t: usize, host_math: bool) -> bool {
+        self.tp_head_split.load(Ordering::Relaxed)
+            && self.topology.is_tp_ep()
+            && self.chains_f32
+            && self.stages.len() == 2
+            && t == 1
+            && !host_math
+            && self.head_split_ev.is_some()
+    }
+
+    /// #433: the eager TP/EP decode head with its 129280 OUTPUT ROWS split across both
+    /// ranks.
+    ///
+    /// WHERE THE BYTES GO. The unsplit launch moves 1,059,595,264 modeled bytes, of which
+    /// 1,059,061,760 (99.95%) is the bf16 weight slab; the f32 logits vector is 517,120 B.
+    /// Rank 1 reads all of it alone at 1638 GB/s, 91.4% of the 1792 GB/s nominal, so the
+    /// kernel has no bandwidth headroom to find and only a smaller READ can help. Each
+    /// rank here reads 529,530,880 B of weight instead, and 258,560 B (rank 0's f32 half)
+    /// crosses the fabric on the copy engine.
+    ///
+    /// WHY IT IS SAME-CLASS. The partition is over N, the output row index. Row j is still
+    /// `sum_k W[j,k]*x[k]` accumulated by one row-local reduction on one rank, with the
+    /// same kernel, the same 128-lane tree and the same rounding points as the unsplit
+    /// launch. No cross-rank arithmetic exists in this door: the pull is pure movement.
+    /// Both ranks recompute the pre-chain rather than shipping `collapsed`, so neither
+    /// rank waits on the other before starting its dots; that rests on both ranks holding
+    /// a bit-identical `h_a`, which they do because every cross-rank join in the walk is
+    /// `memra_tp_ar_1stage` reading its operands in GLOBAL rank order on both sides. That
+    /// is an argument, not a receipt, which is exactly why this door ships with a
+    /// bit-equality component that refuses on the first differing bit.
+    fn head_logits_split_dev(&self, ws: &mut [VerifyWs], host_math: bool) -> Res<()> {
+        if ws.len() != 2 {
+            return Err("split head needs both rank workspaces".into());
+        }
+        let hidden = self.model.mc.n_embd as usize;
+        let vocab = ws[1].logits.len() / ws[1].tmax;
+        if ws[0].logits.len() / ws[0].tmax != vocab {
+            return Err("split head: the two ranks disagree on the vocabulary width".into());
+        }
+        // The red arm shifts which WEIGHT rows rank 0 reads. Its output offset stays
+        // canonical, so a red step has exactly one cause: the low half of the composed
+        // vector holds the wrong rows.
+        let red_shift = self.tp_head_split_red_shift.load(Ordering::Relaxed) as usize;
+        let (weight_first0, rows) = tp_head_split_rows(vocab, 0, red_shift)?;
+        let (out_first1, rows1) = tp_head_split_rows(vocab, 1, 0)?;
+        if rows != rows1 {
+            return Err("split head: the two halves must be equal".into());
+        }
+        let plan = [(weight_first0, 0usize), (out_first1, out_first1)];
+        for (rank, (weight_first, out_first)) in plan.iter().copied().enumerate() {
+            let st = &self.stages[rank];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("split head rank bind"))?;
+            let stream = st.gpu.stream();
+            let vws = &mut ws[rank];
+            self.head_prechain_dev(st, vws, 1, host_math)?;
+            let head = st.head.as_ref().expect("head");
+            // bf16 rows: 2 bytes an element, `weight_first` whole rows of `hidden` in.
+            let head_ptr =
+                (head.device_ptr(&stream).0 as usize + weight_first * hidden * 2) as *const c_void;
+            let out_ptr =
+                (vws.logits.device_ptr_mut(&stream).0 as usize + out_first * 4) as *mut f32;
+            self.dots_m_dev(
+                st,
+                vws.collapsed.device_ptr(&stream).0 as *const f32,
+                head_ptr,
+                1,
+                1,
+                hidden,
+                rows,
+                out_ptr,
+            )?;
+            self.tp_head_split_dispatches[rank].fetch_add(1, Ordering::Relaxed);
+        }
+        // Rank 0 publishes, rank 1 PULLS on its own stream. Consumer-issued is the
+        // transport law here (crates/memra-engine/src/tp_transport.rs "WHY PULL"): the
+        // sampler kernel already queued behind it on this stream is ordered for free, so
+        // the hop costs one ordering primitive instead of two.
+        let ev = self.head_split_ev.as_ref().expect("split head event");
+        {
+            let st0 = &self.stages[0];
+            st0.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("split head publish bind"))?;
+            ev.record(&st0.gpu.stream())
+                .map_err(e("split head record"))?;
+        }
+        let st1 = &self.stages[1];
+        st1.gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("split head pull bind"))?;
+        let stream1 = st1.gpu.stream();
+        stream1.wait(ev).map_err(e("split head wait"))?;
+        let (rank0_ws, rank1_ws) = ws.split_at_mut(1);
+        // Both guards are held ACROSS the copy, the `pp.rs` boundary idiom: these are
+        // stream-ordered pool allocations and dropping a guard at the end of the
+        // expression that produced the pointer would release it while the copy engine is
+        // still reading and writing through it.
+        let (src, _src_guard) = rank0_ws[0].logits.device_ptr(&self.stages[0].gpu.stream());
+        let (dst, _dst_guard) = rank1_ws[0].logits.device_ptr_mut(&stream1);
+        let bytes = rows * std::mem::size_of::<f32>();
+        // SAFETY: peer access is granted both ways at load and both pool grants are set;
+        // both buffers hold `vocab` f32 and the copy covers rank 0's half from offset 0.
+        unsafe {
+            cudarc::driver::result::memcpy_peer_async(
+                st1.gpu.ctx.cu_ctx(),
+                dst,
+                self.stages[0].gpu.ctx.cu_ctx(),
+                src,
+                bytes,
+                stream1.cu_stream(),
+            )
+            .map_err(e("split head peer pull"))?;
+        }
+        self.tp_head_split_pulls.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 }
@@ -20066,6 +20441,68 @@ mod ar_phase_policy_tests {
             let error = ar_phase_environment_policy(Ok(value), false).unwrap_err();
             assert!(error.contains("gate-only"), "{error}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tp_head_split_policy_tests {
+    use super::{tp_head_split_environment_policy, tp_head_split_rows};
+
+    /// A DOOR, not a flip: absent is OFF on BOTH admitted and unadmitted programs.
+    /// An explicit "1" outside the admitted program refuses instead of silently
+    /// serving the single-rank head, and every other value refuses.
+    #[test]
+    fn door_defaults_off_and_refuses_an_unadmitted_or_malformed_request() {
+        let absent = std::env::VarError::NotPresent;
+        assert!(!tp_head_split_environment_policy(Err(&absent), true).unwrap());
+        assert!(!tp_head_split_environment_policy(Err(&absent), false).unwrap());
+        assert!(!tp_head_split_environment_policy(Ok("0"), true).unwrap());
+        assert!(!tp_head_split_environment_policy(Ok("0"), false).unwrap());
+        assert!(tp_head_split_environment_policy(Ok("1"), true).unwrap());
+        assert!(tp_head_split_environment_policy(Ok("1"), false).is_err());
+        for admitted in [true, false] {
+            assert!(tp_head_split_environment_policy(Ok("invalid"), admitted).is_err());
+            assert!(tp_head_split_environment_policy(Ok(""), admitted).is_err());
+            assert!(tp_head_split_environment_policy(Ok("2"), admitted).is_err());
+            assert!(tp_head_split_environment_policy(Ok("true"), admitted).is_err());
+        }
+    }
+
+    /// The two halves must tile the vocabulary exactly once, with rank 1 high so only
+    /// rank 0's half moves. The dsv4f head is 129280 rows.
+    #[test]
+    fn the_halves_tile_the_vocabulary_exactly_once() {
+        let (f0, n0) = tp_head_split_rows(129280, 0, 0).unwrap();
+        let (f1, n1) = tp_head_split_rows(129280, 1, 0).unwrap();
+        assert_eq!((f0, n0), (0, 64640));
+        assert_eq!((f1, n1), (64640, 64640));
+        assert_eq!(f0 + n0, f1);
+        assert_eq!(f1 + n1, 129280);
+    }
+
+    /// The red arm must actually MOVE rank 0's rows, and a shift that would leave the
+    /// head has to refuse rather than read past the slab.
+    #[test]
+    fn the_red_shift_moves_rank_zero_and_refuses_past_the_slab() {
+        let (base, rows) = tp_head_split_rows(129280, 0, 0).unwrap();
+        let (red, red_rows) = tp_head_split_rows(129280, 0, 1).unwrap();
+        assert_eq!(rows, red_rows);
+        assert_ne!(base, red);
+        assert!(tp_head_split_rows(129280, 0, 64640).is_ok());
+        assert!(tp_head_split_rows(129280, 0, 64641).is_err());
+        // The red arm never moves rank 1: a red step has exactly one cause.
+        assert_eq!(
+            tp_head_split_rows(129280, 1, 0).unwrap(),
+            tp_head_split_rows(129280, 1, 0).unwrap()
+        );
+    }
+
+    /// Shapes this door has no answer for refuse instead of silently halving wrong.
+    #[test]
+    fn odd_empty_and_out_of_range_shapes_refuse() {
+        assert!(tp_head_split_rows(129281, 0, 0).is_err());
+        assert!(tp_head_split_rows(0, 0, 0).is_err());
+        assert!(tp_head_split_rows(129280, 2, 0).is_err());
     }
 }
 
