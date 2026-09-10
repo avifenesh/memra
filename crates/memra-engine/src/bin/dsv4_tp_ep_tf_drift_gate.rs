@@ -401,6 +401,10 @@ fn main() {
     // Pin the historical control program independently of the graph default.
     memra_engine::set_moe_m1_graph_splitk_for_gate(false);
     memra_engine::set_moe_m1_splitk_for_gate(false);
+    // memra #458: this is a bench process, so it may run the matrix expert program
+    // with the default-ON split-K arm; a serving process cannot arm it and refuses
+    // that combination at load instead of failing every request.
+    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Dsv4Gpu::load(
         Path::new(&args[1]),
         &[0, 1],

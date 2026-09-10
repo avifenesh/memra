@@ -802,6 +802,10 @@ fn main() {
     std::fs::create_dir(&output).expect("new output directory");
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(true);
+    // memra #458: this is a bench process, so it may run the matrix expert program
+    // with the default-ON split-K arm; a serving process cannot arm it and refuses
+    // that combination at load instead of failing every request.
+    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Box::new(
         Dsv4Gpu::load(
             Path::new(&args[1]),

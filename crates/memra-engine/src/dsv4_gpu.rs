@@ -1686,13 +1686,7 @@ fn norm_fuse_environment_policy(
     value: Result<&str, &std::env::VarError>,
     admitted: bool,
 ) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm fusion requires TP/EP f32x".into()),
-        _ => Err("MEMRA_DSV4_NORM_FUSE requires 0 or 1".into()),
-    }
+    crate::dsv4_doors::norm_fuse_environment_policy(value, admitted)
 }
 
 /// Which arm of the gate-only all-reduce phase instrument this process runs.
@@ -1747,13 +1741,7 @@ fn norm_fuse2_environment_policy(
     value: Result<&str, &std::env::VarError>,
     admitted: bool,
 ) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm fusion2 requires TP/EP f32x".into()),
-        _ => Err("MEMRA_DSV4_NORM_FUSE2 requires 0 or 1".into()),
-    }
+    crate::dsv4_doors::norm_fuse2_environment_policy(value, admitted)
 }
 
 /// Default ON under an admitted norm2 door since the 2026-09-10 model campaign
@@ -1767,13 +1755,7 @@ fn norm2_wide_environment_policy(
     value: Result<&str, &std::env::VarError>,
     admitted: bool,
 ) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm2 wide pack requires MEMRA_DSV4_NORM_FUSE2=1".into()),
-        _ => Err("MEMRA_DSV4_NORM2_WIDE requires 0 or 1".into()),
-    }
+    crate::dsv4_doors::norm2_wide_environment_policy(value, admitted)
 }
 
 /// Column tiles for the wide norm2 pack epilogue, pinned from the component
@@ -2345,6 +2327,26 @@ impl Dsv4Gpu {
         Ok(previous)
     }
 
+    /// This process's program, as the door registry describes one. The load
+    /// receipt and the reach gate read doors through the same description, so
+    /// "which doors did this box actually get" has one answer, not two.
+    pub fn door_program(&self) -> crate::dsv4_doors::Dsv4Program {
+        let d = self.model.cfg();
+        let hc = d.hc_mult as usize;
+        let hidden = self.model.mc.n_embd as usize;
+        crate::dsv4_doors::Dsv4Program {
+            name: "loaded",
+            tp_ep: self.topology.is_tp_ep(),
+            chains_f32: self.chains_f32,
+            dots_f32: self.dots_f32,
+            matrix_moe: self.matrix_moe,
+            drafter_resident: self.dspark.is_some() || self.mtp.is_some(),
+            gate_armed_gu_fuse: crate::dsv4_doors::matrix_splitk_door_armed()
+                || crate::moe_f16g_gu_fuse_on(),
+            hc_geometry_24x16384: (2 + hc) * hc == 24 && hc * hidden == 16384,
+        }
+    }
+
     fn validate_matrix_program(&self) -> Res<()> {
         if self.matrix_moe
             && (self.prefill_grouped
@@ -2372,6 +2374,16 @@ impl Dsv4Gpu {
         {
             return Err("matrix request program requires native NVFP4 trunk, device math, grouped visitor/direct loader, complete expert tables, no prefill-only probe, and device routing/reused storage for EP".into());
         }
+        // memra #458. Fifth sibling refusal: split-K's plain gate/up arm is the
+        // FUSED gate/up launch, so it needs the gate-only fused-GU seam, which no
+        // serving process can arm. Before this, the combination booted clean and
+        // then failed every request with "split-K requires plain fused GU" as an
+        // engine_error 500. Refuse here, where the other four refuse.
+        crate::dsv4_doors::matrix_splitk_admission(
+            self.matrix_moe,
+            crate::moe_m1_splitk_on(),
+            crate::dsv4_doors::matrix_splitk_door_armed(),
+        )?;
         Ok(())
     }
 
@@ -3324,13 +3336,14 @@ impl Dsv4Gpu {
         if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
             return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
         }
+        let norm_admitted = crate::dsv4_doors::norm_admitted(topology.is_tp_ep(), chains_f32);
         let norm_fuse = norm_fuse_environment_policy(
             std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
-            topology.is_tp_ep() && chains_f32,
+            norm_admitted,
         )?;
         let norm_fuse2 = norm_fuse2_environment_policy(
             std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
-            topology.is_tp_ep() && chains_f32,
+            norm_admitted,
         )?;
         let norm2_wide = norm2_wide_environment_policy(
             std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
@@ -3774,6 +3787,9 @@ impl Dsv4Gpu {
         me.validate_matrix_program()?;
         if me.attention_tp.is_some() {
             me.pack_attention_tp_layers()?;
+        }
+        for line in crate::dsv4_doors::door_receipt_lines(&me.door_program()) {
+            eprintln!("{line}");
         }
         Ok(me)
     }

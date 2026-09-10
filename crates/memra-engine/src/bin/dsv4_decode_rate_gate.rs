@@ -358,7 +358,11 @@ fn main() {
         Sha256::digest(source.as_bytes())
     );
     let gpu =
-        Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192 + 256 + 96).expect("model");
+        // memra #458: this is a bench process, so it may run the matrix expert program
+        // with the default-ON split-K arm; a serving process cannot arm it and refuses
+        // that combination at load instead of failing every request.
+        memra_engine::arm_matrix_splitk_door_for_gate();
+    Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192 + 256 + 96).expect("model");
     assert!(gpu.matrix_moe_enabled());
     for count in [256, 8192] {
         let prompt = &tokens[..count];
