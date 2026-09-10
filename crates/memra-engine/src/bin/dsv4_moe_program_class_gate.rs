@@ -452,6 +452,16 @@ fn main() {
         ("MEMRA_DSV4_MOE_PROGRAM", "reference"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
         ("MEMRA_DSV4_EP", "off"),
+        // The matrix program's own admission prerequisites (validate_matrix_program:
+        // mode-2 grouped visitor, direct loader, device verify). They are inert on the
+        // reference walk, which never enters the grouped executor, so setting them in
+        // BOTH arms is what makes `matrix_moe` the only thing that moves. The served
+        // ABBA in darklanes #596 did NOT do this: its reference control dropped the
+        // whole tuned bundle, so nine variables moved between its arms and not one.
+        ("MEMRA_MOE_F16G", "2"),
+        ("MEMRA_F16G_SK", "32"),
+        ("MEMRA_DSV4_VERIFY_TOPK", "device"),
+        ("MEMRA_DSV4_DOTS_ARM", "f32x"),
     ] {
         assert_eq!(
             std::env::var(name).as_deref(),
