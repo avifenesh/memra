@@ -1,0 +1,13 @@
+row                      split  old_rc    new_rc    banked_rc
+idxsplit-check-256k      1      93        0         93       
+idxsplit-check2-256k     1      93        0         93       
+idxsplit-on-a-256k       1      93        0         93       
+idxsplit-on-b-256k       1      93        0         93       
+idxsplit-off-a-256k      0      93        0         0        
+idxsplit-off-b-256k      0      93        0         0        
+
+RED ARM, the guard must FAIL when the door did not do its job:
+  OFF log fed to the split=1 arm (engine refused the split): rc=93 (expect 93)
+  OFF log fed to the split=1 arm (engine refused the split): rc=93 (expect 93)
+  ON  log fed to the split=0 arm (door leaked while OFF):    rc=95 (expect 95)
+  ON  log fed to the split=0 arm (door leaked while OFF):    rc=95 (expect 95)

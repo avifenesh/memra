@@ -182,3 +182,43 @@ already-banked logs with no GPU time:
 
 The OFF rows are what make the ON check mean something: with the door off the engine prints
 `indexer-state=replicated indexer=runtime-selected` and no `[glm5-tp-indexer-split]` line at all.
+
+### The replay that proves it, both halves
+
+`guard-proof.sh` is the repaired predicate lifted out of `run-cell.sh` and replayed against the
+six banked 256k `run.log` files on the dev pair (vast 50431646). It needs no GPU and no boot.
+Output banked verbatim in `guard-proof.txt`:
+
+```
+row                      split  old_rc    new_rc    banked_rc
+idxsplit-check-256k      1      93        0         93
+idxsplit-check2-256k     1      93        0         93
+idxsplit-on-a-256k       1      93        0         93
+idxsplit-on-b-256k       1      93        0         93
+idxsplit-off-a-256k      0      93        0         0
+idxsplit-off-b-256k      0      93        0         0
+
+RED ARM, the guard must FAIL when the door did not do its job:
+  OFF log fed to the split=1 arm (engine refused the split): rc=93 (expect 93)
+  OFF log fed to the split=1 arm (engine refused the split): rc=93 (expect 93)
+  ON  log fed to the split=0 arm (door leaked while OFF):    rc=95 (expect 95)
+  ON  log fed to the split=0 arm (door leaked while OFF):    rc=95 (expect 95)
+```
+
+Read the `old_rc` column first: the old predicate returns 93 on every row in the set, including
+the two OFF rows it was never applied to. A predicate that answers 93 to everything carries no
+information, which is why four engaged arms were marked refusals.
+
+The red arm is not a fixture. `idxsplit-off-a-256k` and `idxsplit-off-b-256k` are real runs of
+this binary on this box in which the engine genuinely did not build the split plane: they print
+`indexer-state=replicated indexer=runtime-selected` and no `[glm5-tp-indexer-split]` line at
+all. Feeding those logs to the `split=1` arm is exactly the shape of a real refusal, and the
+repaired guard fails them 93. The mirror direction, an ON log fed to the `split=0` arm, is the
+door leaking while it is supposed to be off, and fails 95. So the check can fail in both
+directions on real engine output, and the four ON rows that pass it are saying something.
+
+One consequence for the banked rows: `idxsplit-check2-256k` had already printed
+`CHECK: merged idx plane byte-identical to the replicated selection (layer 3, t 4096, width
+2051)`. The old rc=93 fired before the rc=94 byte-identity guard was ever consulted, so a
+PASSING exactness check was reported as a failed arm. The prime lever's identity evidence was
+present the whole time and the guard hid it.
