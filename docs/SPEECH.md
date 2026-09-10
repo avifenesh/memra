@@ -175,6 +175,15 @@ arm has not fired yet are marked, and they are not counted as protection.
 | **G8 streams@SLO battery** | serving battery on a lane-owned box | Readiness, model id, streaming partial/final/revision shape, concurrency ladder c1 → c4 → c16 → c64, admission limit, cancel, reconnect, flush, rollback | **Yes, and it is the best red arm we own.** One A100 holding a resident RNNT student plus a resident large-v3 **shed 54 of 71 streams on incoming-queue overflow at c4** while c1 ran fine. The battery must reproduce that shape and the fix must turn it green |
 | **G9 non-vacuity** | every numeric gate | n/a | Each numeric gate carries a first-divergence log and refuses an empty input set; a sweep that scores zero clips is a failure, not a pass |
 
+Two rules that bind all of them:
+
+- **Timing starts from capture of the last owned speech sample**, not from decoder submission.
+  Endpoint, frontend, encoder, decoder, queue and delivery time are separated, and cold versus
+  warm and each concurrency level are recorded separately.
+- **Admission must shed with a typed error, not drop.** The c4 collapse was a bounded-queue
+  overflow that lost streams. A capacity limit that is reached is a product behaviour; a
+  capacity limit that silently eats streams is a defect.
+
 ### 5.1 G7, the served decode contract
 
 G7 was recorded NOT BUILT above because a decode default is a product decision. It has
@@ -238,15 +247,6 @@ no-parameter transcriptions of one clip must return byte-identical text) is writ
 fixture-tested and **cannot fire**, because §1's audio endpoint does not exist. It reports
 `not-armed` rather than passing, and it is not counted as protection until step 3 lands the
 endpoint. Same treatment as G5's missing encode direction, for the same reason.
-
-Two rules that bind all of them:
-
-- **Timing starts from capture of the last owned speech sample**, not from decoder submission.
-  Endpoint, frontend, encoder, decoder, queue and delivery time are separated, and cold versus
-  warm and each concurrency level are recorded separately.
-- **Admission must shed with a typed error, not drop.** The c4 collapse was a bounded-queue
-  overflow that lost streams. A capacity limit that is reached is a product behaviour; a
-  capacity limit that silently eats streams is a defect.
 
 ---
 
