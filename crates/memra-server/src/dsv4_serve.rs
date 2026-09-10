@@ -55,6 +55,33 @@ pub fn is_dsv4_dir(dir: &Path) -> bool {
     }
 }
 
+/// The checkpoint's OWN declared context, read from `config.json`.
+///
+/// This is the number the serve route must default to. Before this lane the route defaulted to a
+/// literal 8192, allocated `max_seq` from it and published it as `context_length` on
+/// `/v1/models`, so a launcher that omitted `MEMRA_CTX` served 8192 against a checkpoint
+/// declaring `max_position_embeddings: 1048576` and nothing in the response said so.
+///
+/// `0` means the field is absent or unusable, which makes the window unresolvable without an
+/// explicit `MEMRA_CTX`; `resolve_ctx` turns that into a refusal rather than a guess.
+fn dsv4_declared_context(dir: &Path) -> Result<usize, String> {
+    let path = dir.join("config.json");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("dsv4 config {} unreadable: {e}", path.display()))?;
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("dsv4 config {} is not JSON: {e}", path.display()))?;
+    Ok(declared_context_from_config(&json))
+}
+
+/// `max_position_embeddings` as a servable count. A missing, non-integer, zero or
+/// beyond-`usize` value reads as 0 ("undeclared"), never as a substituted default.
+fn declared_context_from_config(json: &serde_json::Value) -> usize {
+    json.get("max_position_embeddings")
+        .and_then(|v| v.as_u64())
+        .and_then(|v| usize::try_from(v).ok())
+        .unwrap_or(0)
+}
+
 pub struct Dsv4Model {
     pub gpu: Arc<Dsv4Gpu>,
     pub tok: Arc<Tokenizer>,
@@ -368,10 +395,10 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             ));
         }
     };
-    let max_seq: usize = std::env::var("MEMRA_CTX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(8192);
+    let model_ctx = dsv4_declared_context(dir)?;
+    let max_seq = crate::worker::resolve_env_ctx(model_ctx).map_err(|e| {
+        format!("dsv4 model {name:?}: {e} (config.json declares {model_ctx} positions)")
+    })?;
     let host_cache_bytes = resolve_env_mb(
         "MEMRA_DSV4_KV_HOST_MB",
         std::env::var_os("MEMRA_DSV4_KV_HOST_MB"),
@@ -1279,6 +1306,96 @@ fn argmax(v: &[f32]) -> u32 {
         }
     }
     best as u32
+}
+
+#[cfg(test)]
+mod declared_context_tests {
+    use super::{declared_context_from_config, dsv4_declared_context};
+    use crate::worker::resolve_ctx;
+
+    /// The DSV4F config as it actually ships (`max_position_embeddings: 1048576`), and the
+    /// resolution the serve route now performs on it. RED ARM: with the old literal fallback
+    /// this route resolved 8192 and published it, so the first assertion fails on any revert.
+    #[test]
+    fn the_dsv4_route_serves_the_window_the_checkpoint_declares() {
+        let cfg: serde_json::Value = serde_json::from_str(
+            r#"{"model_type":"deepseek_v4","max_position_embeddings":1048576,
+                "hidden_size":7168,"num_hidden_layers":61}"#,
+        )
+        .expect("fixture parses");
+        assert_eq!(declared_context_from_config(&cfg), 1_048_576);
+        assert_eq!(
+            resolve_ctx(None, declared_context_from_config(&cfg)),
+            Ok(1_048_576)
+        );
+
+        // An explicit deployment pin still wins, and a smaller checkpoint is not widened.
+        assert_eq!(
+            resolve_ctx(Some("131072"), declared_context_from_config(&cfg)),
+            Ok(131_072)
+        );
+        let narrow: serde_json::Value =
+            serde_json::from_str(r#"{"max_position_embeddings":4096}"#).expect("parses");
+        assert_eq!(
+            resolve_ctx(None, declared_context_from_config(&narrow)),
+            Ok(4_096)
+        );
+    }
+
+    /// Undeclared is undeclared: a config with no usable `max_position_embeddings` reads as 0,
+    /// which `resolve_ctx` refuses rather than filling in.
+    #[test]
+    fn an_undeclared_or_unusable_field_reads_as_zero_and_then_refuses() {
+        for raw in [
+            r#"{}"#,
+            r#"{"max_position_embeddings":null}"#,
+            r#"{"max_position_embeddings":"1048576"}"#,
+            r#"{"max_position_embeddings":-1}"#,
+            r#"{"max_position_embeddings":0}"#,
+        ] {
+            let cfg: serde_json::Value = serde_json::from_str(raw).expect("fixture parses");
+            assert_eq!(declared_context_from_config(&cfg), 0, "{raw}");
+            assert!(
+                resolve_ctx(None, declared_context_from_config(&cfg)).is_err(),
+                "{raw}: an unresolvable window must refuse, not default",
+            );
+        }
+    }
+
+    /// The reader is the file, not a hand-passed number: a real directory resolves, and a
+    /// missing or malformed config.json refuses by name instead of falling back.
+    #[test]
+    fn the_config_file_itself_is_the_source_and_a_broken_one_refuses() {
+        let dir = std::env::temp_dir().join(format!(
+            "memra-dsv4-ctx-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("fixture dir");
+
+        assert!(
+            dsv4_declared_context(&dir)
+                .expect_err("no config.json")
+                .contains("unreadable"),
+        );
+
+        std::fs::write(dir.join("config.json"), "{not json").expect("write");
+        assert!(
+            dsv4_declared_context(&dir)
+                .expect_err("malformed config")
+                .contains("not JSON"),
+        );
+
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"model_type":"deepseek_v4","max_position_embeddings":1048576}"#,
+        )
+        .expect("write");
+        assert_eq!(dsv4_declared_context(&dir), Ok(1_048_576));
+
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
 }
 
 #[cfg(test)]

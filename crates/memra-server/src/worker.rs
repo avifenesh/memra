@@ -4065,10 +4065,15 @@ fn init_prefix_cache_budget(
             };
         }
 
+        // A SIZING heuristic, deliberately NOT `resolve_ctx`: this picks how many bytes of
+        // prefix snapshots to keep, and deriving it from a 1M-token declared context would
+        // size the budget against a window no request has asked for. It publishes nothing and
+        // caps nothing, so the historical 8192 floor stays, named rather than inline.
+        const PREFIX_CACHE_CTX_FALLBACK: usize = 8192;
         let ctx = std::env::var("MEMRA_CTX")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(8192);
+            .unwrap_or(PREFIX_CACHE_CTX_FALLBACK);
         let mut entries: Vec<_> = loaded
             .iter()
             .map(|(name, lm)| (name.as_str(), model_prefix_entry_bytes(&lm.model, ctx)))
@@ -18011,6 +18016,60 @@ fn constraint_poll_wait(
         .min(CONSTRAINT_RESULT_POLL)
 }
 
+/// The server-side context default, resolved from the MODEL rather than from a constant.
+///
+/// Historical behaviour, and the defect this replaces: every reader of `MEMRA_CTX` fell back to
+/// a literal `8192` when the variable was absent or unparseable. On the dsv4 serve route that
+/// literal WAS the served window (`dsv4_serve::load` allocated `max_seq` from it and
+/// `/v1/models` published it), so a launcher that forgot the variable published and served 8192
+/// against a checkpoint declaring `max_position_embeddings: 1048576`, silently, with every
+/// request still returning 200. The rule now: an explicit `MEMRA_CTX` is authoritative, an
+/// absent one resolves to the model's OWN declared context, and a present-but-unusable value
+/// REFUSES instead of resolving to a number that contradicts the checkpoint.
+///
+/// `model_ctx` is the checkpoint's declared context length (`max_position_embeddings` through
+/// `cfg.context_length`); `0` means "the loader could not determine it", which is exactly the
+/// ambiguity that must fail closed rather than be guessed.
+pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String> {
+    match raw {
+        Some(raw) => {
+            let trimmed = raw.trim();
+            let parsed = trimmed.parse::<usize>().map_err(|_| {
+                format!("MEMRA_CTX {raw:?} is not a positive integer; refusing to serve a guessed context window")
+            })?;
+            if parsed == 0 {
+                return Err(
+                    "MEMRA_CTX=0 is not a servable context window; unset it to serve the model's declared context"
+                        .to_string(),
+                );
+            }
+            Ok(parsed)
+        }
+        None => {
+            if model_ctx > 0 {
+                Ok(model_ctx)
+            } else {
+                Err(
+                    "context window unresolvable: the checkpoint declares no context length and MEMRA_CTX is unset; refusing to guess"
+                        .to_string(),
+                )
+            }
+        }
+    }
+}
+
+/// `resolve_ctx` against the process environment. A non-Unicode value is treated like any other
+/// unusable value: it refuses, it does not silently become a default.
+pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
+    match std::env::var_os("MEMRA_CTX") {
+        None => resolve_ctx(None, model_ctx),
+        Some(value) => match value.into_string() {
+            Ok(text) => resolve_ctx(Some(&text), model_ctx),
+            Err(_) => Err("MEMRA_CTX is not valid Unicode".to_string()),
+        },
+    }
+}
+
 fn request_ctx_cap(
     server_ctx: usize,
     model_ctx: usize,
@@ -18157,13 +18216,11 @@ fn prepare_request(
 
     let prompt_len = req.prepared_prompt.as_ref().unwrap().len();
     enforce_prompt_limit(prompt_len, req.max_prompt_tokens)?;
-    let server_ctx = std::env::var("MEMRA_CTX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(8192);
+    let model_ctx = lm.model.cfg.context_length as usize;
+    let server_ctx = resolve_env_ctx(model_ctx).map_err(EngineError::context_length)?;
     let ctx_cap = request_ctx_cap(
         server_ctx,
-        lm.model.cfg.context_length as usize,
+        model_ctx,
         prompt_len,
         req.params.max_ctx,
         req.params.max_new,
@@ -25894,7 +25951,7 @@ mod tests {
         is_cuda_oom, oldest_parked_candidate, parallel_device_requirements, parked_entry_count,
         pp_admission_stage_count, pp_boundary_slot_bytes, pp_boundary_token_cap_resolve,
         pp_device_requirements, pp_stage_admissions, pp_stage_observed_residuals, prepare_park,
-        prompt_source_limit_error, request_ctx_cap,
+        prompt_source_limit_error, request_ctx_cap, resolve_ctx,
     };
     use super::{
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
@@ -27436,6 +27493,63 @@ mod tests {
             non_oom_attempts.get(),
             1,
             "a failure without reclaimed state is not retried",
+        );
+    }
+
+    /// RED ARM for the 2026-09-10 context-fallback defect. Every one of these cases returned
+    /// 8192 before the fix, which is what made an unset `MEMRA_CTX` publish and serve 8k against
+    /// a checkpoint declaring a million positions. If the literal fallback is ever reintroduced,
+    /// the first four assertions fail.
+    #[test]
+    fn an_unset_ctx_resolves_to_the_models_own_declared_context_never_a_constant() {
+        assert_eq!(
+            resolve_ctx(None, 1_048_576),
+            Ok(1_048_576),
+            "DSV4F declares max_position_embeddings 1048576; an unset MEMRA_CTX must serve it",
+        );
+        assert_eq!(resolve_ctx(None, 262_144), Ok(262_144));
+        assert_eq!(resolve_ctx(None, 32_768), Ok(32_768));
+        assert_eq!(
+            resolve_ctx(None, 4_096),
+            Ok(4_096),
+            "a model SMALLER than the old constant must not be widened to it either",
+        );
+
+        // An explicit setting is authoritative in both directions: the fleet launchers pin it,
+        // and a pinned window narrower than the checkpoint is a deployment decision.
+        assert_eq!(resolve_ctx(Some("262144"), 1_048_576), Ok(262_144));
+        assert_eq!(resolve_ctx(Some(" 8192 "), 1_048_576), Ok(8_192));
+
+        // Fail closed where the value is real ambiguity, rather than substituting a number
+        // that contradicts the checkpoint.
+        for bad in ["", "abc", "-1", "1048576tokens", "0"] {
+            let resolved = resolve_ctx(Some(bad), 1_048_576);
+            assert!(
+                resolved.is_err(),
+                "MEMRA_CTX {bad:?} must refuse, not resolve to a guess (got {resolved:?})",
+            );
+        }
+        assert!(
+            resolve_ctx(None, 0).is_err(),
+            "an undeclared model context with no MEMRA_CTX must refuse, not guess",
+        );
+    }
+
+    /// The resolution must survive the request path, not only the resolver: an unbounded request
+    /// against a 1M checkpoint with no `MEMRA_CTX` must be admitted at the checkpoint's window.
+    /// With the old 8192 fallback this cap came out at `prompt + 8192`.
+    #[test]
+    fn an_unbounded_request_on_an_unset_ctx_is_capped_by_the_checkpoint_not_by_8192() {
+        let server_ctx = resolve_ctx(None, 1_048_576).expect("declared context resolves");
+        assert_eq!(
+            request_ctx_cap(server_ctx, 1_048_576, 600_000, None, MAX_NEW_CTX_BOUNDED),
+            1_048_576,
+            "a 600k prompt with no max_tokens must reach the checkpoint's window",
+        );
+        assert_eq!(
+            request_ctx_cap(8_192, 1_048_576, 600_000, None, MAX_NEW_CTX_BOUNDED),
+            608_192,
+            "the pre-fix constant is what this row pins, so the delta is visible in the test",
         );
     }
 
