@@ -389,6 +389,59 @@ pub fn moe_m1_splitk_fast_on() -> bool {
     unsafe { memra_moe_m1_splitk_fast_on() != 0 }
 }
 
+/// How many graph split-K entry nodes of each symbol family a captured forward
+/// graph must contain, given the resolved paired-fetch door and the class's node
+/// count. The class captures ONE family: the paired-fetch (`..._splitk_fast_...`)
+/// entries when the door is on, the base (`..._graph_splitk_...`) entries when it
+/// is explicitly off. Same numeric class, only the symbol moves.
+///
+/// Every gate that censuses the captured graph resolves its expectation here,
+/// against `moe_m1_splitk_fast_on()`, instead of naming one family and hoping the
+/// default never moves. It moved: the split-K-fast flip made the paired-fetch
+/// entries the default and two gates kept asserting the base symbols, so their
+/// census read 0 against 86 on any tree where the flip had landed.
+pub fn graph_splitk_entry_nodes(splitk_fast: bool, nodes: usize) -> GraphSplitkEntryNodes {
+    if splitk_fast {
+        GraphSplitkEntryNodes {
+            base: 0,
+            fast: nodes,
+        }
+    } else {
+        GraphSplitkEntryNodes {
+            base: nodes,
+            fast: 0,
+        }
+    }
+}
+
+/// Per-family expected node counts for one captured graph. Both fields are
+/// asserted at every census site: the family that must be present, and the one
+/// that must be absent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GraphSplitkEntryNodes {
+    pub base: usize,
+    pub fast: usize,
+}
+
+#[cfg(test)]
+mod graph_splitk_entry_nodes_tests {
+    use super::graph_splitk_entry_nodes;
+    /// Red arm, crosswise both ways: each door state must demand its own family
+    /// AND zero of the other, so a flip cannot make either assert vacuous.
+    #[test]
+    fn each_door_state_demands_one_family_and_forbids_the_other() {
+        let on = graph_splitk_entry_nodes(true, 86);
+        assert_eq!((on.base, on.fast), (0, 86));
+        let off = graph_splitk_entry_nodes(false, 86);
+        assert_eq!((off.base, off.fast), (86, 0));
+        assert_ne!(on, off);
+        // A non-forward segment captures neither family.
+        let none = graph_splitk_entry_nodes(true, 0);
+        assert_eq!((none.base, none.fast), (0, 0));
+        assert_eq!(graph_splitk_entry_nodes(false, 0), none);
+    }
+}
+
 #[cfg(test)]
 mod splitk_fast_policy_tests {
     unsafe extern "C" {
