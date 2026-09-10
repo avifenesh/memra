@@ -21,11 +21,16 @@ use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 const PRIME: usize = 256;
 const OUTPUT: usize = 256;
 const CAPACITY: usize = PRIME + OUTPUT + 8;
 const VOCAB: usize = 129280;
+/// Repeats the timing arm pools over. One ARM per process (the arm comes from the
+/// environment policy at load, never a gate setter), so ABBA and its reverse are the
+/// controller's job across processes, not this bin's across calls.
+const QUALIFY_REPEATS: usize = 5;
 /// Committed positions the component cell re-heads at. Every one of them is a DIFFERENT
 /// hidden state, so a pass is not one lucky vector.
 const COMPONENT_STEPS: usize = 32;
@@ -380,6 +385,162 @@ fn replay_refusal_cell(gpu: &Dsv4Gpu, prompt: &[u32], cfg: Dsv4SampleCfg) {
     println!("REPLAY_REFUSAL_PASS door=1");
 }
 
+fn drain(gpu: &Dsv4Gpu) {
+    for stage in &gpu.stages {
+        stage
+            .gpu
+            .stream()
+            .synchronize()
+            .expect("split-head qualify drain");
+    }
+}
+
+/// A greedy-style repeat is not a throughput row: a looped span inflates tok/s because
+/// it stops being work. Same detector the sampled perf gate uses, so an excluded repeat
+/// is excluded for the same reason on both instruments.
+fn looped(tokens: &[u32]) -> bool {
+    (1usize..=32).any(|width| {
+        let length = width * 4usize.max(32usize.div_ceil(width));
+        tokens.windows(length).any(|span| {
+            span.chunks_exact(width)
+                .all(|chunk| chunk == &span[..width])
+        })
+    })
+}
+
+/// The sampled decode wall includes the sampler draw, every forward and the final drain.
+/// One helper so a later edit cannot quietly turn the headline into a forward-only sum.
+fn timed_sampled_decode<F>(steps: usize, mut step: F, gpu: &Dsv4Gpu) -> (Duration, usize)
+where
+    F: FnMut() -> bool,
+{
+    let start = Instant::now();
+    let mut completed = 0usize;
+    for _ in 0..steps {
+        if !step() {
+            break;
+        }
+        completed += 1;
+    }
+    drain(gpu);
+    (start.elapsed(), completed)
+}
+
+/// The timing arm. `arm_on` is READ from the resolved door, not asked for: the process
+/// scores whatever an ordinary process with this environment would run, which is why the
+/// controller sets the arm per process and this cell refuses to move it.
+///
+/// Scores nothing by itself. The verdict is the controller's pooled ABBA plus its
+/// reverse, on this box, against this binary's own OFF arm, and never across boxes.
+fn qualify_cell(gpu: &Dsv4Gpu, prompt: &[u32], cfg: Dsv4SampleCfg, arm_on: bool, eos_id: u32) {
+    assert_eq!(
+        gpu.tp_head_split_enabled_for_gate(),
+        arm_on,
+        "the timing arm must come from the load-time environment policy"
+    );
+    let mut sampler = gpu.device_sampler().expect("device sampler");
+    let mut eligible_tokens = 0usize;
+    let mut eligible_wall = Duration::ZERO;
+    let mut eligible_repeats = 0usize;
+    for repeat in 0..QUALIFY_REPEATS {
+        let mut st = state(gpu);
+        gpu.prefill_with_cache_chunked(&prompt[..1], &mut st, 1)
+            .expect("one-token prime");
+        for &token in &prompt[1..PRIME] {
+            gpu.decode_step_device_logits(token, &mut st)
+                .expect("prime");
+        }
+        drain(gpu);
+        assert_eq!(st.pos, PRIME, "prime position");
+        let d0 = gpu.tp_head_split_dispatches();
+        let p0 = gpu.tp_head_split_pulls();
+        let engagements0 = sampler.engagements();
+        let mut generated = Vec::with_capacity(OUTPUT);
+        let mut eos = false;
+        let (wall, completed) = timed_sampled_decode(
+            OUTPUT,
+            || {
+                let token = gpu
+                    .sample_device_logits(&st, &mut sampler, &cfg, &[], None)
+                    .expect("sample");
+                if token == eos_id {
+                    eos = true;
+                    return false;
+                }
+                generated.push(token);
+                gpu.decode_step_device_logits(token, &mut st)
+                    .expect("sampled decode");
+                true
+            },
+            gpu,
+        );
+        let dispatches = {
+            let d1 = gpu.tp_head_split_dispatches();
+            [d1[0] - d0[0], d1[1] - d0[1]]
+        };
+        let pulls = gpu.tp_head_split_pulls() - p0;
+        // Non-vacuity, both directions, from the door's OWN counters: an ON arm that
+        // silently ran the single-rank head would otherwise score as a win or a loss
+        // that has nothing to do with this door.
+        let steps = generated.len() as u64;
+        if arm_on {
+            assert_eq!(
+                dispatches,
+                [steps, steps],
+                "ON arm must split every decode step on both ranks, repeat {repeat}"
+            );
+            assert_eq!(
+                pulls, steps,
+                "ON arm must pull once per step, repeat {repeat}"
+            );
+        } else {
+            assert_eq!(
+                dispatches,
+                [0, 0],
+                "OFF arm dispatched a split head, repeat {repeat}"
+            );
+            assert_eq!(pulls, 0, "OFF arm pulled, repeat {repeat}");
+        }
+        assert_eq!(
+            sampler.engagements() - engagements0,
+            steps,
+            "the device sampler must engage on every draw, repeat {repeat}"
+        );
+        sampler.check_canary_for_gate().expect("sampler canary");
+        assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
+        assert_eq!(st.pos, PRIME + generated.len(), "decode position");
+        let is_looped = looped(&generated);
+        let ok = !eos && completed == OUTPUT && !is_looped;
+        let tok_s = generated.len() as f64 / wall.as_secs_f64();
+        println!(
+            "QUALIFY_ROW repeat={repeat} arm={} tokens={} decode_wall_ms={:.3} \
+             decode_tok_s={tok_s:.6} eligible={ok} looped={is_looped} eos={eos} \
+             dispatches={dispatches:?} pulls={pulls} generated_sha256={}",
+            if arm_on { "on" } else { "off" },
+            generated.len(),
+            wall.as_secs_f64() * 1e3,
+            sha_tokens(&generated)
+        );
+        if ok {
+            eligible_tokens += generated.len();
+            eligible_wall += wall;
+            eligible_repeats += 1;
+        }
+    }
+    assert!(
+        eligible_repeats >= 3,
+        "at least 3 of {QUALIFY_REPEATS} repeats must be eligible, got {eligible_repeats}"
+    );
+    println!(
+        "QUALIFY_POOLED arm={} repeats={eligible_repeats}/{QUALIFY_REPEATS} tokens={eligible_tokens} \
+         wall_ms={:.3} pooled_decode_tok_s={:.6} door={}",
+        if arm_on { "on" } else { "off" },
+        eligible_wall.as_secs_f64() * 1e3,
+        eligible_tokens as f64 / eligible_wall.as_secs_f64(),
+        door_env()
+    );
+}
+
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     assert!(
@@ -387,10 +548,10 @@ fn main() {
             || (args.len() == 5
                 && matches!(
                     args[4].as_str(),
-                    "--component" | "--identity" | "--replay-refusal" | "--defaults"
+                    "--component" | "--identity" | "--replay-refusal" | "--defaults" | "--qualify"
                 )),
         "usage: dsv4-tp-head-split-gate <model-dir> <source.txt> <new-output-dir> \
-         [--component|--identity|--replay-refusal|--defaults]"
+         [--component|--identity|--replay-refusal|--defaults|--qualify]"
     );
     assert!(!dsv4_prof_on(), "profiling rejected in these rows");
     for key in [
@@ -487,6 +648,19 @@ fn main() {
                 env.as_deref().unwrap_or("unset")
             );
         }
+        Some("--qualify") => {
+            let arm_on = match door_env().as_str() {
+                "1" => true,
+                other => {
+                    assert!(
+                        other == "0" || other == "unset",
+                        "the qualify arm reads the door, and it must be 0, 1 or unset"
+                    );
+                    false
+                }
+            };
+            qualify_cell(&gpu, &prompt[..PRIME], cfg, arm_on, tokenizer.eos_id());
+        }
         Some("--component") => component_cell(&gpu, &prompt[..PRIME], cfg, &output),
         Some("--replay-refusal") => replay_refusal_cell(&gpu, &prompt[..PRIME], cfg),
         _ => {
@@ -498,9 +672,13 @@ fn main() {
             .unwrap();
         }
     }
-    assert!(
-        !gpu.tp_head_split_enabled_for_gate(),
-        "the door is left disarmed at exit"
+    // Every cell that MOVES the door with a gate setter leaves it disarmed. `--qualify`
+    // never moves it, so its exit state is whatever the environment policy resolved at
+    // load, which is the state the row was scored under.
+    assert_eq!(
+        gpu.tp_head_split_enabled_for_gate(),
+        args.get(4).map(String::as_str) == Some("--qualify") && door_env() == "1",
+        "the door is left as the cell's contract requires at exit"
     );
 }
 
