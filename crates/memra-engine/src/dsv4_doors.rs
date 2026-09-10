@@ -435,6 +435,12 @@ pub fn doors_without_evidence_in_either_direction(
     floor_pct: f64,
 ) -> Vec<&'static str> {
     rows.iter()
+        // The complaint is about a door DEFAULTING ON with nothing to justify
+        // it. A default-OFF door is off by decision, so its magnitude is its
+        // evidence rather than a missing justification, and including it would
+        // also break this function's own invariant: at a floor above every
+        // magnitude the set must be exactly `inert_default_on_doors`.
+        .filter(|row| row.declared_default == DeclaredDefault::On)
         .filter(|row| served_disposition(row, facts) != DoorDisposition::Engaged)
         .filter(|row| below_instrument_floor(row, floor_pct))
         .map(|row| row.name)
@@ -1370,10 +1376,18 @@ mod tests {
             doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 0.1).is_empty()
         );
         assert!(engaged_but_below_the_floor(DSV4_DOORS, 0.1).is_empty());
-        // And a floor above everything catches every inert door.
+        // And a floor above everything catches every inert door, and ONLY the
+        // default-ON ones: a default-OFF door is off by decision, so it is not
+        // a door with no evidence for its default.
         assert_eq!(
-            doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 100.0).len(),
-            inert_default_on_doors(DSV4_DOORS).len()
+            doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 100.0),
+            inert_default_on_doors(DSV4_DOORS)
+        );
+        assert!(
+            DSV4_DOORS
+                .iter()
+                .any(|row| row.declared_default == DeclaredDefault::Off),
+            "the default-OFF arm of that invariant is vacuous with no OFF door in the registry"
         );
     }
 }
