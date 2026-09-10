@@ -3922,19 +3922,25 @@ extern "C" int memra_dsv4_gemv_bf16_m(const void* w_bf16, const void* x_bf16, fl
         // growing its register array without bound. Each output row keeps the same
         // element order and 128-leaf reduction tree; tiles are independent and may
         // share the enclosing causal attention transaction.
-        const int tile_w = dsv4_dense_tile_width();
-        if (tile_w == 0) return 40077;
+        //
+        // The tile is DSV4_TMAX, the widest instantiation the switch below carries,
+        // and it is written as that constant rather than as a number of its own so
+        // the two cannot drift apart. It was a hard-coded 8 until memra #471: the
+        // served 64-row chunk then issued eight launches per dense call instead of
+        // two, for +3.94% / +4.10% of served prefill and no numeric change at all
+        // (M decides how many accumulators a block keeps, never one accumulator's
+        // add order). Bit-identity across tilings is gated by dsv4_dense_tile_gate.
         const uint16_t* x = (const uint16_t*)x_bf16;
         int launches = 0;
-        for (int base = 0; base < m; base += tile_w) {
-            int tile = min(tile_w, m - base);
+        for (int base = 0; base < m; base += DSV4_TMAX) {
+            int tile = min(DSV4_TMAX, m - base);
             int rc = memra_dsv4_gemv_bf16_m(
                 w_bf16, x + (long)base * xstride, y + (long)base * ystride,
                 tile, n, k, xstride, ystride, stream_v);
             if (rc != 0) return rc;
             launches++;
         }
-        dsv4_dense_tile_count(tile_w, launches);
+        dsv4_dense_tile_count(launches);
         return 0;
     }
     switch (m) {
@@ -4117,19 +4123,17 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
         return memra_dsv4_dense_exact_tail_fp8(w_codes, sc_f32, sc_cols, x_bf16,
             y, m, n, k, xstride, ystride, stream_v);
     if (m > DSV4_TMAX) {
-        const int tile_w = dsv4_dense_tile_width();
-        if (tile_w == 0) return 40077;
         const uint16_t* x = (const uint16_t*)x_bf16;
         int launches = 0;
-        for (int base = 0; base < m; base += tile_w) {
-            int tile = min(tile_w, m - base);
+        for (int base = 0; base < m; base += DSV4_TMAX) {
+            int tile = min(DSV4_TMAX, m - base);
             int rc = memra_dsv4_gemv_fp8_m(
                 w_codes, sc_f32, sc_cols, x + (long)base * xstride,
                 y + (long)base * ystride, tile, n, k, xstride, ystride, stream_v);
             if (rc != 0) return rc;
             launches++;
         }
-        dsv4_dense_tile_count(tile_w, launches);
+        dsv4_dense_tile_count(launches);
         return 0;
     }
     switch (m) {
@@ -4244,18 +4248,16 @@ extern "C" int memra_dsv4_dots_f32_mrow(const float* x, const void* w, int w_is_
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (s < 1) return 40020;
     if (s > DSV4_TMAX) {
-        const int tile_w = dsv4_dense_tile_width();
-        if (tile_w == 0) return 40077;
         int launches = 0;
-        for (int base = 0; base < s; base += tile_w) {
-            int tile = min(tile_w, s - base);
+        for (int base = 0; base < s; base += DSV4_TMAX) {
+            int tile = min(DSV4_TMAX, s - base);
             int rc = memra_dsv4_dots_f32_mrow(
                 x + (long)base * k, w, w_is_bf16, y + (long)base * n,
                 tile, k, n, stream_v);
             if (rc != 0) return rc;
             launches++;
         }
-        dsv4_dense_tile_count(tile_w, launches);
+        dsv4_dense_tile_count(launches);
         return 0;
     }
     int threads = 128;
@@ -4387,18 +4389,16 @@ extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_
         dsv4_dense_exact_tail_dots_admits(x, w, w_is_bf16, y, s, n, k))
         return memra_dsv4_dense_exact_tail_dots(x, w, w_is_bf16, y, s, n, k, stream_v);
     if (s > DSV4_TMAX) {
-        const int tile_w = dsv4_dense_tile_width();
-        if (tile_w == 0) return 40077;
         int launches = 0;
-        for (int base = 0; base < s; base += tile_w) {
-            int tile = min(tile_w, s - base);
+        for (int base = 0; base < s; base += DSV4_TMAX) {
+            int tile = min(DSV4_TMAX, s - base);
             int rc = memra_dsv4_dots_f32acc_mrow(
                 x + (long)base * k, w, w_is_bf16, y + (long)base * n,
                 tile, k, n, stream_v);
             if (rc != 0) return rc;
             launches++;
         }
-        dsv4_dense_tile_count(tile_w, launches);
+        dsv4_dense_tile_count(launches);
         return 0;
     }
     int threads = 128;
