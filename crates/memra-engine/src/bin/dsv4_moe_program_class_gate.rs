@@ -356,44 +356,47 @@ fn refusal_ordering() -> Vec<String> {
     // Coarsest-first, the same order `mismatch` promises. Each entry changes MORE
     // than one field, so a predicate that returned the LAST difference, or a
     // struct-layout artifact, would produce a different sequence here.
-    for (label, f) in [
-        ("greedy_and_top_k", &|c: &mut SamplerConfig| {
+    // Coarsest-first, the same order `mismatch` promises. Each entry changes MORE
+    // than one field, so a predicate that returned the LAST difference, or a
+    // struct-layout artifact, would produce a different sequence here.
+    let mutations: [(&'static str, fn(&mut SamplerConfig)); 10] = [
+        ("greedy_and_top_k", |c| {
             c.temperature = 0.0;
             c.top_k = 1;
-        }
-            as &dyn Fn(&mut SamplerConfig)),
-        ("temperature_and_top_p", &|c: &mut SamplerConfig| {
+        }),
+        ("temperature_and_top_p", |c| {
             c.temperature = 0.8;
             c.top_p = 0.5;
         }),
-        ("top_k_and_min_p", &|c: &mut SamplerConfig| {
+        ("top_k_and_min_p", |c| {
             c.top_k = 20;
             c.min_p = 0.5;
         }),
-        ("top_p_and_penalty_repeat", &|c: &mut SamplerConfig| {
+        ("top_p_and_penalty_repeat", |c| {
             c.top_p = 0.9;
             c.penalty_repeat = 1.5;
         }),
-        ("min_p_and_penalty_freq", &|c: &mut SamplerConfig| {
+        ("min_p_and_penalty_freq", |c| {
             c.min_p = 0.1;
             c.penalty_freq = 0.9;
         }),
-        ("penalty_last_n_only", &|c: &mut SamplerConfig| {
+        ("penalty_last_n_only", |c| {
             c.penalty_last_n = 128;
         }),
-        ("penalty_repeat_only", &|c: &mut SamplerConfig| {
+        ("penalty_repeat_only", |c| {
             c.penalty_repeat = 1.2;
         }),
-        ("penalty_freq_only", &|c: &mut SamplerConfig| {
+        ("penalty_freq_only", |c| {
             c.penalty_freq = 0.4;
         }),
-        ("penalty_present_only", &|c: &mut SamplerConfig| {
+        ("penalty_present_only", |c| {
             c.penalty_present = 0.6;
         }),
-        ("seed_only_is_legal", &|c: &mut SamplerConfig| {
+        ("seed_only_is_legal", |c| {
             c.seed = c.seed.wrapping_add(1);
         }),
-    ] {
+    ];
+    for (label, f) in mutations {
         let mut cfg = base;
         f(&mut cfg);
         mutated.push((label, cfg));
@@ -582,8 +585,7 @@ fn main() {
         );
 
         let mut totals = Totals::default();
-        for step in 0..SCORED_ROWS {
-            let (a, b) = (&a1[step], &b1[step]);
+        for (step, (a, b)) in a1.iter().zip(&b1).enumerate() {
             let target = tape[prefix + step] as usize;
             let m = compare(a, b, target).expect("valid paired distributions");
             let pos = prefix + step;
