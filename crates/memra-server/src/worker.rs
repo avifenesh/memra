@@ -18307,7 +18307,6 @@ pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String>
     }
 }
 
-
 /// `resolve_ctx` against the process environment. A non-Unicode value is treated like any other
 /// unusable value: it refuses, it does not silently become a default.
 pub fn resolve_env_ctx(model_ctx: usize) -> Result<usize, String> {
@@ -26290,14 +26289,14 @@ mod tests {
         AdsdDetector,
     };
     use super::{
-        AdmissionCostModel, AdmissionDeviceHeadroom, AdmissionHeadroom, MAX_NEW_CTX_BOUNDED,
-        MAX_PROMPT_SOURCE_BYTES, ParkedCandidate, ParkedPool, Request, ReuseMetrics,
-        SPEC_SHRINK_RESERVE, admission_required, admission_reserve,
+        AdmissionCostModel, AdmissionDeviceHeadroom, AdmissionHeadroom, ENGINE_MAX_CTX,
+        MAX_NEW_CTX_BOUNDED, MAX_PROMPT_SOURCE_BYTES, ParkedCandidate, ParkedPool, Request,
+        ReuseMetrics, SPEC_SHRINK_RESERVE, admission_required, admission_reserve,
         alloc_with_single_reclaim_retry, calibration_transient_floor, enforce_prompt_limit,
         is_cuda_oom, oldest_parked_candidate, parallel_device_requirements, parked_entry_count,
         pp_admission_stage_count, pp_boundary_slot_bytes, pp_boundary_token_cap_resolve,
         pp_device_requirements, pp_stage_admissions, pp_stage_observed_residuals, prepare_park,
-        ENGINE_MAX_CTX, prompt_source_limit_error, request_ctx_cap, resolve_ctx,
+        prompt_source_limit_error, request_ctx_cap, resolve_ctx,
     };
     use super::{
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
