@@ -9,6 +9,14 @@ W4A4 checkpoint sits within 0.07 nats of our served arm on the same transcripts,
 this program's linear set rather than FP4 activations as such. Follow-up: #439. Verdict tables
 live in the private companion, `research/qwen-fp4-activation-mint-20260909/VERDICT.md`.
 
+Those bars are this lane's reading of the owner's quality criterion (quality within noise
+against the served artifact, paired intervals, a same-artifact repeat control); they were not
+preregistered as thresholds, and the outcome does not turn on them, since the best arm misses
+KL by 3x at its cleanest window and 16x at its worst. The attribution is controlled: all three
+calibrated artifacts, scored with the program refused before their weights are stamped, are
+bitwise equal to served on all four scored windows (KL exactly 0, twelve of twelve cells), so
+the delta is this program and not something else a re-mint rewrote.
+
 The design below is the Phase 1 text as written on 2026-09-09, kept unedited as the record of
 what was proposed and qualified against.
 

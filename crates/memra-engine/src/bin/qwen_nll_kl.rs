@@ -17,11 +17,25 @@
 use memra_engine::Engine;
 use memra_engine::hybrid::HybridModel;
 use memra_gguf::GgufFile;
+use sha2::{Digest, Sha256};
 
 /// log-softmax in f64, returned as f32 rows: the vocabulary is 248k wide and the tail matters
 /// for KL, so the reduction is not done in f32.
 fn escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Digest of the exact token ids a slice scores. Every artifact brings its OWN tokenizer out of
+/// its OWN GGUF, so "both arms scored the same text" is not the same claim as "both arms scored
+/// the same tokens": a mint that rewrote a tokenizer key would shift the sequence and the
+/// per-position dNLL would then measure the tokenizer, not the program. The reference pass writes
+/// this digest beside its rows and every candidate REFUSES on a mismatch.
+fn ids_digest(ids: &[u32]) -> String {
+    let mut h = Sha256::new();
+    for id in ids {
+        h.update(id.to_le_bytes());
+    }
+    format!("{:x}", h.finalize())
 }
 
 fn log_softmax(logits: &[f32]) -> Vec<f32> {
@@ -84,6 +98,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap()
                 .to_string_lossy()
         );
+
+        // POSITION IDENTITY. The dump pass records the ids digest; the candidate pass asserts it.
+        // Without this the two arms are only assumed to share teacher-forced positions, and
+        // `analyze_nll.py` pairs them by index whatever they contain.
+        let ids_sha = ids_digest(&ids);
+        let sha_path = dir.join(format!("{name}.ids.sha256"));
+        // The dump dir also names the artifact whose rows it holds, so a candidate's receipt says
+        // WHICH reference it was scored against instead of leaving it to the runner's shell.
+        let ref_path = dir.join("reference-artifact.txt");
+        if dumping {
+            std::fs::write(&sha_path, format!("{ids_sha}\n"))?;
+            std::fs::write(&ref_path, format!("{model_path}\n"))?;
+        } else {
+            let want = std::fs::read_to_string(&sha_path)
+                .unwrap_or_else(|e| panic!("{}: {e}", sha_path.display()));
+            let want = want.trim();
+            assert_eq!(
+                want, ids_sha,
+                "{name}: the reference scored ids {want} and this artifact tokenizes the same \
+                 file to {ids_sha}; the two arms are NOT on the same teacher-forced positions"
+            );
+        }
 
         // EXTERNAL-ORACLE HANDOFF: dump the exact token ids so SGLang scores the identical
         // sequence through its native input_ids path. Re-tokenizing the text on the other side
@@ -214,6 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         slices.push(format!(
             "    {{\"slice\": \"{name}\", \"file\": \"{}\", \"ctx\": {ctx}, \"window\": {window}, \
+             \"ids_sha256\": \"{ids_sha}\", \
              \"nll\": {mean_nll:.8}, \"ppl\": {:.6}, \"kl\": {}, \
              \"per_nll\": [{}], \"per_kl\": [{}], \"per_top1\": [{}]}}",
             escape(file),
@@ -233,10 +270,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
 
+    let reference_artifact = std::fs::read_to_string(dir.join("reference-artifact.txt"))
+        .map(|v| v.trim().to_string())
+        .unwrap_or_else(|_| model_path.clone());
     std::fs::write(
         &out_path,
         format!(
-            "{{\n  \"artifact\": \"{model_path}\",\n  \"role\": \"{}\",\n  \"slices\": [\n{}\n  ]\n}}\n",
+            "{{\n  \"artifact\": \"{model_path}\",\n  \"reference_artifact\": \"{}\",\n  \"role\": \"{}\",\n  \"slices\": [\n{}\n  ]\n}}\n",
+            escape(&reference_artifact),
             if dumping { "reference" } else { "candidate" },
             slices.join(",\n")
         ),
