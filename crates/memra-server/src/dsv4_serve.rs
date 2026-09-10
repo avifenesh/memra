@@ -232,28 +232,30 @@ impl Dsv4Model {
     }
 }
 
-fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, String> {
-    let chunk = match raw {
-        None => 0,
-        Some(raw) => raw.trim().parse::<usize>().map_err(|_| {
-            format!("MEMRA_DSV4_PREFILL_CHUNK {raw:?} is not a non-negative integer")
-        })?,
-    };
-    if chunk > max_seq {
-        return Err(format!(
-            "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds MEMRA_CTX {max_seq}"
-        ));
-    }
-    if chunk > DSV4_BATCH_WIDTH_MAX {
-        return Err(format!(
-            "MEMRA_DSV4_PREFILL_CHUNK {chunk} exceeds kernel width {DSV4_BATCH_WIDTH_MAX}"
-        ));
-    }
-    Ok(chunk)
+/// The served prefill transaction width. Was `MEMRA_DSV4_PREFILL_CHUNK`, a default-OFF door;
+/// it is the naked default since 2026-09-11 and the seam is gone (darklanes #457).
+///
+/// The case for the flip is CATEGORICAL rather than a rate: the monolithic prefill allocates
+/// 673 KiB of scratch per prompt token and dies on `CUDA_ERROR_OUT_OF_MEMORY` at 15,974 tokens
+/// on a 2x96 GiB pair, while chunked allocates 7.9 KiB per token and serves 110,554. The
+/// separation cell measured the scratch as O(chunk) and independent of prompt length (0.073 GiB
+/// at width 16 against 0.292 GiB at width 64, 4.00x for 4x the width), which is exactly what
+/// this width is supposed to bound.
+///
+/// 64 is the served value and is not a performance choice on the reference expert program,
+/// where the width curve is flat (-1.4% from 32 to 512) and widths 32 and 64 are bit-identical.
+/// It becomes a performance choice if the served program moves to matrix (+61.5%), and the
+/// width receipts would have to be re-taken there.
+const DSV4_PREFILL_CHUNK: usize = 64;
+
+/// The width this run will actually use. `MEMRA_CTX` below the chunk width is the only way the
+/// served width cannot be honoured, and it is a real runtime condition rather than a door.
+fn prefill_chunk_for(max_seq: usize) -> usize {
+    DSV4_PREFILL_CHUNK.min(max_seq).max(1)
 }
 
 fn use_chunked_prefill(chunk: usize, prompt_tokens: usize) -> bool {
-    chunk > 0 && prompt_tokens > chunk
+    prompt_tokens > chunk
 }
 
 struct ParkedEntry {
@@ -433,17 +435,13 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         std::env::var_os("MEMRA_DSV4_KV_HOST_MB"),
     )?;
     let host_cache_mb = host_cache_bytes / (1024 * 1024);
-    let prefill_chunk_raw = configured_env_text("MEMRA_DSV4_PREFILL_CHUNK")?;
-    let prefill_chunk = resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq)?;
+    let prefill_chunk = prefill_chunk_for(max_seq);
     let c4_host_raw = configured_env_text("MEMRA_DSV4_C4_HOST_MB")?;
     let c4_host_bytes = resolve_c4_host_bytes(c4_host_raw.as_deref())?;
-    if c4_host_bytes > 0 && prefill_chunk == 0 {
-        return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
-    }
+    // The two "requires a nonzero chunk" refusals that used to live here are gone with the
+    // door: chunked prefill is now the only prefill, so the condition they guarded against
+    // cannot arise. Their subjects (active C4 needs the matrix program, below) still refuse.
     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq)?;
-    if gpu.matrix_moe_enabled() && prefill_chunk == 0 {
-        return Err("experimental matrix program requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
-    }
     if c4_host_bytes > 0 {
         if !gpu.matrix_moe_enabled() {
             return Err(
@@ -470,11 +468,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         } else {
             format!("{host_cache_mb} MiB")
         },
-        if prefill_chunk == 0 {
-            "OFF (MEMRA_DSV4_PREFILL_CHUNK=0)".to_string()
-        } else {
-            format!("{prefill_chunk} tokens")
-        },
+        format!("{prefill_chunk} tokens (default, no seam)"),
     );
     Ok(Dsv4Model {
         gpu: Arc::new(gpu),
@@ -1563,38 +1557,51 @@ mod c4_host_budget_tests {
         }
         #[cfg(unix)]
         {
+            // Non-Unicode env refuses rather than silently becoming a default. The subject
+            // moved from MEMRA_DSV4_PREFILL_CHUNK to another live name when that door was
+            // removed; the check is about env_text, not about which flag it reads.
             use std::os::unix::ffi::OsStringExt;
             let err = env_text(
-                "MEMRA_DSV4_PREFILL_CHUNK",
+                "MEMRA_DSV4_C4_HOST_MB",
                 Some(OsString::from_vec(vec![0xff, b'1'])),
             )
             .unwrap_err();
-            assert!(err.contains("MEMRA_DSV4_PREFILL_CHUNK"), "{err}");
+            assert!(err.contains("MEMRA_DSV4_C4_HOST_MB"), "{err}");
         }
     }
 }
 
 #[cfg(test)]
-mod prefill_chunk_flag_tests {
-    use super::{resolve_prefill_chunk, use_chunked_prefill};
+mod prefill_chunk_tests {
+    use super::{DSV4_BATCH_WIDTH_MAX, DSV4_PREFILL_CHUNK, prefill_chunk_for, use_chunked_prefill};
 
+    /// The served width is a constant now, not an env read, so what is left to check is that
+    /// it stays inside the kernel's own bound and that the one runtime condition which can
+    /// lower it (MEMRA_CTX below the width) does so without ever returning zero.
     #[test]
-    fn default_is_off_and_values_are_strictly_bounded() {
-        assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(0));
-        assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576), Ok(0));
-        assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576), Ok(64));
-        assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
-        assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
-        assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
-        assert!(resolve_prefill_chunk(Some("65"), 1_048_576).is_err());
+    fn served_width_is_bounded_and_never_zero() {
+        assert!(
+            DSV4_PREFILL_CHUNK >= 2,
+            "a width of 1 is the m=1 numeric class"
+        );
+        assert!(DSV4_PREFILL_CHUNK <= DSV4_BATCH_WIDTH_MAX);
+        assert_eq!(prefill_chunk_for(1_048_576), DSV4_PREFILL_CHUNK);
+        assert_eq!(prefill_chunk_for(DSV4_PREFILL_CHUNK), DSV4_PREFILL_CHUNK);
+        // MEMRA_CTX below the served width: honour the context, never widen past it.
+        assert_eq!(prefill_chunk_for(8), 8);
+        // and never zero, which would be the removed door's OFF state reappearing by arithmetic
+        assert_eq!(prefill_chunk_for(0), 1);
+        assert!(prefill_chunk_for(0) > 0);
     }
 
     #[test]
     fn prompts_at_or_below_one_chunk_stay_monolithic() {
-        assert!(!use_chunked_prefill(0, 10_000));
         assert!(!use_chunked_prefill(32, 1));
         assert!(!use_chunked_prefill(32, 32));
         assert!(use_chunked_prefill(32, 33));
+        // RED ARM for the removal: with the door gone there is no chunk value that disables
+        // chunking for a long prompt. Under the old dispatch `chunk == 0` did exactly that.
+        assert!(use_chunked_prefill(prefill_chunk_for(1_048_576), 10_000));
     }
 }
 

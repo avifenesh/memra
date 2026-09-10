@@ -86,7 +86,6 @@ Scope note: the merged dsv4 knobs are catalogued individually in §5 below — t
 numeric arms (`MEMRA_DSV4_DECODE_PATH`, `MEMRA_DSV4_DENSE_ARM`) and the serve-door
 seams (`MEMRA_DSV4_DRAFTER`, `MEMRA_DSV4_DEVICES`, `MEMRA_DSV4_SPEC_DEPTH`,
 `MEMRA_DSV4_VT`, `MEMRA_DSV4_VT_TAU`/`_FLOOR`, `MEMRA_DSV4_KV_HOST_MB`,
-`MEMRA_DSV4_PREFILL_CHUNK`,
 lane/dsv4-flash-revival-20260822). The dsv4 door itself is **experimental engine
 support, not a serving-grade path** (docs/MODELS.md has the posture and the numbers;
 tuning is issue #4). The remaining `MEMRA_DSV4_*` names are that door's bench/gate
@@ -1272,7 +1271,6 @@ so this file does reach HTTP traffic when that door is armed.
 | `MEMRA_DSV4_KV_HOST_MB=N` | **0 (OFF)** | dsv4 parked-session host tier (`lane/dsv4f-2card-1m-20260904`): a byte-budgeted LRU of exact-token prefixes inside the request's PC-ISO cache namespace. A parked entry stores only LIVE compressed state in one pinned slab per PP stage: 128-token SWA rings, CSA/HCA rows through their high-water marks, indexer rows and pending compressor state; full-capacity dead tails and verify/step scratch are never copied. DSpark entries also store the three persistent rings plus newest trunk tap, not transient draft rows. A hit is consumed, restored at the incoming request's planned capacity, and feeds a mandatory non-empty suffix before generation, so no 129k-logit row is retained. Entries below 128 tokens are skipped; snapshot/copy failure latches the tier off with no pageable fallback. This is not the active C4 budget; when `MEMRA_DSV4_C4_HOST_MB` is enabled, warm states restore directly to host C4. Default is OFF until the 2x RTX PRO gate proves restored-vs-cold sampled/greedy identity, DSpark state identity, host-copy wall, 1M reachability and concurrency; rollback is `0`. |
 | `MEMRA_DSV4_C4_HOST_MB=N` | **0 (OFF)** | Experimental dedicated-DSV4 active C4 host-history budget, separate from parked-prefix `MEMRA_DSV4_KV_HOST_MB`. Nonzero requires the matrix program and nonzero prefill chunk. Fresh position-zero states and warm restores allocate C4 history directly in cacheable pinned host RAM; GPU history contains only SWA and transient rows. Indexer keys, C128 and pending compressors remain on GPU, with unchanged bits/selection. Per-request admission sums the full-capacity C4 forecast across both stages and returns overload before consuming a prefix or allocating if it exceeds this budget. Actual host bytes must match the forecast; there is no full-GPU-history fallback. The current FIFO worker has one active state; concurrent scheduling must add aggregate reservations. This budget does not include parked snapshots or transient snapshot workspace, which require additional host headroom. Strict integer/overflow/Unicode checks; rollback `0`/unset restores the device-history path. Gate: `dsv4_c4_direct_gate`; API/receipt: `research/dsv4f-2card-1m-20260904/active-c4-host.md`. Target direct allocation/restore and short HTTP cold/warm/budget-refusal gates pass; long HTTP and concurrency remain pending. No default promotion. |
 | `set_c4_host_copy_elision_for_gate` | **OFF** (gate-only) | Active-C4 profile seam, not a request or serving flag. After canonical prime/snapshot/restore, a complete recent-row sidecar may serve newly emitted rows while host publication is skipped; snapshots reject while enabled. The bounded composition profile preserved sampled identity and removed the C4 D2H calls, but sampled-logit D2H remains. No default or graph admission. Receipt: `research/dsv4f-devpair-20260905/c4-host-copy-elision-progress-20260906.md`. |
-| `MEMRA_DSV4_PREFILL_CHUNK=N` | **0 (OFF)** | dsv4 bounded-memory prefill (`lane/dsv4f-2card-1m-20260904`): after a one-token canonical prime, teacher-force the prompt through width-N device transactions, commit every row, and retain only the compact persistent cache plus O(N) activation/indexer scratch. With DSpark resident, target-layer taps advance its persistent rings at absolute positions and seed the newest tap exactly as the monolithic prime does. Restored suffixes use the same path. Prompts no wider than N use the measured-faster canonical monolithic prime and are not parked, keeping that numeric regime isolated; cacheable longer prompts and restored suffixes use the chunked regime. The state allocation reserves N transient rows per trunk layer; malformed values, N greater than `MEMRA_CTX`, and N greater than the current 64-row ceiling refuse at boot. Widths 1..32 use register-specialized exact twins; 33..64 tile those same exact row kernels by eight inside one causal transaction. Default remains OFF until chunk-width exactness, sampled cache transparency, 256K/512K/1M reachability, and TTFT gates pass; rollback is `0` (the existing monolithic prefill). |
 | `MEMRA_DSV4_DSPARK_FUSED_MOE` | **0 (OFF)** | DSpark-only selected-expert dispatch arm. `1` keeps the existing host-oracle router values and expert ordering, but replaces each MTP block's per-expert projection loop with the same exact indirect FP4 projection kernels used by batched verification. Trunk prefill/decode are untouched. Requires device decode. Default stays OFF until proposal/component identity, spec==plain greedy identity, sampled serving, and interleaved wall gates pass; rollback is `0`. |
 | `MEMRA_DSPARK_VERIFY_GRAPH` | ROUTE-SPLIT: serve route ON, bin arm off | engine-bundle slice 3 + graphs-serve lane: replay per-(segment, vt) CUDA graphs for the dspark verify's consecutive LINEAR-layer runs, plus the full-verify (vt, rung, hi) graph when a round rides one seqs rung (captured from the same `qwen35_tparallel_linear_layer`/fa-layer bodies the eager arm runs — no second copy of the math; pointer tables refreshed per verify). SERVE ROUTE DEFAULT ON since v0.103 (owner-ratified 2026-08-22 on the §10 serve-lifetime battery: crossover K=36–43 requests, steady −0.357 ms/round, session wall −1.55..−1.65%, byte-exact 240/240 ×3 interleaved boot pairs; pool = model-owned, shared across sessions, multi-GiB at storm-complete; the pool magnitude is per-export and unknown until observed on the serving box (the 2026-08-31 refuted-read pass killed the earlier 8,852 MiB q38 figure as a portable claim)) — `MEMRA_DSPARK_VERIFY_GRAPH=0` is the kill-switch (eager walk, byte-identical), `MEMRA_DSPARK_VG_MAX=0` the finer freeze valve. COMPOSITION CONSTRAINT (measured on the v0.103 train battery): the door rides the slice-2 deferred path ONLY, and the confidence-slot vt policy (the v0.101 default on accept-rate-head checkpoints under adaptive) keeps the legacy readback order — so on a head-carrying drafter at the adaptive route default the pool is structurally inert (0 captures, exactness unchanged); ladder/fixed arms (`MEMRA_DFLASH_ADAPT=0`, `MEMRA_DFLASH_VERIFY_T=k`) with markov/plain-chain drafters engage it. MEASURED CORRECTION (lane/graph-launch-guard-sweep-20260831, dev-box census runs): a DFlash2 drafter does NOT engage the pool on either arm; the DFlash2 propose branch never builds the deferred device chain (dflash.rs serve + bin arms set `deferred` only on the markov/plain-chain branch), so on the q38+DFlash2 serving shape the pool prints ENGAGED, takes ZERO captures, and run_full/run_segment never launch. The MTP route (`MEMRA_SPEC_VERIFY_GRAPH`) replays the same pool through the same walk and is the caller that exercises it on GDN exports. BIN ARM stays opt-in (`=1`) by its own measured disposition: at gate scale the mean is FLAT (109.2 vs 109.4 — the capture toll is never repaid over a 256-token run). dspark-only; MTP untouched; refuses to co-arm with the ROUND-STREAM verify. ADMISSION ACCOUNTING (2026-08-23, lane/hermes-perf-fixes): the serve gate charges the pool's projected remaining growth (`dspark_vg_debt_projection`: remaining capture slots x the MARGINAL bytes a new key adds to the device graph-mem pool, two-point measured) on top of the transient reserve, so sessions admitted while the pool is cold no longer overcommit the VRAM it will hold. CHARGED BY STRUCT since lane/graph-launch-guard-sweep-20260831: the MTP route's `MEMRA_SPEC_VERIFY_GRAPH` door fills the SAME model-owned pool and no longer escapes the term behind the old dspark-route gate; `MEMRA_DSPARK_VG_MAX` doubles as the reserve's tightening valve (=0 zeroes it with the freeze). MARGINAL, not mean, by on-box measurement: with the q38 pool's reservation flat at ~33.6 MiB across captures 1..3 a mean-based reading extrapolated the pool's ONE-TIME shared allocation and charged 8,556/4,261/2,830 MB of phantom reserve — an over-reserve that can refuse admissions that would have fit. Until growth is measurable (single observation) the charge is bounded to one more pool's worth. GRAPH-LAUNCH HEADROOM GUARD (lane/graph-launch-guard-sweep-20260831, extending step37 defect 3): below the 256 MiB `GRAPH_LAUNCH_MIN_FREE` driver-free floor every replay round yields to the byte-identical eager walk, one grep-stable `[dspark-vg] graph replay suspended:` line (once per process); unguarded, cuGraphLaunch segfaults inside libcuda on an exhausted card with zero log lines |
 | `MEMRA_DFLASH_EMB_SCALE` | off (raw) | `1` = feed the drafter sqrt(n_embd)-scaled embed rows — whether z-lab's gemma4 training fed scaled or raw is not visible from the reference; acceptance arbitrates |
@@ -1497,6 +1495,53 @@ No default is flipped and no door is deleted here. The disposition of the six is
 argued per case in [darklanes #601](https://github.com/avifenesh/darklanes/pull/601), including both
 outcomes of the memra #461 matrix verdict; doors whose removal would move a published performance
 claim are the owner's call.
+
+## Removed doors, 2026-09-11 (dsv4 chunked prefill: promoted to the naked default)
+
+`MEMRA_DSV4_PREFILL_CHUNK` is GONE as a runtime name. Chunked prefill at width 64 is the only
+prefill: the env read, the `resolve_prefill_chunk` parser, the `chunk == 0` dispatch arm and the
+two "requires a nonzero chunk" refusals are deleted. The gates and their red arms are KEPT,
+because they are checks rather than doors.
+
+**Verdict: promoted, on a CATEGORICAL receipt rather than a rate.** The monolithic prefill
+allocates 673 KiB of scratch per prompt token and dies on `CUDA_ERROR_OUT_OF_MEMORY` at 15,974
+tokens on a 2x96 GiB pair, 3.4 s in with no first token; chunked allocates 7.9 KiB per token and
+serves 110,554 tokens. Chunking also roughly doubles what fits inside the shipped 90 s deadline
+(2,708 tokens at 43.3 s unchunked against 5,752 at 58.9 s chunked, both arms refused at 90.0 s
+past their own ceiling). The separation cell measured the scratch as O(chunk) and independent of
+prompt length: 0.073 GiB at width 16 against 0.292 GiB at width 64, exactly 4.00x for 4x the
+width, which is precisely what this flag claimed to bound.
+
+**What the promotion is NOT, stated because the lane published the opposite first and withdrew
+it.** Chunked prefill is a NEW NUMERIC CLASS against monolithic at EVERY prompt length, not for
+a thin slice: `dsv4_prefill_chunk_door_gate` g-r4 compared the two programs at n = 65, 100, 129,
+256, 513 and 1000, whose suffix tails at width 64 are 0, 35, 0, 63, 0 and 39 so not one is a
+1-row-tail case, and all six come back `bit_equal=no`. On those rows the divergence is sub-top-1
+(`top1_changed=0`, `greedy_identical=6/6`, KL fwd mean 1.850e-2 max 9.687e-2), which is an
+encouraging early signal and is NOT the paired task-accuracy control the HC S16 precedent
+requires for shipping a class change. That control is owed and is tracked in darklanes #457.
+
+**Width 64 is a correctness and memory choice on the served reference program**, where the width
+curve is flat (-1.4% from 32 to 512) and widths 32 and 64 are bit-identical. It becomes a
+performance choice if the served program moves to matrix (+61.5%), and these width receipts must
+be re-taken there rather than carried over.
+
+**The exactness law this replaced.** The row above claimed "widths 1..32 use register-specialized
+exact twins; 33..64 tile those same exact row kernels by eight". That does not describe the
+engine. The real boundary is ONE ROW versus TWO: a single-row transaction takes the m=1
+decode-shaped kernels AND engages dense exact-tail and dense-fast, which are suppressed at
+`m != 1` and declared `DoorShape::DecodeOnlyM1` (#462). Measured, and the PROMPT LENGTHS are part
+of the fact because a width's class depends on the prompt it meets: on a 1024-row suffix widths
+32 and 63 are bit-identical to 64 while 1, 31 and 33 differ, and 31 and 33 are bit-identical to
+EACH OTHER since both leave a 1-row tail; on a 999-row suffix width 31 leaves 7 rows and is
+exact. A gate over this must assert TWO-SIDED or it passes vacuously when the boundary moves.
+`dsv4_chunk_width_avoiding_single_row_tail` now removes 1-row tails entirely at the served width.
+
+Rollback is the commit revert; the monolithic path stays in-tree as the reference prefill every
+`CLASS` row compares against, so the comparison arm does not disappear with the flag.
+
+Receipts: darklanes `research/dsv4f-prefill-chunk-door-20260910/LANE.md` (gate-g-r2, gate-g-r4,
+split-sep-r1, ladder-mem-r1, reach-chunk64-r2, reach-unchunked-r2).
 
 ## Removed doors, 2026-09-10 (the dsv4f split vocab head: the read halves, the step does not)
 
