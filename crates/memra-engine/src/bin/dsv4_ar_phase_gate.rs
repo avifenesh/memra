@@ -156,8 +156,12 @@ fn validate(records: &[Vec<ArPhaseRecord>; 2], steps: usize) {
                 "rank {rank} site {site} appears {count} times in {steps} steps"
             );
         }
-        // The epoch tags must advance by exactly one per step at each site: two records claiming
-        // the same epoch would mean one step's join was counted twice.
+        // The epoch tag is the SIGNAL BLOCK's counter, not a per-site one: one `TpEpArState` serves
+        // all 86 joins, so `self_sg->seq[block]` advances once per join and a given site sees it
+        // move by exactly the size of the pool between two consecutive steps. That makes this a
+        // STRONGER statement than "this site ran once per step": it says the 85 other joins ran
+        // between them, in this rank's own device state, so a skipped, doubled or reordered join
+        // anywhere in the step shows up here. Measured 22103 -> 22189 on rank 0 site 0.
         for site in 0..ARS_PER_STEP as u32 {
             let flags: Vec<u32> = rows
                 .iter()
@@ -167,8 +171,8 @@ fn validate(records: &[Vec<ArPhaseRecord>; 2], steps: usize) {
             for pair in flags.windows(2) {
                 assert_eq!(
                     pair[1].wrapping_sub(pair[0]),
-                    1,
-                    "rank {rank} site {site} epoch {} -> {}",
+                    ARS_PER_STEP as u32,
+                    "rank {rank} site {site} epoch {} -> {}, the pool is {ARS_PER_STEP} joins",
                     pair[0],
                     pair[1]
                 );
