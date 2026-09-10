@@ -570,9 +570,6 @@ fn main() {
     // startup, before any model or worker thread exists.
     unsafe {
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
-        // memra #463 door: the dense wide-prefill tile width. Pinned to the shipped
-        // 8 here so an exported 32 cannot silently retile this bin's arm.
-        std::env::set_var("MEMRA_DSV4_DENSE_TILE", "8");
     }
     // This bin measured its rows before the norm2-wide door (#430) flipped default
     // ON. Unset would now engage it under this bin's admitted norm2 door and move

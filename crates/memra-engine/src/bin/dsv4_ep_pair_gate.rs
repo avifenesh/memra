@@ -147,9 +147,6 @@ fn main() {
         std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
         std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
         std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
-        // memra #463 door: the dense wide-prefill tile width. Pinned to the shipped
-        // 8 here so an exported 32 cannot silently retile this bin's arm.
-        std::env::set_var("MEMRA_DSV4_DENSE_TILE", "8");
         // Gate-only AR phase instrument: pinned off here so no other bin can inherit
         // an exported instrument or null collective from the environment.
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");

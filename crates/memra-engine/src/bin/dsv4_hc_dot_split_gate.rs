@@ -51,9 +51,6 @@ fn default_program() {
     );
     unsafe {
         std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
-        // memra #463 door: the dense wide-prefill tile width. Pinned to the shipped
-        // 8 here so an exported 32 cannot silently retile this bin's arm.
-        std::env::set_var("MEMRA_DSV4_DENSE_TILE", "8");
     }
 }
 const PRIME: usize = 256;
