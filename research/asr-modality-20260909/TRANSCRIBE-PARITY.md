@@ -210,12 +210,41 @@ Receipt `stage5-transcribe-parity.json`.
 | Divergence classes | fp16_tie 29, boundary_cascade 13, fp16_ulp 2, real 2 |
 
 **The stage gate is not met:** both domains sit above the 0.05 pt per-domain limit (`d1`
-0.0739, `whatsapp` 0.2237). Both sit inside the 0.21 to 0.34 pt band the oracle's own two
-backends disagree by on the eight clips where both exist: against the banked FP32 text the
-native run is 0.2114 pt on `d1` (exactly the CT2-vs-FP32 gap, so on `d1` the native text is
-identical to CT2's and no closer place exists) and 0.2262 pt on `whatsapp`. The `whatsapp`
-delta moved from 0.2089 at 10 clips to 0.2237 at 22: coin-flip noise around the FP32 offset,
-not a trend. A 0.05 pt limit is below the disagreement between the references on this corpus.
+0.0739, `whatsapp` 0.2237). The `whatsapp` delta moved from 0.2089 at 10 clips to 0.2237 at 22:
+coin-flip noise around the FP32 offset, not a trend.
+
+#### The inter-backend band, stated with its scope
+
+Corrected by the self-review of PR #416, 2026-09-10. An earlier version of this section, and
+the PR body, said both deltas "sit inside the 0.21 to 0.34 pt band the oracle's own two
+backends disagree by". That sentence compares two things that are not measured on the same
+material, and it should not be read as an envelope the deltas fall into.
+
+| Quantity | Clips | Reference words | `d1` | `whatsapp` |
+| --- | ---: | ---: | ---: | ---: |
+| Native vs CT2 (the gate) | 36 | 13,482 | **0.0739 pt** | **0.2237 pt** |
+| CT2 vs HF FP32 (the "band") | 8 | 3,249 | 0.2114 pt | 0.3394 pt |
+| Native vs HF FP32 | 8 | 3,249 | 0.2114 pt | 0.2262 pt |
+
+Three things follow that the shorter sentence hid:
+
+1. **Different corpora.** The gate deltas are measured over 36 clips; the band is measured over
+   the 8 clips that have an FP32 backend at all, roughly a quarter of the words. They are not
+   two readings of one set.
+2. **`d1` is not "inside" the band; it is below it.** 0.0739 pt against a 0.2114 pt
+   reference-to-reference gap. On `d1` the native text is byte-identical to CT2's, so there is
+   no closer place to be, and the band is not what is bounding it.
+3. **The band is not a pure precision figure.** Every clip's last window is padded, and on
+   padded windows the banked `hf-fp32` program pads in waveform space while CT2 zero-fills in
+   feature space, so each of these comparisons includes one window where the two references ran
+   different programs. The `CT2 vs HF FP32` column measures that padding convention as much as
+   it measures precision. This is the same split diagnosed on `whatsapp-001` w3 above.
+
+What the band does support, and all it supports: a 0.05 pt per-domain limit is roughly an order
+of magnitude tighter than the disagreement between the oracle's own two backends on the clips
+where both exist, so the limit is not a scale at which any implementation could distinguish
+itself from the references. That is an argument that **the written limit is the wrong
+instrument**, not a demonstration that the native run passes anything. The gate is missed.
 
 ### The second `real`, and it is not one either: d1-013 window 6
 
@@ -241,9 +270,54 @@ The window mel itself is byte-identical between the native regeneration and the 
 decoder math right and pinning the split on the threshold. Full receipt:
 `D1-013-W6-DIAGNOSIS.json`.
 
-So both `real` windows are now diagnosed, and across all 46 divergent windows **none is a
-native defect against a same-program reference**: every flip is CT2's fp16 resolving a
-threshold its own precision cannot express. The checker's docstring now carries this caveat.
+So both `real` windows are now diagnosed. The checker's docstring now carries this caveat.
+
+### What each of the 46 is actually derived from, and what it is not
+
+Added by the self-review of PR #416, 2026-09-10. The one-line claim these classes support is
+easy to state too strongly, so here is exactly how far each class is measured.
+
+| Class | Windows | Derivation | Strength |
+| --- | ---: | --- | --- |
+| `fp16_tie` | 29 | `oracle_logit_margin == 0.0` in CT2's **own recorded logits** | Measured per window. CT2 cannot express a preference here at all. |
+| `fp16_ulp` | 2 | `0 < margin <= np.spacing(float16(magnitude))` | Measured per window. Both sit at exactly one step, 0.015625. |
+| `real` | 2 | Margin wider than one step; each settled by hand against a **matched-program FP32 reference** | Individually diagnosed, with receipts. |
+| `boundary_cascade` | 13 | `boundary_matches == False`, assigned **before** any logit is read | **Not** a measured fp16 effect. See below. |
+
+The 13 `boundary_cascade` windows are the ones to be careful about. The checker files them on
+the boundary test alone and never consults their logits, and their recorded CT2 margins are in
+fact large: 0.419921875 to 8.6328125, hundreds of fp16 steps. That is not evidence of a
+precision effect. It is not evidence of a defect either: a window that starts at a different
+seek frame is **not the same audio as the oracle's window**, so a token-by-token comparison
+against it is not a comparison of two decodes of one input. The margin printed for such a
+window is measured against a row that answers a different question.
+
+What makes them attributable is the root, and the roots were not written down until now. Every
+one of the 13 follows a divergent, non-cascade window earlier in the same clip:
+
+| Clip | Root window | Cascaded windows | Count |
+| --- | --- | --- | ---: |
+| `d1-002` | w8, `fp16_tie` | w9, w10 | 2 |
+| `d1-012` | w1, `fp16_tie` | w2 | 1 |
+| `d1-013` | w6, `real` (diagnosed, timestamp-forcing threshold) | w7, w8, w9, w10 | 4 |
+| `whatsapp-005` | w1, `fp16_tie` | w2, w3 | 2 |
+| `whatsapp-014` | w1, `fp16_tie` | w2, w3, w4, w5 | 4 |
+
+13 of 13 traced, and every root is either a measured tie or the one hand-diagnosed `d1-013` w6
+threshold. So the honest form of the claim is:
+
+> 31 of the 46 divergent windows are measured CT2 fp16 precision effects, 2 are individually
+> diagnosed against a matched-program FP32 reference, and the remaining 13 are seek-shifted
+> windows that share no input with the oracle window they are scored against, each traceable to
+> one of those 33 as its root. **No window in the 36 clips is a native defect against a
+> same-program reference.** That conclusion is not the same statement as "all 46 are measured
+> fp16 effects", and this receipt should not be read as making the stronger one.
+
+A negative `oracle_logit_margin` would mean CT2 emitted a token its own recorded logits rate
+below the one we took, which is the oracle's policy overriding its argmax rather than any
+precision effect. None of the 46 has one. The checker now files that case as
+`oracle_policy_override` instead of silently folding it into `fp16_ulp`; since no banked window
+takes that branch, the classification of all 46 above is unchanged.
 
 ### What would settle the rest
 

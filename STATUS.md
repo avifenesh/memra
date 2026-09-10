@@ -39,14 +39,19 @@ and the predictor hypothesis carried across chunks.
 | RNNT session, d1-000 15.0 s | 189 chunk partials, final, transcript | 189 of 189 identical | exact |
 | RNNT session, 2 s of silence | 26 chunk partials, both empty | 26 of 26 identical | exact |
 
-Whisper text parity, sweep stopped clean at 36 of 71 clips and 259 of 364 windows:
+Whisper text parity, **stage gate missed numerically**, sweep stopped clean at 36 of 71 clips
+and 259 of 364 windows:
 **213/259 windows token-exact, 27/36 clips text-exact**, `d1` 0.0739 pt and
 `whatsapp` 0.2237 pt against CT2. The stage gate wanted every clip equal or under
-0.05 pt per domain, so it is **not met on either domain**; both deltas sit inside the 0.21 to
-0.34 pt band the oracle's own two backends disagree by (native vs the banked FP32 text: 0.2114
-pt on `d1`, exactly the CT2-vs-FP32 gap, and 0.2262 pt on `whatsapp`). No divergence is a
-native defect. The classes are fp16_tie 29, boundary_cascade 13, fp16_ulp 2 and real 2; both
-`real` windows are diagnosed. `whatsapp-003` window 4 step 86 is two adjacent timestamps two
+0.05 pt per domain, so it is **not met on either domain**. The 0.21 to 0.34 pt band the
+oracle's own two backends disagree by is a scale reference measured on the 8 clips that have an
+FP32 backend, not an envelope containing these 36-clip deltas: `d1` at 0.0739 pt is below it,
+not inside it, and the band is itself partly a padding-convention artefact. What it shows is
+that a 0.05 pt limit is an order of magnitude tighter than the references' own disagreement.
+No divergence is a native defect against a same-program reference. The classes are fp16_tie 29,
+boundary_cascade 13, fp16_ulp 2 and real 2; the 31 tie/ulp windows are measured per window,
+both `real` windows are individually diagnosed, and all 13 cascades are traced to one of those
+33 as their root. `whatsapp-003` window 4 step 86 is two adjacent timestamps two
 fp16 steps apart with the clip's text unchanged. `d1-013` window 6 step 146 looked worst (a
 0.671875 candidate margin, 43 fp16 steps) but the decision variable there is the
 timestamp-forcing threshold, which sits inside one fp16 step: native F32 +0.008751, matched

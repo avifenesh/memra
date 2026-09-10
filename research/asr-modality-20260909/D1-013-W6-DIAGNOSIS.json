@@ -13,7 +13,7 @@
    "best_text": "44644",
    "best_text_logit": 22.913361,
    "timestamp_lse": 22.922112,
-   "mass_minus_best": 22.92211151123047,
+   "mass_minus_best": 0.008751,
    "branch": "timestamp"
   },
   "matched_fp32": {
@@ -32,7 +32,12 @@
    "branch": "text"
   },
   "fp16_step_at_magnitude": 0.015625,
-  "native_to_matched_fp32_gap": 22.913351143709836
+  "native_vs_matched_fp32": {
+   "best_text_logit_gap": 4.219e-06,
+   "timestamp_lse_gap": -5.149e-06,
+   "decision_variable_gap": -9.368e-06,
+   "note": "Both readings take the timestamp branch; the two engines differ by ~1e-05 on the decision variable against an fp16 step of 0.015625."
+  }
  },
  "encoder_on_the_ct2_window": {
   "matched_fp32_vs_native_max_abs": 0.003193378448486328,
@@ -55,5 +60,13 @@
   "native_forced_decode": "whisper-stage decoder on prompt + oracle tokens[:146], step-148 logits; argmax verified against oracle steps 143-145",
   "matched_fp32": "transformers 4.x FP32 CPU on the CT2 window mel and the same prefix",
   "engine": "cpu reference, niced, efficiency cores"
- }
+ },
+ "corrections": [
+  {
+   "date": "2026-09-10",
+   "by": "self-review of PR #416",
+   "what": "native_f32.mass_minus_best held the raw timestamp_lse (22.92211151123047) instead of timestamp_lse - best_text_logit; corrected to 0.008751, which is the value the prose in TRANSCRIBE-PARITY.md always quoted. native_to_matched_fp32_gap held a raw-logit-scale number (22.913351143709836) rather than a gap; replaced by the three explicitly named gaps in native_vs_matched_fp32.",
+   "effect": "None on the verdict. Both corrected values were already derivable from the sibling fields in this receipt and match the analysis text."
+  }
+ ]
 }

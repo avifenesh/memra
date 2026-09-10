@@ -170,6 +170,12 @@ def main():
                     if record["divergence_class"] is None:
                         if margin == 0.0:
                             record["divergence_class"] = "fp16_tie"
+                        elif margin < 0.0:
+                            # CT2's own recorded logits rate the token it emitted BELOW the
+                            # one we took. That is not a precision tie, it is the oracle's
+                            # policy (suppression, timestamp forcing) overriding its argmax,
+                            # and it must not be filed as a one-ulp separation.
+                            record["divergence_class"] = "oracle_policy_override"
                         elif margin <= step_size:
                             record["divergence_class"] = "fp16_ulp"
                         else:
