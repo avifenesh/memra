@@ -3338,6 +3338,12 @@ pub fn hc_pre_v4_on_from(v: Option<&str>, built_arch: &str) -> bool {
     }
 }
 
+/// The CUDA arch this binary's kernels were compiled for (`120a`, `100a`, `90a`, `89`),
+/// as written by memra-engine's build script. `env!` only reaches the crate whose build
+/// script emitted it, so downstream crates that key a default on the board class read this
+/// const instead of re-deriving the arch at runtime.
+pub const BUILT_CUDA_ARCH: &str = env!("MEMRA_BUILT_CUDA_ARCH");
+
 /// The B200 composed-posture doors' shared default (2026-09-06): `MEMRA_HC_MIXES_KERNEL`,
 /// `MEMRA_MLA_SEG_WS`, `MEMRA_GLM5_GRAPH_MLA`, `MEMRA_F32_GEMV_KERNEL`, `MEMRA_KDA_ONORM_ZQ8`
 /// (and `MEMRA_HC_PRE_V4` through its own parse above). `1` arms, `0` disarms, unset follows the

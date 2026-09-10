@@ -1,0 +1,92 @@
+{
+  "system": "You are the office document assistant for a small operations team. You read Hebrew business correspondence delivered through the tools below. Tool results arrive in an English JSON envelope; the document body inside keeps its original language.\n\nRules:\n1. Answer in the language the user wrote in.\n2. Copy identifiers, invoice numbers, purchase order numbers, amounts, currencies and dates exactly as written. Never round an amount or convert a currency.\n3. Never invent a field. If a requested field is absent, return null and say so.\n4. You may not pay, delete, or send anything externally. Describe such a request and stop.\n5. On a discrepancy, open a review task instead of correcting a document.\n6. When asked for structured output, reply with the JSON object alone: no code fence, no commentary.",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "fetch_document",
+        "description": "Fetch a document from the operations mailbox by message id.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "message_id": {
+              "type": "string",
+              "description": "Mailbox id, e.g. MSG-2026-0912."
+            },
+            "max_pages": {
+              "type": "integer",
+              "description": "Upper bound on pages returned."
+            }
+          },
+          "required": [
+            "message_id"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "save_to_supplier_folder",
+        "description": "File a document under the monthly supplier folder. Notifies nobody.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "message_id": {
+              "type": "string",
+              "description": "Message being filed."
+            },
+            "supplier_name": {
+              "type": "string",
+              "description": "Supplier name as written."
+            }
+          },
+          "required": [
+            "message_id",
+            "supplier_name"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "open_review_task",
+        "description": "Open a human review task when a document disagrees with its purchase order.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "detail": {
+              "type": "string",
+              "description": "Which two values disagree."
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high"
+              ],
+              "description": "Urgency."
+            }
+          },
+          "required": [
+            "detail"
+          ]
+        }
+      }
+    }
+  ],
+  "user_1": "קראי את ההודעה MSG-2026-0912 מתיבת התפעול וכתבי לי תקציר קצר בעברית של שני העמודים.",
+  "tool_call": {
+    "name": "fetch_document",
+    "arguments": {
+      "message_id": "MSG-2026-0912",
+      "max_pages": 2
+    }
+  },
+  "tool_result": "{\"status\": \"ok\", \"message_id\": \"MSG-2026-0912\", \"mailbox\": \"operations@example.invalid\", \"fetched_at\": \"2026-09-09T07:14:00Z\", \"page_count\": 2, \"truncated\": false, \"content_language\": \"he\", \"pages\": [{\"page\": 1, \"kind\": \"message_body\", \"content\": \"אל: צוות התפעול\\nמאת: מיכל לוי, חברת אור\\nנושא: אישור חשבונית ותיאום מסירת ציוד למשרד\\nתאריך: 9 בספטמבר 2026\\n\\nשלום לצוות,\\n\\nמצורפת חשבונית מספר INV-2026-091 עבור ההזמנה האחרונה למשרד ברחוב הגפן 12, תל אביב. אנא בדקו שהפרטים תואמים להזמנת הרכש PO-1042 ושמרו את המסמך בתיקיית הספקים של חודש ספטמבר. שם הספק הוא חברת אור, ואשת הקשר להזמנה היא מיכל לוי. אין במסמך זה פרטי בנק אמיתיים או מידע של לקוח אמיתי.\\n\\nהחשבונית כוללת עשרה מארזי נייר במחיר של 30 שקלים למארז, ארבע מחסניות דיו במחיר של 125 שקלים ליחידה ושני כיסאות במחיר של 450 שקלים לכיסא. עלות המשלוח היא 80 שקלים. הסכום הכולל לתשלום בדוגמה זו הוא 1,780 שקלים. המחירים בדוגמה הם מחירים סופיים, ואין להוסיף להם חיוב נוסף. מועד התשלום המבוקש הוא 30 בספטמבר 2026. תנאי התשלום הם העברה לאחר אישור מנהלת המשרד.\\n\\nהמשלוח מתוכנן ליום שני, 14 בספטמבר, בין השעות תשע לאחת עשרה בבוקר. יש להתקשר לדלפק הקבלה לפני הגעת הנהג. הכניסה לפריקה נמצאת בחצר האחורית, והגישה אליה היא מרחוב התאנה. אם מעלית השירות אינה זמינה, יש להשאיר את הציוד במחסן שבקומת הקרקע ולבקש מאחראי המשמרת לחתום על תעודת המסירה.\\n\\nאנא חלצו מההודעה את שם הספק, מספר החשבונית, מספר הזמנת הרכש, הסכום, המטבע ומועד התשלום. כתבו תקציר קצר בעברית וציינו שהעברת התשלום עדיין ממתינה לאישור. אם נמצא פער בין החשבונית להזמנה, פתחו משימת בירור במקום לשנות את הסכום. אין לבצע תשלום, למחוק קובץ או לשלוח הודעה לספק בלי אישור מפורש.\\n\\nלאחר השמירה, הכינו טיוטת תשובה בעברית המאשרת את קבלת החשבונית ואת חלון המסירה. בקשו מהספק לציין מראש אם צפוי איחור. שמרו את מספרי המסמכים בדיוק כפי שהם מופיעים כאן, גם כאשר יתר הטקסט נכתב בעברית.\\n\\nתודה,\\nמיכל\\n\"}, {\"page\": 2, \"kind\": \"attachment_body\", \"content\": \"אל: צוות התפעול\\nמאת: מיכל לוי, חברת אור\\nנושא: אישור חשבונית ותיאום מסירת ציוד למשרד\\nתאריך: 9 בספטמבר 2026\\n\\nשלום לצוות,\\n\\nמצורפת חשבונית מספר INV-2026-091 עבור ההזמנה האחרונה למשרד ברחוב הגפן 12, תל אביב. אנא בדקו שהפרטים תואמים להזמנת הרכש PO-1042 ושמרו את המסמך בתיקיית הספקים של חודש ספטמבר. שם הספק הוא חברת אור, ואשת הקשר להזמנה היא מיכל לוי. אין במסמך זה פרטי בנק אמיתיים או מידע של לקוח אמיתי.\\n\\nהחשבונית כוללת עשרה מארזי נייר במחיר של 30 שקלים למארז, ארבע מחסניות דיו במחיר של 125 שקלים ליחידה ושני כיסאות במחיר של 450 שקלים לכיסא. עלות המשלוח היא 80 שקלים. הסכום הכולל לתשלום בדוגמה זו הוא 1,780 שקלים. המחירים בדוגמה הם מחירים סופיים, ואין להוסיף להם חיוב נוסף. מועד התשלום המבוקש הוא 30 בספטמבר 2026. תנאי התשלום הם העברה לאחר אישור מנהלת המשרד.\\n\\nהמשלוח מתוכנן ליום שני, 14 בספטמבר, בין השעות תשע לאחת עשרה בבוקר. יש להתקשר לדלפק הקבלה לפני הגעת הנהג. הכניסה לפריקה נמצאת בחצר האחורית, והגישה אליה היא מרחוב התאנה. אם מעלית השירות אינה זמינה, יש להשאיר את הציוד במחסן שבקומת הקרקע ולבקש מאחראי המשמרת לחתום על תעודת המסירה.\\n\\nאנא חלצו מההודעה את שם הספק, מספר החשבונית, מספר הזמנת הרכש, הסכום, המטבע ומועד התשלום. כתבו תקציר קצר בעברית וציינו שהעברת התשלום עדיין ממתינה לאישור. אם נמצא פער בין החשבונית להזמנה, פתחו משימת בירור במקום לשנות את הסכום. אין לבצע תשלום, למחוק קובץ או לשלוח הודעה לספק בלי אישור מפורש.\\n\\nלאחר השמירה, הכינו טיוטת תשובה בעברית המאשרת את קבלת החשבונית ואת חלון המסירה. בקשו מהספק לציין מראש אם צפוי איחור. שמרו את מספרי המסמכים בדיוק כפי שהם מופיעים כאן, גם כאשר יתר הטקסט נכתב בעברית.\\n\\nתודה,\\nמיכל\\n\"}]}",
+  "user_2": "עכשיו החזירי אך ורק אובייקט JSON עם המפתחות supplier, invoice_number, purchase_order, amount, currency, due_date.",
+  "page_sha256": "047918822e43f0e3a138a01096084606e8a6ce7b36174850853fd6aef70eba51",
+  "page_repeats": 2
+}
