@@ -497,6 +497,9 @@ fn main() {
     // model or worker thread exists, independently of its default.
     unsafe {
         std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+        // Gate-only AR phase instrument: pinned off here so no other bin can inherit
+        // an exported instrument or null collective from the environment.
+        std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
     }
     let args: Vec<_> = std::env::args().collect();
     if args.get(4).is_some_and(|v| v == "--drift") {

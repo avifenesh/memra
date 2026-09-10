@@ -627,6 +627,9 @@ fn main() {
     // so pin it off before any model or worker thread exists.
     unsafe {
         std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+        // Gate-only AR phase instrument: pinned off here so no other bin can inherit
+        // an exported instrument or null collective from the environment.
+        std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
     }
     let args: Vec<_> = std::env::args().collect();
     assert_eq!(

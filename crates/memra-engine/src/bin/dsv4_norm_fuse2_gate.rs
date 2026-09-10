@@ -550,6 +550,12 @@ fn scored_row(
     arm.rows += 1;
 }
 fn main() {
+    // This bin reads the environment for ITS door, which is exactly why the AR phase instrument is
+    // pinned off here: an exported instrument must never ride along with a norm2 arm. Process
+    // startup, before any model or worker thread exists.
+    unsafe {
+        std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
+    }
     let args: Vec<_> = std::env::args().collect();
     if args.len() == 3 && args[1] == "--components" {
         Dsv4Gpu::run_norm2_components_for_gate(Path::new(&args[2])).unwrap();

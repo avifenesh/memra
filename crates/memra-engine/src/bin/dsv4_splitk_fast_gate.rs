@@ -477,6 +477,9 @@ fn main() {
     // measurement and must not move these rows when its default flips.
     unsafe {
         std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
+        // Gate-only AR phase instrument: pinned off here so no other bin can inherit
+        // an exported instrument or null collective from the environment.
+        std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
     }
     // The wide norm2 pack now defaults ON under the admitted norm2 door. This
     // bin measures the split-K entries, not the norm2 pack class, so it pins

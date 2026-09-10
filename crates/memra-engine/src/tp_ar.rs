@@ -102,6 +102,102 @@ unsafe extern "C" {
     /// `dst += stage`, `n` f32. Enqueued on the caller's stream, which must already be ordered
     /// after the peer's push.
     pub fn memra_tp_ar_fold(dst: *mut f32, stage: *const f32, n: i64, stream: *mut c_void) -> i32;
+    /// Size of one phase record, so the host allocates what the kernel writes.
+    pub fn memra_tp_ar_phase_record_bytes() -> i32;
+    /// The one-shot with the gate-only phase instrument. Same kernel as [`memra_tp_ar_1stage`]:
+    /// the stamps, the null arm and the red-arm delay are all kernel-parameter-uniform branches
+    /// inside it, because a separate instrumented kernel would be a different kernel and could
+    /// not speak for the product arm's timing.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the ordinary call plus the instrument's buffer, site key, arm and injected delay ARE
+    // the call; splitting them into a struct would hide which of them the kernel reads.
+    pub fn memra_tp_ar_1stage_instr(
+        in_rank0: *const f32,
+        in_rank1: *const f32,
+        out: *mut f32,
+        self_sg: *mut c_void,
+        peer_sg: *mut c_void,
+        rank: i32,
+        n: i64,
+        err: *mut i32,
+        spin_limit: i64,
+        blocks: i32,
+        stream: *mut c_void,
+        fault: *const c_void,
+        site: i32,
+        trace: *mut c_void,
+        trace_cursor: *mut c_void,
+        trace_capacity: i64,
+        phase_site: u32,
+        null_arm: i32,
+        delay_ticks: i64,
+    ) -> i32;
+}
+
+/// One AR phase record, byte-for-byte `MemraArPhase` in `cu/tp_ar.cu`. Read back by the gate only.
+///
+/// `clk_*` are SM cycles from block 0's SM and are only comparable INSIDE one record; `gt_*` are
+/// device-wide nanoseconds and place the record on a timeline shared with every other AR on that
+/// rank. The gate converts cycles to nanoseconds with each record's own
+/// `(gt_exit - gt_entry) / (clk_exit - clk_entry)` ratio rather than an assumed clock, so a card
+/// running at a boosted or throttled clock cannot silently rescale a phase.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ArPhaseRecord {
+    pub gt_entry: u64,
+    pub gt_exit: u64,
+    pub clk_entry: u64,
+    pub clk_started: u64,
+    pub clk_reduced: u64,
+    pub clk_exit: u64,
+    pub site: u32,
+    pub flag: u32,
+    pub smid: u32,
+    pub blocks: u32,
+    pub elems: u32,
+    pub rank: u32,
+}
+
+impl ArPhaseRecord {
+    /// Cycles spent in the start barrier: this rank arrived and waited for its peer.
+    pub fn wait_cycles(&self) -> u64 {
+        self.clk_started.saturating_sub(self.clk_entry)
+    }
+    /// Cycles spent reading both operands and writing the sum. On the product arm this is the only
+    /// phase that crosses the fabric; on the null arm it reads local memory only.
+    pub fn reduce_cycles(&self) -> u64 {
+        self.clk_reduced.saturating_sub(self.clk_started)
+    }
+    /// Cycles spent in the end barrier: this rank finished and waited for its peer to finish.
+    pub fn tail_cycles(&self) -> u64 {
+        self.clk_exit.saturating_sub(self.clk_reduced)
+    }
+    pub fn span_cycles(&self) -> u64 {
+        self.clk_exit.saturating_sub(self.clk_entry)
+    }
+    /// Device-wide nanoseconds for the whole kernel body, entry stamp to exit stamp.
+    pub fn span_nanos(&self) -> u64 {
+        self.gt_exit.saturating_sub(self.gt_entry)
+    }
+    /// Nanoseconds per SM cycle, derived from this record alone. `None` when the record cannot
+    /// calibrate itself, which is the gate's signal to throw the record out rather than report it.
+    pub fn nanos_per_cycle(&self) -> Option<f64> {
+        let cycles = self.span_cycles();
+        let nanos = self.span_nanos();
+        (cycles > 0 && nanos > 0).then(|| nanos as f64 / cycles as f64)
+    }
+    /// The three phases must account for the whole span exactly: the stamps are taken in order on
+    /// one thread, so any gap means a stamp was not written where the analysis believes it was.
+    pub fn closes(&self) -> bool {
+        self.clk_entry <= self.clk_started
+            && self.clk_started <= self.clk_reduced
+            && self.clk_reduced <= self.clk_exit
+            && self.gt_entry <= self.gt_exit
+            && self.wait_cycles() + self.reduce_cycles() + self.tail_cycles() == self.span_cycles()
+    }
+    pub fn nanos(&self, cycles: u64) -> Option<f64> {
+        self.nanos_per_cycle().map(|scale| cycles as f64 * scale)
+    }
 }
 
 /// Per-rank all-reduce state. `stage[r]` lives on rank `r` and is written by its peer;
@@ -700,5 +796,62 @@ impl ArLink {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod ar_phase_record_tests {
+    use super::ArPhaseRecord;
+
+    fn record(entry: u64, started: u64, reduced: u64, exit: u64, nanos: u64) -> ArPhaseRecord {
+        ArPhaseRecord {
+            gt_entry: 1_000,
+            gt_exit: 1_000 + nanos,
+            clk_entry: entry,
+            clk_started: started,
+            clk_reduced: reduced,
+            clk_exit: exit,
+            site: 7,
+            flag: 3,
+            smid: 11,
+            blocks: 1,
+            elems: 4096,
+            rank: 0,
+        }
+    }
+
+    #[test]
+    fn phases_close_and_calibrate_from_the_record_itself() {
+        // 30000 cycles over 12000 ns is 0.4 ns/cycle, i.e. a 2.5 GHz SM clock.
+        let r = record(0, 20_000, 26_000, 30_000, 12_000);
+        assert!(r.closes());
+        assert_eq!(r.wait_cycles(), 20_000);
+        assert_eq!(r.reduce_cycles(), 6_000);
+        assert_eq!(r.tail_cycles(), 4_000);
+        assert_eq!(r.nanos_per_cycle(), Some(0.4));
+        assert_eq!(r.nanos(r.reduce_cycles()), Some(2_400.0));
+    }
+
+    #[test]
+    fn a_record_that_cannot_close_is_rejected_rather_than_reported() {
+        // Out-of-order stamps: a phase boundary landed somewhere the analysis does not believe.
+        assert!(!record(0, 26_000, 20_000, 30_000, 12_000).closes());
+        assert!(!record(0, 20_000, 26_000, 30_000, 0).closes());
+        // A zero-cycle span cannot calibrate itself, so it reports nothing instead of a scale.
+        assert_eq!(record(5, 5, 5, 5, 12_000).nanos_per_cycle(), None);
+        assert_eq!(record(0, 20_000, 26_000, 30_000, 0).nanos_per_cycle(), None);
+        // Saturating differences mean a garbled record reads as zero, never as a huge phase.
+        let mut torn = record(0, 20_000, 26_000, 30_000, 12_000);
+        torn.clk_started = 0;
+        assert_eq!(torn.wait_cycles(), 0);
+        assert_eq!(torn.reduce_cycles(), 26_000);
+        assert!(!torn.closes());
+    }
+
+    #[test]
+    fn the_record_is_the_kernel_struct() {
+        // 6 u64 stamps and 6 u32 tags, no padding: the drain copies raw bytes into this struct.
+        assert_eq!(std::mem::size_of::<ArPhaseRecord>(), 6 * 8 + 6 * 4);
+        assert_eq!(std::mem::align_of::<ArPhaseRecord>(), 8);
     }
 }
