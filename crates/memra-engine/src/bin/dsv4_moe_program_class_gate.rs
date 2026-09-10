@@ -453,7 +453,6 @@ fn main() {
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_DRAFTER", "dspark"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "reference"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
         // EP is DECLARED rather than pinned: see the `ep` read below. It is a load-time
         // decision, so it cannot be flipped through the in-process setter the way the
@@ -490,6 +489,28 @@ fn main() {
         ep == "off" || ep == "pair",
         "MEMRA_DSV4_EP must be declared as off or pair, got {ep:?}"
     );
+
+    // TWO MODES, because the one-load exclusive setter cannot reach every realization.
+    //
+    // `reference` is the class cell: load on the shipped default and flip the program
+    // A,B,B,A per panel inside one process, so the comparison is paired and nothing can
+    // drift between arms.
+    //
+    // `matrix` is the REALIZATION PROBE, and it exists because the class cell is not
+    // available at EP=pair. Under EP the per-layer expert tables are built at LOAD time
+    // for whichever program is loaded (`dsv4_gpu.rs:4057-4085`), so a process that loaded
+    // `reference` has no ModelOpt peer table and `validate_matrix_program` refuses the
+    // switch: at EP=pair the two programs cannot coexist in one load AT ALL. The probe
+    // therefore loads matrix directly, runs B,B for within-arm bit-identity, and banks the
+    // per-row logit hashes so a realization can be compared to another run's ACROSS
+    // processes. It prints no cross-arm metric, because it has no second arm to compare.
+    let program =
+        std::env::var("MEMRA_DSV4_MOE_PROGRAM").unwrap_or_else(|_| "reference".to_owned());
+    assert!(
+        program == "reference" || program == "matrix",
+        "MEMRA_DSV4_MOE_PROGRAM must be reference (class cell) or matrix (realization probe), got {program:?}"
+    );
+    let probe = program == "matrix";
 
     let dir = Path::new(&args[1]);
     let panel_bytes = std::fs::read(&args[2]).expect("panel tape");
@@ -544,9 +565,10 @@ fn main() {
     let capacity = tapes.iter().map(|(p, _)| *p).max().unwrap() + SCORED_ROWS + PRIME_CHUNK;
     let mut gpu =
         Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity).expect("load");
-    assert!(
-        !gpu.matrix_moe_enabled(),
-        "load must start on the SHIPPED default so arm A is the program a customer gets"
+    assert_eq!(
+        gpu.matrix_moe_enabled(),
+        probe,
+        "the loaded program must be the one the mode asked for"
     );
     gpu.set_grouped_route_device_for_gate(true)
         .expect("device routing");
@@ -562,56 +584,97 @@ fn main() {
         seed: SEED,
     };
     let mut rows_file = create_new(&output.join("rows.jsonl"));
+    // Written in BOTH modes and in the same shape, so a realization comparison never has
+    // to care which mode produced a run.
+    let mut matrix_rows = create_new(&output.join("matrix-rows.jsonl"));
     let mut overall = Totals::default();
     let mut refusals_b: Option<Vec<String>> = None;
 
     for (i, panel) in panels.iter().enumerate() {
         let (prefix, tape) = &tapes[i];
         let before = gpu.grouped_device_route_calls();
-        gpu.set_matrix_moe_for_gate(false).expect("reference arm");
-        let a1 = capture(&gpu, tape, *prefix);
-        assert_eq!(
-            before,
-            gpu.grouped_device_route_calls(),
-            "the reference arm engaged grouped routes: the arms are not disjoint"
-        );
-        gpu.set_matrix_moe_for_gate(true).expect("matrix arm");
-        let b1 = capture(&gpu, tape, *prefix);
-        if refusals_b.is_none() {
-            refusals_b = Some(refusal_ordering());
-        }
-        let b2 = capture(&gpu, tape, *prefix);
-        let after_matrix = gpu.grouped_device_route_calls();
-        assert!(
-            after_matrix > before,
-            "the matrix arm did not engage grouped routes: the faster program never ran"
-        );
-        gpu.set_matrix_moe_for_gate(false).expect("reference arm");
-        let a2 = capture(&gpu, tape, *prefix);
-        assert_eq!(
-            after_matrix,
-            gpu.grouped_device_route_calls(),
-            "the reference arm engaged grouped routes on its repeat"
-        );
+        let (a1, b1) = if probe {
+            // Realization probe: one program, B,B, no cross-arm comparison possible.
+            let b1 = capture(&gpu, tape, *prefix);
+            let b2 = capture(&gpu, tape, *prefix);
+            assert!(
+                gpu.grouped_device_route_calls() > before,
+                "the matrix arm did not engage grouped routes: the program never ran"
+            );
+            assert!(
+                bitwise_same(&b1, &b2),
+                "panel {}: the matrix program is not bit-identical to itself across repeats; \
+                 no realization comparison is possible",
+                panel.name
+            );
+            println!(
+                "IDENTITY panel={} matrix_repeat_bit_identical=true rows={SCORED_ROWS} mode=realization_probe ep={ep}",
+                panel.name
+            );
+            (None, b1)
+        } else {
+            gpu.set_matrix_moe_for_gate(false).expect("reference arm");
+            let a1 = capture(&gpu, tape, *prefix);
+            assert_eq!(
+                before,
+                gpu.grouped_device_route_calls(),
+                "the reference arm engaged grouped routes: the arms are not disjoint"
+            );
+            gpu.set_matrix_moe_for_gate(true).expect("matrix arm");
+            let b1 = capture(&gpu, tape, *prefix);
+            if refusals_b.is_none() {
+                refusals_b = Some(refusal_ordering());
+            }
+            let b2 = capture(&gpu, tape, *prefix);
+            let after_matrix = gpu.grouped_device_route_calls();
+            assert!(
+                after_matrix > before,
+                "the matrix arm did not engage grouped routes: the faster program never ran"
+            );
+            gpu.set_matrix_moe_for_gate(false).expect("reference arm");
+            let a2 = capture(&gpu, tape, *prefix);
+            assert_eq!(
+                after_matrix,
+                gpu.grouped_device_route_calls(),
+                "the reference arm engaged grouped routes on its repeat"
+            );
+            assert!(
+                bitwise_same(&a1, &a2),
+                "panel {}: the reference program is not bit-identical to itself across repeats; \
+                 no class determination is possible",
+                panel.name
+            );
+            assert!(
+                bitwise_same(&b1, &b2),
+                "panel {}: the matrix program is not bit-identical to itself across repeats; \
+                 no class determination is possible",
+                panel.name
+            );
+            println!(
+                "IDENTITY panel={} reference_repeat_bit_identical=true matrix_repeat_bit_identical=true rows={SCORED_ROWS} mode=class_cell ep={ep}",
+                panel.name
+            );
+            (Some(a1), b1)
+        };
 
-        // Identity arm on real rows. Nothing cross-arm is printed until both
-        // programs are shown deterministic against themselves on this panel.
-        assert!(
-            bitwise_same(&a1, &a2),
-            "panel {}: the reference program is not bit-identical to itself across repeats; \
-             no class determination is possible",
-            panel.name
-        );
-        assert!(
-            bitwise_same(&b1, &b2),
-            "panel {}: the matrix program is not bit-identical to itself across repeats; \
-             no class determination is possible",
-            panel.name
-        );
-        println!(
-            "IDENTITY panel={} reference_repeat_bit_identical=true matrix_repeat_bit_identical=true rows={SCORED_ROWS}",
-            panel.name
-        );
+        for (step, b) in b1.iter().enumerate() {
+            writeln!(
+                matrix_rows,
+                "{{\"panel\":\"{}\",\"step\":{step},\"ep\":\"{ep}\",\"mode\":\"{}\",\"matrix_sha256\":\"{}\"}}",
+                panel.name,
+                if probe { "realization_probe" } else { "class_cell" },
+                row_sha(b)
+            )
+            .unwrap();
+        }
+        matrix_rows.flush().unwrap();
+        let Some(a1) = a1 else {
+            println!(
+                "PANEL_PROBE_DONE panel={} rows={SCORED_ROWS} ep={ep} cross_arm=not_applicable",
+                panel.name
+            );
+            continue;
+        };
 
         let mut totals = Totals::default();
         for (step, (a, b)) in a1.iter().zip(&b1).enumerate() {
@@ -674,6 +737,14 @@ fn main() {
         println!("{}", totals.line(&format!("panel:{}", panel.name)));
     }
 
+    if probe {
+        println!(
+            "COMPLETE realization probe ep={ep} program=matrix rows_per_panel={SCORED_ROWS}; \
+             matrix row hashes banked in matrix-rows.jsonl for cross-process comparison; \
+             no class determination, no drift rows, no quality admission, no performance claim"
+        );
+        return;
+    }
     let refusals_b = refusals_b.expect("matrix-arm refusal battery");
     for (i, (a, b)) in refusals_a.iter().zip(&refusals_b).enumerate() {
         assert_eq!(
