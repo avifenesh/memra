@@ -2116,17 +2116,10 @@ impl HybridModel {
             {
                 let mut hc = e.uninit(n_embd)?;
                 e.copy_into(&mut hc, 0, &g_seed, n_embd)?;
-                for j in 0..kr {
+                for (j, pos_slot) in pos_slots.iter().enumerate().take(kr) {
                     let tv = batch_d.slice(j..j + 1);
-                    let (hn, h_next) = self.gemma4_draft_trunk_dev(
-                        e,
-                        d,
-                        &tv,
-                        &hc,
-                        &pos_slots[j],
-                        &sess.cache,
-                        None,
-                    )?;
+                    let (hn, h_next) =
+                        self.gemma4_draft_trunk_dev(e, d, &tv, &hc, pos_slot, &sess.cache, None)?;
                     let ld = e.matmul(&d.head, &hn, 1)?;
                     let ldv = e.view(&ld, n_vocab);
                     e.copy_view_into(&mut dl, j * n_vocab, &ldv.slice(0..n_vocab), n_vocab)?;
