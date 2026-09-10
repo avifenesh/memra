@@ -17764,6 +17764,9 @@ impl Engine {
         } = w
             && *qtype == QT_NVFP4
         {
+            if !self.a4_stats_observe(stamp.slot, x, m * w.in_features())? {
+                return self.matmul(w, x, m);
+            }
             return self.qmatvec_mmq_nvfp4_calibrated_prefill(
                 bytes,
                 x,
@@ -17802,6 +17805,58 @@ impl Engine {
             Some(buffer) => Ok(Some(self.dtoh_u64(&buffer)?)),
             None => Ok(None),
         }
+    }
+
+    /// Arm the recalibration statistics buffer: one counter block per program slot.
+    pub fn a4_stats_enable(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let slots = memra_gguf::model_packs::qwen35::activation::PROGRAM_SLOTS;
+        let zeros = vec![0u64; slots * crate::mmq_ffi::A4_STATS_STRIDE];
+        let mut buffer = self.alloc_uninit::<u64>(zeros.len())?;
+        self.htod_u64_into(&zeros, &mut buffer)?;
+        *crate::mmq_ffi::a4_stats_buffer().lock().unwrap() = Some(buffer);
+        Ok(())
+    }
+
+    /// Read the recalibration statistics back and disarm.
+    pub fn a4_stats_take(&self) -> Result<Option<Vec<u64>>, Box<dyn std::error::Error>> {
+        let taken = crate::mmq_ffi::a4_stats_buffer().lock().unwrap().take();
+        match taken {
+            Some(buffer) => Ok(Some(self.dtoh_u64(&buffer)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Accumulate one projection's operand into its slot, then report whether the caller should
+    /// still take the A4 path. While a recalibration pass is armed the answer is NO: the point is
+    /// to measure the operand the SERVED arithmetic produces.
+    fn a4_stats_observe(
+        &self,
+        slot: u32,
+        x: &CudaSlice<f32>,
+        n: usize,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let guard = crate::mmq_ffi::a4_stats_buffer().lock().unwrap();
+        let Some(buffer) = guard.as_ref() else {
+            return Ok(true);
+        };
+        let stream = self.gpu.stream();
+        let (base, _g) = buffer.device_ptr(&stream);
+        let (x_p, _gx) = x.device_ptr(&stream);
+        let slot_ptr = (base as usize
+            + (slot as usize) * crate::mmq_ffi::A4_STATS_STRIDE * std::mem::size_of::<u64>())
+            as *mut core::ffi::c_void;
+        let rc = unsafe {
+            crate::mmq_ffi::memra_a4_stats_accumulate(
+                x_p as *const f32,
+                n as i64,
+                slot_ptr,
+                stream.cu_stream() as *mut core::ffi::c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("memra_a4_stats_accumulate rc={rc}").into());
+        }
+        Ok(false)
     }
 
     /// True when the artifact stamped this weight with a calibrated prefill activation scale.

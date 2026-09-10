@@ -23,6 +23,10 @@ extern "C" int memra_mmq_nvfp4_ex2(
     return 2901;
 }
 
+extern "C" int memra_a4_stats_accumulate(const float *, long long, void *, void *) {
+    return 2901;
+}
+
 extern "C" size_t memra_mmq_nvfp4_calibrated_prefill_act_bytes(int, int) {
     return 0;
 }

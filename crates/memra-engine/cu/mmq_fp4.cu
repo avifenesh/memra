@@ -1535,6 +1535,70 @@ int memra_mmq_nvfp4(const void * W_nvfp4_blocks, const float * act_f32, float * 
                                stream, out_scale, /*per_token_scale=*/1, /*residual_k=*/0);
 }
 
+// A4 RECALIBRATION STATISTICS. Per program slot: running |x| amax and a 64-bin log2 histogram of
+// |x|, accumulated over whatever the engine actually feeds that projection. The scales this lane
+// first minted were fitted OFF-GRAPH, against HF module inputs on a BF16 model, and the down
+// projection's fitted amax came out 3.6x the operand the engine really hands the GEMM. The engine's
+// own operand is the ground truth, so this reads it directly and no rented box is involved.
+//
+// Layout per slot (u64): [0] count, [1] amax bits (atomicMax over IEEE-754 positive floats, whose
+// bit patterns order the same as the values), [2] zeros, [8+b] histogram bin b for
+// b = clamp(floor(log2(|x|)) + 40, 0, 63).
+#if CUDART_VERSION >= 12080 && !defined(MEMRA_SM100_TCGEN05)
+static __global__ void a4_stats_accumulate_kernel(
+        const float * __restrict__ x, long long n, unsigned long long * __restrict__ slot) {
+    // SHARED-MEMORY REDUCTION FIRST. A 2048-row prime of a 17408-wide projection is 35.6M
+    // elements; one global atomic per element into 64 addresses serialises the whole pass. Each
+    // block folds into its own histogram and its own amax, then contributes at most 66 global
+    // atomics.
+    __shared__ unsigned long long sh_hist[64];
+    __shared__ unsigned int sh_amax;
+    __shared__ unsigned long long sh_zeros;
+    for (int b = threadIdx.x; b < 64; b += blockDim.x) { sh_hist[b] = 0ull; }
+    if (threadIdx.x == 0) { sh_amax = 0u; sh_zeros = 0ull; }
+    __syncthreads();
+
+    for (long long i = blockIdx.x * (long long) blockDim.x + threadIdx.x; i < n;
+         i += (long long) gridDim.x * blockDim.x) {
+        const float a = fabsf(x[i]);
+        if (a == 0.f) { atomicAdd(&sh_zeros, 1ull); continue; }
+        atomicMax(&sh_amax, __float_as_uint(a));
+        int b = (int) floorf(log2f(a)) + 40;
+        b = b < 0 ? 0 : (b > 63 ? 63 : b);
+        atomicAdd(&sh_hist[b], 1ull);
+    }
+    __syncthreads();
+
+    for (int b = threadIdx.x; b < 64; b += blockDim.x) {
+        if (sh_hist[b]) { atomicAdd(slot + 8 + b, sh_hist[b]); }
+    }
+    if (threadIdx.x == 0) {
+        // amax rides in the LOW 32 bits of a u64 slot: positive IEEE-754 floats order the same as
+        // their bit patterns, so a 32-bit atomicMax over __float_as_uint is exact. Little-endian
+        // only, which every target here is.
+        if (sh_amax) { atomicMax((unsigned int *) (slot + 1), sh_amax); }
+        if (sh_zeros) { atomicAdd(slot + 2, sh_zeros); }
+    }
+    if (blockIdx.x == 0 && threadIdx.x == 0) { atomicAdd(slot + 0, (unsigned long long) n); }
+}
+#endif
+
+extern "C" int memra_a4_stats_accumulate(
+        const float * x, long long n, void * slot, void * stream) {
+#if CUDART_VERSION >= 12080 && !defined(MEMRA_SM100_TCGEN05)
+    if (n <= 0 || !x || !slot) { return 2902; }
+    const int threads = 256;
+    const int blocks = (int) ((n + threads - 1) / threads > 4096 ? 4096 : (n + threads - 1) / threads);
+    a4_stats_accumulate_kernel<<<blocks, threads, 0, reinterpret_cast<cudaStream_t>(stream)>>>(
+        x, n, static_cast<unsigned long long *>(slot));
+    cudaError_t err = cudaGetLastError();
+    return err == cudaSuccess ? 0 : 1000 + int(err);
+#else
+    (void) x; (void) n; (void) slot; (void) stream;
+    return 2901;
+#endif
+}
+
 // Bytes the CALIBRATED prefill quantizer writes for (in_f, rows).
 //
 // This is NOT the W4A8 activation footprint and must not be sized with it. The W4A8 scratch is

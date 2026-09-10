@@ -835,6 +835,13 @@ unsafe extern "C" {
         rp: i32,
         clip_stats: *mut core::ffi::c_void,
     ) -> i32;
+    /// Accumulate |x| statistics into one program slot's counter block. Gate-harness only.
+    pub fn memra_a4_stats_accumulate(
+        x: *const f32,
+        n: i64,
+        slot: *mut core::ffi::c_void,
+        stream: *mut core::ffi::c_void,
+    ) -> i32;
     /// Bytes the calibrated prefill quantizer writes for (in_f, rows). NOT interchangeable with
     /// `memra_mmq_nvfp4_w4a8_act_bytes`: a different block layout over a row count padded to 128.
     pub fn memra_mmq_nvfp4_calibrated_prefill_act_bytes(in_f: i32, rows: i32) -> usize;
@@ -3261,6 +3268,25 @@ pub fn a4_capture_take() -> Vec<A4Capture> {
 /// at 448, 4 blocks seen. 5..8 are padding so one slot's counters do not share a cache line with
 /// the next slot's under the atomics.
 pub const A4_CLIP_STRIDE: usize = 8;
+
+/// u64 slots per projection in the RECALIBRATION buffer: [0] values seen, [1] amax bits,
+/// [2] exact zeros, [8+b] a 64-bin log2 histogram of |x| with bin b covering
+/// [2^(b-40), 2^(b-39)). Wide enough to read a percentile or search an MSE-optimal clip.
+pub const A4_STATS_STRIDE: usize = 72;
+
+static A4_STATS: std::sync::Mutex<Option<CudaSlice<u64>>> = std::sync::Mutex::new(None);
+
+/// True when a recalibration pass is collecting operand statistics. While armed, `matmul_prefill`
+/// accumulates the operand and then takes the ORDINARY W4A8 path, so the statistics describe the
+/// activations the SERVED arithmetic produces rather than A4-perturbed ones.
+pub fn a4_stats_armed() -> bool {
+    A4_STATS.lock().unwrap().is_some()
+}
+
+/// The recalibration buffer, for the Engine methods that arm and drain it.
+pub fn a4_stats_buffer() -> &'static std::sync::Mutex<Option<CudaSlice<u64>>> {
+    &A4_STATS
+}
 
 /// PER-PROJECTION launch counts, indexed by the weight's slot in the activation program.
 ///
