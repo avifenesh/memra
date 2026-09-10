@@ -27892,16 +27892,27 @@ mod tests {
     /// The resolution must survive the request path, not only the resolver: an unbounded request
     /// against a 1M checkpoint with no `MEMRA_CTX` must be admitted at the checkpoint's window.
     /// With the old 8192 fallback this cap came out at `prompt + 8192`.
+    ///
+    /// `open_output_tokens: None` is the memory-admission door OFF, which is what this row is
+    /// about: it pins the `MEMRA_CTX` envelope behaviour the door later replaces, so the two
+    /// arms stay separately testable.
     #[test]
     fn an_unbounded_request_on_an_unset_ctx_is_capped_by_the_checkpoint_not_by_8192() {
         let server_ctx = resolve_ctx(None, 1_048_576).expect("declared context resolves");
         assert_eq!(
-            request_ctx_cap(server_ctx, 1_048_576, 600_000, None, MAX_NEW_CTX_BOUNDED),
+            request_ctx_cap(
+                server_ctx,
+                1_048_576,
+                600_000,
+                None,
+                MAX_NEW_CTX_BOUNDED,
+                None
+            ),
             1_048_576,
             "a 600k prompt with no max_tokens must reach the checkpoint's window",
         );
         assert_eq!(
-            request_ctx_cap(8_192, 1_048_576, 600_000, None, MAX_NEW_CTX_BOUNDED),
+            request_ctx_cap(8_192, 1_048_576, 600_000, None, MAX_NEW_CTX_BOUNDED, None),
             608_192,
             "the pre-fix constant is what this row pins, so the delta is visible in the test",
         );
