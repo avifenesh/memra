@@ -451,7 +451,9 @@ fn main() {
         ("MEMRA_DSV4_DRAFTER", "dspark"),
         ("MEMRA_DSV4_MOE_PROGRAM", "reference"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
-        ("MEMRA_DSV4_EP", "off"),
+        // EP is DECLARED rather than pinned: see the `ep` read below. It is a load-time
+        // decision, so it cannot be flipped through the in-process setter the way the
+        // expert program can, and the two realizations need separate runs.
         // The matrix program's own admission prerequisites (validate_matrix_program:
         // mode-2 grouped visitor, direct loader, device verify). They are inert on the
         // reference walk, which never enters the grouped executor, so setting them in
@@ -472,6 +474,19 @@ fn main() {
 
     non_vacuity_red_arm();
 
+    // The expert-parallel realization. `matrix_ep_storage_valid` admits matrix+EP=off
+    // silently, so a run at the wrong realization gives no signal at all; the value is
+    // therefore read, constrained and printed into the receipt instead of assumed. The
+    // served performance rows were taken at `pair`; the shipped default topology is
+    // `off`. A class verdict has to name which one it covers, and comparing the matrix
+    // row hashes of an `off` run against a `pair` run is what decides whether one
+    // verdict covers both.
+    let ep = std::env::var("MEMRA_DSV4_EP").unwrap_or_else(|_| "off".to_owned());
+    assert!(
+        ep == "off" || ep == "pair",
+        "MEMRA_DSV4_EP must be declared as off or pair, got {ep:?}"
+    );
+
     let dir = Path::new(&args[1]);
     let panel_bytes = std::fs::read(&args[2]).expect("panel tape");
     let panel_sha = format!("{:x}", Sha256::digest(&panel_bytes));
@@ -483,7 +498,7 @@ fn main() {
 
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
     println!(
-        "PANELS sha256={panel_sha} count={} scored_rows_per_panel={SCORED_ROWS} seed={SEED}",
+        "PANELS sha256={panel_sha} count={} scored_rows_per_panel={SCORED_ROWS} seed={SEED} ep={ep}",
         panels.len()
     );
 
@@ -614,7 +629,7 @@ fn main() {
             overall.add(&m, sample_a == sample_b);
             let line = format!(
                 concat!(
-                    "{{\"panel\":\"{}\",\"domain\":\"{}\",\"prefix\":{},\"step\":{},\"position\":{},",
+                    "{{\"panel\":\"{}\",\"domain\":\"{}\",\"ep\":\"{}\",\"prefix\":{},\"step\":{},\"position\":{},",
                     "\"vocab\":{},\"target\":{},\"bits_equal\":{},\"max_abs_logit_delta\":{:.17e},",
                     "\"max_abs_id\":{},\"kl_reference_matrix_nats\":{:.17e},",
                     "\"kl_matrix_reference_nats\":{:.17e},\"total_variation\":{:.17e},",
@@ -625,6 +640,7 @@ fn main() {
                 ),
                 panel.name,
                 panel.domain,
+                ep,
                 prefix,
                 step,
                 pos,
@@ -679,8 +695,9 @@ fn main() {
         "new_class"
     };
     println!(
-        "CLASS determination={class} bit_equal_rows={}/{} \
-         basis=paired_teacher_forced_rows_after_within_arm_bit_identity",
+        "CLASS determination={class} bit_equal_rows={}/{} ep={ep} \
+         basis=paired_teacher_forced_rows_after_within_arm_bit_identity \
+         realization_covered=matrix_ep_{ep}",
         overall.bits_equal, overall.rows
     );
     println!(
