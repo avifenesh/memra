@@ -340,6 +340,10 @@ fn non_vacuity_red_arm() {
 /// and comparing the name sequence byte for byte is the check; `legacy_admits` on
 /// every pair is its red arm, since a battery whose pairs the pre-lane predicate
 /// also refused would be asserting against a mechanism that never existed.
+/// One named battery entry: the label that appears in the receipt, and the edit it
+/// makes to a copy of the base sampler.
+type Mutation = (&'static str, fn(&mut SamplerConfig));
+
 fn refusal_ordering() -> Vec<String> {
     let base = SamplerConfig {
         temperature: 0.7,
@@ -359,7 +363,7 @@ fn refusal_ordering() -> Vec<String> {
     // Coarsest-first, the same order `mismatch` promises. Each entry changes MORE
     // than one field, so a predicate that returned the LAST difference, or a
     // struct-layout artifact, would produce a different sequence here.
-    let mutations: [(&'static str, fn(&mut SamplerConfig)); 10] = [
+    let mutations: [Mutation; 10] = [
         ("greedy_and_top_k", |c| {
             c.temperature = 0.0;
             c.top_k = 1;
