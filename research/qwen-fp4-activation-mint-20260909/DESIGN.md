@@ -1,5 +1,17 @@
 # Qwen3.8-27B calibrated prefill activation program
 
+**STATUS 2026-09-10: this program is banked NEGATIVE and is not a serving path.** On four
+held-out windows it costs +0.1132 nats of mean paired dNLL against the served W4A8 artifact,
+KL(served||A4) 0.164 to 0.817, and 87.1% top-1 agreement, against bars of 0.08 nats, 0.05 and
+97%. A corrected engine re-fit of all 400 multipliers bought 0.026 nats, because the global
+multiplier cancels out of `s * ue4m3(block_amax/(6*s))` and is nearly inert; SGLang's NVFP4
+W4A4 checkpoint sits within 0.07 nats of our served arm on the same transcripts, so the cost is
+this program's linear set rather than FP4 activations as such. Follow-up: #439. Verdict tables
+live in the private companion, `research/qwen-fp4-activation-mint-20260909/VERDICT.md`.
+
+The design below is the Phase 1 text as written on 2026-09-09, kept unedited as the record of
+what was proposed and qualified against.
+
 Phase 1, 2026-09-09. Issue #420, refs #400/#408/#409/#411. Awaiting owner steering before minting or engine changes.
 
 The existing target has 64 trunk layers and one MTP block. The measured GGUF census is 504 NVFP4 tensors, 360 F32 tensors and two Q5_K tensors (embedding and output head). The NVFP4 block format stores four per-16 UE4M3 scales and 32 E2M1 bytes per 64 weights. No calibrated activation scales are present. The existing source importer reads ModelOpt weight_scale_2 but Qwen does not execute input_scale.
