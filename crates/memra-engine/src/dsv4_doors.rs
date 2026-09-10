@@ -8,8 +8,12 @@
 //! through `Dsv4Gpu::set_grouped_gu_fuse_for_gate`. What was never checked is
 //! whether that program is the one a customer request takes. It is not: the
 //! served program is PP-2 with the reference expert program, a resident DSpark
-//! drafter and chunked prefill, and the engine refuses the union of the two
-//! (TP/EP refuses the drafter, and refuses chunked prefill). Six of the nine
+//! drafter and chunked prefill, and the engine refuses the union of the two in
+//! two independent places: TP/EP refuses MTP/DSpark state (`dsv4_gpu.rs:3066`),
+//! and TP/EP refuses a batched prime at all, "DSV4 TP/EP vertical slice
+//! currently admits only a single-token prime; batched replicated cache
+//! hydration is not wired" (`dsv4_gpu.rs:5907`), so it can neither chunk nor
+//! serve. Either refusal alone makes the two programs disjoint. Six of the nine
 //! merged default-ON doors, including the two largest wins, cannot engage there,
 //! and they go inert SILENTLY because an unset value resolves to `Ok(admitted)`
 //! with `admitted == false`.
@@ -342,10 +346,7 @@ fn resolve_graph_splitk(p: &Dsv4Program) -> DoorState {
 fn resolve_splitk_fast(p: &Dsv4Program) -> DoorState {
     // The paired-fetch entries are a choice of split-K entry family: no split-K,
     // no call site. Same reachability as its parent, never a wider one.
-    match resolve_graph_splitk(p) {
-        DoorState::On(shape) => DoorState::On(shape),
-        other => other,
-    }
+    resolve_graph_splitk(p)
 }
 
 fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
