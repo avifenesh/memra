@@ -894,9 +894,9 @@ epilogue that becomes `1/tiles` as wide per CTA. Because every CTA still runs th
 whole reduction, the sweep's asymptote as `tiles` grows was expected to BE the
 reduction floor, with the gap between `tiles=1` and that floor the only thing this
 door can buy. The component gate reports that sweep rather than assuming it, and
-what the sweep reported is the instrument's own floor rather than the kernel's:
-see the bound discussion under Evidence below. The real ceiling on the door is the
-1.240690 ms/step the kernel it replaces costs in the live model.
+what the sweep reports is confirmed as the reduction floor by a
+second card class, see the discussion under Evidence below. The real ceiling on the
+door is the 1.240690 ms/step the kernel it replaces costs in the live model.
 
 The launcher pins block 128 (the tree is the contract) and requires
 `128 * tiles` to divide `n`, so no CTA is empty and every thread writes the same
@@ -923,22 +923,39 @@ at model scale, not just per-site). Four qualify processes (two per arm) matched
 the same digests. Receipts banked in darklanes
 `research/dsv4f-norm2-wide-20260909/`.
 
-Read the sweep as a BOUND, not a prediction. In the cold sweep, rank 0 `tiles=8`,
-`tiles=16` and `tiles=32` all read 6.141332 us: three CTA counts landing on one
-value to six decimals is the standalone-stream event instrument's floor, not the
-reduction floor this section originally expected the asymptote to be. So 6.730 us
-is an upper bound on the wide kernel and 86 x 5.653 us = 0.486 ms/step is a LOWER
-bound on the model return. The measured return is 1.073033 ms/step forward and
-1.057288 reverse, which is above that bound and below the 1.240690 ms/step the
-single-CTA pack costs in the live model, i.e. below the whole cost of the kernel
-being replaced. Isolated per-launch timing on this path predicts the sign of a
-graph-replay change and not its size: Darklanes #562 measured the same
-non-additivity in the other direction, 0.164670 ms/step of kernel time returning
--0.026864 ms/step of replay forward.
+The sweep's asymptote IS the reduction floor this section predicted, and a first
+reading that called it an instrument floor was withdrawn on 2026-09-10. The test was
+to run the same sweep on a second card class: an instrument overhead is roughly
+constant and would not scale, a computational floor does. It scales. Dev pair Max-Q
+`tiles=1` 10.439-12.854 us with floor 6.084-6.909 us; prod-candidate Workstation 600 W
+`tiles=1` 8.122-8.213 us with floor 3.941-4.087 us. Both absolutes move about a third
+while `floor / tiles=1` stays at 0.5375-0.5883 and 0.4803-0.4987.
 
-Not covered by any receipt: `compute-sanitizer` memcheck and synccheck were never
-run against this kernel. The write side is covered by 13,588 raw-bit comparisons
-with poisoned outputs and guard bands on both sides of every buffer, plus a
-launcher that refuses any `n` other than 4096 and any `tiles` where `128 * tiles`
-does not divide `n`. The read side is unproven by a tool. Filed as follow-up cell
-`norm2-wide-sanitizers`.
+So the component number is a real prediction: 86 launches at a 5.653-5.945 us warm
+saving is 0.486-0.511 ms/step (0.370 on the cold rows). The measured model return is
+1.073033 ms/step forward and 1.057288 reverse, i.e. **2.1x to 2.9x the prediction**,
+and below the 1.240690 ms/step the single-CTA pack costs in the live model. The factor
+of two is UNEXPLAINED. The surviving hypothesis is that replay forward span is not
+additive in isolated kernel durations, which Darklanes #562 measured in the other
+direction on this same path: 0.164670 ms/step of kernel time removed returned
+-0.026864 ms/step of replay forward. Isolated per-launch timing on this path predicts
+the sign of a graph-replay change and not its size.
+
+Sanitizers (2026-09-10, on MERGED main `4eaf708e7` rather than the lane head, binary
+`f553bc452ad4398efc90a38216c1972f3254aaabe50c7d34cbb1b017b7830b58`, 2x RTX PRO 6000
+Blackwell Workstation Edition prod-candidate box): `compute-sanitizer --tool memcheck`
+and `--tool synccheck` each report `ERROR SUMMARY: 0 errors` under `--error-exitcode 99`,
+each over 344 `COMPONENT` rows and 13,588 comparisons with the wide kernel engaged at
+`tiles=32`. Non-vacuity is asserted in the controller, not assumed: each sanitizer log
+must carry its own row count and `COMPONENT_PASS` line or the cell fails.
+
+That cell also captured its OWN operands on that box instead of inheriting the
+norm-fuse2 lane's, and reproduced
+`COMPONENT_PASS sites=172 references=172 comparisons=13588 bits_equal=true class=same`
+against them, so the same-class claim now rests on two independent captures taken on two
+different card classes. All 172 captured operand descriptors read `4096 1`: the pack refuses
+any other shape, so 2 sites x 43 layers x 2 ranks is the entire call-site domain rather
+than a sample of it.
+
+These rows are CORRECTNESS ONLY. That box is a different card class from the pair the
+door was scored on, and no absolute timing from it enters this door's verdict.
