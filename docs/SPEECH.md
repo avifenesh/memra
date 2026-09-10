@@ -325,10 +325,11 @@ fatigue.
   faster on throughput and the batch axis is closed permanently. Batch was never the lever;
   this only confirms it. Streams@SLO can still carry the program, but the "our engine is fast"
   claim does not.
-- **K3, no business.** If step 3's streams@SLO on an RTX PRO 6000 lands below ~16 at the
-  accuracy tier, the engine costs more per stream-hour than the cheapest published streaming
-  price and the program is not a business. Sell the model, not the engine. (The arithmetic
-  behind the number 16 is private and lives in darklanes, not here.)
+- **K3, no business.** If step 3's streams@SLO on an RTX PRO 6000 lands below the break-even
+  count for that card, the engine costs more per stream-hour than the cheapest published
+  streaming price and the program is not a business. Sell the model, not the engine. (The
+  break-even count and the arithmetic behind it are business facts and live in the private
+  repository, not here.)
 - **K4, quality decides first.** No amount of streams@SLO matters if the model behind it
   cannot clear the quality bar its market is judged on. The base-model question is open and
   owned by another lane. **Step 4 stays capped until that lane reports**, and speed work must
