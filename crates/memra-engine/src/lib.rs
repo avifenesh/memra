@@ -3340,6 +3340,12 @@ pub fn hc_pre_v4_on_from(v: Option<&str>, built_arch: &str) -> bool {
 /// headline5 all4 (RMS 1024 + V4 + mixes + halves) 84.53 vs base 78.49; gemvab gemv +2.2%,
 /// onorm +1.1%; headline6 all4 + gemv + onorm 86.48 vs all4 84.91. `=0` is each door's rollback
 /// seam.
+/// The CUDA arch this binary's kernels were compiled for (`120a`, `100a`, `90a`, `89`),
+/// as written by memra-engine's build script. `env!` only reaches the crate whose build
+/// script emitted it, so downstream crates that key a default on the board class read this
+/// const instead of re-deriving the arch at runtime.
+pub const BUILT_CUDA_ARCH: &str = env!("MEMRA_BUILT_CUDA_ARCH");
+
 pub fn b200_posture_door_from(v: Option<&str>, built_arch: &str) -> bool {
     match v.map(str::trim) {
         Some("1") => true,

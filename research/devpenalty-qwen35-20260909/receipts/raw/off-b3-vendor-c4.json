@@ -1,0 +1,728 @@
+{
+ "model": "qwen/qwen3.5-9b",
+ "arm": "off",
+ "cell": "vendor",
+ "sampling": null,
+ "concurrency": 4,
+ "reps": 5,
+ "tag": "off-b3",
+ "summary_max_tokens": 200,
+ "extract_max_tokens": 60,
+ "rows": [
+  {
+   "rep": 1,
+   "block_wall_s": 9.64635353256017,
+   "vram_peak_mib": 12579,
+   "tasks": [
+    {
+     "salt": "off-b3-vendor-c4-r1-w0-64c733d3",
+     "turn1": {
+      "ttft_s": 0.9611069429665804,
+      "total_s": 8.103457738645375,
+      "decode_s": 7.142350795678794,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2564.7510071995316,
+      "decode_tok_s": 27.86197509654627,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 7.89807484,
+      "text_sha256": "3f20e21913e3b9505d89ee53eb2d7f0eafd98efc2a7d4320048bcc030a7cf26d"
+     },
+     "turn2": {
+      "ttft_s": 0.13420527428388596,
+      "total_s": 1.541695386171341,
+      "decode_s": 1.407490111887455,
+      "prompt_tokens": 2710,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 20192.947069036243,
+      "decode_tok_s": 41.91858933977202,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 1.510755015,
+      "text_sha256": "545c07c2ec605fe5494e441f328812614a080173cd78408687ff1fc079a685a0"
+     },
+     "e2e_s": 9.645957880653441,
+     "turn1_text": "הנה תקציר קצר של שני העמודים:\n\nהודעה ממיכל לוי מחברת אור לצוות התפעול, מיום 9 בספטמבר 2026. בהודעה מצורפת חשבונית (INV-2026-091) עבור הזמנת רכש (PO-1042) לנכסים למשרד ברחוב הגפן 12, תל אביב.\n\nהחשבונית כוללת:\n*   10 מארזי נייר (30 ש\"ח כל אחד)\n*   4 מחסניות דיו (125 ש\"ח כל אחת)\n*   2 כיסאות (450 ש\"ח כל אחד)\n*   משלוח (80 ש\"ח)\n\nסכום כולל: ",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": 1780,\n  \"currency"
+    },
+    {
+     "salt": "off-b3-vendor-c4-r1-w1-8935d074",
+     "turn1": {
+      "ttft_s": 0.9670481821522117,
+      "total_s": 7.500552607700229,
+      "decode_s": 6.533504425548017,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 183,
+      "prefill_tok_s": 2548.993985505485,
+      "decode_tok_s": 27.85641336498126,
+      "stream_chunks": 182,
+      "spec": null,
+      "server_elapsed_s": 7.290961943,
+      "text_sha256": "c551de4d0643cd070e8d5c6106d915b81480d7439c2388728440d5ae99f64f24"
+     },
+     "turn2": {
+      "ttft_s": 0.11635276861488819,
+      "total_s": 1.8880908247083426,
+      "decode_s": 1.7717380560934544,
+      "prompt_tokens": 2693,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 23145.13038287437,
+      "decode_tok_s": 33.3006336896609,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 1.874592035,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 9.389481247402728,
+     "turn1_text": "התקציר:\n\nחברת אור (מיכל לוי) הגישה חשבונית מס' INV-2026-091 עבור הזמנת רכש PO-1042. החשבונית כוללת 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות המשלוח. הסכום הכולל הוא 1,780 ש\"ח. מועד התשלום המבוקש הוא 30/9/2026, אך העברת התשלום עדיין ממתינה לאישור מנהלת המשרד. המשלוח מתוכנן ל-14/9/2026 בין 09:00-11:00.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r1-w2-28e95c8f",
+     "turn1": {
+      "ttft_s": 0.49968385603278875,
+      "total_s": 7.6572224190458655,
+      "decode_s": 7.157538563013077,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 190,
+      "prefill_tok_s": 4933.1191517187,
+      "decode_tok_s": 26.405725702501492,
+      "stream_chunks": 189,
+      "spec": null,
+      "server_elapsed_s": 7.64814394,
+      "text_sha256": "94dafdf9f167917e99188dbc7ac24290e016633d0344865c9ae96ec2f879b72f"
+     },
+     "turn2": {
+      "ttft_s": 0.13172655832022429,
+      "total_s": 1.8112724833190441,
+      "decode_s": 1.6795459249988198,
+      "prompt_tokens": 2700,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 20497.00557298674,
+      "decode_tok_s": 35.12854225765899,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 1.783319102,
+      "text_sha256": "545c07c2ec605fe5494e441f328812614a080173cd78408687ff1fc079a685a0"
+     },
+     "e2e_s": 9.469170507974923,
+     "turn1_text": "**תקציר:**\n\nחברת אור (מיכל לוי) מגישה חשבונית מס' **INV-2026-091** בהתאם להזמנת הרכש **PO-1042**. החשבונית כוללת 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות המשלוח, עם סך הכל של **1,780 ש\"ח**. מועד התשלום המבוקש הוא **30/9/2026**, אך העברת הכסף תתבצע רק לאחר אישור מנהלת המשרד. המשלוח המתוכנן ל-**14/9/2026** בין השעות 09:00-11:00.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": 1780,\n  \"currency"
+    },
+    {
+     "salt": "off-b3-vendor-c4-r1-w3-30c21423",
+     "turn1": {
+      "ttft_s": 0.9707712065428495,
+      "total_s": 5.070675455033779,
+      "decode_s": 4.09990424849093,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 115,
+      "prefill_tok_s": 2539.2182868489267,
+      "decode_tok_s": 27.805527419807547,
+      "stream_chunks": 114,
+      "spec": null,
+      "server_elapsed_s": 4.859139446,
+      "text_sha256": "a078a99e012a4f84038a07cf8b8d6a8b05fe974dc4453721c739fa3266f35131"
+     },
+     "turn2": {
+      "ttft_s": 0.13174971845000982,
+      "total_s": 2.2620384506881237,
+      "decode_s": 2.130288732238114,
+      "prompt_tokens": 2625,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 19924.141249652926,
+      "decode_tok_s": 27.69577621434147,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.246188947,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 7.333558640442789,
+     "turn1_text": "**תקציר:**\nהחשבונית INV-2026-091 מ-9/9/2026 של חברת אור (מיכל לוי) מכסה הזמנת רכש PO-1042 בסכום כולל של 1,780 ש\"ח. המשלוח מתוכנן ל-14/9/2026. העברת התשלום עדיין מחכה לאישור מנהלת המשרד.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    }
+   ]
+  },
+  {
+   "rep": 2,
+   "block_wall_s": 10.59831527620554,
+   "vram_peak_mib": 12995,
+   "tasks": [
+    {
+     "salt": "off-b3-vendor-c4-r2-w0-bce083ee",
+     "turn1": {
+      "ttft_s": 0.5039949435740709,
+      "total_s": 7.987477041780949,
+      "decode_s": 7.483482098206878,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 188,
+      "prefill_tok_s": 4890.922084494534,
+      "decode_tok_s": 24.988367386461338,
+      "stream_chunks": 187,
+      "spec": null,
+      "server_elapsed_s": 7.973536881,
+      "text_sha256": "c4987816e9b8937966cdb903678cb2e7a29abdf48f60bd491714c21e8e6c8223"
+     },
+     "turn2": {
+      "ttft_s": 0.15263499412685633,
+      "total_s": 2.283592451363802,
+      "decode_s": 2.1309574572369456,
+      "prompt_tokens": 2698,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 17676.156214594328,
+      "decode_tok_s": 27.68708488272728,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.249196168,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.271986398845911,
+     "turn1_text": "הנה תקציר קצר של ההודעה:\n\n**תקציר:**\nחברת אור שלחה חשבונית (INV-2026-091) בסך 1,780 ש\"ח עבור הזמנת רכש (PO-1042). החשבונית כוללת 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, עם משלוח לתאריך 14/9/2026. התשלום מועד ל-30/9/2026 אך עדיין מחכה לאישור מנהלת המשרד. יש לשמור את החשבונית בתיקיית ספטמבר של חברת אור ולהתאים את הפרטים להזמנה המקורית.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r2-w1-3017eb89",
+     "turn1": {
+      "ttft_s": 0.9691937966272235,
+      "total_s": 8.613148469477892,
+      "decode_s": 7.643954672850668,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2543.350987777836,
+      "decode_tok_s": 26.033644692687158,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.399567937,
+      "text_sha256": "7480d0dc4b26c4d7fdd265562b5012517c097cd2c29e66f298db1d95e00d1eef"
+     },
+     "turn2": {
+      "ttft_s": 0.2063237139955163,
+      "total_s": 1.9827243611216545,
+      "decode_s": 1.7764006471261382,
+      "prompt_tokens": 2710,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 13134.699582127976,
+      "decode_tok_s": 33.2132281619297,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 1.9476482320000001,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.596663225442171,
+     "turn1_text": "**תקציר:**\n\nחברת אור (מיכל לוי) שלחה חשבונית מס' **INV-2026-091** עבור הזמנת רכש **PO-1042**.\nהחשבונית כוללת:\n*   10 מארזי נייר @ 30 ש\"ח\n*   4 מחסניות דיו @ 125 ש\"ח\n*   2 כיסאות @ 450 ש\"ח\n*   משלוח: 80 ש\"ח\n\n**סה\"כ: 1,780 ש\"ח.**\nמועד תשלום מבוקש: **30 בספטמבר 2026**.\nתנאי תשלום: העברה לאחר אישור מנהלת המשרד.\nמועד המשלוח: שני, ",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r2-w2-f50e4ae7",
+     "turn1": {
+      "ttft_s": 0.9603316774591804,
+      "total_s": 8.610603821463883,
+      "decode_s": 7.650272144004703,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2566.8215032975177,
+      "decode_tok_s": 26.012146529447396,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.404653461,
+      "text_sha256": "6e3c9092e7b8d13936aef94510c94c96293621fd2d548acb19341927e37ab57a"
+     },
+     "turn2": {
+      "ttft_s": 0.19994834251701832,
+      "total_s": 1.9832100234925747,
+      "decode_s": 1.7832616809755564,
+      "prompt_tokens": 2711,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 13558.501990429138,
+      "decode_tok_s": 33.08544148591994,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 1.9540606839999999,
+      "text_sha256": "545c07c2ec605fe5494e441f328812614a080173cd78408687ff1fc079a685a0"
+     },
+     "e2e_s": 10.594622150994837,
+     "turn1_text": "**תקציר:**\nחברת אור (ספק) שלחה חשבונית מס' **INV-2026-091** עבור הזמנת רכש **PO-1042**.\nהחשבונית כוללת: 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות המשלוח.\nהסכום הכולל הוא **1,780 ש\"ח**.\nמועד התשלום המבוקש: **30/09/2026**, בתנאי העברה לאחר אישור מנהלת המשרד.\nהמשלוח מתוכנן ל-**14/09/2026** בין 09:00-11:00.\nהספקת המסמך בתיקיית ספט",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": 1780,\n  \"currency"
+    },
+    {
+     "salt": "off-b3-vendor-c4-r2-w3-da2b154f",
+     "turn1": {
+      "ttft_s": 0.9736303556710482,
+      "total_s": 7.365423657931387,
+      "decode_s": 6.391793302260339,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 169,
+      "prefill_tok_s": 2531.761654350912,
+      "decode_tok_s": 26.28370350158068,
+      "stream_chunks": 168,
+      "spec": null,
+      "server_elapsed_s": 7.149820394,
+      "text_sha256": "851b6b6e9797a29f42d4bb57fcd3b2f9b0f8f77f625f5fd35a52146520d3ad8b"
+     },
+     "turn2": {
+      "ttft_s": 0.1382376216351986,
+      "total_s": 2.438146780245006,
+      "decode_s": 2.2999091586098075,
+      "prompt_tokens": 2679,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 19379.67369743768,
+      "decode_tok_s": 25.653187117904633,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.417936457,
+      "text_sha256": "545c07c2ec605fe5494e441f328812614a080173cd78408687ff1fc079a685a0"
+     },
+     "e2e_s": 9.80435143224895,
+     "turn1_text": "התקציר הבא מבוסס על הדף הראשון של ההודעה (הדף השני הוא הצרור):\n\n**תקציר:**\nחברת אור שלחה חשבונית (INV-2026-091) עבור הזמנת רכש (PO-1042). החשבונית כוללת 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות המשלוח הכוללת היא 1,780 ש\"ח. משלוח מתוכנן ל-14/9/2026. העברת התשלום עדיין ממתינה לאישור מנהלת המשרד.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": 1780,\n  \"currency"
+    }
+   ]
+  },
+  {
+   "rep": 3,
+   "block_wall_s": 10.428989292122424,
+   "vram_peak_mib": 13059,
+   "tasks": [
+    {
+     "salt": "off-b3-vendor-c4-r3-w0-6cffb1ee",
+     "turn1": {
+      "ttft_s": 0.9734573243185878,
+      "total_s": 8.273697007447481,
+      "decode_s": 7.300239683128893,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2532.211673198391,
+      "decode_tok_s": 27.259378957090394,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.061888346,
+      "text_sha256": "d8671e8c56566d8a612095edce6d2cc3b37b1e0ecf41465d99d4345b1a37cc1d"
+     },
+     "turn2": {
+      "ttft_s": 0.20831489749252796,
+      "total_s": 2.153788105584681,
+      "decode_s": 1.945473208092153,
+      "prompt_tokens": 2711,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 13013.951631074493,
+      "decode_tok_s": 30.326811880313127,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.120148547,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.428409048356116,
+     "turn1_text": "הנה תקציר קצר של שני העמודים:\n\nההודעה מגיעה ממיכל לוי מחברת אור (ספק) ומתייחסת לחשבונית INV-2026-091 בהתאם להזמנת רכש PO-1042. החשבונית כוללת 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, עם עלות משלוח נוספת. הסכום הכולל לתשלום הוא 1,780 ש\"ח, ומועד התשלום המבוקש הוא 30 בספטמבר 2026, אך העברה עדיין ממתינה לאישור מנהלת המשרד. המשלוח מתוכנן ליום שני, 14 בספטמבר, בין 9",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r3-w1-4b428dfa",
+     "turn1": {
+      "ttft_s": 0.9658721340820193,
+      "total_s": 7.634828372858465,
+      "decode_s": 6.668956238776445,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 187,
+      "prefill_tok_s": 2552.097646281903,
+      "decode_tok_s": 27.890421430344468,
+      "stream_chunks": 186,
+      "spec": null,
+      "server_elapsed_s": 7.429170394,
+      "text_sha256": "389187a1253156ada46e023cad2be6f040c1505c084d8a16cec4cc3184ae5594"
+     },
+     "turn2": {
+      "ttft_s": 0.15677991043776274,
+      "total_s": 2.46092760656029,
+      "decode_s": 2.304147696122527,
+      "prompt_tokens": 2697,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 17202.459119088693,
+      "decode_tok_s": 25.60599743639983,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.426929656,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.096643077209592,
+     "turn1_text": "**תקציר:**\nחברת אור (ספק) שלחה חשבונית INV-2026-091 עבור הזמנת רכש PO-1042. החשבונית כוללת 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות המשלוח היא 80 ש\"ח. הסכום הכולל לתשלום הוא 1,780 ש\"ח. מועד התשלום המבוקש הוא 30/09/2026, אך העברה תתבצע רק לאחר אישור מנהלת המשרד. המשלוח מתוכנן ל-14/09/2026 בין 09:00 ל-11:00.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r3-w2-2448d434",
+     "turn1": {
+      "ttft_s": 0.4994288654997945,
+      "total_s": 7.919085816480219,
+      "decode_s": 7.419656950980425,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 196,
+      "prefill_tok_s": 4935.637826085994,
+      "decode_tok_s": 26.281538525070612,
+      "stream_chunks": 195,
+      "spec": null,
+      "server_elapsed_s": 7.907713901,
+      "text_sha256": "fdf8abdb76b00450e2257221674ff25d7fc6e1bd3e8f1733abf727651752205f"
+     },
+     "turn2": {
+      "ttft_s": 0.1594867892563343,
+      "total_s": 2.3420245423913,
+      "decode_s": 2.182537753134966,
+      "prompt_tokens": 2706,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 16966.922543351197,
+      "decode_tok_s": 27.03275117017025,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.304983081,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.261979984119534,
+     "turn1_text": "הנה תקציר קצר של שני העמודים:\n\n**שם הספק:** חברת אור\n**מספר החשבונית:** INV-2026-091\n**מספר הזמנת הרכש:** PO-1042\n**הסכום:** 1,780 ש\"ח\n**המטבע:** ש\"ח (שקלים)\n**מועד התשלום:** 30 בספטמבר 2026\n\nההודעה מאשרת קבלת החשבונית ואת חלון המסירה המתוכנן ליום שני, 14 בספטמבר. נדרש להתקשר לדלפק הקבלה לפני הגעת הנהג. העברת התשלום עדיין ממתינה לאישור מנהלת המשרד.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r3-w3-7e41a8b4",
+     "turn1": {
+      "ttft_s": 0.9789906404912472,
+      "total_s": 8.272858072072268,
+      "decode_s": 7.29386743158102,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2517.8994548539185,
+      "decode_tok_s": 27.283193979968555,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.056429911,
+      "text_sha256": "5ff818273b24adfc5c6e87e8ee9cc05487494eacd5319b41da580e1cb8d2e7c6"
+     },
+     "turn2": {
+      "ttft_s": 0.2022121287882328,
+      "total_s": 2.1528859101235867,
+      "decode_s": 1.9506737813353539,
+      "prompt_tokens": 2710,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 13401.767817983138,
+      "decode_tok_s": 30.2459594036328,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.126188056,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.426571677438915,
+     "turn1_text": "הנה תקציר של שני העמודים:\n\n**חשבונית מס' INV-2026-091 משלוח חברת אור:**\n*   **מוצר:** עשרה מארזי נייר, ארבע מחסניות דיו ושני כיסאות.\n*   **עלות המשלוח:** 80 ש\"ח.\n*   **סה\"כ לתשלום:** 1,780 ש\"ח.\n*   **מועד תשלום מבוקש:** 30/9/2026 (תנאי: העברה לאחר אישור מנהלת).\n*   **מועד ומיקום מסירה:** יום שני, 14/9/2026, בין 09:00-11:00, בחצר האחורית מרחוב התאנה.\n",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    }
+   ]
+  },
+  {
+   "rep": 4,
+   "block_wall_s": 10.56567292381078,
+   "vram_peak_mib": 13155,
+   "tasks": [
+    {
+     "salt": "off-b3-vendor-c4-r4-w0-fc164193",
+     "turn1": {
+      "ttft_s": 0.9648271575570107,
+      "total_s": 8.220937333069742,
+      "decode_s": 7.256110175512731,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2554.861749788947,
+      "decode_tok_s": 27.425162406101183,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.011024495,
+      "text_sha256": "d58b8e258a51483e5f1ad044e6818ed2bb175cf9c613db955272ffe32e8aa905"
+     },
+     "turn2": {
+      "ttft_s": 0.24985409807413816,
+      "total_s": 2.3428822867572308,
+      "decode_s": 2.0930281886830926,
+      "prompt_tokens": 2711,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 10850.332337537151,
+      "decode_tok_s": 28.1888224530421,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.316023883,
+      "text_sha256": "545c07c2ec605fe5494e441f328812614a080173cd78408687ff1fc079a685a0"
+     },
+     "e2e_s": 10.564850637689233,
+     "turn1_text": "התקציר:\nהספק חברת אור (מיכל לוי) שלחה חשבונית INV-2026-091 עבור הזמנת הרכש PO-1042. החשבונית מכילה עשרה מארזי נייר, ארבע מחסניות דיו ושני כיסאות, ועלות המשלוח היא 80 ש\"ח. הסכום הכולל לתשלום הוא 1,780 ש\"ח. מועד התשלום המבוקש הוא 30 בספטמבר 2026, אך העברת התשלום עדיין ממתינה לאישור מנהלת המשרד. המשלוח מתוכנן ליום שני, 14 בספטמבר 2026, בין השעות 09:00–11:00",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": 1780,\n  \"currency"
+    },
+    {
+     "salt": "off-b3-vendor-c4-r4-w1-c9bb0106",
+     "turn1": {
+      "ttft_s": 0.4980438556522131,
+      "total_s": 8.055854788050056,
+      "decode_s": 7.557810932397842,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 4949.363338238478,
+      "decode_tok_s": 26.33037552539885,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.045612011,
+      "text_sha256": "0813b0912b3e75ddb535f0c01e5e3b71a0dbe37aba20eb4ebc6aa3b953be1e7a"
+     },
+     "turn2": {
+      "ttft_s": 0.15536177158355713,
+      "total_s": 2.4222392747178674,
+      "decode_s": 2.2668775031343102,
+      "prompt_tokens": 2711,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 17449.595047530478,
+      "decode_tok_s": 26.02699083581858,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.386417611,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.479068688116968,
+     "turn1_text": "הנה תקציר קצר של שני העמודים:\n\n**עמוד 1:**\nמיכל לוי מחברת אור שולחה הודעה לצוות התפעול עם חשבונית (INV-2026-091) עבור הזמנת רכש (PO-1042). החשבונית כוללת עשרה מארזי נייר, ארבע מחסניות דיו ושני כיסאות, ועלות המשלוח היא 80 שקלים. הסכום הכולל הוא 1,780 שקלים. מועד התשלום המבוקש הוא 30 בספטמבר 2026, בתנאי העברה לאחר אישור מנהלת המשרד. המשלוח מתוכנן ליום שני, 14 בספטמבר, בין השעות 09:",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r4-w2-64d25ba6",
+     "turn1": {
+      "ttft_s": 0.9714024299755692,
+      "total_s": 8.220306697301567,
+      "decode_s": 7.248904267325997,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2537.5682867727587,
+      "decode_tok_s": 27.452424899164498,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.005770421,
+      "text_sha256": "d27d09ee04b48dd9755f15a2fc685f267b88c90548a3d4656fb93ab9d404b2bf"
+     },
+     "turn2": {
+      "ttft_s": 0.25643983110785484,
+      "total_s": 2.342034801840782,
+      "decode_s": 2.0855949707329273,
+      "prompt_tokens": 2711,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 10571.680648392694,
+      "decode_tok_s": 28.289289544683744,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.3101030639999998,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.563161906786263,
+     "turn1_text": "הנה תקציר קצר של ההודעה:\n\n**ספק:** חברת אור\n**מספר חשבונית:** INV-2026-091\n**מספר הזמנת רכש:** PO-1042\n**סכום:** 1,780 ש\"ח\n**מועד תשלום:** 30 בספטמבר 2026 (הערה: העברת התשלום ממתינה לאישור מנהלת המשרד)\n\n**תוכן החשבונית:**\n*   10 מארזי נייר x 30 ש\"ח = 300 ש\"ח\n*   4 מחסניות דיו x 125 ש\"ח = 500 ש\"ח\n*   2 כיסאות x 450 ש\"ח = 9",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r4-w3-7d2e77bf",
+     "turn1": {
+      "ttft_s": 0.955169384367764,
+      "total_s": 8.217748252674937,
+      "decode_s": 7.262578868307173,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2580.6941055084253,
+      "decode_tok_s": 27.400735139470463,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.016297349,
+      "text_sha256": "d48146efab3096c8e6272294039fe315a2ab6ca7f71d94412582294d5ccfc43b"
+     },
+     "turn2": {
+      "ttft_s": 0.24289078172296286,
+      "total_s": 2.343650101684034,
+      "decode_s": 2.100759319961071,
+      "prompt_tokens": 2711,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 11161.395178398005,
+      "decode_tok_s": 28.085083064676503,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.322041492,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.562132880091667,
+     "turn1_text": "התקציר הבא מבוסס על שני העמודים של ההודעה:\n\n**תקציר:**\nמיכל לוי מחברת אור שלחה אישור חשבונית (INV-2026-091) בהתאם להזמנת רכש PO-1042. החשבונית כוללת 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות המשלוח, בסך הכל 1,780 ש\"ח. מועד התשלום הוא 30 בספטמבר 2026, אך העברה עדיין ממתינה לאישור מנהלת המשרד. המשלוח מתוכנן ל-14 בספטמבר בין 9:00 ל-11:00 בבוקר, עם כ",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    }
+   ]
+  },
+  {
+   "rep": 5,
+   "block_wall_s": 10.449742277152836,
+   "vram_peak_mib": 13155,
+   "tasks": [
+    {
+     "salt": "off-b3-vendor-c4-r5-w0-2ebe2c70",
+     "turn1": {
+      "ttft_s": 0.9655068721622229,
+      "total_s": 8.302545384503901,
+      "decode_s": 7.337038512341678,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 2553.0631330253595,
+      "decode_tok_s": 27.122659866819678,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.091969002999999,
+      "text_sha256": "151133f0f639ad6cc36f5689425c67fffdbbacff90a2066dfbe669e5f623e453"
+     },
+     "turn2": {
+      "ttft_s": 0.15274650510400534,
+      "total_s": 2.1456383420154452,
+      "decode_s": 1.99289183691144,
+      "prompt_tokens": 2710,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 17741.813458545297,
+      "decode_tok_s": 29.605219363755083,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.110718985,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.449193813838065,
+     "turn1_text": "הנה תקציר קצר של שני העמודים:\n\nהמסמך הוא הודעה של מיכל לוי מחברת אור לצוות התפעול, מיום 9 בספטמבר 2026. בהודעה מצורפת חשבונית (INV-2026-091) עבור הזמנת רכש (PO-1042) לציוד משרדי: 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות משלוח. הסכום הכולל הוא 1,780 ש\"ח, עם מועד תשלום ב-30 בספטמבר 2026. התשלום יבוצע רק לאחר אישור מנהלת המשרד.\n\nהמשלוח מתוכנן ליום שני, ",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r5-w1-f645f3ca",
+     "turn1": {
+      "ttft_s": 0.4986163293942809,
+      "total_s": 8.141724365763366,
+      "decode_s": 7.643108036369085,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 200,
+      "prefill_tok_s": 4943.680851757265,
+      "decode_tok_s": 26.036528471542635,
+      "stream_chunks": 200,
+      "spec": null,
+      "server_elapsed_s": 8.130955687,
+      "text_sha256": "32de5c23f922c9792e093a4ecebffe821003c45b8644ed50168fa987e7b8031e"
+     },
+     "turn2": {
+      "ttft_s": 0.15214827097952366,
+      "total_s": 2.267788328230381,
+      "decode_s": 2.1156400572508574,
+      "prompt_tokens": 2711,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 17818.145303569374,
+      "decode_tok_s": 27.887541549325185,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.23271976,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 10.41040043067187,
+     "turn1_text": "התקציר:\n\nחברת אור (מיכל לוי) שלחה חשבונית מס' INV-2026-091 בהתאם להזמנת הרכש PO-1042.\nהחשבונית כוללת: 10 מארזי נייר (30 ש\"ח), 4 מחסניות דיו (125 ש\"ח), 2 כיסאות (450 ש\"ח) ועלות משלוח של 80 ש\"ח.\nסכום כולל: 1,780 ש\"ח.\nמועד התשלום המבוקש: 30 בספטמבר 2026, בתנאי העברה לאחר אישור מנהלת המשרד.\nהמשלוח מתוכנן ליום שני, 14 בספטמבר",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    },
+    {
+     "salt": "off-b3-vendor-c4-r5-w2-3f988675",
+     "turn1": {
+      "ttft_s": 0.9571152962744236,
+      "total_s": 7.745993637479842,
+      "decode_s": 6.788878341205418,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 190,
+      "prefill_tok_s": 2575.447294171377,
+      "decode_tok_s": 27.839650454899974,
+      "stream_chunks": 189,
+      "spec": null,
+      "server_elapsed_s": 7.541853418,
+      "text_sha256": "ee079ba7436439655e08588fb13e357df1d5e23fbed70b207eafcd77874159ba"
+     },
+     "turn2": {
+      "ttft_s": 0.1488263299688697,
+      "total_s": 2.4531462658196688,
+      "decode_s": 2.304319935850799,
+      "prompt_tokens": 2700,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 18141.95109537919,
+      "decode_tok_s": 25.604083479066055,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.422033633,
+      "text_sha256": "545c07c2ec605fe5494e441f328812614a080173cd78408687ff1fc079a685a0"
+     },
+     "e2e_s": 10.199906260706484,
+     "turn1_text": "**תקציר:**\nחברת אור (מיכל לוי) מגישה חשבונית מס' **INV-2026-091** עבור הזמנת רכש **PO-1042**.\nהחשבונית מכילה: 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות משלוח.\nהסכום הכולל הוא **1,780 ש\"ח**.\nמועד התשלום מבוקש ל-**30/09/2026**, אך העברת הכסף ממתינה לאישור מנהלת המשרד.\nהמשלוח מתוכנן ל-**14/09/2026** בין 09:00-11:00.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": 1780,\n  \"currency"
+    },
+    {
+     "salt": "off-b3-vendor-c4-r5-w3-2ec985ab",
+     "turn1": {
+      "ttft_s": 0.9685398312285542,
+      "total_s": 8.028077356517315,
+      "decode_s": 7.059537525288761,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 196,
+      "prefill_tok_s": 2545.0682775464643,
+      "decode_tok_s": 27.622206029993983,
+      "stream_chunks": 195,
+      "spec": null,
+      "server_elapsed_s": 7.816221796,
+      "text_sha256": "518984097e02b4be7b74cc5107b028be27c5a33e5634a39b69749f9769620af5"
+     },
+     "turn2": {
+      "ttft_s": 0.1311411252245307,
+      "total_s": 2.3362672151997685,
+      "decode_s": 2.205126089975238,
+      "prompt_tokens": 2706,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 20634.259431333805,
+      "decode_tok_s": 26.755839617616846,
+      "stream_chunks": 60,
+      "spec": null,
+      "server_elapsed_s": 2.316044153,
+      "text_sha256": "545c07c2ec605fe5494e441f328812614a080173cd78408687ff1fc079a685a0"
+     },
+     "e2e_s": 10.36531226709485,
+     "turn1_text": "**תקציר:**\nחברת אור (ספק) שלחה חשבונית מס' INV-2026-091 עבור הזמנת רכש PO-1042. החשבונית כוללת 10 מארזי נייר, 4 מחסניות דיו ו-2 כיסאות, ועלות המשלוח היא 80 ש\"ח. הסכום הכולל הוא 1,780 ש\"ח. מועד התשלום מבוקש ל-30/9/2026, אך העברה תתבצע רק לאחר אישור מנהלת המשרד. המשלוח מתוכנן ל-14/9/2026 בין 09:00-11:00 בבוקר, עם כניסה מרחוב התאנה.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": 1780,\n  \"currency"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "pid": 24057,
+ "arm": "off",
+ "start_ticks": "425444738",
+ "exe": "/root/dp/memra/target/release/memra-server",
+ "binary_sha256": "02316c7a8181563e1c190f3f6457cd7da9ac39a3dce9d0300fbc7e051b7f998b",
+ "env": {
+  "MEMRA_MODEL_METADATA": "/root/dp/scripts/qwen35-9b.models.toml",
+  "MEMRA_MODELS": "qwen/qwen3.5-9b=/root/dp/models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+  "PORT": "8080",
+  "MEMRA_COMPAT": "openai",
+  "MEMRA_PORT": "8080",
+  "MEMRA_TIMEOUT_MS_MAX": "1800000",
+  "MEMRA_NONSTREAM_DEADLINE_GATE": "0"
+ },
+ "devpenalty_env": "<unset>"
+}

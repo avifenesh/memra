@@ -1,0 +1,64 @@
+{
+ "model": "qwen/qwen3.5-9b",
+ "arm": "off",
+ "cell": "vendor",
+ "sampling": null,
+ "concurrency": 1,
+ "reps": 1,
+ "tag": "off-b4",
+ "summary_max_tokens": 200,
+ "extract_max_tokens": 60,
+ "rows": [
+  {
+   "rep": 1,
+   "block_wall_s": 1.053093172609806,
+   "vram_peak_mib": 10531,
+   "tasks": [
+    {
+     "salt": "off-b4-vendor-c1-r1-w0-33910c75",
+     "turn1": {
+      "ttft_s": 0.2584787365049124,
+      "total_s": 0.7595595046877861,
+      "decode_s": 0.5010807681828737,
+      "prompt_tokens": 2465,
+      "cached_tokens": 0,
+      "completion_tokens": 119,
+      "prefill_tok_s": 9536.56781726474,
+      "decode_tok_s": 235.49097768792214,
+      "stream_chunks": 118,
+      "spec": {
+       "rounds": 40,
+       "drafted": 120,
+       "accepted": 87,
+       "acceptance_rate": 0.725
+      },
+      "server_elapsed_s": 0.750529094,
+      "text_sha256": "74e03e8f4c3337dd52f4656e7916863968dbfcb5b6e49a66dca592abc5cadac7"
+     },
+     "turn2": {
+      "ttft_s": 0.07850367855280638,
+      "total_s": 0.2906424291431904,
+      "decode_s": 0.212138750590384,
+      "prompt_tokens": 2629,
+      "cached_tokens": 2432,
+      "completion_tokens": 60,
+      "prefill_tok_s": 33488.87655285572,
+      "decode_tok_s": 278.11986181592226,
+      "stream_chunks": 60,
+      "spec": {
+       "rounds": 20,
+       "drafted": 40,
+       "accepted": 38,
+       "acceptance_rate": 0.95
+      },
+      "server_elapsed_s": 0.28166548,
+      "text_sha256": "43622eca011bcc074a4d26d8edff5d5e0ff56d2e47c6b4a245af4098d887d0f9"
+     },
+     "e2e_s": 1.0511314989998937,
+     "turn1_text": "התקציר הוא:\n\n**ספק:** חברת אור\n**מספר חשבונית:** INV-2026-091\n**מספר הזמנת רכש:** PO-1042\n**סכום:** 1,780 שקלים\n**מטבע:** ש\"ח\n**מועד תשלום:** 30 בספטמבר 2026\n\nהעברת התשלום ממתינה לאישור מנהלת המשרד.",
+     "turn2_text": "{\n  \"supplier\": \"חברת אור\",\n  \"invoice_number\": \"INV-2026-091\",\n  \"purchase_order\": \"PO-1042\",\n  \"amount\": \"1,780\",\n  \""
+    }
+   ]
+  }
+ ]
+}

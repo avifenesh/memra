@@ -1,0 +1,27 @@
+{
+ "model": "qwen/qwen3.5-9b",
+ "arm": "off",
+ "tag": "off-b4",
+ "max_tokens": 128,
+ "rows": [
+  {
+   "ttft_s": 0.08721766620874405,
+   "total_s": 0.6927650636062026,
+   "decode_s": 0.6055473973974586,
+   "prompt_tokens": 501,
+   "cached_tokens": 0,
+   "completion_tokens": 128,
+   "prefill_tok_s": 5744.249092849173,
+   "decode_tok_s": 209.72759613173926,
+   "stream_chunks": 128,
+   "spec": {
+    "rounds": 52,
+    "drafted": 156,
+    "accepted": 75,
+    "acceptance_rate": 0.4807692307692308
+   },
+   "server_elapsed_s": 0.688098122,
+   "text_sha256": "ffbe2a8d4ea064ccafc08256d76fabf4b6dbf614da524a676c9de6ccd62d33d9"
+  }
+ ]
+}

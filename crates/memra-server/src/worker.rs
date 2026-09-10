@@ -32,6 +32,7 @@ use memra_engine::decode_batch::{DevPenalty, DevSamp};
 use memra_engine::hybrid::{HybridModel, StepTpKvDeviceAdmission};
 use memra_engine::sampler::{Sampler, SamplerConfig, SamplerIdentity};
 use memra_gguf::GgufFile;
+use memra_gguf::config::Arch;
 use memra_gguf::source::TensorSource;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -11851,6 +11852,11 @@ struct Session {
     /// verify rounds this request ran (lane/accept-telemetry; same per-request semantics).
     spec_rounds: u64,
     sampler: Sampler,
+    /// Whether penalized SAMPLED rows of this session may take the device penalty path.
+    /// Resolved ONCE at admit from `serve_devpenalty_for(lm.model.cfg.arch)` — the default is
+    /// keyed on the (model class, build arch) pair, so it has to be read where the loaded
+    /// model is in scope, and the value cannot drift mid-request.
+    devpenalty: bool,
     last_logits: Vec<f32>,
     /// Token pre-sampled ON DEVICE by the last batched tick (decode_step_batch_sampled) —
     /// consumed by the next advance_sample_emit instead of the O(n_vocab) host sample
@@ -21698,6 +21704,7 @@ fn admit(
         lane: req.lane,
         cache,
         sampler,
+        devpenalty: serve_devpenalty_for(&lm.model.cfg.arch),
         spec,
         mtp_prime: None,
         oom_retries: req_oom_retries,
@@ -22825,12 +22832,83 @@ fn advance_token_emit(
     (true, ())
 }
 
-/// Penalty-aware extension of device sampling. `1` enables the path on hardware/model
-/// deployments that have passed their serving qualification. Unset stays off: PRO 6000
-/// evidence must not silently set a default for unmeasured hardware.
-fn serve_devpenalty() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_SERVE_DEVPENALTY").as_deref() == Ok("1"))
+/// Penalty-aware extension of device sampling, qualification-keyed.
+///
+/// `MEMRA_SERVE_DEVPENALTY` is the rollback seam and always wins: `1` forces the path on for
+/// every model, `0` forces it off. With the variable absent the default follows the
+/// (model class, build arch) pairs that have a serving qualification, because the win is a
+/// property of the model's vocabulary size and the board's host, not of the code: on an
+/// unqualified pair the default stays off rather than inheriting another board's receipt.
+///
+/// Qualified, default ON:
+/// - `Arch::Qwen35` on a `120a` build. `research/devpenalty-qwen35-20260909/`, one RTX 5090
+///   (575 W, driver 580.95.05), interleaved OFF/ON, three boots per arm, five reps, the
+///   vendor NON-THINKING shape (`presence_penalty 1.5`, `top_k 20`): aggregate decode
+///   109.6 -> 527.2 tok/s at c=4 (+381.0%) and 115.5 -> 758.0 at c=8 (+556.3%), c=1
+///   233.5 -> 242.2 (+3.7%). The `presence_penalty 0.0` control moves -2.0% / -0.5% (rows
+///   with no penalty never enter this path in either arm) and greedy output is
+///   byte-identical across all six boots in both penalty shapes.
+///
+/// Still off by default, and deliberately: `Arch::Qwen3Moe` on RTX PRO 6000 has an even
+/// larger measured win (`research/pro-device-penalty-sampling-20260824/`, darklanes verdict
+/// `q38-devpenalty-flip`) but that fleet pins the flag explicitly, so its default change is
+/// a separate lane with its own launcher smoke.
+fn serve_devpenalty_from(v: Option<&str>, built_arch: &str, arch: &Arch) -> bool {
+    match v.map(str::trim) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => built_arch == "120a" && matches!(arch, Arch::Qwen35),
+    }
+}
+
+/// [`serve_devpenalty_from`] against this process's environment and build arch. The env read
+/// is cached; the arch match is a discriminant compare, so this is called per session, never
+/// per token.
+fn serve_devpenalty_for(arch: &Arch) -> bool {
+    static ENV: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    let env = ENV.get_or_init(|| std::env::var("MEMRA_SERVE_DEVPENALTY").ok());
+    serve_devpenalty_from(env.as_deref(), memra_engine::BUILT_CUDA_ARCH, arch)
+}
+
+#[cfg(test)]
+mod serve_devpenalty_default_tests {
+    use super::serve_devpenalty_from as door;
+    use memra_gguf::config::Arch;
+
+    #[test]
+    fn unset_follows_the_qualified_pair() {
+        assert!(door(None, "120a", &Arch::Qwen35));
+        // qualified model class, unqualified board
+        assert!(!door(None, "100a", &Arch::Qwen35));
+        assert!(!door(None, "90a", &Arch::Qwen35));
+        assert!(!door(None, "89", &Arch::Qwen35));
+        // qualified board, unqualified model class
+        assert!(!door(None, "120a", &Arch::Qwen3));
+        assert!(!door(None, "120a", &Arch::Qwen3Moe));
+        assert!(!door(None, "120a", &Arch::Qwen35Moe));
+        assert!(!door(None, "120a", &Arch::Gemma4));
+    }
+
+    #[test]
+    fn explicit_values_win_on_every_pair() {
+        for arch in [&Arch::Qwen35, &Arch::Qwen3Moe, &Arch::Gemma4] {
+            for built in ["120a", "100a", "90a", "89"] {
+                assert!(door(Some("1"), built, arch));
+                assert!(door(Some(" 1 "), built, arch));
+                assert!(!door(Some("0"), built, arch));
+                assert!(!door(Some(" 0 "), built, arch));
+            }
+        }
+    }
+
+    #[test]
+    fn other_spellings_fall_back_to_the_pair_default() {
+        for v in ["", "true", "on", "yes", "2"] {
+            assert!(door(Some(v), "120a", &Arch::Qwen35));
+            assert!(!door(Some(v), "120a", &Arch::Qwen3Moe));
+            assert!(!door(Some(v), "100a", &Arch::Qwen35));
+        }
+    }
 }
 
 /// MEMRA_CONSTRAIN_HOST=1 (rollback oracle): constrained rows keep the v1 host-side
@@ -22846,8 +22924,9 @@ fn constrain_host() -> bool {
 /// (device argmax, bit-identical), pure-temperature (seeded gumbel), or
 /// temperature+top-k/top-p/min-p (filter_stats floor + the filtered gumbel draw — the
 /// lane/devsample-topkp extension; the host path measured 1.34 ms/row at 248k vocab on
-/// these configs). Sampled penalty configs join this path when `MEMRA_SERVE_DEVPENALTY=1`;
-/// greedy penalties remain host-side. Constrained rows with penalties or filters ALSO
+/// these configs). Sampled penalty configs join this path when the session's
+/// `devpenalty` resolved true (see `serve_devpenalty_from`: qualified pairs default ON,
+/// `MEMRA_SERVE_DEVPENALTY` overrides either way); greedy penalties remain host-side. Constrained rows with penalties or filters ALSO
 /// host-sample: the grammar mask composes with the filter floor only after a
 /// dedicated gate run, so v1 keeps yesterday's behavior for them (meta None -> no mask
 /// staged -> host masked sample, staging agreement preserved). Counter = generated.len()
@@ -22860,7 +22939,7 @@ fn devsample_meta(s: &Session) -> Option<DevSamp> {
     // Greedy penalties stay on the host oracle: the performance lane targets the vendor-
     // sampled surface, whose device draw is already distributional rather than byte-equal.
     // Moving greedy argmax would create a new near-tie numeric class for no current product win.
-    if penalized && (sm.is_greedy() || !serve_devpenalty() || s.constraint.is_some()) {
+    if penalized && (sm.is_greedy() || !s.devpenalty || s.constraint.is_some()) {
         return None;
     }
     let filtered = sm.top_k() != 0 || sm.top_p() < 1.0 || sm.min_p() > 0.0;

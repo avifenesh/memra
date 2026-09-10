@@ -1,0 +1,1439 @@
+[server] build: memra-0.137.0-db7cc3faad44 (id: source-tree, git: 4e107318e7f8)
+[server] OpenRouter metadata loaded: 1 model(s), sha256 620ca10df69abe27e4eedefab06addc35125680b5692fa26bd4f701885c727a7 from /root/dp/scripts/qwen35-9b.models.toml
+[server] starting; models config = [("qwen/qwen3.5-9b", "/root/dp/models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "qwen/qwen3.5-9b" <- /root/dp/models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "qwen/qwen3.5-9b": 33 layers, eos=248046, stop=[248046]
+[worker] qwen/qwen3.5-9b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] qwen/qwen3.5-9b: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 349MB (348651520 B, derived: 2 x 174325760 B max entry for model "qwen/qwen3.5-9b" at MEMRA_CTX=8192, requested 348651520 B; boot driver free 26523795456 B, post-reserve clamp 24913182720 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "qwen/qwen3.5-9b": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="qwen/qwen3.5-9b" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9536MB rest-mapped 8160MB charged 109MB -> 1266MB]; 0.8s)
+[server] worker ready; serving models: ["qwen/qwen3.5-9b"]
+[server] listening on http://127.0.0.1:8080
+[meter] admit id=chatcmpl-1e9b2ab2834fb6ac28866491ae61de49 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 0MB fixed = 934MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-warmup-cf83f305" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="qwen/qwen3.5-9b" 108MB (observed 153MB at ctx 2673 path=spec)
+[spec-acc] ctx=2465 burst=21/30 cum=21/30=0.700
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 93.3MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-warmup-cf83f305")
+[spec-acc] ctx=2497 burst=21/36 cum=42/66=0.636
+[spec-acc] ctx=2531 burst=20/36 cum=62/102=0.608
+[spec-acc] ctx=2564 burst=23/30 cum=85/132=0.644
+[spec-acc] ctx=2598 burst=21/33 cum=106/165=0.642
+[spec-acc] ctx=2631 burst=18/39 cum=124/204=0.608
+[meter] admit id=chatcmpl-a2c428f481e7124528450a1b34c56b7f tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2824 path=spec = 16704 B/token x ctx + 973MB prefill-workspace + 108MB fixed = 1128MB
+[prefix-cache] hit: 2432 of 2700 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2700 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-warmup-cf83f305" K=2 source=cached-long prompt=2700 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="qwen/qwen3.5-9b" 108MB (observed 154MB at ctx 2768 path=spec)
+[spec-acc] ctx=268 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2656 tokens, 97.1MB (resident 190.4MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-warmup-cf83f305")
+[spec-acc] ctx=302 burst=18/18 cum=40/40=1.000
+[meter] admit id=chatcmpl-2c4eccdfca7940e06f3334f34421f917 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1042MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="exactness-greedy-pp15" K=0 source=eligibility-fallback prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 279.7MB / 349MB, model qwen/qwen3.5-9b, ns "exactness-greedy-pp15")
+[meter] admit id=chatcmpl-ae6852872e89e4e57dd0c6864c8f3685 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[spec-k] model="qwen/qwen3.5-9b" tenant="exactness-greedy-pp00" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=20/33 cum=20/33=0.606
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 373.0MB / 349MB, model qwen/qwen3.5-9b, ns "exactness-greedy-pp00")
+[prefix-cache] evict (Probation LRU): 2656 tokens, 97.1MB (model qwen/qwen3.5-9b, ns "on-b2-warmup-cf83f305")
+[spec-acc] ctx=2497 burst=23/30 cum=43/63=0.683
+[spec-acc] ctx=2530 burst=20/36 cum=63/99=0.636
+[spec-acc] ctx=2562 burst=22/36 cum=85/135=0.630
+[spec-acc] ctx=2596 burst=24/30 cum=109/165=0.661
+[spec-acc] ctx=2630 burst=21/33 cum=130/198=0.657
+[spec-acc] ctx=2662 burst=2/6 cum=132/204=0.647
+[meter] admit id=chatcmpl-6a8cb40893ca26aae057cffc4287ba64 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r1-w0-c1677096" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=21/36 cum=21/36=0.583
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 369.3MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r1-w0-c1677096")
+[prefix-cache] evict (Probation LRU): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "exactness-greedy-pp15")
+[spec-acc] ctx=2499 burst=20/42 cum=41/78=0.526
+[spec-acc] ctx=2534 burst=21/33 cum=62/111=0.559
+[spec-acc] ctx=2567 burst=20/36 cum=82/147=0.558
+[meter] admit id=chatcmpl-23d0b74afa9f030f6312d6b75e6ad209 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2763 path=spec = 16704 B/token x ctx + 951MB prefill-workspace + 108MB fixed = 1106MB
+[prefix-cache] hit: 2432 of 2639 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2639 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r1-w0-c1677096" K=2 source=cached-long prompt=2639 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=207 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2592 tokens, 96.0MB (resident 376.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r1-w0-c1677096")
+[prefix-cache] evict (Probation LRU): 2432 tokens, 93.3MB (model qwen/qwen3.5-9b, ns "exactness-greedy-pp00")
+[spec-acc] ctx=241 burst=18/18 cum=40/40=1.000
+[meter] admit id=chatcmpl-0796d3f36c8a39c70f6beeed39708319 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1042MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r2-w0-84d8aa0b" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=22/33 cum=22/33=0.667
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 376.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r2-w0-84d8aa0b")
+[prefix-cache] evict (Probation LRU): 2592 tokens, 96.0MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r1-w0-c1677096")
+[spec-acc] ctx=2499 burst=19/39 cum=41/72=0.569
+[spec-acc] ctx=2532 burst=23/30 cum=64/102=0.627
+[spec-acc] ctx=2566 burst=22/27 cum=86/129=0.667
+[spec-acc] ctx=2598 burst=23/33 cum=109/162=0.673
+[meter] admit id=chatcmpl-c9b9a12072dae4e9e9b4d3315ced3abd tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2782 path=spec = 16704 B/token x ctx + 958MB prefill-workspace + 108MB fixed = 1113MB
+[prefix-cache] demote (protected bytes): 93.3MB to probation (model qwen/qwen3.5-9b, ns "on-b2-warmup-cf83f305")
+[prefix-cache] hit: 2432 of 2658 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2658 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r2-w0-84d8aa0b" K=2 source=cached-long prompt=2658 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2624 tokens, 96.5MB (resident 376.5MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r2-w0-84d8aa0b")
+[prefix-cache] evict (Probation LRU): 2432 tokens, 93.3MB (model qwen/qwen3.5-9b, ns "on-b2-warmup-cf83f305")
+[spec-acc] ctx=260 burst=16/18 cum=38/40=0.950
+[meter] admit id=chatcmpl-048efdff3afb5c785c166c704add3c0e tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1042MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r3-w0-1451dcbb" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=22/33 cum=22/33=0.667
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 376.5MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r3-w0-1451dcbb")
+[prefix-cache] evict (Probation LRU): 2624 tokens, 96.5MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r2-w0-84d8aa0b")
+[spec-acc] ctx=2499 burst=21/30 cum=43/63=0.683
+[spec-acc] ctx=2531 burst=21/39 cum=64/102=0.627
+[spec-acc] ctx=2566 burst=23/27 cum=87/129=0.674
+[spec-acc] ctx=2599 burst=22/33 cum=109/162=0.673
+[spec-acc] ctx=2633 burst=23/30 cum=132/192=0.688
+[meter] admit id=chatcmpl-2ceef0e23d8cd917f92ed252c5d19f84 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=spec = 16704 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1133MB
+[prefix-cache] demote (protected bytes): 93.3MB to probation (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r1-w0-c1677096")
+[prefix-cache] hit: 2432 of 2711 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2711 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r3-w0-1451dcbb" K=2 source=cached-long prompt=2711 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="qwen/qwen3.5-9b" 108MB (observed 155MB at ctx 2779 path=spec)
+[spec-acc] ctx=279 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2688 tokens, 97.6MB (resident 377.6MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r3-w0-1451dcbb")
+[prefix-cache] evict (Probation LRU): 2432 tokens, 93.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r1-w0-c1677096")
+[spec-acc] ctx=313 burst=18/18 cum=40/40=1.000
+[meter] admit id=chatcmpl-d84d2f51340116eb4516abedeb573aa8 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1042MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r4-w0-5f8ef2cb" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=22/36 cum=22/36=0.611
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 377.6MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r4-w0-5f8ef2cb")
+[prefix-cache] evict (Probation LRU): 2688 tokens, 97.6MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r3-w0-1451dcbb")
+[spec-acc] ctx=2500 burst=19/39 cum=41/75=0.547
+[spec-acc] ctx=2533 burst=22/33 cum=63/108=0.583
+[spec-acc] ctx=2567 burst=22/27 cum=85/135=0.630
+[spec-acc] ctx=2599 burst=22/36 cum=107/171=0.626
+[spec-acc] ctx=2634 burst=24/27 cum=131/198=0.662
+[meter] admit id=chatcmpl-8ffaccc7c3ea4c7a698dac55420d1c23 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=spec = 16704 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1133MB
+[prefix-cache] demote (protected bytes): 93.3MB to probation (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r2-w0-84d8aa0b")
+[prefix-cache] hit: 2432 of 2711 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2711 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r4-w0-5f8ef2cb" K=2 source=cached-long prompt=2711 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=279 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2688 tokens, 97.6MB (resident 377.6MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r4-w0-5f8ef2cb")
+[prefix-cache] evict (Probation LRU): 2432 tokens, 93.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r2-w0-84d8aa0b")
+[spec-acc] ctx=313 burst=16/18 cum=38/40=0.950
+[meter] admit id=chatcmpl-5a5737079b8c16c8317001c978d3174c tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1042MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r5-w0-d7389fe1" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=17/42 cum=17/42=0.405
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 377.6MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r5-w0-d7389fe1")
+[prefix-cache] evict (Probation LRU): 2688 tokens, 97.6MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r4-w0-5f8ef2cb")
+[spec-acc] ctx=2497 burst=19/39 cum=36/81=0.444
+[spec-acc] ctx=2530 burst=24/30 cum=60/111=0.541
+[spec-acc] ctx=2565 burst=21/39 cum=81/150=0.540
+[meter] admit id=chatcmpl-b05b437a9611258cf239d0a3da616c6a tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2741 path=spec = 16704 B/token x ctx + 943MB prefill-workspace + 108MB fixed = 1097MB
+[prefix-cache] demote (protected bytes): 93.3MB to probation (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r3-w0-1451dcbb")
+[prefix-cache] hit: 2432 of 2617 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2617 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c1-r5-w0-d7389fe1" K=2 source=cached-long prompt=2617 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=185 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2592 tokens, 96.0MB (resident 376.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r5-w0-d7389fe1")
+[prefix-cache] evict (Probation LRU): 2432 tokens, 93.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r3-w0-1451dcbb")
+[spec-acc] ctx=219 burst=16/18 cum=38/40=0.950
+[meter] admit id=chatcmpl-15f1cd5f467c0f2bc4a20db477c43987 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-8daa38c6fde5b5b6351167bbe7567d9f tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-21902953c8494173afda756a1430525b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-759e72ec5d7e540307d726d47be97c7a tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r1-w0-eee756c9" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r1-w1-9e953ad2" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r1-w2-b871defb" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r1-w3-720fcc2d" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2592 tokens, 96.0MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r5-w0-d7389fe1")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r1-w0-eee756c9")
+[device-penalty] sparse sampled rows=1 unique-counts=578 execution=one-ragged-launch raw-logits=preserved
+[prime-batch] B=3 tokens=99 carried=3 partial=0 in 42.1ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r1-w0-eee756c9")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r1-w1-9e953ad2")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r1-w1-9e953ad2")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r1-w2-b871defb")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r1-w2-b871defb")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r1-w3-720fcc2d")
+[meter] admit id=chatcmpl-5902f7759dcc62be93f25a542a9123c3 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2777 path=plain = 14848 B/token x ctx + 956MB prefill-workspace + 108MB fixed = 1106MB
+[worker] plain-affinity: grew parked cache 2673 -> 2777 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2653 prompt tokens (priming 221 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2653 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r1-w3-720fcc2d" K=0 source=concurrency prompt=2653 cached=2432 lcp=2461 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-684883da464a83768b08487395c92a37 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-8bd35c70ebf4b6264b767d3d9f63f6c4 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2817 path=plain = 14848 B/token x ctx + 971MB prefill-workspace + 108MB fixed = 1121MB
+[worker] plain-affinity: grew parked cache 2673 -> 2817 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2693 prompt tokens (priming 261 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2693 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r1-w0-eee756c9" K=0 source=concurrency prompt=2693 cached=2432 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2814 path=plain = 14848 B/token x ctx + 970MB prefill-workspace + 108MB fixed = 1120MB
+[worker] plain-affinity: grew parked cache 2673 -> 2814 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2690 prompt tokens (priming 258 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2690 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r1-w1-9e953ad2" K=0 source=concurrency prompt=2690 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-d56c54808080ac4075318770b1f56e41 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r1-w2-b871defb" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-83e434d376b26bcd498905ae1993b961 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-3336ed45a0d27745e6ee55c2672e51ed tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-e8ac2c0fe2683549ca9ad871a0a5d55a tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-e964b65da940d40aee5c4462ce5d07c1 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r2-w1-88d42b58" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r2-w0-0bb3c74e" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r2-w2-5b1321c9" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r2-w3-69a6b27e" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r1-w3-720fcc2d")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r2-w1-88d42b58")
+[prime-batch] B=3 tokens=99 carried=3 partial=0 in 41.6ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r2-w1-88d42b58")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r2-w0-0bb3c74e")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r2-w0-0bb3c74e")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r2-w2-5b1321c9")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r2-w2-5b1321c9")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r2-w3-69a6b27e")
+[meter] admit id=chatcmpl-a8f858aaa2e83471a2520f109b25c04d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2764 path=plain = 14848 B/token x ctx + 952MB prefill-workspace + 108MB fixed = 1101MB
+[worker] plain-affinity: grew parked cache 2673 -> 2764 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2640 prompt tokens (priming 208 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2640 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r2-w0-0bb3c74e" K=0 source=concurrency prompt=2640 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-970345c57d55a6cf76730843f9c8a5d2 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2816 path=plain = 14848 B/token x ctx + 970MB prefill-workspace + 108MB fixed = 1120MB
+[worker] plain-affinity: grew parked cache 2673 -> 2816 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2692 prompt tokens (priming 260 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2692 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r2-w1-88d42b58" K=0 source=concurrency prompt=2692 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-df87bc9d62e4e7863db685dc2f0bef46 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-833be316852f1cd2ac8375063bdf4b74 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r2-w3-69a6b27e" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=2 wave=3 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r2-w2-5b1321c9" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-59235c29fc252cd477845dd6e0531f23 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-f9a0f0fbb536bd7af90a74c0655172f2 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-f70c322a1c365be5264200888409d3a1 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-b04661b0f4ad9f24fe0a9dcff908e564 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r3-w2-5f591ec6" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r3-w0-6ec1013d" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r3-w1-16741dd4" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r3-w3-19d1bb9f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r2-w3-69a6b27e")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r3-w2-5f591ec6")
+[prime-batch] B=3 tokens=99 carried=3 partial=0 in 41.8ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r3-w2-5f591ec6")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r3-w0-6ec1013d")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r3-w0-6ec1013d")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r3-w1-16741dd4")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r3-w1-16741dd4")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r3-w3-19d1bb9f")
+[meter] admit id=chatcmpl-7cef90a40e8122a430d3bf82966cfb6b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r3-w2-5f591ec6" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-55a7dce62ced576fde2d489235453128 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-e0c87123777eb2ccf3dcb507fd52fba2 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-44e55110482abd25f073a3de80857038 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r3-w0-6ec1013d" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r3-w1-16741dd4" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r3-w3-19d1bb9f" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=4 wave=4 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-52791d760e774e7fbb49b54faa1b67b8 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-aae603aeab3bef6e064888f791ec2e37 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-a36de2c1743b6394c7ebc747751e6e18 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-ea6396ac55934c06ad1a9bb8dab8c7c9 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r4-w3-449a5bd2" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r4-w2-1bf38e0f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r4-w1-a1bf9a72" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r4-w0-e843d839" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r3-w3-19d1bb9f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r4-w3-449a5bd2")
+[prime-batch] B=3 tokens=99 carried=3 partial=0 in 42.0ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r4-w3-449a5bd2")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r4-w2-1bf38e0f")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r4-w2-1bf38e0f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r4-w1-a1bf9a72")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r4-w1-a1bf9a72")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r4-w0-e843d839")
+[meter] admit id=chatcmpl-536711f993a0b34eeb806a279235ec94 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2764 path=plain = 14848 B/token x ctx + 952MB prefill-workspace + 108MB fixed = 1101MB
+[worker] plain-affinity: grew parked cache 2673 -> 2764 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2640 prompt tokens (priming 208 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2640 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r4-w2-1bf38e0f" K=0 source=concurrency prompt=2640 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1ed3b71f4e007946030303d37eeef67b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-2fbf877e87494d675833c8748f1998a0 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2784 path=plain = 14848 B/token x ctx + 959MB prefill-workspace + 108MB fixed = 1108MB
+[worker] plain-affinity: grew parked cache 2673 -> 2784 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2660 prompt tokens (priming 228 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2660 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r4-w3-449a5bd2" K=0 source=concurrency prompt=2660 cached=2432 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2781 path=plain = 14848 B/token x ctx + 958MB prefill-workspace + 108MB fixed = 1107MB
+[worker] plain-affinity: grew parked cache 2673 -> 2781 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2657 prompt tokens (priming 225 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2657 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r4-w0-e843d839" K=0 source=concurrency prompt=2657 cached=2432 lcp=2461 active=4 wave=4 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-8ffcd3d907d683fd0565325d4e9067ee tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2829 path=plain = 14848 B/token x ctx + 975MB prefill-workspace + 108MB fixed = 1125MB
+[worker] plain-affinity: grew parked cache 2673 -> 2829 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2705 prompt tokens (priming 273 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2705 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r4-w1-a1bf9a72" K=0 source=concurrency prompt=2705 cached=2432 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-0f1e4929b052cbefe938a97cfac94914 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-9b7579d409e36ee49a28219db3017dab tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-09357592d2ad75723c309f65c2948a31 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-0d2f94432594043ba1e6ff5282b8c402 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r5-w2-606d240c" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r5-w0-03153ad5" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r5-w3-1e1ff098" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r5-w1-0a3b9ff0" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r4-w0-e843d839")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r5-w2-606d240c")
+[prime-batch] B=3 tokens=99 carried=3 partial=0 in 41.9ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r5-w2-606d240c")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r5-w0-03153ad5")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r5-w0-03153ad5")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r5-w3-1e1ff098")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r5-w3-1e1ff098")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r5-w1-0a3b9ff0")
+[meter] admit id=chatcmpl-4e168fdcab2301e98385184356963701 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r5-w2-606d240c" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5c60ed0f720aa32d22586b48bd7619f9 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-b4272fdd9af93475855de7c1fe73c1c4 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-cc3df51461ad765a84a744be1440a1bd tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r5-w3-1e1ff098" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r5-w0-03153ad5" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c4-r5-w1-0a3b9ff0" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=4 wave=4 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-808c36a57b41e1f922951dce8dab9d54 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-d8eac9f975613a29934c99429662a738 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-abfb47f4a688b92e01beabf3b5f44c3b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-fce667c7601ff44f46b25ca122d59ef6 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-38f6f9a44ee0a8b9316e364ce9fcb2cd tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-801b3fd53568c8eeac09ec32e29db201 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-0241e2884e294ca188f5d10442e7a6ee tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-bfc6cddf34b93143877a55a404d55e51 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w0-c2e058ea" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w1-4c1cd982" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w3-3e0b6ff1" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w4-004366cd" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w2-74cedb2f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w5-5de89ee4" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w7-deffd258" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w6-c9b08be7" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c4-r5-w1-0a3b9ff0")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w0-c2e058ea")
+[prime-batch] B=6 tokens=198 carried=6 partial=0 in 70.3ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w0-c2e058ea")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w1-4c1cd982")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w1-4c1cd982")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w3-3e0b6ff1")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w3-3e0b6ff1")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w4-004366cd")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w4-004366cd")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w2-74cedb2f")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w2-74cedb2f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w5-5de89ee4")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w5-5de89ee4")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w7-deffd258")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w7-deffd258")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w6-c9b08be7")
+[fa-pool] grow #3 dev=0 o_len 1064960 -> 2129920 ml_len 4160 -> 8320 (retired kept, zero=false)
+[meter] admit id=chatcmpl-bab0ed97c3cccb73f72ab2cf4b5698dc tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2770 path=plain = 14848 B/token x ctx + 954MB prefill-workspace + 108MB fixed = 1103MB
+[worker] plain-affinity: grew parked cache 2673 -> 2770 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2646 prompt tokens (priming 214 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2646 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w2-74cedb2f" K=0 source=concurrency prompt=2646 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-7d76192f035843e72174fea8dfb78407 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2816 path=plain = 14848 B/token x ctx + 970MB prefill-workspace + 108MB fixed = 1120MB
+[worker] plain-affinity: grew parked cache 2673 -> 2816 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2692 prompt tokens (priming 260 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2692 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w7-deffd258" K=0 source=concurrency prompt=2692 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5df0598515bc8c0b1290cab8f08f86a6 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2824 path=plain = 14848 B/token x ctx + 973MB prefill-workspace + 108MB fixed = 1123MB
+[worker] plain-affinity: grew parked cache 2673 -> 2824 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2700 prompt tokens (priming 268 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2700 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w3-3e0b6ff1" K=0 source=concurrency prompt=2700 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-b3d8ca7af882d259c0c544397d1727bf tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w0-c2e058ea" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-56948be7c659b2ef2f01ec91d1703e6b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2833 path=plain = 14848 B/token x ctx + 976MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2833 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2709 prompt tokens (priming 277 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2709 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w5-5de89ee4" K=0 source=concurrency prompt=2709 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5b3c605ceb71bbfa839b6261003bb3bd tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-60090ddafc8f75b2ade304ea9142d199 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-6a0d951f2e9d19df79f9fb611b1d661e tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w4-004366cd" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=5 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w6-c9b08be7" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=6 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r1-w1-4c1cd982" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-c1cb6efb51a3e1e6c0bbc8b20208219b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-12d4e3dc094debe4b9d6d35f0c0bbaee tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-dd9891cd5b621dc16a9ae018db3b9467 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-e6e64228ed78958f21053c4d351d0dbe tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-754489a00f3f3137e218d28304c79cac tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-99098d5bbf205edfd0b478b6da560e7c tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-cc75f3e204ba7abcc59ca172f3900510 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-b133e85ed8c9162ccb7d479d511d0f78 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w1-68e98534" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w6-a75d0a1d" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w0-21a531fa" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w4-36425801" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w7-7f60bb5f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w5-e3f576e1" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w2-bff043e9" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w3-85f5f569" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r1-w6-c9b08be7")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w1-68e98534")
+[prime-batch] B=6 tokens=198 carried=6 partial=0 in 66.3ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w1-68e98534")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w6-a75d0a1d")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w6-a75d0a1d")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w0-21a531fa")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w0-21a531fa")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w4-36425801")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w4-36425801")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w7-7f60bb5f")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w7-7f60bb5f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w5-e3f576e1")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w5-e3f576e1")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w2-bff043e9")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w2-bff043e9")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w3-85f5f569")
+[meter] admit id=chatcmpl-684937321bc5ffe03aa7f6e6351c59e6 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2730 path=plain = 14848 B/token x ctx + 939MB prefill-workspace + 108MB fixed = 1088MB
+[worker] plain-affinity: grew parked cache 2673 -> 2730 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2606 prompt tokens (priming 174 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2606 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w7-7f60bb5f" K=0 source=concurrency prompt=2606 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-a6ff9cf6e87eb1dd34f92d11000f581d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2821 path=plain = 14848 B/token x ctx + 972MB prefill-workspace + 108MB fixed = 1122MB
+[worker] plain-affinity: grew parked cache 2673 -> 2821 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2697 prompt tokens (priming 265 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2697 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w4-36425801" K=0 source=concurrency prompt=2697 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1e9676907a96094d5032adef7ce9f0bc tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2827 path=plain = 14848 B/token x ctx + 974MB prefill-workspace + 108MB fixed = 1124MB
+[worker] plain-affinity: grew parked cache 2673 -> 2827 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2703 prompt tokens (priming 271 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2703 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w0-21a531fa" K=0 source=concurrency prompt=2703 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-81cab5aa9dbe48de611a98a825502f27 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w1-68e98534" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-642423665fc65bdd14ad0b7728c4a9a8 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2834 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2834 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2710 prompt tokens (priming 278 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2710 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w3-85f5f569" K=0 source=concurrency prompt=2710 cached=2432 lcp=2461 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-011de2dad102fa23f9d253bbe55eb7ef tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-f0cc856d8c756a0a25ade9a0293b4fe7 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-114aacfcf646eb6d909a1379759eba70 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w5-e3f576e1" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=5 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w2-bff043e9" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=6 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r2-w6-a75d0a1d" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-c4755b3d9717f178ea24d735cf4ee0db tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-b7d04aa5bd0f63ebdcc6b1e609023da4 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-5909644bd2bcaa1a354094cd3f7aa917 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-fea5631a9220afef9730267fdecde67b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-1f4b9bfc7b99a79c6f113f3db661b1b2 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-be0428e80f079e9c16b208ddc836d112 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-7e5e98d6055758ce5980eb06d593c62a tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-dee3e140d4ee920023db29d4dc41fe97 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w0-225e765a" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w2-8955b067" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w1-0eddf3c7" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w3-ab7204fb" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w4-0dd14b61" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w5-1b010cb1" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w6-08d15662" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w7-7dfcb214" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r2-w3-85f5f569")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w0-225e765a")
+[prime-batch] B=6 tokens=198 carried=6 partial=0 in 66.6ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w0-225e765a")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w2-8955b067")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w2-8955b067")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w1-0eddf3c7")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w1-0eddf3c7")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w3-ab7204fb")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w3-ab7204fb")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w4-0dd14b61")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w4-0dd14b61")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w5-1b010cb1")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w5-1b010cb1")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w6-08d15662")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w6-08d15662")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w7-7dfcb214")
+[meter] admit id=chatcmpl-9c4062cfd661ab13ff4de46d5b74847d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2802 path=plain = 14848 B/token x ctx + 965MB prefill-workspace + 108MB fixed = 1115MB
+[worker] plain-affinity: grew parked cache 2673 -> 2802 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2678 prompt tokens (priming 246 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2678 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w2-8955b067" K=0 source=concurrency prompt=2678 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-511d51b0a811c98ed1e0025d17dd8a95 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2811 path=plain = 14848 B/token x ctx + 969MB prefill-workspace + 108MB fixed = 1118MB
+[worker] plain-affinity: grew parked cache 2673 -> 2811 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2687 prompt tokens (priming 255 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2687 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w5-1b010cb1" K=0 source=concurrency prompt=2687 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-7bceb2b1c3bbc007b7964e0ab16784e7 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2828 path=plain = 14848 B/token x ctx + 975MB prefill-workspace + 108MB fixed = 1125MB
+[worker] plain-affinity: grew parked cache 2673 -> 2828 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2704 prompt tokens (priming 272 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2704 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w3-ab7204fb" K=0 source=concurrency prompt=2704 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-dfcd3a1d610e2eb3f8a3e646486ba538 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2831 path=plain = 14848 B/token x ctx + 976MB prefill-workspace + 108MB fixed = 1126MB
+[worker] plain-affinity: grew parked cache 2673 -> 2831 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2707 prompt tokens (priming 275 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2707 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w6-08d15662" K=0 source=concurrency prompt=2707 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-6b0e902ad78784715236d7e2ca93c8ef tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w0-225e765a" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-c2e41b7dd546fb80e532024ae6b3ff1e tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-3130bf305302b395068aa7e0cc51b7f9 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-d02b637e33333e4c5e4b1fde3814df35 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w7-7dfcb214" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=6 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w4-0dd14b61" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r3-w1-0eddf3c7" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-1509c7ee93dfdd5fdf3174d1d780f093 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-650bd6127c6b18c0f6c796ba91d73a92 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-94e9c2e163cd714b5af4829305ba8a29 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-2383f3237a1585dae194d5e7d51f3625 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-328f40e1d353368d51a180dd0f559889 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-3ee9716b17059222e5f5f595e6c3520d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-5ce1e0b967927ed99b0b7c2628c758c4 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-299acfce9b1c513e1829fbaf5bfa8083 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w2-cc9d42e5" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w0-54f2d307" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w1-9dac1a52" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w3-1d461371" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w5-3db4c725" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w4-a861afa2" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w7-dfe23f29" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w6-d636876e" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r3-w7-7dfcb214")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w2-cc9d42e5")
+[prime-batch] B=6 tokens=198 carried=6 partial=0 in 67.5ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w2-cc9d42e5")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w0-54f2d307")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w0-54f2d307")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w1-9dac1a52")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w1-9dac1a52")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w3-1d461371")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w3-1d461371")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w5-3db4c725")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w5-3db4c725")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w4-a861afa2")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w4-a861afa2")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w7-dfe23f29")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w7-dfe23f29")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w6-d636876e")
+[meter] admit id=chatcmpl-83106d61ef0168f6741cfb6428ca803c tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2750 path=plain = 14848 B/token x ctx + 947MB prefill-workspace + 108MB fixed = 1096MB
+[worker] plain-affinity: grew parked cache 2673 -> 2750 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2626 prompt tokens (priming 194 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2626 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w3-1d461371" K=0 source=concurrency prompt=2626 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-f80bc9c035048374b7c0e0e4f62527d9 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w2-cc9d42e5" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-be614e29b7380e06e2f39621bb0a97a9 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-d81df0603c1c747ee7367831e4f0a7a2 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-f73f7a107949d0c5085024b7069afe96 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-feac70fc8dc0d6d5702554c04eadf078 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-a07bb06d129528cb6d8c0b5cb7ff4a53 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-6fc1f0df0727215e085d8e4bc898b24f tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w1-9dac1a52" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=2 wave=7 placement=single-or-non-pp2
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2834 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2834 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2710 prompt tokens (priming 278 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2710 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w5-3db4c725" K=0 source=concurrency prompt=2710 cached=2432 lcp=0 active=3 wave=7 placement=single-or-non-pp2
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w6-d636876e" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=4 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w0-54f2d307" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=5 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w4-a861afa2" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=6 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r4-w7-dfe23f29" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-bdf1a841ef19556328bcff8b63108371 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-3bf6acc1b6ca71d77f693735f4d27e8d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-ed6ec225683362270461e29734041f3c tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-3ceb82c7a5379600fa45153f77077d21 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-f6b64495d2cb295d95c7dc085d30d37f tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-4ad93f8b8fdd26b9e079285598edc79b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-51f94a2b4a5b5d2f8a45f70e691be46f tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-03e392655562a2018e37aafbcee0f583 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w2-3d23667f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w0-37648932" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w3-bf71887a" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w4-cf61f9f6" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w5-1b3a6c91" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w1-a70c290c" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w6-8bdb66bd" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w7-77d6324c" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r4-w6-d636876e")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w2-3d23667f")
+[prime-batch] B=6 tokens=198 carried=6 partial=0 in 66.2ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w2-3d23667f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w0-37648932")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w0-37648932")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w3-bf71887a")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w3-bf71887a")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w4-cf61f9f6")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w4-cf61f9f6")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w5-1b3a6c91")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w5-1b3a6c91")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w1-a70c290c")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w1-a70c290c")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w6-8bdb66bd")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w6-8bdb66bd")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w7-77d6324c")
+[meter] admit id=chatcmpl-f65798ab157f02bbb1111f36e5241756 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2797 path=plain = 14848 B/token x ctx + 963MB prefill-workspace + 108MB fixed = 1113MB
+[worker] plain-affinity: grew parked cache 2673 -> 2797 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2673 prompt tokens (priming 241 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2673 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w2-3d23667f" K=0 source=concurrency prompt=2673 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a380931fefea7b8dd238b3e3754d1e6d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2828 path=plain = 14848 B/token x ctx + 975MB prefill-workspace + 108MB fixed = 1125MB
+[worker] plain-affinity: grew parked cache 2673 -> 2828 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2704 prompt tokens (priming 272 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2704 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w0-37648932" K=0 source=concurrency prompt=2704 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-48f3a9a576ef87891594c0644e94fa70 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-f2fee513a255baeb86e9ac7ba726db20 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-d6d4a973249cdaf5a6c97f93ac7b6667 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-1a2a43239f3fb19a3180e9b868c3b743 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-8e4f39a59ae2e0af3e340726bb70ce0d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-40bc1ff981d081085f7e5adebf31a324 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w5-1b3a6c91" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w3-bf71887a" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w7-77d6324c" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=5 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w4-cf61f9f6" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w6-8bdb66bd" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-vendor-c8-r5-w1-a70c290c" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-8dfa326f4e8f19460fcd39ec628b4543 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1042MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c1-r1-w0-cf74573e" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=20/42 cum=20/42=0.476
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 369.3MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r1-w0-cf74573e")
+[prefix-cache] evict (Probation LRU): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c8-r5-w7-77d6324c")
+[spec-acc] ctx=2500 burst=20/36 cum=40/78=0.513
+[spec-acc] ctx=2533 burst=20/33 cum=60/111=0.541
+[spec-acc] ctx=2565 burst=23/27 cum=83/138=0.601
+[spec-acc] ctx=2598 burst=23/30 cum=106/168=0.631
+[spec-acc] ctx=2632 burst=20/39 cum=126/207=0.609
+[meter] admit id=chatcmpl-c30da62135b3700aa3fbe1edb7b2c0bf tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=spec = 16704 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1133MB
+[prefix-cache] demote (protected bytes): 93.3MB to probation (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r4-w0-5f8ef2cb")
+[prefix-cache] hit: 2432 of 2711 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2711 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c1-r1-w0-cf74573e" K=2 source=cached-long prompt=2711 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=279 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2688 tokens, 97.6MB (resident 377.6MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r1-w0-cf74573e")
+[prefix-cache] evict (Probation LRU): 2432 tokens, 93.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r4-w0-5f8ef2cb")
+[spec-acc] ctx=313 burst=18/18 cum=40/40=1.000
+[meter] admit id=chatcmpl-ff930b87285ffcb1b7ed72fb53cb6be6 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1042MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c1-r2-w0-b1ce4c28" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=23/33 cum=23/33=0.697
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 377.6MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r2-w0-b1ce4c28")
+[prefix-cache] evict (Probation LRU): 2688 tokens, 97.6MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r1-w0-cf74573e")
+[spec-acc] ctx=2500 burst=24/30 cum=47/63=0.746
+[spec-acc] ctx=2535 burst=20/33 cum=67/96=0.698
+[spec-acc] ctx=2567 burst=22/33 cum=89/129=0.690
+[spec-acc] ctx=2601 burst=22/27 cum=111/156=0.712
+[spec-acc] ctx=2633 burst=22/33 cum=133/189=0.704
+[meter] admit id=chatcmpl-ff1893c0dc0553b719055291352d22ee tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2824 path=spec = 16704 B/token x ctx + 973MB prefill-workspace + 108MB fixed = 1129MB
+[prefix-cache] demote (protected bytes): 93.3MB to probation (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r5-w0-d7389fe1")
+[prefix-cache] hit: 2432 of 2700 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2700 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c1-r2-w0-b1ce4c28" K=2 source=cached-long prompt=2700 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=268 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2656 tokens, 97.1MB (resident 377.1MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r2-w0-b1ce4c28")
+[prefix-cache] evict (Probation LRU): 2432 tokens, 93.3MB (model qwen/qwen3.5-9b, ns "on-b2-vendor-c1-r5-w0-d7389fe1")
+[spec-acc] ctx=302 burst=16/18 cum=38/40=0.950
+[meter] admit id=chatcmpl-d902d1110a1c69460a3ad2ffc9df44eb tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=spec = 16704 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1042MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c1-r3-w0-060251e6" K=3 source=cold-long prompt=2465 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=2465 burst=21/39 cum=21/39=0.538
+[prefix-cache] insert probation (spec-boundary): 2432 tokens, 93.3MB (resident 377.1MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r3-w0-060251e6")
+[prefix-cache] evict (Probation LRU): 2656 tokens, 97.1MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r2-w0-b1ce4c28")
+[spec-acc] ctx=2500 burst=21/39 cum=42/78=0.538
+[spec-acc] ctx=2535 burst=21/30 cum=63/108=0.583
+[spec-acc] ctx=2567 burst=23/27 cum=86/135=0.637
+[spec-acc] ctx=2600 burst=21/30 cum=107/165=0.648
+[spec-acc] ctx=2632 burst=23/27 cum=130/192=0.677
+[meter] admit id=chatcmpl-2c9e6b9fe5eec3b48094bdd512ab7769 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2810 path=spec = 16704 B/token x ctx + 968MB prefill-workspace + 108MB fixed = 1123MB
+[prefix-cache] demote (protected bytes): 93.3MB to probation (model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r1-w0-cf74573e")
+[prefix-cache] hit: 2432 of 2686 prompt tokens from cache (model qwen/qwen3.5-9b)
+[prefix-cache] spec restore: 2432 of 2686 prompt tokens + draft plane from cache [suffix queued] (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c1-r3-w0-060251e6" K=2 source=cached-long prompt=2686 cached=2432 lcp=2432 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=254 burst=22/22 cum=22/22=1.000
+[prefix-cache] insert probation (spec-boundary): 2656 tokens, 97.1MB (resident 377.1MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r3-w0-060251e6")
+[prefix-cache] evict (Probation LRU): 2432 tokens, 93.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r1-w0-cf74573e")
+[spec-acc] ctx=288 burst=18/18 cum=40/40=1.000
+[meter] admit id=chatcmpl-49daa5c19f6dc092b220fdb4dff3efd0 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-b688d1d3670ca1e22beef82da3a2f75e tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-2ea7558772328026c1f6ea8463fd1fa1 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-bf6a238b2b1de44e90b74dc8b99711f6 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r1-w3-c6773b5e" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r1-w0-b4b5042e" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r1-w1-7b687471" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r1-w2-47d5e2b7" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2656 tokens, 97.1MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c1-r3-w0-060251e6")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r1-w3-c6773b5e")
+[prime-batch] B=3 tokens=99 carried=3 partial=0 in 40.6ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r1-w3-c6773b5e")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r1-w0-b4b5042e")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r1-w0-b4b5042e")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r1-w1-7b687471")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r1-w1-7b687471")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r1-w2-47d5e2b7")
+[meter] admit id=chatcmpl-beda85e8140c0e895f886c597fba7480 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2771 path=plain = 14848 B/token x ctx + 954MB prefill-workspace + 108MB fixed = 1103MB
+[worker] plain-affinity: grew parked cache 2673 -> 2771 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2647 prompt tokens (priming 215 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2647 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r1-w0-b4b5042e" K=0 source=concurrency prompt=2647 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-d85434b222e480ecb672b35eb1d931ca tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2801 path=plain = 14848 B/token x ctx + 965MB prefill-workspace + 108MB fixed = 1115MB
+[worker] plain-affinity: grew parked cache 2673 -> 2801 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2677 prompt tokens (priming 245 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2677 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r1-w2-47d5e2b7" K=0 source=concurrency prompt=2677 cached=2432 lcp=2461 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-d80f7b8fbd5871f0fd0b5fddd035f621 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r1-w3-c6773b5e" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-02eb56d2e5fc8206b870ee6772acee4b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r1-w1-7b687471" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=3 wave=3 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-92fd0310aafe29e6cccd67a91a9d8dd9 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-21d3a44b8a24fd36dca3f6111edb53c8 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-522e69603ae505d2729335b28836dd76 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-c26e4130c96ff3f110c65384f43d3104 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r2-w0-060c62a6" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r2-w1-084d2abc" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r2-w3-45649683" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r2-w2-756c706f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r1-w2-47d5e2b7")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r2-w0-060c62a6")
+[prime-batch] B=3 tokens=99 carried=3 partial=0 in 41.6ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r2-w0-060c62a6")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r2-w1-084d2abc")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r2-w1-084d2abc")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r2-w3-45649683")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r2-w3-45649683")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r2-w2-756c706f")
+[meter] admit id=chatcmpl-10db8800539b94217788de0051b16eb3 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2795 path=plain = 14848 B/token x ctx + 963MB prefill-workspace + 108MB fixed = 1112MB
+[worker] plain-affinity: grew parked cache 2673 -> 2795 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2671 prompt tokens (priming 239 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2671 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r2-w2-756c706f" K=0 source=concurrency prompt=2671 cached=2432 lcp=2461 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e01e2ffd99a6182f10288a2279f12ba0 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2813 path=plain = 14848 B/token x ctx + 969MB prefill-workspace + 108MB fixed = 1119MB
+[worker] plain-affinity: grew parked cache 2673 -> 2813 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2689 prompt tokens (priming 257 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2689 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r2-w0-060c62a6" K=0 source=concurrency prompt=2689 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e79d7d1a4b37c54e94621718076e13f0 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2816 path=plain = 14848 B/token x ctx + 970MB prefill-workspace + 108MB fixed = 1120MB
+[worker] plain-affinity: grew parked cache 2673 -> 2816 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2692 prompt tokens (priming 260 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2692 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r2-w3-45649683" K=0 source=concurrency prompt=2692 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-92d1ca4fc20354479485e66853b5ec81 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r2-w1-084d2abc" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-b62e9f555f4ac78c9356a89a06d9040e tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-fef15a1df99b2fb5fcfe3443a7fd5a74 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-1f32595dd725dc640d4c507f218fde2f tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-34f70d4cb1dffca6d23d0ef3604d0ca8 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r3-w0-d15e3183" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r3-w3-c96d90db" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r3-w1-4031aae1" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r3-w2-27d1f8fd" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r2-w2-756c706f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r3-w0-d15e3183")
+[prime-batch] B=3 tokens=99 carried=3 partial=0 in 40.8ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r3-w0-d15e3183")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r3-w3-c96d90db")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r3-w3-c96d90db")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r3-w1-4031aae1")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r3-w1-4031aae1")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r3-w2-27d1f8fd")
+[meter] admit id=chatcmpl-a23fa5ebe13b64a81671dfa57bf225ff tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2804 path=plain = 14848 B/token x ctx + 966MB prefill-workspace + 108MB fixed = 1116MB
+[worker] plain-affinity: grew parked cache 2673 -> 2804 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2680 prompt tokens (priming 248 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2680 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r3-w0-d15e3183" K=0 source=concurrency prompt=2680 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-47c9e051e4c07bd1bfdfc92ee40f2686 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2833 path=plain = 14848 B/token x ctx + 976MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2833 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2709 prompt tokens (priming 277 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2709 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r3-w3-c96d90db" K=0 source=concurrency prompt=2709 cached=2432 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a97ef67b1c6550243a3be4e25f173033 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-fcf128c6a9e63d291311680781e9d5b4 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r3-w1-4031aae1" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c4-r3-w2-27d1f8fd" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=4 wave=4 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-9fe6f5551562a8997bc012a8bca9dc51 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-f62b09884b2e720ab2457df6c15f757b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-215813225472dd0d368894a46bbcd743 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-947e20d1fc72f0034040dabc621c6010 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-77477105748e5e18a9bc262f2b29bfdd tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-6fe2b66493a30c2d99f2d1de2fbe3d6c tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-629ba1644ce0e92a5d2ec1b34c556733 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-5f7b2a13ad4dff681bbf9a420d3bf97f tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w0-92a3c57b" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w3-4f859eb5" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w4-a3657cd5" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w2-ef42cf2c" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w5-a4d6b63f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w1-f2cf0194" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w6-b026f16f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w7-812c8538" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c4-r3-w2-27d1f8fd")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w0-92a3c57b")
+[prime-batch] B=6 tokens=198 carried=6 partial=0 in 68.4ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w0-92a3c57b")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w3-4f859eb5")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w3-4f859eb5")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w4-a3657cd5")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w4-a3657cd5")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w2-ef42cf2c")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w2-ef42cf2c")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w5-a4d6b63f")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w5-a4d6b63f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w1-f2cf0194")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w1-f2cf0194")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w6-b026f16f")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w6-b026f16f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w7-812c8538")
+[meter] admit id=chatcmpl-5341a954bb259cd776d7eccbdfbdf57b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2820 path=plain = 14848 B/token x ctx + 972MB prefill-workspace + 108MB fixed = 1122MB
+[worker] plain-affinity: grew parked cache 2673 -> 2820 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2696 prompt tokens (priming 264 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2696 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w3-4f859eb5" K=0 source=concurrency prompt=2696 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-ab91122298d734c30f7c4d6d88202f98 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w0-92a3c57b" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-3650a71614c9fc76d90d22ba212e5fbd tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-e998cad3157722dae49666974b38ee39 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-d2c791675b1b70d89c93598d6d68f6d4 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-cd3b5b34b5da4d27f6d0bc6b23c1e792 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-5406c3b8065c31a29ba57df7b6f45b41 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-14732853c85d53e72adf61470399b088 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w4-a3657cd5" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w7-812c8538" K=0 source=concurrency prompt=2711 cached=2432 lcp=2461 active=4 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w2-ef42cf2c" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w1-f2cf0194" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w6-b026f16f" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r1-w5-a4d6b63f" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-4fb51494128dd25b6a1aa7199389ce56 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-518a54431a016a9156c162e197f96012 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-dadf7b8955e2b9b7cf7e01fc68d94fa4 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-7efae8ffb9cfee7ff01e8022cc693aac tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-6f72852edfbda540a1fb019bd5e79d7d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-a9a4c6f4020b52949698dd3c5c6c5def tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-02dd41e90691c43c89c61e804f30a751 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-49ff6c5865a6e54549a10b9fdb46cd54 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w1-71dfccdb" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w2-b118f64e" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w0-74c54316" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w3-dce7e83f" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w5-136663df" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w4-91ab03ed" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w6-79f1045a" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w7-bcaa6c12" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r1-w7-812c8538")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w1-71dfccdb")
+[prime-batch] B=6 tokens=198 carried=6 partial=0 in 68.2ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w1-71dfccdb")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w2-b118f64e")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w2-b118f64e")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w0-74c54316")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w0-74c54316")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w3-dce7e83f")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w3-dce7e83f")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w5-136663df")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w5-136663df")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w4-91ab03ed")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w4-91ab03ed")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w6-79f1045a")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w6-79f1045a")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w7-bcaa6c12")
+[meter] admit id=chatcmpl-e4fbc773e0d62d3ed5def815579b05b4 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2732 path=plain = 14848 B/token x ctx + 940MB prefill-workspace + 108MB fixed = 1089MB
+[worker] plain-affinity: grew parked cache 2673 -> 2732 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2608 prompt tokens (priming 176 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2608 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w0-74c54316" K=0 source=concurrency prompt=2608 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-92c52160eae694725ea66ed95f9a2298 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2776 path=plain = 14848 B/token x ctx + 956MB prefill-workspace + 108MB fixed = 1105MB
+[worker] plain-affinity: grew parked cache 2673 -> 2776 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2652 prompt tokens (priming 220 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2652 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w7-bcaa6c12" K=0 source=concurrency prompt=2652 cached=2432 lcp=2461 active=8 wave=8 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-772d8e4e540c1a25c25bdf5c986de051 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2815 path=plain = 14848 B/token x ctx + 970MB prefill-workspace + 108MB fixed = 1120MB
+[worker] plain-affinity: grew parked cache 2673 -> 2815 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2691 prompt tokens (priming 259 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2691 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w1-71dfccdb" K=0 source=concurrency prompt=2691 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1ae8c9a089246b7df2f0a84d6e4be9d0 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-f2abc6d12bea60baa56a33749a34ef03 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-9b0f3ffaaf8c74fc1691fd86ad6acc13 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-7321086a78981c127326fc803d28384d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-445802301e23f10e27178da8001136e9 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w4-91ab03ed" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=3 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w3-dce7e83f" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=4 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w2-b118f64e" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=5 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w6-79f1045a" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=6 wave=7 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r2-w5-136663df" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=7 wave=7 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-3aaaf7ee05ab58a046b22f0c64a58626 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-e215dc885ad9e3b8201d111d543ff7e3 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-bc2b04a67416ce7c1d815f71950d007d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-b5f0bd0af159479bedd2eedaa47e0a3c tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-316f066fe1544bd279185fd1100af57b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-e0f5655c3bf3feffff0cea3e693ded4a tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-ebf496f7f0bd3979bdfc0be2e277d4c0 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-e28228e09e5e878972064f26cd2b6a8b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2729 path=plain = 14848 B/token x ctx + 889MB prefill-workspace + 108MB fixed = 1037MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w0-b2d43c67" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=1 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w1-e932fb28" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=2 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w2-a7794ccb" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w3-60e17454" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=4 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w5-d7ac8653" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=5 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w4-43acd349" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=6 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w6-9143e460" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=7 wave=8 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w7-9b4fb87b" K=0 source=concurrency prompt=2465 cached=0 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r2-w7-bcaa6c12")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w0-b2d43c67")
+[prime-batch] B=6 tokens=198 carried=6 partial=0 in 67.4ms
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w0-b2d43c67")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w1-e932fb28")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w1-e932fb28")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w2-a7794ccb")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w2-a7794ccb")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w3-60e17454")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w3-60e17454")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w5-d7ac8653")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w5-d7ac8653")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w4-43acd349")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w4-43acd349")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w6-9143e460")
+[prefix-cache] evict (snapshot preflight): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w6-9143e460")
+[prefix-cache] insert probation (seed): 2465 tokens, 89.3MB (resident 276.0MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w7-9b4fb87b")
+[meter] admit id=chatcmpl-093f73c5327454f938335cf67849f42b tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2727 path=plain = 14848 B/token x ctx + 938MB prefill-workspace + 108MB fixed = 1087MB
+[worker] plain-affinity: grew parked cache 2673 -> 2727 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2603 prompt tokens (priming 171 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2603 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w3-60e17454" K=0 source=concurrency prompt=2603 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-341320e23eae22ea566caae53d972930 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2744 path=plain = 14848 B/token x ctx + 944MB prefill-workspace + 108MB fixed = 1093MB
+[worker] plain-affinity: grew parked cache 2673 -> 2744 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2620 prompt tokens (priming 188 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2620 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w1-e932fb28" K=0 source=concurrency prompt=2620 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-0e95208c10aae3d1d427817d8eff9b12 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2782 path=plain = 14848 B/token x ctx + 958MB prefill-workspace + 108MB fixed = 1108MB
+[worker] plain-affinity: grew parked cache 2673 -> 2782 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2658 prompt tokens (priming 226 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2658 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w2-a7794ccb" K=0 source=concurrency prompt=2658 cached=2432 lcp=0 active=8 wave=8 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-9246c3d7ef23526a1bf20e2f6333a611 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2810 path=plain = 14848 B/token x ctx + 968MB prefill-workspace + 108MB fixed = 1118MB
+[worker] plain-affinity: grew parked cache 2673 -> 2810 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2686 prompt tokens (priming 254 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2686 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w7-9b4fb87b" K=0 source=concurrency prompt=2686 cached=2432 lcp=2461 active=6 wave=6 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-544821d3f74bbed3e44d32f7bb30fd25 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2814 path=plain = 14848 B/token x ctx + 970MB prefill-workspace + 108MB fixed = 1120MB
+[worker] plain-affinity: grew parked cache 2673 -> 2814 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2690 prompt tokens (priming 258 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2690 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w6-9143e460" K=0 source=concurrency prompt=2690 cached=2432 lcp=0 active=6 wave=6 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-d57082c661d1d44c75d3ce7a97e60029 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=2835 path=plain = 14848 B/token x ctx + 977MB prefill-workspace + 108MB fixed = 1127MB
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w0-b2d43c67" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=6 wave=6 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-68ec8401e5f144a52722b169e2c0229f tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[meter] admit id=chatcmpl-0489f73a953387250c83f122c40fee7c tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w4-43acd349" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=5 wave=6 placement=single-or-non-pp2
+[worker] plain-affinity: grew parked cache 2673 -> 2835 rows (request-owned need)
+[worker] plain-affinity: rewound to 2432 of 2711 prompt tokens (priming 279 suffix; model qwen/qwen3.5-9b)
+[worker] kv-reuse: 2432 of 2711 prompt tokens resumed (model qwen/qwen3.5-9b)
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pp0-c8-r3-w5-d7ac8653" K=0 source=concurrency prompt=2711 cached=2432 lcp=0 active=6 wave=6 placement=single-or-non-pp2
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[sampler-order] model=qwen/qwen3.5-9b radix=0 comparison=1
+[meter] admit id=chatcmpl-c74b673deb5df666bb821a262d4cdfa2 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[admission] per-session draft-state charge: model="qwen/qwen3.5-9b" +44MB (measured capture high-water)
+[admission] request cost: model="qwen/qwen3.5-9b" ctx=693 path=spec = 16704 B/token x ctx + 181MB prefill-workspace + 108MB fixed = 300MB
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pptg-r1-1a0a5188" K=3 source=cold-short prompt=501 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=501 burst=18/48 cum=18/48=0.375
+[prefix-cache] insert probation (spec-boundary): 480 tokens, 60.7MB (resident 336.7MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pptg-r1-1a0a5188")
+[spec-acc] ctx=536 burst=19/36 cum=37/84=0.440
+[spec-acc] ctx=568 burst=19/36 cum=56/120=0.467
+[spec-acc] ctx=600 burst=18/36 cum=74/156=0.474
+[meter] admit id=chatcmpl-491ef258e277245c10f3bcc80c563b5d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pptg-r2-c5f12d0f" K=3 source=cold-short prompt=501 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=501 burst=17/45 cum=17/45=0.378
+[prefix-cache] insert probation (spec-boundary): 480 tokens, 60.7MB (resident 397.4MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pptg-r2-c5f12d0f")
+[prefix-cache] evict (Probation LRU): 2465 tokens, 89.3MB (model qwen/qwen3.5-9b, ns "on-b2-pp0-c8-r3-w7-9b4fb87b")
+[spec-acc] ctx=534 burst=18/39 cum=35/84=0.417
+[spec-acc] ctx=566 burst=20/33 cum=55/117=0.470
+[spec-acc] ctx=598 burst=20/30 cum=75/147=0.510
+[meter] admit id=chatcmpl-7df4fbf6a167594b8d57275e0cb3ae3d tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pptg-r3-92c9ac1b" K=3 source=cold-short prompt=501 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=501 burst=19/39 cum=19/39=0.487
+[prefix-cache] insert probation (spec-boundary): 480 tokens, 60.7MB (resident 368.8MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pptg-r3-92c9ac1b")
+[prefix-cache] evict (Probation LRU): 480 tokens, 60.7MB (model qwen/qwen3.5-9b, ns "on-b2-pptg-r1-1a0a5188")
+[spec-acc] ctx=534 burst=21/33 cum=40/72=0.556
+[spec-acc] ctx=567 burst=18/45 cum=58/117=0.496
+[spec-acc] ctx=601 burst=19/27 cum=77/144=0.535
+[meter] admit id=chatcmpl-4b6badcba6446dbb311a9061d354dd6c tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pptg-r4-60299e2a" K=3 source=cold-short prompt=501 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=501 burst=18/48 cum=18/48=0.375
+[prefix-cache] insert probation (spec-boundary): 480 tokens, 60.7MB (resident 368.8MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pptg-r4-60299e2a")
+[prefix-cache] evict (Probation LRU): 480 tokens, 60.7MB (model qwen/qwen3.5-9b, ns "on-b2-pptg-r2-c5f12d0f")
+[spec-acc] ctx=536 burst=16/45 cum=34/93=0.366
+[spec-acc] ctx=568 burst=14/51 cum=48/144=0.333
+[spec-acc] ctx=600 burst=21/30 cum=69/174=0.397
+[meter] admit id=chatcmpl-51f950550e7c1a14c663c96554f0d813 tenant=default lane=interactive model="qwen/qwen3.5-9b"
+[spec-k] model="qwen/qwen3.5-9b" tenant="on-b2-pptg-r5-2553904e" K=3 source=cold-short prompt=501 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=501 burst=22/36 cum=22/36=0.611
+[prefix-cache] insert probation (spec-boundary): 480 tokens, 60.7MB (resident 368.8MB / 349MB, model qwen/qwen3.5-9b, ns "on-b2-pptg-r5-2553904e")
+[prefix-cache] evict (Probation LRU): 480 tokens, 60.7MB (model qwen/qwen3.5-9b, ns "on-b2-pptg-r3-92c9ac1b")
+[spec-acc] ctx=536 burst=21/39 cum=43/75=0.573
+[spec-acc] ctx=571 burst=19/36 cum=62/111=0.559
+[spec-acc] ctx=603 burst=16/30 cum=78/141=0.553
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

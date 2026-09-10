@@ -494,3 +494,5 @@ glm5-kda-verify-20260909 | SUPERSEDED MECHANISM: one t-row register-state scan a
 - `glm5-dflash-rootcause-20260909` | "PP1 p32k vendor K6 71.850085 tok/s versus plain 80.635647; verify 81.8% of engine round, needs 2.192253 accepted/round versus 1.850000. Selected-q PMIN bias reproduced; causal cutoff code removed, bug #412 open." | [DIAGNOSIS](glm5-dflash-rootcause-20260909/DIAGNOSIS.md) | rev: 2026-12-08
 
 | glm5-verify-graph-20260909 | NEGATIVE: K6 graph ON 79.191090 tok/s vs plain 79.957362 (-0.958351%); four exact oracles, N=3 interleaved, door removed. rev: 2026-09-23 | [RESULTS](glm5-verify-graph-20260909/RESULTS.md) |
+
+| devpenalty-qwen35-20260909 | WIN + FLIP: door default ON for Qwen3.5 on 120a builds; vendor non-thinking agg 109.6->527.2 (c4) / 115.5->758.0 (c8), pp0 control flat, greedy byte-identical 7/7 boots; unset-default smoke reproduced ON rows. rev: 2026-09-24 | [RESULTS](devpenalty-qwen35-20260909/RESULTS.md) |

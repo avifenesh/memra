@@ -441,9 +441,11 @@ impl Sampler {
     /// class. `penalty_counts` holds at most `PEN_WINDOW_MAX` distinct ids and in practice the
     /// number of distinct generated tokens so far, so the loop was inverted the expensive way
     /// round. This matters in production, not in theory: `devsample_meta` refuses the device
-    /// sampler for any penalized config unless `MEMRA_SERVE_DEVPENALTY=1`, the whole fleet runs
-    /// it at 0, and a served model whose VENDOR-RECOMMENDED non-thinking arm carries
-    /// `presence_penalty` therefore lands every token of every request on this function.
+    /// sampler for any penalized config whose (model class, build arch) pair is unqualified
+    /// and unoverridden (`serve_devpenalty_from`), and a served model whose VENDOR-RECOMMENDED
+    /// non-thinking arm carries `presence_penalty` therefore lands every token of every
+    /// request on this function. Qualified pairs (Qwen3.5 on sm_120 since 2026-09-09) take
+    /// the device path instead; this remains the host oracle for them.
     ///
     /// BIT-IDENTICAL BY CONSTRUCTION, and gated as such rather than asserted in prose: the set of
     /// touched entries is identical (`penalty_counts` covers exactly the window, which the
