@@ -41,8 +41,19 @@
 //! that cannot see a planted difference cannot certify the absence of one.
 //!
 //! This gate does NOT admit either program for quality, and prints no threshold.
+//! ROW FIELD NAMES. `reference_*` and `matrix_*` are the PROGRAM axis's names and are kept
+//! on every axis so one comparator reads every run; on the `hc_dot_split` axis they mean arm
+//! A (door OFF) and arm B (door ON, S=16). Every row carries `"axis"` so a receipt says which.
+//!
 //! Usage: dsv4_moe_program_class_gate <model-dir> <panels.txt> <panels-sha256> <new-out-dir>
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4SampleCfg, dsv4_pos_uniform, dsv4_sample_row};
+
+unsafe extern "C" {
+    fn memra_dsv4_hc_dot_split_set_for_gate(slices: i32) -> i32;
+    fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
+}
+/// The accepted door's slice count (memra #418, owner accepted 2026-09-09).
+const HC_SLICES: i32 = 16;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_sampling::{SamplerConfig, SamplerIdentity};
 use memra_tokenizer::Tokenizer;
@@ -504,6 +515,28 @@ fn main() {
     // therefore loads matrix directly, runs B,B for within-arm bit-identity, and banks the
     // per-row logit hashes so a realization can be compared to another run's ACROSS
     // processes. It prints no cross-arm metric, because it has no second arm to compare.
+    // THE AXIS UNDER TEST. `program` is this lane's own question. `hc_dot_split` re-runs the
+    // ACCEPTED PRECEDENT's door (memra #418, HC S16) as arm B against arm A, on the SERVED
+    // program and on THIS tape, and it exists for two reasons.
+    //
+    // It makes the precedent commensurable. HC S16's banked 49/2048 was measured on a
+    // different comparison (within-matrix), a different topology (TP/EP), and a different
+    // prompt domain (100% engine source), so it cannot be set beside this lane's number as
+    // though the two were the same measurement. Run here it produces HC's drift on the same
+    // seven panels, Hebrew included, which is what an owner needs in order to SET a
+    // tolerance rather than match one.
+    //
+    // And it retroactively checks a SHIPPED door. HC S16 is one of the three merged doors
+    // that DO engage on the served path, but its quality evidence was taken on a program
+    // that cannot serve: TP/EP refuses chunked prefill and refuses the DSpark drafter. If
+    // its drift here is materially different, that is a finding about a shipped door and
+    // not merely context for this decision.
+    let axis = std::env::var("MEMRA_DSV4_CLASS_AXIS").unwrap_or_else(|_| "program".to_owned());
+    assert!(
+        axis == "program" || axis == "hc_dot_split",
+        "MEMRA_DSV4_CLASS_AXIS must be program or hc_dot_split, got {axis:?}"
+    );
+    let hc_axis = axis == "hc_dot_split";
     let program =
         std::env::var("MEMRA_DSV4_MOE_PROGRAM").unwrap_or_else(|_| "reference".to_owned());
     assert!(
@@ -511,6 +544,19 @@ fn main() {
         "MEMRA_DSV4_MOE_PROGRAM must be reference (class cell) or matrix (realization probe), got {program:?}"
     );
     let probe = program == "matrix";
+    assert!(
+        !(hc_axis && probe),
+        "the hc_dot_split axis holds the program fixed; it cannot also be a realization probe"
+    );
+    // Arm A is the door OFF, which this gate's own startup block already pinned in the env.
+    // Arm B is selected through the same process-local gate setter the accepted campaign
+    // used, never by re-reading the environment.
+    if hc_axis {
+        unsafe {
+            assert_eq!(memra_dsv4_hc_dot_split_set_for_gate(0), 0);
+            assert_eq!(memra_dsv4_hc_dot_split_slices_for_gate(), 0);
+        }
+    }
 
     let dir = Path::new(&args[1]);
     let panel_bytes = std::fs::read(&args[2]).expect("panel tape");
@@ -523,8 +569,18 @@ fn main() {
 
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
     println!(
-        "PANELS sha256={panel_sha} count={} scored_rows_per_panel={SCORED_ROWS} seed={SEED} ep={ep}",
-        panels.len()
+        "PANELS sha256={panel_sha} count={} scored_rows_per_panel={SCORED_ROWS} seed={SEED} ep={ep} axis={axis} armA={} armB={}",
+        panels.len(),
+        if hc_axis {
+            "hc_dot_split=0"
+        } else {
+            "program=reference"
+        },
+        if hc_axis {
+            "hc_dot_split=16"
+        } else {
+            "program=matrix"
+        }
     );
 
     let mut tapes: Vec<(usize, Vec<u32>)> = Vec::new();
@@ -592,6 +648,22 @@ fn main() {
 
     for (i, panel) in panels.iter().enumerate() {
         let (prefix, tape) = &tapes[i];
+        // Arm selection for whichever axis is under test. On the hc_dot_split axis the
+        // expert program never moves, so `grouped_device_route_calls` must stay put in BOTH
+        // arms and the door slices are the only thing that changes.
+        let set_hc = |b: bool| {
+            if hc_axis {
+                let want = if b { HC_SLICES } else { 0 };
+                unsafe {
+                    assert_eq!(memra_dsv4_hc_dot_split_set_for_gate(want), 0);
+                    assert_eq!(
+                        memra_dsv4_hc_dot_split_slices_for_gate(),
+                        want,
+                        "the HC door setter did not take"
+                    );
+                }
+            }
+        };
         let before = gpu.grouped_device_route_calls();
         let (a1, b1) = if probe {
             // Realization probe: one program, B,B, no cross-arm comparison possible.
@@ -613,45 +685,59 @@ fn main() {
             );
             (None, b1)
         } else {
-            gpu.set_matrix_moe_for_gate(false).expect("reference arm");
+            if !hc_axis {
+                gpu.set_matrix_moe_for_gate(false).expect("arm A");
+            }
+            set_hc(false);
             let a1 = capture(&gpu, tape, *prefix);
             assert_eq!(
                 before,
                 gpu.grouped_device_route_calls(),
-                "the reference arm engaged grouped routes: the arms are not disjoint"
+                "arm A engaged grouped routes: the arms are not disjoint"
             );
-            gpu.set_matrix_moe_for_gate(true).expect("matrix arm");
+            if !hc_axis {
+                gpu.set_matrix_moe_for_gate(true).expect("arm B");
+            }
+            set_hc(true);
             let b1 = capture(&gpu, tape, *prefix);
             if refusals_b.is_none() {
                 refusals_b = Some(refusal_ordering());
             }
             let b2 = capture(&gpu, tape, *prefix);
-            let after_matrix = gpu.grouped_device_route_calls();
-            assert!(
-                after_matrix > before,
-                "the matrix arm did not engage grouped routes: the faster program never ran"
-            );
-            gpu.set_matrix_moe_for_gate(false).expect("reference arm");
+            let after_b = gpu.grouped_device_route_calls();
+            if hc_axis {
+                assert_eq!(
+                    after_b, before,
+                    "the hc_dot_split axis must not move the expert program"
+                );
+            } else {
+                assert!(
+                    after_b > before,
+                    "the matrix arm did not engage grouped routes: the faster program never ran"
+                );
+                gpu.set_matrix_moe_for_gate(false).expect("arm A");
+            }
+            set_hc(false);
             let a2 = capture(&gpu, tape, *prefix);
             assert_eq!(
-                after_matrix,
+                after_b,
                 gpu.grouped_device_route_calls(),
-                "the reference arm engaged grouped routes on its repeat"
+                "arm A engaged grouped routes on its repeat"
             );
             assert!(
                 bitwise_same(&a1, &a2),
-                "panel {}: the reference program is not bit-identical to itself across repeats; \
+                "panel {}: arm A is not bit-identical to itself across repeats; \
                  no class determination is possible",
                 panel.name
             );
             assert!(
                 bitwise_same(&b1, &b2),
-                "panel {}: the matrix program is not bit-identical to itself across repeats; \
+                "panel {}: arm B is not bit-identical to itself across repeats; \
                  no class determination is possible",
                 panel.name
             );
             println!(
-                "IDENTITY panel={} reference_repeat_bit_identical=true matrix_repeat_bit_identical=true rows={SCORED_ROWS} mode=class_cell ep={ep}",
+                "IDENTITY panel={} armA_repeat_bit_identical=true armB_repeat_bit_identical=true rows={SCORED_ROWS} mode=class_cell axis={axis} ep={ep}",
                 panel.name
             );
             (Some(a1), b1)
@@ -696,7 +782,7 @@ fn main() {
             overall.add(&m, sample_a == sample_b);
             let line = format!(
                 concat!(
-                    "{{\"panel\":\"{}\",\"domain\":\"{}\",\"ep\":\"{}\",\"prefix\":{},\"step\":{},\"position\":{},",
+                    "{{\"panel\":\"{}\",\"domain\":\"{}\",\"ep\":\"{}\",\"axis\":\"{}\",\"prefix\":{},\"step\":{},\"position\":{},",
                     "\"vocab\":{},\"target\":{},\"bits_equal\":{},\"max_abs_logit_delta\":{:.17e},",
                     "\"max_abs_id\":{},\"kl_reference_matrix_nats\":{:.17e},",
                     "\"kl_matrix_reference_nats\":{:.17e},\"total_variation\":{:.17e},",
@@ -708,6 +794,7 @@ fn main() {
                 panel.name,
                 panel.domain,
                 ep,
+                axis,
                 prefix,
                 step,
                 pos,
@@ -770,7 +857,7 @@ fn main() {
         "new_class"
     };
     println!(
-        "CLASS determination={class} bit_equal_rows={}/{} ep={ep} \
+        "CLASS determination={class} axis={axis} bit_equal_rows={}/{} ep={ep} \
          basis=paired_teacher_forced_rows_after_within_arm_bit_identity \
          realization_covered=matrix_ep_{ep}",
         overall.bits_equal, overall.rows
