@@ -12,6 +12,26 @@ t=16..1039 on the 170-SM sm_120a target with `MEMRA_PRIME_CHUNK=1024`.
 | `fa_prefill_qw_fa2` | Six query heads share three rotating BF16 KV staging planes; FP32 direct PV and online softmax | BF16 KV, f32 Q/O | sm_120a, 170 SM | `MEMRA_PRIME_ATTN_FA2`, default OFF, decide-by 2026-09-23 | `Engine::fa_prefill_view_ws` |
 | `fa_prefill_qw_fa2_prime_table` | Same numerical body with true causal depth from replay table slot 7 | BF16 KV, f32 Q/O | sm_120a, 170 SM | Same door; the carried graph reuse key includes the attention class | `Engine::fa_prefill_view_ws`, `qwen_prime_graph::run` |
 
+## DSV4 dense wide-prefill tiling, 2026-09-10 (memra #463)
+
+No new kernel and no changed kernel body. The door changes only the WIDTH of the
+tiles the dense entry points decompose a transaction wider than `DSV4_TMAX` into,
+and therefore which already-instantiated `M` the dispatch switch selects. The
+`M = 1..32` instantiations all pre-exist; the door reaches `M = 32` instead of
+`M = 8` at the served 64-row chunk.
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `dsv4_gemv_fp8_m_kernel<M, false>` | Per-row FP8 dense GEMV; `M` independent register accumulators over one shared weight row | FP8 e4m3 weights with f32 block scales, BF16 activations, f32 out | sm_120a | `MEMRA_DSV4_DENSE_TILE`, default OFF (`8`), decide-by 2026-09-24 | `memra_dsv4_gemv_fp8_m` |
+| `dsv4_gemv_bf16_m_kernel<M>` | Same shape for BF16 dense weights | BF16 weights and activations, f32 out | sm_120a | Same door | `memra_dsv4_gemv_bf16_m` |
+| `dsv4_dots_f32acc_mrow_kernel<M>` | f32-accumulated dense dots, `M` rows per launch | BF16 or f32 weights, f32 activations and out | sm_120a | Same door | `memra_dsv4_dots_f32acc_mrow` |
+| `dsv4_dots_f32_mrow_kernel<M>` | f64-accumulated dense dots, `M` rows per launch | BF16 or f32 weights, f32 activations and out | sm_120a | Same door | `memra_dsv4_dots_f32_mrow` |
+
+Numeric class SAME across every `M`: the per-row accumulation order and the
+128-leaf reduction tree are properties of the kernel body, not of `M`. Gate:
+`dsv4_dense_tile_gate <model-dir> <real-source.txt>`, byte comparison at the
+served width with two red arms. Receipts: DENSETILE_RECEIPTS_TBD
+
 ## Whisper CPU reference operators, 2026-09-09
 
 These are native reference operations, not CUDA support or serving qualification.

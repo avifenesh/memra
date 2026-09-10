@@ -93,6 +93,50 @@ pub fn restore_dense_exact_tail_default_for_gate() -> bool {
     unsafe { memra_dsv4_dense_exact_tail_restore_default_for_gate() == 1 }
 }
 
+/// Dense wide-prefill tile width (memra #463), the door `MEMRA_DSV4_DENSE_TILE`
+/// carries. 8 is what ships; 32 is `DSV4_TMAX`, the widest instantiation the
+/// dense dispatch switches already carry, so a served 64-row prefill chunk goes
+/// from eight launches per dense call to two. Same host-thread contract as the
+/// dense exact-tail seam above: set before enqueue or capture, drain first,
+/// retained graphs keep the launches they captured.
+pub fn set_dense_tile_width_for_gate(width: i32) -> Res<()> {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_tile_set_for_gate(width: i32) -> i32;
+    }
+    ck("dense tile width gate selection", unsafe {
+        memra_dsv4_dense_tile_set_for_gate(width)
+    })
+}
+
+/// The width this host thread actually dispatches at. 0 means the environment
+/// carried an unparsable value and the entry points will refuse with 40077.
+pub fn dense_tile_width_for_gate() -> i32 {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_tile_width_for_gate() -> i32;
+    }
+    unsafe { memra_dsv4_dense_tile_width_for_gate() }
+}
+
+/// Tiled dense decompositions issued so far on this host thread, `[at 8, at 32]`.
+/// The engagement receipt: an arm that changed nothing counted nothing.
+pub fn dense_tile_counts_for_gate() -> [u64; 2] {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_tile_counts_for_gate(tile8: *mut u64, tile32: *mut u64) -> i32;
+    }
+    let mut counts = [0u64; 2];
+    let rc = unsafe { memra_dsv4_dense_tile_counts_for_gate(&mut counts[0], &mut counts[1]) };
+    assert_eq!(rc, 0, "dense tile counter read");
+    counts
+}
+
+/// Restore the environment policy after a drained gate override.
+pub fn restore_dense_tile_default_for_gate() -> i32 {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_tile_restore_default_for_gate() -> i32;
+    }
+    unsafe { memra_dsv4_dense_tile_restore_default_for_gate() }
+}
+
 #[path = "dsv4_norm2_component_gate.rs"]
 pub(crate) mod norm2_component_gate;
 #[path = "dsv4_norm2_wide_component_gate.rs"]
@@ -3353,6 +3397,22 @@ impl Dsv4Gpu {
             std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
             norm_fuse2,
         )?;
+        // memra #463. Dense wide-prefill tile width: read once at load like every
+        // other door, so an illegal width refuses at boot instead of arriving as
+        // a 40077 from the first dense call wide enough to tile. The value is
+        // carried by the C entry points; this call is the refusal, and it is why
+        // `MEMRA_DSV4_DENSE_TILE=16` never reaches a kernel.
+        let dense_tile = crate::dsv4_doors::dense_tile_environment_policy(
+            std::env::var("MEMRA_DSV4_DENSE_TILE").as_deref(),
+        )?;
+        eprintln!(
+            "[load] dense wide-prefill tile width: {dense_tile} ({})",
+            if dense_tile == 8 {
+                "shipped default, door OFF"
+            } else {
+                "MEMRA_DSV4_DENSE_TILE=32, door ON"
+            }
+        );
         // Read once at load, like every other door. An unarmed process that exported the name
         // refuses here rather than loading with an instrument or a null collective in it.
         let ar_phase = ar_phase_environment_policy(

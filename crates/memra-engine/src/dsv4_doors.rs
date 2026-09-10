@@ -274,6 +274,28 @@ pub fn norm2_wide_environment_policy(
     }
 }
 
+/// memra #463. Dense wide-prefill tile width. Above `DSV4_TMAX` the four dense
+/// entry points relaunch the registered-row kernel per tile, and the tile width
+/// sets the launch count of the family that is 40.6% of a prefill's GPU-busy
+/// time. 8 is what ships and is the default; 32 is `DSV4_TMAX` itself, the
+/// widest instantiation the dispatch switches already carry, so the served
+/// 64-row chunk goes from eight launches per dense call to two.
+///
+/// Only those two widths are legal. Every other value REFUSES at load: a typo
+/// that silently resolves to the default is the failure memra #454 is about, and
+/// an operator who asks for a width the switches do not carry should be told so
+/// once at boot rather than never. The C entry points read the same variable and
+/// carry the same two-value policy; this is the load-time half, so the refusal
+/// arrives at boot instead of as a 40077 on the first wide dense call.
+pub fn dense_tile_environment_policy(value: Result<&str, &std::env::VarError>) -> Res<i32> {
+    match value {
+        Err(std::env::VarError::NotPresent) => Ok(8),
+        Ok("8") => Ok(8),
+        Ok("32") => Ok(32),
+        _ => Err("MEMRA_DSV4_DENSE_TILE requires 8 (default, shipped) or 32 (DSV4_TMAX)".into()),
+    }
+}
+
 /// memra #458. The matrix program's plain gate/up split-K arm computes gate and
 /// up in ONE fused launch, so it requires the fused-GU arm; `gate_up` refuses
 /// with "split-K requires plain fused GU" when it is not on. That arm is
@@ -509,6 +531,22 @@ fn resolve_dense_fast(_p: &Dsv4Program) -> DoorState {
     DoorState::On(DoorShape::DecodeOnlyM1)
 }
 
+fn resolve_dense_tile(_p: &Dsv4Program) -> DoorState {
+    // Resolved through the same policy function the load path calls, so this row
+    // cannot become a second, kinder model of the door.
+    match dense_tile_environment_policy(unset()) {
+        Ok(32) => return DoorState::On(DoorShape::AllRoutedShapes),
+        Ok(_) => {}
+        Err(_) => return DoorState::RefusedAtLoad,
+    }
+    // Default OFF (memra #463): unset means the shipped 8-row tiling, on every
+    // program. The call sites are the generic dense entry points, so nothing
+    // about a program's topology or expert executor gates reach here: the only
+    // thing that turns this door on is the operator setting it to 32, and a
+    // default-OFF door with the variable unset resolves Off by definition.
+    DoorState::Off
+}
+
 fn resolve_hc_dot_split(p: &Dsv4Program) -> DoorState {
     // `dots_f32 && rows == 24 && w == 16384`, no topology term at all.
     if p.dots_f32 && p.hc_geometry_24x16384 {
@@ -518,8 +556,9 @@ fn resolve_hc_dot_split(p: &Dsv4Program) -> DoorState {
     }
 }
 
-/// The nine merged DSV4F doors, with the default and served-path state the
-/// registries claim for each.
+/// The ten DSV4F doors, with the default and served-path state the registries
+/// claim for each. Nine merged default ON (memra #454 counted them); the tenth,
+/// dense wide tile, is the first that merged default OFF with a decide-by date.
 pub const DSV4_DOORS: &[DoorRow] = &[
     DoorRow {
         name: "replay cadence",
@@ -619,6 +658,15 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         admitted_by: AdmittingProgram::TpEpOnly,
         merged_gain_pct: (1.1022, 0.9839),
         measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
+    },
+    DoorRow {
+        name: "dense wide tile",
+        env: "MEMRA_DSV4_DENSE_TILE",
+        merged: "#464",
+        declared_default: DeclaredDefault::Off,
+        declared_served: DoorState::Off,
+        declared_bench: DoorState::Off,
+        resolve: resolve_dense_tile,
     },
     DoorRow {
         name: "norm2-wide",
@@ -953,6 +1001,47 @@ mod tests {
                 row.env
             );
         }
+    }
+
+    /// The dense tile door's value policy, both arms and the refusal. Default OFF
+    /// means the shipped 8, so an unset environment must not move a single launch.
+    #[test]
+    fn dense_tile_policy_carries_two_widths_and_refuses_the_rest() {
+        let absent = std::env::VarError::NotPresent;
+        assert_eq!(dense_tile_environment_policy(Err(&absent)), Ok(8));
+        assert_eq!(dense_tile_environment_policy(Ok("8")), Ok(8));
+        assert_eq!(dense_tile_environment_policy(Ok("32")), Ok(32));
+        // Red arm: the widths the dispatch switches do not carry, the widths a
+        // reader might assume work, and the empty string, all refuse by NAME.
+        for bad in ["0", "1", "16", "64", "on", "", " 32", "32 "] {
+            let refusal = dense_tile_environment_policy(Ok(bad))
+                .expect_err(bad)
+                .to_string();
+            assert!(
+                refusal.contains("MEMRA_DSV4_DENSE_TILE"),
+                "{bad}: {refusal}"
+            );
+        }
+    }
+
+    /// Red arm for the row itself: the door is declared OFF, and the resolver
+    /// must be the reason, not the declaration. Feed the registry checker a row
+    /// that claims this door engages on the served path and watch it go red.
+    #[test]
+    fn a_default_off_door_claiming_it_engages_is_caught() {
+        const LIAR: &[DoorRow] = &[DoorRow {
+            name: "dense wide tile, claiming it engages unset",
+            env: "MEMRA_DSV4_DENSE_TILE",
+            merged: "#464",
+            declared_default: DeclaredDefault::Off,
+            // The lie: unset resolves to the shipped 8-row tiling on every program.
+            declared_served: DoorState::On(DoorShape::AllRoutedShapes),
+            declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
+            resolve: resolve_dense_tile,
+        }];
+        let violations = declaration_violations(LIAR);
+        assert_eq!(violations.len(), 2, "{violations:?}");
+        assert!(violations.iter().all(|v| v.resolved == DoorState::Off));
     }
 
     /// The exemption list: names the engine reads that are NOT doors. Each is a
