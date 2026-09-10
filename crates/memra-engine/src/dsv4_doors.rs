@@ -662,7 +662,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
     DoorRow {
         name: "dense wide tile",
         env: "MEMRA_DSV4_DENSE_TILE",
-        merged: "#464",
+        merged: "#468",
         declared_default: DeclaredDefault::Off,
         declared_served: DoorState::Off,
         declared_bench: DoorState::Off,
@@ -1032,7 +1032,7 @@ mod tests {
         const LIAR: &[DoorRow] = &[DoorRow {
             name: "dense wide tile, claiming it engages unset",
             env: "MEMRA_DSV4_DENSE_TILE",
-            merged: "#464",
+            merged: "#468",
             declared_default: DeclaredDefault::Off,
             // The lie: unset resolves to the shipped 8-row tiling on every program.
             declared_served: DoorState::On(DoorShape::AllRoutedShapes),
