@@ -375,7 +375,10 @@ Receipts: `research/admit-oom-20260806/`, `research/serving-density-20260806/VER
 Admission sizes each session's KV ladder from the request's own bound. An explicit
 `max_ctx` is authoritative. Without one, a finite request uses
 `prompt_tokens + max_tokens + 8`; only a request that **omits `max_tokens`** falls back to
-`MEMRA_CTX`. At `MEMRA_CTX=32768`, that fallback reserves ladder slack an unbounded client
+`MEMRA_CTX`. `MEMRA_CTX` itself resolves through `worker::resolve_ctx` (2026-09-10): set, it is
+authoritative; unset, it is the checkpoint's own declared context, never a constant; unusable, it
+refuses at the boundary that reads it rather than substituting a window the checkpoint does not
+declare. At `MEMRA_CTX=32768`, that fallback reserves ladder slack an unbounded client
 may never use: measured **6.3% of a 96GB card at c=16 and 12.6% at c=32** stranded on the
 9B — more than sealed-prefix duplication costs at the same shape. Right-sized requests
 (explicit `max_tokens`) strand ~0%. Set an explicit `max_tokens` in serve configs and

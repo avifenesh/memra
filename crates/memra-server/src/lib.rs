@@ -8630,10 +8630,8 @@ fn budget_completion_bound(
     let requested_ctx = match (request.params.max_ctx, max_new) {
         (Some(cap), _) => cap,
         (None, worker::MAX_NEW_CTX_BOUNDED) => {
-            let server_ctx = std::env::var("MEMRA_CTX")
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(8192usize);
+            let model_ctx = caps.map_or(0, |caps| caps.context_length);
+            let server_ctx = worker::resolve_env_ctx(model_ctx)?;
             let mut cap = server_ctx;
             if prompt_tokens.saturating_add(16) > cap {
                 cap = prompt_tokens.saturating_add(server_ctx);
