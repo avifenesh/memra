@@ -306,6 +306,10 @@ fn main() {
     println!(
         "PROTOCOL {{\"plain_only\":true,\"http\":false,\"new_tokens\":{OUTPUT},\"abba_repeats\":{REPEATS},\"rows_per_arm\":{rows_per_arm},\"prompts\":[256,8192],\"modes\":{mode_names:?},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260906,\"capture_cost_included\":true,\"restore_cost_included\":false}}"
     );
+    // memra #458: this is a bench process, so it may run the matrix expert program
+    // with the default-ON split-K arm; a serving process cannot arm it and refuses
+    // that combination at load instead of failing every request.
+    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Dsv4Gpu::load(
         dir,
         &[0, 1],

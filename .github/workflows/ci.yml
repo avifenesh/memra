@@ -380,6 +380,15 @@ jobs:
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
+      # ── DSV4F door reach (memra #454, #458) ──────────────────────────────────────────────
+      # Named so a failure reads as what it is: a door's declared default or served-path reach
+      # stopped matching the admission code. The unfiltered suite below runs it too; this step
+      # exists so the gate has its own caller and its own line in the log.
+      - name: DSV4F door reach gate
+        run: "cargo test --release -p memra-engine --lib dsv4_doors::"
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: "120a"
       - name: Unit suite (memra-engine --lib, unfiltered) + skip census
         run: |
           python3 tools/skip-census.py verify --crate memra-engine

@@ -669,6 +669,10 @@ fn main() {
     println!(
         "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
     );
+    // memra #458: this is a bench process, so it may run the matrix expert program
+    // with the default-ON split-K arm; a serving process cannot arm it and refuses
+    // that combination at load instead of failing every request.
+    memra_engine::arm_matrix_splitk_door_for_gate();
     let mut gpu = Dsv4Gpu::load(
         dir,
         &[0, 1],
