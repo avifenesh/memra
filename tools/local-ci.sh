@@ -253,10 +253,18 @@ fi
 # 2026-09-06 it passed on an empty card and failed with the SAME BINARY on a shared one,
 # which cost a bisect of source that had never moved. This arm holds the card and requires
 # the battery to REFUSE rather than produce either verdict. Same law as the lock self-test:
-# a gate outside the battery rots silently.
-if ! tools/test_release_battery_card.sh; then
-    echo "local-ci: release-battery card-isolation self-test FAILED — the release gate can be starved into a wrong verdict"
-    exit 1
+# a gate outside the battery rots silently. MEMRA_CI_RELEASE_CARD=0 skips, announced — the
+# red arm needs the roster's models, so a contributor box staging one model cannot satisfy
+# it; the door exists so those boxes run everything else honestly instead of editing the
+# script out of tree (lane/devpenalty-qwen35-20260909, whose box receipt ran the arm as an
+# uncommitted one-liner before this door existed).
+if [ "${MEMRA_CI_RELEASE_CARD:-1}" = "1" ]; then
+    if ! tools/test_release_battery_card.sh; then
+        echo "local-ci: release-battery card-isolation self-test FAILED — the release gate can be starved into a wrong verdict"
+        exit 1
+    fi
+else
+    echo "local-ci: release-battery card-isolation self-test SKIPPED (MEMRA_CI_RELEASE_CARD=0)" >&2
 fi
 
 # ---- whole-run GPU lock: everything below this line may touch the GPU ----

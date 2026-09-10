@@ -1,0 +1,39 @@
++ . /root/.cargo/env
+++ case ":${PATH}:" in
+++ export PATH=/root/.cargo/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+++ PATH=/root/.cargo/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
++ cd /root/dp/memra
++ git worktree add /root/dp/base HEAD~1
+HEAD is now at 4e107318 perf: gate exact DSV4 norm and activation pack fusions (#422)
++ cd /root/dp/base
++ export CUDA_HOME=/usr/local/cuda-13.1
++ CUDA_HOME=/usr/local/cuda-13.1
++ export PATH=/usr/local/cuda-13.1/bin:/root/.cargo/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
++ PATH=/usr/local/cuda-13.1/bin:/root/.cargo/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
++ export LD_LIBRARY_PATH=/usr/local/cuda-13.1/lib64:/usr/lib/x86_64-linux-gnu
++ LD_LIBRARY_PATH=/usr/local/cuda-13.1/lib64:/usr/lib/x86_64-linux-gnu
++ export MEMRA_CUDA_ARCH=120a
++ MEMRA_CUDA_ARCH=120a
++ git log --oneline -1
+4e107318 perf: gate exact DSV4 norm and activation pack fusions (#422)
++ tail -3
++ cargo test --release -p memra-engine --lib -j16 --no-run
+warning: memra-engine@0.137.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 3m 52s
+  Executable unittests src/lib.rs (target/release/deps/memra_engine-964cf8e82266a152)
++ cargo test --release -p memra-engine --lib -j16 -- --ignored --test-threads=1
++ tail -12
+
+failures:
+    dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums
+    dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup
+    dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity
+    dsv4_grouped::tests::cuda_gu_m1_matches_gu_reference
+    dsv4_grouped::tests::cuda_matrix_chain_full_bank_equals_two_partitions
+    dsv4_grouped::tests::cuda_matrix_mirrors_reuse_storage_and_clear_live_status
+
+test result: FAILED. 15 passed; 6 failed; 0 ignored; 0 measured; 468 filtered out; finished in 5.82s
+
+error: test failed, to rerun pass `-p memra-engine --lib`
++ echo BASE_CONTROL_DONE
+BASE_CONTROL_DONE

@@ -147,11 +147,76 @@ their default change is a separate lane with its own launcher smoke.
 
 ## Gates
 
-(to be appended: local-ci correctness stage output from the box)
+Gate box: vast instance 50460377 (`hebrew-agentic-devpenalty-20260909`, RTX 5090 32 GB,
+`$0.4778/h`, rented 2026-09-10 05:18Z). CUDA acceptance for this session re-run before
+any new work (`cudaGetDeviceCount` + 1 MiB `cudaMalloc` + memset, sm_120a:
+`receipts/gates/cuda-accept-session2.txt`). Toolkit CUDA 13.1, `MEMRA_CUDA_ARCH=120a`,
+plain `cargo build --release`; gate binary `target/release/memra-server` sha256
+`0bf432dd5bedb9d84917cf79f02f82f27ab82e6f692dae0e16ab4023686ff0b` (kernel-check
+`2a8b75934cf850afd002629977085825dd2d5c9672af7c346588f179d04bcb41`). Model staged =
+the cell pin above (sha `52c9cceb...`, verified at stage). Most of this battery was run
+by a worker that died mid-close-out; this session verified its state on the box before
+inheriting, re-ran the one stage it left without a green receipt (the gguf census at the
+measured budget), and destroyed the box. Full log of record:
+`receipts/gates/local-ci-5090-50460377.log`.
+
+`tools/local-ci.sh` correctness mode on the flipped branch (e5a90da9e), serial CPU chain
+(`MEMRA_CI_OVERLAP=0`: with overlap ON, run 4 of this box flaked the cache-meter gate —
+a CPU-chain timing flake, not a GPU result; the serial rerun is the receipt of record),
+GPU lock held for the whole run:
+
+- clippy gate (-D warnings): PASS. check-flags census: 851 runtime literal reads, every
+  runtime `MEMRA_*` name resolves against `docs/FLAGS.md`, no uncovered names.
+- memra-server HTTP-surface unit suite: PASS. memra-engine lib suite (CPU-safe): PASS.
+- memra-gguf artifact-present skip census: 229 passed, 12 skipped, 0 failed at
+  `MEMRA_CI_GGUF_SKIP_BUDGET=12`. DEVIATION, stated: script default is 10; a one-model
+  box cannot stage the minimax-m3 / Qwen3-1.7B / hy3-repack / nv27b artifacts those 12
+  tests probe. Every skip is artifact-absent and still printed
+  (`receipts/gates/gguf-census-b12.log`; the budget-10 measure run that counted the 12 is
+  kept beside it).
+- kernel-check: ALL GREEN, 107 cells, 13 skipped at `MEMRA_CI_KC_SKIP_BUDGET=13`.
+  DEVIATION, stated: the rig's budget is 11 against its full model tree; the two extra
+  skips are model-absent cells (Qwen3.6-35B, ornith-35B, KAT-Coder/Step-3.7 IQ4_XS,
+  27B-NVFP4, gemma-4-12B/26B rosters live on the rig only). Also green standalone under
+  the CUDA 13.0 build (same tree): `receipts/gates/kernel-check-standalone-cuda130-build.log`.
+- lock-discipline self-test: ALL GREEN. drafter-attach wiring gate: ALL GREEN.
+- release-battery card-isolation self-test: SKIPPED via `MEMRA_CI_RELEASE_CARD=0`. The
+  red arm requires the roster's models, which a one-model box cannot satisfy; on the box
+  this ran as an uncommitted one-line door, now committed on this branch
+  (tools/local-ci.sh, default ON, announced skip).
+- correctness stage: GREEN — decode-batch-gate B=8 and strict B=4 equalized ALL GREEN
+  (9B NVFP4); graph-warmup-stress (10 cycles x 4 arms + overlap) bit-identical ALL GREEN;
+  graph-session-gate ALL GREEN; serve-smoke 0 failed (spec/gemma4/Q35 arms SKIP, models
+  absent); serve-stress-gate c=64 ALL GREEN; spec-on-cache-hit green with spec-engagement
+  and restore receipts; cache-metering exact (per-request + /metrics + economics
+  revenue_multiplier 2.6842).
+- The door's own serving checks ran green on the FLIPPED binary inside serve-smoke:
+  penalized SAMPLED rows engage spec and reproduce byte-for-byte at a seed; plane-less
+  refusal is real; `sampled FIRST token is drawn, not the greedy argmax` (3 distinct
+  first tokens over 3 seeds); `22 of 41 boundary draws deviated from the pre-lane
+  argmax` (the teeth arm — the check can fail); r1-r3/g1-g4 spec==plain byte identity.
+- run-spec K=1..8 (Qwen3.6-35B) and the gemma 31B/12B run-gen/VERIFY-GATE arms: SKIP
+  (roster models absent; they are not qwen35-9B gates).
+- memra-engine GPU-only `#[ignore]` lib tests: 15 passed / 6 FAILED, all six dsv4
+  (cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums,
+  replay_rust_partial_submission_and_capture_cleanup, cuda_half2_chain_identity,
+  cuda_gu_m1_matches_gu_reference, cuda_matrix_chain_full_bank_equals_two_partitions,
+  cuda_matrix_mirrors_reuse_storage_and_clear_live_status). BASE CONTROL at parent
+  4e107318e (worktree of the same box, same toolkit, same flags): the IDENTICAL six
+  fail, 15 passed (`receipts/gates/base-control-parent-4e107318e.log`). The failures are
+  pre-existing on this box/toolkit and unrelated to the flip — the diff touches only the
+  sampled-penalty default, and the rig remains the green home for that suite. Stated, not
+  hidden; GitHub CI is compile-only by design and these do not gate the merge.
 
 ## Cost
 
-Box 50430170 at $0.649/h from first stage to destroy; cell ~40 min GPU-idle wall, flip
-rebuild 2m19s, smoke ~4 min, gates battery (see above). Total lane box time is printed in
-the destroy receipt; roughly 24 h held including the overnight the dead worker left it
-running.
+- Box 50430170 (measurement cell, $0.649/h): ~24 h held by the dead worker ≈ $15.6,
+  mostly overnight idle; recorded above, the lane's fault. Its destroy readback was lost
+  with that worker's session; the figure stands as banked.
+- Box 50460377 (this gate battery, $0.4778/h): 05:18Z rent to 08:25Z destroy = 3.1 h ≈
+  $1.48. Of that, $1.33 is the inherited window (05:18-08:05Z: the dead worker's
+  staging, CUDA 13.0+13.1 builds, and the battery up through its HEAD~1 base control,
+  plus the 19-minute dead gap after it hit the provider session limit); $0.15 is this
+  session (census rerun at budget 12, receipts, CUDA acceptance, destroy).
+- TOTAL LANE HARDWARE: ~$15.6 + $1.48 ≈ $17.1 across two boxes, of which ~$14.5 was
+  idle time on the first box.

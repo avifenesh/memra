@@ -1,0 +1,15 @@
+skip-census: running: cargo test --release -j32 -p memra-gguf --lib -- --test-threads=1 --nocapture
+  SKIP config::minimax_tests::minimax_name_mapping_against_index: SKIP minimax_name_mapping_against_index: no model at /data/ai-ml/hf-models/minimax-m3-nvfp4-reap50
+  SKIP config::minimax_tests::parse_minimax_m3_vl: SKIP parse_minimax_m3_vl: no model at /data/ai-ml/hf-models/minimax-m3-nvfp4-reap50
+  SKIP dequant::tests::iq3s_vs_ggml_oracle: SKIP: /tmp/iq3s_raw.bin missing
+  SKIP safetensors::tests::real_qwen3_17b_config: SKIP real_qwen3_17b_config: no config at "/data/ai-ml/hf-models/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e/config.json"
+  SKIP safetensors::tests::real_qwen3_17b_header: SKIP real_qwen3_17b_header: no model at /data/ai-ml/hf-models/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+  SKIP source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions: SKIP: Hy3 repack absent
+  SKIP source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda: SKIP: Hy3 repack absent
+  SKIP source::hy3_repack_probe::hy3_manifest_offset_roundtrip: SKIP: Hy3 repack absent
+  SKIP source::m3_probe::minimax_m3_lm_head_q8: SKIP: ckpt absent
+  SKIP source::nv27b_probe::nvidia_27b_dtype_routing: SKIP: ckpt absent
+  SKIP source::nv27b_probe::nvidia_27b_mtp_mapping: SKIP: ckpt absent
+  SKIP source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity: SKIP: ckpt/twin absent
+skip-census: FAIL — 12 test(s) skipped, budget 10 (MEMRA_CI_GGUF_SKIP_BUDGET).
+  A skipped artifact-backed test is not a green one: the suite reports '229 passed' whether or not the model-backed assertions ran. Stage the artifacts, or set MEMRA_CI_GGUF_SKIP_BUDGET=12 to account for them deliberately — they will still be printed and still be counted.
