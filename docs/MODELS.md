@@ -60,6 +60,11 @@ HF oracle gate in their documented numeric classes. The complete speech program 
 support state. Decoder policy and FastConformer/RNNT remain in progress; neither path is
 admitted for serving.
 
+The speech capability as a program, which families are in scope, what each support state means
+for a speech model, the repeatable onboarding path for a new one, the gate set and the
+performance thesis with its kill criteria, is [docs/SPEECH.md](SPEECH.md). There is no GPU
+execution path and no audio endpoint yet, so no speech model has a speed number of any kind.
+
 Tensor parallel, P2P and 3-stage pipeline parallel are being built now and are close, which is
 exactly why they are named here as unfinished rather than listed as features. When each one has
 its gates it moves into the table.
