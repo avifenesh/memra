@@ -697,6 +697,9 @@ fn main() {
     );
     unsafe {
         std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
+        // memra #463 door: the dense wide-prefill tile width. Pinned to the shipped
+        // 8 here so an exported 32 cannot silently retile this bin's arm.
+        std::env::set_var("MEMRA_DSV4_DENSE_TILE", "8");
     }
     let dense_initial = unsafe { memra_dsv4_dense_fast_enabled_for_gate() } != 0;
     assert_eq!(

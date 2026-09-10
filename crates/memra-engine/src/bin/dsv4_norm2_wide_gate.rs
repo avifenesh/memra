@@ -573,6 +573,9 @@ fn main() {
     // startup, before any model or worker thread exists.
     unsafe {
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
+        // memra #463 door: the dense wide-prefill tile width. Pinned to the shipped
+        // 8 here so an exported 32 cannot silently retile this bin's arm.
+        std::env::set_var("MEMRA_DSV4_DENSE_TILE", "8");
     }
     let args: Vec<_> = std::env::args().collect();
     if args.len() >= 3 && args[1] == "--components" {
