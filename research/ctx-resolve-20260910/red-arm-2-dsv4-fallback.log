@@ -1,0 +1,28 @@
+warning: memra-engine@0.137.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.137.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.137.0 (/data/ctxlane/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.48s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-7e2f19ed3c31a516)
+
+running 3 tests
+test dsv4_serve::declared_context_tests::an_undeclared_or_unusable_field_reads_as_zero_and_then_refuses ... ok
+test dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares ... FAILED
+test dsv4_serve::declared_context_tests::the_config_file_itself_is_the_source_and_a_broken_one_refuses ... ok
+
+failures:
+
+---- dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares stdout ----
+
+thread 'dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares' (99673) panicked at crates/memra-server/src/dsv4_serve.rs:1327:9:
+assertion `left == right` failed
+  left: Ok(8192)
+ right: Ok(1048576)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    dsv4_serve::declared_context_tests::the_dsv4_route_serves_the_window_the_checkpoint_declares
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 661 filtered out; finished in 0.06s
+
+error: test failed, to rerun pass `-p memra-server --lib`
