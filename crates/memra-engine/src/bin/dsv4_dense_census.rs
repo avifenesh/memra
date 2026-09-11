@@ -34,7 +34,22 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::time::Instant;
 
-const SERVED_WIDTH: usize = 64;
+/// The prefill chunk width the census runs at.
+///
+/// It was a constant until memra #482 moved the served default from 64 to 512,
+/// and a census that cannot follow the served width measures a program nobody
+/// runs. It defaults to 64 so every receipt this lane already took replays
+/// unchanged, and the width is printed on the SOURCE line either way, so a
+/// receipt always says which program it counted.
+fn served_width() -> usize {
+    match std::env::var("MEMRA_DSV4_CENSUS_WIDTH") {
+        Ok(value) => value
+            .parse()
+            .unwrap_or_else(|err| panic!("MEMRA_DSV4_CENSUS_WIDTH={value}: {err}")),
+        Err(std::env::VarError::NotPresent) => 64,
+        Err(err) => panic!("MEMRA_DSV4_CENSUS_WIDTH: {err}"),
+    }
+}
 
 fn entry_name(entry: i32) -> &'static str {
     match entry {
@@ -75,8 +90,10 @@ fn main() {
     let mut prompt = tokenizer.encode(&format!("Review this engine source:\n{source}"), true);
     assert!(prompt.len() >= 1025, "do not pad/repeat source");
     prompt.truncate(1025);
+    let width = served_width();
+    assert!(width > 0, "census width must be positive");
     println!(
-        "SOURCE sha256={:x} tokens={} width={SERVED_WIDTH}",
+        "SOURCE sha256={:x} tokens={} width={width}",
         Sha256::digest(source.as_bytes()),
         prompt.len()
     );
@@ -90,10 +107,10 @@ fn main() {
     // census is taken on a warm one and the cold one is thrown away.
     {
         let mut state = gpu
-            .alloc_decode_state_for_transient(prompt.len() + 32, SERVED_WIDTH)
+            .alloc_decode_state_for_transient(prompt.len() + 32, width)
             .expect("cache");
         let mut draft = gpu.dspark_alloc_state().expect("draft");
-        gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, SERVED_WIDTH)
+        gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, width)
             .expect("warmup prime");
     }
 
@@ -101,11 +118,11 @@ fn main() {
     let tiles_before = dense_tile_counts_for_gate();
     set_dense_census_for_gate(true).expect("arm census");
     let mut state = gpu
-        .alloc_decode_state_for_transient(prompt.len() + 32, SERVED_WIDTH)
+        .alloc_decode_state_for_transient(prompt.len() + 32, width)
         .expect("cache");
     let mut draft = gpu.dspark_alloc_state().expect("draft");
     let timer = Instant::now();
-    gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, SERVED_WIDTH)
+    gpu.dspark_prefill_prime_chunked(&prompt, &mut state, &mut draft, width)
         .expect("census prime");
     let seconds = timer.elapsed().as_secs_f64();
     set_dense_census_for_gate(false).expect("disarm census");
