@@ -15,6 +15,8 @@
 //!     (the knob that taxed baseline p99 11.6 -> 40.6 ms at zero parasite load);
 //!   - interactive is never preempted; harvest yields first.
 
+pub mod audio_stream;
+
 use std::collections::VecDeque;
 use std::time::Instant;
 

@@ -91,6 +91,9 @@ mod affinity;
 /// rendering differs. `surfaces` is the shared admission driver; the other two are the
 /// per-dialect request translations and response renderers.
 mod anthropic;
+/// `/v1/audio/*`: the streaming-transcription surface — session lifecycle, typed admission
+/// shedding, and the declared ASR decode on the wire (lane/audio-endpoint-g8).
+mod audio_api;
 /// The `system_fingerprint` identity, shared with `build.rs` (which `include!`s this same
 /// file to bake the value). Compiled into the crate so the fingerprint tests can re-derive
 /// the id from the working tree instead of pinning a second copy of the algorithm.
@@ -336,7 +339,11 @@ fn protected_inference_path(path: &str) -> bool {
             | "/v1/responses"
             | "/v1/embeddings"
             | "/v1/rerank"
-    )
+            | "/v1/audio/transcriptions"
+            | "/v1/audio/sessions" // The streaming lane lifecycle is per-session, so its paths carry an id and cannot be
+                                   // matched literally. Transcription bodies carry base64 audio, which is the largest
+                                   // unauthenticated buffer this server would otherwise accept.
+    ) || path.starts_with("/v1/audio/sessions/")
 }
 
 /// Give middleware refusals the same request-id and body contract as the handler they
@@ -1182,6 +1189,35 @@ struct OpenRouterModelMetadata {
     /// bare API-standard defaults while looking configured.
     #[serde(default)]
     non_thinking_sampling: Option<SamplingArmMetadata>,
+    /// ASR DECODE CONTRACT (G7, memra `docs/SPEECH.md` §5.1). A served transcription entry
+    /// DECLARES its decode and never inherits one by silence. The reason is that silence is
+    /// not neutral: omitting the argument to a faster-whisper-class transcribe call inherits
+    /// the six-rung `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` temperature ladder and samples on any
+    /// quality trip, so "we didn't configure sampling" and "we configured sampling" are the
+    /// same file. These keys are refused on any non-transcription surface, and required on
+    /// a transcription one — a decode contract that is optional is decoration.
+    #[serde(default)]
+    decode_deterministic: Option<bool>,
+    /// Strategy by name: `greedy`, `greedy_batch`, `beam`, or `default_beam_search`.
+    #[serde(default)]
+    decode_strategy: Option<String>,
+    /// Required for a beam family, refused otherwise.
+    #[serde(default)]
+    decode_beam_size: Option<u32>,
+    /// The temperature-fallback ladder, EXACTLY, or `[]` to disable it. The ladder is
+    /// quality-failure recovery, not a decode default: rung 0 is always 0.0 and a hotter
+    /// rung is reached only on a quality trip. `[]` and `[0.0]` are deterministic; anything
+    /// with a hotter rung is not, and must say so.
+    #[serde(default)]
+    decode_temperature_ladder: Option<Vec<f32>>,
+    /// Whether this entry emits streaming partial hypotheses. It gates the beam rule:
+    /// NeMo's `default_beam_search` ACCEPTS a partial and collapses `kept_hyps` to one
+    /// element to do it (rnnt_beam_decoding.py L624-628), so served width across a chunk
+    /// boundary is 1 whatever `decode_beam_size` says and the offline beam WER does not
+    /// transfer. Declaring beam on a partial-emitting entry is therefore refused, not
+    /// warned about: the arm that "works" is the trap.
+    #[serde(default)]
+    serves_partials: Option<bool>,
 }
 
 /// One declared sampling arm (`non_thinking_sampling`): the same seven vendor keys as the
@@ -1346,6 +1382,194 @@ fn valid_price_string(value: &str) -> bool {
         && parts.next().is_none()
 }
 
+/// G7 AT LOAD TIME: the ASR decode contract, enforced before a model is ever served.
+///
+/// The darklanes acceptance gate (`ops/serving/asr_decode_contract.py`) checks the same rules
+/// against a registry snapshot before a candidate gets traffic. This is the engine's half of
+/// the same contract, and it exists because a gate can only check the file it was pointed at:
+/// the binary must refuse a silent or self-contradictory transcription entry on its own, at
+/// boot, whatever produced the file.
+///
+/// Every refusal below is a shape a person actually writes (each is a banked red arm in
+/// darklanes `research/g7-asr-decode-20260910/red-arm-demonstration.txt`):
+/// an entry that declares nothing, a text model's vendor-sampling stanza copied across, beam
+/// on a streaming partial path, a ladder that starts hot, a non-monotonic ladder, and
+/// `decode_deterministic = false` with nothing to justify it.
+fn validate_asr_decode_contract(
+    alias: &str,
+    metadata: &OpenRouterModelMetadata,
+) -> Result<(), String> {
+    let is_asr = metadata.surface.as_deref() == Some("transcription");
+    let declared: [(&str, bool); 5] = [
+        (
+            "decode_deterministic",
+            metadata.decode_deterministic.is_some(),
+        ),
+        ("decode_strategy", metadata.decode_strategy.is_some()),
+        ("decode_beam_size", metadata.decode_beam_size.is_some()),
+        (
+            "decode_temperature_ladder",
+            metadata.decode_temperature_ladder.is_some(),
+        ),
+        ("serves_partials", metadata.serves_partials.is_some()),
+    ];
+    if !is_asr {
+        for (key, present) in declared {
+            if present {
+                return Err(format!(
+                    "model {alias:?}: {key} is only meaningful on surface = \"transcription\"; \
+                     a decode contract on a non-ASR row protects nothing and reads as if it did"
+                ));
+            }
+        }
+        return Ok(());
+    }
+    // SILENCE IS A VIOLATION. Three keys are unconditionally required; the fourth
+    // (decode_beam_size) is required exactly for the beam families.
+    for (key, present) in [declared[0], declared[1], declared[3], declared[4]] {
+        if !present {
+            return Err(format!(
+                "model {alias:?}: surface \"transcription\" must declare {key}. A served ASR \
+                 endpoint carries a DECLARED deterministic decode (docs/SPEECH.md §5.1); an \
+                 entry that says nothing inherits the faster-whisper \
+                 [0.0, 0.2, 0.4, 0.6, 0.8, 1.0] ladder and samples on any quality trip"
+            ));
+        }
+    }
+    // A text model's sampling stanza copied onto an ASR row. No hosted ASR API exposes
+    // top_p/top_k/best_of/beam_size, and no vendor in scope recommends sampling.
+    let sampling_keys: [(&str, bool); 8] = [
+        (
+            "default_temperature",
+            metadata.default_temperature.is_some(),
+        ),
+        ("default_top_p", metadata.default_top_p.is_some()),
+        ("default_top_k", metadata.default_top_k.is_some()),
+        ("default_min_p", metadata.default_min_p.is_some()),
+        (
+            "default_presence_penalty",
+            metadata.default_presence_penalty.is_some(),
+        ),
+        (
+            "default_frequency_penalty",
+            metadata.default_frequency_penalty.is_some(),
+        ),
+        (
+            "default_repetition_penalty",
+            metadata.default_repetition_penalty.is_some(),
+        ),
+        (
+            "non_thinking_sampling",
+            metadata.non_thinking_sampling.is_some(),
+        ),
+    ];
+    for (key, present) in sampling_keys {
+        if present {
+            return Err(format!(
+                "model {alias:?}: surface \"transcription\" must not declare {key}. The \
+                 vendor recommendation for every ASR family in scope is DETERMINISTIC \
+                 (whisper temperature 0.0, faster-whisper beam 5 at temperature 0, NeMo \
+                 greedy_batch), and no hosted ASR API exposes a sampling knob beyond \
+                 OpenAI's ladder entry point"
+            ));
+        }
+    }
+    let strategy = metadata.decode_strategy.as_deref().unwrap_or_default();
+    let beam_family = matches!(strategy, "beam" | "default_beam_search");
+    if !matches!(
+        strategy,
+        "greedy" | "greedy_batch" | "beam" | "default_beam_search"
+    ) {
+        return Err(format!(
+            "model {alias:?}: decode_strategy {strategy:?} is not a served ASR decode \
+             (greedy|greedy_batch|beam|default_beam_search)"
+        ));
+    }
+    match (beam_family, metadata.decode_beam_size) {
+        (true, None) => {
+            return Err(format!(
+                "model {alias:?}: decode_strategy {strategy:?} must declare decode_beam_size — \
+                 the WER a beam family was measured at does not transfer to another width, and \
+                 serving a narrower beam than the measured one is the anti-greedy violation it \
+                 always was"
+            ));
+        }
+        (true, Some(0)) => {
+            return Err(format!(
+                "model {alias:?}: decode_beam_size 0 is not a beam width"
+            ));
+        }
+        (false, Some(w)) => {
+            return Err(format!(
+                "model {alias:?}: decode_beam_size {w} is meaningless for \
+                 decode_strategy {strategy:?}"
+            ));
+        }
+        _ => {}
+    }
+    // Beam on a partial-emitting path: NeMo collapses the beam to one hypothesis to accept
+    // a partial, so the declared width is a fiction across every chunk boundary.
+    if beam_family && metadata.serves_partials == Some(true) {
+        return Err(format!(
+            "model {alias:?}: decode_strategy {strategy:?} cannot serve streaming partials. \
+             tsd/alsd/maes and the batched beam wrapper each raise NotImplementedError on a \
+             partial hypothesis, and default_beam_search accepts one only by rebuilding \
+             kept_hyps as a ONE-element list (rnnt_beam_decoding.py L624-628) — served width \
+             is 1 whatever decode_beam_size says"
+        ));
+    }
+    let ladder = metadata
+        .decode_temperature_ladder
+        .as_deref()
+        .unwrap_or_default();
+    if !ladder.is_empty() {
+        if !ladder
+            .iter()
+            .all(|t| t.is_finite() && (0.0..=1.0).contains(t))
+        {
+            return Err(format!(
+                "model {alias:?}: decode_temperature_ladder rungs must be finite and in [0, 1]"
+            ));
+        }
+        if ladder[0] != 0.0 {
+            return Err(format!(
+                "model {alias:?}: decode_temperature_ladder must start at 0.0, not {}. The \
+                 ladder is quality-failure RECOVERY (reached on compression_ratio > 2.4 or \
+                 avg_logprob < -1.0), so a ladder that starts hot samples the first attempt \
+                 of every request",
+                ladder[0]
+            ));
+        }
+        if ladder.windows(2).any(|w| w[1] <= w[0]) {
+            return Err(format!(
+                "model {alias:?}: decode_temperature_ladder must be strictly increasing — a \
+                 repeated or falling rung re-runs the decode that already failed its quality \
+                 test"
+            ));
+        }
+    }
+    let hot = ladder.iter().any(|&t| t > 0.0);
+    match metadata.decode_deterministic {
+        Some(true) if hot => {
+            return Err(format!(
+                "model {alias:?}: decode_deterministic = true contradicts a ladder with a \
+                 hotter rung ({ladder:?}). \"deterministic\" and \"deterministic until a \
+                 quality trip, then sampled\" are different products and the response has to \
+                 report which one ran"
+            ));
+        }
+        Some(false) if !hot => {
+            return Err(format!(
+                "model {alias:?}: decode_deterministic = false with no hotter ladder rung \
+                 declares nondeterminism this decode cannot produce; declare the ladder that \
+                 justifies it, or set it true"
+            ));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn validate_openrouter_metadata(
     alias: &str,
     metadata: &OpenRouterModelMetadata,
@@ -1372,12 +1596,13 @@ fn validate_openrouter_metadata(
         }
     }
     if let Some(sfc) = metadata.surface.as_deref()
-        && !matches!(sfc, "chat" | "embedding" | "rerank")
+        && !matches!(sfc, "chat" | "embedding" | "rerank" | "transcription")
     {
         return Err(format!(
-            "model {alias:?}: surface {sfc:?} is not a served surface (chat|embedding|rerank)"
+            "model {alias:?}: surface {sfc:?} is not a served surface              (chat|embedding|rerank|transcription)"
         ));
     }
+    validate_asr_decode_contract(alias, metadata)?;
     if let Some(q) = metadata.quantization.as_deref()
         && !matches!(
             q,
@@ -1817,6 +2042,11 @@ struct AppState {
     /// shared counters + its yield mode, for the /metrics "bg" block. None when MEMRA_BG_JOB
     /// is unset — the block is absent and the payload byte-identical to pre-lane.
     bg: Option<(Arc<darklane::BgJobState>, &'static str)>,
+    /// Live streaming-audio session table (lane/audio-endpoint-g8). The drive shape and the
+    /// caps come from the environment at boot; `engine_bound` is false until a speech pack is
+    /// resident, which is every deployment today — so the surface refuses with
+    /// `engine_unbound` rather than answering with something that is not the model.
+    audio: audio_api::SharedAudio,
 }
 
 impl AppState {
@@ -5600,6 +5830,9 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         tenant_inflight: Arc::new(Default::default()),
         health: health_state.clone(),
         bg: bg_state,
+        // No speech pack can be resident yet: no speech operation has a CUDA kernel
+        // (docs/SPEECH.md §1). The surface exists and fails closed.
+        audio: audio_api::shared_audio(false),
     };
     let inflight_handle = state.inflight.clone();
     // For the drain-kill fault-attribution latch: the drain future outlives the
@@ -5639,6 +5872,20 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         // `?beta=true` query some clients append arrives here too.
         .route("/v1/messages", post(anthropic::messages_admitted))
         .route("/v1/responses", post(responses_api::responses_admitted))
+        // Audio (lane/audio-endpoint-g8). `transcriptions` is the OpenAI-named batch surface
+        // and the target of G7's live half; the `sessions` trio is the streaming lane
+        // lifecycle whose admission is the thing the c4 collapse broke.
+        .route("/v1/audio/transcriptions", post(audio_api::transcriptions))
+        .route("/v1/audio/sessions", post(audio_api::open_session))
+        .route("/v1/audio/sessions", get(audio_api::list_sessions))
+        .route(
+            "/v1/audio/sessions/:id/frames",
+            post(audio_api::append_frames),
+        )
+        .route(
+            "/v1/audio/sessions/:id/close",
+            post(audio_api::close_session),
+        )
         .route("/metrics", get(get_metrics))
         .route("/yield/metrics", get(yield_metrics))
         .with_state(state.clone());
@@ -6449,6 +6696,7 @@ fn declared_surface(metadata: Option<&OpenRouterModelMetadata>) -> &'static str 
     match metadata.and_then(|m| m.surface.as_deref()) {
         Some("embedding") => "embedding",
         Some("rerank") => "rerank",
+        Some("transcription") => "transcription",
         _ => "chat",
     }
 }
@@ -6608,7 +6856,15 @@ fn model_entry_openrouter(
         .filter(|tokenizer| !tokenizer.is_empty());
 
     let mut input = serde_json::Map::new();
-    input.insert("type".into(), json!("text"));
+    // A transcription model's input is AUDIO, and the token-shaped limits below do not
+    // describe it: "max_context_length in tokens" is meaningless for a waveform. The
+    // 2.4 schema has an `audio` InputModality branch for exactly this, so the row uses
+    // it rather than declaring text and hoping nobody reads the units.
+    let input_is_audio = declared_surface(Some(metadata)) == "transcription";
+    input.insert(
+        "type".into(),
+        json!(if input_is_audio { "audio" } else { "text" }),
+    );
     let mut supported_inputs = serde_json::Map::new();
     if let Some(value) = context_length {
         supported_inputs.insert(
@@ -6622,7 +6878,7 @@ fn model_entry_openrouter(
             json!({ "value": value, "unit": "token" }),
         );
     }
-    if !supported_inputs.is_empty() {
+    if !supported_inputs.is_empty() && !input_is_audio {
         input.insert(
             "supported_inputs".into(),
             serde_json::Value::Object(supported_inputs),
@@ -6678,6 +6934,7 @@ fn model_entry_openrouter(
         json!(match or_surface {
             "embedding" => "embeddings",
             "rerank" => "rerank",
+            "transcription" => "transcription",
             _ => "text",
         }),
     );
@@ -6688,6 +6945,16 @@ fn model_entry_openrouter(
     // The embeddings and rerank branches declare NO `streaming` property and are
     // additionalProperties:false, so the key must be ABSENT there — `false` is as
     // invalid as `true`. Chat keeps the byte-identical `true`.
+    // The `transcription` branch DOES allow `streaming` (unlike embeddings/rerank), and
+    // for an ASR row it is not a constant: it is whether the entry declares that it emits
+    // streaming partials. Publishing `true` for a batch-only transcription model would send
+    // a client looking for a partial stream that never arrives.
+    if or_surface == "transcription" {
+        output.insert(
+            "streaming".into(),
+            json!(metadata.serves_partials.unwrap_or(false)),
+        );
+    }
     if or_is_chat {
         output.insert("streaming".into(), json!(true));
     }
@@ -6896,12 +7163,19 @@ fn model_entry_openmodels(
     entry.insert("id".into(), json!(name));
     entry.insert("name".into(), json!(name));
     entry.insert("created".into(), json!(created));
-    entry.insert("input_modalities".into(), json!(["text"]));
+    entry.insert(
+        "input_modalities".into(),
+        json!(match om_surface {
+            "transcription" => ["audio"],
+            _ => ["text"],
+        }),
+    );
     entry.insert(
         "output_modalities".into(),
         json!(match om_surface {
             "embedding" => ["embeddings"],
             "rerank" => ["rerank"],
+            "transcription" => ["transcription"],
             _ => ["text"],
         }),
     );
@@ -6972,7 +7246,11 @@ fn model_entry_v1(
     let owned_by = metadata
         .and_then(|m| m.owned_by.as_deref())
         .unwrap_or_else(|| name.split('/').next().unwrap_or(name));
-    let mut input_modalities = vec!["text"];
+    let mut input_modalities = vec![if declared_surface(metadata) == "transcription" {
+        "audio"
+    } else {
+        "text"
+    }];
     if let Some(meta) = metadata {
         input_modalities.extend(meta.input_modalities.iter().map(String::as_str));
     }
@@ -6990,6 +7268,11 @@ fn model_entry_v1(
         // inventing a second vocabulary is what produced `score` in the first place.
         "embedding" => ("embedding", vec!["embeddings"], vec!["embeddings"]),
         "rerank" => ("rerank", vec!["rerank"], vec!["rerank"]),
+        "transcription" => (
+            "transcription",
+            vec!["audio/transcriptions"],
+            vec!["transcription"],
+        ),
         _ => ("chat", vec!["chat/completions"], vec!["text"]),
     };
     let is_chat = surface == "chat";
@@ -11134,6 +11417,10 @@ mod tests {
             "/v1/responses",
             "/v1/embeddings",
             "/v1/rerank",
+            "/v1/audio/transcriptions",
+            "/v1/audio/sessions",
+            "/v1/audio/sessions/abc123/frames",
+            "/v1/audio/sessions/abc123/close",
         ] {
             assert!(protected_inference_path(path), "{path}");
         }
@@ -16135,6 +16422,20 @@ default_reasoning_effort = "always"
                         .route("/v1/chat/completions", post(chat_completions_admitted))
                         .route("/v1/messages", post(anthropic::messages_admitted))
                         .route("/v1/responses", post(responses_api::responses_admitted))
+        // Audio (lane/audio-endpoint-g8). `transcriptions` is the OpenAI-named batch surface
+        // and the target of G7's live half; the `sessions` trio is the streaming lane
+        // lifecycle whose admission is the thing the c4 collapse broke.
+        .route("/v1/audio/transcriptions", post(audio_api::transcriptions))
+        .route("/v1/audio/sessions", post(audio_api::open_session))
+        .route("/v1/audio/sessions", get(audio_api::list_sessions))
+        .route(
+            "/v1/audio/sessions/:id/frames",
+            post(audio_api::append_frames),
+        )
+        .route(
+            "/v1/audio/sessions/:id/close",
+            post(audio_api::close_session),
+        )
                         .with_state(st);
                     let response = tokio::time::timeout(std::time::Duration::from_secs(2),
                         app.oneshot(axum::http::Request::builder().method("POST").uri(path)
@@ -19284,6 +19585,7 @@ temperature = 0.6
             tenant_inflight: Arc::new(Default::default()),
             health,
             bg: None,
+            audio: audio_api::shared_audio(false),
         }
     }
 
@@ -22032,6 +22334,41 @@ prompt = "0.00000003"
 cached_prompt = "0.0"
 completion = "0.0"
 
+[models."asr"]
+surface = "transcription"
+created = 1787961600
+max_output_length = 448
+is_ready = true
+is_free = false
+discount_to_user = 0.0
+decode_deterministic = true
+decode_strategy = "greedy_batch"
+decode_temperature_ladder = []
+serves_partials = true
+
+[models."asr".pricing]
+prompt = "0.00000004"
+cached_prompt = "0.0"
+completion = "0.0"
+
+[models."asrbatch"]
+surface = "transcription"
+created = 1787961600
+max_output_length = 448
+is_ready = true
+is_free = false
+discount_to_user = 0.0
+decode_deterministic = true
+decode_strategy = "beam"
+decode_beam_size = 5
+decode_temperature_ladder = []
+serves_partials = false
+
+[models."asrbatch".pricing]
+prompt = "0.00000004"
+cached_prompt = "0.0"
+completion = "0.0"
+
 [models."chatty"]
 created = 1787443200
 max_output_length = 32768
@@ -22054,9 +22391,60 @@ completion = "0.0000012"
             ..Default::default()
         };
 
+        // The INPUT branch is closed too, and a transcription row's input is a waveform:
+        // declaring `text` with a token-shaped `max_context_length` would describe a
+        // different product. Checked against the vendored InputModality oneOf.
+        let input_branches = schema["components"]["schemas"]["InputModality"]["oneOf"]
+            .as_array()
+            .expect("InputModality is a oneOf");
+        for (alias, want_input) in [("asr", "audio"), ("chatty", "text"), ("embed", "text")] {
+            let row = model_entry_openrouter(alias, Some(&caps), metadata.get(alias));
+            let modality = &row["input_modalities"][0];
+            assert_eq!(modality["type"], want_input, "{alias}: {row}");
+            let branch = input_branches
+                .iter()
+                .find(|b| b["properties"]["type"]["enum"][0] == want_input)
+                .unwrap_or_else(|| panic!("{want_input:?} is not an InputModality branch"));
+            let allowed: std::collections::BTreeSet<&str> = branch["properties"]
+                .as_object()
+                .expect("branch properties")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            for key in modality.as_object().expect("modality object").keys() {
+                assert!(
+                    allowed.contains(key.as_str()),
+                    "{alias}: {key:?} not allowed"
+                );
+            }
+            if want_input == "audio" {
+                assert!(
+                    modality.get("supported_inputs").is_none(),
+                    "an audio input must not carry token-shaped limits: {modality}"
+                );
+            }
+        }
+        // `streaming` on a transcription row is whether the entry emits partials, not a
+        // constant: a batch-only ASR model that advertised `true` would send a client
+        // looking for a partial stream that never arrives.
+        let streaming_row = model_entry_openrouter("asr", Some(&caps), metadata.get("asr"));
+        assert_eq!(
+            streaming_row["output_modalities"][0]["streaming"],
+            json!(true)
+        );
+        let batch_row = model_entry_openrouter("asrbatch", Some(&caps), metadata.get("asrbatch"));
+        assert_eq!(batch_row["output_modalities"][0]["streaming"], json!(false));
+        // And no sampling parameter may be advertised for a decode that refuses them.
+        assert_eq!(
+            streaming_row["output_modalities"][0]["supported_parameters"],
+            json!({})
+        );
+
         for (alias, want_type) in [
             ("embed", "embeddings"),
             ("rr", "rerank"),
+            ("asr", "transcription"),
+            ("asrbatch", "transcription"),
             ("chatty", "text"),
         ] {
             let row = model_entry_openrouter(alias, Some(&caps), metadata.get(alias));

@@ -184,6 +184,13 @@ jobs:
           MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
+      # memra-lanes is CUDA-free and was outside every unit suite, so the lane admission
+      # policy and the streaming-audio scheduler had NO caller in CI: the audio red arms
+      # (a batch-1 per-lane drive shedding at c4, a short probe that cannot see it) would
+      # have been tests nothing ran. Named separately from the census above because
+      # memra-lanes has no skip budget to verify.
+      - name: Unit suite (memra-lanes — lane admission + streaming-audio scheduler)
+        run: cargo test -p memra-lanes --lib
 
   # ── public boundary: what the public repository is permitted to publish ─────────────────────
   # Its own job because the two steps together are ~250 s and share nothing with the fixtures

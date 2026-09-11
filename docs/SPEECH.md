@@ -24,10 +24,11 @@ less than one that starts from a measured deficit.
 | Nemotron 3.5 streaming RNNT `[56,0]` | The whole path executes and streams: frontend, cache-aware FastConformer, prompt kernel, LSTM predictor, joint, greedy, session state | 657/657 tensors, frontend 5.34058e-05, encoder 2.533197403e-07 over 26 chunks, head 9.155273438e-05, greedy 9/9, session 26/26 partials plus final identical |
 | Audio-LM class (Qwen3-ASR, Voxtral) | Not started | n/a |
 | **GPU execution for any speech operation** | **Does not exist.** No CUDA kernel, no residency plan, no performance receipt | Every number above is a CPU reference measured on efficiency cores |
-| **Audio endpoint in `memra serve`** | **Does not exist.** No readiness, model id, streaming contract, concurrency, admission or rollback | n/a |
+| **Audio endpoint in `memra serve`** | **Exists as of 2026-09-11 and fails CLOSED.** `/v1/audio/transcriptions` plus the `/v1/audio/sessions` lifecycle (open / frames / close / list) carry the session contract, the resident-session cap, the per-lane bounded queue, the typed shed taxonomy and the declared decode; with no speech pack resident every path refuses `engine_unbound` rather than answering with something that is not the model. **The transcript bytes are step 2's work** | `audio_api.rs`, 18 handler + contract tests; scheduler in `memra-lanes::audio_stream`, 20 tests |
 
-So: memra has a correctness spine for two speech families and **no speed and no serving
-surface**. On the metric this program is about, memra has not entered the race. What the
+So: memra has a correctness spine for two speech families, a serving surface that admits and
+sheds honestly, and **no speed**. On the metric this program is about, memra has not entered the
+race: there is still no GPU number, and an endpoint that refuses is not a product. What the
 spine buys is that entering is cheap and checkable, every GPU kernel written from here has
 a banked CPU reference to be byte-identical against, which is the expensive part of a speech
 bring-up and it is already paid for.
@@ -171,8 +172,8 @@ arm has not fired yet are marked, and they are not counted as protection.
 | **G4 decoder / head / greedy** | stage runner; session replay | 12 decoder steps argmax; RNNT 9/9 tokens, 26/26 chunk partials | Yes. 46 divergent windows in the 36-clip sweep, each traced to a cause, 31 of them measured CT2 fp16 precision effects |
 | **G5 tokenizer** | plan compile; generation-config cross-check | Checkpoint generation config, added tokens, suppression list | Partly. Detokenize agrees with the scorer's tokenizer 36/36. **Encode direction is missing, so this gate is currently half-vacuous and is named as such** |
 | **G6 checkpoint parity** | full clip sweep vs pinned oracle | 71 clips, two domains, per-domain WER delta bound 0.05 pt | **Yes, RED today.** 0.0739 `d1` and 0.2237 `whatsapp` against the 0.05 pt limit on the 36-clip partial sweep |
-| **G7 serve decode contract** | registry half: the acceptance gate a candidate passes before it gets traffic, on any entry declaring `task = "transcription"`. Live half: post-deploy probe against the served binary | Both registry shapes we would serve (streaming RNNT, batch Whisper), every shipped registry snapshot, and the pinned RNNT beam decoder itself. Live half: the exact default decode shape, submitted with no decoding parameters, twice | **Registry half: yes, and its red arms are the configs a person actually writes**: an entry that declares nothing (and so inherits faster-whisper's `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` ladder), a text model's vendor-sampling stanza copied across, and beam on a streaming partial path. **Live half: NOT ARMED**, because there is no audio endpoint to probe (§1); it reports `not-armed` and is not counted as protection until step 3. See §5.1 |
-| **G8 streams@SLO battery** | serving battery on a lane-owned box | Readiness, model id, streaming partial/final/revision shape, concurrency ladder c1 → c4 → c16 → c64, admission limit, cancel, reconnect, flush, rollback | **Yes, and it is the best red arm we own.** One A100 holding a resident RNNT student plus a resident large-v3 **shed 54 of 71 streams on incoming-queue overflow at c4** while c1 ran fine. The battery must reproduce that shape and the fix must turn it green |
+| **G7 serve decode contract** | registry half: the acceptance gate a candidate passes before it gets traffic, on any entry declaring `task = "transcription"`. Live half: post-deploy probe against the served binary | Both registry shapes we would serve (streaming RNNT, batch Whisper), every shipped registry snapshot, and the pinned RNNT beam decoder itself. Live half: the exact default decode shape, submitted with no decoding parameters, twice | **Registry half: yes, and its red arms are the configs a person actually writes**: an entry that declares nothing (and so inherits faster-whisper's `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` ladder), a text model's vendor-sampling stanza copied across, and beam on a streaming partial path. **Registry half, engine side: yes, and it now refuses at LOAD.** `validate_asr_decode_contract` (memra-server) rejects a silent transcription entry, a text model's sampling stanza copied across, beam on a partial-emitting path, a ladder that starts hot or is non-monotonic, a determinism flag that contradicts its ladder, a beam width that does not match its strategy, and decode keys on a non-ASR row — 10 tests, each named after the stanza a person writes, with the two shapes we would actually serve asserted PASSING so the gate is not a wall. **Live half: ARMABLE but NOT ARMED**: the endpoint exists (§1) and reports the resolved decode on `x-memra-asr-decode` even on its refusal, but two byte-identical no-parameter transcriptions cannot be compared until an engine is bound. It reports `not-armed`. See §5.1 |
+| **G8 streams@SLO battery** | darklanes `ops/serving/asr_streams_slo.py` against a served endpoint on a lane-owned box; the scheduler half is `cargo test -p memra-lanes --lib audio_stream` in hosted CI | Readiness, model id, streaming partial/final/revision shape, concurrency ladder c1 → c4 → c16 → c64, admission limit, cancel, reconnect, flush, rollback. Minimum duration per rung, derived not typed: `queue_frames / (1000/frame_ms - served_rate_hz/streams)`, i.e. the PER-LANE bleed (the aggregate form gives 2.56 s for the measured c4 geometry whose real answer is 10.24 s, and would bless exactly the rung length that misses the defect) | **Yes, and it is the best red arm we own — and half of it now runs with no GPU.** On the card: one A100 holding a resident RNNT student plus a resident large-v3 **shed 54 of 71 streams on incoming-queue overflow at c4** while c1 ran fine. In CI: `MEMRA_AUDIO_DRIVE=per_lane_worker` drives the SAME `AudioScheduler` the endpoint drives, at the measured step cost (31.522 ms at batch 1, 35.890 ms at batch 32), and refuses 4 of 4 streams at c4 with every refusal a typed `queue_overflow` pinned at the cap, while `fused` holds 64 of 64 at max queue depth ≤ 3. A THIRD red arm came out of writing it: a 10 s probe of the broken shape refuses NOTHING while its backlog is already 48 of 64, so a short ladder rung passes the defect — which is why the duration is derived above. **The GPU half of G8 is still unrun: the CI half bounds scheduling logic and makes no claim about milliseconds** |
 | **G9 non-vacuity** | every numeric gate | n/a | Each numeric gate carries a first-divergence log and refuses an empty input set; a sweep that scores zero clips is a failure, not a pass |
 
 Two rules that bind all of them:
@@ -242,11 +243,25 @@ repository, wired into the acceptance gate that a candidate passes before it get
 and into hosted CI. The engine's obligations are the two above: carry the registry keys
 through to the resolved decode, and report the temperature actually used per segment.
 
-**Where G7 does not protect yet.** Everything about the live half (two identical
-no-parameter transcriptions of one clip must return byte-identical text) is written and
-fixture-tested and **cannot fire**, because §1's audio endpoint does not exist. It reports
-`not-armed` rather than passing, and it is not counted as protection until step 3 lands the
-endpoint. Same treatment as G5's missing encode direction, for the same reason.
+**Where G7 does not protect yet.** The live half (two identical no-parameter transcriptions of
+one clip must return byte-identical text) is written and fixture-tested and **still cannot
+fire**. The reason changed on 2026-09-11: the endpoint now exists and resolves the declared
+decode — it reports it on an `x-memra-asr-decode` response header even on its own refusal, so an
+operator can see WHICH decode a registry row resolved to — but with no engine bound there are no
+two transcripts to compare. It reports `not-armed` rather than passing. Same treatment as G5's
+missing encode direction, for the same reason.
+
+**What the engine now refuses on its own.** `validate_asr_decode_contract` runs inside
+`validate_openrouter_metadata`, i.e. at every metadata load, boot and hot reload. A gate can only
+check the file it was pointed at; the binary refuses a silent or self-contradictory transcription
+entry whatever produced the file. The refusals, each a stanza a person writes: an entry that
+declares nothing (and the refusal quotes the `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` ladder silence
+inherits), any `default_*` sampling key or `non_thinking_sampling` table on a transcription row,
+a strategy that is not served (`maes`/`tsd`/`alsd`/`nsc` among them — declaring one would look
+configured and fail at runtime), a beam family with no width or a width with no beam family, beam
+on a `serves_partials = true` row (with the `kept_hyps` collapse cited in the refusal), a ladder
+that starts hot or does not strictly increase, `decode_deterministic = true` under a hotter rung,
+`decode_deterministic = false` with no hotter rung, and any decode key on a non-ASR surface.
 
 ---
 
@@ -299,6 +314,11 @@ Streaming concurrency, published:
 | ASR NIM Parakeet-0.6B-CTC, high-throughput | **512 streams**, avg 166.85 ms, p95 615.9 ms, 494.12 RTFX | H100 | [NVIDIA ASR NIM performance](https://docs.nvidia.com/nim/speech/26.02.0/reference/performances/asr/performance.html) |
 | same, low-latency config | **64 streams**, avg 32.012 ms, p95 37.779 ms | H100 | same |
 | same, low-latency config | **64 streams**, avg 53.643 ms, p95 97.948 ms | A100 | same |
+| ASR NIM **Nemotron ASR Streaming** (en-US, low-latency, 160 ms chunks) | **128 streams** p95 **92.2** ms / **256** streams not published | A100 | same |
+| same | **128** streams p95 **69.0** ms, **256** streams avg 74.7 / p95 **123.9** ms, RTFX 253.8 | H100 | same |
+| same | **128** streams p95 **54.6** ms, **256** streams avg 62.1 / p95 **89.4** ms, RTFX 253.9 | **B200** | same |
+| ASR NIM **Parakeet-1.1B-CTC** (en-US, low-latency) | "Maximum effective # of streams with n-gram language model: **160**"; 64 streams p95 56.0 ms | B200 | same |
+| ASR NIM Parakeet-1.1B-RNNT (multilingual, low-latency) | stream counts to 128 published, **latency columns EMPTY — ABSENT** | B200 | same |
 | Qwen3-ASR-1.7B streaming | **48-64 concurrent streams**, p95 finalization **under 0.50 s**, 100 ms client chunks | one RTX PRO 6000 or H100 | [Baseten model library](https://www.baseten.co/library/qwen3-asr-1-7b-streaming/) |
 | faster-whisper / CTranslate2 | **No number exists, because no streaming path exists.** CT2 serves bounded utterances | n/a | n/a |
 | whisper.cpp | No published streams-per-GPU figure found. Its `stream` example is a single-session sliding window | n/a | n/a |
@@ -306,20 +326,79 @@ Streaming concurrency, published:
 | Whisper-Streaming (LocalAgreement-2) | **3.3 s** average English word-emission latency; no concurrency figure | A40 | [IJCNLP-AACL 2023 demo](https://aclanthology.org/2023.ijcnlp-demo.3.pdf) |
 | Deepgram Nova-3 | P50 **337-509 ms** audio-to-final, min 184 ms; architecture and streams-per-GPU undisclosed | hosted | [Deepgram latency docs](https://developers.deepgram.com/docs/measuring-streaming-latency) |
 
-Read those two tables together and the gap is specific. **The 512-stream number is a 0.6B
-English CTC model, the cheapest tier there is, and its latency column is per-chunk response
-time, not end-of-speech-to-final.** It is not our SLO and it is not our accuracy tier. The
-only published number in the accuracy tier with a real finalization SLO is Baseten's 48-64
-streams at p95 < 0.50 s on one RTX PRO 6000, and it is a vendor figure on unnamed audio.
-**Nobody publishes streams@SLO for a >= 1B model on a named corpus in a named language.**
-That is the gap.
+And the one board measured with OUR clock, independently and reproducibly — the Pipecat STT
+benchmark, `TTFS = final TranscriptionFrame receipt − speech_end_time`, 1,000 samples of
+`pipecat-ai/smart-turn-data-v3.1-train`, semantic WER, every row a hosted API over the network
+([pipecat-ai/stt-benchmark](https://github.com/pipecat-ai/stt-benchmark)):
+
+| Vendor / model | TTFS median | TTFS P95 | TTFS P99 | WER mean | Streams per GPU |
+| --- | ---: | ---: | ---: | ---: | --- |
+| NVIDIA Nemotron 3.0 ASR (en) | **221 ms** | **238 ms** | 252 ms | 1.90% | ABSENT |
+| NVIDIA Nemotron 3.5 ASR (multilingual) | 236 ms | 253 ms | 266 ms | 4.54% | ABSENT |
+| Deepgram nova-3-general | 247 ms | 298 ms | 326 ms | 1.71% | ABSENT |
+| Soniox stt-rt-v4 | 249 ms | 281 ms | 310 ms | 1.25% | ABSENT |
+| Soniox stt-rt-v5 | 260 ms | 305 ms | 313 ms | 1.34% | ABSENT |
+| AssemblyAI universal-3-5-pro | 282 ms | 354 ms | 393 ms | 1.44% | ABSENT |
+| Cartesia ink-2 | 299 ms | 328 ms | 1584 ms | 1.47% | ABSENT |
+| ElevenLabs scribe_v2_realtime | 281 ms | 348 ms | 407 ms | 3.16% | ABSENT |
+| Meta muse-voice-transcribe-1.0 | 392 ms | 1292 ms | 1922 ms | **0.97%** | ABSENT |
+| Google gemini-3.5-transcribe-live | 458 ms | 532 ms | 599 ms | 2.24% | ABSENT |
+| Mistral voxtral-mini-transcribe-realtime | 525 ms | 973 ms | 1913 ms | 4.44% | ABSENT |
+| OpenAI gpt-4o-transcribe | 637 ms | 965 ms | 1655 ms | 3.24% | ABSENT |
+| OpenAI gpt-realtime-whisper | 740 ms | 878 ms | 1080 ms | 2.92% | ABSENT |
+| Speechmatics | 495 ms | 676 ms | 736 ms | 1.40% | ABSENT |
+| Azure | 1016 ms | 1345 ms | 1791 ms | 1.21% | ABSENT |
+| Google latest-long | 878 ms | 1155 ms | 1570 ms | 2.84% | ABSENT |
+
+Every `ABSENT` above is recorded, not estimated: no hosted vendor publishes streams per GPU, and
+the two boards are DISJOINT — the hosted board has our clock and no concurrency, the NIM board has
+concurrency and a different clock. Nobody publishes the pair.
+
+Read those tables together and the gap is specific, and narrower than the first reading of it.
+
+**The NIM latency column is not our clock.** The harness is `riva_streaming_asr_client
+--simulate_realtime --interim_results=false` over one LibriSpeech dev-clean file, three
+iterations per stream, and the reported figure is "Overall latency of all responses", measured
+from chunk submission to response receipt. That is per-chunk response time. Our SLO starts at
+capture of the last owned speech sample and ends at the final transcript. The two are not
+comparable and treating them as comparable makes our position look worse than it is
+(`TRAP:riva-512-is-not-our-tier`).
+
+**But the stream counts on that board ARE published at our tier, which the earlier reading of it
+missed.** Parakeet-1.1B-CTC and Parakeet-1.1B-RNNT are ≥ 1B and both have rows; the B200 section
+states a ceiling outright — "Maximum effective # of streams with n-gram language model: 160" for
+1.1B-CTC at 160 ms chunks. So "nobody publishes concurrency at the accuracy tier" was wrong.
+What nobody publishes is **concurrency AND a finalization SLO AND a WER on a named corpus, for
+one model on one card**. Every row in the field has exactly two of those three.
+
+**The accuracy-tier hosted figure with a finalization SLO is still one vendor's.** Baseten reports
+Qwen3-ASR-1.7B at 48-64 concurrent streams with p95 finalization under 0.50 s on one RTX PRO 6000,
+on unnamed audio in an unstated language, unreproduced by us.
 
 ### 6.3 The specific gap we intend to beat, and where we stand
 
-Target: **>= 128 concurrent real-time streams at p95 end-of-speech-to-final < 800 ms, on one
-RTX PRO 6000, at the accuracy tier**, i.e. roughly 2x the only comparable published figure.
+Target, restated 2026-09-11 so it is falsifiable against what the field actually publishes. It is
+a PAIR, because the two published boards are disjoint and a claim that wins only one leg is
+hollow:
 
-Where we stand: **streams@SLO = 0.** There is no GPU kernel and no audio endpoint.
+1. **Latency leg.** p95 TTFS (`speech_end` → final segment, the Pipecat harness clock) **< 238 ms**
+   on the `pipecat-ai/smart-turn-data-v3.1-train` sample set, i.e. at or under the best hosted row
+   in the field (NVIDIA Nemotron 3.0 ASR, 221 ms median / 238 ms p95), at a semantic WER inside
+   1 pt of it.
+2. **Concurrency leg.** That p95 held at **>= 128 concurrent real-time streams on ONE card**, on a
+   named card, at the accuracy tier (>= ~1B).
+
+Leadership is winning both legs at once on one card, and saying which card. Either leg alone is
+already published by somebody else.
+
+Where we stand: **streams@SLO = 0, and the latency leg is the harder one.** There is no GPU kernel
+for any speech operation. Our own best measured finalization number is the two-tier RNNT student's
+p50 714/762 ms and p95 1047/1100 ms at c1 on a different (Hebrew) corpus — **4.4x the p95 leg** —
+and the 480 ms of lookahead that bought this lane's only free quality win
+(`att_context_size [56,6]`) is ALONE twice the entire 238 ms budget. The honest reading: the
+concurrency leg is reachable with scheduler and kernel work that is already scoped; the latency leg
+is a chunk/lookahead policy question that no amount of kernel speed answers, because the budget is
+spent on audio we deliberately wait for.
 
 **Step 1 ran on 2026-09-10 and the collapse is engineering, not physics.** On one A100 80GB PCIe,
 profiled at phase level: of a 26.18 ms streaming step only **12.06 ms is kernel execution**, there
@@ -332,7 +411,9 @@ with every lane at the queue cap, while one fused batch-N step consuming a frame
 holds **64 of 64** at max queue depth 3 and 44% step duty.
 
 So the ceiling this program has to beat is not the A100. It is our own scheduler. That is the
-result §7 step 1 was bought to produce, and it clears K1. It does **not** establish a
+result §7 step 1 was bought to produce, and it clears K1. Step 3 has since moved that scheduler
+into the engine (`memra-lanes::audio_stream`) with the losing drive shape kept as a named red arm,
+so the collapse can be re-run in CI without a card. It does **not** establish a
 `streams@SLO`: the batched arm replays one captured chunk across lanes on a shared batched cache
 with no finalizer, no endpointing and no latency percentile, so it bounds compute capacity and
 nothing else. Turning that bound into a served number is step 3.
@@ -379,10 +460,20 @@ session. That second half is what feeds K2, so the step that produces the number
 criterion that judges it are the same measurement, not two separate ones taken weeks apart.
 The parity half is cheap and safe precisely because the CPU reference already exists.
 
-**Step 3, audio endpoint in `memra serve` plus the G8 battery. ~6-10 GPU-hours.** Readiness,
-model id, streaming partial/final/revision contract, concurrency ladder, typed admission
-shedding, cancel, reconnect, flush, rollback. Exit: a measured streams@SLO on one card with the
-c4 red arm reproduced and then green.
+**Step 3, audio endpoint in `memra serve` plus the G8 battery. ~6-10 GPU-hours. PART ONE LANDED
+2026-09-11 with no GPU; the measurement half is unrun.**
+
+Landed: the `/v1/audio/*` surface (§1), per-lane sessions, the fused batch-N drive as the default,
+the per-lane batch-1 drive as a named red arm (`MEMRA_AUDIO_DRIVE`), typed admission shedding with
+a code / limit / observed on every refusal, the shed counters an operator reads per code, the ASR
+decode contract refused at metadata load, and the scheduler's red and green arms running in hosted
+CI against the measured step cost. 38 tests. No GPU, no rental.
+
+Not landed, and it is the half that produces the number: a bound engine behind the surface (that
+is step 2), the partial/final/revision event stream, cancel/reconnect/flush, and the G8 battery on
+a card. **Exit is unchanged and unmet: a measured `streams@SLO` on one named card with the c4 red
+arm reproduced and then green.** Nothing in the landed half is a performance receipt; the step
+cost it schedules against is a 2026-09-10 A100 measurement, not a claim about any other card.
 
 **Step 4, the accuracy tier (audio-LM class). Gated on steps 1 and 3.** AuT encoder, audio
 projector, the streaming window and cache program. ~3-6 GPU-hours of bring-up before any
