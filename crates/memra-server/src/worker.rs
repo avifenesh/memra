@@ -178,6 +178,73 @@ fn removed_bank_v2_doors_refusal(
     None
 }
 
+/// SHORT-FIRST spec-phase visit order (`MEMRA_PREFILL_SHORT_FIRST`, default OFF, decide-by
+/// 2026-09-25).
+///
+/// WHAT IT CHANGES. A spec session primes inside `step_session`, and on a route with no
+/// cooperative walker that call runs the WHOLE remaining prompt before it returns. The phase
+/// visits rows in admission order, so one long cold prime holds the path for its full walk and
+/// every short prompt admitted beside it waits that walk out. Measured on ornith-1.5-35b-a3b on
+/// an RTX 5090 (darklanes#630): eight 4,228-token prompts beside one 104k cold prime spent
+/// 14,360-15,021 ms in `prime_wait`, which is 79% of their TTFT, while their own prefill work
+/// was 3,202-3,618 ms. Warm is sharper still: a request with `prime_ms = 0.000` -- nothing at
+/// all to prefill -- waited 8,632 ms, 99.7% of its TTFT, for a path it needed no work from.
+///
+/// WHY IT IS WORTH ORDERING HERE AND WAS NOT NEXT DOOR. Whether reordering can pay is
+/// `burst_tokens / measured_aggregate_rate` against the observed wait, per model. qwen3.8-27B
+/// primes at 2,330 tok/s, so the same eight-prompt burst is 14.3 s of unavoidable work against a
+/// 14.4 s wait and no order beats the token count; the door was deleted for qwen on that
+/// arithmetic (memra#481). ornith primes at 9,349 tok/s, 4.01x, so the same burst is 3.6 s
+/// against the same 14.4 s wait and about four fifths of that wait is ORDER rather than work.
+/// Same shape, opposite verdict, which is why the rule travels and the flat number does not.
+///
+/// NO STARVATION, structurally, and this is a property of the phase rather than a policy
+/// promise. The phase visits every spec row exactly once per tick and this is a permutation of
+/// the pending subset within the positions it already holds, so a long prime keeps its visit on
+/// every tick no matter how many short prompts keep arriving. Its added wait per tick is
+/// bounded by the other pending rows' prefill, which `MEMRA_MAX_SESSIONS` bounds; it pays the
+/// short prompts' tokens in completion time and nothing else, because aggregate prefill
+/// throughput is unchanged by the order in which it is spent.
+///
+/// NOT THE SAME DOOR AS `MEMRA_PRIME_YIELD`, which is about prime GRANULARITY (whether a walk
+/// returns to the tick between chunks at all) and only reaches plans
+/// `mtp_prime_walk_supported` accepts. This one is about ORDER. They compose: with the walker
+/// engaged the long prime yields, and this decides who takes the freed turn.
+fn spec_short_first() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    // Anything but `1`, including an unparseable value, is OFF. An unknown value must never
+    // silently select an arm nobody asked for.
+    *ON.get_or_init(|| std::env::var("MEMRA_PREFILL_SHORT_FIRST").as_deref() == Ok("1"))
+}
+
+/// Permute the rows that still owe prefill into ascending-remaining order, in place, leaving
+/// every other row exactly where the policy above it put it.
+///
+/// `remaining(row)` answers `Some(tokens)` for a row with prefill left and `None` otherwise.
+/// The `None` rows are already decoding; reordering them would silently re-decide the
+/// admit-yield class split, which belongs to a different door.
+///
+/// Ties break by row index, so an earlier admission still wins among equal remainders and the
+/// order is deterministic. Every input row appears exactly once in the output: this is a
+/// permutation, never a filter, and a row dropped from it would be a starved request.
+fn short_first_reorder(order: &mut [usize], remaining: impl Fn(usize) -> Option<usize>) {
+    let mut slots: Vec<usize> = Vec::new();
+    let mut pending: Vec<(usize, usize)> = Vec::new();
+    for (slot, &row) in order.iter().enumerate() {
+        if let Some(rem) = remaining(row) {
+            slots.push(slot);
+            pending.push((rem, row));
+        }
+    }
+    if pending.len() < 2 {
+        return;
+    }
+    pending.sort_unstable();
+    for (&slot, &(_, row)) in slots.iter().zip(pending.iter()) {
+        order[slot] = row;
+    }
+}
+
 fn interactive_prefill_budget(
     configured: usize,
     configured_explicitly: bool,
@@ -16354,6 +16421,27 @@ pub fn run(
             if memra_engine::prime_walker::prime_yield_enabled() {
                 prime_policy.order(&mut spec_order, |i| active[i].prime_service.pending);
             }
+            // SHORT-FIRST (`MEMRA_PREFILL_SHORT_FIRST`): reorder the rows that still owe
+            // prefill so a short prompt is not made to wait behind a long prime's whole walk.
+            // Last, because it must be the order the phase actually runs; it only permutes the
+            // pending set among the positions that set already occupies, so neither the
+            // admit-yield class split above nor `PrimePolicy`'s rotation is disturbed.
+            if spec_short_first() {
+                short_first_reorder(&mut spec_order, |i| {
+                    let s = &active[i];
+                    (!s.prefill_done && !s.prefill_queue.is_empty())
+                        .then_some(s.prefill_queue.len())
+                });
+                if tick_trace {
+                    eprintln!(
+                        "[prefill-order] short-first order={spec_order:?} remaining={:?}",
+                        spec_order
+                            .iter()
+                            .map(|&i| (i, active[i].prefill_queue.len()))
+                            .collect::<Vec<_>>()
+                    );
+                }
+            }
             let mut dspark_phase_captures: Vec<(usize, memra_engine::spec::SpecBoundaryCapture)> =
                 Vec::new();
             for i in spec_order {
@@ -25682,6 +25770,27 @@ fn run_boot_calibration(
         } else {
             "mtp"
         };
+        // COOPERATIVE-PRIME ENGAGEMENT, printed on the same boot as the route it belongs to.
+        //
+        // `MEMRA_PRIME_YIELD` only reaches an MTP route whose plan the walker adapter handles,
+        // and when it does not, NOTHING is printed: the `[prime-chunk]` tag an engaged walker
+        // emits is simply absent, which reads as a quiet arm rather than an unsupported one.
+        // darklanes#630 spent four interleaved rented boots on ornith comparing OFF against OFF
+        // for exactly that reason. Naming every term costs one line and makes the arm-identity
+        // check a read instead of an inference.
+        {
+            let terms = lm.model.mtp_prime_walk_terms();
+            eprintln!(
+                "[prime-walk] model={name:?} route={route} supported={} yield_door={} [{}]",
+                lm.model.mtp_prime_walk_supported(),
+                memra_engine::prime_walker::prime_yield_enabled(),
+                terms
+                    .iter()
+                    .map(|(term, met)| format!("{term}={met}"))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
         let t0 = Instant::now();
         // Synthetic one-chunk prompt: this is a MEMORY-SHAPE probe (the transient classes
         // scale with chunk geometry and capture shapes, not with prompt semantics).
@@ -28166,6 +28275,84 @@ mod tests {
         assert_eq!(lanes, [4, 0, 0]);
         assert_eq!(stats.p(50.0), Some(5.0), "20 ms / 4 emitted tokens");
         assert!(last_decode > old_decode);
+    }
+
+    /// The short-first door's ORDER: the measured shape, one long cold prime beside eight
+    /// short prompts, in the phase that actually runs them.
+    ///
+    /// RED ARM: `off` is the same input untouched, and every ON assertion is stated against it,
+    /// so a change that reordered unconditionally fails on the OFF expectation rather than in a
+    /// rental.
+    #[test]
+    fn short_first_visits_the_shortest_pending_prefill_before_a_long_prime() {
+        // Row 0 is the 104k cold prime; rows 1..=3 are short prompts of distinct lengths.
+        // These are the orn-5090 cell's own numbers.
+        let remaining = |row: usize| match row {
+            0 => Some(104_000usize),
+            1 => Some(4_228),
+            2 => Some(4_150),
+            3 => Some(4_210),
+            _ => None,
+        };
+
+        let off = vec![0usize, 1, 2, 3];
+        let mut on = off.clone();
+        super::short_first_reorder(&mut on, remaining);
+
+        assert_eq!(on, vec![2, 3, 1, 0], "shortest pending prefill goes first");
+        assert_ne!(on, off, "the door must actually change the visit order");
+
+        // PERMUTATION, never a filter: a row dropped from the order is a starved request, so
+        // assert the whole multiset rather than only the first element.
+        let mut sorted = on.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, off, "every row is still visited exactly once");
+        assert!(
+            on.contains(&0),
+            "the long prime keeps its turn in the same pass"
+        );
+
+        // Deterministic under equal remainders: the earlier row wins.
+        let mut tie = vec![9usize, 2, 5];
+        super::short_first_reorder(&mut tie, |_| Some(2048));
+        assert_eq!(tie, vec![2, 5, 9]);
+    }
+
+    /// Rows with no prefill left are ALREADY DECODING. Moving them would silently re-decide the
+    /// admit-yield class split, which is a different door with its own default.
+    ///
+    /// RED ARM: the assertion names the exact positions, so a reorder that sorted the whole
+    /// vector (the obvious wrong implementation) fails here: it would produce `[1, 3, 7, 4]`.
+    #[test]
+    fn short_first_leaves_every_decoding_row_exactly_where_it_was() {
+        // Positions 0 and 2 hold decoding rows; 1 and 3 hold pending prefills, out of order.
+        let mut order = vec![7usize, 3, 4, 1];
+        let remaining = |row: usize| match row {
+            3 => Some(90_000usize),
+            1 => Some(2_108),
+            _ => None,
+        };
+        super::short_first_reorder(&mut order, remaining);
+
+        assert_eq!(order[0], 7, "a decoding row did not move");
+        assert_eq!(order[2], 4, "a decoding row did not move");
+        assert_eq!(
+            order,
+            vec![7, 1, 4, 3],
+            "the pending rows swapped within the two positions they already held"
+        );
+    }
+
+    /// A door that cannot be off is not a door, and a lone pending row has no order to decide.
+    #[test]
+    fn short_first_is_a_no_op_below_two_pending_rows() {
+        let mut none = vec![4usize, 2, 9];
+        super::short_first_reorder(&mut none, |_| None);
+        assert_eq!(none, vec![4, 2, 9], "no pending rows, no reorder");
+
+        let mut one = vec![4usize, 2, 9];
+        super::short_first_reorder(&mut one, |row| (row == 9).then_some(131_072));
+        assert_eq!(one, vec![4, 2, 9], "one pending row cannot be reordered");
     }
 
     #[test]
