@@ -3103,7 +3103,48 @@ extern "C" int memra_dsv4_indexer_score_f32acc(const float* q, const float* ckv,
 // Absolute-position batched twin for chunked prefill. Arithmetic is verbatim from
 // dsv4_indexer_score_f32acc_kernel; only the causal limit includes pos0 so all query
 // rows can share one launch and one common nb_max.
+//
+// q ARRIVES TRANSPOSED, [s][hd][heads], staged by dsv4_q_transpose_m_kernel. Same defect and
+// same fix as dsv4_sink_scores_mq_f32acc_kernel, one stride smaller: the [heads][hd] form put
+// the lanes 512 bytes apart. Same 128 products, same ascending x, same single f32 accumulator,
+// so this is BIT-IDENTICAL to the form it replaces and owes a bit-equality gate rather than
+// drift rows; dsv4_indexer_score_f32acc_pos_m_ref_kernel is the gate's reference arm. Measured
+// at the served prefill shape: 4.1808 ms -> 0.5764 ms, 7.280x.
 extern "C" __global__ void dsv4_indexer_score_f32acc_pos_m_kernel(
+    const float* __restrict__ q, const float* __restrict__ ckv,
+    const float* __restrict__ w, float wscale, float* __restrict__ score,
+    int s, int heads, int hd, int nb, int ratio, int pos0) {
+    long i = blockIdx.x;
+    if (i >= (long)s * nb) return;
+    int t = (int)(i / nb);
+    int j = (int)(i % nb);
+    int lim = (pos0 + t + 1) / ratio;
+    extern __shared__ float shhf[];
+    if (j >= lim) {
+        if (threadIdx.x == 0) score[i] = -INFINITY;
+        return;
+    }
+    int h = threadIdx.x;
+    if (h < heads) {
+        const float* qr = q + (long)t * heads * hd;
+        const float* kr = ckv + (long)j * hd;
+        float dacc = 0.0f;
+        for (int x = 0; x < hd; x++) dacc += qr[(long)x * heads + h] * kr[x];
+        float r = fmaxf(dacc, 0.0f);
+        float ws = w[(long)t * heads + h] * wscale;
+        shhf[h] = r * ws;
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        float acc = 0.0f;
+        for (int hh = 0; hh < heads; hh++) acc += shhf[hh];
+        score[i] = acc;
+    }
+}
+
+// RED ARM, gate only. The [heads][hd] form, kept so the component gate can assert byte
+// identity against the layout change. No serving launcher and no env read reaches it.
+extern "C" __global__ void dsv4_indexer_score_f32acc_pos_m_ref_kernel(
     const float* __restrict__ q, const float* __restrict__ ckv,
     const float* __restrict__ w, float wscale, float* __restrict__ score,
     int s, int heads, int hd, int nb, int ratio, int pos0) {
@@ -3133,6 +3174,19 @@ extern "C" __global__ void dsv4_indexer_score_f32acc_pos_m_kernel(
         for (int hh = 0; hh < heads; hh++) acc += shhf[hh];
         score[i] = acc;
     }
+}
+
+extern "C" int memra_dsv4_indexer_score_f32acc_pos_m_ref(
+    const float* q, const float* ckv, const float* w, float wscale, float* score,
+    int s, int heads, int hd, int nb, int ratio, int pos0, void* stream_v) {
+    long n = (long)s * nb;
+    if (s <= 0 || nb <= 0 || ratio <= 0 || pos0 < 0 || n > 2147483647L ||
+        heads <= 0 || heads > 1024) return 40009;
+    dsv4_indexer_score_f32acc_pos_m_ref_kernel<<<
+        (unsigned)n, heads, (size_t)heads * sizeof(float), (cudaStream_t)stream_v>>>(
+        q, ckv, w, wscale, score, s, heads, hd, nb, ratio, pos0);
+    DSV4_ERR();
+    return 0;
 }
 
 extern "C" int memra_dsv4_indexer_score_f32acc_pos_m(
@@ -6192,6 +6246,19 @@ extern "C" int memra_dsv4_sink_scores_tiled_f32acc(const float* q, const float* 
     return 0;
 }
 
+// q ARRIVES TRANSPOSED, [nq][hd][heads], staged once per (layer, chunk) by
+// dsv4_q_transpose_m_kernel below. The arithmetic is untouched: thread h still sums the same
+// 512 products in the same ascending x into the same single f32 accumulator, so this kernel is
+// BIT-IDENTICAL to the [heads][hd] form it replaces, and dsv4_sink_scores_mq_f32acc_ref_kernel
+// is kept as the gate's reference arm so the identity is asserted and not assumed.
+//
+// WHY: at fixed x the [heads][hd] layout put the 32 lanes of a warp 2048 bytes apart, so one
+// warp load became 32 sector requests instead of 4. The kernel was never near its arithmetic or
+// byte ceiling (964 GFLOP/s of ~58 TFLOP/s non-FMA, 35.3 GB/s of 1.648 TB/s measured); it was
+// held by L1TEX request throughput. Measured on the served prefill shape (nq 512, slots 640,
+// 64 heads, hd 512, -fmad=false) on 2x RTX PRO 6000 Blackwell: 22.2575 ms -> 3.5115 ms, 6.326x,
+// 6.129x with the transpose priced in, medians of three cold runs, spread under 1.3%.
+// darklanes research/dsv4f-attn-floor-20260911/LANE.md.
 extern "C" __global__ void dsv4_sink_scores_mq_f32acc_kernel(const float* __restrict__ q_all,
                                                              const float* __restrict__ kv,
                                                              const int* __restrict__ idxs_all,
@@ -6216,11 +6283,83 @@ extern "C" __global__ void dsv4_sink_scores_mq_f32acc_kernel(const float* __rest
     for (int x = threadIdx.x; x < hd; x += blockDim.x) kvs[x] = kv[(long)ix * hd + x];
     __syncthreads();
     for (int h = threadIdx.x; h < heads; h += blockDim.x) {
+        float acc = 0.0f;
+        for (int x = 0; x < hd; x++) acc += q[(long)x * heads + h] * kvs[x];
+        scores[(long)h * slots + sl] = acc * scale;
+    }
+}
+
+// RED ARM, gate only. The [heads][hd] form this kernel family used to serve, kept so
+// dsv4_sink_score_gate can assert byte identity against the layout change rather than assume
+// it. Never reachable from a serving launcher: no dispatch arm and no env read selects it.
+extern "C" __global__ void dsv4_sink_scores_mq_f32acc_ref_kernel(const float* __restrict__ q_all,
+                                                                 const float* __restrict__ kv,
+                                                                 const int* __restrict__ idxs_all,
+                                                                 float* __restrict__ scores_all,
+                                                                 int heads, int hd, int slots,
+                                                                 int idx_stride, float scale) {
+    int sl = blockIdx.x;
+    int p = blockIdx.y;
+    if (sl >= slots) return;
+    const int* idxs = idxs_all + (long)p * idx_stride;
+    const float* q = q_all + (long)p * heads * hd;
+    float* scores = scores_all + (long)p * heads * slots;
+    int ix = idxs[sl];
+    extern __shared__ float kvs[];
+    if (ix < 0) {
+        for (int h = threadIdx.x; h < heads; h += blockDim.x)
+            scores[(long)h * slots + sl] = -INFINITY;
+        return;
+    }
+    for (int x = threadIdx.x; x < hd; x += blockDim.x) kvs[x] = kv[(long)ix * hd + x];
+    __syncthreads();
+    for (int h = threadIdx.x; h < heads; h += blockDim.x) {
         const float* qv = q + (long)h * hd;
         float acc = 0.0f;
         for (int x = 0; x < hd; x++) acc += qv[x] * kvs[x];
         scores[(long)h * slots + sl] = acc * scale;
     }
+}
+
+extern "C" int memra_dsv4_sink_scores_mq_f32acc_ref(const float* q, const float* kv,
+    const int* idxs, float* scores, int nq, int heads, int hd, int slots, int idx_stride,
+    float scale, void* stream_v) {
+    if (!q || !kv || !idxs || !scores || nq < 1 || heads < 1 || hd < 1 || slots < 1
+        || idx_stride < slots) return 40010;
+    dim3 g((unsigned)slots, (unsigned)nq);
+    dsv4_sink_scores_mq_f32acc_ref_kernel<<<g, 64, (size_t)hd * sizeof(float),
+                                            (cudaStream_t)stream_v>>>(
+        q, kv, idxs, scores, heads, hd, slots, idx_stride, scale);
+    DSV4_ERR();
+    return 0;
+}
+
+// qt[p][x][h] = q[p][h][x]. Pure data movement: it cannot change a bit of the dot product,
+// and the score kernels above re-assert identity through the gate after it runs. One launch
+// per (layer, chunk); measured at 0.1127 ms against the score kernel's 22.26 ms at nq 512,
+// and that price is inside every ratio this layout change claims.
+extern "C" __global__ void dsv4_q_transpose_m_kernel(const float* __restrict__ q,
+                                                     float* __restrict__ qt,
+                                                     long n, int heads, int hd) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    int x = (int)(i % hd);
+    int h = (int)((i / hd) % heads);
+    long p = i / ((long)hd * heads);
+    qt[p * heads * hd + (long)x * heads + h] = q[i];
+}
+
+extern "C" int memra_dsv4_q_transpose_m(const float* q, float* qt, int nq, int heads, int hd,
+                                        void* stream_v) {
+    if (!q || !qt || nq < 1 || heads < 1 || hd < 1) return 40010;
+    long n = (long)nq * heads * hd;
+    unsigned thr = 256;
+    long blk = (n + thr - 1) / thr;
+    if (blk > 2147483647L) return 40009;
+    dsv4_q_transpose_m_kernel<<<(unsigned)blk, thr, 0, (cudaStream_t)stream_v>>>(
+        q, qt, n, heads, hd);
+    DSV4_ERR();
+    return 0;
 }
 
 extern "C" __global__ void dsv4_sink_soft_mq_f32acc_kernel(const float* __restrict__ scores_all,
