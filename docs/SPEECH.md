@@ -427,8 +427,12 @@ hollow:
    on the `pipecat-ai/smart-turn-data-v3.1-train` sample set, i.e. at or under the best hosted row
    in the field (NVIDIA Nemotron 3.0 ASR, 221 ms median / 238 ms p95), at a semantic WER inside
    1 pt of it.
-2. **Concurrency leg.** That p95 held at **>= 240 concurrent real-time streams on ONE card**, on a
-   named card, at the accuracy tier (>= ~1B).
+2. **Concurrency leg.** That p95 held at **>= 240 concurrent real-time streams on ONE card at a
+   declared chunk profile**, on a named card, at the accuracy tier (>= ~1B). The profile is part
+   of the target and not a detail: per `PATTERN:chunk-size-is-a-served-profile-not-a-constant` one
+   chunk knob moves a published ceiling by 4.8x, and the two rows this target is set against are
+   240 streams at an **80 ms** chunk and 2,400 at **1120 ms** on the same card. A streams number
+   without its chunk is not comparable to anything, including our own earlier one.
 
    **Raised from 128 on 2026-09-11, against us.** The old figure was set against Baseten's 48-64
    and read as "roughly 2x the only comparable published figure". The publisher of the checkpoint
