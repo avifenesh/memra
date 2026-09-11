@@ -45,12 +45,19 @@ static size_t cell(int s, int nb, int pos0, int lim0, bool zero, bool teeth, boo
     for (auto& x : q) x = zero ? 0.0f : (int(rng(seed) % 20001) - 10000) / 3001.0f;
     for (auto& x : k) x = (int(rng(seed) % 20001) - 10000) / 5003.0f;
     for (auto& x : w) x = (int(rng(seed) % 20001) - 10000) / 7001.0f;
-    Dev<float> dq(q), dk(k), dw(w), ref(n + guard), out(n + guard);
+    // The batched pos_m scorer reads q as [s][hd][heads]; the tiled arm and the per-row
+    // f32acc scorer still read [s][heads][hd]. Stage both from the same host buffer.
+    std::vector<float> qt(q.size());
+    for (int t = 0; t < s; ++t)
+        for (int h = 0; h < 64; ++h)
+            for (int x = 0; x < 128; ++x)
+                qt[(size_t)t * 64 * 128 + (size_t)x * 64 + h] = q[(size_t)t * 64 * 128 + (size_t)h * 128 + x];
+    Dev<float> dq(q), dqt(qt), dk(k), dw(w), ref(n + guard), out(n + guard);
     constexpr float scale = 0.011048543f;
     auto run = [&](bool tiled) {
         if (tiled) return memra_dsv4_indexer_score_tiled(dq.p, dk.p, dw.p, scale,
             out.p, s, 64, 128, nb, 4, lim0, pos0, nullptr);
-        if (pos0 >= 0) return memra_dsv4_indexer_score_f32acc_pos_m(dq.p, dk.p, dw.p, scale,
+        if (pos0 >= 0) return memra_dsv4_indexer_score_f32acc_pos_m(dqt.p, dk.p, dw.p, scale,
             ref.p, s, 64, 128, nb, 4, pos0, nullptr);
         return memra_dsv4_indexer_score_f32acc(dq.p, dk.p, dw.p, scale,
             ref.p, s, 64, 128, nb, 4, lim0, nullptr);

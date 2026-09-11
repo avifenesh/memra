@@ -641,6 +641,32 @@ Full execution contract and candidate pins:
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT,true>` | Gate-only GU m_e=1 specialization: skips the duplicate A row tile and invalid-row MMA warps while retaining valid-row gate/up accumulation and the fused epilogue. Both EP workspaces use the shared dispatch. | `set_moe_f16g_gu_m1_tc_for_gate`, default OFF; no environment or serving flag | `memra_moe_kq_gemm_sk_gu_m1`; actual launch counter plus `cuda_gu_m1_matches_gu_reference` and plain ABBA gate. |
 | `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT,false,true>`, `moe_kq_sktail_gu_kernel<QT_NVFP4_MODELOPT,true,true>` and `moe_kq_sktail_kernel<QT_NVFP4_MODELOPT,true,true>` | Packed ModelOpt GU/down stores retain MMA order, using a 256-entry half2 LUT and 1024 extra shared bytes. Existing half2 conversion, full-chain and sampled model identity gates pass; the half2-only model gain is +0.646%/+1.014% at 256/8192. The additional GU M1+half2 conjunction selects `<108,true,true>` for the existing one-token GU visitor; batched groups stay unchanged. Component R7 is 4–7% faster with H bit identity; sampled model composition is +1.2365%/+1.1242% at 256/8192 with full token/logit/KV identity. Receipt: `research/dsv4f-2card-1m-20260904/gu-m1-half2-model-20260907.md`; no serving default. | Existing process-local GU-M1/GU-half2/down-half2 setters, default OFF; no new environment flag. Clearing overrides restores the corresponding prior path. | `memra_moe_kq_gemm_sk_gu_half2`, `memra_moe_kq_gemm_sk_gu_m1_half2`, `memra_moe_kq_gemm_sk_m1_half2`; one combined GU enqueue advances the Rust GU-M1 and CUDA GU-half2 counters once each, not a third receipt. `cuda_half2_chain_identity` and the sampled plain gate retain arithmetic/dispatch coverage. |
 
+DSV4 f32acc scorer q layout (no new arithmetic, no dispatch flag):
+
+`dsv4_sink_scores_mq_f32acc_kernel` and `dsv4_indexer_score_f32acc_pos_m_kernel`
+read q as `[nq][hd][heads]`, staged once per (layer, chunk) by
+`dsv4_q_transpose_m_kernel` (`memra_dsv4_q_transpose_m`) after rope writes q and
+after `fp4_act_quant` writes qi. Each thread still sums the same products in the
+same ascending `x` into the same single f32 accumulator, so the score planes are
+BIT-IDENTICAL to the `[nq][heads][hd]` form they replace; the change owes a
+bit-equality gate, not drift rows. It is the NAKED DEFAULT: no environment
+variable, no dispatch arm, no door. The `[heads][hd]` kernels survive only as
+gate-reachable red arms (`dsv4_sink_scores_mq_f32acc_ref_kernel`,
+`dsv4_indexer_score_f32acc_pos_m_ref_kernel`, bound by
+`memra_dsv4_sink_scores_mq_f32acc_ref` and
+`memra_dsv4_indexer_score_f32acc_pos_m_ref`), which no serving launcher calls.
+The tiled arms of both scorers stage q themselves and keep reading the original
+layout; the q pointer travels with the launcher at the dispatch site so the two
+cannot be paired the wrong way round. Why: at fixed `x` the old layout put the 32
+lanes of a warp 2048 bytes apart (512 for the indexer), turning one warp load
+into 32 sector requests; the kernel was at 1.7% of its non-FMA arithmetic ceiling
+and 2.1% of measured HBM, held by L1TEX request throughput. Component gate:
+`dsv4_q_layout_gate` (identity, one-ULP red arm, device-vs-host transpose
+fidelity). Receipt: `crates/memra-engine/src/bin/dsv4_q_layout_gate.rs`
+(identity over 4 sink shapes plus 2 indexer shapes, one-ULP red arm, device-vs-host
+transpose fidelity); served interleaved A/B at the vendor-default sampled shape
+confirmed the win before this landed as the naked default.
+
 DSV4 prefill work-elision dispatch (no new CUDA arithmetic):
 
 The experimental sink-score tile (`dsv4_sink_scores_tiled_f32acc_kernel`) is

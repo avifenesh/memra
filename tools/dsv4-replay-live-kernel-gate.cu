@@ -141,6 +141,9 @@ void attention(int ratio,bool fine){
     auto plane=[&](){return Plane{a.alloc<int>(slots_max),a.alloc<float>(heads*slots_max),
         a.alloc<float>(heads*slots_max),a.alloc<float>(heads),a.alloc<float>(heads*hd),a.alloc<float>(limit/4)};};
     auto eager=plane(),graph=plane(); const float scale=powf(float(hd),-0.5f),iscale=0.011048543f;
+    // q is arbitrary test data and BOTH arms below read it through the same scorer, which now
+    // takes [nq][hd][heads]. This gate compares a captured graph against an eager replay, so
+    // the layout cancels: it is not staged here, and staging it would change nothing.
     a.begin();
     kernel_check(memra_dsv4_replay_indices(graph.idx,pos,win,ratio,slots_max,slots_max,trans_base,fine,topk,a.stream));
     if(fine) kernel_check(memra_dsv4_replay_indexer(iq,ikv,w,iscale,graph.iscore,graph.idx+win,pos,ih,ihd,nb_max,ratio,topk,win,a.stream));
