@@ -3857,7 +3857,8 @@ extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_fp8(
 extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_set_for_gate(int on);
 extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_armed_for_gate();
 extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_counts_for_gate(
-    uint64_t* splitk, uint64_t* declined, uint64_t* mirror_bytes, uint64_t* shapes_built);
+    uint64_t* splitk, uint64_t* declined, uint64_t* mirror_bytes, uint64_t* shapes_built,
+    uint64_t* ws_device_flips);
 
 // Unconditionally-linked wrappers, so Rust can call the gate arm from a binary
 // built WITHOUT the CUTLASS archive and get a named refusal rather than a link
@@ -3875,9 +3876,11 @@ extern "C" int memra_dsv4_dense_cutlass_armed(void) {
 }
 
 extern "C" int memra_dsv4_dense_cutlass_counts(uint64_t* splitk, uint64_t* declined,
-                                               uint64_t* mirror_bytes, uint64_t* shapes_built) {
+                                               uint64_t* mirror_bytes, uint64_t* shapes_built,
+                                               uint64_t* ws_device_flips) {
     if (!memra_dsv4_dense_cutlass_counts_for_gate) return 40084;
-    return memra_dsv4_dense_cutlass_counts_for_gate(splitk, declined, mirror_bytes, shapes_built);
+    return memra_dsv4_dense_cutlass_counts_for_gate(splitk, declined, mirror_bytes, shapes_built,
+                                                    ws_device_flips);
 }
 
 #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \

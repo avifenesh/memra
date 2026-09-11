@@ -113,19 +113,45 @@ __global__ void scaled_reduce_kernel(const float* __restrict__ partial,
 // One partial workspace per host thread, grown on demand. Peak among the shapes
 // the split-K arm wins is 8.4 MB; the 529 MB case is n = 129280, which takes the
 // single-slice arm and never allocates here.
-thread_local float* g_ws = nullptr;
-thread_local size_t g_ws_elems = 0;
+//
+// KEYED BY DEVICE, and that is not a tidiness point. dsv4f serves PP-2, and the
+// stages are driven from ONE host thread that binds each stage's context in turn
+// (`dsv4_gpu.rs` calls `ctx.bind_to_thread()` around every stage's work). A single
+// thread_local workspace is therefore shared by BOTH cards: whichever device was
+// current when it was allocated owns the allocation, and every call on the other
+// card hands CUTLASS a peer pointer. The split-K partial is written once and read
+// once per call and is exactly n*k bytes, so on this box that is 2 n*k bytes over
+// PCIe instead of over the card's own memory, on roughly half the family's calls.
+// It is correct through UVA and it is slow, which is the worst shape a defect can
+// take: nothing fails, the answers stay right, and the served rate drops.
+struct Ws {
+    float* ptr = nullptr;
+    size_t elems = 0;
+};
+thread_local std::map<int, Ws>* g_ws = nullptr;
+// The instrument that makes the claim above checkable rather than plausible: how
+// many times a call arrived on a different device from the previous call. A run
+// where this stays 0 did not exercise the condition, so a PASS from it means
+// nothing.
+thread_local int g_ws_last_device = -1;
+uint64_t g_ws_device_flips = 0;
 
 float* workspace(size_t elems) {
-    if (elems <= g_ws_elems) return g_ws;
-    if (g_ws) cudaFree(g_ws);
-    g_ws = nullptr;
-    if (cudaMalloc(&g_ws, elems * sizeof(float)) != cudaSuccess) {
-        g_ws_elems = 0;
+    int dev = -1;
+    if (cudaGetDevice(&dev) != cudaSuccess) return nullptr;
+    if (!g_ws) g_ws = new std::map<int, Ws>();
+    if (g_ws_last_device >= 0 && g_ws_last_device != dev) g_ws_device_flips++;
+    g_ws_last_device = dev;
+    Ws& w = (*g_ws)[dev];
+    if (elems <= w.elems) return w.ptr;
+    if (w.ptr) cudaFree(w.ptr);
+    w.ptr = nullptr;
+    if (cudaMalloc(&w.ptr, elems * sizeof(float)) != cudaSuccess) {
+        w.elems = 0;
         return nullptr;
     }
-    g_ws_elems = elems;
-    return g_ws;
+    w.elems = elems;
+    return w.ptr;
 }
 
 const __nv_bfloat16* mirror_for(const void* w_codes, int n, int k, cudaStream_t stream) {
@@ -220,9 +246,13 @@ bool g_armed = true;
 // leaked on purpose, because a thread_local holding CUDA-derived state must not
 // be destroyed during thread teardown, which can run after the context is gone.
 struct ShapeKey {
+    int device;
     int n;
     int k;
-    bool operator<(const ShapeKey& o) const { return n != o.n ? n < o.n : k < o.k; }
+    bool operator<(const ShapeKey& o) const {
+        if (device != o.device) return device < o.device;
+        return n != o.n ? n < o.n : k < o.k;
+    }
 };
 
 // The CUTLASS device wrapper for a COLUMN-MAJOR C is a thin adapter that
@@ -258,7 +288,12 @@ typename DsvGemm::Arguments dense_args(int m, int n, int k, int blocks, const __
 Shape* shape_entry(int m, int n, int k, int blocks, const __nv_bfloat16* w, const void* x_bf16,
                    float* part, cudaStream_t stream) {
     if (!g_shapes) g_shapes = new std::map<ShapeKey, Shape>();
-    ShapeKey key{n, k};
+    int device = -1;
+    if (cudaGetDevice(&device) != cudaSuccess) return nullptr;
+    // Keyed by device with the workspace, and for the same reason: `initialize()`
+    // queries the device it is called on, and a params block built against one
+    // card must not be launched on the other.
+    ShapeKey key{device, n, k};
     auto it = g_shapes->find(key);
     if (it != g_shapes->end()) return &it->second;
 
@@ -287,8 +322,12 @@ extern "C" int memra_dsv4_dense_cutlass_armed_for_gate() { return g_armed ? 1 : 
 
 extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64_t* declined,
                                                         uint64_t* mirror_bytes,
-                                                        uint64_t* shapes_built) {
-    if (!splitk || !declined || !mirror_bytes || !shapes_built) return 40079;
+                                                        uint64_t* shapes_built,
+                                                        uint64_t* ws_device_flips) {
+    if (!splitk || !declined || !mirror_bytes || !shapes_built || !ws_device_flips) return 40079;
+    // Zero here means the run never put two devices through this path, so it did
+    // not test the condition the device-keyed workspace exists for.
+    *ws_device_flips = g_ws_device_flips;
     *splitk = g_calls_splitk;
     *declined = g_calls_declined;
     *mirror_bytes = g_mirror_bytes;
@@ -326,6 +365,7 @@ extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc
     if (!part) { announce_decline("no workspace", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
 
     Shape* shape = shape_entry(m, n, k, blocks, w, x_bf16, part, stream);
+    if (!shape) { announce_decline("no device", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
     if (shape->status == 40080) {
         announce_decline("cutlass cannot_implement", m, n, k, xstride, sc_cols);
         g_calls_declined++;

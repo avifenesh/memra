@@ -121,12 +121,13 @@ fn main() {
             let engaged = after.splitk - before.splitk;
             println!(
                 "PRIME rep={rep} arm={} seconds={seconds:.4} tok_per_s={:.1} splitk={engaged} \
-                 declined={} mirror_MB={:.1} shapes_built={}",
+                 declined={} mirror_MB={:.1} shapes_built={} ws_device_flips={}",
                 if on { "cutlass" } else { "scalar" },
                 prompt.len() as f64 / seconds,
                 after.declined - before.declined,
                 after.mirror_bytes as f64 / 1e6,
-                after.shapes_built
+                after.shapes_built,
+                after.ws_device_flips - before.ws_device_flips
             );
             if on && engaged == 0 {
                 println!(
