@@ -105,6 +105,7 @@ pub mod moe_sel_dump;
 pub mod moesd;
 pub mod parallel;
 pub mod plan_backend;
+pub mod o2_band;
 pub mod pp;
 pub mod progress;
 /// qwen4_exp (Qwen3.8-Flash-Next) GPU eager forward — onboarding phase 7, correctness arm
