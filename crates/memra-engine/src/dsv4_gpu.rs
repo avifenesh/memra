@@ -125,6 +125,12 @@ pub struct Dsv4DenseCutlassCounts {
     /// stop growing while the call count keeps climbing; a prefill that builds a
     /// shape per call has the cache defeated however fast the kernel is.
     pub shapes_built: u64,
+    /// Calls that arrived on a different device from the call before them. dsv4f
+    /// serves PP-2 from ONE host thread that binds each stage in turn, so this is
+    /// how often the path crosses cards. It is the non-vacuity number for the
+    /// device-keyed split-K workspace: a run where it stays 0 never put two cards
+    /// through this path and cannot say whether keying by device mattered.
+    pub ws_device_flips: u64,
 }
 
 /// Stand the dense tensor-core path up or down for a GATE (memra #472).
@@ -171,6 +177,7 @@ pub fn dense_cutlass_counts_for_gate() -> Option<Dsv4DenseCutlassCounts> {
             declined: *mut u64,
             mirror_bytes: *mut u64,
             shapes_built: *mut u64,
+            ws_device_flips: *mut u64,
         ) -> i32;
     }
     let mut counts = Dsv4DenseCutlassCounts {
@@ -178,6 +185,7 @@ pub fn dense_cutlass_counts_for_gate() -> Option<Dsv4DenseCutlassCounts> {
         declined: 0,
         mirror_bytes: 0,
         shapes_built: 0,
+        ws_device_flips: 0,
     };
     let rc = unsafe {
         memra_dsv4_dense_cutlass_counts(
@@ -185,6 +193,7 @@ pub fn dense_cutlass_counts_for_gate() -> Option<Dsv4DenseCutlassCounts> {
             &mut counts.declined,
             &mut counts.mirror_bytes,
             &mut counts.shapes_built,
+            &mut counts.ws_device_flips,
         )
     };
     (rc == 0).then_some(counts)
