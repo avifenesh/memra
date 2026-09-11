@@ -698,7 +698,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     rm_env("MEMRA_MOE_WEIGHT_TRACE");
     rm_env("MEMRA_GLM5_EP_MAP");
     // The batched verify walk PINNED ON for the banked battery (SW mutates it; a caller
-    // env carrying =0 would bank per-row references — the pin law's own words: an unset
+    // env carrying =0 would bank per-row references, against the pin law: an unset
     // variable inherits any future default flip, a pin does not).
     set_env("MEMRA_GLM5_VERIFY_BATCH", "1");
     set_env("MEMRA_GLM5_TP_GATE_SAME_DEV", "1");
@@ -1244,7 +1244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         });
         set_env("MEMRA_GLM5_TP", "all@0,1");
-        // SW: the WALK-level guard — a sharded trunk refuses the verify walk itself by
+        // SW: the WALK-level guard. A sharded trunk refuses the verify walk itself by
         // name at any width (defense in depth under the session gate).
         set_env("MEMRA_GLM5_VERIFY_BATCH", "0");
         let mut cache = memra_engine::cache::Cache::new_planned(&e, &m_tp.cfg, &plan, max_ctx)?;

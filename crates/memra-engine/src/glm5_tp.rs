@@ -565,7 +565,7 @@ fn load_glm5_ep_map(
 /// (the `MEMRA_GLM5_TP` row in docs/FLAGS.md carries the matrix). `MEMRA_GLM5_VERIFY_BATCH`
 /// is absent DELIBERATELY: its walk exists only inside glm5 spec sessions, which are
 /// co-refused on a sharded model unconditionally since the spec x TP composition was
-/// declined (memra #387 NEGATIVE, 2026-09-11) — there is no pair left to refuse.
+/// declined (memra #387 NEGATIVE, 2026-09-11): there is no pair left to refuse.
 pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 3] = [
     (
         "MEMRA_HC_FUSED_PRE",
@@ -1196,7 +1196,7 @@ pub(crate) fn ensure_kda_tp_state<'c>(
     Ok(cache.glm5_tp_recur[il].as_mut().unwrap())
 }
 
-/// The KDA TP walk for prime/decode calls: plain `wo` matmul — byte-for-byte the
+/// The KDA TP walk for prime/decode calls: plain `wo` matmul, byte-for-byte the
 /// pre-composition walk. (The spec x TP verify arm that shared this body was deleted
 /// with the declined composition, memra #387 NEGATIVE 2026-09-11; the walk serves the
 /// plain route only.)
@@ -1327,7 +1327,7 @@ fn kda_tp_core(
     crate::tp_transport::concat_parts_on_root(&hop, &y_refs, t, hh)
 }
 
-/// The KDA TP walk for one prime/decode call — [`kda_tp_core`].
+/// The KDA TP walk for one prime/decode call: [`kda_tp_core`].
 /// The SYMMETRIC KDA mixer (lane/tp-symmetric-20260906): every rank already holds its own copy of
 /// the layer input, so there is no fan-out; each rank runs its heads over its own `x`, multiplies
 /// by its ROW-PARALLEL `wo` (its own channels, full output width), and the two partial sums meet

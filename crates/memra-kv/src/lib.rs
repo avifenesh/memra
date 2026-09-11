@@ -2070,7 +2070,7 @@ pub struct Cache {
     /// `None` everywhere the seam is off. The prefix-cache snapshot seams REFUSE while any
     /// slot is live (per-rank planes are not carried by CacheSnapshot); the spec x TP
     /// verify/rollback seam that was wired for these planes was deleted with the
-    /// declined composition (memra #387 NEGATIVE, 2026-09-11) — the snapshot refusal
+    /// declined composition (memra #387 NEGATIVE, 2026-09-11): the snapshot refusal
     /// is now a live runtime guard, never dead code.
     pub glm5_tp_recur: Vec<Option<Vec<RecurLayer>>>,
     /// glm5 TP PEER replicas of the MLA latent+indexer plane (replicated deterministic

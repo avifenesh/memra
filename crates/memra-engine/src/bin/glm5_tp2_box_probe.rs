@@ -22,7 +22,7 @@
 //!   prime-walker  saved prime versus the original hyper loop; interleave a peer
 //!          prime and decode between ranges, require identical boundary logits and
 //!          hidden stack. Pair rendezvous/owned-transfer receipt, no timing claim.
-//!   spec   COMPOSED spec rows on an UNSHARDED boot only: per prompt — a
+//!   spec   COMPOSED spec rows on an UNSHARDED boot only: per prompt, a
 //!          [`Glm5SpecSession`] burst loop at BOXP_SPEC_K (default 3) drafts/verifies to
 //!          BOXP_MAX_NEW; one JSONL row per prompt with spec tok/s, rounds, drafted,
 //!          accepted, acc-rate and tok/cyc ((accepted + rounds) / rounds — the flip_check
@@ -30,7 +30,7 @@
 //!          first prompt (session-owned Philox sampler — the SERVING sampler, unlike the
 //!          timed mode's host instrument RNG). Needs a draft source (MEMRA_GLM5_DFLASH).
 //!          The spec x TP composition was declined (memra #387 NEGATIVE, 2026-09-11):
-//!          on a TP-armed boot the session refuses unconditionally — run the refusal
+//!          on a TP-armed boot the session refuses unconditionally: run the refusal
 //!          once as the receipt.
 //!   timed  pricing rows (only under the window's TIMING-IN-FLIGHT marker): per prompt —
 //!          prime wall, per-step decode walls, decode tok/s over steps 2..N (the streamed

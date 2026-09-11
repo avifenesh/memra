@@ -1263,7 +1263,7 @@ impl HybridModel {
         }
         // The spec x TP composition was DECLINED (memra #387 NEGATIVE, 2026-09-11):
         // the verify walk carries no TP arm at any width, so a sharded trunk refuses
-        // here by name — defense in depth under the session co-refusal above, and the
+        // here by name: defense in depth under the session co-refusal above, and the
         // pin for the gate's SW arm, which reaches this walk without a session.
         if any_sharded {
             return Err(
@@ -2038,7 +2038,7 @@ impl HybridModel {
         }
         // The spec x TP composition was DECLINED (memra #387 NEGATIVE, 2026-09-11):
         // the rollback seam carries no TP arm either, so a sharded trunk refuses here
-        // by name — the walk-entry guard's twin for direct rollback callers.
+        // by name: the walk-entry guard's twin for direct rollback callers.
         let sharded = self.layers.iter().any(|l| match &l.mixer {
             Mixer::Kda(la) => la.tp.is_some(),
             Mixer::Mla(mla) => mla.tp.is_some(),

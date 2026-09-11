@@ -11782,7 +11782,7 @@ impl HybridModel {
         }
 
         // Peer passes first (each rank's heads over its replica), then root (canonical
-        // plane unchanged) — v1's issue order at two ranks. The walk runs the
+        // plane unchanged): v1's issue order at two ranks. The walk runs the
         // prime/decode matmul class on every rank (byte-for-byte the pre-composition
         // arm); the spec x TP verify class that shared this body was deleted with the
         // declined composition (memra #387 NEGATIVE, 2026-09-11).
