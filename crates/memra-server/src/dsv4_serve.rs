@@ -36,8 +36,8 @@
 use crate::worker::{EngineError, Event, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
     DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
-    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, RoundTake, dsv4_penalize_row,
-    dsv4_sample_row, resolve_vt,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, RoundTake, dense_cutlass_armed_for_gate,
+    dense_cutlass_counts_for_gate, dsv4_penalize_row, dsv4_sample_row, resolve_vt,
 };
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
@@ -649,6 +649,14 @@ pub fn spawn(name: String, m: Dsv4Model) -> std::sync::mpsc::Sender<Box<Request>
     std::thread::Builder::new()
         .name(format!("dsv4-serve-{name}"))
         .spawn(move || {
+            // Diagnostic only, and off unless MEMRA_DSV4_DENSE_CUTLASS_STATS is set. The
+            // dense tensor-core path has no env door to read back: the CUTLASS archive is
+            // linked or it is not, so a served boot line cannot say which arm ran, and the
+            // counters that would say it live in the archive. Without this an ON boot whose
+            // split-K workspace never crossed a card looks exactly like one that did, and
+            // the device-keyed workspace is the thing under test. `armed=absent` is the OFF
+            // build's own answer (40084: this binary does not contain the path).
+            let cutlass_stats = std::env::var("MEMRA_DSV4_DENSE_CUTLASS_STATS").is_ok();
             let mut host_cache = Dsv4HostCache::new(m.host_cache_bytes);
             while let Ok(mut req) = rx.recv() {
                 // The worker's DSV4 channel is unbounded, so the hard admission reservation
@@ -662,7 +670,30 @@ pub fn spawn(name: String, m: Dsv4Model) -> std::sync::mpsc::Sender<Box<Request>
                     serve_one(&m, &mut host_cache, &mut req)
                 }));
                 match r {
-                    Ok(Ok(())) => {}
+                    Ok(Ok(())) => {
+                        if cutlass_stats {
+                            let armed = match dense_cutlass_armed_for_gate() {
+                                Some(true) => "on",
+                                Some(false) => "off",
+                                None => "absent",
+                            };
+                            match dense_cutlass_counts_for_gate() {
+                                Some(c) => eprintln!(
+                                    "[dsv4-serve] dense-cutlass armed={armed} splitk={} \
+                                     declined={} mirror_bytes={} shapes_built={} \
+                                     ws_device_flips={}",
+                                    c.splitk,
+                                    c.declined,
+                                    c.mirror_bytes,
+                                    c.shapes_built,
+                                    c.ws_device_flips
+                                ),
+                                None => eprintln!(
+                                    "[dsv4-serve] dense-cutlass armed={armed} counts=absent"
+                                ),
+                            }
+                        }
+                    }
                     Ok(Err(err)) => {
                         // constraint-carrying requests wait on the constraint_ready
                         // channel, not the event stream — failing only via tx leaves
