@@ -135,9 +135,10 @@ fn main() {
             let seconds = prime(&mut gpu);
             let after = dense_cutlass_counts_for_gate().expect("counts");
             let engaged = after.splitk - before.splitk;
+            let flips = after.ws_device_flips - before.ws_device_flips;
             println!(
                 "PRIME rep={rep} arm={} seconds={seconds:.4} tok_per_s={:.1} splitk={engaged} \
-                 declined={} mirror_MB={:.1} shapes_built={}",
+                 declined={} mirror_MB={:.1} shapes_built={} ws_device_flips={flips}",
                 if on { "cutlass" } else { "scalar" },
                 prompt.len() as f64 / seconds,
                 after.declined - before.declined,
@@ -147,6 +148,13 @@ fn main() {
             if on && engaged == 0 {
                 println!(
                     "AB_FAIL the cutlass arm ran no split-K calls, so the arms are one program"
+                );
+                std::process::exit(1);
+            }
+            if flips_vacuous(engaged, flips, on) {
+                println!(
+                    "AB_FAIL the cutlass arm crossed no device boundary (ws_device_flips=0), \
+                     so the run never tested the device-keyed workspace"
                 );
                 std::process::exit(1);
             }
@@ -184,9 +192,16 @@ fn verdict_ratio(scalar: f64, cutlass: f64) -> (f64, f64) {
     (ratio, (ratio - 1.0) * 100.0)
 }
 
+/// Whether a prime rep failed to exercise the device keying: the cutlass arm ran
+/// but never crossed a device boundary, so a PASS from it would mean nothing.
+/// The scalar arm never touches the workspace, so its zero is expected, not vacuous.
+fn flips_vacuous(engaged: u64, flips: u64, cutlass_arm: bool) -> bool {
+    cutlass_arm && engaged > 0 && flips == 0
+}
+
 #[cfg(test)]
 mod arm_ab_verdict_tests {
-    use super::{median_of, verdict_ratio};
+    use super::{flips_vacuous, median_of, verdict_ratio};
 
     #[test]
     fn median_picks_the_middle_rep() {
@@ -208,5 +223,13 @@ mod arm_ab_verdict_tests {
         let (ratio, delta) = verdict_ratio(3.6998, 2.6701);
         assert!((ratio - 1.386).abs() < 5e-4, "ratio {ratio}");
         assert!((delta - 38.6).abs() < 5e-2, "delta {delta}");
+    }
+
+    #[test]
+    fn flips_zero_on_a_live_cutlass_arm_is_vacuous() {
+        assert!(flips_vacuous(10304, 0, true));
+        assert!(!flips_vacuous(10304, 4, true));
+        assert!(!flips_vacuous(0, 0, true));
+        assert!(!flips_vacuous(0, 0, false));
     }
 }
