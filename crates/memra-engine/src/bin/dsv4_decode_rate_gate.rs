@@ -3,7 +3,7 @@
 //! This is not HTTP latency or concurrent-serving qualification.
 use memra_engine::dsv4_gpu::{
     Dsv4Gpu, Dsv4HostDecodeState, Dsv4HostDsparkState, Dsv4SampleCfg, Dsv4SamplerOrder, Dsv4Vt,
-    dsv4_sample_row, dsv4_sampler_order, resolve_vt, set_dsv4_sampler_order_for_gate,
+    RoundTake, dsv4_sample_row, dsv4_sampler_order, resolve_vt, set_dsv4_sampler_order_for_gate,
 };
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
@@ -135,20 +135,28 @@ impl ReadyPrompt<'_> {
         );
         let timer = Instant::now();
         let (rounds, drafted, accepted) = {
+            // The driver commits exactly what this gate takes (memra #495), so the count is
+            // part of the answer now, not just the stop bit. A swallowed EOS still counts as
+            // taken: the device consumed it even though the rate gate does not record it.
             let mut commit = |new: &[u32]| {
                 let ns = timer.elapsed().as_nanos();
+                let mut taken = 0usize;
                 for &token in new {
                     if token == self.tokenizer.eos_id() {
                         eos = true;
-                        return false;
+                        return RoundTake {
+                            taken: taken + 1,
+                            stop: true,
+                        };
                     }
                     tokens.push(token);
                     commits.push(ns);
+                    taken += 1;
                     if tokens.len() == self.new_tokens {
-                        return false;
+                        return RoundTake { taken, stop: true };
                     }
                 }
-                true
+                RoundTake::all(taken)
             };
             if spec {
                 let run = if greedy {
@@ -197,7 +205,8 @@ impl ReadyPrompt<'_> {
                     dsv4_sample_row(&row, self.tokens.len(), &cfg).expect("sample")
                 };
                 for i in 0..self.new_tokens {
-                    if !commit(&[token]) {
+                    // The plain path feeds one token at a time, so only the stop bit matters.
+                    if commit(&[token]).stop {
                         break;
                     }
                     if i + 1 < self.new_tokens {

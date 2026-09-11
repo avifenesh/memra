@@ -36,8 +36,8 @@
 use crate::worker::{EngineError, Event, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
     DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
-    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row,
-    resolve_vt,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, RoundTake, dsv4_penalize_row,
+    dsv4_sample_row, resolve_vt,
 };
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
@@ -301,6 +301,108 @@ struct Dsv4HostCache {
 
 const DSV4_HOST_CACHE_MIN_TOKENS: usize = 128;
 
+/// Why a parked-tier lookup did not produce an entry. Carried so the serve log can say it
+/// (memra #495): a silent miss and a slow hit read identically in a receipt otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TakeMiss {
+    /// Nothing has ever parked in this request's PC-ISO namespace.
+    EmptyNamespace,
+    /// Entries exist and none is a usable strict prefix of this prompt.
+    NoPrefix {
+        candidates: usize,
+        /// Token count of the entry that shares the longest prefix with this prompt.
+        best_n: usize,
+        /// How far that entry agrees with the prompt before diverging.
+        best_lcp: usize,
+        /// Entries rejected only because the request needs DSpark state they lack.
+        dspark_short: usize,
+    },
+}
+
+impl TakeMiss {
+    fn no_prefix(candidates: usize) -> Self {
+        TakeMiss::NoPrefix {
+            candidates,
+            best_n: 0,
+            best_lcp: 0,
+            dspark_short: 0,
+        }
+    }
+
+    fn count(&mut self) {
+        if let TakeMiss::NoPrefix { candidates, .. } = self {
+            *candidates += 1;
+        }
+    }
+
+    fn observe(&mut self, n: usize, lcp: usize, dspark_missing: bool) {
+        if let TakeMiss::NoPrefix {
+            best_n,
+            best_lcp,
+            dspark_short,
+            ..
+        } = self
+        {
+            if lcp > *best_lcp {
+                *best_lcp = lcp;
+                *best_n = n;
+            }
+            if dspark_missing {
+                *dspark_short += 1;
+            }
+        }
+    }
+}
+
+/// How far two token sequences agree.
+fn common_prefix_len(a: &[u32], b: &[u32]) -> usize {
+    a.iter().zip(b.iter()).take_while(|(x, y)| x == y).count()
+}
+
+/// One parked entry as the selector sees it. Pulled out of `ParkedEntry` so the selection law
+/// (and its miss report) is testable without a GPU snapshot.
+struct Candidate<'a> {
+    toks: &'a [u32],
+    has_dspark: bool,
+    affinity: Option<&'a str>,
+    id: u64,
+}
+
+/// Pick the index of the longest usable STRICT token prefix, or say why none was usable.
+fn select_prefix<'a>(
+    pool: impl Iterator<Item = Candidate<'a>>,
+    affinity: Option<&str>,
+    prompt: &[u32],
+    need_dspark: bool,
+) -> Result<usize, TakeMiss> {
+    let mut best: Option<(usize, usize, bool, u64)> = None;
+    let mut miss = TakeMiss::no_prefix(0);
+    for (i, entry) in pool.enumerate() {
+        miss.count();
+        let n = entry.toks.len();
+        let lcp = common_prefix_len(prompt, entry.toks);
+        let dspark_missing = need_dspark && !entry.has_dspark;
+        let usable = n >= DSV4_HOST_CACHE_MIN_TOKENS && n < prompt.len() && lcp == n;
+        if !usable || dspark_missing {
+            miss.observe(n, lcp, dspark_missing);
+            continue;
+        }
+        let affinity_match = affinity.is_some() && affinity == entry.affinity;
+        let candidate = (i, n, affinity_match, entry.id);
+        if best.is_none_or(|(_, bn, ba, bid)| {
+            n > bn
+                || (n == bn && affinity_match && !ba)
+                || (n == bn && affinity_match == ba && entry.id > bid)
+        }) {
+            best = Some(candidate);
+        }
+    }
+    match best {
+        Some((i, _, _, _)) => Ok(i),
+        None => Err(miss),
+    }
+}
+
 impl Dsv4HostCache {
     fn new(budget: usize) -> Self {
         Self {
@@ -329,35 +431,35 @@ impl Dsv4HostCache {
     /// Consume the longest STRICT exact-token prefix. Strictness guarantees the caller has
     /// at least one suffix token to feed, which reconstructs next-token logits without storing
     /// a 129k-f32 row per entry. Affinity is only a tie-breaker; it never bypasses token match.
+    ///
+    /// A miss answers WHY (memra #495). The parked tier used to return a bare `None`, so a
+    /// conversation whose next turn re-rendered to a DIFFERENT prefix than the one parked was
+    /// indistinguishable, in every receipt, from a tier that was never armed: same absent `hit:`
+    /// line, same `cached_tokens=0`, same cold prefill. The agent shape sat in exactly that
+    /// blind spot. `TakeMiss` carries the longest common prefix of the best candidate, which
+    /// names the DIVERGENCE POINT: an lcp equal to the previous turn's prompt length means the
+    /// assistant turn was re-rendered differently than it was generated.
     fn take(
         &mut self,
         cache_ns: &str,
         affinity: Option<&str>,
         prompt: &[u32],
         need_dspark: bool,
-    ) -> Option<ParkedEntry> {
-        let pool = self.entries.get(cache_ns)?;
-        let mut best: Option<(usize, usize, bool, u64)> = None;
-        for (i, entry) in pool.iter().enumerate() {
-            let n = entry.toks.len();
-            if n < DSV4_HOST_CACHE_MIN_TOKENS
-                || n >= prompt.len()
-                || prompt[..n] != entry.toks[..]
-                || (need_dspark && entry.dspark.is_none())
-            {
-                continue;
-            }
-            let affinity_match = affinity.is_some() && affinity == entry.affinity.as_deref();
-            let candidate = (i, n, affinity_match, entry.id);
-            if best.is_none_or(|(_, bn, ba, bid)| {
-                n > bn
-                    || (n == bn && affinity_match && !ba)
-                    || (n == bn && affinity_match == ba && entry.id > bid)
-            }) {
-                best = Some(candidate);
-            }
-        }
-        let (i, _, _, _) = best?;
+    ) -> Result<ParkedEntry, TakeMiss> {
+        let Some(pool) = self.entries.get(cache_ns) else {
+            return Err(TakeMiss::EmptyNamespace);
+        };
+        let i = select_prefix(
+            pool.iter().map(|e| Candidate {
+                toks: &e.toks,
+                has_dspark: e.dspark.is_some(),
+                affinity: e.affinity.as_deref(),
+                id: e.id,
+            }),
+            affinity,
+            prompt,
+            need_dspark,
+        )?;
         let pool = self
             .entries
             .get_mut(cache_ns)
@@ -367,7 +469,7 @@ impl Dsv4HostCache {
         if pool.is_empty() {
             self.entries.remove(cache_ns);
         }
-        Some(entry)
+        Ok(entry)
     }
 
     fn insert(&mut self, cache_ns: String, mut entry: ParkedEntry) {
@@ -666,19 +768,25 @@ impl<'a> Emit<'a> {
         }
     }
 
-    /// Feed newly committed token ids. Returns false when generation must stop
-    /// (EOS / stop string / budget / client disconnect).
-    fn push(&mut self, new: &[u32]) -> bool {
+    /// Feed a speculative round's tokens BEFORE the device commits them, and answer how many
+    /// this stream took plus whether generation stops here (memra #495). The driver commits
+    /// exactly `taken` rows, which is what keeps the device state at the boundary
+    /// `park_prefix` can name. A swallowed EOS COUNTS as taken: the device consumed it and
+    /// the next turn's render replays it after the assistant content.
+    fn push_round(&mut self, new: &[u32]) -> RoundTake {
+        let mut taken = 0usize;
         for &id in new {
             if self.stop_reason.is_some() || self.client_gone {
-                return false;
+                break;
             }
             if self.eos.contains(&id) {
                 self.stop_reason = Some("stop");
                 self.terminal = Some(id);
-                return false;
+                taken += 1;
+                break;
             }
             self.ids.push(id);
+            taken += 1;
             // v1 detok: re-decode the whole tail and diff (O(n^2) chars at serve
             // lengths — correctness first; the hybrid worker's append-only decoder
             // is the follow-up if this ever profiles).
@@ -699,19 +807,27 @@ impl<'a> Emit<'a> {
                     self.client_gone = true;
                 }
                 self.stop_reason = Some("stop");
-                return false;
+                break;
             }
             self.text = full;
             if self.tx.send(Event::Token { id, text: delta }).is_err() {
                 self.client_gone = true;
-                return false;
+                break;
             }
             if self.ids.len() >= self.budget {
                 self.stop_reason = Some("length");
-                return false;
+                break;
             }
         }
-        true
+        RoundTake {
+            taken,
+            stop: self.stop_reason.is_some() || self.client_gone,
+        }
+    }
+
+    /// The plain (non-speculative) loops feed one token at a time and only need the stop bit.
+    fn push(&mut self, new: &[u32]) -> bool {
+        !self.push_round(new).stop
     }
 
     fn finish(self, n_prompt: usize, n_cached: usize, elapsed_s: f64, spec: Option<SpecUsage>) {
@@ -839,6 +955,27 @@ fn continue_plain_prefix(
     Ok(last.expect("non-empty suffix has final logits"))
 }
 
+/// Say the miss out loud. `reuse MISS` is the line a receipt greps for; without it a prompt that
+/// re-rendered differently than it was parked is invisible (memra #495).
+fn log_reuse_miss(miss: &TakeMiss, prompt_tokens: usize, need_dspark: bool) {
+    match *miss {
+        TakeMiss::EmptyNamespace => eprintln!(
+            "[dsv4-host] reuse MISS: namespace empty, prompt {prompt_tokens} tokens, \
+             dspark={need_dspark}; cold prefill"
+        ),
+        TakeMiss::NoPrefix {
+            candidates,
+            best_n,
+            best_lcp,
+            dspark_short,
+        } => eprintln!(
+            "[dsv4-host] reuse MISS: {candidates} parked, none a strict prefix of this \
+             {prompt_tokens}-token prompt (best entry {best_n} tokens, diverges at {best_lcp}; \
+             {dspark_short} lacked DSpark), dspark={need_dspark}; cold prefill"
+        ),
+    }
+}
+
 fn try_restore_prefix(
     m: &Dsv4Model,
     host: &mut Dsv4HostCache,
@@ -850,7 +987,13 @@ fn try_restore_prefix(
     if !host.armed() {
         return None;
     }
-    let entry = host.take(&req.cache_ns, req.affinity.as_deref(), prompt, need_dspark)?;
+    let entry = match host.take(&req.cache_ns, req.affinity.as_deref(), prompt, need_dspark) {
+        Ok(entry) => entry,
+        Err(miss) => {
+            log_reuse_miss(&miss, prompt.len(), need_dspark);
+            return None;
+        }
+    };
     let n_cached = entry.toks.len();
     let bytes = entry.bytes;
     let t0 = Instant::now();
@@ -1145,7 +1288,7 @@ fn serve_one(
         // generation budget + 1: the drivers count the head token of the final round
         // inside n_new; Emit owns the exact budget/EOS truncation either way.
         let n_new = budget;
-        let mut cb = |new: &[u32]| emit.push(new);
+        let mut cb = |new: &[u32]| emit.push_round(new);
         let run = if let Some(initial_logits) = initial_logits.as_deref() {
             if greedy {
                 m.gpu.spec_greedy_batched_stream_restored(
@@ -1671,7 +1814,10 @@ mod prefill_chunk_flag_tests {
 
 #[cfg(test)]
 mod unicode_window_tests {
-    use super::{processed_prefix_tokens, scan_stop_cut, snap};
+    use super::{RoundTake, processed_prefix_tokens, scan_stop_cut, snap};
+    // Only the boundary red arm needs the driver's commit arithmetic, so it is imported here
+    // rather than at module scope where the serving build would carry an unused name.
+    use memra_engine::dsv4_gpu::round_commit_rows;
 
     /// The box10 owner-serve panic class: a long generation whose fixed-offset scan
     /// window (len-64) lands INSIDE a multi-byte char ('’', 3 bytes). Both live
@@ -1747,6 +1893,41 @@ mod unicode_window_tests {
         );
     }
 
+    /// RED ARM for memra #495, the defect that kept the AGENT shape out of the parked tier.
+    ///
+    /// A tool-call turn stops inside a speculative round: the round produced 5 tokens, the
+    /// stream took 3 (a stop-string cut on the DSML close), and the driver now commits 3. The
+    /// boundary is therefore `prompt ++ emitted` and the session PARKS. Before the fix the
+    /// driver committed all 5 and this exact call returned
+    /// "device state consumed 5 generated tokens, stream committed only 3", which is what 10
+    /// of 10 agent turn-1s hit on the prod candidate while `reasoning.enabled:false` parked
+    /// 10 of 10 (darklanes `research/dsv4f-hot-ttft-20260911`, receipts/hot3-r1).
+    #[test]
+    fn a_tool_call_turn_that_stops_mid_round_parks() {
+        let prompt = [10, 11, 12];
+        let emitted = [20, 21, 22];
+        let n_round = 5;
+        let took = RoundTake {
+            taken: emitted.len(),
+            stop: true,
+        };
+        let state_pos = prompt.len() + round_commit_rows(took, n_round);
+        assert_eq!(
+            processed_prefix_tokens(&prompt, &emitted, None, state_pos).unwrap(),
+            [10, 11, 12, 20, 21, 22],
+            "a stop-string cut inside a round parks at the boundary the stream reached"
+        );
+        // The old arithmetic, stated so the regression is named rather than implied: commit
+        // the whole round and the same boundary call refuses.
+        let over_committed = prompt.len() + n_round;
+        assert!(
+            processed_prefix_tokens(&prompt, &emitted, None, over_committed)
+                .unwrap_err()
+                .contains("past the stop"),
+            "committing the whole round past the stop is exactly what must stay refused"
+        );
+    }
+
     /// RED ARM for the defect this lane closes. Before the terminal token was carried, this is
     /// the shape EVERY eos-terminated dsv4 session ended in: the device consumed the EOS the
     /// stream swallowed, `consumed > emitted` fired, and the session refused to park — so the
@@ -1780,5 +1961,103 @@ mod unicode_window_tests {
                 .contains("past the stop"),
             "state more than the terminal token ahead must not enter the host tier"
         );
+    }
+}
+
+#[cfg(test)]
+mod parked_tier_lookup_tests {
+    use super::{
+        Candidate, DSV4_HOST_CACHE_MIN_TOKENS, TakeMiss, common_prefix_len, select_prefix,
+    };
+
+    fn entry(toks: &[u32]) -> Candidate<'_> {
+        Candidate {
+            toks,
+            has_dspark: true,
+            affinity: None,
+            id: 0,
+        }
+    }
+
+    /// The whole chain in miniature: turn 1's prompt plus what it generated is the boundary that
+    /// parks, and turn 2 re-renders that same boundary and asks for it.
+    fn turn1_boundary(prompt: usize, generated: usize) -> Vec<u32> {
+        (0..(prompt + generated) as u32).collect()
+    }
+
+    #[test]
+    fn the_next_turn_finds_the_boundary_the_previous_turn_parked() {
+        let parked = turn1_boundary(DSV4_HOST_CACHE_MIN_TOKENS + 200, 139);
+        let mut turn2 = parked.clone();
+        turn2.extend(9000..9019); // the tool result and the next generation prompt
+        assert_eq!(
+            select_prefix([entry(&parked)].into_iter(), None, &turn2, true),
+            Ok(0)
+        );
+    }
+
+    /// RED ARM for the blind spot this lane closes (memra #495).
+    ///
+    /// The agent shape's turn 2 diverged from the parked boundary at exactly the point where the
+    /// assistant turn began: the turn was re-rendered WITHOUT the tool calls the model had
+    /// generated, so the parked tier answered a bare `None` and the receipt read exactly like a
+    /// tier that was never armed (`hits=0`, `cached_tokens=0`, no line at all). The miss now
+    /// names the divergence point, and this asserts it names the RIGHT one.
+    #[test]
+    fn a_turn_that_rerenders_differently_reports_where_it_diverged() {
+        let prompt_len = DSV4_HOST_CACHE_MIN_TOKENS + 200;
+        let parked = turn1_boundary(prompt_len, 139);
+        // Turn 2 agrees through the prompt and then renders a DIFFERENT assistant turn.
+        let mut turn2: Vec<u32> = (0..prompt_len as u32).collect();
+        turn2.extend(7000..7158);
+        let miss = select_prefix([entry(&parked)].into_iter(), None, &turn2, true)
+            .expect_err("a re-rendered assistant turn is not a prefix of the parked boundary");
+        assert_eq!(
+            miss,
+            TakeMiss::NoPrefix {
+                candidates: 1,
+                best_n: prompt_len + 139,
+                best_lcp: prompt_len,
+                dspark_short: 0,
+            },
+            "the miss must name the divergence point, which is the previous turn's prompt length"
+        );
+    }
+
+    /// A parked entry with no DSpark state cannot serve a spec-armed request, and the miss says
+    /// so rather than looking like an empty pool.
+    #[test]
+    fn a_dspark_request_reports_entries_that_lack_dspark_state() {
+        let parked = turn1_boundary(DSV4_HOST_CACHE_MIN_TOKENS + 200, 10);
+        let mut turn2 = parked.clone();
+        turn2.push(9999);
+        let mut plain = entry(&parked);
+        plain.has_dspark = false;
+        let miss = select_prefix([plain].into_iter(), None, &turn2, true)
+            .expect_err("a plain entry cannot answer a DSpark-armed request");
+        let TakeMiss::NoPrefix { dspark_short, .. } = miss else {
+            panic!("expected a NoPrefix miss, got {miss:?}");
+        };
+        assert_eq!(dspark_short, 1);
+    }
+
+    /// Strictness: an entry equal to the whole prompt leaves no suffix token to feed, so it is
+    /// not usable and the miss reports a full-length agreement rather than a hit.
+    #[test]
+    fn an_exact_length_entry_is_not_a_strict_prefix() {
+        let parked = turn1_boundary(DSV4_HOST_CACHE_MIN_TOKENS + 200, 5);
+        let miss = select_prefix([entry(&parked)].into_iter(), None, &parked, true)
+            .expect_err("no suffix token left to reconstruct logits from");
+        let TakeMiss::NoPrefix { best_lcp, .. } = miss else {
+            panic!("expected a NoPrefix miss, got {miss:?}");
+        };
+        assert_eq!(best_lcp, parked.len());
+    }
+
+    #[test]
+    fn common_prefix_len_stops_at_the_first_difference() {
+        assert_eq!(common_prefix_len(&[1, 2, 3], &[1, 2, 9, 3]), 2);
+        assert_eq!(common_prefix_len(&[1, 2], &[1, 2, 3]), 2);
+        assert_eq!(common_prefix_len(&[], &[1]), 0);
     }
 }

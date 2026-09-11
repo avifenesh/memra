@@ -821,6 +821,46 @@ impl Dsv4PrefillDraft {
     }
 }
 
+/// What a stream did with one speculative round's tokens.
+///
+/// The driver asks BEFORE it commits, because the device must not run past what the stream took.
+/// `taken` is how many of the round's tokens the consumer accepted (an EOS it swallows rather
+/// than delivers still counts: the device consumed it and the next turn's render replays it), and
+/// `stop` ends generation at this round boundary.
+///
+/// THE DEFECT THIS EXISTS TO CLOSE (memra #495): the drivers used to commit the whole accepted run
+/// and ask afterwards, so any stream that stopped mid-round left device state ahead of the visible
+/// tokens and the dsv4 parked-prefix tier refused the session ("device state consumed N generated
+/// tokens, stream committed only M"). Tool-call turns stop mid-round essentially always, so the
+/// agent shape never parked: measured on the prod candidate 2026-09-11, 10 of 10 agent turn-1s
+/// refused while `reasoning.enabled:false` parked and hit 10 of 10, and one missed park at a 115k
+/// prefix cost a 1,158.8 s cold reprime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RoundTake {
+    pub taken: usize,
+    pub stop: bool,
+}
+
+impl RoundTake {
+    /// The consumer took the whole round and wants more.
+    pub fn all(n: usize) -> Self {
+        Self {
+            taken: n,
+            stop: false,
+        }
+    }
+}
+
+/// Rows a round commits, given what the stream took.
+///
+/// Clamped at BOTH ends and both ends are load-bearing: `commit_verify_dev` refuses a count
+/// outside `1..=t`, so a consumer that took nothing (a disconnect on the round's first token)
+/// still closes the open round with the head row the device certainly consumed, and a consumer
+/// that over-reports cannot commit rows the verify batch never produced.
+pub fn round_commit_rows(take: RoundTake, n_round: usize) -> usize {
+    take.taken.clamp(1, n_round)
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Dsv4DraftProposal {
     #[default]
@@ -17527,11 +17567,13 @@ impl Dsv4Gpu {
     }
 
     /// ds4f rung 3 — [`Self::spec_greedy_batched_policy`] with a per-round COMMIT
-    /// callback: `round_cb` receives every newly committed token slice after the
-    /// round's ring writes + close sync (i.e. the tokens are final), and returning
-    /// `false` stops generation at that round boundary — the serve door's streaming,
-    /// EOS/stop-string, and client-disconnect cancel all ride this one seam. `None`
-    /// is byte-identical to the gated driver (the closure is never constructed).
+    /// callback: `round_cb` is asked with the round's tokens BEFORE they are committed,
+    /// and answers a [`RoundTake`]: how many the stream took and whether to stop. The
+    /// device then commits exactly that many rows, so a stream that stops mid-round
+    /// leaves state at the token boundary it actually reached (memra #495) — the serve
+    /// door's streaming, EOS/stop-string, and client-disconnect cancel all ride this one
+    /// seam. `None` is byte-identical to the gated driver (the closure is never
+    /// constructed) and takes every round whole.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     pub fn spec_greedy_batched_stream(
@@ -17543,7 +17585,7 @@ impl Dsv4Gpu {
         vstate: &mut VerifyState,
         depth_cap: usize,
         vt: Dsv4Vt,
-        round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        round_cb: Option<&mut dyn FnMut(&[u32]) -> RoundTake>,
     ) -> Res<SpecRunGpu> {
         let p0 = prompt.len();
         assert!(n_new >= 1, "n_new must be positive");
@@ -17576,7 +17618,7 @@ impl Dsv4Gpu {
         vstate: &mut VerifyState,
         depth_cap: usize,
         vt: Dsv4Vt,
-        round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        round_cb: Option<&mut dyn FnMut(&[u32]) -> RoundTake>,
     ) -> Res<SpecRunGpu> {
         if state.pos != prompt_len {
             return Err(format!(
@@ -17615,7 +17657,7 @@ impl Dsv4Gpu {
         vstate: &mut VerifyState,
         depth_cap: usize,
         vt: Dsv4Vt,
-        mut round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        mut round_cb: Option<&mut dyn FnMut(&[u32]) -> RoundTake>,
     ) -> Res<SpecRunGpu> {
         assert!(n_new >= 1, "n_new must be positive");
         let mut t_tok = {
@@ -17655,7 +17697,9 @@ impl Dsv4Gpu {
             if carry_pending {
                 tokens.push(t_tok);
                 if let Some(cb) = round_cb.as_deref_mut() {
-                    cb(&tokens[cb_from..]);
+                    // Carry / budget exit: this token rides the PREVIOUS round's commit, so
+                    // there is nothing left to commit and the answer only ends the run.
+                    let _ = cb(&tokens[cb_from..]);
                 }
                 break;
             }
@@ -17686,7 +17730,9 @@ impl Dsv4Gpu {
                     round_us: round_t0.elapsed().as_micros() as u64,
                 });
                 if let Some(cb) = round_cb.as_deref_mut() {
-                    cb(&tokens[cb_from..]);
+                    // Carry / budget exit: this token rides the PREVIOUS round's commit, so
+                    // there is nothing left to commit and the answer only ends the run.
+                    let _ = cb(&tokens[cb_from..]);
                 }
                 break;
             }
@@ -17727,7 +17773,21 @@ impl Dsv4Gpu {
                 t_next = a;
                 break;
             }
-            let n_commit = c_d + 1;
+            let n_round = c_d + 1;
+            // ASK BEFORE COMMITTING (memra #495). The consumer sees the head token plus this
+            // round's accepted drafts and says how many it took; the device commits exactly
+            // that many rows, so a stream that stops inside a round does not leave state past
+            // its own last token. `commit_verify_dev` has to close the open round with at
+            // least the head row, which is the one token the device always consumed.
+            let take = if let Some(cb) = round_cb.as_deref_mut() {
+                let mut round_new = Vec::with_capacity(n_round);
+                round_new.extend_from_slice(&tokens[cb_from..]);
+                round_new.extend_from_slice(&batch_ids[1..=c_d]);
+                cb(&round_new)
+            } else {
+                RoundTake::all(n_round)
+            };
+            let n_commit = round_commit_rows(take, n_round);
             {
                 let _p = phase!("3.commit_rollback", prof_stream.as_ref());
                 self.commit_verify_dev(state, vstate, n_commit)?;
@@ -17751,7 +17811,7 @@ impl Dsv4Gpu {
                     .map_err(e("round close sync"))?;
             }
             mh_row = c_d;
-            for i in 0..c_d {
+            for i in 0..n_commit - 1 {
                 tokens.push(batch_ids[i + 1]);
             }
             // Carry (= stop after emitting the bonus token) only when the n_new BUDGET
@@ -17770,9 +17830,7 @@ impl Dsv4Gpu {
                 round_us: round_t0.elapsed().as_micros() as u64,
             });
             t_tok = t_next;
-            if let Some(cb) = round_cb.as_deref_mut()
-                && !cb(&tokens[cb_from..])
-            {
+            if take.stop || n_commit < n_round {
                 break;
             }
         }
@@ -17834,7 +17892,7 @@ impl Dsv4Gpu {
         depth_cap: usize,
         vt: Dsv4Vt,
         sample: &Dsv4SampleCfg,
-        mut round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        mut round_cb: Option<&mut dyn FnMut(&[u32]) -> RoundTake>,
     ) -> Res<SpecRunGpu> {
         self.spec_sampled_batched_pen(
             prompt,
@@ -17869,7 +17927,7 @@ impl Dsv4Gpu {
         vt: Dsv4Vt,
         sample: &Dsv4SampleCfg,
         pen: Option<&Dsv4PenaltyCfg>,
-        round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        round_cb: Option<&mut dyn FnMut(&[u32]) -> RoundTake>,
     ) -> Res<SpecRunGpu> {
         assert!(n_new >= 1, "n_new must be positive");
         let pre = self.dspark_prefill_prime(prompt, state, dstate)?;
@@ -17905,7 +17963,7 @@ impl Dsv4Gpu {
         vt: Dsv4Vt,
         sample: &Dsv4SampleCfg,
         pen: Option<&Dsv4PenaltyCfg>,
-        round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        round_cb: Option<&mut dyn FnMut(&[u32]) -> RoundTake>,
     ) -> Res<SpecRunGpu> {
         if state.pos != prompt.len() {
             return Err(format!(
@@ -17949,7 +18007,7 @@ impl Dsv4Gpu {
         vt: Dsv4Vt,
         sample: &Dsv4SampleCfg,
         pen: Option<&Dsv4PenaltyCfg>,
-        mut round_cb: Option<&mut dyn FnMut(&[u32]) -> bool>,
+        mut round_cb: Option<&mut dyn FnMut(&[u32]) -> RoundTake>,
     ) -> Res<SpecRunGpu> {
         let p0 = prompt.len();
         assert!(n_new >= 1, "n_new must be positive");
@@ -17971,7 +18029,9 @@ impl Dsv4Gpu {
             if carry_pending {
                 tokens.push(t_tok);
                 if let Some(cb) = round_cb.as_deref_mut() {
-                    cb(&tokens[cb_from..]);
+                    // Carry / budget exit: this token rides the PREVIOUS round's commit, so
+                    // there is nothing left to commit and the answer only ends the run.
+                    let _ = cb(&tokens[cb_from..]);
                 }
                 break;
             }
@@ -18004,7 +18064,9 @@ impl Dsv4Gpu {
                     round_us: round_t0.elapsed().as_micros() as u64,
                 });
                 if let Some(cb) = round_cb.as_deref_mut() {
-                    cb(&tokens[cb_from..]);
+                    // Carry / budget exit: this token rides the PREVIOUS round's commit, so
+                    // there is nothing left to commit and the answer only ends the run.
+                    let _ = cb(&tokens[cb_from..]);
                 }
                 break;
             }
@@ -18058,7 +18120,17 @@ impl Dsv4Gpu {
                 t_next = s;
                 break;
             }
-            let n_commit = c_d + 1;
+            let n_round = c_d + 1;
+            // ASK BEFORE COMMITTING (memra #495) — see the greedy twin and `RoundTake`.
+            let take = if let Some(cb) = round_cb.as_deref_mut() {
+                let mut round_new = Vec::with_capacity(n_round);
+                round_new.extend_from_slice(&tokens[cb_from..]);
+                round_new.extend_from_slice(&batch_ids[1..=c_d]);
+                cb(&round_new)
+            } else {
+                RoundTake::all(n_round)
+            };
+            let n_commit = round_commit_rows(take, n_round);
             self.commit_verify_dev(state, vstate, n_commit)?;
             for i in 0..n_commit {
                 self.dspark_write_rings(dstate, i, m0 + i)?;
@@ -18072,7 +18144,7 @@ impl Dsv4Gpu {
                     .map_err(e("round close sync"))?;
             }
             mh_row = c_d;
-            for i in 0..c_d {
+            for i in 0..n_commit - 1 {
                 tokens.push(batch_ids[i + 1]);
             }
             carry_pending = c_d == kv && t_batch < t_cap;
@@ -18088,9 +18160,7 @@ impl Dsv4Gpu {
                 round_us: round_t0.elapsed().as_micros() as u64,
             });
             t_tok = t_next;
-            if let Some(cb) = round_cb.as_deref_mut()
-                && !cb(&tokens[cb_from..])
-            {
+            if take.stop || n_commit < n_round {
                 break;
             }
         }
@@ -20039,5 +20109,65 @@ mod ar_phase_policy_tests {
             let error = ar_phase_environment_policy(Ok(value), false).unwrap_err();
             assert!(error.contains("gate-only"), "{error}");
         }
+    }
+}
+
+#[cfg(test)]
+mod round_commit_tests {
+    use super::{RoundTake, round_commit_rows};
+
+    /// RED ARM for memra #495. A tool-call turn stops INSIDE a round: the stream takes the
+    /// first 3 tokens of a 5-token round and the device must commit 3, not 5. Before this
+    /// change the drivers committed `c_d + 1` unconditionally and asked afterwards, so state
+    /// ran 2 tokens past the visible stream and the dsv4 parked tier refused the session with
+    /// "device state consumed N generated tokens, stream committed only M". Committing the
+    /// whole round here would put this assertion back at 5.
+    #[test]
+    fn a_stream_that_stops_mid_round_commits_only_what_it_took() {
+        let stopped = RoundTake {
+            taken: 3,
+            stop: true,
+        };
+        assert_eq!(round_commit_rows(stopped, 5), 3);
+        // and the run must end: fewer rows committed than the round produced means the
+        // remaining drafts have no KV and cannot be continued from.
+        assert!(stopped.stop || 3 < 5);
+    }
+
+    /// The ordinary round is unchanged, which is what keeps every non-stopping request
+    /// byte-identical to the pre-change driver.
+    #[test]
+    fn a_round_the_stream_takes_whole_commits_whole() {
+        assert_eq!(round_commit_rows(RoundTake::all(5), 5), 5);
+        assert_eq!(round_commit_rows(RoundTake::all(1), 1), 1);
+        assert!(!RoundTake::all(4).stop);
+    }
+
+    /// Both clamps, because `commit_verify_dev` asserts `1..=t` and would panic outside it.
+    /// A client that disconnects on the round's first token takes nothing, and the head row
+    /// is still the one token the device consumed; a consumer that over-reports cannot commit
+    /// rows the verify batch never produced.
+    #[test]
+    fn the_commit_count_is_clamped_at_both_ends() {
+        assert_eq!(
+            round_commit_rows(
+                RoundTake {
+                    taken: 0,
+                    stop: true
+                },
+                4
+            ),
+            1
+        );
+        assert_eq!(
+            round_commit_rows(
+                RoundTake {
+                    taken: 99,
+                    stop: false
+                },
+                4
+            ),
+            4
+        );
     }
 }
