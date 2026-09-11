@@ -1207,27 +1207,6 @@ mod tests {
     /// and a gate instrument's input is neither.
     #[test]
     fn each_inert_door_carries_its_own_disposition() {
-        // Every row in the registry must be named by one of the lists below, so
-        // a door added later cannot sit in this test's blind spot and a list
-        // that empties out cannot make the test vacuous (memra #482 audit).
-        let named: std::collections::BTreeSet<&str> = [
-            "replay cadence",
-            "dense exact-tail transport",
-            "dense-fast",
-            "HC dot split S16",
-            "norm-fuse",
-            "norm-fuse2",
-            "norm2-wide",
-        ]
-        .into_iter()
-        .collect();
-        let registry: std::collections::BTreeSet<&str> =
-            DSV4_DOORS.iter().map(|row| row.name).collect();
-        assert!(
-            !registry.is_empty(),
-            "empty registry: this test would be vacuous"
-        );
-        assert_eq!(registry, named, "a door is missing a disposition assertion");
         let disposition = |door: &str| {
             DSV4_DOORS
                 .iter()
@@ -1237,12 +1216,18 @@ mod tests {
         };
         // Its own FLAGS row says no serving request arms full-token replay.
         const RECLASSIFY: &[&str] = &["replay cadence"];
-        // TP/EP cannot serve at all, so these three are not waiting on anything.
-        const PERMANENTLY_UNREACHABLE: &[&str] = &["norm-fuse", "norm-fuse2", "norm2-wide"];
+        // TP/EP cannot serve at all, so a door admitted only there waits on
+        // nothing. EMPTY since the PP-2 norm port took the last three out of it;
+        // see the required synthetic subject below, which is what keeps the
+        // permanence disposition asserted when this list holds nobody.
+        const PERMANENTLY_UNREACHABLE: &[&str] = &[];
         const ENGAGED: &[&str] = &[
             "dense exact-tail transport",
             "dense-fast",
             "HC dot split S16",
+            "norm-fuse",
+            "norm-fuse2",
+            "norm2-wide",
         ];
 
         // COVERAGE, and it is the half that was missing. Until 2026-09-11 this
