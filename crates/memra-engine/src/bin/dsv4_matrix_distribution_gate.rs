@@ -140,7 +140,6 @@ fn main() {
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_DRAFTER", "dspark"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "reference"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
         ("MEMRA_DSV4_EP", "off"),
     ] {
@@ -168,13 +167,13 @@ fn main() {
         "source is too short; no padding or repeated tokens"
     );
     let capacity = WINDOWS.iter().map(|&(_, prefix)| prefix).max().unwrap() + SCORED_ROWS + 32;
-    // memra #458: this is a bench process, so it may run the matrix expert program
-    // with the default-ON split-K arm; a serving process cannot arm it and refuses
-    // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
+    // The reference executor has no environment door any more (memra #461): this
+    // gate loads it through the one arm there is, and then asserts it got it.
+    memra_engine::arm_reference_expert_program_for_gate();
     let mut gpu =
         Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity).expect("load");
-    assert!(!gpu.matrix_moe_enabled());
+    assert!(!gpu.matrix_moe_enabled(), "the gate arm must load reference");
+    memra_engine::disarm_reference_expert_program_for_gate();
     gpu.set_grouped_route_device_for_gate(true)
         .expect("device routing");
     let cfg = Dsv4SampleCfg {

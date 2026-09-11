@@ -464,7 +464,7 @@ fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, output: &Path, reve
         "ON OFF OFF ON"
     };
     println!(
-        "PROTOCOL blocks={schedule:?} rows_per_block=5 rows=20 prime=256 output=256 both_full_replay=true device_sampler=true diet=true splitk=false cadence=false gu_n32=false first_capture_each_arm_inside_timing=true initial_carry_outside_timing=true final_next_draw_inside_timing=true timing_scope=sample_plus_forward_envelope control_hash_provenance=host_reconstructed_intended_sequence"
+        "PROTOCOL blocks={schedule:?} rows_per_block=5 rows=20 prime=256 output=256 both_full_replay=true device_sampler=true diet=true cadence=false gu_n32=false first_capture_each_arm_inside_timing=true initial_carry_outside_timing=true final_next_draw_inside_timing=true timing_scope=sample_plus_forward_envelope control_hash_provenance=host_reconstructed_intended_sequence"
     );
     for row in 0..20 {
         let on = matches!(row / 5, 0 | 3) != reverse;
@@ -524,7 +524,7 @@ fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, output: &Path, reve
             h.update(0u64.to_le_bytes());
         }
         println!(
-            r#"MEASURE {{"row":{row},"dense_on":{on},"generated_tokens":256,"decode_wall_ns":{wall},"decode_tok_s":{rate},"first_capture":{first_capture},"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"splitk":false,"generated_sha256":"{expected_tokens}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"captures":[1,1],"control_sha256":"{:x}"}}"#,
+            r#"MEASURE {{"row":{row},"dense_on":{on},"generated_tokens":256,"decode_wall_ns":{wall},"decode_tok_s":{rate},"first_capture":{first_capture},"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"{expected_tokens}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"captures":[1,1],"control_sha256":"{:x}"}}"#,
             expected_identity.0,
             expected_identity.1,
             expected_identity.2,
@@ -572,7 +572,6 @@ fn main() {
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_DOTS_ARM", "f32x"),
         ("MEMRA_DSV4_EP", "pair"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -589,9 +588,6 @@ fn main() {
     }
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
     // Pin the historical control program independently of the graph default.
-    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
-    memra_engine::set_moe_m1_splitk_for_gate(false);
-    assert!(!memra_engine::moe_m1_splitk_on());
     // This source pin contains neither cadence nor GU N32 implementation. The
     // controller binds the source; no future-default support is inferred.
     let source = std::fs::read_to_string(&args[2]).expect("source tape");
@@ -612,7 +608,6 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Box::new(
         Dsv4Gpu::load(
             Path::new(&args[1]),

@@ -3,38 +3,48 @@
 //!
 //! Why this module exists (memra #454, #458). Every DSV4 door merged since #374
 //! was measured honestly, on the tuned bench program every `dsv4_*_gate` binary
-//! pins: attention TP/EP, `MEMRA_DSV4_MOE_PROGRAM=matrix`, the drafter off, the
+//! pins: attention TP/EP, the matrix expert program, the drafter off, the
 //! small-kernel diet on, and the gate-only fused-GU arm turned on AFTER load
 //! through `Dsv4Gpu::set_grouped_gu_fuse_for_gate`. What was never checked is
-//! whether that program is the one a customer request takes. It is not: the
-//! served program is PP-2 with the reference expert program, a resident DSpark
-//! drafter and chunked prefill, and the engine refuses the union of the two in
-//! two independent places: the TP/EP topology guard refuses MTP/DSpark state,
-//! and `prefill_with_cache_chunked` refuses a batched prime at all under
+//! whether that program is the one a customer request takes.
+//!
+//! **Half of that gap closed on 2026-09-11** (memra #461, owner ruling): the
+//! matrix expert program is the SERVED program now, not a default-OFF door, so
+//! `SERVED_PROGRAM.matrix_moe` is true and the expert-program axis no longer
+//! separates the bench from the served path. The other half did not move and
+//! cannot: the served path is PP-2 with a resident DSpark drafter and chunked
+//! prefill, and the engine refuses the union with TP/EP in two independent
+//! places: the TP/EP topology guard refuses MTP/DSpark state, and
+//! `prefill_with_cache_chunked` refuses a batched prime at all under
 //! `topology.is_tp_ep()`, "DSV4 TP/EP vertical slice currently admits only a
 //! single-token prime; batched replicated cache hydration is not wired". So
-//! TP/EP can neither chunk nor serve, and either refusal alone makes the two
+//! TP/EP can neither chunk nor serve, and either refusal alone makes those two
 //! programs disjoint. Both are cited by FUNCTION and refusal text on purpose:
 //! line numbers in this file move under every lane that touches it.
 //!
-//! That has a consequence the first version of this module understated. A door
-//! admitted only under TP/EP is not "inert today", it is PERMANENTLY unreachable
-//! on the served path: the program it needs cannot take a customer request at
-//! all, for two independent structural reasons (memra #457), so no matrix
-//! verdict and no default flip rescues it. A door admitted only by the matrix
-//! expert executor is a different case entirely, because that program CAN serve
-//! and was measured doing so. `AdmittingProgram` is that axis, and
-//! `served_disposition` is where the three futures are decided. Six of the nine
-//! merged default-ON doors, including the two largest wins, cannot engage there,
-//! and they go inert SILENTLY because an unset value resolves to `Ok(admitted)`
-//! with `admitted == false`.
+//! A door admitted only under TP/EP is not "inert today", it is PERMANENTLY
+//! unreachable on the served path: the program it needs cannot take a customer
+//! request at all, for two independent structural reasons (memra #457), so no
+//! program decision rescues it. `AdmittingProgram` is that axis and
+//! `served_disposition` is where the futures are decided.
+//!
+//! What the flip did to the counts, written down because the counts are the
+//! claim: six of nine merged default-ON doors were inert, now FOUR of seven are.
+//! The two that left are the split-K pair, and they left by DELETION rather than
+//! by rescue: their admitting program can serve, but the arm they need is a
+//! gate-only function called after load, so no serving process can reach them on
+//! any ordering. Nothing else moved, because the remaining four are inert for
+//! the TP/EP reason. They still go inert SILENTLY, because an unset value
+//! resolves to `Ok(admitted)` with `admitted == false`, which is why this
+//! registry exists rather than a comment.
 //!
 //! So this module holds three things, and the load path uses the same code the
 //! gate does:
 //!
 //! 1. `Dsv4Program`, a description of a running program, with the two constants
 //!    that matter: `SERVED_PROGRAM` (what a customer request takes today) and
-//!    `TUNED_BENCH_PROGRAM` (what every DSV4 gate binary pins).
+//!    `TUNED_BENCH_PROGRAM` (what every DSV4 gate binary pins). Since the flip
+//!    they differ on topology and gate-only arms, no longer on expert program.
 //! 2. The door policy functions themselves. `Dsv4Gpu::load` calls exactly these,
 //!    so the gate cannot drift into being a second, kinder model of admission.
 //! 3. `DSV4_DOORS`, one row per door: the default and the served-path state the
@@ -163,8 +173,10 @@ pub struct Dsv4Program {
     pub chains_f32: bool,
     /// f32x dots.
     pub dots_f32: bool,
-    /// `MEMRA_DSV4_MOE_PROGRAM=matrix`: the matrix expert executor
-    /// (`dsv4_grouped.rs`). The reference program never enters that file.
+    /// The matrix expert executor (`dsv4_grouped.rs`), which is the loaded
+    /// default since 2026-09-11. The reference program never enters that file,
+    /// and a process only runs it by calling
+    /// `arm_reference_expert_program_for_gate` before load.
     pub matrix_moe: bool,
     /// A drafter (DSpark/MTP) is resident, so decode steps carry `tmax > 1` or a
     /// tap destination and are not the plain fused decode shape.
@@ -187,14 +199,25 @@ pub struct Dsv4Program {
 }
 
 /// What a customer request runs today: PP-2 (`Dsv4TopologyPlan::pp_ep`, so
-/// `is_tp_ep()` is false), the reference expert program, DSpark resident,
-/// chunked prefill, and no gate-only arms.
+/// `is_tp_ep()` is false), the MATRIX expert program, DSpark resident, chunked
+/// prefill, and no gate-only arms.
+///
+/// `matrix_moe` was false until 2026-09-11. The owner flipped it on the memra
+/// #461 class verdict (NEW numeric class, 4.464% top-1 drift on the whole tape
+/// against 3.571% for the already-accepted HC S16 door on the same tape, 179/300
+/// against 179/300 on the paired accuracy control, McNemar p = 1.000000) plus the
+/// `EP=off` gain the serve-economics lane measured on this exact arm: 135.7/135.5
+/// tok/s reference against 173.8/173.8 matrix at a 3,686-token prompt, disjoint
+/// by 28.0%. There is no `MEMRA_DSV4_MOE_PROGRAM` door any more: the matrix
+/// program is what loads, and the scalar reference executor is reachable only
+/// through `arm_reference_expert_program_for_gate`, which no serving process
+/// calls and which exists so every CLASS row still has its reference arm.
 pub const SERVED_PROGRAM: Dsv4Program = Dsv4Program {
     name: "served",
     tp_ep: false,
     chains_f32: true,
     dots_f32: true,
-    matrix_moe: false,
+    matrix_moe: true,
     drafter_resident: true,
     gate_armed_gu_fuse: false,
     hc_geometry_24x16384: true,
@@ -274,49 +297,60 @@ pub fn norm2_wide_environment_policy(
     }
 }
 
-/// memra #458. The matrix program's plain gate/up split-K arm computes gate and
-/// up in ONE fused launch, so it requires the fused-GU arm; `gate_up` refuses
-/// with "split-K requires plain fused GU" when it is not on. That arm is
-/// gate-only: `MEMRA_F16G_GU_FUSE` is OFF and research-only, and the only way to
-/// turn it on is `Dsv4Gpu::set_grouped_gu_fuse_for_gate`, which every gate
-/// binary calls after load and no serving process calls at all. Split-K has been
-/// default ON since #392, so `MEMRA_DSV4_MOE_PROGRAM=matrix` on a serving stack
-/// boots CLEAN and then fails 100% of requests as `engine_error` 500s.
+/// memra #458, RESOLVED BY DELETION 2026-09-11. The matrix program's plain
+/// gate/up split-K arm computed gate and up in ONE fused launch, so it required
+/// the fused-GU arm; `gate_up` refused with "split-K requires plain fused GU"
+/// when it was not on. That arm was gate-only: `MEMRA_F16G_GU_FUSE` is OFF and
+/// research-only, and the only way to turn it on was
+/// `Dsv4Gpu::set_grouped_gu_fuse_for_gate`, which every gate binary called after
+/// load and no serving process called at all. Split-K had been default ON since
+/// #392, so `MEMRA_DSV4_MOE_PROGRAM=matrix` on a serving stack booted CLEAN and
+/// then failed 100% of requests as `engine_error` 500s. memra #462 replaced that
+/// outage with a load-time refusal.
 ///
-/// This function is the load-time refusal that replaces that outage. It joins
-/// the four sibling refusals in `validate_matrix_program`. The per-request check
-/// in `dsv4_grouped::gate_up` stays where it is as the backstop; it is no longer
-/// the thing an operator finds out from.
-pub fn matrix_splitk_admission(matrix_moe: bool, splitk_on: bool, gate_armed: bool) -> Res<()> {
-    if matrix_moe && splitk_on && !gate_armed {
-        return Err(
-            "MEMRA_DSV4_MOE_PROGRAM=matrix with split-K ON (MEMRA_DSV4_MOE_M1_SPLITK unset or \
-             graph, default ON since #392) requires the gate-only fused-GU arm that only a gate \
-             binary arms: set MEMRA_DSV4_MOE_M1_SPLITK=0 to serve the matrix program, or call \
-             memra_engine::arm_matrix_splitk_door_for_gate() before load in a bench process"
-                .into(),
-        );
-    }
-    Ok(())
-}
-
-/// Set by a gate binary BEFORE `Dsv4Gpu::load`, and by nothing else. It is what
-/// keeps the matrix split-K combination a bench arm in the strong sense: a
-/// serving process that inherits the default-ON door with the matrix program
-/// REFUSES to load instead of failing every request. There is no environment
-/// variable that sets this.
-static MATRIX_SPLITK_ARMED: std::sync::atomic::AtomicBool =
+/// With the matrix program as the LOADED DEFAULT (memra #461, owner flip
+/// 2026-09-11), that refusal would have fired on every serving boot. Arming
+/// split-K for serving was never the fix: its precondition is a function only a
+/// gate calls after load, so a serving process cannot meet it on any ordering.
+/// Under the owner's door rule ("a door is the default or it is deleted") both
+/// `MEMRA_DSV4_MOE_M1_SPLITK` (#392) and `MEMRA_DSV4_SPLITK_FAST` (#425) were
+/// therefore REMOVED in the flip lane, with their kernels, their gate binaries
+/// and their registry rows. Their +10.226982%/+10.023951% and
+/// +1.727312%/+1.581907% were measured on a bench-armed configuration no serving
+/// process can reach, and that is recorded in the FLAGS.md removed-doors ledger
+/// rather than carried as a default. This paragraph is the tombstone: the next
+/// lane that wants split-K on the served path owns removing the fused-GU
+/// precondition first, and then owes a served receipt before any default.
+///
+/// The scalar reference expert executor survives, and only here. It is the arm
+/// every CLASS row compares against (`dsv4_moe_program_class_gate`,
+/// `dsv4_program_accuracy`), so it must stay reachable, and it must be
+/// unreachable from a serving process, because a request that silently took the
+/// slower numeric class is exactly the incident #461 was opened about. So it has
+/// no environment variable: a gate binary calls this before `Dsv4Gpu::load`, and
+/// nothing else does.
+static REFERENCE_PROGRAM_ARMED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Permit this process to run the matrix expert program with split-K ON. Gate
-/// binaries call it before load, after which they arm the fused-GU seam the arm
-/// needs; no serving path calls it.
-pub fn arm_matrix_splitk_door_for_gate() {
-    MATRIX_SPLITK_ARMED.store(true, std::sync::atomic::Ordering::SeqCst);
+/// Load the scalar reference expert program in THIS process instead of the
+/// matrix default. Gate binaries that own a CLASS comparison call it before
+/// load; no serving path calls it, and there is no environment variable that
+/// sets it.
+pub fn arm_reference_expert_program_for_gate() {
+    REFERENCE_PROGRAM_ARMED.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
-pub fn matrix_splitk_door_armed() -> bool {
-    MATRIX_SPLITK_ARMED.load(std::sync::atomic::Ordering::SeqCst)
+/// Undo the arm, so a gate binary that loads both programs in one process can
+/// put the default back rather than leaking the reference arm into a later load.
+pub fn disarm_reference_expert_program_for_gate() {
+    REFERENCE_PROGRAM_ARMED.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The program `Dsv4Gpu::load` resolves: matrix unless a gate armed the
+/// reference executor. This is the whole of the program decision; there is no
+/// environment read behind it.
+pub fn matrix_expert_program_resolved() -> bool {
+    !REFERENCE_PROGRAM_ARMED.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 // ---------------------------------------------------------------------------
@@ -467,27 +501,6 @@ fn resolve_norm2_wide(p: &Dsv4Program) -> DoorState {
     }
 }
 
-const MATRIX_EXECUTOR_ONLY: &str = "the arm lives in the matrix expert executor (dsv4_grouped.rs); the reference expert \
-     program the served path runs never enters that file";
-
-fn resolve_graph_splitk(p: &Dsv4Program) -> DoorState {
-    if !p.matrix_moe {
-        return DoorState::OffProgram(MATRIX_EXECUTOR_ONLY);
-    }
-    // Default ON since #392, and then #458: the plain gate/up arm needs the
-    // gate-only fused-GU seam, so an unarmed matrix process refuses at load.
-    match matrix_splitk_admission(true, true, p.gate_armed_gu_fuse) {
-        Ok(()) => DoorState::On(DoorShape::DecodeOnlyM1),
-        Err(_) => DoorState::RefusedAtLoad,
-    }
-}
-
-fn resolve_splitk_fast(p: &Dsv4Program) -> DoorState {
-    // The paired-fetch entries are a choice of split-K entry family: no split-K,
-    // no call site. Same reachability as its parent, never a wider one.
-    resolve_graph_splitk(p)
-}
-
 fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     // `arm_full_token_replay_for_gate` is the only caller, its admission needs
     // the gate-only fused-GU arm and refuses host split-K/DSpark state, and its
@@ -559,18 +572,6 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
     DoorRow {
-        name: "graph split-K",
-        env: "MEMRA_DSV4_MOE_M1_SPLITK",
-        merged: "#392",
-        declared_default: DeclaredDefault::On,
-        declared_served: DoorState::OffProgram(MATRIX_EXECUTOR_ONLY),
-        declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
-        resolve: resolve_graph_splitk,
-        admitted_by: AdmittingProgram::MatrixExecutor,
-        merged_gain_pct: (10.226982, 10.023951),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
-    },
-    DoorRow {
         name: "dense-fast",
         env: "MEMRA_DSV4_DENSE_FAST",
         merged: "#404",
@@ -604,18 +605,6 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         resolve: resolve_hc_dot_split,
         admitted_by: AdmittingProgram::ServedProgram,
         merged_gain_pct: (2.701174, 2.591532),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
-    },
-    DoorRow {
-        name: "split-K-fast",
-        env: "MEMRA_DSV4_SPLITK_FAST",
-        merged: "#425",
-        declared_default: DeclaredDefault::On,
-        declared_served: DoorState::OffProgram(MATRIX_EXECUTOR_ONLY),
-        declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
-        resolve: resolve_splitk_fast,
-        admitted_by: AdmittingProgram::MatrixExecutor,
-        merged_gain_pct: (1.727312, 1.581907),
         measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
     DoorRow {
@@ -821,6 +810,45 @@ pub fn door_receipt_lines(program: &Dsv4Program) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    /// Why the arms below use a SYNTHETIC row instead of a real door.
+    ///
+    /// Several of these arms need a door that CANNOT engage on the served
+    /// program, and they had been keyed to whichever real door was stuck at the
+    /// time. That is a red arm with a maintenance schedule, and it came due
+    /// twice in two days: the matrix flip deleted `graph split-K`, and the PP-2
+    /// norm port makes `norm2-wide` reachable, turning this arm's lie into a
+    /// truth. A red arm that goes green because someone FIXED its subject has
+    /// stopped checking, silently, which is the failure mode this registry
+    /// exists to catch.
+    ///
+    /// So the stand-in is defined here, depends on nothing else in this file,
+    /// and stays correct whichever real doors exist: a door admitted only under
+    /// all-layer TP/EP, which the served program is not and (memra #457, two
+    /// independent refusals) cannot become. Unlike a real door, nobody can fix
+    /// it, because there is nothing behind it to fix.
+    ///
+    /// Taken verbatim from the norm-fuse PP-2 port lane's trial branch
+    /// (`trial-normpp2-on-482`, `c3a4099b2`) rather than re-invented, so the two
+    /// lanes cannot drift into two framings of the same subject.
+    pub(super) const SYNTHETIC_TP_EP_ONLY: &str =
+        "synthetic red-arm door: admitted only under all-layer TP/EP, which cannot serve";
+
+    pub(super) fn resolve_synthetic_tp_ep_only(p: &Dsv4Program) -> DoorState {
+        if p.tp_ep {
+            DoorState::On(DoorShape::AllRoutedShapes)
+        } else {
+            DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY)
+        }
+    }
+
+    /// The stand-in must be non-vacuous in BOTH directions, or every arm built
+    /// on it proves nothing: inert on the served program, live on the bench.
+    #[test]
+    fn the_synthetic_stand_in_is_inert_on_served_and_live_on_the_bench() {
+        assert!(!resolve_synthetic_tp_ep_only(&SERVED_PROGRAM).engaged());
+        assert!(resolve_synthetic_tp_ep_only(&TUNED_BENCH_PROGRAM).engaged());
+    }
+
     use super::*;
 
     /// The gate. Every declared default/served-path claim in the registry must be
@@ -844,22 +872,27 @@ mod tests {
     #[test]
     fn a_door_that_claims_an_engagement_it_does_not_get_is_caught() {
         const LIAR: &[DoorRow] = &[DoorRow {
-            name: "norm2-wide, claiming the served path",
-            env: "MEMRA_DSV4_NORM2_WIDE",
-            merged: "#430",
+            name: "a TP/EP-only door, claiming the served path",
+            env: "MEMRA_DSV4_NORM_FUSE",
+            merged: "#404",
             declared_default: DeclaredDefault::On,
-            // The lie: this door cannot engage on PP-2 without norm-fuse2.
+            // The lie, and it is a lie about a SYNTHETIC door on purpose: see
+            // the note on `resolve_synthetic_tp_ep_only`. This arm used to lie
+            // with norm2-wide, and the PP-2 port makes that claim TRUE.
             declared_served: DoorState::On(DoorShape::AllRoutedShapes),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-            resolve: resolve_norm2_wide,
+            resolve: resolve_synthetic_tp_ep_only,
             admitted_by: AdmittingProgram::TpEpOnly,
-            merged_gain_pct: (5.955257, 5.749573),
-            measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
+            merged_gain_pct: (0.0, 0.0),
+            measured_on: "synthetic: the liar arm, not a claim about any box",
         }];
         let violations = declaration_violations(LIAR);
         assert_eq!(violations.len(), 1, "{violations:?}");
         assert_eq!(violations[0].program, "served");
-        assert_eq!(violations[0].resolved, DoorState::Off);
+        assert_eq!(
+            violations[0].resolved,
+            DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY)
+        );
     }
 
     /// Red arm 2: a door claimed at the wrong SHAPE is caught too. Decode-only
@@ -889,12 +922,16 @@ mod tests {
     #[test]
     fn the_served_and_bench_programs_resolve_doors_differently() {
         assert_ne!(SERVED_PROGRAM, TUNED_BENCH_PROGRAM);
+        assert!(!DSV4_DOORS.is_empty(), "an empty registry loops zero times");
         let differing: Vec<_> = DSV4_DOORS
             .iter()
             .filter(|row| (row.resolve)(&SERVED_PROGRAM) != (row.resolve)(&TUNED_BENCH_PROGRAM))
             .map(|row| row.name)
             .collect();
-        assert_eq!(differing.len(), 6, "{differing:?}");
+        // Four since the 2026-09-11 matrix flip: the two split-K doors that used
+        // to differ purely because the served program was the reference one are
+        // deleted, and the expert program itself no longer separates the two.
+        assert_eq!(differing.len(), 4, "{differing:?}");
         for row in DSV4_DOORS {
             // Nothing may be engaged on the served path and dead on the bench:
             // that direction would mean the bench is measuring less than what
@@ -913,42 +950,53 @@ mod tests {
     /// changing its declared default to match reality, or deleting it, all move
     /// this number, and all three are decisions that must be written down.
     #[test]
-    fn six_default_on_doors_are_inert_on_the_served_path() {
+    fn four_default_on_doors_are_inert_on_the_served_path() {
+        // Six before 2026-09-11. The matrix flip removed the two split-K rows
+        // (deleted outright, not rescued: their precondition is gate-only), and
+        // it moved nothing else: the four that remain are inert for the TP/EP
+        // reason, which the expert-program decision was never going to fix.
         assert_eq!(
             inert_default_on_doors(DSV4_DOORS),
             vec![
                 "replay cadence",
-                "graph split-K",
                 "norm-fuse",
-                "split-K-fast",
                 "norm-fuse2",
                 "norm2-wide",
             ]
         );
     }
 
-    /// memra #458, red arm: the combination that failed 100% of requests on the
-    /// prod-candidate box must refuse at load, and must keep being admitted for
-    /// the armed bench process that measured the +10.2% the door merged on.
+    /// The scalar reference executor has exactly one way in, and a serving
+    /// process does not have it. The red arm is the DEFAULT: if
+    /// `matrix_expert_program_resolved` ever answers false without the arm, a
+    /// request has silently taken the slower numeric class, which is the
+    /// incident memra #461 was opened about.
     #[test]
-    fn matrix_plus_default_on_splitk_refuses_at_load_unless_a_gate_armed_it() {
-        let refusal = matrix_splitk_admission(true, true, false).unwrap_err();
-        assert!(refusal.contains("MEMRA_DSV4_MOE_M1_SPLITK=0"), "{refusal}");
+    fn the_reference_expert_program_is_reachable_only_through_the_gate_arm() {
+        disarm_reference_expert_program_for_gate();
         assert!(
-            refusal.contains("arm_matrix_splitk_door_for_gate"),
-            "{refusal}"
+            matrix_expert_program_resolved(),
+            "unarmed, the loaded program must be matrix"
         );
-        // The documented workaround, and the bench program, both still load.
-        assert_eq!(matrix_splitk_admission(true, false, false), Ok(()));
-        assert_eq!(matrix_splitk_admission(true, true, true), Ok(()));
-        // The reference expert program never had the problem.
-        assert_eq!(matrix_splitk_admission(false, true, false), Ok(()));
+        // No environment variable reaches it: the old door name is gone from the
+        // engine, and setting it changes nothing.
+        // SAFETY: single-threaded test, restored immediately below.
+        unsafe { std::env::set_var("MEMRA_DSV4_MOE_PROGRAM", "reference") };
+        assert!(
+            matrix_expert_program_resolved(),
+            "the removed door must not resurrect the reference program"
+        );
+        unsafe { std::env::remove_var("MEMRA_DSV4_MOE_PROGRAM") };
+
+        arm_reference_expert_program_for_gate();
+        assert!(
+            !matrix_expert_program_resolved(),
+            "a gate binary that armed the reference arm must get it"
+        );
+        disarm_reference_expert_program_for_gate();
+        assert!(matrix_expert_program_resolved());
     }
 
-    /// Every door in the registry owes a `docs/FLAGS.md` row. A door added to the
-    /// engine with no registry entry is caught by
-    /// `every_dsv4_door_name_in_the_engine_is_declared_or_exempt` below; this is
-    /// the other half, so a registry row cannot document itself.
     #[test]
     fn every_declared_door_has_a_flags_row() {
         let flags = std::fs::read_to_string(
@@ -990,10 +1038,6 @@ mod tests {
         ("MEMRA_DSV4_GROUPED_ROUTE", "program selector"),
         ("MEMRA_DSV4_HAVE_NVTX", "build-time profiling switch"),
         ("MEMRA_DSV4_INDEXER_SCORE", "program selector"),
-        (
-            "MEMRA_DSV4_MOE_PROGRAM",
-            "program selector: the disjointness itself (memra #461)",
-        ),
         ("MEMRA_DSV4_NVTX", "profiling ranges"),
         ("MEMRA_DSV4_PEER_PROBE_POISON", "gate-only fault injection"),
         ("MEMRA_DSV4_PREFILL_DRAFT", "program selector"),
@@ -1017,7 +1061,8 @@ mod tests {
         ("MEMRA_F16G_DIRECT", "grouped visitor program selector"),
         (
             "MEMRA_F16G_GU_FUSE",
-            "gate-only research arm; memra #458 is what its gate-only status costs",
+            "gate-only research arm; its gate-only status is why the two split-K \
+             doors were deleted rather than served (memra #458, #461)",
         ),
         ("MEMRA_F16G_SK", "split-K width parameter"),
         ("MEMRA_F16G_SK_CROSS", "split-K crossover parameter"),
@@ -1112,32 +1157,61 @@ mod tests {
                 .expect(door)
         };
         // Its own FLAGS row says no serving request arms full-token replay.
+        const RECLASSIFY: &[&str] = &["replay cadence"];
+        // TP/EP cannot serve at all, so these three are not waiting on anything.
+        const PERMANENTLY_UNREACHABLE: &[&str] = &["norm-fuse", "norm-fuse2", "norm2-wide"];
+        const ENGAGED: &[&str] = &[
+            "dense exact-tail transport",
+            "dense-fast",
+            "HC dot split S16",
+        ];
+
+        // COVERAGE, and it is the half that was missing. Until 2026-09-11 this
+        // test named doors and nothing checked that it named ALL of them, so
+        // `graph split-K` and `split-K-fast` sat in the registry with NO
+        // disposition assertion at all: not a vacuity, a blind spot, and the
+        // kind that grows by one every time a door lands. The flip deletes those
+        // two, which resolves this instance; this assertion is what stops the
+        // next one. Found by the norm-fuse PP-2 port lane's coverage check.
+        //
+        // Keyed to the registry rather than to a count, so a door landing or
+        // leaving fails HERE with its own name rather than shifting a number.
+        let covered: std::collections::BTreeSet<&str> = RECLASSIFY
+            .iter()
+            .chain(PERMANENTLY_UNREACHABLE)
+            .chain(ENGAGED)
+            .copied()
+            .collect();
+        let registry: std::collections::BTreeSet<&str> =
+            DSV4_DOORS.iter().map(|row| row.name).collect();
+        assert!(!registry.is_empty(), "an empty registry covers vacuously");
         assert_eq!(
-            disposition("replay cadence"),
-            DoorDisposition::ReclassifyAsGateInput
+            covered, registry,
+            "every registry door needs a disposition assertion here"
         );
-        // The matrix executor CAN serve, and was measured serving, so memra #461
-        // decides these two.
-        for door in ["graph split-K", "split-K-fast"] {
+        // The three sets must also be disjoint, or a door could be "covered" by
+        // being asserted two incompatible ways.
+        assert_eq!(
+            covered.len(),
+            RECLASSIFY.len() + PERMANENTLY_UNREACHABLE.len() + ENGAGED.len(),
+            "a door is asserted in more than one disposition set"
+        );
+
+        for door in RECLASSIFY {
             assert_eq!(
                 disposition(door),
-                DoorDisposition::FollowsTheProgramDecision,
+                DoorDisposition::ReclassifyAsGateInput,
                 "{door}"
             );
         }
-        // TP/EP cannot serve at all, so these three are not waiting on anything.
-        for door in ["norm-fuse", "norm-fuse2", "norm2-wide"] {
+        for door in PERMANENTLY_UNREACHABLE {
             assert_eq!(
                 disposition(door),
                 DoorDisposition::PermanentlyUnreachable,
                 "{door}"
             );
         }
-        for door in [
-            "dense exact-tail transport",
-            "dense-fast",
-            "HC dot split S16",
-        ] {
+        for door in ENGAGED {
             assert_eq!(disposition(door), DoorDisposition::Engaged, "{door}");
         }
     }
@@ -1154,68 +1228,84 @@ mod tests {
             tp_ep_can_serve: true,
             ..PROGRAM_FACTS
         };
-        for door in ["norm-fuse", "norm-fuse2", "norm2-wide"] {
-            let row = DSV4_DOORS.iter().find(|row| row.name == door).expect(door);
-            assert_eq!(
-                served_disposition(row, &PROGRAM_FACTS),
-                DoorDisposition::PermanentlyUnreachable,
-                "{door}"
-            );
-            assert_eq!(
-                served_disposition(row, &if_tp_ep_could_serve),
-                DoorDisposition::PortAdmissionOrRedeclare,
-                "{door}"
-            );
-        }
-        // And the mirror: if the matrix program could NOT serve, its two doors
-        // would stop being a pending decision and become removable too.
-        let if_matrix_could_not_serve = ProgramFacts {
-            matrix_can_serve: false,
-            ..PROGRAM_FACTS
+        // This arm ran over the three real TP/EP-only doors until 2026-09-11.
+        // The rule is about ANY door admitted only by a program that cannot
+        // serve, and it must keep its teeth when no such door happens to exist
+        // this week -- which the PP-2 norm port is about to make the case. So it
+        // runs on the synthetic stand-in, which nobody can repair.
+        const TP_EP_ONLY: DoorRow = DoorRow {
+            name: "a future TP/EP-only door",
+            env: "MEMRA_DSV4_NORM_FUSE",
+            merged: "#404",
+            declared_default: DeclaredDefault::On,
+            declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
+            declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
+            resolve: resolve_synthetic_tp_ep_only,
+            admitted_by: AdmittingProgram::TpEpOnly,
+            merged_gain_pct: (0.0, 0.0),
+            measured_on: "synthetic: the permanence arm, not a claim about any box",
         };
-        for door in ["graph split-K", "split-K-fast"] {
-            let row = DSV4_DOORS.iter().find(|row| row.name == door).expect(door);
-            assert_eq!(
-                served_disposition(row, &if_matrix_could_not_serve),
-                DoorDisposition::PermanentlyUnreachable,
-                "{door}"
-            );
-        }
+        assert!(
+            !(TP_EP_ONLY.resolve)(&SERVED_PROGRAM).engaged(),
+            "the arm is vacuous unless the stand-in is inert on the served program"
+        );
+        assert_eq!(
+            served_disposition(&TP_EP_ONLY, &PROGRAM_FACTS),
+            DoorDisposition::PermanentlyUnreachable
+        );
+        assert_eq!(
+            served_disposition(&TP_EP_ONLY, &if_tp_ep_could_serve),
+            DoorDisposition::PortAdmissionOrRedeclare
+        );
     }
 
-    /// A served program running the matrix experts moves exactly the two doors
-    /// that follow that decision, and leaves the other four where they are.
+    /// The mirror of the adoption. The matrix program is the served one now, so
+    /// the interesting program is the one a CLASS gate arms: the scalar
+    /// reference executor. Nothing in the registry may depend on the expert
+    /// program any more, because the two doors that did are deleted, and this
+    /// test is what says so rather than a comment.
     #[test]
-    fn adopting_the_matrix_program_moves_only_the_matrix_doors() {
-        let matrix_served = Dsv4Program {
-            name: "served-with-matrix",
-            matrix_moe: true,
+    fn the_reference_arm_resolves_every_remaining_door_the_same_way() {
+        let reference_served = Dsv4Program {
+            name: "served-with-reference",
+            matrix_moe: false,
             ..SERVED_PROGRAM
         };
-        let resolve = |door: &str, program: &Dsv4Program| {
-            (DSV4_DOORS
-                .iter()
-                .find(|row| row.name == door)
-                .expect(door)
-                .resolve)(program)
-        };
-        // Still refused while the fused-GU arm stays gate-only (memra #458),
-        // which is a configuration error an operator can see, not silence.
-        assert_eq!(
-            resolve("graph split-K", &matrix_served),
-            DoorState::RefusedAtLoad
-        );
-        assert_eq!(
-            resolve("split-K-fast", &matrix_served),
-            DoorState::RefusedAtLoad
-        );
-        for door in ["norm-fuse", "norm-fuse2", "norm2-wide"] {
-            assert_eq!(resolve(door, &matrix_served), DoorState::Off, "{door}");
+        for row in DSV4_DOORS {
+            assert_eq!(
+                (row.resolve)(&reference_served),
+                (row.resolve)(&SERVED_PROGRAM),
+                "{} still resolves on the expert program",
+                row.name
+            );
         }
-        assert!(matches!(
-            resolve("replay cadence", &matrix_served),
-            DoorState::NoServingCaller(_)
-        ));
+        // And the non-vacuity: "same on both" above must be a fact about the
+        // EXPERT PROGRAM rather than about a dead resolver, so something must
+        // still resolve differently on a different axis.
+        //
+        // This anchor was `norm-fuse`, named literally, and the PP-2 norm port
+        // makes that door resolve identically on both programs, which would turn
+        // the assertion red for a reason that has nothing to do with what it
+        // checks. Same lesson as the red arms above, one level up. Two anchors
+        // now, neither of them a door name.
+        assert!(!DSV4_DOORS.is_empty(), "an empty registry loops zero times");
+        assert_eq!(DSV4_DOORS.len(), 7);
+        // 1. The machinery is alive and program-sensitive, by construction and
+        //    permanently: the synthetic stand-in cannot be fixed.
+        assert_ne!(
+            resolve_synthetic_tp_ep_only(&SERVED_PROGRAM),
+            resolve_synthetic_tp_ep_only(&TUNED_BENCH_PROGRAM)
+        );
+        // 2. And the REGISTRY still contains at least one such row, computed
+        //    rather than named, so this tracks the registry through door churn
+        //    instead of pinning whichever door happens to differ this month.
+        assert!(
+            DSV4_DOORS
+                .iter()
+                .any(|row| (row.resolve)(&SERVED_PROGRAM) != (row.resolve)(&TUNED_BENCH_PROGRAM)),
+            "no registry row resolves differently on the two programs, so the \
+             expert-program claim above is vacuous"
+        );
     }
 
     /// The honest scope of what the merged receipts establish. The dev pair
@@ -1237,18 +1327,30 @@ mod tests {
                 "dense exact-tail transport",
                 "dense-fast",
                 "norm-fuse",
-                "split-K-fast",
                 "norm-fuse2",
             ]
         );
-        // Above the floor, and so unaffected by the drift finding.
-        for door in ["graph split-K", "HC dot split S16", "norm2-wide"] {
-            let row = DSV4_DOORS.iter().find(|row| row.name == door).expect(door);
-            assert!(
-                !below_instrument_floor(row, DEV_PAIR_INSTRUMENT_FLOOR_PCT),
-                "{door}"
-            );
-        }
+        // The doors ABOVE the floor used to be named literally here
+        // (`["HC dot split S16", "norm2-wide"]`), which is the same disease as
+        // the red arms one level up: an assertion pinned to a door NAME to prove
+        // something about the MECHANISM. Deleting or renaming either door would
+        // have broken it for a reason unrelated to what it checks. Stated as the
+        // partition property instead, which tracks the registry through churn.
+        let above: Vec<_> = DSV4_DOORS
+            .iter()
+            .filter(|row| !below_instrument_floor(row, DEV_PAIR_INSTRUMENT_FLOOR_PCT))
+            .map(|row| row.name)
+            .collect();
+        // Non-vacuity in BOTH directions: a floor that caught everything, or
+        // nothing, would make one of these lists empty and the split
+        // meaningless.
+        assert!(!below.is_empty(), "no door is below the floor");
+        assert!(!above.is_empty(), "no door is above the floor");
+        assert_eq!(
+            below.len() + above.len(),
+            DSV4_DOORS.len(),
+            "below and above must partition the registry"
+        );
     }
 
     /// The strongest removal case: no evidence for the default in EITHER
@@ -1263,7 +1365,7 @@ mod tests {
                 &PROGRAM_FACTS,
                 DEV_PAIR_INSTRUMENT_FLOOR_PCT
             ),
-            vec!["replay cadence", "norm-fuse", "split-K-fast", "norm-fuse2"]
+            vec!["replay cadence", "norm-fuse", "norm-fuse2"]
         );
         // Engaged, but on evidence the pair cannot resolve: a different and
         // weaker complaint, kept separate so it cannot be quoted as the first.
@@ -1294,12 +1396,12 @@ mod tests {
         // stands in for the next one, inert and below any floor.
         const OFF_DOOR: &[DoorRow] = &[DoorRow {
             name: "a default-OFF door, inert and unmeasurable",
-            env: "MEMRA_DSV4_NORM2_WIDE",
-            merged: "#430",
+            env: "MEMRA_DSV4_NORM_FUSE",
+            merged: "#404",
             declared_default: DeclaredDefault::Off,
-            declared_served: DoorState::Off,
+            declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-            resolve: resolve_norm2_wide,
+            resolve: resolve_synthetic_tp_ep_only,
             admitted_by: AdmittingProgram::TpEpOnly,
             merged_gain_pct: (0.0, 0.0),
             measured_on: "synthetic: the floor arm, not a claim about any box",
@@ -1322,12 +1424,12 @@ mod tests {
         // excluded it rather than some other term.
         const ON_DOOR: &[DoorRow] = &[DoorRow {
             name: "the same row, defaulting ON",
-            env: "MEMRA_DSV4_NORM2_WIDE",
-            merged: "#430",
+            env: "MEMRA_DSV4_NORM_FUSE",
+            merged: "#404",
             declared_default: DeclaredDefault::On,
-            declared_served: DoorState::Off,
+            declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-            resolve: resolve_norm2_wide,
+            resolve: resolve_synthetic_tp_ep_only,
             admitted_by: AdmittingProgram::TpEpOnly,
             merged_gain_pct: (0.0, 0.0),
             measured_on: "synthetic: the floor arm, not a claim about any box",

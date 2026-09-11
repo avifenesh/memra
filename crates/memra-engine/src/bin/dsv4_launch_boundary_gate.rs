@@ -98,7 +98,6 @@ fn main() {
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_EP", "pair"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -121,12 +120,9 @@ fn main() {
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(true);
     // This instrument retains the sktail census and control program.
-    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
-    memra_engine::set_moe_m1_splitk_for_gate(false);
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let mut gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 544).unwrap();
     assert!(gpu.topology().is_tp_ep() && gpu.attention_tp_geometry().is_some());
     gpu.set_grouped_route_validation_for_gate(false);

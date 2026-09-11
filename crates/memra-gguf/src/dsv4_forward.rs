@@ -75,12 +75,23 @@ pub const U_FP8: f64 = 1.0 / 16.0; // 2^-4
 /// with pow2-ceil scales and REAL FP8 rounding — the GEMM path rounds in BOTH kernel.py
 /// variants; the clamp-only fork is inplace-KV-QAT-only). One seam for both sides so an
 /// invocation cannot mix numeric classes.
+/// DEFAULT FLIPPED 2026-09-11 (memra #461, the matrix expert program flip).
+/// Unset now resolves `native`; `bf16` is the explicit A/B reference arm.
+///
+/// It had to move WITH `MEMRA_DSV4_DECODE_PATH`, and the served receipt is what
+/// proved it: flipping the decode path to `device` alone produced a default
+/// configuration that REFUSES TO BOOT, because `Dsv4Gpu::load` enforces
+/// "MEMRA_DSV4_DECODE_PATH=device requires MEMRA_DSV4_EXPERT_ARM=native". Both
+/// post-flip arms of the first served ABBA died on exactly that line. The two
+/// are one decision, not two knobs, and `defaults_that_cannot_boot_are_caught`
+/// in `dsv4_gpu` now fails if they are ever separated again.
 pub fn expert_arm_native() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *V.get_or_init(|| {
-        std::env::var("MEMRA_DSV4_EXPERT_ARM")
-            .map(|v| v == "native")
-            .unwrap_or(false)
+        match std::env::var("MEMRA_DSV4_EXPERT_ARM").as_deref() {
+            Err(_) | Ok("") | Ok("native") => true,
+            Ok(_) => false,
+        }
     })
 }
 
