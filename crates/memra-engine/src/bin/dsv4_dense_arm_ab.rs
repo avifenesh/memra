@@ -68,6 +68,22 @@ fn main() {
         Some(armed) => println!("PRESENT armed_at_start={armed}"),
     }
 
+    // The served process runs with the drafter RESIDENT (`[dsv4-serve] ... drafter
+    // RESIDENT (spec route armed)`), and the prime this cell times is the drafter's
+    // own chunked prime. Without the arm the drafter is not loaded and the run dies
+    // 100 seconds into the load, inside `dspark_alloc_state`, with a panic that the
+    // first attempt at this cell mistook for a cell that had run. Refuse up front,
+    // and name the condition being matched.
+    let drafter = std::env::var("MEMRA_DSV4_DRAFTER").unwrap_or_default();
+    if drafter != "dspark" {
+        println!(
+            "AB_FAIL MEMRA_DSV4_DRAFTER={drafter:?}: this cell measures the SERVED shape, \
+             which loads the drafter (spec route armed), so it must be set to dspark"
+        );
+        std::process::exit(1);
+    }
+    println!("DRAFTER dspark (served shape)");
+
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
     let mut prompt = tokenizer.encode(&format!("Review this engine source:\n{source}"), true);
     assert!(prompt.len() >= 1025, "do not pad/repeat source");
