@@ -6290,7 +6290,7 @@ extern "C" __global__ void dsv4_sink_scores_mq_f32acc_kernel(const float* __rest
 }
 
 // RED ARM, gate only. The [heads][hd] form this kernel family used to serve, kept so
-// dsv4_sink_score_gate can assert byte identity against the layout change rather than assume
+// dsv4_q_layout_gate can assert byte identity against the layout change rather than assume
 // it. Never reachable from a serving launcher: no dispatch arm and no env read selects it.
 extern "C" __global__ void dsv4_sink_scores_mq_f32acc_ref_kernel(const float* __restrict__ q_all,
                                                                  const float* __restrict__ kv,

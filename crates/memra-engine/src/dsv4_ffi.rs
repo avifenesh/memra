@@ -1343,7 +1343,7 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     // RED ARMS, gate only: the [heads][hd] scorers the layout change replaced. No serving
-    // path calls these; dsv4_sink_score_gate uses them to assert byte identity.
+    // path calls these; dsv4_q_layout_gate uses them to assert byte identity.
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_sink_scores_mq_f32acc_ref(
         q: *const f32,
