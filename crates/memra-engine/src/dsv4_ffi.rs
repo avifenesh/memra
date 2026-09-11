@@ -1333,6 +1333,46 @@ unsafe extern "C" {
         scale: f32,
         stream: *mut c_void,
     ) -> i32;
+    // q staging for the two f32acc scorers, whose q operand is [nq][hd][heads].
+    pub fn memra_dsv4_q_transpose_m(
+        q: *const f32,
+        qt: *mut f32,
+        nq: i32,
+        heads: i32,
+        hd: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    // RED ARMS, gate only: the [heads][hd] scorers the layout change replaced. No serving
+    // path calls these; dsv4_q_layout_gate uses them to assert byte identity.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_sink_scores_mq_f32acc_ref(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        scores: *mut f32,
+        nq: i32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        idx_stride: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_indexer_score_f32acc_pos_m_ref(
+        q: *const f32,
+        ckv: *const f32,
+        w: *const f32,
+        wscale: f32,
+        score: *mut f32,
+        s: i32,
+        heads: i32,
+        hd: i32,
+        nb: i32,
+        ratio: i32,
+        pos0: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_scatter_rows(
         src: *const f32,
         dst: *mut f32,

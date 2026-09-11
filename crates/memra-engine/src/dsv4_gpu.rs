@@ -12942,8 +12942,13 @@ pub struct VerifyWs {
     qr: CudaSlice<f32>,
     qr_b: CudaSlice<u8>,
     q: CudaSlice<f32>,
+    // q staged [nq][hd][heads] for the f32acc scorers. Separate buffers because the tiled
+    // arms and the per-row indexer arm still read the [heads][hd] form, and because the
+    // transpose must not clobber the operand it reads.
+    qt: CudaSlice<f32>,
     kv: CudaSlice<f32>,
     qi: CudaSlice<f32>,
+    qit: CudaSlice<f32>,
     wproj: CudaSlice<f32>,
     score: CudaSlice<f32>,
     topk_a: CudaSlice<u64>,
@@ -13986,8 +13991,10 @@ impl Dsv4Gpu {
                 qr: f(tmax * q_lora)?,
                 qr_b: b(tmax * q_lora * 2)?,
                 q: f(tmax * heads * hd)?,
+                qt: f(tmax * heads * hd)?,
                 kv: f(tmax * hd)?,
                 qi: f(tmax * iheads * ihd)?,
+                qit: f(tmax * iheads * ihd)?,
                 wproj: f(tmax * iheads)?,
                 score: f(tmax * score_cap)?,
                 topk_a: u(tmax * topk_stride)?,
@@ -15191,6 +15198,19 @@ impl Dsv4Gpu {
                     sp(&stream),
                 ),
             )?;
+            // rope is the last writer of q, so this is the one point where the f32acc
+            // scorers' [hd][heads] operand can be staged. One launch per (layer, chunk).
+            ck(
+                "q transpose batch",
+                k::memra_dsv4_q_transpose_m(
+                    dpf!(vws.q, &stream),
+                    dpm!(vws.qt, &stream),
+                    t as i32,
+                    heads as i32,
+                    hd as i32,
+                    sp(&stream),
+                ),
+            )?;
         }
 
         // Q_b/head norm/rotary use qr_b and q only. gemm_xb still holds
@@ -15307,6 +15327,20 @@ impl Dsv4Gpu {
                             dpm!(vws.qi, &stream),
                             (t * ix.heads) as i32,
                             ix.hd as i64,
+                            ix.hd as i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                    // fp4_act_quant is the last writer of qi, so the batched pos_m scorer's
+                    // [hd][heads] operand is staged here. The per-row and tiled arms below
+                    // still read vws.qi, which this does not touch.
+                    ck(
+                        "qi transpose batch",
+                        k::memra_dsv4_q_transpose_m(
+                            dpf!(vws.qi, &stream),
+                            dpm!(vws.qit, &stream),
+                            t as i32,
+                            ix.heads as i32,
                             ix.hd as i32,
                             sp(&stream),
                         ),
@@ -15595,7 +15629,7 @@ impl Dsv4Gpu {
                                 )
                             } else {
                                 k::memra_dsv4_indexer_score_f32acc_pos_m(
-                                    dpf!(vws.qi, &stream),
+                                    dpf!(vws.qit, &stream),
                                     dpf!(ikvc.as_ref().expect("ikvc"), &stream),
                                     dpf!(vws.wproj, &stream),
                                     wscale,
@@ -15772,7 +15806,7 @@ impl Dsv4Gpu {
                 ck(
                     "replay attention",
                     k::memra_dsv4_replay_attention(
-                        dpf!(vws.q, &stream),
+                        dpf!(vws.qt, &stream),
                         attention_kv,
                         attention_indices,
                         sink,
@@ -15793,15 +15827,58 @@ impl Dsv4Gpu {
                     ),
                 )?;
             } else if self.chains_f32 {
-                let launch = if self.sink_score == Dsv4SinkScore::Tiled {
-                    k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
+                // The tiled arm stages q itself out of the [heads][hd] form; the scalar arm
+                // is the one whose operand moved. The pointer travels with the launcher so
+                // the two can never be paired the wrong way round.
+                let (launch, q_ptr) = if self.sink_score == Dsv4SinkScore::Tiled {
+                    (
+                        k::memra_dsv4_sink_attn_dec_mq_f32acc_tiled
+                            as unsafe extern "C" fn(
+                                *const f32,
+                                *const f32,
+                                *const i32,
+                                *const f32,
+                                *mut f32,
+                                *mut f32,
+                                *mut f32,
+                                *mut f32,
+                                i32,
+                                i32,
+                                i32,
+                                i32,
+                                i32,
+                                f32,
+                                *mut c_void,
+                            ) -> i32,
+                        dpf!(vws.q, &stream),
+                    )
                 } else {
-                    k::memra_dsv4_sink_attn_dec_mq_f32acc
+                    (
+                        k::memra_dsv4_sink_attn_dec_mq_f32acc
+                            as unsafe extern "C" fn(
+                                *const f32,
+                                *const f32,
+                                *const i32,
+                                *const f32,
+                                *mut f32,
+                                *mut f32,
+                                *mut f32,
+                                *mut f32,
+                                i32,
+                                i32,
+                                i32,
+                                i32,
+                                i32,
+                                f32,
+                                *mut c_void,
+                            ) -> i32,
+                        dpf!(vws.qt, &stream),
+                    )
                 };
                 ck(
                     "sink_attn_dec_mq_f32acc",
                     launch(
-                        dpf!(vws.q, &stream),
+                        q_ptr,
                         attention_kv,
                         attention_indices,
                         sink,

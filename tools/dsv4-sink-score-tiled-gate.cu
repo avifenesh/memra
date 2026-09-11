@@ -33,7 +33,10 @@ struct Outputs {
 
 static void cell(int nq,int slots,float scale,bool bench){
     const int hd=512,heads=64,kv_rows=9001,stride=slots+5;
-    Dev<float> q((size_t)nq*heads*hd),kv((size_t)kv_rows*hd),sink(heads);
+    // The scalar scorer reads q as [nq][hd][heads] and the tiled arm reads [nq][heads][hd],
+    // so the gate stages both from one host buffer. Feeding both the same layout would fail
+    // this comparison for a reason that has nothing to do with the tile.
+    Dev<float> q((size_t)nq*heads*hd),qt((size_t)nq*heads*hd),kv((size_t)kv_rows*hd),sink(heads);
     Dev<int> ids((size_t)nq*stride);
     Outputs reference(nq,slots),candidate(nq,slots);
     std::vector<float> qh(q.n),kh(kv.n),sh(heads);
@@ -43,7 +46,7 @@ static void cell(int nq,int slots,float scale,bool bench){
     auto run=[&](bool tiled,Outputs& out){
         if(tiled)ok(memra_dsv4_sink_attn_dec_mq_f32acc_tiled(q.p,kv.p,ids.p,sink.p,
             out.scores.p,out.evals.p,out.den.p,out.out.p,nq,heads,hd,slots,stride,scale,stream));
-        else ok(memra_dsv4_sink_attn_dec_mq_f32acc(q.p,kv.p,ids.p,sink.p,
+        else ok(memra_dsv4_sink_attn_dec_mq_f32acc(qt.p,kv.p,ids.p,sink.p,
             out.scores.p,out.evals.p,out.den.p,out.out.p,nq,heads,hd,slots,stride,scale,stream));
     };
     cudaGraph_t graph=nullptr;cudaGraphExec_t executable=nullptr;
@@ -57,7 +60,9 @@ static void cell(int nq,int slots,float scale,bool bench){
         std::fill(ih.begin(),ih.end(),-1234567);
         for(int p=0;p<nq;++p)for(int k=0;k<slots;++k)
             ih[(size_t)p*stride+k]=pattern==2?-1:pattern==1&&k%7==0?-1:pattern==3?3:(p*71+k*17+3)%kv_rows;
-        q.put(qh);kv.put(kh);ids.put(ih);reference.poison();candidate.poison();check(cudaDeviceSynchronize());
+        q.put(qh);kv.put(kh);ids.put(ih);
+        ok(memra_dsv4_q_transpose_m(q.p,qt.p,nq,heads,hd,stream));check(cudaStreamSynchronize(stream));
+        reference.poison();candidate.poison();check(cudaDeviceSynchronize());
         run(false,reference);check(cudaStreamSynchronize(stream));
         if(pattern==0){
             run(true,candidate);check(cudaStreamSynchronize(stream));reference.equal(candidate);
