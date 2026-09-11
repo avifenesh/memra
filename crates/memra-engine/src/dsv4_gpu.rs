@@ -188,6 +188,8 @@ pub(crate) mod norm2_component_gate;
 pub(crate) mod norm2_wide_component_gate;
 #[path = "dsv4_norm_component_gate.rs"]
 mod norm_component_gate;
+#[path = "dsv4_norm_pp2_port_gate.rs"]
+pub(crate) mod norm_pp2_port_gate;
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
@@ -3424,7 +3426,7 @@ impl Dsv4Gpu {
         if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
             return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
         }
-        let norm_admitted = crate::dsv4_doors::norm_admitted(topology.is_tp_ep(), chains_f32);
+        let norm_admitted = crate::dsv4_doors::norm_admitted(chains_f32);
         let norm_fuse = norm_fuse_environment_policy(
             std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
             norm_admitted,
@@ -14384,8 +14386,8 @@ impl Dsv4Gpu {
     /// Gate selector for fresh eager calls/captures. Drain before switching;
     /// retained graphs contain fixed functions and do not read this selector.
     pub fn set_norm_fuse_for_gate(&self, enabled: bool) -> Res<()> {
-        if enabled && (!self.topology.is_tp_ep() || !self.chains_f32) {
-            return Err("norm fusion gate requires TP/EP f32x".into());
+        if enabled && !self.chains_f32 {
+            return Err("norm fusion gate requires f32x chains".into());
         }
         self.norm_fuse.store(enabled, Ordering::Relaxed);
         Ok(())
@@ -14399,15 +14401,15 @@ impl Dsv4Gpu {
     pub fn restore_norm_fuse_default_for_gate(&self) -> Res<bool> {
         let enabled = norm_fuse_environment_policy(
             std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
-            self.topology.is_tp_ep() && self.chains_f32,
+            crate::dsv4_doors::norm_admitted(self.chains_f32),
         )?;
         self.norm_fuse.store(enabled, Ordering::Relaxed);
         Ok(enabled)
     }
 
     pub fn set_norm_fuse2_for_gate(&self, enabled: bool) -> Res<()> {
-        if enabled && (!self.topology.is_tp_ep() || !self.chains_f32) {
-            return Err("norm fusion2 requires TP/EP f32x".into());
+        if enabled && !self.chains_f32 {
+            return Err("norm fusion2 requires f32x chains".into());
         }
         for st in &self.stages {
             st.gpu.stream().synchronize().map_err(e("norm2 drain"))?;
@@ -14448,23 +14450,37 @@ impl Dsv4Gpu {
         w: *const f32,
         dst: *mut f32,
         packed: *mut c_void,
+        rows: i32,
         n: i32,
         eps: f32,
         sv: *mut c_void,
     ) -> i32 {
         unsafe {
             if self.norm2_wide.load(Ordering::Relaxed) {
-                k::memra_dsv4_norm2_pack_wide(x, w, dst, packed, n, eps, NORM2_WIDE_TILES, sv)
+                k::memra_dsv4_norm2_pack_wide(x, w, dst, packed, rows, n, eps, NORM2_WIDE_TILES, sv)
             } else {
-                k::memra_dsv4_norm2_pack(x, w, dst, packed, n, eps, sv)
+                k::memra_dsv4_norm2_pack(x, w, dst, packed, rows, n, eps, sv)
             }
         }
     }
-    fn norm2_active(&self, t: usize, host_math: bool) -> bool {
+    /// memra #4xx, the PP-2 port. Two terms left this predicate and one stayed.
+    ///
+    /// `is_tp_ep()` was a topology ASSUMPTION, not a precondition: no norm2 pack
+    /// kernel, and nothing the pack feeds, reads a rank, a shard or a topology
+    /// plan. It was here because TP/EP was the only program the door was ever
+    /// measured on. `t == 1` was a KERNEL limit, not a program fact: the pack
+    /// launcher pinned grid 1. Both kernels now take `rows` and run the
+    /// identical per-row tree, so the shape term is gone with the limit.
+    ///
+    /// `chains_f32` STAYS and is a real precondition. The pack is the f32
+    /// reduction tree (`dsv4_rmsnorm_f32acc_kernel`) with the bf16 cast folded
+    /// into its epilogue; with f32x chains off the unfused arm is a different
+    /// kernel with a different accumulator, so fusing there would be a new
+    /// numeric class rather than the same-class rewrite this door is.
+    /// `n_embd == 4096` is the launcher's own geometry refusal restated.
+    fn norm2_active(&self, _t: usize, host_math: bool) -> bool {
         self.norm_fuse2.load(Ordering::Relaxed)
-            && self.topology.is_tp_ep()
             && self.chains_f32
-            && t == 1
             && !host_math
             && self.model.mc.n_embd == 4096
     }
@@ -15135,6 +15151,7 @@ impl Dsv4Gpu {
                         dpf!(layer.attn_norm, &stream),
                         dpm!(vws.x, &stream),
                         vws.gemm_xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        t as i32,
                         hidden as i32,
                         eps,
                         sp(&stream),
@@ -15297,10 +15314,14 @@ impl Dsv4Gpu {
             self.capture_norm_component(st, layer, &vws.kv, hd, rd, eps, fc_dev, &vws.pos_dev)?;
         }
         unsafe {
+            // `t == 1` left this guard with memra #4xx: the fused kernel is one
+            // CTA per row over its own position, so every routed shape reaches
+            // it. `chains_f32`, `hd == 512` and `rd == 64` stay: the first is
+            // the reduction tree the fusion preserves, the last two are the
+            // launcher's own geometry refusal (40004) restated at the call.
             if self.norm_fuse.load(Ordering::Relaxed)
                 && self.chains_f32
                 && !host_math
-                && t == 1
                 && hd == 512
                 && rd == 64
             {
@@ -15309,6 +15330,7 @@ impl Dsv4Gpu {
                     k::memra_dsv4_norm_rope_f32_fixed_order(
                         dpm!(vws.kv, &stream),
                         dpf!(layer.kv_norm, &stream),
+                        t as i32,
                         hd as i32,
                         eps,
                         rd as i32,
@@ -16132,6 +16154,7 @@ impl Dsv4Gpu {
                         dpf!(layer.ffn_norm, &stream),
                         dpm!(vws.xf, &stream),
                         vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        t as i32,
                         hidden as i32,
                         eps,
                         sp(&stream),
@@ -16413,6 +16436,7 @@ impl Dsv4Gpu {
                         dpf!(vws.sg1, &stream),
                         dpf!(vws.sg3, &stream),
                         vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                        t as i32,
                         sh_inter as i32,
                         limit,
                         sp(&stream),

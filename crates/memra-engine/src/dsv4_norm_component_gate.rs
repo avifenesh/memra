@@ -166,6 +166,7 @@ impl Dsv4Gpu {
                                     k::memra_dsv4_norm_rope_f32_fixed_order(
                                         xp,
                                         wd.device_ptr(&stream).0 as *const f32,
+                                        1,
                                         512,
                                         f32::from_bits(eps),
                                         64,

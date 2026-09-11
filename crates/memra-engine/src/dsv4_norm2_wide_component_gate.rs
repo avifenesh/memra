@@ -242,6 +242,7 @@ impl Dsv4Gpu {
                         wp,
                         yp,
                         bp,
+                        1,
                         COLS as i32,
                         eps,
                         tiles,
@@ -250,7 +251,7 @@ impl Dsv4Gpu {
                 )?,
                 None => ck(
                     "norm2 pack",
-                    k::memra_dsv4_norm2_pack(xp, wp, yp, bp, COLS as i32, eps, sp(stream)),
+                    k::memra_dsv4_norm2_pack(xp, wp, yp, bp, 1, COLS as i32, eps, sp(stream)),
                 )?,
             }
         }

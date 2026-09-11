@@ -1628,19 +1628,24 @@ extern "C" int memra_dsv4_swiglu(const float* gate, const float* up, float* dst,
 // original clamp/sigmoid/multiply order. The unchanged down GEMV reads packed.
 extern "C" __global__ void dsv4_norm2_swiglu_pack_kernel(
         const float* gate, const float* up, __nv_bfloat16* packed,
-        int n, float limit) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+        long n, float limit) {
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
     float u = fminf(fmaxf(up[i], -limit), limit);
     float g = fminf(gate[i], limit);
     float h = g * dsv4_sigmoid(g) * u;
     packed[i] = __float2bfloat16_rn(h);
 }
+// `rows` is the PP-2 port seam. The kernel is elementwise over a contiguous
+// rows*n block and the unfused pair (dsv4_swiglu over t rows, then cvt) is too,
+// so widening the launch is the whole change and the arithmetic per element is
+// untouched.
 extern "C" int memra_dsv4_norm2_swiglu_pack(const float* gate, const float* up,
-        void* packed, int n, float limit, void* stream_v) {
-    if (!gate || !up || !packed || n != 2048) return 40004;
-    dsv4_norm2_swiglu_pack_kernel<<<(n+255)/256,256,0,(cudaStream_t)stream_v>>>(
-        gate,up,(__nv_bfloat16*)packed,n,limit);
+        void* packed, int rows, int n, float limit, void* stream_v) {
+    if (!gate || !up || !packed || rows < 1 || n != 2048) return 40004;
+    long total = (long)rows * n;
+    dsv4_norm2_swiglu_pack_kernel<<<(unsigned)((total+255)/256),256,0,(cudaStream_t)stream_v>>>(
+        gate,up,(__nv_bfloat16*)packed,total,limit);
     DSV4_ERR();
     return 0;
 }
@@ -3032,9 +3037,18 @@ extern "C" int memra_dsv4_rmsnorm_f32acc(const float* x, const float* w, float* 
 
 // Adjacent KV norm -> RoPE. Preserve the unfused reduction and all f32
 // rounding points. Shared storage is also the in-place read/write barrier.
+//
+// One CTA per row (memra #4xx, the PP-2 port). The single-row original was
+// grid 1 reading positions[0]; every row here repeats that CTA byte for byte
+// on its own row with its own position, which is exactly what the unfused pair
+// (dsv4_rmsnorm_f32acc_kernel, one CTA per row, then dsv4_rope over t rows)
+// does. Rows are independent, so the reduction tree and every rounding point
+// are unchanged and the arm stays same-class at every t.
 extern "C" __global__ void dsv4_norm_rope_f32_fixed_order_kernel(
-        float* x, const float* w, int ncols, float eps, int rd,
+        float* x_all, const float* w, int ncols, float eps, int rd,
         const float* cs, const int* positions) {
+    const int row = blockIdx.x;
+    float* x = x_all + (long)row * ncols;
     const float* xr = x;
     float acc = 0.0f;
     int i = threadIdx.x;
@@ -3066,7 +3080,7 @@ extern "C" __global__ void dsv4_norm_rope_f32_fixed_order_kernel(
     for (int col = threadIdx.x; col < ncols - rd; col += blockDim.x)
         x[col] = normalized[col];
     for (int kk = threadIdx.x; kk < rd / 2; kk += blockDim.x) {
-        const float* row = cs + (long)positions[0] * rd + 2 * kk;
+        const float* row = cs + (long)positions[blockIdx.x] * rd + 2 * kk;
         float c = row[0], s = row[1];
         int col = ncols - rd + 2 * kk;
         float x0 = normalized[col], x1 = normalized[col + 1];
@@ -3076,12 +3090,12 @@ extern "C" __global__ void dsv4_norm_rope_f32_fixed_order_kernel(
 }
 
 extern "C" int memra_dsv4_norm_rope_f32_fixed_order(
-        float* x, const float* w, int ncols, float eps, int rd,
+        float* x, const float* w, int rows, int ncols, float eps, int rd,
         const float* cs, const int* positions, void* stream_v) {
     // Exact target geometry only. Unsupported shapes must use the unfused arm.
-    if (!x || !w || !cs || !positions || ncols != 512 || rd != 64)
+    if (!x || !w || !cs || !positions || rows < 1 || ncols != 512 || rd != 64)
         return 40004;
-    dsv4_norm_rope_f32_fixed_order_kernel<<<1, 128, (128+ncols)*sizeof(float),
+    dsv4_norm_rope_f32_fixed_order_kernel<<<(unsigned)rows, 128, (128+ncols)*sizeof(float),
         (cudaStream_t)stream_v>>>(x, w, ncols, eps, rd, cs, positions);
     DSV4_ERR();
     return 0;
@@ -3125,10 +3139,16 @@ extern "C" __global__ void dsv4_norm2_pack_f32_fixed_order_kernel(const float* _
     }
 }
 
+// `rows` is the port seam (PP-2). The kernel above was already written row-major
+// with `row = blockIdx.x` and row-strided offsets; the launcher pinned grid 1
+// because the only admitted program never ran t > 1 through it. Grid `rows` runs
+// the identical 128-thread tree once per row, which is what the unfused pair
+// (dsv4_rmsnorm_f32acc_kernel one CTA per row, then dsv4_cvt_bf16 over
+// rows*ncols) already does, so the arm is same-class at every t.
 extern "C" int memra_dsv4_norm2_pack(const float* x, const float* w, float* dst,
-        void* packed, int n, float eps, void* stream_v) {
-    if (!x || !w || !dst || !packed || n != 4096) return 40004;
-    dsv4_norm2_pack_f32_fixed_order_kernel<<<1,128,128*sizeof(float),(cudaStream_t)stream_v>>>(
+        void* packed, int rows, int n, float eps, void* stream_v) {
+    if (!x || !w || !dst || !packed || rows < 1 || n != 4096) return 40004;
+    dsv4_norm2_pack_f32_fixed_order_kernel<<<(unsigned)rows,128,128*sizeof(float),(cudaStream_t)stream_v>>>(
         x,w,dst,(__nv_bfloat16*)packed,n,eps);
     DSV4_ERR();
     return 0;
@@ -3147,11 +3167,14 @@ extern "C" int memra_dsv4_norm2_pack(const float* x, const float* w, float* dst,
 extern "C" __global__ void dsv4_norm2_pack_f32_fixed_order_wide_kernel(
         const float* __restrict__ x, const float* __restrict__ w,
         float* __restrict__ dst, __nv_bfloat16* __restrict__ packed, int ncols,
-        float eps, int tile) {
-    // One row only: the launcher rejects anything else, so row 0 offsets are zero
-    // exactly as they are when the original runs with grid 1.
-    const float* xr = x;
-    float* dr = dst;
+        float eps, int tile, int tiles) {
+    // grid is rows * tiles, row-major: CTA i covers row i / tiles, epilogue tile
+    // i % tiles. Row 0 with tiles CTAs is byte for byte the pre-port launch.
+    const int row = blockIdx.x / tiles;
+    const int tile_idx = blockIdx.x % tiles;
+    const float* xr = x + (long)row * ncols;
+    float* dr = dst + (long)row * ncols;
+    packed += (long)row * ncols;
     float acc = 0.0f;
     int i = threadIdx.x;
     int B = blockDim.x;
@@ -3175,7 +3198,7 @@ extern "C" __global__ void dsv4_norm2_pack_f32_fixed_order_wide_kernel(
     float tot = dsv4_block_sum_f32(acc, shf32);
     float mean = tot / (float)ncols;
     float rsq = 1.0f / sqrtf(mean + eps);
-    int lo = blockIdx.x * tile;
+    int lo = tile_idx * tile;
     int hi = min(ncols, lo + tile);
     for (int c = lo + threadIdx.x; c < hi; c += blockDim.x)
     {
@@ -3188,14 +3211,14 @@ extern "C" __global__ void dsv4_norm2_pack_f32_fixed_order_wide_kernel(
 // tiles == 1 is the original geometry expressed through the wide kernel, kept so
 // the component gate can sweep the whole domain against one symbol.
 extern "C" int memra_dsv4_norm2_pack_wide(const float* x, const float* w, float* dst,
-        void* packed, int n, float eps, int tiles, void* stream_v) {
-    if (!x || !w || !dst || !packed || n != 4096) return 40004;
+        void* packed, int rows, int n, float eps, int tiles, void* stream_v) {
+    if (!x || !w || !dst || !packed || rows < 1 || n != 4096) return 40004;
     // Every CTA runs the 128-thread tree, so the block is pinned. Requiring each
     // tile to be a whole multiple of the block keeps every CTA non-empty and every
     // thread's write count equal.
     if (tiles < 1 || tiles > n / 128 || n % (tiles * 128) != 0) return 40004;
-    dsv4_norm2_pack_f32_fixed_order_wide_kernel<<<tiles,128,128*sizeof(float),(cudaStream_t)stream_v>>>(
-        x,w,dst,(__nv_bfloat16*)packed,n,eps,n / tiles);
+    dsv4_norm2_pack_f32_fixed_order_wide_kernel<<<(unsigned)(rows * tiles),128,128*sizeof(float),(cudaStream_t)stream_v>>>(
+        x,w,dst,(__nv_bfloat16*)packed,n,eps,n / tiles,tiles);
     DSV4_ERR();
     return 0;
 }
