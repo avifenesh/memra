@@ -206,6 +206,63 @@ pub fn moe_f16g_sk_params() -> (i32, i32) {
         }
     })
 }
+/// DSV4's own sk form policy. The shared default above is a HYBRID split
+/// (`cross = 64`): groups with `m_e >= 64` ride the 128x64x64 three-stage form.
+/// Every cell that qualified the matrix expert program held `MEMRA_F16G_SK=32`,
+/// which is `cross = i32::MAX`: every group on the 32x64x32 two-stage form. That
+/// is the arm the drift rows, the accuracy control and the +28.0% prefill gain
+/// were measured on, so it is the DSV4 default rather than something an operator
+/// exports (memra #461, owner flip 2026-09-11). An explicit `MEMRA_F16G_SK`
+/// still wins, and `0` is still the rollback seam that refuses the matrix
+/// program's admission.
+pub fn dsv4_moe_f16g_sk_params() -> (i32, i32) {
+    match std::env::var("MEMRA_F16G_SK") {
+        Err(std::env::VarError::NotPresent) => (0, i32::MAX),
+        _ => moe_f16g_sk_params(),
+    }
+}
+
+#[cfg(test)]
+mod dsv4_sk_params_tests {
+    use super::{dsv4_moe_f16g_sk_params, moe_f16g_sk_params};
+
+    /// The fourth default the 2026-09-11 matrix flip moved (memra #461), and the
+    /// one most able to pass vacuously, because it is a DSV4-scoped override of
+    /// a SHARED resolver: if `dsv4_moe_f16g_sk_params` ever just delegated, every
+    /// DSV4 row would silently be measured on the shared hybrid arm instead of
+    /// the `cross = i32::MAX` arm the class cells held, and nothing would fail.
+    ///
+    /// This test is written to be non-vacuous in exactly that direction: it
+    /// asserts the DSV4 default DIFFERS from the shared default, so a delegating
+    /// implementation fails here rather than in a receipt six weeks later.
+    ///
+    /// It manipulates `MEMRA_F16G_SK`, which the shared resolver caches in a
+    /// `OnceLock`, so it only ever reads the shared one in the UNSET state that
+    /// the rest of the suite also sees, and never sets the variable.
+    #[test]
+    fn dsv4_resolves_the_32_form_while_the_shared_default_stays_hybrid() {
+        // SAFETY: the suite runs single-threaded (`--test-threads=1` in CI) and
+        // this only reads; it asserts the variable is absent rather than setting it.
+        assert!(
+            std::env::var_os("MEMRA_F16G_SK").is_none(),
+            "this test describes the UNSET default; a set value makes it meaningless"
+        );
+        let (dsv4_shape, dsv4_cross) = dsv4_moe_f16g_sk_params();
+        let (shared_shape, shared_cross) = moe_f16g_sk_params();
+
+        // DSV4's default: every group on the 32x64x32 two-stage form.
+        assert_eq!((dsv4_shape, dsv4_cross), (0, i32::MAX));
+        // The shared default, unchanged by this flip: the hybrid split at 64.
+        assert_eq!((shared_shape, shared_cross), (0, 64));
+        // The point of the override, and the red arm for a delegating stub.
+        assert_ne!(dsv4_cross, shared_cross);
+        // Both admit the matrix program, whose predicate is `shape_sel >= 0`;
+        // only an explicit `MEMRA_F16G_SK=0` refuses it, and that arm is the
+        // rollback seam rather than something the default can wander into.
+        assert!(dsv4_shape >= 0 && shared_shape >= 0);
+    }
+}
+
 /// DIRECT-FROM-QUANT sk tile loaders (lane/kquant-tile-loaders, 2026-08-02; IQ classes added
 /// by lane/iq-direct-loaders): Q4_K/Q6_K/IQ4_XS/IQ3_S expert projections on the mode-2/3 sk
 /// visitor forms dequant their weight tiles in-register from the quant superblocks instead of
@@ -296,213 +353,15 @@ pub fn clear_moe_f16g_m1_tc_for_gate() {
     MOE_F16G_M1_TC_OVERRIDE.store(-1, Ordering::Release);
 }
 
-/// Experimental M=1 numeric class. Set before loading or starting a request,
-/// and only change after draining all ranks. No environment or serving arm.
-static MOE_M1_SPLITK: AtomicI8 = AtomicI8::new(0);
-pub const MOE_M1_SPLITK_NUMERIC_CLASS: &str = "moe_m1_adaptive_splitk_f32_fixed_order";
-pub fn set_moe_m1_splitk_for_gate(enabled: bool) -> bool {
-    MOE_M1_SPLITK.swap(enabled as i8, Ordering::AcqRel) != 0
-}
-pub const MOE_M1_GRAPH_SPLITK_NUMERIC_CLASS: &str = "moe_m1_graph_splitk_f32_fixed_order";
-static MOE_M1_GRAPH_SPLITK_GATE: AtomicI8 = AtomicI8::new(-1);
-/// Gate-only enqueue selector. Drain both ranks before switching. Retained
-/// graphs keep their captured functions and must keep their original prefix.
-pub fn set_moe_m1_graph_splitk_for_gate(enabled: bool) {
-    MOE_M1_GRAPH_SPLITK_GATE.store(i8::from(enabled), Ordering::Release);
-}
-fn graph_splitk_policy(raw: Option<&str>) -> Result<bool, String> {
-    match raw {
-        None | Some("graph") => Ok(true),
-        Some("0") => Ok(false),
-        Some(value) => Err(format!(
-            "invalid MEMRA_DSV4_MOE_M1_SPLITK policy: {value:?}"
-        )),
-    }
-}
-fn graph_splitk_override(host_adaptive: bool, graph_gate: i8) -> Option<bool> {
-    if host_adaptive {
-        // Preserve the explicit historical adaptive control under default ON.
-        Some(false)
-    } else if graph_gate >= 0 {
-        Some(graph_gate != 0)
-    } else {
-        None
-    }
-}
-/// Graph split-K defaults ON. Explicit 0 is the sktail rollback. The process
-/// gate override affects future enqueues/captures, never retained graphs;
-/// explicit host-adaptive control takes priority and remains replay-refused.
-pub fn moe_m1_graph_splitk_on() -> bool {
-    if let Some(enabled) = graph_splitk_override(
-        moe_m1_host_splitk_on(),
-        MOE_M1_GRAPH_SPLITK_GATE.load(Ordering::Acquire),
-    ) {
-        return enabled;
-    }
-    static GRAPH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *GRAPH.get_or_init(|| {
-        let value = match std::env::var("MEMRA_DSV4_MOE_M1_SPLITK") {
-            Ok(value) => Some(value),
-            Err(std::env::VarError::NotPresent) => None,
-            Err(error) => panic!("invalid MEMRA_DSV4_MOE_M1_SPLITK: {error}"),
-        };
-        graph_splitk_policy(value.as_deref()).unwrap_or_else(|error| panic!("{error}"))
-    })
-}
-#[cfg(test)]
-mod graph_splitk_policy_tests {
-    use super::{graph_splitk_override, graph_splitk_policy};
-    #[test]
-    fn unset_zero_and_graph_have_explicit_policies() {
-        assert_eq!(graph_splitk_policy(None), Ok(true));
-        assert_eq!(graph_splitk_policy(Some("0")), Ok(false));
-        assert_eq!(graph_splitk_policy(Some("graph")), Ok(true));
-        assert!(graph_splitk_policy(Some("adaptive")).is_err());
-    }
-    #[test]
-    fn gate_controls_preserve_the_historical_adaptive_arm() {
-        assert_eq!(graph_splitk_override(true, -1), Some(false));
-        assert_eq!(graph_splitk_override(true, 1), Some(false));
-        assert_eq!(graph_splitk_override(false, 0), Some(false));
-        assert_eq!(graph_splitk_override(false, 1), Some(true));
-        assert_eq!(graph_splitk_override(false, -1), None);
-    }
-}
-
-unsafe extern "C" {
-    fn memra_moe_m1_splitk_fast_set_for_gate(enabled: i32);
-    fn memra_moe_m1_splitk_fast_on() -> i32;
-}
-
-/// Gate-only selector for the paired-fetch split-K partial/reduce entries.
-/// Takes priority over the environment policy for future enqueues and captures,
-/// never for retained graphs. Drain both ranks before switching. A historical
-/// control that must keep measuring the base graph split-K partial pins `false`
-/// here rather than relying on the default.
-pub fn set_moe_m1_splitk_fast_for_gate(enabled: bool) {
-    unsafe { memra_moe_m1_splitk_fast_set_for_gate(i32::from(enabled)) }
-}
-
-/// Selected paired-fetch entry state: the gate override when one is set,
-/// otherwise the environment policy (unset selects the paired-fetch entries).
-pub fn moe_m1_splitk_fast_on() -> bool {
-    unsafe { memra_moe_m1_splitk_fast_on() != 0 }
-}
-
-/// How many graph split-K entry nodes of each symbol family a captured forward
-/// graph must contain, given the resolved paired-fetch door and the class's node
-/// count. The class captures ONE family: the paired-fetch (`..._splitk_fast_...`)
-/// entries when the door is on, the base (`..._graph_splitk_...`) entries when it
-/// is explicitly off. Same numeric class, only the symbol moves.
-///
-/// Every gate that censuses the captured graph resolves its expectation here,
-/// against `moe_m1_splitk_fast_on()`, instead of naming one family and hoping the
-/// default never moves. It moved: the split-K-fast flip made the paired-fetch
-/// entries the default and two gates kept asserting the base symbols, so their
-/// census read 0 against 86 on any tree where the flip had landed.
-pub fn graph_splitk_entry_nodes(splitk_fast: bool, nodes: usize) -> GraphSplitkEntryNodes {
-    if splitk_fast {
-        GraphSplitkEntryNodes {
-            base: 0,
-            fast: nodes,
-        }
-    } else {
-        GraphSplitkEntryNodes {
-            base: nodes,
-            fast: 0,
-        }
-    }
-}
-
-/// Per-family expected node counts for one captured graph. Both fields are
-/// asserted at every census site: the family that must be present, and the one
-/// that must be absent.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GraphSplitkEntryNodes {
-    pub base: usize,
-    pub fast: usize,
-}
-
-#[cfg(test)]
-mod graph_splitk_entry_nodes_tests {
-    use super::graph_splitk_entry_nodes;
-    /// Red arm, crosswise both ways: each door state must demand its own family
-    /// AND zero of the other, so a flip cannot make either assert vacuous.
-    #[test]
-    fn each_door_state_demands_one_family_and_forbids_the_other() {
-        let on = graph_splitk_entry_nodes(true, 86);
-        assert_eq!((on.base, on.fast), (0, 86));
-        let off = graph_splitk_entry_nodes(false, 86);
-        assert_eq!((off.base, off.fast), (86, 0));
-        assert_ne!(on, off);
-        // A non-forward segment captures neither family.
-        let none = graph_splitk_entry_nodes(true, 0);
-        assert_eq!((none.base, none.fast), (0, 0));
-        assert_eq!(graph_splitk_entry_nodes(false, 0), none);
-    }
-}
-
-#[cfg(test)]
-mod splitk_fast_policy_tests {
-    unsafe extern "C" {
-        /// Pure paired-fetch split-K entry policy, owned by
-        /// `cu/moe_f16_grouped.cu`. Takes the raw value instead of reading the
-        /// environment, so one process can exercise every arm. Returns 1 ON,
-        /// 0 OFF, -1 for an unusable value. The engine itself calls it from the
-        /// same translation unit, so this declaration is test-only.
-        fn memra_moe_m1_splitk_fast_policy(raw: *const core::ffi::c_char) -> i32;
-    }
-    fn policy(raw: Option<&str>) -> i32 {
-        let owned = raw.map(|value| std::ffi::CString::new(value).unwrap());
-        let ptr = owned
-            .as_ref()
-            .map_or(std::ptr::null(), |value| value.as_ptr());
-        unsafe { memra_moe_m1_splitk_fast_policy(ptr) }
-    }
-    #[test]
-    fn unset_selects_the_paired_fetch_entries() {
-        assert_eq!(policy(None), 1);
-    }
-    #[test]
-    fn explicit_zero_is_the_rollback_seam() {
-        assert_eq!(policy(Some("0")), 0);
-    }
-    #[test]
-    fn explicit_one_selects_them_too() {
-        assert_eq!(policy(Some("1")), 1);
-    }
-    #[test]
-    fn anything_else_is_unusable() {
-        for value in ["graph", "", "true", "2", "00"] {
-            assert_eq!(policy(Some(value)), -1, "{value:?}");
-        }
-    }
-}
-
-pub(crate) fn moe_m1_host_splitk_on() -> bool {
-    MOE_M1_SPLITK.load(Ordering::Acquire) != 0
-}
-pub fn moe_m1_splitk_on() -> bool {
-    moe_m1_host_splitk_on() || moe_m1_graph_splitk_on()
-}
-pub static MOE_M1_SPLITK_GU_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-pub static MOE_M1_SPLITK_DOWN_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-static MOE_M1_SPLITK_COMPONENT: AtomicI8 = AtomicI8::new(0);
-pub fn set_moe_m1_splitk_component_for_gate(enabled: bool) {
-    MOE_M1_SPLITK_COMPONENT.store(enabled as i8, Ordering::Release);
-}
-
-/// Arm first-layer component capture for the next real routed token. The gate
-/// calls this after the previous token has drained, never during a request run.
-pub fn set_moe_m1_splitk_component_token_for_gate(token: usize) {
-    assert!(token < i32::MAX as usize);
-    unsafe {
-        mmq_ffi::memra_moe_m1_splitk_component_token(token as i32);
-    }
-    dsv4_grouped::reset_splitk_component_token();
-}
+// The M=1 split-K family lived here until 2026-09-11 (memra #392, #425, #458,
+// #461). Every entry it dispatched required the fused gate/up launch, whose only
+// arm is `Dsv4Gpu::set_grouped_gu_fuse_for_gate` -- a function a gate binary
+// calls AFTER load and a serving process never calls. When the matrix expert
+// program became the loaded default the door had two honest futures, serve or
+// go, and serving it was impossible on any ordering. It is gone: the policy, the
+// gate selectors, the graph-entry census helpers, the CUDA entries and the two
+// gate binaries. Verdict and receipt pointers are in the `docs/FLAGS.md`
+// removed-doors ledger.
 
 /// DSV4 matrix plain-only GU tensor-core m_e=1 work-elision candidate. This
 /// is deliberately a process-local gate override with no environment arm: the
@@ -981,7 +840,9 @@ mod dsv4_c4;
 pub mod dsv4_doors;
 mod dsv4_ep;
 mod dsv4_ep_graph;
-pub use dsv4_doors::{arm_matrix_splitk_door_for_gate, matrix_splitk_door_armed};
+pub use dsv4_doors::{
+    arm_reference_expert_program_for_gate, disarm_reference_expert_program_for_gate,
+};
 pub mod dsv4_ffi;
 pub mod dsv4_gpu;
 mod dsv4_graph;

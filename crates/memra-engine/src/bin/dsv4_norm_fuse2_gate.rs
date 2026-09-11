@@ -42,7 +42,6 @@ fn default_program() {
     unsafe {
         std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
     }
-    assert!(memra_engine::moe_m1_graph_splitk_on());
     unsafe extern "C" {
         fn memra_dsv4_hc_dot_split_slices_for_gate() -> i32;
     }
@@ -140,33 +139,20 @@ fn count_kernel(dot: &str, needle: &str) -> usize {
         .count()
 }
 
-/// Assert the graph split-K entry census for one captured graph. The expectation
-/// follows the resolved paired-fetch door through
-/// `memra_engine::graph_splitk_entry_nodes`, never a symbol named here, and BOTH
-/// families are asserted so the absent one cannot drift in unnoticed.
-fn assert_graph_splitk_entries(dot: &str, splitk_fast: bool, forward: bool) {
-    let expected =
-        memra_engine::graph_splitk_entry_nodes(splitk_fast, if forward { 86 } else { 0 });
-    assert_eq!(
-        count_kernel(dot, "moe_m1_graph_splitk_partial_kernel"),
-        expected.base,
-        "base graph split-K partial entries"
-    );
-    assert_eq!(
-        count_kernel(dot, "moe_m1_graph_splitk_reduce_kernel"),
-        expected.base,
-        "base graph split-K reduce entries"
-    );
-    assert_eq!(
-        count_kernel(dot, "moe_m1_splitk_fast_partial_kernel"),
-        expected.fast,
-        "paired-fetch split-K partial entries"
-    );
-    assert_eq!(
-        count_kernel(dot, "moe_m1_splitk_fast_reduce_kernel"),
-        expected.fast,
-        "paired-fetch split-K reduce entries"
-    );
+/// The split-K entry families are DELETED (memra #461 flip, 2026-09-11). This
+/// assert is the half that survives and the half that matters now: a captured
+/// graph that still carries one of them is a stale capture dispatching a kernel
+/// the tree no longer builds, so the census demands ZERO on every variant.
+fn assert_no_deleted_splitk_entries(dot: &str) {
+    for deleted in [
+        "moe_m1_graph_splitk_partial_kernel",
+        "moe_m1_graph_splitk_reduce_kernel",
+        "moe_m1_splitk_fast_partial_kernel",
+        "moe_m1_splitk_fast_reduce_kernel",
+        "moe_m1_splitk_partial_kernel",
+    ] {
+        assert_eq!(count_kernel(dot, deleted), 0, "{deleted} is deleted");
+    }
 }
 
 fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
@@ -198,7 +184,7 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
             ] {
                 assert_eq!(count_kernel(&dot, symbol), if forward { 86 } else { 0 });
             }
-            assert_graph_splitk_entries(&dot, memra_engine::moe_m1_splitk_fast_on(), forward);
+            assert_no_deleted_splitk_entries(&dot);
             assert_eq!(
                 count_kernel(&dot, "dsv4_dense_fast_fp8_kernel"),
                 if forward { 494 } else { 0 }
@@ -591,7 +577,6 @@ fn main() {
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_DOTS_ARM", "f32x"),
         ("MEMRA_DSV4_EP", "pair"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -632,7 +617,6 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Box::new(
         Dsv4Gpu::load(
             Path::new(&args[1]),
@@ -717,29 +701,6 @@ mod tests {
     /// graph that captured the base entries must fail when scored as fast.
     /// Without this, the flip that moved the default would have turned the
     /// census into a silent lie again.
-    #[test]
-    fn splitk_entry_census_fails_crosswise_both_ways() {
-        let fast = "| {ID | 1 moe_m1_splitk_fast_partial_kernel }\n| {ID | 2 moe_m1_splitk_fast_reduce_kernel }\n".repeat(86);
-        let base = "| {ID | 1 moe_m1_graph_splitk_partial_kernel }\n| {ID | 2 moe_m1_graph_splitk_reduce_kernel }\n".repeat(86);
-        assert_graph_splitk_entries(&fast, true, true);
-        assert_graph_splitk_entries(&base, false, true);
-        assert!(
-            std::panic::catch_unwind(|| assert_graph_splitk_entries(&fast, false, true)).is_err()
-        );
-        assert!(
-            std::panic::catch_unwind(|| assert_graph_splitk_entries(&base, true, true)).is_err()
-        );
-        // A non-forward segment captures neither family, and either arm rejects
-        // a graph that carries one anyway.
-        assert_graph_splitk_entries("", true, false);
-        assert_graph_splitk_entries("", false, false);
-        assert!(
-            std::panic::catch_unwind(|| assert_graph_splitk_entries(&fast, true, false)).is_err()
-        );
-        assert!(
-            std::panic::catch_unwind(|| assert_graph_splitk_entries(&base, false, false)).is_err()
-        );
-    }
     #[test]
     fn census_and_order_contract() {
         assert_eq!(block_order(false), [true, false, false, true]);

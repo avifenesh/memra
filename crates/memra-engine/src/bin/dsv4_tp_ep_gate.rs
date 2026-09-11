@@ -316,29 +316,12 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-component|--moe-m1-splitk-pair]"
+        "usage: dsv4_tp_ep_gate <model-dir> <real-source.txt>"
     );
-    let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
-    let component = args
-        .get(3)
-        .is_some_and(|a| a == "--moe-m1-splitk-component");
-    let paired = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-pair");
-    assert!(
-        args.len() == 3 || splitk || component || paired,
-        "unknown gate arm"
-    );
-    // Pin the historical control program independently of the graph default.
-    memra_engine::set_moe_m1_graph_splitk_for_gate(false);
-    memra_engine::set_moe_m1_splitk_for_gate(splitk);
-    memra_engine::set_moe_m1_splitk_component_for_gate(component);
-    println!(
-        "MOE_PROGRAM splitk={splitk} component={component} numeric_class={}",
-        if splitk {
-            memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
-        } else {
-            "existing_m1_f16_mma"
-        }
-    );
+    // The three split-K arms this gate carried are gone with the door
+    // (memra #461): one expert program, one numeric class.
+    assert!(args.len() == 3, "unknown gate arm");
+    println!("MOE_PROGRAM numeric_class=existing_m1_f16_mma");
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
         Ok("1") => true,
@@ -354,7 +337,6 @@ fn main() {
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_EP", "pair"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -395,10 +377,6 @@ fn main() {
     println!(
         "PROTOCOL {{\"plain_only\":true,\"topology\":\"tp_ep_all_layers\",\"numeric_class\":\"{numeric_class}\",\"attention_tp\":{attention_mode},\"prime_tokens\":1,\"continuation_tokens\":{CONTINUATION_TOKENS},\"source_sha256\":\"{source_sha256}\",\"dspark\":false}}"
     );
-    // memra #458: this is a bench process, so it may run the matrix expert program
-    // with the default-ON split-K arm; a serving process cannot arm it and refuses
-    // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 256)
         .expect("plain-only TP/EP load");
     assert!(gpu.topology().is_tp_ep(), "no silent PP fallback");
@@ -421,35 +399,9 @@ fn main() {
         [0, 0]
     );
 
-    if component {
-        let mut state = gpu
-            .alloc_decode_state_for_transient(16, 1)
-            .expect("component state");
-        for token in 0..8 {
-            memra_engine::set_moe_m1_splitk_component_token_for_gate(token);
-            if token == 0 {
-                gpu.prefill_with_cache_chunked(&prompt[..1], &mut state, 1)
-                    .expect("real-token component prime");
-            } else {
-                gpu.decode_step(prompt[token], &mut state)
-                    .expect("real-token component continuation");
-            }
-        }
-        println!("PASS real routed M1 split-K component tokens=8");
-        return;
-    }
-    let arms: &[bool] = if paired { &[false, true] } else { &[splitk] };
-    for &armed in arms {
-        gpu.set_grouped_m1_splitk_for_gate(armed);
-        println!("CORRECTNESS_ARM splitk={armed} fresh_request_state=true");
-        println!(
-            "MOE_NUMERIC_CLASS {}",
-            if armed {
-                memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
-            } else {
-                "existing_m1_f16_mma"
-            }
-        );
+    {
+        println!("CORRECTNESS_ARM fresh_request_state=true");
+        println!("MOE_NUMERIC_CLASS existing_m1_f16_mma");
         let first = run_once(&gpu, &prompt, &source_sha256);
         let second = run_once(&gpu, &prompt, &source_sha256);
         assert_eq!(

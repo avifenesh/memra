@@ -52,13 +52,10 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
         }
     }
 }
-fn forward_kernel_census(
-    graph_splitk: bool,
-    norm_fuse: bool,
-    norm_fuse2: bool,
-) -> [(usize, u64); 3] {
-    // Each of 43 layers replaces one GU and one down node with two passes each.
-    let extra = if graph_splitk { 86 + 86 - 43 - 43 } else { 0 };
+fn forward_kernel_census(norm_fuse: bool, norm_fuse2: bool) -> [(usize, u64); 3] {
+    // The graph split-K term (+86 forward nodes per rank, two passes replacing
+    // one GU and one down node in each of 43 layers) left with the door on
+    // 2026-09-11: no entry family it captured exists any more.
     // norm_fuse removes the 43 separate norm/RoPE chains. norm_fuse2 packs the
     // remaining entry-boundary activation chains into 172 fused nodes while
     // removing 387, a net 215 fewer forward launches per rank and forward
@@ -67,37 +64,35 @@ fn forward_kernel_census(
     // against right 2870, which is this 215 with the HC term already added.
     let removed = (if norm_fuse { 43 } else { 0 }) + (if norm_fuse2 { 215 } else { 0 });
     [
-        (0, 2741 + extra - removed),
-        (2, 3140 + extra - removed),
-        (3, 3240 + extra - removed),
+        (0, 2741 - removed),
+        (2, 3140 - removed),
+        (3, 3240 - removed),
     ]
 }
 
-/// `splitk_fast` selects which entry symbol the graph split-K class captures:
-/// the paired-fetch entries when the door is on, the base entries when it is
-/// off. Both are the same numeric class, so only the symbol moves.
-fn check_expert_nodes(dot: &str, graph_splitk: bool, splitk_fast: bool, forward: bool) {
+/// With the split-K doors deleted (memra #461 flip, 2026-09-11) the forward
+/// graph has exactly one expert entry family left, and the census says so in
+/// both directions: 43 sktail entries on a forward variant, and ZERO nodes from
+/// any deleted family on any variant. The negative half is the half that would
+/// notice a split-K entry coming back through a stale captured graph.
+fn check_expert_nodes(dot: &str, forward: bool) {
     let count = |name: &str| {
         dot.lines()
             .filter(|line| line.contains("| {ID |") && line.contains(name))
             .count()
     };
-    let splitk_nodes = if forward && graph_splitk { 86 } else { 0 };
-    let sktail_nodes = if forward && !graph_splitk { 43 } else { 0 };
-    // One owner for this policy: every census site resolves the same way, so a
-    // future flip moves one function instead of every gate that names a symbol.
-    let entries = memra_engine::graph_splitk_entry_nodes(splitk_fast, splitk_nodes);
-    assert_eq!(count("moe_m1_graph_splitk_partial_kernel"), entries.base);
-    assert_eq!(count("moe_m1_graph_splitk_reduce_kernel"), entries.base);
-    assert_eq!(count("moe_m1_splitk_fast_partial_kernel"), entries.fast);
-    assert_eq!(count("moe_m1_splitk_fast_reduce_kernel"), entries.fast);
+    let sktail_nodes = if forward { 43 } else { 0 };
     assert_eq!(count("moe_kq_sktail_gu_kernel"), sktail_nodes);
     assert_eq!(count("moe_kq_sktail_kernel"), sktail_nodes);
-    assert_eq!(
-        count("moe_m1_splitk_partial_kernel"),
-        0,
-        "host-adaptive class"
-    );
+    for deleted in [
+        "moe_m1_graph_splitk_partial_kernel",
+        "moe_m1_graph_splitk_reduce_kernel",
+        "moe_m1_splitk_fast_partial_kernel",
+        "moe_m1_splitk_fast_reduce_kernel",
+        "moe_m1_splitk_partial_kernel",
+    ] {
+        assert_eq!(count(deleted), 0, "{deleted} is a deleted entry family");
+    }
 }
 
 fn hc_slices() -> i32 {
@@ -129,7 +124,6 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
             .unwrap()
         {
             for (slot, kernels) in forward_kernel_census(
-                memra_engine::moe_m1_graph_splitk_on(),
                 gpu.norm_fuse_enabled_for_gate(),
                 gpu.norm_fuse2_enabled_for_gate(),
             ) {
@@ -531,7 +525,6 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     use memra_engine::dsv4_gpu::Dsv4Phase;
     let cadence = memra_engine::dsv4_gpu::dsv4_replay_cadence_default();
     let dense = memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate();
-    let graph_splitk = memra_engine::moe_m1_graph_splitk_on();
     let norm_fuse = gpu.norm_fuse_enabled_for_gate();
     unsafe extern "C" {
         fn memra_dsv4_dense_fast_enabled_for_gate() -> i32;
@@ -567,7 +560,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     }
     assert_eq!(prefix.pos, 368);
     println!(
-        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"graph_splitk_on":{graph_splitk},"dense_fast_on":{dense_fast},"norm_fuse_on":{norm_fuse},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
+        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"dense_fast_on":{dense_fast},"norm_fuse_on":{norm_fuse},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
         sha256_tokens(&prefix_tape)
     );
     let mut control = state(gpu);
@@ -594,12 +587,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                 "profile-graphs/full-token-rank{rank}-segment{segment}.dot"
             ))
             .unwrap();
-            check_expert_nodes(
-                &dot,
-                graph_splitk,
-                memra_engine::moe_m1_splitk_fast_on(),
-                segment != 1,
-            );
+            check_expert_nodes(&dot, segment != 1);
             let count = |name: &str| {
                 dot.lines()
                     .filter(|line| line.trim_start().starts_with("| {ID |") && line.contains(name))
@@ -635,7 +623,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                 }
             );
             println!(
-                "PROFILE_CENSUS rank={rank} segment={segment} graph_splitk={graph_splitk} passed=true"
+                "PROFILE_CENSUS rank={rank} segment={segment} passed=true"
             );
         }
     }
@@ -708,7 +696,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             oracle = Some(result);
         }
         println!(
-            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"graph_splitk_on":{graph_splitk},"dense_fast_on":{dense_fast},"norm_fuse_on":{norm_fuse},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
+            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"dense_fast_on":{dense_fast},"norm_fuse_on":{norm_fuse},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
             if graph_arm { "graph" } else { "eager" },
             sha256_tokens(&tokens)
         );
@@ -727,26 +715,18 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
 mod profile_census_tests {
     use super::{check_expert_nodes, forward_kernel_census};
 
+    /// Base 2741/3140/3240 forward launches per rank and variant, minus 43 for
+    /// norm-fuse and 215 for the norm2 activation pack. The graph split-K term
+    /// (+86) left with the door on 2026-09-11, so this function has two inputs
+    /// instead of three.
     #[test]
-    fn forward_census_keeps_off_and_replaces_both_expert_nodes_on() {
+    fn forward_census_is_the_base_minus_each_doors_own_term() {
         assert_eq!(
-            forward_kernel_census(false, false, false),
+            forward_kernel_census(false, false),
             [(0, 2741), (2, 3140), (3, 3240)]
         );
         assert_eq!(
-            forward_kernel_census(true, false, false),
-            [(0, 2827), (2, 3226), (3, 3326)]
-        );
-    }
-
-    #[test]
-    fn profile_census_tracks_norm_fusion_and_its_zero_twin() {
-        assert_eq!(
-            forward_kernel_census(true, true, false),
-            [(0, 2784), (2, 3183), (3, 3283)]
-        );
-        assert_eq!(
-            forward_kernel_census(false, true, false),
+            forward_kernel_census(true, false),
             [(0, 2698), (2, 3097), (3, 3197)]
         );
     }
@@ -755,77 +735,65 @@ mod profile_census_tests {
     fn profile_census_tracks_the_norm2_activation_pack_door() {
         // Assert in the shape capture_once uses, so the red arms below exercise
         // the same comparison the gate makes rather than a weaker inequality.
-        fn expect(policy: (bool, bool, bool), want: [(usize, u64); 3]) {
+        fn expect(policy: (bool, bool), want: [(usize, u64); 3]) {
             assert_eq!(
-                forward_kernel_census(policy.0, policy.1, policy.2),
+                forward_kernel_census(policy.0, policy.1),
                 want,
                 "forward census for {policy:?}"
             );
         }
-        const ON: [(usize, u64); 3] = [(0, 2569), (2, 2968), (3, 3068)];
-        const OFF: [(usize, u64); 3] = [(0, 2784), (2, 3183), (3, 3283)];
-        expect((true, true, true), ON);
-        expect((true, true, false), OFF);
+        const ON: [(usize, u64); 3] = [(0, 2483), (2, 2882), (3, 2982)];
+        const OFF: [(usize, u64); 3] = [(0, 2698), (2, 3097), (3, 3197)];
+        expect((true, true), ON);
+        expect((true, false), OFF);
         // Crosswise red arms: each arm's expectation must fail against the other
         // arm's policy. Before memra #428 the ON policy was scored against OFF
         // and the gate panicked with left 2655, right 2870.
-        assert!(std::panic::catch_unwind(|| expect((true, true, false), ON)).is_err());
-        assert!(std::panic::catch_unwind(|| expect((true, true, true), OFF)).is_err());
+        assert!(std::panic::catch_unwind(|| expect((true, false), ON)).is_err());
+        assert!(std::panic::catch_unwind(|| expect((true, true), OFF)).is_err());
         // The door's own term is the documented net 215, in every variant and
-        // independently of the split-K and norm-fuse terms.
-        for splitk in [false, true] {
-            for norm_fuse in [false, true] {
-                let on = forward_kernel_census(splitk, norm_fuse, true);
-                let off = forward_kernel_census(splitk, norm_fuse, false);
-                for (slot, off_kernels) in off {
-                    let on_kernels = on.into_iter().find(|(s, _)| *s == slot).unwrap().1;
-                    assert_eq!(
-                        off_kernels - on_kernels,
-                        215,
-                        "net norm2 forward launch reduction, slot {slot}"
-                    );
-                }
+        // independently of the norm-fuse term.
+        for norm_fuse in [false, true] {
+            let on = forward_kernel_census(norm_fuse, true);
+            let off = forward_kernel_census(norm_fuse, false);
+            for (slot, off_kernels) in off {
+                let on_kernels = on.into_iter().find(|(s, _)| *s == slot).unwrap().1;
+                assert_eq!(
+                    off_kernels - on_kernels,
+                    215,
+                    "net norm2 forward launch reduction, slot {slot}"
+                );
             }
         }
     }
 
     #[test]
     fn expert_census_requires_active_policy_and_ignores_non_nodes() {
-        let off =
+        let sktail =
             "| {ID | 1 moe_kq_sktail_gu_kernel }\n| {ID | 2 moe_kq_sktail_kernel }\n".repeat(43);
-        let on = "| {ID | 1 moe_m1_graph_splitk_partial_kernel }\n| {ID | 2 moe_m1_graph_splitk_reduce_kernel }\n".repeat(86);
-        let fast = "| {ID | 1 moe_m1_splitk_fast_partial_kernel }\n| {ID | 2 moe_m1_splitk_fast_reduce_kernel }\n".repeat(86);
-        check_expert_nodes(&off, false, false, true);
-        check_expert_nodes(&on, true, false, true);
-        check_expert_nodes(&fast, true, true, true);
-        assert!(std::panic::catch_unwind(|| check_expert_nodes(&off, true, false, true)).is_err());
-        assert!(std::panic::catch_unwind(|| check_expert_nodes(&on, false, false, true)).is_err());
-        // The two entry symbols are not interchangeable in either direction.
-        assert!(std::panic::catch_unwind(|| check_expert_nodes(&on, true, true, true)).is_err());
-        assert!(std::panic::catch_unwind(|| check_expert_nodes(&fast, true, false, true)).is_err());
-        let missing_reduce = on.replacen("| {ID | 2", "edge 2", 1);
-        assert!(
-            std::panic::catch_unwind(|| check_expert_nodes(&missing_reduce, true, false, true))
-                .is_err()
-        );
-        for policy in [false, true] {
-            for fast_policy in [false, true] {
-                check_expert_nodes(
-                    "graph moe_m1_graph_splitk_partial_kernel\n",
-                    policy,
-                    fast_policy,
-                    false,
-                );
-                assert!(
-                    std::panic::catch_unwind(|| check_expert_nodes(
-                        &on,
-                        policy,
-                        fast_policy,
-                        false
-                    ))
-                    .is_err()
-                );
-            }
+        check_expert_nodes(&sktail, true);
+        // Red arm 1: a forward variant that is missing its sktail entries fails.
+        let missing = sktail.replacen("| {ID | 2", "edge 2", 1);
+        assert!(std::panic::catch_unwind(|| check_expert_nodes(&missing, true)).is_err());
+        // Red arm 2: a DELETED entry family reappearing in a captured graph
+        // fails, which is the half of this check the flip added. Without it the
+        // census would pass on a stale graph that still dispatches split-K.
+        for deleted in [
+            "moe_m1_graph_splitk_partial_kernel",
+            "moe_m1_graph_splitk_reduce_kernel",
+            "moe_m1_splitk_fast_partial_kernel",
+            "moe_m1_splitk_fast_reduce_kernel",
+            "moe_m1_splitk_partial_kernel",
+        ] {
+            let resurrected = format!("{sktail}| {{ID | 3 {deleted} }}\n");
+            assert!(
+                std::panic::catch_unwind(move || check_expert_nodes(&resurrected, true)).is_err(),
+                "{deleted} must fail the census"
+            );
         }
+        // A non-forward segment carries no expert entries, and a line that is
+        // not a node line is not counted.
+        check_expert_nodes("graph moe_kq_sktail_kernel\n", false);
+        assert!(std::panic::catch_unwind(|| check_expert_nodes(&sktail, false)).is_err());
     }
 }

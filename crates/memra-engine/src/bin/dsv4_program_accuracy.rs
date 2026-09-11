@@ -26,7 +26,7 @@
 //!
 //! The matrix program's admission prerequisites are asserted in BOTH arms. They are
 //! inert on the reference walk, which never enters the grouped executor, so holding
-//! them fixed is what makes `MEMRA_DSV4_MOE_PROGRAM` the only thing that differs.
+//! them fixed is what makes the expert program the only thing that differs.
 //!
 //! Usage: dsv4_program_accuracy <model> <prompts-dir> <new-out-dir> <REF|MAT>
 use memra_engine::dsv4_gpu::Dsv4Gpu;
@@ -66,7 +66,6 @@ fn main() {
         // memra #458: matrix under PP-2 boots clean on default-ON split-K and then
         // fails every request. Pinned off so this control measures the expert
         // program and not a second, separately gated numeric arm.
-        std::env::set_var("MEMRA_DSV4_MOE_M1_SPLITK", "0");
     }
 
     let args: Vec<String> = std::env::args().collect();
@@ -102,12 +101,17 @@ fn main() {
     // Refused at load under PP-2 ("small-kernel diet requires all-layer TP/EP and
     // f32x"), so its presence in a bench env must not leak into a serving-shaped run.
     assert!(std::env::var_os("MEMRA_DSV4_SMALL_KERNEL_DIET").is_none());
+    // The expert program stopped being an environment door on 2026-09-11
+    // (memra #461): matrix is what loads, and the REF arm of this control is
+    // selected by the gate arm, which is the only way in. The assertion that the
+    // arm actually took is `grouped_device_route_calls` further down, which is
+    // engagement rather than a restatement of what we asked for.
     let want_program = if arm == "MAT" { "matrix" } else { "reference" };
-    assert_eq!(
-        std::env::var("MEMRA_DSV4_MOE_PROGRAM").as_deref(),
-        Ok(want_program),
-        "arm {arm} requires MEMRA_DSV4_MOE_PROGRAM={want_program}"
-    );
+    if arm == "REF" {
+        memra_engine::arm_reference_expert_program_for_gate();
+    } else {
+        memra_engine::disarm_reference_expert_program_for_gate();
+    }
 
     let tokenizer = Tokenizer::from_hf_dir(Path::new(&args[1])).expect("tokenizer");
     assert_eq!(tokenizer.eos_id(), 1);
@@ -139,7 +143,7 @@ fn main() {
     std::fs::create_dir(out).expect("create a new, nonexisting receipt directory");
     println!(
         "PROTOCOL arm={arm} program={want_program} ep=off topology=pp2 prompts={} max_new={LIMIT} \
-         capacity={capacity} sampler=argmax ties=lowest_id drafter=off splitk=0 stop=eos \
+         capacity={capacity} sampler=argmax ties=lowest_id drafter=off stop=eos \
          instrument=greedy_only_never_a_serving_shape",
         prompts.len()
     );

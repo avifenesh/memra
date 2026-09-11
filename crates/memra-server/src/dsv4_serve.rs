@@ -35,9 +35,9 @@
 
 use crate::worker::{EngineError, Event, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
-    DSV4_SERVING_BATCH_WIDTH_MAX as DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu,
-    Dsv4HostDecodeState, Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row,
-    dsv4_sample_row, resolve_vt,
+    DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row,
+    resolve_vt,
 };
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
@@ -232,9 +232,29 @@ impl Dsv4Model {
     }
 }
 
+/// The served prefill chunk width.
+///
+/// Two things moved on 2026-09-11 and they moved together (memra #460, #461).
+///
+/// The CEILING was a second constant `DSV4_SERVING_BATCH_WIDTH_MAX` (64) while the kernel's own is
+/// `DSV4_BATCH_WIDTH_MAX` (512); both constants entered together in `8a52da7c7`
+/// (#318) with 512 qualified for the bring-up surface and serving left at 64.
+/// #460 proposed a door to raise it. There is no door: the width gain survives
+/// at the canonical `EP=off` matrix arm, which is where the earlier +18.1% was
+/// NOT measured, so under the owner's door rule it is the naked default. The
+/// prod-candidate ABBA (darklanes `receipts/epoffwide-r1`, widths 64/128/256/512
+/// forward and 512/64 reverse) reads 173.8 / 195.5 / 213.8 / 227.8 tok/s at a
+/// 3,686-token prompt, with the two 512 arms IDENTICAL to 0.0% and the two 64
+/// arms within 0.1%: +31.1% at a repeat spread the gain is 300x larger than.
+///
+/// The DEFAULT moved from 0 (monolithic) to the kernel width for the same
+/// reason plus a harder one: the matrix expert program is the loaded default now
+/// and it REFUSES a zero chunk, so leaving this at 0 would mean the default
+/// server configuration refusing to boot. `0` stays selectable and stays the
+/// monolithic rollback, and it is still refused in combination with matrix.
 fn resolve_prefill_chunk(raw: Option<&str>, max_seq: usize) -> Result<usize, String> {
     let chunk = match raw {
-        None => 0,
+        None => DSV4_BATCH_WIDTH_MAX.min(max_seq),
         Some(raw) => raw.trim().parse::<usize>().map_err(|_| {
             format!("MEMRA_DSV4_PREFILL_CHUNK {raw:?} is not a non-negative integer")
         })?,
@@ -1576,17 +1596,35 @@ mod c4_host_budget_tests {
 
 #[cfg(test)]
 mod prefill_chunk_flag_tests {
-    use super::{resolve_prefill_chunk, use_chunked_prefill};
+    use super::{DSV4_BATCH_WIDTH_MAX, resolve_prefill_chunk, use_chunked_prefill};
 
     #[test]
-    fn default_is_off_and_values_are_strictly_bounded() {
-        assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(0));
+    fn the_default_is_the_kernel_width_and_values_are_strictly_bounded() {
+        // The measured default, not a door: 512 is the kernel's own ceiling and
+        // the top of the EP=off width curve.
+        assert_eq!(resolve_prefill_chunk(None, 1_048_576), Ok(512));
+        assert_eq!(DSV4_BATCH_WIDTH_MAX, 512);
+        // Widths the old 64 ceiling refused are admitted now, and the kernel's
+        // own ceiling is still a refusal rather than a clamp.
+        assert_eq!(resolve_prefill_chunk(Some("128"), 1_048_576), Ok(128));
+        assert_eq!(resolve_prefill_chunk(Some("512"), 1_048_576), Ok(512));
+        assert!(resolve_prefill_chunk(Some("513"), 1_048_576).is_err());
+        // Red arm for the ceiling itself: a build that let the serving ceiling
+        // drift back under the kernel's would fail here rather than silently
+        // refusing a width the kernel admits.
+        for width in [64usize, 128, 256, 512] {
+            assert_eq!(
+                resolve_prefill_chunk(Some(&width.to_string()), 1_048_576),
+                Ok(width)
+            );
+        }
+        // A short context still bounds the default rather than refusing it.
+        assert_eq!(resolve_prefill_chunk(None, 64), Ok(64));
         assert_eq!(resolve_prefill_chunk(Some("0"), 1_048_576), Ok(0));
         assert_eq!(resolve_prefill_chunk(Some("64"), 1_048_576), Ok(64));
         assert!(resolve_prefill_chunk(Some("-1"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("banana"), 1_048_576).is_err());
         assert!(resolve_prefill_chunk(Some("65"), 64).is_err());
-        assert!(resolve_prefill_chunk(Some("65"), 1_048_576).is_err());
     }
 
     #[test]

@@ -522,7 +522,7 @@ fn run(
     let blocks = block_arms(reverse);
     let schedule = if reverse { "A B B A" } else { "B A A B" };
     println!(
-        "PROTOCOL blocks={schedule:?} rows_per_block=5 rows=20 prime=256 output=256 both_full_replay=true device_sampler=true diet=true splitk=true cadence_A=true cadence_B=true dense_A=true dense_B=true norm_A=false norm_B=true gu_n32=false first_capture_each_arm_inside_timing=true initial_carry_outside_timing=true final_next_draw_inside_timing=true timing_scope=sample_plus_forward_envelope control_hash_provenance=host_reconstructed_intended_sequence"
+        "PROTOCOL blocks={schedule:?} rows_per_block=5 rows=20 prime=256 output=256 both_full_replay=true device_sampler=true diet=true cadence_A=true cadence_B=true dense_A=true dense_B=true norm_A=false norm_B=true gu_n32=false first_capture_each_arm_inside_timing=true initial_carry_outside_timing=true final_next_draw_inside_timing=true timing_scope=sample_plus_forward_envelope control_hash_provenance=host_reconstructed_intended_sequence"
     );
     for row in 0..20 {
         let index = blocks[row / 5];
@@ -599,7 +599,7 @@ fn run(
             h.update(0u64.to_le_bytes());
         }
         println!(
-            r#"MEASURE {{"row":{row},"arm_row":{arm_row},"arm":"{arm_name}","norm_on":{on},"cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":{wall},"decode_tok_s":{rate},"first_capture":{first_capture},"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"splitk":true,"generated_sha256":"{expected_tokens}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"captures":{capture_counts:?},"variant_device_counts":{variants:?},"control_sha256":"{:x}"}}"#,
+            r#"MEASURE {{"row":{row},"arm_row":{arm_row},"arm":"{arm_name}","norm_on":{on},"cadence_on":true,"dense_on":true,"sampler":"device","generated_tokens":256,"decode_wall_ns":{wall},"decode_tok_s":{rate},"first_capture":{first_capture},"timing_scope":"sample_plus_forward_envelope","eligible":true,"full_replay":true,"generated_sha256":"{expected_tokens}","final_logits_sha256":"{}","final_cache_digest":{:?},"final_hidden_digest":{:?},"device_replays":{counts:?},"captures":{capture_counts:?},"variant_device_counts":{variants:?},"control_sha256":"{:x}"}}"#,
             expected_identity.0,
             expected_identity.1,
             expected_identity.2,
@@ -653,7 +653,6 @@ fn main() {
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_DOTS_ARM", "f32x"),
         ("MEMRA_DSV4_EP", "pair"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -669,14 +668,8 @@ fn main() {
         );
     }
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
-    assert!(
-        memra_engine::moe_m1_graph_splitk_on(),
-        "graph split-K default required"
-    );
     // Default-ON paired-fetch entries would change this control's captured
     // class, so this historical gate pins the base graph split-K partial.
-    memra_engine::set_moe_m1_splitk_fast_for_gate(false);
-    assert!(!memra_engine::moe_m1_splitk_fast_on());
     assert!(memra_engine::dsv4_gpu::dsv4_replay_cadence_default());
     assert!(memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate());
     let programs = PROGRAMS;
@@ -709,7 +702,6 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Box::new(
         Dsv4Gpu::load(
             Path::new(&args[1]),

@@ -37,8 +37,6 @@ struct Counters {
     attention_rank: [u64; 2],
     attention_ar: u64,
     gu_m1: u64,
-    splitk_gu: u64,
-    splitk_down: u64,
     gu_half2: u64,
     down_half2: u64,
     wo_a: u64,
@@ -53,10 +51,6 @@ fn counters(gpu: &Dsv4Gpu) -> Counters {
         ar: gpu.tp_ep_ar_dispatches(),
         attention_rank: gpu.attention_tp_rank_calls(),
         attention_ar: gpu.attention_tp_ar_calls(),
-        splitk_gu: memra_engine::MOE_M1_SPLITK_GU_DISPATCHES
-            .load(std::sync::atomic::Ordering::Relaxed),
-        splitk_down: memra_engine::MOE_M1_SPLITK_DOWN_DISPATCHES
-            .load(std::sync::atomic::Ordering::Relaxed),
         gu_m1: memra_engine::moe_f16g_gu_m1_tc_dispatches(),
         gu_half2: memra_engine::moe_f16g_gu_half2_dispatches(),
         down_half2: memra_engine::moe_f16g_down_m1_half2_dispatches(),
@@ -78,8 +72,6 @@ fn delta(after: Counters, before: Counters) -> Counters {
             after.attention_rank[rank] - before.attention_rank[rank]
         }),
         attention_ar: after.attention_ar - before.attention_ar,
-        splitk_gu: after.splitk_gu - before.splitk_gu,
-        splitk_down: after.splitk_down - before.splitk_down,
         gu_m1: after.gu_m1 - before.gu_m1,
         gu_half2: after.gu_half2 - before.gu_half2,
         down_half2: after.down_half2 - before.down_half2,
@@ -221,20 +213,15 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
         expected_small.map(|n| n * local_steps),
         "HC and Q pack actual enqueues: a diet PASS with the old count is forbidden"
     );
-    let splitk = memra_engine::moe_m1_splitk_on();
-    let oracle_steps = if splitk { 0 } else { local_steps };
-    let splitk_steps = if splitk { local_steps } else { 0 };
-    assert_eq!(c.gu_m1, oracle_steps, "GU-M1 actual enqueues");
-    assert_eq!(c.gu_half2, oracle_steps, "GU-half2 actual enqueues");
-    assert_eq!(c.down_half2, oracle_steps, "down-half2 actual enqueues");
-    assert_eq!(c.splitk_gu, splitk_steps, "split-K GU two-pass enqueues");
-    assert_eq!(
-        c.splitk_down, splitk_steps,
-        "split-K down two-pass enqueues"
-    );
+    // The split-K arm is deleted (memra #461), so the fused GU/down oracle
+    // entries are the ONLY expert entries a decode step can enqueue, and their
+    // count is the whole engagement statement rather than one of two branches.
+    assert_eq!(c.gu_m1, local_steps, "GU-M1 actual enqueues");
+    assert_eq!(c.gu_half2, local_steps, "GU-half2 actual enqueues");
+    assert_eq!(c.down_half2, local_steps, "down-half2 actual enqueues");
     println!(
-        "MOE_ENGAGEMENT splitk={splitk} gu={} down={}",
-        c.splitk_gu, c.splitk_down
+        "MOE_ENGAGEMENT gu_m1={} gu_half2={} down_half2={}",
+        c.gu_m1, c.gu_half2, c.down_half2
     );
     assert_eq!(
         c.wo_a,
@@ -520,17 +507,6 @@ fn select_dense_policy(profile: bool) {
     }
 }
 
-fn select_expert_policy(profile: bool, host_splitk: bool) {
-    // Profile inherits the environment default, including which split-K entry
-    // symbols it captures. Historical scored controls stay OFF and pin the base
-    // graph split-K entries so their captured class does not move with the door.
-    if !profile {
-        memra_engine::set_moe_m1_graph_splitk_for_gate(false);
-        memra_engine::set_moe_m1_splitk_fast_for_gate(false);
-    }
-    memra_engine::set_moe_m1_splitk_for_gate(host_splitk);
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let replay_profile = args
@@ -569,25 +545,20 @@ fn main() {
     let sampler_abba = args.get(3).is_some_and(|a| a == "--sampler-abba");
     assert!(
         args.len() == 3 || args.len() == 4,
-        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--moe-m1-splitk|--moe-m1-splitk-abba|--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile|--full-token-replay-cadence|--full-token-replay-cadence-baab]"
+        "usage: dsv4_tp_ep_sampled_perf_gate <model-dir> <real-source.txt> [--sampler-abba|--small-kernel-components|--small-kernel-abba|--full-token-replay|--full-token-replay-baab|--full-token-replay-profile|--full-token-replay-cadence|--full-token-replay-cadence-baab]"
     );
     let components = args
         .get(3)
         .is_some_and(|v| v == "--small-kernel-components");
     let small_abba = args.get(3).is_some_and(|v| v == "--small-kernel-abba");
-    let splitk = args.get(3).is_some_and(|a| a == "--moe-m1-splitk");
-    let splitk_abba = args.get(3).is_some_and(|a| a == "--moe-m1-splitk-abba");
     assert!(
         args.len() == 3
-            || splitk
-            || splitk_abba
             || sampler_abba
             || components
             || small_abba
             || full_replay,
         "unknown gate arm"
     );
-    select_expert_policy(replay_profile, splitk);
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("0") => false,
         Ok("1") => true,
@@ -631,7 +602,6 @@ fn main() {
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_EP", "pair"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -672,7 +642,6 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let mut gpu = Dsv4Gpu::load(
         dir,
         &[0, 1],
@@ -698,8 +667,8 @@ fn main() {
 
     if full_replay {
         assert!(
-            attention_mode && device && (profiled == replay_profile) && !splitk,
-            "replay requires TP2/device sampler/split-K OFF and profiling only in the profile-only arm"
+            attention_mode && device && (profiled == replay_profile),
+            "replay requires TP2/device sampler and profiling only in the profile-only arm"
         );
         gpu.set_small_kernel_diet_for_gate(true)
             .expect("replay diet");
@@ -752,22 +721,11 @@ fn main() {
         );
     }
 
-    let arms: &[bool] = if splitk_abba {
-        &[false, true, true, false]
-    } else {
-        &[splitk]
-    };
-    for (arm_index, &armed) in arms.iter().enumerate() {
-        gpu.set_grouped_m1_splitk_for_gate(armed);
-        println!("ABBA_ARM index={arm_index} splitk={armed} fresh_request_state=true");
-        println!(
-            "MOE_PROGRAM splitk={armed} component=false numeric_class={}",
-            if armed {
-                memra_engine::MOE_M1_SPLITK_NUMERIC_CLASS
-            } else {
-                "existing_m1_f16_mma"
-            }
-        );
+    // One expert program, one numeric class: the split-K arm this loop used to
+    // sweep is deleted (memra #461), so there is exactly one arm left.
+    for arm_index in 0..1 {
+        println!("ABBA_ARM index={arm_index} fresh_request_state=true");
+        println!("MOE_PROGRAM component=false numeric_class=existing_m1_f16_mma");
         let receipts: Vec<_> = (0..repeats)
             .map(|repeat| {
                 let arm = if sampler_abba {
@@ -902,31 +860,6 @@ fn main() {
 
 #[cfg(test)]
 mod default_policy_tests {
-    #[test]
-    fn profile_inherits_graph_splitk_policy() {
-        const CHILD: &str = "MEMRA_TEST_DSV4_DEFAULT_CHILD";
-        if let Ok(expected) = std::env::var(CHILD) {
-            super::select_expert_policy(true, false);
-            assert_eq!(memra_engine::moe_m1_graph_splitk_on(), expected == "1");
-            super::select_expert_policy(false, false);
-            assert!(!memra_engine::moe_m1_graph_splitk_on());
-            return;
-        }
-        for value in [None, Some("0"), Some("graph")] {
-            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
-            child.args([
-                "--exact",
-                "default_policy_tests::profile_inherits_graph_splitk_policy",
-            ]);
-            child.env(CHILD, if value == Some("0") { "0" } else { "1" });
-            if let Some(value) = value {
-                child.env("MEMRA_DSV4_MOE_M1_SPLITK", value);
-            } else {
-                child.env_remove("MEMRA_DSV4_MOE_M1_SPLITK");
-            }
-            assert!(child.status().unwrap().success());
-        }
-    }
 
     #[test]
     fn environment_defaults_and_explicit_gate_rollback() {
