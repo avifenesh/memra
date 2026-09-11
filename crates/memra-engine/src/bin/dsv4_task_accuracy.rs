@@ -120,6 +120,25 @@ fn main() {
     );
     let slices: i32 = hc.parse().unwrap();
 
+    // RED ARM. The two asserts that make this control non-vacuous are the post-load
+    // program check and the two-directional engagement count. A check that has never
+    // failed is not a check, so this env deliberately loads MATRIX while the rest of
+    // the binary still believes the arm is the reference one, and the run must refuse.
+    // This is also the exact failure shape memra #482 introduces: after it,
+    // MEMRA_DSV4_MOE_PROGRAM is deleted and a reference arm selected by environment
+    // loads matrix silently. Both arms would then be matrix and the paired comparison
+    // would report a perfect null, which is the answer everyone is hoping for and the
+    // worst possible thing to report by accident.
+    let red_arm = std::env::var_os("MEMRA_ACC_RED_ARM_FORCE_MATRIX").is_some();
+    if red_arm {
+        assert_eq!(
+            program, "reference",
+            "the red arm mislabels a matrix load as reference"
+        );
+        unsafe { std::env::set_var("MEMRA_DSV4_MOE_PROGRAM", "matrix") };
+        println!("RED_ARM force_matrix=1 declared_program={program}; this run MUST refuse");
+    }
+
     let tokenizer = Tokenizer::from_hf_dir(Path::new(&args[1])).expect("tokenizer");
     assert_eq!(tokenizer.eos_id(), 1);
     let mut paths: Vec<_> = std::fs::read_dir(&args[2])
@@ -168,7 +187,12 @@ fn main() {
     assert_eq!(
         gpu.matrix_moe_enabled(),
         program == "matrix",
-        "the loaded program must be the one the arm asked for"
+        "the loaded program must be the one the arm asked for; an arm that silently \
+         loaded the other program would make the paired comparison a vacuous null"
+    );
+    assert!(
+        !red_arm,
+        "unreachable: the red arm must be refused by the assert above"
     );
     assert!(
         !gpu.topology().is_tp_ep(),
