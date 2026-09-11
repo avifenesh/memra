@@ -881,7 +881,7 @@ engagement latch and the four component/port instruments that qualified them.
 They were correct, they were same-class, and on the served program they did not
 pay. The full verdict, the ABBA table, the break-even point and the receipts are
 the 2026-09-11 norm-fusion entry in the `FLAGS.md` removed-doors ledger; the lane
-is darklanes `research/dsv4f-norm-pp2-port-20260911/LANE.md`.
+is darklanes `research/dsv4f-norm-pp2-port-20260911/`.
 
 One kernel-level fact is worth keeping here rather than only in a ledger, because
 it is about how to read an isolated per-launch sweep. The wide pack splits the
