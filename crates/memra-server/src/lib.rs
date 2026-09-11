@@ -12867,6 +12867,131 @@ mod tests {
         }
     }
 
+    /// GUARD for the other half of memra #495: a tool-call turn that parks is worth nothing
+    /// unless the NEXT turn asks for the same tokens.
+    ///
+    /// The parked-prefix tier hits only on a strict exact-token prefix, so the agent chain works
+    /// only if the assistant turn a harness echoes back re-renders to EXACTLY the bytes the model
+    /// generated — reasoning, the `</think>` split, and the DSML tool-call block. The first
+    /// end-to-end cell (darklanes `receipts/hot12-r1`) missed on all five turns with
+    /// `hits=0 parks=5`: the client had dropped `delta.tool_calls`, so turn 2 re-rendered an
+    /// assistant turn the model never produced and the boundary could not match. This asserts
+    /// the round trip on the serve path's own functions: generated text -> OpenAI wire ->
+    /// rendered history, byte for byte.
+    #[test]
+    fn an_agent_tool_call_turn_rerenders_to_what_the_model_generated() {
+        use crate::toolcall::{Piece, ToolStreamParser};
+        const D: &str = "<\u{ff5c}DSML\u{ff5c}";
+        const DE: &str = "</\u{ff5c}DSML\u{ff5c}";
+        let caps = ModelCaps {
+            chat_ok: true,
+            dsv4: true,
+            tools_branch: true,
+            context_length: 1_048_576,
+            ..Default::default()
+        };
+        let tools = json!([{"type": "function", "function": {
+            "name": "grep_source",
+            "description": "Search the staged source corpus for a pattern.",
+            "parameters": {"type": "object",
+                           "properties": {"pattern": {"type": "string"}},
+                           "required": ["pattern"]}}}]);
+        let render = |messages: serde_json::Value| -> String {
+            let body = json!({"model": "dsv4", "messages": messages, "tools": tools});
+            let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
+            let (tx, _rx) = worker::event_channel();
+            let plan =
+                build_chat_request(req, Some(&caps), tx, lanes::Lane::Interactive, None).unwrap();
+            chat::apply_chat_template_tools_ex(
+                None,
+                &plan.request.chat_turns,
+                true,
+                &plan.request.tools_json,
+                &plan.request.tools_struct,
+                plan.request.think,
+                plan.request.reasoning_effort.as_deref(),
+                Some(chat::Dsv4Encoding::V0731),
+            )
+            .unwrap()
+        };
+
+        // Turn 1: one user message with tools declared. This is the prompt the session primes on.
+        let user = "Find the function that merges tool messages. Use grep_source to look it up.";
+        let turn1 = render(json!([{"role": "user", "content": user}]));
+        assert!(
+            turn1.ends_with("<think>"),
+            "turn 1 opens the thinking tail: {turn1:?}"
+        );
+
+        // What the model emits next, in wire order: reasoning, the split, then the DSML block.
+        // Two calls, because a single-call round trip would not catch the join between invokes.
+        let generated = [
+            "The user wants the merge function.</think>".to_string(),
+            String::new(),
+            format!("{D}tool_calls>"),
+            format!("{D}invoke name=\"grep_source\">"),
+            format!("{D}parameter name=\"pattern\" string=\"true\">merge_tool{DE}parameter>"),
+            format!("{DE}invoke>"),
+            format!("{D}invoke name=\"grep_source\">"),
+            format!("{D}parameter name=\"pattern\" string=\"true\">fn merge{DE}parameter>"),
+            format!("{DE}invoke>"),
+            format!("{DE}tool_calls>"),
+        ]
+        .join("\n");
+
+        // The server's own parser turns that stream into the OpenAI wire the harness echoes back.
+        let mut parser = ToolStreamParser::dsv4(true);
+        let mut pieces = parser.push(&generated);
+        pieces.extend(parser.finish());
+        let (mut content, mut reasoning, mut calls) = (String::new(), String::new(), Vec::new());
+        for piece in &pieces {
+            match piece {
+                Piece::Content(t) => content.push_str(t),
+                Piece::Reasoning(t) => reasoning.push_str(t),
+                Piece::Call(c) => calls.push(c.clone()),
+            }
+        }
+        assert_eq!(calls.len(), 2, "both invokes parse: {pieces:?}");
+        assert_eq!(reasoning, "The user wants the merge function.");
+        assert!(content.is_empty(), "content was {content:?}");
+
+        let mut messages = vec![
+            json!({"role": "user", "content": user}),
+            json!({"role": "assistant", "content": content,
+                   "reasoning_content": reasoning,
+                   "tool_calls": calls.iter().map(|c| json!({
+                       "id": c.id, "type": "function",
+                       "function": {"name": c.name, "arguments": c.arguments}
+                   })).collect::<Vec<_>>()}),
+        ];
+        for call in &calls {
+            messages.push(json!({"role": "tool", "tool_call_id": call.id,
+                                 "name": call.name, "content": "fn merge_tool_messages(...)"}));
+        }
+        let turn2 = render(serde_json::Value::Array(messages));
+
+        // THE LAW: turn 2 is turn 1 plus exactly what the model generated, and only then the
+        // tool results. Anything else and the parked boundary is unreachable by construction.
+        let expected_prefix = format!("{turn1}{generated}");
+        assert!(
+            turn2.starts_with(&expected_prefix),
+            "turn 2 stopped extending the generation at byte {}:\n  parked: {:?}\n  turn 2: {:?}",
+            turn2
+                .as_bytes()
+                .iter()
+                .zip(expected_prefix.as_bytes())
+                .take_while(|(a, b)| a == b)
+                .count(),
+            &expected_prefix[expected_prefix.len().saturating_sub(120)..],
+            &turn2[turn1.len().min(turn2.len())
+                ..(turn1.len() + generated.len() + 40).min(turn2.len())],
+        );
+        assert!(
+            turn2.len() > expected_prefix.len(),
+            "the tool results must follow, leaving a suffix for the restore to feed"
+        );
+    }
+
     #[test]
     fn dsv4_default_thinkmode_renders_thinking() {
         // Default == Think for dsv4 (the model has no template-own chat default; thinking is
