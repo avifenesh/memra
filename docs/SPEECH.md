@@ -560,11 +560,25 @@ Its exit is deliberately not "it produces intelligible speech", which any correc
 **byte identity against the banked CPU reference**, then a p95 TTFA at c1 / c8 / c32 / c64 on one
 named card with the leading-silence term measured, not assumed.
 
-This step rests on a claim that is an **architectural inference and not a receipt**: that a
-12 Hz codec decode step is launch-bound the way §6.3's ASR step measured. The decisive cell is a
-phase-level profile of one decode step (kernel ms inside step ms, device launches per step),
-about 2 GPU-hours, and it runs **before** the port rather than after it. If it comes back
-negative, this step's priority is wrong and the ordering is re-argued.
+This step rested on a claim that was an architectural inference and not a receipt: that a
+12 Hz codec decode step is launch-bound the way §6.3's ASR step measured. **That cell ran on
+2026-09-11 and came back positive**, on one rented RTX 5090 against `Qwen3-TTS-12Hz-1.7B-CustomVoice`
+on a stock reference path, with its acceptance criterion committed before the box was rented:
+
+| Quantity | §6.3's ASR step (A100) | The TTS decode step (RTX 5090) |
+|---|---:|---:|
+| Step wall | 26.18 ms | **57.99 ms** |
+| Kernel inside the step | 12.06 ms | **13.62 ms** |
+| Gap | 54% | **76.5%** |
+| Device launches per 80 ms of audio | 2,904 | **7,021.8** |
+| Batch 1 -> 32, same step | +13.9% | **+3.4%** wall |
+
+One talker forward emits exactly 80.00 ms of audio and contains a nested 15-step autoregressive
+code predictor over the remaining codebooks before the 28-layer talker forward runs, which is why
+the launch count is 2.4x the ASR step's in a step with a wider gap. Mean kernel duration is
+**1.94 us**, below the per-launch host cost. The step's priority is therefore correct and the
+ordering is not re-argued. Receipts are private (darklanes
+`research/tts-launchbound-20260911/`); the numbers above are the whole of what they say.
 
 Steps 2 and 3 run on the cheapest card that fits, not on an A100; step 1 uses an A100
 specifically because that is the card the published rows were measured on.
