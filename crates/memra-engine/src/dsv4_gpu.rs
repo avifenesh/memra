@@ -111,6 +111,85 @@ pub fn dense_tile_counts_for_gate() -> [u64; 2] {
     counts
 }
 
+/// Counters the dense tensor-core path keeps about itself (memra #472).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Dsv4DenseCutlassCounts {
+    /// Calls the split-K path ran.
+    pub splitk: u64,
+    /// Calls it declined, which is normal: the strided grouped output projection
+    /// and every `m` below `DSV4_TMAX` belong to the scalar kernel.
+    pub declined: u64,
+    /// Bytes held by the lazy bf16 weight mirror.
+    pub mirror_bytes: u64,
+    /// Distinct shapes whose CUTLASS setup has been built and cached. It must
+    /// stop growing while the call count keeps climbing; a prefill that builds a
+    /// shape per call has the cache defeated however fast the kernel is.
+    pub shapes_built: u64,
+}
+
+/// Stand the dense tensor-core path up or down for a GATE (memra #472).
+///
+/// NOT a door. There is no environment read, no serving caller, and no dispatch
+/// a serving process can reach: when the CUTLASS archive is linked this path IS
+/// the code. It exists so a CLASS cell can take both arms in ONE process over ONE
+/// tape, because two binaries cannot share a model load and a drift row measured
+/// across two loads carries the load's variation into the number it is trying to
+/// attribute to a reduction tree. Same shape as `#482`'s
+/// `arm_reference_expert_program_for_gate`.
+///
+/// Returns an error when this binary was built without the archive, so a class
+/// cell whose two arms would be the same program fails instead of reporting no
+/// drift.
+pub fn arm_dense_cutlass_for_gate(on: bool) -> Res<()> {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_cutlass_arm(on: i32) -> i32;
+    }
+    ck("dense cutlass arm", unsafe {
+        memra_dsv4_dense_cutlass_arm(i32::from(on))
+    })
+}
+
+/// Whether the dense tensor-core path is armed, or `None` when this binary does
+/// not contain it at all. The distinction is the point: "off" and "absent" look
+/// identical in a drift row and are not the same fact.
+pub fn dense_cutlass_armed_for_gate() -> Option<bool> {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_cutlass_armed() -> i32;
+    }
+    match unsafe { memra_dsv4_dense_cutlass_armed() } {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+/// The dense tensor-core path's own counters, or `None` when it is not linked.
+pub fn dense_cutlass_counts_for_gate() -> Option<Dsv4DenseCutlassCounts> {
+    unsafe extern "C" {
+        fn memra_dsv4_dense_cutlass_counts(
+            splitk: *mut u64,
+            declined: *mut u64,
+            mirror_bytes: *mut u64,
+            shapes_built: *mut u64,
+        ) -> i32;
+    }
+    let mut counts = Dsv4DenseCutlassCounts {
+        splitk: 0,
+        declined: 0,
+        mirror_bytes: 0,
+        shapes_built: 0,
+    };
+    let rc = unsafe {
+        memra_dsv4_dense_cutlass_counts(
+            &mut counts.splitk,
+            &mut counts.declined,
+            &mut counts.mirror_bytes,
+            &mut counts.shapes_built,
+        )
+    };
+    (rc == 0).then_some(counts)
+}
+
 /// One dense entry-point launch shape and how often it was issued.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
