@@ -1081,6 +1081,72 @@ mod tests {
         assert_eq!(b["error"]["observed"], 3);
     }
 
+    /// EVERY TEST ABOVE CALLS A HANDLER DIRECTLY, so none of them would notice a handler
+    /// that is never routed, or a path typo'd in the router. The surface's whole claim is
+    /// that these paths EXIST (the v1 router carried no audio route at all before this
+    /// lane), so the registration itself needs an assertion, in the repo's own
+    /// comment-stripped-source style.
+    #[test]
+    fn every_audio_route_is_registered_in_the_v1_router() {
+        let src = include_str!("lib.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let sq: String = code.split_whitespace().collect::<Vec<_>>().join(" ");
+        for (path, handler) in [
+            (
+                "/v1/audio/transcriptions",
+                "post(audio_api::transcriptions)",
+            ),
+            ("/v1/audio/sessions", "post(audio_api::open_session)"),
+            ("/v1/audio/sessions", "get(audio_api::list_sessions)"),
+            (
+                "/v1/audio/sessions/:id/frames",
+                "post(audio_api::append_frames)",
+            ),
+            (
+                "/v1/audio/sessions/:id/close",
+                "post(audio_api::close_session)",
+            ),
+        ] {
+            // Both rustfmt shapes of one `.route` call: single-line, and the wrapped form
+            // it takes when the path is long enough to break.
+            let flat = format!(".route(\"{path}\", {handler})");
+            let wrapped = format!(".route( \"{path}\", {handler},");
+            assert!(
+                sq.contains(&flat) || sq.contains(&wrapped),
+                "no router entry pairs {path} with {handler}"
+            );
+        }
+    }
+
+    /// And the axum path SYNTAX has to be the one this axum version captures under, or the
+    /// id arrives empty and every session lookup 404s at runtime while every direct-call
+    /// test above stays green.
+    #[tokio::test]
+    async fn the_session_id_path_captures_under_this_axum_version() {
+        use axum::routing::post;
+        let app: axum::Router = axum::Router::new().route(
+            "/v1/audio/sessions/:id/frames",
+            post(|Path(id): Path<String>| async move { id }),
+        );
+        let resp = tower::ServiceExt::oneshot(
+            app,
+            axum::http::Request::post("/v1/audio/sessions/abc123/frames")
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("routed");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], b"abc123", "the id must reach the handler");
+    }
+
     /// `frames` is bounded: a client cannot offer an unbounded batch and call it one call.
     #[tokio::test]
     async fn frame_count_is_bounded() {
