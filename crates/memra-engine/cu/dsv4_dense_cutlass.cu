@@ -176,6 +176,23 @@ uint64_t g_calls_declined = 0;
 uint64_t g_shapes_built = 0;
 
 // ---------------------------------------------------------------------------
+// The gate-only arm.
+//
+// NOT a door, and the difference is load-bearing under the owner's no-OFF-doors
+// rule: there is no environment read, no dispatch on anything a serving process
+// can set, and no caller outside a gate binary. When the archive is linked this
+// path IS the code; when it is not, the weak symbol is null and the scalar kernel
+// runs. This switch exists for one reason: a CLASS comparison has to take both
+// arms in ONE process over ONE tape. Two binaries cannot share a model load, and
+// a drift row measured across two loads carries the load's variation into the
+// numbers it is trying to attribute to a reduction tree. memra #482 set the
+// precedent with arm_reference_expert_program_for_gate().
+//
+// Default ARMED, so a binary that links the archive serves this path unless a
+// gate deliberately stands it down.
+bool g_armed = true;
+
+// ---------------------------------------------------------------------------
 // Per-shape CUTLASS setup cache.
 //
 // This is the whole difference between a 5.25x device-side win and a 37% SERVED
@@ -261,6 +278,13 @@ Shape* shape_entry(int m, int n, int k, int blocks, const __nv_bfloat16* w, cons
 }
 }  // namespace
 
+extern "C" int memra_dsv4_dense_cutlass_set_for_gate(int on) {
+    g_armed = on != 0;
+    return 0;
+}
+
+extern "C" int memra_dsv4_dense_cutlass_armed_for_gate() { return g_armed ? 1 : 0; }
+
 extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64_t* declined,
                                                         uint64_t* mirror_bytes,
                                                         uint64_t* shapes_built) {
@@ -282,6 +306,9 @@ extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64
 extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc_f32, int sc_cols,
                                             const void* x_bf16, float* y, int m, int n, int k,
                                             int xstride, int ystride, void* stream_v) {
+    // The gate arm, checked before admission: standing the path down is not a
+    // DECLINE (no shape was rejected) and must not be counted or announced as one.
+    if (!g_armed) return 40080;
     // Admission, stated positively so a reader can see the whole domain at once.
     if (m != 32) { announce_decline("m!=32", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
     if (k % DSV4_DENSE_SCALE_BLOCK != 0) { announce_decline("k%128", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }

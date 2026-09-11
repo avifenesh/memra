@@ -3854,6 +3854,31 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
 extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_fp8(
     const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y, int m,
     int n, int k, int xstride, int ystride, void* stream_v);
+extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_set_for_gate(int on);
+extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_armed_for_gate();
+extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_counts_for_gate(
+    uint64_t* splitk, uint64_t* declined, uint64_t* mirror_bytes, uint64_t* shapes_built);
+
+// Unconditionally-linked wrappers, so Rust can call the gate arm from a binary
+// built WITHOUT the CUTLASS archive and get a named refusal rather than a link
+// error. 40084 means "this binary does not contain the path", which is a fact a
+// gate needs to be able to read: a class cell whose OFF arm and ON arm are the
+// same program has to fail rather than report zero drift.
+extern "C" int memra_dsv4_dense_cutlass_arm(int on) {
+    if (!memra_dsv4_dense_cutlass_set_for_gate) return 40084;
+    return memra_dsv4_dense_cutlass_set_for_gate(on);
+}
+
+extern "C" int memra_dsv4_dense_cutlass_armed(void) {
+    if (!memra_dsv4_dense_cutlass_armed_for_gate) return -1;
+    return memra_dsv4_dense_cutlass_armed_for_gate();
+}
+
+extern "C" int memra_dsv4_dense_cutlass_counts(uint64_t* splitk, uint64_t* declined,
+                                               uint64_t* mirror_bytes, uint64_t* shapes_built) {
+    if (!memra_dsv4_dense_cutlass_counts_for_gate) return 40084;
+    return memra_dsv4_dense_cutlass_counts_for_gate(splitk, declined, mirror_bytes, shapes_built);
+}
 
 #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \
     case MM:                                                                         \
