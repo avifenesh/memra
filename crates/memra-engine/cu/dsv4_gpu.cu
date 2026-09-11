@@ -3850,6 +3850,11 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
 
 #include "dsv4_dense_m1_exact_tail.cuh"
 
+// Defined in cu/dsv4_dense_cutlass.cu, compiled only under MEMRA_CUTLASS.
+extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_fp8(
+    const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y, int m,
+    int n, int k, int xstride, int ystride, void* stream_v);
+
 #define DSV4_GEMV_FP8_M_CASE(MM)                                                     \
     case MM:                                                                         \
         dsv4_gemv_fp8_m_kernel<MM, false><<<(unsigned)n, 128, 0, stream>>>(           \
@@ -3887,6 +3892,18 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
         return 0;
     }
     dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
+    // Tensor-core dense path (memra #472). Declared WEAK because it is compiled
+    // only under MEMRA_CUTLASS; when it is absent the symbol is null and the
+    // scalar kernel below runs exactly as it always has. When it is present it
+    // still declines every shape it does not admit, and declining is normal
+    // rather than an error, so the scalar kernel remains the fallback for the
+    // strided grouped-output projection and for every m below DSV4_TMAX.
+    if (memra_dsv4_dense_cutlass_fp8) {
+        int rc = memra_dsv4_dense_cutlass_fp8(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride,
+                                              ystride, stream_v);
+        if (rc == 0) return 0;
+        if (rc != 40080) return rc;  // a real failure is a failure, not a fallback
+    }
     switch (m) {
         DSV4_GEMV_FP8_M_CASE(1)
         DSV4_GEMV_FP8_M_CASE(2)
