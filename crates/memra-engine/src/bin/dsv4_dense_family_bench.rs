@@ -41,7 +41,7 @@
 //! null; that is the mistake this guard exists to make impossible.
 //!
 //! Usage: `dsv4-dense-family-bench [device] [weights_per_shape] [reps]`
-use cudarc::driver::{CudaContext, DevicePtr, DevicePtrMut};
+use cudarc::driver::{CudaContext, DevicePtr};
 use memra_engine::dsv4_ffi as k;
 use memra_engine::dsv4_gpu::{
     arm_dense_cutlass_for_gate, dense_cutlass_armed_for_gate, dense_cutlass_counts_for_gate,
