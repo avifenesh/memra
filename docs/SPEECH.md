@@ -24,7 +24,7 @@ less than one that starts from a measured deficit.
 | Nemotron 3.5 streaming RNNT `[56,0]` | The whole path executes and streams: frontend, cache-aware FastConformer, prompt kernel, LSTM predictor, joint, greedy, session state | 657/657 tensors, frontend 5.34058e-05, encoder 2.533197403e-07 over 26 chunks, head 9.155273438e-05, greedy 9/9, session 26/26 partials plus final identical |
 | Audio-LM class (Qwen3-ASR, Voxtral) | Not started | n/a |
 | **GPU execution for any speech operation** | **Does not exist.** No CUDA kernel, no residency plan, no performance receipt | Every number above is a CPU reference measured on efficiency cores |
-| Streaming TTS (§2.4) | **Not started.** No pack, no codec decoder, no reference | n/a |
+| Streaming TTS (§2.4) | **No pack, no codec decoder, no reference, and `NativeReference` unset.** What DOES exist as of 2026-09-11 is the part of §4's steps 0-5 that costs zero GPU-hours and zero engine code: the artifact pinned and its census exact, the codec contract read off it, three measured model-contract defects, the streaming emit contract fixed in §2.4.1 BEFORE any implementation, the parity bounds re-derived in §2.4.2 because the ones first written down are unreachable, and a stage oracle that is bit-reproducible across hosts and drivers | `docs/SPEECH.md` §2.4.1, §2.4.2; receipts private (darklanes `research/tts-pack-20260911/`) |
 | **Audio endpoint in `memra serve`** | **Exists as of 2026-09-11 and fails CLOSED.** `/v1/audio/transcriptions` plus the `/v1/audio/sessions` lifecycle (open / frames / close / list) carry the session contract, the resident-session cap, the per-lane bounded queue, the typed shed taxonomy and the declared decode; with no speech pack resident every path refuses `engine_unbound` rather than answering with something that is not the model. **The transcript bytes are step 2's work** | `audio_api.rs`, 18 handler + contract tests; scheduler in `memra-lanes::audio_stream`, 20 tests |
 
 So: memra has a correctness spine for two speech families, a serving surface that admits and
@@ -116,21 +116,159 @@ is the best-matched case in the engine for graph capture.
 **Read the rate, do not read the name.** `Qwen3-TTS-12Hz-1.7B-CustomVoice` @ `0c0e3051` is a
 **12.5 Hz** codec: `output_sample_rate` 24000 and `decode_upsample_rate` 1920, so one frame is
 **80.00 ms exactly** and a second of audio costs 12.5 steps, not 12. Neither 83.33 ms nor 2000
-samples appears anywhere in the artifact. Two more facts about that artifact belong to the
-streaming emit contract this family needs, and neither can be inferred from a sibling:
+samples appears anywhere in the artifact. Three more facts about that artifact belong to the
+streaming emit contract this family needs, and none of them can be inferred from a sibling:
 
 - **The first emitted codec frame is silent** (peak 5.72e-05, about -85 dBFS) and it is
   structural, not a truncation artifact: the same 1920 samples sliced out of a 12-frame
   generation peak at 5.01e-05 while the rest of the clip peaks at 0.289. A TTFA clock stopped at
   the first chunk therefore times the arrival of silence, and the emit contract owes a caller
   either the silence with its duration declared or the first audible frame, never one labelled as
-  the other.
+  the other. Re-measured independently on 2026-09-11 on a second host: frame 0 peak 4.816e-05
+  against a rest-of-clip peak of 0.2451.
 - **The vendor reference emits `max_new_tokens - 1` codec frames** (`min_new_tokens` is 2 and
   returns one frame), so a harness or a port that passes a frame count straight through is one
   frame short of what it reports.
+- **The frame count also depends on WHY the talker stopped, and the two vendor entry points
+  disagree when it stops on EOS.** Measured 2026-09-11 on the pinned artifact at
+  `0c0e3051f131929182e2c023b9537f8b1c68adfe`, on a fixture that terminates on `codec_eos` rather
+  than on the frame cap: the outer entry point returned **17 frames of audio** while the inner
+  `model.generate` returned **16 code rows** for the same prompt and seed, so the codec decode of
+  the returned codes is one frame shorter than the end-to-end audio and the two cannot be compared
+  sample for sample. A fixture that hits the cap cannot show this at all, which is why the parity
+  set needs at least one EOS-terminated prompt. The outer entry point does not post-process: its
+  returned audio is **bit-identical** to a re-decode of its own captured codes, so the whole
+  difference is in the codes. An emit contract that does not say which count a client is promised
+  is ambiguous on every request that ends on EOS.
 
-Both are measured, both are red-armed in darklanes `ops/serving/tts_ttfa_slo.py`, and the
-receipts are private (`research/tts-qual-20260911/`).
+All three are measured, all three are red-armed in darklanes `ops/serving/tts_ttfa_slo.py`, and
+the receipts are private (`research/tts-qual-20260911/`, `research/tts-pack-20260911/`).
+
+### 2.4.1 The streaming emit contract
+
+FIXED HERE BEFORE THE IMPLEMENTATION, on 2026-09-11, so a battery can be written against it in
+parallel with the code rather than after it. Every constant below is read off the pinned artifact
+or measured on it; none is inherited from a sibling model, which is §4 step 2's frontend discipline
+applied to the output side.
+
+**Frame geometry.** One emitted chunk is exactly **1920 samples at 24000 Hz = 80.00 ms**, the
+codec's `decode_upsample_rate`. A partial frame is never emitted: the codec cannot decode one, and
+a chunk that is not a whole number of frames is a contract violation rather than a small chunk.
+The frame rate is **12.5 Hz**, not the 12 Hz in the model's name.
+
+**Audibility is declared on the wire, not inferred by the client.** Frame 0 is silent and
+structural, so the emit stream marks every frame with `audible` and with the `peak` that produced
+the marking, plus the threshold the server used. A client's time-to-first-audio clock stops at the
+first frame with `audible: true`, and the silent frames are still delivered with their duration
+declared. The field is checkable rather than trusted, because `peak` and the threshold are on the
+wire too, so a client can recompute `audible` from the PCM and refuse a server that disagrees with
+itself. An endpoint that emits silence and calls it audio produces a number about 80 ms better
+than the product, which is the first bullet above.
+
+**Two clocks, always reported side by side.** Time to first CHUNK and time to first AUDIBLE frame
+are different numbers, and the difference is the silent lead-in, measured at 76.8 ms at batch 1
+and 61.2 ms at 64 streams on the reference runtime. A response that reports one without the other
+lets a reader pick the flattering one, so the terminal event carries both.
+
+**Frame count is promised in EMITTED frames, never in `max_new_tokens`.** The vendor off-by-one
+and the EOS divergence above are internal to the engine. A client asks for N frames and receives N
+chunks of 1920 samples, or receives a terminal event saying how many it got and why it stopped
+(`eos`, `frame_limit`, `cancelled`). Which of the two vendor counts is authoritative is a pack
+decision recorded in the pack, not something left to the caller.
+
+**Admission reuses the existing typed shed taxonomy; it does not grow a second one.** The four
+codes in `memra-lanes::audio_stream::ShedCode` cover this surface unchanged, each keeping its
+meaning rather than being reinterpreted:
+
+| code | status | what it means on the TTS surface |
+| --- | --- | --- |
+| `engine_unbound` | 503 | no TTS pack resident. Fails CLOSED, exactly as the transcription surface does today |
+| `sessions_exceeded` | 503 | the resident-session cap is full |
+| `queue_overflow` | 429 | this stream's bounded frame backlog is full, i.e. the engine is not keeping up with real time for this lane. On ASR the queue holds inbound audio; on TTS it holds outbound frames the client has not drained. Same code, same meaning: THIS LANE FELL BEHIND |
+| `unknown_session` | 404 | a cancel or close on an id that is not open |
+
+Every refusal carries the code, the limit it hit and the value observed, and the retryable arms
+carry `retry-after` and `x-should-retry`. A capacity limit that is reached is product behaviour;
+one that silently eats a stream is the defect this taxonomy exists to prevent.
+
+**Request validation is NOT shedding and does not use these codes.** An unknown voice, an
+unsupported language id, an unsupported response format or an input over the length limit is a 400
+with its own typed reason, because it is a malformed request and not a capacity event. Mixing the
+two makes a shed counter lie: an operator reading `queue_overflow` would be reading a client's
+typos.
+
+**Cancel is a real seam, not a dropped connection.** A cancelled stream stops producing frames,
+releases its session slot, and emits a terminal event marked `cancelled` with the frame count it
+reached. A client that disconnects without cancelling must produce the same release, because a slot
+leaked per abandoned connection is a capacity limit reached by accident.
+
+**Rollback seam.** The decode shape this family serves is the DECLARED one from §5 (G7): for this
+artifact the vendor recommendation is SAMPLED on both the talker and the nested code predictor, and
+greedy stays the instrument for byte-identity gates and is never the served shape. The declared
+shape is a registry entry, so rolling it back is a registry change and not a code change, and the
+response reports the shape it actually used so the contract is checkable from outside.
+
+**What is deliberately NOT in this contract.** No mp3 or opus encoding is promised: the frame
+geometry above is a PCM contract, and an encoded format changes the chunk quantum, which would make
+the 1920-sample rule unenforceable. No speed or pitch parameter is promised, because neither is a
+property of this artifact's decode path and inventing one would be a format compatibility
+shortcut. No claim about voice quality: this family is qualified on identity against a pinned
+reference and on latency, and quality is a different gate owned elsewhere.
+
+### 2.4.2 Parity bounds for this family are measured, and the first ones written down were unreachable
+
+§4 step 5 says a bound is measured against truth and never typed, and §5's G3 row records the
+precedent: an original 1e-2 F16-vs-F32 gate FAILED and the bound became the same-fixture
+HF-F16-vs-F32 floor, 0.2771682739. This family needs the same correction and it is bigger.
+
+**Greedy decoding on this model's codec head is chaotic under any change to its arithmetic.** Same
+pin, same fixture, same seed, greedy on both loops, ONE thing changed (the vendor's own dtype,
+bfloat16 against float32): **37 of 39 talker argmaxes flip, the first at step 2, and 582 of 624
+codec ids differ.** The cause is measured, not argued: the head's top-2 margin over those 39 steps
+is min **0.125**, p10 0.475, p50 2.000, with **10 of 39 steps below 1.0**, and at the first flip
+the logit delta was **2.588** against a margin of **0.75**. Once one code differs the two runs are
+generating different audio, so the per-step logit delta grows without bound after that (0.137,
+3.31, 2.588, 9.33, 11.2, 16.6, 26.8, 21.4) and the end-to-end waveform comparison goes to a
+NEGATIVE SNR. Two different valid utterances are uncorrelated.
+
+Three consequences, and they bind the pack rather than the write-up:
+
+1. **A generic compiler was never going to pass an argmax-identity gate here.** The 2026-09-11
+   reference-runtime probe found `torch.compile(mode="default")` diverging at step 2 with 584 of
+   624 ids differing, and read the cause as inductor's fused BF16 reduction order. The vendor's own
+   F32 arm reproduces the same divergence at the same step with the same magnitude and no compiler
+   in the path, so the instability is a property of the MODEL. That probe's conclusion stands and
+   its cause is now general.
+2. **S2 argmax-identity and S3 code bit-identity are reachable only by a path that is
+   bit-identical to the vendor's bf16 kernels.** There is no tolerance to be had, because the
+   margin distribution says any perturbation diverges. A native implementation that is not
+   bit-identical has to be compared distributionally or on quality, and must be reported that way
+   rather than as a passed identity gate.
+3. **The codec decoder is the one stage where a real numerical tolerance exists**, because it has
+   no autoregression: given pinned codes it is a deterministic conv stack. Measured on identical
+   pinned codes with only the codec's arithmetic varying, the vendor's own bf16-vs-F32 floor is
+   **max abs sample delta 0.00738058, mean 0.000524672, SNR 36.5 dB**, against a signal RMS of
+   0.05071. That is **7.4x the 1e-3 peak and 23.5 dB under the 60 dB SNR** that the qualifying
+   lane's pre-registration wrote down, so those two numbers are the vendor's own two arithmetics
+   failing them. The bound for a native codec decoder is the measured 0.00738058 / 36.5 dB,
+   re-derived exactly as G3's was, and the 1e-3 / 60 dB pair is retired for this family rather
+   than quietly not applied.
+
+The same arm establishes that the codec is a usable gate at all: decoding one pinned code list
+twice in one process is **bit-identical**, and re-decoding it in a fresh process on a different
+host under a different driver a day later is **bit-identical to the banked waveform**. So the
+codec is reproducible and its tolerance means something. The autoregressive half is not
+reproducible across arithmetic changes, and no tolerance on it means anything.
+
+**One consequence for how an oracle has to be captured.** If S1/S2 are hooked out of one vendor
+entry point and S3/S4 out of another, the stages are not from the same generation and no
+implementation can pass them jointly. On this artifact the two entry points emit different codes at
+the same seed (602 of 624 ids differing, first divergent frame 1), and the first banked oracle had
+exactly that shape, which is why its own S4 and S5 disagree at SNR -2.856 dB inside one file. **A
+stage-coherent oracle captures every stage from ONE generation, and its internal consistency check
+is that S4, the decode of that generation's own codes, is bit-identical to S5, the audio that
+generation returned.** That check is cheap and it is the one that catches an incoherent oracle, so
+it belongs in the gate set rather than in a lane's write-up.
 
 A NON-autoregressive TTS model (`Kokoro-82M`: StyleTTS 2 + ISTFTNet, one forward pass per
 utterance) is a different program in this class's clothing. It has no decode loop, no session
