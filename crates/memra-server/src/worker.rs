@@ -15407,19 +15407,62 @@ pub fn run(
                         // fall through to admit: the drained re-read says the work fits.
                     } else if !headroom.sufficient(required) {
                         if active.is_empty() {
+                            // NOTHING ELSE IS RUNNING, so this request does not fit the box at
+                            // ANY arrival rate, and its class is ContextLength, not RateLimit.
+                            // This branch used to answer `rate_limit_error` /
+                            // `rate_limit_exceeded`, which tells a caller to back off and retry
+                            // when backing off can never help: measured 2026-09-10 on a 5090,
+                            // a 185,055-token qwen request was refused in 0.189 s on a
+                            // completely idle server with `type: rate_limit_error`. The class
+                            // doc above already draws this line ("a 429 that a client cannot fix
+                            // by waiting should not be a 429"), and ContextLength is the
+                            // machine-readable form clients branch on to summarize and retry.
+                            // The DEFER path below keeps RateLimit, correctly: there the box is
+                            // busy and a later arrival really does fit.
+                            // NAME THE LIMIT, from the admission model's own arithmetic and
+                            // values already in scope, rather than from a second estimator that
+                            // could disagree with the one that just refused. The charge is
+                            // linear in context at `bytes_per_token + ring_bytes_per_token`, so
+                            // the largest admissible context is this request's context less the
+                            // overshoot divided by that slope. Stated as the model's own
+                            // estimate, which is what admission actually enforces.
+                            let per_token =
+                                (bytes_per_token as u64).saturating_add(ring_bytes_per_token as u64);
+                            let available = headroom.limiting_free_bytes() as u64;
+                            let fits = if per_token == 0 {
+                                None
+                            } else {
+                                let over = (required as u64).saturating_sub(available);
+                                let shed = over.div_ceil(per_token);
+                                (admission_cap as u64).checked_sub(shed).map(|n| n as usize)
+                            };
                             eprintln!(
-                                "[admit-oom] VRAM reject: model={model_key:?} ctx={} has no \
-                                 attainable admission headroom (available {:.0}MB) — HTTP 429",
+                                "[admit-oom] capacity reject: model={model_key:?} ctx={} does not \
+                                 fit an IDLE box (available {:.0}MB{}) — HTTP 400 \
+                                 context_length_exceeded",
                                 admission_cap,
                                 headroom.limiting_free_bytes() as f64 / 1e6,
+                                match fits {
+                                    Some(n) => format!(", largest admissible context {n}"),
+                                    None => String::new(),
+                                },
                             );
                             fail_request(
                                 req,
-                                EngineError::rate_limit(format!(
-                                    "request context {} does not fit available KV capacity; retry \
-                                 with smaller max_tokens or max_ctx",
-                                    admission_cap,
-                                )),
+                                EngineError::context_length(match fits {
+                                    Some(n) => format!(
+                                        "request context {admission_cap} does not fit this \
+                                         model's available KV capacity on an idle server; the \
+                                         largest admissible context is {n} tokens. Retrying will \
+                                         not help: send a shorter prompt or a smaller max_tokens"
+                                    ),
+                                    None => format!(
+                                        "request context {admission_cap} does not fit this \
+                                         model's available KV capacity on an idle server. \
+                                         Retrying will not help: send a shorter prompt or a \
+                                         smaller max_tokens"
+                                    ),
+                                }),
                             );
                             continue;
                         }
@@ -28189,6 +28232,14 @@ mod tests {
         assert_eq!(stats.p(50.0), Some(7.0));
     }
 
+    /// The short-first door's ORDER half, with the OFF arm asserted so a regression that
+    /// reorders unconditionally fails here rather than in a rental.
+    ///
+    /// RED ARM: with the door OFF this returns admission order, so the ON expectation below
+    /// The short-first door's BUDGET half.
+    ///
+    /// RED ARM: every ON assertion is paired with the same call at `short_first = false`,
+    /// which returns the 1024-token tick. A change that widened the budget unconditionally
     #[test]
     fn naked_solo_fresh_prefill_uses_one_bounded_outer_call() {
         assert_eq!(

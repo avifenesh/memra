@@ -1813,6 +1813,12 @@ static SHEXP_OV_WS: std::sync::Mutex<
     Option<(usize, usize, usize, CudaSlice<f32>, CudaSlice<f32>)>,
 > = std::sync::Mutex::new(None);
 
+/// Door read for the per-prime-chunk `[prime-row]` receipt. See `a4_prime_receipt_begin`.
+fn prime_row_receipt_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("MEMRA_PRIME_ROW_RECEIPT").as_deref() == Ok("1"))
+}
+
 impl HybridModel {
     /// Does this model's prime schedule live under the GDN WY-chunk grid law? True when the
     /// trunk has GDN (linear-attention) layers AND the chunked scan is on — the regime where
@@ -5522,7 +5528,27 @@ impl HybridModel {
     /// question that matters for the restore fence is whether they run the same 400 projections
     /// through the same arithmetic. Without a per-prime receipt the only evidence is the answer
     /// text, which cannot say WHICH walk differed.
+    /// `MEMRA_PRIME_ROW_RECEIPT=1` (explanatory diagnostic, default OFF).
+    ///
+    /// This receipt used to run on EVERY prime chunk of EVERY model with no door, which put
+    /// an unmeasured host-side stall on the served path: `a4_prime_receipt_end` FNV-hashes
+    /// the whole last-position logits vector byte by byte and then scans it again for the
+    /// top-2 margin, and on qwen3.8-27B that vector is 248,320 floats, i.e. ~993 KB hashed
+    /// per chunk, 128 chunks for a 131k prompt. Measured at under 1% of a 131k cold prime on
+    /// a 5090, which is exactly the kind of always-on cost the door law says nobody chose.
+    ///
+    /// It is also VACUOUS on every served artifact today: the served qwen NVFP4 mint prints
+    /// `a4_launches=0 a4_projections=0` because the A4 activation program is banked NEGATIVE
+    /// (memra#420, follow-up #439). The receipt earns its cost only in a lane that is
+    /// actually running an activation-quantized prefill and needs the cold-vs-restored row
+    /// comparison, so it is one env var away for that lane and off for everyone else.
+    ///
+    /// The instrument itself is UNCHANGED: turning the door on reproduces the previous
+    /// `[prime-row]` lines byte for byte.
     fn a4_prime_receipt_begin(&self) -> Option<Vec<u64>> {
+        if !prime_row_receipt_enabled() {
+            return None;
+        }
         Some(crate::mmq_ffi::a4_prefill_slots_snapshot())
     }
 
