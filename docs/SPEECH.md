@@ -98,12 +98,12 @@ decoder that turns those tokens back into a waveform. `Qwen3-TTS-12Hz-*`, `chatt
 `orpheus-*`, `higgs-tts-2`, `csm-1b`, `kyutai/tts-*`.
 
 Engine shape: the decoder is a first-class native text path already, exactly as in §2.3, and
-there is no audio ENCODER in this class at all — the audio direction is generation, not
+there is no audio ENCODER in this class at all: the audio direction is generation, not
 perception. New surface: the codec tokenizer's DECODER, a multi-codebook sampling head (a step
 emits several tokens across codebooks, not one), and a streaming emit contract that says when a
 partial waveform may leave the box. **This inventory sizes the work; it does not rank the
 family.** Ordering across families is argued on market pull, licence, where the engine's edge
-lands, headroom against the published bar and revenue surface — never on how close a family is to
+lands, headroom against the published bar and revenue surface, never on how close a family is to
 the code that already exists (owner ruling 2026-09-11; darklanes
 `LAW:effort-is-not-a-selection-criterion`).
 
@@ -490,7 +490,7 @@ Receipts (private): darklanes `research/speech-k1-20260910/RESULTS.md`.
 ## 7. Ranked plan
 
 Sized in GPU-hours, which are the scarce axis. **Development time is not the schedule and it is
-not a criterion** — owner ruling 2026-09-11, verbatim: *"engineering needed is not a blocker ever,
+not a criterion**, owner ruling 2026-09-11, verbatim: *"engineering needed is not a blocker ever,
 thats what we are doing, building an engine and selling its work."* Every step below is ordered by
 what it decides and what it is worth, never by what it costs to write; the GPU-hour figures size
 the rental, not the priority.
@@ -528,7 +528,7 @@ clears instantly and would prove nothing: **byte identity against the banked CPU
 plus a per-stream RTF measured interleaved against CTranslate2 on the same card in the same
 session. That second half is what feeds K2, so the step that produces the number and the
 criterion that judges it are the same measurement, not two separate ones taken weeks apart.
-The parity half is CHECKABLE because the CPU reference already exists — an oracle, not a discount.
+The parity half is CHECKABLE because the CPU reference already exists: an oracle, not a discount.
 
 **Step 3, audio endpoint in `memra serve` plus the G8 battery. ~6-10 GPU-hours. PART ONE LANDED
 2026-09-11 with no GPU; the measurement half is unrun.**
