@@ -173,14 +173,105 @@ const __nv_bfloat16* mirror_for(const void* w_codes, int n, int k, cudaStream_t 
 // SCALAR kernel, and split-K beats it at every census shape.
 uint64_t g_calls_splitk = 0;
 uint64_t g_calls_declined = 0;
+uint64_t g_shapes_built = 0;
+
+// ---------------------------------------------------------------------------
+// Per-shape CUTLASS setup cache.
+//
+// This is the whole difference between a 5.25x device-side win and a 37% SERVED
+// regression, and the gap was entirely HOST work. The first served A/B built
+// Gemm::Arguments, called can_implement() and called initialize() on every one
+// of the ~20k dense calls a prefill issues. initialize() runs init_params(),
+// which queries the device and constructs the whole GemmKernel::Params block
+// (grid tiled shape, swizzle, gemm-k geometry); can_implement() re-validates
+// alignment and extents. None of that depends on the call, and the tell was in
+// the served rows themselves: the regression was FLAT in prompt length (-37.0%
+// at 981 tokens, -37.7% at 3,686), so it scaled with CALL COUNT and not with
+// tokens.
+//
+// Everything that setup computes is a function of (n, k) alone. m is pinned to
+// DSV4_TMAX by admission, the batch count is k/128 by construction, and the four
+// leading dimensions are k, k, n, n. So it is computed ONCE per distinct shape
+// (the census over a real prefill has 14) and thereafter only the four pointers
+// move, through params update(), which is the API CUTLASS provides for exactly
+// this and which copies pointers and batch strides and nothing else.
+//
+// thread_local, matching the workspace above, and for the same reason: the
+// params block is MUTATED by update() on every call, so a single copy shared
+// across host threads would race between one thread's update and another's
+// launch. Fourteen params blocks per thread is a few kilobytes. The map is
+// leaked on purpose, because a thread_local holding CUDA-derived state must not
+// be destroyed during thread teardown, which can run after the context is gone.
+struct ShapeKey {
+    int n;
+    int k;
+    bool operator<(const ShapeKey& o) const { return n != o.n ? n < o.n : k < o.k; }
+};
+
+// The CUTLASS device wrapper for a COLUMN-MAJOR C is a thin adapter that
+// transposes the problem and forwards to an underlying row-major operator, and
+// in this CUTLASS its forwarding `update` does not compile: it calls the base's
+// one-argument update with two. The adapter's underlying operator is a public
+// typedef and so is the transpose, so the cache holds the underlying operator
+// and transposes the arguments itself. Same kernel, same params, same launch;
+// only the two lines of forwarding the adapter would have done are here instead.
+using DsvGemmOp = typename DsvGemm::UnderlyingOperator;
+
+struct Shape {
+    DsvGemmOp gemm;
+    int status = 0;  // 0 ready, 40080 declined by can_implement, 40081 initialize failed
+};
+
+thread_local std::map<ShapeKey, Shape>* g_shapes = nullptr;
+
+// Everything except the four pointers is a function of (n, k); the pointers are
+// what update() refreshes per call.
+typename DsvGemm::Arguments dense_args(int m, int n, int k, int blocks, const __nv_bfloat16* w,
+                                       const void* x_bf16, float* part) {
+    return typename DsvGemm::Arguments(
+        cutlass::gemm::GemmUniversalMode::kBatched, {n, m, DSV4_DENSE_SCALE_BLOCK}, blocks,
+        {1.f, 0.f}, (cutlass::bfloat16_t const*)w, (cutlass::bfloat16_t const*)x_bf16, part, part,
+        (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)m * n,
+        (int64_t)m * n, k, k, n, n);
+}
+
+// Returns the cached entry for this shape, building it on first use. A shape
+// that CUTLASS declines is cached as declined, so the second call through it
+// costs a map lookup rather than another can_implement().
+Shape* shape_entry(int m, int n, int k, int blocks, const __nv_bfloat16* w, const void* x_bf16,
+                   float* part, cudaStream_t stream) {
+    if (!g_shapes) g_shapes = new std::map<ShapeKey, Shape>();
+    ShapeKey key{n, k};
+    auto it = g_shapes->find(key);
+    if (it != g_shapes->end()) return &it->second;
+
+    Shape& slot = (*g_shapes)[key];
+    auto args = DsvGemm::to_underlying_arguments(dense_args(m, n, k, blocks, w, x_bf16, part));
+    if (DsvGemmOp::can_implement(args) != cutlass::Status::kSuccess) {
+        slot.status = 40080;
+        return &slot;
+    }
+    if (slot.gemm.initialize(args, nullptr, stream) != cutlass::Status::kSuccess) {
+        slot.status = 40081;
+        return &slot;
+    }
+    slot.status = 0;
+    g_shapes_built++;
+    return &slot;
+}
 }  // namespace
 
 extern "C" int memra_dsv4_dense_cutlass_counts_for_gate(uint64_t* splitk, uint64_t* declined,
-                                                        uint64_t* mirror_bytes) {
-    if (!splitk || !declined || !mirror_bytes) return 40079;
+                                                        uint64_t* mirror_bytes,
+                                                        uint64_t* shapes_built) {
+    if (!splitk || !declined || !mirror_bytes || !shapes_built) return 40079;
     *splitk = g_calls_splitk;
     *declined = g_calls_declined;
     *mirror_bytes = g_mirror_bytes;
+    // The count that says the setup cache is working: it must stop growing while
+    // the call count keeps climbing. A prefill that builds a shape per call has
+    // the cache defeated, however fast the kernel is.
+    *shapes_built = g_shapes_built;
     return 0;
 }
 
@@ -207,19 +298,17 @@ extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc
     float* part = workspace((size_t)blocks * m * n);
     if (!part) { announce_decline("no workspace", m, n, k, xstride, sc_cols); g_calls_declined++; return 40080; }
 
-    DsvGemm gemm;
-    typename DsvGemm::Arguments args(
-        cutlass::gemm::GemmUniversalMode::kBatched, {n, m, DSV4_DENSE_SCALE_BLOCK}, blocks,
-        {1.f, 0.f}, (cutlass::bfloat16_t const*)w, (cutlass::bfloat16_t const*)x_bf16, part, part,
-        (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)DSV4_DENSE_SCALE_BLOCK, (int64_t)m * n,
-        (int64_t)m * n, k, k, n, n);
-    if (gemm.can_implement(args) != cutlass::Status::kSuccess) {
+    Shape* shape = shape_entry(m, n, k, blocks, w, x_bf16, part, stream);
+    if (shape->status == 40080) {
         announce_decline("cutlass cannot_implement", m, n, k, xstride, sc_cols);
         g_calls_declined++;
         return 40080;
     }
-    if (gemm.initialize(args, nullptr, stream) != cutlass::Status::kSuccess) return 40081;
-    if (gemm(stream) != cutlass::Status::kSuccess) return 40082;
+    if (shape->status != 0) return shape->status;
+    // Per call, from here on: refresh the four pointers and launch. No
+    // can_implement, no initialize, no device query.
+    shape->gemm.update(DsvGemm::to_underlying_arguments(dense_args(m, n, k, blocks, w, x_bf16, part)));
+    if (shape->gemm(stream) != cutlass::Status::kSuccess) return 40082;
     scaled_reduce_kernel<<<((long)n * m + 255) / 256, 256, 0, stream>>>(part, sc_f32, sc_cols, y, n,
                                                                        m, blocks, ystride);
     if (cudaGetLastError() != cudaSuccess) return 40083;
@@ -229,7 +318,7 @@ extern "C" int memra_dsv4_dense_cutlass_fp8(const void* w_codes, const float* sc
     if (g_calls_splitk == 0)
         fprintf(stderr,
                 "[dsv4-dense-cutlass] engaged: split-K at the %d-wide scale block, m=%d n=%d k=%d, "
-                "blocks=%d\n",
+                "blocks=%d, setup cached per shape\n",
                 DSV4_DENSE_SCALE_BLOCK, m, n, k, blocks);
     g_calls_splitk++;
     return 0;
