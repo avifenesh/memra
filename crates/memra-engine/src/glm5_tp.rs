@@ -563,10 +563,9 @@ fn load_glm5_ep_map(
 /// door cold, and each door's own gate ran on the unsharded walk, so v1 refuses by name
 /// rather than silently picking an arm; a pair unlocks only with its own composition gate
 /// (the `MEMRA_GLM5_TP` row in docs/FLAGS.md carries the matrix). `MEMRA_GLM5_VERIFY_BATCH`
-/// is absent DELIBERATELY: its walk exists only inside glm5 spec sessions — co-refused on
-/// a sharded model unless `MEMRA_GLM5_SPEC_TP=1` arms the GATED composition
-/// (lane/glm5-composition; the spec x TP pair HAS its composition gate, `glm5-tp-gate`
-/// arms S2/Q-S4), whose admission REQUIRES the batched walk by name.
+/// is absent DELIBERATELY: its walk exists only inside glm5 spec sessions, which are
+/// co-refused on a sharded model unconditionally since the spec x TP composition was
+/// declined (memra #387 NEGATIVE, 2026-09-11) — there is no pair left to refuse.
 pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 3] = [
     (
         "MEMRA_HC_FUSED_PRE",
@@ -1197,21 +1196,16 @@ pub(crate) fn ensure_kda_tp_state<'c>(
     Ok(cache.glm5_tp_recur[il].as_mut().unwrap())
 }
 
-/// The KDA TP walk, ONE body for both consumers (the #80 review's dedup finding — the
-/// forked verify twin had already drifted to root-first issue order):
-///   * prime/decode ([`kda_tp_cached`]): `verify_stash = None`, plain `wo` matmul —
-///     byte-for-byte the pre-composition walk.
-///   * spec x TP verify rows ([`kda_tp_verify_rows`]): `verify_stash = Some`, per-rank
-///     pre-round ssm snapshot + batched `KdaStash::Rows` capture, `wo` on the ROWS-EXACT
-///     class (the unsharded verify walk's own routing), per-rank scan-ns accumulated into
-///     `scan_clock` so the `[glm5-phase-v]` receipt keeps its sequential-floor share on
-///     the composed shape.
+/// The KDA TP walk for prime/decode calls: plain `wo` matmul — byte-for-byte the
+/// pre-composition walk. (The spec x TP verify arm that shared this body was deleted
+/// with the declined composition, memra #387 NEGATIVE 2026-09-11; the walk serves the
+/// plain route only.)
 ///
-/// Issue order is PEERS FIRST, ROOT LAST on both arms (v1's order; the twins document it).
-/// THREE cross-rank hop shapes, each a named `tp_transport` shape: fan-out of `x`,
-/// gather of the gated parts, concat of the `wo` parts. On `host-canonical` at two ranks
-/// that is 5 draining `dtoh` + 4 `htod` per layer-call, exactly as v1; on `peer-pull` it is
-/// device peer copies, local copies and 0 host boundaries.
+/// Issue order is PEERS FIRST, ROOT LAST (v1's order). THREE cross-rank hop shapes,
+/// each a named `tp_transport` shape: fan-out of `x`, gather of the gated parts,
+/// concat of the `wo` parts. On `host-canonical` at two ranks that is 5 draining
+/// `dtoh` + 4 `htod` per layer-call, exactly as v1; on `peer-pull` it is device peer
+/// copies, local copies and 0 host boundaries.
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
 fn kda_tp_core(
     e: &Engine,
@@ -1222,8 +1216,6 @@ fn kda_tp_core(
     cache: &mut Cache,
     il: usize,
     arm: ConvArm,
-    verify_stash: Option<&mut Glm5TpKdaVerifyStash>,
-    mut scan_clock: Option<&mut u64>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     let tp = la_root
         .tp
@@ -1235,12 +1227,6 @@ fn kda_tp_core(
     let full = tp.full_qkv;
     let n_embd = tp.n_embd;
     let hh = n_embd / ranks;
-    let rows_exact = verify_stash.is_some();
-    // Per-rank verify capture, RANK-indexed regardless of issue order; assembled into the
-    // caller's stash after the loop.
-    let mut captured: Vec<Option<(CudaSlice<f32>, crate::kda::KdaRowsStash)>> =
-        (0..ranks).map(|_| None).collect();
-
     let hop = rt.hop(e);
     // HOP 1 — fan-out of the mixer input to every peer rank. `x.len()` and not `t * n_embd`:
     // the v1 arm moved the WHOLE buffer, and the arms must move identical byte ranges or
@@ -1255,15 +1241,6 @@ fn kda_tp_core(
         let dev = if r == 0 { e } else { &rt.peers[r - 1] };
         let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
         let xin = if r == 0 { x } else { &x_peers[r - 1] };
-        // Verify arm: the pre-round snapshot on the rank's engine, BEFORE the batched
-        // call advances the resident state (the ckpt contract's per-rank twin).
-        let snap = if rows_exact {
-            Some(dev.clone_dtod(&states[r].ssm_state)?)
-        } else {
-            None
-        };
-        let mut rank_stash: Option<crate::kda::KdaRowsStash> = None;
-        let mut rank_scan_ns = 0u64;
         let out = {
             let RecurLayer {
                 conv_state,
@@ -1280,34 +1257,15 @@ fn kda_tp_core(
                 ssm_state,
                 ssm_state_alt,
                 arm,
-                if rows_exact {
-                    crate::kda::KdaStash::Rows(&mut rank_stash)
-                } else {
-                    crate::kda::KdaStash::None
-                },
-                scan_clock.as_deref_mut().map(|_| &mut rank_scan_ns),
+                crate::kda::KdaStash::None,
+                None,
                 None,
                 None,
             )?;
             std::mem::swap(ssm_state, ssm_state_alt);
             out
         };
-        if let Some(clock) = scan_clock.as_deref_mut() {
-            *clock += rank_scan_ns;
-        }
-        if rows_exact {
-            let snap = snap.expect("verify arm cloned the snapshot above");
-            let rank_stash = rank_stash
-                .ok_or("kda_core_gated returned without filling the requested rows stash")?;
-            captured[r] = Some((snap, rank_stash));
-        }
         gated[r] = Some(out);
-    }
-    if let Some(stash_vec) = verify_stash {
-        stash_vec.clear();
-        for c in captured {
-            stash_vec.push(c.expect("every rank captured on the verify arm"));
-        }
     }
 
     // HOP 2 — gather the gated parts into the FULL [t, qkv] layout on EVERY rank
@@ -1330,11 +1288,7 @@ fn kda_tp_core(
         for r in 0..ranks {
             let dev = if r == 0 { e } else { &rt.peers[r - 1] };
             let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
-            partials.push(if rows_exact {
-                dev.matmul_rows_exact(&la.wo, gated_refs[r], t)?
-            } else {
-                dev.matmul(&la.wo, gated_refs[r], t)?
-            });
+            partials.push(dev.matmul(&la.wo, gated_refs[r], t)?);
         }
         let mut y = partials.remove(0);
         let reduced = if partials.len() == 1 && rt.ar_1stage_available() {
@@ -1363,16 +1317,9 @@ fn kda_tp_core(
     // Per-rank column wo slices: each output element is one full-K dot by the SAME kernel
     // class the consumer's unsharded walk uses — no cross-rank arithmetic in this join.
     let mut ys = Vec::with_capacity(ranks);
-    if rows_exact {
-        ys.push(e.matmul_rows_exact(&la_root.wo, &fulls[0], t)?);
-        for r in 1..ranks {
-            ys.push(rt.peers[r - 1].matmul_rows_exact(&tp.peers[r - 1].wo, &fulls[r], t)?);
-        }
-    } else {
-        ys.push(e.matmul(&la_root.wo, &fulls[0], t)?);
-        for r in 1..ranks {
-            ys.push(rt.peers[r - 1].matmul(&tp.peers[r - 1].wo, &fulls[r], t)?);
-        }
+    ys.push(e.matmul(&la_root.wo, &fulls[0], t)?);
+    for r in 1..ranks {
+        ys.push(rt.peers[r - 1].matmul(&tp.peers[r - 1].wo, &fulls[r], t)?);
     }
 
     // HOP 3 — concat the column parts into the mixer output on ROOT.
@@ -1380,7 +1327,7 @@ fn kda_tp_core(
     crate::tp_transport::concat_parts_on_root(&hop, &y_refs, t, hh)
 }
 
-/// The KDA TP walk for one prime/decode call — [`kda_tp_core`] with no verify capture.
+/// The KDA TP walk for one prime/decode call — [`kda_tp_core`].
 /// The SYMMETRIC KDA mixer (lane/tp-symmetric-20260906): every rank already holds its own copy of
 /// the layer input, so there is no fan-out; each rank runs its heads over its own `x`, multiplies
 /// by its ROW-PARALLEL `wo` (its own channels, full output width), and the two partial sums meet
@@ -1459,83 +1406,7 @@ pub(crate) fn kda_tp_cached(
     il: usize,
     arm: ConvArm,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    kda_tp_core(e, la_root, x, t, eps, cache, il, arm, None, None)
-}
-
-/// Per-rank rollback material of ONE sharded-KDA verify round (lane/glm5-composition, the
-/// spec x TP composition): index = rank; each entry is that rank's pre-round ssm snapshot
-/// (cloned on the rank's engine BEFORE its batched call advanced the resident state) plus
-/// the batched [`crate::kda::KdaRowsStash`] its `KdaStash::Rows` call filled. Rollback to
-/// `keep` rows restores every rank through `kda_verify_rollback_rows_on` with the rank's
-/// own engine/shard/plane tuple — the same two-plane contract as the unsharded stash,
-/// per rank.
-pub type Glm5TpKdaVerifyStash = Vec<(CudaSlice<f32>, crate::kda::KdaRowsStash)>;
-
-/// The sharded-KDA VERIFY walk (spec x TP composition) — [`kda_tp_core`] with the verify
-/// capture armed: batched `KdaStash::Rows` per rank, ROWS-EXACT `wo` (the unsharded verify
-/// walk's own routing), per-rank scan-ns accumulated into `scan_clock`. Returns the mixer
-/// output plus the rank-indexed rollback stash the ckpt banks.
-#[allow(clippy::too_many_arguments)] // mirrors the kda verify entry contract shape
-pub(crate) fn kda_tp_verify_rows(
-    e: &Engine,
-    la_root: &KdaAttnLayer,
-    x: &CudaSlice<f32>,
-    t: usize,
-    eps: f32,
-    cache: &mut Cache,
-    il: usize,
-    scan_clock: Option<&mut u64>,
-) -> Result<(CudaSlice<f32>, Glm5TpKdaVerifyStash), Box<dyn std::error::Error>> {
-    let mut stash: Glm5TpKdaVerifyStash = Vec::new();
-    let out = kda_tp_core(
-        e,
-        la_root,
-        x,
-        t,
-        eps,
-        cache,
-        il,
-        ConvArm::Prefill,
-        Some(&mut stash),
-        scan_clock,
-    )?;
-    Ok((out, stash))
-}
-
-/// Roll every rank's sharded-KDA state back to "after row `keep-1`" from a spec x TP verify
-/// round (the [`Glm5TpKdaVerifyStash`] contract). Full accept never calls this — the
-/// resident per-rank states ARE the state after the last kept row.
-pub(crate) fn kda_tp_verify_rollback(
-    e: &Engine,
-    la_root: &KdaAttnLayer,
-    stash: &Glm5TpKdaVerifyStash,
-    keep: usize,
-    cache: &mut Cache,
-    il: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let tp = la_root
-        .tp
-        .as_ref()
-        .ok_or("kda_tp_verify_rollback called on an unsharded layer")?;
-    let rt = &tp.rt;
-    let ranks = rt.ranks();
-    if stash.len() != ranks {
-        return Err(format!(
-            "glm5-tp verify rollback: stash carries {} ranks, the runtime has {ranks}",
-            stash.len()
-        )
-        .into());
-    }
-    let states = cache.glm5_tp_recur[il]
-        .as_mut()
-        .ok_or_else(|| format!("glm5-tp verify rollback: layer {il} has no per-rank state"))?;
-    for r in 0..ranks {
-        let dev = if r == 0 { e } else { &rt.peers[r - 1] };
-        let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
-        let (snap, rows) = &stash[r];
-        crate::kda::kda_verify_rollback_rows_on(dev, la, snap, rows, keep, &mut states[r], il)?;
-    }
-    Ok(())
+    kda_tp_core(e, la_root, x, t, eps, cache, il, arm)
 }
 
 // ------------------------------------------------------------------------------------------

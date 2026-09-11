@@ -418,176 +418,6 @@ struct Verdict {
     detail: String,
 }
 
-/// The spec x TP composition arms (lane/glm5-composition): the verify + rollback +
-/// continue identity between the SHARDED walk and the plain walk, per fixture.
-///
-/// STATE BUILD IS THE DECODE REGIME ON PURPOSE: the trunk state is built with prime P=1 +
-/// t=1 decode steps (byte-identical between the arms by the banked decode-identity bar),
-/// so the comparison isolates the VERIFY WALK + ROLLBACK — a t>1 prime would fold the
-/// documented prime near-tie class into the state and turn a verify-walk bar into a band.
-///
-/// Per `keep` in {1, partial, full}: fresh cache, state build over `ids[..s]`, one
-/// `glm5_verify_rows` over `ids[s..s+4]` (K=3 -> t=4), `glm5_verify_rollback(keep)`, then
-/// M t=1 continue steps over `ids[s+keep..]` — verify logits, continue logits and tapes
-/// all BYTE-compared against the plain model's identical sequence (the accept-j-then-
-/// continue identity, the tparallel gate's own bar). The red arm SKIPS the rollback and
-/// must then diverge loudly (or trip a residency guard) — the proof the rollback is
-/// load-bearing, not decorative.
-#[allow(clippy::too_many_arguments)]
-fn spec_tp_verify_arms(
-    label: &str,
-    e: &Engine,
-    source: &FixtureSource,
-    plan: &ModelPlan,
-    ids: &[u32],
-    spec: &str,
-    verdicts: &mut Vec<Verdict>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    const S: usize = 12; // committed state rows before the verify round
-    const T: usize = 4; // verify rows (K=3 drafts + the anchor)
-    const M: usize = 6; // t=1 continue steps after the rollback
-    if ids.len() < S + T + M {
-        return Err(format!("{label}: token stream too short for the composition arm").into());
-    }
-    let max_ctx = ids.len() + 8;
-
-    // One walk of the protocol on one model; returns (verify logits, continue logits,
-    // continue tape). `keep = None` = the RED arm (rollback skipped).
-    let run = |m: &HybridModel,
-               keep: Option<usize>|
-     -> Result<(Vec<f32>, Vec<Vec<f32>>, Vec<u32>), Box<dyn std::error::Error>> {
-        let mut cache = memra_engine::cache::Cache::new_planned(e, &m.cfg, plan, max_ctx)?;
-        let (_lg, _seed, _h) = m.prime_cache(e, &ids[..1], &mut cache, 0)?;
-        for &tok in &ids[1..S] {
-            let _ = m.decode_step(e, tok, &mut cache)?;
-        }
-        let (vlog, _collapsed, ckpt) = m.glm5_verify_rows(e, &ids[S..S + T], &mut cache)?;
-        let vhost = e.dtoh(&vlog)?;
-        let kept = match keep {
-            Some(k) => {
-                m.glm5_verify_rollback(e, &mut cache, &ckpt, k)?;
-                k
-            }
-            None => {
-                // RED: no rollback. The trunk state holds all T verify rows but pos never
-                // moved; move pos as a keep=2 rollback would (the state build fixed
-                // ckpt-time pos at S) and continue — the chain must diverge from the
-                // plain reference (or a residency guard trips loudly; either is a bite).
-                let _ = &ckpt;
-                cache.pos = S + 2;
-                2
-            }
-        };
-        let mut clogs = Vec::with_capacity(M);
-        let mut tape = Vec::with_capacity(M);
-        for &tok in ids[S + kept..].iter().take(M) {
-            let lg = m.decode_step(e, tok, &mut cache)?;
-            tape.push(argmax(&lg) as u32);
-            clogs.push(lg);
-        }
-        Ok((vhost, clogs, tape))
-    };
-
-    // Plain references (door OFF — caller guarantees the env is cold here).
-    let m_plain = HybridModel::load_from_source_without_mtp(e, source)?;
-    let mut plain: Vec<(usize, (Vec<f32>, Vec<Vec<f32>>, Vec<u32>))> = Vec::new();
-    for keep in [1usize, 2, T] {
-        plain.push((keep, run(&m_plain, Some(keep))?));
-    }
-    drop(m_plain);
-
-    // TP twin: the raw verify/rollback walk needs no session flag (the flag gates the
-    // SESSION seam; the walk itself is wired unconditionally and reachable only through
-    // gates until the session admits it).
-    set_env("MEMRA_GLM5_TP", spec);
-    let m_tp = HybridModel::load_from_source_without_mtp(e, source)?;
-    rm_env("MEMRA_GLM5_TP");
-    // Non-vacuity anchor (run_tp_arm's own law): every green keep AND the RED below would
-    // pass on an accidentally-unsharded model (plain-vs-plain identity; a skipped rollback
-    // diverges unsharded too) — assert the shards actually armed.
-    let sharded = m_tp
-        .layers
-        .iter()
-        .filter(|l| match &l.mixer {
-            memra_engine::hybrid::Mixer::Kda(la) => la.tp.is_some(),
-            memra_engine::hybrid::Mixer::Mla(la) => la.tp.is_some(),
-            _ => false,
-        })
-        .count();
-    assert_eq!(
-        sharded, LAYERS,
-        "[{label}] {sharded} sharded mixers != {LAYERS} — the composition arms would be vacuous"
-    );
-    for (keep, (pv, pc, pt)) in &plain {
-        let (tv, tc, tt) = run(&m_tp, Some(*keep))?;
-        let v_ok = pv.len() == tv.len()
-            && pv
-                .iter()
-                .zip(tv.iter())
-                .all(|(a, b)| a.to_bits() == b.to_bits());
-        let c_diff = bit_equal(pc, &tc);
-        let pass = v_ok && c_diff.is_none() && pt == &tt;
-        verdicts.push(Verdict {
-            name: format!("{label} verify+rollback keep={keep}"),
-            pass,
-            detail: format!(
-                "verify logits byte_identical={v_ok}; continue {} / tape_match={} \
-                 (S={S} T={T} M={M}, decode-regime state build)",
-                match c_diff {
-                    None => "BYTE-IDENTICAL".to_string(),
-                    Some((s, i)) => format!("DIVERGES at step {s} logit {i}"),
-                },
-                pt == &tt,
-            ),
-        });
-    }
-
-    // RED: rollback skipped on the TP model — must diverge from the plain keep=2 arm.
-    let red = run(&m_tp, None);
-    let (_, (pv2, pc2, pt2)) = plain.iter().find(|(k, _)| *k == 2).expect("keep=2 banked");
-    let _ = pv2;
-    verdicts.push(match red {
-        Ok((_, rc, rt)) => {
-            let diverged = bit_equal(pc2, &rc).is_some() || &rt != pt2;
-            Verdict {
-                name: format!("{label} RED no-rollback"),
-                pass: diverged,
-                detail: if diverged {
-                    "skipped rollback DIVERGES from the plain accept-then-continue chain \
-                     (the rollback is load-bearing)"
-                        .into()
-                } else {
-                    "skipped rollback matched plain — the rollback arm is VACUOUS".into()
-                },
-            }
-        }
-        Err(err) => {
-            // Only the NAMED state guards count as a loud bite; any other error (alloc,
-            // prime, walk infrastructure) means the divergence comparison never executed
-            // and the arm FAILS rather than passing vacuously (#80 review finding).
-            let msg = err.to_string();
-            // The NAMED state guards only — 'blk.' prefixes 100+ non-guard per-layer
-            // errors (alloc, tensor-load, contract), so matching the prefix half-reopened
-            // the vacuous pass this arm exists to close (#82 review).
-            let named_guard = ["index_pools_ready", "KDA scan replay", "KDA rows rollback"]
-                .iter()
-                .any(|p| msg.contains(p));
-            Verdict {
-                name: format!("{label} RED no-rollback"),
-                pass: named_guard,
-                detail: if named_guard {
-                    format!("skipped rollback tripped a NAMED state guard: {msg}")
-                } else {
-                    format!(
-                        "RED arm errored OUTSIDE the named guards (comparison never ran): {msg}"
-                    )
-                },
-            }
-        }
-    });
-    Ok(())
-}
-
 /// Everything one TP arm needs from its fixture: the engine, the source/plan pair, the
 /// chosen token stream, and the banked plain references of BOTH regimes. Two instances
 /// exist — the original TP-2 fixture and the TP-4 quad fixture — running the SAME arm
@@ -1370,13 +1200,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut verdicts,
     )?;
 
-    // ============ S. spec x TP composition arms (lane/glm5-composition) ============
-    spec_tp_verify_arms("S2", &e, &source, &plan, &ids, "all@0,1", &mut verdicts)?;
+    // ============ S. spec x TP composition REFUSAL arms (the composition was DECLINED,
+    // memra #387 NEGATIVE 2026-09-11: the S2/Q-S4 verify arms and the SF2/SF3 flag-ON
+    // arms are deleted with the door; what remains pins the unconditional refusal) ====
     {
-        // SF1: WITHOUT the flag the session co-refusal holds verbatim (arm F's twin, kept
-        // here so the composition block carries its own OFF-arm receipt).
+        // SF1: the session co-refusal holds with no flag to lift it (arm F's twin, kept
+        // here so the composition block carries its own refusal receipt).
         set_env("MEMRA_GLM5_TP", "all@0,1");
-        rm_env("MEMRA_GLM5_SPEC_TP");
         let m_tp = HybridModel::load_from_source_without_mtp(&e, &source)?;
         let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
         let msg = refused
@@ -1385,53 +1215,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|e| e.to_string())
             .unwrap_or_default();
         verdicts.push(Verdict {
-            name: "SF1 session co-refusal without the flag".into(),
-            pass: refused.is_err()
-                && msg.contains("co-refused")
-                && msg.contains("MEMRA_GLM5_SPEC_TP"),
+            name: "SF1 session co-refusal (no flag lifts it)".into(),
+            pass: refused.is_err() && msg.contains("co-refused") && msg.contains("memra #387"),
             detail: if refused.is_err() {
                 format!("refused: {msg}")
             } else {
-                "a spec session opened on a TP model with the flag COLD".into()
+                "a spec session opened on a TP model".into()
             },
         });
-        // SF2: flag ON + per-row verify walk pinned = refuse by name (no TP rollback arm).
-        set_env("MEMRA_GLM5_SPEC_TP", "1");
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "0");
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF2 flag-on demands the batched walk".into(),
-            pass: refused.is_err() && msg.contains("BATCHED verify walk"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "a spec x TP session opened on the per-row walk".into()
-            },
-        });
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "1"); // restore the battery pin
-        // SF3: flag ON lifts ONLY the co-refusal — the fixture has no draft source, so
-        // the session must still refuse on THAT law (the flag is not a bypass).
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF3 flag-on still demands a draft source".into(),
-            pass: refused.is_err() && msg.contains("draft source"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "a draft-source-less session opened under the composition flag".into()
-            },
-        });
-        rm_env("MEMRA_GLM5_SPEC_TP");
         // SF4: the co-refusal keys on MODEL TRUTH, not the env — unset MEMRA_GLM5_TP
         // entirely (the set/load/unset bypass the #80 review confirmed) and the session
         // on the SHARDED model must still refuse.
@@ -1454,8 +1245,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         });
         set_env("MEMRA_GLM5_TP", "all@0,1");
-        // SW: the WALK-level guard — a sharded trunk + MEMRA_GLM5_VERIFY_BATCH=0 refuses
-        // the t>1 verify walk itself by name (defense in depth under the session gate).
+        // SW: the WALK-level guard — a sharded trunk refuses the verify walk itself by
+        // name at any width (defense in depth under the session gate).
         set_env("MEMRA_GLM5_VERIFY_BATCH", "0");
         let mut cache = memra_engine::cache::Cache::new_planned(&e, &m_tp.cfg, &plan, max_ctx)?;
         let (_lg, _s, _h) = m_tp.prime_cache(&e, &ids[..1], &mut cache, 0)?;
@@ -1488,9 +1279,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             name: "SD verify-batch default resolves ON (env absent)".into(),
             pass: default_batched,
             detail: format!(
-                "glm5_verify_batch_on() with the env unset = {default_batched} (the \
-                 composition's admission REQUIRES the batched walk; a default flip would \
-                 refuse every env-absent composed session)"
+                "glm5_verify_batch_on() with the env unset = {default_batched} (the live \
+                 unsharded spec walk runs batched; a default flip would silently revert \
+                 env-absent consumers to the per-row walk)"
             ),
         });
     }
@@ -2354,9 +2145,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
         std::fs::remove_dir_all(&map_dir4)?;
-        // Q-S4: the spec x TP composition arms at FOUR ranks (same harness as S2) — after
-        // the scratch cleanup, so an arm failure cannot leak the map dir (tmp hygiene law).
-        spec_tp_verify_arms("Q-S4", &e, &source4, &plan4, &ids4, spec4, &mut verdicts)?;
     }
 
     // ================= verdict =================

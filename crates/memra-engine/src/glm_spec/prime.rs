@@ -18,7 +18,6 @@ pub struct Glm5PrimeState {
     pen: Option<Glm5Penalty>,
     max_ctx: usize,
     mtp_il: Option<usize>,
-    tp_sharded: bool,
     fill: Vec<(usize, usize)>,
     fill_cursor: usize,
     prof: Option<SpecFirstTokenProf>,
@@ -91,7 +90,6 @@ impl Glm5PrimeState {
         pen: Option<Glm5Penalty>,
         mtp_il: Option<usize>,
         source: crate::spec::DraftSourceKind,
-        tp_sharded: bool,
         prof: Option<SpecFirstTokenProf>,
     ) -> Res<Self> {
         let n = m.cfg.n_embd as usize;
@@ -164,7 +162,6 @@ impl Glm5PrimeState {
             pen,
             max_ctx,
             mtp_il,
-            tp_sharded,
             fill,
             fill_cursor: 0,
             prof,
@@ -217,7 +214,6 @@ impl Glm5PrimeState {
             pen,
             max_ctx,
             mtp_il: None,
-            tp_sharded: false,
             fill: Vec::new(),
             fill_cursor: 0,
             prof: spec_prof_on().then(SpecFirstTokenProf::default),
@@ -564,11 +560,6 @@ impl PrimeWalker for Glm5PrimeWalker<'_> {
                 } else {
                     "suffix-prime"
                 }
-            );
-        }
-        if s.tp_sharded {
-            eprintln!(
-                "[glm5-spec] spec x TP composition ARMED (MEMRA_GLM5_SPEC_TP=1): verify rows ride the TP shards; rollback restores per-rank planes performance_claim=false"
             );
         }
         Ok(session)
