@@ -1147,6 +1147,56 @@ mod tests {
         assert_eq!(&bytes[..], b"abc123", "the id must reach the handler");
     }
 
+    /// A transcription model must be ADVERTISED as one on all three catalog feeds. This is
+    /// the 2026-08-28 defect one surface over: a non-chat model published as chat sends the
+    /// caller to the wrong endpoint with the wrong body, and adding a fourth `surface` value
+    /// without teaching the feeds about it would have done exactly that (the fallthrough was
+    /// `_ => chat`, so an ASR row would have advertised `chat/completions` and tools).
+    #[test]
+    fn a_transcription_model_is_advertised_as_one_on_every_feed() {
+        let md = OpenRouterModelMetadata {
+            created: Some(1787961600),
+            max_output_length: Some(448),
+            is_ready: Some(true),
+            is_free: Some(false),
+            discount_to_user: Some(0.0),
+            pricing: crate::OpenRouterPricing {
+                prompt: Some("0.00000004".into()),
+                cached_prompt: Some("0.0".into()),
+                completion: Some("0.0".into()),
+                ..Default::default()
+            },
+            ..asr()
+        };
+        let caps = crate::ModelCaps {
+            tools_branch: true,
+            qwen_think: true,
+            chat_ok: true,
+            context_length: 448,
+            ..Default::default()
+        };
+        let v1 = crate::model_entry_v1("asr", Some(&caps), Some(&md));
+        assert_eq!(v1["type"], "transcription");
+        assert_eq!(v1["endpoints"], serde_json::json!(["audio/transcriptions"]));
+        assert_eq!(v1["input_modalities"], serde_json::json!(["audio"]));
+        assert_eq!(
+            v1["output_modalities"],
+            serde_json::json!(["transcription"])
+        );
+        let om = crate::model_entry_openmodels("asr", Some(&caps), Some(&md))
+            .expect("the openmodels row builds");
+        assert_eq!(om["input_modalities"], serde_json::json!(["audio"]));
+        assert_eq!(
+            om["output_modalities"],
+            serde_json::json!(["transcription"])
+        );
+        assert_eq!(
+            om["supported_features"],
+            serde_json::json!([]),
+            "no tool calling and no reasoning on an ASR row"
+        );
+    }
+
     /// `frames` is bounded: a client cannot offer an unbounded batch and call it one call.
     #[tokio::test]
     async fn frame_count_is_bounded() {

@@ -6692,6 +6692,7 @@ fn declared_surface(metadata: Option<&OpenRouterModelMetadata>) -> &'static str 
     match metadata.and_then(|m| m.surface.as_deref()) {
         Some("embedding") => "embedding",
         Some("rerank") => "rerank",
+        Some("transcription") => "transcription",
         _ => "chat",
     }
 }
@@ -6851,7 +6852,15 @@ fn model_entry_openrouter(
         .filter(|tokenizer| !tokenizer.is_empty());
 
     let mut input = serde_json::Map::new();
-    input.insert("type".into(), json!("text"));
+    // A transcription model's input is AUDIO, and the token-shaped limits below do not
+    // describe it: "max_context_length in tokens" is meaningless for a waveform. The
+    // 2.4 schema has an `audio` InputModality branch for exactly this, so the row uses
+    // it rather than declaring text and hoping nobody reads the units.
+    let input_is_audio = declared_surface(Some(metadata)) == "transcription";
+    input.insert(
+        "type".into(),
+        json!(if input_is_audio { "audio" } else { "text" }),
+    );
     let mut supported_inputs = serde_json::Map::new();
     if let Some(value) = context_length {
         supported_inputs.insert(
@@ -6865,7 +6874,7 @@ fn model_entry_openrouter(
             json!({ "value": value, "unit": "token" }),
         );
     }
-    if !supported_inputs.is_empty() {
+    if !supported_inputs.is_empty() && !input_is_audio {
         input.insert(
             "supported_inputs".into(),
             serde_json::Value::Object(supported_inputs),
@@ -6921,6 +6930,7 @@ fn model_entry_openrouter(
         json!(match or_surface {
             "embedding" => "embeddings",
             "rerank" => "rerank",
+            "transcription" => "transcription",
             _ => "text",
         }),
     );
@@ -6931,6 +6941,16 @@ fn model_entry_openrouter(
     // The embeddings and rerank branches declare NO `streaming` property and are
     // additionalProperties:false, so the key must be ABSENT there — `false` is as
     // invalid as `true`. Chat keeps the byte-identical `true`.
+    // The `transcription` branch DOES allow `streaming` (unlike embeddings/rerank), and
+    // for an ASR row it is not a constant: it is whether the entry declares that it emits
+    // streaming partials. Publishing `true` for a batch-only transcription model would send
+    // a client looking for a partial stream that never arrives.
+    if or_surface == "transcription" {
+        output.insert(
+            "streaming".into(),
+            json!(metadata.serves_partials.unwrap_or(false)),
+        );
+    }
     if or_is_chat {
         output.insert("streaming".into(), json!(true));
     }
@@ -7139,12 +7159,19 @@ fn model_entry_openmodels(
     entry.insert("id".into(), json!(name));
     entry.insert("name".into(), json!(name));
     entry.insert("created".into(), json!(created));
-    entry.insert("input_modalities".into(), json!(["text"]));
+    entry.insert(
+        "input_modalities".into(),
+        json!(match om_surface {
+            "transcription" => ["audio"],
+            _ => ["text"],
+        }),
+    );
     entry.insert(
         "output_modalities".into(),
         json!(match om_surface {
             "embedding" => ["embeddings"],
             "rerank" => ["rerank"],
+            "transcription" => ["transcription"],
             _ => ["text"],
         }),
     );
@@ -7215,7 +7242,11 @@ fn model_entry_v1(
     let owned_by = metadata
         .and_then(|m| m.owned_by.as_deref())
         .unwrap_or_else(|| name.split('/').next().unwrap_or(name));
-    let mut input_modalities = vec!["text"];
+    let mut input_modalities = vec![if declared_surface(metadata) == "transcription" {
+        "audio"
+    } else {
+        "text"
+    }];
     if let Some(meta) = metadata {
         input_modalities.extend(meta.input_modalities.iter().map(String::as_str));
     }
@@ -7233,6 +7264,11 @@ fn model_entry_v1(
         // inventing a second vocabulary is what produced `score` in the first place.
         "embedding" => ("embedding", vec!["embeddings"], vec!["embeddings"]),
         "rerank" => ("rerank", vec!["rerank"], vec!["rerank"]),
+        "transcription" => (
+            "transcription",
+            vec!["audio/transcriptions"],
+            vec!["transcription"],
+        ),
         _ => ("chat", vec!["chat/completions"], vec!["text"]),
     };
     let is_chat = surface == "chat";
@@ -22290,6 +22326,41 @@ prompt = "0.00000003"
 cached_prompt = "0.0"
 completion = "0.0"
 
+[models."asr"]
+surface = "transcription"
+created = 1787961600
+max_output_length = 448
+is_ready = true
+is_free = false
+discount_to_user = 0.0
+decode_deterministic = true
+decode_strategy = "greedy_batch"
+decode_temperature_ladder = []
+serves_partials = true
+
+[models."asr".pricing]
+prompt = "0.00000004"
+cached_prompt = "0.0"
+completion = "0.0"
+
+[models."asrbatch"]
+surface = "transcription"
+created = 1787961600
+max_output_length = 448
+is_ready = true
+is_free = false
+discount_to_user = 0.0
+decode_deterministic = true
+decode_strategy = "beam"
+decode_beam_size = 5
+decode_temperature_ladder = []
+serves_partials = false
+
+[models."asrbatch".pricing]
+prompt = "0.00000004"
+cached_prompt = "0.0"
+completion = "0.0"
+
 [models."chatty"]
 created = 1787443200
 max_output_length = 32768
@@ -22312,9 +22383,60 @@ completion = "0.0000012"
             ..Default::default()
         };
 
+        // The INPUT branch is closed too, and a transcription row's input is a waveform:
+        // declaring `text` with a token-shaped `max_context_length` would describe a
+        // different product. Checked against the vendored InputModality oneOf.
+        let input_branches = schema["components"]["schemas"]["InputModality"]["oneOf"]
+            .as_array()
+            .expect("InputModality is a oneOf");
+        for (alias, want_input) in [("asr", "audio"), ("chatty", "text"), ("embed", "text")] {
+            let row = model_entry_openrouter(alias, Some(&caps), metadata.get(alias));
+            let modality = &row["input_modalities"][0];
+            assert_eq!(modality["type"], want_input, "{alias}: {row}");
+            let branch = input_branches
+                .iter()
+                .find(|b| b["properties"]["type"]["enum"][0] == want_input)
+                .unwrap_or_else(|| panic!("{want_input:?} is not an InputModality branch"));
+            let allowed: std::collections::BTreeSet<&str> = branch["properties"]
+                .as_object()
+                .expect("branch properties")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            for key in modality.as_object().expect("modality object").keys() {
+                assert!(
+                    allowed.contains(key.as_str()),
+                    "{alias}: {key:?} not allowed"
+                );
+            }
+            if want_input == "audio" {
+                assert!(
+                    modality.get("supported_inputs").is_none(),
+                    "an audio input must not carry token-shaped limits: {modality}"
+                );
+            }
+        }
+        // `streaming` on a transcription row is whether the entry emits partials, not a
+        // constant: a batch-only ASR model that advertised `true` would send a client
+        // looking for a partial stream that never arrives.
+        let streaming_row = model_entry_openrouter("asr", Some(&caps), metadata.get("asr"));
+        assert_eq!(
+            streaming_row["output_modalities"][0]["streaming"],
+            json!(true)
+        );
+        let batch_row = model_entry_openrouter("asrbatch", Some(&caps), metadata.get("asrbatch"));
+        assert_eq!(batch_row["output_modalities"][0]["streaming"], json!(false));
+        // And no sampling parameter may be advertised for a decode that refuses them.
+        assert_eq!(
+            streaming_row["output_modalities"][0]["supported_parameters"],
+            json!({})
+        );
+
         for (alias, want_type) in [
             ("embed", "embeddings"),
             ("rr", "rerank"),
+            ("asr", "transcription"),
+            ("asrbatch", "transcription"),
             ("chatty", "text"),
         ] {
             let row = model_entry_openrouter(alias, Some(&caps), metadata.get(alias));
