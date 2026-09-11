@@ -833,13 +833,30 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
 ### KV RMSNorm and RoPE default with rollback, 2026-09-09
 
-`dsv4_norm_rope_f32_fixed_order_kernel` is the default-ON (admitted TP/EP f32x)
-`MEMRA_DSV4_NORM_FUSE` arm. It replaces the adjacent KV norm and rotary launches
-in each t=1 device batch attention layer (SWA, CSA and HCA). The 128-thread
-RMSNorm reduction is unchanged; only shared-memory transport replaces the
-normalized f32 global-memory intermediate. The subsequent QAT is unchanged.
-Retained census confirms 43 launches removed per rank per forward step,
-with 43 fused nodes in each ON forward variant and zero in OFF.
+`dsv4_norm_rope_f32_fixed_order_kernel` is the default-ON (admitted f32x) arm of
+`MEMRA_DSV4_NORM_FUSE`. It replaces the adjacent KV norm and rotary launches in
+each device batch attention layer (SWA, CSA and HCA). The 128-thread RMSNorm
+reduction is unchanged; only shared-memory transport replaces the normalized f32
+global-memory intermediate. The subsequent QAT is unchanged. Retained census
+confirms 43 launches removed per rank per forward step, with 43 fused nodes in
+each ON forward variant and zero in OFF.
+
+**PP-2 port, 2026-09-11.** The launcher took no `rows` and the kernel read
+`positions[0]`, so it was grid 1 and the call site guarded `t == 1`. It now takes
+`rows` and runs one CTA per row, each reading `positions[row]` and its own row
+offset, which is exactly what the unfused pair it replaces does
+(`dsv4_rmsnorm_f32acc_kernel` one CTA per row, then `dsv4_rope` with
+`n_pos = rows, n_vec = 1`). Rows are independent, so the reduction tree and every
+rounding point are unchanged and the arm stays SAME-CLASS at every `t`. The
+admission lost its `is_tp_ep()` term with the shape guard: that term was an
+assumption, `chains_f32` is the precondition, and the served program is where
+`t > 1` lives (DSpark verify rounds, chunked prefill). Bit-equality gate:
+`dsv4-norm-pp2-port-gate`, which sweeps rows 1/2/3/4/8/64/129 with distinct data
+and distinct positions per row and refuses on the first differing bit, naming the
+row, column and bit index. Its red arms are what give it teeth: a constant
+position vector must make the comparator refuse (otherwise the multi-row sweep
+cannot see a row-offset defect at all), and a flipped bf16 bit in the last row
+must be reported at exactly that byte and bit.
 
 Attention-entry norm feeds Q and KV projections and, in compressed layers,
 f32 compressor/indexer projections. Q norm/pack is already fused by the diet.
@@ -906,7 +923,20 @@ environment policy after the eager OFF oracle. No kernel arithmetic changes.
 
 ### Remaining DSV4 activation packing (experimental, 2026-09-09)
 
-`MEMRA_DSV4_NORM_FUSE2` is default OFF, decide-by: 2026-09-23.
+`MEMRA_DSV4_NORM_FUSE2` is default ON under admitted f32x chains; explicit `0` is
+the rollback seam, decide-by: 2026-09-23.
+
+**PP-2 port, 2026-09-11.** `memra_dsv4_norm2_pack`, `memra_dsv4_norm2_pack_wide`
+and `memra_dsv4_norm2_swiglu_pack` all take `rows`. The pack kernel was already
+written row-major with `row = blockIdx.x`; only its launcher pinned grid 1. The
+wide kernel's grid is now `rows * tiles`, row-major, so CTA `i` covers row
+`i / tiles` and epilogue tile `i % tiles`, and row 0 with `tiles` CTAs is byte for
+byte the pre-port launch. The SwiGLU pack is elementwise over a contiguous
+`rows * n` block, as is the `dsv4_swiglu` + `cvt_bf16` pair it replaces. Same
+class at every `t`, gated by `dsv4-norm-pp2-port-gate` against the unfused pair on
+BOTH outputs (retained f32 and bf16 pack) and, for the wide arm, across every
+legal tile count at every row count.
+
 `dsv4_norm2_pack_f32_fixed_order_kernel` uses the original 128-thread norm
 reduction and f32 epilogue, emits BF16 RNE as well as retained f32, and permits
 attention Q_a/KV to share one unchanged pack. FFN routing and quantization keep
@@ -934,7 +964,8 @@ the rollback seam, decide-by: 2026-09-23.
 `MEMRA_DSV4_NORM2_WIDE` is default ON under an admitted `MEMRA_DSV4_NORM_FUSE2`
 (flipped 2026-09-10 on the model campaign receipts below); explicit `0` is the
 rollback seam, and unset without the norm2 door degrades to OFF because the wide
-pack has no other call site.
+pack has no other call site. Since the 2026-09-11 PP-2 port that admission is
+`chains_f32` rather than TP/EP f32x, so the door reaches a customer request.
 
 `dsv4_norm2_pack_f32_fixed_order_kernel` launches grid 1 / block 128 over one
 4096-element f32 row. One CTA holds both the reduction and the whole epilogue:
@@ -944,9 +975,8 @@ pack the norm2 door replaced, so it is not a regression the door introduced, but
 it is the largest single kernel in the fused norm2 family.
 
 `dsv4_norm2_pack_f32_fixed_order_wide_kernel` partitions the EPILOGUE COLUMNS
-across `NORM2_WIDE_TILES` CTAs of 128 threads. Grid X is a column tile, not a
-row: the pack domain is one row of 4096 and the launcher refuses anything else.
-Every CTA repeats, byte for byte, the same eight-load accumulation order and the
+across `NORM2_WIDE_TILES` CTAs of 128 threads. Grid is `rows * tiles`, row-major
+(pre-port it was `tiles` and the domain was one row of 4096). Every CTA repeats, byte for byte, the same eight-load accumulation order and the
 same `dsv4_block_sum_f32` tree over the whole row, so `tot`, `mean` and `rsq` are
 bit-identical in every CTA and identical to the single-CTA kernel. The written
 value is a pure function of (column, rsq), so which CTA writes a column cannot

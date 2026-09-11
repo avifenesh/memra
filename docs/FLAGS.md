@@ -1503,23 +1503,30 @@ the engine reads to be a declared door or an exempt non-door with a reason).
 | dense exact-tail transport | #374 | +0.459578% / +0.397451% | ON | ON, `m == 1` only | engaged | generic dense entry, but the control scope suppresses it for every `m > 1`, so prefill chunks never use it |
 | graph split-K | #392 | **+10.226982% / +10.023951%** | ON | **off-program** | follows the matrix verdict (memra #461) | the arm lives in the matrix expert executor, which CAN serve and was measured serving; the served reference program does not run it |
 | dense-fast | #404 | +1.618979% / +1.609496% composed | ON | ON, `m == 1` only | engaged | same `m == 1` scope as the dense tail |
-| norm-fuse | #404 | +1.618979% / +1.609496% composed | ON | **off** | **permanently unreachable** | admitted only under TP/EP f32x, and TP/EP cannot serve at all (memra #457) |
+| norm-fuse | #404 | +1.618979% / +1.609496% composed | ON | ON, every routed shape | engaged since the PP-2 port | admission is `chains_f32` alone; the TP/EP term was an assumption and the `t == 1` term was a grid-1 launcher |
 | HC dot split S16 | #418 | +2.701174% / +2.591532% | ON | ON | engaged | gates on `dots_f32 && rows == 24 && w == 16384`, no topology term |
 | split-K-fast | #425 | +1.727312% / +1.581907% | ON | **off-program** | follows the matrix verdict (memra #461) | it selects a split-K entry family; no split-K call site, no door |
-| norm-fuse2 | #426 | +1.1022% / +0.9839% | ON | **off** | **permanently unreachable** | same TP/EP admission predicate |
-| norm2-wide | #430 | **+5.955257% / +5.749573%** | ON | **off** | **permanently unreachable** | admitted only when norm-fuse2 is, so TP/EP again |
+| norm-fuse2 | #426 | +1.1022% / +0.9839% | ON | ON, every routed shape | engaged since the PP-2 port | same `chains_f32` admission; the pack launchers take `rows` |
+| norm2-wide | #430 | **+5.955257% / +5.749573%** | ON | ON, every routed shape | engaged since the PP-2 port | admitted when norm-fuse2 is, and norm-fuse2 now is |
 
 ### The three futures, and why they are not one population
 
 `AdmittingProgram` is the axis, and `served_disposition` decides:
 
-- **Permanently unreachable** (norm-fuse, norm-fuse2, norm2-wide). TP/EP is the only program that
-  admits them, and TP/EP cannot take a customer request AT ALL: `prefill_with_cache_chunked` refuses
-  a batched prime under `topology.is_tp_ep()` ("admits only a single-token prime; batched replicated
-  cache hydration is not wired"), and the topology guard separately refuses MTP/DSpark state, which
-  the served spec route requires. The refusals are independent, so replicating the drafter per rank
-  would still leave TP/EP unable to chunk (memra #457). No matrix verdict and no default flip
-  rescues these: they are removable on their own evidence.
+- **PORTED, and now engaged** (norm-fuse, norm-fuse2, norm2-wide). These were the three
+  "permanently unreachable" rows, and the owner ruled them FIXED rather than deleted. The
+  unreachability was real but it was not one fact, it was two stacked ones, and neither was a
+  property of the fusion. (1) The admission term `is_tp_ep()` was an ASSUMPTION: no norm kernel, and
+  nothing a norm kernel feeds, reads a rank, a shard or a topology plan, and the pack's consumers are
+  the generic `gemv_m_dev` entries the reference expert program already runs. TP/EP was simply the
+  only program the doors were ever measured on. (2) The call sites additionally required `t == 1`,
+  and THAT was a kernel limit: every fused launcher pinned grid 1 and
+  `dsv4_norm_rope_f32_fixed_order_kernel` read `positions[0]`. The two hid each other, because the
+  only program whose every routed shape is `t == 1` is the drafter-off TP/EP bench. The launchers now
+  take `rows` and run one CTA per row; `chains_f32` is the one term left, and it is a real
+  precondition (the fused kernel IS the f32-accumulator tree with the cast folded into its epilogue,
+  so fusing without f32x chains would be a NEW numeric class). TP/EP still cannot serve (memra #457,
+  both refusals stand); it is simply no longer what these doors need.
 - **Follows the matrix verdict** (graph split-K, split-K-fast). The matrix expert executor CAN
   serve, and a sibling lane measured it on the served path at +42% to +140% prefill, so whether
   these ever engage is memra #461's question, not door hygiene's.
@@ -1527,8 +1534,10 @@ the engine reads to be a declared door or an exempt non-door with a reason).
   serving; no program decision can create a caller.
 
 The permanence claim is keyed to the PROGRAM fact, not hard-coded per door:
-`permanence_is_keyed_to_the_program_fact_not_to_the_door` flips `tp_ep_can_serve` and requires all
-three doors to stop being removable and become an ordinary admission question.
+`permanence_is_keyed_to_the_program_fact_not_to_the_door` flips `tp_ep_can_serve` and requires the
+disposition to move. Since the port no registry row is TP/EP-only, so that arm runs on a synthetic
+row rather than on whichever door happens to be stuck this month: a rule that is only exercised while
+some row trips it is a rule that stops having teeth the day the row is fixed.
 
 ### What the merged receipts actually establish
 
@@ -1540,9 +1549,11 @@ split-K-fast, norm-fuse2**. Three are above it: graph split-K (+10.2%), norm2-wi
 split (+2.70%, the closest to the line). This re-litigates nothing; it is the honest scope of what we
 know, pinned by `the_doors_merged_below_the_dev_pair_instrument_floor_are_named`.
 
-Four doors are BOTH inert on the served path and below that floor, so there is no evidence for their
-default in either direction: **replay cadence, norm-fuse, split-K-fast, norm-fuse2**. That is a
-stronger case for removal than either fact alone.
+Two doors are BOTH inert on the served path and below that floor, so there is no evidence for their
+default in either direction: **replay cadence, split-K-fast**. That is a stronger case for removal
+than either fact alone. norm-fuse and norm-fuse2 left that set by being ported rather than by being
+re-measured: they are now engaged and below the floor, which is the weaker and separate complaint
+`engaged_but_below_the_floor` names, and the served ABBA in this lane is what settles them.
 
 `DoorState` records the resolution (`Off`, `OffProgram`, `NoServingCaller`) and
 `served_disposition` turns it into a decision by asking which program admits the door and whether
@@ -1550,16 +1561,17 @@ that program can serve. Both are pinned per door by
 `each_inert_door_carries_its_own_disposition`.
 
 Two doors that DO engage are `m == 1` only, which is decode; prefill is 95-97% of a request's GPU
-seconds at this family's real input:output ratio. An operator cannot opt in to the inert ones either:
-`MEMRA_DSV4_NORM_FUSE=1` on a serving stack does not enable norm fusion, it refuses at boot with
-"norm fusion requires TP/EP f32x".
+seconds at this family's real input:output ratio. The three norm doors are NOT among them since the
+port: they engage on every routed shape, prefill chunks included, which is the whole point of taking
+`rows` into the launchers. `MEMRA_DSV4_NORM_FUSE=1` on a serving stack used to refuse at boot with
+"norm fusion requires TP/EP f32x"; it now refuses only outside f32x chains, and with them it is
+already the default.
 
-No default is flipped and no door is deleted here. The dispositions are argued per case in darklanes
+The three TP/EP-gated doors were the owner's call, and the owner ruled: FIX, do not delete. That is
+this lane (darklanes `research/dsv4f-norm-pp2-port-20260911/LANE.md`); the port is above and the
+served ABBA is in that lane doc. The remaining dispositions are argued per case in darklanes
 `research/dsv4f-door-reach-20260910/LANE.md`, including both outcomes of the memra #461 matrix
-verdict for the two doors that depend on it. Removal of the three TP/EP-gated doors needs no other
-verdict, but norm2-wide merged at +5.96% and graph split-K at +10.2%, so those two are the owner's
-call rather than a lane's; norm-fuse2 cannot be removed without norm2-wide, which composes on it, so
-the TP/EP chain is one decision and it contains a headline number.
+verdict for the two doors that depend on it.
 
 ## Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)
 
