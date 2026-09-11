@@ -25682,6 +25682,27 @@ fn run_boot_calibration(
         } else {
             "mtp"
         };
+        // COOPERATIVE-PRIME ENGAGEMENT, printed on the same boot as the route it belongs to.
+        //
+        // `MEMRA_PRIME_YIELD` only reaches an MTP route whose plan the walker adapter handles,
+        // and when it does not, NOTHING is printed: the `[prime-chunk]` tag an engaged walker
+        // emits is simply absent, which reads as a quiet arm rather than an unsupported one.
+        // darklanes#630 spent four interleaved rented boots on ornith comparing OFF against OFF
+        // for exactly that reason. Naming every term costs one line and makes the arm-identity
+        // check a read instead of an inference.
+        {
+            let terms = lm.model.mtp_prime_walk_terms();
+            eprintln!(
+                "[prime-walk] model={name:?} route={route} supported={} yield_door={} [{}]",
+                lm.model.mtp_prime_walk_supported(),
+                memra_engine::prime_walker::prime_yield_enabled(),
+                terms
+                    .iter()
+                    .map(|(term, met)| format!("{term}={met}"))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
         let t0 = Instant::now();
         // Synthetic one-chunk prompt: this is a MEMORY-SHAPE probe (the transient classes
         // scale with chunk geometry and capture shapes, not with prompt semantics).
@@ -28232,14 +28253,17 @@ mod tests {
         assert_eq!(stats.p(50.0), Some(7.0));
     }
 
-    /// The short-first door's ORDER half, with the OFF arm asserted so a regression that
-    /// reorders unconditionally fails here rather than in a rental.
+    /// The SOLO widening: a lone fresh prefill takes one bounded outer call instead of slicing
+    /// itself into `PREFILL_TICK_T` pieces across as many tick loops.
     ///
-    /// RED ARM: with the door OFF this returns admission order, so the ON expectation below
-    /// The short-first door's BUDGET half.
+    /// RED ARM: the three OFF cases (explicit tick, not sole, not fresh) live in
+    /// `solo_prefill_widening_preserves_operator_and_fairness_caps`, which asserts the plain
+    /// 1024-token tick for each, so a change that widened the budget unconditionally fails
+    /// there rather than in a rental. This test owns the ON side.
     ///
-    /// RED ARM: every ON assertion is paired with the same call at `short_first = false`,
-    /// which returns the 1024-token tick. A change that widened the budget unconditionally
+    /// (The doc comment above this test was left dangling by memra#481's deletion of the
+    /// short-first door's budget half: the prose survived, the test it described did not.
+    /// Rewritten to describe the test that is actually here.)
     #[test]
     fn naked_solo_fresh_prefill_uses_one_bounded_outer_call() {
         assert_eq!(

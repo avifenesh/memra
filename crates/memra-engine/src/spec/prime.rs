@@ -199,11 +199,38 @@ impl HybridModel {
 
     /// This adapter handles the single-device GDN MTP execution plan. Other
     /// placements keep their existing prime until their own adapter is qualified.
+    ///
+    /// Derived from [`Self::mtp_prime_walk_terms`] rather than repeating the conjunction, so a
+    /// probe that disagrees with the predicate cannot exist.
     pub fn mtp_prime_walk_supported(&self) -> bool {
-        crate::plan_backend::gdn_dspark_compatible(&self.plan)
-            && self.mtp.is_some()
-            && self.hyper.is_none()
-            && crate::pp::pp_cuts(self.layers.len()).is_none()
+        self.mtp_prime_walk_terms().iter().all(|(_, met)| *met)
+    }
+
+    /// Which term of the walker-support conjunction answered what.
+    ///
+    /// A four-term `&&` reports one bit and hides which of the four produced it, and that cost a
+    /// whole rented A/B cell: darklanes#630 ran four interleaved `MEMRA_PRIME_YIELD` boots on
+    /// ornith-1.5-35b-a3b, read `[prime-chunk] = 0` in BOTH arms, and could not separate "the
+    /// door is negative here" from "the door never engaged" -- so it compared OFF against OFF
+    /// and the 0.3% it saw was the OFF arm's own between-round drift. An arm that did not
+    /// engage is not a measurement, and a measurement cannot prove engagement from a tag that
+    /// an unsupported route never prints at all: absence reads as quiet, not as absent.
+    ///
+    /// This is the same shape as `MEMRA_PREFILL_WIDEN_PROBE`, which exists because one false
+    /// term of that guard was silently costing 76% of cold TTFT. The cost here is one boot line.
+    pub fn mtp_prime_walk_terms(&self) -> [(&'static str, bool); 4] {
+        [
+            (
+                "gdn_dspark_compatible",
+                crate::plan_backend::gdn_dspark_compatible(&self.plan),
+            ),
+            ("mtp_head_loaded", self.mtp.is_some()),
+            ("no_hyper_connections", self.hyper.is_none()),
+            (
+                "no_pipeline_cuts",
+                crate::pp::pp_cuts(self.layers.len()).is_none(),
+            ),
+        ]
     }
 
     #[allow(clippy::too_many_arguments)]
