@@ -3861,11 +3861,19 @@ impl Dsv4Gpu {
             st.gpu.stream().synchronize().map_err(e("load sync"))?;
         }
         me.validate_matrix_program()?;
-        if me.matrix_moe {
-            eprintln!(
-                "[load] matrix request program: one-row/batched native executor, experimental"
-            );
-        }
+        // memra #461: the expert program decides which of two DIFFERENT numeric
+        // classes answered a request, and until this line existed only the matrix
+        // arm announced itself, so the shipped default was the one an operator
+        // could not see in the log. Both arms are named now, unconditionally.
+        eprintln!(
+            "[load] expert program: {}",
+            if me.matrix_moe {
+                "matrix (grouped ModelOpt split-plane executor via dsv4_grouped; \
+                 experimental, distinct numeric class)"
+            } else {
+                "reference (per-slot selection-gathered NVFP4 GEMM; shipped default)"
+            }
+        );
         if sink_score == Dsv4SinkScore::Tiled {
             me.set_sink_score_for_gate(sink_score)?;
         }

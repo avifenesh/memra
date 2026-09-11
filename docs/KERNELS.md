@@ -539,15 +539,36 @@ Corrected DSV4 grouped-prefill experiment:
 `MEMRA_DSV4_MOE_PROGRAM=matrix` is the separate default-OFF whole-request
 experiment: the existing grouped CUDA kernels run through one native batched
 executor for prefill, one-row decode and speculative verification, including
-the initial token. No new CUDA arithmetic is introduced by this dispatch.
+the initial token. No new CUDA arithmetic is introduced by this dispatch, and
+that sentence has been read the wrong way: it means no kernel was WRITTEN for
+it, not that the arithmetic is the same. The dispatch selects a DIFFERENT
+KERNEL FAMILY, so it is a DIFFERENT NUMERIC CLASS. Reference walks each slot
+with scalar f32 FMA over 16- or 32-element FP4 groups on the packed
+`experts_w`/`experts_sc` plane and reduces through a fixed 128-lane tree whose
+association its own comment pins deliberately; matrix runs a tensor-core MMA
+chain over the split-plane ModelOpt table with a persistent split-K tail, fuses
+gate and up, and folds the routing weight and clamp inside the kernel instead of
+in the later SwiGLU launch. Both consume the same FP8-QAT-rounded activation, so
+activation quantization is NOT where they part company: the weight plane, the
+arithmetic unit, the K decomposition and the fusion point are. Bit-equality is
+therefore structurally unavailable and the matrix arm owes drift rows, not an
+exactness gate.
 Program-tagged state refuses matrix/reference crossings. Full-layer capture
 still refuses the host-validation path; component graph evidence is not a
 whole-model graph receipt. `dsv4_matrix_program_gate` passes on the PRO pair for
 phase/state/storage and sampled plain/spec identity. Quality and performance
 remain separate: `dsv4_matrix_distribution_gate` characterizes fixed
-teacher-forced source windows and does not grant admission. Receipts:
+teacher-forced source windows and does not grant admission, and
+`dsv4_moe_program_class_gate` decides the class itself: within-arm bit-identity
+first from real rows, then paired rows carrying bit equality, top-1 per arm, KL
+mean AND max in both directions, and a seeded draw, with the sampler stream and
+the resume-refusal name sequence checked apart from drift. Receipts:
 `research/dsv4f-2card-1m-20260904/matrix-request-program.md` and
-`research/dsv4f-2card-1m-20260904/matrix-distribution.md`.
+`research/dsv4f-2card-1m-20260904/matrix-distribution.md`; the class
+determination and its drift rows are memra #461 (0 bit-equal rows of 448 across
+seven domains, 20 top-1 changes, KL mean 0.011106 / max 0.220805, sampler stream
+and refusal ordering both unchanged), with the private write-up in the darklanes
+`dsv4f-matrix-class-20260910` lane.
 
 The matrix workspace now retains both checked FP8/half mirrors, their scale and
 status buffers, and the CSR contribution plane. Seven explicit GPU scratch
