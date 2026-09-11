@@ -392,12 +392,30 @@ pub(crate) async fn append_frames(
         );
     }
     let mut depth = 0usize;
+    let mut accepted = 0usize;
     let now = now_ms();
     let mut sched = st.audio.lock().expect("audio session table");
     for _ in 0..req.frames {
         match sched.offer(&id, now) {
-            Ok(d) => depth = d,
-            Err(shed) => return crate::with_request_id(&env.id, shed_response(&shed)),
+            Ok(d) => {
+                depth = d;
+                accepted += 1;
+            }
+            Err(shed) => {
+                // A MULTI-FRAME OFFER CAN BE PARTIALLY ACCEPTED, and the client has to be
+                // told how much: frames already queued are not rolled back (they are real
+                // audio in a real queue), so a refusal that reported only "429" would leave
+                // the caller unable to resume without either losing or duplicating audio.
+                // That is the same class of silence as dropping a stream.
+                drop(sched);
+                let mut resp = shed_response(&shed);
+                resp.headers_mut().insert(
+                    "x-memra-audio-frames-accepted",
+                    axum::http::HeaderValue::from_str(&accepted.to_string())
+                        .unwrap_or(axum::http::HeaderValue::from_static("0")),
+                );
+                return crate::with_request_id(&env.id, resp);
+            }
         }
     }
     let m = metrics_json(sched.metrics());
@@ -408,7 +426,7 @@ pub(crate) async fn append_frames(
             "id": id,
             "object": "audio.session.frames",
             "queue_depth": depth,
-            "frames_accepted": req.frames,
+            "frames_accepted": accepted,
             "audio_ms": req.frames as u64 * FRAME_MS,
             "scheduler": m,
         }))
@@ -978,6 +996,11 @@ mod tests {
         )
         .await;
         assert_eq!(shed.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            shed.headers().get("x-memra-audio-frames-accepted").unwrap(),
+            "0",
+            "a refusal must say how many frames it took before refusing"
+        );
         assert_eq!(shed.headers().get("retry-after").unwrap(), "1");
         let sb = body(shed).await;
         assert_eq!(sb["error"]["code"], "queue_overflow");
@@ -1010,6 +1033,48 @@ mod tests {
         assert_eq!(lb["scheduler"]["shed"]["queue_overflow"], 1);
         assert_eq!(lb["scheduler"]["shed"]["sessions_exceeded"], 1);
         assert_eq!(lb["scheduler"]["frames_in"], 2);
+    }
+
+    /// A multi-frame offer that overruns the cap must report how much it TOOK. Without
+    /// that the caller cannot resume without losing or duplicating audio, which is the
+    /// same silence as dropping a stream.
+    #[tokio::test]
+    async fn a_partially_accepted_offer_reports_what_it_took() {
+        let mut st = asr_state();
+        st.audio = Arc::new(Mutex::new(AudioScheduler::new(
+            AudioPolicy {
+                max_sessions: 1,
+                queue_frames: 3,
+                drive: DriveShape::Fused,
+                final_slo_ms: 800,
+            },
+            true,
+        )));
+        let opened = open_session(
+            State(st.clone()),
+            HeaderMap::new(),
+            Json(OpenSessionReq {
+                model: "asr".into(),
+            }),
+        )
+        .await;
+        let id = body(opened).await["id"].as_str().unwrap().to_string();
+        // Offer five frames into a three-frame queue: three land, then the refusal.
+        let resp = append_frames(
+            State(st.clone()),
+            HeaderMap::new(),
+            Path(id),
+            Json(FramesReq { frames: 5 }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            resp.headers().get("x-memra-audio-frames-accepted").unwrap(),
+            "3"
+        );
+        let b = body(resp).await;
+        assert_eq!(b["error"]["code"], "queue_overflow");
+        assert_eq!(b["error"]["observed"], 3);
     }
 
     /// `frames` is bounded: a client cannot offer an unbounded batch and call it one call.
