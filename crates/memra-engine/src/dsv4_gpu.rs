@@ -14506,13 +14506,23 @@ impl Dsv4Gpu {
     /// row count it ran at. `rows > 1` in that line is the port's whole claim.
     fn note_fused_launch(&self, arm: &str, counter: &AtomicU64, max_rows: &AtomicU64, rows: usize) {
         let n = counter.fetch_add(1, Ordering::Relaxed);
-        max_rows.fetch_max(rows as u64, Ordering::Relaxed);
+        let widest = max_rows.fetch_max(rows as u64, Ordering::Relaxed);
         if n == 0 {
             eprintln!(
                 "[{arm}] engaged rows={rows} tp_ep={} chains_f32={}",
                 self.topology.is_tp_ep(),
                 self.chains_f32
             );
+        }
+        // And every WIDENING after the first, which is the line that says the
+        // port did its job. The first launch of a served process is a t == 1
+        // prime, so a once-only latch reports `rows=1` and proves only the shape
+        // that already worked before this port: a reader cannot tell from it
+        // whether a 512-row prefill chunk ever reached the fused arm at all.
+        // One line per new maximum is bounded by the distinct widths a process
+        // ever runs (single digits) and names the widest shape reached.
+        if rows as u64 > widest.max(1) {
+            eprintln!("[{arm}] widened rows={rows}");
         }
     }
 
