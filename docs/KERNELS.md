@@ -851,7 +851,8 @@ rounding point are unchanged and the arm stays SAME-CLASS at every `t`. The
 admission lost its `is_tp_ep()` term with the shape guard: that term was an
 assumption, `chains_f32` is the precondition, and the served program is where
 `t > 1` lives (DSpark verify rounds, chunked prefill). Bit-equality gate:
-`dsv4-norm-pp2-port-gate`, which sweeps rows 1/2/3/4/8/64/129 with distinct data
+`dsv4-norm-pp2-port-gate`, which sweeps rows 1/2/3/4/8/64/129 and the kernel
+transaction width `DSV4_BATCH_WIDTH_MAX` and `MAX - 1`, with distinct data
 and distinct positions per row and refuses on the first differing bit, naming the
 row, column and bit index. Its red arms are what give it teeth: a constant
 position vector must make the comparator refuse (otherwise the multi-row sweep

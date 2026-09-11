@@ -36,11 +36,30 @@ const COLS_H: usize = 4096;
 const COLS_SH: usize = 2048;
 const CANARY: u32 = 0x4b123456;
 
-/// Row counts the sweep walks. 1 is the pre-port geometry, and it stays in the
-/// sweep so a port that only works for `t > 1` fails here rather than on the
-/// box. 2/4/8 are DSpark verify widths, 64 is the served prefill chunk, and 129
-/// is deliberately not a multiple of anything.
-pub const ROW_SWEEP: [usize; 7] = [1, 2, 3, 4, 8, 64, 129];
+/// Row counts the sweep walks. 1 is the pre-port geometry, and it stays so a
+/// port that only works for `t > 1` fails here rather than on the box. 2/3/4/8
+/// are DSpark verify widths. 129 is deliberately not a multiple of anything.
+///
+/// The top of the sweep is `DSV4_BATCH_WIDTH_MAX`, the kernel's own transaction
+/// width, because that is the widest row count a served request can present: it
+/// is both the ceiling `resolve_prefill_chunk` enforces and, since memra #460,
+/// the DEFAULT chunk. It moved from 64 to 512 on 2026-09-11 while this port was
+/// in flight, which is the argument for taking it from the constant instead of
+/// typing the number: a row port correct at 129 and wrong at 512 would pass a
+/// hand-written sweep and fail in production. `MAX - 1` rides along because the
+/// wide arm's grid is `rows * tiles` and an off-by-one in the row/tile split
+/// shows up at a non-multiple, not at the round number.
+pub const ROW_SWEEP: [usize; 9] = [
+    1,
+    2,
+    3,
+    4,
+    8,
+    64,
+    129,
+    DSV4_BATCH_WIDTH_MAX - 1,
+    DSV4_BATCH_WIDTH_MAX,
+];
 /// Every tile count `memra_dsv4_norm2_pack_wide` admits at 4096 columns with a
 /// 128-thread block, so the wide arm is swept over its whole legal domain at
 /// every row count rather than only at the pinned constant.
@@ -494,6 +513,27 @@ mod tests {
         assert_eq!(first_differing_bit(&a, &c), Some((1, 0)));
         // Length disagreement is a refusal too, never a silent prefix compare.
         assert!(first_differing_bit(&a, &a[..3]).is_some());
+    }
+
+    /// The sweep must reach the widest row count a served request can present.
+    /// This is the check that would have caught the 64 -> 512 chunk default move
+    /// (memra #460) landing under a hand-written sweep that stopped at 129.
+    #[test]
+    fn the_sweep_reaches_the_served_transaction_ceiling() {
+        assert!(
+            ROW_SWEEP.contains(&DSV4_BATCH_WIDTH_MAX),
+            "sweep {ROW_SWEEP:?} never reaches the kernel transaction width {DSV4_BATCH_WIDTH_MAX}"
+        );
+        assert!(
+            ROW_SWEEP.contains(&1),
+            "the pre-port geometry left the sweep"
+        );
+        // And the wide arm's grid at the ceiling must be a legal launch
+        // dimension, which is the shape of bug the extra rows are hunting.
+        for tiles in TILE_SWEEP {
+            let grid = DSV4_BATCH_WIDTH_MAX as u64 * tiles as u64;
+            assert!(grid <= u32::MAX as u64, "grid {grid} at tiles={tiles}");
+        }
     }
 
     /// The operand generator must actually distinguish rows, or the whole sweep
