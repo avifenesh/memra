@@ -938,6 +938,16 @@ pub struct Dsv4Gpu {
     /// Process-local, default OFF; fixed at load, never toggled during a walk.
     small_kernel_diet: bool,
     norm_fuse: AtomicBool,
+    /// Actual fused launches, per arm, with the widest row count each has seen.
+    /// This is the served-path ENGAGEMENT receipt for the PP-2 port: a door that
+    /// resolves ON at load and never dispatches is exactly the failure the whole
+    /// door-reach program is about, and `[dsv4-norm-fuse] engaged` in the server
+    /// log is the line that distinguishes the two. Announced once per arm, then
+    /// counted, so the cost is one relaxed add per launch.
+    norm_fuse_launches: AtomicU64,
+    norm_fuse_max_rows: AtomicU64,
+    norm2_pack_launches: AtomicU64,
+    norm2_pack_max_rows: AtomicU64,
     norm_fuse2: AtomicBool,
     /// Process-local, default OFF. Widens the norm2 pack epilogue across
     /// `NORM2_WIDE_TILES` CTAs; the reduction tree is unchanged, so this is a
@@ -3483,6 +3493,10 @@ impl Dsv4Gpu {
             chains_f32,
             small_kernel_diet,
             norm_fuse: AtomicBool::new(norm_fuse),
+            norm_fuse_launches: AtomicU64::new(0),
+            norm_fuse_max_rows: AtomicU64::new(0),
+            norm2_pack_launches: AtomicU64::new(0),
+            norm2_pack_max_rows: AtomicU64::new(0),
             norm_fuse2: AtomicBool::new(norm_fuse2),
             norm2_wide: AtomicBool::new(norm2_wide),
             ar_phase,
@@ -14455,6 +14469,16 @@ impl Dsv4Gpu {
         eps: f32,
         sv: *mut c_void,
     ) -> i32 {
+        self.note_fused_launch(
+            if self.norm2_wide.load(Ordering::Relaxed) {
+                "dsv4-norm2-wide"
+            } else {
+                "dsv4-norm-fuse2"
+            },
+            &self.norm2_pack_launches,
+            &self.norm2_pack_max_rows,
+            rows as usize,
+        );
         unsafe {
             if self.norm2_wide.load(Ordering::Relaxed) {
                 k::memra_dsv4_norm2_pack_wide(x, w, dst, packed, rows, n, eps, NORM2_WIDE_TILES, sv)
@@ -14478,6 +14502,36 @@ impl Dsv4Gpu {
     /// kernel with a different accumulator, so fusing there would be a new
     /// numeric class rather than the same-class rewrite this door is.
     /// `n_embd == 4096` is the launcher's own geometry refusal restated.
+    /// Count a fused dispatch and announce the FIRST one, naming the arm and the
+    /// row count it ran at. `rows > 1` in that line is the port's whole claim.
+    fn note_fused_launch(&self, arm: &str, counter: &AtomicU64, max_rows: &AtomicU64, rows: usize) {
+        let n = counter.fetch_add(1, Ordering::Relaxed);
+        max_rows.fetch_max(rows as u64, Ordering::Relaxed);
+        if n == 0 {
+            eprintln!(
+                "[{arm}] engaged rows={rows} tp_ep={} chains_f32={}",
+                self.topology.is_tp_ep(),
+                self.chains_f32
+            );
+        }
+    }
+
+    /// `(launches, widest rows seen)` for the two fused norm arms, in the order
+    /// (norm-fuse, norm2 pack). Zero launches with the door resolved ON is the
+    /// defect this pair exists to make visible.
+    pub fn norm_fuse_engagement(&self) -> [(u64, u64); 2] {
+        [
+            (
+                self.norm_fuse_launches.load(Ordering::Relaxed),
+                self.norm_fuse_max_rows.load(Ordering::Relaxed),
+            ),
+            (
+                self.norm2_pack_launches.load(Ordering::Relaxed),
+                self.norm2_pack_max_rows.load(Ordering::Relaxed),
+            ),
+        ]
+    }
+
     fn norm2_active(&self, _t: usize, host_math: bool) -> bool {
         self.norm_fuse2.load(Ordering::Relaxed)
             && self.chains_f32
@@ -15325,6 +15379,12 @@ impl Dsv4Gpu {
                 && hd == 512
                 && rd == 64
             {
+                self.note_fused_launch(
+                    "dsv4-norm-fuse",
+                    &self.norm_fuse_launches,
+                    &self.norm_fuse_max_rows,
+                    t,
+                );
                 ck(
                     "KV norm rope f32 fixed order",
                     k::memra_dsv4_norm_rope_f32_fixed_order(
