@@ -37,6 +37,9 @@ use sha2::{Digest, Sha256};
 use std::{io::Write, path::Path};
 
 const LIMIT: usize = 128;
+/// Chunked-prime width. 32 is the only width the dense path admits; the state
+/// allocation rows must match it or the prime is refused before any row runs.
+const PRIME_WIDTH: usize = 32;
 
 fn argmax(row: &[f32]) -> u32 {
     assert!(!row.is_empty() && row.iter().all(|v| v.is_finite()));
@@ -203,13 +206,13 @@ fn main() {
                 arm_dense_cutlass_for_gate(true).expect("red arm");
             }
             let mut state = gpu
-                .alloc_decode_state_for_transient(capacity, 1)
+                .alloc_decode_state_for_transient(capacity, PRIME_WIDTH)
                 .expect("fresh state per item per arm; no cache crosses items or arms");
             let c0 = dense_cutlass_counts_for_gate().expect("counts");
             // Chunked prime at width 32, the only width the dense path admits.
             // A decode-shaped prime (width 1) would compare the scalar kernel to
             // itself; see the header.
-            gpu.prefill_with_cache_chunked(tokens, &mut state, 32)
+            gpu.prefill_with_cache_chunked(tokens, &mut state, PRIME_WIDTH)
                 .expect("prime");
             assert_eq!(state.pos, tokens.len());
             let c1 = dense_cutlass_counts_for_gate().expect("counts");
@@ -261,9 +264,9 @@ fn main() {
             if i == 0 && !cutlass {
                 arm_dense_cutlass_for_gate(false).expect("reselect scalar");
                 let mut check = gpu
-                    .alloc_decode_state_for_transient(capacity, 1)
+                    .alloc_decode_state_for_transient(capacity, PRIME_WIDTH)
                     .expect("state");
-                gpu.prefill_with_cache_chunked(tokens, &mut check, 32)
+                gpu.prefill_with_cache_chunked(tokens, &mut check, PRIME_WIDTH)
                     .expect("prime");
                 let mut c = argmax(&gpu.read_decode_logits_for_gate(&check).expect("logits"));
                 let mut device_tape = Vec::new();
