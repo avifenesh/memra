@@ -108,10 +108,29 @@ the code that already exists (owner ruling 2026-09-11; darklanes
 `LAW:effort-is-not-a-selection-criterion`).
 
 The frame rate is the thing to read off the artifact before anything else, because it sets the
-step budget directly: a 12 Hz codec means **twelve full decoder forwards per second of generated
-audio**, so a 1.9B model spends its whole session in a short, repeated, launch-bound step. That
-is the same shape §6.3's profile measured on the ASR side, and it is why this family is the
-best-matched case in the engine for graph capture.
+step budget directly: a 12 Hz codec means roughly **twelve full decoder forwards per second of
+generated audio**, so a 1.9B model spends its whole session in a short, repeated, launch-bound
+step. That is the same shape §6.3's profile measured on the ASR side, and it is why this family
+is the best-matched case in the engine for graph capture.
+
+**Read the rate, do not read the name.** `Qwen3-TTS-12Hz-1.7B-CustomVoice` @ `0c0e3051` is a
+**12.5 Hz** codec: `output_sample_rate` 24000 and `decode_upsample_rate` 1920, so one frame is
+**80.00 ms exactly** and a second of audio costs 12.5 steps, not 12. Neither 83.33 ms nor 2000
+samples appears anywhere in the artifact. Two more facts about that artifact belong to the
+streaming emit contract this family needs, and neither can be inferred from a sibling:
+
+- **The first emitted codec frame is silent** (peak 5.72e-05, about -85 dBFS) and it is
+  structural, not a truncation artifact: the same 1920 samples sliced out of a 12-frame
+  generation peak at 5.01e-05 while the rest of the clip peaks at 0.289. A TTFA clock stopped at
+  the first chunk therefore times the arrival of silence, and the emit contract owes a caller
+  either the silence with its duration declared or the first audible frame, never one labelled as
+  the other.
+- **The vendor reference emits `max_new_tokens - 1` codec frames** (`min_new_tokens` is 2 and
+  returns one frame), so a harness or a port that passes a frame count straight through is one
+  frame short of what it reports.
+
+Both are measured, both are red-armed in darklanes `ops/serving/tts_ttfa_slo.py`, and the
+receipts are private (`research/tts-qual-20260911/`).
 
 A NON-autoregressive TTS model (`Kokoro-82M`: StyleTTS 2 + ISTFTNet, one forward pass per
 utterance) is a different program in this class's clothing. It has no decode loop, no session
@@ -212,7 +231,7 @@ arm has not fired yet are marked, and they are not counted as protection.
 | **G6 checkpoint parity** | full clip sweep vs pinned oracle | 71 clips, two domains, per-domain WER delta bound 0.05 pt | **Yes, RED today.** 0.0739 `d1` and 0.2237 `whatsapp` against the 0.05 pt limit on the 36-clip partial sweep |
 | **G7 serve decode contract** | registry half: the acceptance gate a candidate passes before it gets traffic, on any entry declaring `task = "transcription"`. Live half: post-deploy probe against the served binary | Both registry shapes we would serve (streaming RNNT, batch Whisper), every shipped registry snapshot, and the pinned RNNT beam decoder itself. Live half: the exact default decode shape, submitted with no decoding parameters, twice | **Registry half: yes, and its red arms are the configs a person actually writes**: an entry that declares nothing (and so inherits faster-whisper's `[0.0, 0.2, 0.4, 0.6, 0.8, 1.0]` ladder), a text model's vendor-sampling stanza copied across, and beam on a streaming partial path. **Registry half, engine side: yes, and it now refuses at LOAD.** `validate_asr_decode_contract` (memra-server) rejects a silent transcription entry, a text model's sampling stanza copied across, beam on a partial-emitting path, a ladder that starts hot or is non-monotonic, a determinism flag that contradicts its ladder, a beam width that does not match its strategy, and decode keys on a non-ASR row — 10 tests, each named after the stanza a person writes, with the two shapes we would actually serve asserted PASSING so the gate is not a wall. **Live half: ARMABLE but NOT ARMED**: the endpoint exists (§1) and reports the resolved decode on `x-memra-asr-decode` even on its refusal, but two byte-identical no-parameter transcriptions cannot be compared until an engine is bound. It reports `not-armed`. See §5.1 |
 | **G8 streams@SLO battery** | darklanes `ops/serving/asr_streams_slo.py` against a served endpoint on a lane-owned box; the scheduler half is `cargo test -p memra-lanes --lib audio_stream` in hosted CI | Readiness, model id, streaming partial/final/revision shape, concurrency ladder c1 → c4 → c16 → c64, admission limit, cancel, reconnect, flush, rollback. Minimum duration per rung, derived not typed: `queue_frames / (1000/frame_ms - served_rate_hz/streams)`, i.e. the PER-LANE bleed (the aggregate form gives 2.56 s for the measured c4 geometry whose real answer is 10.24 s, and would bless exactly the rung length that misses the defect) | **Yes, and it is the best red arm we own — and half of it now runs with no GPU.** On the card: one A100 holding a resident RNNT student plus a resident large-v3 **shed 54 of 71 streams on incoming-queue overflow at c4** while c1 ran fine. In CI: `MEMRA_AUDIO_DRIVE=per_lane_worker` drives the SAME `AudioScheduler` the endpoint drives, at the measured step cost (31.522 ms at batch 1, 35.890 ms at batch 32), and refuses 4 of 4 streams at c4 with every refusal a typed `queue_overflow` pinned at the cap, while `fused` holds 64 of 64 at max queue depth ≤ 3. A THIRD red arm came out of writing it: a 10 s probe of the broken shape refuses NOTHING while its backlog is already 48 of 64, so a short ladder rung passes the defect — which is why the duration is derived above. **The GPU half of G8 is still unrun: the CI half bounds scheduling logic and makes no claim about milliseconds** |
-| **G10 TTFA battery** (§2.4 family only) | serving battery on a lane-owned box, once a TTS pack exists | Readiness, model id, streaming first-chunk contract, concurrency ladder, leading-silence measurement, admission limit, cancel, rollback | **NOT ARMED, and named as such.** No TTS pack exists, so this gate cannot fire and is not counted as protection. Same treatment as G5's missing encode direction and G7's live half |
+| **G10 TTFA battery** (§2.4 family only) | **Clock and chunk-contract half: darklanes `ops/serving/tts_ttfa_slo.py --self-test`, run by darklanes `.github/workflows/gates.yml` on every push.** Served half: serving battery on a lane-owned box, once a TTS pack exists | Armed half: the TTFA clock (`plan_request`), the chunk classifier (`classify_chunk`) and the ladder decision rules (`verdict`), against the measured chunk shapes of `Qwen3-TTS-12Hz-1.7B-CustomVoice` @ `0c0e3051` and against two malformed ladders. Unarmed half: readiness, model id, the streaming partial-chunk event contract, the admission limit and its typed refusal, cancel, rollback | **HALF ARMED, and the half that is armed found two real defects before any pack exists.** Red arms, all eight refused and four of them mutation-tested until they stopped refusing: a vacuous chunk, the **measured** silent lead-in at its own amplitude (5.72e-05), the sister lane's 16 kHz void-run rate, the vendor off-by-one (a frame count passed straight through as `max_new_tokens` is one frame short), a partial frame, a ladder of silent rows, a ladder carrying means instead of p95, and the served half refusing while no pack is bound. **The served half is still NOT ARMED and is not counted as protection**, same treatment as G5's missing encode direction and G7's live half |
 | **G9 non-vacuity** | every numeric gate | n/a | Each numeric gate carries a first-divergence log and refuses an empty input set; a sweep that scores zero clips is a failure, not a pass |
 
 Two rules that bind all of them:
@@ -579,6 +598,25 @@ the launch count is 2.4x the ASR step's in a step with a wider gap. Mean kernel 
 **1.94 us**, below the per-launch host cost. The step's priority is therefore correct and the
 ordering is not re-argued. Receipts are private (darklanes
 `research/tts-launchbound-20260911/`); the numbers above are the whole of what they say.
+
+**Step 5's FLOOR ran on 2026-09-11 and the qualification lane is open.** On one rented RTX 5090
+against the same pinned artifact, on the vendor reference path with no memra in it, first-audible
+p95 TTFA is **241.69 ms at batch 1** and **332.23 ms at 64 streams under batched arrival**, so
+streams at the 155 ms bar is **zero** on the reference runtime and the gap to close is about
+2.1x at 64 streams. The owner's rule for this program stands: **the first measure is the floor,
+not a decision.** Two results from that lane bind engine work here rather than the lane's own
+write-up:
+
+- **The parity oracle is bit-reproducible**, all five stages at max abs delta 0.0 under greedy on
+  both loops with a fixed seed, so the native port can be checked stage by stage from its first
+  kernel instead of argued. Reference-runtime only; `NativeReference` stays unset.
+- **`torch.compile(mode="reduce-overhead")` REFUSES this shape**: CUDA graph trees fail on
+  warm-up with `accessing tensor output of CUDAGraphs that has been overwritten by a subsequent
+  run`, raised inside the talker's own decoder layer loop, because the nested code predictor
+  consumes the talker's output tensor across runs. Generic graph capture does not own this step.
+  A capture that works has to cover the whole 80 ms frame (one 28-layer talker forward plus the
+  15 code-predictor forwards inside it) and copy out of graph-owned memory at the boundary. That
+  is the design brief for the pack's decode step, and it is measured rather than assumed.
 
 Steps 2 and 3 run on the cheapest card that fits, not on an A100; step 1 uses an A100
 specifically because that is the card the published rows were measured on.
