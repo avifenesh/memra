@@ -34,7 +34,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use memra_lanes::audio_stream::{
-    AudioMetrics, AudioPolicy, AudioScheduler, AudioShed, DriveShape, FRAME_MS, ShedCode,
+    AudioMetrics, AudioPolicy, AudioScheduler, AudioShed, FRAME_MS, ShedCode,
 };
 
 use crate::{AppState, Envelope, auth};
@@ -470,7 +470,10 @@ pub(crate) async fn list_sessions(State(st): State<AppState>, headers: HeaderMap
     let sched = st.audio.lock().expect("audio session table");
     let body = json!({
         "object": "list",
-        "drive": DriveShape::from_env().as_str(),
+        // The drive in FORCE, read off the policy the table was built with — not
+        // `DriveShape::from_env()`, which answers what the environment says NOW and would
+        // report a shape the running scheduler is not using.
+        "drive": sched.policy.drive.as_str(),
         "sessions_live": sched.live(),
         "sessions_max": sched.policy.max_sessions,
         "queue_frames": sched.policy.queue_frames,
@@ -507,6 +510,7 @@ fn metrics_json(m: &AudioMetrics) -> serde_json::Value {
 mod tests {
     use super::*;
     use crate::{OpenRouterModelMetadata, validate_asr_decode_contract};
+    use memra_lanes::audio_stream::DriveShape;
 
     // ---- G7 AT LOAD: the red arms ------------------------------------------------------
     //
