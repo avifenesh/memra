@@ -552,11 +552,7 @@ fn main() {
         .is_some_and(|v| v == "--small-kernel-components");
     let small_abba = args.get(3).is_some_and(|v| v == "--small-kernel-abba");
     assert!(
-        args.len() == 3
-            || sampler_abba
-            || components
-            || small_abba
-            || full_replay,
+        args.len() == 3 || sampler_abba || components || small_abba || full_replay,
         "unknown gate arm"
     );
     let attention_mode = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {

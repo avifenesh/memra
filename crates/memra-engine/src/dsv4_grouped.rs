@@ -1453,9 +1453,7 @@ mod tests {
         }
     }
 
-    use super::{
-        GroupedWork, HalfMirror, ensure_program, mirror_bytes, partition_shape, resolve,
-    };
+    use super::{GroupedWork, HalfMirror, ensure_program, mirror_bytes, partition_shape, resolve};
 
     #[test]
     fn expert_partition_bounds_do_not_wrap() {

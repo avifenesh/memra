@@ -188,6 +188,8 @@ pub(crate) mod norm2_component_gate;
 pub(crate) mod norm2_wide_component_gate;
 #[path = "dsv4_norm_component_gate.rs"]
 mod norm_component_gate;
+#[path = "dsv4_norm_pp2_port_gate.rs"]
+pub(crate) mod norm_pp2_port_gate;
 #[path = "dsv4_small_kernel_gate.rs"]
 mod small_kernel_gate;
 
@@ -936,6 +938,16 @@ pub struct Dsv4Gpu {
     /// Process-local, default OFF; fixed at load, never toggled during a walk.
     small_kernel_diet: bool,
     norm_fuse: AtomicBool,
+    /// Actual fused launches, per arm, with the widest row count each has seen.
+    /// This is the served-path ENGAGEMENT receipt for the PP-2 port: a door that
+    /// resolves ON at load and never dispatches is exactly the failure the whole
+    /// door-reach program is about, and `[dsv4-norm-fuse] engaged` in the server
+    /// log is the line that distinguishes the two. Announced once per arm, then
+    /// counted, so the cost is one relaxed add per launch.
+    norm_fuse_launches: AtomicU64,
+    norm_fuse_max_rows: AtomicU64,
+    norm2_pack_launches: AtomicU64,
+    norm2_pack_max_rows: AtomicU64,
     norm_fuse2: AtomicBool,
     /// Process-local, default OFF. Widens the norm2 pack epilogue across
     /// `NORM2_WIDE_TILES` CTAs; the reduction tree is unchanged, so this is a
@@ -3278,9 +3290,8 @@ impl Dsv4Gpu {
         // the host-driven loop would have meant the loaded default program
         // refusing its own default decode path. `legacy` and `device-hostmath`
         // stay selectable; they are the byte-identity instruments.
-        let decode_path = resolve_decode_path(
-            std::env::var("MEMRA_DSV4_DECODE_PATH").as_deref().ok(),
-        )?;
+        let decode_path =
+            resolve_decode_path(std::env::var("MEMRA_DSV4_DECODE_PATH").as_deref().ok())?;
         if verify_topk == Dsv4VerifyTopk::Device
             && !matches!(decode_path, DecodePath::Device { host_math: false })
         {
@@ -3425,7 +3436,7 @@ impl Dsv4Gpu {
         if small_kernel_diet && (!topology.is_tp_ep() || !chains_f32) {
             return Err("small-kernel diet requires all-layer TP/EP and f32x".into());
         }
-        let norm_admitted = crate::dsv4_doors::norm_admitted(topology.is_tp_ep(), chains_f32);
+        let norm_admitted = crate::dsv4_doors::norm_admitted(chains_f32);
         let norm_fuse = norm_fuse_environment_policy(
             std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
             norm_admitted,
@@ -3482,6 +3493,10 @@ impl Dsv4Gpu {
             chains_f32,
             small_kernel_diet,
             norm_fuse: AtomicBool::new(norm_fuse),
+            norm_fuse_launches: AtomicU64::new(0),
+            norm_fuse_max_rows: AtomicU64::new(0),
+            norm2_pack_launches: AtomicU64::new(0),
+            norm2_pack_max_rows: AtomicU64::new(0),
             norm_fuse2: AtomicBool::new(norm_fuse2),
             norm2_wide: AtomicBool::new(norm2_wide),
             ar_phase,
@@ -14385,8 +14400,8 @@ impl Dsv4Gpu {
     /// Gate selector for fresh eager calls/captures. Drain before switching;
     /// retained graphs contain fixed functions and do not read this selector.
     pub fn set_norm_fuse_for_gate(&self, enabled: bool) -> Res<()> {
-        if enabled && (!self.topology.is_tp_ep() || !self.chains_f32) {
-            return Err("norm fusion gate requires TP/EP f32x".into());
+        if enabled && !self.chains_f32 {
+            return Err("norm fusion gate requires f32x chains".into());
         }
         self.norm_fuse.store(enabled, Ordering::Relaxed);
         Ok(())
@@ -14400,15 +14415,15 @@ impl Dsv4Gpu {
     pub fn restore_norm_fuse_default_for_gate(&self) -> Res<bool> {
         let enabled = norm_fuse_environment_policy(
             std::env::var("MEMRA_DSV4_NORM_FUSE").as_deref(),
-            self.topology.is_tp_ep() && self.chains_f32,
+            crate::dsv4_doors::norm_admitted(self.chains_f32),
         )?;
         self.norm_fuse.store(enabled, Ordering::Relaxed);
         Ok(enabled)
     }
 
     pub fn set_norm_fuse2_for_gate(&self, enabled: bool) -> Res<()> {
-        if enabled && (!self.topology.is_tp_ep() || !self.chains_f32) {
-            return Err("norm fusion2 requires TP/EP f32x".into());
+        if enabled && !self.chains_f32 {
+            return Err("norm fusion2 requires f32x chains".into());
         }
         for st in &self.stages {
             st.gpu.stream().synchronize().map_err(e("norm2 drain"))?;
@@ -14449,23 +14464,77 @@ impl Dsv4Gpu {
         w: *const f32,
         dst: *mut f32,
         packed: *mut c_void,
+        rows: i32,
         n: i32,
         eps: f32,
         sv: *mut c_void,
     ) -> i32 {
+        self.note_fused_launch(
+            if self.norm2_wide.load(Ordering::Relaxed) {
+                "dsv4-norm2-wide"
+            } else {
+                "dsv4-norm-fuse2"
+            },
+            &self.norm2_pack_launches,
+            &self.norm2_pack_max_rows,
+            rows as usize,
+        );
         unsafe {
             if self.norm2_wide.load(Ordering::Relaxed) {
-                k::memra_dsv4_norm2_pack_wide(x, w, dst, packed, n, eps, NORM2_WIDE_TILES, sv)
+                k::memra_dsv4_norm2_pack_wide(x, w, dst, packed, rows, n, eps, NORM2_WIDE_TILES, sv)
             } else {
-                k::memra_dsv4_norm2_pack(x, w, dst, packed, n, eps, sv)
+                k::memra_dsv4_norm2_pack(x, w, dst, packed, rows, n, eps, sv)
             }
         }
     }
-    fn norm2_active(&self, t: usize, host_math: bool) -> bool {
+    /// memra #4xx, the PP-2 port. Two terms left this predicate and one stayed.
+    ///
+    /// `is_tp_ep()` was a topology ASSUMPTION, not a precondition: no norm2 pack
+    /// kernel, and nothing the pack feeds, reads a rank, a shard or a topology
+    /// plan. It was here because TP/EP was the only program the door was ever
+    /// measured on. `t == 1` was a KERNEL limit, not a program fact: the pack
+    /// launcher pinned grid 1. Both kernels now take `rows` and run the
+    /// identical per-row tree, so the shape term is gone with the limit.
+    ///
+    /// `chains_f32` STAYS and is a real precondition. The pack is the f32
+    /// reduction tree (`dsv4_rmsnorm_f32acc_kernel`) with the bf16 cast folded
+    /// into its epilogue; with f32x chains off the unfused arm is a different
+    /// kernel with a different accumulator, so fusing there would be a new
+    /// numeric class rather than the same-class rewrite this door is.
+    /// `n_embd == 4096` is the launcher's own geometry refusal restated.
+    /// Count a fused dispatch and announce the FIRST one, naming the arm and the
+    /// row count it ran at. `rows > 1` in that line is the port's whole claim.
+    fn note_fused_launch(&self, arm: &str, counter: &AtomicU64, max_rows: &AtomicU64, rows: usize) {
+        let n = counter.fetch_add(1, Ordering::Relaxed);
+        max_rows.fetch_max(rows as u64, Ordering::Relaxed);
+        if n == 0 {
+            eprintln!(
+                "[{arm}] engaged rows={rows} tp_ep={} chains_f32={}",
+                self.topology.is_tp_ep(),
+                self.chains_f32
+            );
+        }
+    }
+
+    /// `(launches, widest rows seen)` for the two fused norm arms, in the order
+    /// (norm-fuse, norm2 pack). Zero launches with the door resolved ON is the
+    /// defect this pair exists to make visible.
+    pub fn norm_fuse_engagement(&self) -> [(u64, u64); 2] {
+        [
+            (
+                self.norm_fuse_launches.load(Ordering::Relaxed),
+                self.norm_fuse_max_rows.load(Ordering::Relaxed),
+            ),
+            (
+                self.norm2_pack_launches.load(Ordering::Relaxed),
+                self.norm2_pack_max_rows.load(Ordering::Relaxed),
+            ),
+        ]
+    }
+
+    fn norm2_active(&self, _t: usize, host_math: bool) -> bool {
         self.norm_fuse2.load(Ordering::Relaxed)
-            && self.topology.is_tp_ep()
             && self.chains_f32
-            && t == 1
             && !host_math
             && self.model.mc.n_embd == 4096
     }
@@ -15136,6 +15205,7 @@ impl Dsv4Gpu {
                         dpf!(layer.attn_norm, &stream),
                         dpm!(vws.x, &stream),
                         vws.gemm_xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        t as i32,
                         hidden as i32,
                         eps,
                         sp(&stream),
@@ -15298,18 +15368,29 @@ impl Dsv4Gpu {
             self.capture_norm_component(st, layer, &vws.kv, hd, rd, eps, fc_dev, &vws.pos_dev)?;
         }
         unsafe {
+            // `t == 1` left this guard with memra #4xx: the fused kernel is one
+            // CTA per row over its own position, so every routed shape reaches
+            // it. `chains_f32`, `hd == 512` and `rd == 64` stay: the first is
+            // the reduction tree the fusion preserves, the last two are the
+            // launcher's own geometry refusal (40004) restated at the call.
             if self.norm_fuse.load(Ordering::Relaxed)
                 && self.chains_f32
                 && !host_math
-                && t == 1
                 && hd == 512
                 && rd == 64
             {
+                self.note_fused_launch(
+                    "dsv4-norm-fuse",
+                    &self.norm_fuse_launches,
+                    &self.norm_fuse_max_rows,
+                    t,
+                );
                 ck(
                     "KV norm rope f32 fixed order",
                     k::memra_dsv4_norm_rope_f32_fixed_order(
                         dpm!(vws.kv, &stream),
                         dpf!(layer.kv_norm, &stream),
+                        t as i32,
                         hd as i32,
                         eps,
                         rd as i32,
@@ -16133,6 +16214,7 @@ impl Dsv4Gpu {
                         dpf!(layer.ffn_norm, &stream),
                         dpm!(vws.xf, &stream),
                         vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                        t as i32,
                         hidden as i32,
                         eps,
                         sp(&stream),
@@ -16414,6 +16496,7 @@ impl Dsv4Gpu {
                         dpf!(vws.sg1, &stream),
                         dpf!(vws.sg3, &stream),
                         vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                        t as i32,
                         sh_inter as i32,
                         limit,
                         sp(&stream),
@@ -19340,7 +19423,10 @@ mod verify_topk_tests {
         );
         // Non-vacuity: all three arms are distinct, so none of the above can be
         // passing against a resolver stuck on one value.
-        assert_ne!(resolve_decode_path(None), resolve_decode_path(Some("legacy")));
+        assert_ne!(
+            resolve_decode_path(None),
+            resolve_decode_path(Some("legacy"))
+        );
         assert_ne!(
             resolve_decode_path(None),
             resolve_decode_path(Some("device-hostmath"))
