@@ -47,60 +47,6 @@ fn gu_receipt_features(kind: GuLaunchKind) -> (bool, bool) {
     )
 }
 
-static SPLITK_COMPONENT_SEEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-pub(crate) fn reset_splitk_component_token() {
-    SPLITK_COMPONENT_SEEN.store(0, Ordering::Release);
-}
-fn splitk_component_claim(gpu: &Gpu, gu: bool) -> bool {
-    if crate::MOE_M1_SPLITK_COMPONENT.load(Ordering::Acquire) == 0 {
-        return false;
-    }
-    if crate::moe_m1_graph_splitk_on() {
-        // Search real routes across layers until the C++ gate has a six-live
-        // operand set for this rank/projection. Its completion mask skips all
-        // subsequent calls. The historical adaptive gate still samples once.
-        return true;
-    }
-    let bit = 1u64 << (gpu.ctx.ordinal() * 2 + usize::from(gu));
-    SPLITK_COMPONENT_SEEN.fetch_or(bit, Ordering::AcqRel) & bit == 0
-}
-
-fn graph_splitk_inactive_rows_for_gate(offsets: &[i32], pairs: &[i32]) -> Res<usize> {
-    let live = *offsets.last().ok_or("empty component CSR")?;
-    if pairs.len() < 6
-        || !(0..=6).contains(&live)
-        || offsets[0] != 0
-        || offsets.windows(2).any(|p| p[0] > p[1] || p[1] > live)
-        || pairs[live as usize..6].iter().any(|&p| p != -1)
-        || pairs[..live as usize].iter().any(|&p| !(0..6).contains(&p))
-    {
-        return Err("graph split-K inactive output rows are not consumer-masked".into());
-    }
-    Ok(live as usize)
-}
-
-#[cfg(test)]
-mod graph_splitk_tail_tests {
-    use super::graph_splitk_inactive_rows_for_gate;
-    #[test]
-    fn graph_splitk_inactive_rows_contract() {
-        assert_eq!(
-            graph_splitk_inactive_rows_for_gate(&[0, 0, 1, 2], &[4, 2, -1, -1, -1, -1]),
-            Ok(2)
-        );
-        assert_eq!(
-            graph_splitk_inactive_rows_for_gate(&[0, 0], &[-1; 6]),
-            Ok(0)
-        );
-        assert_eq!(
-            graph_splitk_inactive_rows_for_gate(&[0, 6], &[0, 1, 2, 3, 4, 5]),
-            Ok(6)
-        );
-        assert!(graph_splitk_inactive_rows_for_gate(&[0, 2], &[4, 2, 0, -1, -1, -1]).is_err());
-        assert!(graph_splitk_inactive_rows_for_gate(&[0, 2, 1], &[0, -1, -1, -1, -1, -1]).is_err());
-    }
-}
-
 static MIRROR_VALIDATE: AtomicBool = AtomicBool::new(true);
 static ROUTE_VALIDATE: AtomicBool = AtomicBool::new(true);
 
@@ -120,16 +66,6 @@ pub(crate) fn set_route_validation_for_gate(enabled: bool) -> bool {
     ROUTE_VALIDATE.swap(enabled, Ordering::SeqCst)
 }
 
-pub(crate) fn resolve_program(raw: Option<&str>) -> Res<bool> {
-    match raw {
-        None | Some("reference") => Ok(false),
-        Some("matrix") => Ok(true),
-        Some(other) => Err(format!(
-            "MEMRA_DSV4_MOE_PROGRAM '{other}' unknown (reference | matrix)"
-        )),
-    }
-}
-
 pub(crate) fn ensure_program(runtime_matrix: bool, state_matrix: bool) -> Res<()> {
     if runtime_matrix != state_matrix {
         return Err("DSV4 matrix/reference state program mismatch".into());
@@ -137,10 +73,14 @@ pub(crate) fn ensure_program(runtime_matrix: bool, state_matrix: bool) -> Res<()
     Ok(())
 }
 
+/// Routing transport. `device` is the default since the 2026-09-11 matrix flip:
+/// it is part of the admission minimum every class cell held in BOTH arms, and
+/// the matrix program's own EP storage validity term requires it, so the default
+/// program must resolve it rather than inherit `host` by silence (memra #461).
 pub(crate) fn resolve(raw: Option<&str>) -> Res<bool> {
     match raw {
-        None | Some("host") => Ok(false),
-        Some("device") => Ok(true),
+        None | Some("device") => Ok(true),
+        Some("host") => Ok(false),
         Some(other) => Err(format!(
             "MEMRA_DSV4_GROUPED_ROUTE '{other}' unknown (host | device)"
         )),
@@ -257,7 +197,6 @@ pub(crate) struct GroupedWork {
     plain_single: bool,
     gu_fuse: bool,
     phase: MatrixPhase,
-    splitk_scratch: Option<CudaSlice<f32>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -381,21 +320,6 @@ impl GroupedWork {
             .bytes
             .checked_add(extra_bytes as u64)
             .ok_or("grouped workspace byte overflow")?;
-        // Allocate both projections' maximum workspace before any capture.
-        let splitk_len = if crate::moe_m1_graph_splitk_on() && slots == 6 {
-            slots * (inter * 32).max(hidden * 16)
-        } else {
-            0
-        };
-        let splitk_scratch = if splitk_len > 0 {
-            Some(
-                s.alloc_zeros::<f32>(splitk_len)
-                    .map_err(|e| format!("graph split-K scratch: {e}"))?,
-            )
-        } else {
-            None
-        };
-        let bytes = bytes + (splitk_len * 4) as u64;
         Ok(Self {
             routes,
             input: HalfMirror::new(s, slots, hidden)?,
@@ -409,127 +333,7 @@ impl GroupedWork {
             plain_single: false,
             gu_fuse: false,
             phase: MatrixPhase::Idle,
-            splitk_scratch,
         })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn splitk(
-        &mut self,
-        gpu: &Gpu,
-        table: &CudaSlice<u64>,
-        output: u64,
-        limit: f32,
-        gu: bool,
-        component: bool,
-    ) -> Res<()> {
-        let s = gpu.stream();
-        let (input, out_f) = if gu {
-            (&self.input, self.intermediate.cols)
-        } else {
-            (&self.intermediate, self.input.cols)
-        };
-        if component && crate::moe_m1_graph_splitk_on() {
-            // The reducer zeroes [CSR live, 6). Down's scatter must ignore
-            // exactly that region; GU's downstream projection uses this CSR.
-            let offsets = s
-                .clone_dtoh(&self.routes.offsets)
-                .map_err(|e| format!("component CSR read: {e}"))?;
-            let pairs = s
-                .clone_dtoh(&self.routes.pairs)
-                .map_err(|e| format!("component scatter mask read: {e}"))?;
-            s.synchronize()
-                .map_err(|e| format!("component mask drain: {e}"))?;
-            let live = graph_splitk_inactive_rows_for_gate(&offsets, &pairs)?;
-            println!(
-                "GRAPH_COMPONENT_CONSUMER rank={} gu={gu} live={live} inactive_scatter_ids=-1 csr_excludes_tail=true",
-                gpu.ctx.ordinal()
-            );
-        }
-        let graph = !component && crate::moe_m1_graph_splitk_on();
-        let live = if graph { 6 } else { self.routes.live_slots };
-        if graph && (self.input.rows != 6 || self.intermediate.rows != 6) {
-            return Err("graph split-K requires six-slot M=1 storage".into());
-        }
-        if table.len() != self.routes.experts * 6
-            || crate::moe_f16g_mode() < 2
-            || crate::moe_f16g_sk_params().0 < 0
-            || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
-        {
-            return Err(
-                "split-K requires a complete local ModelOpt table and direct grouped visitor"
-                    .into(),
-            );
-        }
-        let needed = live
-            .checked_mul(out_f)
-            .and_then(|v| v.checked_mul(if gu { 32 } else { 16 }))
-            .ok_or("split-K scratch overflow")?;
-        if !component
-            && self
-                .splitk_scratch
-                .as_ref()
-                .is_none_or(|p| p.len() < needed)
-        {
-            if graph {
-                return Err("graph split-K scratch must be allocated before capture".into());
-            }
-            let old_bytes = self.splitk_scratch.as_ref().map_or(0, |p| p.len() * 4);
-            self.splitk_scratch = Some(
-                s.alloc_zeros::<f32>(needed)
-                    .map_err(|e| format!("split-K scratch: {e}"))?,
-            );
-            self.bytes = self.bytes - old_bytes as u64 + (needed * 4) as u64;
-        }
-        let partial = self
-            .splitk_scratch
-            .as_mut()
-            .map_or(std::ptr::null_mut(), |p| p.device_ptr_mut(&s).0 as *mut f32);
-        let launch = if component && crate::moe_m1_graph_splitk_on() {
-            crate::mmq_ffi::memra_moe_m1_graph_splitk_component
-        } else if component {
-            crate::mmq_ffi::memra_moe_m1_splitk_component
-        } else if graph {
-            crate::mmq_ffi::memra_moe_m1_graph_splitk
-        } else {
-            crate::mmq_ffi::memra_moe_m1_splitk
-        };
-        let rc = unsafe {
-            launch(
-                table.device_ptr(&s).0 as *const u64,
-                self.routes.experts as i32,
-                self.routes.ids.device_ptr(&s).0 as *const i32,
-                input.half.device_ptr(&s).0 as *const std::ffi::c_void,
-                output as *mut f32,
-                input.scale.device_ptr(&s).0 as *const f32,
-                self.routes.macro1.device_ptr(&s).0 as *const f32,
-                self.routes.macro3.device_ptr(&s).0 as *const f32,
-                self.routes.weights.device_ptr(&s).0 as *const f32,
-                self.routes.offsets.device_ptr(&s).0 as *const i32,
-                self.routes.experts as i32,
-                input.cols as i32,
-                out_f as i32,
-                limit,
-                live as i32,
-                gu as i32,
-                partial,
-                s.cu_stream().cast(),
-            )
-        };
-        if rc != 0 {
-            return Err(format!(
-                "moe_m1_splitk gu={gu} component={component} rc={rc}"
-            ));
-        }
-        if !component {
-            let counter = if gu {
-                &crate::MOE_M1_SPLITK_GU_DISPATCHES
-            } else {
-                &crate::MOE_M1_SPLITK_DOWN_DISPATCHES
-            };
-            counter.fetch_add(1, Ordering::Relaxed);
-        }
-        Ok(())
     }
 
     /// Source FP8 codes/scales are already produced on the token's owner.
@@ -622,15 +426,7 @@ impl GroupedWork {
                 crate::moe_f16g_gu_m1_tc_on(),
                 crate::moe_f16g_gu_half2_on(),
             );
-            if self.plain_single && splitk_component_claim(gpu, true) {
-                self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, true)?;
-            }
-            if self.plain_single && crate::moe_m1_splitk_on() {
-                if !fuse_gu {
-                    return Err("split-K requires plain fused GU".into());
-                }
-                self.splitk(gpu, table, out.h.device_ptr_mut(&s).0, limit, true, false)?;
-            } else if let Some(gu_kind) = gu_kind {
+            if let Some(gu_kind) = gu_kind {
                 let rc = unsafe {
                     let launch = match gu_kind {
                         GuLaunchKind::M1Half2 => memra_moe_kq_gemm_sk_gu_m1_half2,
@@ -805,15 +601,7 @@ impl GroupedWork {
                 self.intermediate.gather(&s, out.hq, out.hs, None, live)?;
             }
 
-            let component = self.plain_single && splitk_component_claim(gpu, false);
-            let splitk = self.plain_single && crate::moe_m1_splitk_on();
-            let output = self.contribution.device_ptr_mut(&s).0;
-            if component {
-                self.splitk(gpu, table, output, 0.0, false, true)?;
-            }
-            if splitk {
-                self.splitk(gpu, table, output, 0.0, false, false)?;
-            } else if self.plain_single
+            if self.plain_single
                 && crate::moe_f16g_tail_on()
                 && (crate::moe_f16g_m1_tc_on() || crate::moe_f16g_down_m1_half2_on())
             {
@@ -919,7 +707,7 @@ impl GroupedRoutes {
         if table.len() != self.experts * 6
             || output.len() < self.live_slots * out_f
             || crate::moe_f16g_mode() < 2
-            || crate::moe_f16g_sk_params().0 < 0
+            || crate::dsv4_moe_f16g_sk_params().0 < 0
             || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
         {
             return Err(
@@ -927,7 +715,7 @@ impl GroupedRoutes {
                     .into(),
             );
         }
-        let (_, cross) = crate::moe_f16g_sk_params();
+        let (_, cross) = crate::dsv4_moe_f16g_sk_params();
         let rc = unsafe {
             memra_moe_kq_gemm_sk(
                 table.device_ptr(s).0 as *const u64,
@@ -970,7 +758,7 @@ impl GroupedRoutes {
         if table.len() != self.experts * 6
             || output.len() < self.live_slots * out_f
             || crate::moe_f16g_mode() < 2
-            || crate::moe_f16g_sk_params().0 < 0
+            || crate::dsv4_moe_f16g_sk_params().0 < 0
             || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
         {
             return Err(
@@ -1667,7 +1455,6 @@ mod tests {
 
     use super::{
         GroupedWork, HalfMirror, ensure_program, mirror_bytes, partition_shape, resolve,
-        resolve_program,
     };
 
     #[test]
@@ -1949,12 +1736,10 @@ mod tests {
 
     #[test]
     fn matrix_program_and_state_are_explicit() {
-        assert_eq!(resolve_program(None), Ok(false));
-        assert_eq!(resolve_program(Some("reference")), Ok(false));
-        assert_eq!(resolve_program(Some("matrix")), Ok(true));
-        for raw in ["", "1", "MATRIX", " matrix"] {
-            assert!(resolve_program(Some(raw)).is_err());
-        }
+        // `resolve_program` is gone with the door (memra #461, 2026-09-11): the
+        // program is resolved in `dsv4_doors`, from a gate arm and nothing else.
+        // What survives here is the state-tag check, which is what stops a
+        // snapshot minted under one program being reused under the other.
         for runtime in [false, true] {
             for state in [false, true] {
                 assert_eq!(ensure_program(runtime, state).is_ok(), runtime == state);
@@ -1963,9 +1748,10 @@ mod tests {
     }
     #[test]
     fn route_policy_is_explicit() {
-        assert_eq!(resolve(None), Ok(false));
-        assert_eq!(resolve(Some("host")), Ok(false));
+        // `device` by default since the matrix flip; `host` stays the seam.
+        assert_eq!(resolve(None), Ok(true));
         assert_eq!(resolve(Some("device")), Ok(true));
+        assert_eq!(resolve(Some("host")), Ok(false));
         for raw in ["1", "DEVICE", " device", ""] {
             assert!(resolve(Some(raw)).is_err());
         }

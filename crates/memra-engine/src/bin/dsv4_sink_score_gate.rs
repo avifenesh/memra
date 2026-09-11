@@ -162,7 +162,6 @@ fn main() {
     );
     for (name, value) in [
         ("MEMRA_DSV4_SINK_SCORE", "scalar"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_EP", "pair"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
     ] {
@@ -184,7 +183,6 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let mut gpu =
         Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, 8192).expect("matrix EP load");
     gpu.set_verify_topk_for_gate(Dsv4VerifyTopk::Device)

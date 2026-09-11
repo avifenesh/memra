@@ -853,16 +853,20 @@ fn dspark_draft_position(tap_position: usize, slot: usize) -> usize {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Dsv4VerifyTopk {
-    #[default]
     Legacy,
+    /// The default since the 2026-09-11 matrix flip: `device` is part of the
+    /// admission minimum every class cell that qualified the matrix program held
+    /// in BOTH arms, so it is the loaded program's resolved state rather than
+    /// something an operator has to remember (memra #461).
+    #[default]
     Device,
 }
 
 impl Dsv4VerifyTopk {
     pub fn resolve(value: Option<&str>) -> Res<Self> {
         match value {
-            None | Some("") | Some("legacy") => Ok(Self::Legacy),
-            Some("device") => Ok(Self::Device),
+            None | Some("") | Some("device") => Ok(Self::Device),
+            Some("legacy") => Ok(Self::Legacy),
             Some(other) => Err(format!(
                 "MEMRA_DSV4_VERIFY_TOPK '{other}' unknown (legacy | device)"
             )),
@@ -1169,9 +1173,13 @@ impl DecodeState {
 /// Number of persistent compressed rows admitted for one session. Decode allocation
 /// and batched verification must share this exact planner because the latter places its
 /// transient rows immediately after this store.
-/// Engine bring-up ceiling. The serving surface separately retains its qualified limit.
+/// The batch width ceiling, for every surface. There used to be a second,
+/// narrower `DSV4_SERVING_BATCH_WIDTH_MAX = 64`: both entered together in
+/// `8a52da7c7` (#318) with 512 qualified for bring-up and serving left at 64.
+/// The serving one is gone (memra #460, 2026-09-11) because the width gain is
+/// real at the canonical served arm, +31.1% at 3,686 tokens with a 0.0% repeat
+/// spread, and a qualified win becomes the code rather than a door.
 pub const DSV4_BATCH_WIDTH_MAX: usize = 512;
-pub const DSV4_SERVING_BATCH_WIDTH_MAX: usize = 64;
 
 fn ring_commit_plan(pos0: usize, n_commit: usize, win: usize) -> (usize, Vec<i32>) {
     assert!(win > 0);
@@ -2115,18 +2123,6 @@ impl Dsv4Gpu {
         crate::set_moe_f16g_m1_tc_for_gate(enabled)
     }
 
-    /// Change the experimental numeric program only between drained requests.
-    pub fn set_grouped_m1_splitk_for_gate(&self, enabled: bool) -> bool {
-        for stage in &self.stages {
-            stage
-                .gpu
-                .stream()
-                .synchronize()
-                .expect("drain M1 split-K gate");
-        }
-        crate::set_moe_m1_splitk_for_gate(enabled)
-    }
-
     pub fn grouped_m1_tc_for_gate(&self) -> bool {
         crate::moe_f16g_m1_tc_on()
     }
@@ -2430,8 +2426,7 @@ impl Dsv4Gpu {
             dots_f32: self.dots_f32,
             matrix_moe: self.matrix_moe,
             drafter_resident: self.dspark.is_some() || self.mtp.is_some(),
-            gate_armed_gu_fuse: crate::dsv4_doors::matrix_splitk_door_armed()
-                || crate::moe_f16g_gu_fuse_on(),
+            gate_armed_gu_fuse: crate::moe_f16g_gu_fuse_on(),
             hc_geometry_24x16384: (2 + hc) * hc == 24 && hc * hidden == 16384,
             // TP/EP cannot take a customer request: `prefill_with_cache_chunked`
             // refuses a batched prime under this topology and the topology guard
@@ -2453,7 +2448,7 @@ impl Dsv4Gpu {
                 || !matches!(self.decode_path, DecodePath::Device { host_math: false })
                 || self.expert_arm != ExpertArm::Native
                 || crate::moe_f16g_mode() < 2
-                || crate::moe_f16g_sk_params().0 < 0
+                || crate::dsv4_moe_f16g_sk_params().0 < 0
                 || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
                 || self.stages.iter().flat_map(|s| &s.layers).any(|l| {
                     l.expert_kind != ExpertKind::Nvfp4
@@ -2467,16 +2462,9 @@ impl Dsv4Gpu {
         {
             return Err("matrix request program requires native NVFP4 trunk, device math, grouped visitor/direct loader, complete expert tables, no prefill-only probe, and device routing/reused storage for EP".into());
         }
-        // memra #458. Fifth sibling refusal: split-K's plain gate/up arm is the
-        // FUSED gate/up launch, so it needs the gate-only fused-GU seam, which no
-        // serving process can arm. Before this, the combination booted clean and
-        // then failed every request with "split-K requires plain fused GU" as an
-        // engine_error 500. Refuse here, where the other four refuse.
-        crate::dsv4_doors::matrix_splitk_admission(
-            self.matrix_moe,
-            crate::moe_m1_splitk_on(),
-            crate::dsv4_doors::matrix_splitk_door_armed(),
-        )?;
+        // memra #458's fifth sibling refusal lived here until 2026-09-11. It is
+        // gone with the thing it refused: the split-K door is deleted, so the
+        // matrix program has no unservable default left to refuse.
         Ok(())
     }
 
@@ -3065,12 +3053,18 @@ impl Dsv4Gpu {
             Err(err) => return Err(format!("MEMRA_DSV4_PREFILL_MOE: {err}")),
         };
         let prefill_grouped = resolve_prefill_moe(grouped_env.as_deref())?;
-        let program_env = match std::env::var("MEMRA_DSV4_MOE_PROGRAM") {
-            Ok(value) => Some(value),
-            Err(std::env::VarError::NotPresent) => None,
-            Err(err) => return Err(format!("MEMRA_DSV4_MOE_PROGRAM: {err}")),
-        };
-        let matrix_moe = crate::dsv4_grouped::resolve_program(program_env.as_deref())?;
+        // memra #461, owner flip 2026-09-11. The expert program is NOT a door:
+        // the matrix executor is what loads, and the scalar reference executor
+        // is reachable only through `arm_reference_expert_program_for_gate`,
+        // which every CLASS gate calls before load and no serving process calls.
+        // There is deliberately no environment variable here to read.
+        let matrix_moe = crate::dsv4_doors::matrix_expert_program_resolved();
+        // Consequence of the flip, written down rather than discovered: with matrix
+        // as the loaded default, `MEMRA_DSV4_PREFILL_MOE=grouped` (the prefill-only
+        // grouped bring-up probe) is reachable ONLY from a process that armed the
+        // reference executor, because the two are mutually exclusive. It stays a
+        // program selector rather than a door, and every gate that pins it pins
+        // `reference`.
         if matrix_moe && prefill_grouped {
             return Err(
                 "matrix request program and prefill-only grouped probe are mutually exclusive"
@@ -3118,6 +3112,9 @@ impl Dsv4Gpu {
             Err(std::env::VarError::NotPresent) => None,
             Err(err) => return Err(format!("MEMRA_DSV4_VERIFY_TOPK: {err}")),
         };
+        // Part of the matrix program's admission minimum, held in BOTH arms of
+        // every class cell that qualified the flip, so it is a default rather
+        // than something an operator sets (memra #461).
         let verify_topk = Dsv4VerifyTopk::resolve(topk_env.as_deref())?;
         let ep_env = match std::env::var("MEMRA_DSV4_EP") {
             Ok(value) => Some(value),
@@ -3275,16 +3272,15 @@ impl Dsv4Gpu {
         }
 
         // lane 8: decode-path seam (read once, printed; one binary carries both arms)
-        let decode_path = match std::env::var("MEMRA_DSV4_DECODE_PATH").as_deref() {
-            Err(_) | Ok("") | Ok("legacy") => DecodePath::Legacy,
-            Ok("device-hostmath") => DecodePath::Device { host_math: true },
-            Ok("device") => DecodePath::Device { host_math: false },
-            Ok(other) => {
-                return Err(format!(
-                    "MEMRA_DSV4_DECODE_PATH '{other}' unknown (legacy | device | device-hostmath)"
-                ));
-            }
-        };
+        // The default moved from `legacy` to `device` with the 2026-09-11 matrix
+        // flip: the matrix expert program requires `Device { host_math: false }`
+        // (`validate_matrix_program`), so leaving the decode path defaulting to
+        // the host-driven loop would have meant the loaded default program
+        // refusing its own default decode path. `legacy` and `device-hostmath`
+        // stay selectable; they are the byte-identity instruments.
+        let decode_path = resolve_decode_path(
+            std::env::var("MEMRA_DSV4_DECODE_PATH").as_deref().ok(),
+        )?;
         if verify_topk == Dsv4VerifyTopk::Device
             && !matches!(decode_path, DecodePath::Device { host_math: false })
         {
@@ -3365,7 +3361,7 @@ impl Dsv4Gpu {
         if prefill_grouped
             && (!matches!(decode_path, DecodePath::Device { host_math: false })
                 || crate::moe_f16g_mode() < 2
-                || crate::moe_f16g_sk_params().0 < 0
+                || crate::dsv4_moe_f16g_sk_params().0 < 0
                 || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT))
         {
             return Err("MEMRA_DSV4_PREFILL_MOE=grouped requires device decode, MEMRA_MOE_F16G=2, visitor form and direct quant loader".into());
@@ -3861,19 +3857,6 @@ impl Dsv4Gpu {
             st.gpu.stream().synchronize().map_err(e("load sync"))?;
         }
         me.validate_matrix_program()?;
-        // memra #461: the expert program decides which of two DIFFERENT numeric
-        // classes answered a request, and until this line existed only the matrix
-        // arm announced itself, so the shipped default was the one an operator
-        // could not see in the log. Both arms are named now, unconditionally.
-        eprintln!(
-            "[load] expert program: {}",
-            if me.matrix_moe {
-                "matrix (grouped ModelOpt split-plane executor via dsv4_grouped; \
-                 experimental, distinct numeric class)"
-            } else {
-                "reference (per-slot selection-gathered NVFP4 GEMM; shipped default)"
-            }
-        );
         if sink_score == Dsv4SinkScore::Tiled {
             me.set_sink_score_for_gate(sink_score)?;
         }
@@ -3886,6 +3869,36 @@ impl Dsv4Gpu {
             }
         }
         me.validate_matrix_program()?;
+        // memra #461: the expert program decides which of two DIFFERENT numeric
+        // classes answered a request, and until this line existed only the matrix
+        // arm announced itself, so the shipped default was the one an operator
+        // could not see in the log. Two incidents on 2026-09-10 came straight out
+        // of an operator not being able to tell which program answered.
+        //
+        // It prints AFTER the EP transition, not before, because EP is the other
+        // half of the same question: `matrix` alone does not say which arm ran,
+        // and `EP=pair` reaches a different executor composition from `EP=off`.
+        // Every number this family publishes is keyed to the PAIR, so the boot
+        // line carries the pair.
+        eprintln!(
+            "[load] expert program: {}, EP {}",
+            if me.matrix_moe {
+                "matrix (grouped ModelOpt split-plane executor via dsv4_grouped; \
+                 tensor-core MMA class, the loaded default since 2026-09-11)"
+            } else {
+                "reference (per-slot selection-gathered NVFP4 GEMM; scalar f32 FMA \
+                 class, reachable only through a gate arm)"
+            },
+            if me.ep_enabled {
+                if me.topology.is_tp_ep() {
+                    "pair (all-layer TP/EP local banks)"
+                } else {
+                    "pair (PP-2 expert-parallel banks)"
+                }
+            } else {
+                "off"
+            }
+        );
         if me.attention_tp.is_some() {
             me.pack_attention_tp_layers()?;
         }
@@ -8143,8 +8156,6 @@ impl Dsv4Gpu {
             || self.verify_topk != Dsv4VerifyTopk::Device
             || (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) != 43
             || self.model.mc.n_embd != 4096
-            || crate::moe_m1_host_splitk_on()
-            || crate::MOE_M1_SPLITK_COMPONENT.load(Ordering::Acquire) != 0
             || crate::dsv4_grouped::route_validation_enabled()
             || crate::dsv4_grouped::mirror_validation_enabled()
             || !crate::moe_f16g_gu_fuse_on()
@@ -16237,7 +16248,7 @@ impl Dsv4Gpu {
         allow_gu_fuse: bool,
     ) -> Res<()> {
         if crate::moe_f16g_mode() < 2
-            || crate::moe_f16g_sk_params().0 < 0
+            || crate::dsv4_moe_f16g_sk_params().0 < 0
             || !crate::moe_f16g_direct_on(crate::QT_NVFP4_MODELOPT)
         {
             return Err("DSV4 grouped MoE requires the direct native matrix visitor".into());
@@ -18637,6 +18648,30 @@ impl Dsv4Gpu {
 /// legacy (device-scoped default, the 82a754fbec dots-default shape); explicit values
 /// keep their exact prior semantics including the legacy+fp8 refusal and the
 /// unknown-value refusal.
+/// Lane 8 decode-path seam, resolved from the raw value so the DEFAULT is
+/// testable without an environment.
+///
+/// The default moved from `Legacy` to `Device { host_math: false }` with the
+/// 2026-09-11 matrix flip (memra #461): the matrix expert program is the loaded
+/// default and `validate_matrix_program` requires exactly that variant, so a
+/// decode path still defaulting to the host-driven loop would have meant the
+/// default program refusing its own default decode path.
+///
+/// Both other arms stay SELECTABLE, which is the contract this ships: `legacy`
+/// and `device-hostmath` are the byte-identity instruments and an explicit
+/// export of either is honoured, not refused. Unknown values refuse, so a typo
+/// cannot silently land on the default.
+pub fn resolve_decode_path(v: Option<&str>) -> Result<DecodePath, String> {
+    match v {
+        None | Some("") | Some("device") => Ok(DecodePath::Device { host_math: false }),
+        Some("legacy") => Ok(DecodePath::Legacy),
+        Some("device-hostmath") => Ok(DecodePath::Device { host_math: true }),
+        Some(other) => Err(format!(
+            "MEMRA_DSV4_DECODE_PATH '{other}' unknown (legacy | device | device-hostmath)"
+        )),
+    }
+}
+
 pub fn resolve_dense_arm(v: Option<&str>, on_device: bool) -> Result<bool, String> {
     match v {
         None | Some("") => Ok(on_device),
@@ -19280,17 +19315,150 @@ mod peer_probe_tests {
 mod verify_topk_tests {
     use super::*;
 
+    /// THE CHECK THAT WOULD HAVE CAUGHT IT, added because it did not exist and
+    /// the first served ABBA paid for that.
+    ///
+    /// Flipping four defaults one at a time produced a default configuration
+    /// that REFUSES TO BOOT: `MEMRA_DSV4_DECODE_PATH` moved to `device` while
+    /// `MEMRA_DSV4_EXPERT_ARM` still defaulted to `bf16`, and `Dsv4Gpu::load`
+    /// enforces "MEMRA_DSV4_DECODE_PATH=device requires
+    /// MEMRA_DSV4_EXPERT_ARM=native". Both post-flip arms of
+    /// `receipts/flipserve-r2` died on that line, and because the cell fell back
+    /// to reporting only the arms that DID boot, it produced a clean-looking
+    /// receipt that had measured the pre-flip binary twice.
+    ///
+    /// Every unit test in this file passed throughout. They each checked ONE
+    /// resolver against its own contract; nothing checked that the resolvers
+    /// AGREE with each other when nothing is exported. That is the gap: a
+    /// default is not a property of one variable, it is a property of the
+    /// configuration all of them resolve to together.
+    ///
+    /// So this asserts the JOINT default, against the real admission predicates
+    /// rather than a copy of them. It cannot drift from `load`, because the
+    /// predicates below are the ones `load` fails on.
     #[test]
-    fn verify_topk_is_literal_and_default_off() {
-        for value in [None, Some(""), Some("legacy")] {
-            assert_eq!(Dsv4VerifyTopk::resolve(value), Ok(Dsv4VerifyTopk::Legacy));
-        }
-        assert_eq!(
-            Dsv4VerifyTopk::resolve(Some("device")),
-            Ok(Dsv4VerifyTopk::Device)
+    fn defaults_that_cannot_boot_are_caught() {
+        // Resolved with NOTHING exported, which is what a serving launcher does.
+        let decode_path = resolve_decode_path(None).expect("decode path default");
+        let on_device = matches!(decode_path, DecodePath::Device { .. });
+        let expert_native = memra_gguf::dsv4_forward::expert_arm_native();
+        let dense_fp8 = resolve_dense_arm(None, on_device).expect("dense arm default");
+        let verify_topk = Dsv4VerifyTopk::resolve(None).expect("verify topk default");
+
+        // `load`: "MEMRA_DSV4_DECODE_PATH=device requires MEMRA_DSV4_EXPERT_ARM=native".
+        assert!(
+            !on_device || expert_native,
+            "DEFAULT CONFIGURATION CANNOT BOOT: decode path resolves device and              the expert arm resolves bf16; load refuses that pair"
         );
-        for value in ["1", "DEVICE", "device ", "cpu"] {
-            assert!(Dsv4VerifyTopk::resolve(Some(value)).is_err());
+        // `load`: "MEMRA_DSV4_VERIFY_TOPK=device requires device math".
+        assert!(
+            verify_topk != Dsv4VerifyTopk::Device
+                || matches!(decode_path, DecodePath::Device { host_math: false }),
+            "DEFAULT CONFIGURATION CANNOT BOOT: verify-topk resolves device              without device math"
+        );
+        // `validate_matrix_program`, which the matrix default must satisfy: the
+        // matrix program is unconditional now, so every term it needs from a
+        // resolved default has to hold at the default.
+        assert!(
+            crate::dsv4_doors::matrix_expert_program_resolved(),
+            "the loaded program must be matrix with no arm set"
+        );
+        assert!(
+            matches!(decode_path, DecodePath::Device { host_math: false }),
+            "matrix requires device math"
+        );
+        assert!(expert_native, "matrix requires the native expert arm");
+        assert!(dense_fp8, "the device decode path resolves the fp8 dense arm");
+        assert!(crate::moe_f16g_mode() >= 2, "matrix requires mode-2 grouped");
+        assert!(
+            crate::dsv4_moe_f16g_sk_params().0 >= 0,
+            "matrix refuses the grid-scan sk form"
+        );
+        assert!(
+            crate::dsv4_grouped::resolve(None).expect("route default"),
+            "matrix EP storage validity requires device routing"
+        );
+
+        // Non-vacuity: this test must be able to FAIL. Every predicate above is
+        // an implication, and an implication whose antecedent is false passes
+        // for free, so pin the antecedents that make them bite.
+        assert!(on_device, "the decode-path antecedent must be live");
+        assert_eq!(verify_topk, Dsv4VerifyTopk::Device);
+    }
+
+    /// Sibling audit for the 2026-09-11 flip (memra #461 moved FOUR defaults in
+    /// one PR, and `MEMRA_DSV4_DECODE_PATH` had NO test at all before this one,
+    /// so its default was unguarded in both directions).
+    ///
+    /// The contract this pins, because "default device" and "cannot be turned
+    /// off" are different contracts: the default is `device`, AND both other
+    /// arms remain explicitly SELECTABLE. An export of `legacy` is honoured, not
+    /// refused.
+    #[test]
+    fn decode_path_defaults_to_device_and_both_other_arms_stay_selectable() {
+        for value in [None, Some(""), Some("device")] {
+            assert_eq!(
+                resolve_decode_path(value),
+                Ok(DecodePath::Device { host_math: false }),
+                "{value:?}"
+            );
+        }
+        // The inverse the default does NOT take away.
+        assert_eq!(resolve_decode_path(Some("legacy")), Ok(DecodePath::Legacy));
+        assert_eq!(
+            resolve_decode_path(Some("device-hostmath")),
+            Ok(DecodePath::Device { host_math: true })
+        );
+        // Non-vacuity: all three arms are distinct, so none of the above can be
+        // passing against a resolver stuck on one value.
+        assert_ne!(resolve_decode_path(None), resolve_decode_path(Some("legacy")));
+        assert_ne!(
+            resolve_decode_path(None),
+            resolve_decode_path(Some("device-hostmath"))
+        );
+        // Literal: a typo must refuse rather than fall through to the default,
+        // which is the whole reason this family of tests exists.
+        for value in ["1", "DEVICE", "device ", " legacy", "hostmath", "off"] {
+            assert!(resolve_decode_path(Some(value)).is_err(), "{value:?}");
+        }
+    }
+
+    /// The default INVERTED on 2026-09-11 (memra #461): `device` is part of the
+    /// matrix expert program's admission minimum, held in BOTH arms of every
+    /// class cell that qualified the flip, so the loaded program resolves it
+    /// rather than an operator exporting it.
+    ///
+    /// THE CONTRACT THIS SHIPS, pinned because "default device" and "cannot be
+    /// turned off" are different contracts: the default is `device`, AND an
+    /// explicit `legacy` is still HONOURED rather than refused. The off arm did
+    /// not go away, it stopped being the default. (A load with
+    /// `VERIFY_TOPK=device` on a non-device-math decode path still refuses, and
+    /// that refusal is unchanged; it is a composition rule, not this resolver.)
+    ///
+    /// What also did NOT change is the literalness, which is the half of this
+    /// test that has always had the teeth: a near-miss spelling refuses instead
+    /// of falling through to either arm.
+    #[test]
+    fn verify_topk_is_literal_and_defaults_to_device() {
+        for value in [None, Some(""), Some("device")] {
+            assert_eq!(Dsv4VerifyTopk::resolve(value), Ok(Dsv4VerifyTopk::Device));
+        }
+        // The inverse the new default does NOT take away: off is still selectable.
+        assert_eq!(
+            Dsv4VerifyTopk::resolve(Some("legacy")),
+            Ok(Dsv4VerifyTopk::Legacy)
+        );
+        // Both arms are reachable and they are different, so neither assertion
+        // above can be passing vacuously against a resolver stuck on one value.
+        assert_ne!(
+            Dsv4VerifyTopk::resolve(None),
+            Dsv4VerifyTopk::resolve(Some("legacy"))
+        );
+        // `Default` and the unset environment must agree; they are read on
+        // different paths and a flip that moved only one would be invisible.
+        assert_eq!(Dsv4VerifyTopk::resolve(None), Ok(Dsv4VerifyTopk::default()));
+        for value in ["1", "DEVICE", "device ", "cpu", "Legacy"] {
+            assert!(Dsv4VerifyTopk::resolve(Some(value)).is_err(), "{value:?}");
         }
     }
 

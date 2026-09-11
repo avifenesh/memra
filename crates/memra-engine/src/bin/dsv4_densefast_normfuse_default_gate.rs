@@ -224,15 +224,6 @@ fn compose_census(gpu: &Dsv4Gpu, state: &DecodeState, on: bool, dir: &Path) -> G
             } else {
                 [0, 0]
             };
-            let split = if segment != 1 { 86 } else { 0 };
-            assert_eq!(
-                count_kernel(&dot, "moe_m1_graph_splitk_partial_kernel"),
-                split
-            );
-            assert_eq!(
-                count_kernel(&dot, "moe_m1_graph_splitk_reduce_kernel"),
-                split
-            );
             for name in [
                 "dsv4_hc_dot_split_partial_kernel",
                 "dsv4_hc_dot_split_reduce_kernel",
@@ -649,7 +640,6 @@ fn main() {
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_DOTS_ARM", "f32x"),
         ("MEMRA_DSV4_EP", "pair"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -665,13 +655,8 @@ fn main() {
         );
     }
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
-    memra_engine::set_moe_m1_splitk_for_gate(false);
-    memra_engine::set_moe_m1_graph_splitk_for_gate(true);
-    assert!(memra_engine::moe_m1_graph_splitk_on());
     // Default-ON paired-fetch entries would change this control's captured
     // class, so this historical gate pins the base graph split-K partial.
-    memra_engine::set_moe_m1_splitk_fast_for_gate(false);
-    assert!(!memra_engine::moe_m1_splitk_fast_on());
     memra_engine::dsv4_gpu::set_dense_exact_tail_for_gate(true).unwrap();
     let dense_env = std::env::var("MEMRA_DSV4_DENSE_FAST").ok();
     let norm_env = std::env::var("MEMRA_DSV4_NORM_FUSE").ok();
@@ -729,7 +714,6 @@ fn main() {
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Box::new(
         Dsv4Gpu::load(
             Path::new(&args[1]),

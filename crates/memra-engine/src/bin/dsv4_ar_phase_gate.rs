@@ -400,7 +400,6 @@ fn main() {
             "default ON required: {name}"
         );
     }
-    assert!(memra_engine::moe_m1_graph_splitk_on());
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
 
     // Arming BEFORE load is the whole contract: a process that does not call this and exports the

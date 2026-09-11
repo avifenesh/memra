@@ -452,7 +452,6 @@ fn main() {
         // memra #458: matrix boots clean under default-ON split-K and then fails
         // every request. Pinned off here so the class answer is about the expert
         // program and not about a second, separately gated numeric arm.
-        std::env::set_var("MEMRA_DSV4_MOE_M1_SPLITK", "0");
     }
 
     let args: Vec<String> = std::env::args().collect();
@@ -541,13 +540,17 @@ fn main() {
         "MEMRA_DSV4_CLASS_AXIS must be program or hc_dot_split, got {axis:?}"
     );
     let hc_axis = axis == "hc_dot_split";
-    let program =
-        std::env::var("MEMRA_DSV4_MOE_PROGRAM").unwrap_or_else(|_| "reference".to_owned());
+    // `MEMRA_DSV4_MOE_PROGRAM` selected this until 2026-09-11, when the expert
+    // program stopped being a door (memra #461). The MODE is still a choice this
+    // gate makes, so it gets its own gate-only variable rather than borrowing a
+    // deleted door's name: `cell` is the paired class comparison, `probe` is the
+    // one-program realization probe used where the two cannot share a load.
+    let mode = std::env::var("MEMRA_DSV4_CLASS_REALIZATION").unwrap_or_else(|_| "cell".to_owned());
     assert!(
-        program == "reference" || program == "matrix",
-        "MEMRA_DSV4_MOE_PROGRAM must be reference (class cell) or matrix (realization probe), got {program:?}"
+        mode == "cell" || mode == "probe",
+        "MEMRA_DSV4_CLASS_REALIZATION must be cell or probe, got {mode:?}"
     );
-    let probe = program == "matrix";
+    let probe = mode == "probe";
     assert!(
         !(hc_axis && probe),
         "the hc_dot_split axis holds the program fixed; it cannot also be a realization probe"
@@ -623,6 +626,13 @@ fn main() {
     }
 
     let capacity = tapes.iter().map(|(p, _)| *p).max().unwrap() + SCORED_ROWS + PRIME_CHUNK;
+    // The class cell starts on the reference arm, which since the flip is only
+    // reachable through the gate arm; the probe loads the default program.
+    if probe {
+        memra_engine::disarm_reference_expert_program_for_gate();
+    } else {
+        memra_engine::arm_reference_expert_program_for_gate();
+    }
     let mut gpu =
         Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity).expect("load");
     assert_eq!(
@@ -630,6 +640,7 @@ fn main() {
         probe,
         "the loaded program must be the one the mode asked for"
     );
+    memra_engine::disarm_reference_expert_program_for_gate();
     gpu.set_grouped_route_device_for_gate(true)
         .expect("device routing");
 

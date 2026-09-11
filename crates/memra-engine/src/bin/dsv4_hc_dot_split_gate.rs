@@ -30,10 +30,6 @@ fn default_program() {
             "default ON required: {name}"
         );
     }
-    assert!(
-        memra_engine::moe_m1_graph_splitk_on(),
-        "default graph split-K required"
-    );
     // main() pinned this door off at startup. Verify the pin took rather than
     // trusting it: an inherited 1 would silently change what these rows measure.
     assert_eq!(
@@ -165,15 +161,16 @@ fn census(gpu: &Dsv4Gpu, state: &DecodeState, dir: &Path) -> [[String; 4]; 2] {
                 "HC24 census rank={rank} variant={segment}"
             );
             let forward = segment != 1;
-            let expert = if forward { 86 } else { 0 };
-            assert_eq!(
-                count_kernel(&dot, "moe_m1_graph_splitk_partial_kernel"),
-                expert
-            );
-            assert_eq!(
-                count_kernel(&dot, "moe_m1_graph_splitk_reduce_kernel"),
-                expert
-            );
+            // Deleted entry families: a stale capture carrying one would be
+            // dispatching a kernel this tree no longer builds (memra #461).
+            for deleted in [
+                "moe_m1_graph_splitk_partial_kernel",
+                "moe_m1_graph_splitk_reduce_kernel",
+                "moe_m1_splitk_fast_partial_kernel",
+                "moe_m1_splitk_fast_reduce_kernel",
+            ] {
+                assert_eq!(count_kernel(&dot, deleted), 0, "{deleted} is deleted");
+            }
             assert_eq!(
                 count_kernel(&dot, "dsv4_dense_fast_fp8_kernel"),
                 if forward { 494 } else { 0 }
@@ -544,7 +541,6 @@ fn main() {
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_DOTS_ARM", "f32x"),
         ("MEMRA_DSV4_EP", "pair"),
-        ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -562,7 +558,6 @@ fn main() {
     assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
     // Deliberately keep the graph environment default for --defaults.
     // Scored ABBA selects each graph policy explicitly after model creation.
-    memra_engine::set_moe_m1_splitk_for_gate(false);
     println!("HC_DOT_SPLIT_POLICY on={}", hc_on());
     let cfg = Dsv4SampleCfg {
         temperature: 1.0,
@@ -586,13 +581,10 @@ fn main() {
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     // Default-ON paired-fetch entries would change this control's captured
     // class, so this historical gate pins the base graph split-K partial.
-    memra_engine::set_moe_m1_splitk_fast_for_gate(false);
-    assert!(!memra_engine::moe_m1_splitk_fast_on());
     Dsv4Gpu::set_attention_tp_for_gate(true);
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
     // that combination at load instead of failing every request.
-    memra_engine::arm_matrix_splitk_door_for_gate();
     let gpu = Box::new(
         Dsv4Gpu::load(
             Path::new(&args[1]),
@@ -856,7 +848,7 @@ mod evidence {
         assert_eq!(
             args.len(),
             5,
-            "usage: dsv4_graph_splitk_drift_r3 <model-dir> <source.txt> <new-output-dir>"
+            "usage: dsv4_hc_dot_split_drift_r3 <model-dir> <source.txt> <new-output-dir>"
         );
         assert!(!dsv4_prof_on());
         for (name, value) in [
@@ -865,7 +857,6 @@ mod evidence {
             ("MEMRA_DSV4_DENSE_ARM", "fp8"),
             ("MEMRA_DSV4_DOTS_ARM", "f32x"),
             ("MEMRA_DSV4_EP", "pair"),
-            ("MEMRA_DSV4_MOE_PROGRAM", "matrix"),
             ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
             ("MEMRA_DSV4_VERIFY_TOPK", "device"),
             ("MEMRA_DSV4_PREFILL_MOE", "reference"),
@@ -877,7 +868,6 @@ mod evidence {
             assert_eq!(std::env::var(name).as_deref(), Ok(value), "{name}");
         }
         assert_eq!(dsv4_sampler().unwrap(), Dsv4Sampler::Device);
-        memra_engine::set_moe_m1_splitk_for_gate(false);
         let source = std::fs::read_to_string(&args[2]).unwrap();
         assert_eq!(
             format!("{:x}", Sha256::digest(source.as_bytes())),
