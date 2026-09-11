@@ -125,11 +125,13 @@ fn main() {
 
     // One pass per weight buffer per shape, so the bf16 mirror for every buffer the timed
     // region will touch is already built and no arm pays mirror construction.
-    let replay = |arm_on: bool, warm_only: bool| -> f64 {
+    let replay = |arm_on: bool, warm_only: bool, per_shape: &mut Vec<f64>| -> f64 {
         arm_dense_cutlass_for_gate(arm_on).expect("arm");
+        per_shape.clear();
         let t0 = std::time::Instant::now();
         for (s, &(n, kdim, calls)) in CENSUS.iter().enumerate() {
             let b = &bufs[s];
+            let shape_t0 = std::time::Instant::now();
             let passes = if warm_only { weights } else { calls };
             for c in 0..passes {
                 let wi = &b.w[c % weights];
@@ -150,13 +152,18 @@ fn main() {
                 };
                 assert_eq!(rc, 0, "gemv_fp8_m rc={rc} at n={n} k={kdim}");
             }
+            // Per shape, because the two candidate limits predict different SHAPES of row.
+            // A launch-bound family costs the same per CALL at every (n, k); a byte-bound one
+            // costs in proportion to n*k. One arm of rows separates them without another cell.
+            stream.synchronize().expect("sync");
+            per_shape.push(shape_t0.elapsed().as_secs_f64() * 1e3);
         }
-        stream.synchronize().expect("sync");
         t0.elapsed().as_secs_f64() * 1e3
     };
 
+    let mut scratch: Vec<f64> = Vec::new();
     for on in [false, true] {
-        replay(on, true);
+        replay(on, true, &mut scratch);
     }
 
     // Interleaved, because this box drifts: scalar, cutlass, scalar, cutlass.
@@ -164,8 +171,28 @@ fn main() {
     for rep in 1..=reps {
         for on in [false, true] {
             let before = dense_cutlass_counts_for_gate().expect("counts");
-            let ms = replay(on, false);
+            let mut shape_ms: Vec<f64> = Vec::new();
+            let ms = replay(on, false, &mut shape_ms);
             let after = dense_cutlass_counts_for_gate().expect("counts");
+            for (s, &(n, kdim, calls)) in CENSUS.iter().enumerate() {
+                // Bytes this arm moves for this shape, from the source and not from a model:
+                // scalar reads n*k e4m3 codes; cutlass reads a 2 n*k bf16 mirror and then writes
+                // and re-reads a split-K partial that is exactly n*k bytes ((k/128)*32*4 = k).
+                let nk = (n * kdim) as f64;
+                let per_call = if on {
+                    4.0 * nk + (M * kdim * 2) as f64 + (M * n * 4) as f64
+                } else {
+                    nk + (M * kdim * 2) as f64 + (M * n * 4) as f64
+                };
+                let gb = per_call * calls as f64 / 1e9;
+                println!(
+                    "SHAPE rep={rep} arm={} n={n} k={kdim} calls={calls} ms={:.1}                      per_call_us={:.2} GB={gb:.1} GB_per_s={:.0}",
+                    if on { "cutlass" } else { "scalar" },
+                    shape_ms[s],
+                    shape_ms[s] * 1000.0 / calls as f64,
+                    gb / (shape_ms[s] / 1e3)
+                );
+            }
             let engaged = after.splitk - before.splitk;
             println!(
                 "REPLAY rep={rep} arm={} ms={ms:.1} per_call_us={:.3} splitk_calls={engaged} \
