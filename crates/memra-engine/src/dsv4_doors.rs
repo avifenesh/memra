@@ -946,6 +946,11 @@ mod tests {
             "gate-only all-reduce phase instrument, refuses to load unarmed",
         ),
         ("MEMRA_DSV4_BENCH_PROFILE", "bench profile selector"),
+        (
+            "MEMRA_DSV4_CUTLASS",
+            "build-time archive switch; when the archive is linked the dense \
+             tensor-core path IS the code, and no serving process reads it",
+        ),
         ("MEMRA_DSV4_DECODE_PATH", "program selector"),
         ("MEMRA_DSV4_DENSE_ARM", "program selector"),
         ("MEMRA_DSV4_DOTS_ARM", "program selector"),

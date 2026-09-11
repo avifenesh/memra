@@ -696,6 +696,62 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=cuda");
     }
 
+    // DSV4 dense tensor-core path (memra #472). Deliberately INDEPENDENT of the MEMRA_CUTLASS
+    // block below: that one carries the fp4 experiment, sets the memra_cutlass cfg and pulls the
+    // fp4 Rust call sites in with it, and its archive hit an lld symbol-ordering failure on this
+    // box. This path needs none of that. It has its own switch, its own archive, and NO cfg,
+    // because cu/dsv4_gpu.cu declares memra_dsv4_dense_cutlass_fp8 WEAK: when this block does not
+    // run the symbol is null and the scalar kernel runs untouched.
+    //
+    // -fmad=false to match cu/dsv4_gpu.cu, because this family's numerics are the point.
+    if std::env::var("MEMRA_DSV4_CUTLASS").is_ok() {
+        println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
+        let dense_src = "cu/dsv4_dense_cutlass.cu";
+        println!("cargo:rerun-if-changed={dense_src}");
+        let root = std::env::var("MEMRA_CUTLASS_ROOT")
+            .expect("MEMRA_DSV4_CUTLASS requires MEMRA_CUTLASS_ROOT");
+        let obj = out.join("dsv4_dense_cutlass.o");
+        let lib = out.join("libmemra_dsv4_cutlass.a");
+        let status = Command::new(&nvcc)
+            .args([
+                "-gencode",
+                "arch=compute_120a,code=sm_120a",
+                "-O3",
+                "-std=c++17",
+                "-fmad=false",
+                "--expt-relaxed-constexpr",
+                "-I",
+                &format!("{root}/include"),
+                "-I",
+                &format!("{root}/tools/util/include"),
+                "-c",
+                dense_src,
+                "-o",
+                obj.to_str().unwrap(),
+            ])
+            .status()
+            .expect("spawn nvcc (dsv4 dense cutlass)");
+        assert!(status.success(), "nvcc build failed for {dense_src}");
+        let _ = std::fs::remove_file(&lib);
+        let status = Command::new("ar")
+            .args(["crus", lib.to_str().unwrap(), obj.to_str().unwrap()])
+            .status()
+            .expect("spawn ar (dsv4 dense cutlass)");
+        assert!(status.success(), "ar failed for {}", lib.display());
+        // link-LIB, not link-ARG, and this is the whole reason the first attempt produced a
+        // binary byte-identical to the baseline with the symbol still weak-undefined:
+        // `cargo:rustc-link-arg` applies only to the crate whose build script emitted it and to
+        // binaries in the SAME package, so it never reached memra-server in another package.
+        // `cargo:rustc-link-lib` does propagate to downstream crates, and the
+        // `static:+whole-archive` modifier carries the whole-archive that the CUDART
+        // fatbin-registration ctor needs (without it the device kernels silently never register).
+        println!("cargo:rustc-link-search=native={}", out.display());
+        println!("cargo:rustc-link-lib=static:+whole-archive=memra_dsv4_cutlass");
+        println!("cargo:rustc-link-lib=dylib=cudart");
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+        let _ = &lib;
+    }
+
     // ---- CUTLASS sm_120a NVFP4 GEMM: a STATIC LIB (7th artifact, different kind), NOT a fatbin ----
     // CUTLASS needs its host-side GemmUniversalAdapter::run() (host C++), so it cannot go through the
     // fatbin/load_module path above. It is compiled to an object, archived, and whole-archived at link.

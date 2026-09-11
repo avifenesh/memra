@@ -34,6 +34,21 @@ above `DSV4_TMAX` byte-identical to the untiled width-32 walk and carries two re
 arms. The measurement that made this the default is in the removed-doors ledger
 in `docs/FLAGS.md` and in darklanes `research/dsv4f-dense-tile-20260910/`.
 
+## DSV4 dense tensor-core path, 2026-09-11 (memra #472)
+
+CUTLASS split-K at the per-128 block-scale granularity (the scale multiplies the f32 block
+partial sum in `scaled_reduce_kernel`; folding it into a bf16 operand is refused on numerics).
+Compiled only under `MEMRA_DSV4_CUTLASS`; the dispatch declares the entry WEAK, so without the
+archive the scalar kernel runs untouched. Gate-armed only (`arm_dense_cutlass_for_gate`); there
+is no env read and no serving caller. Numeric class NEW: mma fragment registers per 128-k block,
+never bit-equal to the shipped 128-leaf smem tree. Drift rows plus the paired accuracy control
+are owed before default.
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `memra_dsv4_dense_cutlass_fp8` | Split-K CUTLASS GEMM over the lazy bf16 mirror plus scaled f32 reduction; admits m=32, k%128=0, xstride=k | e4m3 weights (lossless bf16 mirror), bf16 activations, f32 accumulate | sm_120a | None (naked default when linked) | `memra_dsv4_gemv_fp8_m` |
+| `scaled_reduce_kernel` | Per-output scaled sum over k/128 f32 partials | f32 partials and scales, f32 out | sm_120a | None | `memra_dsv4_dense_cutlass_fp8` |
+
 ## Whisper CPU reference operators, 2026-09-09
 
 These are native reference operations, not CUDA support or serving qualification.
