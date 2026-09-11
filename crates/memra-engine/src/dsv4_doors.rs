@@ -436,12 +436,6 @@ pub fn engaged_but_below_the_floor(rows: &[DoorRow], floor_pct: f64) -> Vec<&'st
         .collect()
 }
 
-static NOT_PRESENT: std::env::VarError = std::env::VarError::NotPresent;
-
-fn unset() -> Result<&'static str, &'static std::env::VarError> {
-    Err(&NOT_PRESENT)
-}
-
 fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     // `arm_full_token_replay_for_gate` is the only caller, its admission needs
     // the gate-only fused-GU arm and refuses host split-K/DSpark state, and its

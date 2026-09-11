@@ -10569,7 +10569,6 @@ impl Dsv4Gpu {
                             hidden,
                             d.swiglu_limit,
                             true,
-                            false,
                             Some(&ar_outputs[0]),
                         )?;
                         self.moe_verify_common_tail(
@@ -10581,7 +10580,6 @@ impl Dsv4Gpu {
                             hidden,
                             d.swiglu_limit,
                             true,
-                            false,
                             Some(&ar_outputs[1]),
                         )?;
                     }
@@ -16072,7 +16070,6 @@ impl Dsv4Gpu {
         hidden: usize,
         limit: f32,
         include_hc_post: bool,
-        host_math: bool,
         joined_contribution: Option<&CudaSlice<f32>>,
     ) -> Res<()> {
         let stream = st.gpu.stream();
@@ -16441,8 +16438,7 @@ impl Dsv4Gpu {
                                         return Ok(());
                                     }
                                     self.moe_verify_common_tail(
-                                        st, layer, vws, t, topk, hidden, limit, true, host_math,
-                                        None,
+                                        st, layer, vws, t, topk, hidden, limit, true, None,
                                     )
                                 })
                             }) {
@@ -16655,7 +16651,6 @@ impl Dsv4Gpu {
             hidden,
             limit,
             include_hc_post,
-            host_math,
             None,
         )?;
         Ok(())
