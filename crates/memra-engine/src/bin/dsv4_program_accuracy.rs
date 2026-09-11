@@ -59,9 +59,6 @@ fn main() {
     unsafe {
         std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
         std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
-        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
-        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
-        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
         // memra #458: matrix under PP-2 boots clean on default-ON split-K and then
         // fails every request. Pinned off so this control measures the expert

@@ -28,13 +28,32 @@
 //! program decision rescues it. `AdmittingProgram` is that axis and
 //! `served_disposition` is where the futures are decided.
 //!
-//! What the flip did to the counts, written down because the counts are the
-//! claim: six of nine merged default-ON doors were inert, now FOUR of seven are.
-//! The two that left are the split-K pair, and they left by DELETION rather than
-//! by rescue: their admitting program can serve, but the arm they need is a
-//! gate-only function called after load, so no serving process can reach them on
-//! any ordering. Nothing else moved, because the remaining four are inert for
-//! the TP/EP reason. They still go inert SILENTLY, because an unset value
+//! What the two flips did to the counts, written down because the counts are
+//! the claim: six of nine merged default-ON doors were inert, the matrix flip
+//! took that to FOUR of seven, and the norm-door deletion takes it to ONE of
+//! four. The two
+//! that left with the matrix flip were the split-K pair, and they left by
+//! DELETION rather than by rescue: their admitting program can serve, but the
+//! arm they need is a gate-only function called after load, so no serving
+//! process could reach them on any ordering.
+//!
+//! THREE more left, and by a route this ledger had not seen before: PORTED,
+//! MEASURED, then DELETED. The norm doors (`norm-fuse` #404, `norm-fuse2` #426,
+//! `norm2-wide` #430) were the ones the owner ruled FIXED rather than deleted,
+//! and the fix was real: their admission never needed a topology (no norm
+//! kernel, and no consumer of a norm kernel's output, reads a rank, a shard or a
+//! topology plan), and what made TP/EP look like a precondition was a SEPARATE
+//! kernel limit, the pack launchers pinning grid 1, which forced a `t == 1`
+//! call-site guard that only the drafter-off bench satisfied on every shape. The
+//! port took `rows` into the launchers, bit-equal at every swept width, and put
+//! the doors on a customer request for the first time. Then the served ABBA
+//! priced them at -0.36% prefill with disjoint ranges, flat decode and a 3.2 ms
+//! win on the `t == 1` prime, which breaks even around a 209-token suffix and
+//! loses above it. Not positive beyond box noise, so they went. The verdict and
+//! the table are the 2026-09-11 norm-fusion entry in `docs/FLAGS.md`.
+//!
+//! The one door still inert is inert for a reason of its own rather than for a
+//! program reason. Doors still go inert SILENTLY, because an unset value
 //! resolves to `Ok(admitted)` with `admitted == false`, which is why this
 //! registry exists rather than a comment.
 //!
@@ -244,59 +263,6 @@ pub const TUNED_BENCH_PROGRAM: Dsv4Program = Dsv4Program {
 // Policy functions. `Dsv4Gpu::load` calls these; so does the registry below.
 // ---------------------------------------------------------------------------
 
-/// The TP/EP f32x admission term the norm doors share. One function so the load
-/// site and the door registry cannot disagree about what "admitted" means.
-pub fn norm_admitted(tp_ep: bool, chains_f32: bool) -> bool {
-    tp_ep && chains_f32
-}
-
-/// Default ON only in the qualified TP/EP f32 domain. An explicit unsupported ON
-/// request still refuses instead of silently admitting an unqualified path.
-pub fn norm_fuse_environment_policy(
-    value: Result<&str, &std::env::VarError>,
-    admitted: bool,
-) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm fusion requires TP/EP f32x".into()),
-        _ => Err("MEMRA_DSV4_NORM_FUSE requires 0 or 1".into()),
-    }
-}
-
-pub fn norm_fuse2_environment_policy(
-    value: Result<&str, &std::env::VarError>,
-    admitted: bool,
-) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm fusion2 requires TP/EP f32x".into()),
-        _ => Err("MEMRA_DSV4_NORM_FUSE2 requires 0 or 1".into()),
-    }
-}
-
-/// Default ON under an admitted norm2 door since the 2026-09-10 model campaign;
-/// an explicit `0` is the rollback seam to the single-CTA kernel. Without the
-/// norm2 door the pack has no call site, so an unset value degrades to OFF
-/// rather than refusing every composed-off launch, while an explicit `1` without
-/// the door stays a configuration error instead of a silent no-op. `admitted` is
-/// the norm2 door's own resolved value.
-pub fn norm2_wide_environment_policy(
-    value: Result<&str, &std::env::VarError>,
-    admitted: bool,
-) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm2 wide pack requires MEMRA_DSV4_NORM_FUSE2=1".into()),
-        _ => Err("MEMRA_DSV4_NORM2_WIDE requires 0 or 1".into()),
-    }
-}
-
 /// memra #458, RESOLVED BY DELETION 2026-09-11. The matrix program's plain
 /// gate/up split-K arm computed gate and up in ONE fused launch, so it required
 /// the fused-GU arm; `gate_up` refused with "split-K requires plain fused GU"
@@ -470,37 +436,6 @@ pub fn engaged_but_below_the_floor(rows: &[DoorRow], floor_pct: f64) -> Vec<&'st
         .collect()
 }
 
-static NOT_PRESENT: std::env::VarError = std::env::VarError::NotPresent;
-
-fn unset() -> Result<&'static str, &'static std::env::VarError> {
-    Err(&NOT_PRESENT)
-}
-
-fn resolve_norm_fuse(p: &Dsv4Program) -> DoorState {
-    match norm_fuse_environment_policy(unset(), norm_admitted(p.tp_ep, p.chains_f32)) {
-        Ok(true) => DoorState::On(DoorShape::AllRoutedShapes),
-        Ok(false) => DoorState::Off,
-        Err(_) => DoorState::RefusedAtLoad,
-    }
-}
-
-fn resolve_norm_fuse2(p: &Dsv4Program) -> DoorState {
-    match norm_fuse2_environment_policy(unset(), norm_admitted(p.tp_ep, p.chains_f32)) {
-        Ok(true) => DoorState::On(DoorShape::AllRoutedShapes),
-        Ok(false) => DoorState::Off,
-        Err(_) => DoorState::RefusedAtLoad,
-    }
-}
-
-fn resolve_norm2_wide(p: &Dsv4Program) -> DoorState {
-    let fuse2 = resolve_norm_fuse2(p).engaged();
-    match norm2_wide_environment_policy(unset(), fuse2) {
-        Ok(true) => DoorState::On(DoorShape::AllRoutedShapes),
-        Ok(false) => DoorState::Off,
-        Err(_) => DoorState::RefusedAtLoad,
-    }
-}
-
 fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     // `arm_full_token_replay_for_gate` is the only caller, its admission needs
     // the gate-only fused-GU arm and refuses host split-K/DSpark state, and its
@@ -581,19 +516,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         resolve: resolve_dense_fast,
         admitted_by: AdmittingProgram::ServedProgram,
         merged_gain_pct: (1.618979, 1.609496),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with norm-fuse",
-    },
-    DoorRow {
-        name: "norm-fuse",
-        env: "MEMRA_DSV4_NORM_FUSE",
-        merged: "#404",
-        declared_default: DeclaredDefault::On,
-        declared_served: DoorState::Off,
-        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-        resolve: resolve_norm_fuse,
-        admitted_by: AdmittingProgram::TpEpOnly,
-        merged_gain_pct: (1.618979, 1.609496),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with dense-fast",
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with the deleted norm-fuse door",
     },
     DoorRow {
         name: "HC dot split S16",
@@ -605,30 +528,6 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         resolve: resolve_hc_dot_split,
         admitted_by: AdmittingProgram::ServedProgram,
         merged_gain_pct: (2.701174, 2.591532),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
-    },
-    DoorRow {
-        name: "norm-fuse2",
-        env: "MEMRA_DSV4_NORM_FUSE2",
-        merged: "#426",
-        declared_default: DeclaredDefault::On,
-        declared_served: DoorState::Off,
-        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-        resolve: resolve_norm_fuse2,
-        admitted_by: AdmittingProgram::TpEpOnly,
-        merged_gain_pct: (1.1022, 0.9839),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
-    },
-    DoorRow {
-        name: "norm2-wide",
-        env: "MEMRA_DSV4_NORM2_WIDE",
-        merged: "#430",
-        declared_default: DeclaredDefault::On,
-        declared_served: DoorState::Off,
-        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-        resolve: resolve_norm2_wide,
-        admitted_by: AdmittingProgram::TpEpOnly,
-        merged_gain_pct: (5.955257, 5.749573),
         measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
 ];
@@ -778,8 +677,8 @@ pub fn declaration_violations(rows: &[DoorRow]) -> Vec<DoorViolation> {
 }
 
 /// The doors whose declared default is ON and which do not engage on the served
-/// program. This is the number memra #454 is about; it is six today, and the
-/// gate pins it so it cannot grow silently.
+/// program. This is the number memra #454 is about; it is THREE since the PP-2
+/// norm port, and the gate pins it so it cannot grow silently.
 pub fn inert_default_on_doors(rows: &[DoorRow]) -> Vec<&'static str> {
     rows.iter()
         .filter(|row| row.declared_default == DeclaredDefault::On)
@@ -841,6 +740,29 @@ mod tests {
         }
     }
 
+    /// The stand-in as a ROW, for arms that need a `DoorRow` rather than a
+    /// resolver. Required where a derived subject list is allowed to reach zero:
+    /// since the PP-2 norm port the registry holds no real TP/EP-only door, and
+    /// a `for` over an empty list passes, so this row is what keeps the
+    /// permanence disposition actually asserted.
+    pub(super) const SYNTHETIC_TP_EP_ONLY_ROW: DoorRow = DoorRow {
+        name: "a future TP/EP-only door",
+        // A real declared name on purpose: the coverage scan in this module
+        // reads this file, so an invented `MEMRA_DSV4_` literal here would be
+        // reported as an undeclared door. The row's teeth are in its resolver,
+        // not in this label, and #482's synthetic rows label themselves the
+        // same way.
+        env: "MEMRA_DSV4_REPLAY_CADENCE",
+        merged: "#374",
+        declared_default: DeclaredDefault::On,
+        declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
+        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
+        resolve: resolve_synthetic_tp_ep_only,
+        admitted_by: AdmittingProgram::TpEpOnly,
+        merged_gain_pct: (0.0, 0.0),
+        measured_on: "synthetic: a stand-in, not a claim about any box",
+    };
+
     /// The stand-in must be non-vacuous in BOTH directions, or every arm built
     /// on it proves nothing: inert on the served program, live on the bench.
     #[test]
@@ -873,8 +795,8 @@ mod tests {
     fn a_door_that_claims_an_engagement_it_does_not_get_is_caught() {
         const LIAR: &[DoorRow] = &[DoorRow {
             name: "a TP/EP-only door, claiming the served path",
-            env: "MEMRA_DSV4_NORM_FUSE",
-            merged: "#404",
+            env: "MEMRA_DSV4_REPLAY_CADENCE",
+            merged: "#374",
             declared_default: DeclaredDefault::On,
             // The lie, and it is a lie about a SYNTHETIC door on purpose: see
             // the note on `resolve_synthetic_tp_ep_only`. This arm used to lie
@@ -928,10 +850,15 @@ mod tests {
             .filter(|row| (row.resolve)(&SERVED_PROGRAM) != (row.resolve)(&TUNED_BENCH_PROGRAM))
             .map(|row| row.name)
             .collect();
-        // Four since the 2026-09-11 matrix flip: the two split-K doors that used
-        // to differ purely because the served program was the reference one are
-        // deleted, and the expert program itself no longer separates the two.
-        assert_eq!(differing.len(), 4, "{differing:?}");
+        // One since the PP-2 norm port. Before it four: the matrix flip had
+        // already deleted the two split-K doors that used to differ purely
+        // because the served program was the reference one, and the expert
+        // program itself no longer separates the two programs. The port then
+        // took the three norm doors from TP/EP-only to served, so one
+        // disagreement is left. Non-vacuity for this test does not rest on the
+        // count: the assertion above it requires the list to be non-empty and
+        // the synthetic stand-in keeps a permanent disagreement in the file.
+        assert_eq!(differing.len(), 1, "{differing:?}");
         for row in DSV4_DOORS {
             // Nothing may be engaged on the served path and dead on the bench:
             // that direction would mean the bench is measuring less than what
@@ -948,17 +875,18 @@ mod tests {
 
     /// The count memra #454 reports, pinned. Making a door reachable, or
     /// changing its declared default to match reality, or deleting it, all move
-    /// this number, and all three are decisions that must be written down.
+    /// this number, and all three are decisions that must be written down. It
+    /// moved from six to three when the PP-2 norm port took the three norm doors
+    /// off the TP/EP-only list: this assertion is the record of that decision.
     #[test]
-    fn four_default_on_doors_are_inert_on_the_served_path() {
+    fn one_default_on_door_is_inert_on_the_served_path() {
         // Six before 2026-09-11. The matrix flip removed the two split-K rows
         // (deleted outright, not rescued: their precondition is gate-only), and
-        // it moved nothing else: the four that remain are inert for the TP/EP
-        // reason, which the expert-program decision was never going to fix.
-        assert_eq!(
-            inert_default_on_doors(DSV4_DOORS),
-            vec!["replay cadence", "norm-fuse", "norm-fuse2", "norm2-wide",]
-        );
+        // it moved nothing else, because the remaining four were inert for the
+        // TP/EP reason an expert-program decision was never going to fix. The
+        // PP-2 norm port fixed that reason for three of them by RESCUE, so what
+        // is left is the one door inert for a reason of its own.
+        assert_eq!(inert_default_on_doors(DSV4_DOORS), vec!["replay cadence"]);
     }
 
     /// The scalar reference executor has exactly one way in, and a serving
@@ -1153,8 +1081,12 @@ mod tests {
         };
         // Its own FLAGS row says no serving request arms full-token replay.
         const RECLASSIFY: &[&str] = &["replay cadence"];
-        // TP/EP cannot serve at all, so these three are not waiting on anything.
-        const PERMANENTLY_UNREACHABLE: &[&str] = &["norm-fuse", "norm-fuse2", "norm2-wide"];
+        // TP/EP cannot serve at all, so a door admitted only there waits on
+        // nothing. EMPTY since the norm doors left the registry: the PP-2 port
+        // took them out of this list and the served ABBA then deleted them. See
+        // the required synthetic subject below, which is what keeps the
+        // permanence disposition asserted when this list holds nobody.
+        const PERMANENTLY_UNREACHABLE: &[&str] = &[];
         const ENGAGED: &[&str] = &[
             "dense exact-tail transport",
             "dense-fast",
@@ -1199,6 +1131,10 @@ mod tests {
                 "{door}"
             );
         }
+        // EMPTY since the PP-2 port, and empty by DECISION rather than by
+        // omission: a `for` over an empty list passes, so this list cannot be
+        // the only subject carrying the permanence rule here. The required
+        // subject below is, and it is synthetic, so nobody can repair it away.
         for door in PERMANENTLY_UNREACHABLE {
             assert_eq!(
                 disposition(door),
@@ -1206,6 +1142,12 @@ mod tests {
                 "{door}"
             );
         }
+        assert_eq!(
+            served_disposition(&SYNTHETIC_TP_EP_ONLY_ROW, &PROGRAM_FACTS),
+            DoorDisposition::PermanentlyUnreachable,
+            "the permanence disposition must still be asserted with no real \
+             TP/EP-only row left in the registry"
+        );
         for door in ENGAGED {
             assert_eq!(disposition(door), DoorDisposition::Engaged, "{door}");
         }
@@ -1230,8 +1172,8 @@ mod tests {
         // runs on the synthetic stand-in, which nobody can repair.
         const TP_EP_ONLY: DoorRow = DoorRow {
             name: "a future TP/EP-only door",
-            env: "MEMRA_DSV4_NORM_FUSE",
-            merged: "#404",
+            env: "MEMRA_DSV4_REPLAY_CADENCE",
+            merged: "#374",
             declared_default: DeclaredDefault::On,
             declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
@@ -1284,7 +1226,7 @@ mod tests {
         // checks. Same lesson as the red arms above, one level up. Two anchors
         // now, neither of them a door name.
         assert!(!DSV4_DOORS.is_empty(), "an empty registry loops zero times");
-        assert_eq!(DSV4_DOORS.len(), 7);
+        assert_eq!(DSV4_DOORS.len(), 4);
         // 1. The machinery is alive and program-sensitive, by construction and
         //    permanently: the synthetic stand-in cannot be fixed.
         assert_ne!(
@@ -1317,16 +1259,10 @@ mod tests {
             .collect();
         assert_eq!(
             below,
-            vec![
-                "replay cadence",
-                "dense exact-tail transport",
-                "dense-fast",
-                "norm-fuse",
-                "norm-fuse2",
-            ]
+            vec!["replay cadence", "dense exact-tail transport", "dense-fast",]
         );
-        // The doors ABOVE the floor used to be named literally here
-        // (`["HC dot split S16", "norm2-wide"]`), which is the same disease as
+        // The doors ABOVE the floor used to be named literally here, which is
+        // the same disease as
         // the red arms one level up: an assertion pinned to a door NAME to prove
         // something about the MECHANISM. Deleting or renaming either door would
         // have broken it for a reason unrelated to what it checks. Stated as the
@@ -1360,7 +1296,11 @@ mod tests {
                 &PROGRAM_FACTS,
                 DEV_PAIR_INSTRUMENT_FLOOR_PCT
             ),
-            vec!["replay cadence", "norm-fuse", "norm-fuse2"]
+            // norm-fuse and norm-fuse2 left this list with the PP-2 port: they
+            // engage on the served path now, so the "no evidence in either
+            // direction" complaint no longer applies to them. What remains is
+            // the weaker floor complaint, asserted separately below.
+            vec!["replay cadence"]
         );
         // Engaged, but on evidence the pair cannot resolve: a different and
         // weaker complaint, kept separate so it cannot be quoted as the first.
@@ -1377,10 +1317,17 @@ mod tests {
         // And a floor above everything catches every inert door, and ONLY the
         // default-ON ones: a default-OFF door is off by decision, so it is not
         // a door with no evidence for its default.
-        assert_eq!(
-            doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 100.0),
-            inert_default_on_doors(DSV4_DOORS)
+        // Both sides are DERIVED, so equality between two empty lists would pass
+        // while proving nothing (memra #482 audit, the empty-subject vacuity
+        // class). This lane's port takes the inert list from four rows to one,
+        // so the day it reaches zero this assertion must stop passing quietly.
+        let at_any_floor =
+            doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 100.0);
+        assert!(
+            !at_any_floor.is_empty(),
+            "empty subject set: a floor above every magnitude must still catch the inert doors"
         );
+        assert_eq!(at_any_floor, inert_default_on_doors(DSV4_DOORS));
         // Red arm for the default-ON filter itself, and the reason it is a
         // synthetic row rather than a registry one: under the owner's
         // 2026-09-10 ruling a same-class win with a clean receipt becomes the
@@ -1391,8 +1338,8 @@ mod tests {
         // stands in for the next one, inert and below any floor.
         const OFF_DOOR: &[DoorRow] = &[DoorRow {
             name: "a default-OFF door, inert and unmeasurable",
-            env: "MEMRA_DSV4_NORM_FUSE",
-            merged: "#404",
+            env: "MEMRA_DSV4_REPLAY_CADENCE",
+            merged: "#374",
             declared_default: DeclaredDefault::Off,
             declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
@@ -1419,8 +1366,8 @@ mod tests {
         // excluded it rather than some other term.
         const ON_DOOR: &[DoorRow] = &[DoorRow {
             name: "the same row, defaulting ON",
-            env: "MEMRA_DSV4_NORM_FUSE",
-            merged: "#404",
+            env: "MEMRA_DSV4_REPLAY_CADENCE",
+            merged: "#374",
             declared_default: DeclaredDefault::On,
             declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),

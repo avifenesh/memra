@@ -1501,48 +1501,50 @@ the engine reads to be a declared door or an exempt non-door with a reason).
 |---|---|---:|---|---|---|---|
 | replay cadence | #374 | +1.007107% / +1.074545% | ON | **no serving caller** | reclassify as a gate input | full-token replay is armed per request by a gate binary only; no serving or eager request arms it, on any program |
 | dense exact-tail transport | #374 | +0.459578% / +0.397451% | ON | ON, `m == 1` only | engaged | generic dense entry, but the control scope suppresses it for every `m > 1`, so prefill chunks never use it |
-| graph split-K | #392 | **+10.226982% / +10.023951%** | ON | **off-program** | follows the matrix verdict (memra #461) | the arm lives in the matrix expert executor, which CAN serve and was measured serving; the served reference program does not run it |
 | dense-fast | #404 | +1.618979% / +1.609496% composed | ON | ON, `m == 1` only | engaged | same `m == 1` scope as the dense tail |
-| norm-fuse | #404 | +1.618979% / +1.609496% composed | ON | **off** | **permanently unreachable** | admitted only under TP/EP f32x, and TP/EP cannot serve at all (memra #457) |
 | HC dot split S16 | #418 | +2.701174% / +2.591532% | ON | ON | engaged | gates on `dots_f32 && rows == 24 && w == 16384`, no topology term |
-| split-K-fast | #425 | +1.727312% / +1.581907% | ON | **off-program** | follows the matrix verdict (memra #461) | it selects a split-K entry family; no split-K call site, no door |
-| norm-fuse2 | #426 | +1.1022% / +0.9839% | ON | **off** | **permanently unreachable** | same TP/EP admission predicate |
-| norm2-wide | #430 | **+5.955257% / +5.749573%** | ON | **off** | **permanently unreachable** | admitted only when norm-fuse2 is, so TP/EP again |
 
 ### The three futures, and why they are not one population
 
 `AdmittingProgram` is the axis, and `served_disposition` decides:
 
-- **Permanently unreachable** (norm-fuse, norm-fuse2, norm2-wide). TP/EP is the only program that
-  admits them, and TP/EP cannot take a customer request AT ALL: `prefill_with_cache_chunked` refuses
-  a batched prime under `topology.is_tp_ep()` ("admits only a single-token prime; batched replicated
-  cache hydration is not wired"), and the topology guard separately refuses MTP/DSpark state, which
-  the served spec route requires. The refusals are independent, so replicating the drafter per rank
-  would still leave TP/EP unable to chunk (memra #457). No matrix verdict and no default flip
-  rescues these: they are removable on their own evidence.
-- **Follows the matrix verdict** (graph split-K, split-K-fast). The matrix expert executor CAN
-  serve, and a sibling lane measured it on the served path at +42% to +140% prefill, so whether
-  these ever engage is memra #461's question, not door hygiene's.
+- **PORTED, MEASURED, and DELETED** (norm-fuse, norm-fuse2, norm2-wide). These were the three
+  "permanently unreachable" rows, and the owner ruled them FIXED rather than deleted. The
+  unreachability was two stacked assumptions, neither a property of the fusion: `is_tp_ep()` was a
+  topology ASSUMPTION (no norm kernel, and nothing a norm kernel feeds, reads a rank, a shard or a
+  topology plan), and the `t == 1` call-site guard was a KERNEL limit, the pack launchers pinning
+  grid 1. The port took `rows` into the four launchers, bit-equal at every swept width on both
+  cards, and put the doors on the served program for the first time. Then the served ABBA priced
+  them, and they do not pay: see the removed-doors ledger entry for 2026-09-11 below. Deleted with
+  their kernels, launchers, FFI entries, component instruments and gate bins.
+- **Follows the matrix verdict**: EMPTY since memra #482. Both rows that sat here, graph split-K and
+  split-K-fast, were DELETED with that flip rather than answered by it, because their precondition is
+  a post-load gate call no serving process makes. The ledger entry below is where they went.
 - **Reclassify as a gate input** (replay cadence). Its own row above says no automatic arming for
   serving; no program decision can create a caller.
 
 The permanence claim is keyed to the PROGRAM fact, not hard-coded per door:
-`permanence_is_keyed_to_the_program_fact_not_to_the_door` flips `tp_ep_can_serve` and requires all
-three doors to stop being removable and become an ordinary admission question.
+`permanence_is_keyed_to_the_program_fact_not_to_the_door` flips `tp_ep_can_serve` and requires the
+disposition to move. Since the port no registry row is TP/EP-only, so that arm runs on a synthetic
+row rather than on whichever door happens to be stuck this month: a rule that is only exercised while
+some row trips it is a rule that stops having teeth the day the row is fixed.
 
 ### What the merged receipts actually establish
 
 The dev pair drifts about 5% monotonically within one arm across a single run (darklanes
 `KNEE:dev-pair-run-drift-swamps-sub-2pct-levers`, the finding that deleted the split vocab head
 door), so a door merged at under about 2% is below that instrument's resolution however disjoint its
-steady rows looked. Six of the nine are: **replay cadence, dense exact-tail, dense-fast, norm-fuse,
-split-K-fast, norm-fuse2**. Three are above it: graph split-K (+10.2%), norm2-wide (+5.96%), HC dot
-split (+2.70%, the closest to the line). This re-litigates nothing; it is the honest scope of what we
-know, pinned by `the_doors_merged_below_the_dev_pair_instrument_floor_are_named`.
+steady rows looked. Three of the four are: **replay cadence, dense exact-tail, dense-fast**. One is
+above it: HC dot split (+2.70%, the closest to the line). It was six of nine before 2026-09-11,
+when memra #482 deleted the split-K pair and this lane deleted the three norm doors. This re-litigates nothing;
+it is the honest scope of what we know, pinned by
+`the_doors_merged_below_the_dev_pair_instrument_floor_are_named`.
 
-Four doors are BOTH inert on the served path and below that floor, so there is no evidence for their
-default in either direction: **replay cadence, norm-fuse, split-K-fast, norm-fuse2**. That is a
-stronger case for removal than either fact alone.
+ONE door is BOTH inert on the served path and below that floor, so there is no evidence for its
+default in either direction: **replay cadence**. That is a stronger case for removal than either
+fact alone. It was four rows before 2026-09-11: split-K-fast left by DELETION with memra #482, and
+norm-fuse and norm-fuse2 left by being PORTED and then MEASURED, which is the outcome the floor
+complaint was asking for and the answer it gave was no.
 
 `DoorState` records the resolution (`Off`, `OffProgram`, `NoServingCaller`) and
 `served_disposition` turns it into a decision by asking which program admits the door and whether
@@ -1550,16 +1552,92 @@ that program can serve. Both are pinned per door by
 `each_inert_door_carries_its_own_disposition`.
 
 Two doors that DO engage are `m == 1` only, which is decode; prefill is 95-97% of a request's GPU
-seconds at this family's real input:output ratio. An operator cannot opt in to the inert ones either:
-`MEMRA_DSV4_NORM_FUSE=1` on a serving stack does not enable norm fusion, it refuses at boot with
-"norm fusion requires TP/EP f32x".
+seconds at this family's real input:output ratio. That ratio is also why the norm doors were
+deleted rather than kept: the shape they sped up was the small prime and the shape they slowed was
+the prefill chunk.
 
-No default is flipped and no door is deleted here. The dispositions are argued per case in darklanes
+The three TP/EP-gated doors were the owner's call, and the owner ruled: FIX, do not delete. The fix
+was done, the fix made them measurable on the served program for the first time, and the measurement
+deleted them (darklanes `research/dsv4f-norm-pp2-port-20260911/LANE.md`). The remaining
+dispositions are argued per case in darklanes
 `research/dsv4f-door-reach-20260910/LANE.md`, including both outcomes of the memra #461 matrix
-verdict for the two doors that depend on it. Removal of the three TP/EP-gated doors needs no other
-verdict, but norm2-wide merged at +5.96% and graph split-K at +10.2%, so those two are the owner's
-call rather than a lane's; norm-fuse2 cannot be removed without norm2-wide, which composes on it, so
-the TP/EP chain is one decision and it contains a headline number.
+verdict for the two doors that depend on it.
+
+## Removed doors, 2026-09-11 (the three norm-fusion doors: ported, measured on the served program, deleted)
+
+Owner ruling, 2026-09-11: FIX the norm doors, do not delete them. The fix was done and it worked;
+the measurement it made possible is what deleted them. Both halves belong in this entry, because a
+ledger that only records the outcome teaches nothing about why the earlier numbers were wrong.
+
+- `MEMRA_DSV4_NORM_FUSE` (memra #404), `MEMRA_DSV4_NORM_FUSE2` (#426) and `MEMRA_DSV4_NORM2_WIDE`
+  (#430): **DELETED**, with `norm_admitted`, the three environment policies and their resolvers, the
+  registry rows, the `norm2_pack_arm` seam, the engagement counters and their latch, the
+  `norm2`/`norm2_capture` fields and the fused FP8 half-mirror transport in `dsv4_grouped`, five
+  `__global__` kernels and their host launchers in `cu/dsv4_gpu.cu`
+  (`dsv4_norm_rope_f32_fixed_order_kernel`, `dsv4_norm2_pack_f32_fixed_order_kernel` and its wide
+  twin, `dsv4_norm2_swiglu_pack_kernel`, `dsv4_norm2_quant_half_kernel`), their five FFI
+  declarations, the four component/port instruments
+  (`dsv4_norm_component_gate`, `dsv4_norm2_component_gate`, `dsv4_norm2_wide_component_gate`,
+  `dsv4_norm_pp2_port_gate`) with their capture latches and call sites, and the gate bins
+  `dsv4_norm_fuse_gate`, `dsv4_norm_fuse2_gate`, `dsv4_norm2_wide_gate`,
+  `dsv4_norm_pp2_port_gate`, `dsv4_compose_densefast_normfuse_gate` and
+  `dsv4_densefast_normfuse_default_gate`.
+
+  **Why they were unreachable, and why that was fixable.** Admission was
+  `is_tp_ep() && chains_f32`, and the call sites added a third term nobody had counted: `t == 1`.
+  Three terms, three different KINDS of thing. `chains_f32` is a real precondition: each fused
+  kernel IS `dsv4_rmsnorm_f32acc_kernel` with the next op folded into its epilogue, same 128
+  threads, same eight-load order, same reduction tree, so fusing on the other accumulator would
+  have been a NEW numeric class. `is_tp_ep()` was an ASSUMPTION: no norm kernel, and nothing a norm
+  kernel feeds, reads a rank, a shard, a plan or a collective; TP/EP was just the only program they
+  were ever measured on. `t == 1` was a KERNEL limit: the rope launcher ran `<<<1,128>>>` and read
+  `positions[0]`, the pack launched grid 1, the wide twin hard-coded `xr = x`. The two hid each
+  other, because the served program is exactly where `t > 1` lives (DSpark verify at `1 + drafts`,
+  chunked prefill at the chunk width).
+
+  **The port.** Four launchers take `rows`, four kernels index their row: no new memory, no new
+  synchronization, no layout change. SAME class, and by receipt rather than by argument:
+  `PP2_PORT_PASS comparisons=73921536 owed=73921536 red_arms=2 bits_equal=true class=same`, 162
+  cells across both cards, rows 1/2/3/4/8/64/129/511/512, every tile count 1..32, both outputs
+  compared. Red arms in the same run: a constant position vector diverges at row 1, and a flipped
+  bf16 bit is reported at exactly `(14353, 3)`.
+
+  **The measurement, which is the part that decided it.** Four boots of the real server, PP-2 with
+  a resident DSpark drafter, matrix expert program, `EP off`, chunked prefill at the 512 default,
+  vendor-default sampled, order A B B A, first request per boot discarded, served program read off
+  each boot line and asserted identical across all four. Engagement proven at the shape that
+  matters rather than assumed: both ON boots print `[dsv4-norm-fuse] widened rows=512` and
+  `[dsv4-norm2-wide] widened rows=512`, both OFF boots print nothing at all.
+
+  | metric | doors ON | doors OFF | ON - OFF |
+  |---|---:|---:|---:|
+  | prefill tok/s at 5,462 prompt tokens | 232.355 [231.943, 232.818] | 233.189 [232.841, 233.527] | **-0.358%**, ranges DISJOINT |
+  | decode tok/s, 384 tokens | 52.931 [47.828, 56.762] | 53.090 [49.264, 56.952] | -0.300%, ranges overlap |
+  | TTFT at a 16-token prompt | 0.1949 s [0.1942, 0.1955] | 0.1981 s [0.1976, 0.1986] | **-1.59%**, ranges DISJOINT (ON is FASTER) |
+
+  An independent earlier cell on the same program reproduces the direction and the disjointness:
+  prefill -0.527%, decode -1.237%, TTFT -1.508%.
+
+  **Verdict: not positive beyond box noise on the served program, so under the no-OFF-doors rule
+  they are deleted.** They are not uniformly negative, and the honest statement is the interesting
+  one: the doors BUY about 3.2 ms on the `t == 1` prime and COST about 0.0000153 s per prefill
+  token, so they break even at a new suffix of roughly 209 tokens and lose above it. Prefill is
+  95-97% of a request's GPU seconds at this family's real input:output ratio, and the hot-TTFT ship
+  gate's own worked example is a 274-token new turn, which is past the break-even. The wide arm's
+  redundant row read is the mechanism: it was paid once for the single row the bench ran and is now
+  paid per row.
+
+  **What the merged receipts established, kept honest.** +5.955257% / +5.749573% (#430),
+  +1.618979% / +1.609496% composed (#404) and +1.1022% / +0.9839% (#426) were real on the
+  configuration they were measured on: the drafter-off TP/EP bench, whose every routed shape is
+  `t == 1`. None was ever a served number, and the port is what made that checkable. The lesson is
+  not that the numbers were faked, it is that `t == 1` was doing load-bearing work in them that
+  nobody had written down.
+
+  Receipts (prod-candidate 2x RTX PRO 6000 Blackwell Workstation, `MEMRA_CUDA_ARCH=120a`,
+  `MEMRA_DSV4_FMAD=0`): build `receipts/build-normpp2-r9`, port gate `receipts/normpp2-portgate-r6`,
+  served ABBA `receipts/normpp2-cell-r3` with `receipts/normpp2-cell-r2` as the replicate. Lane:
+  darklanes `research/dsv4f-norm-pp2-port-20260911/LANE.md`.
 
 ## Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes with the flip)
 
@@ -2181,9 +2259,6 @@ with identity, in addition to dense #507 and cadence #508.
 
 | Door | Default | Contract and gate |
 | --- | --- | --- |
-| `MEMRA_DSV4_NORM_FUSE2` | **ON when unset in admitted TP/EP f32x**, rollback seam decide-by: 2026-09-23 | Unset or `1` selects the exact remaining activation packing in the qualified t=1 TP/EP f32 path: attention norm/pack with KV reuse, FFN norm/pack, shared SwiGLU/pack, intermediate FP8 quantization/half gather. Explicit `0` restores the original chains. Unset stays OFF outside that admitted topology/numeric domain; explicit unsupported `1` still refuses at topology admission. Inside an admitted process each site is geometry checked at dispatch and falls back to its unfused chain when the shape does not match, so an out-of-domain shape costs launches rather than failing the step. Same numeric class, token-identical to the prior default: raw-bit identical at all 344 component sites (27176 comparisons warm and cold), memcheck and synccheck zero errors, four qualification processes and all 40 scored rows in one identity class. 172 fused nodes and 215 fewer launches per rank and forward variant, totals 2870/3269/3369 to 2655/3054/3154; explicit `0` has no norm2 symbol and the commit variant never gains one. Measured as a door: +1.0926% pooled ABBA (OFF 51.698579 / ON 52.263452 tok/s) and +0.9075% pooled reverse (OFF 51.859019 / ON 52.329643), 20 rows per order, first-row-excluded twin +1.0227% / +0.9776%. Rollback: set `0` before process initialization and create fresh uncaptured states; retained graphs keep their captured functions. Every other DSV4 gate bin pins this door `0` explicitly, including the historical instruments and the bins that read the environment for other doors. Default engagement: `dsv4-norm-fuse2-gate --defaults`, separate unset and `0` invocations, 256-step eager identity, censuses and 8 refusals per mode. Receipts: [private Darklanes #560](https://github.com/avifenesh/darklanes/pull/560), measured source `365c32c120d35f09c4eafdfddd164272e07db0f5`, binary `f37bed69f472ce2a36e830890e8319c83a26b2ac5f90f46c7bdc0c85113cff7d`. Default flip: [Darklanes #564](https://github.com/avifenesh/darklanes/pull/564), flip source `5070a0efe085b91d6ac046d694cc7d3b7d5417bf`, binary `0f2305817e351dc541f9f2f2e45c5ac1ca2f0f1fa4177705dc3377121d86d14a`, +1.1022% pooled ABBA and +0.9839% pooled reverse with unset engaging and `0` restoring; re-verified on the census-fixed head `21f122cb27f3f9e8a2fb7d0fd1ecee47795f8e97`, gate binary `91b4ecb8bafb51c7a2a36d5452fa049f66421a81e76cb69e88abb2882b2769d1`, including the replay-gate green arm. |
-| `MEMRA_DSV4_NORM2_WIDE` | Default ON since 2026-09-10 (door opened 2026-09-09 with decide-by 2026-09-23; the campaign receipt settled it early) | Same-class occupancy door on the norm2 pack, composed on `MEMRA_DSV4_NORM_FUSE2`. `dsv4_norm2_pack_f32_fixed_order_kernel` launches grid 1 / block 128 over one 4096-element row: a single CTA carries the whole epilogue, 14.426623 us per launch and 1.240690 ms/step on rank 0 at 86 launches, a provisional 0.221812% of 1,792 GB/s ([private Darklanes #562](https://github.com/avifenesh/darklanes/pull/562)). The wide arm selects `dsv4_norm2_pack_f32_fixed_order_wide_kernel`, which splits the EPILOGUE COLUMNS across `NORM2_WIDE_TILES` CTAs of 128 threads while every CTA repeats the identical eight-load accumulation order and the identical `dsv4_block_sum_f32` tree over the whole row. The reduction order is unchanged, so this is a SAME-CLASS rewrite and bit equality is a contract rather than a measurement: the written value is a pure function of (column, rsq) and rsq is byte-identical in every CTA. It moves no launch count at all (86 packs per forward variant either way) and no other kernel. Both arms: unset now selects the wide kernel under an admitted `MEMRA_DSV4_NORM_FUSE2`; explicit `0` keeps the single-CTA kernel and is the ROLLBACK SEAM; unset without `MEMRA_DSV4_NORM_FUSE2=1` degrades to OFF (the wide pack has no other call site, and composed-off launches must not refuse); an explicit `1` without `MEMRA_DSV4_NORM_FUSE2=1` still refuses at load. Rollback seam: set `0` before process initialization and create fresh uncaptured states; retained graphs keep their captured functions. Junk, empty and `2` all refuse. Every other DSV4 gate bin pins this door `0`, and the four environment-reading bins pin `0` and refuse an exported `1`. Gate: `dsv4-norm2-wide-gate` (`--components <dir> [--sweep]` for raw-bit and per-launch timing on 172 captured live operands, `--qualify`/`--reverse` for the sampled ABBA). Receipts (2x RTX PRO 6000 Blackwell Max-Q dev pair, 2026-09-10, head d710438fb, binary cb270f66): component cell 13,588/13,588 raw-bit equal over the 172 live sites; model ABBA +5.955257% pooled forward and +5.749573% pooled reverse (+5.9542% / +5.7550% mean), disjoint steady ranges in both orders and identical digests across arms; banked in darklanes `research/dsv4f-norm2-wide-20260909/`. The model return is 1.073033 ms/step forward and 1.057288 reverse, BELOW the 1.240690 ms/step the single-CTA pack costs in the live model and 2.1-2.9x ABOVE the 0.370-0.511 ms/step the isolated per-launch sweep predicts. That factor is UNEXPLAINED: a first reading blamed an instrument floor and was withdrawn 2026-09-10 when a second card class showed the sweep's asymptote SCALES with the silicon (floor/tiles=1 stays near 0.5 on both boxes while both absolutes move a third), which a fixed instrument overhead would not do, so the asymptote is the reduction floor and the component number is a real prediction. Surviving hypothesis: replay forward span is not additive in isolated kernel durations, the same non-additivity Darklanes #562 measured in the opposite direction on this path. Sanitizers (2026-09-10, merged main `4eaf708e7`, binary f553bc452, prod-candidate RTX PRO 6000 Workstation box, CORRECTNESS ONLY and no timing from it enters this row): memcheck and synccheck each `ERROR SUMMARY: 0 errors` under `--error-exitcode 99` over 344 COMPONENT rows and 13,588 comparisons with the wide kernel engaged. That cell captured its own operands rather than inheriting the norm-fuse2 lane's and reproduced `COMPONENT_PASS sites=172 comparisons=13588 bits_equal=true class=same`, so the class claim rests on two independent captures on two card classes; all 172 captured operand descriptors read `4096 1`, and since the pack refuses any other shape, 2 sites x 43 layers x 2 ranks is the whole call-site domain. Winner: the explicit-0 seam retires after two served weeks per door hygiene. |
-| `MEMRA_DSV4_NORM_FUSE` | **ON when unset in admitted TP/EP f32x**, rollback seam decide-by: 2026-09-23 | Unset or `1` selects adjacent KV RMSNorm plus RoPE fusion in the qualified t=1 TP/EP f32 path and newly captured cadence variants. Explicit `0` restores the unfused pair. Unset stays OFF outside that admitted topology/numeric domain; explicit unsupported `1` still refuses. Same numeric class, token-identical to the prior default. The 128-thread reduction and rotary expressions are unchanged, with 43 fused nodes and 43 fewer launches per rank/forward. Rollback: set `0` before process initialization and create fresh uncaptured states; retained graphs keep their captured functions. Historical gate controls force OFF explicitly. Composition KEEP: +1.618979% A5B5B5A5 / +1.609496% B5A5A5B5, 20 rows/order with first captures included, 256-step identity, both censuses, resets and 16 refusals per invocation. Receipts: [dense single #529](https://github.com/avifenesh/darklanes/pull/529), [single #530](https://github.com/avifenesh/darklanes/pull/530), [composition #535](https://github.com/avifenesh/darklanes/pull/535), measured source `73c8b04b7`, binary `f891afea1e008a754f17cb534e35cbe26bdd35857bf5ae3c6d40b34df002b755`. Default engagement: `dsv4_densefast_normfuse_default_gate`, separate unset/0 invocations, 256-step eager identity and five sanity rows per mode. |
 
 ### Dense-fast exact-tree composition door (2026-09-09)
 

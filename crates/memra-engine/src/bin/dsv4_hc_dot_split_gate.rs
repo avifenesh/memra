@@ -21,7 +21,6 @@ fn hc_on() -> bool {
 fn default_program() {
     for name in [
         "MEMRA_DSV4_DENSE_FAST",
-        "MEMRA_DSV4_NORM_FUSE",
         "MEMRA_DSV4_DENSE_EXACT_TAIL",
         "MEMRA_DSV4_REPLAY_CADENCE",
     ] {
@@ -29,24 +28,6 @@ fn default_program() {
             std::env::var(name).is_err() || std::env::var(name).as_deref() == Ok("1"),
             "default ON required: {name}"
         );
-    }
-    // main() pinned this door off at startup. Verify the pin took rather than
-    // trusting it: an inherited 1 would silently change what these rows measure.
-    assert_eq!(
-        std::env::var("MEMRA_DSV4_NORM_FUSE2").as_deref(),
-        Ok("0"),
-        "explicit OFF required: MEMRA_DSV4_NORM_FUSE2"
-    );
-    // The wide norm2 pack now defaults ON under the admitted norm2 door. This
-    // bin measures the narrow norm2 pack, so it pins the rollback seam
-    // explicitly and refuses an exported 1 rather than inheriting the default.
-    assert_ne!(
-        std::env::var("MEMRA_DSV4_NORM2_WIDE").as_deref(),
-        Ok("1"),
-        "MEMRA_DSV4_NORM2_WIDE=1 is not this bin's arm"
-    );
-    unsafe {
-        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
     }
 }
 const PRIME: usize = 256;
@@ -493,7 +474,6 @@ fn main() {
     // the rmsnorm counts that the norm2 fusion removes. Pin that door off before any
     // model or worker thread exists, independently of its default.
     unsafe {
-        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
         // Gate-only AR phase instrument: pinned off here so no other bin can inherit
         // an exported instrument or null collective from the environment.
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");

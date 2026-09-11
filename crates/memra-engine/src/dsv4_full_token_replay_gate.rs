@@ -52,22 +52,14 @@ fn epochs(gpu: &Dsv4Gpu, before: &[Vec<u32>; 2], steps: u32) {
         }
     }
 }
-fn forward_kernel_census(norm_fuse: bool, norm_fuse2: bool) -> [(usize, u64); 3] {
-    // The graph split-K term (+86 forward nodes per rank, two passes replacing
-    // one GU and one down node in each of 43 layers) left with the door on
-    // 2026-09-11: no entry family it captured exists any more.
-    // norm_fuse removes the 43 separate norm/RoPE chains. norm_fuse2 packs the
-    // remaining entry-boundary activation chains into 172 fused nodes while
-    // removing 387, a net 215 fewer forward launches per rank and forward
-    // variant, exactly as docs/FLAGS.md and docs/KERNELS.md record. Without this
-    // term the census refuses the door's own arm: memra #428 observed left 2655
-    // against right 2870, which is this 215 with the HC term already added.
-    let removed = (if norm_fuse { 43 } else { 0 }) + (if norm_fuse2 { 215 } else { 0 });
-    [
-        (0, 2741 - removed),
-        (2, 3140 - removed),
-        (3, 3240 - removed),
-    ]
+fn forward_kernel_census() -> [(usize, u64); 3] {
+    // Two door terms used to subtract from these counts and both left on
+    // 2026-09-11. The graph split-K term (+86 forward nodes per rank) went with
+    // the matrix flip: no entry family it captured exists any more. The norm
+    // terms (43 for the KV norm/RoPE fusion, a net 215 for the activation
+    // packing) went with the three norm doors, which the served ABBA deleted, so
+    // the unfused chains are the only chains and these are their counts.
+    [(0, 2741), (2, 3140), (3, 3240)]
 }
 
 /// With the split-K doors deleted (memra #461 flip, 2026-09-11) the forward
@@ -123,10 +115,7 @@ fn capture_once(gpu: &Dsv4Gpu, state: &DecodeState, cadence: bool) {
             .full_token_replay_variant_census_for_gate(state)
             .unwrap()
         {
-            for (slot, kernels) in forward_kernel_census(
-                gpu.norm_fuse_enabled_for_gate(),
-                gpu.norm_fuse2_enabled_for_gate(),
-            ) {
+            for (slot, kernels) in forward_kernel_census() {
                 assert_eq!(
                     rank[slot][1],
                     kernels + if hc_slices() != 0 { 86 } else { 0 },
@@ -525,7 +514,6 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     use memra_engine::dsv4_gpu::Dsv4Phase;
     let cadence = memra_engine::dsv4_gpu::dsv4_replay_cadence_default();
     let dense = memra_engine::dsv4_gpu::dense_exact_tail_enabled_for_gate();
-    let norm_fuse = gpu.norm_fuse_enabled_for_gate();
     unsafe extern "C" {
         fn memra_dsv4_dense_fast_enabled_for_gate() -> i32;
     }
@@ -560,7 +548,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
     }
     assert_eq!(prefix.pos, 368);
     println!(
-        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"dense_fast_on":{dense_fast},"norm_fuse_on":{norm_fuse},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
+        r#"PROFILE_PROTOCOL {{"start_position":368,"end_position":400,"crosses_c128":true,"cadence_on":{cadence},"dense_on":{dense},"dense_fast_on":{dense_fast},"arming":"environment_default","prefix_sha256":"{}","profile_only":true,"scored":false}}"#,
         sha256_tokens(&prefix_tape)
     );
     let mut control = state(gpu);
@@ -594,10 +582,6 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                     .count()
             };
             let forward = segment != 1;
-            assert_eq!(
-                count("dsv4_norm_rope_f32_fixed_order_kernel"),
-                if norm_fuse && forward { 43 } else { 0 }
-            );
             let hc = hc_slices() != 0;
             for name in [
                 "dsv4_hc_dot_split_partial_kernel",
@@ -694,7 +678,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
             oracle = Some(result);
         }
         println!(
-            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"dense_fast_on":{dense_fast},"norm_fuse_on":{norm_fuse},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
+            r#"PROFILE_ONLY {{"arm":"{}","steps":32,"start_position":368,"end_position":400,"cadence_on":{cadence},"dense_on":{dense},"dense_fast_on":{dense_fast},"tokens_sha256":"{}","identical":true,"scored":false,"capture_outside_window":true}}"#,
             if graph_arm { "graph" } else { "eager" },
             sha256_tokens(&tokens)
         );
@@ -713,56 +697,20 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
 mod profile_census_tests {
     use super::{check_expert_nodes, forward_kernel_census};
 
-    /// Base 2741/3140/3240 forward launches per rank and variant, minus 43 for
-    /// norm-fuse and 215 for the norm2 activation pack. The graph split-K term
-    /// (+86) left with the door on 2026-09-11, so this function has two inputs
-    /// instead of three.
+    /// The forward census is now a CONSTANT, and that is the whole claim: both
+    /// door terms that used to subtract from it are deleted, so there is nothing
+    /// left to parameterize. Pinned here rather than only at the call site so a
+    /// future door that changes the launch count has to move this number and say
+    /// why, instead of quietly re-deriving it.
+    ///
+    /// History, because the number is meaningless without it: the base is
+    /// 2741/3140/3240, graph split-K subtracted 86 until the matrix flip
+    /// (2026-09-11), the KV norm/RoPE fusion subtracted 43 and the norm2
+    /// activation pack a net 215 until the served ABBA deleted all three norm
+    /// doors the same day.
     #[test]
-    fn forward_census_is_the_base_minus_each_doors_own_term() {
-        assert_eq!(
-            forward_kernel_census(false, false),
-            [(0, 2741), (2, 3140), (3, 3240)]
-        );
-        assert_eq!(
-            forward_kernel_census(true, false),
-            [(0, 2698), (2, 3097), (3, 3197)]
-        );
-    }
-
-    #[test]
-    fn profile_census_tracks_the_norm2_activation_pack_door() {
-        // Assert in the shape capture_once uses, so the red arms below exercise
-        // the same comparison the gate makes rather than a weaker inequality.
-        fn expect(policy: (bool, bool), want: [(usize, u64); 3]) {
-            assert_eq!(
-                forward_kernel_census(policy.0, policy.1),
-                want,
-                "forward census for {policy:?}"
-            );
-        }
-        const ON: [(usize, u64); 3] = [(0, 2483), (2, 2882), (3, 2982)];
-        const OFF: [(usize, u64); 3] = [(0, 2698), (2, 3097), (3, 3197)];
-        expect((true, true), ON);
-        expect((true, false), OFF);
-        // Crosswise red arms: each arm's expectation must fail against the other
-        // arm's policy. Before memra #428 the ON policy was scored against OFF
-        // and the gate panicked with left 2655, right 2870.
-        assert!(std::panic::catch_unwind(|| expect((true, false), ON)).is_err());
-        assert!(std::panic::catch_unwind(|| expect((true, true), OFF)).is_err());
-        // The door's own term is the documented net 215, in every variant and
-        // independently of the norm-fuse term.
-        for norm_fuse in [false, true] {
-            let on = forward_kernel_census(norm_fuse, true);
-            let off = forward_kernel_census(norm_fuse, false);
-            for (slot, off_kernels) in off {
-                let on_kernels = on.into_iter().find(|(s, _)| *s == slot).unwrap().1;
-                assert_eq!(
-                    off_kernels - on_kernels,
-                    215,
-                    "net norm2 forward launch reduction, slot {slot}"
-                );
-            }
-        }
+    fn the_forward_census_is_the_unfused_base_with_no_door_terms_left() {
+        assert_eq!(forward_kernel_census(), [(0, 2741), (2, 3140), (3, 3240)]);
     }
 
     #[test]
