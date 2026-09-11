@@ -831,59 +831,6 @@ Composition confirmation is directly recorded in
 [Darklanes #509](https://github.com/avifenesh/darklanes/pull/509), +1.87%/+2.11%
 with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
-### KV RMSNorm and RoPE default with rollback, 2026-09-09
-
-`dsv4_norm_rope_f32_fixed_order_kernel` is the default-ON (admitted f32x) arm of
-`MEMRA_DSV4_NORM_FUSE`. It replaces the adjacent KV norm and rotary launches in
-each device batch attention layer (SWA, CSA and HCA). The 128-thread RMSNorm
-reduction is unchanged; only shared-memory transport replaces the normalized f32
-global-memory intermediate. The subsequent QAT is unchanged. Retained census
-confirms 43 launches removed per rank per forward step, with 43 fused nodes in
-each ON forward variant and zero in OFF.
-
-**PP-2 port, 2026-09-11.** The launcher took no `rows` and the kernel read
-`positions[0]`, so it was grid 1 and the call site guarded `t == 1`. It now takes
-`rows` and runs one CTA per row, each reading `positions[row]` and its own row
-offset, which is exactly what the unfused pair it replaces does
-(`dsv4_rmsnorm_f32acc_kernel` one CTA per row, then `dsv4_rope` with
-`n_pos = rows, n_vec = 1`). Rows are independent, so the reduction tree and every
-rounding point are unchanged and the arm stays SAME-CLASS at every `t`. The
-admission lost its `is_tp_ep()` term with the shape guard: that term was an
-assumption, `chains_f32` is the precondition, and the served program is where
-`t > 1` lives (DSpark verify rounds, chunked prefill). Bit-equality gate:
-`dsv4-norm-pp2-port-gate`, which sweeps rows 1/2/3/4/8/64/129 and the kernel
-transaction width `DSV4_BATCH_WIDTH_MAX` and `MAX - 1`, with distinct data
-and distinct positions per row and refuses on the first differing bit, naming the
-row, column and bit index. Its red arms are what give it teeth: a constant
-position vector must make the comparator refuse (otherwise the multi-row sweep
-cannot see a row-offset defect at all), and a flipped bf16 bit in the last row
-must be reported at exactly that byte and bit.
-
-Attention-entry norm feeds Q and KV projections and, in compressed layers,
-f32 compressor/indexer projections. Q norm/pack is already fused by the diet.
-MoE-entry norm feeds router logits before activation quantization and grouped
-FP8-to-half gathering; shared experts also consume its BF16 pack. Those are
-not one adjacent norm/gather/convert chain. Compressor emission norm feeds
-RoPE then Hadamard/FP4 (indexer) or QAT (attention), but its replay wrappers
-are outside this lane. Final norm feeds f32 head dots. No fusion of these
-fan-out chains or modification of their reduction trees is proposed.
-
-KEEP small, same numeric class: +0.607010% forward and +0.437574% reverse
-pooled throughput on pinned DSV4F EP+TP2 2x RTX PRO 6000 with full replay,
-cadence, dense exact-tail, graph split-K, device sampler and diet. A second
-forward run confirms +0.499856%. Each order has 20 sampled rows with first
-capture included. All 86 component sites pass raw-bit comparison, memcheck
-and synccheck report zero errors, and every 256-step identity/census/reset
-and 16-refusal invocation passes. Receipts: [private Darklanes #530](https://github.com/avifenesh/darklanes/pull/530),
-the report and raw manifests linked there, source `511f0e663`,
-binary `e36c98b0bd80cd8f1c6895f7193e68ebf9120327e437b5fab07c1945cad5761c`.
-The composition with dense-fast is KEEP at +1.618979% / +1.609496%, with
-40 identity-matched sampled rows, and is now the default in the admitted path.
-Same numeric class, token-identical to the prior default. Rollback uses explicit
-`MEMRA_DSV4_NORM_FUSE=0` with a fresh process/uncaptured state; unset is ON.
-Rollback seam decide-by: 2026-09-23. Composition receipts: [private Darklanes #535](https://github.com/avifenesh/darklanes/pull/535). FFI entry: `memra_dsv4_norm_rope_f32_fixed_order` in
-`src/dsv4_ffi.rs`, dispatched by the t=1 batch attention path in `src/dsv4_gpu.rs`.
-
 ### Dense-fast exact-tree kernels and qualification (default ON, 2026-09-09)
 
 `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
@@ -910,155 +857,38 @@ split-K/cadence/device sampler/diet program, checks 256 per-step identities,
 retained resets, every forward variant's functions and 16 live refusals.
 Its 20-row ON/OFF/OFF/ON and single reverse twin include each scored arm's first
 capture. Pooled gains are +1.551526% and +1.459516%; all 40 rows are eligible
-and share token/logit/cache/hidden identity. Composition with norm-fuse is KEEP
-at +1.618979% / +1.609496% and defaults ON when unset. Explicit `0` is the
-rollback with fresh uncaptured states; seam decide-by: 2026-09-23.
+and share token/logit/cache/hidden identity. Dense-fast defaults ON when unset;
+explicit `0` is the rollback with fresh uncaptured states.
 Same numeric class, token-identical to the prior default. Source `711165799`, model binary SHA256
 `4be3e8084bb7d589abb8d2250c06f8c12f1edb713a66e2390bc90ed91821d5fd`.
 Receipts: [private Darklanes #529](https://github.com/avifenesh/darklanes/pull/529).
-Composition receipts: [private Darklanes #535](https://github.com/avifenesh/darklanes/pull/535).
-`dsv4_densefast_normfuse_default_gate` checks real unset/0 selection before
-capture, both function censuses, eager identity, refusals and five sanity rows.
+The +1.618979% / +1.609496% composition row was dense-fast COMPOSED WITH norm-fuse
+([#535](https://github.com/avifenesh/darklanes/pull/535)), and norm-fuse was deleted
+2026-09-11, so that row no longer describes any reachable program; dense-fast's own
+standalone numbers above are what stand. The composition gate bins went with it.
 Gate-only `memra_dsv4_dense_fast_restore_default_for_gate` restores the actual
 environment policy after the eager OFF oracle. No kernel arithmetic changes.
 
-### Remaining DSV4 activation packing (experimental, 2026-09-09)
+### The three DSV4 norm-fusion kernels, REMOVED 2026-09-11
 
-`MEMRA_DSV4_NORM_FUSE2` is default ON under admitted f32x chains; explicit `0` is
-the rollback seam, decide-by: 2026-09-23.
+`dsv4_norm_rope_f32_fixed_order_kernel` (`MEMRA_DSV4_NORM_FUSE`, #404),
+`dsv4_norm2_pack_f32_fixed_order_kernel` and its wide twin
+(`MEMRA_DSV4_NORM_FUSE2` #426, `MEMRA_DSV4_NORM2_WIDE` #430),
+`dsv4_norm2_swiglu_pack_kernel` and `dsv4_norm2_quant_half_kernel` are deleted,
+with their host launchers, their FFI entries, the `norm2_pack_arm` seam, the
+engagement latch and the four component/port instruments that qualified them.
 
-**PP-2 port, 2026-09-11.** `memra_dsv4_norm2_pack`, `memra_dsv4_norm2_pack_wide`
-and `memra_dsv4_norm2_swiglu_pack` all take `rows`. The pack kernel was already
-written row-major with `row = blockIdx.x`; only its launcher pinned grid 1. The
-wide kernel's grid is now `rows * tiles`, row-major, so CTA `i` covers row
-`i / tiles` and epilogue tile `i % tiles`, and row 0 with `tiles` CTAs is byte for
-byte the pre-port launch. The SwiGLU pack is elementwise over a contiguous
-`rows * n` block, as is the `dsv4_swiglu` + `cvt_bf16` pair it replaces. Same
-class at every `t`, gated by `dsv4-norm-pp2-port-gate` against the unfused pair on
-BOTH outputs (retained f32 and bf16 pack) and, for the wide arm, across every
-legal tile count at every row count.
+They were correct, they were same-class, and on the served program they did not
+pay. The full verdict, the ABBA table, the break-even point and the receipts are
+the 2026-09-11 norm-fusion entry in the `FLAGS.md` removed-doors ledger; the lane
+is darklanes `research/dsv4f-norm-pp2-port-20260911/LANE.md`.
 
-`dsv4_norm2_pack_f32_fixed_order_kernel` uses the original 128-thread norm
-reduction and f32 epilogue, emits BF16 RNE as well as retained f32, and permits
-attention Q_a/KV to share one unchanged pack. FFN routing and quantization keep
-the f32 row. `dsv4_norm2_swiglu_pack_kernel` preserves clamp, sigmoid and f32
-multiply rounding before BF16 RNE. `dsv4_norm2_quant_half_kernel` uses four
-64-thread teams to repeat the original per-128 FP8 max tree, power-of-two scale,
-E4M3 rounding and zero-sign canonicalization, then the original 256-thread
-row-scale tree and lossless half/status expressions. Intermediate codes/scales
-are shared-memory transport. No expert GEMV, split-K, dense kernel, HC or rotary
-kernel changes. Each site is geometry checked at dispatch and falls back to its unfused chain
-outside the fused domain; the intermediate transport additionally requires the
-half mirror's own row capacity. Counts per rank and forward variant: 86
-norm/pack, 43 shared SwiGLU/pack, 43 quant/half, 387 launches gross for a net
-215 removed. Commit has none. OFF has zero
-new symbols. FFI: `src/dsv4_ffi.rs`; component capture and raw-bit gate:
-`src/dsv4_norm2_component_gate.rs`; replay gate: `dsv4-norm-fuse2-gate`.
-Evidence: [private Darklanes #560](https://github.com/avifenesh/darklanes/pull/560),
-raw-bit identity at all 344 component sites, memcheck and synccheck zero
-errors, +1.0926% pooled ABBA and +0.9075% pooled reverse on the sampled
-default program. Default is ON when unset in the admitted TP/EP f32x topology; explicit `0` is
-the rollback seam, decide-by: 2026-09-23.
-
-### Wide DSV4 norm2 pack (default ON since 2026-09-10, door opened 2026-09-09)
-
-`MEMRA_DSV4_NORM2_WIDE` is default ON under an admitted `MEMRA_DSV4_NORM_FUSE2`
-(flipped 2026-09-10 on the model campaign receipts below); explicit `0` is the
-rollback seam, and unset without the norm2 door degrades to OFF because the wide
-pack has no other call site. Since the 2026-09-11 PP-2 port that admission is
-`chains_f32` rather than TP/EP f32x, so the door reaches a customer request.
-
-`dsv4_norm2_pack_f32_fixed_order_kernel` launches grid 1 / block 128 over one
-4096-element f32 row. One CTA holds both the reduction and the whole epilogue:
-14.426623 us per launch, 1.240690 ms/step on rank 0 at 86 launches, a provisional
-0.221812% of 1,792 GB/s. That geometry was inherited unchanged from the separate
-pack the norm2 door replaced, so it is not a regression the door introduced, but
-it is the largest single kernel in the fused norm2 family.
-
-`dsv4_norm2_pack_f32_fixed_order_wide_kernel` partitions the EPILOGUE COLUMNS
-across `NORM2_WIDE_TILES` CTAs of 128 threads. Grid is `rows * tiles`, row-major
-(pre-port it was `tiles` and the domain was one row of 4096). Every CTA repeats, byte for byte, the same eight-load accumulation order and the
-same `dsv4_block_sum_f32` tree over the whole row, so `tot`, `mean` and `rsq` are
-bit-identical in every CTA and identical to the single-CTA kernel. The written
-value is a pure function of (column, rsq), so which CTA writes a column cannot
-move a bit.
-
-**Class: SAME.** The reduction order is the contract the `fixed_order` name
-carries, and nothing here changes it, so this rewrite needs no numerical-drift
-qualification: bit equality is a construction, and the component gate refuses on
-the first differing bit rather than scoring a tolerance. Contrast the two rejected
-shapes, both of which change the summation tree and would therefore be a NEW class
-needing drift rows (Darklanes #534 showed a changed f32 tree flips near-tie
-argmax): per-CTA partial sums combined in a second phase, and a single wider block.
-
-The price is a redundant row read per CTA. At 4096 f32 that is 16 KB re-read
-`tiles` times, which lands in L2 after the first CTA touches the row, against an
-epilogue that becomes `1/tiles` as wide per CTA. Because every CTA still runs the
-whole reduction, the sweep's asymptote as `tiles` grows was expected to BE the
-reduction floor, with the gap between `tiles=1` and that floor the only thing this
-door can buy. The component gate reports that sweep rather than assuming it, and
-what the sweep reports is confirmed as the reduction floor by a
-second card class, see the discussion under Evidence below. The real ceiling on the
-door is the 1.240690 ms/step the kernel it replaces costs in the live model.
-
-The launcher pins block 128 (the tree is the contract) and requires
-`128 * tiles` to divide `n`, so no CTA is empty and every thread writes the same
-number of columns. `tiles = 1` reproduces the original geometry through the wide
-symbol and is the sweep's own red arm.
-
-No launch count moves: 86 packs per rank and forward variant in both arms, one
-symbol or the other, never both and never neither. No other kernel changes. FFI:
-`src/dsv4_ffi.rs`; component gate: `src/dsv4_norm2_wide_component_gate.rs`;
-replay and sampled gate: `dsv4-norm2-wide-gate`.
-
-Evidence (2x RTX PRO 6000 Blackwell Max-Q dev pair, head d710438fb, binary
-cb270f66, 2026-09-10): the component cell passed raw-bit equality at all 172 live
-pack sites (13,588 / 13,588 comparisons, warm and cold, tiles 1..32; the warm sweep
-on a sample site runs 12.383 us at tiles=1 down to 6.730 us at tiles=32, 4.63 GB/s
-unique rising to 8.52 GB/s unique at 83.99 GB/s issued, the predicted L2-served
-re-read). The model program on the pinned default shape (PRIME=256, OUTPUT=256):
-wide 55.154288 tok/s vs narrow 52.054319 pooled ABBA (+5.955257%, mean +5.9542%)
-and wide 55.192155 vs narrow 52.191374 pooled reverse (+5.749573%, mean +5.7550%),
-steady ranges disjoint in both orders (3.019 and 2.946 tok/s separation), 40/40
-rows eligible with zero looped rows, and every row in both orders carries the same
-generated/logits/cache/hidden digests as the narrow arm (same-class identity held
-at model scale, not just per-site). Four qualify processes (two per arm) matched
-the same digests. Receipts banked in darklanes
-`research/dsv4f-norm2-wide-20260909/`.
-
-The sweep's asymptote IS the reduction floor this section predicted, and a first
-reading that called it an instrument floor was withdrawn on 2026-09-10. The test was
-to run the same sweep on a second card class: an instrument overhead is roughly
-constant and would not scale, a computational floor does. It scales. Dev pair Max-Q
-`tiles=1` 10.439-12.854 us with floor 6.084-6.909 us; prod-candidate Workstation 600 W
-`tiles=1` 8.122-8.213 us with floor 3.941-4.087 us. Both absolutes move about a third
-while `floor / tiles=1` stays at 0.5375-0.5883 and 0.4803-0.4987.
-
-So the component number is a real prediction: 86 launches at a 5.653-5.945 us warm
-saving is 0.486-0.511 ms/step (0.370 on the cold rows). The measured model return is
-1.073033 ms/step forward and 1.057288 reverse, i.e. **2.1x to 2.9x the prediction**,
-and below the 1.240690 ms/step the single-CTA pack costs in the live model. The factor
-of two is UNEXPLAINED. The surviving hypothesis is that replay forward span is not
-additive in isolated kernel durations, which Darklanes #562 measured in the other
-direction on this same path: 0.164670 ms/step of kernel time removed returned
--0.026864 ms/step of replay forward. Isolated per-launch timing on this path predicts
-the sign of a graph-replay change and not its size.
-
-Sanitizers (2026-09-10, on MERGED main `4eaf708e7` rather than the lane head, binary
-`f553bc452ad4398efc90a38216c1972f3254aaabe50c7d34cbb1b017b7830b58`, 2x RTX PRO 6000
-Blackwell Workstation Edition prod-candidate box): `compute-sanitizer --tool memcheck`
-and `--tool synccheck` each report `ERROR SUMMARY: 0 errors` under `--error-exitcode 99`,
-each over 344 `COMPONENT` rows and 13,588 comparisons with the wide kernel engaged at
-`tiles=32`. Non-vacuity is asserted in the controller, not assumed: each sanitizer log
-must carry its own row count and `COMPONENT_PASS` line or the cell fails.
-
-That cell also captured its OWN operands on that box instead of inheriting the
-norm-fuse2 lane's, and reproduced
-`COMPONENT_PASS sites=172 references=172 comparisons=13588 bits_equal=true class=same`
-against them, so the same-class claim now rests on two independent captures taken on two
-different card classes. All 172 captured operand descriptors read `4096 1`: the pack refuses
-any other shape, so 2 sites x 43 layers x 2 ranks is the entire call-site domain rather
-than a sample of it.
-
-These rows are CORRECTNESS ONLY. That box is a different card class from the pair the
-door was scored on, and no absolute timing from it enters this door's verdict.
+One kernel-level fact is worth keeping here rather than only in a ledger, because
+it is about how to read an isolated per-launch sweep. The wide pack splits the
+epilogue columns across `NORM2_WIDE_TILES` CTAs and every CTA re-reads the whole
+4096-element row to rebuild the identical reduction. On the bench program that
+redundant read was paid ONCE, for the one row a `t == 1` shape presents, and the
+arm measured +5.96%. On a served prefill chunk it is paid PER ROW, up to 512 of
+them, and the same arm costs about 0.36% of prefill rate. An occupancy rewrite
+whose cost scales with a dimension the qualifying program pinned to 1 is not
+qualified for a program where that dimension is 512.

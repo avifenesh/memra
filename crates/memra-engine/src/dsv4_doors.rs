@@ -257,77 +257,6 @@ pub const TUNED_BENCH_PROGRAM: Dsv4Program = Dsv4Program {
 // Policy functions. `Dsv4Gpu::load` calls these; so does the registry below.
 // ---------------------------------------------------------------------------
 
-/// The f32x admission term the norm doors share. One function so the load site
-/// and the door registry cannot disagree about what "admitted" means.
-///
-/// The `tp_ep` term left this predicate with the PP-2 port. It was never a
-/// precondition of anything the fused kernels do: no norm kernel and nothing a
-/// norm kernel feeds reads a rank, a shard or a topology plan, and the pack's
-/// consumers (`gemv_m_dev` on the bf16 buffer, the shared-expert GEMVs) are the
-/// generic ones the reference expert program already runs. It was here because
-/// TP/EP is the only program the doors were ever measured on, and the kernels
-/// carried a separate, real limit that made the distinction invisible: the pack
-/// launchers pinned grid 1, so the call sites guarded `t == 1`, and the only
-/// program that ran nothing but `t == 1` shapes was the TP/EP bench. The
-/// launchers now take `rows`, so both are gone together.
-///
-/// `chains_f32` STAYS, and it is the real precondition. Each fused kernel IS the
-/// f32-accumulator reduction tree (`dsv4_rmsnorm_f32acc_kernel`) with the
-/// following cast or rotation folded into its epilogue. With f32x chains off the
-/// unfused arm is `dsv4_rmsnorm_kernel`, a different accumulator: fusing there
-/// would be a NEW numeric class rather than the same-class rewrite these doors
-/// are qualified as.
-pub fn norm_admitted(chains_f32: bool) -> bool {
-    chains_f32
-}
-
-/// Default ON only in the qualified TP/EP f32 domain. An explicit unsupported ON
-/// request still refuses instead of silently admitting an unqualified path.
-pub fn norm_fuse_environment_policy(
-    value: Result<&str, &std::env::VarError>,
-    admitted: bool,
-) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm fusion requires f32x chains".into()),
-        _ => Err("MEMRA_DSV4_NORM_FUSE requires 0 or 1".into()),
-    }
-}
-
-pub fn norm_fuse2_environment_policy(
-    value: Result<&str, &std::env::VarError>,
-    admitted: bool,
-) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm fusion2 requires f32x chains".into()),
-        _ => Err("MEMRA_DSV4_NORM_FUSE2 requires 0 or 1".into()),
-    }
-}
-
-/// Default ON under an admitted norm2 door since the 2026-09-10 model campaign;
-/// an explicit `0` is the rollback seam to the single-CTA kernel. Without the
-/// norm2 door the pack has no call site, so an unset value degrades to OFF
-/// rather than refusing every composed-off launch, while an explicit `1` without
-/// the door stays a configuration error instead of a silent no-op. `admitted` is
-/// the norm2 door's own resolved value.
-pub fn norm2_wide_environment_policy(
-    value: Result<&str, &std::env::VarError>,
-    admitted: bool,
-) -> Res<bool> {
-    match value {
-        Err(std::env::VarError::NotPresent) => Ok(admitted),
-        Ok("0") => Ok(false),
-        Ok("1") if admitted => Ok(true),
-        Ok("1") => Err("norm2 wide pack requires MEMRA_DSV4_NORM_FUSE2=1".into()),
-        _ => Err("MEMRA_DSV4_NORM2_WIDE requires 0 or 1".into()),
-    }
-}
-
 /// memra #458, RESOLVED BY DELETION 2026-09-11. The matrix program's plain
 /// gate/up split-K arm computed gate and up in ONE fused launch, so it required
 /// the fused-GU arm; `gate_up` refused with "split-K requires plain fused GU"
@@ -507,30 +436,8 @@ fn unset() -> Result<&'static str, &'static std::env::VarError> {
     Err(&NOT_PRESENT)
 }
 
-fn resolve_norm_fuse(p: &Dsv4Program) -> DoorState {
-    match norm_fuse_environment_policy(unset(), norm_admitted(p.chains_f32)) {
-        Ok(true) => DoorState::On(DoorShape::AllRoutedShapes),
-        Ok(false) => DoorState::Off,
-        Err(_) => DoorState::RefusedAtLoad,
-    }
-}
 
-fn resolve_norm_fuse2(p: &Dsv4Program) -> DoorState {
-    match norm_fuse2_environment_policy(unset(), norm_admitted(p.chains_f32)) {
-        Ok(true) => DoorState::On(DoorShape::AllRoutedShapes),
-        Ok(false) => DoorState::Off,
-        Err(_) => DoorState::RefusedAtLoad,
-    }
-}
 
-fn resolve_norm2_wide(p: &Dsv4Program) -> DoorState {
-    let fuse2 = resolve_norm_fuse2(p).engaged();
-    match norm2_wide_environment_policy(unset(), fuse2) {
-        Ok(true) => DoorState::On(DoorShape::AllRoutedShapes),
-        Ok(false) => DoorState::Off,
-        Err(_) => DoorState::RefusedAtLoad,
-    }
-}
 
 fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     // `arm_full_token_replay_for_gate` is the only caller, its admission needs
@@ -615,18 +522,6 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with norm-fuse",
     },
     DoorRow {
-        name: "norm-fuse",
-        env: "MEMRA_DSV4_NORM_FUSE",
-        merged: "#404",
-        declared_default: DeclaredDefault::On,
-        declared_served: DoorState::On(DoorShape::AllRoutedShapes),
-        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-        resolve: resolve_norm_fuse,
-        admitted_by: AdmittingProgram::ServedProgram,
-        merged_gain_pct: (1.618979, 1.609496),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with dense-fast",
-    },
-    DoorRow {
         name: "HC dot split S16",
         env: "MEMRA_DSV4_HC_DOT_SPLIT",
         merged: "#418",
@@ -636,30 +531,6 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         resolve: resolve_hc_dot_split,
         admitted_by: AdmittingProgram::ServedProgram,
         merged_gain_pct: (2.701174, 2.591532),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
-    },
-    DoorRow {
-        name: "norm-fuse2",
-        env: "MEMRA_DSV4_NORM_FUSE2",
-        merged: "#426",
-        declared_default: DeclaredDefault::On,
-        declared_served: DoorState::On(DoorShape::AllRoutedShapes),
-        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-        resolve: resolve_norm_fuse2,
-        admitted_by: AdmittingProgram::ServedProgram,
-        merged_gain_pct: (1.1022, 0.9839),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
-    },
-    DoorRow {
-        name: "norm2-wide",
-        env: "MEMRA_DSV4_NORM2_WIDE",
-        merged: "#430",
-        declared_default: DeclaredDefault::On,
-        declared_served: DoorState::On(DoorShape::AllRoutedShapes),
-        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
-        resolve: resolve_norm2_wide,
-        admitted_by: AdmittingProgram::ServedProgram,
-        merged_gain_pct: (5.955257, 5.749573),
         measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair",
     },
 ];
@@ -884,8 +755,8 @@ mod tests {
         // reported as an undeclared door. The row's teeth are in its resolver,
         // not in this label, and #482's synthetic rows label themselves the
         // same way.
-        env: "MEMRA_DSV4_NORM_FUSE",
-        merged: "#404",
+        env: "MEMRA_DSV4_REPLAY_CADENCE",
+        merged: "#374",
         declared_default: DeclaredDefault::On,
         declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
         declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
@@ -927,8 +798,8 @@ mod tests {
     fn a_door_that_claims_an_engagement_it_does_not_get_is_caught() {
         const LIAR: &[DoorRow] = &[DoorRow {
             name: "a TP/EP-only door, claiming the served path",
-            env: "MEMRA_DSV4_NORM_FUSE",
-            merged: "#404",
+            env: "MEMRA_DSV4_REPLAY_CADENCE",
+            merged: "#374",
             declared_default: DeclaredDefault::On,
             // The lie, and it is a lie about a SYNTHETIC door on purpose: see
             // the note on `resolve_synthetic_tp_ep_only`. This arm used to lie
@@ -1217,17 +1088,15 @@ mod tests {
         // Its own FLAGS row says no serving request arms full-token replay.
         const RECLASSIFY: &[&str] = &["replay cadence"];
         // TP/EP cannot serve at all, so a door admitted only there waits on
-        // nothing. EMPTY since the PP-2 norm port took the last three out of it;
-        // see the required synthetic subject below, which is what keeps the
+        // nothing. EMPTY since the norm doors left the registry: the PP-2 port
+        // took them out of this list and the served ABBA then deleted them. See
+        // the required synthetic subject below, which is what keeps the
         // permanence disposition asserted when this list holds nobody.
         const PERMANENTLY_UNREACHABLE: &[&str] = &[];
         const ENGAGED: &[&str] = &[
             "dense exact-tail transport",
             "dense-fast",
             "HC dot split S16",
-            "norm-fuse",
-            "norm-fuse2",
-            "norm2-wide",
         ];
 
         // COVERAGE, and it is the half that was missing. Until 2026-09-11 this
@@ -1309,8 +1178,8 @@ mod tests {
         // runs on the synthetic stand-in, which nobody can repair.
         const TP_EP_ONLY: DoorRow = DoorRow {
             name: "a future TP/EP-only door",
-            env: "MEMRA_DSV4_NORM_FUSE",
-            merged: "#404",
+            env: "MEMRA_DSV4_REPLAY_CADENCE",
+            merged: "#374",
             declared_default: DeclaredDefault::On,
             declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
@@ -1363,7 +1232,7 @@ mod tests {
         // checks. Same lesson as the red arms above, one level up. Two anchors
         // now, neither of them a door name.
         assert!(!DSV4_DOORS.is_empty(), "an empty registry loops zero times");
-        assert_eq!(DSV4_DOORS.len(), 7);
+        assert_eq!(DSV4_DOORS.len(), 4);
         // 1. The machinery is alive and program-sensitive, by construction and
         //    permanently: the synthetic stand-in cannot be fixed.
         assert_ne!(
@@ -1400,12 +1269,10 @@ mod tests {
                 "replay cadence",
                 "dense exact-tail transport",
                 "dense-fast",
-                "norm-fuse",
-                "norm-fuse2",
             ]
         );
-        // The doors ABOVE the floor used to be named literally here
-        // (`["HC dot split S16", "norm2-wide"]`), which is the same disease as
+        // The doors ABOVE the floor used to be named literally here, which is
+        // the same disease as
         // the red arms one level up: an assertion pinned to a door NAME to prove
         // something about the MECHANISM. Deleting or renaming either door would
         // have broken it for a reason unrelated to what it checks. Stated as the
@@ -1449,12 +1316,7 @@ mod tests {
         // weaker complaint, kept separate so it cannot be quoted as the first.
         assert_eq!(
             engaged_but_below_the_floor(DSV4_DOORS, DEV_PAIR_INSTRUMENT_FLOOR_PCT),
-            vec![
-                "dense exact-tail transport",
-                "dense-fast",
-                "norm-fuse",
-                "norm-fuse2"
-            ]
+            vec!["dense exact-tail transport", "dense-fast"]
         );
         // Red arm: the sets are computed from the floor, not asserted. Drop the
         // floor below every merged magnitude and both sets must empty out.
@@ -1486,8 +1348,8 @@ mod tests {
         // stands in for the next one, inert and below any floor.
         const OFF_DOOR: &[DoorRow] = &[DoorRow {
             name: "a default-OFF door, inert and unmeasurable",
-            env: "MEMRA_DSV4_NORM_FUSE",
-            merged: "#404",
+            env: "MEMRA_DSV4_REPLAY_CADENCE",
+            merged: "#374",
             declared_default: DeclaredDefault::Off,
             declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
@@ -1514,8 +1376,8 @@ mod tests {
         // excluded it rather than some other term.
         const ON_DOOR: &[DoorRow] = &[DoorRow {
             name: "the same row, defaulting ON",
-            env: "MEMRA_DSV4_NORM_FUSE",
-            merged: "#404",
+            env: "MEMRA_DSV4_REPLAY_CADENCE",
+            merged: "#374",
             declared_default: DeclaredDefault::On,
             declared_served: DoorState::OffProgram(SYNTHETIC_TP_EP_ONLY),
             declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
