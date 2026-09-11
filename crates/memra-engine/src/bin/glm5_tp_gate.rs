@@ -697,10 +697,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     rm_env("MEMRA_MOE_TRACE");
     rm_env("MEMRA_MOE_WEIGHT_TRACE");
     rm_env("MEMRA_GLM5_EP_MAP");
-    // The batched verify walk PINNED ON for the banked battery (the S2/Q-S4 arms depend
-    // on it and SF2/SW mutate it; a caller env carrying =0 would bank per-row references
-    // and abort the first TP verify at the walk-entry guard — the pin law's own words:
-    // an unset variable inherits any future default flip, a pin does not).
+    // The batched verify walk PINNED ON for the banked battery (SW mutates it; a caller
+    // env carrying =0 would bank per-row references — the pin law's own words: an unset
+    // variable inherits any future default flip, a pin does not).
     set_env("MEMRA_GLM5_VERIFY_BATCH", "1");
     set_env("MEMRA_GLM5_TP_GATE_SAME_DEV", "1");
 
