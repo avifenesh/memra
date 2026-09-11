@@ -65,6 +65,28 @@ pub const ROW_SWEEP: [usize; 9] = [
 /// every row count rather than only at the pinned constant.
 pub const TILE_SWEEP: [i32; 6] = [1, 2, 4, 8, 16, 32];
 
+/// How many byte comparisons a complete run owes, derived from the sweeps rather
+/// than counted after the fact.
+///
+/// This exists because of a vacuity class the memra #482 audit named and neither
+/// lane had: not a check that cannot fail, but a check whose SUBJECT SET can
+/// become empty. `for rows in ROW_SWEEP` over an empty sweep passes, prints
+/// PASS, and has compared nothing. A `> 0` guard would catch the empty sweep and
+/// nothing else; an exact expectation also catches a cell that silently stopped
+/// contributing, which is the same defect one notch smaller.
+///
+/// Per row: the KV cell compares `rows * COLS_KV` f32 words; the norm2 cell
+/// compares f32 AND bf16 for the single-CTA symbol plus every tile count, so
+/// `2 * rows * COLS_H` per arm across `1 + TILE_SWEEP.len()` arms; the SwiGLU
+/// cell compares `rows * COLS_SH`.
+pub fn expected_comparisons(rows_sweep: &[usize], tiles_sweep: &[i32]) -> usize {
+    let arms = 1 + tiles_sweep.len();
+    rows_sweep
+        .iter()
+        .map(|&rows| rows * COLS_KV + arms * 2 * rows * COLS_H + rows * COLS_SH)
+        .sum()
+}
+
 /// Deterministic, distinct per (row, col). No RNG crate and no file: the gate
 /// must be reproducible from its own source.
 fn operand(row: usize, col: usize, salt: u64) -> f32 {
@@ -111,6 +133,13 @@ fn refuse_on_first_bit(
     control: &[u8],
     arm: &[u8],
 ) -> Res<()> {
+    if control.is_empty() || arm.is_empty() {
+        // Same class of defect one level down: two empty buffers "match", so a
+        // cell that produced nothing would report bit equality.
+        return Err(format!(
+            "{what} compared an EMPTY buffer at rows={rows} cols={cols}: nothing was checked"
+        ));
+    }
     match first_differing_bit(control, arm) {
         None => Ok(()),
         Some((byte, bit)) => {
@@ -144,15 +173,34 @@ impl Dsv4Gpu {
         println!(
             "PP2_PORT_PROTOCOL doors=MEMRA_DSV4_NORM_FUSE,MEMRA_DSV4_NORM_FUSE2,MEMRA_DSV4_NORM2_WIDE class=same device={device} rows={ROW_SWEEP:?} tiles={TILE_SWEEP:?}"
         );
+        // The empty-subject guard, before the loop rather than after it. An
+        // empty sweep is not a fast PASS, it is a gate that tested nothing.
+        if ROW_SWEEP.is_empty() || TILE_SWEEP.is_empty() {
+            return Err(
+                "PP2 port gate has an empty sweep: it would PASS having compared nothing".into(),
+            );
+        }
+        let owed = expected_comparisons(&ROW_SWEEP, &TILE_SWEEP);
         let mut comparisons = 0usize;
         for rows in ROW_SWEEP {
             comparisons += Self::pp2_norm_rope_cell(&stream, rows)?;
             comparisons += Self::pp2_norm2_pack_cell(&stream, rows)?;
             comparisons += Self::pp2_swiglu_pack_cell(&stream, rows)?;
         }
+        // And the count is CHECKED against what the sweeps owe, so a cell that
+        // silently stopped contributing fails here instead of shrinking a number
+        // nobody reads.
+        if comparisons != owed {
+            return Err(format!(
+                "PP2 port gate compared {comparisons} bytes, sweeps owe {owed}: a cell did not run"
+            ));
+        }
         let red = Self::pp2_red_arms(&stream)?;
+        if red == 0 {
+            return Err("PP2 port gate ran no red arms".into());
+        }
         println!(
-            "PP2_PORT_PASS comparisons={comparisons} red_arms={red} bits_equal=true class=same"
+            "PP2_PORT_PASS comparisons={comparisons} owed={owed} red_arms={red} bits_equal=true class=same"
         );
         Ok(())
     }
@@ -534,6 +582,42 @@ mod tests {
             let grid = DSV4_BATCH_WIDTH_MAX as u64 * tiles as u64;
             assert!(grid <= u32::MAX as u64, "grid {grid} at tiles={tiles}");
         }
+    }
+
+    /// The empty-subject vacuity class, tested directly (memra #482 audit,
+    /// 2026-09-11). A loop over a derived subject list PASSES when the list is
+    /// empty, so a check whose whole job is to compare things can end up proving
+    /// nothing about nothing. An exact expectation, rather than a `> 0` guard,
+    /// also catches the smaller version: a cell that stopped contributing.
+    #[test]
+    fn an_empty_sweep_owes_nothing_and_the_gate_would_notice() {
+        assert_eq!(expected_comparisons(&[], &TILE_SWEEP), 0);
+        assert_eq!(expected_comparisons(&ROW_SWEEP, &[]), {
+            // Even with no wide tiles the single-CTA arm still owes its bytes,
+            // so an empty TILE_SWEEP is a smaller subject set, not an empty one.
+            ROW_SWEEP
+                .iter()
+                .map(|&r| r * COLS_KV + 2 * r * COLS_H + r * COLS_SH)
+                .sum::<usize>()
+        });
+        assert!(expected_comparisons(&ROW_SWEEP, &TILE_SWEEP) > 0);
+        // Dropping one row from the sweep must change the expectation, or the
+        // expectation is not actually derived from the sweep.
+        assert_ne!(
+            expected_comparisons(&ROW_SWEEP, &TILE_SWEEP),
+            expected_comparisons(&ROW_SWEEP[..ROW_SWEEP.len() - 1], &TILE_SWEEP)
+        );
+    }
+
+    /// The comparator refuses an empty buffer rather than reporting equality,
+    /// which is the same vacuity one level down: two empty strings "match".
+    #[test]
+    fn the_comparator_refuses_an_empty_buffer() {
+        let err = refuse_on_first_bit("x", 0, 512, 4, &[], &[]).unwrap_err();
+        assert!(err.contains("EMPTY"), "{err}");
+        // And it still passes real equal buffers, so the guard did not just
+        // break the ordinary path.
+        assert!(refuse_on_first_bit("x", 1, 2, 4, &[0u8; 8], &[0u8; 8]).is_ok());
     }
 
     /// The operand generator must actually distinguish rows, or the whole sweep

@@ -1207,6 +1207,27 @@ mod tests {
     /// and a gate instrument's input is neither.
     #[test]
     fn each_inert_door_carries_its_own_disposition() {
+        // Every row in the registry must be named by one of the lists below, so
+        // a door added later cannot sit in this test's blind spot and a list
+        // that empties out cannot make the test vacuous (memra #482 audit).
+        let named: std::collections::BTreeSet<&str> = [
+            "replay cadence",
+            "dense exact-tail transport",
+            "dense-fast",
+            "HC dot split S16",
+            "norm-fuse",
+            "norm-fuse2",
+            "norm2-wide",
+        ]
+        .into_iter()
+        .collect();
+        let registry: std::collections::BTreeSet<&str> =
+            DSV4_DOORS.iter().map(|row| row.name).collect();
+        assert!(
+            !registry.is_empty(),
+            "empty registry: this test would be vacuous"
+        );
+        assert_eq!(registry, named, "a door is missing a disposition assertion");
         let disposition = |door: &str| {
             DSV4_DOORS
                 .iter()
@@ -1459,10 +1480,17 @@ mod tests {
         // And a floor above everything catches every inert door, and ONLY the
         // default-ON ones: a default-OFF door is off by decision, so it is not
         // a door with no evidence for its default.
-        assert_eq!(
-            doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 100.0),
-            inert_default_on_doors(DSV4_DOORS)
+        // Both sides are DERIVED, so equality between two empty lists would pass
+        // while proving nothing (memra #482 audit, the empty-subject vacuity
+        // class). This lane's port takes the inert list from four rows to one,
+        // so the day it reaches zero this assertion must stop passing quietly.
+        let at_any_floor =
+            doors_without_evidence_in_either_direction(DSV4_DOORS, &PROGRAM_FACTS, 100.0);
+        assert!(
+            !at_any_floor.is_empty(),
+            "empty subject set: a floor above every magnitude must still catch the inert doors"
         );
+        assert_eq!(at_any_floor, inert_default_on_doors(DSV4_DOORS));
         // Red arm for the default-ON filter itself, and the reason it is a
         // synthetic row rather than a registry one: under the owner's
         // 2026-09-10 ruling a same-class win with a clean receipt becomes the
