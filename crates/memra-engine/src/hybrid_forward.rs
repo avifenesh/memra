@@ -2717,7 +2717,7 @@ impl HybridModel {
                 }
                 Mixer::Linear(la) => self.linear_attn_prime(e, la, &h, None, t, cache, il)?,
                 Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, pos_d, t, il, cache, false)?
+                    self.mla_tp_attn_cached(e, mla, &h, pos_d, t, il, cache)?
                 }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, pos_d, t, il, cache)?,
                 Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
@@ -2887,7 +2887,7 @@ impl HybridModel {
                 Mixer::Full(fa) => self.full_attn_decode(e, fa, &h, pos_d, pos, cache, il)?,
                 Mixer::Linear(la) => self.linear_attn_decode(e, la, &h, cache, il)?,
                 Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, pos_d, 1, il, cache, false)?
+                    self.mla_tp_attn_cached(e, mla, &h, pos_d, 1, il, cache)?
                 }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, pos_d, 1, il, cache)?,
                 Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
@@ -4922,7 +4922,7 @@ impl HybridModel {
                 }
                 Mixer::Linear(la) => self.linear_attn_prime(e, la, &h, None, t, cache, il)?,
                 Mixer::Mla(mla) if mla.tp.is_some() => {
-                    self.mla_tp_attn_cached(e, mla, &h, &pos_d, t, il, cache, false)?
+                    self.mla_tp_attn_cached(e, mla, &h, &pos_d, t, il, cache)?
                 }
                 Mixer::Mla(mla) => self.mla_attn_cached(e, mla, &h, &pos_d, t, il, cache)?,
                 Mixer::Kda(la) if la.tp.is_some() => crate::glm5_tp::kda_tp_cached(
@@ -11747,7 +11747,6 @@ impl HybridModel {
         t: usize,
         il: usize,
         cache: &mut Cache,
-        rows_exact: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let tp = mla
             .tp
@@ -11783,14 +11782,13 @@ impl HybridModel {
         }
 
         // Peer passes first (each rank's heads over its replica), then root (canonical
-        // plane unchanged) — v1's issue order at two ranks. `rows_exact` threads the
-        // caller's matmul class through every rank: false = the prime/decode walk
-        // (byte-for-byte the pre-composition arm), true = the spec x TP verify walk
-        // (lane/glm5-composition) riding the same rows-exact classes as the unsharded
-        // verify walk.
+        // plane unchanged): v1's issue order at two ranks. The walk runs the
+        // prime/decode matmul class on every rank (byte-for-byte the pre-composition
+        // arm); the spec x TP verify class that shared this body was deleted with the
+        // declined composition (memra #387 NEGATIVE, 2026-09-11).
         let mut attn: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-        // Pool-split indexer for grouped prime; decode and verify stay replicated.
-        if !rows_exact && Self::mla_tp_indexer_split_ready(mla, tp, cache, il, t) {
+        // Pool-split indexer for grouped prime; decode stays replicated.
+        if Self::mla_tp_indexer_split_ready(mla, tp, cache, il, t) {
             let parts = self.mla_tp_attn_indexer_split(
                 e,
                 mla,
@@ -11817,16 +11815,13 @@ impl HybridModel {
                     il,
                     layer,
                     max_ctx,
-                    rows_exact,
+                    false,
                 )?);
             }
-            attn[0] =
-                {
-                    let layer = cache.latent[il].as_mut().unwrap();
-                    Some(self.mla_attn_cached_pre_wo(
-                        e, mla, h, pos_d, t, il, layer, max_ctx, rows_exact,
-                    )?)
-                };
+            attn[0] = {
+                let layer = cache.latent[il].as_mut().unwrap();
+                Some(self.mla_attn_cached_pre_wo(e, mla, h, pos_d, t, il, layer, max_ctx, false)?)
+            };
         }
 
         let part = hl * dv;
@@ -11848,11 +11843,7 @@ impl HybridModel {
             for (r, a) in attn_refs.iter().enumerate() {
                 let dev = crate::glm5_tp::rank_engine(e, rt, r);
                 let wo = if r == 0 { &mla.wo } else { &tp.peers[r - 1].wo };
-                partials.push(if rows_exact {
-                    dev.matmul_rows_exact(wo, a, t)?
-                } else {
-                    dev.matmul(wo, a, t)?
-                });
+                partials.push(dev.matmul(wo, a, t)?);
             }
             // MEMRA_TP_AR_1STAGE: this is a COLLECTIVE, not a hop. Done as a push plus a fold it
             // costs 4 launches and 8 cross-context event operations; the one-shot is two launches
@@ -11888,19 +11879,11 @@ impl HybridModel {
         // every rank. `full_heads * dv == ranks * (hl * dv)` by the shard map.
         let fulls = crate::tp_transport::gather_parts(&hop, &attn_refs, t, part)?;
 
-        // Column-parallel wo slices + output concat (pure movement). The verify walk's
-        // wo rides the rows-exact class, exactly like the unsharded verify walk's wo.
+        // Column-parallel wo slices + output concat (pure movement).
         let mut ys = Vec::with_capacity(ranks);
-        if rows_exact {
-            ys.push(e.matmul_rows_exact(&mla.wo, &fulls[0], t)?);
-            for r in 1..ranks {
-                ys.push(rt.peers[r - 1].matmul_rows_exact(&tp.peers[r - 1].wo, &fulls[r], t)?);
-            }
-        } else {
-            ys.push(e.matmul(&mla.wo, &fulls[0], t)?);
-            for r in 1..ranks {
-                ys.push(rt.peers[r - 1].matmul(&tp.peers[r - 1].wo, &fulls[r], t)?);
-            }
+        ys.push(e.matmul(&mla.wo, &fulls[0], t)?);
+        for r in 1..ranks {
+            ys.push(rt.peers[r - 1].matmul(&tp.peers[r - 1].wo, &fulls[r], t)?);
         }
         // HOP 3 — concat the column parts into the mixer output on ROOT.
         debug_assert_eq!(n_embd, ranks * hh);

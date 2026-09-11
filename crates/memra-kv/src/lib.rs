@@ -2068,10 +2068,10 @@ pub struct Cache {
     /// engine's TP walk on first touch (the kpool-plane precedent). The canonical
     /// `recur[il]` planes stay allocated untouched (full-width; never read by the TP walk).
     /// `None` everywhere the seam is off. The prefix-cache snapshot seams REFUSE while any
-    /// slot is live (per-rank planes are not carried by CacheSnapshot); the SPEC
-    /// verify/rollback seam is WIRED for these planes since lane/glm5-composition
-    /// (admitted behind MEMRA_GLM5_SPEC_TP, default OFF) — the snapshot refusal is now a
-    /// live runtime guard, never dead code.
+    /// slot is live (per-rank planes are not carried by CacheSnapshot); the spec x TP
+    /// verify/rollback seam that was wired for these planes was deleted with the
+    /// declined composition (memra #387 NEGATIVE, 2026-09-11): the snapshot refusal
+    /// is now a live runtime guard, never dead code.
     pub glm5_tp_recur: Vec<Option<Vec<RecurLayer>>>,
     /// glm5 TP PEER replicas of the MLA latent+indexer plane (replicated deterministic
     /// compute: every rank appends identical bytes in the same calls), one per peer rank

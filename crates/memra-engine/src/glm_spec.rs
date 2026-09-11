@@ -372,19 +372,6 @@ pub fn glm5_spec_fullcover_on() -> bool {
     std::env::var("MEMRA_GLM5_SPEC_FULLCOVER").as_deref() == Ok("1")
 }
 
-/// `MEMRA_GLM5_SPEC_TP` (default OFF, lane/glm5-composition 2026-09-01): admit glm5 spec
-/// SESSIONS on a `MEMRA_GLM5_TP`-armed model. DEFAULT OFF BY DESIGN (new-flags law): the
-/// composition's verify/rollback wiring is rig-gated for correctness (per-rank KDA
-/// snapshot/replay, per-replica MLA latent truncation — `glm5-tp-gate` arms S*), but it has
-/// ZERO real-artifact receipts and the TP serving wiring is still the named box increment;
-/// an unmeasured composition does not default ON. `=1` lifts ONLY the session co-refusal —
-/// every other admission law holds (draft source required, batched verify walk required:
-/// the per-row rollback seam carries no TP arm and refuses by name). Read per session
-/// creation. Rollback seam: unset (the co-refusal is restored verbatim).
-pub fn glm5_spec_tp_on() -> bool {
-    std::env::var("MEMRA_GLM5_SPEC_TP").as_deref() == Ok("1")
-}
-
 /// `MEMRA_SPEC_PENALTY` (default OFF, lane/spec-exclusions-20260902): admit PENALIZED
 /// requests (repetition / frequency / presence, greedy AND sampled) to the glm5 spec route.
 /// Pre-lane every penalized request served plain (`reason=penalized`), which on agent
@@ -715,11 +702,6 @@ pub struct Glm5VerifyCkpt {
     /// layer per round — ring snapshot + stolen raw conv rows + stolen batched scan
     /// inputs; rollback re-rolls the ring and replays the scan ONCE at T=keep.
     kda_rows: Vec<Option<crate::kda::KdaRowsStash>>,
-    /// glm5 TP composition (lane/glm5-composition): per-rank rollback material of each
-    /// SHARDED KDA layer's batched verify call — the rank-indexed twin of
-    /// (`kda_ssm_snap`, `kda_rows`), restored through each rank's own engine. `None` on
-    /// every unsharded layer.
-    kda_tp: Vec<Option<crate::glm5_tp::Glm5TpKdaVerifyStash>>,
     /// Row count of the walk that filled this ckpt; rollback validates `keep` against it.
     rows: usize,
 }
@@ -1279,15 +1261,15 @@ impl HybridModel {
                 }
             }
         }
-        // spec x TP composition (lane/glm5-composition): the per-row walk carries no TP
-        // rollback arm — a sharded trunk demands the BATCHED walk at t > 1 (t = 1 rounds
-        // ride the TP decode walk below; full accept is the only legal outcome there).
-        if any_sharded && t > 1 && !glm5_verify_batch_on() {
+        // The spec x TP composition was DECLINED (memra #387 NEGATIVE, 2026-09-11):
+        // the verify walk carries no TP arm at any width, so a sharded trunk refuses
+        // here by name: defense in depth under the session co-refusal above, and the
+        // pin for the gate's SW arm, which reaches this walk without a session.
+        if any_sharded {
             return Err(
-                "glm5_verify_rows: the trunk is glm5-TP-SHARDED and MEMRA_GLM5_VERIFY_BATCH=0 — \
-                 the per-row rollback seam carries no TP arm; the spec x TP composition \
-                 requires the batched verify walk (unset MEMRA_GLM5_VERIFY_BATCH or run \
-                 without the TP door)"
+                "glm5_verify_rows: the trunk is glm5-TP-SHARDED and the verify walk \
+                 carries no TP arm (the spec x TP composition was declined, memra #387 \
+                 NEGATIVE, 2026-09-11)"
                     .into(),
             );
         }
@@ -1313,7 +1295,6 @@ impl HybridModel {
             },
             kda_scan_stash: (0..self.layers.len()).map(|_| None).collect(),
             kda_rows: (0..self.layers.len()).map(|_| None).collect(),
-            kda_tp: (0..self.layers.len()).map(|_| None).collect(),
             rows: t,
         };
 
@@ -1425,44 +1406,6 @@ impl HybridModel {
                 };
             let mixed = if layer_batched {
                 match &layer.mixer {
-                    // spec x TP composition: sharded mixers ride the TP verify walks —
-                    // per-rank batched rows calls, column-parallel-over-gather joins on
-                    // the rows-exact classes, per-rank rollback stash into the ckpt.
-                    Mixer::Kda(la) if la.tp.is_some() => {
-                        let t0 = vclock(trace_v);
-                        let mut scan_ns = 0u64;
-                        let (out, stash) = crate::glm5_tp::kda_tp_verify_rows(
-                            e,
-                            la,
-                            &h,
-                            t,
-                            eps,
-                            cache,
-                            il,
-                            trace_v.then_some(&mut scan_ns),
-                        )?;
-                        ckpt.kda_tp[il] = Some(stash);
-                        if let Some(t0) = t0 {
-                            let _ = e.stream().synchronize();
-                            use std::sync::atomic::Ordering;
-                            crate::spec_phase::V_KDA_NS
-                                .fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
-                            crate::spec_phase::V_KDA_SCAN_NS.fetch_add(scan_ns, Ordering::Relaxed);
-                        }
-                        out
-                    }
-                    Mixer::Mla(mla) if mla.tp.is_some() => {
-                        let t0 = vclock(trace_v);
-                        let out =
-                            self.mla_tp_attn_cached(e, mla, &h, &pos.all, t, il, cache, true)?;
-                        if let Some(t0) = t0 {
-                            let _ = e.stream().synchronize();
-                            use std::sync::atomic::Ordering;
-                            crate::spec_phase::V_MLA_NS
-                                .fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
-                        }
-                        out
-                    }
                     Mixer::Kda(la) => {
                         // Pre-round snapshot: ONE ssm clone per layer per round, BEFORE
                         // the batched call advances the resident state (ckpt doc; also
@@ -1580,38 +1523,6 @@ impl HybridModel {
                         &pos_row
                     };
                     let out_row = match &layer.mixer {
-                        // spec x TP composition on the per-row arm. KDA shards reach
-                        // here at t == 1 ONLY, asserted locally: the walk-entry guard is
-                        // a FLAG check two frames up (MEMRA_GLM5_VERIFY_BATCH=0 at t>1
-                        // refuses), and under the batched flag layer_batched is
-                        // unconditionally true for KDA — but neither is a structural
-                        // invariant of THIS arm (#80 review's latent-trap finding). A
-                        // sharded NO-INDEXER MLA layer legally lands here at any t
-                        // (append + truncate rollback covers every keep; foreign
-                        // geometry, never a live glm5_next path).
-                        Mixer::Kda(la) if la.tp.is_some() => {
-                            if t > 1 {
-                                return Err(format!(
-                                    "glm5 verify per-row arm reached a sharded KDA \
-                                     layer {il} at t={t}: no per-rank rollback stash \
-                                     exists on this arm (walk-entry guard bypassed?)"
-                                )
-                                .into());
-                            }
-                            crate::glm5_tp::kda_tp_cached(
-                                e,
-                                la,
-                                &h_row,
-                                1,
-                                eps,
-                                cache,
-                                il,
-                                crate::kda::ConvArm::Decode,
-                            )?
-                        }
-                        Mixer::Mla(mla) if mla.tp.is_some() => {
-                            self.mla_tp_attn_cached(e, mla, &h_row, pos_r, 1, il, cache, false)?
-                        }
                         Mixer::Kda(la) => {
                             // Pre-round snapshot: ONE ssm clone per layer per round taken
                             // before row 0 mutates the resident state (loop-port 3).
@@ -2125,6 +2036,22 @@ impl HybridModel {
             )
             .into());
         }
+        // The spec x TP composition was DECLINED (memra #387 NEGATIVE, 2026-09-11):
+        // the rollback seam carries no TP arm either, so a sharded trunk refuses here
+        // by name: the walk-entry guard's twin for direct rollback callers.
+        let sharded = self.layers.iter().any(|l| match &l.mixer {
+            Mixer::Kda(la) => la.tp.is_some(),
+            Mixer::Mla(mla) => mla.tp.is_some(),
+            _ => false,
+        });
+        if sharded {
+            return Err(
+                "glm5_verify_rollback: the trunk is glm5-TP-SHARDED and the rollback seam \
+                 carries no TP arm (the spec x TP composition was declined, memra #387 \
+                 NEGATIVE, 2026-09-11)"
+                    .into(),
+            );
+        }
         match crate::pp::pp_cuts(self.layers.len()) {
             Some(fence) if !crate::pp::pp2_streams_off() => {
                 let rt = crate::pp::PpNRt::get(e)?;
@@ -2185,44 +2112,6 @@ impl HybridModel {
                 if let Some(indexer) = mla.index.as_ref() {
                     plane.truncate_index_pool_keys(indexer.geom.pool);
                 }
-                // spec x TP composition: the PEER latent replicas append in lock-step with
-                // the canonical plane (the TP walk's construction), so the same truncation
-                // restores each of them — through its own rank's engine for the device
-                // `len_d` mirror. Full accept skips the loop (lens already read
-                // saved + rows — the KDA arm's early-out twin; each skipped store is a
-                // synchronizing pageable copy per rank per layer on the HOT outcome).
-                // Missing replicas after a verify walk are a wiring bug and refuse by
-                // name, never a silent canonical-only restore (#80 review hardening).
-                if let Some(tp) = mla.tp.as_ref() {
-                    let replicas = cache.glm5_tp_latent_peer[il].as_mut().ok_or_else(|| {
-                        format!(
-                            "glm5_verify_rollback: sharded MLA layer {il} has no peer \
-                             latent replicas (the TP verify walk hydrates them; a \
-                             rollback without them would silently restore the canonical \
-                             plane only)"
-                        )
-                    })?;
-                    for (i, replica) in replicas.iter_mut().enumerate() {
-                        replica.len = saved + keep;
-                        tp.rt.peers[i].i32_mirror_store(&mut replica.len_d, len_i32)?;
-                        if let Some(indexer) = mla.index.as_ref() {
-                            replica.truncate_index_pool_keys(indexer.geom.pool);
-                        }
-                    }
-                }
-            }
-            Mixer::Kda(la) if la.tp.is_some() => {
-                if keep == ckpt.rows {
-                    return Ok(()); // resident per-rank states ARE the post-keep states
-                }
-                let stash = ckpt.kda_tp[il].as_ref().ok_or_else(|| {
-                    format!(
-                        "glm5_verify_rollback: sharded KDA layer {il} has no per-rank stash \
-                         (the batched TP verify walk fills it; the per-row arm is refused \
-                         at walk entry)"
-                    )
-                })?;
-                crate::glm5_tp::kda_tp_verify_rollback(e, la, stash, keep, cache, il)?;
             }
             Mixer::Kda(la) => {
                 if keep == ckpt.rows {
@@ -2521,11 +2410,8 @@ impl HybridModel {
         if self.hyper.is_none() {
             return Err("generate_spec_glm5 requires a HyperConnections trunk".into());
         }
-        // Two parallel/spec programs on one model never silently coexist unless the
-        // composition is EXPLICITLY armed: the spec x TP verify/rollback wiring
-        // (lane/glm5-composition) exists and is rig-gated, but it has zero real-artifact
-        // receipts, so sessions on a SHARDED model stay co-refused unless
-        // MEMRA_GLM5_SPEC_TP=1 lifts the refusal (default OFF by design — the FLAGS row).
+        // The spec x TP composition was DECLINED (memra #387 NEGATIVE, 2026-09-11),
+        // so sessions on a SHARDED model stay co-refused and no flag lifts this.
         // The predicate is the MODEL's own sharding (the same per-layer truth the verify
         // walk keys on), never the MEMRA_GLM5_TP env: sharding is a load-time property,
         // and an env read here is bypassable after load (set/load/unset) and spuriously
@@ -2537,25 +2423,12 @@ impl HybridModel {
             _ => false,
         });
         if tp_sharded {
-            if !glm5_spec_tp_on() {
-                return Err(
-                    "glm5 spec is co-refused on a MEMRA_GLM5_TP-sharded model: set \
-                     MEMRA_GLM5_SPEC_TP=1 to run the gated spec x TP composition \
-                     (default OFF — zero real-artifact receipts; every other admission \
-                     law still holds)"
-                        .into(),
-                );
-            }
-            if !glm5_verify_batch_on() {
-                return Err("MEMRA_GLM5_SPEC_TP=1 requires the BATCHED verify walk \
-                     (MEMRA_GLM5_VERIFY_BATCH must not be 0): the per-row rollback seam \
-                     carries no TP arm"
-                    .into());
-            }
-            // The ARMED announce prints AFTER the last admission law below — a session
-            // refused later (draft source, ppN qualification, penalties, ctx) must never
-            // log the engagement receipt (the fleet's prints-ARMED-then-serves-plain
-            // trap class; rig-gates/03 caught SF3 logging it on a refused session).
+            return Err(
+                "glm5 spec is co-refused on a MEMRA_GLM5_TP-sharded model: the spec x TP \
+                 composition was declined (memra #387 NEGATIVE, 2026-09-11) and no flag \
+                 lifts this"
+                    .into(),
+            );
         }
         // DRAFT-SOURCE SELECTION — through the GENERAL law
         // ([`crate::spec::resolve_draft_source_kind`], lane/glm5-extract2): DFlash2 when the
@@ -2692,7 +2565,6 @@ impl HybridModel {
             pen,
             mtp_il,
             source_kind,
-            tp_sharded,
             prof,
         )
     }
