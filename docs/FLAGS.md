@@ -1501,11 +1501,9 @@ the engine reads to be a declared door or an exempt non-door with a reason).
 |---|---|---:|---|---|---|---|
 | replay cadence | #374 | +1.007107% / +1.074545% | ON | **no serving caller** | reclassify as a gate input | full-token replay is armed per request by a gate binary only; no serving or eager request arms it, on any program |
 | dense exact-tail transport | #374 | +0.459578% / +0.397451% | ON | ON, `m == 1` only | engaged | generic dense entry, but the control scope suppresses it for every `m > 1`, so prefill chunks never use it |
-| graph split-K | #392 | **+10.226982% / +10.023951%** | ON | **off-program** | follows the matrix verdict (memra #461) | the arm lives in the matrix expert executor, which CAN serve and was measured serving; the served reference program does not run it |
 | dense-fast | #404 | +1.618979% / +1.609496% composed | ON | ON, `m == 1` only | engaged | same `m == 1` scope as the dense tail |
 | norm-fuse | #404 | +1.618979% / +1.609496% composed | ON | ON, every routed shape | engaged since the PP-2 port | admission is `chains_f32` alone; the TP/EP term was an assumption and the `t == 1` term was a grid-1 launcher |
 | HC dot split S16 | #418 | +2.701174% / +2.591532% | ON | ON | engaged | gates on `dots_f32 && rows == 24 && w == 16384`, no topology term |
-| split-K-fast | #425 | +1.727312% / +1.581907% | ON | **off-program** | follows the matrix verdict (memra #461) | it selects a split-K entry family; no split-K call site, no door |
 | norm-fuse2 | #426 | +1.1022% / +0.9839% | ON | ON, every routed shape | engaged since the PP-2 port | same `chains_f32` admission; the pack launchers take `rows` |
 | norm2-wide | #430 | **+5.955257% / +5.749573%** | ON | ON, every routed shape | engaged since the PP-2 port | admitted when norm-fuse2 is, and norm-fuse2 now is |
 
@@ -1527,9 +1525,9 @@ the engine reads to be a declared door or an exempt non-door with a reason).
   precondition (the fused kernel IS the f32-accumulator tree with the cast folded into its epilogue,
   so fusing without f32x chains would be a NEW numeric class). TP/EP still cannot serve (memra #457,
   both refusals stand); it is simply no longer what these doors need.
-- **Follows the matrix verdict** (graph split-K, split-K-fast). The matrix expert executor CAN
-  serve, and a sibling lane measured it on the served path at +42% to +140% prefill, so whether
-  these ever engage is memra #461's question, not door hygiene's.
+- **Follows the matrix verdict**: EMPTY since memra #482. Both rows that sat here, graph split-K and
+  split-K-fast, were DELETED with that flip rather than answered by it, because their precondition is
+  a post-load gate call no serving process makes. The ledger entry below is where they went.
 - **Reclassify as a gate input** (replay cadence). Its own row above says no automatic arming for
   serving; no program decision can create a caller.
 
@@ -1544,16 +1542,18 @@ some row trips it is a rule that stops having teeth the day the row is fixed.
 The dev pair drifts about 5% monotonically within one arm across a single run (darklanes
 `KNEE:dev-pair-run-drift-swamps-sub-2pct-levers`, the finding that deleted the split vocab head
 door), so a door merged at under about 2% is below that instrument's resolution however disjoint its
-steady rows looked. Six of the nine are: **replay cadence, dense exact-tail, dense-fast, norm-fuse,
-split-K-fast, norm-fuse2**. Three are above it: graph split-K (+10.2%), norm2-wide (+5.96%), HC dot
-split (+2.70%, the closest to the line). This re-litigates nothing; it is the honest scope of what we
-know, pinned by `the_doors_merged_below_the_dev_pair_instrument_floor_are_named`.
+steady rows looked. Five of the seven are: **replay cadence, dense exact-tail, dense-fast, norm-fuse,
+norm-fuse2**. Two are above it: norm2-wide (+5.96%) and HC dot split (+2.70%, the closest to the
+line). It was six of nine until memra #482 deleted the split-K pair. This re-litigates nothing;
+it is the honest scope of what we know, pinned by
+`the_doors_merged_below_the_dev_pair_instrument_floor_are_named`.
 
-Two doors are BOTH inert on the served path and below that floor, so there is no evidence for their
-default in either direction: **replay cadence, split-K-fast**. That is a stronger case for removal
-than either fact alone. norm-fuse and norm-fuse2 left that set by being ported rather than by being
-re-measured: they are now engaged and below the floor, which is the weaker and separate complaint
-`engaged_but_below_the_floor` names, and the served ABBA in this lane is what settles them.
+ONE door is BOTH inert on the served path and below that floor, so there is no evidence for its
+default in either direction: **replay cadence**. That is a stronger case for removal than either
+fact alone. It was four rows before 2026-09-11: split-K-fast left by DELETION with memra #482, and
+norm-fuse and norm-fuse2 left by being PORTED rather than by being re-measured. Those two are now
+engaged and below the floor, which is the weaker and separate complaint `engaged_but_below_the_floor`
+names, and the served ABBA in this lane is what settles them.
 
 `DoorState` records the resolution (`Off`, `OffProgram`, `NoServingCaller`) and
 `served_disposition` turns it into a decision by asking which program admits the door and whether
