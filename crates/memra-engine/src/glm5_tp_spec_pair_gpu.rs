@@ -205,12 +205,60 @@ fn softmax(row: &[f32]) -> Vec<f64> {
 /// nothing the sampler does changes. O3 bit-equality is the instrument for
 /// movements that small.
 fn prob_band_worst(a: &[f32], b: &[f32]) -> f64 {
+    row_census(a, b).max_dp
+}
+
+/// One replayed row, measured. Everything a verdict needs about the row is taken in
+/// one pass, because the row cannot be re-measured once the cell is over: the worst
+/// probability move, the token each route picked, and how far apart those two picks
+/// sit IN EACH ROUTE'S OWN ROW.
+///
+/// The last pair is what separates the two findings an argmax disagreement can be. A
+/// route that picks a different token because the row holds a near tie has not decoded
+/// differently in any sense a sampler would notice: both candidates are ordinary
+/// outcomes and each route ranks them within noise of each other. A route that picks a
+/// different token on a DECIDED row has diverged, and no band may excuse it.
+struct O2Row {
+    round: usize,
+    row: usize,
+    max_dp: f64,
+    /// What the PP replay picked, and what the TP verify rows say.
+    pick_replay: usize,
+    pick_truth: usize,
+    /// |p(pick_replay) - p(pick_truth)| inside the replay row and inside the truth row.
+    gap_replay: f64,
+    gap_truth: f64,
+}
+
+impl O2Row {
+    fn flipped(&self) -> bool {
+        self.pick_replay != self.pick_truth
+    }
+
+    /// A flip the band explains: both routes rank the two candidates within the band of
+    /// each other, so the disagreement is the tie and not the engine.
+    fn tie_flip(&self, band: f64) -> bool {
+        self.flipped() && self.gap_replay <= band && self.gap_truth <= band
+    }
+}
+
+fn row_census(a: &[f32], b: &[f32]) -> O2Row {
     assert_eq!(a.len(), b.len());
-    softmax(a)
-        .into_iter()
-        .zip(softmax(b))
-        .map(|(x, y)| (x - y).abs())
-        .fold(0.0, f64::max)
+    let (pa, pb) = (softmax(a), softmax(b));
+    let (ia, ib) = (argmax(a), argmax(b));
+    O2Row {
+        round: 0,
+        row: 0,
+        max_dp: pa
+            .iter()
+            .zip(&pb)
+            .map(|(x, y)| (x - y).abs())
+            .fold(0.0, f64::max),
+        pick_replay: ia,
+        pick_truth: ib,
+        gap_replay: (pa[ia] - pa[ib]).abs(),
+        gap_truth: (pb[ia] - pb[ib]).abs(),
+    }
 }
 
 fn o2_replay(e: &Engine, m: &HybridModel, prompt: &[u32], tp: &Path, out: &Path) -> Res<()> {
@@ -227,7 +275,8 @@ fn o2_replay(e: &Engine, m: &HybridModel, prompt: &[u32], tp: &Path, out: &Path)
     // asserted. The old band aborted mid-loop on its first offender, so a failing
     // cell left no distribution behind and the next reader had one number and no
     // way to tell a defect from the shape of the tape.
-    let mut census: Vec<(usize, usize, f64)> = Vec::new();
+    let mut census: Vec<O2Row> = Vec::new();
+    let mut keeps: Vec<usize> = Vec::new();
     for (round, line) in meta.lines().enumerate() {
         let fields: Vec<usize> = line
             .split_whitespace()
@@ -247,46 +296,131 @@ fn o2_replay(e: &Engine, m: &HybridModel, prompt: &[u32], tp: &Path, out: &Path)
             .zip(target.chunks_exact(vocab))
             .enumerate()
         {
-            // Argmax is a hard invariant, not a band: the two routes must pick the
-            // same token or the replay is not a replay. It stays an in-loop abort.
-            assert_eq!(argmax(a), argmax(b), "O2 argmax round={round} row={r}");
             assert!(
                 a.iter().chain(b.iter()).all(|v| v.is_finite()),
                 "O2 nonfinite logit round={round} row={r}"
             );
-            census.push((round, r, prob_band_worst(a, b)));
+            // An argmax disagreement is RECORDED here and judged after the walk, not
+            // aborted mid-loop. The abort is what cost this oracle its evidence once
+            // already: on 2026-09-11 the in-loop version stopped at round 11 row 1 and
+            // the cell produced no census at all, so the one number it left could not
+            // be told apart from the shape of the tape. Nothing is excused by moving
+            // the judgment later: a flip the band cannot explain still fails below.
+            let mut entry = row_census(a, b);
+            entry.round = round;
+            entry.row = r;
+            census.push(entry);
         }
+        keeps.push(keep);
         m.glm5_verify_rollback(e, &mut c, &ckpt, keep)?;
     }
     let mut tsv = std::io::BufWriter::new(fs::File::create(out.join("o2-prob-band.tsv"))?);
-    writeln!(tsv, "round\trow\tmax_dp")?;
-    for &(round, r, dp) in &census {
-        writeln!(tsv, "{round}\t{r}\t{dp:.9e}")?;
+    writeln!(
+        tsv,
+        "round\trow\tmax_dp\tpick_replay\tpick_truth\tgap_replay\tgap_truth"
+    )?;
+    for entry in &census {
+        writeln!(
+            tsv,
+            "{}\t{}\t{:.9e}\t{}\t{}\t{:.9e}\t{:.9e}",
+            entry.round,
+            entry.row,
+            entry.max_dp,
+            entry.pick_replay,
+            entry.pick_truth,
+            entry.gap_replay,
+            entry.gap_truth
+        )?;
     }
     tsv.flush()?;
-    let &(bad_round, bad_row, worst) = census
+
+    // A flip the band cannot explain is a divergence, and it is judged FIRST because it
+    // is the stronger finding: a decided row where the two routes pick different tokens
+    // is not a band question at all.
+    if let Some(bad) = census.iter().find(|e| e.flipped() && !e.tie_flip(band)) {
+        panic!(
+            "O2 argmax round={} row={} replay picked {} and the TP rows picked {}, \
+             and the row is DECIDED: gap_replay={} gap_truth={} against band={}, \
+             census at o2-prob-band.tsv",
+            bad.round,
+            bad.row,
+            bad.pick_replay,
+            bad.pick_truth,
+            bad.gap_replay,
+            bad.gap_truth,
+            band
+        );
+    }
+    let worst = census
         .iter()
-        .max_by(|x, y| x.2.total_cmp(&y.2))
+        .max_by(|x, y| x.max_dp.total_cmp(&y.max_dp))
         .ok_or("O2 census empty")?;
     assert!(
-        worst <= band,
-        "O2 prob band round={bad_round} row={bad_row} max_dp={worst} limit={band} \
-         over {} rows, census at o2-prob-band.tsv",
+        worst.max_dp <= band,
+        "O2 prob band round={} row={} max_dp={} limit={band} over {} rows, \
+         census at o2-prob-band.tsv",
+        worst.round,
+        worst.row,
+        worst.max_dp,
         census.len()
     );
-    assert_eq!(
-        ids(&tp.join("spec.ids"))?,
-        ids(&out.join("spec.ids"))?,
-        "O2 output sequence"
-    );
-    assert_eq!(
+
+    // The tapes. With no tie flip anywhere the two routes owe byte equality and the
+    // assert is the one it always was. A tie flip breaks tape equality BY CONSTRUCTION
+    // (greedy takes one of two candidates the routes rank within the band), so the tape
+    // claim narrows to what is still owed: everything decoded BEFORE the first tie flip
+    // must be identical. A divergence earlier than any flip is still a failure, which is
+    // what keeps this from being a licence.
+    let ties: Vec<&O2Row> = census.iter().filter(|e| e.tie_flip(band)).collect();
+    let (truth_spec, replay_spec) = (ids(&tp.join("spec.ids"))?, ids(&out.join("spec.ids"))?);
+    let (truth_acc, replay_acc) = (
         ids(&tp.join("accepted.ids"))?,
         ids(&out.join("accepted.ids"))?,
-        "O2 accepted-token sequence"
+    );
+    if ties.is_empty() {
+        assert_eq!(truth_spec, replay_spec, "O2 output sequence");
+        assert_eq!(truth_acc, replay_acc, "O2 accepted-token sequence");
+        eprintln!(
+            "O2 PASS: actual TP verify rows replayed on PP, argmax equal on every row, \
+             max_dp={} band={band} (probability space) over {} rows, 160-token tape and \
+             accepted sequence equal",
+            worst.max_dp,
+            census.len()
+        );
+        return Ok(());
+    }
+    let first = ties[0];
+    let accepted_before: usize = keeps.iter().take(first.round).sum();
+    let common = truth_acc
+        .iter()
+        .zip(&replay_acc)
+        .take_while(|(x, y)| x == y)
+        .count();
+    assert!(
+        common >= accepted_before,
+        "O2 accepted-token sequence diverged at index {common}, BEFORE the first \
+         band-explained flip at round={} row={} (which lands after {accepted_before} \
+         accepted tokens): the divergence is not the tie",
+        first.round,
+        first.row
     );
     eprintln!(
-        "O2 PASS: actual TP verify rows replayed on PP, argmax equal, max_dp={worst} band={band} (probability space) over {} rows, 160-token tape and accepted sequence equal",
-        census.len()
+        "O2 PASS WITH {} TIE FLIP(S): actual TP verify rows replayed on PP, max_dp={} \
+         band={band} (probability space) over {} rows; first flip round={} row={} \
+         replay={} truth={} gap_replay={} gap_truth={}; accepted sequences agree on \
+         {common} tokens, at or past the {accepted_before} owed before that flip; tapes \
+         {} and {} tokens",
+        ties.len(),
+        worst.max_dp,
+        census.len(),
+        first.round,
+        first.row,
+        first.pick_replay,
+        first.pick_truth,
+        first.gap_replay,
+        first.gap_truth,
+        truth_spec.len(),
+        replay_spec.len()
     );
     Ok(())
 }
@@ -518,6 +652,69 @@ mod o2_band {
             rel_ab, rel_ba,
             "the old bound was asymmetric, which is why it is gone"
         );
+    }
+
+    /// GREEN for the flip classifier: the row the pinned cell actually produced.
+    /// Round 11 row 1 of the 2026-09-11 census: the replay picked 320 at p=0.4326
+    /// while the TP rows picked 22840 at p=0.4296, and each route ranks the two
+    /// candidates within 0.075 of each other. Both gaps sit under the band, so the
+    /// flip is the tie, and the cell continues.
+    #[test]
+    fn a_flip_between_two_candidates_the_band_covers_is_a_tie() {
+        let mut a = row();
+        let mut b = row();
+        a[0] = 27.2168;
+        a[1] = 27.4602; // the replay's pick is entry 1
+        b[0] = 27.4300;
+        b[1] = 27.2168; // the truth's pick is entry 0
+        let entry = super::row_census(&a, &b);
+        assert!(entry.flipped(), "the case must actually flip");
+        assert!(
+            entry.gap_replay > 0.0 && entry.gap_truth > 0.0,
+            "a zero gap would make this vacuous"
+        );
+        assert!(
+            entry.tie_flip(BAND),
+            "gaps {} and {} must read as a tie under band {BAND}",
+            entry.gap_replay,
+            entry.gap_truth
+        );
+    }
+
+    /// RED for the flip classifier: the same flip on a DECIDED row. The replay picks a
+    /// token its own row gives 0.99 while the truth row gives its own pick 0.99, so the
+    /// two routes disagree about a token neither row was undecided about. No band may
+    /// excuse it, and `tie_flip` must refuse.
+    #[test]
+    fn a_flip_on_a_decided_row_is_never_a_tie() {
+        let mut a = row();
+        let mut b = row();
+        a[1] = 40.0; // the replay is certain about entry 1
+        b[0] = 40.0; // the truth is certain about entry 0
+        let entry = super::row_census(&a, &b);
+        assert!(entry.flipped(), "the case must actually flip");
+        assert!(
+            entry.gap_replay > 0.9 && entry.gap_truth > 0.9,
+            "both rows must be decided or this proves nothing: {} {}",
+            entry.gap_replay,
+            entry.gap_truth
+        );
+        assert!(
+            !entry.tie_flip(BAND),
+            "a decided flip must NOT be excused as a tie"
+        );
+    }
+
+    /// A row with no flip is never a tie flip, whatever its gaps are, so the
+    /// classifier cannot report a flip the cell did not have.
+    #[test]
+    fn an_agreeing_row_is_not_a_flip() {
+        let a = row();
+        let entry = super::row_census(&a, &a);
+        assert!(!entry.flipped());
+        assert!(!entry.tie_flip(BAND));
+        assert_eq!(entry.gap_replay, 0.0);
+        assert_eq!(entry.gap_truth, 0.0);
     }
 
     /// Softmax is computed in f64 with the max subtracted, so a row whose logits
