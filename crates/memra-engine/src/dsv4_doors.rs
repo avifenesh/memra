@@ -957,12 +957,7 @@ mod tests {
         // reason, which the expert-program decision was never going to fix.
         assert_eq!(
             inert_default_on_doors(DSV4_DOORS),
-            vec![
-                "replay cadence",
-                "norm-fuse",
-                "norm-fuse2",
-                "norm2-wide",
-            ]
+            vec!["replay cadence", "norm-fuse", "norm-fuse2", "norm2-wide",]
         );
     }
 

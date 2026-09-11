@@ -172,7 +172,10 @@ fn main() {
     memra_engine::arm_reference_expert_program_for_gate();
     let mut gpu =
         Dsv4Gpu::load(dir, &[0, 1], ActQuantVariant::RefFp8Round, capacity).expect("load");
-    assert!(!gpu.matrix_moe_enabled(), "the gate arm must load reference");
+    assert!(
+        !gpu.matrix_moe_enabled(),
+        "the gate arm must load reference"
+    );
     memra_engine::disarm_reference_expert_program_for_gate();
     gpu.set_grouped_route_device_for_gate(true)
         .expect("device routing");

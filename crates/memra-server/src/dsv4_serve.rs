@@ -638,6 +638,10 @@ struct Emit<'a> {
     text: String,
     stop_reason: Option<&'static str>,
     client_gone: bool,
+    /// The EOS id this stream CONSUMED but did not deliver. The device state advanced over it,
+    /// so it is part of the token boundary the parked-prefix tier has to name; without it an
+    /// eos-terminated session cannot park at all (see `processed_prefix_tokens`).
+    terminal: Option<u32>,
 }
 
 impl<'a> Emit<'a> {
@@ -658,6 +662,7 @@ impl<'a> Emit<'a> {
             text: String::new(),
             stop_reason: None,
             client_gone: false,
+            terminal: None,
         }
     }
 
@@ -670,6 +675,7 @@ impl<'a> Emit<'a> {
             }
             if self.eos.contains(&id) {
                 self.stop_reason = Some("stop");
+                self.terminal = Some(id);
                 return false;
             }
             self.ids.push(id);
@@ -956,11 +962,24 @@ fn park_prefix(
 
 /// Token boundary represented by a completed request's device state. The final emitted token
 /// is commonly still pending (state one token behind), which is a valid strict prefix for the
-/// next turn. State ahead of the visible stream can happen when a speculative round commits
-/// before an EOS/stop callback; that shape is not cacheable without a semantic rollback.
+/// next turn.
+///
+/// State AHEAD of the visible stream is the normal end of an eos-terminated session, not an
+/// anomaly: `Emit` swallows the EOS id rather than delivering it, while the device consumed it.
+/// That one token is known (`terminal`) and it is exactly what the next turn's render replays
+/// after the assistant content, so the boundary including it is the one a continuation matches.
+/// Measured on the prod candidate 2026-09-11 (darklanes `research/dsv4f-hot-ttft-20260911`):
+/// with this token missing, EVERY eos-terminated request refused to park
+/// ("device state consumed N generated tokens, stream committed only N-1") and the parked-prefix
+/// tier was inert on the only traffic shape that can use it, at any budget.
+///
+/// State further ahead than that single EOS can still happen when a speculative round commits
+/// several tokens before the stop callback. Those ids are past the stop and no continuation will
+/// ever replay them, so that shape stays uncacheable rather than being papered over.
 fn processed_prefix_tokens(
     prompt: &[u32],
     emitted: &[u32],
+    terminal: Option<u32>,
     state_pos: usize,
 ) -> Result<Vec<u32>, String> {
     let consumed_generated = state_pos.checked_sub(prompt.len()).ok_or_else(|| {
@@ -969,15 +988,29 @@ fn processed_prefix_tokens(
             prompt.len()
         )
     })?;
-    if consumed_generated > emitted.len() {
-        return Err(format!(
-            "device state consumed {consumed_generated} generated tokens, stream committed only {}",
-            emitted.len()
-        ));
-    }
     let mut toks = Vec::with_capacity(prompt.len() + consumed_generated);
     toks.extend_from_slice(prompt);
-    toks.extend_from_slice(&emitted[..consumed_generated]);
+    match consumed_generated.checked_sub(emitted.len()) {
+        None | Some(0) => toks.extend_from_slice(&emitted[..consumed_generated]),
+        Some(1) => {
+            let id = terminal.ok_or_else(|| {
+                format!(
+                    "device state consumed {consumed_generated} generated tokens, stream \
+                     committed only {} and swallowed no terminal token",
+                    emitted.len()
+                )
+            })?;
+            toks.extend_from_slice(emitted);
+            toks.push(id);
+        }
+        Some(ahead) => {
+            return Err(format!(
+                "device state consumed {consumed_generated} generated tokens, stream committed \
+                 only {} ({ahead} past the stop)",
+                emitted.len()
+            ));
+        }
+    }
     Ok(toks)
 }
 
@@ -1317,7 +1350,7 @@ fn serve_one(
         );
         None
     } else {
-        match processed_prefix_tokens(&prompt, &emit.ids, state_to_park.pos) {
+        match processed_prefix_tokens(&prompt, &emit.ids, emit.terminal, state_to_park.pos) {
             Ok(toks) => Some(toks),
             Err(err) => {
                 // A speculative round commits before its callback. If an EOS/stop lands inside that
@@ -1696,21 +1729,56 @@ mod unicode_window_tests {
         let prompt = [10, 11, 12];
         let emitted = [20, 21, 22];
         assert_eq!(
-            processed_prefix_tokens(&prompt, &emitted, 5).unwrap(),
+            processed_prefix_tokens(&prompt, &emitted, None, 5).unwrap(),
             [10, 11, 12, 20, 21],
             "the final emitted token may be pending and belongs to the next suffix"
         );
         assert!(
-            processed_prefix_tokens(&prompt, &emitted, 7)
+            processed_prefix_tokens(&prompt, &emitted, None, 7)
                 .unwrap_err()
                 .contains("stream committed only 3"),
             "spec state ahead of the visible stream must not enter the host tier"
         );
         assert!(
-            processed_prefix_tokens(&prompt, &emitted, 2)
+            processed_prefix_tokens(&prompt, &emitted, None, 2)
                 .unwrap_err()
                 .contains("precedes prompt boundary"),
             "a corrupt pre-prompt state is refused rather than saturating to zero"
+        );
+    }
+
+    /// RED ARM for the defect this lane closes. Before the terminal token was carried, this is
+    /// the shape EVERY eos-terminated dsv4 session ended in: the device consumed the EOS the
+    /// stream swallowed, `consumed > emitted` fired, and the session refused to park — so the
+    /// parked-prefix tier never held a single entry a real conversation could resume from, at
+    /// any `MEMRA_DSV4_KV_HOST_MB`. Measured on the prod candidate 2026-09-11 (darklanes
+    /// `research/dsv4f-hot-ttft-20260911`): 4 parks against 4 skips, and every skip was an
+    /// eos-terminated turn.
+    #[test]
+    fn an_eos_terminated_session_parks_at_the_boundary_including_the_swallowed_eos() {
+        let prompt = [10, 11, 12];
+        let emitted = [20, 21];
+        assert_eq!(
+            processed_prefix_tokens(&prompt, &emitted, Some(1), 6).unwrap(),
+            [10, 11, 12, 20, 21, 1],
+            "the swallowed EOS is a real token of the device boundary and the next turn's \
+             render replays it after the assistant content"
+        );
+        // Without a terminal token there is nothing to name the extra position with, so the
+        // refusal stays — the fix is carrying the id, not trusting the arithmetic.
+        assert!(
+            processed_prefix_tokens(&prompt, &emitted, None, 6)
+                .unwrap_err()
+                .contains("swallowed no terminal token"),
+            "one past the stream with no recorded terminal token is still unparkable"
+        );
+        // Two past the stop is a speculative round that ran beyond EOS. Those ids are not in
+        // any continuation, so this shape stays refused rather than being papered over.
+        assert!(
+            processed_prefix_tokens(&prompt, &emitted, Some(1), 7)
+                .unwrap_err()
+                .contains("past the stop"),
+            "state more than the terminal token ahead must not enter the host tier"
         );
     }
 }

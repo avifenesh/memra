@@ -87,11 +87,9 @@ pub const U_FP8: f64 = 1.0 / 16.0; // 2^-4
 /// in `dsv4_gpu` now fails if they are ever separated again.
 pub fn expert_arm_native() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| {
-        match std::env::var("MEMRA_DSV4_EXPERT_ARM").as_deref() {
-            Err(_) | Ok("") | Ok("native") => true,
-            Ok(_) => false,
-        }
+    *V.get_or_init(|| match std::env::var("MEMRA_DSV4_EXPERT_ARM").as_deref() {
+        Err(_) | Ok("") | Ok("native") => true,
+        Ok(_) => false,
     })
 }
 
