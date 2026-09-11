@@ -30,22 +30,28 @@
 //!
 //! What the two flips did to the counts, written down because the counts are
 //! the claim: six of nine merged default-ON doors were inert, the matrix flip
-//! took that to FOUR of seven, and the PP-2 norm port takes it to ONE. The two
+//! took that to FOUR of seven, and the norm-door deletion takes it to ONE of
+//! four. The two
 //! that left with the matrix flip were the split-K pair, and they left by
 //! DELETION rather than by rescue: their admitting program can serve, but the
 //! arm they need is a gate-only function called after load, so no serving
 //! process could reach them on any ordering.
 //!
-//! THREE more left by RESCUE, which is a different thing and the first time it
-//! has happened here: the norm doors (`norm-fuse` #404, `norm-fuse2` #426,
-//! `norm2-wide` #430), which the owner ruled FIXED rather than deleted. Their
-//! admission term never needed a topology (no norm kernel, and no consumer of a
-//! norm kernel's output, reads a rank, a shard or a topology plan), and what
-//! made TP/EP look like a precondition was a SEPARATE kernel limit: the pack
-//! launchers pinned grid 1, which forced a `t == 1` call-site guard that only
-//! the drafter-off bench program satisfied on every shape. The launchers now
-//! take `rows` and run the identical per-row 128-thread tree, so both terms are
-//! gone together and `chains_f32`, the one real precondition, is what is left.
+//! THREE more left, and by a route this ledger had not seen before: PORTED,
+//! MEASURED, then DELETED. The norm doors (`norm-fuse` #404, `norm-fuse2` #426,
+//! `norm2-wide` #430) were the ones the owner ruled FIXED rather than deleted,
+//! and the fix was real: their admission never needed a topology (no norm
+//! kernel, and no consumer of a norm kernel's output, reads a rank, a shard or a
+//! topology plan), and what made TP/EP look like a precondition was a SEPARATE
+//! kernel limit, the pack launchers pinning grid 1, which forced a `t == 1`
+//! call-site guard that only the drafter-off bench satisfied on every shape. The
+//! port took `rows` into the launchers, bit-equal at every swept width, and put
+//! the doors on a customer request for the first time. Then the served ABBA
+//! priced them at -0.36% prefill with disjoint ranges, flat decode and a 3.2 ms
+//! win on the `t == 1` prime, which breaks even around a 209-token suffix and
+//! loses above it. Not positive beyond box noise, so they went. The verdict and
+//! the table are the 2026-09-11 norm-fusion entry in `docs/FLAGS.md`.
+//!
 //! The one door still inert is inert for a reason of its own rather than for a
 //! program reason. Doors still go inert SILENTLY, because an unset value
 //! resolves to `Ok(admitted)` with `admitted == false`, which is why this
@@ -436,9 +442,6 @@ fn unset() -> Result<&'static str, &'static std::env::VarError> {
     Err(&NOT_PRESENT)
 }
 
-
-
-
 fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     // `arm_full_token_replay_for_gate` is the only caller, its admission needs
     // the gate-only fused-GU arm and refuses host split-K/DSpark state, and its
@@ -519,7 +522,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
         resolve: resolve_dense_fast,
         admitted_by: AdmittingProgram::ServedProgram,
         merged_gain_pct: (1.618979, 1.609496),
-        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with norm-fuse",
+        measured_on: "2x RTX PRO 6000 Blackwell Max-Q dev pair, composed with the deleted norm-fuse door",
     },
     DoorRow {
         name: "HC dot split S16",
@@ -889,10 +892,7 @@ mod tests {
         // TP/EP reason an expert-program decision was never going to fix. The
         // PP-2 norm port fixed that reason for three of them by RESCUE, so what
         // is left is the one door inert for a reason of its own.
-        assert_eq!(
-            inert_default_on_doors(DSV4_DOORS),
-            vec!["replay cadence"]
-        );
+        assert_eq!(inert_default_on_doors(DSV4_DOORS), vec!["replay cadence"]);
     }
 
     /// The scalar reference executor has exactly one way in, and a serving
@@ -1265,11 +1265,7 @@ mod tests {
             .collect();
         assert_eq!(
             below,
-            vec![
-                "replay cadence",
-                "dense exact-tail transport",
-                "dense-fast",
-            ]
+            vec!["replay cadence", "dense exact-tail transport", "dense-fast",]
         );
         // The doors ABOVE the floor used to be named literally here, which is
         // the same disease as

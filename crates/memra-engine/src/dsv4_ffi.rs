@@ -7,9 +7,6 @@
 use std::os::raw::c_void;
 
 unsafe extern "C" {
-    /// Same-class wide twin: `tiles` CTAs partition the epilogue columns only,
-    /// each repeating the identical 128-thread fixed-order reduction.
-
     pub fn memra_dsv4_replay_compressor_emit(
         pending_kv: *mut f32,
         pending_score: *mut f32,

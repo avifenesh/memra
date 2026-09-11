@@ -1809,16 +1809,6 @@ fn ar_phase_environment_policy(
     }
 }
 
-
-/// Default ON under an admitted norm2 door since the 2026-09-10 model campaign
-/// (+5.95% ABBA / +5.76% reverse, disjoint steady ranges in both orders); an
-/// explicit `0` is the rollback seam to the single-CTA kernel. Without the
-/// norm2 door the pack has no call site, so an unset value degrades to OFF
-/// rather than refusing every composed-off launch, while an explicit `1`
-/// without the door stays a configuration error instead of a silent no-op.
-/// `admitted` is the norm2 door's own resolved value.
-
-
 impl Dsv4Gpu {
     pub fn device_verify_topk_calls(&self) -> u64 {
         self.device_verify_topk_calls
@@ -20056,4 +20046,3 @@ mod ar_phase_policy_tests {
         }
     }
 }
-
