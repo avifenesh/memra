@@ -30,9 +30,12 @@ less than one that starts from a measured deficit.
 So: memra has a correctness spine for two speech families, a serving surface that admits and
 sheds honestly, and **no speed**. On the metric this program is about, memra has not entered the
 race: there is still no GPU number, and an endpoint that refuses is not a product. What the
-spine buys is that entering is cheap and checkable, every GPU kernel written from here has
-a banked CPU reference to be byte-identical against, which is the expensive part of a speech
-bring-up and it is already paid for.
+spine buys is an ORACLE: every GPU kernel written from here has a banked CPU reference to be
+byte-identical against, so correctness is checkable from the first kernel instead of argued. That
+is a statement about what can be VERIFIED, not about what it costs to enter; per the owner ruling
+of 2026-09-11 ("engineering needed is not a blocker ever, thats what we are doing, building an
+engine and selling its work"), no model, family or step in this document is ranked by how much
+work it is.
 
 `NativeReference` is unset for every speech model. Nothing here is production permission.
 
@@ -40,8 +43,10 @@ bring-up and it is already paid for.
 
 ## 2. Families in scope
 
-Three architecture classes, chosen because they cover the field and because each one reuses a
-different part of the engine we already have.
+Four architecture classes, chosen because they cover the field: between them they hold the
+models buyers actually pay to run, on both the STT and the TTS side. They are NOT chosen for
+reusing parts of the engine we already have, and the order they are attacked in is argued in §7
+on decision value, never on how much of each one is already built.
 
 ### 2.1 Encoder-decoder AED (Whisper family)
 
@@ -93,10 +98,14 @@ decoder that turns those tokens back into a waveform. `Qwen3-TTS-12Hz-*`, `chatt
 `orpheus-*`, `higgs-tts-2`, `csm-1b`, `kyutai/tts-*`.
 
 Engine shape: the decoder is a first-class native text path already, exactly as in §2.3, and
-there is no audio ENCODER at all, which removes the expensive half of every ASR bring-up. New
-surface: the codec tokenizer's DECODER, a multi-codebook sampling head (a step emits several
-tokens across codebooks, not one), and a streaming emit contract that says when a partial
-waveform may leave the box.
+there is no audio ENCODER in this class at all: the audio direction is generation, not
+perception. New surface: the codec tokenizer's DECODER, a multi-codebook sampling head (a step
+emits several tokens across codebooks, not one), and a streaming emit contract that says when a
+partial waveform may leave the box. **This inventory sizes the work; it does not rank the
+family.** Ordering across families is argued on market pull, licence, where the engine's edge
+lands, headroom against the published bar and revenue surface, never on how close a family is to
+the code that already exists (owner ruling 2026-09-11; darklanes
+`LAW:effort-is-not-a-selection-criterion`).
 
 The frame rate is the thing to read off the artifact before anything else, because it sets the
 step budget directly: a 12 Hz codec means **twelve full decoder forwards per second of generated
@@ -480,14 +489,19 @@ Receipts (private): darklanes `research/speech-k1-20260910/RESULTS.md`.
 
 ## 7. Ranked plan
 
-Sized in GPU-hours. Development time is not the schedule.
+Sized in GPU-hours, which are the scarce axis. **Development time is not the schedule and it is
+not a criterion**, owner ruling 2026-09-11, verbatim: *"engineering needed is not a blocker ever,
+thats what we are doing, building an engine and selling its work."* Every step below is ordered by
+what it decides and what it is worth, never by what it costs to write; the GPU-hour figures size
+the rental, not the priority.
 
 **Step 0, this document. 0 GPU-hours, done.** Defines the capability, the ladder, the
 onboarding path, the gate set and the kill criteria, so that every step below has a registered
 decision rule before it spends anything.
 
-**Step 1, the incumbent baseline board. ~2.5 GPU-hours on one A100-80GB. Decisive and
-cheapest; do this before writing a single kernel.** One rented non-production A100-SXM4-80GB
+**Step 1, the incumbent baseline board. ~2.5 GPU-hours on one A100-80GB. Decisive, and it
+spends the fewest GPU-hours of any step that can still kill the program; do this before writing a
+single kernel.** One rented non-production A100-SXM4-80GB
 (so the numbers are directly comparable to the leaderboard's own A100 batch-64 rows), CUDA
 allocation verified before the first byte is staged. Three arms on our pinned clip set plus one
 English control:
@@ -514,7 +528,7 @@ clears instantly and would prove nothing: **byte identity against the banked CPU
 plus a per-stream RTF measured interleaved against CTranslate2 on the same card in the same
 session. That second half is what feeds K2, so the step that produces the number and the
 criterion that judges it are the same measurement, not two separate ones taken weeks apart.
-The parity half is cheap and safe precisely because the CPU reference already exists.
+The parity half is CHECKABLE because the CPU reference already exists: an oracle, not a discount.
 
 **Step 3, audio endpoint in `memra serve` plus the G8 battery. ~6-10 GPU-hours. PART ONE LANDED
 2026-09-11 with no GPU; the measurement half is unrun.**
