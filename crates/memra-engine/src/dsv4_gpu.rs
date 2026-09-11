@@ -3278,9 +3278,8 @@ impl Dsv4Gpu {
         // the host-driven loop would have meant the loaded default program
         // refusing its own default decode path. `legacy` and `device-hostmath`
         // stay selectable; they are the byte-identity instruments.
-        let decode_path = resolve_decode_path(
-            std::env::var("MEMRA_DSV4_DECODE_PATH").as_deref().ok(),
-        )?;
+        let decode_path =
+            resolve_decode_path(std::env::var("MEMRA_DSV4_DECODE_PATH").as_deref().ok())?;
         if verify_topk == Dsv4VerifyTopk::Device
             && !matches!(decode_path, DecodePath::Device { host_math: false })
         {
@@ -19368,8 +19367,14 @@ mod verify_topk_tests {
             "matrix requires device math"
         );
         assert!(expert_native, "matrix requires the native expert arm");
-        assert!(dense_fp8, "the device decode path resolves the fp8 dense arm");
-        assert!(crate::moe_f16g_mode() >= 2, "matrix requires mode-2 grouped");
+        assert!(
+            dense_fp8,
+            "the device decode path resolves the fp8 dense arm"
+        );
+        assert!(
+            crate::moe_f16g_mode() >= 2,
+            "matrix requires mode-2 grouped"
+        );
         assert!(
             crate::dsv4_moe_f16g_sk_params().0 >= 0,
             "matrix refuses the grid-scan sk form"
@@ -19411,7 +19416,10 @@ mod verify_topk_tests {
         );
         // Non-vacuity: all three arms are distinct, so none of the above can be
         // passing against a resolver stuck on one value.
-        assert_ne!(resolve_decode_path(None), resolve_decode_path(Some("legacy")));
+        assert_ne!(
+            resolve_decode_path(None),
+            resolve_decode_path(Some("legacy"))
+        );
         assert_ne!(
             resolve_decode_path(None),
             resolve_decode_path(Some("device-hostmath"))

@@ -15426,8 +15426,8 @@ pub fn run(
                             // the largest admissible context is this request's context less the
                             // overshoot divided by that slope. Stated as the model's own
                             // estimate, which is what admission actually enforces.
-                            let per_token =
-                                (bytes_per_token as u64).saturating_add(ring_bytes_per_token as u64);
+                            let per_token = (bytes_per_token as u64)
+                                .saturating_add(ring_bytes_per_token as u64);
                             let available = headroom.limiting_free_bytes() as u64;
                             let fits = if per_token == 0 {
                                 None

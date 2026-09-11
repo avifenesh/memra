@@ -622,9 +622,7 @@ pub(super) fn profile(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer) {
                     0
                 }
             );
-            println!(
-                "PROFILE_CENSUS rank={rank} segment={segment} passed=true"
-            );
+            println!("PROFILE_CENSUS rank={rank} segment={segment} passed=true");
         }
     }
     let mut oracle = None;
