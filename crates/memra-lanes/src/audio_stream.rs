@@ -249,7 +249,9 @@ pub struct AudioMetrics {
     /// Audio ingested across every lane, ms. Against wall time this is the concurrency the
     /// box actually served in real time, which is the numerator of `streams@SLO`.
     pub audio_ms_in: u64,
-    /// Wall time observed, ms (the newest `now_ms` any call passed in).
+    /// Wall time ELAPSED since the scheduler's first observed clock reading, ms. It is a
+    /// duration, never a timestamp: the server passes absolute Unix epoch ms and dividing
+    /// cumulative audio by ~1.78e12 would make every rate read as zero.
     pub wall_ms: u64,
 }
 
@@ -291,6 +293,10 @@ pub struct AudioScheduler {
     order: VecDeque<String>,
     metrics: AudioMetrics,
     engine_bound: bool,
+    /// First clock reading this scheduler ever saw, ms. `wall_ms` is measured from it so
+    /// the caller may pass any monotone clock: the replay's virtual clock starts at 0 and
+    /// the server's starts at the Unix epoch, and both produce the same elapsed duration.
+    origin_ms: Option<u64>,
 }
 
 impl AudioScheduler {
@@ -301,7 +307,16 @@ impl AudioScheduler {
             order: VecDeque::new(),
             metrics: AudioMetrics::default(),
             engine_bound,
+            origin_ms: None,
         }
+    }
+
+    /// Latch the clock origin on the first reading and record elapsed wall time. Every
+    /// entry point that takes a `now_ms` goes through here; nothing else writes `wall_ms`.
+    fn observe_clock(&mut self, now_ms: u64) {
+        let origin = *self.origin_ms.get_or_insert(now_ms);
+        let elapsed = now_ms.saturating_sub(origin);
+        self.metrics.wall_ms = self.metrics.wall_ms.max(elapsed);
     }
 
     pub fn metrics(&self) -> &AudioMetrics {
@@ -347,6 +362,7 @@ impl AudioScheduler {
         );
         self.order.push_back(id.to_string());
         self.metrics.opened += 1;
+        self.observe_clock(now_ms);
         Ok(())
     }
 
@@ -372,7 +388,7 @@ impl AudioScheduler {
         self.metrics.frames_in += 1;
         self.metrics.audio_ms_in += FRAME_MS;
         self.metrics.max_queue_depth = self.metrics.max_queue_depth.max(depth);
-        self.metrics.wall_ms = self.metrics.wall_ms.max(now_ms);
+        self.observe_clock(now_ms);
         Ok(depth)
     }
 
@@ -419,7 +435,7 @@ impl AudioScheduler {
                 }
             }
         }
-        self.metrics.wall_ms = self.metrics.wall_ms.max(now_ms);
+        self.observe_clock(now_ms);
         if !batch.is_empty() {
             self.metrics.steps += 1;
             self.metrics.batch_last = batch.len();
@@ -893,5 +909,34 @@ mod tests {
         s.complete_step(&b, 40.0, 80);
         assert!((s.metrics().step_duty() - 0.5).abs() < 1e-9);
         assert!((s.metrics().realtime_streams() - 2.0).abs() < 1e-9);
+    }
+
+    /// RED ARM for the served clock. Every replay in this file starts its virtual clock at
+    /// 0, so a `wall_ms` that stored the raw reading instead of the elapsed duration passed
+    /// all of them while the SERVER, which passes absolute Unix epoch ms, divided 160 ms of
+    /// audio by ~1.78e12 and reported ~1e-10 streams on every `GET /v1/audio/sessions`.
+    /// This test drives the identical geometry off an epoch-shaped origin and demands the
+    /// identical answer; it fails on any implementation that divides by a timestamp.
+    #[test]
+    fn rates_are_identical_on_a_virtual_clock_and_on_unix_epoch_ms() {
+        const EPOCH: u64 = 1_789_000_000_000;
+        let mut virt = AudioScheduler::new(policy(DriveShape::Fused, 8), true);
+        let mut epoch = AudioScheduler::new(policy(DriveShape::Fused, 8), true);
+        for (s, t0) in [(&mut virt, 0u64), (&mut epoch, EPOCH)] {
+            for id in ["a", "b"] {
+                s.open(id, Lane::Interactive, t0).unwrap();
+                s.offer(id, t0).unwrap();
+            }
+            let b = s.next_batch();
+            s.complete_step(&b, 40.0, t0 + 80);
+        }
+        assert_eq!(virt.metrics().wall_ms, 80, "virtual clock elapsed");
+        assert_eq!(
+            epoch.metrics().wall_ms,
+            80,
+            "wall_ms must be a DURATION, not the {EPOCH} timestamp the server passes"
+        );
+        assert!((epoch.metrics().realtime_streams() - 2.0).abs() < 1e-9);
+        assert!((epoch.metrics().step_duty() - 0.5).abs() < 1e-9);
     }
 }

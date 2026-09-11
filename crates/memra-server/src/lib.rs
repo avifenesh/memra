@@ -339,7 +339,11 @@ fn protected_inference_path(path: &str) -> bool {
             | "/v1/responses"
             | "/v1/embeddings"
             | "/v1/rerank"
-    )
+            | "/v1/audio/transcriptions"
+            | "/v1/audio/sessions" // The streaming lane lifecycle is per-session, so its paths carry an id and cannot be
+                                   // matched literally. Transcription bodies carry base64 audio, which is the largest
+                                   // unauthenticated buffer this server would otherwise accept.
+    ) || path.starts_with("/v1/audio/sessions/")
 }
 
 /// Give middleware refusals the same request-id and body contract as the handler they
@@ -11413,6 +11417,10 @@ mod tests {
             "/v1/responses",
             "/v1/embeddings",
             "/v1/rerank",
+            "/v1/audio/transcriptions",
+            "/v1/audio/sessions",
+            "/v1/audio/sessions/abc123/frames",
+            "/v1/audio/sessions/abc123/close",
         ] {
             assert!(protected_inference_path(path), "{path}");
         }

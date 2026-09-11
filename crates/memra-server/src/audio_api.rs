@@ -27,6 +27,7 @@
 use std::sync::{Arc, Mutex};
 
 use axum::Json;
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -168,9 +169,21 @@ pub(crate) struct TranscriptionReq {
 pub(crate) async fn transcriptions(
     State(st): State<AppState>,
     headers: HeaderMap,
-    Json(req): Json<TranscriptionReq>,
+    // `Result<Json<_>, _>` and NOT `Json<_>`: a bare `Json` extractor rejects a
+    // `multipart/form-data` request with Axum's own plain-text 415 before this function is
+    // entered at all, which made the multipart branch below unreachable over real HTTP and
+    // reachable only from a test that called the handler with a pre-parsed body. Deferring
+    // the rejection lets the content type be read first, and lets AUTHENTICATION run before
+    // a single byte of the body is deserialized.
+    body: Result<Json<TranscriptionReq>, JsonRejection>,
 ) -> Response {
     let env = Envelope::new(false);
+    // AUTHENTICATE FIRST. Model resolution and parameter validation answer "does this model
+    // exist" and "is it a transcription model" with 404/400, so running them ahead of the
+    // 401 turns this endpoint into a registry oracle for an unauthenticated caller.
+    if let Err(resp) = crate::authenticate(&st.api_auth, &headers) {
+        return crate::with_request_id(&env.id, resp);
+    }
     let ct = headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -187,6 +200,15 @@ pub(crate) async fn transcriptions(
             ),
         );
     }
+    let req = match body {
+        Ok(Json(req)) => req,
+        Err(rejection) => {
+            return crate::with_request_id(
+                &env.id,
+                crate::bad_request(&rejection.body_text(), None),
+            );
+        }
+    };
     let mut model = req.model.clone();
     match crate::canonical_model_id(&st.models, &model) {
         Some(canonical) => model = canonical,
@@ -258,9 +280,7 @@ pub(crate) async fn transcriptions(
             crate::bad_request("file must carry base64 audio", Some("file")),
         );
     }
-    if let Err(resp) = crate::authenticate(&st.api_auth, &headers) {
-        return crate::with_request_id(&env.id, resp);
-    }
+    // (Authentication already ran, above, before the body was read.)
     // FAIL CLOSED. No speech operation has a CUDA kernel, so there is nothing to run and a
     // 200 here would be a lie about the model. The refusal names the capability.
     let shed = AudioShed {
@@ -298,6 +318,12 @@ pub(crate) async fn open_session(
     Json(req): Json<OpenSessionReq>,
 ) -> Response {
     let env = Envelope::new(false);
+    // AUTHENTICATE FIRST, same reason as `transcriptions`: 404 and 400 on an unauthenticated
+    // request answer questions about the registry that a 401 must answer instead.
+    let tenant = match crate::authenticate(&st.api_auth, &headers) {
+        Ok(t) => t,
+        Err(resp) => return crate::with_request_id(&env.id, resp),
+    };
     let mut model = req.model.clone();
     match crate::canonical_model_id(&st.models, &model) {
         Some(canonical) => model = canonical,
@@ -311,10 +337,6 @@ pub(crate) async fn open_session(
     let decode = match resolve_decode(&st, &model) {
         Ok(d) => d,
         Err(resp) => return crate::with_request_id(&env.id, *resp),
-    };
-    let tenant = match crate::authenticate(&st.api_auth, &headers) {
-        Ok(t) => t,
-        Err(resp) => return crate::with_request_id(&env.id, resp),
     };
     let lane = match lane_for(&headers, &tenant) {
         Ok(l) => l,
@@ -783,14 +805,14 @@ mod tests {
         let resp = transcriptions(
             State(st),
             HeaderMap::new(),
-            Json(TranscriptionReq {
+            Ok(Json(TranscriptionReq {
                 model: "asr".into(),
                 file: Some("AAAA".into()),
                 language: Some("he".into()),
                 temperature: None,
                 top_p: None,
                 response_format: None,
-            }),
+            })),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -828,7 +850,7 @@ mod tests {
         let resp = transcriptions(
             State(st.clone()),
             HeaderMap::new(),
-            Json(req(None, Some(0.9))),
+            Ok(Json(req(None, Some(0.9)))),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -841,7 +863,7 @@ mod tests {
         let resp = transcriptions(
             State(st.clone()),
             HeaderMap::new(),
-            Json(req(Some(0.4), None)),
+            Ok(Json(req(Some(0.4), None))),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -852,7 +874,8 @@ mod tests {
                 .contains("not a rung")
         );
         // temperature 0 is always honest, and reaches the engine-unbound refusal
-        let resp = transcriptions(State(st), HeaderMap::new(), Json(req(Some(0.0), None))).await;
+        let resp =
+            transcriptions(State(st), HeaderMap::new(), Ok(Json(req(Some(0.0), None)))).await;
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
@@ -863,14 +886,14 @@ mod tests {
         let resp = transcriptions(
             State(asr_state()),
             HeaderMap::new(),
-            Json(TranscriptionReq {
+            Ok(Json(TranscriptionReq {
                 model: "chatty".into(),
                 file: Some("AAAA".into()),
                 language: None,
                 temperature: None,
                 top_p: None,
                 response_format: None,
-            }),
+            })),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -884,26 +907,31 @@ mod tests {
 
     /// A multipart body — what an OpenAI SDK actually sends — is refused with the sentence
     /// that says what to send instead, not a bare 415.
+    ///
+    /// RED ARM, and it is the reason this test goes through a ROUTER instead of calling the
+    /// handler: with a bare `Json<TranscriptionReq>` in the parameter list, Axum's extractor
+    /// runs first and answers a multipart request with its own plain-text
+    /// `MissingJsonContentType` 415, so the branch under test was unreachable over HTTP and
+    /// only a direct call with a pre-parsed body could ever see it. A handler test that
+    /// hands itself the output of the extractor it is trying to test proves nothing.
     #[tokio::test]
     async fn transcription_names_the_multipart_gap_instead_of_guessing() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::CONTENT_TYPE,
-            axum::http::HeaderValue::from_static("multipart/form-data; boundary=x"),
-        );
-        let resp = transcriptions(
-            State(asr_state()),
-            headers,
-            Json(TranscriptionReq {
-                model: "asr".into(),
-                file: None,
-                language: None,
-                temperature: None,
-                top_p: None,
-                response_format: None,
-            }),
+        use axum::routing::post;
+        let app: axum::Router = axum::Router::new()
+            .route("/v1/audio/transcriptions", post(transcriptions))
+            .with_state(asr_state());
+        let resp = tower::ServiceExt::oneshot(
+            app,
+            axum::http::Request::post("/v1/audio/transcriptions")
+                .header(
+                    axum::http::header::CONTENT_TYPE,
+                    "multipart/form-data; boundary=x",
+                )
+                .body(axum::body::Body::from("--x--\r\n"))
+                .unwrap(),
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(resp.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
         assert!(
             body(resp).await["error"]["message"]
@@ -911,6 +939,52 @@ mod tests {
                 .unwrap()
                 .contains("base64 audio in `file`")
         );
+    }
+
+    /// RED ARM for the registry oracle. `canonical_model_id` and `resolve_decode` ran ahead
+    /// of `authenticate`, so an unauthenticated caller could ask this endpoint whether a
+    /// model exists (404 vs 401) and whether it is a transcription model (400 vs 401), on
+    /// both the batch and the streaming-open paths. 401 must win over every other answer.
+    #[tokio::test]
+    async fn an_unauthenticated_caller_learns_nothing_about_the_registry() {
+        let mut st = asr_state();
+        st.api_auth = crate::ApiAuth {
+            keyring: None,
+            single_key: Some(std::sync::Arc::from("sk-test")),
+        };
+        for model in ["asr", "chatty", "no-such-model"] {
+            let resp = transcriptions(
+                State(st.clone()),
+                HeaderMap::new(),
+                Ok(Json(TranscriptionReq {
+                    model: model.into(),
+                    file: Some("AAAA".into()),
+                    language: None,
+                    temperature: None,
+                    top_p: None,
+                    response_format: None,
+                })),
+            )
+            .await;
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNAUTHORIZED,
+                "transcriptions leaked the status of model `{model}`"
+            );
+            let resp = open_session(
+                State(st.clone()),
+                HeaderMap::new(),
+                Json(OpenSessionReq {
+                    model: model.into(),
+                }),
+            )
+            .await;
+            assert_eq!(
+                resp.status(),
+                StatusCode::UNAUTHORIZED,
+                "open_session leaked the status of model `{model}`"
+            );
+        }
     }
 
     /// Opening a stream is refused with a CODE and a limit, never dropped. With no engine
