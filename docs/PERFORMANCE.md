@@ -180,7 +180,7 @@ On the H100, a full per-model board against vLLM 0.26 (frozen 2026-08-01): **no 
 losses** — seven wins of seven (1.02–1.81x); decode wins 7 of 7. Multi-user serving measured
 on 3 rented H100s: 1,477 tok/s managed fleet, chaos-tested. Trimmed MTP drafter heads are
 published ready-to-use at
-[huggingface.co/Avifenesh/memra-bench](https://huggingface.co/Avifenesh/memra-bench).
+[huggingface.co/tiyuvta/memra-bench](https://huggingface.co/tiyuvta/memra-bench).
 
 The **plain-serve c=1 gap (task #70) has a measured fixed-solo opt-in**: explicit
 `MEMRA_SERVE_B1FAST=1` routes a solo serve tick through the m=1 fused trunk (+8.33% q9 /
@@ -285,7 +285,7 @@ agentic (temp 0.7, distribution-exact rejection sampling). One asterisk: the 35B
 llama bar is an EOS-suppressed continuation (the raw short prompt EOSes at 1 token)
 and is not a clean win basis. Every spec row uses one trimmed draft built by the standard
 regime ([`docs/DRAFT-REGIME.md`](DRAFT-REGIME.md)); prebuilt drafts live in the
-[bench repo](https://huggingface.co/Avifenesh/memra-bench), or build your own:
+[bench repo](https://huggingface.co/tiyuvta/memra-bench), or build your own:
 
 ```bash
 ./target/release/frspec-owngen model.gguf ranks.gguf 32768        # ranks from the model's OWN generations

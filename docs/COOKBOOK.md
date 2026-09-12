@@ -25,17 +25,17 @@ here, that is a statement: a block only appears once the configuration has recei
 
 Dense hybrid (GDN + gated attention). Both paths are tuned and supported; choose from receipts for
 the exact artifact and card rather than transferring a format-level performance claim.
-Artifacts: [Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF](https://huggingface.co/Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF)
+Artifacts: [tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF)
 (trunk, pre-trimmed masked MTP head, ranks `.txt`).
 
 ### RTX 5090 / 24 GB class: DFlash2 q4 + masked head (default)
 
 ```bash
 MEMRA_COMPAT=openai \
-MEMRA_MODELS="q38=hf:Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
+MEMRA_MODELS="q38=hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
 MEMRA_DSPARK_SPEC=1 \
-MEMRA_DSPARK_DRAFT=hf:Avifenesh/Qwen3.8-27B-DFlash2-memra \
-MEMRA_FRSPEC_TRIM=hf:Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF:q38-ranks-sxc32768.gguf \
+MEMRA_DSPARK_DRAFT=hf:tiyuvta/Qwen3.8-27B-DFlash2-memra \
+MEMRA_FRSPEC_TRIM=hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:q38-ranks-sxc32768.gguf \
 MEMRA_DFLASH_PREC=q4 \
 MEMRA_CTX=8192 \
 MEMRA_MAX_SESSIONS=8 \
@@ -51,7 +51,7 @@ workload. Boot proof: the resolved q4 precision, the DFlash route path, and
 `[dspark] q38: DFlash2 draft head TRIMMED to 32768 rows`.
 
 The masked MTP head remains the rollback path: unset `MEMRA_DSPARK_SPEC` and use the prior
-`+hf:Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF:frspec-sxc32768` attachment.
+`+hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:frspec-sxc32768` attachment.
 
 ### RTX PRO 6000 Blackwell 96 GB: long-context serving
 
@@ -73,7 +73,7 @@ that never send it; [SERVING.md](SERVING.md#admission) covers the ladder and the
 
 ### RTX PRO 6000 Blackwell: DFlash2 drafter (the measured-fastest spec route)
 
-The [DFlash2 block-diffusion drafter](https://huggingface.co/Avifenesh/Qwen3.8-27B-DFlash2-memra)
+The [DFlash2 block-diffusion drafter](https://huggingface.co/tiyuvta/Qwen3.8-27B-DFlash2-memra)
 replaces the MTP arm for this model (arming it disables MTP spec: two spec programs never
 coexist). Defaults do the tuning: the drafter quantizes to q4_0 at load
 (`MEMRA_DFLASH_PREC=q4`) and the round consumes the FR-Spec vocab trim when armed. Output is
@@ -83,7 +83,7 @@ byte-identical to plain decode by construction: the verifier arbitrates every co
 MEMRA_COMPAT=openai \
 MEMRA_MODELS="q38=/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf" \
 MEMRA_DSPARK_SPEC=1 \
-MEMRA_DSPARK_DRAFT=hf:Avifenesh/Qwen3.8-27B-DFlash2-memra \
+MEMRA_DSPARK_DRAFT=hf:tiyuvta/Qwen3.8-27B-DFlash2-memra \
 MEMRA_FRSPEC_TRIM=q38-ranks-sxc32768.gguf.txt \
 MEMRA_CTX=262144 \
 MEMRA_MAX_SESSIONS=32 \
@@ -154,13 +154,13 @@ operator pin, including `0` for plain decode.
 MoE. NVFP4 GGUF with a trained MTP head; masked own-gen ranks trim adopted as the serving
 default (see the board entry). NVFP4 is not an upstream llama.cpp tensor type: this file
 runs on memra. Artifacts:
-[Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF](https://huggingface.co/Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF).
+[tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF](https://huggingface.co/tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF).
 
 ### RTX PRO 6000 Blackwell: trunk + masked head
 
 ```bash
 MEMRA_COMPAT=openai \
-MEMRA_MODELS="ornith=hf:Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:Q5K-mtp+hf:Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:frspec-owngen32768" \
+MEMRA_MODELS="ornith=hf:tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:Q5K-mtp+hf:tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:frspec-owngen32768" \
 memra-server
 ```
 
@@ -172,7 +172,7 @@ default, board entry 412c45b0):
 
 ```bash
 MEMRA_FRSPEC_TRIM=ornith15-ranks-owngen-32768.txt \
-MEMRA_MODELS="ornith=hf:Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:Q5K-mtp" \
+MEMRA_MODELS="ornith=hf:tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF:Q5K-mtp" \
 memra-server
 ```
 

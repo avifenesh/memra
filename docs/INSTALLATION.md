@@ -83,7 +83,7 @@ Face cache on first use.
 
 ```bash
 MEMRA_CHAT=1 run-gen \
-  hf:Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp \
+  hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp \
   --prompt "Explain KV caching in one sentence."
 ```
 
