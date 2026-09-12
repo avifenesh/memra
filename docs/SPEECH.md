@@ -1,5 +1,10 @@
 # Speech program
 
+> **Serving bring-up PAUSED (owner decision, 2026-09-12).** This lane continues as research and
+> correctness work only; nothing in it is a serving claim or a roster commitment, and no serving
+> qualification cell is scheduled for it until the owner reopens it. Receipts and gates below stay
+> valid as engine records.
+
 What it takes for memra to serve any speech model, and how a new one gets onboarded.
 
 This file owns the *program*: model families in scope, what "support" means for a speech

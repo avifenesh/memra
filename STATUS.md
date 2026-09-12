@@ -1,5 +1,10 @@
 # ASR lane status
 
+> **Serving bring-up PAUSED (owner decision, 2026-09-12).** This lane continues as research and
+> correctness work only; nothing in it is a serving claim or a roster commitment, and no serving
+> qualification cell is scheduled for it until the owner reopens it. Receipts and gates below stay
+> valid as engine records.
+
 Updated 2026-09-10 (sweep closed at 36 of 71 clips, partial-sweep verdict stands by owner
 decision; both `real` divergences diagnosed as CT2 fp16 threshold effects; engine detokenizer
 agreement 36/36; scratch disposed, stop receipt banked).

@@ -1,5 +1,10 @@
 # Native ASR modality plan
 
+> **Serving bring-up PAUSED (owner decision, 2026-09-12).** This lane continues as research and
+> correctness work only; nothing in it is a serving claim or a roster commitment, and no serving
+> qualification cell is scheduled for it until the owner reopens it. Receipts and gates below stay
+> valid as engine records.
+
 Status: native CPU mel, encoder, cached decoder, beam-1 policy and clip window program all execute; end-to-end clip parity is measured on 36 of the 71 oracle clips (stopped clean; sweep closed 2026-09-10, partial-sweep verdict stands). See the measured status ladder below. Tracking: [#414](https://github.com/avifenesh/memra/issues/414).
 Engine baseline: `1657a5a80`; lane `lane/asr-modality-20260909`.
 
