@@ -32,7 +32,7 @@ kernel-check                  # expect: ALL GREEN
 Start a server with a supported public checkpoint. The first run downloads and caches the model:
 
 ```bash
-MEMRA_MODELS="q38=hf:Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
+MEMRA_MODELS="q38=hf:tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF:Q5K-mtp" \
 memra-server
 ```
 

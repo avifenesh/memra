@@ -12,7 +12,7 @@ production admission still requires the NativeQualified gate set.
   n-gram/PLE block, a 1-layer QSA MTP head, vocab 248,320, 262,144-token native window
   (1M YaRN). Geometry was read from checkpoint headers, never by analogy to a sibling
   (`research/qwen4exp-bringup-20260829/ARCH.md`).
-- Artifact: `Avifenesh/Qwen3.8-Flash-Next-NVFP4` — an experts-only NVFP4 mint (9 shards,
+- Artifact: `tiyuvta/Qwen3.8-Flash-Next-NVFP4` — an experts-only NVFP4 mint (9 shards,
   174 GB) with the BF16 MTP head grafted back in; the upstream modeling code carries no
   MTP module, so a PTQ pass without the graft ships no draft head at all.
 - Real-checkpoint gate

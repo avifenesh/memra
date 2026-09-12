@@ -98,7 +98,7 @@ weight than a wishlist, and they are read.
 | Model | Class | Quant | Drafter | Supported since |
 |---|---|---|---|---|
 | Qwen3.5-9B | dense | NVFP4 (5090), Q8_0 (H100) | MTP + own-gen trimmed draft | v0.1.0 |
-| Qwen3.8-27B | dense hybrid (GDN + gated attention) | both paths tuned: safetensors NVFP4 · NVFP4+Q5_K GGUF; performance receipts are not interchangeable | DFlash2 block-diffusion drafter (MEMRA_DSPARK_SPEC=1, q4 default + FR-Spec trim — HF Avifenesh/Qwen3.8-27B-DFlash2-memra; the qualified serving route since v0.113.0, beats the MTP arm on every rung of the vendor sampled shape) · MTP + own-gen FR-Spec masked ranks (safetensors: MEMRA_FRSPEC_TRIM; GGUF: pre-trimmed head — HF Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF) | v0.82.2 (MTP) / v0.113.0 (DFlash2 serving default) |
+| Qwen3.8-27B | dense hybrid (GDN + gated attention) | both paths tuned: safetensors NVFP4 · NVFP4+Q5_K GGUF; performance receipts are not interchangeable | DFlash2 block-diffusion drafter (MEMRA_DSPARK_SPEC=1, q4 default + FR-Spec trim — HF tiyuvta/Qwen3.8-27B-DFlash2-memra; the qualified serving route since v0.113.0, beats the MTP arm on every rung of the vendor sampled shape) · MTP + own-gen FR-Spec masked ranks (safetensors: MEMRA_FRSPEC_TRIM; GGUF: pre-trimmed head — HF tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF) | v0.82.2 (MTP) / v0.113.0 (DFlash2 serving default) |
 | Qwen3.6-27B | dense | NVFP4, Q4_K_M MTP-baked | MTP + own-gen trimmed draft | v0.1.0 |
 | Qwen3.6-35B-A3B | MoE | IQ4_XS | MTP + own-gen trimmed draft | v0.1.0 |
 | Gemma-4 26B-A4B | MoE | QAT Q4_0 | Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements | v0.23.0 |
@@ -107,7 +107,7 @@ weight than a wishlist, and they are read.
 | Gemma-4 12B | dense | QAT Q4_0 | Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements | v0.40.0 |
 | Ornith-1.0-9B | dense | Q8_0 | own-gen donor-block draft | v0.63.0 |
 | Ornith-1.0-35B | MoE | Q4_K_M | own-gen donor-block draft | v0.64.0 |
-| Ornith-1.5-35B-A3B | MoE hybrid (GDN + gated attention) | NVFP4+Q5_K GGUF (own-published: HF Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF, first NVFP4 of this model) · image input via the checkpoint ViT (MEMRA_VISION_DIR, parity-gated) | continued-trained MTP head + FR-Spec self-trim (MEMRA_FRSPEC_TRIM; v0.105 serves cached-long at K=5 with a trimmed head, v0.108 replays the verify trunk as a captured graph by default — +19.7% on a current-generation host, and much less host-CPU-sensitive than before) — artifacts on HF | v0.97.0 |
+| Ornith-1.5-35B-A3B | MoE hybrid (GDN + gated attention) | NVFP4+Q5_K GGUF (own-published: HF tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF, first NVFP4 of this model) · image input via the checkpoint ViT (MEMRA_VISION_DIR, parity-gated) | continued-trained MTP head + FR-Spec self-trim (MEMRA_FRSPEC_TRIM; v0.105 serves cached-long at K=5 with a trimmed head, v0.108 replays the verify trunk as a captured graph by default — +19.7% on a current-generation host, and much less host-CPU-sensitive than before) — artifacts on HF | v0.97.0 |
 | Qwen-AgentWorld-35B-A3B | MoE | UD-IQ4_XS (avoid UD-Q4_K_M — its Q5_K expert mix sits outside fast-path coverage) | own-gen drafter | v0.66.0 |
 | Step-3.7-Flash 196B-A11B | MoE | IQ4_XS + Q8_0 MTP head (two-card PP-2), supported · FP8 tuning in progress · image input via the checkpoint perception_encoder ViT (MEMRA_STEP_VISION_DIR, parity- and serve-gated, default off) | MTP (single-card); plain batched decode on PP-2 | v0.73.1 |
 <!-- PERF-MODELS:END -->
@@ -227,7 +227,7 @@ memra runs **Ornith-1.5-35B-A3B at its full native 262,144-token context** on on
 RTX PRO 6000 Blackwell — self-published NVFP4 GGUF (the first NVFP4 of this model,
 published ~34.5 h after the checkpoint dropped), continued-trained MTP head, and a
 self-trimmed FR-Spec draft lm_head, all on HF
-([Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF](https://huggingface.co/Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF)).
+([tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF](https://huggingface.co/tiyuvta/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF)).
 
 Measured on one rented RTX PRO 6000 Blackwell WS (vendor sampling T=0.6/top-p 0.95/
 top-k 20, memra v0.105.0; N and windows in `research/orndecode-20260822/`). The
@@ -312,16 +312,16 @@ The trim costs nothing in correctness: verification runs on the target's full 24
 vocabulary, so a trim moves draft acceptance and never output. Heads are trimmed
 248,320 → 32,768.
 
-Published in [Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF](https://huggingface.co/Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF), three ranks flavours, chosen by
+Published in [tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF), three ranks flavours, chosen by
 workload. On a **safetensors** trunk the `.txt` ranks drive the trim at load time
 (`MEMRA_FRSPEC_TRIM=<ranks.txt>`) and no separate draft file is needed; the pre-trimmed `.gguf`
 head is the GGUF path (`MEMRA_MTP_DRAFT=<head.gguf>`):
 
 | Flavour | Ranks (safetensors) | Pre-trimmed head (GGUF) | Corpus |
 |---|---|---|---|
-| **agentic** — serving default | [`q38-ranks-sxc32768.gguf.txt`](https://huggingface.co/Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/q38-ranks-sxc32768.gguf.txt) | [`mtp-…frspec-sxc32768.gguf`](https://huggingface.co/Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf) | 163k own-generated tokens over real agentic sessions |
-| **prose** | [`q38-ranks-prose-32768.txt`](https://huggingface.co/Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/q38-ranks-prose-32768.txt) | [`mtp-…frspec-prose32768.gguf`](https://huggingface.co/Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/mtp-Qwen3.8-27B-NVFP4-frspec-prose32768.gguf) | 154k own-generated tokens, essay/story/letter prompts, ~15% non-English |
-| **mixed** | [`q38-ranks-mixed-32768.txt`](https://huggingface.co/Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/q38-ranks-mixed-32768.txt) | [`mtp-…frspec-mixed32768.gguf`](https://huggingface.co/Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/mtp-Qwen3.8-27B-NVFP4-frspec-mixed32768.gguf) | 50/50 normalised blend of both streams, same rank law |
+| **agentic** — serving default | [`q38-ranks-sxc32768.gguf.txt`](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/q38-ranks-sxc32768.gguf.txt) | [`mtp-…frspec-sxc32768.gguf`](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf) | 163k own-generated tokens over real agentic sessions |
+| **prose** | [`q38-ranks-prose-32768.txt`](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/q38-ranks-prose-32768.txt) | [`mtp-…frspec-prose32768.gguf`](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/mtp-Qwen3.8-27B-NVFP4-frspec-prose32768.gguf) | 154k own-generated tokens, essay/story/letter prompts, ~15% non-English |
+| **mixed** | [`q38-ranks-mixed-32768.txt`](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/q38-ranks-mixed-32768.txt) | [`mtp-…frspec-mixed32768.gguf`](https://huggingface.co/tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF/blob/main/mtp-Qwen3.8-27B-NVFP4-frspec-mixed32768.gguf) | 50/50 normalised blend of both streams, same rank law |
 
 Short generic probes put the three within noise of each other; the differences live in
 domain tail tokens, which is why the flavour is a choice and not a default anyone should
