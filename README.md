@@ -11,11 +11,13 @@ Rust + CUDA LLM inference engine for Blackwell (Tuned specifically on RTX PRO 60
 [Serving](docs/SERVING.md) · [Performance](docs/PERFORMANCE.md) ·
 [Hosted API](https://inference.tiyuvta.ai/model?c=github-memra-readme)
 
-> **Want to try Memra without operating a GPU? Or want us to put memra tuned on your GPU?**
-> Use memra models -> [inference](https://inference.tiyuvta.ai/model?c=gh-mem-red-infe).
-> Check our offering -> [services](https://tiyuvta.ai/services?c=gh-mem-red-serv)
-> Live catalog, API openai compat, 5$ first month free.
-> Services including fine tune, BYOC, setup on ours and more.
+> memra is the research engine of the [tiyuvta](https://tiyuvta.ai) lab: kernels, quantization
+> arithmetic, speculative decoding and serving written from scratch for Blackwell, with exactness
+> gates and receipts for every published number.
+> The lab's hosted API ([inference](https://inference.tiyuvta.ai/model?c=gh-mem-red-infe)) and its
+> deployments ([services](https://tiyuvta.ai/services?c=gh-mem-red-serv)) serve open models
+> **tuned on your workload** on an open serving stack the lab operates; memra's findings feed that
+> tuning. Pay per use, OpenAI-compatible API, no subscription.
 
 ## Quick start
 
