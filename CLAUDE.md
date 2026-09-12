@@ -10,19 +10,13 @@ The rules below are hard prohibitions set by the user across prior sessions. Eac
 
 Do not declare a model format supported by substituting a different activation, weight, KV, or compute program. When the owner requests checkpoint-faithful support, implement and qualify that exact program first; fallback formats are diagnostics only and must not become the deliverable.
 
-### No external kernel dependencies
-
-Do not vendor, submodule, link, or ship third-party inference kernels or runtime libraries in Memra. Learn from current primary-source implementations and papers, then write and validate Memra-owned CUDA implementations against those external systems only as research controls.
-
 ### No 5090 blocker for Step delivery
 
 Do not make local RTX 5090 evidence a blocking release gate for Step-3.7 multi-card changes. RTX PRO 6000 Blackwell is the target and blocking qualification surface; 5090 validation is a later compatibility follow-up unless the change also modifies a generic 5090-facing default.
 
-### No software-wall surrender
-
-Do not stop an engineering or performance objective because the current implementation, benchmark, duration, complexity, or estimated effort looks unfavorable. Continue exploring and implementing alternative directions for as long as necessary; stop only when evidence proves the remaining bound is imposed by hardware or physics and cannot be surpassed by any software or system design within the target constraints.
-
 <!-- banthis:end -->
+
+
 
 
 

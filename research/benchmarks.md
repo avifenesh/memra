@@ -1,12 +1,15 @@
 # Benchmarks — bw24 vs llama.cpp on RTX 5090 Laptop (the beat-targets)
 
-> **DOCTRINE CHANGE (owner, 2026-08-03): llama benching STOPPED.** The llama numbers in
-> this file and the boards are frozen reference points, recorded through 2026-08-03 — no
-> new llama-bench runs, no fresh llama builds, no interleaved llama arms. All future
-> measurement is SELF-COMPETITION: new binary vs our own baseline binary, same-session
-> interleaved, same window rules below (the A/B protocol now pairs memra-vs-memra).
-> Ratios vs the frozen llama rows carry a stated non-interleaved caveat and are context,
-> not verdicts.
+> **DOCTRINE CHANGE (owner, 2026-09-12): external benching RESUMES, monthly.** The 2026-08-03
+> stop is lifted. (1) The competitor arm is the current pinned release of SGLang (primary) and
+> vLLM (control) at its documented best configuration for the model and card, recorded with
+> commit, container digest and flags. (2) One cell per month per served shape, same-session
+> interleaved with the current memra binary under the window rules below. (3) Cells are banked
+> under `research/external-baseline-YYYYMM/` and summarized in `docs/PERFORMANCE.md`. (4) The
+> llama numbers in this file and the frozen 2026-08-03 board columns are never refreshed in
+> place; they stay labeled frozen. Self-competition (new binary vs our own baseline binary,
+> same-session interleaved) continues for kernel work and is not a substitute for the monthly
+> external cell.
 >
 > **Rig/target correction (2026-08-05).** This file's title rig — RTX 5090 Laptop — is the
 > **measuring and gating** rig (and the only owned GPU). The *deployment* target is no

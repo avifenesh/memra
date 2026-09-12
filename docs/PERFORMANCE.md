@@ -19,27 +19,29 @@ unlocked clocks drift 9% in-process, and 1860 MHz-locked absolute numbers read B
 3090 MHz free-clock boost): a clock-locked value is the only valid A/B denominator, and
 locked and free-clock numbers must never be mixed in one comparison.
 
-> **Competitor benching is STOPPED (owner call, 2026-08-03).** Every llama.cpp and vLLM
-> column in this document is a **frozen reference point** recorded on or before that date,
-> kept as a regression anchor — not a live scoreboard. Forward work is self-competition
-> (memra vs its own previous cells, and spec vs its own plain arm). Do not re-run a
-> competitor to refresh a column here; do not read a ratio as a current-day claim. The
-> doctrine banner also lives in [`research/benchmarks.md`](../research/benchmarks.md).
+> **Competitor benching RESUMES as a monthly external baseline (owner call, 2026-09-12).**
+> The 2026-08-03 stop is lifted. Every llama.cpp and vLLM column in this document is still a
+> **frozen reference point** recorded on or before 2026-08-03 and stays labeled that way; frozen
+> columns are never refreshed in place. From 2026-09-12 one external cell per served shape is
+> measured once a month against the current pinned SGLang (primary) and vLLM (control) at their
+> documented best configuration for the model and card, same-session interleaved with the current
+> memra binary, and banked under `research/external-baseline-YYYYMM/` with commit, container
+> digest and flags. A ratio in this file is context; the newest monthly cell is the verdict.
+> Self-competition (memra vs its own previous cells) continues for kernel work and is not a
+> substitute for the monthly cell. The doctrine banner also lives in
+> [`research/benchmarks.md`](../research/benchmarks.md).
 >
-> One open counter-example that belongs in the same breath as the ratios below: on
-> 2026-08-05, same model file / each engine at its owner's daily config / N=5 interleaved,
-> **llama.cpp leads on cold time-to-first-token (0.19 s vs 0.53 s), short agentic turns, and
-> raw prefill**, while memra leads long-generation sampled decode by +17%
-> ([`research/memra-vs-llama-daily-20260805/`](../research/memra-vs-llama-daily-20260805/),
-> labeled a dogfood diagnostic, not board material). memra makes **no interactive-latency
-> superiority claim** while that stands. Since that measurement, the memra side of the
-> latency stack has moved (all self-competition receipts, local 5090): round-cadence SSE
-> takes solo first text 0.41 → 0.12 s and the admission-yield fix takes contended first
-> text 1.60 → 0.15 s at any burst size
-> ([`research/sse-cadence-20260805/`](../research/sse-cadence-20260805/),
-> [`research/admission-20260806/`](../research/admission-20260806/)) — but the head-to-head
-> itself has NOT been re-run (benching stopped), so the 0.53 s-vs-0.19 s row stays frozen
-> as recorded.
+> The 2026-08-05 head-to-head stays as recorded: same model file, each engine at its owner's daily
+> config, N=5 interleaved, **llama.cpp leads on cold time-to-first-token (0.19 s vs 0.53 s), short
+> agentic turns, and raw prefill**, while memra leads long-generation sampled decode by +17%
+> ([`research/memra-vs-llama-daily-20260805/`](../research/memra-vs-llama-daily-20260805/)).
+> memra makes **no interactive-latency superiority claim** while that stands. The memra-side
+> latency moves since then (round-cadence SSE solo first text 0.41 to 0.12 s, admission-yield
+> contended first text 1.60 to 0.15 s;
+> [`research/sse-cadence-20260805/`](../research/sse-cadence-20260805/),
+> [`research/admission-20260806/`](../research/admission-20260806/)) are self-competition
+> receipts that were never re-paired against a competitor; the first monthly cell is where that
+> pairing happens.
 
 > **Rig labels are load-bearing.** The generated tracked boards remain **RTX 5090 Laptop**
 > and **rented H100 80 GB** receipts. The 5090 board is the development and single-card
