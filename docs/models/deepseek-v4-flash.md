@@ -1,5 +1,10 @@
 # DeepSeek V4 Flash
 
+> **Serving bring-up PAUSED (owner decision, 2026-09-12).** This lane continues as research and
+> correctness work only; nothing in it is a serving claim or a roster commitment, and no serving
+> qualification cell is scheduled for it until the owner reopens it. Receipts and gates below stay
+> valid as engine records.
+
 | | Recommended use |
 |---|---|
 | **Status** | Experimental engine support; functional and gated, not serving-grade |
