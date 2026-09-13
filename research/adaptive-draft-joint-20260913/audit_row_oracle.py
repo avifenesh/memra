@@ -132,12 +132,14 @@ def analyze(bank):
                 counts[c[0]][1] += 1
     utilities = {token: total/(n+4) for token, (total, n) in counts.items()}
 
-    def evaluate(split, threshold, policy):
+    def evaluate(split, threshold, policy, domain=None):
         groups = defaultdict(list)
         actions = 0
         ambiguous = 0
         for s in states:
             if s['split'] != split or not s['overlap_argmax_match']:
+                continue
+            if domain is not None and s['domain'] != domain:
                 continue
             # All policies share the same numerical eligibility, including no-op.
             if any(swap_label(s, c) is None for c in s['outside_top16']):
@@ -165,6 +167,8 @@ def analyze(bank):
             groups[s['prompt']].append(value)
         return {'prompt_groups': len(groups), 'states': sum(len(x) for x in groups.values()),
                 'actions': actions, 'ambiguous_action_states_excluded': ambiguous,
+                'beneficial_actions': sum(v == 1 for x in groups.values() for v in x),
+                'harmful_actions': sum(v == -1 for x in groups.values() for v in x),
                 'net_one_step_correctness_changes': sum(sum(x) for x in groups.values()),
                 'prompt_mean_delta': statistics.mean(statistics.mean(x) for x in groups.values()),
                 'per_prompt_delta': {k: statistics.mean(v) for k, v in groups.items()}}
@@ -176,6 +180,7 @@ def analyze(bank):
         'table': {str(k): {'sum_delta': counts[k][0], 'n': counts[k][1], 'utility': v} for k, v in utilities.items()},
         'calibration_grid': grid, 'selected_threshold': threshold, 'training_target_frequency': dict(frequency),
         'metrics': {split: {p: evaluate(split, threshold, p) for p in ['no_change', 'highest_outside', 'frequency', 'learned']} for split in ['train', 'calibration', 'heldout']},
+        'heldout_by_domain': {domain: {p: evaluate('heldout', threshold, p, domain) for p in ['no_change', 'highest_outside', 'frequency', 'learned']} for domain in ['code', 'prose']},
         'scope': 'Offline one-step candidate admission to a fixed victim using expensive probe scores; not online policy, speedup, or novelty evidence.'}
     pairs = {}
     for r in runs:
