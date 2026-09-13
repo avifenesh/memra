@@ -89,10 +89,16 @@ def evaluate(states, kind, model):
         'prompt_mean_delta':statistics.mean(statistics.mean(v) for v in groups.values()),
         'per_prompt':{k:statistics.mean(v) for k,v in groups.items()}}
 
-def fit(bank):
-    source_runs = raw_runs(bank/'raw/candidate-source')
-    full_runs = [r for r in raw_runs(bank/'raw/bounded-candidates') if r['phase']=='collection' and r['mode']=='full']
-    modes = {m:build_states([r for r in source_runs if r['phase']=='collection' and r['mode']==m],full_runs) for m in ['committed','suffix']}
+def fit(bank, dense=False):
+    if dense:
+        all_runs = raw_runs(bank/'raw/dense-admission', expected_prompts=32)
+        full_runs = [r for r in all_runs if r['mode']=='full']
+        source_runs = [{**r, 'mode':'suffix'} for r in all_runs if r['mode']=='bounded']
+        modes = {'suffix':build_states(source_runs,full_runs)}
+    else:
+        source_runs = raw_runs(bank/'raw/candidate-source')
+        full_runs = [r for r in raw_runs(bank/'raw/bounded-candidates') if r['phase']=='collection' and r['mode']=='full']
+        modes = {m:build_states([r for r in source_runs if r['phase']=='collection' and r['mode']==m],full_runs) for m in ['committed','suffix']}
     recall = {m:sum(s['repairable'] and s['discovered'] for s in states if s['split']=='calibration') for m,states in modes.items()}
     source = max(modes,key=lambda m:(recall[m],m=='committed'))
     train = [s for s in modes[source] if s['split']=='train']
@@ -131,12 +137,13 @@ def fit(bank):
     return {'source':source, 'source_calibration_discoveries':recall, 'models':models,'calibration':calibration,
         'training_support':{'states':len(train),'nontrivial_interventions':len(support),'positive':sum(c['delta']>0 for c in support),'negative':sum(c['delta']<0 for c in support)},
         'training_and_calibration_metrics':{split:{k:evaluate(states,k,m) for k,m in models.items()} for split,states in [('train',train),('calibration',cal)]},
-        'inputs':{str(p.relative_to(bank)):sha(p) for name in ['candidate-source','bounded-candidates'] for p in sorted((bank/'raw'/name).glob('*')) if p.is_file()},
+        'dense_training':dense,
+        'inputs':{str(p.relative_to(bank)):sha(p) for name in (['dense-admission'] if dense else ['candidate-source','bounded-candidates']) for p in sorted((bank/'raw'/name).glob('*')) if p.is_file()},
         'fitter_sha256':sha(Path(__file__)), 'auditor_sha256':sha(Path(__file__).with_name('audit_candidate_gates.py')),
         'python':sys.version, 'scope':'Offline one-step admission only; no live policy or serving claim.'}
 
 if __name__ == '__main__':
     import argparse
-    p=argparse.ArgumentParser(); p.add_argument('bank',type=Path); p.add_argument('--out',type=Path,required=True)
+    p=argparse.ArgumentParser(); p.add_argument('bank',type=Path); p.add_argument('--out',type=Path,required=True); p.add_argument('--dense',action='store_true')
     a=p.parse_args(); assert not a.out.exists(), 'Refuse checkpoint overwrite'
-    checkpoint=fit(a.bank); a.out.write_text(json.dumps(checkpoint,indent=2)); print(json.dumps({k:v for k,v in checkpoint.items() if k in ['source','source_calibration_discoveries','training_support']},indent=2))
+    checkpoint=fit(a.bank,a.dense); a.out.write_text(json.dumps(checkpoint,indent=2)); print(json.dumps({k:v for k,v in checkpoint.items() if k in ['source','source_calibration_discoveries','training_support']},indent=2))
