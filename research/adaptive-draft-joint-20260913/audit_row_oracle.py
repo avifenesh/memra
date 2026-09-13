@@ -45,6 +45,16 @@ def analyze(bank):
     runs = [json.loads(x) for x in (root/'runs.jsonl').read_text().splitlines()]
     manifest = json.loads((root/'manifest.json').read_text())
     assert manifest['source_commit'] == (bank/'SOURCE_COMMIT').read_text().strip()
+    artifacts = json.loads(Path(__file__).with_name('artifacts.lock.json').read_text())['files']
+    staged = [json.loads(x) for x in re.findall(r'\{"artifact"[^\n\r]+\}', (bank/'raw/stage.log').read_text())]
+    assert {x['artifact']: x['sha256'] for x in staged if x['status'] == 'verified'} == {x['name']: x['sha256'] for x in artifacts}
+    pilot = [json.loads(x) for x in (bank/'raw/runs-row-oracle.jsonl').read_text().splitlines()]
+    assert len(pilot) == 21 and all(x['status'] == 'pass' for x in pilot)
+    for run in pilot:
+        assert sha(bank/'raw/pilot-row-oracle'/(run['id']+'.log')) == run['raw_sha256']
+    pilot_manifest = json.loads((bank/'raw/pilot-row-oracle/manifest.json').read_text())
+    assert pilot_manifest['source_commit'] == manifest['source_commit']
+    assert pilot_manifest['binaries']['gemma-gate'] == manifest['binary_sha256']
     check = bank/'checkpoints/row-oracle'
     seed = json.loads((check/'seed.json').read_text())
     assert sha(check/'base.txt') == seed['core_sha256']
@@ -67,6 +77,7 @@ def analyze(bank):
         assert r['status'] in ['pass', 'expected_refusal']
         if r['status'] == 'expected_refusal':
             assert r['phase'] == 'admission' and r['exit_code'] != 0
+            assert 'row probe requires MEMRA_GEMMA_TRIM_FREEZE=1' in (root/(r['id']+'.log')).read_text()
             continue
         assert r['emitted'] == 128 and r['exit_code'] == 0
         text = (root/(r['id']+'.log')).read_text()
@@ -198,7 +209,7 @@ def analyze(bank):
     assert sum(r['status'] == 'expected_refusal' for r in runs) == 1
     assert all(len(p) == 2 for p in pairs.values())
     assert all(len(x) == 6 for x in log_ratios.values())
-    return {'raw_runs_verified': len(runs), 'headroom': headroom, 'cost': cost, 'estimator': estimator,
+    return {'raw_runs_verified': len(runs), 'pilot_runs_verified': len(pilot), 'headroom': headroom, 'cost': cost, 'estimator': estimator,
             'scope': 'Sparse reached-state oracle diagnostic; no extrapolation to whole-block acceptance or serving throughput.'}
 
 
