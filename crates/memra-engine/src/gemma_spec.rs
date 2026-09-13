@@ -822,6 +822,10 @@ impl HybridModel {
             None
         };
 
+        let candidate_suffix = std::env::var("MEMRA_GEMMA_CANDIDATE_SUFFIX").as_deref() == Ok("1");
+        if candidate_suffix && row_candidates.is_none() {
+            return Err("candidate suffix discovery requires the bounded probe".into());
+        }
         let t_prime = std::time::Instant::now();
         // short prompts fall below prime_cache's T floor — the batched verify IS a prime.
         let (pl, h_seed) = if prompt.len() >= crate::hybrid_forward::PRIME_MIN_T {
@@ -1670,7 +1674,9 @@ impl HybridModel {
             // BEFORE any miss is paid (prose escapes are first-occurrence-dominated —
             // corrections-only learning measured +0.5 acceptance pts, jsonl 2026-07-19).
             if let Some(cp) = row_candidates.as_mut() {
-                cp.observe(&vam[..=m]);
+                // Abandoned verifier suffixes are discovery hints only. The
+                // current round's candidate pool and reached-state labels are sealed.
+                cp.observe(if candidate_suffix { &vam } else { &vam[..=m] });
             }
             trim_adapt_learn(e, d, &vam)?;
             if adapt {
