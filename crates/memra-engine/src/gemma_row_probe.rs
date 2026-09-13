@@ -51,7 +51,11 @@ impl RowProbe {
             overhead_ns: started.elapsed().as_nanos(),
             states: 0,
             replay: std::env::var("MEMRA_GEMMA_ROW_REPLAY").as_deref() == Ok("1"),
-            source_rows: if std::env::var("MEMRA_GEMMA_ROW_REPLAY").as_deref() == Ok("1") { rows.to_vec() } else { Vec::new() },
+            source_rows: if std::env::var("MEMRA_GEMMA_ROW_REPLAY").as_deref() == Ok("1") {
+                rows.to_vec()
+            } else {
+                Vec::new()
+            },
             row_bytes,
             width,
             shadow: None,
@@ -138,7 +142,20 @@ impl RowProbe {
             .count();
         if self.replay {
             let hidden = hidden.ok_or("physical replay requires the original hidden vector")?;
-            self.replay_state(e, hidden, round, position, core, map, active, full, &candidates, proposal, target, tolerance)?;
+            self.replay_state(
+                e,
+                hidden,
+                round,
+                position,
+                core,
+                map,
+                active,
+                full,
+                &candidates,
+                proposal,
+                target,
+                tolerance,
+            )?;
         }
         // Only finite numeric fields and booleans; no text needs JSON escaping.
         let top_json = top
@@ -172,9 +189,20 @@ impl RowProbe {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn replay_state(&mut self, e: &Engine, hidden: &[f32], round: usize,
-        position: usize, core: usize, map: &[u32], active: &[f32], full: &[f32],
-        candidates: &[(u32, f32)], proposal: u32, target: u32, tolerance: f32,
+    fn replay_state(
+        &mut self,
+        e: &Engine,
+        hidden: &[f32],
+        round: usize,
+        position: usize,
+        core: usize,
+        map: &[u32],
+        active: &[f32],
+        full: &[f32],
+        candidates: &[(u32, f32)],
+        proposal: u32,
+        target: u32,
+        tolerance: f32,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if core >= map.len() || hidden.len() != self.width {
             return Err("physical replay requires a mutable slot and exact hidden width".into());
@@ -182,47 +210,86 @@ impl RowProbe {
         if self.shadow.is_none() {
             let mut bytes = Vec::with_capacity(map.len() * self.row_bytes);
             for &id in map {
-                bytes.extend_from_slice(&self.source_rows[id as usize * self.row_bytes..(id as usize + 1) * self.row_bytes]);
+                bytes.extend_from_slice(
+                    &self.source_rows
+                        [id as usize * self.row_bytes..(id as usize + 1) * self.row_bytes],
+                );
             }
             self.shadow = Some(GpuTensor::Quant {
-                bytes: e.htod_bytes(&bytes)?, qtype: crate::QT_Q8_0,
-                row_bytes: self.row_bytes, ne: vec![self.width as u64, map.len() as u64],
-                scale: 1.0, rp: false,
+                bytes: e.htod_bytes(&bytes)?,
+                qtype: crate::QT_Q8_0,
+                row_bytes: self.row_bytes,
+                ne: vec![self.width as u64, map.len() as u64],
+                scale: 1.0,
+                rp: false,
                 #[cfg(memra_cutlass)]
                 cutlass: None,
-                fp8: None, blk: None, rp4: None, f16: None, a4: None,
+                fp8: None,
+                blk: None,
+                rp4: None,
+                f16: None,
+                a4: None,
             });
         }
         let h = e.htod(hidden)?;
         let mut choices: Vec<u32> = candidates.iter().map(|x| x.0).collect();
         // Oracle-target insertion is qualification only, never a policy input.
-        if !map.contains(&target) && !choices.contains(&target) { choices.push(target); }
-        if !choices.contains(&proposal) { choices.push(proposal); } // Duplicate-winner tie fixture.
+        if !map.contains(&target) && !choices.contains(&target) {
+            choices.push(target);
+        }
+        if !choices.contains(&proposal) {
+            choices.push(proposal);
+        } // Duplicate-winner tie fixture.
         choices.push(map[core]); // Explicit exact restoration/no-op case.
         for candidate in choices {
             let shadow = self.shadow.as_mut().unwrap();
             if let GpuTensor::Quant { bytes, .. } = shadow {
-                e.htod_u8_into(bytes, core * self.row_bytes,
-                    &self.source_rows[candidate as usize * self.row_bytes..(candidate as usize + 1) * self.row_bytes])?;
+                e.htod_u8_into(
+                    bytes,
+                    core * self.row_bytes,
+                    &self.source_rows[candidate as usize * self.row_bytes
+                        ..(candidate as usize + 1) * self.row_bytes],
+                )?;
             }
             let logits = e.matmul(shadow, &h, 1)?;
             let actual_slot = e.dtoh_u32(&e.argmax_token_device(&logits, map.len())?)?[0] as usize;
-            let actual = if actual_slot == core { candidate } else { map[actual_slot] };
+            let actual = if actual_slot == core {
+                candidate
+            } else {
+                map[actual_slot]
+            };
             let mut expected = active.to_vec();
             expected[core] = full[candidate as usize];
             let mut slots: Vec<usize> = (0..map.len()).collect();
             slots.sort_unstable_by(|&a, &b| expected[b].total_cmp(&expected[a]).then(a.cmp(&b)));
-            let predicted = if slots[0] == core { candidate } else { map[slots[0]] };
+            let predicted = if slots[0] == core {
+                candidate
+            } else {
+                map[slots[0]]
+            };
             let margin = expected[slots[0]] - expected[slots[1]];
             let measured = e.dtoh(&logits)?;
-            if measured.iter().any(|x| !x.is_finite()) { return Err("non-finite physical replay score".into()); }
-            let max_error = measured.iter().zip(&expected).map(|(a,b)| (a-b).abs()).fold(0.0_f32, f32::max);
+            if measured.iter().any(|x| !x.is_finite()) {
+                return Err("non-finite physical replay score".into());
+            }
+            let max_error = measured
+                .iter()
+                .zip(&expected)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0_f32, f32::max);
             let ambiguous = margin <= tolerance;
             let matched = predicted == actual;
             let delta = i32::from(actual == target) - i32::from(proposal == target);
-            writeln!(self.file, "{{\"schema\":2,\"kind\":\"physical_swap\",\"round\":{round},\"position\":{position},\"victim_slot\":{core},\"candidate\":{candidate},\"predicted\":{predicted},\"actual\":{actual},\"margin\":{margin},\"ambiguous\":{ambiguous},\"matched\":{matched},\"max_abs_error\":{max_error},\"delta\":{delta}}}")?;
-            if !ambiguous && !matched { return Err("physical swap disagrees with score prediction".into()); }
-            if candidate == map[core] && actual != proposal { return Err("physical shadow restoration changed winner".into()); }
+            writeln!(
+                self.file,
+                "{{\"schema\":2,\"kind\":\"physical_swap\",\"round\":{round},\"position\":{position},\"victim_slot\":{core},\"candidate\":{candidate},\"predicted\":{predicted},\"actual\":{actual},\"margin\":{margin},\"ambiguous\":{ambiguous},\"matched\":{matched},\"max_abs_error\":{max_error},\"delta\":{delta}}}"
+            )?;
+            if !ambiguous && !matched {
+                return Err("physical swap disagrees with score prediction".into());
+            }
+            if candidate == map[core] && actual != proposal {
+                return Err("physical shadow restoration changed winner".into());
+            }
         }
         Ok(())
     }

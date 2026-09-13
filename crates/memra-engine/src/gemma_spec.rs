@@ -750,7 +750,9 @@ impl HybridModel {
         // prompt is the cheapest predictor of what the trim is about to miss.
         trim_adapt_learn(e, d, prompt)?;
 
-        if std::env::var("MEMRA_GEMMA_ROW_REPLAY").as_deref() == Ok("1") && std::env::var("MEMRA_GEMMA_ROW_PROBE").is_err() {
+        if std::env::var("MEMRA_GEMMA_ROW_REPLAY").as_deref() == Ok("1")
+            && std::env::var("MEMRA_GEMMA_ROW_PROBE").is_err()
+        {
             return Err("physical row replay requires MEMRA_GEMMA_ROW_PROBE".into());
         }
         let mut row_probe = if let Ok(path) = std::env::var("MEMRA_GEMMA_ROW_PROBE") {
@@ -1076,7 +1078,11 @@ impl HybridModel {
                         probe_captures.borrow_mut().push((
                             active_host,
                             full_host,
-                            if row_probe.as_ref().unwrap().replay { Some(e.dtoh(&hn)?) } else { None },
+                            if row_probe.as_ref().unwrap().replay {
+                                Some(e.dtoh(&hn)?)
+                            } else {
+                                None
+                            },
                             started.elapsed().as_nanos(),
                         ));
                     }
@@ -1502,7 +1508,19 @@ impl HybridModel {
                 let core = d.trim_adapt.as_ref().unwrap().spare_base;
                 let map = d.d2t.as_ref().unwrap();
                 for (j, (active, full, hidden, _)) in captures.iter().take(eligible).enumerate() {
-                    probe.record(e, hidden.as_deref(), rounds, j, pos0, core, map, active, full, dtoks[j], vam[j])?;
+                    probe.record(
+                        e,
+                        hidden.as_deref(),
+                        rounds,
+                        j,
+                        pos0,
+                        core,
+                        map,
+                        active,
+                        full,
+                        dtoks[j],
+                        vam[j],
+                    )?;
                 }
             }
             if let Some(file) = draft_trace.as_mut() {
