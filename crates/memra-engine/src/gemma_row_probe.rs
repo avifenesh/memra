@@ -125,12 +125,22 @@ impl RowProbe {
             })
             .count();
         // Only finite numeric fields and booleans; no text needs JSON escaping.
-        let top_json = top.iter().map(|(id, score, slot)| format!("[{id},{score},{slot}]")).collect::<Vec<_>>().join(",");
-        let candidates_json = candidates.iter().map(|(id, score)| format!("[{id},{score}]")).collect::<Vec<_>>().join(",");
+        let top_json = top
+            .iter()
+            .map(|(id, score, slot)| format!("[{id},{score},{slot}]"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let candidates_json = candidates
+            .iter()
+            .map(|(id, score)| format!("[{id},{score}]"))
+            .collect::<Vec<_>>()
+            .join(",");
         let correct = !wrong;
         let head_rows = map.len();
-        writeln!(self.file,
-            "{{\"schema\":1,\"round\":{round},\"position\":{position},\"context\":{context},\"core_rows\":{core},\"head_rows\":{head_rows},\"proposal\":{proposal},\"target\":{target},\"correct\":{correct},\"target_in_head\":{target_present},\"target_full_score\":{target_score},\"active_top\":[{top_json}],\"outside_top16\":[{candidates_json}],\"overlap_max_abs_error\":{max_error},\"overlap_argmax_match\":{numerical_match},\"tolerance\":{tolerance},\"mutable_winner\":{mutable_winner},\"addition_rescue\":{add_rescue},\"removal_rescue\":{remove_rescue},\"swap_rescue\":{swap_rescue},\"harmful_outside_top16\":{harmful_candidates}}}")?;
+        writeln!(
+            self.file,
+            "{{\"schema\":1,\"round\":{round},\"position\":{position},\"context\":{context},\"core_rows\":{core},\"head_rows\":{head_rows},\"proposal\":{proposal},\"target\":{target},\"correct\":{correct},\"target_in_head\":{target_present},\"target_full_score\":{target_score},\"active_top\":[{top_json}],\"outside_top16\":[{candidates_json}],\"overlap_max_abs_error\":{max_error},\"overlap_argmax_match\":{numerical_match},\"tolerance\":{tolerance},\"mutable_winner\":{mutable_winner},\"addition_rescue\":{add_rescue},\"removal_rescue\":{remove_rescue},\"swap_rescue\":{swap_rescue},\"harmful_outside_top16\":{harmful_candidates}}}"
+        )?;
         self.states += 1;
         self.overhead_ns += started.elapsed().as_nanos();
         Ok(())
