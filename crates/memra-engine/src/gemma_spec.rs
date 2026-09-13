@@ -826,6 +826,9 @@ impl HybridModel {
         if candidate_suffix && row_candidates.is_none() {
             return Err("candidate suffix discovery requires the bounded probe".into());
         }
+        let probe_every: usize = std::env::var("MEMRA_GEMMA_PROBE_EVERY")
+            .map(|s| s.parse()).unwrap_or(Ok(16))?;
+        if probe_every == 0 { return Err("probe cadence must be positive".into()); }
         let t_prime = std::time::Instant::now();
         // short prompts fall below prime_cache's T floor — the batched verify IS a prime.
         let (pl, h_seed) = if prompt.len() >= crate::hybrid_forward::PRIME_MIN_T {
@@ -1060,7 +1063,7 @@ impl HybridModel {
             .unwrap_or(0);
         'outer: while out.len() < max_new {
             let probe_this_round =
-                (row_probe.is_some() || row_candidates.is_some()) && rounds % 16 == 0;
+                (row_probe.is_some() || row_candidates.is_some()) && rounds % probe_every == 0;
             let candidate_head = if probe_this_round {
                 if let Some(cp) = row_candidates.as_ref() {
                     let ta = d.trim_adapt.as_ref().unwrap();

@@ -14,23 +14,28 @@ from row_oracle import ROOT, BIN, tokenize
 LANE = ROOT/'memra/research/adaptive-draft-joint-20260913'
 OLD = LANE/'row-oracle-receipts'
 OUT = ROOT/'raw/fresh-admission'
+CHECKPOINT = ROOT/'checkpoints/admission-model.json'
+PROMPTS = ROOT/'checkpoints/fresh-admission-prompts'
+DONE = ROOT/'FRESH_ADMISSION_DONE'
+EXPECTED_PROMPTS = 24
+EXTRA_CONFIG = {}
 sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
 
 def main():
     import fcntl
     OUT.mkdir(exist_ok=False)
-    checkpoint = ROOT/'checkpoints/admission-model.json'
+    checkpoint = CHECKPOINT
     checkpoint_hash = sha(checkpoint)
     model = json.loads(checkpoint.read_text())
     ranks = OLD/'checkpoints/row-oracle/base.txt'
     sidecar = Path(str(ranks)+'.learned')
     frozen_hash = sha(sidecar)
-    prompts = sorted((ROOT/'checkpoints/fresh-admission-prompts').glob('*.txt'))
+    prompts = sorted(PROMPTS.glob('*.txt'))
     encoded = {p.name: tokenize(p) for p in prompts}
     (OUT/'manifest.json').write_text(json.dumps({'source_commit': (ROOT/'SOURCE_COMMIT').read_text().strip(),
         'binary_sha256': sha(BIN/'gemma-gate'), 'checkpoint_sha256':checkpoint_hash, 'selected_source':model['source'],
         'prompts': {p.name: sha(p) for p in prompts}}, indent=2))
-    assert len(prompts) == 24
+    assert len(prompts) == EXPECTED_PROMPTS
     known = {}
     def run(prompt, mode, repeat, phase):
         name = f'{prompt.stem}-{phase}-r{repeat}-{mode}'
@@ -40,6 +45,7 @@ def main():
             'MEMRA_SPEC_PMIN': '0', 'MEMRA_SPEC_PMIN_INROUND': '0', 'MEMRA_GEMMA_DRAFT_GRAPH': '0', 'MEMRA_GEMMA_ROUND_GRAPH': '0',
             'MEMRA_GEMMA_DRAFT_RANKS': str(ranks), 'MEMRA_GEMMA_TRIM_ADAPT': '512', 'MEMRA_GEMMA_TRIM_FREEZE': '1'}
         if mode == 'full': config['MEMRA_GEMMA_ROW_PROBE'] = str(trace)
+        config.update(EXTRA_CONFIG)
         if mode == 'bounded':
             config['MEMRA_GEMMA_CANDIDATE_PROBE'] = str(trace)
             config['MEMRA_GEMMA_CANDIDATE_SUFFIX'] = '1' if model['source']=='suffix' else '0'
@@ -92,6 +98,6 @@ def main():
             finally:
                 telemetry.terminate()
                 telemetry.wait(timeout=10)
-    (ROOT/'FRESH_ADMISSION_DONE').write_text('48 runs completed')
+    DONE.write_text(f'{2*len(prompts)} runs completed')
 
 if __name__ == '__main__': main()
