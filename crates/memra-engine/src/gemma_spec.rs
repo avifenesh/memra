@@ -763,11 +763,22 @@ impl HybridModel {
                     return Err(format!("row probe requires {name}={expected}").into());
                 }
             }
-            let ta = d.trim_adapt.as_ref().ok_or("row probe requires a trimmed adaptive head")?;
-            if !matches!(&d.head, GpuTensor::Quant { qtype, rp: false, .. } if *qtype == crate::QT_Q8_0) {
+            let ta = d
+                .trim_adapt
+                .as_ref()
+                .ok_or("row probe requires a trimmed adaptive head")?;
+            if !matches!(&d.head, GpuTensor::Quant { qtype, rp: false, .. } if *qtype == crate::QT_Q8_0)
+            {
                 return Err("row probe currently qualifies only a native Q8_0 draft head".into());
             }
-            Some(crate::gemma_row_probe::RowProbe::new(e, &path, &ta.src_rows, ta.row_bytes, d.n_embd, ta.n_vocab)?)
+            Some(crate::gemma_row_probe::RowProbe::new(
+                e,
+                &path,
+                &ta.src_rows,
+                ta.row_bytes,
+                d.n_embd,
+                ta.n_vocab,
+            )?)
         } else {
             None
         };
@@ -1059,7 +1070,11 @@ impl HybridModel {
                         let full = e.matmul(&row_probe.as_ref().unwrap().full_head, &hn, 1)?;
                         let active_host = e.dtoh(&ld)?;
                         let full_host = e.dtoh(&full)?;
-                        probe_captures.borrow_mut().push((active_host, full_host, started.elapsed().as_nanos()));
+                        probe_captures.borrow_mut().push((
+                            active_host,
+                            full_host,
+                            started.elapsed().as_nanos(),
+                        ));
                     }
                     e.argmax_token_device_col(&ld, 0, d.head.out_features(), batch_d, j + 1)?;
                     // confidence-adaptive depth (MEMRA_SPEC_PMIN): TRIM-space prob before d2t.

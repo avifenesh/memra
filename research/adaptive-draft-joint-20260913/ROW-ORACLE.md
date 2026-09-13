@@ -52,3 +52,25 @@ commands, binary/source hashes, failures and 250ms telemetry. All comparisons
 retain exact full output equality, not matching prefixes alone. End by recording
 what is actually supported and which estimator/physical-swap gate comes next;
 no confidence/depth learner or joint-policy experiment is admitted by this stage.
+
+## First offline estimator, specified before collection
+
+For each state, use only the scored top-16 outside candidates (chosen without
+looking at the verifier label). Consider replacing the first mutable slot, index
+4096, with each candidate. Its one-step label is changed greedy correctness minus
+existing correctness, in {-1,0,1}; discard ambiguous numerical/tie cases. The
+fixed victim deliberately isolates candidate admission from learning eviction.
+
+Fit per-candidate mean utility from training exposures with four zero-utility
+pseudo-observations. Unseen candidates have utility zero. Pick the highest-utility
+available candidate, with token-ID tie break, only above a threshold. Select that
+threshold on calibration prompt-mean utility from {0,0.01,0.025,0.05,0.1,1.0}; ties
+prefer the higher threshold. Freeze before held-out evaluation. Compare with no
+change and highest-scoring outside insertion. Save counts, scores, threshold and
+all split metrics. This is a first table estimator, not a novel algorithm or a
+competitive replacement-policy verdict. It excludes candidate-probe cost and
+does not replay changed draft suffixes, so it cannot establish inference speedup.
+
+Prose inputs contain related task-format variants across splits; report them as
+synthetic within-family diagnostics. They do not establish generalization across
+unseen task families. Fresh family-grouped data is required for a final policy test.
