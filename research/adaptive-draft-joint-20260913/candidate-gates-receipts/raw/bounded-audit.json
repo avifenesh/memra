@@ -1,0 +1,57 @@
+{
+  "runs": 192,
+  "discovery": {
+    "calibration-code": {
+      "states": 58,
+      "missing_targets": 2,
+      "oracle_repairable": 1,
+      "repairable_target_discovered": 0,
+      "missing_target_discovered": 0
+    },
+    "calibration-prose": {
+      "states": 61,
+      "missing_targets": 23,
+      "oracle_repairable": 17,
+      "repairable_target_discovered": 5,
+      "missing_target_discovered": 7
+    },
+    "heldout-code": {
+      "states": 60,
+      "missing_targets": 2,
+      "oracle_repairable": 2,
+      "repairable_target_discovered": 0,
+      "missing_target_discovered": 0
+    },
+    "heldout-prose": {
+      "states": 79,
+      "missing_targets": 21,
+      "oracle_repairable": 7,
+      "repairable_target_discovered": 2,
+      "missing_target_discovered": 4
+    },
+    "train-code": {
+      "states": 59,
+      "missing_targets": 4,
+      "oracle_repairable": 1,
+      "repairable_target_discovered": 0,
+      "missing_target_discovered": 0
+    },
+    "train-prose": {
+      "states": 74,
+      "missing_targets": 25,
+      "oracle_repairable": 13,
+      "repairable_target_discovered": 2,
+      "missing_target_discovered": 5
+    }
+  },
+  "candidate_scores_compared": 136,
+  "maximum_compared_score_error": 0.0,
+  "cost_ratio": 1.0019562967412783,
+  "bootstrap95": [
+    1.0012380913199432,
+    1.0026607149773181
+  ],
+  "control_seconds": 0.5679939010208334,
+  "bounded_seconds": 0.5690772479166667,
+  "scope": "Candidate discovery diagnostic, not a learned-policy or serving speedup result."
+}

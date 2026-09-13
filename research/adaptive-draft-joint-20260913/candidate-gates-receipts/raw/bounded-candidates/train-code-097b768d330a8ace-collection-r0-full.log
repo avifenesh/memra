@@ -1,0 +1,19 @@
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 24111 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[gemma-draft] FR head trim: 4096 rows + 512 adaptive (5 MB vs 285 MB full)
+[trim-adapt] 512 learned rows pre-filled from /workspace/adaptive-draft/memra/research/adaptive-draft-joint-20260913/row-oracle-receipts/checkpoints/row-oracle/base.txt.learned
+spec K=4 n_new=128 prompt=756 toks
+[fa-pool] grow #0 dev=0 o_len 0 -> 196608 ml_len 0 -> 768 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 786432 -> 1572864 ml_len 3072 -> 6144 (retired kept, zero=false)
+[gemma-spec] rounds=59 drafted=236 accepted=69                    accept-rate=0.292 tok/round=2.17
+[trim-adapt] 512/512 spare slots learned
+[gemma-spec] per-position accept: p0:35/59 p1:17/59 p2:9/59 p3:8/59
+[row-probe] states=6 measured_overhead_ns=41284911
+spec timing: request_seconds=0.687849326 prime_seconds=0.086938239 decode_seconds=0.600911087 emitted=128
+plain: 163.28 tok/s | spec: 213.01 tok/s (1.30x) | stream agreement 128/128
+plain tokens: [10354, 13768, 529, 43999, 17690, 1787, 97008, 108, 2595, 48573, 107, 818, 5708, 529, 672, 3393, 563, 531, 23448, 532, 26955, 496, 3530, 14860, 2731, 20442, 4968, 21817, 18833, 573, 496, 5464, 4735, 2028, 568, 145300, 496, 623, 67908, 236775, 3567, 529, 496, 22267, 40574, 236772, 3061, 13217, 769, 1030, 28399, 1156, 1689, 9395, 236787, 107, 236770, 236761, 5213, 9842, 170132, 53121, 1030, 183803, 496, 2651, 90841, 10434, 2483, 1131, 496, 2165, 4968, 4092, 236929, 2495, 236761, 107, 236778, 236761, 5213, 21817, 22039, 833, 120360, 53121, 1030, 28402, 496, 623, 110306, 236775, 2731, 699, 600, 3957, 532, 1299, 16819, 3530, 126534, 568, 10181, 847, 236768, 531, 506, 2165, 236796, 43297, 236929, 27864, 1101, 5280, 236761, 108, 2595, 115768, 107, 236829, 139, 1018, 33231, 90841, 10434, 2552, 53121, 76843]
+spec tokens: [10354, 13768, 529, 43999, 17690, 1787, 97008, 108, 2595, 48573, 107, 818, 5708, 529, 672, 3393, 563, 531, 23448, 532, 26955, 496, 3530, 14860, 2731, 20442, 4968, 21817, 18833, 573, 496, 5464, 4735, 2028, 568, 145300, 496, 623, 67908, 236775, 3567, 529, 496, 22267, 40574, 236772, 3061, 13217, 769, 1030, 28399, 1156, 1689, 9395, 236787, 107, 236770, 236761, 5213, 9842, 170132, 53121, 1030, 183803, 496, 2651, 90841, 10434, 2483, 1131, 496, 2165, 4968, 4092, 236929, 2495, 236761, 107, 236778, 236761, 5213, 21817, 22039, 833, 120360, 53121, 1030, 28402, 496, 623, 110306, 236775, 2731, 699, 600, 3957, 532, 1299, 16819, 3530, 126534, 568, 10181, 847, 236768, 531, 506, 2165, 236796, 43297, 236929, 27864, 1101, 5280, 236761, 108, 2595, 115768, 107, 236829, 139, 1018, 33231, 90841, 10434, 2552, 53121, 76843]
