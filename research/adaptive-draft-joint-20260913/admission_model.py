@@ -25,7 +25,7 @@ def build_states(candidate_runs, full_runs):
             base_token, base_score, _ = survivors[0]
             known = set(r['_tokens'][:s['context']-prompt_len+1])
             candidates = []
-            ambiguous = False
+            ambiguous = not f['overlap_argmax_match']
             for i, (token, score) in enumerate(s['candidates']):
                 margin = score-base_score
                 tie = abs(margin) <= f['tolerance'] or (margin < 0 and len(survivors)>1 and abs(base_score-survivors[1][1]) <= f['tolerance'])
