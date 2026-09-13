@@ -11,7 +11,7 @@ import statistics
 
 sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
 
-def raw_runs(root):
+def raw_runs(root, expected_prompts=48):
     runs = [json.loads(x) for x in (root/'runs.jsonl').read_text().splitlines()]
     known = {}
     for r in runs:
@@ -33,7 +33,7 @@ def raw_runs(root):
             trace = root/(r['id']+'.jsonl')
             assert sha(trace) == r['trace_sha256']
             r['_states'] = [json.loads(x) for x in trace.read_text().splitlines()]
-    assert len(known) == 48
+    assert len(known) == expected_prompts
     return runs
 
 def physical(bank):
