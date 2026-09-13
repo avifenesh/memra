@@ -788,6 +788,20 @@ impl HybridModel {
             None
         };
 
+        let mut row_candidates = if let Ok(path) = std::env::var("MEMRA_GEMMA_CANDIDATE_PROBE") {
+            if row_probe.is_some() { return Err("candidate and full row probes must run separately".into()); }
+            for (name, expected) in [("MEMRA_GEMMA_TRIM_FREEZE", "1"), ("MEMRA_SPEC_ADAPT", "0"),
+                ("MEMRA_SPEC_PMIN", "0"), ("MEMRA_SPEC_PMIN_INROUND", "0"),
+                ("MEMRA_GEMMA_DRAFT_GRAPH", "0"), ("MEMRA_GEMMA_ROUND_GRAPH", "0")] {
+                if std::env::var(name).as_deref() != Ok(expected) { return Err(format!("candidate probe requires {name}={expected}").into()); }
+            }
+            let ta = d.trim_adapt.as_ref().ok_or("candidate probe requires trimmed adaptive head")?;
+            if !matches!(&d.head, GpuTensor::Quant { qtype, rp: false, .. } if *qtype == crate::QT_Q8_0) {
+                return Err("candidate probe requires original Q8_0 rows".into());
+            }
+            Some(crate::gemma_candidate_probe::CandidateProbe::new(&path, d.d2t.as_ref().unwrap(), ta.n_vocab, prompt)?)
+        } else { None };
+
         let t_prime = std::time::Instant::now();
         // short prompts fall below prime_cache's T floor — the batched verify IS a prime.
         let (pl, h_seed) = if prompt.len() >= crate::hybrid_forward::PRIME_MIN_T {
@@ -1021,7 +1035,13 @@ impl HybridModel {
             .map(|g| g.shared_kv_layers)
             .unwrap_or(0);
         'outer: while out.len() < max_new {
-            let probe_this_round = row_probe.is_some() && rounds % 16 == 0;
+            let probe_this_round = (row_probe.is_some() || row_candidates.is_some()) && rounds % 16 == 0;
+            let candidate_head = if probe_this_round {
+                if let Some(cp) = row_candidates.as_ref() {
+                    let ta = d.trim_adapt.as_ref().unwrap();
+                    Some(cp.prepare(e, &ta.src_rows, ta.row_bytes, d.n_embd, rounds)?)
+                } else { None }
+            } else { None };
             let probe_captures = std::cell::RefCell::new(Vec::new());
             let mut kr = if adapt { kc } else { k_cap };
             // power-of-2 rung bucket for the dc arms (shared by eager and captured replays);
@@ -1072,13 +1092,15 @@ impl HybridModel {
                     let ld = e.matmul(&d.head, &hn, 1)?;
                     if probe_this_round {
                         let started = std::time::Instant::now();
-                        let full = e.matmul(&row_probe.as_ref().unwrap().full_head, &hn, 1)?;
-                        let active_host = e.dtoh(&ld)?;
+                        let full = if let Some(probe) = row_probe.as_ref() {
+                            e.matmul(&probe.full_head, &hn, 1)?
+                        } else { e.matmul(&candidate_head.as_ref().unwrap().0, &hn, 1)? };
+                        let active_host = if row_probe.is_some() { e.dtoh(&ld)? } else { Vec::new() };
                         let full_host = e.dtoh(&full)?;
                         probe_captures.borrow_mut().push((
                             active_host,
                             full_host,
-                            if row_probe.as_ref().unwrap().replay {
+                            if row_probe.as_ref().is_some_and(|p| p.replay) {
                                 Some(e.dtoh(&hn)?)
                             } else {
                                 None
@@ -1502,9 +1524,9 @@ impl HybridModel {
             prev_full = m == k; // feeds the self-keyed in-round cut (miss → next round cuts)
             if probe_this_round {
                 let captures = probe_captures.into_inner();
-                let probe = row_probe.as_mut().unwrap();
-                probe.overhead_ns += captures.iter().map(|(_, _, _, ns)| ns).sum::<u128>();
                 let eligible = (m + 1).min(k).min(max_new.saturating_sub(out.len() + 1));
+                if let Some(probe) = row_probe.as_mut() {
+                probe.overhead_ns += captures.iter().map(|(_, _, _, ns)| ns).sum::<u128>();
                 let core = d.trim_adapt.as_ref().unwrap().spare_base;
                 let map = d.d2t.as_ref().unwrap();
                 for (j, (active, full, hidden, _)) in captures.iter().take(eligible).enumerate() {
@@ -1521,6 +1543,12 @@ impl HybridModel {
                         dtoks[j],
                         vam[j],
                     )?;
+                }
+                } else if let Some(cp) = row_candidates.as_mut() {
+                    let (_, ids, history_rows) = candidate_head.as_ref().unwrap();
+                    for (j, (_, scores, _, _)) in captures.iter().take(eligible).enumerate() {
+                        cp.record(rounds, j, pos0, ids, *history_rows, scores, dtoks[j], vam[j])?;
+                    }
                 }
             }
             if let Some(file) = draft_trace.as_mut() {
@@ -1600,6 +1628,7 @@ impl HybridModel {
             // exactly those tokens, so learning them here lets the draft propose them
             // BEFORE any miss is paid (prose escapes are first-occurrence-dominated —
             // corrections-only learning measured +0.5 acceptance pts, jsonl 2026-07-19).
+            if let Some(cp) = row_candidates.as_mut() { cp.observe(&vam[..=m]); }
             trim_adapt_learn(e, d, &vam)?;
             if adapt {
                 let fl_now = floor_at(cache.pos);
@@ -1640,6 +1669,7 @@ impl HybridModel {
         if let Some(probe) = row_probe.as_mut() {
             probe.finish()?;
         }
+        if let Some(cp) = row_candidates.as_mut() { cp.finish()?; }
         Ok(out)
     }
 }
