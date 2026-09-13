@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub(crate) fn charged_ctx_tokens(
+    prompt_tokens: usize,
+    max_output_bound: Option<usize>,
+    open_output_tokens: usize,
+    model_ctx: usize,
+) -> usize {
+    let output = max_output_bound.unwrap_or(open_output_tokens);
+    let charged = prompt_tokens
+        .saturating_add(output)
+        .saturating_add(CTX_SLACK)
+        .max(prompt_tokens.saturating_add(CTX_SLACK));
+    if model_ctx > 0 {
+        charged.min(model_ctx)
+    } else {
+        charged
+    }
+}
+
+/// A per-session KV estimate, decomposed for the receipt line.
+///
+/// `context_bytes` is the ring-aware context-linear term (the caller passes the model's own
+/// `bytes_per_token` / ring geometry, which for a latent-KV family already carries the MLA
+/// latent rows AND the DSA indexer pool keys — `memra_kv::latent_kv_bytes_per_token_for_plan`),
+/// `fixed_bytes` the measured non-context residual (activations, workspaces, draft plane).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct KvEstimate {
+    pub charged_ctx: usize,
+    pub context_bytes: u64,
+    pub fixed_bytes: u64,
+}
+
+impl KvEstimate {
+    pub(crate) fn total_bytes(&self) -> u64 {
+        self.context_bytes.saturating_add(self.fixed_bytes)
+    }
+}
+```

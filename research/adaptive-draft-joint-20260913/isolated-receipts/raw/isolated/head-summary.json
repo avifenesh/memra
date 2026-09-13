@@ -1,0 +1,463 @@
+{
+  "independent_prompt_groups": 8,
+  "paired_repeats": 48,
+  "request_ratio_b_over_a": 0.9559202229223355,
+  "bootstrap_95_percentile": [
+    0.9384842644195031,
+    0.9742077208290343
+  ],
+  "groups_faster_b": 7,
+  "group_log_ratios": {
+    "41b117f961844935": [
+      -0.029400076261374343,
+      -0.029694148397948667,
+      -0.029883913470942634,
+      -0.03016048352843049,
+      -0.03048961687126402,
+      -0.03152528875572624
+    ],
+    "708ba8ebea367475": [
+      -0.07673394174117906,
+      -0.07669474069317395,
+      -0.07700270801845069,
+      -0.07714927317314106,
+      -0.07412803941494966,
+      -0.07660697130036942
+    ],
+    "9630100ea8e082c3": [
+      0.001022262264460467,
+      0.0013323479141205137,
+      0.0015956488740013197,
+      0.0011210331240027913,
+      0.0014710576494449956,
+      0.0021058946864022012
+    ],
+    "5b70daf3c8929a6f": [
+      -0.06873451464308591,
+      -0.06864085726246269,
+      -0.06830955103583698,
+      -0.06816564244063433,
+      -0.0672392533905141,
+      -0.06761355537055325
+    ],
+    "7606ce31b18914fa": [
+      -0.02910957341887509,
+      -0.028959241889615638,
+      -0.029161005159628304,
+      -0.029225519335444226,
+      -0.029127448150600692,
+      -0.02924884454841761
+    ],
+    "998da33880a85e70": [
+      -0.04835415333905471,
+      -0.04806522188528937,
+      -0.04830068936800475,
+      -0.04753895461556149,
+      -0.04797041266348373,
+      -0.04621466476472799
+    ],
+    "747d652e62c9df99": [
+      -0.08278390483542301,
+      -0.08268438071525905,
+      -0.082596496372694,
+      -0.08327981366211086,
+      -0.0828147204411499,
+      -0.08289416160090464
+    ],
+    "46888b8b0d9aa66f": [
+      -0.027542555736795826,
+      -0.027480495376909293,
+      -0.02759437584304833,
+      -0.027595537716872807,
+      -0.02787740776065997,
+      -0.02793536500386343
+    ]
+  },
+  "pairs": [
+    {
+      "prompt": "41b117f961844935",
+      "repeat": 0,
+      "request_ratio_b_over_a": 0.9710279015318495,
+      "decode_ratio_b_over_a": 0.9679154886747011,
+      "a_request_seconds": 0.614553068,
+      "b_request_seconds": 0.596748176
+    },
+    {
+      "prompt": "708ba8ebea367475",
+      "repeat": 0,
+      "request_ratio_b_over_a": 0.9261362270221936,
+      "decode_ratio_b_over_a": 0.9195875820088565,
+      "a_request_seconds": 0.619320489,
+      "b_request_seconds": 0.573575141
+    },
+    {
+      "prompt": "9630100ea8e082c3",
+      "repeat": 0,
+      "request_ratio_b_over_a": 1.001022784952622,
+      "decode_ratio_b_over_a": 1.001139081860321,
+      "a_request_seconds": 0.595106526,
+      "b_request_seconds": 0.595715192
+    },
+    {
+      "prompt": "5b70daf3c8929a6f",
+      "repeat": 0,
+      "request_ratio_b_over_a": 0.933574497539478,
+      "decode_ratio_b_over_a": 0.9269257943577248,
+      "a_request_seconds": 0.548390944,
+      "b_request_seconds": 0.5119638
+    },
+    {
+      "prompt": "7606ce31b18914fa",
+      "repeat": 0,
+      "request_ratio_b_over_a": 0.971310028874804,
+      "decode_ratio_b_over_a": 0.9660904725899301,
+      "a_request_seconds": 0.673970633,
+      "b_request_seconds": 0.654634435
+    },
+    {
+      "prompt": "998da33880a85e70",
+      "repeat": 0,
+      "request_ratio_b_over_a": 0.9527962913303958,
+      "decode_ratio_b_over_a": 0.9484399236334496,
+      "a_request_seconds": 0.568782724,
+      "b_request_seconds": 0.54193407
+    },
+    {
+      "prompt": "747d652e62c9df99",
+      "repeat": 0,
+      "request_ratio_b_over_a": 0.9205500521431739,
+      "decode_ratio_b_over_a": 0.9113596092133815,
+      "a_request_seconds": 0.572706795,
+      "b_request_seconds": 0.52720527
+    },
+    {
+      "prompt": "46888b8b0d9aa66f",
+      "repeat": 0,
+      "request_ratio_b_over_a": 0.9728332820354489,
+      "decode_ratio_b_over_a": 0.9704439680598745,
+      "a_request_seconds": 0.637735851,
+      "b_request_seconds": 0.620410661
+    },
+    {
+      "prompt": "46888b8b0d9aa66f",
+      "repeat": 1,
+      "request_ratio_b_over_a": 0.9728936582925084,
+      "decode_ratio_b_over_a": 0.9704902477823553,
+      "a_request_seconds": 0.637656058,
+      "b_request_seconds": 0.620371535
+    },
+    {
+      "prompt": "41b117f961844935",
+      "repeat": 1,
+      "request_ratio_b_over_a": 0.9707423912645374,
+      "decode_ratio_b_over_a": 0.9675458427277179,
+      "a_request_seconds": 0.614981428,
+      "b_request_seconds": 0.596988542
+    },
+    {
+      "prompt": "998da33880a85e70",
+      "repeat": 1,
+      "request_ratio_b_over_a": 0.9530716239221997,
+      "decode_ratio_b_over_a": 0.9487049964405075,
+      "a_request_seconds": 0.568784182,
+      "b_request_seconds": 0.542092064
+    },
+    {
+      "prompt": "5b70daf3c8929a6f",
+      "repeat": 1,
+      "request_ratio_b_over_a": 0.933661937776182,
+      "decode_ratio_b_over_a": 0.9270003066892177,
+      "a_request_seconds": 0.548386986,
+      "b_request_seconds": 0.512008056
+    },
+    {
+      "prompt": "708ba8ebea367475",
+      "repeat": 1,
+      "request_ratio_b_over_a": 0.9261725332445047,
+      "decode_ratio_b_over_a": 0.9196421865673221,
+      "a_request_seconds": 0.619692792,
+      "b_request_seconds": 0.573942443
+    },
+    {
+      "prompt": "747d652e62c9df99",
+      "repeat": 1,
+      "request_ratio_b_over_a": 0.9206416736363789,
+      "decode_ratio_b_over_a": 0.9115162055165176,
+      "a_request_seconds": 0.572808199,
+      "b_request_seconds": 0.527351099
+    },
+    {
+      "prompt": "7606ce31b18914fa",
+      "repeat": 1,
+      "request_ratio_b_over_a": 0.9714560583729737,
+      "decode_ratio_b_over_a": 0.9661814663575352,
+      "a_request_seconds": 0.674167333,
+      "b_request_seconds": 0.65492394
+    },
+    {
+      "prompt": "9630100ea8e082c3",
+      "repeat": 1,
+      "request_ratio_b_over_a": 1.0013332358839204,
+      "decode_ratio_b_over_a": 1.0014742418558604,
+      "a_request_seconds": 0.595399516,
+      "b_request_seconds": 0.596193324
+    },
+    {
+      "prompt": "9630100ea8e082c3",
+      "repeat": 2,
+      "request_ratio_b_over_a": 1.0015969225990484,
+      "decode_ratio_b_over_a": 1.0017172306540418,
+      "a_request_seconds": 0.595347577,
+      "b_request_seconds": 0.596298301
+    },
+    {
+      "prompt": "747d652e62c9df99",
+      "repeat": 2,
+      "request_ratio_b_over_a": 0.9207225871800692,
+      "decode_ratio_b_over_a": 0.9116260861593573,
+      "a_request_seconds": 0.572946838,
+      "b_request_seconds": 0.527525095
+    },
+    {
+      "prompt": "708ba8ebea367475",
+      "repeat": 2,
+      "request_ratio_b_over_a": 0.9258873462830834,
+      "decode_ratio_b_over_a": 0.9193897506839801,
+      "a_request_seconds": 0.619957547,
+      "b_request_seconds": 0.574010848
+    },
+    {
+      "prompt": "5b70daf3c8929a6f",
+      "repeat": 2,
+      "request_ratio_b_over_a": 0.9339713170365385,
+      "decode_ratio_b_over_a": 0.9273046872178144,
+      "a_request_seconds": 0.548564796,
+      "b_request_seconds": 0.512343785
+    },
+    {
+      "prompt": "41b117f961844935",
+      "repeat": 2,
+      "request_ratio_b_over_a": 0.970558195741292,
+      "decode_ratio_b_over_a": 0.9673981545950523,
+      "a_request_seconds": 0.615266267,
+      "b_request_seconds": 0.597151718
+    },
+    {
+      "prompt": "998da33880a85e70",
+      "repeat": 2,
+      "request_ratio_b_over_a": 0.9528472329654909,
+      "decode_ratio_b_over_a": 0.948577410534899,
+      "a_request_seconds": 0.569070803,
+      "b_request_seconds": 0.54223754
+    },
+    {
+      "prompt": "7606ce31b18914fa",
+      "repeat": 2,
+      "request_ratio_b_over_a": 0.9712600739938522,
+      "decode_ratio_b_over_a": 0.965923413191402,
+      "a_request_seconds": 0.674704973,
+      "b_request_seconds": 0.655314002
+    },
+    {
+      "prompt": "46888b8b0d9aa66f",
+      "repeat": 2,
+      "request_ratio_b_over_a": 0.9727828710175713,
+      "decode_ratio_b_over_a": 0.9702718081598404,
+      "a_request_seconds": 0.63792511,
+      "b_request_seconds": 0.62056262
+    },
+    {
+      "prompt": "5b70daf3c8929a6f",
+      "repeat": 3,
+      "request_ratio_b_over_a": 0.934105733208322,
+      "decode_ratio_b_over_a": 0.9273559664153438,
+      "a_request_seconds": 0.548668568,
+      "b_request_seconds": 0.512514455
+    },
+    {
+      "prompt": "9630100ea8e082c3",
+      "repeat": 3,
+      "request_ratio_b_over_a": 1.0011216617165044,
+      "decode_ratio_b_over_a": 1.0013103604927707,
+      "a_request_seconds": 0.595571722,
+      "b_request_seconds": 0.596239752
+    },
+    {
+      "prompt": "747d652e62c9df99",
+      "repeat": 3,
+      "request_ratio_b_over_a": 0.9200936564215948,
+      "decode_ratio_b_over_a": 0.9116358496926791,
+      "a_request_seconds": 0.573533764,
+      "b_request_seconds": 0.527704778
+    },
+    {
+      "prompt": "998da33880a85e70",
+      "repeat": 3,
+      "request_ratio_b_over_a": 0.9535733263267745,
+      "decode_ratio_b_over_a": 0.9493532765469735,
+      "a_request_seconds": 0.568918359,
+      "b_request_seconds": 0.542505372
+    },
+    {
+      "prompt": "46888b8b0d9aa66f",
+      "repeat": 3,
+      "request_ratio_b_over_a": 0.9727817407672732,
+      "decode_ratio_b_over_a": 0.9703350350758633,
+      "a_request_seconds": 0.638022691,
+      "b_request_seconds": 0.620656824
+    },
+    {
+      "prompt": "708ba8ebea367475",
+      "repeat": 3,
+      "request_ratio_b_over_a": 0.9257516534051163,
+      "decode_ratio_b_over_a": 0.919212166009893,
+      "a_request_seconds": 0.62033345,
+      "b_request_seconds": 0.574274717
+    },
+    {
+      "prompt": "7606ce31b18914fa",
+      "repeat": 3,
+      "request_ratio_b_over_a": 0.9711974159718626,
+      "decode_ratio_b_over_a": 0.9659723276806762,
+      "a_request_seconds": 0.674979647,
+      "b_request_seconds": 0.655538489
+    },
+    {
+      "prompt": "41b117f961844935",
+      "repeat": 3,
+      "request_ratio_b_over_a": 0.9702898055213606,
+      "decode_ratio_b_over_a": 0.9670015449088316,
+      "a_request_seconds": 0.615745515,
+      "b_request_seconds": 0.597451596
+    },
+    {
+      "prompt": "708ba8ebea367475",
+      "repeat": 4,
+      "request_ratio_b_over_a": 0.928552794872967,
+      "decode_ratio_b_over_a": 0.9220642724724849,
+      "a_request_seconds": 0.61998274,
+      "b_request_seconds": 0.575686706
+    },
+    {
+      "prompt": "747d652e62c9df99",
+      "repeat": 4,
+      "request_ratio_b_over_a": 0.9205216852727885,
+      "decode_ratio_b_over_a": 0.9113444350234875,
+      "a_request_seconds": 0.574228746,
+      "b_request_seconds": 0.528590013
+    },
+    {
+      "prompt": "41b117f961844935",
+      "repeat": 4,
+      "request_ratio_b_over_a": 0.9699705033435311,
+      "decode_ratio_b_over_a": 0.9666570153199904,
+      "a_request_seconds": 0.616079657,
+      "b_request_seconds": 0.597579095
+    },
+    {
+      "prompt": "46888b8b0d9aa66f",
+      "repeat": 4,
+      "request_ratio_b_over_a": 0.9725075813758828,
+      "decode_ratio_b_over_a": 0.9700999064991747,
+      "a_request_seconds": 0.638275964,
+      "b_request_seconds": 0.620728214
+    },
+    {
+      "prompt": "9630100ea8e082c3",
+      "repeat": 4,
+      "request_ratio_b_over_a": 1.0014721401855082,
+      "decode_ratio_b_over_a": 1.0016031537104186,
+      "a_request_seconds": 0.596040383,
+      "b_request_seconds": 0.596917838
+    },
+    {
+      "prompt": "998da33880a85e70",
+      "repeat": 4,
+      "request_ratio_b_over_a": 0.9531619881848038,
+      "decode_ratio_b_over_a": 0.9487437288289101,
+      "a_request_seconds": 0.569045311,
+      "b_request_seconds": 0.54239236
+    },
+    {
+      "prompt": "7606ce31b18914fa",
+      "repeat": 4,
+      "request_ratio_b_over_a": 0.9712926671237843,
+      "decode_ratio_b_over_a": 0.9660257552498056,
+      "a_request_seconds": 0.675152376,
+      "b_request_seconds": 0.655770552
+    },
+    {
+      "prompt": "5b70daf3c8929a6f",
+      "repeat": 4,
+      "request_ratio_b_over_a": 0.934971479478238,
+      "decode_ratio_b_over_a": 0.9283836530179811,
+      "a_request_seconds": 0.549077262,
+      "b_request_seconds": 0.51337158
+    },
+    {
+      "prompt": "708ba8ebea367475",
+      "repeat": 5,
+      "request_ratio_b_over_a": 0.9262538264128536,
+      "decode_ratio_b_over_a": 0.9197565667844118,
+      "a_request_seconds": 0.620075209,
+      "b_request_seconds": 0.574347035
+    },
+    {
+      "prompt": "7606ce31b18914fa",
+      "repeat": 5,
+      "request_ratio_b_over_a": 0.9711747628494913,
+      "decode_ratio_b_over_a": 0.9659066979252363,
+      "a_request_seconds": 0.675062963,
+      "b_request_seconds": 0.655604113
+    },
+    {
+      "prompt": "5b70daf3c8929a6f",
+      "repeat": 5,
+      "request_ratio_b_over_a": 0.9346215832896924,
+      "decode_ratio_b_over_a": 0.9280108367031994,
+      "a_request_seconds": 0.549008829,
+      "b_request_seconds": 0.513115501
+    },
+    {
+      "prompt": "41b117f961844935",
+      "repeat": 5,
+      "request_ratio_b_over_a": 0.9689664521879835,
+      "decode_ratio_b_over_a": 0.9654853326493765,
+      "a_request_seconds": 0.616513172,
+      "b_request_seconds": 0.597380581
+    },
+    {
+      "prompt": "998da33880a85e70",
+      "repeat": 5,
+      "request_ratio_b_over_a": 0.954836970335647,
+      "decode_ratio_b_over_a": 0.9506927656209576,
+      "a_request_seconds": 0.568924897,
+      "b_request_seconds": 0.543230525
+    },
+    {
+      "prompt": "46888b8b0d9aa66f",
+      "repeat": 5,
+      "request_ratio_b_over_a": 0.9724512191507871,
+      "decode_ratio_b_over_a": 0.9699414883838411,
+      "a_request_seconds": 0.638457981,
+      "b_request_seconds": 0.620869242
+    },
+    {
+      "prompt": "9630100ea8e082c3",
+      "repeat": 5,
+      "request_ratio_b_over_a": 1.0021081136399714,
+      "decode_ratio_b_over_a": 1.002389139433819,
+      "a_request_seconds": 0.595947949,
+      "b_request_seconds": 0.597204275
+    },
+    {
+      "prompt": "747d652e62c9df99",
+      "repeat": 5,
+      "request_ratio_b_over_a": 0.9204485608671134,
+      "decode_ratio_b_over_a": 0.9112049728940311,
+      "a_request_seconds": 0.573343996,
+      "b_request_seconds": 0.527733656
+    }
+  ],
+  "scope": "Existing component baseline; greedy code-review mechanism study, not serving or novelty evidence."
+}

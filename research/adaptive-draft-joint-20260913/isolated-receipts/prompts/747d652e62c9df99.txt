@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn capturable_runs(
+    lo: usize,
+    hi: usize,
+    capturable: impl Fn(usize) -> bool,
+) -> Vec<(usize, usize)> {
+    let mut runs = Vec::new();
+    let mut start: Option<usize> = None;
+    for il in lo..hi {
+        match (capturable(il), start) {
+            (true, None) => start = Some(il),
+            (false, Some(a)) => {
+                runs.push((a, il));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(a) = start {
+        runs.push((a, hi));
+    }
+    runs
+}
+
+/// Maximal contiguous runs of KDA-mixer layers inside `[lo, hi)`. A TP-sharded KDA layer is not
+/// on this path at all, so it breaks a run rather than joining one.
+/// The run plan of a stage. Without `MEMRA_GLM5_GRAPH_MLA` (or without the segment
+/// workspace seam it needs) this is exactly `capturable_runs` over the KDA layers, one graph
+/// piece per run. With it, an MLA layer no longer breaks a run: its attention-site hc pre +
+/// norm + PRE segment closes the current graph piece, an eager middle follows, and the layer's
+/// second half (hc post of the handed-over attention output + the FFN half) opens the next
+/// graph piece of the SAME run, so the run's span [lo, hi) covers the MLA layer whole and the
+/// door's signature, self-check and phase bookkeeping stay per run.
+fn plan_runs(m: &HybridModel, lo: usize, hi: usize) -> Vec<RunSpec> {
+    let halves = crate::glm5_graph_mla_on() && Engine::mla_seg_ws_on();
+    let mid = halves && crate::glm5_graph_mla_mid_on();
+    let mid_ok = |il: usize| match m.mla_mid_live_ok(il) {
+```

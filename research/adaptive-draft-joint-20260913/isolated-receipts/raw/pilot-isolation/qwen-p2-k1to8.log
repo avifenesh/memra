@@ -1,0 +1,65 @@
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (33 layers, nextn=1)
+text prompt (127 chars, chat-templated) -> 32 tokens
+prompt tokens: [248045, 846, 198, 68111, 449, 21870, 5640, 4849, 1675, 883, 264, 3110, 8151, 310, 26629, 11, 37306, 12387, 11120, 321, 1902, 12, 3924, 37214, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 24576 ml_len 16 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+
+[generate]   95 tok in 0.448s = 212.10 tok/s (gen-only; this run's prime 0.022s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 4849, 1675, 25, 271, 16, 13, 220, 2972, 2014, 53983, 279, 5952, 64700, 198, 262, 348, 256, 2972, 25562, 64700, 33155, 8151, 310, 26629, 13, 198, 262, 348, 256, 2972, 51, 588, 64700, 3178, 3982, 11, 5640, 4849, 1647, 13, 198, 262, 348, 256, 2972, 1536, 33027, 64700, 54115, 12387, 11120, 321, 1902, 12, 3924, 37214, 13, 198, 262, 348, 256, 2972, 38663, 64700, 28939, 540, 12361, 310, 3814, 466, 14952, 279, 8833, 13, 271, 17, 13, 220, 2972, 35, 23544, 279, 19427, 594, 629, 22814, 64700]
+--- generated text ---
+Here's a thinking process that leads to the blog post:
+
+1.  **Analyze the Request:**
+    *   **Topic:** Recent trip to Hawaii.
+    *   **Tone:** Engaging, travel blog style.
+    *   **Key Elements:** Highlight cultural experiences and must-see attractions.
+    *   **Goal:** Inspire readers to visit or appreciate the destination.
+
+2.  **Determine the Setting & Vibe:**
+--- end ---
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[fa-pool] grow #3 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[spec-stats] rounds=50 full_accept=45 len_hist=[0, 50] per_slot=[45/50=0.900] total=45/50=0.900 tok_per_round=1.900
+
+[generate_spec K=1] 96 tok in 0.316s = 300.33 tok/s (1.42x vs generate; this run's prime 0.022s)
+  acceptance: 45/50 = 90.0%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=37 full_accept=27 len_hist=[0, 0, 37] per_slot=[32/37=0.865 27/37=0.730] total=59/74=0.797 tok_per_round=2.595
+
+[generate_spec K=2] 96 tok in 0.277s = 343.26 tok/s (1.62x vs generate; this run's prime 0.022s)
+  acceptance: 59/74 = 79.7%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #4 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[spec-stats] rounds=31 full_accept=18 len_hist=[0, 0, 0, 31] per_slot=[27/31=0.871 21/31=0.677 18/31=0.581] total=66/93=0.710 tok_per_round=3.129
+
+[generate_spec K=3] 96 tok in 0.275s = 345.80 tok/s (1.63x vs generate; this run's prime 0.022s)
+  acceptance: 66/93 = 71.0%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=26 full_accept=14 len_hist=[0, 0, 0, 0, 26] per_slot=[23/26=0.885 18/26=0.692 16/26=0.615 14/26=0.538] total=71/104=0.683 tok_per_round=3.731
+
+[generate_spec K=4] 96 tok in 0.271s = 350.31 tok/s (1.65x vs generate; this run's prime 0.022s)
+  acceptance: 71/104 = 68.3%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #5 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[spec-stats] rounds=26 full_accept=10 len_hist=[0, 0, 0, 0, 0, 26] per_slot=[22/26=0.846 17/26=0.654 12/26=0.462 10/26=0.385 10/26=0.385] total=71/130=0.546 tok_per_round=3.731
+
+[generate_spec K=5] 96 tok in 0.308s = 308.22 tok/s (1.45x vs generate; this run's prime 0.022s)
+  acceptance: 71/130 = 54.6%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=24 full_accept=6 len_hist=[0, 0, 0, 0, 0, 0, 24] per_slot=[21/24=0.875 15/24=0.625 11/24=0.458 10/24=0.417 10/24=0.417 6/24=0.250] total=73/144=0.507 tok_per_round=4.042
+
+[generate_spec K=6] 96 tok in 0.317s = 299.41 tok/s (1.41x vs generate; this run's prime 0.022s)
+  acceptance: 73/144 = 50.7%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=23 full_accept=5 len_hist=[0, 0, 0, 0, 0, 0, 0, 23] per_slot=[20/23=0.870 13/23=0.565 11/23=0.478 10/23=0.435 9/23=0.391 6/23=0.261 5/23=0.217] total=74/161=0.460 tok_per_round=4.217
+
+[generate_spec K=7] 96 tok in 0.347s = 273.75 tok/s (1.29x vs generate; this run's prime 0.022s)
+  acceptance: 74/161 = 46.0%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=23 full_accept=3 len_hist=[0, 0, 0, 0, 0, 0, 0, 0, 23] per_slot=[19/23=0.826 13/23=0.565 11/23=0.478 9/23=0.391 9/23=0.391 5/23=0.217 5/23=0.217 3/23=0.130] total=74/184=0.402 tok_per_round=4.217
+
+[generate_spec K=8] 96 tok in 0.392s = 242.48 tok/s (1.14x vs generate; this run's prime 0.022s)
+  acceptance: 74/184 = 40.2%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

@@ -2,6 +2,8 @@
 
 This is a native correctness and learning-data pilot on one RTX 5090. It is not a serving performance result and does not establish joint-controller novelty.
 
+Later equal-capacity component results are reported separately in `ISOLATED-RESULTS.md`.
+
 ## Model and code locks
 
 The exact two targets and Gemma assistant are in `artifacts.lock.json`. The Qwen artifact matches the earlier local qualified file byte for byte. Starting engine source is `3bb21381848067d922dec1320261846f99ceb29a`; this branch adds the diagnostic recorder, native prompt helper and token-limit correction described below. Binary hashes are retained in each pilot manifest. No E4B artifact was used.

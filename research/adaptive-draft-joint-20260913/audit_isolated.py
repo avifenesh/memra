@@ -5,6 +5,7 @@ import datetime as dt
 import hashlib
 import importlib.util
 import json
+import math
 from pathlib import Path
 import statistics
 
@@ -13,26 +14,66 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def equivalent(a, b):
+    """Allow only floating-point platform rounding, never a changed observation."""
+    if isinstance(a, float) and isinstance(b, (float, int)):
+        return math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-14)
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(equivalent(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(equivalent(x, y) for x, y in zip(a, b))
+    return a == b
+
+
 def audit(root):
     raw = root/'raw/isolated'
     rows = [json.loads(x) for x in (raw/'runs.jsonl').read_text().splitlines()]
+    manifest = json.loads((raw/'manifest.json').read_text())
+    final_build = root/'raw/final-build.sha256'
+    if final_build.exists():
+        end_hashes = {line.split()[1]: line.split()[0] for line in final_build.read_text().splitlines()}
+        for binary, sha in manifest['binaries'].items():
+            assert end_hashes['memra/target/release/'+binary] == sha, 'Binary changed during campaign'
+    sealed = json.loads(Path(__file__).with_name('prompt-manifest.json').read_text())
+    eligible = sorted((r for r in sealed['records'] if r['split'] == 'heldout'), key=lambda r: r['id'])[6:14]
+    assert manifest['prompts'] == {r['id']+'.txt': r['prompt_sha256'] for r in eligible}
+    bank_ranks = root/'checkpoints/gemma12-ranks4096.gguf.txt'
+    assert manifest['base_ranks_sha256'] == digest(bank_ranks)
+    # Exact banked bytes above; Git may convert the local text artifact to CRLF.
+    local_ranks = Path(__file__).with_name('checkpoints')/'gemma12-ranks4096.gguf.txt'
+    assert bank_ranks.read_text().split() == local_ranks.read_text().split()
     spec = importlib.util.spec_from_file_location('isolated', Path(__file__).with_name('isolated.py'))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    output_hashes = {}
+    rank_paths = set()
     for row in rows:
         assert digest(raw/(row['id']+'.log')) == row['raw_sha256']
         assert row['status'] == 'pass' and row['exit_code'] == 0
         if row['phase'] == 'timed':
             assert 'MEMRA_GEMMA_DRAFT_TRACE' not in row['config']
+        config = row['config']
+        component, arm = row['component'], row['arm']
+        output_hashes.setdefault(row['prompt'], set()).add(row['tokens_sha256'])
+        assert config['MEMRA_GEMMA_DRAFT_RANKS'] not in rank_paths
+        rank_paths.add(config['MEMRA_GEMMA_DRAFT_RANKS'])
+        assert row['emitted'] == 128 and row['accepted'] > 0
+        assert config['MEMRA_SPEC'] == '4' and config['MEMRA_SPEC_CAPMAX'] == '4'
+        assert config['MEMRA_GEMMA_TRIM_ADAPT'] == '512'
+        assert config['MEMRA_GEMMA_TRIM_FREEZE'] == ('0' if component == 'head' and arm == 'B' else '1')
+        assert config['MEMRA_SPEC_ADAPT'] == ('1' if component == 'depth' and arm == 'B' else '0')
+        assert config['MEMRA_SPEC_PMIN'] == '0'
+        assert config['MEMRA_SPEC_PMIN_INROUND'] == ('0.7' if component == 'confidence' and arm == 'B' else '0')
         if row.get('trace_sha256'):
             assert digest(raw/(row['id']+'.trace.jsonl')) == row['trace_sha256']
+    assert all(len(v) == 1 for v in output_hashes.values()), 'Cross-component/repeat output mismatch'
     summaries = {}
     for component in ['head', 'confidence', 'depth']:
         subset = [r for r in rows if r['component'] == component]
         if not (raw/f'{component}-summary.json').exists():
             continue
         result = mod.summarize(subset)
-        assert result == json.loads((raw/f'{component}-summary.json').read_text())
+        assert equivalent(result, json.loads((raw/f'{component}-summary.json').read_text()))
         seal = json.loads((raw/f'{component}-seal.json').read_text())
         assert all(digest(raw/name) == sha for name, sha in seal.items())
         assert result['independent_prompt_groups'] == 8 and result['paired_repeats'] == 48

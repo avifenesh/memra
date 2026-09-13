@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
+    plan.layers
+        .iter()
+        .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
+        .filter_map(|layer| match &layer.attention {
+            AttentionPlan::Full(attention) | AttentionPlan::SlidingWindow { attention, .. } => {
+                matches!(
+                    attention.rope.factors,
+                    RopeFactors::Checkpoint | RopeFactors::PartialRotary { .. }
+                )
+                .then_some(attention.rope.dimensions / 2)
+            }
+            AttentionPlan::Mla(mla) => match mla {
+                MlaAttentionPlan::LatentKv { rope, .. }
+                | MlaAttentionPlan::CompressedKv { rope, .. } => matches!(
+                    rope.factors,
+                    RopeFactors::Checkpoint | RopeFactors::PartialRotary { .. }
+                )
+                .then_some(rope.dimensions / 2),
+            },
+            AttentionPlan::GatedDeltaNet(_) | AttentionPlan::KimiDeltaNet(_) => None,
+        })
+        .max()
+}
+
+impl QuantConstraint {
+    fn accepts(self, storage: &StorageLayout) -> bool {
+        match self {
+            Self::FloatOnly => matches!(storage, StorageLayout::Float(_)),
+            Self::Weight => true,
+            Self::ExactFloat(expected) => {
+                matches!(storage, StorageLayout::Float(actual) if *actual == expected)
+            }
+            Self::Nvfp4 => matches!(
+                storage,
+                StorageLayout::Quantized(layout)
+```

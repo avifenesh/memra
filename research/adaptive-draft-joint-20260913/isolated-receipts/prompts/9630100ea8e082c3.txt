@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn dspark_topk_idxs(win: usize, block: usize, start_pos: usize) -> Vec<i64> {
+    assert!(start_pos > 0, "drafting requires start_pos > 0 (M:745)");
+    let mut m: Vec<i64> = (0..win.min(start_pos + 1)).map(|x| x as i64).collect();
+    m.extend((0..block).map(|j| (win + j) as i64));
+    m
+}
+
+/// One DSpark block: a full trunk Block (hc + attn + score-routed MoE) under the
+/// `mtp.k` prefix (ratio 0: window-only, theta 10000, no YaRN) + the main_kv ring.
+pub struct DsparkBlockState {
+    pub w: BlockW,
+    pub ring: Vec<f32>, // [win, hd]
+}
+
+impl DsparkBlockState {
+    pub fn load(model: &Dsv4Model, stage: usize, max_len: usize) -> Self {
+        let n_trunk = (model.mc.n_layer - model.mc.nextn_predict_layers) as usize;
+        let d = model.cfg();
+        let layer_id = (n_trunk + stage) as u32;
+        assert_eq!(
+            d.compress_ratio(layer_id),
+            0,
+            "dspark block mtp.{stage} must be ratio 0"
+        );
+        let w = BlockW::load(model, &format!("mtp.{stage}"), layer_id, max_len);
+        assert!(w.attn.compressor.is_none() && w.attn.indexer.is_none());
+        assert!(!w.moe.hash, "dspark blocks are score-routed (gate.bias)");
+        DsparkBlockState {
+            w,
+            ring: vec![0f32; (d.sliding_window as usize) * (d.head_dim as usize)],
+        }
+    }
+
+    /// main_kv rows (M:759-761): kv_norm(wkv(main_x)) + rope(real positions) +
+    /// group-64 FP8 QAT on the nope dims. main_x [s, hidden].
+    fn main_kv_rows(
+```

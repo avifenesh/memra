@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn status_error_type(status: StatusCode) -> &'static str {
+    match status.as_u16() {
+        401 => "authentication_error",
+        403 => "permission_error",
+        404 => "not_found_error",
+        // Deadline miss (lane/deadline-billing): the same `timeout` type as the OpenAI
+        // surfaces — one semantic everywhere, and the message carries the billing promise.
+        408 => "timeout",
+        413 => "request_too_large",
+        429 => "rate_limit_error",
+        503 | 529 => "overloaded_error",
+        s if s >= 500 => "api_error",
+        _ => "invalid_request_error",
+    }
+}
+
+fn error_body(etype: &str, message: &str, request_id: &str) -> Value {
+    json!({
+        "type": "error",
+        "error": { "type": etype, "message": message },
+        "request_id": request_id,
+    })
+}
+
+/// Stamp the request id as BOTH `x-request-id` (house convention, every surface) and
+/// `request-id` (the Anthropic SDK's spelling — it surfaces this one to callers).
+pub(crate) fn with_anthropic_request_id(id: &str, resp: Response) -> Response {
+    let mut resp = crate::with_request_id(id, resp);
+    if let Ok(v) = axum::http::HeaderValue::from_str(id) {
+        resp.headers_mut()
+            .insert(axum::http::HeaderName::from_static("request-id"), v);
+    }
+    resp
+}
+
+fn error_response(status: StatusCode, message: &str, request_id: &str) -> Response {
+```

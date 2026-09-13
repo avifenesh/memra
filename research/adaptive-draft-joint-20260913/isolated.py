@@ -1,6 +1,5 @@
 """Three separately sealed component experiments; deliberately no combined arm."""
 import datetime as dt
-import fcntl
 import hashlib
 import json
 import math
@@ -51,6 +50,8 @@ def summarize(rows):
 
 
 def main():
+    import fcntl
+
     OUT.mkdir(parents=True, exist_ok=False)
     CHECK.mkdir(parents=True, exist_ok=False)
     assert (ROOT/'models/VERIFIED').exists()

@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn execution_rewrites(plan: &ModelPlan) -> Vec<ExecutionRewrite> {
+    let plan_sha256 = plan_sha256(plan);
+    let trunk = plan.trunk_operations();
+    let mut spec_operations = plan
+        .draft_operations()
+        .unwrap_or_else(|| vec![OperationKind::DraftPlan]);
+    spec_operations.extend(plan.trunk_operations());
+    let selections = [
+        (
+            "carried-prime.v1",
+            RewriteSurface::CarriedPrime,
+            CARRIED_PRIME,
+            trunk.clone(),
+            CARRIED_PRIME.trunk_capabilities(plan).batch,
+        ),
+        (
+            "decode-eager.v1",
+            RewriteSurface::DecodeEager,
+            NATIVE_EAGER,
+            trunk.clone(),
+            NATIVE_EAGER.trunk_capabilities(plan).batch,
+        ),
+        (
+            "decode-batch.v1",
+            RewriteSurface::DecodeBatch,
+            DECODE_BATCH,
+            trunk.clone(),
+            DECODE_BATCH.trunk_capabilities(plan).batch,
+        ),
+        (
+            "decode-graph.v1",
+            RewriteSurface::DecodeGraph,
+            DECODE_GRAPH,
+            trunk.clone(),
+            DECODE_GRAPH.trunk_capabilities(plan).cuda_graph,
+        ),
+```
