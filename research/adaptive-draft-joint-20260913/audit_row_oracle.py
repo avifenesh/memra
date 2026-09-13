@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import random
+import re
 import statistics
 
 
@@ -43,6 +44,20 @@ def analyze(bank):
     root = bank/'raw/row-oracle'
     runs = [json.loads(x) for x in (root/'runs.jsonl').read_text().splitlines()]
     manifest = json.loads((root/'manifest.json').read_text())
+    assert manifest['source_commit'] == (bank/'SOURCE_COMMIT').read_text().strip()
+    check = bank/'checkpoints/row-oracle'
+    seed = json.loads((check/'seed.json').read_text())
+    assert sha(check/'base.txt') == seed['core_sha256']
+    assert sha(check/'base.txt.learned') == seed['tail_sha256']
+    core = list(map(int, (check/'base.txt').read_text().split()))
+    tail = list(map(int, (check/'base.txt.learned').read_text().split()))
+    assert len(core) == 4096 and len(tail) == 512 and len(set(core+tail)) == 4608
+    build = dict((name, digest) for digest, name in
+                 (line.split() for line in (bank/'raw/build-inputs.sha256').read_text().splitlines()))
+    assert build['memra/target/release/gemma-gate'] == manifest['binary_sha256']
+    for name, digest in build.items():
+        if '/src/' in name:
+            assert sha(bank/'raw/compiled-source'/name.removeprefix('memra/')) == digest
     for name, expected in manifest['prompts'].items():
         assert sha(root/'prompts'/name) == expected
     states = []
@@ -54,13 +69,30 @@ def analyze(bank):
             assert r['phase'] == 'admission' and r['exit_code'] != 0
             continue
         assert r['emitted'] == 128 and r['exit_code'] == 0
+        text = (root/(r['id']+'.log')).read_text()
+        plain = json.loads(re.search(r'plain tokens: (\[[^\n]+\])', text)[1])
+        spec = json.loads(re.search(r'spec tokens: (\[[^\n]+\])', text)[1])
+        assert plain == spec and len(spec) == 128
+        assert hashlib.sha256(json.dumps(spec).encode()).hexdigest() == r['tokens_sha256']
+        assert float(re.search(r'request_seconds=([\d.]+)', text)[1]) == r['request_seconds']
+        assert r['request_seconds'] > 0
         outputs[r['prompt']].add(r['tokens_sha256'])
         assert r['config']['MEMRA_GEMMA_TRIM_FREEZE'] == '1'
         assert all(r['config'][k] == '0' for k in ['MEMRA_SPEC_ADAPT', 'MEMRA_SPEC_PMIN', 'MEMRA_SPEC_PMIN_INROUND'])
+        assert r['config']['MEMRA_SPEC'] == '4' and r['config']['MEMRA_SPEC_CAPMAX'] == '4'
+        assert all(r['config'][k] == '0' for k in ['MEMRA_GEMMA_DRAFT_GRAPH', 'MEMRA_GEMMA_ROUND_GRAPH'])
         if r['probe']:
             trace = root/(r['id']+'.jsonl')
             assert sha(trace) == r['trace_sha256']
             observations = [json.loads(x) for x in trace.read_text().splitlines()]
+            assert len(observations) == r['probe_states'] > 0
+            for s in observations:
+                assert s['head_rows'] == 4608 and s['core_rows'] == 4096
+                assert s['round'] % 16 == 1 and 0 <= s['position'] < 4
+                assert s['correct'] == (s['proposal'] == s['target'])
+                assert s['target_in_head'] == (s['target'] in set(core+tail))
+                assert len(s['outside_top16']) == 16
+                assert all(token not in set(core+tail) for token, score in s['outside_top16'])
             if r['phase'] == 'collection':
                 for s in observations:
                     s.update(split=r['split'], domain=r['domain'], prompt=r['prompt'])
@@ -152,6 +184,9 @@ def analyze(bank):
     cost = {'paired_runs': len(pairs), 'prompt_groups': len(values), 'probe_over_control_request_ratio': math.exp(statistics.mean(values)),
             'bootstrap_95_percentile': [boot[250], boot[9749]], 'group_log_ratios': log_ratios}
     assert len(runs) == 193 and len(pairs) == 48 and len(outputs) == 48
+    assert sum(r['status'] == 'expected_refusal' for r in runs) == 1
+    assert all(len(p) == 2 for p in pairs.values())
+    assert all(len(x) == 6 for x in log_ratios.values())
     return {'raw_runs_verified': len(runs), 'headroom': headroom, 'cost': cost, 'estimator': estimator,
             'scope': 'Sparse reached-state oracle diagnostic; no extrapolation to whole-block acceptance or serving throughput.'}
 
