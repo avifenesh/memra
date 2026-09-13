@@ -1,0 +1,11 @@
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 24111 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[gemma-draft] FR head trim: 4096 rows + 512 adaptive (5 MB vs 285 MB full)
+[trim-adapt] 512 learned rows pre-filled from /workspace/adaptive-draft/checkpoints/row-oracle/base.txt.learned
+spec K=4 n_new=128 prompt=445 toks
+[fa-pool] grow #0 dev=0 o_len 0 -> 114688 ml_len 0 -> 448 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 114688 -> 229376 ml_len 448 -> 896 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 229376 -> 458752 ml_len 896 -> 1792 (retired kept, zero=false)
+Error: "row probe requires MEMRA_GEMMA_TRIM_FREEZE=1"

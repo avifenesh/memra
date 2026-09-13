@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn main() {
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: dump_scales <model.gguf>");
+    let g = GgufFile::open(&path).unwrap();
+
+    // Collect scale tensors and their owning weight's dtype.
+    let mut by_owner_type: std::collections::BTreeMap<String, (usize, f32, f32, f32)> =
+        Default::default();
+    for t in &g.tensors {
+        let (stem, kind) = if let Some(s) = t.name.strip_suffix(".input_scale") {
+            (s, "input_scale")
+        } else if let Some(s) = t.name.strip_suffix(".scale") {
+            (s, "scale")
+        } else {
+            continue;
+        };
+        // value (these are F32 ne=[1])
+        let v = f32::from_le_bytes(g.tensor_data(t)[..4].try_into().unwrap());
+        // owner weight dtype
+        let owner = g.find(&format!("{stem}.weight"));
+        let dty = owner
+            .map(|o| format!("{:?}", o.ggml_type))
+            .unwrap_or("?".into());
+        let key = format!("{dty}/{kind}");
+        let e = by_owner_type
+            .entry(key)
+            .or_insert((0, f32::INFINITY, f32::NEG_INFINITY, 0.0));
+        e.0 += 1;
+        e.1 = e.1.min(v);
+        e.2 = e.2.max(v);
+        e.3 += v;
+    }
+    println!("scale tensors grouped by  ownerDtype/kind :  count  min  max  mean");
+    for (k, (n, mn, mx, sum)) in &by_owner_type {
+        println!(
+```

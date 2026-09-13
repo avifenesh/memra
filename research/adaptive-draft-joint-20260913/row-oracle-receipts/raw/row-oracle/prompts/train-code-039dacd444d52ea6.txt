@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn sha256_hex(key: &str) -> String {
+    sha256_digest(key)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn sha256_digest(key: &str) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(key.as_bytes());
+    let digest = h.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
+}
+
+/// Compare secrets without length- or prefix-dependent early exit. Hashing first gives
+/// the comparison a fixed 32-byte shape even when callers supply different-length values.
+pub fn constant_time_secret_eq(left: &str, right: &str) -> bool {
+    constant_time_digest_eq(&sha256_digest(left), &sha256_digest(right))
+}
+
+fn constant_time_digest_eq(left: &[u8; 32], right: &[u8; 32]) -> bool {
+    let mut different = 0u8;
+    for i in 0..left.len() {
+        different |= left[i] ^ right[i];
+    }
+    different == 0
+}
+
+/// A key's QoS lane class. `Interactive` keys behave exactly like pre-lane traffic
+/// (default lane interactive, any `x-lane` honored). `Batch` keys default to the
+/// harvest lane and may not claim the protected interactive lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LaneClass {
+    #[default]
+```

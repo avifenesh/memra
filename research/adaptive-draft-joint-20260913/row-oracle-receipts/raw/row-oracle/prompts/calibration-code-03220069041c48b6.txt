@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn trace_allocation_phase(e: &Engine, phase: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if !crate::alloc_trace_on() {
+        return Ok(());
+    }
+    e.stream().synchronize()?;
+    let (free, total) = e.ctx().mem_get_info()?;
+    let (reserved, used) = e.pool_reserved_used();
+    eprintln!(
+        "[dflash-alloc] phase={phase} driver_free_bytes={free} driver_total_bytes={total} pool_reserved_bytes={reserved} pool_used_bytes={used} graph_pool_bytes={}",
+        e.device_graph_mem_reserved()
+    );
+    Ok(())
+}
+
+fn hash_f32_bits(hash: &mut Sha256, values: &[f32]) {
+    let mut bytes = [0u8; 16384];
+    for part in values.chunks(4096) {
+        for (value, dst) in part.iter().zip(bytes.chunks_exact_mut(4)) {
+            dst.copy_from_slice(&value.to_bits().to_le_bytes());
+        }
+        hash.update(&bytes[..part.len() * 4]);
+    }
+}
+
+#[derive(Default)]
+struct DflashPrimeOracle {
+    taps: Sha256,
+    features: Sha256,
+    positions: Sha256,
+}
+
+impl DflashPrimeOracle {
+    fn record(
+        &mut self,
+        e: &Engine,
+        taps: &CudaSlice<f32>,
+```

@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn on() -> bool {
+    std::env::var("MEMRA_GLM5_TP_SYM_GRAPH").as_deref() == Ok("1")
+}
+
+/// Replays of a whole graphed token (both ranks): the engagement receipt.
+pub static GLM5_TP_SYM_GRAPH_TOKENS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// One recordable step of the walk: a whole KDA layer, or a half of a split MLA layer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Seg {
+    Kda(usize),
+    MlaPre(usize),
+    MlaFfn(usize),
+}
+
+/// One piece of the token: a graph over a run of segments (`[phase][rank]`), the eager middle
+/// of a split MLA layer, or a whole layer the plan keeps eager (dense FFN, or MLA when the
+/// half-capture is off).
+enum Piece {
+    Graph {
+        segs: Vec<Seg>,
+        graphs: [[CudaGraph; 2]; 2],
+    },
+    MlaMid(usize),
+    Eager(usize),
+}
+
+/// The plan before capture: what each piece will be.
+#[derive(Debug, PartialEq, Eq)]
+enum Item {
+    Seg(Seg),
+    MlaMid(usize),
+    Eager(usize),
+}
+
+```

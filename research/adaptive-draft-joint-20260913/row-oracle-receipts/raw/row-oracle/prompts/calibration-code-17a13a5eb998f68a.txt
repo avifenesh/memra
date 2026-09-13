@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn ue4m3_to_f32(x: u8) -> f32 {
+    if x == 0 || x == 0x7F {
+        return 0.0;
+    }
+    let exp = ((x >> 3) & 0xF) as i32;
+    let man = (x & 0x7) as f32;
+    let raw = if exp == 0 {
+        man * 2f32.powi(-9)
+    } else {
+        (1.0 + man / 8.0) * 2f32.powi(exp - 7)
+    };
+    raw * 0.5
+}
+
+/// f32 -> IEEE f16 bits (round-to-nearest-even). Serde-free (no `half` dep) — used by the
+/// F8->Q8_0 host re-encode (per-32 block scale is fp16 in GGUF Q8_0).
+#[inline]
+pub fn f32_to_f16_bits(x: f32) -> u16 {
+    let b = x.to_bits();
+    let sign = ((b >> 16) & 0x8000) as u16;
+    let exp = ((b >> 23) & 0xFF) as i32;
+    let man = b & 0x7F_FFFF;
+    if exp == 0xFF {
+        return sign | 0x7C00 | if man != 0 { 0x200 } else { 0 };
+    } // inf/nan
+    let e16 = exp - 127 + 15;
+    if e16 >= 0x1F {
+        return sign | 0x7C00;
+    } // overflow -> inf
+    if e16 <= 0 {
+        // subnormal / underflow
+        if e16 < -10 {
+            return sign;
+        }
+        let man24 = man | 0x80_0000;
+        let shift = (14 - e16) as u32;
+```

@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn parse_pinned_frac(raw: Option<&str>) -> Result<f64, &'static str> {
+    let frac = raw
+        .unwrap_or("0.60")
+        .parse::<f64>()
+        .map_err(|_| "expected a number")?;
+    if frac.is_finite() && frac > 0.0 && frac <= 1.0 {
+        Ok(frac)
+    } else {
+        Err("expected a finite fraction greater than 0 and at most 1")
+    }
+}
+
+fn configured_pinned_frac() -> f64 {
+    static PINNED_FRAC: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *PINNED_FRAC.get_or_init(|| {
+        let raw = std::env::var("MEMRA_SPILL_PINNED_FRAC").ok();
+        match parse_pinned_frac(raw.as_deref()) {
+            Ok(frac) => frac,
+            Err(reason) => {
+                crate::spill_pread::note_config_fallback();
+                eprintln!(
+                    "[spill] invalid MEMRA_SPILL_PINNED_FRAC={:?} ({reason}); using {DEFAULT_PINNED_FRAC}",
+                    raw.as_deref().unwrap_or("")
+                );
+                DEFAULT_PINNED_FRAC
+            }
+        }
+    })
+}
+
+/// Runtime free-memory budget (SPILLING-PLAN §2). Both numbers are QUERIED at load, never
+/// hardcoded — free host RAM "varies with other LLM servers", so the split between pinned (Tier 1)
+/// and disk (Tier 2) must be decided against the live machine state.
+#[derive(Clone, Copy, Debug)]
+pub struct MemBudget {
+    /// Free VRAM in bytes, from `cuMemGetInfo` (authoritative; accounts for other GPU processes).
+```

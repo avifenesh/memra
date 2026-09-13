@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn fill_ranges(rows: usize, width: usize) -> Vec<(usize, usize)> {
+    (0..rows)
+        .step_by(width)
+        .map(|s| (s, (s + width).min(rows)))
+        .collect()
+}
+
+/// The same phase order drives CUDA and the CPU tape oracle. Boundary sampling
+/// happens after the trunk, before draft warm, and emission only after ready.
+#[derive(Debug)]
+struct PreparationOrder {
+    trunk: usize,
+    draft: usize,
+    completed: usize,
+    anchor: bool,
+}
+impl PreparationOrder {
+    fn new(trunk: usize, draft: usize) -> Self {
+        Self {
+            trunk,
+            draft,
+            completed: 0,
+            anchor: false,
+        }
+    }
+    fn remaining(&self) -> usize {
+        self.trunk + self.draft - self.completed
+    }
+    fn complete_chunk(&mut self) -> Res<()> {
+        if self.remaining() == 0 || (self.completed >= self.trunk && !self.anchor) {
+            return Err("GLM5 preparation chunk violates the anchor boundary".into());
+        }
+        self.completed += 1;
+        Ok(())
+    }
+    fn draw_anchor(&mut self) -> Res<()> {
+```

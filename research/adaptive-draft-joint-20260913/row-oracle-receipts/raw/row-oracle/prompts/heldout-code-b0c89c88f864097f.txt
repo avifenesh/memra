@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn parse(text: &str) -> Result<Value, String> {
+    let mut p = Parser {
+        b: text.as_bytes(),
+        i: 0,
+    };
+    p.ws();
+    let v = p.value()?;
+    p.ws();
+    if p.i != p.b.len() {
+        return Err(format!("json: trailing bytes at {}", p.i));
+    }
+    Ok(v)
+}
+
+struct Parser<'a> {
+    b: &'a [u8],
+    i: usize,
+}
+
+impl<'a> Parser<'a> {
+    fn ws(&mut self) {
+        while self.i < self.b.len() && matches!(self.b[self.i], b' ' | b'\t' | b'\n' | b'\r') {
+            self.i += 1;
+        }
+    }
+
+    fn peek(&self) -> Result<u8, String> {
+        self.b
+            .get(self.i)
+            .copied()
+            .ok_or_else(|| "json: unexpected EOF".to_string())
+    }
+
+    fn expect(&mut self, c: u8) -> Result<(), String> {
+        if self.peek()? != c {
+            return Err(format!(
+```

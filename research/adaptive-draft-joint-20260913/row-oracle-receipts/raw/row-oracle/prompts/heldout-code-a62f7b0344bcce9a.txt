@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn residency_census_note(qtype: i32, bytes: usize) {
+    use std::sync::atomic::Ordering::Relaxed;
+    if let Some(slot) = RESIDENCY_CENSUS.get(qtype as usize) {
+        slot.0.fetch_add(1, Relaxed);
+        slot.1.fetch_add(bytes as u64, Relaxed);
+    }
+}
+
+/// Human-readable residency census: one line per qtype that took at least one 2D weight, plus a
+/// total. Callers print it right after load — see `run-gen`'s `MEMRA_RESIDENCY_CENSUS=1`.
+pub fn residency_census_report() -> String {
+    use std::sync::atomic::Ordering::Relaxed;
+    let name = |q: usize| -> &'static str {
+        match q as i32 {
+            QT_Q8_0 => "Q8_0",
+            QT_Q4_K => "Q4_K",
+            QT_Q6_K => "Q6_K",
+            QT_Q5_K => "Q5_K",
+            QT_Q3_K => "Q3_K",
+            QT_IQ4_XS => "IQ4_XS",
+            QT_IQ3_S => "IQ3_S",
+            QT_NVFP4 => "NVFP4",
+            QT_F32 => "F32",
+            QT_NVFP4_RP => "NVFP4_RP",
+            QT_F8_E4M3 => "F8_E4M3",
+            QT_BF16 => "BF16",
+            QT_Q4_0 => "Q4_0",
+            QT_Q2_K => "Q2_K",
+            crate::QT_F8_E4M3_BLK => "F8_E4M3_BLK",
+            _ => "?",
+        }
+    };
+    let mut out = String::from("residency census (2D matmul weights, resident container):\n");
+    let (mut tn, mut tb) = (0usize, 0u64);
+    for (q, slot) in RESIDENCY_CENSUS.iter().enumerate() {
+        let (n, b) = (slot.0.load(Relaxed), slot.1.load(Relaxed));
+```

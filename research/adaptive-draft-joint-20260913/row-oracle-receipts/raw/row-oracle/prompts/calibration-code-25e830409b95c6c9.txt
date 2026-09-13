@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub(crate) fn set_for_gate(enabled: bool) -> bool {
+    MATRIX_EP_GRAPH_FOR_GATE.swap(enabled, Ordering::AcqRel)
+}
+
+pub(crate) fn enabled() -> bool {
+    MATRIX_EP_GRAPH_FOR_GATE.load(Ordering::Acquire)
+}
+
+pub(crate) fn dispatches() -> u64 {
+    MATRIX_EP_GRAPH_DISPATCHES.load(Ordering::Acquire)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CopySpec {
+    src: cudarc::driver::sys::CUdeviceptr,
+    dst: cudarc::driver::sys::CUdeviceptr,
+    graph_ctx: cudarc::driver::sys::CUcontext,
+    bytes: usize,
+}
+
+/// Parent graph plus the child graphs it references.  Child graphs must stay
+/// alive until the parent exec is destroyed: CUDA clones their topology into
+/// the parent at AddChildGraphNode time, but the retained handles are kept here
+/// to preserve the allocation and module lifetime contract explicitly.
+pub(crate) struct MatrixEpGraph {
+    exec: cudarc::driver::sys::CUgraphExec,
+    parent: cudarc::driver::sys::CUgraph,
+    _children: Vec<CudaGraph>,
+}
+
+// The graph is owned by one decode state and launched by the decode thread.
+// CUDA graph handles are process handles, not Rust-thread-bound references.
+unsafe impl Send for MatrixEpGraph {}
+
+impl Drop for MatrixEpGraph {
+    fn drop(&mut self) {
+```

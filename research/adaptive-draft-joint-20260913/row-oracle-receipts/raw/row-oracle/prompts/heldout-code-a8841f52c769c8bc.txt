@@ -1,0 +1,15 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    let mut plan = canonical_plan(config)?;
+    if plan.mtp_blocks.is_empty() {
+        plan.draft_source = DraftSourcePlan::ExternalArtifact;
+    }
+    plan.sampling_defaults = Some(SamplingDefaultsPlan {
+        temperature: 0.5,
+        top_p: 0.9,
+    });
+    Ok(plan)
+}
+```

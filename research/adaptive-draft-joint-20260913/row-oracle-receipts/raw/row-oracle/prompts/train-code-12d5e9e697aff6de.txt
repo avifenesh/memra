@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn argmax_u32(logits: &[f32]) -> u32 {
+    let mut best = 0u32;
+    let mut bv = f32::NEG_INFINITY;
+    for (i, &v) in logits.iter().enumerate() {
+        if v > bv {
+            bv = v;
+            best = i as u32;
+        }
+    }
+    best
+}
+
+/// Ordering-only prefix radix path. Probability arithmetic and the downstream
+/// f32 cutoff/draw are unchanged. Resolve high-probability buckets first and stop
+/// at the exact nucleus, avoiding passes/copies over discarded vocabulary tails.
+/// The legacy unstable comparator still owns ties that affect retained IDs.
+#[derive(Default)]
+struct NucleusOrderScratch {
+    keys: Vec<u32>,
+    order: Vec<u32>,
+    scratch: Vec<u32>,
+    sorted: Vec<(u32, f32)>,
+    radix_calls: u64,
+    comparison_calls: u64,
+}
+
+enum NucleusVisit {
+    More,
+    Complete,
+    Tied,
+}
+
+fn descending_probability_key(value: f32) -> u32 {
+    let bits = value.to_bits();
+    let ascending = if bits & 0x8000_0000 == 0 {
+        bits ^ 0x8000_0000
+```

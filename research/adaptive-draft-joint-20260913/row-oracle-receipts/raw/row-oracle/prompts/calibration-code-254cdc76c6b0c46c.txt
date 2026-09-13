@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn parse_requested(value: Option<&str>) -> Result<bool, &'static str> {
+    match value {
+        None | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        _ => Err("expected 0 or 1"),
+    }
+}
+
+pub fn requested() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let value = std::env::var_os("MEMRA_GLM5_TP_DEVICE_SAMPLE");
+        let parsed = match &value {
+            None => parse_requested(None),
+            Some(v) => v
+                .to_str()
+                .ok_or("non-Unicode flag value")
+                .and_then(|v| parse_requested(Some(v))),
+        };
+        parsed.unwrap_or_else(|reason| {
+            eprintln!("[glm5-tp-device-sample] refused: {reason}; host fallback");
+            false
+        })
+    })
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Glm5TpSampleConfig {
+    cfg: Dsv4SampleCfg,
+    greedy: bool,
+}
+
+impl Glm5TpSampleConfig {
+    /// A refusal leaves the request on its existing host path. `host_logits`
+    /// covers constraints, logprobs and other consumers of the full host row.
+    pub fn for_request(
+```

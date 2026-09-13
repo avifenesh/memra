@@ -1,0 +1,109 @@
+info: syncing channel updates for 1.97.1-x86_64-unknown-linux-gnu
+info: latest update on 2026-07-16 for version 1.97.1 (8bab26f4f 2026-07-14)
+info: downloading 5 components
+warn: the missing active toolchain `1.97.1-x86_64-unknown-linux-gnu` has been auto-installed
+warn: this might cause rustup commands to take longer time to finish than expected
+info: you may opt out with `RUSTUP_AUTO_INSTALL=0` or `rustup set auto-install disable`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded block-buffer v0.10.4
+  Downloaded autocfg v1.5.1
+  Downloaded bitflags v2.13.1
+  Downloaded adler2 v2.0.1
+  Downloaded base64 v0.22.1
+  Downloaded flate2 v1.1.9
+  Downloaded digest v0.10.7
+  Downloaded crc32fast v1.5.0
+  Downloaded crypto-common v0.1.7
+  Downloaded gif v0.14.2
+  Downloaded generic-array v0.14.7
+  Downloaded quick-error v2.0.1
+  Downloaded cpufeatures v0.2.17
+  Downloaded cfg-if v1.0.4
+  Downloaded version_check v0.9.5
+  Downloaded byteorder-lite v0.1.0
+  Downloaded sha2 v0.10.9
+  Downloaded color_quant v1.1.0
+  Downloaded simd-adler32 v0.3.10
+  Downloaded num-traits v0.2.19
+  Downloaded fdeflate v0.3.7
+  Downloaded zune-core v0.5.3
+  Downloaded miniz_oxide v0.8.9
+  Downloaded libloading v0.9.0
+  Downloaded memmap2 v0.9.11
+  Downloaded bytemuck v1.25.2
+  Downloaded weezl v0.1.12
+  Downloaded zune-jpeg v0.5.15
+  Downloaded image-webp v0.2.4
+  Downloaded typenum v1.20.1
+  Downloaded png v0.18.1
+  Downloaded moxcms v0.8.1
+  Downloaded image v0.25.10
+  Downloaded cudarc v0.19.8
+  Downloaded libc v0.2.186
+  Downloaded pxfm v0.1.30
+   Compiling version_check v0.9.5
+   Compiling cfg-if v1.0.4
+   Compiling typenum v1.20.1
+   Compiling libc v0.2.186
+   Compiling cpufeatures v0.2.17
+   Compiling autocfg v1.5.1
+   Compiling simd-adler32 v0.3.10
+   Compiling crc32fast v1.5.0
+   Compiling cudarc v0.19.8
+   Compiling generic-array v0.14.7
+   Compiling adler2 v2.0.1
+   Compiling num-traits v0.2.19
+   Compiling miniz_oxide v0.8.9
+   Compiling libloading v0.9.0
+   Compiling fdeflate v0.3.7
+   Compiling memmap2 v0.9.11
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling flate2 v1.1.9
+   Compiling zune-core v0.5.3
+   Compiling sha2 v0.10.9
+   Compiling color_quant v1.1.0
+   Compiling weezl v0.1.12
+   Compiling memra-gguf v0.138.0 (/workspace/adaptive-draft/memra/crates/memra-gguf)
+   Compiling byteorder-lite v0.1.0
+   Compiling pxfm v0.1.30
+   Compiling quick-error v2.0.1
+   Compiling bitflags v2.13.1
+   Compiling png v0.18.1
+   Compiling image-webp v0.2.4
+   Compiling gif v0.14.2
+   Compiling moxcms v0.8.1
+   Compiling zune-jpeg v0.5.15
+   Compiling memra-tokenizer v0.138.0 (/workspace/adaptive-draft/memra/crates/memra-tokenizer)
+   Compiling memra-engine v0.138.0 (/workspace/adaptive-draft/memra/crates/memra-engine)
+   Compiling bytemuck v1.25.2
+   Compiling image v0.25.10
+   Compiling memra-reference v0.138.0 (/workspace/adaptive-draft/memra/crates/memra-reference)
+   Compiling memra-kv v0.138.0 (/workspace/adaptive-draft/memra/crates/memra-kv)
+   Compiling memra-runtime v0.138.0 (/workspace/adaptive-draft/memra/crates/memra-runtime)
+   Compiling memra-sampling v0.138.0 (/workspace/adaptive-draft/memra/crates/memra-sampling)
+   Compiling base64 v0.22.1
+   Compiling memra-validate v0.138.0 (/workspace/adaptive-draft/memra/crates/memra-validate)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+error[E0432]: unresolved import `serde_json`
+ --> crates/memra-engine/src/gemma_row_probe.rs:3:5
+  |
+3 | use serde_json::json;
+  |     ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+  |
+  = help: if you wanted to use a crate named `serde_json`, use `cargo add serde_json` to add it to your `Cargo.toml`
+
+error[E0433]: cannot find module or crate `serde_json` in this scope
+   --> crates/memra-engine/src/gemma_row_probe.rs:136:9
+    |
+136 |         serde_json::to_writer(&mut self.file, &row)?;
+    |         ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+    |
+    = help: if you wanted to use a crate named `serde_json`, use `cargo add serde_json` to add it to your `Cargo.toml`
+
+Some errors have detailed explanations: E0432, E0433.
+For more information about an error, try `rustc --explain E0432`.
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+error: could not compile `memra-engine` (lib) due to 2 previous errors

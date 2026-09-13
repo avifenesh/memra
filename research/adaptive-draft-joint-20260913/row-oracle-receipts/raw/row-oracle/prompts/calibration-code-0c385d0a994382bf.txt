@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn read_bytes(p: &str) -> Vec<u8> {
+    std::fs::read(p).unwrap_or_else(|e| panic!("read {p}: {e}"))
+}
+fn read_f32(p: &str) -> Vec<f32> {
+    read_bytes(p)
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+struct Report {
+    name: &'static str,
+    n: usize,
+    max_abs: f32,
+    max_rel: f32,
+    n_bad: usize,
+    pass: bool,
+}
+
+fn check(name: &'static str, ty: GgmlType) -> Report {
+    let raw = read_bytes(&format!("/tmp/dq/{name}.raw"));
+    let refv = read_f32(&format!("/tmp/dq/{name}.ref"));
+    let n = refv.len();
+    let got = dequantize(ty, &raw, n);
+    assert_eq!(got.len(), n, "{name}: length mismatch");
+
+    // scale for relative tolerance: max |ref| across the tensor (per-tensor, robust to
+    // the many tiny/zero weights that would blow up a pointwise rel metric).
+    let scale = refv
+        .iter()
+        .map(|v| v.abs())
+        .fold(0.0f32, f32::max)
+        .max(1e-12);
+
+    let mut max_abs = 0f32;
+    let mut max_rel = 0f32;
+```

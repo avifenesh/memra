@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn read(path: impl AsRef<Path>) -> Result<String, String> {
+    let path = path.as_ref();
+    std::fs::read_to_string(path)
+        .map_err(|e| format!("host arena headroom {}: {e}", path.display()))
+}
+
+fn number(text: &str) -> Result<usize, String> {
+    text.trim()
+        .parse()
+        .map_err(|e| format!("invalid cgroup memory value {text:?}: {e}"))
+}
+
+fn require(budget: usize, available: usize, detail: &str) -> Result<(), String> {
+    if budget
+        .checked_add(MARGIN)
+        .is_none_or(|need| need > available)
+    {
+        return Err(format!(
+            "startup pinned arena headroom refused: budget={budget} margin={MARGIN} available={available} {detail}"
+        ));
+    }
+    Ok(())
+}
+
+fn unescape(path: &str) -> PathBuf {
+    PathBuf::from(
+        path.replace("\\040", " ")
+            .replace("\\011", "\t")
+            .replace("\\012", "\n")
+            .replace("\\134", "\\"),
+    )
+}
+
+pub(super) fn check_headroom(budget: usize) -> Result<(), String> {
+    check_headroom_from_contents(
+        budget,
+```

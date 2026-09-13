@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn git(args: &[&str]) -> Option<String> {
+    std::process::Command::new("git")
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Watch the refs behind `HEAD` so the EXTRA git-sha field cannot go stale. The content id
+/// is kept fresh by the per-file watches emitted in `main`; these two lines only cover the
+/// sha. HEAD changes on checkout/detach; the ref it points to changes on commit. In a
+/// submodule checkout (how darklanes builds) HEAD is always detached, so `symbolic-ref`
+/// fails and only the first watch arms - which is the safe direction.
+fn watch_git_head() {
+    if let Some(head) = git(&["rev-parse", "--git-path", "HEAD"]) {
+        println!("cargo:rerun-if-changed={head}");
+    }
+    if let Some(refname) = git(&["symbolic-ref", "-q", "HEAD"])
+        && let Some(refpath) = git(&["rev-parse", "--git-path", &refname])
+    {
+        println!("cargo:rerun-if-changed={refpath}");
+    }
+}
+
+fn main() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
+    let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
+    let pkg_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
+
+    watch_git_head();
+
+    let scan = workspace_root(&manifest_dir)
+        .as_deref()
+        .and_then(content_id);
+```

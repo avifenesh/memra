@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn set_for_gate(enabled: bool) -> bool {
+    ENABLED_FOR_GATE.swap(enabled, Ordering::AcqRel)
+}
+
+pub(crate) fn enabled_for_gate() -> bool {
+    ENABLED_FOR_GATE.load(Ordering::Acquire)
+}
+
+/// Derived from the normalized model configuration, not a fixed layer/head allowlist.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AttentionTpGeometry {
+    pub full_heads: usize,
+    pub local_heads: usize,
+    pub head_dim: usize,
+    pub q_lora: usize,
+    pub full_groups: usize,
+    pub local_groups: usize,
+    pub o_lora: usize,
+    pub hidden: usize,
+    pub group_width: usize,
+    pub full_output_width: usize,
+    pub local_output_width: usize,
+}
+
+/// Actual final-layer device partials and their native GPU rank sums, read only by gates.
+pub struct AttentionTpJoinSnapshot {
+    pub partials: [Vec<f32>; 2],
+    pub joined: [Vec<f32>; 2],
+}
+
+impl AttentionTpGeometry {
+    pub fn new(
+        heads: usize,
+        head_dim: usize,
+        q_lora: usize,
+        groups: usize,
+```
