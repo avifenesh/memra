@@ -1,0 +1,11 @@
+# Status
+
+- 2026-09-13: execution authorized by owner; E4B explicitly excluded. Selected Gemma 4 12B and Qwen3.5-9B.
+- Isolated source branch created at `3bb21381848067d922dec1320261846f99ceb29a`.
+- Plan registered before first model run. Dedicated 5090 provisioned; CUDA qualification and artifact staging pending.
+- First pilot completed: 15/21 subprocess checks passed; 6 Gemma coding-prompt checks failed full-length equality. They agreed on the first 96 tokens but spec emitted 97. The engine's prefix-only gate did not reject this. Original raw receipts retained.
+- Fixed the one-shot emission boundary and strengthened the native Gemma gate to reject unequal lengths and token-limit overshoot. A new `r2` namespace reruns all cells before admitting training.
+- Recorder ON/OFF output checks completed on all three smoke prompts. Data is diagnostic only; no performance claim or final predictor fit yet.
+- Training workload: 88 training, 24 calibration, 24 held-out code-review prompts, split by source file before model execution. Public MT-Bench smoke prompts are excluded from learning.
+- Rerun `r2` passed all 21 subprocess checks (Qwen K=1..8 and Gemma K=1,2,4,6,8 on three prompts, plus three traced Gemma runs). Recorder ON/OFF token identity passed. This is greedy CLI qualification for the pilot, not sampled serving qualification or a speed result.
+- Own-generation rank learning started on the 5090. Both targets are queued for 4,096-row rank artifacts, requiring at least 16,384 generated training tokens each. Gemma then collects full/static/adaptive-head traces on 6 training, 6 calibration and 6 held-out prompt groups and fits two small acceptance predictors. This first diagnostic has unequal head widths and cannot establish the proposed equal-capacity speedup.

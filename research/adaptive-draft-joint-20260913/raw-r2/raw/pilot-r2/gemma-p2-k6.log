@@ -1,0 +1,16 @@
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 24098 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+spec K=6 n_new=96 prompt=35 toks
+[fa-pool] grow #0 dev=0 o_len 0 -> 12288 ml_len 0 -> 48 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 12288 -> 24576 ml_len 48 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[gemma-spec] rounds=45 drafted=270 accepted=51                    accept-rate=0.189 tok/round=2.13
+[gemma-spec] per-position accept: p0:26/45 p1:11/45 p2:5/45 p3:3/45 p4:3/45 p5:3/45
+plain: 169.02 tok/s | spec: 186.38 tok/s (1.10x) | stream agreement 96/96
+plain tokens: [1408, 200756, 3245, 529, 24604, 236787, 52653, 506, 19657, 529, 30666, 236743, 244277, 239794, 108, 3810, 563, 496, 3530, 2712, 529, 15236, 600, 9439, 506, 3479, 611, 2918, 1135, 506, 8180, 528, 30666, 236761, 1030, 236858, 236751, 711, 1164, 506, 31992, 24285, 822, 5716, 653, 506, 38115, 529, 729, 3162, 722, 528, 506, 2634, 237028, 509, 236858, 236751, 506, 808, 177510, 22429, 1030, 236858, 236751, 506, 120952, 2778, 529, 496, 2601, 600, 186300, 236764, 12489, 236764, 532, 26266, 236761, 108, 236777, 5569, 7785, 496, 2069, 9884, 236772, 221325, 1343, 506, 114714, 236764, 532, 1651, 564, 3588]
+spec tokens: [1408, 200756, 3245, 529, 24604, 236787, 52653, 506, 19657, 529, 30666, 236743, 244277, 239794, 108, 3810, 563, 496, 3530, 2712, 529, 15236, 600, 9439, 506, 3479, 611, 2918, 1135, 506, 8180, 528, 30666, 236761, 1030, 236858, 236751, 711, 1164, 506, 31992, 24285, 822, 5716, 653, 506, 38115, 529, 729, 3162, 722, 528, 506, 2634, 237028, 509, 236858, 236751, 506, 808, 177510, 22429, 1030, 236858, 236751, 506, 120952, 2778, 529, 496, 2601, 600, 186300, 236764, 12489, 236764, 532, 26266, 236761, 108, 236777, 5569, 7785, 496, 2069, 9884, 236772, 221325, 1343, 506, 114714, 236764, 532, 1651, 564, 3588]

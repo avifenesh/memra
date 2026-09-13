@@ -815,6 +815,22 @@ impl HybridModel {
             }
         }
         let mut out: Vec<u32> = Vec::with_capacity(max_new);
+        // Research recorder: confidence is measured in the current physical head's
+        // normalization. Positions after the first rejection are censored labels.
+        let mut draft_trace = if let Some(path) = std::env::var_os("MEMRA_GEMMA_DRAFT_TRACE") {
+            if std::env::var("MEMRA_GEMMA_ROUND_GRAPH").as_deref() == Ok("1") {
+                return Err("draft trace supports the eager one-shot round only".into());
+            }
+            Some(
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)?,
+            )
+        } else {
+            None
+        };
+        let draft_trace_enabled = draft_trace.is_some();
         let (mut drafted, mut accepted, mut rounds) = (0usize, 0usize, 0usize);
         // per-position accept histogram (MEMRA_SPEC_STATS): [attempted, accepted] per slot —
         // the depth-K policy statistic (deep slots' marginal accept decides fixed-cap vs deep).
@@ -1010,7 +1026,7 @@ impl HybridModel {
                     let ld = e.matmul(&d.head, &hn, 1)?;
                     e.argmax_token_device_col(&ld, 0, d.head.out_features(), batch_d, j + 1)?;
                     // confidence-adaptive depth (MEMRA_SPEC_PMIN): TRIM-space prob before d2t.
-                    if pmin > 0.0 || inround > 0.0 {
+                    if pmin > 0.0 || inround > 0.0 || draft_trace_enabled {
                         e.prob_of_token_device_col(
                             &ld,
                             batch_d,
@@ -1422,6 +1438,20 @@ impl HybridModel {
                 }
             }
             prev_full = m == k; // feeds the self-keyed in-round cut (miss → next round cuts)
+            if let Some(file) = draft_trace.as_mut() {
+                use std::io::Write;
+                let probabilities = e.dtoh(&p_d)?;
+                if probabilities[..k].iter().any(|p| !p.is_finite()) {
+                    return Err("draft trace encountered non-finite confidence".into());
+                }
+                let learned = d.trim_adapt_stats().map(|(used, _)| used).unwrap_or(0);
+                writeln!(
+                    file,
+                    "{{\"schema\":1,\"mode\":\"greedy\",\"round\":{rounds},\"context\":{pos0},\"drafted\":{k},\"accepted_prefix\":{m},\"head_rows\":{},\"learned_rows\":{learned},\"confidence\":{:?},\"proposal_ids\":{dtoks:?},\"verifier_ids\":{vam:?}}}",
+                    d.head.out_features(),
+                    &probabilities[..k]
+                )?;
+            }
             if std::env::var("MEMRA_DEBUG_SPEC").as_deref() == Ok("1") {
                 let l0 = cache
                     .kv
@@ -1446,7 +1476,7 @@ impl HybridModel {
             }
             // emit last + accepted drafts; the correction token comes from verify row m.
             out.push(last);
-            if eos.contains(&last) {
+            if eos.contains(&last) || out.len() >= max_new {
                 break 'outer;
             }
             for &dt in &dtoks[..m] {

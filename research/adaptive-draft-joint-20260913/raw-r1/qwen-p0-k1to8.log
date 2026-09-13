@@ -1,0 +1,68 @@
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (33 layers, nextn=1)
+text prompt (133 chars, chat-templated) -> 36 tokens
+prompt tokens: [248045, 846, 198, 19821, 264, 12654, 1957, 421, 15339, 660, 279, 1414, 3425, 1172, 264, 6025, 321, 4523, 1844, 12, 20, 4105, 440, 279, 1379, 1324, 314, 54133, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 24576 ml_len 16 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+
+[generate]   95 tok in 0.458s = 207.45 tok/s (gen-only; this run's prime 0.022s)
+  tokens: [760, 1156, 6587, 264, 12654, 1957, 421, 25, 198, 16, 13, 42272, 660, 1414, 3425, 303, 264, 6025, 198, 17, 13, 82699, 3299, 54133, 3808, 660, 3425, 198, 18, 13, 5019, 279, 1844, 220, 20, 1379, 20125, 4105, 271, 40, 1220, 2814, 25, 198, 12, 53844, 5081, 3425, 303, 264, 6025, 198, 12, 17239, 1414, 2144, 494, 1754, 999, 198, 12, 9372, 4694, 4105, 318, 86999, 59429, 11, 1105, 25598, 8, 198, 12, 4356, 286, 3299, 32655, 198, 12, 41382, 1844, 220, 20, 1379, 20125, 4105, 198, 12, 4451, 11256, 364, 7167, 3425, 11, 10845, 4562]
+--- generated text ---
+The user wants a Python program that:
+1. Reads all text files in a directory
+2. Counts word occurrences across all files
+3. Returns the top 5 most frequent words
+
+I should consider:
+- Handling multiple files in a directory
+- Reading text content from each file
+- Tokenizing words (handling punctuation, case sensitivity)
+- Counting word frequencies
+- Finding top 5 most frequent words
+- Error handling for missing files, encoding issues
+--- end ---
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[fa-pool] grow #3 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[spec-stats] rounds=52 full_accept=44 len_hist=[0, 52] per_slot=[44/52=0.846] total=44/52=0.846 tok_per_round=1.846
+
+[generate_spec K=1] 96 tok in 0.342s = 278.07 tok/s (1.34x vs generate; this run's prime 0.022s)
+  acceptance: 44/52 = 84.6%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #4 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[spec-stats] rounds=41 full_accept=22 len_hist=[0, 0, 41] per_slot=[34/41=0.829 22/41=0.537] total=56/82=0.683 tok_per_round=2.366
+
+[generate_spec K=2] 96 tok in 0.320s = 297.31 tok/s (1.43x vs generate; this run's prime 0.022s)
+  acceptance: 56/82 = 68.3%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=36 full_accept=14 len_hist=[0, 0, 0, 36] per_slot=[29/36=0.806 19/36=0.528 14/36=0.389] total=62/108=0.574 tok_per_round=2.722
+
+[generate_spec K=3] 96 tok in 0.376s = 252.93 tok/s (1.22x vs generate; this run's prime 0.022s)
+  acceptance: 62/108 = 57.4%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=35 full_accept=6 len_hist=[0, 0, 0, 0, 35] per_slot=[28/35=0.800 17/35=0.486 13/35=0.371 6/35=0.171] total=64/140=0.457 tok_per_round=2.829
+
+[generate_spec K=4] 96 tok in 0.372s = 255.25 tok/s (1.23x vs generate; this run's prime 0.022s)
+  acceptance: 64/140 = 45.7%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #5 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[spec-stats] rounds=35 full_accept=3 len_hist=[0, 0, 0, 0, 0, 35] per_slot=[28/35=0.800 17/35=0.486 12/35=0.343 5/35=0.143 3/35=0.086] total=65/175=0.371 tok_per_round=2.857
+
+[generate_spec K=5] 96 tok in 0.421s = 225.70 tok/s (1.09x vs generate; this run's prime 0.022s)
+  acceptance: 65/175 = 37.1%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=35 full_accept=2 len_hist=[0, 0, 0, 0, 0, 0, 35] per_slot=[27/35=0.771 17/35=0.486 13/35=0.371 5/35=0.143 2/35=0.057 2/35=0.057] total=66/210=0.314 tok_per_round=2.886
+
+[generate_spec K=6] 96 tok in 0.471s = 201.55 tok/s (0.97x vs generate; this run's prime 0.022s)
+  acceptance: 66/210 = 31.4%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=35 full_accept=1 len_hist=[0, 0, 0, 0, 0, 0, 0, 35] per_slot=[27/35=0.771 17/35=0.486 13/35=0.371 5/35=0.143 2/35=0.057 2/35=0.057 1/35=0.029] total=67/245=0.273 tok_per_round=2.914
+
+[generate_spec K=7] 96 tok in 0.538s = 176.43 tok/s (0.85x vs generate; this run's prime 0.022s)
+  acceptance: 67/245 = 27.3%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=35 full_accept=1 len_hist=[0, 0, 0, 0, 0, 0, 0, 0, 35] per_slot=[27/35=0.771 17/35=0.486 13/35=0.371 5/35=0.143 2/35=0.057 2/35=0.057 1/35=0.029 1/35=0.029] total=68/280=0.243 tok_per_round=2.943
+
+[generate_spec K=8] 96 tok in 0.605s = 157.07 tok/s (0.76x vs generate; this run's prime 0.022s)
+  acceptance: 68/280 = 24.3%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

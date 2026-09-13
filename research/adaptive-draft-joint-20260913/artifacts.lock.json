@@ -1,0 +1,9 @@
+{
+  "engine_commit": "3bb21381848067d922dec1320261846f99ceb29a",
+  "files": [
+    {"role":"gemma_target","name":"gemma12.gguf","repo":"google/gemma-4-12B-it-qat-q4_0-gguf","revision":"29d097773436b69ff9feafd636ab4cf873786537","file":"gemma-4-12b-it-qat-q4_0.gguf","size":6975879296,"sha256":"93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"},
+    {"role":"gemma_draft","name":"gemma12-draft.gguf","repo":"ggml-org/gemma-4-12B-it-GGUF","revision":"e3e681731089efaa3f0917336944ac64752db8ba","file":"mtp-gemma-4-12B-it-Q8_0.gguf","size":465109152,"sha256":"16c90eb9f2b2891cc138f3d2b3bf11e23b2ced2aeab9a9d39d90fe446f2f0610"},
+    {"role":"qwen_target_embedded_mtp","name":"qwen9.gguf","repo":"michaelw9999/Qwen3.5-9B-NVFP4-MTP-GGUF","revision":"640ced996727af23f39fd0946b6d2bbabad58cd2","file":"Qwen3.5-9B-NVFP4-MTP-GGUF.gguf","size":5657607424,"sha256":"52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"}
+  ],
+  "notes": ["Qwen target SHA256 matches the existing local qualified artifact byte for byte.","Gemma assistant conversion is explicitly Q8_0. Qualify this exact target/draft pair before timing claims; family support alone is insufficient.","Official assistant source: google/gemma-4-12B-it-assistant@46d4c6f13f0ac0ad827b915669b8df9b81c64c51. No E4B artifact is admitted."]
+}

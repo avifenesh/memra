@@ -1,0 +1,16 @@
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 24098 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+spec K=4 n_new=96 prompt=39 toks
+[fa-pool] grow #0 dev=0 o_len 0 -> 12288 ml_len 0 -> 48 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 12288 -> 24576 ml_len 48 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[gemma-spec] rounds=32 drafted=128 accepted=66                    accept-rate=0.516 tok/round=3.03
+[gemma-spec] per-position accept: p0:26/32 p1:20/32 p2:12/32 p3:8/32
+plain: 169.00 tok/s | spec: 315.56 tok/s (1.87x) | stream agreement 96/96
+plain tokens: [2021, 8974, 672, 2608, 236764, 692, 795, 1161, 506, 2165, 585, 236929, 9173, 531, 21332, 506, 2129, 1458, 236764, 506, 2165, 54405, 236761, 16894, 236929, 1012, 531, 6060, 506, 23513, 23057, 236764, 532, 2165, 500, 236929, 568, 16749, 19094, 236768, 531, 5330, 692, 1186, 1527, 5396, 4171, 568, 796, 5227, 88078, 769, 108, 10354, 17856, 23130, 108, 2717, 6719, 107, 1106, 3252, 107, 1106, 544, 107, 2543, 18853, 1419, 35693, 108, 2063, 974, 236779, 3991, 236779, 8992, 236769, 23756, 236779, 2337, 236764, 1903, 236779, 236749, 236784, 236810, 1473, 107, 140, 3017, 236779, 26021, 578, 35693, 825]
+spec tokens: [2021, 8974, 672, 2608, 236764, 692, 795, 1161, 506, 2165, 585, 236929, 9173, 531, 21332, 506, 2129, 1458, 236764, 506, 2165, 54405, 236761, 16894, 236929, 1012, 531, 6060, 506, 23513, 23057, 236764, 532, 2165, 500, 236929, 568, 16749, 19094, 236768, 531, 5330, 692, 1186, 1527, 5396, 4171, 568, 796, 5227, 88078, 769, 108, 10354, 17856, 23130, 108, 2717, 6719, 107, 1106, 3252, 107, 1106, 544, 107, 2543, 18853, 1419, 35693, 108, 2063, 974, 236779, 3991, 236779, 8992, 236769, 23756, 236779, 2337, 236764, 1903, 236779, 236749, 236784, 236810, 1473, 107, 140, 3017, 236779, 26021, 578, 35693, 825, 108]

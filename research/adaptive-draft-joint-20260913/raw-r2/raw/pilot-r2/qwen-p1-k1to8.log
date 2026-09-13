@@ -1,0 +1,67 @@
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (33 layers, nextn=1)
+text prompt (178 chars, chat-templated) -> 48 tokens
+prompt tokens: [248045, 846, 198, 49338, 488, 513, 22793, 303, 264, 6741, 440, 264, 1809, 314, 1208, 13, 1368, 488, 599, 1066, 41147, 3257, 279, 2018, 1637, 11, 1092, 579, 678, 1428, 2234, 30, 10646, 369, 279, 1637, 488, 1066, 888, 87246, 30, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 24576 ml_len 16 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+
+[generate]   95 tok in 0.453s = 209.49 tok/s (gen-only; this run's prime 0.022s)
+  tokens: [90700, 8340, 25, 271, 16, 13, 220, 2972, 2014, 53983, 279, 5952, 64700, 198, 262, 348, 256, 56679, 25, 42044, 1060, 303, 264, 6741, 440, 264, 1809, 314, 1208, 13, 198, 262, 348, 256, 5411, 25, 4450, 41147, 3257, 279, 2018, 1637, 13, 198, 262, 348, 256, 22656, 25, 198, 285, 220, 16, 13, 220, 3437, 369, 821, 1428, 2234, 30, 198, 285, 220, 17, 13, 220, 10646, 369, 279, 1637, 353, 1066, 888, 87246, 30, 271, 17, 13, 220, 2972, 2014, 53983, 279, 34906, 64700, 198, 262, 348, 256, 733, 264, 6741, 11, 9599, 513]
+--- generated text ---
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Scenario: Participating in a race with a group of people.
+    *   Action: Just overtaken the second person.
+    *   Questions:
+        1.  What is my current position?
+        2.  Where is the person I just overtook?
+
+2.  **Analyze the Logic:**
+    *   In a race, positions are
+--- end ---
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+[fa-pool] grow #3 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[spec-stats] rounds=49 full_accept=47 len_hist=[0, 49] per_slot=[47/49=0.959] total=47/49=0.959 tok_per_round=1.959
+
+[generate_spec K=1] 96 tok in 0.319s = 297.37 tok/s (1.42x vs generate; this run's prime 0.022s)
+  acceptance: 47/49 = 95.9%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #4 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[spec-stats] rounds=34 full_accept=28 len_hist=[0, 0, 34] per_slot=[34/34=1.000 28/34=0.824] total=62/68=0.912 tok_per_round=2.824
+
+[generate_spec K=2] 96 tok in 0.261s = 364.44 tok/s (1.74x vs generate; this run's prime 0.022s)
+  acceptance: 62/68 = 91.2%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=27 full_accept=20 len_hist=[0, 0, 0, 27] per_slot=[26/27=0.963 23/27=0.852 20/27=0.741] total=69/81=0.852 tok_per_round=3.556
+
+[generate_spec K=3] 96 tok in 0.263s = 360.57 tok/s (1.72x vs generate; this run's prime 0.022s)
+  acceptance: 69/81 = 85.2%   self-consistency: PASS (identical to plain target)
+[fa-pool] grow #5 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+[spec-stats] rounds=22 full_accept=17 len_hist=[0, 0, 0, 0, 22] per_slot=[22/22=1.000 18/22=0.818 17/22=0.773 17/22=0.773] total=74/88=0.841 tok_per_round=4.364
+
+[generate_spec K=4] 96 tok in 0.240s = 395.30 tok/s (1.89x vs generate; this run's prime 0.022s)
+  acceptance: 74/88 = 84.1%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=20 full_accept=9 len_hist=[0, 0, 0, 0, 0, 20] per_slot=[20/20=1.000 18/20=0.900 17/20=0.850 12/20=0.600 9/20=0.450] total=76/100=0.760 tok_per_round=4.800
+
+[generate_spec K=5] 96 tok in 0.242s = 392.77 tok/s (1.87x vs generate; this run's prime 0.022s)
+  acceptance: 76/100 = 76.0%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=20 full_accept=7 len_hist=[0, 0, 0, 0, 0, 0, 20] per_slot=[20/20=1.000 18/20=0.900 13/20=0.650 10/20=0.500 8/20=0.400 7/20=0.350] total=76/120=0.633 tok_per_round=4.800
+
+[generate_spec K=6] 96 tok in 0.272s = 349.52 tok/s (1.67x vs generate; this run's prime 0.022s)
+  acceptance: 76/120 = 63.3%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=19 full_accept=4 len_hist=[0, 0, 0, 0, 0, 0, 0, 19] per_slot=[19/19=1.000 16/19=0.842 13/19=0.684 11/19=0.579 8/19=0.421 6/19=0.316 4/19=0.211] total=77/133=0.579 tok_per_round=5.053
+
+[generate_spec K=7] 96 tok in 0.289s = 328.55 tok/s (1.57x vs generate; this run's prime 0.022s)
+  acceptance: 77/133 = 57.9%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=18 full_accept=4 len_hist=[0, 0, 0, 0, 0, 0, 0, 0, 18] per_slot=[18/18=1.000 15/18=0.833 14/18=0.778 10/18=0.556 6/18=0.333 6/18=0.333 5/18=0.278 4/18=0.222] total=78/144=0.542 tok_per_round=5.333
+
+[generate_spec K=8] 96 tok in 0.310s = 306.20 tok/s (1.46x vs generate; this run's prime 0.022s)
+  acceptance: 78/144 = 54.2%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

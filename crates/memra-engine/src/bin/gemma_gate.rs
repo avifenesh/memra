@@ -398,9 +398,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("plain tokens: {plain:?}");
             println!("spec tokens: {spec:?}");
         }
-        if same < plain.len().min(spec.len()) {
+        if same != plain.len() || spec.len() != plain.len() || spec.len() > n_new {
             println!("plain: {:?}", &plain[..plain.len().min(24)]);
             println!("spec : {:?}", &spec[..spec.len().min(24)]);
+            return Err(format!(
+                "Gemma spec stream mismatch: matched={same}, plain={}, spec={}, limit={n_new}",
+                plain.len(),
+                spec.len()
+            )
+            .into());
         }
         return Ok(());
     }
