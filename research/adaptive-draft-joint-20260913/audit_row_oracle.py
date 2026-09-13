@@ -93,6 +93,12 @@ def analyze(bank):
                 assert s['target_in_head'] == (s['target'] in set(core+tail))
                 assert len(s['outside_top16']) == 16
                 assert all(token not in set(core+tail) for token, score in s['outside_top16'])
+            reached = defaultdict(list)
+            for s in observations:
+                reached[s['round']].append(s)
+            for block in reached.values():
+                assert [s['position'] for s in block] == list(range(len(block)))
+                assert all(s['correct'] for s in block[:-1]), 'Label beyond first rejection'
             if r['phase'] == 'collection':
                 for s in observations:
                     s.update(split=r['split'], domain=r['domain'], prompt=r['prompt'])
