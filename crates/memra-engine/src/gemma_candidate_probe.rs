@@ -57,7 +57,8 @@ impl CandidateProbe {
             return Err("invalid bounded candidate probe scores".into());
         }
         let rows = ids.iter().zip(scores).map(|(id, score)| format!("[{id},{score}]")).collect::<Vec<_>>().join(",");
-        writeln!(self.file, "{{\"schema\":1,\"kind\":\"bounded_candidates\",\"round\":{round},\"position\":{position},\"context\":{context},\"history_rows\":{history_rows},\"proposal\":{proposal},\"target\":{target},\"candidates\":[{rows}]}}")?;
+        let vocab = self.present.len();
+        writeln!(self.file, "{{\"schema\":1,\"kind\":\"bounded_candidates\",\"round\":{round},\"position\":{position},\"context\":{context},\"vocab\":{vocab},\"history_rows\":{history_rows},\"proposal\":{proposal},\"target\":{target},\"candidates\":[{rows}]}}")?;
         self.states += 1;
         Ok(())
     }
