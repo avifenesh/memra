@@ -204,6 +204,8 @@ def analyze(bank):
     rng = random.Random(20260913)
     boot = sorted(math.exp(statistics.mean(rng.choices(values, k=len(values)))) for _ in range(10000))
     cost = {'paired_runs': len(pairs), 'prompt_groups': len(values), 'probe_over_control_request_ratio': math.exp(statistics.mean(values)),
+            'mean_request_seconds_control': statistics.mean(p[False]['request_seconds'] for p in pairs.values()),
+            'mean_request_seconds_probe': statistics.mean(p[True]['request_seconds'] for p in pairs.values()),
             'bootstrap_95_percentile': [boot[250], boot[9749]], 'group_log_ratios': log_ratios}
     assert len(runs) == 193 and len(pairs) == 48 and len(outputs) == 48
     assert sum(r['status'] == 'expected_refusal' for r in runs) == 1
