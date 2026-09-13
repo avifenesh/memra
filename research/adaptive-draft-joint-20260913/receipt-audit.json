@@ -1,0 +1,45 @@
+{
+  "verified_learning_run_logs": 56,
+  "labeled_proposals": 6539,
+  "head_summary": {
+    "full": {
+      "labeled_proposals": 2174,
+      "physical_head_rows": [
+        262144
+      ],
+      "max_learned_rows": 0,
+      "mean_confidence_on_labeled_proposals": 0.8531558415643975,
+      "empirical_agreement_on_labeled_proposals": 0.6191352345906164
+    },
+    "static": {
+      "labeled_proposals": 2188,
+      "physical_head_rows": [
+        4096
+      ],
+      "max_learned_rows": 0,
+      "mean_confidence_on_labeled_proposals": 0.8585330701051188,
+      "empirical_agreement_on_labeled_proposals": 0.6023765996343693
+    },
+    "adaptive": {
+      "labeled_proposals": 2177,
+      "physical_head_rows": [
+        4608
+      ],
+      "max_learned_rows": 133,
+      "mean_confidence_on_labeled_proposals": 0.8253046307868167,
+      "empirical_agreement_on_labeled_proposals": 0.6136885622416169
+    }
+  },
+  "paired_heldout_brier_delta": {
+    "unit": "prompt group, equal group weight",
+    "groups": 6,
+    "head_aware_minus_independent": 0.0002879611023504208,
+    "bootstrap_95_percentile_interval": [
+      7.219153890191139e-05,
+      0.0004981631702344544
+    ],
+    "bootstrap_replicates": 10000,
+    "seed": 20260913
+  },
+  "interpretation": "Inconclusive initial diagnostic; no demonstrated head-aware prediction advantage. Unequal head capacities, greedy acceptance, six held-out prompt groups; no throughput claim."
+}

@@ -27,7 +27,20 @@ Own-generation rank corpora:
 | Gemma 4 12B QAT Q4_0 | 22,528 | 16,384 | Corpus floor passed |
 | Qwen3.5-9B NVFP4 | 22,525 | 16,384 | Corpus floor passed |
 
-Both rank artifacts and original generated token IDs are checkpointed with hashes. The current next stage collects confidence/acceptance traces under full, static-trimmed and append-only adapting Gemma heads, then fits a shared acceptance predictor and a head-aware predictor on training data. The calibration and held-out partitions stay separate.
+Both rank artifacts and original generated token IDs are checkpointed with hashes. The diagnostic completed 54 Gemma trace runs: full, static-trimmed and append-only adapting heads on six training, six calibration and six held-out prompt groups. All 54 matched their plain target's complete 128-token output. Two small acceptance predictors were fitted using training data only. The calibration and held-out partitions remained separate.
+
+**Measured predictor result:** the simple head-aware fit lost narrowly to the shared baseline on this held-out set. This does not settle the proposed joint head/depth controller, which was not implemented or evaluated in this pilot.
+
+| Held-out metric, lower is better | Shared predictor | Head-aware predictor |
+| --- | ---: | ---: |
+| Brier score | 0.1793217 | 0.1796074 |
+| Log loss | 0.5317165 | 0.5317317 |
+
+Held-out scope: 2,183 labeled proposals nested in **six independent prompt groups**, each exercised under all three head configurations. Across all splits there are 6,539 labeled proposals. A paired prompt-group analysis gives a head-aware-minus-baseline Brier difference of +0.000288, with a 10,000-resample percentile interval [+0.000072, +0.000498]. This is a small, six-group pilot, not a broad generalization result. Optimizer and feature choices are fixed in `learn_pilot.py`; the calibration partition was reported but not used to tune these first fits. Weights and data hash: `checkpoints/acceptance-predictors.json`.
+
+The anticipated confidence issue appears descriptively in these traces. On labeled proposals, static trim averaged 85.85% raw confidence and 60.24% agreement, while the adaptive setup averaged 82.53% confidence and 61.37% agreement. The adaptive head learned up to 133 additional rows in a request. These aggregates have different physical widths and differently selected proposal positions, so they do not isolate a causal effect of learning or establish a throughput improvement.
+
+`audit_receipts.py` verified all 56 learning-stage raw logs (two corpus generations plus 54 trace runs) against their recorded SHA256 values, the learner's data hash, and the absence of duplicate prompt hashes across the 136-prompt pool. Output: `receipt-audit.json`. Raw traces and logs are in `raw-learning/`; ranks, original generation IDs and per-request learned-row sidecars are in `checkpoints/`.
 
 Only accepted-prefix positions and the first rejection receive actual-continuation labels; later positions are censored. The recorded confidence is the physical head's softmax probability, not target acceptance. Recorder I/O and the extra confidence computation make these trace timings unsuitable for uninstrumented speed claims.
 

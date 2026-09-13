@@ -1,0 +1,63 @@
+{
+  "independent": {
+    "weights": [
+      -0.6750023303179506,
+      1.4493407087273202,
+      0.009575916206129274,
+      -0.372464035387373
+    ],
+    "metrics": {
+      "train": {
+        "n_labeled_proposals": 2193,
+        "n_prompt_groups": 6,
+        "brier": 0.1817268305765932,
+        "log_loss": 0.5379316379679124
+      },
+      "calibration": {
+        "n_labeled_proposals": 2163,
+        "n_prompt_groups": 6,
+        "brier": 0.15900579638276588,
+        "log_loss": 0.47883344857850485
+      },
+      "heldout": {
+        "n_labeled_proposals": 2183,
+        "n_prompt_groups": 6,
+        "brier": 0.17932167430109913,
+        "log_loss": 0.5317165108667246
+      }
+    }
+  },
+  "head_aware": {
+    "weights": [
+      -0.37865069655690503,
+      0.8074273816792582,
+      0.026318893887153957,
+      -0.20671575840675438,
+      -0.43035248328426057,
+      0.08359059695671489,
+      0.6748109364530557
+    ],
+    "metrics": {
+      "train": {
+        "n_labeled_proposals": 2193,
+        "n_prompt_groups": 6,
+        "brier": 0.18166833603110494,
+        "log_loss": 0.537281209204319
+      },
+      "calibration": {
+        "n_labeled_proposals": 2163,
+        "n_prompt_groups": 6,
+        "brier": 0.1588886454907516,
+        "log_loss": 0.4777274568495806
+      },
+      "heldout": {
+        "n_labeled_proposals": 2183,
+        "n_prompt_groups": 6,
+        "brier": 0.17960743137879032,
+        "log_loss": 0.5317316831835887
+      }
+    }
+  },
+  "scope": "Small diagnostic on code review, greedy current-proposal acceptance; unequal head widths; no speed or joint-policy novelty claim.",
+  "data_sha256": "3261a00bcc5063155a14a7fa7918482a4eadb4c19f86a70b689c948d895fc5b2"
+}

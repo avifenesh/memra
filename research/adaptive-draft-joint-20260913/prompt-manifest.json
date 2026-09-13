@@ -1,0 +1,964 @@
+{
+  "workload": "native-source-code-review-pilot",
+  "split_unit": "source_file",
+  "source_commit": "3bb21381848067d922dec1320261846f99ceb29a",
+  "counts": {
+    "train": 88,
+    "calibration": 24,
+    "heldout": 24
+  },
+  "records": [
+    {
+      "id": "00c7a40f21381aef",
+      "split": "train",
+      "source_file": "crates/memra-server/src/responses_api.rs",
+      "source_sha256": "0656ea56e9c1a165ecb5653f7111758b05d9beaddc81fd80d1b7509010b958d6",
+      "prompt_sha256": "74f5844cf4471ee581ef5a88ecc4dc2381ca38cca35c8a43ce2740ae9c759e44"
+    },
+    {
+      "id": "0200fc024c1faee6",
+      "split": "calibration",
+      "source_file": "crates/memra-reference/src/hidden_trace.rs",
+      "source_sha256": "98c23378f75b2f922c7e13bd5238438c5783653d84b16cdfc54b98dbb64e6300",
+      "prompt_sha256": "57921439e6462d640e5f9fa28d38d54c2a89b367304b0f14d5ce62f0c1d54db9"
+    },
+    {
+      "id": "03220069041c48b6",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/dflash.rs",
+      "source_sha256": "b26490750038f03c9be214e6363e48a5cd9a301434df816a6b3a7f89da51cd4d",
+      "prompt_sha256": "d2f3914c59811f1de570e7d928bd55692134fc66e2d7c8e2602f6c396eba3c0b"
+    },
+    {
+      "id": "039dacd444d52ea6",
+      "split": "train",
+      "source_file": "crates/memra-server/src/auth.rs",
+      "source_sha256": "1443d4222b483c154298289169251bd673e9fd0791c492b1d8b0e2c88949ca0f",
+      "prompt_sha256": "d444759fe2e97d55c86d48a56c8505a4ce45946a0b1c81424ec31e01c72911ba"
+    },
+    {
+      "id": "085e3ce4834194ff",
+      "split": "train",
+      "source_file": "crates/memra-server/src/constrained.rs",
+      "source_sha256": "66681a521740cf30eded1efc0a0d9bc21fd932d5c48c98fd95ccd72d8fb629f5",
+      "prompt_sha256": "091720bc4b6b00b8c5332e0c683a98ee7a8e120e206a59495e8aa960f8fc5063"
+    },
+    {
+      "id": "097b768d330a8ace",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/deepseek_v4/mod.rs",
+      "source_sha256": "3906f6645f646a406ca936058e2ea07dbbda4305c0fa507908fdd3d9c8ae7731",
+      "prompt_sha256": "9591629c971261ad25b39cc63b3f9179af32d2f084dc894284b23df0f7d74e14"
+    },
+    {
+      "id": "0ab80c26b53bd8c2",
+      "split": "train",
+      "source_file": "crates/memra-server/src/toolcall.rs",
+      "source_sha256": "a8b63b7cff232870d733642d78f85b186283a4aad55756ff7a5e2f06ed00758c",
+      "prompt_sha256": "5c578c9c867b73aeb97dcbc83d31476ab6c24b03156e9e15f29f61e4cb11a4bb"
+    },
+    {
+      "id": "0c385d0a994382bf",
+      "split": "calibration",
+      "source_file": "crates/memra-gguf/examples/dequant_oracle_diff.rs",
+      "source_sha256": "e4a86edc1bcbf077fbbefce8030684f62fedc4a690d35250fc0664d31a08a57b",
+      "prompt_sha256": "8d011a3e899d3589d52dff49ee46b02adcb556fa51e858915247bb5efc723dc1"
+    },
+    {
+      "id": "0d5a845b2fab8006",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/round_stream.rs",
+      "source_sha256": "d12d81ca1b24a050973697b099328b3ad7b29e9f8ffb8bf289e52381e33a2649",
+      "prompt_sha256": "dbaed14b5b5512961de9dc65c637e1e0e62516b3a894ee764158b76b9d4b2b21"
+    },
+    {
+      "id": "0f81ab1df8007078",
+      "split": "heldout",
+      "source_file": "crates/memra-gguf/src/model_packs/gemma4_dense/mod.rs",
+      "source_sha256": "04a763e39aee6cafbd9bbe1625ec131208f51e03ecc23536ce0074b434f30b74",
+      "prompt_sha256": "0e8e628f3b52982461a9924ec34c8c5f1b15b64ad1d6ebd59a6636fa3effcba6"
+    },
+    {
+      "id": "12d5e9e697aff6de",
+      "split": "train",
+      "source_file": "crates/memra-sampling/src/lib.rs",
+      "source_sha256": "eae02f51fbb72faeb2861132338f2ee68ea5648113560dd590e7f5788690ea61",
+      "prompt_sha256": "c14da29672d8a7ca54dc8e391827875cb155030a67597cd9ced2305b7b4ad59d"
+    },
+    {
+      "id": "1349ea223c8c83ca",
+      "split": "train",
+      "source_file": "crates/memra-probe/src/main.rs",
+      "source_sha256": "eca309c0ed6292dda6f7b78176bbebc5b56f4c972fad55d9d499c43c7f91c6d4",
+      "prompt_sha256": "0787591658c6eb7ed437d823f594e4fc8021c184f3162f12b5db79f4c37ab893"
+    },
+    {
+      "id": "144ff2616032f848",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/cpu_experts.rs",
+      "source_sha256": "c2111cebb36e4ce38f02aa6a6065c5873277dbcad3b0a7f1aff99d3b065d49e0",
+      "prompt_sha256": "9864d21de62dfbfd450ce59edb6b0fa873ea4db568dac0a3659e02f76cb3e797"
+    },
+    {
+      "id": "14a2eb83141dbe0d",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/mla_ffi.rs",
+      "source_sha256": "13d9076f0e7220817663c5017a9afc6544d68e234fb50742f1cf72cfac7e4cc7",
+      "prompt_sha256": "a14dedf01369cc41f07b3413d1f2d8f52893eb12be08fa3503d801a0eae11560"
+    },
+    {
+      "id": "15f70c2b00a9c5f3",
+      "split": "train",
+      "source_file": "crates/memra-lanes/src/audio_stream.rs",
+      "source_sha256": "96f69182dfa6c62e7aeb9e362d90aa09f488acf7af92e83d617ef6acd728d646",
+      "prompt_sha256": "4ac0eb5686e45a5101a5b8f311894083020c1f8942d248f7505ba481ba896c8f"
+    },
+    {
+      "id": "17a13a5eb998f68a",
+      "split": "calibration",
+      "source_file": "crates/memra-gguf/src/nvfp4_repack.rs",
+      "source_sha256": "3e7006f3cd9f4a76c7cefeecddb4ef806bd402022cc7095e47b2c3cae38ffb87",
+      "prompt_sha256": "3bdcd8198881c401d84fb816f974ce2fb32760228c30f9ad8136c5dc81b3599a"
+    },
+    {
+      "id": "183a2e8646ea9725",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/gemma_spec.rs",
+      "source_sha256": "db481cdb5dd2f13e462a7cecfd964d0a7c374cdaa716b64d6138683cccdc634f",
+      "prompt_sha256": "30605abbf8fe975f8bfef0966675b6d6962dec9ddbe986d2d19f4550e0a714be"
+    },
+    {
+      "id": "1ab4c8c012ec0afa",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/mmq_ffi.rs",
+      "source_sha256": "1d8e5690bb6d19523f965cf73b7a089f32742db0baee83c3cc666fe5395b6479",
+      "prompt_sha256": "f11fc1bd694eb8be2fc1c856390284c25f40026fdfc71e582a72f4ddfb5706ae"
+    },
+    {
+      "id": "1c39d1c50b50661f",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/nemo.rs",
+      "source_sha256": "b6141b81dd7e62e4e7bc2dba74d29d9e9385bf77349799216bb885009857ade2",
+      "prompt_sha256": "b5e02321a5d23ec9f698c270c13eb5990a89fd2f53e4384b571395c7ceffa6f5"
+    },
+    {
+      "id": "1ce39e4971b748c2",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/placement.rs",
+      "source_sha256": "33fa7edd2d67348ba58d582bfa6e0b08c42ff939b61c25286e1ff55616ebbc80",
+      "prompt_sha256": "3fe031f0e9f2f35c200107b2947c907c797dedc67e7b6a52095b396ff59fa50a"
+    },
+    {
+      "id": "1de21548269d0639",
+      "split": "heldout",
+      "source_file": "crates/memra-gguf/src/config.rs",
+      "source_sha256": "e4ecb2e7df6bc3a607585b8ca4dcdeb424df0dee6cd59219805a342921ac0166",
+      "prompt_sha256": "cc6d7d2be0c29b4c4985bbdf015d184b9f11b2d6cb1a6006ec3efc2332a0cd24"
+    },
+    {
+      "id": "1ebbebec5804eff0",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/f16_ffi.rs",
+      "source_sha256": "c77343d41309348f0eef0f36b1e5722b005192780f4abad039d40eff234abd48",
+      "prompt_sha256": "e3618e4ec8ecaea91b822c102fd7519e374e5b72ed0a05c67571e5c54c580bd2"
+    },
+    {
+      "id": "1ebd89fa8fc6a121",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/spill.rs",
+      "source_sha256": "1e4517f1d5f7e591279d3058ad3c9318c18f2057471fa8064df368ecd93d6152",
+      "prompt_sha256": "80e0396d4fc54405b81eefebeb0f55e1213d17b33d9d9b1cedbaeb4ec903fb46"
+    },
+    {
+      "id": "1f67e66190d77c56",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/qwen35/mod.rs",
+      "source_sha256": "95fc7d4ef041b789457a1974f99b3bec8d4d69f223dde6a162f668d19c5cbf51",
+      "prompt_sha256": "f960715e286daed2ac83ef03e0d273a3628f3bb740dd25659dac1649d52c3e63"
+    },
+    {
+      "id": "209af4d07f80620f",
+      "split": "heldout",
+      "source_file": "crates/memra-gguf/src/safetensors.rs",
+      "source_sha256": "1a4ae78c73c462a3ab2d67a1688f588ada64fb82b03752b67027b39c6303556f",
+      "prompt_sha256": "140cd15a9e022d448b4d50e985839eee37c2067e7007958bb60c64923353d70d"
+    },
+    {
+      "id": "212001589c427609",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/hf.rs",
+      "source_sha256": "ea3b5ce1f895fcc7f0c0052a6db3ce4e5e8743a09d9cb0a8d6ec1111cfd66fe3",
+      "prompt_sha256": "3e1aed9957b25321c0d9139c413299ab675cf71b29a7b26236a6ab5cea247ca8"
+    },
+    {
+      "id": "22381b0d0fa3663c",
+      "split": "train",
+      "source_file": "crates/memra-validate/src/lib.rs",
+      "source_sha256": "c4a571142e72311a751d8e2bb8896a1337439531c2537c1a1fa9d6f61393a45c",
+      "prompt_sha256": "af764a4de0797d554f9672cc08356f6060182d12ad0d98a33d3ca906765b1342"
+    },
+    {
+      "id": "254cdc76c6b0c46c",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/glm5_tp_sampler.rs",
+      "source_sha256": "44d9e9c824a18fa322df1a35fcedd26ba38370fbf15ac4ea9aa551334c88ce83",
+      "prompt_sha256": "fb380b6070d135990906778566d9709aa0694b190583a709c87dd9afa6d0a460"
+    },
+    {
+      "id": "25e830409b95c6c9",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/dsv4_ep_graph.rs",
+      "source_sha256": "a703e23d694cf8f9607c3ffcb5dc6168fc2546f41f842d2434080402863a7c61",
+      "prompt_sha256": "bdd9f4798359b8458ecea912428e4d3d7b598b4fa617b2830d71616795c875c0"
+    },
+    {
+      "id": "25ea77dfca7f287c",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/glm5_tp.rs",
+      "source_sha256": "88d694e139f8c8bfdd442fc10502148ab6addf7cb94636539f24398485fd469e",
+      "prompt_sha256": "b84889eb20ec16d5054fe9187ac4716b4b4e70c9ca770c200953dd3c6f6d49c8"
+    },
+    {
+      "id": "2954b3488fa3a8af",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/dsv4_attention_tp.rs",
+      "source_sha256": "f69cdd6e68e0305c28e6264a68d63e9425c9c67a22df9791f1cd4bc77bb09875",
+      "prompt_sha256": "c14b55a942c7d6f4892ac44d4c0004167b4566611ae43a246c10fe96a33ea7d0"
+    },
+    {
+      "id": "2a5b5c80e6a37be0",
+      "split": "heldout",
+      "source_file": "crates/memra-server/src/audio_api.rs",
+      "source_sha256": "708b58e6a5f01875a8a5e15227986d2d2110bc3b3de2a9284950aed361dc73fd",
+      "prompt_sha256": "76035786a49fa8f1c29fad506354d63ce395115f31111ecee3bd1ef11ecbd70b"
+    },
+    {
+      "id": "2aba382f5dd01166",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/moesd.rs",
+      "source_sha256": "b58c707f84371f5f37c0ddb6ebe64e36c404c4e31ce3a14e28290e1095ac6d58",
+      "prompt_sha256": "fbe182972ec44e4421c438443f8d060aa70205817c13352aaa9dd2b2fd73c2b1"
+    },
+    {
+      "id": "2adf2573545791aa",
+      "split": "calibration",
+      "source_file": "crates/memra-gguf/src/model_packs/llama_dense/mod.rs",
+      "source_sha256": "63a806fcdf1efa522e313a6f400871ae7729918403fdd57fdbe48fea3b4da684",
+      "prompt_sha256": "4db6ee2f64070668151a0154898585bf3e10687ef37604bac8810d00bb83d6a3"
+    },
+    {
+      "id": "2c617a660a7f4517",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/graph_update.rs",
+      "source_sha256": "cb986097c5c3309dbd992855cc6a42cfc6ab6e7d13244529c2298d9b39959c67",
+      "prompt_sha256": "2e7acc39ab3bc9adb24270b370016adbf3d578a70fb86c62995bb98d794191c8"
+    },
+    {
+      "id": "2d3dca9efb3c2d56",
+      "split": "calibration",
+      "source_file": "crates/memra-gguf/src/dsv4_decode.rs",
+      "source_sha256": "2b9d8c413789bfcd7aafca4695d3d8ce56b6a1fa824585dd6f7c30c2eae93e32",
+      "prompt_sha256": "1a436ab8d8608d192ada595a31c9bb8b4e1c31936b39c6e5e0b7a971ae3f4999"
+    },
+    {
+      "id": "33288435404e920d",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/vision.rs",
+      "source_sha256": "e824d184c3bcc109bb0d96519fbec90fb92c160f499d502fb769cda69e0a0bc0",
+      "prompt_sha256": "9e7adaa5d2b1550056cef723d93d6cf9ee803019ba268c7639d8c11c58b30182"
+    },
+    {
+      "id": "388aed8c51507c37",
+      "split": "calibration",
+      "source_file": "crates/memra-cli/src/lib.rs",
+      "source_sha256": "a107746ca271e0be500e9e7a2f2d69edfa8ba262dc7c3252cf10e40619c240a2",
+      "prompt_sha256": "d9ad257969e874b8e007243d41ecf1aa2b3ef806fc4564280de67f1ed04348f3"
+    },
+    {
+      "id": "398398a0a76d46a8",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/hybrid_forward.rs",
+      "source_sha256": "b526ca044c8cd2d0d92fde56b8b66145b09287e0e5abecd24265e54ea9b49415",
+      "prompt_sha256": "89a01ac43d264c3092efbfa1d17e3825960f60d383760bea34a9b3efedc34d3c"
+    },
+    {
+      "id": "3ec17f58de3d414e",
+      "split": "train",
+      "source_file": "crates/memra-server/src/affinity.rs",
+      "source_sha256": "0e80331d1ea0e7c4d950b153738439910bd8fc61160ea6a7718818df501ebf12",
+      "prompt_sha256": "ca1445cc30409eb2cfa2bb59f2579701e5e5924a92b8b9f772e5bd478d5b4f58"
+    },
+    {
+      "id": "400e80edf48f49d3",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/qwen35_moe/mod.rs",
+      "source_sha256": "481677f12038c6f1f7ce345ff256c007cffe262708f7059b471d95a226c54297",
+      "prompt_sha256": "a405e707ade4ed425737c5dbbab6c2ba3c5e39fe85261b1a3d28593597878476"
+    },
+    {
+      "id": "408ec888037d3c63",
+      "split": "train",
+      "source_file": "crates/memra-reference/src/speech/matrix.rs",
+      "source_sha256": "9229b2e5ec64ee22529cb027c32478f1910913659582f13ebf090f063b219fa0",
+      "prompt_sha256": "a4aebaf4af0a9143d8b3f16c919fa3930a3e41cc1cadc2ba25179be121a3f978"
+    },
+    {
+      "id": "4151c9fa97979838",
+      "split": "train",
+      "source_file": "crates/memra-server/src/embed_api.rs",
+      "source_sha256": "71e59ae58da971c5b907b9c055ef0fe586f7036ee93ccc4b844ab460f2a51436",
+      "prompt_sha256": "860eefabf679791ac4f5709eeedca8e59da9feed240ff737db13f5f9e16466b7"
+    },
+    {
+      "id": "41b117f961844935",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/dsv4_gpu.rs",
+      "source_sha256": "9139d7b65c25a28d417292eb30bb5f040ce3055e0d3a0aec2d5eede8b065c201",
+      "prompt_sha256": "be648d87e17122d8077789837ac74f617cbcd5b5ee2ddbfc1719f0994f217d1a"
+    },
+    {
+      "id": "422a2d9224324939",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/tp.rs",
+      "source_sha256": "1c02858372a746bcd775c0810ba515d91ba37509e604b8b4aad727694e71b7aa",
+      "prompt_sha256": "b0d2e4435e449e1c24a7279a82d319cf1ee240716a7d54ef743b623f2205dd75"
+    },
+    {
+      "id": "42f57f702f4248dc",
+      "split": "train",
+      "source_file": "crates/memra-server/src/build_id.rs",
+      "source_sha256": "675e73679373a999741a6d006039da2a3823cf95662e7d669dcfcfbd35275c67",
+      "prompt_sha256": "4accd7d823b253637cde11050d73f06774c87083caa641f0c4b9e22912d348c7"
+    },
+    {
+      "id": "467fd12e7b5d8a08",
+      "split": "train",
+      "source_file": "crates/memra-server/src/health.rs",
+      "source_sha256": "fb425a5b4bb8f3554926ea3405857f555a84a9c088aee79d910962e1bd6e2e22",
+      "prompt_sha256": "8e0b852243bd67bd9d7a27f8ffdcfa89f78c3ed5def409618c7ca9c14f239bac"
+    },
+    {
+      "id": "46888b8b0d9aa66f",
+      "split": "heldout",
+      "source_file": "crates/memra-server/src/anthropic.rs",
+      "source_sha256": "88f296c7dae72460f039ae544d7b0a34716edf4f78f60af49518b37a0e3aa18f",
+      "prompt_sha256": "01bed514dac45523bc918e8e6bd71be836cb35a622ac57eb77cc7e3ac0ba72b2"
+    },
+    {
+      "id": "4747756cc9f7a916",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/progress.rs",
+      "source_sha256": "206bbb807c81167d9b54dacd3f2b48ac49e9fba8c57b8ffb804e83af807bc09b",
+      "prompt_sha256": "94cb47d7aa2aed86fb89dae07d3eb383108426f61d3d0aefe4e6fc33c7f33925"
+    },
+    {
+      "id": "47511b1d78de8345",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/qwen35/activation.rs",
+      "source_sha256": "27201ec0257aa9f9477dbdcb215c16d4c0323cc61da405a86ae58513a5bd1ac8",
+      "prompt_sha256": "6ed4d08c176853f9b74809dcb203d0467840e7aacb12a4bd5f45f141665c03bc"
+    },
+    {
+      "id": "48c774ca2a4b23b6",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_doors.rs",
+      "source_sha256": "3ff94252b9ff4f3e310288bdff105ba44f27fb2b7801cfafbd87565c4eeb63ec",
+      "prompt_sha256": "d2ffbc4f8fb015d0aa0368b93834ba4060101ac22fe4b87038ccb7d84f1166d6"
+    },
+    {
+      "id": "49287e3efac4a8f8",
+      "split": "calibration",
+      "source_file": "crates/memra-server/src/dsv4_serve.rs",
+      "source_sha256": "1b8fb39a04957fc58a4a4ee7c3b61439cd54f62ebaa34d1d09a0ad8ea4a90554",
+      "prompt_sha256": "85ff7519239a47d73dbb96b5fcfd4972b3a6eb755ec9e3fd82a317bbb2aae5dc"
+    },
+    {
+      "id": "4deb60e02ebea130",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/dsv4_forward.rs",
+      "source_sha256": "4a7153cd30192eb3c57b1b79f87e9ba7a57e288d559a3fb782e9b2003cef8cb3",
+      "prompt_sha256": "54d530c1326982dc3b7782dc39b5e1bdec3aaca703ccd503151f740b34df3c0b"
+    },
+    {
+      "id": "53c4f63533177b7f",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/tp_ar.rs",
+      "source_sha256": "9106e732664b1aad3eb8a8bb164ecc40983f34adb98ce084b09181299b310af8",
+      "prompt_sha256": "b7e5add8bdd41b2ea608fdafbeecbe9aa513015cd6db11105792b866b0a1056d"
+    },
+    {
+      "id": "5a9111a53997c04b",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/glm_spec.rs",
+      "source_sha256": "0574654687375e2d536449614b741633cbb16ea384a436f246b0ef5cd82d2e71",
+      "prompt_sha256": "ceedfee836f217cf510e594fdfd8a09af7e7287ad0508034cbc974f8a1b3111d"
+    },
+    {
+      "id": "5b70daf3c8929a6f",
+      "split": "heldout",
+      "source_file": "crates/memra-server/src/admit_memory.rs",
+      "source_sha256": "d91cf8d722854051d60cc3651522fcab4f8ce81ad39d389dfb8c98b9fce15a72",
+      "prompt_sha256": "e7619798a6eab023fdc71a707a52da5af7ff654e62a9e3aa1b8b3c573b22d420"
+    },
+    {
+      "id": "5ce2693049b8b1dc",
+      "split": "calibration",
+      "source_file": "crates/memra-server/src/surfaces.rs",
+      "source_sha256": "66c379212991f9776e2f6d9dc5adaca1f570750f4f061623e24442f8c68c03df",
+      "prompt_sha256": "5a10c98dc02e3a6801a523d4dbb5920a58804ce8654f8e4f36b111ac98c34509"
+    },
+    {
+      "id": "5f5b81a66e6d48f5",
+      "split": "calibration",
+      "source_file": "crates/memra-server/src/lib.rs",
+      "source_sha256": "e54978c21b3eb9b8bd0d284ca088f3cc3fa2d2561bafddcedcf35f1a4df2d104",
+      "prompt_sha256": "583cfba96e930bee55fc8b2706bb59849030e575abcfcf14b0f195f8a0341099"
+    },
+    {
+      "id": "6301079a2fc0ec21",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/kda.rs",
+      "source_sha256": "f75aea61a79566969888c25f5136cf2112c9baa13ffd1eff470e61ac8086938a",
+      "prompt_sha256": "7c5f9f9d6170c57781661cb376dffda964bc910198e7e348e21912587d39e528"
+    },
+    {
+      "id": "63c7a45a25a43d38",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/mod.rs",
+      "source_sha256": "47b285dbe15d8c003b010a5ca4e0dfa0c242492dca7041a0b223aa0b7f09b4b0",
+      "prompt_sha256": "22b45737706a445206f398c1895d34a6a4bc56a4cb7714f506e9be9b9570a4ab"
+    },
+    {
+      "id": "654cb5e4c78b4d7a",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/glm5_sel_ledger.rs",
+      "source_sha256": "66990ff1b67f72a77c8a9e54f68183d1400ed774a75c9f4983de30fd3cf34871",
+      "prompt_sha256": "b9f6eed31c762cbaebb6e8d7c3896dc198f47f843c70bce60d8af0f37a59f66a"
+    },
+    {
+      "id": "65a54b15cb42729e",
+      "split": "calibration",
+      "source_file": "crates/memra-server/src/worker.rs",
+      "source_sha256": "f515812c7c4c2e61ecda73062fbcbedcd874a8828c1ef96ff11e27b24c728cbd",
+      "prompt_sha256": "522aa7b92ede4d98f9eb825f09c83bc53a53ff82908835e6958f33583ec0cf0c"
+    },
+    {
+      "id": "668363eacc4e3a81",
+      "split": "calibration",
+      "source_file": "crates/memra-gguf/src/spec_oracle.rs",
+      "source_sha256": "5a53f907cdb214d992a9a6d4596e67fc7aacd87bbf7d330d5867ef40a1ba1ba3",
+      "prompt_sha256": "8cbdfbb01f1f511cf4e236ee15556237c8c57449568a74cde3282afdd94818cf"
+    },
+    {
+      "id": "67a92ada24b63ee4",
+      "split": "train",
+      "source_file": "crates/memra-kv/src/lib.rs",
+      "source_sha256": "b9e958b7c01e7e9b10c07abd6bbce8fec645174c5fa20045d7a1eb14ddb44e4e",
+      "prompt_sha256": "6265662b3fd6b80f03ffc793828011631bb677f17c133e31f7dcac8be0cfbbd0"
+    },
+    {
+      "id": "6b11e7e1c3203efa",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/vision_step.rs",
+      "source_sha256": "0aeb90c86d163beddbfc7aebfed0dfd7c4a8b6c59b9809fa09ab75dfbe6fe9f2",
+      "prompt_sha256": "ff0e8b772d596574943c0e9cc84b8075969516b6d4d4437d2e2dc271cf7b61cf"
+    },
+    {
+      "id": "6ea91d384e2e2d8f",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/dsv4.rs",
+      "source_sha256": "61ee32141e141b792918d2cfd79944e50bdc59ffc75ece54fe931f1b8d096217",
+      "prompt_sha256": "19db6b7e984ed8551046ed7d8b8323597e7a78f6268867a45b2d8152ac7378d0"
+    },
+    {
+      "id": "708ba8ebea367475",
+      "split": "heldout",
+      "source_file": "crates/memra-gguf/src/tensor_contract.rs",
+      "source_sha256": "32716c792a0ed6b594e5ff48204944e13eae94d6c4d9cbf9ef67d1105f4779cc",
+      "prompt_sha256": "b8951f1956ed833b384adeac3b2ca080ac3847c88a26fb381e42fb69d7100576"
+    },
+    {
+      "id": "712ad7b8047d24db",
+      "split": "train",
+      "source_file": "crates/memra-tokenizer/src/lib.rs",
+      "source_sha256": "b76b5721f853a1cbe13555714583e7d43daff264c06b4b9222d7bad4269d9964",
+      "prompt_sha256": "fbffb6a84deb2bf7c11633d84c422119f134c35711ab7b4a61014a21512078b1"
+    },
+    {
+      "id": "72ba54826023b57b",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/pp.rs",
+      "source_sha256": "18c8dc60ddf8473bc80689f09c6fb513d74f44dc8bc211fd5e42fb3d3ffb63e2",
+      "prompt_sha256": "dd542738c9e17c10fefc3e57f33cc1ea5424cee64b28e2337faf644db0b4b2b4"
+    },
+    {
+      "id": "747d652e62c9df99",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/glm5_decode_graph.rs",
+      "source_sha256": "425fff3845529927ecf978b0334ac9bef074548c4b968b8a6602c1bb693ffea0",
+      "prompt_sha256": "d2f957b545a00ba3a6293e151001e783cc52d0eb39a99d7db8974f8773b201e6"
+    },
+    {
+      "id": "75d0fa16de5bb367",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/d2t.rs",
+      "source_sha256": "823177a36e546bc4543af3a17bcf0111ac0e1eecbec7c82b87210671b48e2619",
+      "prompt_sha256": "10bc391c60a899932a93cafa6cf1227816b2e0c121f3f83737dd469eea66b49c"
+    },
+    {
+      "id": "7606ce31b18914fa",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/sigrouter_contract.rs",
+      "source_sha256": "4678c268f4c9821fa3d53ef67204982da0dc98c875fe8645e71da7c8bb8629e3",
+      "prompt_sha256": "f4653088f7276f6937dc9e403719c0be381de5f5c22ea2f1a02cceebaf5044fe"
+    },
+    {
+      "id": "768138ef1b2bbe20",
+      "split": "calibration",
+      "source_file": "crates/memra-gguf/examples/findtok.rs",
+      "source_sha256": "f660466be01f9ee5a3ea16693f919ae87dfe1cf6177fd3687212fa31aaff5489",
+      "prompt_sha256": "56b71d2f5f186612d9bd2fa3c97bd2626959a50a9358c9913d2361b176141214"
+    },
+    {
+      "id": "7787f4fc6ae39c3d",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/qwen3_moe/mod.rs",
+      "source_sha256": "82f984b5fcdafcd5fb8f899c018f804244a1fc90c25ba7e7b25fc64b56e8f022",
+      "prompt_sha256": "53312d60d57ffb5fd375805a8b46fe091c030aa04a3cd56c97fee33ce866fcc8"
+    },
+    {
+      "id": "78dcfe24e72b04bb",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/hf_mapping.rs",
+      "source_sha256": "18884c54c9e8978e0f265e725b35ff449f9a6ff77b75ee908b1a6db173c97b44",
+      "prompt_sha256": "3c342ea322e9d23df32522d860bf4aaedecf168415a22edf0bb8cdac2c5fffd7"
+    },
+    {
+      "id": "79acf3b014582e3b",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_plan.rs",
+      "source_sha256": "8711dc19b5cb22edacfec3e14d44c07f175e8bee384dbfb8d409b051b92035eb",
+      "prompt_sha256": "542dc684202badc46726319af7c6f0fa55e1d078b713848badacf800a769efce"
+    },
+    {
+      "id": "7a9a76bf2c4d1b1f",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_topology.rs",
+      "source_sha256": "e80e4e4ea61a5c02813ca98ad201cbf8288c4855a6e65ce960a485e26f3ddcdf",
+      "prompt_sha256": "a229f075f2d82590a39da937f99957204ca04386d65334b459a72d77306b8875"
+    },
+    {
+      "id": "7b9a4e7ad17caea2",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/prime_walker.rs",
+      "source_sha256": "00e8481c2997c051f47c5e45bc83652db675ca301fa6ba78f6352f8fa69995c0",
+      "prompt_sha256": "f863d3893fb8481d3c4174cc08ff210c3d803d1ea0fe81d145899063a45a0465"
+    },
+    {
+      "id": "7d7f86a7819f1de8",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/dequant.rs",
+      "source_sha256": "32475c76a2b4b8ed0d160ad301aea979658ae503c2d54babdd4b9177372abb72",
+      "prompt_sha256": "52d26c38e84982765e3553c7ec1a0f3b2ec6d9d0ef3223f1c67fc0c730638fbb"
+    },
+    {
+      "id": "8168a01049007400",
+      "split": "train",
+      "source_file": "crates/memra-cli/src/main.rs",
+      "source_sha256": "dc9a97be4781b98be5ff8bfc0c142e22414664fab8a50b0ffd81df72dfb09294",
+      "prompt_sha256": "71aa11129cbf7bb29a79802b5ab432ac595c3c69c3d6310db4c952ae8916165b"
+    },
+    {
+      "id": "81d41d7276eb65d2",
+      "split": "train",
+      "source_file": "crates/memra-probe/build.rs",
+      "source_sha256": "a733b8713a3802187a6d0fde27664ce6824734aa14056caabeb0be5915ff93ee",
+      "prompt_sha256": "b93bce3ad7b5a8176cd22360e99e4275f23ec1fb10d3b69d94f9d15e40df4b36"
+    },
+    {
+      "id": "84247c863d5c870f",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/lib.rs",
+      "source_sha256": "ea174ce3150cf9e4a80b0dfeebfcac6f72bf150f1ccf470fd942eab2dee073fa",
+      "prompt_sha256": "62caa15c480c19265512023dd25ac05d8b57811e178c7269c240cdb3ba34d646"
+    },
+    {
+      "id": "84f2e66cd85b7b7b",
+      "split": "train",
+      "source_file": "crates/memra-server/src/worker/host_glm.rs",
+      "source_sha256": "3be743d02b6e522b1203988ddcc9fe6fd2c733d5cdd1f08ef533a69e2df4bf1a",
+      "prompt_sha256": "e90fb6c4d42a89b5c6aa877866473b50493daee42cb118035b0b8ae3e84135b8"
+    },
+    {
+      "id": "893d77442cf78f8b",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/prime_receipt.rs",
+      "source_sha256": "5ba47f84bf22170aa28c05742e28045a73aa0d07bb933abb40f80a884b51271e",
+      "prompt_sha256": "53c143c9d66c129a83d42cbb99a76b848c571aaf9cab127e75aeafe35f9a996a"
+    },
+    {
+      "id": "8cd4a13a3836c0f7",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/mla.rs",
+      "source_sha256": "8fcac6763db6aeb181e57e46173fbef407bf012f1e1f4b3dce3a8297679d83b2",
+      "prompt_sha256": "fc3c43655d67f8b414d6fb7e850ef0891c9e6b89590f89e9bfc2234cf81ed5d3"
+    },
+    {
+      "id": "8f8f77b12decb0c3",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/vision_gemma.rs",
+      "source_sha256": "29f23c1c7889588cd62d446866016d8dbc3d18f6e24916642bc36293b17d457b",
+      "prompt_sha256": "5a47a35ee4c41c6a673f8e8780e3d8589eb4494e67e1aab2ef8d6dbd302c37eb"
+    },
+    {
+      "id": "8f971901c6ea26e1",
+      "split": "train",
+      "source_file": "crates/memra-server/src/darklane.rs",
+      "source_sha256": "668ccde836546f9b08650fe3a57352007dd344b42492e91c0aa32c588bce4d07",
+      "prompt_sha256": "e5670c81ca5c4ecbc9c45f99fd14f135099b1127e954749a4f31a8f69447bfeb"
+    },
+    {
+      "id": "9217433cb113c039",
+      "split": "calibration",
+      "source_file": "crates/memra-engine/src/spec.rs",
+      "source_sha256": "410b9d2efaed914fafa12ee875edf4a3b112a0c6e75eba775d8161a68460ff47",
+      "prompt_sha256": "ef872645c493a35063a4faac8b7b148b653e7f5aa7f16ddf48233ec6aca3d4ac"
+    },
+    {
+      "id": "95502e5fc89a18c1",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_ep.rs",
+      "source_sha256": "76b8420a97885ae883c9cb259e43185504a7af43f0e430c4d6f1f70e07ba0f19",
+      "prompt_sha256": "82a9b1ebd0c48e0e2df44f2e92e60c18b288c3c5db8c0cf0c4597d364e2642f5"
+    },
+    {
+      "id": "9630100ea8e082c3",
+      "split": "heldout",
+      "source_file": "crates/memra-gguf/src/dsv4_dspark.rs",
+      "source_sha256": "3d68434e8ce93aa206d63f9e2958eb92ccb32bed666b1fb4f75cdb8d4ffe0890",
+      "prompt_sha256": "d0e8216bcbe961461245e3c9437e62f45c7d8361adbff70de0a70b501cef4dba"
+    },
+    {
+      "id": "97cba885e0845135",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/lib.rs",
+      "source_sha256": "3b204d74a2a543eeb5352212014be585120e28b05710b341167f20654f5504ce",
+      "prompt_sha256": "03c16874f37b9af618b9217904160926dff3c8b28418c90810cd2dad8b1be14e"
+    },
+    {
+      "id": "998da33880a85e70",
+      "split": "heldout",
+      "source_file": "crates/memra-gguf/src/execution_manifest.rs",
+      "source_sha256": "61b6e879859f516116d4adaf81c0a6d78563c9561b50f0f513b32fd24af70cb3",
+      "prompt_sha256": "48c0c22dabb40923173ba5481deef03772e5d98521f5b33f49efa7a80595b8ea"
+    },
+    {
+      "id": "99ef9afed4d125ab",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_sampler.rs",
+      "source_sha256": "7b8c06827a53c11d690a1485c6f5fa3e149400503184124aa3b6a3873532137a",
+      "prompt_sha256": "74c4121584081c7c91557d0840941bcc91000a90c3918141bbbc57b2ae374bbc"
+    },
+    {
+      "id": "9b51de6e6ddab7ac",
+      "split": "heldout",
+      "source_file": "crates/memra-server/src/worker/host_memory.rs",
+      "source_sha256": "244d58d089eeb967e8708f2415e1b11c39e13d260d6f483f875d1ddd132dc6ba",
+      "prompt_sha256": "c311b2d3ef58c0bbf7df73b00860fa8b351f1ac95ac2c36082febc576916365d"
+    },
+    {
+      "id": "9d1d28f70871ed37",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/tp_expert_split.rs",
+      "source_sha256": "63e9c36f144d68994a330b58cdebbdd756ab33dfb878db236e50da614edfc3e4",
+      "prompt_sha256": "22627cf44a1de5e337d38d9a9a3ef59ce3b7fde66c7e4ecc0ac06c3ffe94fa9e"
+    },
+    {
+      "id": "9ddd214be3cf9751",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/parity_geometry.rs",
+      "source_sha256": "cf3beaea12844ea4079a771efc24273d68eb884689280ecc91e533d08ec84829",
+      "prompt_sha256": "49c721e96055684313efd95ba5143b28821b42061d86285611fc67ef54980e1a"
+    },
+    {
+      "id": "a36339f41a4c0553",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/glm5_tp_sym_graph.rs",
+      "source_sha256": "63e3f2ae8114c8f8d42972f55b29b421cc6b8d497cc23b48c3597765d7f75076",
+      "prompt_sha256": "32d1ae81184999d29e48eda2b7b38b1081230521a83fa0b91e090a17e246cedb"
+    },
+    {
+      "id": "a52d297c9c0e9094",
+      "split": "train",
+      "source_file": "crates/memra-reference/src/speech/fastconformer.rs",
+      "source_sha256": "136b84db97aaf58e3d03a451afaa6b09146ee90479fc7807da3053b55c0b710c",
+      "prompt_sha256": "a32e5fb9a9726e52e908da1d72fea6221ca65ce5f69c1aca6c7db37ab3e910a1"
+    },
+    {
+      "id": "a62f7b0344bcce9a",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/model.rs",
+      "source_sha256": "88d6b1d0d81da090f6c6c2324b5b6180a5314d792c2943f80b7d85e824a71721",
+      "prompt_sha256": "ac391f1494d0b898395784db95dbbaaff3c2fe143e7193d0c9345a215ad93143"
+    },
+    {
+      "id": "a8841f52c769c8bc",
+      "split": "heldout",
+      "source_file": "crates/memra-gguf/src/model_packs/step35/mod.rs",
+      "source_sha256": "57151dcb1d0493fd45648bdcae268649b65b11de5d36e011ed9ac9ac86a058a4",
+      "prompt_sha256": "2d43d2b8066464ed30939a176c4b936815cb49459300fbe823edb7999f0e5243"
+    },
+    {
+      "id": "ab6d188be5bd4de2",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/eagle.rs",
+      "source_sha256": "7946aac420a748c4b2cdea392025a98def3f2a460351db85a895755b6817972d",
+      "prompt_sha256": "c9f7af25d350b4b9cbb73bd6ad2ed8abf58f182582102855d95e6d9a49c5d2d1"
+    },
+    {
+      "id": "adfc753c1dfb2bc6",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/spec_phase.rs",
+      "source_sha256": "7b558da4474ecd50c9b85b4f11336e7b1475976cb67c7c27b8ff2f2f3c462d8d",
+      "prompt_sha256": "f35762beca16ef8bca188308477d10c0729854fb58fa33cbf9aae7f30aecb391"
+    },
+    {
+      "id": "b0c89c88f864097f",
+      "split": "heldout",
+      "source_file": "crates/memra-tokenizer/src/json.rs",
+      "source_sha256": "eae69fd99170c027035e95b3b291b0a1137156d993f41730fee46cc8f8beb473",
+      "prompt_sha256": "0383ed32d2fe78451af020c2d10a35619f54576abbb80b398a1168ebeae6e8aa"
+    },
+    {
+      "id": "b57b4d994b9a8bb7",
+      "split": "heldout",
+      "source_file": "crates/memra-gguf/examples/dump_scales.rs",
+      "source_sha256": "4a937566ec3cacce75a63471c88e3fd00a9db5b0a88fabdd2ed674e0f639e4a4",
+      "prompt_sha256": "c0121da40a13aefb1aba1dbd2b45eb5873eea8de33168f700774bd21c2eacc3e"
+    },
+    {
+      "id": "b5e291c5d9c294b9",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/glm_spec/prime.rs",
+      "source_sha256": "93c48c2788a908c7551af94aed6d4a3dd021a5b70d2f51963c74842cad4bb09d",
+      "prompt_sha256": "544a5b4afb2d494a2e218fc85752c156d511676184b98c61016c8e8655e2230b"
+    },
+    {
+      "id": "b65ba7f4a7640cea",
+      "split": "train",
+      "source_file": "crates/memra-reference/src/speech/rnnt_head.rs",
+      "source_sha256": "f085ec10ab4978ad97e749cf956203305ea2a3247d01a764189e029352b1ed07",
+      "prompt_sha256": "7d0885caa69c28b226aea015e24554d0637ce84fdcbe5cb9ba98892e092f20f8"
+    },
+    {
+      "id": "b7712c484a7c3172",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/moe_cache.rs",
+      "source_sha256": "e979dbcc411fcbd8e2d6614bf04111459c6dfeb588ebbcc1cf43d752dec1aab7",
+      "prompt_sha256": "7c813d3ab9f72107dae2a9a9f1437660941df4bed2f58d4868dd6e6ab6be2817"
+    },
+    {
+      "id": "c0b8bcbf4f614674",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/glm5_next/mod.rs",
+      "source_sha256": "5b6caaf92a7df8793c4587f2017385004b464b2c96527bc457614feb1e7c5b2f",
+      "prompt_sha256": "9986e5910e1d48208afd92d2741995c2d787fcd3822b8109ca79100060dd7015"
+    },
+    {
+      "id": "c1f1ff8aeda71ecc",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/moe_sel_dump.rs",
+      "source_sha256": "ebbed0067ab7b54249436c01f701c789006607939b81c09a93a4e25985b0f0c3",
+      "prompt_sha256": "06fbcd14e6a1e51459b844888993bc5afed6213108051258ae8af414c8104ce6"
+    },
+    {
+      "id": "c4cc8e1df072f9e9",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/forward.rs",
+      "source_sha256": "371ca1b68ef75e255f93261411175f136e5c1897b795a4b4901b6b908fdc615a",
+      "prompt_sha256": "43644701590c9514221fd358bc2fe4a5f24569ef1ef1553812906627898a0383"
+    },
+    {
+      "id": "c8fd32ab328d7a87",
+      "split": "heldout",
+      "source_file": "crates/memra-server/build.rs",
+      "source_sha256": "50e5bf1f4ea5b8606f4c856461f749e6a4f3afd109c2d7818684af0bb7ea86c9",
+      "prompt_sha256": "4afbc710fca280cd2a75b263422b7b77708c5fdbb79be0482eb40ad24639ca4f"
+    },
+    {
+      "id": "ca12fb08713fdd2e",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/gemma4_moe/mod.rs",
+      "source_sha256": "2367f8749a1d6f1cd7c48638eb7f3c2346c134b443f917f0f99746730bcf85a8",
+      "prompt_sha256": "1bbeca4d5be20f50dfcbf865444cbae64224ddaff1544b92231ea361a60d57d6"
+    },
+    {
+      "id": "cab5dcb0177baeca",
+      "split": "train",
+      "source_file": "crates/memra-runtime/src/lib.rs",
+      "source_sha256": "93e26d37268285cab68f0e5ddf697175191645875a4417fb7c8eb42c21616d33",
+      "prompt_sha256": "e0cb76bbe3f28e284581d09d7d2792205267b795e021d2ba9aa532d240a2a0d0"
+    },
+    {
+      "id": "cc7ffb43fa967d82",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/tp_transport.rs",
+      "source_sha256": "098c4897e873c882a3c860f7d2dadbb137c6e8937c0e9c086dbacb3c37ae6aa2",
+      "prompt_sha256": "45f572801ab5026d56218b9d03157c0be809344d5bbdc0ec8f17c7f85bd7d9c8"
+    },
+    {
+      "id": "cfcad46802666236",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/hyper.rs",
+      "source_sha256": "3f98a27d11734a603b00ca59b357e18416bd6a73dc26008dbeebf303efffe93f",
+      "prompt_sha256": "7b8e05c507c5c72aa3de293644d6e88a52bd32caf1ff4a78b5da2bf96fc77dbe"
+    },
+    {
+      "id": "cfce3298f321ca9a",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/ep_map.rs",
+      "source_sha256": "131ce6fa0294aec9908f05e9a1ecfa918aab3cb0b6bba631a08971dbda6c7ae1",
+      "prompt_sha256": "d08db2c13eadbcc9bdcb256c4641c890bf963eb4379c56f224bc5f325f6dbd28"
+    },
+    {
+      "id": "d2e6c3055755bcba",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/decode_batch.rs",
+      "source_sha256": "fa3ee3528f7388023365ea3cce76d3efacdcc5cf4bff28e15efaa04c1421da54",
+      "prompt_sha256": "99ff0436c55b5653f858c2e0267092440a05da483f2e355b841609fd0e6f126c"
+    },
+    {
+      "id": "d374459b6d463f10",
+      "split": "train",
+      "source_file": "crates/memra-tokenizer/src/chat.rs",
+      "source_sha256": "5c991a2bc51afe7414bf2351cf4e94549c30affeac4e8fc4f24d1fdf7b1d95ba",
+      "prompt_sha256": "c94e6fabf1551125e0780e48802d9cf24ff14141a8deb262961bd9f003f89ac6"
+    },
+    {
+      "id": "d3a2175cb4a381e2",
+      "split": "heldout",
+      "source_file": "crates/memra-engine/src/dsv4_c4.rs",
+      "source_sha256": "67ca06a2ea471f66e6508fc4115d8aff54625e6b1157b7a421e6327497cbac42",
+      "prompt_sha256": "78d638f00904fd69f748cd49419efbed77d9d55dfe87eea173153e61dea0c9b8"
+    },
+    {
+      "id": "d50c8482efe0807e",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/nemotron_rnnt/mod.rs",
+      "source_sha256": "ae462b18f6689803b91744dd89a3300c88b6086beab4e0bbe8832b7894ad884c",
+      "prompt_sha256": "87535c59689eb50f56e481674db5db78d50c9cbc79545c69c66aa3d604bf58fe"
+    },
+    {
+      "id": "d7c9a52f77484908",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_small_kernel_gate.rs",
+      "source_sha256": "7e7480caf18569258f2c56f64b015833c39be0017b04b28dc59ce844bf977341",
+      "prompt_sha256": "a35ca2ad7fce7643589165875e5e57ba450cc214404a45c478994fe5c3398533"
+    },
+    {
+      "id": "dc49bc6b9d51deb5",
+      "split": "train",
+      "source_file": "crates/memra-server/src/admit_predict.rs",
+      "source_sha256": "1452bf13246311a3cbf82795689f42152fd7ef804bfb3f2f9e0746c3934f3c75",
+      "prompt_sha256": "78406f1c743fd61f629e21fb526f7ca66606e556442c5c147e1c1db2e494c170"
+    },
+    {
+      "id": "dc930a52dc3698a7",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_grouped.rs",
+      "source_sha256": "89d199012484fc8e46a4c0eb9304f41548e4f7b3125a5f30d454f56020920bae",
+      "prompt_sha256": "62653d2bc94593495b0bbb6341504e5d590fb143786af453a82370e212435a05"
+    },
+    {
+      "id": "e6a01524a151ee35",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/fp8_ffi.rs",
+      "source_sha256": "290f8bfa4e1e6dd3dfbefe8d1fafe93dd984b8289a829dfc728fab497ce59f27",
+      "prompt_sha256": "c40e7a0455deddaaf0fbb10f130f3140b59066f70ce8a943d31490c813a08349"
+    },
+    {
+      "id": "eaf72842671eac82",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_default_engagement_gate.rs",
+      "source_sha256": "bfd99820de7f22fa8babff479f3fe46a6e3e629eeb8cd9e3067efb5f23a4d97d",
+      "prompt_sha256": "952b4ceccc72cb3a636697a860274f761128100c75b5eac83dadd3ae27e56515"
+    },
+    {
+      "id": "ebedac45c140ebc9",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/source.rs",
+      "source_sha256": "f307b8e35a2c1c0bc7ba0ee4f9c9333a9942df50da9ad25531d54758aaf649d2",
+      "prompt_sha256": "9426e3c67c96f49e9c0cc848c779519c130784b276a37cf9a3d6cf9f2410695f"
+    },
+    {
+      "id": "ec9dbea4a627a415",
+      "split": "train",
+      "source_file": "crates/memra-gguf/src/model_packs/hy3/mod.rs",
+      "source_sha256": "11feb02377bc3ba560a895abdee6d0d72839b820e6c2787e0a3446bbdc94176c",
+      "prompt_sha256": "ba1e024e22b2f64e92f280d84cec17cc7df1780f99145dbc9553cabd8d7fdb3f"
+    },
+    {
+      "id": "eee297a4e4921159",
+      "split": "train",
+      "source_file": "crates/memra-reference/src/speech/text.rs",
+      "source_sha256": "95aa8d76438470be119ea078076f3581fcafbfad308381aaf64c2155c14d24e1",
+      "prompt_sha256": "641c7b542f639ce2c5a7081d8b804b57b6ac300c4c56ec419b551ca38bbd67e4"
+    },
+    {
+      "id": "f063f405be65e993",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_full_token_replay_gate.rs",
+      "source_sha256": "a7e9b89ac82e38776f7283acc223bfe0e02ae08e82622c1f5de1f3003aedf467",
+      "prompt_sha256": "bcf0301a7ee5b662423a98d0151b42d66fc019998159a4c9f61240b6e4a3cc1c"
+    },
+    {
+      "id": "f29d571c1d31bddb",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/dsv4_ffi.rs",
+      "source_sha256": "da537f7dcf11a6da15b2df3639932e215e1c44498dcc286d67e18b81c59f05d0",
+      "prompt_sha256": "d2e6f041b47b6ff0d7ab7a6a2702a84a3560ced4f19886dc6fab4eb6b856a5ba"
+    },
+    {
+      "id": "f31fd7397479dce0",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/parallel.rs",
+      "source_sha256": "c55a022c97931a8cf9a439d191253c2805ff30d55b4a3de8d7afd5cd50f111dc",
+      "prompt_sha256": "326ea51ffcc641c65ad80fa51b5ba48bc6e5130b848970058314e30832603df5"
+    },
+    {
+      "id": "f47586141537c19e",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/vision_pre.rs",
+      "source_sha256": "3905a66c0277bed9abf6cfdf758df91a14114985e45c9159ee0c343140b2e8a3",
+      "prompt_sha256": "20c94f6bb8a38f8df069d192a967fcec409574f8ffd2bce5035569103a1bb9b2"
+    },
+    {
+      "id": "f50a5ddfb4973f20",
+      "split": "train",
+      "source_file": "crates/memra-engine/src/vision_glm5.rs",
+      "source_sha256": "a186f9a4f253f92300d09642771b3e1842ebd82a36416246c127533bec74598a",
+      "prompt_sha256": "33dd35a616ee007bc26a390b024fc74db2cc0b2b12c115d4be59107489b11ff3"
+    },
+    {
+      "id": "f8f79583ebaa7f7c",
+      "split": "train",
+      "source_file": "crates/memra-tokenizer/src/unicode.rs",
+      "source_sha256": "b0d3f8815442d6fa8c7979f8d6046f986c3a0351a864096b97c6fcb7a9b6325c",
+      "prompt_sha256": "55e40ef2245bae8491380d76c3889156269ae9a0181221ba150356d816b23133"
+    },
+    {
+      "id": "f9239aa337ce17ce",
+      "split": "train",
+      "source_file": "crates/memra-reference/src/lib.rs",
+      "source_sha256": "abe8386458a42f23d920d829ad25ca15bba7005a01a7bdfbd7af06c035c9958c",
+      "prompt_sha256": "b96f58b320924d5a6fa3195afb2626bf4978466fa18c176828d9558bd2aeaad6"
+    },
+    {
+      "id": "ffff7c6d51b2a5c0",
+      "split": "train",
+      "source_file": "crates/memra-server/src/ttft.rs",
+      "source_sha256": "307ba5e5ebdc304258be6e62a0b97e15b825c41196708c181c4663655d1c7326",
+      "prompt_sha256": "5f81fdc9d2aa07d9928ad2051cccd5944594cc15c28f708b54e4c8694d3e87fc"
+    }
+  ]
+}
