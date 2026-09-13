@@ -379,8 +379,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t1 = std::time::Instant::now();
         let spec = model.generate_spec_gemma(&e, &mut draft, &toks, n_new, k, &[])?;
         e.stream().synchronize()?;
-        let dt_spec = t1.elapsed().as_secs_f64()
-            - memra_engine::PRIME_NANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9;
+        let spec_request_seconds = t1.elapsed().as_secs_f64();
+        let spec_prime_seconds =
+            memra_engine::PRIME_NANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9;
+        let dt_spec = spec_request_seconds - spec_prime_seconds;
+        println!(
+            "spec timing: request_seconds={spec_request_seconds:.9} prime_seconds={spec_prime_seconds:.9} decode_seconds={dt_spec:.9} emitted={}",
+            spec.len()
+        );
         let same = plain.iter().zip(&spec).take_while(|(a, b)| a == b).count();
         if spec_only {
             println!("spec: {:.2} tok/s (spec-only)", spec.len() as f64 / dt_spec);

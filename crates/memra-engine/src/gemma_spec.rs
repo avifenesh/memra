@@ -77,6 +77,8 @@ pub struct TrimAdapt {
     n_spare: usize,
     used: usize,
     logged_full: bool,
+    /// Research ablation: retain identical allocation and initial rows, skip updates.
+    frozen: bool,
 }
 
 impl TrimAdapt {
@@ -138,6 +140,9 @@ fn trim_adapt_learn(
     else {
         return Ok(());
     };
+    if ta.frozen {
+        return Ok(());
+    }
     for &tok in toks {
         ta.maybe_add(e, tok, head, d2t, d2t_dev)?;
     }
@@ -350,6 +355,7 @@ impl GemmaDraft {
                             n_spare,
                             used: 0,
                             logged_full: false,
+                            frozen: std::env::var("MEMRA_GEMMA_TRIM_FREEZE").as_deref() == Ok("1"),
                         }
                     });
                     let mut d2t = ids;
