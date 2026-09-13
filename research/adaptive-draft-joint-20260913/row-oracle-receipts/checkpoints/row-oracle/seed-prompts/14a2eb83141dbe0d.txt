@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn mla_coalesce_on() -> bool {
+    std::env::var("MEMRA_MLA_COALESCE").as_deref() == Ok("1")
+}
+
+/// Announce once per boot, naming the kernel and the split it composed with, because a door
+/// that silently changes which kernel runs is the failure class this lane spent a day on.
+fn mla_coalesce_announce(which: &str, t_q: usize, n_head: usize, split: i32) {
+    use std::sync::atomic::Ordering;
+    if MLA_COALESCE_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
+        eprintln!(
+            "[mla-coalesce] engaged {which} t_q={t_q} n_head={n_head} split={split} \
+             (warp-per-row coalesced loads + shuffle reduction; numeric class \
+             mla_warp_row_reduce; MEMRA_MLA_COALESCE=1)"
+        );
+    }
+}
+
+fn mla_decode_split_on() -> bool {
+    std::env::var("MEMRA_MLA_DECODE_SPLIT").as_deref() == Ok("1")
+}
+
+/// The split policy: engage only in the block-starved regime (fewer than 1024 (token, head)
+/// blocks — decode and short verify widths; prefill widths already fill the card and the TC
+/// prefill chain owns them anyway), aiming for ~1024 blocks while keeping at least 32 outputs
+/// per block. The OUTPUT BYTES ARE SPLIT-INVARIANT by construction, so this arithmetic is a
+/// throughput policy, never a numerics decision.
+fn mla_decode_split_for(blocks: usize, out_dim: usize) -> Option<i32> {
+    if !mla_decode_split_on() || blocks == 0 || blocks >= 1024 {
+        return None;
+    }
+    let want = 1024usize.div_ceil(blocks);
+    let cap = (out_dim / 32).max(1);
+    let split = want.min(cap);
+    if split <= 1 { None } else { Some(split as i32) }
+}
+
+```

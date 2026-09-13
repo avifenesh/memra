@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn main() -> Result<(), DriverError> {
+    let ctx = CudaContext::new(0)?;
+    let stream = ctx.default_stream();
+
+    // --- Device caps (sanity vs our known sm_120 facts) ---
+    use cudarc::driver::sys::CUdevice_attribute as A;
+    let cc_major = ctx.attribute(A::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
+    let cc_minor = ctx.attribute(A::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
+    let sms = ctx.attribute(A::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)?;
+    println!("device: {}", ctx.name()?);
+    println!("compute capability: {cc_major}.{cc_minor}  SMs: {sms}");
+    assert_eq!((cc_major, cc_minor), (12, 0), "expected sm_120");
+
+    // --- Load the fatbin module built by build.rs (File variant -> cuModuleLoad accepts fatbin) ---
+    let module = ctx.load_module(Ptx::from_file(env!("MEMRA_FATBIN")))?;
+
+    // --- Test 1: vec_add elementwise (correctness oracle for the launch path) ---
+    let f = module.load_function("vec_add")?;
+    let n: i32 = 1 << 20;
+    let a: Vec<f32> = (0..n).map(|i| i as f32).collect();
+    let b: Vec<f32> = (0..n).map(|i| (2 * i) as f32).collect();
+    let a_dev = stream.clone_htod(&a)?;
+    let b_dev = stream.clone_htod(&b)?;
+    let mut c_dev = stream.alloc_zeros::<f32>(n as usize)?;
+    let cfg = LaunchConfig::for_num_elems(n as u32);
+    let mut lb = stream.launch_builder(&f);
+    lb.arg(&a_dev).arg(&b_dev).arg(&mut c_dev).arg(&n);
+    unsafe { lb.launch(cfg)? };
+    let c = stream.clone_dtoh(&c_dev)?;
+    let ok = c
+        .iter()
+        .enumerate()
+        .all(|(i, &v)| (v - (3 * i) as f32).abs() < 1e-3);
+    println!("vec_add correct: {ok}  (c[7]={}, expect 21)", c[7]);
+    assert!(ok, "vec_add wrong");
+
+```

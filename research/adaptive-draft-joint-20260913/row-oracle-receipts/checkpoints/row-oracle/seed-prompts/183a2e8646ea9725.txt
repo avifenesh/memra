@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn trim_adapt_learn(
+    e: &Engine,
+    d: &mut GemmaDraft,
+    toks: &[u32],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let GemmaDraft {
+        trim_adapt,
+        head,
+        d2t,
+        d2t_dev,
+        ..
+    } = d;
+    let (Some(ta), Some(d2t), Some(d2t_dev)) =
+        (trim_adapt.as_mut(), d2t.as_mut(), d2t_dev.as_mut())
+    else {
+        return Ok(());
+    };
+    for &tok in toks {
+        ta.maybe_add(e, tok, head, d2t, d2t_dev)?;
+    }
+    Ok(())
+}
+
+impl GemmaDraft {
+    /// Adaptive-trim stats: (slots used, slot budget). None when adaptation is off.
+    pub fn trim_adapt_stats(&self) -> Option<(usize, usize)> {
+        self.trim_adapt.as_ref().map(|ta| (ta.used, ta.n_spare))
+    }
+
+    /// Persist the learned trim rows: append ids not yet in the sidecar to
+    /// `<ranks>.learned` (the load path pre-fills spare slots from it, so a distribution's
+    /// escapes pay their first-miss round ONCE across the serve lifetime, not per request).
+    pub fn trim_adapt_save(&self) -> std::io::Result<usize> {
+        let (Some(ta), Some(d2t), Some(path)) = (
+            self.trim_adapt.as_ref(),
+            self.d2t.as_ref(),
+```

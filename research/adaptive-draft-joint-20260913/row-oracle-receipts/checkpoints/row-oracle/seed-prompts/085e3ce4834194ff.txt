@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn reap_finished_workers(workers: &mut Vec<std::thread::JoinHandle<()>>) {
+    let mut index = 0;
+    while index < workers.len() {
+        if workers[index].is_finished() {
+            // Dropping a handle whose worker already finished never waits. In particular, the
+            // serving-thread rearm path must not join even briefly while admitting a request.
+            drop(workers.swap_remove(index));
+        } else {
+            index += 1;
+        }
+    }
+}
+
+impl AbandonedWorkers {
+    fn new(model: &str) -> Self {
+        Self {
+            model: model.to_string(),
+            workers: std::sync::Mutex::new(Vec::new()),
+            fail_closed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    fn is_fail_closed(&self) -> bool {
+        self.fail_closed.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn update_latch(&self, outstanding: usize) {
+        let fail_closed = outstanding >= CONSTRAINT_ABANDONED_WORKER_CAP;
+        if self
+            .fail_closed
+            .swap(fail_closed, std::sync::atomic::Ordering::AcqRel)
+            == fail_closed
+        {
+            return;
+        }
+        if fail_closed {
+```

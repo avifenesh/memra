@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn tail_ends_with_tool_call(tail: &str) -> bool {
+    let t = tail.trim_end();
+    t.ends_with(CLOSE) || t.ends_with(GEMMA_CALL_CLOSE) || t.ends_with(DSV4_CLOSE)
+}
+
+/// Length of the longest PROPER prefix of `tag` that `s` ends with. NOTE: byte-indexed —
+/// callers holding back `keep` bytes must only do so on ASCII tags (always a char
+/// boundary) or re-check boundaries (the stop-scrubber truncates on char_indices).
+pub fn partial_suffix_len(s: &str, tag: &str) -> usize {
+    let max = (tag.len() - 1).min(s.len());
+    for k in (1..=max).rev() {
+        // `tag[..k]` must slice at a char boundary — the dsv4 markers carry the multibyte
+        // `｜` (U+FF5C, 3 bytes), so a byte-index k inside it is not a valid slice. Skip
+        // non-boundary k (a no-op for the ASCII qwen/gemma tags, where every index is one).
+        if tag.is_char_boundary(k) && s.ends_with(&tag[..k]) {
+            return k;
+        }
+    }
+    0
+}
+
+impl ToolStreamParser {
+    /// `schemas`: function name -> parameter -> declared JSON-schema type string.
+    /// `skip_think`: true when the rendered prompt ends with an open `<think>\n` tail.
+    pub fn new(schemas: HashMap<String, HashMap<String, String>>, skip_think: bool) -> Self {
+        Self {
+            state: if skip_think {
+                State::Prethink
+            } else {
+                State::Scan
+            },
+            buf: String::new(),
+            schemas,
+            n_calls: 0,
+            scan_tools: true,
+            gemma: false,
+```

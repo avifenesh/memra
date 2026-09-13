@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub fn replay_realtime(
+    policy: AudioPolicy,
+    streams: usize,
+    audio_ms: u64,
+    cost: &dyn StepCost,
+) -> ReplayOutcome {
+    let mut sched = AudioScheduler::new(policy, true);
+    let mut refused: Vec<AudioShed> = Vec::new();
+    let mut bad: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for i in 0..streams {
+        let id = format!("s{i}");
+        if let Err(e) = sched.open(&id, Lane::Interactive, 0) {
+            bad.insert(id);
+            refused.push(e);
+        }
+    }
+
+    // Virtual clock in 1 ms ticks. Two independent timelines: frame arrivals (every
+    // FRAME_MS per stream) and the device (busy until `device_free_ms`).
+    let mut device_free_ms: u64 = 0;
+    let mut in_flight: Vec<String> = Vec::new();
+    let mut in_flight_ms: f64 = 0.0;
+    let horizon = audio_ms + FRAME_MS * 4;
+
+    for now in 0..=horizon {
+        // arrivals
+        if now % FRAME_MS == 0 && now < audio_ms {
+            for i in 0..streams {
+                let id = format!("s{i}");
+                if bad.contains(&id) {
+                    continue;
+                }
+                if let Err(e) = sched.offer(&id, now) {
+                    bad.insert(id);
+                    refused.push(e);
+```

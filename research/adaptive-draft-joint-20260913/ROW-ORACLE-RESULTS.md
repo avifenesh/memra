@@ -83,6 +83,10 @@ hashes, prompt hashes, raw logs, complete token arrays, trace hashes, reached
 prefixes and fixed settings. `row-oracle-receipt-hashes.json` covers every
 banked file; `row-oracle-audit.json` contains the utility table, calibration
 grid, per-prompt results and separate held-out code/prose metrics.
+Run `python verify_row_evidence.py` to verify the full file manifest, the original
+seed prompt bytes, balanced run order, and equality with every metric produced by
+the preregistered analysis script. The 12 seed prompts are copied byte-for-byte
+from the hash-verified original uploaded corpus archive.
 
 Follow [ROW-POLICY-GATES.md](ROW-POLICY-GATES.md): physical replacement, bounded
 candidate discovery, admission, eviction, then actual online head-only benefit.
@@ -94,6 +98,7 @@ current per-token table does not establish an advantage from learned utility;
 do not tune it further on this held-out set or promote it to runtime. The full
 probe remains an explicit default-OFF research diagnostic.
 
-All 399 evidence files were banked locally. The rented instance was confirmed
+All 399 rental/failure evidence files and 12 original seed prompts are banked locally
+(411 files total). The rented instance was confirmed
 destroyed at 2026-09-13 14:57:19 UTC after a manual takeover from an SSH-timed-out
 cleanup guard. No serving deployment, upstream push or combined-policy run occurred.

@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+fn call_output_text(v: Option<&Value>) -> Result<String, String> {
+    match v {
+        None | Some(Value::Null) => Ok(String::new()),
+        Some(Value::String(s)) => Ok(s.clone()),
+        Some(Value::Array(parts)) => {
+            let mut out = String::new();
+            for p in parts {
+                match p.get("type").and_then(|t| t.as_str()) {
+                    Some("input_text") | Some("output_text") | Some("text") => out.push_str(
+                        p.get("text")
+                            .and_then(|t| t.as_str())
+                            .ok_or("output content item has no text field")?,
+                    ),
+                    other => {
+                        return Err(format!(
+                            "function_call_output content item type {other:?} is not \
+                             supported (text only)"
+                        ));
+                    }
+                }
+            }
+            Ok(out)
+        }
+        Some(other) => Err(format!(
+            "function_call_output.output must be a string or content array, got {other}"
+        )),
+    }
+}
+
+/// Message content: a string, or an array of typed parts.
+fn message_content(v: Option<&Value>, at: &str) -> Result<Value, String> {
+    match v {
+        None | Some(Value::Null) => Ok(json!("")),
+        Some(Value::String(s)) => Ok(json!(s)),
+        Some(Value::Array(parts)) => {
+            let mut out: Vec<Value> = Vec::new();
+```

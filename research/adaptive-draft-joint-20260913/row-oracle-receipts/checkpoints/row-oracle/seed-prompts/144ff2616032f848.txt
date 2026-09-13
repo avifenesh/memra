@@ -1,0 +1,40 @@
+Review this Rust source excerpt. Explain its purpose, inputs, outputs and state changes, then identify two important edge cases and propose focused tests. If surrounding definitions are missing, state the assumption instead of inventing behavior.
+
+```rust
+pub(crate) fn configured() -> bool {
+    std::env::var_os("MEMRA_CPU_EXPERT_LIB").is_some()
+}
+
+fn threads_from_env() -> Result<i32, String> {
+    let value = match std::env::var("MEMRA_CPU_EXPERT_THREADS") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(format!("cannot read MEMRA_CPU_EXPERT_THREADS: {error}")),
+    };
+    parse_thread_count(value.as_deref())
+}
+
+fn parse_thread_count(value: Option<&str>) -> Result<i32, String> {
+    let raw = value.unwrap_or("8");
+    let threads = raw
+        .parse::<i32>()
+        .map_err(|_| format!("MEMRA_CPU_EXPERT_THREADS={raw:?} is not an integer"))?;
+    if !(1..=256).contains(&threads) {
+        return Err(format!(
+            "MEMRA_CPU_EXPERT_THREADS={threads} is outside 1..=256"
+        ));
+    }
+    Ok(threads)
+}
+
+fn dl_error(context: &str) -> String {
+    // SAFETY: dlerror returns either null or a process-owned NUL-terminated diagnostic.
+    let detail = unsafe {
+        let pointer = libc::dlerror();
+        if pointer.is_null() {
+            "unknown dynamic-loader error".to_string()
+        } else {
+            CStr::from_ptr(pointer).to_string_lossy().into_owned()
+        }
+    };
+```
