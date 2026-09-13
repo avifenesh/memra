@@ -66,7 +66,10 @@ pseudo-observations. Unseen candidates have utility zero. Pick the highest-utili
 available candidate, with token-ID tie break, only above a threshold. Select that
 threshold on calibration prompt-mean utility from {0,0.01,0.025,0.05,0.1,1.0}; ties
 prefer the higher threshold. Freeze before held-out evaluation. Compare with no
-change and highest-scoring outside insertion. Save counts, scores, threshold and
+change, highest-scoring outside insertion, and a training-only target-frequency
+selector (no action when no available candidate was a training target). Evaluate
+all policies on the same states, excluding any state with an ambiguous candidate
+comparison. Save counts, scores, threshold and
 all split metrics. This is a first table estimator, not a novel algorithm or a
 competitive replacement-policy verdict. It excludes candidate-probe cost and
 does not replay changed draft suffixes, so it cannot establish inference speedup.

@@ -22,7 +22,21 @@ def swap_label(state, candidate):
         return None
     if value > score:
         winner = token
+    elif len(survivors) > 1 and abs(score-survivors[1][1]) <= state['tolerance']:
+        return None
     return int(winner == state['target']) - int(state['correct'])
+
+
+def check_counterexamples():
+    state = {'active_top': [[1, 4.0, 0], [2, 3.0, 4096], [3, 2.0, 1]],
+             'core_rows': 4096, 'target': 99, 'correct': False, 'tolerance': 1e-5}
+    assert swap_label(state, [99, 3.5]) == 0  # Missing but insertion cannot win.
+    assert swap_label(state, [99, 5.0]) == 1  # Missing and insertion repairs.
+    assert swap_label({**state, 'target': 1, 'correct': True}, [99, 5.0]) == -1
+    mutable = {**state, 'active_top': [[1, 4.0, 4096], [99, 3.0, 0], [3, 2.0, 1]]}
+    assert swap_label(mutable, [50, 1.0]) == 1  # Removal repairs with low filler.
+    assert swap_label({**mutable, 'target': 1, 'correct': True}, [50, 1.0]) == -1
+    assert swap_label(state, [99, 4.0]) is None  # No unsupported tie claim.
 
 
 def analyze(bank):
@@ -68,9 +82,11 @@ def analyze(bank):
                 'any_one_swap_rescue': sum(s['addition_rescue'] or s['removal_rescue'] or s['swap_rescue'] for s in wrong),
                 'correct_states_exposed_to_top16_harm': sum(s['correct'] and s['harmful_outside_top16'] > 0 for s in valid)}
     counts = defaultdict(lambda: [0, 0])
+    frequency = defaultdict(int)
     for s in states:
         if s['split'] != 'train' or not s['overlap_argmax_match']:
             continue
+        frequency[s['target']] += 1
         for c in s['outside_top16']:
             label = swap_label(s, c)
             if label is not None:
@@ -85,9 +101,17 @@ def analyze(bank):
         for s in states:
             if s['split'] != split or not s['overlap_argmax_match']:
                 continue
+            # All policies share the same numerical eligibility, including no-op.
+            if any(swap_label(s, c) is None for c in s['outside_top16']):
+                ambiguous += 1
+                continue
             value = 0
             if policy == 'highest_outside':
                 choice = s['outside_top16'][0]
+            elif policy == 'frequency':
+                choice = max(s['outside_top16'], key=lambda c: (frequency.get(c[0], 0), -c[0]))
+                if frequency.get(choice[0], 0) == 0:
+                    choice = None
             elif policy == 'learned':
                 choice = max(s['outside_top16'], key=lambda c: (utilities.get(c[0], 0), -c[0]))
                 if utilities.get(choice[0], 0) <= threshold:
@@ -112,8 +136,8 @@ def analyze(bank):
     # Scores/calibration are fixed above. Held-out labels never enter fitting/selection.
     estimator = {'prior_exposures': 4, 'candidate_rows': len(utilities),
         'table': {str(k): {'sum_delta': counts[k][0], 'n': counts[k][1], 'utility': v} for k, v in utilities.items()},
-        'calibration_grid': grid, 'selected_threshold': threshold,
-        'metrics': {split: {p: evaluate(split, threshold, p) for p in ['no_change', 'highest_outside', 'learned']} for split in ['train', 'calibration', 'heldout']},
+        'calibration_grid': grid, 'selected_threshold': threshold, 'training_target_frequency': dict(frequency),
+        'metrics': {split: {p: evaluate(split, threshold, p) for p in ['no_change', 'highest_outside', 'frequency', 'learned']} for split in ['train', 'calibration', 'heldout']},
         'scope': 'Offline one-step candidate admission to a fixed victim using expensive probe scores; not online policy, speedup, or novelty evidence.'}
     pairs = {}
     for r in runs:
@@ -133,6 +157,7 @@ def analyze(bank):
 
 
 if __name__ == '__main__':
+    check_counterexamples()
     p = argparse.ArgumentParser()
     p.add_argument('bank', type=Path)
     p.add_argument('--out', type=Path, required=True)
