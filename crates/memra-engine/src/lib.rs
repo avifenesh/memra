@@ -86,6 +86,7 @@ pub mod eagle;
 /// minted by the shared fleet tool from `MEMRA_MOE_WEIGHT_TRACE` traces). No CUDA deps.
 pub mod ep_map;
 pub mod gemma_spec;
+mod gemma_row_probe;
 pub mod glm5_decode_graph;
 pub mod glm5_sel_ledger;
 pub mod glm5_tp;

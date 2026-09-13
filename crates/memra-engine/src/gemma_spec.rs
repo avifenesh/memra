@@ -750,6 +750,28 @@ impl HybridModel {
         // prompt is the cheapest predictor of what the trim is about to miss.
         trim_adapt_learn(e, d, prompt)?;
 
+        let mut row_probe = if let Ok(path) = std::env::var("MEMRA_GEMMA_ROW_PROBE") {
+            for (name, expected) in [
+                ("MEMRA_GEMMA_TRIM_FREEZE", "1"),
+                ("MEMRA_SPEC_ADAPT", "0"),
+                ("MEMRA_SPEC_PMIN", "0"),
+                ("MEMRA_SPEC_PMIN_INROUND", "0"),
+                ("MEMRA_GEMMA_DRAFT_GRAPH", "0"),
+                ("MEMRA_GEMMA_ROUND_GRAPH", "0"),
+            ] {
+                if std::env::var(name).as_deref() != Ok(expected) {
+                    return Err(format!("row probe requires {name}={expected}").into());
+                }
+            }
+            let ta = d.trim_adapt.as_ref().ok_or("row probe requires a trimmed adaptive head")?;
+            if !matches!(&d.head, GpuTensor::Quant { qtype, rp: false, .. } if *qtype == crate::QT_Q8_0) {
+                return Err("row probe currently qualifies only a native Q8_0 draft head".into());
+            }
+            Some(crate::gemma_row_probe::RowProbe::new(e, &path, &ta.src_rows, ta.row_bytes, d.n_embd, ta.n_vocab)?)
+        } else {
+            None
+        };
+
         let t_prime = std::time::Instant::now();
         // short prompts fall below prime_cache's T floor — the batched verify IS a prime.
         let (pl, h_seed) = if prompt.len() >= crate::hybrid_forward::PRIME_MIN_T {
@@ -983,6 +1005,8 @@ impl HybridModel {
             .map(|g| g.shared_kv_layers)
             .unwrap_or(0);
         'outer: while out.len() < max_new {
+            let probe_this_round = row_probe.is_some() && rounds % 16 == 0;
+            let probe_captures = std::cell::RefCell::new(Vec::new());
             let mut kr = if adapt { kc } else { k_cap };
             // power-of-2 rung bucket for the dc arms (shared by eager and captured replays);
             // MEMRA_GEMMA_DRAFT_DC=0 reverts to the host-len kvmod arm.
@@ -1030,6 +1054,13 @@ impl HybridModel {
                         dc_bucket,
                     )?;
                     let ld = e.matmul(&d.head, &hn, 1)?;
+                    if probe_this_round {
+                        let started = std::time::Instant::now();
+                        let full = e.matmul(&row_probe.as_ref().unwrap().full_head, &hn, 1)?;
+                        let active_host = e.dtoh(&ld)?;
+                        let full_host = e.dtoh(&full)?;
+                        probe_captures.borrow_mut().push((active_host, full_host, started.elapsed().as_nanos()));
+                    }
                     e.argmax_token_device_col(&ld, 0, d.head.out_features(), batch_d, j + 1)?;
                     // confidence-adaptive depth (MEMRA_SPEC_PMIN): TRIM-space prob before d2t.
                     if pmin > 0.0 || inround > 0.0 || draft_trace_enabled {
@@ -1444,6 +1475,17 @@ impl HybridModel {
                 }
             }
             prev_full = m == k; // feeds the self-keyed in-round cut (miss → next round cuts)
+            if probe_this_round {
+                let captures = probe_captures.into_inner();
+                let probe = row_probe.as_mut().unwrap();
+                probe.overhead_ns += captures.iter().map(|(_, _, ns)| ns).sum::<u128>();
+                let eligible = (m + 1).min(k).min(max_new.saturating_sub(out.len() + 1));
+                let core = d.trim_adapt.as_ref().unwrap().spare_base;
+                let map = d.d2t.as_ref().unwrap();
+                for (j, (active, full, _)) in captures.iter().take(eligible).enumerate() {
+                    probe.record(rounds, j, pos0, core, map, active, full, dtoks[j], vam[j])?;
+                }
+            }
             if let Some(file) = draft_trace.as_mut() {
                 use std::io::Write;
                 let probabilities = e.dtoh(&p_d)?;
@@ -1557,6 +1599,9 @@ impl HybridModel {
                 .map(|j| format!("p{j}:{}/{}", pos_acc[j], pos_att[j]))
                 .collect();
             eprintln!("[gemma-spec] per-position accept: {}", hist.join(" "));
+        }
+        if let Some(probe) = row_probe.as_mut() {
+            probe.finish()?;
         }
         Ok(out)
     }
