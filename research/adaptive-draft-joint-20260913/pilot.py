@@ -69,7 +69,8 @@ def run(name, argv, config, timeout=300):
     return row
 
 assert (MODELS/'VERIFIED').exists(), 'Artifacts must be verified before GPU work'
-manifest = {'kind':'correctness-pilot-not-serving-benchmark', 'source_commit':'3bb21381848067d922dec1320261846f99ceb29a',
+source_commit = (ROOT/'SOURCE_COMMIT').read_text().strip() if (ROOT/'SOURCE_COMMIT').exists() else '3bb21381848067d922dec1320261846f99ceb29a'
+manifest = {'kind':'correctness-pilot-not-serving-benchmark', 'source_commit':source_commit,
             'binaries':{name:digest(BIN/name) for name in ['gemma-gate','run-spec','draft_prompt']}}
 source = 'https://raw.githubusercontent.com/lm-sys/FastChat/587d5cfa1609a43d192cedb8441cac3c17db105d/fastchat/llm_judge/data/mt_bench/question.jsonl'
 data = urllib.request.urlopen(source, timeout=60).read()
