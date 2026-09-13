@@ -46,7 +46,7 @@ def analyze(bank, original):
     metrics={kind:evaluate(states,kind,params) for kind,params in model['models'].items()}
     family={kind:{f:statistics.mean(v for p,v in m['per_prompt'].items() if p.split('-')[0]==f)
                   for f in sorted({p.split('-')[0] for p in m['per_prompt']})} for kind,m in metrics.items()}
-    strongest=max(metrics[k]['prompt_mean_delta'] for k in ['frequency','highest'])
+    strongest=max(metrics[k]['prompt_mean_delta'] for k in ['noop','frequency','highest'])
     advance=[k for k in ['utility','conditional','context'] if k in metrics and metrics[k]['prompt_mean_delta']>strongest]
     return {'runs':len(runs),'states':len(states),'source':model['source'], 'checkpoint_sha256':frozen,
         'training_support':model['training_support'], 'metrics':metrics, 'family_means':family,
