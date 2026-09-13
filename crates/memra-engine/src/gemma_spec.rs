@@ -750,6 +750,9 @@ impl HybridModel {
         // prompt is the cheapest predictor of what the trim is about to miss.
         trim_adapt_learn(e, d, prompt)?;
 
+        if std::env::var("MEMRA_GEMMA_ROW_REPLAY").as_deref() == Ok("1") && std::env::var("MEMRA_GEMMA_ROW_PROBE").is_err() {
+            return Err("physical row replay requires MEMRA_GEMMA_ROW_PROBE".into());
+        }
         let mut row_probe = if let Ok(path) = std::env::var("MEMRA_GEMMA_ROW_PROBE") {
             for (name, expected) in [
                 ("MEMRA_GEMMA_TRIM_FREEZE", "1"),
@@ -1073,6 +1076,7 @@ impl HybridModel {
                         probe_captures.borrow_mut().push((
                             active_host,
                             full_host,
+                            if row_probe.as_ref().unwrap().replay { Some(e.dtoh(&hn)?) } else { None },
                             started.elapsed().as_nanos(),
                         ));
                     }
@@ -1493,12 +1497,12 @@ impl HybridModel {
             if probe_this_round {
                 let captures = probe_captures.into_inner();
                 let probe = row_probe.as_mut().unwrap();
-                probe.overhead_ns += captures.iter().map(|(_, _, ns)| ns).sum::<u128>();
+                probe.overhead_ns += captures.iter().map(|(_, _, _, ns)| ns).sum::<u128>();
                 let eligible = (m + 1).min(k).min(max_new.saturating_sub(out.len() + 1));
                 let core = d.trim_adapt.as_ref().unwrap().spare_base;
                 let map = d.d2t.as_ref().unwrap();
-                for (j, (active, full, _)) in captures.iter().take(eligible).enumerate() {
-                    probe.record(rounds, j, pos0, core, map, active, full, dtoks[j], vam[j])?;
+                for (j, (active, full, hidden, _)) in captures.iter().take(eligible).enumerate() {
+                    probe.record(e, hidden.as_deref(), rounds, j, pos0, core, map, active, full, dtoks[j], vam[j])?;
                 }
             }
             if let Some(file) = draft_trace.as_mut() {
