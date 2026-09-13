@@ -85,8 +85,8 @@ pub mod eagle;
 /// design; glm5 is the first consumer). (LAW:coactivation-expert-placement; maps are
 /// minted by the shared fleet tool from `MEMRA_MOE_WEIGHT_TRACE` traces). No CUDA deps.
 pub mod ep_map;
-mod gemma_row_probe;
 mod gemma_candidate_probe;
+mod gemma_row_probe;
 pub mod gemma_spec;
 pub mod glm5_decode_graph;
 pub mod glm5_sel_ledger;

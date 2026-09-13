@@ -39,6 +39,14 @@ def main():
         argv = [str(BIN/'gemma-gate'), str(ROOT/'models/gemma12.gguf')]+list(map(str, encoded[prompt.name]))
         env = {k:v for k,v in os.environ.items() if not k.startswith('MEMRA_')}
         env.update(config)
+        if not (OUT/'admission.json').exists():
+            red_env = dict(env)
+            red_env['MEMRA_GEMMA_ROW_PROBE'] = str(OUT/'refused-full.jsonl')
+            red_env['MEMRA_GEMMA_CANDIDATE_PROBE'] = str(OUT/'refused-bounded.jsonl')
+            with (OUT/'admission.log').open('xb') as f:
+                red = subprocess.run(argv, env=red_env, stdout=f, stderr=subprocess.STDOUT, timeout=300)
+            assert red.returncode != 0 and 'candidate and full row probes must run separately' in (OUT/'admission.log').read_text()
+            (OUT/'admission.json').write_text(json.dumps({'exit_code':red.returncode, 'raw_sha256':sha(OUT/'admission.log'), 'argv':argv, 'config':{k:v for k,v in red_env.items() if k.startswith('MEMRA_')}, 'status':'expected_refusal'}))
         log = OUT/(name+'.log')
         with log.open('xb') as f:
             try: code = subprocess.run(argv, env=env, stdout=f, stderr=subprocess.STDOUT, timeout=300).returncode
