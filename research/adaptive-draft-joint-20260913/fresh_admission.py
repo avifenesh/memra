@@ -61,6 +61,13 @@ def main():
                 red = subprocess.run(argv, env=red_env, stdout=f, stderr=subprocess.STDOUT, timeout=300)
             assert red.returncode != 0 and 'candidate and full row probes must run separately' in (OUT/'admission.log').read_text()
             (OUT/'admission.json').write_text(json.dumps({'exit_code':red.returncode, 'raw_sha256':sha(OUT/'admission.log'), 'argv':argv, 'config':{k:v for k,v in red_env.items() if k.startswith('MEMRA_')}, 'status':'expected_refusal'}))
+        if EXTRA_CONFIG and not (OUT/'cadence-refusal.json').exists():
+            red_env = dict(env); red_env['MEMRA_GEMMA_PROBE_EVERY'] = '0'
+            with (OUT/'cadence-refusal.log').open('xb') as f:
+                red = subprocess.run(argv, env=red_env, stdout=f, stderr=subprocess.STDOUT, timeout=300)
+            assert red.returncode != 0 and 'probe cadence must be positive' in (OUT/'cadence-refusal.log').read_text()
+            (OUT/'cadence-refusal.json').write_text(json.dumps({'exit_code':red.returncode,
+                'raw_sha256':sha(OUT/'cadence-refusal.log'), 'status':'expected_refusal'}))
         log = OUT/(name+'.log')
         with log.open('xb') as f:
             try: code = subprocess.run(argv, env=env, stdout=f, stderr=subprocess.STDOUT, timeout=300).returncode
