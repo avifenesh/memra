@@ -33,8 +33,8 @@ controls are not assumed to affect Qwen. Cross-family replication remains pendin
 ## Schedule and acceptance criteria
 
 Use heldout source-file groups sorted [6:14] from the already sealed prompt manifest:
-eight groups untouched by the earlier six-group pilot. Two repetitions per group,
-opposite AB/BA order, paired adjacent executions. Deterministic random group order
+eight groups untouched by the earlier six-group pilot. Six repetitions per group,
+balanced AB/BA order, paired adjacent executions. Deterministic random group order
 seed 20260913. Each mechanism finishes and writes its own summary before the next.
 One unscored warmup pair precedes each mechanism. Primary metric: paired request
 time ratio B/A, including all learning cost within the request. Decode time and
@@ -46,10 +46,10 @@ freeze control actually suppresses updates, both arms have 4608 rows, and contro
 change drafted length. These trace times are excluded. Every failure is banked and
 halts progression. Plain-vs-spec is a correctness reference, not the timed A/B effect.
 
-N=8 independent prompt groups, two paired repeats per group (16 pairs/mechanism).
+N=8 independent prompt groups, six paired repeats per group (48 pairs/mechanism).
 Average log ratios within group; bootstrap groups 10,000 times for a descriptive
-95% interval. Report all per-pair values and per-group signs. The two repetitions
-measure repeatability but do not double independent N. Compare token hashes across
+95% interval. Report all per-pair values and per-group signs. Repetitions
+measure repeatability but do not multiply independent prompt N. Compare token hashes across
 arms and repetitions, not only against each run's plain reference.
 
 Use a dedicated 5090, serialized lock, 250ms telemetry, archive raw at each mechanism

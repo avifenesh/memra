@@ -157,7 +157,7 @@ def main():
                         rows.append(execute(component, prompts[0], 0, arm, 'diagnostic'))
                     for arm in ['A', 'B']:
                         rows.append(execute(component, prompts[0], 0, arm, 'warmup'))
-                    for repeat in range(2):
+                    for repeat in range(6):
                         order = list(prompts)
                         random.Random(SEED+repeat).shuffle(order)
                         for i, prompt in enumerate(order):
