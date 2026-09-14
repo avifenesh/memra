@@ -17,7 +17,7 @@ Rust + CUDA LLM inference engine for Blackwell (Tuned specifically on RTX PRO 60
 > The lab's hosted API ([inference](https://inference.tiyuvta.ai/model?c=gh-mem-red-infe)) and its
 > deployments ([services](https://tiyuvta.ai/services?c=gh-mem-red-serv)) serve open models
 > **tuned on your workload** on an open serving stack the lab operates; memra's findings feed that
-> tuning. Pay per use, OpenAI-compatible API, no subscription.
+> tuning. The hosted API is OpenAI-compatible.
 
 ## Quick start
 
