@@ -71,6 +71,24 @@ measured on a GPU, because no speech operation has a CUDA kernel yet (§1).
 | --- | --- |
 | `MEMRA_DSV4_SMALL_KERNEL_DIET` | **Default 0**, decide-by: **2026-09-21**. Parsed at model load; accepts only `0` or `1`. `0` retains the separate f32x HC finish (rowsq, Sinkhorn, collapse) and Q-LoRA norm/pack. `1` fuses each HC finish into one launch and Q norm/pack into one launch on all-layer TP/EP, t=1, HC4, hidden4096. Other topology or f64 chains refuse at load; unsupported HC shape refuses before its fused enqueue. Multirow work retains the old path. Both reductions retain the 128-thread tree; Sinkhorn gathers ascending row/column sums with the original iteration count. Expected bitwise classes: `dsv4_hc_f32_fixed_order`, `dsv4_norm_pack_f32_fixed_order`; no tolerance admission. Rollback: restart with `=0`. Gate: `dsv4_tp_ep_sampled_perf_gate --small-kernel-components` on live checkpoint tensors, then `--small-kernel-abba` (10 cycles, radix, sampled envelope, all state digests, actual HC/Q enqueue assertions). The gate's exclusive model setter changes arms between complete walks. Receipt pointer: private Darklanes `research/dsv4f-devpair-20260905/small-kernel-diet-20260907.md`, namespace `small-kernel-diet-29a73db-r1`: both components bit-equal on both ranks; ten sampled ABBA cycles give 35.404649 OFF to 36.850968 ON tok/s (+4.085112%), all 40 rows eligible and digest-identical. Targeted enqueues fall 344 to 129 per step per rank. Code source and binary hash are pinned in the tracked lane report. |
 
+## DSV4 task accuracy gate controls
+
+These controls are read only by `dsv4_task_accuracy`; they do not select a serving program.
+
+| Flag | Contract |
+| --- | --- |
+| `MEMRA_ACC_EXPERT_PROGRAM` | **Required**, exactly `reference` or `matrix`, including when selecting the default. Before model load, `reference` calls `arm_reference_expert_program_for_gate()` and `matrix` calls `disarm_reference_expert_program_for_gate()`. The engine default is matrix; its former `MEMRA_DSV4_MOE_PROGRAM` environment door remains removed. The binary checks `matrix_moe_enabled()` after load and grouped-executor engagement in both directions after decoding. `MEMRA_DSV4_HC_DOT_SPLIT` is independently required as `0` or `16`. The fixed 300-item program-accuracy control is superseded: use its frozen prompts with HC split `0`. |
+| `MEMRA_ACC_RED_ARM_FORCE_MATRIX` | **Unset normally. Gate fault injection, not a serving door.** When present, requires a reference label and calls `disarm_reference_expert_program_for_gate()` after the normal selector, so the model loads matrix while the declared arm remains reference. The post-load program assertion must refuse before any accuracy rows. Remove the variable for the green control. |
+
+The `GREEN_RC=0 RED_RC=101` and bare-environment refusal in private darklanes
+`research/dsv4f-hebrew-accuracy-20260911/receipts/` are historical receipts for the old
+selector, not qualification of this implementation. Before using the repaired instrument,
+rebuild from its pushed engine SHA on the lane-owned box and capture a passing reference
+green control, a forced-matrix red refusal at the post-load assertion, and an `env -i`
+refusal. Record source and binary hashes. Hosted CI runs the binary's six host tests; it
+cannot replace these model-load checks. Earlier Hebrew accuracy results remain bound to
+their original engine and require fresh paired runs for claims about the current program.
+
 > **A new `MEMRA_*` read needs a row here IN THE SAME COMMIT.** `tools/hooks/pre-push` runs
 > `tools/check-flags.sh` on every push (+0.55 s) and refuses one that adds an uncovered name. That
 > arm landed 2026-08-23 after main went red three times in one day on this exact rule — the census
@@ -1663,7 +1681,7 @@ memra #461 / #467 and darklanes #612; the gain is darklanes #596 at the canonica
   DEFAULT, then was DELETED as a door.** The matrix executor is what loads. The scalar reference
   executor stays in-tree as the arm every CLASS row compares against and is reachable ONLY through
   `dsv4_doors::arm_reference_expert_program_for_gate`, a process-local function with no environment
-  variable, called before load by `dsv4_moe_program_class_gate`, `dsv4_program_accuracy` and
+  variable, called before load by `dsv4_moe_program_class_gate`, `dsv4_task_accuracy` and
   `dsv4_matrix_distribution_gate`, and by no serving path. Red arm:
   `dsv4_doors::tests::the_reference_expert_program_is_reachable_only_through_the_gate_arm`, which
   asserts the DEFAULT (unarmed resolves matrix) and that exporting the removed name changes nothing.
@@ -2393,7 +2411,6 @@ Code removed 2026-09-09; rev: 2026-09-23.
 | Removed door | Verdict and receipt |
 |---|---|
 | `MEMRA_GLM5_SPEC_VERIFY_GRAPH` | NEGATIVE; candidate `6e073bd5a`, default OFF, decide-by 2026-09-23. PP1 p32k N=3: K6 graph ON 79.191090 tok/s vs plain 79.957362 (-0.958351%) and K6 graph OFF 80.209701. HTTP signed saving -0.905348 ms/round. Greedy and fixed-seed sampled K3/K6 logits and 160-token tapes identical. Removed new env read, dispatch and dedicated lifecycle additions; pre-lane graph code unchanged. `research/glm5-verify-graph-20260909/RESULTS.md`; rev: 2026-09-23. |
-| `MEMRA_ACC_RED_ARM_FORCE_MATRIX` | **OFF by design, and it is not a door**: it is the red arm of a gate binary, read only by `dsv4_task_accuracy` and by nothing in the engine, the server or any serving path. Set to anything, it loads the matrix expert program while the binary still believes the arm is the reference one, so the post-load `matrix_moe_enabled()` check must fire and the run must REFUSE. Both arms: unset is every real measurement; set is the refusal proof. It exists because that check and the two-directional grouped-executor engagement assert are what stop a paired accuracy cell from reporting a PERFECT null with zero gains and zero losses when both arms silently load the same program, which is the answer everyone is hoping for and the worst thing to report by accident. memra #482 makes that shape live by deleting `MEMRA_DSV4_MOE_PROGRAM`. Receipt: `GREEN_RC=0 RED_RC=101`, green control first so a refusal cannot be a binary refusing everything, darklanes `research/dsv4f-hebrew-accuracy-20260911/receipts/red-arm-r1/`. Rollback seam: none needed, unset is the default and the binary reads it once at startup. |
 
 ## Removed doors, 2026-09-09 (GLM TP indexer decode split)
 

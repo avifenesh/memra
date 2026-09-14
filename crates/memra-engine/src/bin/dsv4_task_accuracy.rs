@@ -1,17 +1,18 @@
-//! Paired task accuracy on ANY frozen short-answer set, at the served realization.
+//! Paired task accuracy on any frozen short-answer set, at the canonical PP-2 realization.
 //!
-//! WHY A SECOND ACCURACY BINARY. `dsv4_quality_twin` (darklanes #545) and the matrix
-//! lane's `dsv4_program_accuracy` (memra #467) each hard-wire one comparison: a fixed
-//! 300-item count, one arm axis, and `MEMRA_DSV4_HC_DOT_SPLIT` pinned to a constant
-//! inside the binary. Neither can answer the question the Hebrew accuracy set was
-//! built for, because that set is 100 items and because HC S16 is one of the arms
-//! rather than a fixed background. This binary keeps every measurement rule of those
-//! two identical and moves exactly three things into the caller's hands: the item
-//! count, the expert program, and the HC dot-split slice count.
+//! This replaces #467's fixed 300-item `dsv4_program_accuracy` control and lets the
+//! caller select the item count, expert program and HC dot-split slice count. The
+//! former control is recovered with its frozen 300-item set and HC split explicitly
+//! set to 0. The Hebrew set has 100 items and compares HC S16 as an arm instead of a
+//! fixed background. Matrix is the engine default; reference is reachable only by
+//! the explicit gate arm, never by restoring the removed engine environment door.
 //!
 //! Greedy is the INSTRUMENT, never a serving shape. A paired accuracy comparison
 //! needs a deterministic decode or the arms differ by sampling noise instead of by
-//! the numeric class under test. Prod serves the vendor-recommended sampled default.
+//! the numeric class under test. This research control grants no serving admission.
+//!
+//! Usage: `MEMRA_ACC_EXPERT_PROGRAM=reference|matrix MEMRA_DSV4_HC_DOT_SPLIT=0|16`
+//! `dsv4_task_accuracy <model> <prompts-dir> <new-out-dir> <arm-label>`.
 //!
 //! WHY IT ALSO EMITS NLL. A null on a paired accuracy set is only meaningful if the
 //! set could have registered a flip. The reference negative log likelihood of each
@@ -56,13 +57,7 @@ fn main() {
     // MEMRA_DSV4_HC_DOT_SPLIT is deliberately NOT pinned here: it is an arm.
     unsafe {
         std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
-        std::env::set_var("MEMRA_DSV4_NORM_FUSE", "0");
-        std::env::set_var("MEMRA_DSV4_NORM_FUSE2", "0");
-        std::env::set_var("MEMRA_DSV4_NORM2_WIDE", "0");
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
-        // memra #458: matrix under PP-2 boots clean on default-ON split-K and then
-        // fails every request.
-        std::env::set_var("MEMRA_DSV4_MOE_M1_SPLITK", "0");
     }
 
     let args: Vec<String> = std::env::args().collect();
@@ -77,7 +72,7 @@ fn main() {
         "arm label is written into every row; keep it a plain token"
     );
 
-    // The served realization, asserted rather than assumed. Identical across arms.
+    // The canonical PP-2 realization, asserted rather than assumed. Identical across arms.
     for (name, value) in [
         ("MEMRA_DSV4_DECODE_PATH", "device"),
         ("MEMRA_DSV4_EXPERT_ARM", "native"),
@@ -103,12 +98,19 @@ fn main() {
 
     // Arm axis 1: the expert program. Named explicitly in both arms, because a
     // receipt that says "the default" stops being readable the day the default moves.
-    let program = std::env::var("MEMRA_DSV4_MOE_PROGRAM")
+    // This name belongs to this instrument. The engine has no environment selector;
+    // its reference program is armed through the public gate seam before model load.
+    let program = std::env::var("MEMRA_ACC_EXPERT_PROGRAM")
         .expect("name the expert program explicitly, even when it is the default");
     assert!(
         program == "reference" || program == "matrix",
-        "MEMRA_DSV4_MOE_PROGRAM must be reference or matrix, got {program}"
+        "MEMRA_ACC_EXPERT_PROGRAM must be reference or matrix, got {program}"
     );
+    if program == "reference" {
+        memra_engine::arm_reference_expert_program_for_gate();
+    } else {
+        memra_engine::disarm_reference_expert_program_for_gate();
+    }
     // Arm axis 2: HC dot split slices. The kernel's own parser maps unset AND "1"
     // AND "16" to 16 and anything unrecognised to 0, so only the two explicit
     // values this control means are accepted.
@@ -124,18 +126,16 @@ fn main() {
     // program check and the two-directional engagement count. A check that has never
     // failed is not a check, so this env deliberately loads MATRIX while the rest of
     // the binary still believes the arm is the reference one, and the run must refuse.
-    // This is also the exact failure shape memra #482 introduces: after it,
-    // MEMRA_DSV4_MOE_PROGRAM is deleted and a reference arm selected by environment
-    // loads matrix silently. Both arms would then be matrix and the paired comparison
-    // would report a perfect null, which is the answer everyone is hoping for and the
-    // worst possible thing to report by accident.
+    // Disarming the SAME selector used above reproduces the stale-selector failure:
+    // a reference label paired with the matrix default. The post-load assertion must
+    // catch it before any accuracy row is emitted.
     let red_arm = std::env::var_os("MEMRA_ACC_RED_ARM_FORCE_MATRIX").is_some();
     if red_arm {
         assert_eq!(
             program, "reference",
             "the red arm mislabels a matrix load as reference"
         );
-        unsafe { std::env::set_var("MEMRA_DSV4_MOE_PROGRAM", "matrix") };
+        memra_engine::disarm_reference_expert_program_for_gate();
         println!("RED_ARM force_matrix=1 declared_program={program}; this run MUST refuse");
     }
 
@@ -173,7 +173,7 @@ fn main() {
     println!(
         "PROTOCOL arm={arm} program={program} hc_dot_split={slices} ep=off topology=pp2 \
          prompts={} max_new={LIMIT} capacity={capacity} sampler=argmax ties=lowest_id \
-         drafter=off splitk=0 stop=eos instrument=greedy_only_never_a_serving_shape",
+         drafter=off stop=eos instrument=greedy_only_never_a_serving_shape",
         prompts.len()
     );
 
@@ -196,7 +196,7 @@ fn main() {
     );
     assert!(
         !gpu.topology().is_tp_ep(),
-        "this control runs the served PP-2 topology; TP/EP refuses the reference arm"
+        "this control runs the canonical PP-2 topology; TP/EP refuses the reference arm"
     );
     gpu.set_grouped_route_validation_for_gate(false);
     gpu.set_grouped_mirror_validation_for_gate(false);
@@ -358,8 +358,8 @@ mod tests {
     }
     #[test]
     fn nll_survives_logits_that_would_overflow_a_naive_exponential() {
-        // exp(400) is inf in f64; the max shift is what keeps this finite.
-        let row = [400.0f32, 399.0, 0.0];
+        // exp(1000) is inf in f64; the max shift is what keeps this finite.
+        let row = [1000.0f32, 999.0, 0.0];
         let v = super::nll(&row, 0);
         assert!(v.is_finite() && v > 0.0 && v < 1.0, "{v}");
     }
