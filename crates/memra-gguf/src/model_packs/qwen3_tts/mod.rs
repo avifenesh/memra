@@ -216,7 +216,7 @@ impl AudioContract {
     }
     /// The arithmetic has to close on itself or the contract was read off the wrong artifact.
     pub fn self_consistent(&self) -> bool {
-        self.sample_rate % self.samples_per_frame == 0
+        self.sample_rate.is_multiple_of(self.samples_per_frame)
             || (f64::from(self.sample_rate) / f64::from(self.samples_per_frame) * 100.0).fract()
                 == 0.0
     }
@@ -325,10 +325,10 @@ pub fn resolve_language_id(language: &str, speaker: &str) -> Result<Option<i64>,
         return Ok(dialect.and_then(|d| language_id(d).ok()));
     }
     let id = language_id(&lower)?;
-    if lower == "chinese" {
-        if let Some(d) = dialect {
-            return Ok(Some(language_id(d)?));
-        }
+    if lower == "chinese"
+        && let Some(d) = dialect
+    {
+        return Ok(Some(language_id(d)?));
     }
     Ok(Some(id))
 }
@@ -524,7 +524,9 @@ pub fn talker_tensor_contract(g: TalkerGeometry) -> Vec<TtsTensorRequirement> {
     let ffn = u64::from(g.ffn);
     let head = u64::from(g.head_dim);
     let ph = u64::from(g.predictor_hidden);
-    let pq = u64::from(g.q_heads * g.head_dim / 2);
+    // The predictor narrows the residual stream, not its attention head geometry:
+    // the pinned config still declares 16 query heads and 8 KV heads of width 128.
+    let pq = q;
     let pffn = u64::from(g.predictor_ffn);
     let mut want = Vec::new();
     let mut add = |name: String, shape: Vec<u64>| {
@@ -565,8 +567,8 @@ pub fn talker_tensor_contract(g: TalkerGeometry) -> Vec<TtsTensorRequirement> {
         add(format!("{p}.input_layernorm.weight"), vec![ph]);
         add(format!("{p}.post_attention_layernorm.weight"), vec![ph]);
         add(format!("{p}.self_attn.q_proj.weight"), vec![pq, ph]);
-        add(format!("{p}.self_attn.k_proj.weight"), vec![ph, ph]);
-        add(format!("{p}.self_attn.v_proj.weight"), vec![ph, ph]);
+        add(format!("{p}.self_attn.k_proj.weight"), vec![kv, ph]);
+        add(format!("{p}.self_attn.v_proj.weight"), vec![kv, ph]);
         add(format!("{p}.self_attn.o_proj.weight"), vec![ph, pq]);
         add(format!("{p}.self_attn.q_norm.weight"), vec![head]);
         add(format!("{p}.self_attn.k_norm.weight"), vec![head]);
@@ -632,6 +634,8 @@ pub const CODEC_TRANSFORMER_LAYERS: u32 = 8;
 pub const CODEC_TRANSFORMER_HIDDEN: u32 = 512;
 pub const CODEC_TRANSFORMER_FFN: u32 = 1024;
 pub const CODEC_LATENT: u32 = 1024;
+/// RVQ projection channels, before `pre_conv` expands them to `CODEC_LATENT`.
+pub const CODEC_QUANTIZER_DIM: u32 = 512;
 pub const CODEC_VQ_DIM: u32 = 256;
 /// The `upsample` stage runs BEFORE `decoder.decoder` and contributes x4 (two stages at x2).
 pub const CODEC_PRE_UPSAMPLE_STAGES: u32 = 2;
@@ -653,18 +657,18 @@ pub fn codec_decoder_tensor_contract() -> Vec<TtsTensorRequirement> {
     };
     let codebooks = u64::from(AUDIO.codebooks);
     let vq = u64::from(CODEC_VQ_DIM);
-    let latent = u64::from(CODEC_LATENT);
+    let quantizer = u64::from(CODEC_QUANTIZER_DIM);
     let size = u64::from(AUDIO.codebook_size);
 
     // The RVQ dequantizer stores `embedding_sum` with a `cluster_usage` divisor, so the codebook
     // is embedding_sum / cluster_usage and NOT a plain embedding table.
     add(
         "decoder.quantizer.rvq_first.input_proj.weight".into(),
-        vec![vq, latent, 1],
+        vec![vq, quantizer, 1],
     );
     add(
         "decoder.quantizer.rvq_first.output_proj.weight".into(),
-        vec![latent, vq, 1],
+        vec![quantizer, vq, 1],
     );
     add(
         "decoder.quantizer.rvq_first.vq.layers.0._codebook.embedding_sum".into(),
@@ -676,11 +680,11 @@ pub fn codec_decoder_tensor_contract() -> Vec<TtsTensorRequirement> {
     );
     add(
         "decoder.quantizer.rvq_rest.input_proj.weight".into(),
-        vec![vq, latent, 1],
+        vec![vq, quantizer, 1],
     );
     add(
         "decoder.quantizer.rvq_rest.output_proj.weight".into(),
-        vec![latent, vq, 1],
+        vec![quantizer, vq, 1],
     );
     for layer in 0..(codebooks - 1) {
         add(
@@ -695,7 +699,7 @@ pub fn codec_decoder_tensor_contract() -> Vec<TtsTensorRequirement> {
 
     add(
         "decoder.pre_conv.conv.weight".into(),
-        vec![u64::from(CODEC_LATENT), 512, 3],
+        vec![u64::from(CODEC_LATENT), quantizer, 3],
     );
     add(
         "decoder.pre_conv.conv.bias".into(),

@@ -29,7 +29,7 @@ less than one that starts from a measured deficit.
 | Nemotron 3.5 streaming RNNT `[56,0]` | The whole path executes and streams: frontend, cache-aware FastConformer, prompt kernel, LSTM predictor, joint, greedy, session state | 657/657 tensors, frontend 5.34058e-05, encoder 2.533197403e-07 over 26 chunks, head 9.155273438e-05, greedy 9/9, session 26/26 partials plus final identical |
 | Audio-LM class (Qwen3-ASR, Voxtral) | Not started | n/a |
 | **GPU execution for any speech operation** | **Does not exist.** No CUDA kernel, no residency plan, no performance receipt | Every number above is a CPU reference measured on efficiency cores |
-| Streaming TTS (§2.4) | **No pack, no codec decoder, no reference, and `NativeReference` unset.** What DOES exist as of 2026-09-11 is the part of §4's steps 0-5 that costs zero GPU-hours and zero engine code: the artifact pinned and its census exact, the codec contract read off it, three measured model-contract defects, the streaming emit contract fixed in §2.4.1 BEFORE any implementation, the parity bounds re-derived in §2.4.2 because the ones first written down are unreachable, and a stage oracle that is bit-reproducible across hosts and drivers | `docs/SPEECH.md` §2.4.1, §2.4.2; receipts private (darklanes `research/tts-pack-20260911/`) |
+| Streaming TTS (§2.4) | **A non-executing `qwen3_tts` pack defines the pinned tensor, prefill, decode and emit contracts; `NativeReference` remains unset.** Header fixtures cover 404 talker tensors and 271 codec-decoder tensors, with refusal tests for malformed contracts. The native forward, codec decoder and stage-parity execution are still unimplemented. The streaming emit contract is fixed in §2.4.1 and measured parity bounds are recorded in §2.4.2 | `crates/memra-gguf/src/model_packs/qwen3_tts/`; `docs/SPEECH.md` §2.4.1, §2.4.2; receipts private (darklanes `research/tts-pack-20260911/`) |
 | **Audio endpoint in `memra serve`** | **Exists as of 2026-09-11 and fails CLOSED.** `/v1/audio/transcriptions` plus the `/v1/audio/sessions` lifecycle (open / frames / close / list) carry the session contract, the resident-session cap, the per-lane bounded queue, the typed shed taxonomy and the declared decode; with no speech pack resident every path refuses `engine_unbound` rather than answering with something that is not the model. **The transcript bytes are step 2's work** | `audio_api.rs`, 18 handler + contract tests; scheduler in `memra-lanes::audio_stream`, 20 tests |
 
 So: memra has a correctness spine for two speech families, a serving surface that admits and
@@ -146,8 +146,11 @@ streaming emit contract this family needs, and none of them can be inferred from
   difference is in the codes. An emit contract that does not say which count a client is promised
   is ambiguous on every request that ends on EOS.
 
-All three are measured, all three are red-armed in darklanes `ops/serving/tts_ttfa_slo.py`, and
-the receipts are private (`research/tts-qual-20260911/`, `research/tts-pack-20260911/`).
+All three are measured. The first two have red arms in darklanes
+`ops/serving/tts_ttfa_slo.py`; the EOS entry-point divergence is not yet armed and needs the
+EOS-terminated stage-parity fixture. The receipts are private
+(`research/tts-qual-20260911/`, `research/tts-pack-20260911/` at darklanes
+`aea8ba8e6d441b02edcdae00be2361301c4aaf8a`).
 
 ### 2.4.1 The streaming emit contract
 
@@ -231,7 +234,7 @@ pin, same fixture, same seed, greedy on both loops, ONE thing changed (the vendo
 bfloat16 against float32): **37 of 39 talker argmaxes flip, the first at step 2, and 582 of 624
 codec ids differ.** The cause is measured, not argued: the head's top-2 margin over those 39 steps
 is min **0.125**, p10 0.475, p50 2.000, with **10 of 39 steps below 1.0**, and at the first flip
-the logit delta was **2.588** against a margin of **0.75**. Once one code differs the two runs are
+the logit delta was **2.588** against a margin of **1.25**. Once one code differs the two runs are
 generating different audio, so the per-step logit delta grows without bound after that (0.137,
 3.31, 2.588, 9.33, 11.2, 16.6, 26.8, 21.4) and the end-to-end waveform comparison goes to a
 NEGATIVE SNR. Two different valid utterances are uncorrelated.

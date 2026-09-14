@@ -56,7 +56,7 @@ fn the_codec_decoder_contract_binds_exactly_and_the_encoder_half_is_dead_weight(
 
     // What a serving box holds is the talker plus the codec's decoder half, not the whole codec.
     assert_eq!(RESIDENT_ELEMENTS, 1_916_676_352 + 114_323_137);
-    assert_eq!(RESIDENT_ELEMENTS, 2_087_233_793);
+    assert_eq!(RESIDENT_ELEMENTS, 2_030_999_489);
 }
 
 #[test]
@@ -384,10 +384,7 @@ fn the_prefill_rows_are_the_exact_codec_sequence_in_order() {
         ]
     );
     assert_eq!(rows.iter().filter(|r| r.speaker_row).count(), 1);
-    assert_eq!(
-        rows[4].speaker_row, true,
-        "the speaker row is the fifth position"
-    );
+    assert!(rows[4].speaker_row, "the speaker row is the fifth position");
 
     // With no language the think block collapses to three ids, so the whole prefill is one
     // position narrower per removed id.
@@ -456,12 +453,14 @@ fn the_speaker_and_language_tables_match_the_artifact_and_the_dialect_rule_holds
 fn the_served_decode_is_sampled_on_both_loops_and_greedy_is_only_the_instrument() {
     // G7: a default inherited by silence is a violation. The vendor recommendation for this
     // artifact is SAMPLED, and there are TWO sampled shapes, not one.
-    assert!(SERVED_DECODE.talker_do_sample);
-    assert!(
-        SERVED_DECODE.predictor_do_sample,
-        "a port that samples the talker but argmaxes the nested predictor serves a decode nobody \
-         recommended"
-    );
+    const {
+        assert!(SERVED_DECODE.talker_do_sample);
+        assert!(
+            SERVED_DECODE.predictor_do_sample,
+            "a port that samples the talker but argmaxes the nested predictor serves a decode nobody \
+             recommended"
+        );
+    }
     assert_eq!(SERVED_DECODE.talker_temperature, 0.9);
     assert_eq!(SERVED_DECODE.predictor_temperature, 0.9);
     assert_eq!(SERVED_DECODE.talker_top_k, 50);
@@ -474,8 +473,10 @@ fn the_served_decode_is_sampled_on_both_loops_and_greedy_is_only_the_instrument(
         (f64::from(SERVED_DECODE.max_new_frames) / AUDIO.frame_rate_hz() - 655.36).abs() < 1e-9
     );
     // Greedy differs on exactly the two sampling switches and nothing else.
-    assert!(!GREEDY_INSTRUMENT.talker_do_sample);
-    assert!(!GREEDY_INSTRUMENT.predictor_do_sample);
+    const {
+        assert!(!GREEDY_INSTRUMENT.talker_do_sample);
+        assert!(!GREEDY_INSTRUMENT.predictor_do_sample);
+    }
     assert_eq!(
         GREEDY_INSTRUMENT.talker_temperature,
         SERVED_DECODE.talker_temperature
@@ -493,9 +494,11 @@ fn the_emit_contract_is_one_whole_frame_and_declares_its_silence() {
     assert_eq!(EMIT.silent_lead_in_frames, 1);
     // The threshold sits above BOTH measured silent lead-ins (5.72e-05 and 4.816e-05) and below
     // the quietest audible frame measured (0.032), so it separates them with margin on both sides.
-    assert!(EMIT.audible_peak > 5.72e-05);
-    assert!(EMIT.audible_peak > 4.816e-05);
-    assert!(EMIT.audible_peak < 0.032);
+    const {
+        assert!(EMIT.audible_peak > 5.72e-05);
+        assert!(EMIT.audible_peak > 4.816e-05);
+        assert!(EMIT.audible_peak < 0.032);
+    }
     assert_eq!(frames_for_audible(2), 3);
     assert_eq!(frames_for_audible(1), 2);
     // A chunk is never a partial frame.
