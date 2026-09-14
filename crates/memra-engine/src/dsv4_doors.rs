@@ -920,6 +920,54 @@ mod tests {
         assert!(matrix_expert_program_resolved());
     }
 
+    /// The dense tensor-core path has no switch, at build time or at runtime. It used to
+    /// be `MEMRA_DSV4_CUTLASS`, an exemption in the list below; the served A/B
+    /// (+45.53% at a 3,686-token prefill, ranges disjoint in both ABBA orders) made the
+    /// archive part of the DEFAULT sm_120a build and the name left the tree. The red arm
+    /// is the source itself: reintroduce the switch and this fails naming the file,
+    /// because a build flag that selects which kernel serves is an OFF door wearing a
+    /// different layer, and the door rule does not care which layer it lives at.
+    ///
+    /// This file is deliberately absent from the scanned set. It names the removed
+    /// variable in this very assertion, which is the same self-reference the coverage
+    /// derivation excludes it for.
+    #[test]
+    fn the_dense_tensor_core_path_has_no_switch_that_turns_it_off() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for rel in [
+            "build.rs",
+            "cu/dsv4_gpu.cu",
+            "cu/dsv4_dense_cutlass.cu",
+            "src/dsv4_gpu.rs",
+        ] {
+            let path = root.join(rel);
+            let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+            assert!(
+                !text.contains("MEMRA_DSV4_CUTLASS"),
+                "{rel} names the removed build switch again: the dense tensor-core archive \
+                 is part of the default sm_120a build and must not be switchable"
+            );
+        }
+        // What gates the archive now is the ARCHITECTURE, which nobody chooses per build,
+        // and the macro carrying that fact to the dispatch is what makes a dropped
+        // archive a link failure on sm_120a instead of a silently scalar binary.
+        let build = std::fs::read_to_string(root.join("build.rs")).expect("build.rs");
+        assert!(
+            build.contains("MEMRA_DENSE_CUTLASS_LINKED"),
+            "build.rs must still tell dsv4_gpu.cu whether it linked the archive"
+        );
+        assert!(
+            build.contains("cu/dsv4_dense_cutlass.cu"),
+            "build.rs must still compile the dense tensor-core kernel"
+        );
+        let cu = std::fs::read_to_string(root.join("cu/dsv4_gpu.cu")).expect("dsv4_gpu.cu");
+        assert!(
+            cu.contains("dsv4_dense_try_tensorcore"),
+            "the served dispatch must go through the one helper that spells the arch \
+             difference, so the call site itself stays unconditional"
+        );
+    }
+
     #[test]
     fn every_declared_door_has_a_flags_row() {
         let flags = std::fs::read_to_string(
@@ -946,11 +994,6 @@ mod tests {
             "gate-only all-reduce phase instrument, refuses to load unarmed",
         ),
         ("MEMRA_DSV4_BENCH_PROFILE", "bench profile selector"),
-        (
-            "MEMRA_DSV4_CUTLASS",
-            "build-time archive switch; when the archive is linked the dense \
-             tensor-core path IS the code, and no serving process reads it",
-        ),
         ("MEMRA_DSV4_DECODE_PATH", "program selector"),
         ("MEMRA_DSV4_DENSE_ARM", "program selector"),
         ("MEMRA_DSV4_DOTS_ARM", "program selector"),

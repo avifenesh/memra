@@ -34,19 +34,36 @@ above `DSV4_TMAX` byte-identical to the untiled width-32 walk and carries two re
 arms. The measurement that made this the default is in the removed-doors ledger
 in `docs/FLAGS.md` and in darklanes `research/dsv4f-dense-tile-20260910/`.
 
-## DSV4 dense tensor-core path, 2026-09-11 (memra #472)
+## DSV4 dense tensor-core path, 2026-09-11 (memra #472), the sm_120a DEFAULT 2026-09-12
 
 CUTLASS split-K at the per-128 block-scale granularity (the scale multiplies the f32 block
 partial sum in `scaled_reduce_kernel`; folding it into a bf16 operand is refused on numerics).
-Compiled only under `MEMRA_DSV4_CUTLASS`; the dispatch declares the entry WEAK, so without the
-archive the scalar kernel runs untouched. Gate-armed only (`arm_dense_cutlass_for_gate`); there
-is no env read and no serving caller. Numeric class NEW: mma fragment registers per 128-k block,
-never bit-equal to the shipped 128-leaf smem tree. Drift rows plus the paired accuracy control
-are owed before default.
+
+Linked into EVERY sm_120a build. The `MEMRA_DSV4_CUTLASS` build switch is deleted, so no build
+serves the scalar dense path for a shape this admits, and on that arch the entry symbol is
+declared STRONG rather than weak: a dropped archive is now a link failure instead of a silently
+scalar binary, which is the failure mode that once made an A/B compare one program against
+itself and report a clean null. Every other arch has no such kernel (sm_120a-only) and keeps the
+weak declaration, where a null symbol is an architecture fact and not a choice. See the
+removed-doors ledger in `docs/FLAGS.md`.
+
+The scalar kernel stays in tree with two jobs that are not an arm: SHAPE COVERAGE for what this
+declines by its own admission rules, and the reference side of every class row, reachable only
+through `arm_dense_cutlass_for_gate(false)`, which no serving process calls.
+
+Numeric class NEW: mma fragment registers per 128-k block, never bit-equal to the shipped
+128-leaf smem tree, so no bit-identity gate can pass on it and none was run. What was run
+instead, all banked in darklanes `research/dsv4f-dense-perrow-20260910/`: drift over 448
+teacher-forced paired rows (21 top-1 changes, greedy identity 427/448, KL means ~1e-2 in both
+directions, Hebrew the highest-drift domain), a paired accuracy control WITH Hebrew coverage
+(twin 300 at -2.0pp McNemar p=0.18, Hebrew 100 at -3.0pp p=0.375, neither significant at 5%,
+frozen scorer bodies), and the served end-to-end A/B that made this the default: **+45.53% at a
+3,686-token prefill and +45.09% at 981, arm ranges disjoint in both ABBA orders, 20/20 boots
+eligible with the device-keyed workspace crossing cards 71 times per boot**.
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
-| `memra_dsv4_dense_cutlass_fp8` | Split-K CUTLASS GEMM over the lazy bf16 mirror plus scaled f32 reduction; admits m=32, k%128=0, xstride=k | e4m3 weights (lossless bf16 mirror), bf16 activations, f32 accumulate | sm_120a | None (naked default when linked) | `memra_dsv4_gemv_fp8_m` |
+| `memra_dsv4_dense_cutlass_fp8` | Split-K CUTLASS GEMM over the lazy bf16 mirror plus scaled f32 reduction; admits m=32, k%128=0, xstride=k | e4m3 weights (lossless bf16 mirror), bf16 activations, f32 accumulate | sm_120a | None at any layer: the default sm_120a build, no env read and no build switch | `memra_dsv4_gemv_fp8_m` |
 | `scaled_reduce_kernel` | Per-output scaled sum over k/128 f32 partials | f32 partials and scales, f32 out | sm_120a | None | `memra_dsv4_dense_cutlass_fp8` |
 
 ## Whisper CPU reference operators, 2026-09-09

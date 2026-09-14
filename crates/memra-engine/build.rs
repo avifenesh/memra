@@ -628,6 +628,22 @@ fn main() {
                 } else {
                     args.push("-fmad=false".into());
                 }
+                // The dense tensor-core archive below is linked into EVERY sm_120a build and
+                // there is no switch that leaves it out, so on this arch dsv4_gpu.cu declares
+                // the entry STRONG: a dropped archive becomes a link failure instead of a
+                // silently null weak symbol that serves the scalar path and makes an A/B
+                // compare one program against itself. Every other arch has no such kernel at
+                // all and keeps the weak declaration, where null is an architecture fact
+                // rather than a choice anybody made.
+                //
+                // The macro is deliberately NOT MEMRA_DSV4_-prefixed, like MEMRA_PORTABLE_CUDA
+                // and MEMRA_HOPPER_MMA above. dsv4_doors' coverage test derives its name set by
+                // scanning every cu/dsv4* file for MEMRA_DSV4_*/MEMRA_F16G_* tokens, so a
+                // compile-time macro carrying that prefix reads to it as an undeclared door and
+                // reddens the build. This is an nvcc -D, not an environment read.
+                if cuda_arch == "120a" {
+                    args.push("-DMEMRA_DENSE_CUTLASS_LINKED=1".into());
+                }
             }
             args.extend([
                 "-c".into(),
@@ -699,17 +715,36 @@ fn main() {
     // DSV4 dense tensor-core path (memra #472). Deliberately INDEPENDENT of the MEMRA_CUTLASS
     // block below: that one carries the fp4 experiment, sets the memra_cutlass cfg and pulls the
     // fp4 Rust call sites in with it, and its archive hit an lld symbol-ordering failure on this
-    // box. This path needs none of that. It has its own switch, its own archive, and NO cfg,
-    // because cu/dsv4_gpu.cu declares memra_dsv4_dense_cutlass_fp8 WEAK: when this block does not
-    // run the symbol is null and the scalar kernel runs untouched.
+    // box. This path needs none of that: its own archive, and NO cfg.
+    //
+    // NOT a switch any more. This used to read MEMRA_DSV4_CUTLASS, and the served A/B that
+    // decided the question measured +45.53% at a 3,686-token prefill, disjoint in both ABBA
+    // orders, on the merged main that carries the device-keyed workspace. Under the standing
+    // rule that a door is the default or it is deleted, the archive is now part of the DEFAULT
+    // sm_120a build and there is no way to ask for the scalar dense path at build time. The
+    // condition is the ARCHITECTURE, not an environment variable, because the kernel is
+    // sm_120a-only (docs/KERNELS.md): on 100a/90a/89 there is no tensor-core arm to link and
+    // the scalar kernel is the only correct code, so those builds neither need nor get a
+    // CUTLASS tree.
+    //
+    // The consequence is stated rather than buried: an sm_120a build now requires the CUTLASS
+    // header tree. `tools/install-cutlass.sh` fetches the pinned v3.9.2 and prints the export;
+    // CI runs it. The tree is headers only, 838 files, and the pin is by tarball sha256.
     //
     // -fmad=false to match cu/dsv4_gpu.cu, because this family's numerics are the point.
-    if std::env::var("MEMRA_DSV4_CUTLASS").is_ok() {
-        println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
+    if cuda_arch == "120a" {
         let dense_src = "cu/dsv4_dense_cutlass.cu";
         println!("cargo:rerun-if-changed={dense_src}");
-        let root = std::env::var("MEMRA_CUTLASS_ROOT")
-            .expect("MEMRA_DSV4_CUTLASS requires MEMRA_CUTLASS_ROOT");
+        let root = std::env::var("MEMRA_CUTLASS_ROOT").unwrap_or_else(|_| {
+            panic!(
+                "the default sm_120a build links the dense tensor-core archive \
+                 (cu/dsv4_dense_cutlass.cu) and needs the CUTLASS header tree. Run \
+                 tools/install-cutlass.sh and export what it prints, or point \
+                 MEMRA_CUTLASS_ROOT at an existing v3.9.2 tree. Build another arch \
+                 (MEMRA_CUDA_ARCH=100a|90a|89) if you need a CUTLASS-free build; the \
+                 dense tensor-core kernel is sm_120a-only."
+            )
+        });
         let obj = out.join("dsv4_dense_cutlass.o");
         let lib = out.join("libmemra_dsv4_cutlass.a");
         let status = Command::new(&nvcc)

@@ -3904,21 +3904,49 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
 
 #include "dsv4_dense_m1_exact_tail.cuh"
 
-// Defined in cu/dsv4_dense_cutlass.cu, compiled only under MEMRA_DSV4_CUTLASS.
+// Defined in cu/dsv4_dense_cutlass.cu. On sm_120a build.rs links that archive into
+// EVERY build and defines MEMRA_DENSE_CUTLASS_LINKED, so the served entry is
+// declared STRONG there: a dropped archive is a link failure, not a null symbol that
+// quietly serves the scalar path. That is the failure this family already paid for
+// once, when an A/B compared two identical binaries and reported a clean null.
+// Every other arch has no such kernel (it is sm_120a-only), keeps the weak
+// declaration, and a null symbol there is an architecture fact, not a choice.
+#ifdef MEMRA_DENSE_CUTLASS_LINKED
+extern "C" int memra_dsv4_dense_cutlass_fp8(
+    const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y, int m,
+    int n, int k, int xstride, int ystride, void* stream_v);
+#else
 extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_fp8(
     const void* w_codes, const float* sc_f32, int sc_cols, const void* x_bf16, float* y, int m,
     int n, int k, int xstride, int ystride, void* stream_v);
+#endif
 extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_set_for_gate(int on);
 extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_armed_for_gate();
 extern "C" __attribute__((weak)) int memra_dsv4_dense_cutlass_counts_for_gate(
     uint64_t* splitk, uint64_t* declined, uint64_t* mirror_bytes, uint64_t* shapes_built,
     uint64_t* ws_device_flips);
 
-// Unconditionally-linked wrappers, so Rust can call the gate arm from a binary
-// built WITHOUT the CUTLASS archive and get a named refusal rather than a link
-// error. 40084 means "this binary does not contain the path", which is a fact a
-// gate needs to be able to read: a class cell whose OFF arm and ON arm are the
-// same program has to fail rather than report zero drift.
+// The ONE place the architecture difference is spelled. Returns 0 when the tensor-core
+// path ran, 40080 when the shape was declined or the arch has no such kernel, and any
+// other code unchanged so a real failure is never laundered into a fallback. The call
+// site below is therefore unconditional: which kernel a shape gets is decided by the
+// tensor-core path's own admission rules, never by a build flag or an environment read.
+static inline int dsv4_dense_try_tensorcore(const void* w_codes, const float* sc_f32, int sc_cols,
+                                            const void* x_bf16, float* y, int m, int n, int k,
+                                            int xstride, int ystride, void* stream_v) {
+#ifndef MEMRA_DENSE_CUTLASS_LINKED
+    if (!memra_dsv4_dense_cutlass_fp8) return 40080;
+#endif
+    return memra_dsv4_dense_cutlass_fp8(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride,
+                                        ystride, stream_v);
+}
+
+// Unconditionally-linked wrappers, so Rust can call the gate arm from an arch that has
+// no tensor-core kernel at all (100a/90a/89) and get a named refusal rather than a link
+// error. 40084 means "this binary does not contain the path", which is a fact a gate
+// needs to be able to read: a class cell whose OFF arm and ON arm are the same program
+// has to fail rather than report zero drift. On sm_120a the archive is always linked, so
+// 40084 is unreachable there and "off" is a real, armed state rather than an absence.
 extern "C" int memra_dsv4_dense_cutlass_arm(int on) {
     if (!memra_dsv4_dense_cutlass_set_for_gate) return 40084;
     return memra_dsv4_dense_cutlass_set_for_gate(on);
@@ -3974,15 +4002,17 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
         return 0;
     }
     dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
-    // Tensor-core dense path (memra #472). Declared WEAK because it is compiled
-    // only under MEMRA_DSV4_CUTLASS; when it is absent the symbol is null and the
-    // scalar kernel below runs exactly as it always has. When it is present it
-    // still declines every shape it does not admit, and declining is normal
-    // rather than an error, so the scalar kernel remains the fallback for the
-    // strided grouped-output projection and for every m below DSV4_TMAX.
-    if (memra_dsv4_dense_cutlass_fp8) {
-        int rc = memra_dsv4_dense_cutlass_fp8(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride,
-                                              ystride, stream_v);
+    // Tensor-core dense path (memra #472), the DEFAULT on sm_120a since the served A/B
+    // measured +45.53% at a 3,686-token prefill, disjoint in both ABBA orders. There is
+    // no arm to select here and no environment read behind it: the shape either is
+    // admitted by the tensor-core path's own rules or it is not. Declining is normal
+    // rather than an error, so the scalar kernel below stays the SHAPE-COVERAGE fallback
+    // for the strided grouped-output projection and for every m below the admitted 32,
+    // and it is reachable as a forced REFERENCE arm only through
+    // memra_dsv4_dense_cutlass_arm(0), which no serving process calls.
+    {
+        int rc = dsv4_dense_try_tensorcore(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride,
+                                           ystride, stream_v);
         if (rc == 0) return 0;
         if (rc != 40080) return rc;  // a real failure is a failure, not a fallback
     }
