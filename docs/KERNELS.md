@@ -352,6 +352,20 @@ token/logit/KV rows pass. Measured +1.897%/+1.491% at 256/8192; serving
 qualification remains separate. Record:
 `research/dsv4f-2card-1m-20260904/wo-a-20260907.md`.
 
+R9 native ordinary GEMV: `dsv4_gemv_fp8_r9_m1_kernel` in the separate
+`cu/dsv4_gemv_fp8_r9.cu` TU uses CUDA 13.3's packed E4M3x2 -> BF16x2
+conversion, then the existing FP32 scale/product and 128-leaf reduction
+order. The compiler override is explicit (`MEMRA_DSV4_NVCC`) so the normal
+CUDA 13.1 engine TUs and runtime libraries remain unchanged; without it the
+TU exposes fail-closed stubs. Rust admits only packed M=1 ordinary shapes
+`(32768,1024)` and `(2048,4096)`, counts successful enqueues by shape, and
+rejects grouped/strided `wo_a`, M>1 and all unreceipted dimensions. Signed zero
+is preserved and only E4M3 NaNs map to +0. The process gate is default OFF;
+the component shape receipt passes bit identity on both PRO 6000 cards, while
+the sampled model gate and target-binary qualification remain pending. FFI:
+`dsv4_ffi.rs`; dispatch: `Dsv4Gpu::set_dense_fp8_r9_for_gate`; receipt:
+`research/dsv4f-2card-1m-20260904/dense-tc-gate-r9-native-compile-20260907.md`.
+
 `dsv4_graph::capture_layer` retains an explicitly armed graph and executes the
 recorded operations once, with event tracking disabled before allocation.
 Window-only layers, the head and the embedding prefix have separate probe

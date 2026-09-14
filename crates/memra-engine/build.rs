@@ -237,17 +237,33 @@ fn main() {
         println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
         println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
         println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
+        println!("cargo:rustc-check-cfg=cfg(memra_dsv4_r9_native)");
         println!("cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a");
         return;
     }
 
     let nvcc = resolve_nvcc();
+    // R9 is deliberately a separate static-lib TU.  CUDA 13.1 ptxas rejects
+    // cvt.rn.bf16x2.e4m3x2, so an explicit staged/newer compiler may build only
+    // that TU while the ordinary engine TUs and the runtime/link libraries stay
+    // on the resolved engine compiler.  Without this opt-in the TU emits its
+    // fail-closed ABI stubs.
+    println!("cargo:rerun-if-env-changed=MEMRA_DSV4_NVCC");
+    let dsv4_r9_nvcc = std::env::var("MEMRA_DSV4_NVCC").ok();
+    if let Some(path) = &dsv4_r9_nvcc {
+        assert!(
+            std::path::Path::new(path).is_file(),
+            "MEMRA_DSV4_NVCC is not an nvcc file: {path}"
+        );
+        println!("cargo:warning=DSV4 R9 compiler override: {path}");
+    }
     println!("cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH");
     println!("cargo:rerun-if-env-changed=MEMRA_CUTLASS");
     println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
     println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
     println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
     println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
+    println!("cargo:rustc-check-cfg=cfg(memra_dsv4_r9_native)");
     let cuda_arch = std::env::var("MEMRA_CUDA_ARCH").unwrap_or_else(|_| detect_arch());
     assert!(
         matches!(cuda_arch.as_str(), "120a" | "100a" | "90a" | "89"),
@@ -267,6 +283,21 @@ fn main() {
         "MEMRA_CUTLASS is sm_120a-only and cannot be enabled for this CUDA architecture"
     );
     let gencode = format!("arch=compute_{cuda_arch},code=sm_{cuda_arch}");
+    let r9_native = dsv4_r9_nvcc
+        .as_deref()
+        .and_then(|path| nvcc_version(std::path::Path::new(path)))
+        .is_some_and(|version| version >= (13, 3))
+        && cuda_arch == "120a";
+    if r9_native {
+        println!("cargo:rustc-cfg=memra_dsv4_r9_native");
+        println!(
+            "cargo:warning=DSV4 R9 native FP8 decode enabled for explicit CUDA 13.3+ sm_120a TU"
+        );
+    } else {
+        println!(
+            "cargo:warning=DSV4 R9 native FP8 decode unavailable; building fail-closed ABI stub"
+        );
+    }
     if portable {
         println!("cargo:rustc-cfg=memra_portable_cuda");
     }
@@ -508,6 +539,10 @@ fn main() {
             // mul+add rounding; default FMA contraction would silently fork the f32-island
             // arithmetic from the oracle contract.
             "cu/dsv4_gpu.cu",
+            // R9 native E4M3x2 -> BF16x2 M=1 ordinary GEMV.  This TU is the
+            // only source allowed to use the explicit CUDA 13.3 compiler
+            // override; its host link remains on the ordinary engine CUDA lib.
+            "cu/dsv4_gemv_fp8_r9.cu",
         ] {
             println!("cargo:rerun-if-changed={mmq_src}");
             println!("cargo:rerun-if-changed=cu/mmq_common.cuh");
@@ -636,13 +671,26 @@ fn main() {
                     args.push("-fmad=false".into());
                 }
             }
+            if mmq_src.ends_with("dsv4_gemv_fp8_r9.cu") {
+                // The R9 body spells out __fmul_rn/__fadd_rn, but keep the TU
+                // under the same no-contraction build contract as dsv4_gpu.cu.
+                args.push("-fmad=false".into());
+                if r9_native {
+                    args.push("-DMEMRA_DSV4_R9_NATIVE=1".into());
+                }
+            }
             args.extend([
                 "-c".into(),
                 compile_src.into(),
                 "-o".into(),
                 obj.to_str().unwrap().into(),
             ]);
-            let status = Command::new(&nvcc)
+            let compile_nvcc = if mmq_src.ends_with("dsv4_gemv_fp8_r9.cu") {
+                dsv4_r9_nvcc.as_deref().unwrap_or(nvcc.as_str())
+            } else {
+                nvcc.as_str()
+            };
+            let status = Command::new(compile_nvcc)
                 .args(&args)
                 .status()
                 .expect("spawn nvcc (mmq)");

@@ -1,0 +1,12 @@
+
+running 1 test
+PASS EP projection partitions hidden=128 intermediate=256 rows=1 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=128 intermediate=256 rows=6 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=128 intermediate=256 rows=32 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=4096 intermediate=2048 rows=1 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=4096 intermediate=2048 rows=6 both reductions, global scales, masks, original-slot merge and guards
+PASS EP projection partitions hidden=4096 intermediate=2048 rows=32 both reductions, global scales, masks, original-slot merge and guards
+test dsv4_ep::tests::cuda_ep_partition_matches_original_full_bank ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 405 filtered out; finished in 1.08s
+

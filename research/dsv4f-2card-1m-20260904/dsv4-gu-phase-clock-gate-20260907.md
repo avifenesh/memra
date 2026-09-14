@@ -48,6 +48,16 @@ instrumented timing includes clock sampling and trace writes; the receipt is
 for identifying phase ownership and instrumentation overhead, not a speed
 claim.
 
+## Subsequent paired execution
+
+The corrected instrument (including cp.async wait-group intervals) ran in
+`gu-phase-clock-20260907-r3`, finishing 2026-09-07T08:04:41Z. Both cards
+pass memcheck, exact H bits, finite and guard checks at active groups
+1/3/4/6. Instrument/control wall ratios range 1.0103-1.0503. Weight
+fetch/decode/store is the dominant sampled phase, ahead of MMA. The
+instrumentation itself adds up to about 5% overhead; its per-warp clocks
+are neither additive wall milliseconds nor pure instruction-active time.
+
 ## Clock interpretation
 
 CUDA documents `clock64()` as a per-multiprocessor counter incrementing each

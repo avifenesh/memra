@@ -1,0 +1,18 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Checking memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+error: field `bytes` is never read
+  --> crates/memra-engine/src/dsv4_grouped.rs:62:9
+   |
+55 | pub(crate) struct HalfMirror {
+   |                   ---------- field in this struct
+...
+62 |     pub bytes: usize,
+   |         ^^^^^
+   |
+   = note: `-D dead-code` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error: could not compile `memra-engine` (lib) due to 1 previous error

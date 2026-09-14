@@ -18,6 +18,7 @@ enum Change {
     Half2,
     WoA,
     IndexTopk,
+    R9NativeF32,
 }
 impl Change {
     fn name(self) -> &'static str {
@@ -27,20 +28,28 @@ impl Change {
             Self::Half2 => "half2",
             Self::WoA => "wo-a",
             Self::IndexTopk => "index-topk",
+            Self::R9NativeF32 => "r9-native-f32",
         }
     }
     fn gu_m1(self, tuned: bool) -> bool {
-        tuned && matches!(self, Self::GuM1 | Self::GuM1Half2)
+        matches!(self, Self::R9NativeF32) || (tuned && matches!(self, Self::GuM1 | Self::GuM1Half2))
     }
     fn half2(self, tuned: bool) -> bool {
-        matches!(self, Self::WoA | Self::IndexTopk | Self::GuM1Half2)
-            || (tuned && matches!(self, Self::Half2))
+        matches!(
+            self,
+            Self::WoA | Self::IndexTopk | Self::GuM1Half2 | Self::R9NativeF32
+        ) || (tuned && matches!(self, Self::Half2))
     }
     fn wo_a(self, tuned: bool) -> bool {
-        matches!(self, Self::IndexTopk | Self::GuM1Half2) || (tuned && matches!(self, Self::WoA))
+        matches!(self, Self::IndexTopk | Self::GuM1Half2 | Self::R9NativeF32)
+            || (tuned && matches!(self, Self::WoA))
     }
     fn index_topk(self, tuned: bool) -> bool {
-        matches!(self, Self::GuM1Half2) || (tuned && matches!(self, Self::IndexTopk))
+        matches!(self, Self::GuM1Half2 | Self::R9NativeF32)
+            || (tuned && matches!(self, Self::IndexTopk))
+    }
+    fn r9_native(self, tuned: bool) -> bool {
+        tuned && matches!(self, Self::R9NativeF32)
     }
 }
 
@@ -95,12 +104,15 @@ impl Ready<'_> {
     fn run(&self, change: Change, tuned: bool, warmup: bool, ordinal: usize) -> Identity {
         drain(self.gpu);
         let gu_m1 = change.gu_m1(tuned);
-        let gu_m1_half2_composed = tuned && matches!(change, Change::GuM1Half2);
+        let gu_m1_half2_composed =
+            matches!(change, Change::R9NativeF32) || (tuned && matches!(change, Change::GuM1Half2));
         let half2 = change.half2(tuned);
         let wo_a_grouped = change.wo_a(tuned);
         let index_topk_radix = change.index_topk(tuned);
+        let r9_native = change.r9_native(tuned);
         self.gpu.clear_dense_wo_a_grouped_for_gate();
         self.gpu.clear_index_topk_radix_for_gate();
+        self.gpu.clear_dense_fp8_r9_for_gate();
         memra_engine::set_moe_f16g_gu_m1_tc_for_gate(gu_m1);
         memra_engine::set_moe_f16g_gu_half2_for_gate(half2);
         memra_engine::set_moe_f16g_down_m1_half2_for_gate(half2);
@@ -110,6 +122,7 @@ impl Ready<'_> {
             .expect("same host C4 snapshot restore");
         self.gpu.set_dense_wo_a_grouped_for_gate(wo_a_grouped);
         self.gpu.set_index_topk_radix_for_gate(index_topk_radix);
+        self.gpu.set_dense_fp8_r9_for_gate(r9_native);
         let mut row = self.logits.to_vec();
         let mut tokens = Vec::with_capacity(OUTPUT);
         let mut commits = Vec::with_capacity(OUTPUT);
@@ -127,6 +140,9 @@ impl Ready<'_> {
         let down_half2_before = memra_engine::moe_f16g_down_m1_half2_dispatches();
         let wo_a_before = self.gpu.dense_wo_a_grouped_dispatches();
         let index_topk_before = self.gpu.index_topk_radix_dispatches();
+        let r9_before = self.gpu.dense_fp8_r9_dispatches();
+        let r9_qb_before = self.gpu.dense_fp8_r9_qb_dispatches();
+        let r9_shared_gu_before = self.gpu.dense_fp8_r9_shared_gu_dispatches();
         let start_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -167,6 +183,9 @@ impl Ready<'_> {
         assert_eq!(ep_calls, steps * trunk_layers, "whole trunk EP engagement");
         let wo_a_calls = self.gpu.dense_wo_a_grouped_dispatches() - wo_a_before;
         let index_topk_calls = self.gpu.index_topk_radix_dispatches() - index_topk_before;
+        let r9_calls = self.gpu.dense_fp8_r9_dispatches() - r9_before;
+        let r9_qb_calls = self.gpu.dense_fp8_r9_qb_dispatches() - r9_qb_before;
+        let r9_shared_gu_calls = self.gpu.dense_fp8_r9_shared_gu_dispatches() - r9_shared_gu_before;
         let indexed_layers = (0..trunk_layers as u32)
             .filter(|&layer| self.gpu.model.cfg().compress_ratio(layer) == 4)
             .count() as u64;
@@ -202,6 +221,33 @@ impl Ready<'_> {
             if half2 { 2 * ep_calls } else { 0 },
             "actual packed-half2 down enqueues on both ranks"
         );
+        assert_eq!(
+            r9_calls,
+            if r9_native {
+                r9_qb_calls + r9_shared_gu_calls
+            } else {
+                0
+            },
+            "actual R9 native ordinary GEMV enqueues"
+        );
+        if r9_native {
+            // Source census for the DSV4 trunk: wq_b is one ordinary
+            // (32768,1024) call per trunk layer, while shared_w[0] and
+            // shared_w[2] are two ordinary (2048,4096) calls per layer.
+            // The model has 43 trunk layers; this is independent of the R9
+            // counter sum and therefore catches missing/extra callsites.
+            assert_eq!(
+                trunk_layers, 43,
+                "R9 shape census is pinned to the 43-layer DSV4 trunk"
+            );
+            assert_eq!(r9_qb_calls, steps * trunk_layers, "R9 q_b call census");
+            assert_eq!(
+                r9_shared_gu_calls,
+                2 * steps * trunk_layers,
+                "R9 shared-GU call census"
+            );
+            assert_eq!(r9_calls, 3 * steps * trunk_layers, "R9 total call census");
+        }
         // Full-state hashing and detokenization run outside the measurement.
         let mut cache_hash = Sha256::new();
         for (name, values) in self
@@ -228,7 +274,7 @@ impl Ready<'_> {
         let text_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
         let state_pos = state.pos;
         println!(
-            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":false,\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_half2_composed\":{gu_m1_half2_composed},\"gu_m1_calls\":{gu_m1_calls},\"wo_a_grouped\":{wo_a_grouped},\"wo_a_calls\":{wo_a_calls},\"index_topk_radix\":{index_topk_radix},\"index_topk_calls\":{index_topk_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"prefix_graph\":false,\"expert_graph\":false,\"graph_captures\":0,\"graph_replays\":0,\"graph_kernel_nodes\":0,\"graph_fallbacks\":0,\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
+            "MEASURE {{\"mode\":\"{mode}\",\"arm\":\"plain\",\"prompt\":{prompt},\"tuned\":{tuned},\"warmup\":{warmup},\"ordinal\":{ordinal},\"eligible\":{eligible},\"looped\":{excluded_loop},\"eos\":{eos},\"output_tokens\":{output_tokens},\"decode_wall_ns\":{wall_ns},\"first_step_ns\":{first_step_ns},\"capture_included_in_wall\":false,\"start_unix_ms\":{start_ms},\"ep_calls\":{ep_calls},\"gu_fuse\":true,\"down_m1_tc\":true,\"route_validate\":false,\"mirror_validate\":false,\"gu_m1\":{gu_m1},\"gu_m1_half2_composed\":{gu_m1_half2_composed},\"gu_m1_calls\":{gu_m1_calls},\"wo_a_grouped\":{wo_a_grouped},\"wo_a_calls\":{wo_a_calls},\"index_topk_radix\":{index_topk_radix},\"index_topk_calls\":{index_topk_calls},\"half2\":{half2},\"gu_half2_calls\":{gu_half2_calls},\"down_half2_calls\":{down_half2_calls},\"r9_native\":{r9_native},\"r9_calls\":{r9_calls},\"r9_qb_calls\":{r9_qb_calls},\"r9_shared_gu_calls\":{r9_shared_gu_calls},\"prefix_graph\":false,\"expert_graph\":false,\"graph_captures\":0,\"graph_replays\":0,\"graph_kernel_nodes\":0,\"graph_fallbacks\":0,\"c4_recent_rows\":0,\"c4_host_copy_elide\":false,\"token_sha256\":\"{token_sha256}\",\"logits_sha256\":\"{logits_hash}\",\"cache_sha256\":\"{cache_hash}\",\"text_sha256\":\"{text_sha256}\",\"commit_ns\":{commits:?},\"tokens\":{tokens:?},\"state_pos\":{state_pos}}}"
         );
         Identity {
             tokens,
@@ -244,7 +290,7 @@ fn main() {
     assert_eq!(
         args.len(),
         4,
-        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|gu-m1-half2|half2|wo-a|index-topk|all"
+        "usage: dsv4_plain_perf_gate <model-dir> <source.txt> gu-m1|gu-m1-half2|half2|wo-a|index-topk|r9-native-f32|all"
     );
     let modes = match args[3].as_str() {
         "gu-m1" => vec![Change::GuM1],
@@ -252,6 +298,7 @@ fn main() {
         "half2" => vec![Change::Half2],
         "wo-a" => vec![Change::WoA],
         "index-topk" => vec![Change::IndexTopk],
+        "r9-native-f32" => vec![Change::R9NativeF32],
         "all" => vec![Change::IndexTopk],
         _ => panic!("unknown plain gate mode"),
     };
@@ -359,6 +406,7 @@ fn main() {
             memra_engine::clear_moe_f16g_down_m1_half2_for_gate();
             gpu.clear_dense_wo_a_grouped_for_gate();
             gpu.clear_index_topk_radix_for_gate();
+            gpu.clear_dense_fp8_r9_for_gate();
             println!(
                 "PASS mode={} prompt={count} both_arms=engaged outputs=exact logits=exact cache=exact",
                 mode.name()

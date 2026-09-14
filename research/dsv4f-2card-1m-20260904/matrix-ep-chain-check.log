@@ -1,0 +1,21 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Checking memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+error: this file contains an unclosed delimiter
+   --> crates/memra-engine/src/dsv4_grouped.rs:884:3
+    |
+188 | impl GroupedWork {
+    |                  - unclosed delimiter
+...
+290 |     pub fn down(&mut self, gpu: &Gpu, table: &CudaSlice<u64>, out: &mut EpCompute<'_>) -> Res<()> {
+    |                                                                                                   - this delimiter might not be properly closed...
+...
+311 | }
+    | - ...as it matches this but it has different indentation
+...
+884 | }
+    |  ^
+
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error: could not compile `memra-engine` (lib) due to 1 previous error

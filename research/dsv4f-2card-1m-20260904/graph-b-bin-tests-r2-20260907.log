@@ -1,0 +1,12 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 0.53s
+     Running unittests src/bin/dsv4_plain_perf_gate.rs (target/release/deps/dsv4_plain_perf_gate-5c1fbe1edbfb568d)
+
+running 3 tests
+test coverage_tests::raw_cuda_template_case_is_preserved_by_coverage ... ok
+test coverage_tests::wrapper_name_cannot_replace_grouped_device_kernel ... ok
+test coverage_tests::wrong_batch_template_cannot_prove_plain_output_coverage ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

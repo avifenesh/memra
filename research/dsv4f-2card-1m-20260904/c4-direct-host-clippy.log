@@ -1,0 +1,21 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Checking memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+error: the loop variable `stage` is used to index `reference_bytes`
+   --> crates/memra-engine/src/bin/dsv4_c4_direct_gate.rs:164:22
+    |
+164 |         for stage in 0..reference_bytes.len() {
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+    = note: `-D clippy::needless-range-loop` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_range_loop)]`
+help: consider using an iterator and enumerate()
+    |
+164 -         for stage in 0..reference_bytes.len() {
+164 +         for (stage, <item>) in reference_bytes.iter().enumerate() {
+    |
+
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error: could not compile `memra-engine` (bin "dsv4_c4_direct_gate") due to 1 previous error

@@ -1,0 +1,36 @@
+   Compiling memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error: manual implementation of `.is_multiple_of()`
+  --> crates/memra-engine/src/dsv4_ep.rs:61:52
+   |
+61 |         if rows == 0 || rows > 512 || topk == 0 || hidden % 128 != 0 || inter % 128 != 0 {
+   |                                                    ^^^^^^^^^^^^^^^^^ help: replace with: `!hidden.is_multiple_of(128)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+   = note: `-D clippy::manual-is-multiple-of` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::manual_is_multiple_of)]`
+
+error: manual implementation of `.is_multiple_of()`
+  --> crates/memra-engine/src/dsv4_ep.rs:61:73
+   |
+61 |         if rows == 0 || rows > 512 || topk == 0 || hidden % 128 != 0 || inter % 128 != 0 {
+   |                                                                         ^^^^^^^^^^^^^^^^ help: replace with: `!inter.is_multiple_of(128)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+
+error: manual implementation of `.is_multiple_of()`
+    --> crates/memra-engine/src/dsv4_gpu.rs:2758:23
+     |
+2758 |         if ne == 0 || ne % 2 != 0 {
+     |                       ^^^^^^^^^^^ help: replace with: `!ne.is_multiple_of(2)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error: could not compile `memra-engine` (lib) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error: could not compile `memra-engine` (lib test) due to 3 previous errors

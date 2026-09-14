@@ -1,0 +1,18 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.91s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-b4347c02a233aa35)
+
+running 8 tests
+test dsv4_gpu::sampled_path_tests::draws_are_position_keyed_and_deterministic ... ok
+test dsv4_gpu::sampled_path_tests::filters_collapse_to_argmax_and_ties_break_low_index ... ok
+test dsv4_gpu::sampled_path_tests::sampler_order_is_opt_in_and_names_are_strict ... ok
+test dsv4_gpu::sampled_path_tests::sampler_gate_override_is_thread_local_and_reversible ... ok
+test dsv4_gpu::sampled_path_tests::t0_and_bad_topp_refuse_by_name ... ok
+test dsv4_gpu::sampled_path_tests::draw_frequencies_track_the_filtered_target ... ok
+test dsv4_gpu::sampled_path_tests::radix_preserves_signed_zero_ties_and_sampled_draws ... ok
+test dsv4_gpu::sampled_path_tests::malformed_sampler_order_refuses_before_artifact_or_cuda ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 412 filtered out; finished in 0.11s
+

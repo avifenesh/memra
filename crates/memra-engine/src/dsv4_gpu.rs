@@ -46,6 +46,15 @@ type Res<T> = Result<T, String>;
 static DSV4_DENSE_WO_A_GROUPED: AtomicBool = AtomicBool::new(false);
 static DSV4_DENSE_WO_A_GROUPED_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
+// Gate-only R9 native E4M3x2 -> BF16x2 ordinary GEMV.  The CUDA TU is built
+// as a fail-closed stub unless the explicit CUDA 13.3+ sm_120a compiler path
+// is selected at build time.  No environment variable or serving default
+// selects this arm.
+static DSV4_DENSE_FP8_R9: AtomicBool = AtomicBool::new(false);
+static DSV4_DENSE_FP8_R9_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+static DSV4_DENSE_FP8_R9_QB_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+static DSV4_DENSE_FP8_R9_SHARED_GU_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
 // Gate-only exact radix-cut selector for plain t=1, K=512 indexer rows. Default OFF and
 // process-local: there is no production environment knob or serving default. The scratch is
 // preallocated with the decode workspace, and the actual enqueue count is incremented only after
@@ -56,6 +65,33 @@ static DSV4_INDEX_TOPK_RADIX_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 #[inline]
 fn index_topk_radix_eligible(t: usize, nb: usize, kk: usize) -> bool {
     t == 1 && kk == 512 && (2048..=4096).contains(&nb)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DenseFp8R9Shape {
+    Qb,
+    SharedGu,
+}
+
+#[inline]
+fn dense_fp8_r9_shape(
+    m: usize,
+    n: usize,
+    kdim: usize,
+    xstride: usize,
+    ystride: usize,
+) -> Option<DenseFp8R9Shape> {
+    // The native component receipt covers only packed ordinary M=1 launches.
+    // Nonzero strides are the grouped wo_a fallback contract and must never
+    // accidentally enter this arm.
+    if m != 1 || xstride != 0 || ystride != 0 {
+        return None;
+    }
+    match (n, kdim) {
+        (32768, 1024) => Some(DenseFp8R9Shape::Qb),
+        (2048, 4096) => Some(DenseFp8R9Shape::SharedGu),
+        _ => None,
+    }
 }
 
 /// Copyable report for the gate-only one-layer CUDA graph probe.  The retained
@@ -1835,6 +1871,57 @@ impl Dsv4Gpu {
     /// Successful CUDA enqueues through the grouped FP8 wo_a entry point.
     pub fn dense_wo_a_grouped_dispatches(&self) -> u64 {
         DSV4_DENSE_WO_A_GROUPED_DISPATCHES.load(Ordering::Relaxed)
+    }
+
+    /// Whether this binary contains the CUDA 13.3+ sm_120a R9 native FP8
+    /// conversion TU.  A false result is a build/architecture refusal, not a
+    /// request to silently fall back while a gate is measuring the candidate.
+    pub fn dense_fp8_r9_available(&self) -> bool {
+        unsafe { k::memra_dsv4_gemv_fp8_r9_available() != 0 }
+    }
+
+    /// Gate-only R9 ordinary packed-M=1 FP8 GEMV.  Enabling on a baseline
+    /// CUDA 13.1, sm_100a, sm_90a, or sm_89 build fails loudly because the
+    /// candidate cannot be measured there.  This is process-local and has no
+    /// serving/environment switch.
+    pub fn set_dense_fp8_r9_for_gate(&self, enabled: bool) -> bool {
+        if enabled {
+            assert!(
+                self.dense_fp8_r9_available(),
+                "DSV4 R9 native FP8 GEMV unavailable: requires explicit CUDA 13.3+ sm_120a TU"
+            );
+        }
+        for stage in &self.stages {
+            stage
+                .gpu
+                .stream()
+                .synchronize()
+                .expect("drain dense R9 gate");
+        }
+        DSV4_DENSE_FP8_R9.swap(enabled, Ordering::SeqCst)
+    }
+
+    pub fn dense_fp8_r9_for_gate(&self) -> bool {
+        DSV4_DENSE_FP8_R9.load(Ordering::Acquire)
+    }
+
+    pub fn clear_dense_fp8_r9_for_gate(&self) {
+        self.set_dense_fp8_r9_for_gate(false);
+    }
+
+    /// Successful native R9 kernel enqueues, split by the two measured shape
+    /// classes.  The counters advance only after the C ABI launcher accepts a
+    /// dispatch, never for an ineligible or grouped fallback call.
+    pub fn dense_fp8_r9_dispatches(&self) -> u64 {
+        DSV4_DENSE_FP8_R9_DISPATCHES.load(Ordering::Relaxed)
+    }
+
+    pub fn dense_fp8_r9_qb_dispatches(&self) -> u64 {
+        DSV4_DENSE_FP8_R9_QB_DISPATCHES.load(Ordering::Relaxed)
+    }
+
+    pub fn dense_fp8_r9_shared_gu_dispatches(&self) -> u64 {
+        DSV4_DENSE_FP8_R9_SHARED_GU_DISPATCHES.load(Ordering::Relaxed)
     }
 
     /// Gate-only active-C4 profile control. Host publication may be elided only
@@ -11876,22 +11963,55 @@ impl Dsv4Gpu {
                     codes,
                     scales,
                     sc_cols,
-                } => ck(
-                    "gemv_fp8_m dev",
-                    k::memra_dsv4_gemv_fp8_m(
-                        codes,
-                        scales,
-                        sc_cols,
-                        x_ptr,
-                        y_ptr,
-                        m as i32,
-                        n as i32,
-                        kdim as i32,
-                        xstride as i32,
-                        ystride as i32,
-                        sp(&stream),
-                    ),
-                ),
+                } => {
+                    if DSV4_DENSE_FP8_R9.load(Ordering::Acquire)
+                        && let Some(shape) = dense_fp8_r9_shape(m, n, kdim, xstride, ystride)
+                    {
+                        ck(
+                            "gemv_fp8_r9_m1 dev",
+                            k::memra_dsv4_gemv_fp8_r9_m1(
+                                codes,
+                                scales,
+                                sc_cols,
+                                x_ptr,
+                                y_ptr,
+                                m as i32,
+                                n as i32,
+                                kdim as i32,
+                                xstride as i32,
+                                ystride as i32,
+                                sp(&stream),
+                            ),
+                        )?;
+                        DSV4_DENSE_FP8_R9_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+                        match shape {
+                            DenseFp8R9Shape::Qb => {
+                                DSV4_DENSE_FP8_R9_QB_DISPATCHES.fetch_add(1, Ordering::Relaxed);
+                            }
+                            DenseFp8R9Shape::SharedGu => {
+                                DSV4_DENSE_FP8_R9_SHARED_GU_DISPATCHES
+                                    .fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                        return Ok(());
+                    }
+                    ck(
+                        "gemv_fp8_m dev",
+                        k::memra_dsv4_gemv_fp8_m(
+                            codes,
+                            scales,
+                            sc_cols,
+                            x_ptr,
+                            y_ptr,
+                            m as i32,
+                            n as i32,
+                            kdim as i32,
+                            xstride as i32,
+                            ystride as i32,
+                            sp(&stream),
+                        ),
+                    )
+                }
             }
         }
     }
@@ -15974,6 +16094,72 @@ mod index_topk_radix_tests {
 }
 
 #[cfg(test)]
+mod dense_fp8_r9_policy_tests {
+    use super::{DenseFp8R9Shape, dense_fp8_r9_shape};
+    use crate::dsv4_ffi as k;
+
+    #[test]
+    fn r9_admits_only_the_two_packed_m1_receipted_shapes() {
+        assert_eq!(
+            dense_fp8_r9_shape(1, 32768, 1024, 0, 0),
+            Some(DenseFp8R9Shape::Qb)
+        );
+        assert_eq!(
+            dense_fp8_r9_shape(1, 2048, 4096, 0, 0),
+            Some(DenseFp8R9Shape::SharedGu)
+        );
+        for (m, n, k, xs, ys) in [
+            (2, 32768, 1024, 0, 0),
+            (1, 1024, 4096, 0, 0),
+            (1, 4096, 8192, 0, 0),
+            (1, 2048, 4096, 4096, 2048),
+            (1, 8192, 4096, 4096, 8192),
+        ] {
+            assert_eq!(
+                dense_fp8_r9_shape(m, n, k, xs, ys),
+                None,
+                "unexpected R9 admission m={m} n={n} k={k} xs={xs} ys={ys}"
+            );
+        }
+    }
+
+    #[test]
+    fn r9_shape_policy_keeps_grouped_strides_out() {
+        // The wo_a fallback uses a non-packed output stride even when its
+        // per-group n/k pair resembles a dense projection.  This is the
+        // explicit grouped-separation guard, not an incidental shape filter.
+        assert_eq!(dense_fp8_r9_shape(1, 2048, 4096, 4096, 8192), None);
+    }
+
+    #[test]
+    fn r9_abi_availability_matches_the_build_mode() {
+        let available = unsafe { k::memra_dsv4_gemv_fp8_r9_available() != 0 };
+        assert_eq!(available, cfg!(memra_dsv4_r9_native));
+    }
+
+    #[cfg(not(memra_dsv4_r9_native))]
+    #[test]
+    fn r9_unavailable_stub_refuses_without_cuda13_3() {
+        let rc = unsafe {
+            k::memra_dsv4_gemv_fp8_r9_m1(
+                std::ptr::null(),
+                std::ptr::null(),
+                8,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                1,
+                32768,
+                1024,
+                0,
+                0,
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(rc, 40023, "R9 stub must fail closed");
+    }
+}
+
+#[cfg(test)]
 mod dense_arm_default_tests {
     use super::{
         Dsv4IndexerScore, resolve_dense_arm, resolve_dspark_fused_moe, resolve_prefill_moe,
@@ -16665,6 +16851,224 @@ mod dense_wo_a_grouped_fp8_component_tests {
         );
         println!(
             "PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused"
+        );
+    }
+}
+
+#[cfg(test)]
+mod dense_fp8_r9_component_tests {
+    use crate::dsv4_ffi as k;
+    use cudarc::driver::{CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
+    use std::ffi::c_void;
+    use std::sync::Arc;
+
+    const GUARD_WORD: u32 = 0x7fc0_1234;
+    const GUARD_FLOATS: usize = 16;
+
+    struct Fixture {
+        codes: CudaSlice<u8>,
+        scales: CudaSlice<f32>,
+        x: CudaSlice<u16>,
+        control: CudaSlice<f32>,
+        native: CudaSlice<f32>,
+        n: usize,
+        k: usize,
+        sc_cols: usize,
+    }
+
+    fn bf16_bits(value: f32) -> u16 {
+        (value.to_bits() >> 16) as u16
+    }
+
+    fn seeded_code(index: usize) -> u8 {
+        match index % 257 {
+            0 => 0x00, // +0
+            1 => 0x80, // -0
+            2 => 0x7f, // NaN code -> +0 by the model contract
+            3 => 0xff, // signed NaN code -> +0 by the model contract
+            4 => 0x38,
+            5 => 0xb8,
+            6 => 0x7e,
+            7 => 0xfe,
+            _ => {
+                let mut value = (index as u64).wrapping_mul(0x9e37_79b9).rotate_left(17) as u8;
+                if (value & 0x7f) == 0x7f {
+                    value ^= 1;
+                }
+                value
+            }
+        }
+    }
+
+    fn make_fixture(stream: &Arc<CudaStream>, n: usize, kdim: usize) -> Fixture {
+        assert!(n % 128 == 0 && kdim % 128 == 0);
+        let sc_cols = kdim / 128;
+        let scale_rows = n / 128;
+        let codes_host: Vec<u8> = (0..n * kdim).map(seeded_code).collect();
+        let scales_host: Vec<f32> = (0..scale_rows * sc_cols)
+            .map(|index| {
+                let sign = if (index * 13 + n) % 7 == 0 { -1.0 } else { 1.0 };
+                sign * (0.125 + ((index * 17 + kdim) % 29) as f32 / 32.0)
+            })
+            .collect();
+        let x_host: Vec<u16> = (0..kdim)
+            .map(|index| match index % 31 {
+                0 => 0x0000, // +0
+                1 => 0x8000, // -0
+                2 => 0x3f80, // +1
+                3 => 0xbf80, // -1
+                4 => bf16_bits(0.125),
+                5 => bf16_bits(-0.375),
+                _ => bf16_bits(((index * 19) % 97) as f32 / 64.0 - 0.75),
+            })
+            .collect();
+        let output = vec![f32::from_bits(GUARD_WORD); n + GUARD_FLOATS];
+        Fixture {
+            codes: stream.clone_htod(&codes_host).unwrap(),
+            scales: stream.clone_htod(&scales_host).unwrap(),
+            x: stream.clone_htod(&x_host).unwrap(),
+            control: stream.clone_htod(&output).unwrap(),
+            native: stream.clone_htod(&output).unwrap(),
+            n,
+            k: kdim,
+            sc_cols,
+        }
+    }
+
+    unsafe fn launch_control(stream: &Arc<CudaStream>, f: &mut Fixture) {
+        k::ck("R9 ordinary control", unsafe {
+            k::memra_dsv4_gemv_fp8_m(
+                f.codes.device_ptr(stream).0 as *const c_void,
+                f.scales.device_ptr(stream).0 as *const f32,
+                f.sc_cols as i32,
+                f.x.device_ptr(stream).0 as *const c_void,
+                f.control.device_ptr_mut(stream).0 as *mut f32,
+                1,
+                f.n as i32,
+                f.k as i32,
+                0,
+                0,
+                stream.cu_stream().cast(),
+            )
+        })
+        .unwrap();
+    }
+
+    unsafe fn launch_native(stream: &Arc<CudaStream>, f: &mut Fixture) {
+        k::ck("R9 native candidate", unsafe {
+            k::memra_dsv4_gemv_fp8_r9_m1(
+                f.codes.device_ptr(stream).0 as *const c_void,
+                f.scales.device_ptr(stream).0 as *const f32,
+                f.sc_cols as i32,
+                f.x.device_ptr(stream).0 as *const c_void,
+                f.native.device_ptr_mut(stream).0 as *mut f32,
+                1,
+                f.n as i32,
+                f.k as i32,
+                0,
+                0,
+                stream.cu_stream().cast(),
+            )
+        })
+        .unwrap();
+    }
+
+    fn assert_outputs_match(stream: &Arc<CudaStream>, f: &Fixture) {
+        stream.synchronize().unwrap();
+        let control = stream.clone_dtoh(&f.control).unwrap();
+        let native = stream.clone_dtoh(&f.native).unwrap();
+        for row in 0..f.n {
+            assert!(control[row].is_finite(), "control nonfinite row={row}");
+            assert!(native[row].is_finite(), "native nonfinite row={row}");
+            assert_eq!(
+                control[row].to_bits(),
+                native[row].to_bits(),
+                "R9 output mismatch row={row} n={} k={}",
+                f.n,
+                f.k
+            );
+        }
+        for (name, output) in [("control", control), ("native", native)] {
+            assert!(
+                output[f.n..]
+                    .iter()
+                    .all(|value| value.to_bits() == GUARD_WORD),
+                "{name} wrote through the output tail guard n={} k={}",
+                f.n,
+                f.k
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires an exclusively locked CUDA device and the explicit CUDA 13.3 R9 TU"]
+    fn cuda_r9_native_wrapper_matches_ordinary_wrapper_on_receipted_shapes() {
+        let gpu = memra_runtime::Gpu::new(0).expect("GPU");
+        let stream = gpu.stream();
+        let available = unsafe { k::memra_dsv4_gemv_fp8_r9_available() };
+        assert_eq!(available, 1, "R9 component test needs the native TU");
+
+        for (n, kdim) in [(32768usize, 1024usize), (2048, 4096)] {
+            let mut fixture = make_fixture(&stream, n, kdim);
+
+            // The integrated C ABI enforces the same allowlist and scale-plane
+            // capacity as the Rust policy.  These calls return before touching
+            // the pointers, so they are safe refusal checks.
+            let bad_shape = unsafe {
+                k::memra_dsv4_gemv_fp8_r9_m1(
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    fixture.sc_cols as i32,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    1,
+                    1024,
+                    4096,
+                    0,
+                    0,
+                    std::ptr::null_mut(),
+                )
+            };
+            assert_eq!(bad_shape, 40020, "R9 ABI accepted an unreceipted shape");
+            let bad_scales = unsafe {
+                k::memra_dsv4_gemv_fp8_r9_m1(
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    (fixture.k / 128 - 1) as i32,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    1,
+                    fixture.n as i32,
+                    fixture.k as i32,
+                    0,
+                    0,
+                    std::ptr::null_mut(),
+                )
+            };
+            assert_eq!(bad_scales, 40012, "R9 ABI accepted a short scale plane");
+            let bad_stride = unsafe {
+                k::memra_dsv4_gemv_fp8_r9_m1(
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    fixture.sc_cols as i32,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    1,
+                    fixture.n as i32,
+                    fixture.k as i32,
+                    (fixture.k + 8) as i32,
+                    fixture.n as i32,
+                    std::ptr::null_mut(),
+                )
+            };
+            assert_eq!(bad_stride, 40011, "R9 ABI accepted a non-packed stride");
+
+            unsafe { launch_control(&stream, &mut fixture) };
+            unsafe { launch_native(&stream, &mut fixture) };
+            assert_outputs_match(&stream, &fixture);
+        }
+        println!(
+            "PASS R9 integrated native wrapper: shapes=(32768,1024),(2048,4096), seeded finite/-0/NaN codes, output guards, ABI refusals"
         );
     }
 }

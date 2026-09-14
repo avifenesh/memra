@@ -1,0 +1,14 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.82s
+     Running unittests src/bin/dsv4_matrix_distribution_gate.rs (target/debug/deps/dsv4_matrix_distribution_gate-466ff4fdd9470db8)
+
+running 4 tests
+test tests::extreme_finite_logits_remain_finite ... ok
+test tests::identical_and_shifted_logits_have_the_same_distribution ... ok
+test tests::invalid_rows_and_targets_are_refused ... ok
+test tests::known_binary_distributions_match_analytic_metrics ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

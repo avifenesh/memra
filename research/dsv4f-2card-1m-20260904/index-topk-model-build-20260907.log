@@ -1,0 +1,47 @@
+   Compiling memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: enum `Dsv4GraphSegment` is never used
+  --> crates/memra-engine/src/dsv4_graph.rs:14:17
+   |
+14 | pub(crate) enum Dsv4GraphSegment {
+   |                 ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `Dsv4GraphShapeKey` is never constructed
+  --> crates/memra-engine/src/dsv4_graph.rs:23:19
+   |
+23 | pub(crate) struct Dsv4GraphShapeKey {
+   |                   ^^^^^^^^^^^^^^^^^
+
+warning: associated function `graph_b` is never used
+  --> crates/memra-engine/src/dsv4_graph.rs:44:19
+   |
+39 | impl Dsv4GraphShapeKey {
+   | ---------------------- associated function in this implementation
+...
+44 |     pub(crate) fn graph_b(
+   |                   ^^^^^^^
+
+warning: struct `Dsv4GraphPointerKey` is never constructed
+  --> crates/memra-engine/src/dsv4_graph.rs:88:19
+   |
+88 | pub(crate) struct Dsv4GraphPointerKey {
+   |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `Dsv4GraphKey` is never constructed
+   --> crates/memra-engine/src/dsv4_graph.rs:100:19
+    |
+100 | pub(crate) struct Dsv4GraphKey {
+    |                   ^^^^^^^^^^^^
+
+warning: associated function `graph_b` is never used
+   --> crates/memra-engine/src/dsv4_graph.rs:107:19
+    |
+106 | impl Dsv4GraphKey {
+    | ----------------- associated function in this implementation
+107 |     pub(crate) fn graph_b(shape: Dsv4GraphShapeKey, pointers: Dsv4GraphPointerKey) -> Self {
+    |                   ^^^^^^^
+
+warning: `memra-engine` (lib) generated 6 warnings
+    Finished `release` profile [optimized] target(s) in 4m 22s

@@ -1,0 +1,22 @@
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Checking memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+warning: function `upload_u64` is never used
+    --> crates/memra-engine/src/dsv4_gpu.rs:1099:4
+     |
+1099 | fn upload_u64(stream: &std::sync::Arc<CudaStream>, v: &[u64]) -> Res<CudaSlice<u64>> {
+     |    ^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `new` is never used
+   --> crates/memra-engine/src/dsv4_grouped.rs:536:12
+    |
+485 | impl GroupedRoutes {
+    | ------------------ associated function in this implementation
+...
+536 |     pub fn new(s: &Arc<CudaStream>, experts: usize, slots: usize) -> Res<Self> {
+    |            ^^^
+
+warning: `memra-engine` (lib) generated 2 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.77s

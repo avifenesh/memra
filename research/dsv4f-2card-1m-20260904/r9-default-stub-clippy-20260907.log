@@ -1,0 +1,30 @@
+   Compiling memra-engine v0.125.0 (/home/avifenesh/projects/wt-dsv4f-2card-1m-20260904/crates/memra-engine)
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: DSV4 R9 native FP8 decode unavailable; building fail-closed ABI stub
+error: this `if` statement can be collapsed
+     --> crates/memra-engine/src/dsv4_gpu.rs:11967:21
+      |
+11967 | /                     if DSV4_DENSE_FP8_R9.load(Ordering::Acquire) {
+11968 | |                         if let Some(shape) = dense_fp8_r9_shape(m, n, kdim, xstride, ystride) {
+11969 | |                             ck(
+11970 | |                                 "gemv_fp8_r9_m1 dev",
+...     |
+11997 | |                     }
+      | |_____________________^
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
+      = note: `-D clippy::collapsible-if` implied by `-D warnings`
+      = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+      |
+11967 ~                     if DSV4_DENSE_FP8_R9.load(Ordering::Acquire)
+11968 ~                         && let Some(shape) = dense_fp8_r9_shape(m, n, kdim, xstride, ystride) {
+11969 |                             ck(
+  ...
+11995 |                             return Ok(());
+11996 ~                         }
+      |
+
+warning: memra-engine@0.125.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.125.0: DSV4 R9 native FP8 decode unavailable; building fail-closed ABI stub
+error: could not compile `memra-engine` (lib) due to 1 previous error
