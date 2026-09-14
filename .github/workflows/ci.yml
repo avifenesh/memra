@@ -117,6 +117,8 @@ jobs:
       # exactly like the gates it protects, which is why every one of them is HERE.
       - name: Gate-integrity teeth fixture (round 2)
         run: tools/test_gate_integrity_r2.sh
+      - name: Argmax-margin input and verdict controls
+        run: python3 tools/test_argmax_margin_gate.py
       - name: Push-range fixture (round 1)
         run: tools/test_push_range.sh
       - name: Gate-template teeth fixture (round 3)
@@ -279,8 +281,8 @@ jobs:
       # The parity-geometry rule's own tests live in a module included by the two parity
       # binaries (`#[path = "../parity_geometry.rs"]`), so `-p memra-engine --lib` does NOT
       # reach them; the target has to be named. Nothing in them touches the CUDA driver.
-      - name: Parity-geometry rule tests
-        run: cargo test --release -p memra-engine --bin dflash_parity --bin dspark_q38_parity
+      - name: Parity geometry and argmax instrument tests
+        run: cargo test --release -p memra-engine --bin dflash_parity --bin dspark_q38_parity --bin argmax-margin-probe
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
