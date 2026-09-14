@@ -703,6 +703,44 @@ impl Dsv4PrefillHead {
     }
 }
 
+/// The cache-class census a prefill comparison must cover, resolved from the loaded
+/// model's own per-layer structure (does this layer carry a compressor, does it carry an
+/// indexer) instead of from a kernel or symbol family. One owner for the expectation: a
+/// door that changes which layers carry which state moves this function, not every site
+/// that happens to name a class. `layers[il] = (has_cmp, has_idx)`.
+pub fn cache_class_census(layers: &[(bool, bool)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (il, (has_cmp, has_idx)) in layers.iter().enumerate() {
+        out.push(format!("l{il}.ring"));
+        if *has_cmp {
+            out.push(format!("l{il}.cmp_store"));
+            out.push(format!("l{il}.cmp_pend_kv"));
+            out.push(format!("l{il}.cmp_pend_score"));
+        }
+        if *has_idx {
+            out.push(format!("l{il}.idx_store"));
+            out.push(format!("l{il}.idx_pend_kv"));
+            out.push(format!("l{il}.idx_pend_score"));
+        }
+    }
+    out
+}
+
+/// The prefill-head door's own expectation over one chunked prefill: `(full_rows,
+/// last_rows, skipped_chunks)` for `chunks` transactions carrying `rows` teacher-forced
+/// rows in total. Resolved from the arm, so a census site cannot keep asserting the
+/// other arm's counters after a flip.
+pub fn prefill_head_census(arm: Dsv4PrefillHead, chunks: u64, rows: u64) -> (u64, u64, u64) {
+    assert!(
+        chunks >= 1,
+        "a chunked prefill runs at least one transaction"
+    );
+    match arm {
+        Dsv4PrefillHead::All => (rows, 0, 0),
+        Dsv4PrefillHead::Last => (0, 1, chunks - 1),
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum VerifyOutput {
     Device,
@@ -18426,6 +18464,24 @@ impl Dsv4Gpu {
     /// the committed tokens, bit for bit). "Live" is load-bearing: bytes past `n_blocks`
     /// in an append-only store, and the TRANSIENT verify rows, are dead scratch and are
     /// deliberately excluded (the CPU-oracle gate draws the same line).
+    /// The class names `cache_classes` must return for this loaded model, resolved
+    /// through [`cache_class_census`] from the per-layer compressor/indexer facts.
+    pub fn expected_cache_class_names(&self) -> Vec<String> {
+        let mut layers: Vec<(bool, bool)> = Vec::new();
+        let n = self.layer_stage.len();
+        for il in 0..n {
+            let st = &self.stages[self.layer_stage[il]];
+            let lidx = st
+                .layers
+                .iter()
+                .position(|l| l.il == il as u32)
+                .unwrap_or_else(|| panic!("layer {il} not on its stage"));
+            let layer = &st.layers[lidx];
+            layers.push((layer.cmp.is_some(), layer.idx.is_some()));
+        }
+        cache_class_census(&layers)
+    }
+
     pub fn cache_classes(&self, state: &DecodeState) -> Res<Vec<(String, Vec<f32>)>> {
         let d = self.model.cfg();
         let hd = d.head_dim as usize;
@@ -20119,5 +20175,51 @@ mod norm2_wide_policy_tests {
         // Launcher contract: tiles in 1..=n/128 and 128*tiles divides 4096.
         assert!((1..=4096 / 128).contains(&NORM2_WIDE_TILES));
         assert_eq!(4096 % (128 * NORM2_WIDE_TILES), 0);
+    }
+}
+
+#[cfg(test)]
+mod prefill_chunk_census_tests {
+    use super::{Dsv4PrefillHead, cache_class_census, prefill_head_census};
+
+    #[test]
+    fn cache_census_demands_the_classes_a_layer_carries_and_forbids_the_others() {
+        // Crosswise, both ways: a layer with no compressor must NOT demand cmp classes,
+        // and a layer that carries one must. Same for the indexer.
+        let plain = cache_class_census(&[(false, false)]);
+        assert_eq!(plain, vec!["l0.ring".to_string()]);
+        let cmp_only = cache_class_census(&[(true, false)]);
+        assert!(cmp_only.contains(&"l0.cmp_pend_score".to_string()));
+        assert!(!cmp_only.iter().any(|n| n.starts_with("l0.idx")));
+        let idx_only = cache_class_census(&[(false, true)]);
+        assert!(idx_only.contains(&"l0.idx_pend_score".to_string()));
+        assert!(!idx_only.iter().any(|n| n.starts_with("l0.cmp")));
+        let both = cache_class_census(&[(true, true), (false, false)]);
+        assert_eq!(both.len(), 7 + 1);
+        assert_eq!(both[7], "l1.ring");
+        // A census is only a check if it can fail: the four shapes are all different.
+        assert_ne!(plain, cmp_only);
+        assert_ne!(cmp_only, idx_only);
+    }
+
+    #[test]
+    fn prefill_head_census_moves_with_the_door_both_ways() {
+        // 9 chunks, 545 teacher-forced rows.
+        assert_eq!(
+            prefill_head_census(Dsv4PrefillHead::All, 9, 545),
+            (545, 0, 0)
+        );
+        assert_eq!(
+            prefill_head_census(Dsv4PrefillHead::Last, 9, 545),
+            (0, 1, 8)
+        );
+        // Crosswise: neither arm's expectation is satisfiable by the other's counters.
+        assert_ne!(
+            prefill_head_census(Dsv4PrefillHead::All, 9, 545),
+            prefill_head_census(Dsv4PrefillHead::Last, 9, 545)
+        );
+        // A single-transaction prefill still skips nothing under either arm.
+        assert_eq!(prefill_head_census(Dsv4PrefillHead::Last, 1, 40), (0, 1, 0));
+        assert_eq!(prefill_head_census(Dsv4PrefillHead::All, 1, 40), (40, 0, 0));
     }
 }
