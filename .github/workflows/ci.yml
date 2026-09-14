@@ -281,8 +281,8 @@ jobs:
       # The parity-geometry rule's own tests live in a module included by the two parity
       # binaries (`#[path = "../parity_geometry.rs"]`), so `-p memra-engine --lib` does NOT
       # reach them; the target has to be named. Nothing in them touches the CUDA driver.
-      - name: Parity-geometry rule tests
-        run: cargo test --release -p memra-engine --bin dflash_parity --bin dspark_q38_parity
+      - name: Parity geometry and argmax instrument tests
+        run: cargo test --release -p memra-engine --bin dflash_parity --bin dspark_q38_parity --bin argmax-margin-probe
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
