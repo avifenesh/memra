@@ -50,6 +50,7 @@
 // errors 0 ok / 10000+cudaError / 40000+contract, stream passed as void*.
 
 #include <cuda_runtime.h>
+#include <cuda_bf16.h>
 #include <cstdint>
 #include <cfloat>
 #include <cmath>
@@ -362,6 +363,99 @@ extern "C" int memra_mla_absorb_q_wp_f32(const float* q_nope, const float* wk_b,
     if (blocks == 0) return 0;
     memra_mla_absorb_q_wp_kernel<<<(unsigned)blocks, MLA_THREADS, d_nope * sizeof(float),
                                    stream>>>(q_nope, wk_b, q_lat, n_head, d_nope, kv_rank, split);
+    MLA_ERR();
+    return 0;
+}
+
+// ---- BF16-RESIDENT ABSORB PLANES (lane/glm5-mla-bf16-planes-20260904, memra#135) ----
+// The MLA absorb planes are the largest kept-precision byte stream in a decode token: 33.6 MB of
+// f32 `wk_b` plus 33.6 MB of f32 `wv_b` per MLA layer, read in full every token, 738 MB/token on
+// the served GLM-5.3-Flash geometry. NVIDIA's own hybrid-MoE NVFP4 checkpoint keeps attention
+// projections at BF16 (Nemotron-Labs-3-Puzzle-75B-A9B, Table 2), and the re-mint emits them that
+// way, so the engine has to consume BF16 3D planes instead of dequantizing them to f32 at load.
+//
+// THE TWINS ARE BIT-IDENTICAL TO THE f32 KERNELS ON THE SAME VALUES, and that is a construction,
+// not a hope: `__bfloat162float` is exact (BF16 is a truncated f32 significand, every BF16 value
+// is representable in f32), the accumulation order is unchanged (same loop bounds, same `acc`
+// chain, same warp reduction), and the activation side stays f32. So widening a BF16 plane to f32
+// and running the f32 kernel must produce the same bits as running these kernels on the BF16
+// plane, which is exactly what the gate asserts.
+__device__ __forceinline__ float mla_bf16_load(const __nv_bfloat16* p) {
+    return __bfloat162float(*p);
+}
+
+extern "C" __global__ void memra_mla_absorb_q_bf16_kernel(const float* __restrict__ q_nope,
+                                                          const __nv_bfloat16* __restrict__ wk_b,
+                                                          float* __restrict__ q_lat, int n_head,
+                                                          int d_nope, int kv_rank) {
+    extern __shared__ float smem[];
+    int blk = blockIdx.x;      // i * n_head + h
+    int h = blk % n_head;
+    const float* qn = q_nope + (long)blk * d_nope;
+    for (int p = threadIdx.x; p < d_nope; p += blockDim.x) smem[p] = qn[p];
+    __syncthreads();
+    const __nv_bfloat16* w = wk_b + (long)h * kv_rank * d_nope;
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) {
+        const __nv_bfloat16* row = w + (long)l * d_nope;
+        float acc = 0.0f;
+        for (int p = 0; p < d_nope; ++p) acc = __fmaf_rn(smem[p], mla_bf16_load(row + p), acc);
+        q_lat[(long)blk * kv_rank + l] = acc;
+    }
+}
+
+extern "C" int memra_mla_absorb_q_bf16(const float* q_nope, const void* wk_b, float* q_lat,
+                                       int t_q, int n_head, int d_nope, int kv_rank,
+                                       void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head;
+    if (blocks == 0) return 0;
+    memra_mla_absorb_q_bf16_kernel<<<(unsigned)blocks, MLA_THREADS, d_nope * sizeof(float),
+                                     stream>>>(
+        q_nope, (const __nv_bfloat16*)wk_b, q_lat, n_head, d_nope, kv_rank);
+    MLA_ERR();
+    return 0;
+}
+
+extern "C" __global__ void memra_mla_decompress_v_wp_bf16_kernel(
+        const float* __restrict__ o_lat, const __nv_bfloat16* __restrict__ wv_b,
+        float* __restrict__ out, int n_head, int d_v, int kv_rank, int split) {
+    extern __shared__ float smem[];
+    int blk = blockIdx.x / split;
+    int chunk = blockIdx.x % split;
+    int h = blk % n_head;
+    const float* ol = o_lat + (long)blk * kv_rank;
+    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) smem[l] = ol[l];
+    __syncthreads();
+    const __nv_bfloat16* w = wv_b + (long)h * d_v * kv_rank;
+    int per = (d_v + split - 1) / split;
+    int lo = chunk * per;
+    int hi = lo + per < d_v ? lo + per : d_v;
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int nwarp = blockDim.x >> 5;
+    for (int j = lo + warp; j < hi; j += nwarp) {
+        const __nv_bfloat16* row = w + (long)j * kv_rank;
+        float acc = 0.0f;
+        // PINNED to the fused form: the f32 kernel's `acc += row[l] * smem[l]` compiles to FFMA,
+        // and after the BF16 conversion nvcc stopped contracting, which showed up as 2,908 of
+        // 16,384 outputs differing by an ulp against a reference that was otherwise identical.
+        for (int l = lane; l < kv_rank; l += 32) acc = __fmaf_rn(mla_bf16_load(row + l), smem[l], acc);
+        acc = mla_warp_sum(acc);
+        if (lane == 0) out[(long)blk * d_v + j] = acc;
+    }
+}
+
+extern "C" int memra_mla_decompress_v_wp_bf16(const float* o_lat, const void* wv_b, float* out,
+                                              int t_q, int n_head, int d_v, int kv_rank, int split,
+                                              void* stream_v) {
+    if (split < 1 || split > d_v) return 40003;
+    if (kv_rank > MLA_MAX_RANK) return 40002;
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    long blocks = (long)t_q * n_head * split;
+    if (blocks == 0) return 0;
+    memra_mla_decompress_v_wp_bf16_kernel<<<(unsigned)blocks, MLA_THREADS,
+                                            kv_rank * sizeof(float), stream>>>(
+        o_lat, (const __nv_bfloat16*)wv_b, out, n_head, d_v, kv_rank, split);
     MLA_ERR();
     return 0;
 }

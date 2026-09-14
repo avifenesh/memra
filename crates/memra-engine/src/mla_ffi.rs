@@ -533,6 +533,20 @@ unsafe extern "C" {
         kv_rank: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// BF16-resident twin of [`memra_mla_absorb_q_f32`] (memra#135, lane/glm5-mla-bf16-planes):
+    /// the same kernel with `wk_b` read as BF16 and widened per element with `__bfloat162float`,
+    /// which is exact, in the same accumulation order. Bit-identical to the f32 kernel run on the
+    /// same values widened to f32 — the property `mla_bf16_planes_gpu` asserts.
+    pub fn memra_mla_absorb_q_bf16(
+        q_nope: *const f32,
+        wk_b: *const c_void,
+        q_lat: *mut f32,
+        t_q: i32,
+        n_head: i32,
+        d_nope: i32,
+        kv_rank: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_mla_decompress_v_f32(
         o_lat: *const f32,
         wv_b: *const f32,
@@ -574,6 +588,19 @@ unsafe extern "C" {
     pub fn memra_mla_decompress_v_wp_f32(
         o_lat: *const f32,
         wv_b: *const f32,
+        out: *mut f32,
+        t_q: i32,
+        n_head: i32,
+        d_v: i32,
+        kv_rank: i32,
+        split: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// BF16-resident twin of [`memra_mla_decompress_v_wp_f32`] (memra#135): same warp-per-row
+    /// program, `wv_b` read as BF16 and widened exactly, same order, same warp reduction.
+    pub fn memra_mla_decompress_v_wp_bf16(
+        o_lat: *const f32,
+        wv_b: *const c_void,
         out: *mut f32,
         t_q: i32,
         n_head: i32,
