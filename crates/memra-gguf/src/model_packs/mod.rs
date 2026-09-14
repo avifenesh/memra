@@ -22,6 +22,11 @@ pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
 pub mod qwen3_moe;
+/// The second speech pack, and it follows `nemotron_rnnt`'s shape: the pack owns the census, the
+/// tensor contract and the pinned constants, and executes nothing. Unlike the RNNT pack it reads
+/// safetensors headers through the existing header-only reader, so its G1 census gate runs in
+/// hosted CI against the pinned artifact's own headers with no weights and no GPU.
+pub mod qwen3_tts;
 pub mod qwen4_exp;
 pub mod step35;
 pub mod whisper;
