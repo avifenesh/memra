@@ -1,5 +1,10 @@
 # D contract proposal + interface-freeze fixture plan
 
+> Historical day-one proposal. Superseded by the accepted frozen v1 at `259ff819`.
+> Day-two implementations import the shared contracts; the old facade below is not the
+> current API. `verify-cpu.sh` now tests the real workspace, not this historical facade.
+> See CONFORMANCE-REVIEW.md for migration coverage and remaining proposed shared cases.
+
 **Proposal, not frozen shared API.** Day 1, 2026-09-19; baseline memra
 `c5a33b14ff7b6c75a3cd808dbc0ee4f10aa8b33f`. The coordinator owns freeze,
 `contracts.rs`, Cargo/module wiring, merges and shared documentation.

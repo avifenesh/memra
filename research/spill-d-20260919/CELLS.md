@@ -1,6 +1,9 @@
-# D qualification queue — day 1, all GPU rows PENDING
+# D qualification queue — day 2, all GPU rows PENDING
 
-No GPU/model/SSH execution by this session. Check-in: 2026-09-20 for pair access/artifact
+No GPU/model execution. Day-2 approved development-rig SSH inventory attempt exited 255
+with `Connection closed by UNKNOWN port 65535`; no remote command execution established.
+One attempt, no retry, no PRO address approved. This expected connectivity failure is not a
+day-2 CPU milestone blocker. Check-in: 2026-09-20 for pair access/artifact
 locks; target check-in 2026-09-26 and run at arrival+1 day. These are bookings, not claims.
 No serving instance, DSv4 0731 cell, V4.1 adapter or format substitution.
 
@@ -26,8 +29,8 @@ rc=${PIPESTATUS[0]}
 
 Shell gates owning their own canonical lock run standalone, serially scheduled, with no
 wrapper lock. Multi-arm campaign driver must hold one canonical lock and invoke **non-locking
-binary** entry points beneath it. The actual integrated GPU runner, telemetry collection and
-failure lifecycle are pending; `tier-battery.py --plan` does not acquire a GPU or run commands.
+binary** entry points beneath it. Native integrated GPU runner and real instrumented counter bindings are pending; the day-2
+collector protocol, raw-log/failure lifecycle and synthetic sampler are CPU-tested; `tier-battery.py --plan` does not acquire a GPU or run commands.
 
 Before/after each campaign and on failures capture verbatim topology, concurrent compute PIDs,
 link gen/width, NUMA and local-NVMe mount/device inventory. Read-only topology commands are in
@@ -86,7 +89,8 @@ outputs, ON movement>0/OFF movement=0, exact arm pairs, same runtime/artifact/pl
 numeric/prompt identity, canonical rig lock labels, and no fake/host-bounce P2P claim.
 These checks compare submitted evidence only; they do not authenticate hardware provenance,
 prove an actual held lock, establish numeric truth, count a complete cell roster, or verify
-model support. Full GPU collector/campaign acceptance is pending.
+model support. GPU rows now require the version-1 telemetry fields. Native GPU collector
+bindings and full campaign acceptance remain pending.
 
 - Faults/refusals retain attempted command, exit status, exact stderr quote and concurrent
   GPU state in raw logs, not disguised as positive output rows. Sole active corruption fails
@@ -100,3 +104,39 @@ model support. Full GPU collector/campaign acceptance is pending.
   useful/physical/migrated bytes, failures and warm-up boundaries. p99 from tiny N descriptive.
 - No performance verdict/default, G0–G7 GO or support promotion from day-1 fixtures. End-to-end
   active reload/model consumption is mandatory; prefix park/copy/allocator-only success is not it.
+
+## Day-2 CPU collector and placement/probe cells (executed; not GPU gates)
+
+| Cell | Command | Evidence / outcome boundary |
+|---|---|---|
+| D0 frozen peer conformance | `cargo test -p memra-tier --offline` | 36 frozen contract + 10 D peer + 6 D placement tests; 3 compile-fail doctests. See CONFORMANCE-REVIEW.md: reusable PeerCapacity schedule absent, proposed to lead. |
+| D0 collector adversarial tests | `python3 -B -m unittest discover -s crates/memra-tier/tests/battery -p 'test_*.py'` | 16 CPU tests; exact bytes, raw failures/timeout/descendant drain, canonical-lock contention, 250ms callback cadence, order/N/thermal/hash/schema red controls, placement and topology. |
+| D0 dry campaign | `python3 -B tools/tier-battery.py --dry-run --out research/spill-d-20260919/day2-dry-run` | Real canonical **local Mac** flock held across fake commands; no remote/GPU lock claim. One forced control pair first, then interleaved five AB + five BA pairs: N=10/arm. Three **virtual** 250ms samples/run; one deliberately failing subprocess before correctness, excluded from medians. |
+| D0 retained campaign check | `python3 -B tools/tier-battery.py --validate-campaign research/spill-d-20260919/day2-dry-run` | Exact order/cardinality, hashes, state/logits/tokens, telemetry window, thermal/N/median and quoted failure checked. `CPU CAMPAIGN MATCH: 22 runs`; not GPU qualification. |
+| D4 arithmetic only | `python3 -B tools/tier-placement.py`; `python3 -B tools/tier-placement.py --record-bytes 264 --json` | PLACEMENT-TABLES.md reproduces 07 §3 class/grid/frontier tables for both 10/10/10/10 and 9/11/9/11. Explicit owner streams/floors and weight census, not layer-count-only capacity. Override is opaque sizing, no format promotion. |
+| D1 probe dry-run | `python3 -B tools/tier-topology.py --dry-run crates/memra-tier/tests/battery/topology.fixture.json --out <new-json-path>` | Six read-only captures: topo matrix, nvidia-smi -q, P2P read/write capability, CPU/NUMA inventory. Fixture text retained verbatim; route_qualification=false. |
+
+`telemetry.schema.json` v1 contains cumulative per-device route bytes in/out (local, PCIe-P2P,
+host-bounce, host, NVMe), pinned/pageable host occupancy, NVMe queue depth/read/write bytes,
+nullable physical bytes, device clock/power/temperature/VRAM, and p50/p95/p99 io/h2d/d2h/p2p/
+queue waits. Missing/negative/nonmonotonic data refuses; native gaps above 500ms refuse.
+Sampler requests 250ms ticks; actual timestamps are retained rather than made evenly spaced.
+Synthetic sampler clocks/power/temperature/VRAM are **null**, not invented GPU observations.
+Counters in this dry run are synthetic, physical SSD bytes unknown, thermal regime is
+`synthetic-no-thermal-measurement`; every median names N and this regime. Tiny-N percentiles
+are descriptive only. No synthetic timing is published to the engine performance board.
+
+Raw merged stdout/stderr is teed/flushed before parsing and hashed afterward. Failure records
+quote captured errors, retain exit code/timeout and provenance; CPU failures explicitly have
+no concurrent GPU process query. The native failure adapter must capture real compute-apps
+at failure, and native serving cells still need TTFT/E2E/TPOT/ITL distributions and request/token
+throughput. The fake cannot fulfill those real instrumentation requirements.
+
+Topology inventory remains diagnostic, never a grant: live context/pool grants, byte-path proof,
+and measured link/route/fabric pressure still belong to D1/G5. Scoped topology observations bind
+direction, both owner contexts, binary and topology digest; any change refuses old observations.
+Keep QSA remote-scatter refusal unchanged. PP is never TP, host bounce never P2P.
+
+The official Step ladder above is unchanged: `decode-batch-gate --mode pp/ppspec` consumes
+pinned official FP8 safetensors. `ppn-gate` remains **GGUF-only / supplementary**. No PRO pair
+address, artifact permission, CUDA toolchain or GPU was available here. G0–G7 remain pending.
