@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use super::*;
 use memra_tier::contracts::{CancelState, ChargeState, Destination, ReadPlan, TransferEngine};
 use memra_tier::io::transfer::CpuTransfers;
@@ -359,7 +357,7 @@ fn root_metadata_requires_canonical_v1_and_distinct_digest_domains() {
 
 struct PinnedFixture {
     pool: Option<FakePinnedPool>,
-    gov: Rc<RefCell<support::Governor>>,
+    gov: SharedGovernor,
     charge: memra_tier::contracts::ChargedLease,
 }
 impl PinnedFixture {
