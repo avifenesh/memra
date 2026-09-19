@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use super::*;
 use memra_tier::contracts::{CancelState, ChargeState, Destination, ReadPlan, TransferEngine};
 use memra_tier::io::transfer::CpuTransfers;
@@ -353,4 +355,96 @@ fn root_metadata_requires_canonical_v1_and_distinct_digest_domains() {
     metadata.push(b' ');
     *root = encode_extent(&metadata).unwrap();
     assert_eq!(s.lookup(&key()), Err(Error::Corrupt));
+}
+
+struct PinnedFixture {
+    pool: Option<FakePinnedPool>,
+    gov: Rc<RefCell<support::Governor>>,
+    charge: memra_tier::contracts::ChargedLease,
+}
+impl PinnedFixture {
+    fn new() -> Self {
+        let gov = governor();
+        let charge = gov
+            .borrow_mut()
+            .reserve(&support::request(
+                2 * (4096 + 4095),
+                Priority::MandatoryActive,
+            ))
+            .unwrap();
+        let pool = Some(FakePinnedPool::new(2, 4096, 4096, 1, &charge).unwrap());
+        Self { pool, gov, charge }
+    }
+}
+impl conformance::PinnedFixture for PinnedFixture {
+    type Host = memra_tier::pool::PinnedLease;
+    fn acquire(&mut self, optional: bool) -> memra_tier::contracts::Result<Self::Host> {
+        self.pool.as_ref().unwrap().acquire(
+            264,
+            if optional {
+                Admission::Optional
+            } else {
+                Admission::Demand
+            },
+        )
+    }
+    fn initialize(
+        &mut self,
+        host: &mut Self::Host,
+        bytes: &[u8],
+    ) -> memra_tier::contracts::Result<()> {
+        host.write(bytes)
+    }
+    fn release(&mut self, host: Self::Host) {
+        host.release();
+    }
+    fn quarantine(&mut self, host: Self::Host) {
+        host.quarantine();
+    }
+    fn free_slots(&self) -> usize {
+        self.pool.as_ref().unwrap().accounting().free_slots
+    }
+    fn used(&self) -> memra_tier::contracts::TierBudget {
+        self.gov.borrow().used()
+    }
+    fn release_backing(&mut self) -> memra_tier::contracts::Result<()> {
+        self.gov.borrow_mut().release(&self.charge)
+    }
+    fn close_pool(&mut self) {
+        self.pool.take();
+    }
+}
+#[test]
+fn revision_v11_pinned_lease() {
+    conformance::pinned_lease(&mut PinnedFixture::new());
+}
+#[test]
+fn revision_v11_pinned_quarantine() {
+    conformance::pinned_quarantine(&mut PinnedFixture::new());
+}
+#[test]
+fn revision_v11_object_publish_release() {
+    let directory = OwnedDirectory::new();
+    let mut s = new_store(FileBackend::open_mode(&directory.0, Durability::Persistent).unwrap());
+    let mut request = support::request(0, Priority::MandatoryActive);
+    request.bytes.nvme = 32768;
+    conformance::object_publish_release(&mut s, key(), request);
+}
+#[test]
+fn revision_v11_transfer_complete_cancel() {
+    let (mut engine, pool) = transfers();
+    let ticket = engine.nvme_read(plan(&pool)).unwrap();
+    conformance::transfer_complete_cancel(
+        &mut engine,
+        ticket,
+        &[vec![memra_tier::contracts::SegmentExpectation {
+            valid_bytes: 264,
+            io_bytes: 8192,
+            checksum: digest(&payload(264)),
+        }]],
+        |e, t| e.drive(t).unwrap(),
+    );
+    engine.retire(&ticket, None).unwrap();
+    engine.acknowledge(&ticket).unwrap();
+    assert_eq!(pool.accounting().free_slots, 4);
 }

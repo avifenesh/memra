@@ -619,3 +619,135 @@ fn caller_source_drop_keeps_owned_bytes_until_acknowledged() {
     .unwrap();
     p.release(&dst).unwrap();
 }
+
+impl super::conformance::CapacityFixture for Peer {
+    fn used(&self) -> TierBudget {
+        self.gov.borrow().used()
+    }
+    fn non_peer(&mut self) -> ChargedLease {
+        let mut r = request(4, Priority::MandatoryActive);
+        r.bytes.device[0] = 4;
+        self.gov.borrow_mut().reserve(&r).unwrap()
+    }
+    fn release_non_peer(&mut self, lease: &ChargedLease) -> Result<()> {
+        self.gov.borrow_mut().release(lease)
+    }
+    fn plan(&self, owner: u32) -> PeerPlan {
+        self.plan(owner, if owner == 0 { 19 } else { 31 })
+    }
+    fn retain(&self, lease: &PeerLease) -> DeviceLease {
+        self.owners[lease.device.device() as usize]
+            .retain(&lease.device)
+            .unwrap()
+    }
+    fn next_state(&mut self) {
+        self.state += 1;
+    }
+}
+#[test]
+fn revision_v11_peer_capacity() {
+    super::conformance::peer_capacity(&mut Peer::new(shared()), &mut Peer::new(shared()));
+}
+#[test]
+fn revision_v11_peer_complete_cancel_and_quarantine() {
+    let mut p = Peer::new(shared());
+    let src = p.reserve(p.plan(0, 19)).unwrap();
+    let dst = p.reserve(p.plan(1, 31)).unwrap();
+    let copies = vec![p.copy(&src, &dst)];
+    let expect = vec![vec![SegmentExpectation {
+        valid_bytes: 4,
+        io_bytes: 4,
+        checksum: checksum(&bytes(4)),
+    }]];
+    let t =
+        super::conformance::peer_complete_cancel(&mut p, copies, 1, &expect, |p, t| p.finish(t));
+    super::conformance::peer_lifetime(
+        &mut p,
+        t,
+        |p, t, step| {
+            use super::conformance::LifetimeStep::*;
+            if matches!(step, Producer) {
+                p.finish(t);
+                return;
+            }
+            let e = p.entries.get_mut(t).unwrap();
+            match step {
+                Unknown => e.unknown = true,
+                Recover => e.unknown = false,
+                Consumer => e.consumer = true,
+                Graph => e.graph = true,
+                Producer => unreachable!(),
+            }
+        },
+        |p| p.gov.borrow().used(),
+    );
+    p.release(&src).unwrap();
+    p.release(&dst).unwrap();
+    assert_eq!(p.gov.borrow().used(), TierBudget::zero(2));
+}
+#[test]
+fn revision_v11_peer_indexed_acceptance() {
+    for (rejected, short) in [(2, Some(1)), (0, None), (1, None)] {
+        let mut p = Peer::new(shared());
+        let src = p.reserve(p.plan(0, 19)).unwrap();
+        let dst = p.reserve(p.plan(1, 31)).unwrap();
+        p.reject.insert(rejected);
+        let b = p
+            .submit((0..3).map(|_| p.copy(&src, &dst)).collect())
+            .unwrap();
+        p.finish(&b.ticket);
+        if let Some(i) = short {
+            p.entries.get_mut(&b.ticket).unwrap().completion.items[i].segments[0].io_bytes = 3;
+        }
+        let c = p.poll(&b.ticket).unwrap();
+        super::conformance::acceptance(&b, &c, &p.entries[&b.ticket].expected, rejected, short);
+        assert!(
+            p.materialize_local(&b.ticket, 2, b.ticket.epochs, 1)
+                .is_err()
+        );
+        drop(b.items);
+        p.cancel(&b.ticket).unwrap();
+        p.drain(&b.ticket);
+        p.release(&src).unwrap();
+        p.release(&dst).unwrap();
+        assert_eq!(p.gov.borrow().used(), TierBudget::zero(2));
+    }
+}
+#[test]
+fn revision_v11_directed_capacity_lane_fix_required() {
+    let mut p = Peer::new(shared());
+    let forward = p.plan(0, 19);
+    let reverse = p.plan(1, 31);
+    super::conformance::peer_directed_grants(
+        &mut p,
+        forward,
+        reverse,
+        |p, _kind, denied| p.grants = !denied,
+        |p| p.gov.borrow().used(),
+    );
+}
+
+#[test]
+fn revision_v11_peer_submit_epochs_and_zero_accept() {
+    let mut p = Peer::new(shared());
+    let src = p.reserve(p.plan(0, 19)).unwrap();
+    let dst = p.reserve(p.plan(1, 31)).unwrap();
+    super::conformance::peer_submit_epochs(
+        &mut p,
+        |p| vec![p.copy(&src, &dst), p.copy(&src, &dst)],
+        |p, t| p.drain(t),
+    );
+    p.reject.extend([0, 1]);
+    let copies = vec![p.copy(&src, &dst), p.copy(&src, &dst)];
+    let returned = super::conformance::peer_zero_accept(&mut p, copies, |ops| {
+        assert!(
+            ops.iter()
+                .all(|o| o.source().allocation_id() == src.device.allocation_id())
+        );
+    });
+    assert!(p.entries.is_empty());
+    drop(returned);
+    p.release(&src).unwrap();
+    p.release(&dst).unwrap();
+    assert_eq!(p.gov.borrow().used(), TierBudget::zero(2));
+}
