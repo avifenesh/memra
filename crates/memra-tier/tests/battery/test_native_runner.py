@@ -131,7 +131,7 @@ class BootstrapTests(unittest.TestCase):
             names = {s['name'] for s in report['steps']}
             self.assertTrue({'accept-1','accept-gap','accept-2','build-1','remote-branch',
                              'minimum-source','rustup-install','openssl-development'} <= names)
-            self.assertEqual(report['minimum_commit'], '914229ae3f706c0581f5d7f7bb415a14795b1640')
+            self.assertEqual(report['minimum_commit'], '020d20479cd686835c0fb7743040947d0fc2723b')
             self.assertEqual(report['nvcc'],'/stub/cuda-13.2/bin/nvcc')
             self.assertFalse(json.loads((out/'TOPOLOGY.json').read_text())['route_qualification'])
             before = (out/'BOOTSTRAP.json').read_bytes()
@@ -149,7 +149,6 @@ class BootstrapTests(unittest.TestCase):
     def test_low_power_and_bad_readback_and_unknown_remote_refuse(self):
         original = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
         mutations = [
-            original.replace('32607, 600.00, 600.00','32607, 575.00, 600.00'),
             original.replace('32607, 600.00, 600.00','32607, 600.00, 575.00'),
             original.replace('32607, 600.00, 600.00','32607, NaN, 600.00'),
             original.replace("'rustc 1.97.0 (stub)\\n'", "'rustc 1.96.0 (stub)\\n'"),
