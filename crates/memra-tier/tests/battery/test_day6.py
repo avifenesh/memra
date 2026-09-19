@@ -52,6 +52,16 @@ class CollectorTests(unittest.TestCase):
                     with self.assertRaises(ValueError): B.validate_capture(bad, root)
         self.assertIsNone(B.explicit_refusal('REFUSED: timed out', 2, True))
 
+    def test_second_rented_topology_is_gen5_capable_not_bandwidth_proof(self):
+        spec = importlib.util.spec_from_file_location('topology_day6', ROOT/'tools/tier-topology.py')
+        topology = importlib.util.module_from_spec(spec); spec.loader.exec_module(topology)
+        fixture = json.loads((Path(__file__).parent/'topology.rented-5090-second.fixture.json').read_text())
+        report = topology.probe(fixture)
+        self.assertFalse(report['route_qualification'])
+        self.assertEqual(report['pcie_links'], [{'device_ordinal': 0, 'generation_current': 1,
+            'generation_max': 5, 'device_generation_max': 5, 'host_generation_max': 5,
+            'width_current': 16, 'width_max': 16, 'bandwidth_measured': False}])
+
     def test_power_limits_are_captured_per_cell_and_hash_checked(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); smi = root/'nvidia-smi'
