@@ -59,3 +59,18 @@ checks and unrun surfaces. Those receipts, not this schedule description, determ
 whether the complete CPU integration passed. No engine/server/nvcc/GPU/serving,
 Linux runtime, direct-I/O, NVMe ancestry, PRO-pair or four-card gate runs here.
 Executed CPU/cross-compile checks are **not qualified hardware or model support**.
+
+### Full lane receipt
+
+Checked source: **`ebf437b799eb926faeaf56c97d2fc6ecaa4b66cc`**. All ten commands in
+`v1.2/checks.json` actually ran and exited 0: fmt, macOS all-targets check,
+Linux cross-target all-targets check, both package suites, strict package Clippy,
+diff whitespace, flags, docs census, all eleven independent wire/payload pins,
+and unchanged frozen contract/fixtures/root manifest/lock comparison.
+**239 tests passed, zero failed/ignored** (KV 59 + new KV 2; tier unit 2,
+bank 43, contracts 52, peer 18, placement 6, storage 53, compile-fail doctests 4).
+No engine/server build or hardware/model gate ran. Docs census: 122 kernel-file
+references resolve, five support tokens valid, router 40/60 lines, 864 runtime
+names, 898 flag-table rows shaped correctly. No unrelated worktree modifications
+were absorbed; the only untracked files during the run were this lane's verifier
+and receipts. Receipt-only follow-ups do not change the tested Rust bytes.
