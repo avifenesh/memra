@@ -467,6 +467,7 @@ impl TransferEngine for Transfers {
 }
 struct Backing {
     stored: StateBundle,
+    others: Vec<StateBundle>,
     route: Option<Tier>,
     gov: Shared,
     available: Rc<RefCell<bool>>,
@@ -482,26 +483,32 @@ impl Backing {
 }
 impl KvBacking<Transfers> for Backing {
     fn lookup(&self, id: &KvBlockId) -> Result<Vec<Lookup>> {
-        Ok(if *self.available.borrow() && id == &self.stored.id {
-            [
-                Tier::Nvme,
-                Tier::PinnedHost,
-                Tier::PeerGpu(1),
-                Tier::LocalGpu(0),
-            ]
-            .iter()
-            .filter(|&&tier| self.route.is_none_or(|r| r == tier))
-            .map(|&tier| Lookup {
-                tier,
-                storage_bytes: 128,
-            })
-            .collect()
-        } else {
-            vec![]
-        })
+        Ok(
+            if *self.available.borrow()
+                && (id == &self.stored.id || self.others.iter().any(|b| &b.id == id))
+            {
+                [
+                    Tier::Nvme,
+                    Tier::PinnedHost,
+                    Tier::PeerGpu(1),
+                    Tier::LocalGpu(0),
+                ]
+                .iter()
+                .filter(|&&tier| self.route.is_none_or(|r| r == tier))
+                .map(|&tier| Lookup {
+                    tier,
+                    storage_bytes: 128,
+                })
+                .collect()
+            } else {
+                vec![]
+            },
+        )
     }
     fn acquire(&mut self, p: &TierAdmission) -> Result<BlockLease> {
-        if !*self.available.borrow() {
+        if !*self.available.borrow()
+            || (p.id != self.stored.id && !self.others.iter().any(|b| b.id == p.id))
+        {
             return Err(Error::NotFound);
         }
         let mut r = request(128, Priority::MandatoryActive);
@@ -514,7 +521,11 @@ impl KvBacking<Transfers> for Backing {
         }
         let charge = self.gov.lock().unwrap().reserve(&r)?;
         Ok(BlockLease {
-            bundle: self.stored.clone(),
+            bundle: if p.id == self.stored.id {
+                self.stored.clone()
+            } else {
+                self.others.iter().find(|b| b.id == p.id).unwrap().clone()
+            },
             tier: p.source,
             charge,
         })
@@ -644,6 +655,7 @@ fn fixture() -> (H, Shared, Rc<RefCell<Controls>>, Rc<RefCell<bool>>) {
         Hierarchy::new(
             Backing {
                 stored: bundle(),
+                others: vec![],
                 route: None,
                 gov: gov.clone(),
                 available: available.clone(),
@@ -1732,4 +1744,32 @@ fn recompute_load_cross_product_fixture_is_not_a_runtime_default() {
     }
     assert_eq!(count, 48);
     assert!(load > 0 && load < count);
+}
+
+#[test]
+fn scheduler_equal_priority_deadline_alternates_tenants_before_second_fifo_turn() {
+    use scheduler::*;
+    let (mut h, g, c, _) = fixture();
+    let mut other = bundle();
+    other.program.tenant_salt = [77; 32];
+    other.id = KvBlockId::new(&other.program, [0; 32], &[42], 0, 0, 0, 7).unwrap();
+    h.backing.as_mut().unwrap().others.push(other.clone());
+    h.backing.as_mut().unwrap().route = Some(Tier::Nvme);
+    let mut s = Scheduler::new(h, 3);
+    let first = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    let last = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    let mut p = plan(&other);
+    p.request.tenant = other.program.tenant_salt;
+    let middle = s.enqueue(p, PrefetchPolicy::Wait).unwrap();
+    for id in [first, middle, last] {
+        assert!(
+            s.tick(1, &[], |_| epochs())
+                .unwrap()
+                .contains(&(id, Ok(Progress::Phase(Phase::Reserved))))
+        );
+        s.cancel(id).unwrap();
+        c.borrow_mut().retired = true;
+        s.release(id).unwrap();
+    }
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
 }

@@ -99,8 +99,8 @@ is booked by lead only; these per-cell budgets are not authorization to run in p
 
 ## Day-3 delta (supersedes CPU status above; GPU rows still NONE EXECUTED)
 
-Implementation `fa763c97`: 46 memra-kv tests pass, including six new tests for
-bounded scheduler interleaving/cancel/rollback/quota/timeout, direct local/peer
+Implementation `fa763c97` plus the day-3 fairness follow-up: 47 memra-kv tests pass, including seven new tests for
+bounded scheduler interleaving/cancel/rollback/quota/timeout and cross-tenant fairness, direct local/peer
 consumer fences, owned immutable sealing, resident-charge host twin retention and
 all 48 recompute fixture rows. Shared memra-tier suites run unchanged: bank 27,
 contracts 36, peer 10, placement 6, storage 26, doctests 4. CPU checks are in

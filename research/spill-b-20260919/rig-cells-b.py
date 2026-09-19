@@ -65,19 +65,21 @@ def main():
         if gpu and not args.dry_run:
             telemetry_file = (out / f"{count:02d}-{label}-250ms.csv").open("wb")
             telemetry = subprocess.Popen(["nvidia-smi", "--query-gpu=timestamp,index,clocks.sm,clocks.mem,power.draw,temperature.gpu,memory.used,utilization.gpu", "--format=csv", "--loop-ms=250"], stdout=telemetry_file, stderr=subprocess.STDOUT)
-        with log.open("wb") as raw:
-            proc = subprocess.Popen(["bash", str(HERE / "rig-stub-b.sh"), "fail" if args.stub_fail else label] if args.dry_run else actual, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            # tee bytes to raw first, then the console; parse only the closed raw file.
-            for chunk in iter(lambda: proc.stdout.read(8192), b""):
-                raw.write(chunk)
-                raw.flush()
-                sys.stdout.buffer.write(chunk)
-                sys.stdout.buffer.flush()
-            rc = proc.wait()
-        if telemetry:
-            telemetry.terminate()
-            telemetry.wait(timeout=10)
-            telemetry_file.close()
+        try:
+            with log.open("wb") as raw:
+                proc = subprocess.Popen(["bash", str(HERE / "rig-stub-b.sh"), "fail" if args.stub_fail else label] if args.dry_run else actual, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                # tee bytes to raw first, then the console; parse only the closed raw file.
+                for chunk in iter(lambda: proc.stdout.read(8192), b""):
+                    raw.write(chunk)
+                    raw.flush()
+                    sys.stdout.buffer.write(chunk)
+                    sys.stdout.buffer.flush()
+                rc = proc.wait()
+        finally:
+            if telemetry:
+                telemetry.terminate()
+                telemetry.wait(timeout=10)
+                telemetry_file.close()
         row = {"cell": label, "command": actual, "cwd": str(cwd), "status": "DRY_RUN" if args.dry_run and rc == 0 else "PASS_COMMAND" if rc == 0 else "FAIL", "exit": rc, "elapsed_seconds": time.monotonic() - started, "raw": log.name, "raw_sha256": sha(log), "gpu_executed": gpu and not args.dry_run}
         with (out / "runs.jsonl").open("a") as f:
             f.write(json.dumps(row) + "\n")
