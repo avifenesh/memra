@@ -96,3 +96,65 @@ explicit refusal. Graph operands/counters retain stable addresses.
 M2 chunk/frontier review 2026-09-23 remains a booking, not a measurement. Lead must supply
 rig window and immutable artifact lock before any GPU launch. B/C/D shared-pressure campaign
 is booked by lead only; these per-cell budgets are not authorization to run in parallel.
+
+## Day-3 delta (supersedes CPU status above; GPU rows still NONE EXECUTED)
+
+Implementation `fa763c97`: 46 memra-kv tests pass, including six new tests for
+bounded scheduler interleaving/cancel/rollback/quota/timeout, direct local/peer
+consumer fences, owned immutable sealing, resident-charge host twin retention and
+all 48 recompute fixture rows. Shared memra-tier suites run unchanged: bank 27,
+contracts 36, peer 10, placement 6, storage 26, doctests 4. CPU checks are in
+`day3-checks/`; Linux-target `cargo check --all-targets` ran, **not Linux tests/GPU**.
+
+Direct local/peer tests now bypass HostReady and use one direct descriptor ticket,
+with no Ready publication until consumer fencing. The B fake uses retained CPU
+DeviceOwners; **it does not instantiate D's private PeerCapacity fake**. D's ten
+peer tests ran in the common suite. Export/adapter handoff is still required for
+one combined B→D PeerCapacity schedule; that task is not claimed completed.
+
+### Executable rig preparation / refusal runner
+
+`rig-cells-b.sh` delegates to the adjacent Python driver. Its 20-command dry run
+uses an actual shell stub; two unit teeth test raw hashes/order/locks/no-GPU labels
+and a child exit-7 failure. Fresh output directories are immutable (reuse refuses),
+and each live run owns a uniquely named scratch worktree/branch, removed on exit.
+
+```sh
+bash research/spill-b-20260919/rig-cells-b.sh --dry-run
+python3 research/spill-b-20260919/test-rig-cells-b.py
+bash -n research/spill-b-20260919/rig-cells-b.sh
+
+# Only on an approved dedicated Linux development 5090, never a serving box:
+bash research/spill-b-20260919/rig-cells-b.sh --exclusive-non-serving \
+  --artifact "$ARTIFACT" --artifact-sha256 "$ARTIFACT_SHA256" \
+  --tokens-8k "$TOKENS_8K" --tokens-32k "$TOKENS_32K" --fit-plan "$FIT_PLAN"
+```
+
+Inputs: local-NVMe staged byte-identical GGUF with its SHA256; prompt JSON arrays
+of exactly `context-128` u32 tokens (no model-format substitution); a prequalified
+run-gen memory envelope JSON with `artifact_sha256`, full `source_commit`, and
+`required_free_bytes: {"8192": <bytes>, "32768": <bytes>}`. Include run-gen's multiple
+cache/gate allocations and headroom, not just a one-cache payload formula. Missing
+fit envelope or insufficient free VRAM **refuses**, never runs a non-fitting cell.
+Pin the tokenizer/template/plan/numeric manifest alongside these inputs before GPU use.
+
+Sequence, before then after patch in scratch: build server/run-gen → full server
+lib tests → Qwen 8k and 32k raw-token **baseline** probes → existing short host-prefix
+identity/teeth/failure gates. Native active/prefix full-state gates are recorded as
+PENDING; without the future native gate the live runner exits nonzero after baseline
+collection. A supplied `--active-gate` is a future interface, NOT a current binary;
+receipt acceptance/bootstrap is still missing and the live runner still refuses final
+qualification. A green command exit is labeled PASS_COMMAND, not model exactness.
+
+All run-gen/future native probes use `/tmp/memra-5090.lock`; existing legacy scripts
+own that same lock internally, avoiding nested flock deadlock. GPU work records 250 ms
+raw nvidia-smi CSV plus command/exit/raw SHA256 JSONL and failure compute-app snapshots.
+Raw logs are written before JSONL. Output is `raw/rtx5090-<utc>-<pid>/` (hardware-shaped
+host label deliberately avoids deployment machine identity). Existing legacy gate
+subreceipts and server logs remain in that directory. Builds are outside GPU lock;
+no simultaneous scored campaign is permitted.
+
+**128k and 262144 are not runner options:** they remain non-serving PRO-pair cells
+with `/tmp/memra-gpu.lock`. No performance/default decision is made from this runner's
+single correctness attempts. Generic active attention consumption, state/logit/token
+hash equality, measured engagement and all original B2/B3/B4 requirements are unchanged.
