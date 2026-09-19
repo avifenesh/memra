@@ -1,0 +1,421 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "monotonic_ns",
+    "interval_ms",
+    "devices",
+    "host",
+    "nvme",
+    "wait_ns"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "enum": [
+        "gpu",
+        "cpu-fixture"
+      ]
+    },
+    "monotonic_ns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "interval_ms": {
+      "const": 250
+    },
+    "devices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "device",
+          "routes",
+          "clock_mhz",
+          "power_w",
+          "temperature_c",
+          "vram_bytes"
+        ],
+        "properties": {
+          "device": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "routes": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "host",
+              "host-bounce",
+              "local",
+              "nvme",
+              "pcie-p2p"
+            ],
+            "properties": {
+              "host": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bytes_in",
+                  "bytes_out"
+                ],
+                "properties": {
+                  "bytes_in": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "bytes_out": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "host-bounce": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bytes_in",
+                  "bytes_out"
+                ],
+                "properties": {
+                  "bytes_in": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "bytes_out": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "local": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bytes_in",
+                  "bytes_out"
+                ],
+                "properties": {
+                  "bytes_in": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "bytes_out": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "nvme": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bytes_in",
+                  "bytes_out"
+                ],
+                "properties": {
+                  "bytes_in": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "bytes_out": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "pcie-p2p": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "bytes_in",
+                  "bytes_out"
+                ],
+                "properties": {
+                  "bytes_in": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "bytes_out": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "clock_mhz": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "power_w": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "temperature_c": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vram_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pinned_bytes",
+        "pageable_bytes"
+      ],
+      "properties": {
+        "pinned_bytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pageable_bytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "nvme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "queue_depth",
+        "read_bytes",
+        "write_bytes",
+        "physical_bytes"
+      ],
+      "properties": {
+        "queue_depth": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "read_bytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "write_bytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "physical_bytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "wait_ns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "io",
+        "h2d",
+        "d2h",
+        "p2p",
+        "queue"
+      ],
+      "properties": {
+        "io": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p50",
+            "p95",
+            "p99"
+          ],
+          "properties": {
+            "p50": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p99": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "h2d": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p50",
+            "p95",
+            "p99"
+          ],
+          "properties": {
+            "p50": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p99": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "d2h": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p50",
+            "p95",
+            "p99"
+          ],
+          "properties": {
+            "p50": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p99": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "p2p": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p50",
+            "p95",
+            "p99"
+          ],
+          "properties": {
+            "p50": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p99": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "queue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "p50",
+            "p95",
+            "p99"
+          ],
+          "properties": {
+            "p50": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p99": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memra:tier-telemetry:1",
+  "title": "250 ms tier collector telemetry; kind distinguishes synthetic counters",
+  "$comment": "Cumulative bytes, instantaneous memory/QD, interval wait distributions. Unknown physical counters null. Validator checks timestamp monotonicity, <=500ms gaps, route completeness, ordered percentiles. A sample is not a hardware receipt."
+}

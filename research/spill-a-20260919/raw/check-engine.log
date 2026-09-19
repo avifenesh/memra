@@ -1,0 +1,81 @@
+    Checking cfg-if v1.0.4
+   Compiling version_check v0.9.5
+   Compiling libc v0.2.186
+    Checking typenum v1.20.1
+    Checking simd-adler32 v0.3.10
+   Compiling crc32fast v1.5.0
+   Compiling autocfg v1.5.1
+    Checking adler2 v2.0.1
+   Compiling cudarc v0.19.8
+   Compiling generic-array v0.14.7
+   Compiling num-traits v0.2.19
+    Checking miniz_oxide v0.8.9
+    Checking libloading v0.9.0
+    Checking fdeflate v0.3.7
+    Checking bitflags v2.13.1
+    Checking pxfm v0.1.30
+    Checking flate2 v1.1.9
+    Checking color_quant v1.1.0
+    Checking zune-core v0.5.3
+    Checking weezl v0.1.12
+    Checking quick-error v2.0.1
+    Checking byteorder-lite v0.1.0
+    Checking gif v0.14.2
+    Checking image-webp v0.2.4
+    Checking zune-jpeg v0.5.15
+    Checking cpufeatures v0.2.17
+    Checking memmap2 v0.9.11
+    Checking png v0.18.1
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-a/crates/memra-engine)
+    Checking bytemuck v1.25.2
+    Checking memra-validate v0.138.0 (/Users/avifen/tiyuvta/wt-spill-a/crates/memra-validate)
+    Checking base64 v0.22.1
+    Checking memra-sampling v0.138.0 (/Users/avifen/tiyuvta/wt-spill-a/crates/memra-sampling)
+    Checking block-buffer v0.10.4
+    Checking crypto-common v0.1.7
+    Checking digest v0.10.7
+    Checking sha2 v0.10.9
+    Checking memra-gguf v0.138.0 (/Users/avifen/tiyuvta/wt-spill-a/crates/memra-gguf)
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+    Checking moxcms v0.8.1
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/tiyuvta/wt-spill-a/crates/memra-tokenizer)
+    Checking memra-runtime v0.138.0 (/Users/avifen/tiyuvta/wt-spill-a/crates/memra-runtime)
+    Checking memra-kv v0.138.0 (/Users/avifen/tiyuvta/wt-spill-a/crates/memra-kv)
+warning: memra-engine@0.138.0: no runnable nvcc found via MEMRA_NVCC / CUDA_HOME / PATH / /usr/local/cuda*; falling back to /usr/local/cuda-13.1/bin/nvcc — set MEMRA_NVCC=<path/to/nvcc>
+warning: memra-engine@0.138.0: no GPU visible; defaulting MEMRA_CUDA_ARCH=120a (compile-only)
+error: failed to run custom build command for `memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-a/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `/Users/avifen/tiyuvta/wt-spill-a/target/debug/build/memra-engine-2c88d4fa09ea9f64/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-env-changed=MEMRA_NVCC
+  cargo:rerun-if-env-changed=CUDA_HOME
+  cargo:rerun-if-env-changed=CUDA_PATH
+  cargo:rerun-if-env-changed=CUDA_ROOT
+  cargo:warning=no runnable nvcc found via MEMRA_NVCC / CUDA_HOME / PATH / /usr/local/cuda*; falling back to /usr/local/cuda-13.1/bin/nvcc — set MEMRA_NVCC=<path/to/nvcc>
+  cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH
+  cargo:rerun-if-env-changed=MEMRA_CUTLASS
+  cargo:rustc-check-cfg=cfg(memra_portable_cuda)
+  cargo:rustc-check-cfg=cfg(memra_hopper_mma)
+  cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)
+  cargo:rustc-check-cfg=cfg(memra_cutlass)
+  cargo:warning=no GPU visible; defaulting MEMRA_CUDA_ARCH=120a (compile-only)
+  cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a
+  cargo:rerun-if-changed=cu/kernels.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+
+  --- stderr
+
+  thread 'main' (14713998) panicked at crates/memra-engine/build.rs:314:62:
+  spawn nvcc: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...
