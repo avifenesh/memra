@@ -1,11 +1,13 @@
 //! Native eager baseline capture, NOT active/prefix tier qualification.
 //! Run GPU cases ONLY through tools/tier-battery.py (canonical rig lock + telemetry).
 //! No tier restore is simulated: active/prefix refuse before model or CUDA initialization.
+#[path = "kv_tier_gate/capture_contract.rs"]
+mod capture_contract;
 #[path = "kv_tier_gate/cli.rs"]
 mod cli;
 
 use memra_engine::{Engine, forward::argmax, hybrid::HybridModel};
-use memra_gguf::{GgufFile, model_plan::StatePlan};
+use memra_gguf::{GgufFile, model_plan::ModelPlan};
 use memra_kv::Cache;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -50,6 +52,7 @@ fn u32_bytes(values: &[u32]) -> Vec<u8> {
 fn capture(
     e: &Engine,
     cache: &Cache,
+    plan: &ModelPlan,
     logits: &[f32],
     hidden: &[f32],
     out: &Path,
@@ -81,29 +84,29 @@ fn capture(
     if cache.kv.len() != cache.recur.len() {
         return Err("state vector length mismatch".into());
     }
+    capture_contract::validate_plan(plan, cache.kv.len())?;
     for (i, (kv, recur)) in cache.kv.iter().zip(&cache.recur).enumerate() {
         record(
             &format!("layer-{i}-presence"),
             &[u8::from(kv.is_some()), u8::from(recur.is_some())],
         );
-        if kv.is_some() == recur.is_some() {
-            return Err(
-                "REFUSED: each supported layer must have exactly one KV or recurrent plane".into(),
-            );
+        let geometry = kv.as_ref().map(|kv| capture_contract::KvGeometry {
+            len: kv.len,
+            ring: kv.ring.is_some(),
+            base: kv.base_d.is_some(),
+            key_width: kv.kv_dim_k,
+            value_width: kv.kv_dim_v,
+            key_row: kv.k_tok_bytes,
+            value_row: kv.v_tok_bytes,
+            key_allocation: kv.k.len(),
+            value_allocation: kv.v.len(),
+        });
+        let plane = capture_contract::classify(plan, i, cache.pos, geometry, recur.is_some())?;
+        if plane == capture_contract::Plane::AbsentUnexecutedMtp {
+            record(&format!("layer-{i}-absent-unexecuted-mtp"), &[]);
+            continue;
         }
         if let Some(kv) = kv {
-            if kv.ring.is_some()
-                || kv.base_d.is_some()
-                || kv.len != cache.pos
-                || !kv.kv_dim_k.is_multiple_of(32)
-                || !kv.kv_dim_v.is_multiple_of(32)
-                || kv.k_tok_bytes != kv.kv_dim_k / 32 * 34
-                || kv.v_tok_bytes != kv.kv_dim_v / 32 * 24
-            {
-                return Err(
-                    "REFUSED: capture requires full-history native q8_0 K/q5_1 V, no ring".into(),
-                );
-            }
             record(
                 &format!("layer-{i}-geometry-u64le"),
                 &[
@@ -182,18 +185,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
     let e = Engine::new(0)?;
     // Same trunk-only loader as run-gen; optional MTP is deliberately not a scored program.
     let model = HybridModel::load_without_mtp(&e, &g)?;
-    if model.plan.layers.is_empty()
-        || model.plan.layers.iter().any(|l| {
-            !matches!(
-                l.state,
-                StatePlan::KvCache { .. } | StatePlan::Recurrent { .. }
-            )
-        })
-    {
-        return Err(
-            "REFUSED: baseline capture supports only native full KV + recurrent plan states".into(),
-        );
-    }
+    capture_contract::validate_plan(&model.plan, model.cfg.n_layer as usize)?;
     if args.context > model.plan.context_length as usize {
         return Err("requested context exceeds model plan".into());
     }
@@ -235,7 +227,15 @@ fn baseline(args: &cli::Args) -> Result<()> {
         }
     }
     let (mut logits, mut hidden) = last.ok_or("empty prompt")?;
-    let prefix_hash = capture(&e, &cache, &logits, &e.dtoh(&hidden)?, &args.out, "prefix")?;
+    let prefix_hash = capture(
+        &e,
+        &cache,
+        &model.plan,
+        &logits,
+        &e.dtoh(&hidden)?,
+        &args.out,
+        "prefix",
+    )?;
     let mut rows = File::create(args.out.join("logits.tsv"))?;
     writeln!(rows, "committed\tlogits_f32le_sha256")?;
     let mut tokens = Vec::with_capacity(GENERATE);
@@ -255,7 +255,15 @@ fn baseline(args: &cli::Args) -> Result<()> {
     if logits.len() != model.cfg.n_vocab as usize || logits.iter().any(|x| !x.is_finite()) {
         return Err("nonfinite or wrong-sized final logits".into());
     }
-    let final_hash = capture(&e, &cache, &logits, &e.dtoh(&hidden)?, &args.out, "final")?;
+    let final_hash = capture(
+        &e,
+        &cache,
+        &model.plan,
+        &logits,
+        &e.dtoh(&hidden)?,
+        &args.out,
+        "final",
+    )?;
     writeln!(rows, "{}\t{}", cache.pos, hash(&f32_bytes(&logits)))?;
     rows.sync_all()?;
     let tokens = u32_bytes(&tokens);
