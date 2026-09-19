@@ -1,0 +1,82 @@
+[
+  {
+    "check": "workspace-fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0
+  },
+  {
+    "check": "bank-fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "research/spill-c-20260919/Cargo.toml",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0
+  },
+  {
+    "check": "check",
+    "command": [
+      "cargo",
+      "check",
+      "--manifest-path",
+      "research/spill-c-20260919/Cargo.toml",
+      "--offline"
+    ],
+    "exit": 0
+  },
+  {
+    "check": "test",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "research/spill-c-20260919/Cargo.toml",
+      "--offline",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0
+  },
+  {
+    "check": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--manifest-path",
+      "research/spill-c-20260919/Cargo.toml",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0
+  },
+  {
+    "check": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0
+  },
+  {
+    "check": "diff-check",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0
+  }
+]
