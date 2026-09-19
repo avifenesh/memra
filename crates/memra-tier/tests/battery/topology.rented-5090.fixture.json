@@ -1,0 +1,38 @@
+{
+  "nvidia-smi topo -m": {
+    "exit_code": 0,
+    "stdout": "\t\u001b[4mGPU0\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID\u001b[0m\nGPU0\t X \t0-127\t0\t\tN/A\n\nLegend:\n\n  X    = Self\n  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)\n  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node\n  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)\n  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)\n  PIX  = Connection traversing at most a single PCIe bridge\n  NV#  = Connection traversing a bonded set of # NVLinks\n",
+    "stderr": "",
+    "timed_out": false
+  },
+  "nvidia-smi -q": {
+    "exit_code": 0,
+    "stdout": "GPU <redacted>\n        GPU Link Info\n            PCIe Generation\n                Max                                    : 4\n                Current                                : 1\n                Device Current                         : 1\n                Device Max                             : 5\n                Host Max                               : 4\n            Link Width\n                Max                                    : 16x\n                Current                                : 16x\n",
+    "stderr": "",
+    "timed_out": false
+  },
+  "nvidia-smi topo -p2p r": {
+    "exit_code": 0,
+    "stdout": " \t\u001b[4mGPU0\t\u001b[0m\n GPU0\tX\t\n\nLegend:\n\n  X    = Self\n  OK   = Status Ok\n  CNS  = Chipset not supported\n  GNS  = GPU not supported\n  TNS  = Topology not supported\n  NS   = Not supported\n  U    = Unknown\n",
+    "stderr": "",
+    "timed_out": false
+  },
+  "nvidia-smi topo -p2p w": {
+    "exit_code": 0,
+    "stdout": " \t\u001b[4mGPU0\t\u001b[0m\n GPU0\tX\t\n\nLegend:\n\n  X    = Self\n  OK   = Status Ok\n  CNS  = Chipset not supported\n  GNS  = GPU not supported\n  TNS  = Topology not supported\n  NS   = Not supported\n  U    = Unknown\n",
+    "stderr": "",
+    "timed_out": false
+  },
+  "lscpu --extended=CPU,NODE,SOCKET": {
+    "exit_code": 0,
+    "stdout": "CPU NODE SOCKET\n  0    0      0\n  1    0      0\n  2    0      0\n  3    0      0\n  4    0      0\n  5    0      0\n  6    0      0\n  7    0      0\n  8    0      0\n  9    0      0\n 10    0      0\n 11    0      0\n 12    0      0\n 13    0      0\n 14    0      0\n 15    0      0\n 16    0      0\n 17    0      0\n 18    0      0\n 19    0      0\n 20    0      0\n 21    0      0\n 22    0      0\n 23    0      0\n 24    0      0\n 25    0      0\n 26    0      0\n 27    0      0\n 28    0      0\n 29    0      0\n 30    0      0\n 31    0      0\n 32    0      0\n 33    0      0\n 34    0      0\n 35    0      0\n 36    0      0\n 37    0      0\n 38    0      0\n 39    0      0\n 40    0      0\n 41    0      0\n 42    0      0\n 43    0      0\n 44    0      0\n 45    0      0\n 46    0      0\n 47    0      0\n 48    0      0\n 49    0      0\n 50    0      0\n 51    0      0\n 52    0      0\n 53    0      0\n 54    0      0\n 55    0      0\n 56    0      0\n 57    0      0\n 58    0      0\n 59    0      0\n 60    0      0\n 61    0      0\n 62    0      0\n 63    0      0\n 64    0      0\n 65    0      0\n 66    0      0\n 67    0      0\n 68    0      0\n 69    0      0\n 70    0      0\n 71    0      0\n 72    0      0\n 73    0      0\n 74    0      0\n 75    0      0\n 76    0      0\n 77    0      0\n 78    0      0\n 79    0      0\n 80    0      0\n 81    0      0\n 82    0      0\n 83    0      0\n 84    0      0\n 85    0      0\n 86    0      0\n 87    0      0\n 88    0      0\n 89    0      0\n 90    0      0\n 91    0      0\n 92    0      0\n 93    0      0\n 94    0      0\n 95    0      0\n 96    0      0\n 97    0      0\n 98    0      0\n 99    0      0\n100    0      0\n101    0      0\n102    0      0\n103    0      0\n104    0      0\n105    0      0\n106    0      0\n107    0      0\n108    0      0\n109    0      0\n110    0      0\n111    0      0\n112    0      0\n113    0      0\n114    0      0\n115    0      0\n116    0      0\n117    0      0\n118    0      0\n119    0      0\n120    0      0\n121    0      0\n122    0      0\n123    0      0\n124    0      0\n125    0      0\n126    0      0\n127    0      0\n",
+    "stderr": "",
+    "timed_out": false
+  },
+  "numactl -H": {
+    "exit_code": 0,
+    "stdout": "available: 1 nodes (0)\nnode 0 cpus: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127\nnode 0 size: 225288 MB\nnode 0 free: 123663 MB\nnode distances:\nnode   0 \n  0:  10 \n",
+    "stderr": "",
+    "timed_out": false
+  }
+}

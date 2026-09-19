@@ -1,0 +1,119 @@
+[
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0,
+    "source_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+    "started_utc": "2026-09-19T22:02:04Z",
+    "wall_seconds": 5.166989803314209,
+    "log": "00.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "macOS CPU or cross-compile, not Linux/GPU execution"
+  },
+  {
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets"
+    ],
+    "exit_code": 0,
+    "source_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+    "started_utc": "2026-09-19T22:02:09Z",
+    "wall_seconds": 2.5125880241394043,
+    "log": "01.log",
+    "sha256": "24d3ac51eaad3436a5be11c35b864db8203335677b073beb4a8f9093e319e130",
+    "scope": "macOS CPU or cross-compile, not Linux/GPU execution"
+  },
+  {
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--target",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "exit_code": 0,
+    "source_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+    "started_utc": "2026-09-19T22:02:12Z",
+    "wall_seconds": 2.2651479244232178,
+    "log": "02.log",
+    "sha256": "cf2acfa7b899c2c47f36e943698e98a6aa18840b01f6643a2584923306402e14",
+    "scope": "macOS CPU or cross-compile, not Linux/GPU execution"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit_code": 0,
+    "source_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+    "started_utc": "2026-09-19T22:02:14Z",
+    "wall_seconds": 22.95406413078308,
+    "log": "03.log",
+    "sha256": "e4a8d6861337f174ea56e6b34457cb66b0356a2fe7ef67cf2240104d2c50c3de",
+    "scope": "macOS CPU or cross-compile, not Linux/GPU execution"
+  },
+  {
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--no-deps",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "source_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+    "started_utc": "2026-09-19T22:02:37Z",
+    "wall_seconds": 3.1117780208587646,
+    "log": "04.log",
+    "sha256": "b0c2f130d26b7a011361c1d1854c109e93c4106396d3d507846f5c7a8e3fc417",
+    "scope": "macOS CPU or cross-compile, not Linux/GPU execution"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0,
+    "source_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+    "started_utc": "2026-09-19T22:02:40Z",
+    "wall_seconds": 0.44792699813842773,
+    "log": "05.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "macOS CPU or cross-compile, not Linux/GPU execution"
+  },
+  {
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit_code": 0,
+    "source_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+    "started_utc": "2026-09-19T22:02:40Z",
+    "wall_seconds": 4.804967880249023,
+    "log": "06.log",
+    "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+    "scope": "macOS CPU or cross-compile, not Linux/GPU execution"
+  }
+]
