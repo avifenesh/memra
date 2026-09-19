@@ -221,9 +221,19 @@ def execute(args):
     telemetry = None
     try:
         gpu_csv = capture(["nvidia-smi", "-i", visible,
-            "--query-gpu=index,uuid,name,memory.total,compute_cap,driver_version",
+            "--query-gpu=index,uuid,name,memory.total,compute_cap,driver_version,power.limit",
             "--format=csv,noheader,nounits"])
         (target / "devices.csv").write_text(gpu_csv + "\n")
+        # Inventory only: other locked cards may have independent jobs. Do not require
+        # an idle host, and do not execute work on cards outside this stage's lease.
+        try:
+            topology = capture(["nvidia-smi", "topo", "-m"])
+            (target / "topology.txt").write_text(topology + "\n")
+            activity = capture(["nvidia-smi", "--query-compute-apps=gpu_uuid,pid,used_memory",
+                                "--format=csv,noheader,nounits"])
+            (target / "host-processes-before.csv").write_text(activity + "\n")
+        except (OSError, subprocess.SubprocessError) as error:
+            receipt["host_inventory_error"] = str(error)
         rows = list(csv.reader(io.StringIO(gpu_csv), skipinitialspace=True))
         if (len(rows) != count or {r[1] for r in rows} != set(args.gpu_uuid)
                 or any(r[4] != CAPABILITIES[built["arch"]] for r in rows)):

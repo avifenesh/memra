@@ -9,7 +9,9 @@ for these runs. No host or wrapper was available when this protocol was prepared
 ## Resource envelope
 
 - Native seam stages: one card for `same-device`; two distinct cards for `pair` and `worker`.
-- Primary target: RTX PRO 6000 Blackwell, 96 GiB per card. B200 is also a native Memra
+- Primary target: RTX PRO 6000 Blackwell, 96 GiB per card. The 96 GiB Max-Q variant is
+  suitable for these correctness/allocator stages; record its exact name and power limit.
+  No performance result transfers to a full-power variant. B200 is also a native Memra
   target; receipts on it qualify that device seam, not PRO performance or release gates.
   A conservative allocation floor for these tiny fixtures is 24 GiB per card; this is a
   provisioning allowance, not a measured minimum or peak VRAM claim.
