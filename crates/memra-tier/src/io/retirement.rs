@@ -1,24 +1,26 @@
 //! CPU-only retirement fixture; never evidence of actual CUDA fence completion.
-use crate::contracts::{Error, Result};
+use crate::contracts::{Epochs, Error, Result};
 use crate::pool::PinnedLease;
 
 /// Real adapters must source each signal from disk/DMA/consumer owners.
 pub struct FakeTransferLease {
     lease: Option<PinnedLease>,
-    epoch: u64,
+    epoch: Epochs,
     disk_done: bool,
     dma_done: bool,
     consumer_done: bool,
+    graph_done: bool,
     cancelled: bool,
 }
 impl FakeTransferLease {
-    pub fn new(lease: PinnedLease, epoch: u64) -> Self {
+    pub fn new(lease: PinnedLease, epoch: Epochs) -> Self {
         Self {
             lease: Some(lease),
             epoch,
             disk_done: false,
             dma_done: false,
             consumer_done: false,
+            graph_done: false,
             cancelled: false,
         }
     }
@@ -30,10 +32,11 @@ impl FakeTransferLease {
     }
     pub fn observe(
         &mut self,
-        epoch: u64,
+        epoch: Epochs,
         disk_done: bool,
         dma_done: bool,
         consumer_done: bool,
+        graph_done: bool,
     ) -> Result<()> {
         if epoch != self.epoch {
             return Err(Error::StaleEpoch);
@@ -41,10 +44,11 @@ impl FakeTransferLease {
         self.disk_done |= disk_done;
         self.dma_done |= dma_done;
         self.consumer_done |= consumer_done;
+        self.graph_done |= graph_done;
         Ok(())
     }
     pub fn retired(&self) -> bool {
-        self.disk_done && self.dma_done && self.consumer_done
+        self.disk_done && self.dma_done && self.consumer_done && self.graph_done
     }
     pub fn release(&mut self) -> Result<()> {
         if !self.retired() {

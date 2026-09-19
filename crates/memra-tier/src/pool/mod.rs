@@ -1,7 +1,7 @@
 //! CPU fake of startup-allocated aligned pinned slots. NOT CUDA-pinned memory.
 //! Lease ownership travels to I/O and is returned only after completion. No per-lease
 //! backing allocation. Admission must charge this physical pool once, not per caller.
-use crate::contracts::{Error, Result};
+use crate::contracts::{ChargedLease, Error, LeasePin, Result};
 use std::sync::{Arc, Mutex};
 
 struct Slot {
@@ -32,6 +32,7 @@ impl Slot {
     }
 }
 struct Inner {
+    _pin: LeasePin,
     free: Vec<Slot>,
     quarantined: Vec<Slot>,
 }
@@ -62,10 +63,12 @@ impl FakePinnedPool {
         slot_bytes: usize,
         alignment: usize,
         reserved_demand_slots: usize,
+        charge: &ChargedLease,
     ) -> Result<Self> {
         if slots == 0
             || slot_bytes == 0
             || !alignment.is_power_of_two()
+            || alignment > u32::MAX as usize
             || !slot_bytes.is_multiple_of(alignment)
             || reserved_demand_slots > slots
         {
@@ -78,11 +81,17 @@ impl FakePinnedPool {
                     .ok_or(Error::Overflow)?,
             )
             .ok_or(Error::Overflow)?;
+        let backing_bytes = slots * (slot_bytes + alignment - 1);
+        if charge.bytes().pageable < backing_bytes as u64 {
+            return Err(Error::Capacity);
+        }
+        let pin = charge.pin()?;
         let free = (0..slots)
             .map(|_| Slot::new(slot_bytes, alignment))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             inner: Arc::new(Mutex::new(Inner {
+                _pin: pin,
                 free,
                 quarantined: Vec::new(),
             })),
@@ -108,6 +117,7 @@ impl FakePinnedPool {
         let mut slot = inner.free.pop().ok_or(Error::Capacity)?;
         slot.data_mut().fill(0xa5); // deterministic fake poison; never visible before initialization
         Ok(PinnedLease {
+            lifetime: Arc::new(()),
             pool: self.clone(),
             slot: Some(slot),
             valid_bytes,
@@ -129,6 +139,7 @@ impl FakePinnedPool {
 /// Exclusive, non-Clone lease; dropping an idle lease returns quota and its slot.
 /// GPU integration must move it into a retirement record BEFORE submitting DMA.
 pub struct PinnedLease {
+    lifetime: Arc<()>,
     pool: FakePinnedPool,
     slot: Option<Slot>,
     valid_bytes: usize,
@@ -143,6 +154,9 @@ impl std::fmt::Debug for PinnedLease {
     }
 }
 impl PinnedLease {
+    pub(crate) fn lifetime(&self) -> std::sync::Weak<()> {
+        Arc::downgrade(&self.lifetime)
+    }
     /// Explicit idle-lease release. In-flight owners must retain this value until
     /// disk/DMA/consumer retirement; cancel cannot call this behind their back.
     pub fn release(self) {
@@ -210,5 +224,23 @@ impl Drop for PinnedLease {
                 .free
                 .push(slot);
         }
+    }
+}
+
+impl crate::contracts::PinnedLease for PinnedLease {
+    fn storage_bytes(&self) -> u64 {
+        self.storage_bytes() as u64
+    }
+    fn valid_bytes(&self) -> u64 {
+        self.valid_bytes() as u64
+    }
+    fn alignment(&self) -> u32 {
+        self.alignment() as u32
+    }
+    fn numa_node(&self) -> Option<u32> {
+        None
+    }
+    fn bytes(&self) -> Result<&[u8]> {
+        self.bytes()
     }
 }

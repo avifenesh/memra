@@ -1,81 +1,197 @@
-//! Day-1 storage-bench skeleton. CPU byte-store fixture only, never GPU/NVMe qualification.
-//! Built by the standalone A scaffold until lead workspace/bin wiring lands.
-use memra_tier::contracts::ObjectKey;
-use memra_tier::object_store::{
-    ALIGNMENT, ExtentStore, FileBackend, ObjectStore, digest, hex, padded_len,
-};
-use memra_tier::telemetry::StorageSample;
-use std::path::Path;
+//! Development-Mac I/O characterization, NOT memra spill speed or GPU qualification.
+//! This CPU executable can be linked to the workspace memra-tier rlib without nvcc.
+use memra_tier::contracts::*;
+use memra_tier::io::direct::{AlignedFile, ReadMode};
+use memra_tier::object_store::{ExtentStore, FileBackend, MAX_CHUNK};
+use std::{cell::RefCell, path::Path, rc::Rc};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().collect();
-    if args.len() == 2 && args[1] == "--help" {
-        println!(
-            "storage-bench cpu-fixture <empty-owned-directory> [valid-bytes<=1048576]\nCPU ephemeral buffered filesystem only; other backends fail closed."
-        );
-        return Ok(());
+/// Native syscall stays outside the unsafe-free metadata/storage crate.
+/// macOS F_NOCACHE is explicitly a development fallback, not Linux O_DIRECT.
+pub fn open_uncached(path: &Path) -> Result<std::fs::File> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::fd::AsRawFd;
+        unsafe extern "C" {
+            fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+        }
+        let file = std::fs::File::open(path)?;
+        // SAFETY: valid owned descriptor; Darwin F_NOCACHE takes an integer boolean.
+        if unsafe { fcntl(file.as_raw_fd(), 48, 1i32) } == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(file)
     }
-    if !(args.len() == 3 || args.len() == 4) || args[1] != "cpu-fixture" {
-        return Err(
-            "usage: storage-bench cpu-fixture <empty-owned-directory> [valid-bytes]".into(),
-        );
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Err(Error::Unsupported)
     }
-    let directory = Path::new(&args[2]);
-    // Refuse reusing arbitrary data. Caller owns cleanup, CLI only creates objects in this dir.
-    if directory.exists() && directory.read_dir()?.next().is_some() {
-        return Err("fixture directory must be empty".into());
+}
+
+// CPU benchmark-only bounded ledger; not a serving governor or alternative to WP-B.
+struct BenchBudget {
+    issuer: LeaseIssuer,
+    used: TierBudget,
+    cap: TierBudget,
+}
+impl BudgetGovernor for BenchBudget {
+    fn reserve(&mut self, r: &BudgetRequest) -> Result<ChargedLease> {
+        r.validate()?;
+        if !r.bytes.fits(&self.used, &self.cap)? {
+            return Err(Error::Capacity);
+        }
+        let charge = self.issuer.issue(r.bytes.clone())?;
+        self.used = self.used.checked_add(&r.bytes)?;
+        Ok(charge)
     }
-    let len: usize = if args.len() == 4 {
-        args[3].parse()?
-    } else {
-        264
-    };
-    if len == 0 || len > memra_tier::object_store::MAX_CHUNK {
-        return Err("valid bytes must be 1..=1048576".into());
+    fn used(&self) -> TierBudget {
+        self.used.clone()
     }
-    let payload: Vec<u8> = (0..len)
+    fn mark(&mut self, l: &ChargedLease, state: ChargeState) -> Result<()> {
+        self.issuer.mark(l, state)
+    }
+    fn release(&mut self, l: &ChargedLease) -> Result<()> {
+        self.issuer.release(l)?;
+        self.used = self.used.checked_sub(l.bytes())?;
+        Ok(())
+    }
+}
+fn fixture(offset: usize, len: usize) -> Vec<u8> {
+    (offset..offset + len)
         .map(|i| (i.wrapping_mul(17).wrapping_add(3) % 251) as u8)
-        .collect();
+        .collect()
+}
+pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::error::Error>> {
+    if !(3..=5).contains(&args.len()) || !matches!(args[1].as_str(), "roundtrip" | "restore") {
+        return Err("usage: storage-bench roundtrip|restore <owned-directory> [bytes<=1073741824] [buffered|uncached]".into());
+    }
+    let restore = args[1] == "restore";
+    let directory = Path::new(&args[2]);
+    let len: usize = args.get(3).map(|s| s.parse()).transpose()?.unwrap_or(264);
+    if len == 0 || len > 1 << 30 {
+        return Err("bytes must be 1..=1073741824".into());
+    }
+    let mode = match args.get(4).map(String::as_str).unwrap_or("buffered") {
+        "buffered" => ReadMode::Buffered,
+        "uncached" => ReadMode::Uncached,
+        _ => return Err("backend must be buffered or uncached".into()),
+    };
+    if restore {
+        if !directory.is_dir() {
+            return Err("restore requires an existing object directory".into());
+        }
+    } else if directory.exists() && directory.read_dir()?.next().is_some() {
+        return Err("roundtrip requires an empty owned directory".into());
+    }
     let key = ObjectKey {
-        artifact: digest(b"spill-a-byte-fixture-v1"),
-        semantic_id: digest(&payload),
-        layout: digest(b"opaque-bytes-v1"),
+        version: 1,
+        artifact: digest("benchmark-artifact", b"affine-mod251-v1"),
+        semantic_id: digest("benchmark-size", &(len as u64).to_le_bytes()),
+        layout: digest("benchmark-layout", b"opaque-bytes-v1"),
         generation: 0,
     };
-    let mut store = ExtentStore::new(FileBackend::open(directory)?);
-    let start = std::time::Instant::now();
-    let mut txn = store.begin(key.clone(), len as u64)?;
-    store.put(&mut txn, &payload)?;
-    store.commit(txn)?;
-    let lease = store.lookup(&key)?.ok_or("published object missing")?;
-    let got = store.read(&lease, 0)?;
-    if got != payload {
-        return Err("byte mismatch".into());
+    let mut backend = FileBackend::open_mode(directory, Durability::Persistent)?;
+    backend.set_read_mode(mode);
+    #[cfg(target_os = "macos")]
+    if mode == ReadMode::Uncached {
+        backend.set_uncached_opener(open_uncached);
     }
-    let extent_bytes = ALIGNMENT + padded_len(len)?;
-    let root_bytes = ALIGNMENT + padded_len(160)?;
-    // put: write+verify, commit: verify+root write+root readback, lookup: root read, read: chunk read.
-    let sample = StorageSample {
-        schema_version: 1,
-        fixture: "opaque-affine-mod251-v1".into(),
-        backend_requested: "cpu-fixture".into(),
-        backend_actual: "buffered-filesystem-ephemeral".into(),
+    let mut cap = TierBudget::zero(0);
+    cap.nvme = 2 * (len as u64) + (1 << 24);
+    let gov = Rc::new(RefCell::new(BenchBudget {
+        issuer: LeaseIssuer::default(),
+        used: TierBudget::zero(0),
+        cap: cap.clone(),
+    }));
+    let mut store = ExtentStore::new(backend, gov.clone());
+    let start = std::time::Instant::now();
+    if !restore {
+        let mut txn = store.begin(key.clone(), len as u64, Durability::Persistent)?;
+        for offset in (0..len).step_by(MAX_CHUNK) {
+            store.put(&mut txn, &fixture(offset, MAX_CHUNK.min(len - offset)))?;
+        }
+        store.commit(&mut txn)?;
+    }
+    let manifest = store.lookup(&key)?.ok_or("committed root missing")?;
+    let request = BudgetRequest {
+        bytes: cap,
+        priority: Priority::MandatoryActive,
+        deadline: Deadline(u64::MAX),
+        tenant: [0; 32],
+    };
+    let lease = store.lease(&manifest, &request)?;
+    use sha2::{Digest as _, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(b"memra-tier\0v1\0");
+    hash.update(11u64.to_le_bytes());
+    hash.update(b"valid-bytes");
+    hash.update((len as u64).to_le_bytes());
+    let mut offset = 0;
+    // Bounded readback + byte-by-byte verification; no full-object RAM allocation.
+    for (i, c) in manifest.chunks.iter().enumerate() {
+        let mut got = vec![0; c.valid_bytes as usize];
+        store.read(&lease, i as u32, &mut got)?;
+        if got != fixture(offset, got.len()) {
+            return Err("byte mismatch".into());
+        }
+        hash.update(&got);
+        offset += got.len();
+    }
+    if offset != len {
+        return Err("incomplete restore".into());
+    }
+    store.release(&lease)?;
+    if gov.borrow().used().nvme != 0 {
+        return Err("lease charge leaked".into());
+    }
+    let total_ns = start.elapsed().as_nanos().try_into()?;
+    let payload_checksum = hash.finalize().into();
+    Ok(StorageSample {
+        version: 1,
+        fixture: format!(
+            "opaque-affine-mod251-v1-{}-development-{}-io-not-spill-speed",
+            args[1],
+            std::env::consts::OS
+        ),
+        backend_requested: if mode == ReadMode::Buffered {
+            "buffered"
+        } else {
+            "uncached"
+        }
+        .into(),
+        backend_actual: if mode == ReadMode::Buffered {
+            "buffered-filesystem-persistent"
+        } else {
+            AlignedFile::backend_label()
+        }
+        .into(),
         status: "byte-exact".into(),
         valid_bytes: len as u64,
-        padded_bytes: padded_len(len)? as u64,
-        io_bytes: (4 * extent_bytes + 3 * root_bytes) as u64,
+        padded_bytes: manifest.chunks.iter().map(|c| c.storage_bytes).sum(),
+        io_bytes: store.backend().io_bytes(),
         physical_bytes: None,
         queue_ns: None,
         io_ns: None,
         h2d_ns: None,
         d2h_ns: None,
-        total_ns: start.elapsed().as_nanos().try_into()?,
+        p2p_ns: None,
+        total_ns,
         inflight: 1,
         pinned_bytes: 0,
         pageable_bytes: None,
-        fallbacks: 0,
-        payload_sha256: hex(&digest(&got)),
-    };
-    println!("{}", sample.json_line()?);
+        fallbacks: u64::from(mode == ReadMode::Uncached && cfg!(target_os = "macos")),
+        payload_checksum,
+    })
+}
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<_> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--help" {
+        println!(
+            "storage-bench roundtrip|restore <owned-directory> [bytes<=1073741824] [buffered|uncached]\nCPU filesystem only. Development-Mac I/O characterization, not memra spill speed. No GPU modes."
+        );
+        return Ok(());
+    }
+    let sample = run(&args)?;
+    println!("{}", String::from_utf8(sample.encode()?)?);
     Ok(())
 }

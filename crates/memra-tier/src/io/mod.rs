@@ -1,7 +1,9 @@
 //! Bounded CPU positioned-read workers, generalized from spill_pread's ownership pattern.
 //! No CUDA calls. The existing expert adapter is deliberately unchanged before freeze.
+pub mod direct;
 pub mod retirement;
-use crate::contracts::{Error, Result, TransferTicket};
+pub mod transfer;
+use crate::contracts::{Epochs, Error, Result, TransferTicket};
 use crate::pool::PinnedLease;
 use std::collections::HashMap;
 use std::io;
@@ -43,7 +45,7 @@ pub struct ReadRequest {
     pub source: Arc<dyn ReadAt>,
     pub offset: u64,
     pub lease: PinnedLease,
-    pub epoch: u64,
+    pub epochs: Epochs,
 }
 pub struct SubmitError {
     pub error: Error,
@@ -71,6 +73,7 @@ pub struct BoundedReader {
     pending: HashMap<TransferTicket, bool>,
     limit: usize,
     next_id: u64,
+    issuer: u64,
 }
 impl BoundedReader {
     pub fn new(workers: usize, max_inflight: usize) -> Result<Self> {
@@ -134,9 +137,11 @@ impl BoundedReader {
             pending: HashMap::new(),
             limit: max_inflight,
             next_id: 1,
+            issuer: crate::contracts::DeviceOwner::new(0).issuer(),
         })
     }
     /// Accepted set is bounded until COMPLETIONS are consumed, not merely dequeued by workers.
+    #[allow(clippy::result_large_err)] // Rejection returns owned backing without an allocation.
     pub fn submit(
         &mut self,
         request: ReadRequest,
@@ -149,8 +154,9 @@ impl BoundedReader {
             return reject(Error::Overflow, request);
         };
         let ticket = TransferTicket {
-            id: self.next_id,
-            epoch: request.epoch,
+            issuer: self.issuer,
+            sequence: self.next_id,
+            epochs: request.epochs,
         };
         let Some(sender) = &self.sender else {
             return reject(Error::NotReady, request);

@@ -5,3 +5,8 @@
 //! No empty shadow modules: implementations import this single contract namespace.
 #![forbid(unsafe_code)]
 pub mod contracts;
+
+pub mod io;
+pub mod object_store;
+pub mod pool;
+pub mod telemetry;

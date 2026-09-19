@@ -1,4 +1,46 @@
+#[allow(dead_code)]
+#[path = "../contracts/conformance.rs"]
+mod conformance;
 mod retirement;
+#[allow(dead_code)]
+#[path = "../contracts/support.rs"]
+mod support;
+use memra_tier::contracts::{BudgetGovernor, Durability, Epochs, Priority, Wire};
+fn epochs(state: u64) -> Epochs {
+    Epochs {
+        state,
+        src_gen: 19,
+        dst_gen: 31,
+    }
+}
+fn governor() -> support::Shared {
+    std::rc::Rc::new(std::cell::RefCell::new(support::Governor::new(1 << 30)))
+}
+fn new_pool(slots: usize, size: usize, align: usize, reserved: usize) -> Result<FakePinnedPool> {
+    let g = governor();
+    let charge = g.borrow_mut().reserve(&support::request(
+        (slots * (size + align - 1)) as u64,
+        Priority::MandatoryActive,
+    ))?;
+    FakePinnedPool::new(slots, size, align, reserved, &charge)
+}
+fn new_store<B: BlobBackend>(backend: B) -> ExtentStore<B, support::Governor> {
+    ExtentStore::new(backend, governor())
+}
+fn read_manifest<B: BlobBackend>(
+    s: &mut ExtentStore<B, support::Governor>,
+    m: &ObjectManifest,
+    c: u32,
+) -> Result<Vec<u8>> {
+    let mut r = support::request(0, Priority::MandatoryActive);
+    r.bytes.nvme = 1 << 26;
+    let l = s.lease(m, &r)?;
+    let mut out = vec![0; m.chunks[c as usize].valid_bytes as usize];
+    let result = s.read(&l, c, &mut out);
+    s.release(&l)?;
+    result?;
+    Ok(out)
+}
 use memra_tier::contracts::{Error, ObjectKey, Result, TransferTicket};
 use memra_tier::io::{BoundedReader, ReadAt, ReadRequest, read_exact_at};
 use memra_tier::object_store::*;
@@ -14,6 +56,7 @@ fn payload(n: usize) -> Vec<u8> {
 }
 fn key() -> ObjectKey {
     ObjectKey {
+        version: 1,
         artifact: digest(b"fixture"),
         semantic_id: digest(b"record"),
         layout: digest(b"opaque-v1"),
@@ -99,9 +142,9 @@ fn corruption_header_payload_padding_truncation_and_future_version_refused() {
 }
 #[test]
 fn publication_is_last_and_streams_object_larger_than_pool() {
-    let mut store = ExtentStore::new(MemoryBackend::default());
-    let mut txn = store.begin(key(), 4 * 264).unwrap();
-    let pool = FakePinnedPool::new(1, 4096, 4096, 1).unwrap();
+    let mut store = new_store(MemoryBackend::default());
+    let mut txn = store.begin(key(), 4 * 264, Durability::Ephemeral).unwrap();
+    let pool = new_pool(1, 4096, 4096, 1).unwrap();
     for i in 0..4 {
         store.put(&mut txn, &payload(264)).unwrap();
         assert!(
@@ -109,11 +152,13 @@ fn publication_is_last_and_streams_object_larger_than_pool() {
             "early root at chunk {i}"
         );
     }
-    let object = store.commit(txn).unwrap();
+    let object = store.commit(&mut txn).unwrap();
     assert_eq!(store.lookup(&key()).unwrap(), Some(object.clone()));
     for i in 0..4 {
         let mut lease = pool.acquire(264, Admission::Demand).unwrap();
-        lease.write(&store.read(&object, i).unwrap()).unwrap();
+        lease
+            .write(&read_manifest(&mut store, &object, i).unwrap())
+            .unwrap();
         assert_eq!(lease.bytes().unwrap(), payload(264));
     }
     assert_eq!(pool.accounting().free_slots, 1);
@@ -125,24 +170,27 @@ fn publication_is_last_and_streams_object_larger_than_pool() {
                 ..key()
             },
             8192,
+            Durability::Ephemeral,
         )
         .unwrap();
     for _ in 0..2 {
         store.put(&mut txn, &payload(4096)).unwrap();
     }
-    let object = store.commit(txn).unwrap();
+    let object = store.commit(&mut txn).unwrap();
     for i in 0..2 {
         let mut lease = pool.acquire(4096, Admission::Demand).unwrap();
-        lease.write(&store.read(&object, i).unwrap()).unwrap();
+        lease
+            .write(&read_manifest(&mut store, &object, i).unwrap())
+            .unwrap();
         assert_eq!(lease.bytes().unwrap(), payload(4096));
     }
 }
 #[test]
 fn incomplete_enospc_short_write_and_interrupted_commit_never_publish() {
-    let mut store = ExtentStore::new(MemoryBackend::default());
-    let txn = store.begin(key(), 264).unwrap();
-    assert_eq!(store.commit(txn), Err(Error::NotReady));
-    let mut txn = store.begin(key(), 264).unwrap();
+    let mut store = new_store(MemoryBackend::default());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    assert_eq!(store.commit(&mut txn), Err(Error::NotReady));
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
     store.backend_mut().fail_chunk = true;
     assert_eq!(
         store.put(&mut txn, &payload(264)),
@@ -160,31 +208,31 @@ fn incomplete_enospc_short_write_and_interrupted_commit_never_publish() {
     *store.backend_mut() = MemoryBackend::default();
     store.put(&mut txn, &payload(264)).unwrap();
     store.backend_mut().fail_root = true;
-    assert!(store.commit(txn).is_err());
+    assert!(store.commit(&mut txn).is_err());
     assert!(store.lookup(&key()).unwrap().is_none());
 }
 #[test]
 fn corrupt_or_missing_chunk_blocks_commit_and_read() {
-    let mut store = ExtentStore::new(MemoryBackend::default());
-    let mut txn = store.begin(key(), 264).unwrap();
+    let mut store = new_store(MemoryBackend::default());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
     store.put(&mut txn, &payload(264)).unwrap();
     store.backend_mut().blobs.values_mut().next().unwrap()[ALIGNMENT] ^= 1;
-    assert_eq!(store.commit(txn), Err(Error::Corrupt));
+    assert_eq!(store.commit(&mut txn), Err(Error::Corrupt));
     assert!(store.lookup(&key()).unwrap().is_none());
     *store.backend_mut() = MemoryBackend::default();
-    let mut txn = store.begin(key(), 264).unwrap();
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
     store.put(&mut txn, &payload(264)).unwrap();
-    let obj = store.commit(txn).unwrap();
+    let obj = store.commit(&mut txn).unwrap();
     store.backend_mut().blobs.retain(|(root, _), _| *root);
     assert!(store.lookup(&key()).unwrap().is_some()); // advisory != readable
-    assert_eq!(store.read(&obj, 0), Err(Error::NotFound));
+    assert_eq!(read_manifest(&mut store, &obj, 0), Err(Error::NotFound));
 }
 #[test]
 fn root_collision_identity_and_immutable_conflicts_fail_closed() {
-    let mut store = ExtentStore::new(MemoryBackend::default());
-    let mut txn = store.begin(key(), 264).unwrap();
+    let mut store = new_store(MemoryBackend::default());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
     store.put(&mut txn, &payload(264)).unwrap();
-    store.commit(txn).unwrap();
+    store.commit(&mut txn).unwrap();
     let first = store
         .backend()
         .blobs
@@ -198,9 +246,11 @@ fn root_collision_identity_and_immutable_conflicts_fail_closed() {
         ..key()
     };
     assert!(store.lookup(&wrong).unwrap().is_none());
-    let mut empty = store.begin(wrong.clone(), 264).unwrap();
+    let mut empty = store
+        .begin(wrong.clone(), 264, Durability::Ephemeral)
+        .unwrap();
     store.put(&mut empty, &[8; 264]).unwrap();
-    store.commit(empty).unwrap();
+    store.commit(&mut empty).unwrap();
     let second_root = store
         .backend_mut()
         .blobs
@@ -210,13 +260,13 @@ fn root_collision_identity_and_immutable_conflicts_fail_closed() {
         .1;
     *second_root = first;
     assert_eq!(store.lookup(&wrong), Err(Error::Corrupt));
-    let mut conflict = store.begin(key(), 264).unwrap();
+    let mut conflict = store.begin(key(), 264, Durability::Ephemeral).unwrap();
     store.put(&mut conflict, &[7; 264]).unwrap();
-    assert_eq!(store.commit(conflict), Err(Error::Conflict));
+    assert_eq!(store.commit(&mut conflict), Err(Error::Conflict));
 }
 #[test]
 fn fake_pool_reserves_demand_headroom_and_charges_padding() {
-    let pool = FakePinnedPool::new(2, 4096, 4096, 1).unwrap();
+    let pool = new_pool(2, 4096, 4096, 1).unwrap();
     let optional = pool.acquire(264, Admission::Optional).unwrap();
     assert!(matches!(
         pool.acquire(264, Admission::Optional),
@@ -240,7 +290,7 @@ fn fake_pool_reserves_demand_headroom_and_charges_padding() {
 }
 #[test]
 fn unknown_completion_quarantines_not_reuses() {
-    let pool = FakePinnedPool::new(1, 4096, 4096, 0).unwrap();
+    let pool = new_pool(1, 4096, 4096, 0).unwrap();
     pool.acquire(264, Admission::Demand).unwrap().quarantine();
     assert_eq!(pool.accounting().quarantined_bytes, 4096);
     assert_eq!(pool.accounting().free_slots, 0);
@@ -292,13 +342,13 @@ fn exact_pread_eintr_partial_eof_overflow() {
 }
 #[test]
 fn bounded_reader_partial_acceptance_and_short_read_visibility() {
-    let pool = FakePinnedPool::new(3, 4096, 4096, 0).unwrap();
+    let pool = new_pool(3, 4096, 4096, 0).unwrap();
     let mut reader = BoundedReader::new(1, 2).unwrap();
     let request = |offset| ReadRequest {
         source: source(97),
         offset,
         lease: pool.acquire(37, Admission::Demand).unwrap(),
-        epoch: 3,
+        epochs: epochs(3),
     };
     let a = reader.submit(request(3)).unwrap();
     let b = reader.submit(request(90)).unwrap();
@@ -337,7 +387,7 @@ impl ReadAt for Delayed {
 }
 #[test]
 fn cancel_late_completion_keeps_source_and_slot_until_io_retires() {
-    let pool = FakePinnedPool::new(1, 4096, 4096, 0).unwrap();
+    let pool = new_pool(1, 4096, 4096, 0).unwrap();
     let (entered, ack) = mpsc::channel();
     let (resume, wait) = mpsc::channel();
     let backend = Arc::new(Delayed {
@@ -351,13 +401,16 @@ fn cancel_late_completion_keeps_source_and_slot_until_io_retires() {
             source: backend,
             offset: 0,
             lease: pool.acquire(264, Admission::Demand).unwrap(),
-            epoch: 9,
+            epochs: epochs(9),
         })
         .unwrap();
     ack.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
     assert!(weak.upgrade().is_some());
     assert_eq!(
-        reader.cancel(TransferTicket { epoch: 10, ..t }),
+        reader.cancel(TransferTicket {
+            epochs: epochs(10),
+            ..t
+        }),
         Err(Error::UnknownTicket)
     );
     reader.cancel(t).unwrap();
@@ -395,18 +448,18 @@ impl Drop for OwnedDirectory {
 #[test]
 fn real_filesystem_reopen_and_conflict_do_not_clobber() {
     let directory = OwnedDirectory::new();
-    let mut store = ExtentStore::new(FileBackend::open(&directory.0).unwrap());
-    let mut t = store.begin(key(), 264).unwrap();
+    let mut store = new_store(FileBackend::open(&directory.0).unwrap());
+    let mut t = store.begin(key(), 264, Durability::Ephemeral).unwrap();
     store.put(&mut t, &payload(264)).unwrap();
-    store.commit(t).unwrap();
+    store.commit(&mut t).unwrap();
     drop(store);
-    let mut reopened = ExtentStore::new(FileBackend::open(&directory.0).unwrap());
+    let mut reopened = new_store(FileBackend::open(&directory.0).unwrap());
     let obj = reopened.lookup(&key()).unwrap().unwrap();
-    assert_eq!(reopened.read(&obj, 0).unwrap(), payload(264));
-    let mut t = reopened.begin(key(), 264).unwrap();
+    assert_eq!(read_manifest(&mut reopened, &obj, 0).unwrap(), payload(264));
+    let mut t = reopened.begin(key(), 264, Durability::Ephemeral).unwrap();
     reopened.put(&mut t, &[1; 264]).unwrap();
-    assert_eq!(reopened.commit(t), Err(Error::Conflict));
-    assert_eq!(reopened.read(&obj, 0).unwrap(), payload(264));
+    assert_eq!(reopened.commit(&mut t), Err(Error::Conflict));
+    assert_eq!(read_manifest(&mut reopened, &obj, 0).unwrap(), payload(264));
     assert!(std::fs::read_dir(&directory.0).unwrap().all(|p| {
         !p.unwrap()
             .file_name()
@@ -417,7 +470,7 @@ fn real_filesystem_reopen_and_conflict_do_not_clobber() {
 #[test]
 fn jsonl_escapes_strings_and_unknown_times_are_null() {
     let sample = memra_tier::telemetry::StorageSample {
-        schema_version: 1,
+        version: 1,
         fixture: "a\"b\nc".into(),
         backend_requested: "cpu-fixture".into(),
         backend_actual: "fake".into(),
@@ -430,17 +483,23 @@ fn jsonl_escapes_strings_and_unknown_times_are_null() {
         io_ns: None,
         h2d_ns: None,
         d2h_ns: None,
+        p2p_ns: None,
         total_ns: 42,
         inflight: 1,
         pinned_bytes: 0,
         pageable_bytes: Some(8191),
         fallbacks: 0,
-        payload_sha256: hex(&digest(&payload(264))),
+        payload_checksum: digest(&payload(264)),
     };
-    let line = sample.json_line().unwrap();
+    let line = String::from_utf8(sample.encode().unwrap()).unwrap();
     assert!(!line.contains('\n'));
     assert_eq!(
         serde_json::from_str::<memra_tier::telemetry::StorageSample>(&line).unwrap(),
         sample
     );
 }
+
+#[allow(dead_code)]
+#[path = "../../../memra-engine/src/bin/storage_bench.rs"]
+mod bench;
+mod day2;
