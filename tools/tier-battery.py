@@ -132,6 +132,7 @@ def percentiles(values):
 def validate_telemetry(samples, kind):
     require(len(samples) >= 2, "telemetry needs window coverage")
     previous = None
+    previous_sample = None
     for s in samples:
         require(set(s) == {"schema_version", "kind", "monotonic_ns", "interval_ms", "devices", "host", "nvme", "wait_ns"}, "telemetry fields")
         require(type(s["schema_version"]) is int and s["schema_version"] == 1 and type(s["interval_ms"]) is int and s["interval_ms"] == 250 and s["kind"] == kind, "telemetry version/class/cadence")
@@ -159,6 +160,17 @@ def validate_telemetry(samples, kind):
             values = list(distribution.values())
             require(all(type(v) in (int,float) and math.isfinite(v) and v >= 0 for v in values), "invalid wait percentile")
             require(distribution["p50"] <= distribution["p95"] <= distribution["p99"], "unordered waits")
+        if previous_sample is not None:
+            old_devices = {d["device"]:d for d in previous_sample["devices"]}
+            require(set(old_devices) == {d["device"] for d in s["devices"]}, "device roster changed")
+            for device in s["devices"]:
+                old = old_devices[device["device"]]
+                require(all(device["routes"][r][direction] >= old["routes"][r][direction] for r in ROUTES for direction in ("bytes_in", "bytes_out")), "route byte counter regressed")
+            for field in ("read_bytes", "write_bytes", "physical_bytes"):
+                old, new = previous_sample["nvme"][field], s["nvme"][field]
+                require(old is None or new is None or new >= old, "NVMe byte counter regressed")
+        previous_sample = s
+
 
 
 @contextlib.contextmanager
@@ -297,7 +309,7 @@ def run_dry_campaign(out, n=5, rig="pro-pair", thermal="synthetic-no-thermal-mea
             row = {"schema_version":1,"cell":"boundary","pair_id":pair,"run_id":rid,"arm":arm,**identity,"lock":None,"route":"host" if arm=="on" else "local","direct_path_proven":False,"migrated_bytes":result["migrated_bytes"],**outputs,"raw_log":descriptor(out,log),"telemetry":None,"telemetry_interval_ms":None,"status":"pass","exit_code":0}
             records.append(row)
             # Exercise the sampler schema with an explicitly VIRTUAL 250ms clock.
-            sampler = Sampler(lambda ns: sample_fake(ns, ns//INTERVAL_NS*result["migrated_bytes"]))
+            sampler = Sampler(lambda ns: sample_fake(ns, min(1, ns//INTERVAL_NS)*result["migrated_bytes"]))
             for i in range(3): sampler.sample_at(i*INTERVAL_NS)
             samples = sampler.samples
             validate_telemetry(samples,"cpu-fixture")
@@ -357,6 +369,9 @@ def validate_campaign(root):
         path = evidence(root,run["telemetry"])
         samples = [json.loads(line) for line in path.read_text().splitlines()]
         validate_telemetry(samples, "cpu-fixture")
+        for device, direction in ((0, "bytes_out"), (1, "bytes_in")):
+            counters = [{d["device"]:d for d in sample["devices"]}[device]["routes"]["host"][direction] for sample in (samples[0], samples[-1])]
+            require(counters[1] - counters[0] == row["migrated_bytes"], "synthetic telemetry/migration byte mismatch")
         require(run["clock"] == "virtual-monotonic" and samples[-1]["monotonic_ns"] - samples[0]["monotonic_ns"] >= run["duration_ns"], "telemetry does not cover run window")
     summary = json.loads((root / "summary.json").read_text())
     require(summary["status"] == "dry-run-not-qualification" and summary["kind"] == "cpu-fixture", "synthetic summary mislabeled")

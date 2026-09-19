@@ -69,7 +69,7 @@ class CollectorTests(unittest.TestCase):
         B.validate_telemetry(samples,'cpu-fixture')
         schema=json.loads((ROOT/'research/spill-d-20260919/telemetry.schema.json').read_text())
         self.assertEqual(set(schema['required']),set(samples[0]))
-        for mutation in [lambda s:s.pop('host'),lambda s:s['devices'][0]['routes'].pop('pcie-p2p'),lambda s:s.update(monotonic_ns=-1),lambda s:s.update(monotonic_ns=2_000_000_000),lambda s:s['wait_ns']['queue'].update(p50=900),lambda s:s.update(kind='gpu'),lambda s:s['nvme'].update(read_bytes=-1)]:
+        for mutation in [lambda s:s.pop('host'),lambda s:s['devices'][0]['routes'].pop('pcie-p2p'),lambda s:s.update(monotonic_ns=-1),lambda s:s.update(monotonic_ns=2_000_000_000),lambda s:s['wait_ns']['queue'].update(p50=900),lambda s:s.update(kind='gpu'),lambda s:s['nvme'].update(read_bytes=-1),lambda s:s['nvme'].update(read_bytes=100)]:
             bad=copy.deepcopy(samples);mutation(bad[1])
             with self.assertRaises((ValueError,KeyError)):B.validate_telemetry(bad,'cpu-fixture')
         with self.assertRaises(ValueError):B.percentiles([])
