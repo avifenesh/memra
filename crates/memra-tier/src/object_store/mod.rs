@@ -365,6 +365,7 @@ pub struct FileBackend {
     directory: PathBuf,
     persistent: bool,
     read_mode: crate::io::direct::ReadMode,
+    direct_writes: bool,
     io_bytes: std::cell::Cell<u64>,
     uncached_opener: Option<crate::io::direct::FileOpener>,
 }
@@ -390,6 +391,7 @@ impl FileBackend {
             directory: directory.to_owned(),
             persistent: durability == Durability::Persistent,
             read_mode: crate::io::direct::ReadMode::Buffered,
+            direct_writes: false,
             io_bytes: std::cell::Cell::new(0),
             uncached_opener: None,
         })
@@ -399,6 +401,19 @@ impl FileBackend {
     }
     pub fn set_read_mode(&mut self, mode: crate::io::direct::ReadMode) {
         self.read_mode = mode;
+    }
+    /// Experimental explicit comparator, never a default or silent fallback.
+    pub fn set_direct_writes(&mut self, enabled: bool) -> Result<()> {
+        if enabled
+            && !cfg!(all(
+                target_os = "linux",
+                any(target_arch = "x86_64", target_arch = "aarch64")
+            ))
+        {
+            return Err(Error::Unsupported);
+        }
+        self.direct_writes = enabled;
+        Ok(())
     }
     pub fn io_bytes(&self) -> u64 {
         self.io_bytes.get()
@@ -451,14 +466,40 @@ impl BlobBackend for FileBackend {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        let mut file = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        // Allocate/validate before creating a temporary file. Direct files never
+        // contain a buffered header followed by direct payload (or vice versa).
+        let direct = if self.direct_writes {
+            let mut buffer = crate::io::direct::AlignedBuffer::new(bytes.len())?;
+            buffer.bytes_mut().copy_from_slice(bytes);
+            Some(buffer)
+        } else {
+            None
+        };
+        let mut buffered;
+        let direct_file;
+        if direct.is_some() {
+            direct_file = Some(crate::io::direct::AlignedFile::create_new(&tmp)?);
+            buffered = None;
+        } else {
+            direct_file = None;
+            buffered = Some(OpenOptions::new().write(true).create_new(true).open(&tmp)?);
+        }
         let result = (|| {
             self.count(bytes.len() as u64)?;
-            file.write_all(bytes)?;
-            if self.persistent {
-                file.sync_all()?;
+            if let (Some(file), Some(buffer)) = (&direct_file, &direct) {
+                file.write_aligned(0, buffer.bytes())?;
+                if self.persistent {
+                    file.sync_all()?;
+                }
+            } else {
+                let file = buffered.as_mut().ok_or(Error::InvalidLayout)?;
+                file.write_all(bytes)?;
+                if self.persistent {
+                    file.sync_all()?;
+                }
             }
-            drop(file);
+            drop(buffered);
+            drop(direct_file);
             match fs::hard_link(&tmp, self.path(root, id)) {
                 Ok(()) => {
                     if self.persistent {

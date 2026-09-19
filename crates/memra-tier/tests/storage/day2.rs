@@ -85,7 +85,7 @@ fn charged_pool_pins_backing_once_until_last_slice_returns() {
     assert_eq!(charge.state().unwrap(), ChargeState::Released);
 }
 fn transfers() -> (
-    CpuTransfers<ExtentStore<MemoryBackend, support::Governor>>,
+    CpuTransfers<ExtentStore<MemoryBackend, memra_tier::tier::Governor>>,
     FakePinnedPool,
 ) {
     let mut s = new_store(MemoryBackend::default());
