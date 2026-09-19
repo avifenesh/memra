@@ -794,7 +794,7 @@ def main():
     modes.add_argument("--validate-campaign", type=Path, metavar="BUNDLE")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--external-lock", action="store_true", help="inherit canonical lock FD; replace exactly one @COLLECTOR_LOCK_FD@ child argument (explicit opt-in only)")
-    parser.add_argument("--schema", choices=["auto", "runs", "telemetry"], default="auto")
+    parser.add_argument("--schema", choices=["auto", "runs", "telemetry", "storage-cell"], default="auto")
     parser.add_argument("--storage-root", type=Path, help="actual filesystem path for this storage cell; ancestry captured before execution")
     parser.add_argument("--allow-unproven-storage", action="store_true", help="explicit overlay/unproven development mode; never NVMe/spill-speed evidence")
     parser.add_argument("--storage-samples", type=Path, help="run-id wrapped canonical StorageSample JSONL")
@@ -889,6 +889,21 @@ def main():
         return
     rows = [json.loads(line) for line in args.validate.read_text().splitlines() if line.strip()]
     require(rows, "empty JSONL")
+    if args.schema == "storage-cell":
+        # Keep A's diagnostic sample join behind this explicit schema. First run
+        # current capture integrity (including UTC, storage and inherited locks),
+        # then A's exact command/raw-sample/run-id binding. Never auto-promote it.
+        import runpy
+        validate_cell(args.validate)
+        module = Path(__file__).resolve().parents[1] / "research/spill-a-20260919/storage_capture.py"
+        envelopes = None if args.storage_samples is None else [
+            json.loads(line) for line in args.storage_samples.read_text().splitlines() if line.strip()]
+        joined = runpy.run_path(str(module))["validate_storage_cell"](args.validate, sys.modules[__name__], envelopes)
+        require(args.out is not None, "storage CELL join requires new --out JSONL file")
+        with args.out.open("x") as out:
+            out.write(json.dumps(joined) + "\n")
+        print("STORAGE-CAPTURE MATCH: 1 run; diagnostic join only, NOT hardware/serving qualification")
+        return
     kind = args.schema if args.schema != "auto" else ("telemetry" if "monotonic_ns" in rows[0] else "runs")
     schema = json.loads((Path(__file__).resolve().parents[1] / "research/spill-d-20260919" / (kind + ".schema.json")).read_text())
     for row in rows:

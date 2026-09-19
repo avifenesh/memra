@@ -2,8 +2,10 @@
 
 `tools/tier-battery.py::validate_capture` and `validate_cell` enforce the capture
 contract. This is **not** `telemetry.schema.json` (the structured route-counter
-schema), `runs.schema.json` (forced byte-identity arms), or A's pending storage-cell
-join. Existing archived capture version 1 remains readable.
+schema), or `runs.schema.json` (forced byte-identity arms). A's explicit
+`--schema storage-cell` diagnostic join first passes current capture integrity,
+then strictly binds the command, raw sample and run-id envelope. Existing
+archived capture version 1 remains readable.
 
 ## Additive day-6 fields
 
