@@ -1,7 +1,7 @@
 # What a serving inference engine must have for real inference usage — and where memra stands
 
 Lane `serving-musthaves-20260919`. Audit at memra `61be8b0d` (origin/main, 2026-09-19).
-Tracking issues for the ranked gaps: #521–#533 (one per gap, §7).
+Tracking issues: surface gaps #521–#533 (one per gap, §7); engine-level structural defects #534–#539 (§9).
 Method: (1) the converged 2026 industry baseline (every mainstream engine ships it, so a
 customer assumes it); (2) the production incident record of this program's own serving
 (private sibling repo, `../darklanes/ops/incidents/` and `research/*incident*`), which is the
@@ -137,6 +137,31 @@ above therefore split:
   gates G2–G8. The 2026-09 incidents were not memra-specific mechanisms; a fork stack that
   cannot show prefill fairness under a 135k prefill, a warmup-gated readiness, a drain, a
   completion count and Prometheus histograms will reproduce them.
+
+## 9. The engine underneath — what is structurally broken (added 2026-09-19, second pass)
+
+§1–§7 are the surface: they say what is missing at the HTTP and lifecycle layer. This section is
+what a second, code-level pass found underneath, verified in the tree at `61be8b0d`. These are
+the items where the fix is engine work, not a flag or a gate. Ranked by how much of the surface
+they explain.
+
+| # | Structural defect | Where | What it explains | Issue |
+|---|---|---|---|---|
+| 9.1 | **Eager-only routes prime the whole prompt in one synchronous call.** `prefill_tick_take`: `take = if eager_mono { q } else { q.min(budget) }`. Eager-only = HyperConnections (GLM-5.3-Flash) and the Gemma-4 class; `prime_cache_hyper` never calls `prime_chunk_ranges`; `gemma4_prime` refuses `pos>0`; dsv4 is monolithic at 673 KiB/token. A strict phase barrier runs all prefill before any decode in a tick on the single CUDA thread. | `worker.rs:220-224`, `:22845-22856`, `:22920-22924`, `:13294-13330`, `:16880-17014`; `memra-kv/src/lib.rs:185-191` | 3.1 entirely (the 11.5 h incident); why `MEMRA_PRIME_YIELD` (#521) cannot fix it — the walker cannot yield inside a call with no chunk boundary; #456/#457/#442/#480/#476 | **#534** |
+| 9.2 | **glm5 batched decode keeps the mixers per-session.** `decode_step_batch_hyper` batches hc glue + MoE at m=B; KDA and MLA/k-pool run in a per-session loop ("step latency grows ~linearly in B on that segment"); cap B≤15 at a numeric-class knee; measured plateau 1.2× from c=8. **Under TP the batched arm is refused at boot** — "the TP walk serves sessions one at a time through decode_step" — so the 2-card shape the model needs is eager per-session with spec refused. | `decode_batch.rs:2620-2704`, `:2646-2650`, `:2668`; `worker.rs:4866-4906`, `:16960-17014`, `:24470-24479`; `docs/FLAGS.md:982` | Why concurrency divides throughput on the flagship instead of multiplying it; why TTFT-under-load is bounded only by admission; 5.1 | **#538** |
+| 9.3 | **KV is contiguous per session at `request_ctx_cap`.** `alloc_rows = max_ctx` per plane; a request that omits `max_tokens` (the OpenAI default) books the whole server context (~13.96 GB at 1M) unless the `MEMRA_ADMIT_BY_MEMORY` door is on; prefix hits are D2D deep copies (N sessions on one 84k system prompt = N+1 copies); only zero-emission sessions can be parked — an emitting session is never preemptible. The prefix cache is therefore a snapshot store with prompt-sized entries. | `memra-kv/src/lib.rs:2747-2753`, `:2799-2808`; `worker.rs:18380-18420`, `:10223-10382`, `:16480-16534`; `admit_memory.rs:360-367` | 3.2 (#523 self-eviction is a property of prompt-sized entries), 3.6, 3.7, #346/#445 reclaim accounting, the 1M session cap of 4 | **#539** |
+| 9.4 | **Execution is N per-family programs behind op allowlists.** `DECODE_BATCH`, `CARRIED_PRIME`, `NATIVE_EAGER`, `PIPELINE`, `MTP_SPEC` are allowlists that exclude HC, MLA, DSA, compressed MLA, Gemma residual; glm5 and dsv4 live on dedicated arms (`decode_step_batch_hyper`, `prime_cache_hyper`, `glm_spec.rs`, `glm5_tp.rs`, `dsv4_ep.rs`) plus a second serving loop `dsv4_serve.rs` with no memory admission, metrics or liveness. Every scheduling property is re-derived per family; the default for a new topology is "eager-only for every non-decode entry point". | `execution_manifest.rs:512-530`, `:559-569`, `:640-677`, `:679-711`, `:713-731`, `:733-767`; `hybrid_forward.rs:2041-2056`; `worker.rs:13311/13321/13328`; `dsv4_serve.rs` | 5.5 (owner: "every bringup … hours of gpu … many bugs"); #500–#503, #449, #454; why 9.1 and 9.2 had to be built per family | **#535** |
+| 9.5 | **One CUDA-owner thread does everything synchronously inside the tick**: prime, decode, prefix capture, D2D restore, D2H demotion, H2D promotion, trim. No cancellation point inside a prime call. A worker panic unwinds every `Session`; peers' streams close with **no error event** (the truncated-200 class); second panic exits the process. | `worker.rs:8424-8447`, `:8562-8620`, `:10078-10116`, `:22984`, `:24319`, `:26168`, `:26199-26220`, `:1378-1385`; `worker/host_glm.rs:13-36`; `lib.rs:7510-7521` | 4.2 mechanism (#525), 4.7, `TRAP:admin-trim-releases-on-second-call`, the 329 `client disconnected while queued` lines behind one prime, host-tier moves taxing every neighbour | **#536** |
+
+**How they compose.** 9.4 is why 9.1 and 9.2 exist per family. 9.1 is the incident. 9.2 is why
+the flagship never scaled. 9.3 is why the cache and admission are fragile and why 1M is c=4.
+9.5 is why one bad request or one large move is felt by everyone. The surface issues #521–#533
+stay open as the observable contracts; #534–#539 are the work that makes them true.
+
+**Corrected from the corpus.** `TRAP:glm53:spec-prefill-sequential-mtp-warm` (MTP plane warmed
+token-by-token) is superseded in the tree: `glm5_mtp_plane_fill_chunk` is a chunked t-parallel
+warm (`glm_spec.rs:2270-2290`). EAGLE3's tokenwise prompt loop (`eagle.rs:492-496`) is CLI-only;
+`eagle` does not appear in `memra-server`. Neither is filed.
 
 ## Sources
 
