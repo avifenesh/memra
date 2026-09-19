@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/memra-cli", "crates/memra-probe", "crates/memra-gguf", "crates/memra-reference", "crates/memra-runtime", "crates/memra-engine", "crates/memra-tokenizer", "crates/memra-sampling", "crates/memra-validate", "crates/memra-kv", "crates/memra-lanes", "crates/memra-server"]
+members = ["crates/memra-cli", "crates/memra-probe", "crates/memra-gguf", "crates/memra-reference", "crates/memra-runtime", "crates/memra-engine", "crates/memra-tokenizer", "crates/memra-sampling", "crates/memra-validate", "crates/memra-kv", "crates/memra-tier", "crates/memra-lanes", "crates/memra-server"]
 
 # Shared crates.io metadata (docs/RELEASING.md "Publishing to crates.io"): every member
 # inherits via `<field>.workspace = true`. The version is the release tag — bump it as
@@ -24,6 +24,7 @@ keywords = ["llm", "inference", "cuda", "gguf", "safetensors"]
 # strips the path on publish, and the memra crates evolve in lockstep — mixed versions
 # across the workspace are never a supported configuration.
 [workspace.dependencies]
+memra-tier = { path = "crates/memra-tier", version = "=0.138.0" }
 memra-gguf = { path = "crates/memra-gguf", version = "=0.138.0" }
 memra-sampling = { path = "crates/memra-sampling", version = "=0.138.0" }
 memra-validate = { path = "crates/memra-validate", version = "=0.138.0" }
