@@ -13,6 +13,7 @@ use crate::tensor_contract::{
 };
 use crate::{GgmlType, GgufFile};
 use memmap2::Mmap;
+use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
@@ -596,6 +597,13 @@ fn expert_activation_precision_from_quant_algo(
 
 /// A weight source the engine can load from. GGUF and safetensors both implement it.
 pub trait TensorSource: Sync {
+    /// SHA-256 identity of the opened artifact bytes and the metadata used to interpret them.
+    /// This reads the retained mappings, never reopens a pathname or trusts a supplied receipt.
+    /// Sources without complete byte coverage must refuse strict rewrite qualification.
+    /// Like tensor access, this requires the mapped files to remain immutable while loaded.
+    fn artifact_sha256(&self) -> Result<String, String> {
+        Err("tensor source does not expose a trusted loaded-artifact identity".to_string())
+    }
     /// The model configuration (from GGUF metadata or config.json).
     fn config(&self) -> ModelConfig;
     /// Fallible configuration boundary for untrusted model artifacts. Legacy callers retain the
@@ -711,7 +719,36 @@ pub trait TensorSource: Sync {
 /// GGUF-backed source (the existing path). Zero behavior change vs. direct GgufFile use.
 pub struct GgufSource<'g>(pub &'g GgufFile);
 
+/// Length-prefix every field (including its tag); concatenation cannot erase record boundaries.
+fn artifact_hash_field(hash: &mut Sha256, tag: &[u8], value: &[u8]) {
+    hash.update((tag.len() as u64).to_le_bytes());
+    hash.update(tag);
+    hash.update((value.len() as u64).to_le_bytes());
+    hash.update(value);
+}
+
+/// Hash every opened byte once, retaining only one digest/length per shard. Sorting the records
+/// makes safetensors index filename order irrelevant; tensor names and GGUF split numbers are
+/// already covered by the shard headers. Duplicate tensor owners are rejected by StModel::open.
+fn artifact_hash_shards<'a>(hash: &mut Sha256, shards: impl Iterator<Item = &'a [u8]>) {
+    let mut records: Vec<_> = shards
+        .map(|bytes| (bytes.len() as u64, <[u8; 32]>::from(Sha256::digest(bytes))))
+        .collect();
+    records.sort_unstable();
+    artifact_hash_field(hash, b"shard-count", &(records.len() as u64).to_le_bytes());
+    for (len, digest) in records {
+        artifact_hash_field(hash, b"shard-length", &len.to_le_bytes());
+        artifact_hash_field(hash, b"shard-sha256", &digest);
+    }
+}
+
 impl<'g> TensorSource for GgufSource<'g> {
+    fn artifact_sha256(&self) -> Result<String, String> {
+        let mut hash = Sha256::new();
+        artifact_hash_field(&mut hash, b"domain", b"memra-loaded-gguf-v1");
+        artifact_hash_shards(&mut hash, self.0.opened_shard_bytes());
+        Ok(format!("{:x}", hash.finalize()))
+    }
     fn config(&self) -> ModelConfig {
         ModelConfig::from_gguf(self.0)
     }
@@ -1100,6 +1137,13 @@ impl Hy3RepackSource {
 }
 
 impl TensorSource for Hy3RepackSource {
+    fn artifact_sha256(&self) -> Result<String, String> {
+        Err(
+            "Hy3RepackSource has no trusted composite artifact identity: overlay metadata, \
+             expert masks, and all fallback bytes must be covered before strict qualification"
+                .to_string(),
+        )
+    }
     fn config(&self) -> ModelConfig {
         self.cfg.clone()
     }
@@ -1513,6 +1557,9 @@ fn read_nvfp4_scale_layout(dir: &std::path::Path) -> std::io::Result<Nvfp4ScaleL
 pub struct SafetensorsSource {
     model: StModel,
     cfg: ModelConfig,
+    /// The exact config read at open, including metadata outside ModelConfig. Never reread a
+    /// path for identity; open_with_config may have no accompanying config.json at all.
+    raw_config: Option<String>,
     dir: std::path::PathBuf,
     modules_to_not_convert: Vec<String>,
     preserve_checkpoint_bf16: bool,
@@ -1551,6 +1598,7 @@ impl SafetensorsSource {
         Ok(Self {
             model,
             cfg,
+            raw_config: Some(config),
             dir: dir.to_path_buf(),
             modules_to_not_convert: hf.modules_to_not_convert,
             preserve_checkpoint_bf16: hf.preserve_checkpoint_bf16,
@@ -1569,9 +1617,8 @@ impl SafetensorsSource {
         } else {
             path.to_path_buf()
         };
-        let hf = std::fs::read_to_string(dir.join("config.json"))
-            .ok()
-            .map(|json| crate::config::HfConfig::parse(&json));
+        let raw_config = std::fs::read_to_string(dir.join("config.json")).ok();
+        let hf = raw_config.as_deref().map(crate::config::HfConfig::parse);
         let modules_to_not_convert = hf
             .as_ref()
             .map(|config| config.modules_to_not_convert.clone())
@@ -1584,6 +1631,7 @@ impl SafetensorsSource {
         Ok(Self {
             model,
             cfg,
+            raw_config,
             dir,
             modules_to_not_convert,
             preserve_checkpoint_bf16,
@@ -2157,6 +2205,57 @@ fn hy3_modelopt_aliases(hf_name: &str) -> Vec<String> {
 }
 
 impl TensorSource for SafetensorsSource {
+    fn artifact_sha256(&self) -> Result<String, String> {
+        let mut hash = Sha256::new();
+        artifact_hash_field(&mut hash, b"domain", b"memra-loaded-safetensors-v1");
+        artifact_hash_shards(&mut hash, self.model.opened_shard_bytes());
+        if let Some(config) = &self.raw_config {
+            artifact_hash_field(&mut hash, b"config.json", config.as_bytes());
+        }
+        // ModelConfig has ordered fields/vectors and no paths or pointers. Include its full
+        // effective config so open_with_config overrides and future fields are covered. The
+        // prefill calibration's custom Debug abbreviates its map, so hash those bits below too.
+        // This encoding is build-scoped (qualification also binds the running implementation).
+        artifact_hash_field(
+            &mut hash,
+            b"effective-config-debug-v1",
+            format!("{:?}", self.cfg).as_bytes(),
+        );
+        if let Some(activation) = &self.cfg.prefill_activation {
+            for (name, scale) in activation.scales() {
+                artifact_hash_field(&mut hash, b"prefill-scale-name", name.as_bytes());
+                artifact_hash_field(
+                    &mut hash,
+                    b"prefill-scale-bits",
+                    &scale.to_bits().to_le_bytes(),
+                );
+            }
+        }
+        artifact_hash_field(
+            &mut hash,
+            b"modules-to-not-convert",
+            format!("{:?}", self.modules_to_not_convert).as_bytes(),
+        );
+        artifact_hash_field(
+            &mut hash,
+            b"preserve-checkpoint-bf16",
+            &[u8::from(self.preserve_checkpoint_bf16)],
+        );
+        artifact_hash_field(
+            &mut hash,
+            b"quant-algo",
+            format!("{:?}", self.quant_algo).as_bytes(),
+        );
+        artifact_hash_field(
+            &mut hash,
+            b"nvfp4-scale-layout",
+            match self.nvfp4_scale_layout {
+                Nvfp4ScaleLayout::Linear => b"linear",
+                Nvfp4ScaleLayout::Swizzle32x4x4 => b"swizzle32x4x4",
+            },
+        );
+        Ok(format!("{:x}", hash.finalize()))
+    }
     fn config(&self) -> ModelConfig {
         self.cfg.clone()
     }
@@ -2742,6 +2841,212 @@ impl TensorSource for SafetensorsSource {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod artifact_identity_tests {
+    use super::*;
+
+    const CONFIG: &str = r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":4,"num_attention_heads":2,"intermediate_size":8,"vocab_size":10,"max_position_embeddings":128}"#;
+
+    struct Fixture(PathBuf);
+
+    impl Fixture {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "memra-artifact-identity-{tag}-{}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("config.json"), CONFIG).unwrap();
+            Self(dir)
+        }
+
+        fn shard(&self, file: &str, name: &str, value: f32) {
+            let header =
+                format!(r#"{{"{name}":{{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}}}"#);
+            let mut bytes = (header.len() as u64).to_le_bytes().to_vec();
+            bytes.extend_from_slice(header.as_bytes());
+            bytes.extend_from_slice(&value.to_le_bytes());
+            std::fs::write(self.0.join(file), bytes).unwrap();
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    fn cfg() -> ModelConfig {
+        ModelConfig::from_hf(&crate::config::HfConfig::parse(CONFIG))
+    }
+
+    #[test]
+    fn artifact_sha256_synthetic_source_fails_closed() {
+        struct Synthetic;
+        impl TensorSource for Synthetic {
+            fn config(&self) -> ModelConfig {
+                cfg()
+            }
+            fn find(&self, _: &str) -> Option<TensorView<'_>> {
+                None
+            }
+        }
+        let source: &dyn TensorSource = &Synthetic;
+        assert!(source.artifact_sha256().unwrap_err().contains("identity"));
+    }
+
+    #[test]
+    fn artifact_sha256_safetensors_uses_opened_weights_after_path_replacement() {
+        let fixture = Fixture::new("pinned");
+        fixture.shard("model.safetensors", "model.norm.weight", 1.0);
+        let source = SafetensorsSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        assert_eq!(identity.len(), 64);
+        assert!(identity.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        let renamed = fixture.0.join("renamed.safetensors");
+        std::fs::rename(fixture.0.join("model.safetensors"), &renamed).unwrap();
+        assert_eq!(
+            SafetensorsSource::open(&renamed)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        fixture.shard("model.safetensors", "model.norm.weight", 2.0);
+        let replacement = SafetensorsSource::open(&fixture.0).unwrap();
+        assert_eq!(
+            format!("{:?}", source.cfg),
+            format!("{:?}", replacement.cfg)
+        );
+        assert_eq!(
+            source.raw_hf("model.norm.weight").unwrap().ne,
+            replacement.raw_hf("model.norm.weight").unwrap().ne
+        );
+        assert_ne!(replacement.artifact_sha256().unwrap(), identity);
+        std::fs::remove_file(renamed).unwrap();
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+        assert_eq!(
+            source.raw_hf("model.norm.weight").unwrap().bytes.as_ref(),
+            &1.0f32.to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn artifact_sha256_safetensors_covers_all_shards_independent_of_filenames() {
+        let fixture = Fixture::new("shards");
+        fixture.shard("a.safetensors", "a", 1.0);
+        fixture.shard("z.safetensors", "z", 2.0);
+        let index = fixture.0.join("model.safetensors.index.json");
+        std::fs::write(
+            &index,
+            r#"{"weight_map":{"a":"a.safetensors","z":"z.safetensors"}}"#,
+        )
+        .unwrap();
+        let source = SafetensorsSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        // Renaming a shard changes the reader's filename-sorted shard order, not its bytes.
+        std::fs::rename(
+            fixture.0.join("a.safetensors"),
+            fixture.0.join("zz.safetensors"),
+        )
+        .unwrap();
+        std::fs::write(
+            &index,
+            r#"{"weight_map":{"z":"z.safetensors","a":"zz.safetensors"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            SafetensorsSource::open(&fixture.0)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        fixture.shard("replacement.safetensors", "z", 3.0);
+        std::fs::rename(
+            fixture.0.join("replacement.safetensors"),
+            fixture.0.join("z.safetensors"),
+        )
+        .unwrap();
+        assert_ne!(
+            SafetensorsSource::open(&fixture.0)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+    }
+
+    #[test]
+    fn artifact_sha256_safetensors_binds_config_and_loaded_interpretation() {
+        let fixture = Fixture::new("metadata");
+        fixture.shard("model.safetensors", "model.norm.weight", 1.0);
+        let source = SafetensorsSource::open(&fixture.0).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        let config_path = fixture.0.join("config.json");
+        std::fs::write(&config_path, CONFIG.replace("128", "256")).unwrap();
+        assert_ne!(
+            SafetensorsSource::open(&fixture.0)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+
+        // With identical explicit config, every separately consumed precision/layout field
+        // still belongs to the identity. Config comes from memory when no config.json exists.
+        std::fs::remove_file(config_path).unwrap();
+        let source = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        let identity = source.artifact_sha256().unwrap();
+        let mut changed_cfg = cfg();
+        changed_cfg.rms_eps *= 2.0;
+        assert_ne!(
+            SafetensorsSource::open_with_config(&fixture.0, changed_cfg)
+                .unwrap()
+                .artifact_sha256()
+                .unwrap(),
+            identity
+        );
+        let mut changed = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        changed.modules_to_not_convert.push("model.norm".into());
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        let mut changed = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        changed.preserve_checkpoint_bf16 = true;
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        let mut changed = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        changed.quant_algo = Some("W4A16_NVFP4".into());
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        std::fs::write(
+            fixture.0.join("LAYOUT.json"),
+            r#"{"nvfp4_scale":"Swizzle32x4x4"}"#,
+        )
+        .unwrap();
+        let changed = SafetensorsSource::open_with_config(&fixture.0, cfg()).unwrap();
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+        std::fs::remove_file(fixture.0.join("LAYOUT.json")).unwrap();
+        assert_eq!(source.artifact_sha256().unwrap(), identity);
+        assert_eq!(changed.nvfp4_scale_layout, Nvfp4ScaleLayout::Swizzle32x4x4);
+        assert_ne!(changed.artifact_sha256().unwrap(), identity);
+    }
+
+    #[test]
+    fn artifact_sha256_repack_refuses_incomplete_composite_identity() {
+        let source = Hy3RepackSource {
+            cfg: cfg(),
+            expert_activation_precision: ExpertActivationPrecision::F32,
+            dir: PathBuf::new(),
+            source_dir: None,
+            tensors: BTreeMap::new(),
+            files: BTreeMap::new(),
+            fallback: None,
+            active_experts: BTreeMap::new(),
+        };
+        assert!(source.artifact_sha256().unwrap_err().contains("composite"));
     }
 }
 

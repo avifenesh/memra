@@ -58,6 +58,7 @@ impl HybridModel {
         e: &Engine,
         bucket: usize,
     ) -> Result<PrimeGraph, Box<dyn std::error::Error>> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)?;
         self.refuse_hyper("prime_graph_new")?;
         use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
         let n_embd = self.cfg.n_embd as usize;
@@ -144,6 +145,7 @@ impl HybridModel {
         tokens: &[u32],
         session: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)?;
         let t = tokens.len();
         assert!(
             t >= 2 && t <= pg.bucket,

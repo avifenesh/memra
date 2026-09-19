@@ -814,3 +814,16 @@ fresh child processes for unset, 0, 1, 16, 8, 32, invalid and empty values, chec
 explicit gate rollback and refusal, and verify a new thread's environment policy.
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
+
+### Rewrite identity admission (#542)
+
+`cargo test -p memra-gguf execution_manifest --lib` checks strict admission with correct,
+missing, stale, and mismatched artifact/executable/numerical-program identities, including
+internally rehashed bundles and duplicate fields. `cargo test -p memra-gguf artifact_sha256 --lib`
+checks identities from opened source bytes. `cargo test -p memra-cli --lib` checks receipt import.
+These CPU tests do not qualify CUDA rewrites. Raw reproduction and verification records live in
+`research/modelplan-onboarding-rewrite-identity-20260920/`.
+
+Runtime CPU admission regressions are in `memra-engine` under `plan_backend::runtime_identity`;
+`cargo test -p memra-engine --lib plan_backend::runtime_identity` runs them on a CUDA build host.
+They cover failed reinstall, stale program state, and eager-only graph/spec refusal.

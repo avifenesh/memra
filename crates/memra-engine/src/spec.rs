@@ -4961,6 +4961,9 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        // Shared teacher-forced/prefill rows need a live eager baseline. Speculative
+        // session entry points additionally require their MTP/GLM5 surface receipt.
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         if self.is_gemma4_e4b() {
             return Ok(self.gemma4_e4b_decode_step_t_h(e, tokens, pos0, cache)?.0);
         }
@@ -5011,6 +5014,9 @@ impl HybridModel {
         cache: &mut Cache,
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // Shared teacher-forced/prefill rows need a live eager baseline. Speculative
+        // session entry points additionally require their MTP/GLM5 surface receipt.
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         cache.ensure_usable("decode_step_t")?;
         let n_embd = self.cfg.n_embd as usize;
         let t = tokens.len();
@@ -8460,6 +8466,9 @@ impl HybridModel {
         (Vec<f32>, Vec<CudaSlice<f32>>, Option<Vec<CudaSlice<f32>>>),
         Box<dyn std::error::Error>,
     > {
+        // Shared teacher-forced/prefill rows need a live eager baseline. Speculative
+        // session entry points additionally require their MTP/GLM5 surface receipt.
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         cache.ensure_usable("decode_step_t_aux2")?;
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
@@ -9225,6 +9234,11 @@ impl HybridModel {
         republish_at: Option<usize>,
         defer_suffix: bool,
     ) -> Result<SpecSession, (Option<Cache>, String)> {
+        if let Err(error) =
+            self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)
+        {
+            return Err((Some(cache), error));
+        }
         let pos = prefix.len();
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
             Err((Some(cache), msg))
@@ -9890,6 +9904,7 @@ impl HybridModel {
         sess: &mut SpecSession,
         sampling: Option<SpecSampling>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
         sess.cache.ensure_usable("spec_flush_pending")?;
         let Some(b) = sess.pending_tok.take() else {
             return Ok(());
@@ -10135,6 +10150,7 @@ impl HybridModel {
         prime_split: Option<usize>,
         on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
         if constraint.is_some() && sampling.is_some_and(|s| s.temp > 0.0) {
             return Err(
                 "constrained spec decode is greedy-only (worker routes sampled \
@@ -10226,7 +10242,7 @@ impl HybridModel {
             && crate::glm_spec::glm5_spec_on()
             && (self.mtp.is_some() || self.glm5_dflash.is_some())
         {
-            if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::MtpSpec) {
+            if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec) {
                 return Err("speculative rewrite is not qualified for this ModelPlan".into());
             }
             return self.generate_spec_glm5(e, prompt, max_new, k);

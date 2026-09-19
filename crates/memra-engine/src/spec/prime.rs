@@ -243,6 +243,7 @@ impl HybridModel {
         sampling: Option<SpecSampling>,
         prime_split: Option<usize>,
     ) -> Result<MtpPrimeState, PrimeError> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
         if prompt.is_empty() || !self.mtp_prime_walk_supported() || k == 0 {
             return Err("MTP prime walker requires a nonempty supported prime and K>0".into());
         }

@@ -1,0 +1,43 @@
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling generic-array v0.14.7
+   Compiling cpufeatures v0.2.17
+   Compiling memmap2 v0.9.11
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling memra-gguf v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf)
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+warning: `memra-gguf` (lib test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.30s
+     Running unittests src/lib.rs (target/debug/deps/memra_gguf-e80b7f4edcbfcfe8)
+
+running 1 test
+test execution_manifest::tests::qualification_rejects_bundle_without_loaded_runtime_identity ... FAILED
+
+failures:
+
+---- execution_manifest::tests::qualification_rejects_bundle_without_loaded_runtime_identity stdout ----
+
+thread 'execution_manifest::tests::qualification_rejects_bundle_without_loaded_runtime_identity' (18722086) panicked at crates/memra-gguf/src/execution_manifest.rs:980:9:
+internally consistent bundle must not qualify without loaded runtime identity
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    execution_manifest::tests::qualification_rejects_bundle_without_loaded_runtime_identity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 277 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-gguf --lib`

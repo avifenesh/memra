@@ -9,7 +9,6 @@ use memra_gguf::tensor_contract::{
 };
 use memra_gguf::{GgmlType, model_plan::ModelPlan};
 use memra_reference::{ReferenceTensor, deterministic_fixture, execute};
-use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -99,6 +98,11 @@ fn fixture_source(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var_os("MEMRA_ARTIFACT_LOCK").is_some()
+        || std::env::var_os("MEMRA_REWRITE_BUNDLE").is_some()
+    {
+        return Err("modelplan-reference-gate uses synthetic fixture weights and cannot issue checkpoint artifact qualification".into());
+    }
     let mut args = std::env::args().skip(1);
     let config_path = args
         .next()
@@ -124,11 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into_iter()
         .find(|rewrite| rewrite.surface == memra_engine::plan_backend::RewriteSurface::DecodeEager)
         .ok_or("decode-eager rewrite manifest is missing")?;
-    let executable = std::fs::read(std::env::current_exe()?)?;
-    let executable_sha256 = Sha256::digest(&executable)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let executable_sha256 = memra_engine::plan_backend::running_implementation_sha256()?;
     let receipt = rewrite.verify_logits(
         &executable_sha256,
         expected,
@@ -146,9 +146,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    let receipt = memra_engine::plan_backend::bind_rewrite_artifact(receipt)?;
-    receipt.validate_for(&rewrite)?;
-    std::fs::write(&receipt_path, receipt.to_tsv())?;
+    // A fixture comparison is diagnostic evidence, never a v2 checkpoint receipt.
+    std::fs::write(
+        &receipt_path,
+        format!(
+            "format\tmemra-modelplan-fixture-parity-v1\nstatus\tpassed\nimplementation_sha256\t{executable_sha256}\nplan_sha256\t{}\nvalues\t{}\nmax_abs\t{}\nmax_rel\t{}\n",
+            rewrite.plan_sha256, receipt.values, receipt.max_abs, receipt.max_rel,
+        ),
+    )?;
     println!(
         "ModelPlan reference parity passed: values={} max_abs={} max_rel={} receipt={receipt_path}",
         receipt.values, receipt.max_abs, receipt.max_rel

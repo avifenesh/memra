@@ -12866,6 +12866,12 @@ pub fn run(
         // file = GGUF. Repack tokenizers live in the manifest's source_dir.
         let from_dir = std::path::Path::new(path).is_dir();
         if from_dir && crate::dsv4_serve::is_dsv4_dir(std::path::Path::new(path)) {
+            if std::env::var_os("MEMRA_REWRITE_BUNDLE").is_some() {
+                let _ = ready_tx.send(Err(format!(
+                    "model {name:?}: DSv4 does not support MEMRA_REWRITE_BUNDLE; runtime qualification coverage is tracked by #449/#504"
+                )));
+                return;
+            }
             if draft.is_some() {
                 let _ = ready_tx.send(Err(format!(
                     "model {name:?}: '+draft' is a GGUF-family attach; the dsv4 drafter \
@@ -12892,6 +12898,15 @@ pub fn run(
             dsv4_routes.insert(name.clone(), crate::dsv4_serve::spawn(name.clone(), dm));
             order.push(name.clone());
             continue;
+        }
+        if draft.is_some()
+            && (std::env::var_os("MEMRA_REWRITE_BUNDLE").is_some()
+                || std::env::var_os("MEMRA_ARTIFACT_LOCK").is_some())
+        {
+            let _ = ready_tx.send(Err(format!(
+                "model {name:?}: '+draft' rewrite qualification requires a composite artifact identity; external draft attachment is unsupported"
+            )));
+            return;
         }
         let (model, tok) = if from_dir {
             let dir = std::path::Path::new(path);
@@ -12998,7 +13013,7 @@ pub fn run(
         // and `MtpHead::load_draft` already resolves step35's per-layer draft geometry from the
         // drafter file's own arrays (d316162c). The gap was never the attach syntax — it was
         // that a step35 model loaded WITHOUT one said nothing. See the verdict below.
-        let mut model = {
+        let model = {
             let mut model = model;
             if let Some(dpath) = draft {
                 let dg = match GgufFile::open(dpath) {
@@ -13060,19 +13075,16 @@ pub fn run(
             }
             model
         };
-        if let Some(bundle) = std::env::var_os("MEMRA_REWRITE_BUNDLE") {
-            let bundle = std::path::Path::new(&bundle);
-            if let Err(error) = model.install_rewrite_bundle(bundle) {
+        // All HybridModel loader entry points install strict admission. This check also
+        // catches a caller changing the plan between load and insertion into the worker.
+        if std::env::var_os("MEMRA_REWRITE_BUNDLE").is_some() {
+            if !model.rewrite_is_qualified() {
                 let _ = ready_tx.send(Err(format!(
-                    "rewrite bundle {} for {name}: {error}",
-                    bundle.display()
+                    "model {name:?}: strict rewrite qualification was not installed or became stale"
                 )));
                 return;
             }
-            eprintln!(
-                "[worker] {name}: rewrite qualification installed from {}",
-                bundle.display()
-            );
+            eprintln!("[worker] {name}: loaded runtime rewrite qualification installed");
         }
 
         // LOUD DRAFTER SEMANTICS (lane/step-draft, 2026-08-07). The silent-degradation class

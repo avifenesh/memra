@@ -3871,7 +3871,9 @@ impl Step35Aux {
 pub struct HybridModel {
     pub cfg: ModelConfig,
     pub plan: memra_gguf::model_plan::ModelPlan,
-    pub rewrite_qualifications: Option<memra_gguf::execution_manifest::RewriteQualifications>,
+    rewrite_admission: crate::plan_backend::RewriteAdmission,
+    pub(crate) rewrite_identity: Option<crate::plan_backend::RewriteIdentity>,
+    rewrite_load_state: Option<crate::plan_backend::RewriteLoadState>,
     pub embd: EmbedHost,
     pub output_norm: GpuTensor,
     pub output: GpuTensor,
@@ -3966,17 +3968,67 @@ impl HybridModel {
         &mut self,
         bundle: &std::path::Path,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.rewrite_qualifications = Some(
-            memra_gguf::execution_manifest::RewriteQualifications::load(bundle, &self.plan)
-                .map_err(|error| format!("rewrite qualification: {error}"))?,
-        );
+        let identity = self.rewrite_identity().cloned();
+        crate::plan_backend::install_rewrite_admission(
+            &mut self.rewrite_admission,
+            bundle,
+            &self.plan,
+            identity.as_ref().map_err(Clone::clone),
+        )
+        .map_err(|error| format!("rewrite qualification: {error}"))?;
         Ok(())
     }
 
+    /// Trusted loader identity, valid only while the loaded program is unchanged.
+    /// Receipt producers must use this accessor rather than a bundle or artifact lock.
+    pub fn rewrite_identity(&self) -> Result<&crate::plan_backend::RewriteIdentity, String> {
+        crate::plan_backend::checked_rewrite_identity(
+            self.rewrite_identity.as_ref(),
+            self.rewrite_load_state
+                .as_ref()
+                .is_some_and(|state| state.matches(self)),
+        )
+    }
+
+    pub fn rewrite_is_qualified(&self) -> bool {
+        match &self.rewrite_admission {
+            crate::plan_backend::RewriteAdmission::Qualified(qualifications) => self
+                .rewrite_identity()
+                .is_ok_and(|identity| qualifications.matches(&self.plan, identity)),
+            _ => false,
+        }
+    }
+
     pub fn rewrite_allowed(&self, surface: memra_gguf::execution_manifest::RewriteSurface) -> bool {
-        self.rewrite_qualifications
-            .as_ref()
-            .is_none_or(|qualifications| qualifications.allows(surface))
+        crate::plan_backend::rewrite_admission_allows(
+            &self.rewrite_admission,
+            self.rewrite_is_qualified(),
+            std::env::var_os("MEMRA_REWRITE_BUNDLE").is_some(),
+            surface,
+        )
+    }
+
+    /// Enforce admission at direct output entry points, including retained sessions after
+    /// failed installation or a plan/environment change. Worker checks are not sufficient.
+    pub(crate) fn require_rewrite(
+        &self,
+        surface: memra_gguf::execution_manifest::RewriteSurface,
+    ) -> Result<(), String> {
+        if !self.rewrite_allowed(surface) {
+            return Err(format!(
+                "{} rewrite is not qualified for the current loaded runtime identity",
+                surface.as_str()
+            ));
+        }
+        if self.rewrite_admission.is_qualified()
+            && self.is_multi_device()
+            && !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)
+        {
+            return Err(
+                "pipeline rewrite is not qualified for the current loaded runtime identity".into(),
+            );
+        }
+        Ok(())
     }
 
     /// Return the set of unique CUDA device ordinals touched by this model's resident
@@ -4224,6 +4276,14 @@ impl HybridModel {
         src: &dyn TensorSource,
         load_mtp: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let rewrite_bundle = std::env::var_os("MEMRA_REWRITE_BUNDLE");
+        if crate::plan_backend::identity_requested() {
+            crate::plan_backend::refuse_external_rewrite_artifacts()?;
+        }
+        let artifact_sha256 = crate::plan_backend::source_artifact_identity(
+            src,
+            crate::plan_backend::identity_requested(),
+        )?;
         // MEMRA_LOAD_TRACE=1: one line per phase and per layer with the wall it took, so a slow
         // boot is attributed from its own log (the pair's boots ran 12 minutes with ptrace
         // blocked in the container). `il` is 0 for the phases before the layer loop.
@@ -6360,10 +6420,16 @@ impl HybridModel {
                 }
             }
         }
-        let model = HybridModel {
+        let mut model = HybridModel {
             cfg,
             plan,
-            rewrite_qualifications: None,
+            rewrite_admission: if rewrite_bundle.is_some() {
+                crate::plan_backend::RewriteAdmission::StrictPending
+            } else {
+                crate::plan_backend::RewriteAdmission::LegacyUnbundled
+            },
+            rewrite_identity: None,
+            rewrite_load_state: None,
             embd,
             output_norm,
             output,
@@ -6398,6 +6464,19 @@ impl HybridModel {
         // no consumer can ever read a half-built tensor (the 2026-08-02 split5 ref=0.0
         // head-mirror find). No-op with the door shut.
         crate::pp::sync_stages_after_load(e, n_trunk)?;
+        if let Some(artifact_sha256) = artifact_sha256 {
+            let (identity, state) = crate::plan_backend::capture_rewrite_identity(
+                &model,
+                src,
+                artifact_sha256,
+                load_mtp,
+            )?;
+            model.rewrite_identity = Some(identity);
+            model.rewrite_load_state = Some(state);
+        }
+        if let Some(bundle) = rewrite_bundle {
+            model.install_rewrite_bundle(std::path::Path::new(&bundle))?;
+        }
         Ok(model)
     }
 

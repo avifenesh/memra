@@ -2229,6 +2229,7 @@ impl HybridModel {
         max_new: usize,
         eos: &[u32],
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         const RING: usize = 64;
         const DRAIN: usize = 32; // replays per host sync
         let win_main = self

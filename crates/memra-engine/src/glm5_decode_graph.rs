@@ -831,6 +831,12 @@ impl HybridModel {
         lo: usize,
         hi: usize,
     ) -> Option<String> {
+        if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph) {
+            return Some(
+                "decode-graph rewrite is not qualified for the current loaded runtime identity"
+                    .into(),
+            );
+        }
         if self.hyper.is_none() {
             return Some("model carries no HyperConnections topology".into());
         }

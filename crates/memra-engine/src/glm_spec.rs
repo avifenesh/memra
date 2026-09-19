@@ -1228,6 +1228,7 @@ impl HybridModel {
         snap_pool: Vec<Option<CudaSlice<f32>>>,
         graphs: Option<&mut VerifyGraphPool>,
     ) -> Res<(CudaSlice<f32>, CudaSlice<f32>, Glm5VerifyCkpt)> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         let topology = *self
             .hyper
             .as_ref()
@@ -2230,6 +2231,7 @@ impl HybridModel {
         k: usize,
         mut knobs: Glm5SpecKnobs<'_>,
     ) -> Res<(Vec<u32>, usize, usize)> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         let cap = Self::hyper_batch_cap();
         if k == 0 || k + 1 > cap {
             return Err(format!(
@@ -2394,6 +2396,7 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5SpecSession> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         let mut state = Some(self.glm5_prime_start(e, prompt, ctx_cap, sampling)?);
         let mut walker = self.glm5_prime_walker(e, &mut state);
         crate::prime_walker::advance_prime(&mut walker, false, crate::prime_walker::trace_chunk)?;
@@ -2407,6 +2410,7 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5PrimeState> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         if self.hyper.is_none() {
             return Err("generate_spec_glm5 requires a HyperConnections trunk".into());
         }
@@ -2922,6 +2926,7 @@ impl HybridModel {
         ctx_cap: usize,
         sampling: Option<SpecSampling>,
     ) -> Res<Glm5PrimeState> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         if self.hyper.is_none() {
             return Err("glm5_spec_session_from_restored requires a HyperConnections trunk".into());
         }
@@ -3231,6 +3236,7 @@ impl HybridModel {
         knobs: &mut Glm5SpecKnobs<'_>,
         mut on_commit: Option<CommitHook<'_>>,
     ) -> Res<(Vec<u32>, usize, usize)> {
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)?;
         let cap = Self::hyper_batch_cap();
         if k == 0 || k + 1 > cap {
             return Err(format!(
