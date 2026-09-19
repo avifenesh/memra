@@ -7368,6 +7368,9 @@ struct HostDflashTail {
 /// mismatched version is REFUSED at both insert and promote: the identity rule the
 /// PREFIX_ENTRY_LAYOUT_VERSION comment reserved for exactly this tier.
 struct HostPrefixEntry {
+    /// Unbound for legacy synchronous images; Drop revokes future tier identity leases.
+    /// Native full-state binding is not enabled until the program/auxiliary mapping gate.
+    _tier_identity: memra_engine::cache::tiered::hostprefix::IdentitySlot,
     model_generation: Option<Arc<()>>,
     glm: Option<host_glm::HostGlmState>,
     layout_version: u32,
@@ -7999,6 +8002,7 @@ fn host_entry_from_device(
         _ => None,
     };
     let entry = HostPrefixEntry {
+        _tier_identity: Default::default(),
         model_generation,
         glm,
         layout_version: dead.layout_version,
@@ -9628,6 +9632,7 @@ fn host_entry_from_owned(
         })
         .transpose()?;
     Ok(HostPrefixEntry {
+        _tier_identity: Default::default(),
         model_generation: None,
         glm: None,
         layout_version: e.layout_version,
@@ -33284,6 +33289,7 @@ mod tests {
 
     fn host_entry(pool_key: &PoolKey, toks: Vec<u32>, bytes: usize) -> HostPrefixEntry {
         HostPrefixEntry {
+            _tier_identity: Default::default(),
             model_generation: None,
             glm: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
