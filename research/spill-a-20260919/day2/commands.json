@@ -1,0 +1,340 @@
+[
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "check",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "test",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "fixtures",
+    "command": [
+      "python3",
+      "crates/memra-tier/tests/contracts/fixture_reference.py",
+      "--check"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "build-cpu",
+    "command": [
+      "cargo",
+      "build",
+      "-p",
+      "memra-tier",
+      "--offline"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "build-cli",
+    "command": [
+      "rustc",
+      "--edition=2024",
+      "crates/memra-engine/src/bin/storage_bench.rs",
+      "--extern",
+      "memra_tier=target/debug/libmemra_tier.rlib",
+      "--extern",
+      "sha2=target/debug/deps/libsha2-b9812815f3e14939.rlib",
+      "-L",
+      "dependency=target/debug/deps",
+      "-o",
+      "target/debug/storage-bench"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-264-buffered",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/264-buffered",
+      "264",
+      "buffered"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-264-buffered-refuse-reuse",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/264-buffered",
+      "264",
+      "buffered"
+    ],
+    "exit": 1,
+    "expected": 1
+  },
+  {
+    "name": "restore-264-buffered",
+    "command": [
+      "target/debug/storage-bench",
+      "restore",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/264-buffered",
+      "264",
+      "buffered"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-264-uncached",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/264-uncached",
+      "264",
+      "uncached"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-264-uncached-refuse-reuse",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/264-uncached",
+      "264",
+      "uncached"
+    ],
+    "exit": 1,
+    "expected": 1
+  },
+  {
+    "name": "restore-264-uncached",
+    "command": [
+      "target/debug/storage-bench",
+      "restore",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/264-uncached",
+      "264",
+      "uncached"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-1048576-buffered",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/1048576-buffered",
+      "1048576",
+      "buffered"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-1048576-buffered-refuse-reuse",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/1048576-buffered",
+      "1048576",
+      "buffered"
+    ],
+    "exit": 1,
+    "expected": 1
+  },
+  {
+    "name": "restore-1048576-buffered",
+    "command": [
+      "target/debug/storage-bench",
+      "restore",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/1048576-buffered",
+      "1048576",
+      "buffered"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-1048576-uncached",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/1048576-uncached",
+      "1048576",
+      "uncached"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-1048576-uncached-refuse-reuse",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/1048576-uncached",
+      "1048576",
+      "uncached"
+    ],
+    "exit": 1,
+    "expected": 1
+  },
+  {
+    "name": "restore-1048576-uncached",
+    "command": [
+      "target/debug/storage-bench",
+      "restore",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/1048576-uncached",
+      "1048576",
+      "uncached"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-4194568-buffered",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/4194568-buffered",
+      "4194568",
+      "buffered"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-4194568-buffered-refuse-reuse",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/4194568-buffered",
+      "4194568",
+      "buffered"
+    ],
+    "exit": 1,
+    "expected": 1
+  },
+  {
+    "name": "restore-4194568-buffered",
+    "command": [
+      "target/debug/storage-bench",
+      "restore",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/4194568-buffered",
+      "4194568",
+      "buffered"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-4194568-uncached",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/4194568-uncached",
+      "4194568",
+      "uncached"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "roundtrip-4194568-uncached-refuse-reuse",
+    "command": [
+      "target/debug/storage-bench",
+      "roundtrip",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/4194568-uncached",
+      "4194568",
+      "uncached"
+    ],
+    "exit": 1,
+    "expected": 1
+  },
+  {
+    "name": "restore-4194568-uncached",
+    "command": [
+      "target/debug/storage-bench",
+      "restore",
+      "research/spill-a-20260919/day2/owned-characterization-scratch/4194568-uncached",
+      "4194568",
+      "uncached"
+    ],
+    "exit": 0,
+    "expected": 0
+  },
+  {
+    "name": "unsupported-gpu-mode",
+    "command": [
+      "target/debug/storage-bench",
+      "h2d",
+      "research/spill-a-20260919/day2/owned-characterization-scratch"
+    ],
+    "exit": 1,
+    "expected": 1
+  }
+]

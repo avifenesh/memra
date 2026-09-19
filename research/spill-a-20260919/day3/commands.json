@@ -1,0 +1,148 @@
+[
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "check-macos",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--all-targets"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "check-linux",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--all-targets",
+      "--target",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "test",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline"
+    ],
+    "exit": 101
+  },
+  {
+    "name": "test-storage",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--test",
+      "storage"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "test-kv",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "runner-syntax",
+    "command": [
+      "bash",
+      "-n",
+      "research/spill-a-20260919/rig-cells-a.sh"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "runner-dry",
+    "command": [
+      "python3",
+      "research/spill-a-20260919/day3/test_runner.py"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "fixtures",
+    "command": [
+      "python3",
+      "crates/memra-tier/tests/contracts/fixture_reference.py",
+      "--check"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "test-doc",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--doc"
+    ],
+    "exit": 0
+  }
+]

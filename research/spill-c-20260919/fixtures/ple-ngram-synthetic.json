@@ -1,0 +1,142 @@
+{
+  "synthetic": true,
+  "source": "qwen4exp_gpu.rs host_ngram_ids semantics at c5a33b14; small synthetic geometry, NOT an artifact capture",
+  "multipliers": [
+    3,
+    5,
+    7
+  ],
+  "sizes": [
+    17,
+    19
+  ],
+  "offsets": [
+    0,
+    17
+  ],
+  "eos": 99,
+  "max_ngram": 3,
+  "heads_per_ngram": 1,
+  "steps": [
+    {
+      "label": "decode",
+      "tokens": [
+        1
+      ],
+      "chunk": 1,
+      "ids": [
+        16,
+        19
+      ]
+    },
+    {
+      "label": "chunk",
+      "tokens": [
+        1,
+        2,
+        3
+      ],
+      "chunk": 2,
+      "ids": [
+        16,
+        19,
+        3,
+        27,
+        3,
+        21
+      ]
+    },
+    {
+      "label": "eos",
+      "tokens": [
+        1,
+        2,
+        3,
+        99,
+        4
+      ],
+      "chunk": 2,
+      "ids": [
+        16,
+        19,
+        3,
+        27,
+        3,
+        21,
+        5,
+        28,
+        7,
+        35
+      ]
+    },
+    {
+      "label": "spec-proposal",
+      "tokens": [
+        1,
+        2,
+        3,
+        99,
+        4,
+        5,
+        6
+      ],
+      "chunk": 2,
+      "ids": [
+        16,
+        19,
+        3,
+        27,
+        3,
+        21,
+        5,
+        28,
+        7,
+        35,
+        10,
+        19,
+        11,
+        21
+      ]
+    },
+    {
+      "label": "rewind-diverge",
+      "tokens": [
+        1,
+        2,
+        3,
+        99,
+        4,
+        8
+      ],
+      "chunk": 1,
+      "ids": [
+        16,
+        19,
+        3,
+        27,
+        3,
+        21,
+        5,
+        28,
+        7,
+        35,
+        12,
+        30
+      ]
+    },
+    {
+      "label": "request-reuse",
+      "tokens": [
+        99,
+        2
+      ],
+      "chunk": 2,
+      "ids": [
+        11,
+        17,
+        13,
+        22
+      ]
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+   Compiling memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tier)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.05s
+     Running unittests src/lib.rs (target/debug/deps/memra_tier-953de986bc31c7e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/bank/main.rs (target/debug/deps/bank-bd6b64183c1f3fb4)
+
+running 20 tests
+test bounds_wrong_ids_overflow_and_device_request_fail_closed ... ok
+test cancel_retains_charge_until_retirement_and_tombstone_ack ... ok
+test frozen_bank_cancel_schedule_runs_on_implementation ... ok
+test borrowed_view_and_alias_survive_busy_retirement ... ok
+test discontiguous_row_scale_planes_are_required_and_exact ... ok
+test host_bridge::bridge_uses_per_record_metadata_and_preserves_existing_scale_planes ... ok
+test frozen_row_order_schedule_runs_on_implementation ... ok
+test all_three_epochs_cross_service_and_publish_replay_refuse ... ok
+test missing_or_extra_checksums_and_false_uniform_declarations_refuse ... ok
+test original_masks_foreign_catalog_and_wrong_domain_refuse_before_reads ... ok
+test host_exps_uniform_mixed_original_mask_and_split_offsets ... ok
+test overlapping_cache_hit_tickets_hold_same_allocation_until_all_retire ... ok
+test shared_budget_atomic_refusal_and_tombstone_bound ... ok
+test predictions_are_bounded_mask_checked_and_not_demand_heat ... ok
+test uniform_proof_checks_actual_source_even_homogeneous_subset ... ok
+test short_and_corrupt_reads_never_publish_partial_batch ... ok
+test sparse_amplification_and_default_policy_are_explicit_arithmetic_not_io_benchmarks ... ok
+test zero_small_full_cache_preserves_exact_bytes_and_scales ... ok
+test synthetic_ple_trace_preserves_chunk_rewind_eos_and_native_expansion_bits ... ok
+test rows_straddles_duplicates_pool_smaller_than_batch_and_retirement ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/contracts/mod.rs (target/debug/deps/contracts-8c4b776665dc29a3)
+
+running 36 tests
+test peer::contiguous_bounds_overflow_and_foreign_owner_fail_closed ... ok
+test peer::reusable_peer_schedule ... ok
+test peer::peer_capacity_grants_budget_source_lifetime_and_explicit_release ... ok
+test peer::peer_partial_vector_cannot_materialize_missing_sibling ... ok
+test peer::peer_three_epochs_local_only_and_cancel_linearization ... ok
+test services::bank_scale_plane_missing_is_not_a_complete_uniform_record ... ok
+test services::budget_device_headroom_and_priority_deadline_order ... ok
+test services::bank_lease_keeps_backing_pinned_and_explicit_retirement_invalidates_aliases ... ok
+test services::object_cancel_before_and_after_commit_and_chunked_progress ... ok
+test services::common_governor_headroom_foreign_double_release_and_pin_lifetime ... ok
+test services::object_partial_short_and_interrupted_root_never_publish ... ok
+test services::invalid_bank_publication_returns_charge_and_backing_for_explicit_release ... ok
+test services::object_full_key_collision_corruption_and_version_refusal ... ok
+test services::bank_masked_ids_partial_completion_and_uniform_mixed_refusal ... ok
+test services::rows_rejected_read_and_cancel_never_publish_logical_subset ... ok
+test services::tier_cancel_after_load_before_ready_and_unknown_retirement ... ok
+test services::reusable_object_tier_bank_row_schedules ... ok
+test transfer::completion_refuses_each_epoch_bad_checksum_missing_fence_and_short_vector ... ok
+test rows::row_straddles_deduplicate_physical_reads_and_preserve_exact_duplicate_bytes ... ok
+test transfer::reusable_transfer_schedule ... ok
+test transfer::copy_bounds_and_consumer_context_generation_are_checked ... ok
+test services::rows_duplicate_order_dedup_charge_and_delayed_consumer_retirement ... ok
+test services::tier_advisory_lookup_identity_completeness_and_epochs ... ok
+test transfer::transfer_cancel_after_completion_before_publication_revokes ... ok
+test transfer::transfer_partial_batch_and_broken_aggregate_are_detected ... ok
+test transfer::unknown_backend_shutdown_does_not_free_accepted_host_source ... ok
+test transfer::transfer_ready_take_is_owner_bound_and_post_publish_cannot_revoke ... ok
+test transfer::transfer_zero_accept_error_returns_every_input_and_empty_refuses ... ok
+test transfer::unknown_cancel_and_delayed_fences_quarantine_until_retired ... ok
+test wire::layout_duplicate_overflow_and_group_specific_counts_refuse ... ok
+test wire::placement_negative_headroom_route_labels_and_estimates_survive_wire ... ok
+test wire::heterogeneous_all_trailing_groups_aliases_and_padding ... ok
+test wire::immutable_seal_and_committed_high_water_cannot_publish_rollback_tail ... ok
+test wire::identity_domains_full_program_and_canonical_roundtrip ... ok
+test rows::row_batch_larger_than_pool_progresses_and_one_bad_physical_read_refuses_all_output ... ok
+test wire::golden_fixture_hashes_are_pinned ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+   Doc-tests memra_tier
+
+running 4 tests
+test crates/memra-tier/src/contracts.rs - contracts::ContiguousCopy (line 1334) - compile fail ... ok
+test crates/memra-tier/src/bank/adapters.rs - bank::adapters::with_uniform_experts (line 150) - compile fail ... ok
+test crates/memra-tier/src/contracts.rs - contracts::UniformLease (line 1754) - compile fail ... ok
+test crates/memra-tier/src/contracts.rs - contracts::ChargedLease (line 860) - compile fail ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s

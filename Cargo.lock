@@ -669,6 +669,7 @@ dependencies = [
  "memra-reference",
  "memra-runtime",
  "memra-sampling",
+ "memra-tier",
  "memra-tokenizer",
  "memra-validate",
  "sha2",
@@ -689,6 +690,7 @@ version = "0.138.0"
 dependencies = [
  "cudarc",
  "memra-gguf",
+ "memra-tier",
 ]
 
 [[package]]
@@ -748,6 +750,15 @@ dependencies = [
  "tokio",
  "toml",
  "tower",
+]
+
+[[package]]
+name = "memra-tier"
+version = "0.138.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -1,0 +1,96 @@
+{
+  "utc": "2026-09-19T06:19:34.012084+00:00",
+  "head": "7f28f4f1eabe4b6fb86e39c849f8fdf6b8f01b0a",
+  "commands": [
+    {
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "verify-1.log"
+    },
+    {
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "log": "verify-2.log"
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline"
+      ],
+      "exit": 0,
+      "log": "verify-3.log"
+    },
+    {
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "log": "verify-4.log"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "verify-5.log"
+    },
+    {
+      "argv": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "log": "verify-6.log"
+    },
+    {
+      "argv": [
+        "python3",
+        "crates/memra-tier/tests/contracts/fixture_reference.py",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "verify-7.log"
+    }
+  ],
+  "files_sha256": {
+    "crates/memra-tier/src/bank/adapters.rs": "35e2aeb1b38d678f85a63e3b183c62ae3ca8d38b2a61afaf63df77ea8bd96788",
+    "crates/memra-tier/src/bank/mod.rs": "e6be6423ed90c8e5162cdaddf09ffb8b0f2965864c34e19ee471d9fecb2fc8e7",
+    "crates/memra-tier/src/bank/residency.rs": "5d1c157a7bad92fb9097e7b2897dcbc9fe862f1fe88befce223ae02378fd13a0",
+    "crates/memra-tier/src/bank/rows.rs": "be4e337b264c811f973b0dd830a7b9034cd32c1b1d0ca4d9b320bfd53f96e374",
+    "crates/memra-tier/src/bank/types.rs": "c09fff98bf54809149bfc8efb9ccb56ed983c317b4ec8928555c8126b40a0b4d",
+    "crates/memra-tier/tests/bank/host_bridge.rs": "1958e9a6c5a0cbd8719e0525f3ce9f4142ae91a35e1d111aa9921d2c33e6a8c5",
+    "crates/memra-tier/tests/bank/main.rs": "e3dd6c2de4f62742cea9892ab0adcc0a8a3b18868a9d46fbd412304a2e51fd41",
+    "crates/memra-tier/tests/bank/ple_oracle.rs": "8e212391008e750cb35d9f3ff888eba0b09a9c11d20b4845de1a6a4206acda5f",
+    "crates/memra-tier/src/contracts.rs": "8d65f2ae27f481f82b52bcac0e8c53ce8c5d929e1c6f735ae26241aa97bef7e6",
+    "crates/memra-tier/src/lib.rs": "875a7f43c8dbd616134e27dcf6b455bb84f55d538fe0488a6b4377825797f86e",
+    "crates/memra-tier/Cargo.toml": "b35487fe9a6aaacb2d7ccc5a4bf41a209c1a855ed002ca7a902b40bca076ec11",
+    "crates/memra-engine/src/banked_residency.rs": "b90c225de754355328dae69e8bf06dbb231e4564507d0b7ba6fe9c57252134ae",
+    "research/spill-c-20260919/fixtures/ple-ngram-synthetic.json": "4bd8667ba6f40fce1a67836602aa65c5bbd176e151e266bd832552e7627de78e"
+  }
+}

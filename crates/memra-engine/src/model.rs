@@ -3577,7 +3577,9 @@ mod tests {
         assert_eq!(exps.expert_layout(0).qtype, QT_Q2_K);
         assert_eq!(exps.expert_layout(0).row_bytes, 84);
         assert_eq!(exps.expert_layout(1).len, 0);
-        assert_eq!(exps.expert_bytes(1), &[]);
+        // `&[]` no longer infers as `&[u8; 0]` with serde_json in the graph
+        // (impl PartialEq<Value> for u8); assert emptiness directly instead.
+        assert!(exps.expert_bytes(1).is_empty());
         assert_eq!(exps.expert_layout(2).qtype, QT_NVFP4);
         assert_eq!(exps.expert_layout(2).row_bytes, 4 * 36);
     }

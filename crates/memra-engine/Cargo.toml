@@ -14,6 +14,7 @@ edition = "2024"
 memra-sampling = { workspace = true }
 memra-validate = { workspace = true }
 memra-kv = { workspace = true }
+memra-tier = { workspace = true }
 memra-gguf = { workspace = true }
 memra-runtime = { workspace = true }
 memra-tokenizer = { workspace = true }
@@ -26,6 +27,10 @@ sha2 = "0.10"
 # vision input lane: image decode + resize for the Qwen3.8 ViT preprocessor
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
 base64 = "0.22"
+
+[[bin]]
+name = "storage-bench"
+path = "src/bin/storage_bench.rs"
 
 [[bin]]
 name = "bw-roofline"
