@@ -1,5 +1,9 @@
 # WP-A io_uring decision proposal — day 3
 
+**Day-4 lead decision: DEFERRED.** Measure the bounded-pread baseline on the
+rig before approving any dependency. The proposal below is retained as a
+decision record, not an implementation instruction or currently required arm.
+
 **Proposal only; no dependency, feature, ring, kernel module or default added.**
 Current byte-worker baseline remains `io::BoundedReader`; explicit Linux direct
 read/write is a comparator, not a scored winner. No Linux execution has run here.
