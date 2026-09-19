@@ -1,232 +1,181 @@
 use super::*;
-use std::collections::BTreeSet;
+use crate::contracts::*;
+use std::collections::BTreeMap;
 
-/// A bounded row request, in logical consumer order (including duplicates).
-#[derive(Clone, Debug)]
-pub struct RowBatch {
-    pub rows: Vec<u64>,
-}
-
-/// Immutable table descriptor. Row stride includes on-disk padding; width includes
-/// all payload/scales belonging to the row. Separate scale planes need separate tables
-/// in this prototype; final shared RecordLayout must describe them as one atomic row.
-#[derive(Clone, Debug)]
-pub struct RowTable {
-    pub tensor: TensorId,
-    pub base: u64,
-    pub rows: u64,
-    pub width: u64,
-    pub stride: u64,
-    /// Physical readable length including explicitly declared tail padding.
-    pub storage_bytes: u64,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReadExtent {
+    pub tensor: TensorId,
     pub offset: u64,
     pub len: u64,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RowReadPlan {
     pub extents: Vec<ReadExtent>,
     pub logical_bytes: u64,
     pub unique_useful_bytes: u64,
-    pub physical_bytes: u64,
-    pub straddling_rows: u64,
+    /// Submitted aligned bytes, NOT measured SSD physical traffic.
+    pub io_bytes: u64,
+    pub straddling_segments: u64,
 }
 impl RowReadPlan {
-    /// Unique useful / aligned physical bytes; None for an empty request.
-    pub fn efficiency(&self) -> Option<f64> {
-        (self.physical_bytes != 0)
-            .then(|| self.unique_useful_bytes as f64 / self.physical_bytes as f64)
-    }
-    /// Physical / unique useful bytes. Duplicates do not artificially improve this ratio.
     pub fn amplification(&self) -> Option<f64> {
         (self.unique_useful_bytes != 0)
-            .then(|| self.physical_bytes as f64 / self.unique_useful_bytes as f64)
+            .then(|| self.io_bytes as f64 / self.unique_useful_bytes as f64)
     }
 }
-impl RowTable {
-    fn range(&self, row: u64) -> Result<(u64, u64)> {
-        if self.width == 0 || self.stride < self.width {
-            return Err(BankError::InvalidLayout);
+
+/// Coalesce each original tensor independently, including discontiguous scale
+/// tensors; duplicates alias outputs. Bounds include explicitly readable padding.
+pub fn plan_reads(
+    records: &[(BankId, CatalogRecord)],
+    logical_bytes: u64,
+    reader: &dyn ExactReader,
+    policy: CoalescingPolicy,
+) -> Result<RowReadPlan> {
+    policy.validate()?;
+    let mut ranges: BTreeMap<TensorId, Vec<(u64, u64)>> = BTreeMap::new();
+    let mut plan = RowReadPlan {
+        logical_bytes,
+        ..RowReadPlan::default()
+    };
+    for (_, record) in records {
+        for segment in &record.layout.segments {
+            let tensor = segment.tensor.as_ref().ok_or(Error::InvalidLayout)?;
+            let end = segment
+                .offset
+                .checked_add(segment.storage_bytes)
+                .ok_or(Error::Overflow)?;
+            let lo = segment.offset / policy.granularity * policy.granularity;
+            let hi = end
+                .checked_add(policy.granularity - 1)
+                .ok_or(Error::Overflow)?
+                / policy.granularity
+                * policy.granularity;
+            if hi > reader.storage_bytes(tensor)? {
+                return Err(Error::InvalidLayout);
+            }
+            plan.unique_useful_bytes = plan
+                .unique_useful_bytes
+                .checked_add(segment.valid_bytes)
+                .ok_or(Error::Overflow)?;
+            plan.straddling_segments += u64::from(hi - lo > policy.granularity);
+            ranges.entry(tensor.clone()).or_default().push((lo, hi));
         }
-        if row >= self.rows {
-            return Err(BankError::UnknownId);
-        }
-        let begin = row
-            .checked_mul(self.stride)
-            .and_then(|v| self.base.checked_add(v))
-            .ok_or(BankError::Overflow)?;
-        let end = begin.checked_add(self.width).ok_or(BankError::Overflow)?;
-        if end > self.storage_bytes {
-            return Err(BankError::InvalidLayout);
-        }
-        Ok((begin, end))
     }
-    /// Pure planning: aligned ranges merged across adjacent/overlapping rows, never gaps.
-    /// This models backend request bytes, NOT actual SSD device bytes through page cache.
-    pub fn plan(&self, batch: &RowBatch, granularity: u64) -> Result<RowReadPlan> {
-        if granularity == 0 || !granularity.is_power_of_two() {
-            return Err(BankError::InvalidLayout);
+    for (tensor, mut spans) in ranges {
+        spans.sort_unstable();
+        let mut merged: Vec<(u64, u64)> = Vec::new();
+        for (lo, hi) in spans {
+            if let Some(last) = merged.last_mut()
+                && lo <= last.1
+            {
+                last.1 = last.1.max(hi);
+            } else {
+                merged.push((lo, hi));
+            }
         }
-        if self.width == 0 || self.stride < self.width {
-            return Err(BankError::InvalidLayout);
-        }
-        let logical_bytes = self
-            .width
-            .checked_mul(batch.rows.len() as u64)
-            .ok_or(BankError::Overflow)?;
-        let unique: BTreeSet<_> = batch.rows.iter().copied().collect();
-        let unique_useful_bytes = self
-            .width
-            .checked_mul(unique.len() as u64)
-            .ok_or(BankError::Overflow)?;
-        let mut extents: Vec<ReadExtent> = Vec::new();
-        let mut straddling_rows = 0;
-        for row in unique {
-            let (begin, end) = self.range(row)?;
-            let aligned_begin = begin / granularity * granularity;
-            let aligned_end = end
-                .checked_add(granularity - 1)
-                .ok_or(BankError::Overflow)?
-                / granularity
-                * granularity;
-            if aligned_end > self.storage_bytes {
-                return Err(BankError::InvalidLayout);
-            }
-            if aligned_end - aligned_begin > granularity {
-                straddling_rows += 1;
-            }
-            if let Some(last) = extents.last_mut() {
-                let last_end = last.offset + last.len;
-                if aligned_begin <= last_end {
-                    last.len = last_end.max(aligned_end) - last.offset;
-                    continue;
-                }
-            }
-            extents.push(ReadExtent {
-                offset: aligned_begin,
-                len: aligned_end - aligned_begin,
+        for (lo, hi) in merged {
+            plan.io_bytes = plan.io_bytes.checked_add(hi - lo).ok_or(Error::Overflow)?;
+            plan.extents.push(ReadExtent {
+                tensor: tensor.clone(),
+                offset: lo,
+                len: hi - lo,
             });
         }
-        let physical_bytes = extents.iter().try_fold(0u64, |sum, e| {
-            sum.checked_add(e.len).ok_or(BankError::Overflow)
-        })?;
-        Ok(RowReadPlan {
-            extents,
-            logical_bytes,
-            unique_useful_bytes,
-            physical_bytes,
-            straddling_rows,
-        })
     }
+    Ok(plan)
 }
 
-pub struct RowLease {
-    bytes: Vec<u8>,
-    pub plan: RowReadPlan,
-    _permit: Box<dyn BudgetPermit>,
-}
-impl RowLease {
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-}
-
-/// CPU host-first exact gather. A future asynchronous engine adapter uses A's tickets
-/// and pinned leases; this prototype returns HOST-ready bytes, not permission to project.
-pub trait RowService {
-    fn gather(&mut self, batch: RowBatch, reader: &mut dyn ExactReader) -> Result<RowLease>;
-}
-pub struct BoundedRowService {
-    table: RowTable,
-    budget: SharedBudget,
-    granularity: u64,
-    slot_bytes: u64,
-    max_rows: usize,
-    max_output_bytes: u64,
-}
-impl BoundedRowService {
-    pub fn new(
-        table: RowTable,
-        budget: SharedBudget,
-        granularity: u64,
-        slot_bytes: u64,
-        max_rows: usize,
-        max_output_bytes: u64,
-    ) -> Result<Self> {
-        if granularity == 0
-            || !granularity.is_power_of_two()
-            || slot_bytes == 0
-            || !slot_bytes.is_multiple_of(granularity)
-            || slot_bytes > usize::MAX as u64
-        {
-            return Err(BankError::InvalidLayout);
-        }
-        table.plan(&RowBatch { rows: vec![] }, granularity)?;
-        Ok(Self {
-            table,
-            budget,
-            granularity,
-            slot_bytes,
-            max_rows,
-            max_output_bytes,
+/// CPU-only bounded gather worker. Every storage segment is copied verbatim,
+/// including padding; valid checksums and zero padding are checked before publish.
+pub(crate) fn read_records(
+    records: &[(BankId, CatalogRecord)],
+    plan: &RowReadPlan,
+    reader: &mut dyn ExactReader,
+    policy: CoalescingPolicy,
+) -> Result<Vec<Vec<u8>>> {
+    let mut outputs = records
+        .iter()
+        .map(|(_, r)| {
+            Ok(vec![
+                0;
+                usize::try_from(r.layout.storage_bytes()?)
+                    .map_err(|_| Error::Capacity)?
+            ])
         })
-    }
-}
-impl RowService for BoundedRowService {
-    fn gather(&mut self, batch: RowBatch, reader: &mut dyn ExactReader) -> Result<RowLease> {
-        if batch.rows.len() > self.max_rows {
-            return Err(BankError::TooLarge);
-        }
-        let plan = self.table.plan(&batch, self.granularity)?;
-        if plan.logical_bytes > self.max_output_bytes {
-            return Err(BankError::TooLarge);
-        }
-        let output_len = usize::try_from(plan.logical_bytes).map_err(|_| BankError::TooLarge)?;
-        // The single physical slot is independent of the merged extent length.
-        // Large batches progress incrementally, provided exact output fits admission.
-        let output_permit = self.budget.reserve(Charge {
-            host_bytes: plan.logical_bytes,
-            ..Charge::default()
-        })?;
-        let slot_bytes = if batch.rows.is_empty() {
-            0
-        } else {
-            self.slot_bytes
-        };
-        let _slot = self.budget.reserve(Charge {
-            staging_bytes: slot_bytes,
-            inflight: 1,
-            ..Charge::default()
-        })?;
-        let mut bytes = vec![0; output_len];
-        let mut slot = vec![0; slot_bytes as usize];
-        for extent in &plan.extents {
-            let mut position = extent.offset;
-            let end = extent.offset + extent.len;
-            while position < end {
-                let n = (end - position).min(self.slot_bytes);
-                reader.read_exact(&self.table.tensor, position, &mut slot[..n as usize])?;
-                for (logical, &row) in batch.rows.iter().enumerate() {
-                    let (begin, row_end) = self.table.range(row)?;
-                    let overlap_begin = position.max(begin);
-                    let overlap_end = (position + n).min(row_end);
-                    if overlap_begin < overlap_end {
-                        let from = (overlap_begin - position) as usize;
-                        let to =
-                            logical * self.table.width as usize + (overlap_begin - begin) as usize;
-                        let len = (overlap_end - overlap_begin) as usize;
-                        bytes[to..to + len].copy_from_slice(&slot[from..from + len]);
+        .collect::<Result<Vec<_>>>()?;
+    let mut slot = vec![0; policy.slot_bytes as usize];
+    for extent in &plan.extents {
+        let end = extent.offset + extent.len;
+        let mut position = extent.offset;
+        while position < end {
+            let n = (end - position).min(policy.slot_bytes);
+            reader.read_exact(&extent.tensor, position, &mut slot[..n as usize])?;
+            for ((_, record), output) in records.iter().zip(&mut outputs) {
+                let mut base = 0usize;
+                for s in &record.layout.segments {
+                    if s.tensor.as_ref() == Some(&extent.tensor) {
+                        let lo = position.max(s.offset);
+                        let hi = (position + n).min(s.offset + s.storage_bytes);
+                        if lo < hi {
+                            let from = (lo - position) as usize;
+                            let to = base + (lo - s.offset) as usize;
+                            output[to..to + (hi - lo) as usize]
+                                .copy_from_slice(&slot[from..from + (hi - lo) as usize]);
+                        }
                     }
+                    base += s.storage_bytes as usize;
                 }
-                position += n;
+            }
+            position += n;
+        }
+    }
+    Ok(outputs)
+}
+
+/// Row policy and expert heat are deliberately distinct types. This host backend
+/// publishes HOST-ready resources only, never permission to submit a projection.
+pub struct BoundedRowService<H: Hotness<RowDomain>, R: ExactReader>(
+    pub BankService<RowDomain, H, R>,
+);
+impl<H: Hotness<RowDomain>, R: ExactReader> RowService for BoundedRowService<H, R> {
+    fn gather(&mut self, batch: RowBatch) -> Result<TransferTicket> {
+        self.0.stage(BankBatch {
+            ids: batch.ids,
+            epochs: batch.epochs,
+            request: batch.request,
+        })
+    }
+    fn publish(&mut self, ticket: &TransferTicket, current: Epochs) -> Result<RowLease> {
+        Ok(RowLease {
+            records: self.0.publish(ticket, current)?,
+        })
+    }
+    fn cancel(&mut self, ticket: &TransferTicket) -> Result<CancelState> {
+        self.0.cancel(ticket)
+    }
+    fn retire(&mut self, ticket: &TransferTicket) -> Result<bool> {
+        self.0.retire(ticket)
+    }
+    fn release(&mut self, lease: &RowLease) -> Result<()> {
+        // Preflight outstanding tickets. A later borrowed-view Busy may follow
+        // a partial release; retry skips already-released members without losing
+        // any remaining handles. An entirely released row lease refuses replay.
+        let mut unique = BTreeMap::new();
+        for record in &lease.records {
+            if record.charge().state()? != ChargeState::Released {
+                unique.insert(record.charge().id(), record);
             }
         }
-        Ok(RowLease {
-            bytes,
-            plan,
-            _permit: output_permit,
-        })
+        if unique.is_empty() {
+            return Err(Error::AlreadyReleased);
+        }
+        for record in unique.values() {
+            self.0.can_release(record)?;
+        }
+        for record in unique.values() {
+            self.0.release(record)?;
+        }
+        Ok(())
     }
 }

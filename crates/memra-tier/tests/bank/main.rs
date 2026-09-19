@@ -1,78 +1,66 @@
-use memra_bank_prototype::*;
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+#[path = "../../../memra-engine/src/banked_residency.rs"]
+mod engine_bridge;
+mod host_bridge;
+// API-shaped stand-in; this does NOT compile the actual CUDA HostExps type.
+mod model {
+    #[derive(Clone, Copy)]
+    pub struct ExpertLayout {
+        pub offset: usize,
+        pub len: usize,
+        pub qtype: i32,
+        pub row_bytes: usize,
+    }
+    pub struct HostExpertFp8BlockScales {
+        pub scales: Vec<f32>,
+        pub expert_stride: usize,
+    }
+    pub struct HostExps {
+        pub n_expert: usize,
+        pub qtype: i32,
+        pub row_bytes: usize,
+        pub expert_stride: usize,
+        pub layouts: Option<Vec<ExpertLayout>>,
+        pub tiers: Option<Vec<()>>,
+        pub macros: Option<Vec<f32>>,
+        pub fp8_blk: Option<HostExpertFp8BlockScales>,
+    }
+    impl HostExps {
+        pub fn is_uniform_layout(&self) -> bool {
+            self.layouts.is_none()
+        }
+        pub fn max_expert_bytes(&self) -> usize {
+            self.layouts
+                .as_ref()
+                .and_then(|ls| ls.iter().map(|l| l.len).max())
+                .unwrap_or(self.expert_stride)
+        }
+        pub fn expert_layout(&self, e: usize) -> ExpertLayout {
+            self.layouts
+                .as_ref()
+                .map(|ls| ls[e])
+                .unwrap_or(ExpertLayout {
+                    offset: e * self.expert_stride,
+                    len: self.expert_stride,
+                    qtype: self.qtype,
+                    row_bytes: self.row_bytes,
+                })
+        }
+    }
+}
+mod ple_oracle;
+use memra_tier::{bank::*, contracts::*};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+#[allow(dead_code)]
+#[path = "../contracts/conformance.rs"]
+mod conformance;
+#[allow(dead_code)]
+#[path = "../contracts/support.rs"]
+mod support;
+use support::{Governor, epochs, request};
 
 #[derive(Default)]
-struct BudgetState {
-    used: Charge,
-    peak: Charge,
-}
-struct Governor {
-    limit: Charge,
-    state: Arc<Mutex<BudgetState>>,
-}
-struct Permit {
-    charge: Charge,
-    state: Arc<Mutex<BudgetState>>,
-}
-impl BudgetPermit for Permit {}
-impl Drop for Permit {
-    fn drop(&mut self) {
-        let mut s = self.state.lock().unwrap();
-        s.used.host_bytes -= self.charge.host_bytes;
-        s.used.staging_bytes -= self.charge.staging_bytes;
-        s.used.inflight -= self.charge.inflight;
-    }
-}
-impl BudgetGovernor for Governor {
-    fn reserve(&self, charge: Charge) -> Result<Box<dyn BudgetPermit>> {
-        let mut s = self.state.lock().unwrap();
-        let used = Charge {
-            host_bytes: s
-                .used
-                .host_bytes
-                .checked_add(charge.host_bytes)
-                .ok_or(BankError::Overflow)?,
-            staging_bytes: s
-                .used
-                .staging_bytes
-                .checked_add(charge.staging_bytes)
-                .ok_or(BankError::Overflow)?,
-            inflight: s
-                .used
-                .inflight
-                .checked_add(charge.inflight)
-                .ok_or(BankError::Overflow)?,
-        };
-        if used.host_bytes > self.limit.host_bytes
-            || used.staging_bytes > self.limit.staging_bytes
-            || used.inflight > self.limit.inflight
-        {
-            return Err(BankError::Backpressure);
-        }
-        s.used = used;
-        s.peak.host_bytes = s.peak.host_bytes.max(used.host_bytes);
-        s.peak.staging_bytes = s.peak.staging_bytes.max(used.staging_bytes);
-        s.peak.inflight = s.peak.inflight.max(used.inflight);
-        Ok(Box::new(Permit {
-            charge,
-            state: self.state.clone(),
-        }))
-    }
-}
-fn governor(host: u64, staging: u64, inflight: u32) -> Arc<Governor> {
-    Arc::new(Governor {
-        limit: Charge {
-            host_bytes: host,
-            staging_bytes: staging,
-            inflight,
-        },
-        state: Arc::default(),
-    })
-}
-#[derive(Default)]
 struct Heat(BTreeMap<BankId, u64>);
-impl Hotness<ExpertDomain> for Heat {
+impl<D: BankDomain> Hotness<D> for Heat {
     fn demand(&mut self, id: &BankId) {
         *self.0.entry(id.clone()).or_default() += 1;
     }
@@ -80,591 +68,1119 @@ impl Hotness<ExpertDomain> for Heat {
         self.0.get(id).copied().unwrap_or(0)
     }
 }
-fn tensor() -> TensorId {
-    TensorId {
-        artifact: [7; 32],
-        name: "layer.2.experts.gate.weight".into(),
-    }
-}
-fn id(original_id: u32) -> BankId {
-    BankId {
-        tensor: tensor(),
-        record: RecordId::Expert {
-            layer: 2,
-            original_id,
-            projection: Projection::Gate,
-        },
-        layout: [3; 32],
-    }
-}
-fn layout(original: u64, encoding: &str, len: u64) -> RecordLayout {
-    RecordLayout {
-        encoding: encoding.into(),
-        row_bytes: len,
-        segments: vec![
-            Segment {
-                tensor: tensor(),
-                offset: original * 64,
-                len,
-                role: "payload".into(),
-            },
-            Segment {
-                tensor: TensorId {
-                    name: "layer.2.experts.gate.scale".into(),
-                    ..tensor()
-                },
-                offset: original * 4,
-                len: 4,
-                role: "macro_scale".into(),
-            },
-        ],
-    }
-}
-fn catalog(class: LayoutClass) -> Catalog {
-    let e = if class == LayoutClass::Uniform {
-        "NVFP4"
-    } else {
-        "Q2_K"
-    };
-    Catalog::new(
-        class,
-        vec![
-            (id(9), Some(layout(9, "NVFP4", 16))),
-            (id(47), Some(layout(47, e, 16))),
-            (id(21), None),
-        ],
-    )
-    .unwrap()
-}
-fn batch(ids: &[u32]) -> BankBatch {
-    catalog(LayoutClass::PerRecord)
-        .batch(ids.iter().map(|i| id(*i)).collect())
-        .unwrap()
-}
+#[derive(Default)]
 struct Reader {
     calls: Vec<(TensorId, u64, usize)>,
-    fail_at: Option<usize>,
+    fail: Option<usize>,
+    corrupt: bool,
 }
-impl Reader {
-    fn new() -> Self {
-        Self {
-            calls: vec![],
-            fail_at: None,
-        }
-    }
-}
-fn byte(t: &TensorId, position: u64) -> u8 {
-    (position.wrapping_mul(13).wrapping_add(t.name.len() as u64) % 251) as u8
+fn byte(t: &TensorId, p: u64) -> u8 {
+    ((p * 13 + t.name.len() as u64) % 251) as u8
 }
 impl ExactReader for Reader {
-    fn read_exact(&mut self, tensor: &TensorId, offset: u64, dst: &mut [u8]) -> Result<()> {
-        self.calls.push((tensor.clone(), offset, dst.len()));
-        if self.fail_at == Some(self.calls.len()) {
-            return Err(BankError::ReadFailed);
+    fn storage_bytes(&self, _: &TensorId) -> Result<u64> {
+        Ok(1 << 28)
+    }
+    fn read_exact(&mut self, t: &TensorId, o: u64, dst: &mut [u8]) -> Result<()> {
+        self.calls.push((t.clone(), o, dst.len()));
+        if self.fail == Some(self.calls.len()) {
+            return Err(Error::ShortIo {
+                expected: dst.len() as u64,
+                actual: 0,
+            });
         }
         for (i, b) in dst.iter_mut().enumerate() {
-            *b = byte(tensor, offset + i as u64);
+            *b = byte(t, o + i as u64) ^ u8::from(self.corrupt);
         }
         Ok(())
     }
 }
-struct Fence(bool);
-impl ConsumerFence for Fence {
-    fn ready_on_owner(&mut self, _: BankTicket) -> Result<bool> {
-        Ok(self.0)
+fn tensor() -> TensorId {
+    TensorId {
+        version: 1,
+        artifact: [7; 32],
+        name: "expert.weight".into(),
     }
 }
-fn service(budget: SharedBudget, cache: u64, queue: usize) -> BankService<ExpertDomain, Heat> {
-    BankService::new(
-        catalog(LayoutClass::PerRecord),
-        budget,
-        Heat::default(),
-        cache,
-        1024,
-        64,
-        queue,
+fn layout(n: u64, q: i32, len: u64) -> RecordLayout {
+    let payload = ByteSegment {
+        version: 1,
+        group: 0,
+        page: 0,
+        owner: 0,
+        role: Role::Payload,
+        tensor: Some(tensor()),
+        offset: n * 32768,
+        valid_bytes: len,
+        storage_bytes: len,
+        alignment: 1,
+        encoding: EncodingId {
+            version: 1,
+            program: digest("host-exps-qtype-v1", &q.to_le_bytes()),
+            row_bytes: len,
+        },
+    };
+    let scale = ByteSegment {
+        group: 1,
+        role: Role::MacroScale,
+        tensor: Some(TensorId {
+            name: "expert.macro".into(),
+            ..tensor()
+        }),
+        offset: n * 4,
+        valid_bytes: 4,
+        storage_bytes: 4,
+        encoding: EncodingId {
+            row_bytes: 4,
+            program: digest("encoding", b"f32-le"),
+            version: 1,
+        },
+        ..payload.clone()
+    };
+    let segments = vec![payload, scale];
+    RecordLayout {
+        version: 1,
+        requirements: segments
+            .iter()
+            .map(|s| GroupRequirement {
+                version: 1,
+                group: s.group,
+                owner: s.owner,
+                role: s.role,
+                page_count: 1,
+                pages: PageRequirement::AllPages,
+            })
+            .collect(),
+        segments,
+    }
+}
+fn record(l: RecordLayout) -> CatalogRecord {
+    let checksums = l
+        .segments
+        .iter()
+        .map(|s| {
+            checksum(
+                &(s.offset..s.offset + s.valid_bytes)
+                    .map(|p| byte(s.tensor.as_ref().unwrap(), p))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    CatalogRecord {
+        layout: l,
+        checksums,
+    }
+}
+fn bank_id(n: u32, l: &RecordLayout) -> BankId {
+    BankId {
+        version: 1,
+        tensor: tensor(),
+        record: RecordId::Expert {
+            layer: 2,
+            original_id: n,
+            projection: Projection::Gate,
+        },
+        layout: l.identity().unwrap(),
+    }
+}
+fn catalog(class: LayoutClass) -> (Catalog, Vec<BankId>) {
+    let mut entries = Vec::new();
+    let mut ids = Vec::new();
+    for (n, q, len) in [
+        (9, 2, 16),
+        (47, if class == LayoutClass::Uniform { 2 } else { 3 }, 16),
+        (
+            83,
+            if class == LayoutClass::Uniform { 2 } else { 4 },
+            if class == LayoutClass::Uniform {
+                16
+            } else {
+                32
+            },
+        ),
+    ] {
+        let l = layout(n as u64, q, len);
+        let id = bank_id(n, &l);
+        ids.push(id.clone());
+        entries.push((id, Some(record(l))));
+    }
+    let masked = BankId {
+        record: RecordId::Expert {
+            layer: 2,
+            original_id: 21,
+            projection: Projection::Gate,
+        },
+        ..ids[0].clone()
+    };
+    ids.push(masked.clone());
+    entries.push((masked, None));
+    (Catalog::new(class, entries).unwrap(), ids)
+}
+fn gov() -> Rc<RefCell<Governor>> {
+    Rc::new(RefCell::new(Governor::new(1_000_000)))
+}
+fn limits(cache: u64) -> BankLimits {
+    BankLimits {
+        cache_bytes: cache,
+        batch_bytes: 100_000,
+        items: 128,
+        tickets: 4,
+    }
+}
+type Banks = BankService<ExpertDomain, Heat, Reader>;
+fn banks(class: LayoutClass, cache: u64, r: Reader, g: SharedBudget) -> (Banks, Vec<BankId>) {
+    let (c, ids) = catalog(class);
+    (
+        BankService::new(
+            c,
+            g,
+            Heat::default(),
+            r,
+            CoalescingPolicy::default(),
+            limits(cache),
+        )
+        .unwrap(),
+        ids,
     )
+}
+fn batch(ids: Vec<BankId>) -> BankBatch {
+    BankBatch {
+        ids,
+        epochs: epochs(),
+        request: request(0, Priority::Demand),
+    }
+}
+fn finish<D: BankDomain, H: Hotness<D>, R: ExactReader>(
+    b: &mut BankService<D, H, R>,
+    t: &TransferTicket,
+) {
+    b.finish_host_use(t).unwrap();
+    assert!(b.retire(t).unwrap());
+    b.acknowledge(t).unwrap();
 }
 fn expected(l: &RecordLayout) -> Vec<u8> {
     l.segments
         .iter()
-        .flat_map(|s| (s.offset..s.offset + s.len).map(|p| byte(&s.tensor, p)))
+        .flat_map(|s| {
+            (s.offset..s.offset + s.valid_bytes).map(|p| byte(s.tensor.as_ref().unwrap(), p))
+        })
         .collect()
 }
 
 #[test]
-fn masked_and_unknown_ids_fail_before_queue_or_cache() {
-    let g = governor(1024, 0, 2);
-    let mut s = service(g.clone(), 20, 2);
-    assert!(matches!(s.resident(&id(21)), Err(BankError::MaskedId)));
-    assert!(matches!(s.resident(&id(22)), Err(BankError::UnknownId)));
-    assert!(matches!(
-        catalog(LayoutClass::PerRecord).batch(vec![id(21)]),
-        Err(BankError::MaskedId)
-    ));
-    let forged = Catalog::new(
-        LayoutClass::Uniform,
-        vec![(id(21), Some(layout(21, "Q3_K", 16)))],
-    )
-    .unwrap()
-    .batch(vec![id(21)])
-    .unwrap();
-    assert_eq!(s.stage(forged), Err(BankError::MaskedId));
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
+fn frozen_bank_cancel_schedule_runs_on_implementation() {
+    let g = gov();
+    let (mut b, ids) = banks(LayoutClass::PerRecord, 0, Reader::default(), g.clone());
+    conformance::bank_cancel(&mut b, batch(vec![ids[0].clone()]));
+    assert!(g.borrow().used.pageable > 0);
+    for t in b.tickets() {
+        finish(&mut b, &t);
+    }
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
 }
 #[test]
-fn mixed_cannot_obtain_uniform_proof_even_for_one_record() {
-    let c = catalog(LayoutClass::PerRecord);
-    assert!(matches!(
-        c.uniform(c.batch(vec![id(9)]).unwrap()),
-        Err(BankError::MixedLayout)
-    ));
-    let c = catalog(LayoutClass::Uniform);
-    assert_eq!(
-        c.uniform(c.batch(vec![id(47)]).unwrap())
-            .unwrap()
-            .batch()
-            .ids(),
-        &[id(47)]
-    );
-    assert!(matches!(
-        Catalog::new(
-            LayoutClass::Uniform,
-            vec![
-                (id(9), Some(layout(9, "Q2_K", 16))),
-                (id(47), Some(layout(47, "Q3_K", 16)))
-            ]
-        ),
-        Err(BankError::MixedLayout)
-    ));
+fn cancel_retains_charge_until_retirement_and_tombstone_ack() {
+    let g = gov();
+    let (mut b, ids) = banks(LayoutClass::PerRecord, 0, Reader::default(), g.clone());
+    let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    let used = g.borrow().used.clone();
+    assert_eq!(b.cancel(&t), Ok(CancelState::PublicationRevoked));
+    assert!(!b.retire(&t).unwrap());
+    assert_eq!(g.borrow().used, used);
+    assert_eq!(b.acknowledge(&t), Err(Error::Busy));
+    assert!(matches!(b.publish(&t, epochs()), Err(Error::Cancelled)));
+    finish(&mut b, &t);
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
+    assert_eq!(b.retire(&t), Err(Error::UnknownTicket));
 }
 #[test]
-fn source_identity_keeps_artifact_projection_and_original_router_slot() {
-    let mut a = id(9);
-    let b = a.clone();
-    a.tensor.artifact[0] += 1;
-    assert_ne!(a, b);
-    a = b.clone();
-    a.record = RecordId::Expert {
-        layer: 2,
-        original_id: 9,
-        projection: Projection::Down,
-    };
-    assert_ne!(a, b);
-    assert!(matches!(
-        catalog(LayoutClass::PerRecord).layout(&id(0)),
-        Err(BankError::UnknownId)
-    ));
-}
-#[test]
-fn zero_small_full_cache_exact_bytes_scales_order_and_forced_misses() {
+fn zero_small_full_cache_preserves_exact_bytes_and_scales() {
     for capacity in [0, 20, 40] {
-        let g = governor(256, 0, 2);
-        let mut s = service(g.clone(), capacity, 2);
-        let mut r = Reader::new();
+        let g = gov();
+        let (mut b, ids) = banks(
+            LayoutClass::PerRecord,
+            capacity,
+            Reader::default(),
+            g.clone(),
+        );
         for _ in 0..5 {
-            let t = s.stage(batch(&[47, 9, 47])).unwrap();
-            assert!(matches!(
-                s.publish(t, &mut Fence(false)),
-                Err(BankError::Pending)
-            ));
-            s.read(t, &mut r).unwrap();
-            let leases = s.publish(t, &mut Fence(true)).unwrap();
-            for (lease, original) in leases.iter().zip([47, 9, 47]) {
-                assert_eq!(lease.id(), &id(original));
-                assert_eq!(lease.bytes(), expected(lease.layout()));
+            let order = vec![ids[1].clone(), ids[0].clone(), ids[1].clone()];
+            let t = b.stage(batch(order.clone())).unwrap();
+            let leases = b.publish(&t, epochs()).unwrap();
+            assert_eq!(
+                leases.iter().map(|r| r.id().clone()).collect::<Vec<_>>(),
+                order
+            );
+            assert!(!b.completion(&t).unwrap().consumer_fenced); // HOST only
+            for r in &leases {
+                assert_eq!(&*r.resource::<Vec<u8>>().unwrap(), &expected(r.layout()));
             }
-            assert!(s.cache_bytes() <= capacity);
+            assert_eq!(b.release(&leases[0]), Err(Error::Busy));
+            assert_eq!(b.cancel(&t), Ok(CancelState::AlreadyPublished));
+            finish(&mut b, &t);
+            b.collect_evicted().unwrap();
+            assert!(b.cache_bytes() <= capacity);
         }
         assert_eq!(
-            r.calls.len(),
+            b.reader().calls.len(),
             match capacity {
-                0 => 20,
-                20 => 12,
-                _ => 4,
+                0 => 15,
+                20 => 11,
+                _ => 3,
             }
         );
-        drop(s);
-        assert_eq!(g.state.lock().unwrap().used, Charge::default());
+        for id in ids.iter().take(2) {
+            b.evict_cached(id).unwrap();
+        }
+        b.collect_evicted().unwrap();
+        assert_eq!(g.borrow().used, TierBudget::zero(2));
     }
 }
 #[test]
-fn disk_ready_is_not_consumer_ready_and_queue_is_bounded() {
-    let g = governor(256, 0, 4);
-    let mut s = service(g.clone(), 40, 1);
-    let t = s.stage(batch(&[9])).unwrap();
-    assert_eq!(s.stage(batch(&[47])), Err(BankError::Backpressure));
-    s.read(t, &mut Reader::new()).unwrap();
-    assert!(matches!(
-        s.publish(t, &mut Fence(false)),
-        Err(BankError::Pending)
-    ));
-    assert!(s.resident(&id(9)).unwrap().is_none());
-    let v = s.publish(t, &mut Fence(true)).unwrap();
-    assert!(s.resident(&id(9)).unwrap().is_some());
-    assert!(matches!(
-        s.publish(t, &mut Fence(true)),
-        Err(BankError::UnknownTicket)
-    ));
-    drop(s); // lease still pins budget after service/cache destruction
-    assert_eq!(g.state.lock().unwrap().used.host_bytes, 20);
-    drop(v);
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
+fn original_masks_foreign_catalog_and_wrong_domain_refuse_before_reads() {
+    let g = gov();
+    let (mut b, ids) = banks(LayoutClass::PerRecord, 0, Reader::default(), g.clone());
+    assert_eq!(b.stage(batch(vec![ids[3].clone()])), Err(Error::MaskedId));
+    let mut unknown = ids[0].clone();
+    unknown.tensor.artifact = [99; 32];
+    assert_eq!(b.stage(batch(vec![unknown])), Err(Error::NotFound));
+    let mut row = ids[0].clone();
+    row.record = RecordId::Row(9);
+    assert_eq!(b.stage(batch(vec![row])), Err(Error::InvalidLayout));
+    assert!(b.reader().calls.is_empty());
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
 }
 #[test]
-fn cancellation_and_cross_service_ticket_do_not_publish() {
-    let g = governor(256, 0, 4);
-    let mut s = service(g.clone(), 0, 2);
-    let mut other = service(g.clone(), 0, 2);
-    let t = s.stage(batch(&[9])).unwrap();
-    let u = other.stage(batch(&[9])).unwrap();
-    assert_eq!(other.cancel(t), Err(BankError::UnknownTicket));
-    s.read(t, &mut Reader::new()).unwrap();
-    s.cancel(t).unwrap();
-    assert!(matches!(
-        s.publish(t, &mut Fence(true)),
-        Err(BankError::UnknownTicket)
-    ));
-    other.cancel(u).unwrap();
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
-}
-#[test]
-fn partial_read_error_retires_whole_batch_and_all_permits() {
-    let g = governor(256, 0, 2);
-    let mut s = service(g.clone(), 40, 2);
-    let t = s.stage(batch(&[9, 47])).unwrap();
-    let mut r = Reader::new();
-    r.fail_at = Some(3);
-    assert_eq!(s.read(t, &mut r), Err(BankError::ReadFailed));
-    assert!(matches!(
-        s.publish(t, &mut Fence(true)),
-        Err(BankError::UnknownTicket)
-    ));
-    assert_eq!(s.cache_bytes(), 0);
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
-}
-#[test]
-fn shared_governor_admission_is_atomic_and_releases_cancelled_wait() {
-    let g = governor(30, 4096, 1);
-    let mut s = service(g.clone(), 0, 2);
-    assert_eq!(s.stage(batch(&[9, 47])), Err(BankError::Backpressure));
-    assert_eq!(s.pending_count(), 0);
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
-    let kv_permit = g
-        .reserve(Charge {
-            host_bytes: 20,
-            ..Charge::default()
-        })
-        .unwrap();
-    assert_eq!(s.stage(batch(&[9])), Err(BankError::Backpressure));
-    drop(kv_permit);
-    let t = s.stage(batch(&[9])).unwrap();
-    s.cancel(t).unwrap();
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
-}
-fn table(stride: u64, rows: u64) -> RowTable {
-    RowTable {
-        tensor: tensor(),
-        base: 0,
-        rows,
-        width: 264,
-        stride,
-        storage_bytes: rows * stride + 32768,
+fn all_three_epochs_cross_service_and_publish_replay_refuse() {
+    let (mut b, ids) = banks(LayoutClass::Uniform, 0, Reader::default(), gov());
+    let (mut other, _) = banks(LayoutClass::Uniform, 0, Reader::default(), gov());
+    let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    assert_eq!(other.cancel(&t), Err(Error::UnknownTicket));
+    for e in [
+        Epochs {
+            state: 8,
+            ..epochs()
+        },
+        Epochs {
+            src_gen: 20,
+            ..epochs()
+        },
+        Epochs {
+            dst_gen: 32,
+            ..epochs()
+        },
+    ] {
+        assert!(matches!(b.publish(&t, e), Err(Error::StaleEpoch)));
     }
+    let l = b.publish(&t, epochs()).unwrap();
+    assert!(matches!(b.publish(&t, epochs()), Err(Error::Busy)));
+    finish(&mut b, &t);
+    b.release(&l[0]).unwrap();
 }
 #[test]
-fn sparse_264_by_48_amplification_fixture() {
-    let table = table(32768, 48);
-    let batch = RowBatch {
-        rows: (0..48).collect(),
-    };
-    for granularity in [512, 4096, 16384] {
-        let p = table.plan(&batch, granularity).unwrap();
-        assert_eq!(p.unique_useful_bytes, 12672);
-        assert_eq!(p.logical_bytes, 12672);
-        assert_eq!(p.physical_bytes, 48 * granularity);
-        assert_eq!(p.extents.len(), 48);
-        assert_eq!(p.straddling_rows, 0);
-        assert_eq!(p.efficiency(), Some(264.0 / granularity as f64));
-        assert_eq!(p.amplification(), Some(granularity as f64 / 264.0));
-        println!(
-            "fixture=sparse264x48 granularity={granularity} useful={} physical={} amplification={}",
-            p.unique_useful_bytes,
-            p.physical_bytes,
-            p.amplification().unwrap()
-        );
-    }
-}
-#[test]
-fn ordered_packed_rows_coalesce_and_straddles_count() {
-    let table = table(264, 48);
-    let batch = RowBatch {
-        rows: (0..48).collect(),
-    };
-    for g in [512, 4096, 16384] {
-        let p = table.plan(&batch, g).unwrap();
-        assert_eq!(p.physical_bytes, 12672u64.div_ceil(g) * g);
-        assert_eq!(p.extents.len(), 1);
-        assert_eq!(
-            p.straddling_rows,
-            match g {
-                512 => 24,
-                4096 => 3,
-                _ => 0,
-            }
-        );
-    }
-}
-#[test]
-fn duplicate_and_history_reordering_preserve_logical_output_not_io() {
-    let table = table(264, 96);
-    let a = table
-        .plan(
-            &RowBatch {
-                rows: vec![30, 1, 30, 2, 0],
-            },
-            4096,
-        )
-        .unwrap();
-    let b = table
-        .plan(
-            &RowBatch {
-                rows: vec![0, 1, 2, 30],
-            },
-            4096,
-        )
-        .unwrap();
-    assert_eq!(a.extents, b.extents);
-    assert_eq!(a.unique_useful_bytes, 4 * 264);
-    assert_eq!(a.logical_bytes, 5 * 264);
-}
-#[test]
-fn row_bounds_overflow_padding_and_empty_are_explicit() {
-    let mut t = table(264, 48);
-    assert_eq!(
-        t.plan(&RowBatch { rows: vec![48] }, 4096),
-        Err(BankError::UnknownId)
-    );
-    assert_eq!(
-        t.plan(&RowBatch { rows: vec![1] }, 3),
-        Err(BankError::InvalidLayout)
-    );
-    t.base = u64::MAX;
-    assert_eq!(
-        t.plan(&RowBatch { rows: vec![1] }, 4096),
-        Err(BankError::Overflow)
-    );
-    t.base = 0;
-    t.storage_bytes = 12672;
-    assert_eq!(
-        t.plan(&RowBatch { rows: vec![47] }, 4096),
-        Err(BankError::InvalidLayout)
-    );
-    let p = t.plan(&RowBatch { rows: vec![] }, 4096).unwrap();
-    assert_eq!(p.efficiency(), None);
-    assert_eq!(p.amplification(), None);
-}
-#[test]
-fn gather_host_and_fake_nvme_exact_across_straddles_small_slot_and_duplicates() {
-    for granularity in [512, 4096, 16384] {
-        let t = table(264, 96);
-        let g = governor(20000, granularity, 1);
-        let mut s =
-            BoundedRowService::new(t.clone(), g.clone(), granularity, granularity, 64, 20000)
-                .unwrap();
-        let batch = RowBatch {
-            rows: (0..48).rev().chain([0, 47, 16]).collect(),
+fn uniform_proof_checks_actual_source_even_homogeneous_subset() {
+    for class in [LayoutClass::Uniform, LayoutClass::PerRecord] {
+        let (mut b, ids) = banks(class, 0, Reader::default(), gov());
+        let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
+        let leases = b.publish(&t, epochs()).unwrap();
+        let result = UniformLease::try_new(leases);
+        let leases = if class == LayoutClass::Uniform {
+            let p = result.unwrap();
+            with_uniform_experts(&p, |p| assert_eq!(p.records().len(), 1));
+            p.into_records()
+        } else {
+            let rejected = result.unwrap_err();
+            assert_eq!(rejected.error, Error::MixedLayout);
+            rejected.op
         };
-        let mut nvme = Reader::new();
-        let lease = s.gather(batch.clone(), &mut nvme).unwrap();
-        let expected: Vec<_> = batch
-            .rows
-            .iter()
-            .flat_map(|r| (*r * 264..(*r + 1) * 264).map(|p| byte(&t.tensor, p)))
-            .collect();
-        assert_eq!(lease.bytes(), expected);
-        assert_eq!(
-            nvme.calls.iter().map(|(_, _, n)| *n as u64).sum::<u64>(),
-            lease.plan.physical_bytes
-        );
-        assert!(
-            nvme.calls
-                .iter()
-                .all(|(_, offset, n)| offset % granularity == 0 && *n as u64 <= granularity)
-        );
-        assert!(g.state.lock().unwrap().peak.staging_bytes <= granularity);
-        assert_eq!(g.state.lock().unwrap().used.staging_bytes, 0);
-        drop(lease);
-        assert_eq!(g.state.lock().unwrap().used, Charge::default());
+        finish(&mut b, &t);
+        b.release(&leases[0]).unwrap();
     }
 }
 #[test]
-fn row_read_error_and_output_pressure_leave_no_partial_lease() {
-    let g = governor(4096, 4096, 1);
-    let mut s = BoundedRowService::new(table(32768, 48), g.clone(), 4096, 4096, 64, 4096).unwrap();
-    let mut r = Reader::new();
-    r.fail_at = Some(2);
-    assert!(matches!(
-        s.gather(RowBatch { rows: vec![0, 1] }, &mut r),
-        Err(BankError::ReadFailed)
-    ));
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
+fn shared_budget_atomic_refusal_and_tombstone_bound() {
+    let g = gov();
+    let (mut b, ids) = banks(LayoutClass::PerRecord, 0, Reader::default(), g.clone());
     let held = g
-        .reserve(Charge {
-            host_bytes: 4096,
-            ..Charge::default()
-        })
+        .borrow_mut()
+        .reserve(&request(749_999, Priority::Demand))
         .unwrap();
-    assert!(matches!(
-        s.gather(RowBatch { rows: vec![0] }, &mut Reader::new()),
-        Err(BankError::Backpressure)
-    ));
-    drop(held);
-    assert!(matches!(
-        s.gather(RowBatch { rows: vec![0; 65] }, &mut Reader::new()),
-        Err(BankError::TooLarge)
-    ));
-    assert!(matches!(
-        s.gather(RowBatch { rows: vec![0; 16] }, &mut Reader::new()),
-        Err(BankError::TooLarge)
-    ));
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
-}
-
-#[test]
-fn uniform_compute_proof_is_bound_to_actual_leased_bytes() {
-    let g = governor(256, 0, 4);
-    let mut s = service(g.clone(), 0, 2);
-    let ticket = s.stage(batch(&[9])).unwrap();
-    s.read(ticket, &mut Reader::new()).unwrap();
-    let lease = s.publish(ticket, &mut Fence(true)).unwrap();
-    assert!(matches!(
-        UniformLease::try_new(lease),
-        Err(BankError::MixedLayout)
-    ));
-    let mut u: BankService<ExpertDomain, Heat> = BankService::new(
-        catalog(LayoutClass::Uniform),
-        g,
-        Heat::default(),
-        0,
-        1024,
-        64,
-        2,
+    assert_eq!(
+        b.stage(batch(vec![ids[0].clone(), ids[1].clone()])),
+        Err(Error::Capacity)
     );
-    let t = u.stage(batch(&[9, 47])).unwrap();
-    u.read(t, &mut Reader::new()).unwrap();
-    let lease = UniformLease::try_new(u.publish(t, &mut Fence(true)).unwrap()).unwrap();
-    assert_eq!(lease.records().len(), 2);
+    assert_eq!(g.borrow().used.pageable, 749_999);
+    assert!(b.reader().calls.is_empty());
+    g.borrow_mut().release(&held).unwrap();
+    let mut tickets = vec![];
+    for _ in 0..4 {
+        tickets.push(b.stage(batch(vec![ids[0].clone()])).unwrap());
+    }
+    assert_eq!(b.stage(batch(vec![ids[0].clone()])), Err(Error::Capacity));
+    for t in tickets {
+        b.cancel(&t).unwrap();
+        finish(&mut b, &t);
+    }
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
 }
-
 #[test]
-fn prefetch_is_bounded_mask_checked_and_does_not_add_demand_heat() {
-    struct Router(Vec<BankId>);
-    impl PrefetchHook<ExpertDomain> for Router {
+fn short_and_corrupt_reads_never_publish_partial_batch() {
+    for reader in [
+        Reader {
+            fail: Some(2),
+            ..Reader::default()
+        },
+        Reader {
+            corrupt: true,
+            ..Reader::default()
+        },
+    ] {
+        let g = gov();
+        let (mut b, ids) = banks(LayoutClass::PerRecord, 40, reader, g.clone());
+        let t = b
+            .stage(batch(vec![ids[0].clone(), ids[1].clone()]))
+            .unwrap();
+        assert!(b.publish(&t, epochs()).is_err());
+        assert_eq!(b.cache_bytes(), 0);
+        assert!(!b.retire(&t).unwrap());
+        b.cancel(&t).unwrap();
+        finish(&mut b, &t);
+        assert_eq!(g.borrow().used, TierBudget::zero(2));
+    }
+}
+#[test]
+fn borrowed_view_and_alias_survive_busy_retirement() {
+    let g = gov();
+    let (mut b, ids) = banks(LayoutClass::Uniform, 20, Reader::default(), g.clone());
+    let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    let leases = b.publish(&t, epochs()).unwrap();
+    let alias = leases[0].clone();
+    finish(&mut b, &t);
+    {
+        let view = alias.resource::<Vec<u8>>().unwrap();
+        assert_eq!(b.release(&alias), Err(Error::Busy));
+        assert_eq!(view.len(), 20);
+    }
+    b.release(&alias).unwrap();
+    assert!(matches!(
+        leases[0].resource::<Vec<u8>>(),
+        Err(Error::AlreadyReleased)
+    ));
+    assert_eq!(b.release(&alias), Err(Error::AlreadyReleased));
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
+}
+#[test]
+fn overlapping_cache_hit_tickets_hold_same_allocation_until_all_retire() {
+    let g = gov();
+    let (mut b, ids) = banks(LayoutClass::Uniform, 20, Reader::default(), g.clone());
+    let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    let a = b.publish(&t, epochs()).unwrap();
+    let u = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    let c = b.publish(&u, epochs()).unwrap();
+    assert_eq!(a[0].charge().id(), c[0].charge().id());
+    finish(&mut b, &t);
+    assert_eq!(b.release(&a[0]), Err(Error::Busy));
+    finish(&mut b, &u);
+    b.release(&a[0]).unwrap();
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
+}
+#[test]
+fn predictions_are_bounded_mask_checked_and_not_demand_heat() {
+    struct Predictor(Vec<BankId>);
+    impl PrefetchHook<ExpertDomain> for Predictor {
         type Context = ();
         fn predict(&self, _: &(), _: usize) -> Vec<BankId> {
             self.0.clone()
         }
     }
-    let c = catalog(LayoutClass::PerRecord);
+    let (c, ids) = catalog(LayoutClass::Uniform);
     assert!(matches!(
-        prefetch_batch(&c, &Router(vec![id(9), id(47)]), &(), 1),
-        Err(BankError::TooLarge)
+        prefetch_batch(
+            &c,
+            &Predictor(vec![ids[3].clone()]),
+            &(),
+            1,
+            epochs(),
+            request(0, Priority::Demand)
+        ),
+        Err(Error::MaskedId)
     ));
     assert!(matches!(
-        prefetch_batch(&c, &Router(vec![id(21)]), &(), 1),
-        Err(BankError::MaskedId)
+        prefetch_batch(
+            &c,
+            &Predictor(ids.clone()),
+            &(),
+            1,
+            epochs(),
+            request(0, Priority::Demand)
+        ),
+        Err(Error::Capacity)
     ));
-    assert!(
-        prefetch_batch(&c, &Router(vec![]), &(), 1)
-            .unwrap()
-            .is_none()
-    );
-    let mut s = service(governor(256, 0, 2), 20, 2);
-    let t = s.stage(batch(&[9])).unwrap();
-    s.read(t, &mut Reader::new()).unwrap();
-    drop(s.publish(t, &mut Fence(true)).unwrap());
-    let b = prefetch_batch(&c, &Router(vec![id(47)]), &(), 1)
-        .unwrap()
-        .unwrap();
-    let t = s.stage(b).unwrap();
-    s.read(t, &mut Reader::new()).unwrap();
-    drop(s.publish(t, &mut Fence(true)).unwrap());
-    assert!(s.resident(&id(9)).unwrap().is_some());
-    assert!(s.resident(&id(47)).unwrap().is_none());
+    let p = prefetch_batch(
+        &c,
+        &Predictor(vec![ids[1].clone()]),
+        &(),
+        1,
+        epochs(),
+        request(0, Priority::Demand),
+    )
+    .unwrap()
+    .unwrap();
+    let (mut b, _) = banks(LayoutClass::Uniform, 20, Reader::default(), gov());
+    let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    b.publish(&t, epochs()).unwrap();
+    finish(&mut b, &t);
+    let u = b.stage(p).unwrap();
+    b.publish(&u, epochs()).unwrap();
+    finish(&mut b, &u);
+    assert!(b.resident(&ids[0]).unwrap().is_some());
+    assert!(b.resident(&ids[1]).unwrap().is_none());
+    b.collect_evicted().unwrap();
+    b.evict_cached(&ids[0]).unwrap();
+    b.collect_evicted().unwrap();
 }
-
-#[test]
-fn eviction_under_pressure_does_not_release_consumer_lease() {
-    let g = governor(20, 0, 2);
-    let mut s = service(g.clone(), 20, 2);
-    let t = s.stage(batch(&[9])).unwrap();
-    s.read(t, &mut Reader::new()).unwrap();
-    let lease = s.publish(t, &mut Fence(true)).unwrap();
-    s.evict_cached(&id(9)).unwrap();
-    assert_eq!(s.stage(batch(&[47])), Err(BankError::Backpressure));
-    drop(lease);
-    let t = s.stage(batch(&[47])).unwrap();
-    s.cancel(t).unwrap();
-    assert_eq!(g.state.lock().unwrap().used, Charge::default());
-}
-
-#[test]
-fn immutable_host_and_nvme_fake_backends_produce_identical_row_bytes() {
-    struct Host {
-        tensor: TensorId,
-        bytes: Vec<u8>,
+fn ple(encoding: PleEncoding) -> PleTable {
+    PleTable {
+        tensor: TensorId {
+            name: "ple.table".into(),
+            ..tensor()
+        },
+        rows: 1_000_000,
+        head_dim: if encoding == PleEncoding::F32 {
+            66
+        } else {
+            132
+        },
+        encoding,
     }
-    impl ExactReader for Host {
-        fn read_exact(&mut self, tensor: &TensorId, offset: u64, dst: &mut [u8]) -> Result<()> {
-            if tensor != &self.tensor {
-                return Err(BankError::UnknownId);
+}
+fn row_catalog(table: &PleTable, rows: &[u64]) -> Catalog {
+    let entries = rows
+        .iter()
+        .map(|&n| (table.id(n).unwrap(), Some(record(table.layout(n).unwrap()))))
+        .collect::<BTreeMap<_, _>>();
+    Catalog::new(LayoutClass::PerRecord, entries.into_iter().collect()).unwrap()
+}
+fn rows(
+    table: &PleTable,
+    ns: &[u64],
+    g: SharedBudget,
+    policy: CoalescingPolicy,
+) -> BoundedRowService<Heat, Reader> {
+    BoundedRowService(
+        BankService::new(
+            row_catalog(table, ns),
+            g,
+            Heat::default(),
+            Reader::default(),
+            policy,
+            limits(0),
+        )
+        .unwrap(),
+    )
+}
+fn row_batch(table: &PleTable, ns: &[u64]) -> RowBatch {
+    RowBatch {
+        ids: ns.iter().map(|&n| table.id(n).unwrap()).collect(),
+        epochs: epochs(),
+        request: request(0, Priority::Demand),
+    }
+}
+#[test]
+fn frozen_row_order_schedule_runs_on_implementation() {
+    let table = ple(PleEncoding::F32);
+    let g = gov();
+    let mut r = rows(&table, &[5, 2, 9], g.clone(), CoalescingPolicy::default());
+    let leases = conformance::rows_order(&mut r, row_batch(&table, &[5, 2, 5, 9]));
+    assert_eq!(
+        leases.records[0].charge().id(),
+        leases.records[2].charge().id()
+    );
+    for l in &leases.records {
+        assert_eq!(&*l.resource::<Vec<u8>>().unwrap(), &expected(l.layout()));
+    }
+    for t in r.0.tickets() {
+        finish(&mut r.0, &t);
+    }
+    r.release(&leases).unwrap();
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
+}
+#[test]
+fn rows_straddles_duplicates_pool_smaller_than_batch_and_retirement() {
+    let table = ple(PleEncoding::F32);
+    let ns: Vec<_> = (0..48).rev().chain([0, 47, 16]).collect();
+    for granularity in [512, 4096, 16384] {
+        let g = gov();
+        let mut r = rows(
+            &table,
+            &ns,
+            g.clone(),
+            CoalescingPolicy {
+                granularity,
+                slot_bytes: granularity,
+            },
+        );
+        let t = r.gather(row_batch(&table, &ns)).unwrap();
+        let l = r.publish(&t, epochs()).unwrap();
+        assert_eq!(
+            r.0.plan(&t).unwrap().io_bytes,
+            12672u64.div_ceil(granularity) * granularity
+        );
+        assert_eq!(
+            r.0.plan(&t).unwrap().straddling_segments,
+            match granularity {
+                512 => 24,
+                4096 => 3,
+                _ => 0,
             }
-            let end = offset as usize + dst.len();
-            let src = self
-                .bytes
-                .get(offset as usize..end)
-                .ok_or(BankError::WrongLength)?;
-            dst.copy_from_slice(src);
-            Ok(())
+        );
+        for lease in &l.records {
+            assert_eq!(
+                &*lease.resource::<Vec<u8>>().unwrap(),
+                &expected(lease.layout())
+            );
+        }
+        assert!(
+            r.0.reader()
+                .calls
+                .iter()
+                .all(|(_, _, n)| *n as u64 <= granularity)
+        );
+        assert_eq!(r.release(&l), Err(Error::Busy));
+        finish(&mut r.0, &t);
+        r.release(&l).unwrap();
+        assert_eq!(g.borrow().used, TierBudget::zero(2));
+    }
+}
+#[test]
+fn sparse_amplification_and_default_policy_are_explicit_arithmetic_not_io_benchmarks() {
+    let records: Vec<_> = (0..48)
+        .map(|n| {
+            let mut l = ple(PleEncoding::F32).layout(n).unwrap();
+            l.segments[0].offset = n * 32768;
+            (ple(PleEncoding::F32).id(n).unwrap(), record(l))
+        })
+        .collect();
+    assert_eq!(CoalescingPolicy::default().granularity, 512);
+    for g in [512, 4096, 16384] {
+        let p = plan_reads(
+            &records,
+            12672,
+            &Reader::default(),
+            CoalescingPolicy {
+                granularity: g,
+                slot_bytes: g,
+            },
+        )
+        .unwrap();
+        assert_eq!(p.io_bytes, 48 * g);
+        assert_eq!(p.unique_useful_bytes, 12672);
+        println!(
+            "sparse264x48 granularity={g} submitted={} useful={} amplification={}",
+            p.io_bytes,
+            p.unique_useful_bytes,
+            p.amplification().unwrap()
+        );
+    }
+}
+#[test]
+fn discontiguous_row_scale_planes_are_required_and_exact() {
+    let mut l = layout(9, 2, 264);
+    let table = ple(PleEncoding::F32);
+    let id = BankId {
+        record: RecordId::Row(9),
+        tensor: table.tensor.clone(),
+        layout: l.identity().unwrap(),
+        version: 1,
+    };
+    let c = Catalog::new(
+        LayoutClass::PerRecord,
+        vec![(id.clone(), Some(record(l.clone())))],
+    )
+    .unwrap();
+    let mut r = BoundedRowService(
+        BankService::new(
+            c,
+            gov(),
+            Heat::default(),
+            Reader::default(),
+            CoalescingPolicy::default(),
+            limits(0),
+        )
+        .unwrap(),
+    );
+    let t = r
+        .gather(RowBatch {
+            ids: vec![id],
+            epochs: epochs(),
+            request: request(0, Priority::Demand),
+        })
+        .unwrap();
+    let lease = r.publish(&t, epochs()).unwrap();
+    assert_eq!(lease.records[0].resource::<Vec<u8>>().unwrap().len(), 268);
+    finish(&mut r.0, &t);
+    r.release(&lease).unwrap();
+    l.segments.pop();
+    assert_eq!(l.validate(), Err(Error::Incomplete));
+}
+#[test]
+fn bounds_wrong_ids_overflow_and_device_request_fail_closed() {
+    let table = ple(PleEncoding::F32);
+    assert_eq!(table.id(table.rows), Err(Error::NotFound));
+    assert!(matches!(
+        table.last_chunk(&[-1], 1, 1, 1, epochs(), request(0, Priority::Demand)),
+        Err(Error::NotFound)
+    ));
+    assert!(matches!(
+        table.last_chunk(&[0], 1, 2, 1, epochs(), request(0, Priority::Demand)),
+        Err(Error::InvalidLayout)
+    ));
+    let huge = PleTable {
+        head_dim: u64::MAX,
+        ..table
+    };
+    assert_eq!(huge.layout(0), Err(Error::Overflow));
+    let (mut b, ids) = banks(LayoutClass::Uniform, 0, Reader::default(), gov());
+    let mut q = batch(vec![ids[0].clone()]);
+    q.request.bytes.device[0] = 20;
+    assert_eq!(b.stage(q), Err(Error::Unsupported));
+}
+
+#[derive(Clone)]
+struct HostFixture {
+    uniform: bool,
+    metadata: Vec<ExpertMetadata>,
+}
+impl HostExpsView for HostFixture {
+    fn is_uniform_layout(&self) -> bool {
+        self.uniform
+    }
+    fn n_expert(&self) -> usize {
+        self.metadata.len()
+    }
+    fn max_expert_bytes(&self) -> u64 {
+        self.metadata.iter().map(|m| m.len).max().unwrap_or(0)
+    }
+    fn expert_layout(&self, n: usize) -> Result<ExpertMetadata> {
+        self.metadata.get(n).copied().ok_or(Error::NotFound)
+    }
+}
+#[test]
+fn host_exps_uniform_mixed_original_mask_and_split_offsets() {
+    for uniform in [true, false] {
+        for split in [true, false] {
+            let fixture = HostFixture {
+                uniform,
+                metadata: vec![
+                    ExpertMetadata {
+                        offset: 0,
+                        len: 16,
+                        qtype: 2,
+                        row_bytes: 8,
+                    },
+                    ExpertMetadata {
+                        offset: 16,
+                        len: 16,
+                        qtype: 2,
+                        row_bytes: 8,
+                    },
+                    ExpertMetadata {
+                        offset: 64,
+                        len: if uniform { 16 } else { 24 },
+                        qtype: if uniform { 2 } else { 3 },
+                        row_bytes: 8,
+                    },
+                ],
+            };
+            let sources = [0, 2]
+                .into_iter()
+                .map(|n| {
+                    (
+                        n,
+                        ExpertSource {
+                            tensor: if split {
+                                TensorId {
+                                    name: format!("expert.{n}.weight"),
+                                    ..tensor()
+                                }
+                            } else {
+                                tensor()
+                            },
+                            split,
+                            scales: vec![],
+                            checksums: vec![[1; 32]],
+                        },
+                    )
+                })
+                .collect();
+            let mapped = host_exps_catalog(
+                &fixture,
+                tensor(),
+                2,
+                Projection::Up,
+                &[true, false, true],
+                &sources,
+            )
+            .unwrap();
+            assert_eq!(mapped.ids.len(), 3);
+            assert_eq!(mapped.max_expert_bytes, if uniform { 16 } else { 24 });
+            assert!(matches!(
+                mapped.ids[2].record,
+                RecordId::Expert { original_id: 2, .. }
+            ));
+            assert_eq!(
+                mapped
+                    .catalog
+                    .record(&mapped.ids[2])
+                    .unwrap()
+                    .layout
+                    .segments[0]
+                    .offset,
+                if split { 0 } else { 64 }
+            );
+            assert!(matches!(
+                mapped.catalog.record(&mapped.ids[1]),
+                Err(Error::MaskedId)
+            ));
+            let mut missing = sources.clone();
+            missing.remove(&2);
+            assert!(matches!(
+                host_exps_catalog(
+                    &fixture,
+                    tensor(),
+                    2,
+                    Projection::Up,
+                    &[true, false, true],
+                    &missing
+                ),
+                Err(Error::Incomplete)
+            ));
         }
     }
-    let table = table(264, 96);
-    let mut host = Host {
-        tensor: table.tensor.clone(),
-        bytes: (0..table.storage_bytes)
-            .map(|p| byte(&table.tensor, p))
-            .collect(),
-    };
-    let mut s =
-        BoundedRowService::new(table, governor(8192, 4096, 1), 4096, 4096, 16, 4096).unwrap();
-    let rows = RowBatch {
-        rows: vec![47, 0, 31, 1, 47],
-    };
-    let a = s.gather(rows.clone(), &mut host).unwrap();
-    let b = s.gather(rows, &mut Reader::new()).unwrap();
-    assert_eq!(a.bytes(), b.bytes());
+}
+#[test]
+fn missing_or_extra_checksums_and_false_uniform_declarations_refuse() {
+    let (c, ids) = catalog(LayoutClass::PerRecord);
+    let mut r = c.record(&ids[0]).unwrap().clone();
+    r.checksums.pop();
+    assert!(matches!(
+        Catalog::new(LayoutClass::Uniform, vec![(ids[0].clone(), Some(r))]),
+        Err(Error::InvalidLayout)
+    ));
+    let entries = ids[..2]
+        .iter()
+        .map(|id| (id.clone(), Some(c.record(id).unwrap().clone())))
+        .collect();
+    assert!(matches!(
+        Catalog::new(LayoutClass::Uniform, entries),
+        Err(Error::MixedLayout)
+    ));
 }
 
 #[test]
-fn q2_q3_nvfp4_records_keep_distinct_lengths_encodings_and_macro_segments() {
-    let entries: Vec<_> = [(9, "Q2_K", 16), (47, "Q3_K", 24), (83, "NVFP4", 32)]
-        .into_iter()
-        .map(|(e, q, n)| (id(e), Some(layout(e as u64, q, n))))
-        .collect();
-    let c = Catalog::new(LayoutClass::PerRecord, entries).unwrap();
-    let batch = c.batch(vec![id(83), id(9), id(47)]).unwrap();
-    let mut s: BankService<ExpertDomain, Heat> =
-        BankService::new(c, governor(256, 0, 2), Heat::default(), 0, 256, 8, 2);
-    let t = s.stage(batch).unwrap();
-    s.read(t, &mut Reader::new()).unwrap();
-    let leases = s.publish(t, &mut Fence(true)).unwrap();
-    for (lease, (q, n)) in leases
-        .iter()
-        .zip([("NVFP4", 36), ("Q2_K", 20), ("Q3_K", 28)])
-    {
-        assert_eq!(lease.layout().encoding, q);
-        assert_eq!(lease.bytes().len(), n);
-        assert_eq!(lease.bytes(), expected(lease.layout()));
+fn synthetic_ple_trace_preserves_chunk_rewind_eos_and_native_expansion_bits() {
+    let trace: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../research/spill-c-20260919/fixtures/ple-ngram-synthetic.json"
+    ))
+    .unwrap();
+    assert_eq!(trace["synthetic"], true);
+    let (mut cached, mut history, mut last_eos) = (vec![], vec![], -1);
+    for step in trace["steps"].as_array().unwrap() {
+        let tokens: Vec<u32> = step["tokens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u32)
+            .collect();
+        let ids: Vec<i64> = step["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        assert_eq!(
+            ple_oracle::host_ngram_ids(&tokens, &[3, 5, 7], &[17, 19], &[0, 17], 3, 1, 99),
+            ids
+        );
+        ple_oracle::host_ngram_ids_cached(
+            &mut cached,
+            &mut history,
+            &mut last_eos,
+            &tokens,
+            &[3, 5, 7],
+            &[17, 19],
+            &[0, 17],
+            3,
+            1,
+            99,
+        );
+        assert_eq!(cached, ids);
     }
+    for encoding in [PleEncoding::F32, PleEncoding::Bf16] {
+        let table = ple(encoding);
+        for step in trace["steps"].as_array().unwrap() {
+            let all: Vec<i64> = step["ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_i64().unwrap())
+                .collect();
+            let tokens = step["tokens"].as_array().unwrap().len();
+            let chunk = step["chunk"].as_u64().unwrap() as usize;
+            let b = table
+                .last_chunk(
+                    &all,
+                    tokens,
+                    chunk,
+                    2,
+                    epochs(),
+                    request(0, Priority::Demand),
+                )
+                .unwrap();
+            let ns: Vec<_> = b
+                .ids
+                .iter()
+                .map(|id| match id.record {
+                    RecordId::Row(n) => n,
+                    _ => panic!(),
+                })
+                .collect();
+            let g = gov();
+            let mut r = rows(&table, &ns, g.clone(), CoalescingPolicy::default());
+            let t = r.gather(b).unwrap();
+            let l = r.publish(&t, epochs()).unwrap();
+            for lease in &l.records {
+                let raw = expected(lease.layout());
+                let floats = table.expand_row(lease).unwrap();
+                let bits: Vec<_> = match encoding {
+                    PleEncoding::F32 => raw
+                        .chunks_exact(4)
+                        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+                        .collect(),
+                    PleEncoding::Bf16 => raw
+                        .chunks_exact(2)
+                        .map(|b| u32::from(u16::from_le_bytes([b[0], b[1]])) << 16)
+                        .collect(),
+                };
+                assert_eq!(floats.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), bits);
+            }
+            finish(&mut r.0, &t);
+            r.release(&l).unwrap();
+            assert_eq!(g.borrow().used, TierBudget::zero(2));
+        }
+    }
+}
+
+#[test]
+fn refused_publication_retains_owned_charge_until_explicit_retirement() {
+    struct RefusePin(Rc<RefCell<Governor>>);
+    impl BudgetGovernor for RefusePin {
+        fn reserve(&mut self, r: &BudgetRequest) -> Result<ChargedLease> {
+            let l = self.0.borrow_mut().reserve(r)?;
+            if r.bytes.pageable > 0 && r.bytes.inflight == 0 {
+                self.0.borrow_mut().mark(&l, ChargeState::Retired)?;
+            }
+            Ok(l)
+        }
+        fn used(&self) -> TierBudget {
+            self.0.borrow().used.clone()
+        }
+        fn mark(&mut self, l: &ChargedLease, s: ChargeState) -> Result<()> {
+            self.0.borrow_mut().mark(l, s)
+        }
+        fn release(&mut self, l: &ChargedLease) -> Result<()> {
+            self.0.borrow_mut().release(l)
+        }
+    }
+    let g = gov();
+    let injected: SharedBudget = Rc::new(RefCell::new(RefusePin(g.clone())));
+    let (mut b, ids) = banks(LayoutClass::Uniform, 0, Reader::default(), injected);
+    let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    let before = g.borrow().used.clone();
+    assert!(matches!(b.publish(&t, epochs()), Err(Error::Busy)));
+    assert_eq!(g.borrow().used, before); // rejected.op wasn't dropped/lost
+    b.cancel(&t).unwrap();
+    finish(&mut b, &t);
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
+}
+
+#[test]
+fn row_release_busy_preserves_retry_after_partial_alias_retirement() {
+    let table = ple(PleEncoding::Bf16);
+    let g = gov();
+    let mut r = rows(&table, &[2, 5], g.clone(), CoalescingPolicy::default());
+    let t = r.gather(row_batch(&table, &[2, 5])).unwrap();
+    let l = r.publish(&t, epochs()).unwrap();
+    finish(&mut r.0, &t);
+    {
+        // Original-id order issues charge 2 after charge 1; release can retire the
+        // first record before encountering this borrow. Retry must still work.
+        let last = l.records[1].resource::<Vec<u8>>().unwrap();
+        assert_eq!(r.release(&l), Err(Error::Busy));
+        assert_eq!(last.len(), 264);
+    }
+    r.release(&l).unwrap();
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
+    assert_eq!(r.release(&l), Err(Error::AlreadyReleased));
+}
+
+#[test]
+fn actual_q2_q3_nvfp4_codes_are_preserved_without_kernel_promotion() {
+    let native = include_str!("../../../memra-engine/src/lib.rs");
+    for (name, value) in [("QT_Q2_K", 13), ("QT_Q3_K", 4), ("QT_NVFP4", 7)] {
+        assert!(native.contains(&format!("pub const {name}: i32 = {value};")));
+    }
+    let f = HostFixture {
+        uniform: false,
+        metadata: vec![
+            ExpertMetadata {
+                offset: 0,
+                len: 16,
+                qtype: 13,
+                row_bytes: 8,
+            },
+            ExpertMetadata {
+                offset: 16,
+                len: 24,
+                qtype: 4,
+                row_bytes: 8,
+            },
+            ExpertMetadata {
+                offset: 40,
+                len: 32,
+                qtype: 7,
+                row_bytes: 8,
+            },
+        ],
+    };
+    let sources = (0..3)
+        .map(|n| {
+            (
+                n,
+                ExpertSource {
+                    tensor: tensor(),
+                    split: false,
+                    scales: vec![],
+                    checksums: vec![[1; 32]],
+                },
+            )
+        })
+        .collect();
+    let mapping =
+        host_exps_catalog(&f, tensor(), 0, Projection::Down, &[true; 3], &sources).unwrap();
+    for (id, (q, n)) in mapping.ids.iter().zip([(13i32, 16), (4, 24), (7, 32)]) {
+        let r = mapping.catalog.record(id).unwrap();
+        assert_eq!(
+            r.layout.segments[0].encoding.program,
+            digest("host-exps-qtype-v1", &q.to_le_bytes())
+        );
+        assert_eq!(r.layout.segments[0].valid_bytes, n);
+    }
+}
+
+#[test]
+fn pinned_ple_test_oracle_matches_native_function_bodies() {
+    fn body<'a>(source: &'a str, name: &str) -> &'a str {
+        let start = source.find(&format!("fn {name}(")).unwrap();
+        let brace = start + source[start..].find('{').unwrap();
+        let mut depth = 0;
+        for (offset, ch) in source[brace..].char_indices() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+            }
+            if depth == 0 {
+                return &source[start..brace + offset + 1];
+            }
+        }
+        panic!("unclosed function")
+    }
+    let native = include_str!("../../../memra-engine/src/qwen4exp_gpu.rs");
+    let fixture = include_str!("ple_oracle.rs");
+    for name in [
+        "host_ngram_ids",
+        "host_ngram_ids_cached",
+        "shift_right_ignore_eos",
+    ] {
+        let normalize = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+        assert_eq!(
+            normalize(body(native, name)),
+            normalize(body(fixture, name)),
+            "native oracle drift: {name}"
+        );
+    }
+}
+
+#[test]
+fn read_planning_refuses_undeclared_tail_padding_and_invalid_granularity() {
+    struct Tail;
+    impl ExactReader for Tail {
+        fn storage_bytes(&self, _: &TensorId) -> Result<u64> {
+            Ok(264)
+        }
+        fn read_exact(&mut self, _: &TensorId, _: u64, _: &mut [u8]) -> Result<()> {
+            panic!("planning only")
+        }
+    }
+    let table = ple(PleEncoding::F32);
+    let entries = vec![(table.id(0).unwrap(), record(table.layout(0).unwrap()))];
+    assert_eq!(
+        plan_reads(&entries, 264, &Tail, CoalescingPolicy::default()),
+        Err(Error::InvalidLayout)
+    );
+    assert_eq!(
+        plan_reads(
+            &entries,
+            264,
+            &Reader::default(),
+            CoalescingPolicy {
+                granularity: 3,
+                slot_bytes: 4096
+            }
+        ),
+        Err(Error::InvalidLayout)
+    );
+    let mut overflow = entries.clone();
+    overflow[0].1.layout.segments[0].offset = u64::MAX;
+    assert_eq!(
+        plan_reads(
+            &overflow,
+            264,
+            &Reader::default(),
+            CoalescingPolicy::default()
+        ),
+        Err(Error::Overflow)
+    );
+}
+
+#[test]
+fn failed_transfer_completion_enumerates_all_records_and_segments() {
+    let (mut b, ids) = banks(
+        LayoutClass::PerRecord,
+        0,
+        Reader {
+            fail: Some(2),
+            ..Reader::default()
+        },
+        gov(),
+    );
+    let t = b
+        .stage(batch(vec![ids[0].clone(), ids[1].clone()]))
+        .unwrap();
+    let c = b.completion(&t).unwrap();
+    assert_eq!(c.items.len(), 2);
+    for (i, item) in c.items.iter().enumerate() {
+        assert_eq!(item.item, i as u32);
+        assert!(item.accepted);
+        assert_eq!(item.segments.len(), 2);
+        for s in &item.segments {
+            assert_eq!(s.status, ItemStatus::Failed);
+            assert!(s.error.is_some());
+            assert_eq!(s.checksum, None);
+        }
+    }
+    assert!(b.publish(&t, epochs()).is_err());
+    b.cancel(&t).unwrap();
+    finish(&mut b, &t);
 }

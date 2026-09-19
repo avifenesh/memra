@@ -1,314 +1,501 @@
 use super::*;
-use std::collections::{BTreeMap, BTreeSet};
-use std::marker::PhantomData;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::thread::{self, ThreadId};
+use crate::contracts::*;
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    marker::PhantomData,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 static NEXT_SERVICE: AtomicU64 = AtomicU64::new(1);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BankTicket {
-    service: u64,
-    sequence: u64,
-}
-
-/// A real engine adapter must check the designated CUDA owner, bind the exact transfer
-/// ticket, and insert/observe the consumer-stream fence. Disk completion is insufficient.
-/// The day-1 test implementation supplies a deterministic fake fence, NOT CUDA evidence.
-pub trait ConsumerFence {
-    fn ready_on_owner(&mut self, ticket: BankTicket) -> Result<bool>;
-}
-
-struct Record {
-    id: BankId,
-    layout: RecordLayout,
-    class: LayoutClass,
-    bytes: Vec<u8>,
-    _permit: Box<dyn BudgetPermit>,
-}
-#[derive(Clone)]
-pub struct BankLease(Arc<Record>);
-impl BankLease {
-    pub fn id(&self) -> &BankId {
-        &self.0.id
-    }
-    pub fn layout(&self) -> &RecordLayout {
-        &self.0.layout
-    }
-    pub fn bytes(&self) -> &[u8] {
-        &self.0.bytes
-    }
-}
-/// A uniform-only adapter consumes this lease, not a detached catalog proof.
-/// It owns exactly the validated bytes/layouts and preserves their budget lifetimes.
-/// ```compile_fail
-/// use memra_bank_prototype::{BankLease, UniformLease};
-/// fn uniform_kernel(_: &UniformLease) {}
-/// fn mixed_dispatch(lease: &BankLease) { uniform_kernel(lease); }
-/// ```
-pub struct UniformLease(Vec<BankLease>);
-impl UniformLease {
-    pub fn try_new(leases: Vec<BankLease>) -> Result<Self> {
-        let first = leases.first().ok_or(BankError::EmptyBatch)?;
-        for lease in &leases {
-            if lease.0.class != LayoutClass::Uniform || !first.layout().same_program(lease.layout())
-            {
-                return Err(BankError::MixedLayout);
-            }
-        }
-        Ok(Self(leases))
-    }
-    pub fn records(&self) -> &[BankLease] {
-        &self.0
-    }
-}
-
-struct PendingRecord {
-    id: BankId,
-    layout: RecordLayout,
-    permit: Box<dyn BudgetPermit>,
-}
-struct PendingBatch {
+struct Pending {
     ids: Vec<BankId>,
-    demand: bool,
-    missing: Vec<PendingRecord>,
     records: BTreeMap<BankId, BankLease>,
-    host_ready: bool,
-    _queue: Box<dyn BudgetPermit>,
+    unpublished: Vec<BankPublication>,
+    completion: Completion,
+    expected: Vec<Vec<SegmentExpectation>>,
+    error: Option<Error>,
+    plan: RowReadPlan,
+    queue: Option<ChargedLease>,
+    demand: bool,
+    cancelled: bool,
+    published: bool,
+    host_use_done: bool,
+    retired: bool,
 }
 
-pub trait BankedResidency {
-    fn layout(&self, id: &BankId) -> Result<&RecordLayout>;
-    fn resident(&mut self, id: &BankId) -> Result<Option<BankLease>>;
-    fn stage(&mut self, batch: BankBatch) -> Result<BankTicket>;
-    fn publish(
-        &mut self,
-        ticket: BankTicket,
-        fence: &mut dyn ConsumerFence,
-    ) -> Result<Vec<BankLease>>;
-}
-
-/// CPU state-machine skeleton. Cache references and demand leases alias the same charged
-/// allocation. Eviction cannot free a borrowed lease; cancellation releases only CPU-owned
-/// bytes. Real DMA cancellation/retirement must remain in A's transfer/pinned-lease layer.
-/// !Send/!Sync keeps stage/read/publish on the constructing owner thread.
-pub struct BankService<D, H> {
+/// Portable HOST-only implementation of the frozen bank lifecycle. Reads currently
+/// finish synchronously in `stage`, but tickets, publication, cancellation and
+/// last-use retirement are separate. This is not A's asynchronous DMA engine and
+/// must not publish device pointers. A native GPU adapter must use TransferEngine
+/// ReadyView plus actual owner/consumer fences instead of this host boundary.
+/// Rc governor and shared BankLease make this service owner-thread-only.
+pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     catalog: Catalog,
     budget: SharedBudget,
-    hotness: H,
+    heat: H,
+    reader: R,
+    policy: CoalescingPolicy,
+    limits: BankLimits,
     cache: BTreeMap<BankId, BankLease>,
-    pending: BTreeMap<u64, PendingBatch>,
-    cache_limit: u64,
-    batch_limit: u64,
-    item_limit: usize,
-    queue_limit: usize,
-    owner: ThreadId,
-    service: u64,
+    owned: BTreeMap<(u64, u64), BankLease>,
+    pending: HashMap<TransferTicket, Pending>,
+    issuer: u64,
     sequence: u64,
     _domain: PhantomData<D>,
-    _owner_only: PhantomData<Rc<()>>,
 }
-impl<D: BankDomain, H: Hotness<D>> BankService<D, H> {
+impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     pub fn new(
         catalog: Catalog,
         budget: SharedBudget,
-        hotness: H,
-        cache_limit: u64,
-        batch_limit: u64,
-        item_limit: usize,
-        queue_limit: usize,
-    ) -> Self {
-        Self {
+        heat: H,
+        reader: R,
+        policy: CoalescingPolicy,
+        limits: BankLimits,
+    ) -> Result<Self> {
+        policy.validate()?;
+        if limits.items == 0 || limits.tickets == 0 {
+            return Err(Error::Capacity);
+        }
+        let issuer = NEXT_SERVICE
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+            .map_err(|_| Error::Overflow)?;
+        Ok(Self {
             catalog,
             budget,
-            hotness,
+            heat,
+            reader,
+            policy,
+            limits,
             cache: BTreeMap::new(),
-            pending: BTreeMap::new(),
-            cache_limit,
-            batch_limit,
-            item_limit,
-            queue_limit,
-            owner: thread::current().id(),
-            service: NEXT_SERVICE.fetch_add(1, Ordering::Relaxed),
+            owned: BTreeMap::new(),
+            pending: HashMap::new(),
+            issuer,
             sequence: 0,
             _domain: PhantomData,
-            _owner_only: PhantomData,
-        }
-    }
-    fn owner(&self) -> Result<()> {
-        if thread::current().id() != self.owner {
-            return Err(BankError::WrongOwner);
-        }
-        Ok(())
-    }
-    fn ticket(&self, ticket: BankTicket) -> Result<u64> {
-        self.owner()?;
-        if ticket.service != self.service || !self.pending.contains_key(&ticket.sequence) {
-            return Err(BankError::UnknownTicket);
-        }
-        Ok(ticket.sequence)
-    }
-    /// Reads are explicit, bounded and exact. No cache entry becomes visible here.
-    /// A failure retires this CPU-only batch atomically, including successfully read siblings.
-    pub fn read(&mut self, ticket: BankTicket, reader: &mut dyn ExactReader) -> Result<()> {
-        let seq = self.ticket(ticket)?;
-        let mut pending = self.pending.remove(&seq).ok_or(BankError::UnknownTicket)?;
-        if pending.host_ready {
-            self.pending.insert(seq, pending);
-            return Ok(());
-        }
-        for record in pending.missing.drain(..) {
-            let len = usize::try_from(record.layout.bytes()?).map_err(|_| BankError::TooLarge)?;
-            let mut bytes = vec![0; len];
-            let mut at = 0;
-            for seg in &record.layout.segments {
-                let end = at + usize::try_from(seg.len).map_err(|_| BankError::TooLarge)?;
-                reader.read_exact(&seg.tensor, seg.offset, &mut bytes[at..end])?;
-                at = end;
-            }
-            let id = record.id.clone();
-            pending.records.insert(
-                id,
-                BankLease(Arc::new(Record {
-                    id: record.id,
-                    layout: record.layout,
-                    class: self.catalog.class(),
-                    bytes,
-                    _permit: record.permit,
-                })),
-            );
-        }
-        pending.host_ready = true;
-        self.pending.insert(seq, pending);
-        Ok(())
-    }
-    pub fn cancel(&mut self, ticket: BankTicket) -> Result<()> {
-        let seq = self.ticket(ticket)?;
-        self.pending.remove(&seq);
-        Ok(())
-    }
-    /// Governor-pressure hook: drop cache references only; active leases remain charged.
-    pub fn evict_cached(&mut self, id: &BankId) -> Result<bool> {
-        self.owner()?;
-        self.catalog.layout(id)?;
-        Ok(self.cache.remove(id).is_some())
-    }
-    pub fn cache_bytes(&self) -> u64 {
-        self.cache.values().map(|v| v.bytes().len() as u64).sum()
-    }
-    pub fn pending_count(&self) -> usize {
-        self.pending.len()
-    }
-    fn trim_cache(&mut self) {
-        while self.cache_bytes() > self.cache_limit {
-            let victim = self
-                .cache
-                .keys()
-                .min_by_key(|id| self.hotness.score(id))
-                .cloned();
-            if let Some(victim) = victim {
-                self.cache.remove(&victim);
-            } else {
-                break;
-            }
-        }
-    }
-}
-impl<D: BankDomain, H: Hotness<D>> BankedResidency for BankService<D, H> {
-    fn layout(&self, id: &BankId) -> Result<&RecordLayout> {
-        self.catalog.layout(id)
-    }
-    fn resident(&mut self, id: &BankId) -> Result<Option<BankLease>> {
-        self.owner()?;
-        self.catalog.layout(id)?;
-        if !D::accepts(&id.record) {
-            return Err(BankError::InvalidLayout);
-        }
-        self.hotness.demand(id);
-        Ok(self.cache.get(id).cloned())
-    }
-    fn stage(&mut self, batch: BankBatch) -> Result<BankTicket> {
-        self.owner()?;
-        if batch.ids.len() > self.item_limit {
-            return Err(BankError::TooLarge);
-        }
-        if self.pending.len() >= self.queue_limit {
-            return Err(BankError::Backpressure);
-        }
-        // Validate against THIS service, not whichever catalog constructed the batch.
-        let mut bytes = 0u64;
-        let unique: BTreeSet<_> = batch.ids.iter().cloned().collect();
-        for id in &unique {
-            if !D::accepts(&id.record) {
-                return Err(BankError::InvalidLayout);
-            }
-            bytes = bytes
-                .checked_add(self.catalog.layout(id)?.bytes()?)
-                .ok_or(BankError::Overflow)?;
-        }
-        if bytes > self.batch_limit {
-            return Err(BankError::TooLarge);
-        }
-        let sequence = self.sequence.checked_add(1).ok_or(BankError::Overflow)?;
-        // All-or-none acceptance: RAII unwinds already-reserved permits on any refusal.
-        let queue = self.budget.reserve(Charge {
-            inflight: 1,
-            ..Charge::default()
-        })?;
-        let mut missing = Vec::new();
-        let mut records = BTreeMap::new();
-        for id in unique {
-            if let Some(lease) = self.cache.get(&id) {
-                records.insert(id, lease.clone());
-            } else {
-                let layout = self.catalog.layout(&id)?.clone();
-                let permit = self.budget.reserve(Charge {
-                    host_bytes: layout.bytes()?,
-                    ..Charge::default()
-                })?;
-                missing.push(PendingRecord { id, layout, permit });
-            }
-        }
-        let host_ready = missing.is_empty();
-        self.sequence = sequence;
-        self.pending.insert(
-            sequence,
-            PendingBatch {
-                ids: batch.ids,
-                demand: batch.demand,
-                missing,
-                records,
-                host_ready,
-                _queue: queue,
-            },
-        );
-        Ok(BankTicket {
-            service: self.service,
-            sequence,
         })
     }
-    fn publish(
-        &mut self,
-        ticket: BankTicket,
-        fence: &mut dyn ConsumerFence,
-    ) -> Result<Vec<BankLease>> {
-        let seq = self.ticket(ticket)?;
-        if !self.pending[&seq].host_ready || !fence.ready_on_owner(ticket)? {
-            return Err(BankError::Pending);
+    /// Bounded lifecycle inventory for orderly host shutdown/receipt collection.
+    pub fn tickets(&self) -> Vec<TransferTicket> {
+        self.pending.keys().copied().collect()
+    }
+    pub fn reader(&self) -> &R {
+        &self.reader
+    }
+    pub fn plan(&self, ticket: &TransferTicket) -> Result<&RowReadPlan> {
+        Ok(&self.pending.get(ticket).ok_or(Error::UnknownTicket)?.plan)
+    }
+    pub fn completion(&self, ticket: &TransferTicket) -> Result<&Completion> {
+        Ok(&self
+            .pending
+            .get(ticket)
+            .ok_or(Error::UnknownTicket)?
+            .completion)
+    }
+    pub fn cache_bytes(&self) -> u64 {
+        self.cache
+            .values()
+            .map(|r| r.layout().storage_bytes().expect("validated layout"))
+            .sum()
+    }
+    pub fn evict_cached(&mut self, id: &BankId) -> Result<bool> {
+        self.catalog.record(id)?;
+        Ok(self.cache.remove(id).is_some())
+    }
+    /// Host consumer adapter calls after its last use (including speculative
+    /// rollback). No CUDA/graph use is accepted by this backend. Does not release
+    /// resources: retire/release still run, and borrowed views refuse Busy.
+    pub fn finish_host_use(&mut self, ticket: &TransferTicket) -> Result<()> {
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if !p.published && !p.cancelled && p.error.is_none() {
+            return Err(Error::Busy);
         }
-        let pending = self.pending.remove(&seq).ok_or(BankError::UnknownTicket)?;
-        let mut output = Vec::with_capacity(pending.ids.len());
-        for id in &pending.ids {
-            let lease = pending.records.get(id).ok_or(BankError::UnknownId)?.clone();
-            if pending.demand {
-                self.hotness.demand(id);
+        p.host_use_done = true;
+        Ok(())
+    }
+    pub fn acknowledge(&mut self, ticket: &TransferTicket) -> Result<()> {
+        if !self
+            .pending
+            .get(ticket)
+            .ok_or(Error::UnknownTicket)?
+            .retired
+        {
+            return Err(Error::Busy);
+        }
+        // Keep tombstone/descriptor quota until actual acknowledgement removes it.
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if let Some(queue) = &p.queue {
+            self.budget.borrow_mut().release(queue)?;
+        }
+        p.queue = None;
+        self.pending.remove(ticket);
+        Ok(())
+    }
+    pub(crate) fn can_release(&self, lease: &BankLease) -> Result<()> {
+        if !self.owned.contains_key(&lease.charge().id()) {
+            return Err(if lease.charge().state()? == ChargeState::Released {
+                Error::AlreadyReleased
+            } else {
+                Error::ForeignLease
+            });
+        }
+        if self.pending.values().any(|p| {
+            !p.retired
+                && p.records
+                    .values()
+                    .any(|r| r.charge().id() == lease.charge().id())
+        }) {
+            return Err(Error::Busy);
+        }
+        // Shared API deliberately doesn't expose a mutable-borrow probe. The
+        // actual retire_backing below is the final borrowed-view guard.
+        Ok(())
+    }
+    fn trim(&mut self) {
+        while self.cache_bytes() > self.limits.cache_bytes {
+            let id = self
+                .cache
+                .keys()
+                .min_by_key(|id| self.heat.score(id))
+                .cloned()
+                .expect("nonempty cache");
+            self.cache.remove(&id);
+        }
+    }
+    /// Release inactive evicted allocations, never outstanding consumer tickets.
+    pub fn collect_evicted(&mut self) -> Result<()> {
+        let leases: Vec<_> = self
+            .owned
+            .values()
+            .filter(|l| {
+                !self
+                    .cache
+                    .values()
+                    .any(|c| c.charge().id() == l.charge().id())
+            })
+            .cloned()
+            .collect();
+        for lease in leases {
+            match self.release(&lease) {
+                Ok(()) | Err(Error::Busy) => (),
+                Err(e) => return Err(e),
             }
-            output.push(lease);
         }
-        self.cache.extend(pending.records);
-        self.trim_cache();
+        Ok(())
+    }
+}
+impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankService<D, H, R> {
+    fn layout(&self, id: &BankId) -> Result<&RecordLayout> {
+        if !D::accepts(&id.record) {
+            return Err(Error::InvalidLayout);
+        }
+        Ok(&self.catalog.record(id)?.layout)
+    }
+    fn resident(&mut self, id: &BankId) -> Result<Option<BankLease>> {
+        self.layout(id)?;
+        // Advisory only: stage a ticket even for hits to register last-use lifetime.
+        Ok(self.cache.get(id).cloned())
+    }
+    fn stage(&mut self, batch: BankBatch) -> Result<TransferTicket> {
+        if batch.ids.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if batch.ids.len() > self.limits.items || self.pending.len() >= self.limits.tickets {
+            return Err(Error::Capacity);
+        }
+        batch.request.validate()?;
+        // This backend can promise host bytes only. Never accept a device request
+        // and quietly substitute host readiness.
+        if batch
+            .request
+            .bytes
+            .device
+            .iter()
+            .chain(&batch.request.bytes.peer)
+            .chain(&batch.request.bytes.replicas)
+            .any(|&n| n != 0)
+            || batch.request.bytes.pinned != 0
+        {
+            return Err(Error::Unsupported);
+        }
+        let mut logical = 0u64;
+        for id in &batch.ids {
+            logical = logical
+                .checked_add(self.layout(id)?.storage_bytes()?)
+                .ok_or(Error::Overflow)?;
+        }
+        if logical > self.limits.batch_bytes {
+            return Err(Error::Capacity);
+        }
+        let unique: BTreeSet<_> = batch.ids.iter().cloned().collect();
+        let missing: Vec<_> = unique
+            .iter()
+            .filter(|id| !self.cache.contains_key(*id))
+            .map(|id| Ok((id.clone(), self.catalog.record(id)?.clone())))
+            .collect::<Result<_>>()?;
+        let plan = plan_reads(&missing, logical, &self.reader, self.policy)?;
+        let sequence = self.sequence.checked_add(1).ok_or(Error::Overflow)?;
+        let ticket = TransferTicket {
+            issuer: self.issuer,
+            sequence,
+            epochs: batch.epochs,
+        };
+        // Charge output, slot and bounded metadata through one injected governor.
+        // Canonical metadata + conservative per-node allowance is an estimate;
+        // allocator/RSS calibration remains a native integration gate.
+        let output_bytes = missing.iter().try_fold(0u64, |n, (id, r)| {
+            n.checked_add(r.resident_charge_bytes(id)?)
+                .ok_or(Error::Overflow)
+        })?;
+        let metadata = batch.ids.iter().try_fold(0u64, |n, id| {
+            n.checked_add(
+                (id.encode()?.len() + self.catalog.record(id)?.layout.encode()?.len() + 1024)
+                    as u64,
+            )
+            .ok_or(Error::Overflow)
+        })?;
+        let slot = if missing.is_empty() {
+            0
+        } else {
+            self.policy.slot_bytes
+        };
+        let required = output_bytes
+            .checked_add(metadata)
+            .and_then(|n| n.checked_add(slot))
+            .ok_or(Error::Overflow)?;
+        let mut queue_request = batch.request.clone();
+        queue_request.bytes.pageable = queue_request.bytes.pageable.max(required) - output_bytes;
+        queue_request.bytes.staging = queue_request.bytes.staging.max(slot);
+        queue_request.bytes.inflight = queue_request.bytes.inflight.max(1);
+        let queue = self.budget.borrow_mut().reserve(&queue_request)?;
+        let mut charges = Vec::new();
+        for (id, r) in &missing {
+            let mut request = batch.request.clone();
+            request.bytes = TierBudget::zero(request.bytes.device.len());
+            request.bytes.pageable = r.resident_charge_bytes(id)?;
+            let result = self.budget.borrow_mut().reserve(&request);
+            match result {
+                Ok(charge) => charges.push(charge),
+                Err(e) => {
+                    for charge in &charges {
+                        self.budget.borrow_mut().release(charge)?;
+                    }
+                    self.budget.borrow_mut().release(&queue)?;
+                    return Err(e);
+                }
+            }
+        }
+        let expected: Vec<Vec<SegmentExpectation>> = missing
+            .iter()
+            .map(|(_, r)| {
+                r.layout
+                    .segments
+                    .iter()
+                    .zip(&r.checksums)
+                    .map(|(s, h)| SegmentExpectation {
+                        valid_bytes: s.valid_bytes,
+                        io_bytes: s.storage_bytes,
+                        checksum: *h,
+                    })
+                    .collect()
+            })
+            .collect();
+        let read = read_records(&missing, &plan, &mut self.reader, self.policy);
+        let mut error = read.as_ref().err().cloned();
+        let mut unpublished = Vec::new();
+        let mut items = Vec::new();
+        if let Ok(outputs) = read {
+            for (index, (((id, r), charge), bytes)) in
+                missing.into_iter().zip(charges).zip(outputs).enumerate()
+            {
+                let mut base = 0usize;
+                let mut segments = Vec::new();
+                for (j, s) in r.layout.segments.iter().enumerate() {
+                    let valid_end = base + s.valid_bytes as usize;
+                    let end = base + s.storage_bytes as usize;
+                    let hash = checksum(&bytes[base..valid_end]);
+                    let valid =
+                        hash == r.checksums[j] && bytes[valid_end..end].iter().all(|&v| v == 0);
+                    if !valid {
+                        error = Some(Error::Corrupt);
+                    }
+                    segments.push(SegmentCompletion {
+                        segment: j as u32,
+                        status: if valid {
+                            ItemStatus::Complete
+                        } else {
+                            ItemStatus::Failed
+                        },
+                        valid_bytes: s.valid_bytes,
+                        io_bytes: s.storage_bytes,
+                        checksum: Some(hash),
+                        epochs: ticket.epochs,
+                        producer_done: true,
+                        consumer_fenced: false,
+                        consumer_fence: None,
+                        error: (!valid).then_some(Error::Corrupt),
+                    });
+                    base = end;
+                }
+                items.push(ItemOutcome {
+                    item: index as u32,
+                    accepted: true,
+                    segments,
+                });
+                unpublished.push(BankPublication {
+                    id,
+                    layout: r.layout,
+                    class: self.catalog.class,
+                    charge,
+                    backing: Box::new(bytes),
+                });
+            }
+        } else {
+            // Enumerate EVERY accepted record/segment even when a coalesced
+            // read fails. No short status vector or successful sibling survives.
+            // Zero lengths here mean no verified logical bytes were delivered;
+            // the reader's exact I/O error is retained independently.
+            items = missing
+                .iter()
+                .enumerate()
+                .map(|(i, (_, r))| ItemOutcome {
+                    item: i as u32,
+                    accepted: true,
+                    segments: r
+                        .layout
+                        .segments
+                        .iter()
+                        .enumerate()
+                        .map(|(j, _)| SegmentCompletion {
+                            segment: j as u32,
+                            status: ItemStatus::Failed,
+                            valid_bytes: 0,
+                            io_bytes: 0,
+                            checksum: None,
+                            epochs: ticket.epochs,
+                            producer_done: true,
+                            consumer_fenced: false,
+                            consumer_fence: None,
+                            error: error.clone(),
+                        })
+                        .collect(),
+                })
+                .collect();
+            // Synchronous read failed: no DMA exists and all temporary outputs
+            // are gone; charges may be explicitly returned immediately.
+            for charge in &charges {
+                self.budget.borrow_mut().release(charge)?;
+            }
+        }
+        let records = unique
+            .into_iter()
+            .filter_map(|id| self.cache.get(&id).map(|l| (id, l.clone())))
+            .collect();
+        self.pending.insert(
+            ticket,
+            Pending {
+                ids: batch.ids,
+                records,
+                unpublished,
+                completion: Completion {
+                    ticket,
+                    items,
+                    producer_done: true,
+                    consumer_fenced: false,
+                },
+                expected,
+                error,
+                plan,
+                queue: Some(queue),
+                demand: batch.request.priority != Priority::OptionalPrefetch,
+                cancelled: false,
+                published: false,
+                host_use_done: false,
+                retired: false,
+            },
+        );
+        self.sequence = sequence;
+        Ok(ticket)
+    }
+    fn publish(&mut self, ticket: &TransferTicket, current: Epochs) -> Result<Vec<BankLease>> {
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        ticket.epochs.require(current)?;
+        if p.cancelled {
+            return Err(Error::Cancelled);
+        }
+        if p.published || p.retired {
+            return Err(Error::Busy);
+        }
+        if let Some(e) = &p.error {
+            return Err(e.clone());
+        }
+        if !p.expected.is_empty() {
+            p.completion.require(ticket, &p.expected, false)?;
+        }
+        while let Some(publication) = p.unpublished.pop() {
+            match BankLease::from_backend(
+                publication.id,
+                publication.layout,
+                publication.class,
+                publication.charge,
+                publication.backing,
+            ) {
+                Ok(lease) => {
+                    self.owned.insert(lease.charge().id(), lease.clone());
+                    p.records.insert(lease.id().clone(), lease);
+                }
+                Err(rejected) => {
+                    // Preserve every resource and retry/release handle on refusal.
+                    p.error = Some(rejected.error.clone());
+                    p.unpublished.push(rejected.op);
+                    return Err(rejected.error);
+                }
+            }
+        }
+        let output: Vec<_> = p.ids.iter().map(|id| p.records[id].clone()).collect();
+        if p.demand {
+            for id in &p.ids {
+                self.heat.demand(id);
+            }
+        }
+        p.published = true;
+        self.cache
+            .extend(p.records.iter().map(|(id, l)| (id.clone(), l.clone())));
+        self.trim();
         Ok(output)
+    }
+    fn cancel(&mut self, ticket: &TransferTicket) -> Result<CancelState> {
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if p.published {
+            Ok(CancelState::AlreadyPublished)
+        } else {
+            p.cancelled = true;
+            Ok(CancelState::PublicationRevoked)
+        }
+    }
+    fn retire(&mut self, ticket: &TransferTicket) -> Result<bool> {
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if !p.host_use_done {
+            return Ok(false);
+        }
+        if p.retired {
+            return Ok(true);
+        }
+        // Only unpublished inputs are freed here; live published aliases retire
+        // via release, after ALL tickets referencing that allocation have retired.
+        for publication in &p.unpublished {
+            self.budget.borrow_mut().release(&publication.charge)?;
+        }
+        p.unpublished.clear();
+        p.retired = true;
+        Ok(true)
+    }
+    fn release(&mut self, lease: &BankLease) -> Result<()> {
+        self.can_release(lease)?;
+        lease.retire_backing()?;
+        self.budget.borrow_mut().release(lease.charge())?;
+        self.cache
+            .retain(|_, r| r.charge().id() != lease.charge().id());
+        self.owned.remove(&lease.charge().id());
+        Ok(())
     }
 }

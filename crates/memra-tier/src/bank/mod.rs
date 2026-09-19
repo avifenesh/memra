@@ -1,12 +1,11 @@
-//! Day-1 CPU prototype, not wired into the engine or the shared contracts crate.
-//! All contract definitions here are proposals pending the lead's interface freeze.
-//! No CUDA, pinning, UVA or actual NVMe implementation is claimed by this module.
+//! Exact-byte CPU host bank/row implementation of the frozen shared contracts.
+//! No CUDA, pinning, UVA, real NVMe or runtime dispatch qualification.
 #![forbid(unsafe_code)]
-
+mod adapters;
 mod residency;
 mod rows;
 mod types;
-
+pub use adapters::*;
 pub use residency::*;
 pub use rows::*;
 pub use types::*;

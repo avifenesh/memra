@@ -4,4 +4,5 @@
 //! `tier` (WP-B), `bank` (WP-C), and `peer`, `placement` (WP-D).
 //! No empty shadow modules: implementations import this single contract namespace.
 #![forbid(unsafe_code)]
+pub mod bank;
 pub mod contracts;
