@@ -35,14 +35,14 @@ def digest(path):
     return h.hexdigest()
 
 
-def evidence(root, record):
+def evidence(root, record, allow_empty=False):
     require(set(record) == {"path", "sha256", "bytes"}, "invalid evidence descriptor")
     require(isinstance(record["path"], str), "invalid evidence path")
     rel = Path(record["path"])
     require(not rel.is_absolute() and ".." not in rel.parts, "evidence path escapes bundle")
     path = (root / rel).resolve()
     require(path.is_relative_to(root.resolve()) and path.is_file(), "missing/escaping evidence")
-    require(type(record["bytes"]) is int and record["bytes"] > 0, "empty evidence")
+    require(type(record["bytes"]) is int and record["bytes"] >= (0 if allow_empty else 1), "empty evidence")
     require(path.stat().st_size == record["bytes"], "evidence size mismatch")
     require(isinstance(record["sha256"], str) and re.fullmatch("[0-9a-f]{64}", record["sha256"]), "invalid evidence hash")
     require(digest(path) == record["sha256"], "evidence hash mismatch")
@@ -249,14 +249,16 @@ class SubprocessRunner:
     def __init__(self, smi="nvidia-smi"):
         self.smi = smi
 
-    def run(self, command, raw_path, timeout=30, echo=True, run_id=None, hourly_cost=None, resume_from=None):
+    def run(self, command, raw_path, timeout=30, echo=True, run_id=None, hourly_cost=None, resume_from=None, storage=None):
         root = raw_path.parent
         stem = raw_path.stem
+        started = time.monotonic_ns()
         started_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         instance = os.environ.get("RUNPOD_POD_ID") or os.environ.get("CONTAINER_ID")
         cell = {"kind": "CELL", "run_id": run_id or stem, "command": command,
                 "started_utc": started_utc, "provider_instance_id": instance,
-                "hourly_cost": hourly_cost, "qualification": False, "resume_from": resume_from}
+                "hourly_cost": hourly_cost, "qualification": False, "resume_from": resume_from,
+                "storage": storage, "timing_scope": "collector-with-snapshots-and-sampler"}
         append_cell(root / "CELL.jsonl", {**cell, "event": "start"})
         smi = shutil.which(self.smi)
         snapshots = {}
@@ -269,7 +271,6 @@ class SubprocessRunner:
         telemetry = {"status": "unavailable", "interval_ms": 250,
                      "reason": "nvidia-smi not found", "tier_counters": "not collected"}
         sampler = None
-        started = time.monotonic_ns()
         csv_path = root / f"{stem}.gpu.csv"
         sampler_log = root / f"{stem}.sampler.log"
         with contextlib.ExitStack() as stack:
@@ -304,6 +305,7 @@ class SubprocessRunner:
                 if smi:
                     snapshot("after")
         ended = time.monotonic_ns()
+        ended_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if smi:
             telemetry.update(raw_csv=descriptor(root, csv_path), stderr=descriptor(root, sampler_log))
             if csv_path.stat().st_size == 0:
@@ -322,19 +324,22 @@ class SubprocessRunner:
                 parse_error = str(error)
         failed = code != 0 or expired or parse_error is not None
         quote = next((line for line in text.splitlines() if re.search(
-            r"ERROR|error:|out of memory|CUDA_ERROR|fatal|panic", line)),
+            r"error|out of memory|CUDA_ERROR|fatal|panic", line, re.IGNORECASE)),
             "died, cause unknown — repro needed") if failed else None
         record = {"schema_version": 1, "kind": "subprocess-capture", "command": command,
                   "exit_code": code, "timed_out": expired, "parse_error": parse_error,
                   "status": "failed" if failed else "executed-not-qualified",
                   "started_monotonic_ns": started, "ended_monotonic_ns": ended,
+                  "started_utc": started_utc, "ended_utc": ended_utc,
+                  "elapsed_seconds": (ended-started)/1e9,
+                  "timing_scope": cell["timing_scope"], "storage": storage,
                   "raw_log": descriptor(root, raw_path), "failure_quote": quote,
                   "result": result, "gpu_telemetry": telemetry, "compute_apps": snapshots,
                   "qualification": False}
         with (root / f"{stem}.capture.json").open("x") as out:
             json.dump(record, out, indent=2); out.write("\n")
         append_cell(root / "CELL.jsonl", {**cell, "event": "end",
-                    "ended_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "ended_utc": ended_utc, "elapsed_seconds": (ended-started)/1e9,
                     "duration_ns": ended-started, "exit_code": code, "status": record["status"],
                     "estimated_cost": (ended-started)/3.6e12 * hourly_cost if hourly_cost is not None else None,
                     "capture": descriptor(root, root / f"{stem}.capture.json")})
@@ -343,6 +348,118 @@ class SubprocessRunner:
 
 def descriptor(root, path):
     return {"path": str(path.relative_to(root)), "bytes": path.stat().st_size, "sha256": digest(path)}
+
+
+UNPROVEN_STORAGE = "overlay/unproven — not NVMe, not spill speed"
+
+
+def capture_storage(path, root, allow_unproven=False):
+    """Read-only ancestry, retaining failed commands verbatim; no hidden fallback."""
+    require(path.is_dir(), "storage root must exist")
+    path = path.resolve()
+    commands = [
+        ("storage-findmnt", ["findmnt", "-J", "-T", str(path)]),
+        ("storage-lsblk", ["lsblk", "-J", "-o", "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"]),
+        ("storage-source", ["findmnt", "-n", "-o", "SOURCE", "-T", str(path)]),
+    ]
+    captures = []
+    def capture(name, command):
+        raw = root / (name + ".log")
+        code, expired = tee_run(command, raw, timeout=20, echo=False)
+        captures.append({"command": command, "exit_code": code, "timed_out": expired,
+                         "raw_log": descriptor(root, raw)})
+        return raw.read_text(errors="replace") if code == 0 and not expired else ""
+    for name, command in commands:
+        text = capture(name, command)
+    device = text.strip()
+    ancestry = capture("storage-ancestry", ["lsblk", "-s", "-r", "-n", "-o", "KNAME", device])
+    proven = device.startswith("/dev/") and any(re.fullmatch(
+        r"nvme[0-9]+n[0-9]+(?:p[0-9]+)?", line.strip()) for line in ancestry.splitlines())
+    record = {"class": "nvme-ancestry" if proven else "overlay-unproven", "nvme_proven": proven,
+              "label": "NVMe ancestry only; not measured spill speed" if proven else UNPROVEN_STORAGE,
+              "allow_unproven_storage": allow_unproven, "root": str(path),
+              "commands": captures, "qualification": False}
+    (root / "STORAGE.json").write_text(json.dumps(record, indent=2) + "\n")
+    require(proven or allow_unproven, "NVMe ancestry unproven; retained STORAGE.json; --allow-unproven-storage is development only")
+    return record
+
+
+def utc_timestamp(value):
+    require(isinstance(value, str), "UTC timestamp must be a string")
+    parsed = datetime.datetime.fromisoformat(value)
+    require(parsed.utcoffset() == datetime.timedelta(0), "timestamp must include UTC offset")
+    return parsed
+
+
+def validate_capture(record, root):
+    """Archive integrity, not byte equality or scoring. Empty diagnostic logs are valid.
+
+    Legacy v1 captures lack wall UTC/seconds; their CELL journal supplies UTC and ns.
+    Keep those original bytes unchanged. Missing measurements never become zeroes.
+    """
+    require(record["schema_version"] == 1 and record["kind"] == "subprocess-capture", "not a capture")
+    require(record["qualification"] is False, "capture cannot qualify hardware")
+    require(type(record["exit_code"]) is int and type(record["timed_out"]) is bool, "invalid command outcome")
+    failed = record["exit_code"] != 0 or record["timed_out"] or record["parse_error"] is not None
+    require(record["status"] == ("failed" if failed else "executed-not-qualified"), "command status mismatch")
+    require(isinstance(record["command"], list) and record["command"] and all(isinstance(a, str) for a in record["command"]), "invalid command")
+    begin, end = record["started_monotonic_ns"], record["ended_monotonic_ns"]
+    require(type(begin) is int and type(end) is int and 0 <= begin <= end, "invalid capture clock")
+    if {"elapsed_seconds", "started_utc", "ended_utc"} & record.keys():
+        require({"elapsed_seconds", "started_utc", "ended_utc"} <= record.keys(), "partial capture timing fields")
+        require(type(record["elapsed_seconds"]) in (int, float) and record["elapsed_seconds"] == (end-begin)/1e9, "capture elapsed mismatch")
+        require(utc_timestamp(record["ended_utc"]) >= utc_timestamp(record["started_utc"]), "capture UTC regressed")
+    text = evidence(root, record["raw_log"], allow_empty=True).read_text(errors="replace")
+    if failed:
+        require(isinstance(record["failure_quote"], str) and (record["failure_quote"] in text or
+                record["failure_quote"] == "died, cause unknown — repro needed"), "failure quote not in raw log")
+    else:
+        require(record["failure_quote"] is None, "successful capture has failure quote")
+    telemetry = record["gpu_telemetry"]
+    for key in ("raw_csv", "stderr"):
+        if key in telemetry:
+            evidence(root, telemetry[key], allow_empty=True)
+    for snapshot in record["compute_apps"].values():
+        evidence(root, snapshot["raw_log"], allow_empty=True)
+    storage = record.get("storage")
+    if storage is not None:
+        require(storage["qualification"] is False, "storage ancestry is not qualification")
+        if not storage["nvme_proven"]:
+            require(storage["allow_unproven_storage"] is True and storage["label"] == UNPROVEN_STORAGE,
+                    "unproven storage lacks explicit opt-in/label")
+        for capture in storage["commands"]:
+            evidence(root, capture["raw_log"], allow_empty=True)
+    return record
+
+
+def validate_cell(path):
+    rows, torn = read_cell_journal(path)
+    require(not torn and len(rows) == 2 and [r["event"] for r in rows] == ["start", "end"],
+            "interrupted/invalid CELL journal; not a completed capture")
+    start, end = rows
+    for key in ("kind", "run_id", "command", "started_utc", "qualification", "resume_from"):
+        require(start[key] == end[key], "CELL start/end identity mismatch")
+    require(start["kind"] == "CELL" and start["qualification"] is False, "not an unqualified CELL")
+    require(utc_timestamp(end["ended_utc"]) >= utc_timestamp(start["started_utc"]), "CELL UTC regressed")
+    root = path.parent
+    capture = json.loads(evidence(root, end["capture"]).read_text())
+    validate_capture(capture, root)
+    require(capture["command"] == end["command"] and capture["exit_code"] == end["exit_code"] and
+            capture["status"] == end["status"], "CELL capture outcome mismatch")
+    duration = capture["ended_monotonic_ns"] - capture["started_monotonic_ns"]
+    require(type(end["duration_ns"]) is int and end["duration_ns"] == duration, "CELL duration mismatch")
+    if "elapsed_seconds" in capture:
+        require(end["elapsed_seconds"] == capture["elapsed_seconds"], "CELL elapsed mismatch")
+        require(end["started_utc"] == capture["started_utc"] and end["ended_utc"] == capture["ended_utc"], "CELL capture UTC mismatch")
+        require(start.get("storage") == end.get("storage") == capture.get("storage"), "CELL storage mismatch")
+    lock = json.loads((root / "lock.json").read_text())
+    require(lock["rig"] in LOCKS and lock["rig"] != "cpu" and lock["lock"] == LOCKS[lock["rig"]]
+            and lock["acquired"] is True, "missing/noncanonical collector lock")
+    return {"kind": "capture-integrity", "status": capture["status"],
+            "started_utc": start["started_utc"], "ended_utc": end["ended_utc"],
+            "elapsed_seconds": duration/1e9, "qualification": False,
+            "legacy_timing": "elapsed_seconds" not in capture,
+            "storage_label": (capture.get("storage") or {}).get("label", "not recorded; no NVMe/spill-speed claim")}
 
 
 def sample_fake(ns, moved):
@@ -614,11 +731,13 @@ def main():
     modes.add_argument("--execute", nargs=argparse.REMAINDER, metavar="ARGV")
     modes.add_argument("--plan", action="store_true")
     modes.add_argument("--first-hour", action="store_true")
-    modes.add_argument("--validate", type=Path, metavar="RUNS_JSONL")
+    modes.add_argument("--validate", type=Path, metavar="RECEIPT", help="byte/telemetry JSONL, CELL.jsonl, capture JSON, or directory of CELL journals; integrity is not qualification")
     modes.add_argument("--dry-run", action="store_true")
     modes.add_argument("--validate-campaign", type=Path, metavar="BUNDLE")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--schema", choices=["auto", "runs", "telemetry"], default="auto")
+    parser.add_argument("--storage-root", type=Path, help="actual filesystem path for this storage cell; ancestry captured before execution")
+    parser.add_argument("--allow-unproven-storage", action="store_true", help="explicit overlay/unproven development mode; never NVMe/spill-speed evidence")
     parser.add_argument("--storage-samples", type=Path, help="run-id wrapped canonical StorageSample JSONL")
     parser.add_argument("--resume", action="store_true", help="read last CELL receipt; rerun in a new attempt")
     parser.add_argument("--run-id", help="stable cell identity (defaults to output directory name)")
@@ -638,10 +757,15 @@ def main():
             require(records and records[-1]["command"] == args.execute, "resume command mismatch")
             previous = {"receipt": str(old), "sha256": digest(old), "last_event": records[-1]["event"], "torn_tail_preserved": torn}
             args.out = args.out / "attempts" / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        require(not args.allow_unproven_storage or args.storage_root is not None,
+                "--allow-unproven-storage requires --storage-root")
+        require(not any(Path(arg).name == "storage-bench" for arg in args.execute) or args.storage_root is not None,
+                "storage-bench requires --storage-root; overlay needs --allow-unproven-storage")
         args.out.mkdir(parents=True, exist_ok=False)
+        storage = capture_storage(args.storage_root, args.out, args.allow_unproven_storage) if args.storage_root else None
         with campaign_lock(args.rig) as lock:
             record = SubprocessRunner().run(args.execute, args.out / "command.log", args.timeout,
-                                            run_id=args.run_id, hourly_cost=args.hourly_cost, resume_from=previous)
+                                            run_id=args.run_id or args.out.name, hourly_cost=args.hourly_cost, resume_from=previous, storage=storage)
             (args.out / "lock.json").write_text(json.dumps({"rig": args.rig, "lock": lock, "acquired": True}) + "\n")
         print(json.dumps(record, indent=2))
         if record["status"] == "failed":
@@ -661,6 +785,25 @@ def main():
         return
     if args.plan:
         print(json.dumps({"schema_version": 1, "status": "pending-gpu-adapters", "cases": CASES, "standard_gates": ["kernel-check", "run-gen argmax", "run-spec K=1..8 / manifest refusals", "step-pro"], "locks": LOCKS, "performance": {"AB_pairs": 5, "BA_pairs": 5, "telemetry_interval_ms": 250}, "warning": "Scaffold only. No GPU cell executed; pair is four tiers, not four-card qualification."}, indent=2))
+        return
+    if args.validate.is_dir():
+        require(args.schema == "auto" and args.storage_samples is None, "directory capture validation cannot join storage or validate byte schemas")
+        paths = sorted(args.validate.rglob("CELL.jsonl"))
+        require(paths, "no CELL journals in receipt directory")
+        results = [{"cell": str(path.parent.relative_to(args.validate)), **validate_cell(path)} for path in paths]
+        print(json.dumps({"kind": "capture-integrity", "cells": len(results),
+                          "failed_commands": sum(r["status"] == "failed" for r in results),
+                          "qualification": False, "results": results}, indent=2))
+        return
+    if args.schema == "auto" and args.validate.name == "CELL.jsonl":
+        require(args.storage_samples is None, "capture integrity is not a storage/byte-receipt join")
+        print(json.dumps(validate_cell(args.validate), indent=2))
+        return
+    if args.schema == "auto" and args.validate.name.endswith(".capture.json"):
+        require(args.storage_samples is None, "capture integrity is not a storage/byte-receipt join")
+        record = json.loads(args.validate.read_text())
+        validate_capture(record, args.validate.parent)
+        print("CAPTURE INTEGRITY MATCH; command status=" + record["status"] + "; NOT qualification")
         return
     rows = [json.loads(line) for line in args.validate.read_text().splitlines() if line.strip()]
     require(rows, "empty JSONL")

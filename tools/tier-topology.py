@@ -7,6 +7,7 @@ machine-local: raw hardware identifiers must not be committed to public receipts
 import argparse
 import datetime
 import json
+import re
 from pathlib import Path
 import subprocess
 
@@ -24,6 +25,26 @@ STORAGE_COMMANDS = [
     ['lscpu'], ['df', '-hT'], ['lsblk', '-J', '-o', 'NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS'],
     ['free', '-g'], ['findmnt', '-J', '-T', '/scratch'],
 ]
+
+
+def pcie_links(text):
+    """Separate observed generation from host/device ceilings; never infer bandwidth."""
+    links = []
+    for block in text.split('GPU Link Info')[1:]:
+        match = re.search(r'PCIe Generation\s*\n(.*?)Link Width\s*\n(.*?)(?=\n\s*Bridge Chip|\Z)', block, re.S)
+        if not match:
+            continue
+        def fields(section, width=False):
+            return {key.strip(): int(value) for key, value in re.findall(
+                r'^\s*(Max|Current|Device Current|Device Max|Host Max)\s*:\s*(\d+)' + ('x' if width else '') + r'\s*$',
+                section, re.M)}
+        gen, width = fields(match[1]), fields(match[2], True)
+        links.append({'device_ordinal': len(links),
+                      'generation_current': gen.get('Current'), 'generation_max': gen.get('Max'),
+                      'device_generation_max': gen.get('Device Max'), 'host_generation_max': gen.get('Host Max'),
+                      'width_current': width.get('Current'), 'width_max': width.get('Max'),
+                      'bandwidth_measured': False})
+    return links
 
 
 def probe(fixture=None, storage=False):
@@ -49,6 +70,8 @@ def probe(fixture=None, storage=False):
             'captured_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'route_qualification':False, 'target':'PCIe Gen5 only; no NVLink assumption',
             'warning':'Capability queries do not prove context/pool grants, direct DMA, active link health or bandwidth.',
+            'pcie_links': pcie_links(next((c['stdout'] for c in captures
+                                            if c['command'] == ['nvidia-smi', '-q'] and c['exit_code'] == 0), '')),
             'commands':captures}
 
 
