@@ -341,9 +341,11 @@ self-locking A/B/C shell runner under `--execute` or `locked-run.sh`.
 | 4 | B Qwen fitting baseline | 32 GiB total card; admit only measured free minus model/workspace reserve, single request; 15 min first-hour slice /60 min baseline | `run-gen` argmax and supported `run-spec` outputs; `$EV/b-*`; no invented 8k/32k context from a short-prompt baseline |
 | 5 | B active-8k then prefix-8k | <=32 GiB, original q8_0 K/q5_1 V, working-set refusal required; 20 min/cell after native binding | **BLOCKED**: proposed `$GATE_BIN --artifact "$QWEN" --case active --context 8192 --tiers host,nvme --same-program --out ...` is not present; no fake substitution |
 
-A's existing pinned-worker exact-byte test is a subsequent 5-minute cell after `--no-run`:
+A2's existing `spill_pread::tests` pinned-worker exact-byte test is a subsequent 5-minute cell after `--no-run`:
 `cargo +stable test --release -p memra-engine --lib spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read -- --ignored --exact --nocapture`
-under the 5090 lock via the collector (single run, timeout 300 seconds):
+under the 5090 lock via the collector (single run, timeout 300 seconds). Keep the literal
+`-- --ignored --exact --nocapture`: the collector forwards it verbatim to cargo/libtest.
+The exact spelling below names the existing test; do not abbreviate the module or test name:
 
 ```sh
 python3 tools/tier-battery.py --rig rtx5090 --timeout 300 \

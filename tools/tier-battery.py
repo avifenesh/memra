@@ -109,6 +109,7 @@ def validate_rows(rows, root):
 
 # Collector support. CPU dry runs never create positive GPU rows.
 import contextlib
+import csv
 import datetime
 import fcntl
 import math
@@ -278,7 +279,7 @@ class SubprocessRunner:
                 snapshot("before")
                 csv = stack.enter_context(csv_path.open("xb"))
                 err = stack.enter_context(sampler_log.open("xb"))
-                argv = [smi, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
+                argv = [smi, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
                 try:
                     sampler = subprocess.Popen(argv, stdout=csv, stderr=err, start_new_session=True)
                     telemetry = {"status": "started", "interval_ms": 250, "command": argv,
@@ -323,12 +324,17 @@ class SubprocessRunner:
             except (ValueError, TypeError) as error:
                 parse_error = str(error)
         failed = code != 0 or expired or parse_error is not None
+        refusal = explicit_refusal(text, code, expired)
+        power_limits = gpu_power_limits(csv_path) if smi else []
         quote = next((line for line in text.splitlines() if re.search(
             r"error|out of memory|CUDA_ERROR|fatal|panic", line, re.IGNORECASE)),
             "died, cause unknown — repro needed") if failed else None
+        if refusal is not None:
+            quote = refusal
         record = {"schema_version": 1, "kind": "subprocess-capture", "command": command,
                   "exit_code": code, "timed_out": expired, "parse_error": parse_error,
-                  "status": "failed" if failed else "executed-not-qualified",
+                  "status": "refused" if refusal is not None else ("failed" if failed else "executed-not-qualified"),
+                  "gpu_power_limits": power_limits,
                   "started_monotonic_ns": started, "ended_monotonic_ns": ended,
                   "started_utc": started_utc, "ended_utc": ended_utc,
                   "elapsed_seconds": (ended-started)/1e9,
@@ -341,9 +347,31 @@ class SubprocessRunner:
         append_cell(root / "CELL.jsonl", {**cell, "event": "end",
                     "ended_utc": ended_utc, "elapsed_seconds": (ended-started)/1e9,
                     "duration_ns": ended-started, "exit_code": code, "status": record["status"],
+                    "gpu_power_limits": power_limits,
                     "estimated_cost": (ended-started)/3.6e12 * hourly_cost if hourly_cost is not None else None,
                     "capture": descriptor(root, root / f"{stem}.capture.json")})
         return record
+
+
+def explicit_refusal(text, code, expired):
+    """Only a terminal explicit diagnostic plus exit 2 is a refusal, never a guess."""
+    lines = text.splitlines()
+    if code == 2 and not expired and lines and lines[-1].startswith(("REFUSED:", "Error:")):
+        return lines[-1]
+    return None
+
+
+def gpu_power_limits(path):
+    """Retain all observed device/limit pairs; N/A is unknown, never zero or a default."""
+    limits = []
+    with path.open(newline="") as stream:
+        for row in csv.DictReader(stream, skipinitialspace=True):
+            item = dict((key, row.get(column)) for key, column in (
+                ("device", "index"), ("power.limit", "power.limit [W]"),
+                ("power.max_limit", "power.max_limit [W]")))
+            if item["device"] is not None and item not in limits:
+                limits.append(item)
+    return limits
 
 
 def descriptor(root, path):
@@ -401,7 +429,7 @@ def validate_capture(record, root):
     require(record["qualification"] is False, "capture cannot qualify hardware")
     require(type(record["exit_code"]) is int and type(record["timed_out"]) is bool, "invalid command outcome")
     failed = record["exit_code"] != 0 or record["timed_out"] or record["parse_error"] is not None
-    require(record["status"] == ("failed" if failed else "executed-not-qualified"), "command status mismatch")
+    require(record["status"] in ({"failed", "refused"} if failed else {"executed-not-qualified"}), "command status mismatch")
     require(isinstance(record["command"], list) and record["command"] and all(isinstance(a, str) for a in record["command"]), "invalid command")
     begin, end = record["started_monotonic_ns"], record["ended_monotonic_ns"]
     require(type(begin) is int and type(end) is int and 0 <= begin <= end, "invalid capture clock")
@@ -410,6 +438,9 @@ def validate_capture(record, root):
         require(type(record["elapsed_seconds"]) in (int, float) and record["elapsed_seconds"] == (end-begin)/1e9, "capture elapsed mismatch")
         require(utc_timestamp(record["ended_utc"]) >= utc_timestamp(record["started_utc"]), "capture UTC regressed")
     text = evidence(root, record["raw_log"], allow_empty=True).read_text(errors="replace")
+    if record["status"] == "refused":
+        require(explicit_refusal(text, record["exit_code"], record["timed_out"]) == record["failure_quote"]
+                and record["failure_quote"] is not None, "refusal not explicitly recorded")
     if failed:
         require(isinstance(record["failure_quote"], str) and (record["failure_quote"] in text or
                 record["failure_quote"] == "died, cause unknown — repro needed"), "failure quote not in raw log")
@@ -419,6 +450,9 @@ def validate_capture(record, root):
     for key in ("raw_csv", "stderr"):
         if key in telemetry:
             evidence(root, telemetry[key], allow_empty=True)
+    if "gpu_power_limits" in record:
+        expected = gpu_power_limits(root / telemetry["raw_csv"]["path"]) if "raw_csv" in telemetry else []
+        require(record["gpu_power_limits"] == expected, "power limits do not match raw CSV")
     for snapshot in record["compute_apps"].values():
         evidence(root, snapshot["raw_log"], allow_empty=True)
     storage = record.get("storage")
@@ -446,6 +480,8 @@ def validate_cell(path):
     validate_capture(capture, root)
     require(capture["command"] == end["command"] and capture["exit_code"] == end["exit_code"] and
             capture["status"] == end["status"], "CELL capture outcome mismatch")
+    if "gpu_power_limits" in capture:
+        require(end.get("gpu_power_limits") == capture["gpu_power_limits"], "CELL power limit mismatch")
     duration = capture["ended_monotonic_ns"] - capture["started_monotonic_ns"]
     require(type(end["duration_ns"]) is int and end["duration_ns"] == duration, "CELL duration mismatch")
     if "elapsed_seconds" in capture:
@@ -745,7 +781,13 @@ def main():
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--pairs-per-order", type=int, default=5)
     parser.add_argument("--rig", choices=["rtx5090", "pro-pair", "pro-four"], default="pro-pair")
-    args = parser.parse_args()
+    # argparse REMAINDER still treats a literal -- as its own option terminator.
+    # Split before parsing so every child byte/argument (including --) survives.
+    argv = sys.argv[1:]
+    execute = argv.index("--execute") if "--execute" in argv else None
+    args = parser.parse_args(argv if execute is None else argv[:execute + 1])
+    if execute is not None:
+        args.execute = argv[execute + 1:]
     if args.execute is not None:
         require(args.execute and args.out is not None and args.timeout > 0, "--execute requires argv, new --out and positive timeout")
         if args.hourly_cost is not None:
@@ -768,7 +810,7 @@ def main():
                                             run_id=args.run_id or args.out.name, hourly_cost=args.hourly_cost, resume_from=previous, storage=storage)
             (args.out / "lock.json").write_text(json.dumps({"rig": args.rig, "lock": lock, "acquired": True}) + "\n")
         print(json.dumps(record, indent=2))
-        if record["status"] == "failed":
+        if record["status"] in {"failed", "refused"}:
             sys.exit(record["exit_code"] if 0 < record["exit_code"] < 126 else 2)
         return
     if args.first_hour:
@@ -793,6 +835,7 @@ def main():
         results = [{"cell": str(path.parent.relative_to(args.validate)), **validate_cell(path)} for path in paths]
         print(json.dumps({"kind": "capture-integrity", "cells": len(results),
                           "failed_commands": sum(r["status"] == "failed" for r in results),
+                          "refused_commands": sum(r["status"] == "refused" for r in results),
                           "qualification": False, "results": results}, indent=2))
         return
     if args.schema == "auto" and args.validate.name == "CELL.jsonl":
