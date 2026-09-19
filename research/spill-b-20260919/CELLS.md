@@ -158,3 +158,30 @@ no simultaneous scored campaign is permitted.
 with `/tmp/memra-gpu.lock`. No performance/default decision is made from this runner's
 single correctness attempts. Generic active attention consumption, state/logit/token
 hash equality, measured engagement and all original B2/B3/B4 requirements are unchanged.
+
+## Day-4 delta (supersedes runner order above; all GPU rows remain UNRUN)
+
+The runner now performs **baseline build/server tests/prefix teeth → patched
+build/server tests/prefix teeth → baseline and patched 8k/32k fitting cells**.
+`test-rig-cells-b.py` asserts that order and raw-first hashes; the 20-command dry run
+is still explicitly CPU stubs, not 20 native passes.
+
+CPU additions: second frozen KvMaterializer binding for opaque packed FP8-record
+fixtures, AllPages and TrailingPages(2), exact bytes including zero storage padding,
+identity/alternate coverage/mixed-encoding refusal. This does not add a Qwen F8 path
+or a numerical FP8 consumer. Policy now records fixture costs/decision on each
+scheduler request alongside the frozen TierAdmissionPlan; recompute winners never
+call lookup/admit/prefetch/load. Explicit state kind keeps epoch-zero active state
+mandatory. All 48 synthetic table rows drive admission policy tests; no calibration
+or runtime default is inferred.
+
+B's `reserve_peer_source` uses frozen PeerCapacity and directed lookup metadata;
+its own CPU capacity fake tests denial of context/pool/link, reverse independence,
+local byte materialization/fenced readiness, exact accounting and Busy retry. D's
+implementation remains private: `D-SEAM-REQUEST.md` is the required export request.
+This B-only schedule is not a B→D implementation interoperability or native PCIe gate.
+
+HostPrefix patch v2 carries full ProgramIdentity on source/destination residency
+guards, charges the shared governor, refuses cross-tenant before quota changes,
+checks host model-generation provenance and charges metadata before publication.
+Patch remains UNAPPLIED; see `PATCH-REVIEW.md` for every hunk and remaining blockers.
