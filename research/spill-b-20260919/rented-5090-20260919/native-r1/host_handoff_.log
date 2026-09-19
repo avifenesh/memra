@@ -1,0 +1,15 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.22s
+     Running unittests src/lib.rs (target/release/deps/memra_server-78a7f7e05e0c9770)
+
+running 7 tests
+test worker::host_handoff_tests::host_handoff_header_corruption_refuses_the_whole_file ... ok
+test worker::host_handoff_tests::host_handoff_refuses_bad_plane_census_before_allocation ... ok
+test worker::host_handoff_tests::host_handoff_round_trips_every_field_class ... ok
+test worker::host_handoff_tests::host_handoff_skips_a_corrupt_frame_and_keeps_the_stream_in_register ... ok
+test worker::host_handoff_tests::host_handoff_truncated_stream_aborts_instead_of_inventing_entries ... ok
+test worker::host_handoff_tests::host_handoff_verdict_refuses_layout_age_and_stamp_mismatch ... ok
+test worker::host_handoff_tests::host_handoff_wiring ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.02s
+
