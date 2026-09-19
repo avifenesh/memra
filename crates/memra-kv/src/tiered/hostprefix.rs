@@ -84,3 +84,74 @@ impl IdentityLease {
         Ok(&self.0.bundle)
     }
 }
+
+/// CPU owned immutable image, not CUDA storage. Copy committed payloads BEFORE sealing
+/// metadata; no mutable borrow or Arc to an active generation is retained.
+pub struct SealedImage {
+    bundle: StateBundle,
+    payloads: Vec<Vec<u8>>,
+}
+impl SealedImage {
+    pub fn copy_committed(
+        active: &super::ActiveEpoch,
+        bundle: &StateBundle,
+        payloads: &[Vec<u8>],
+    ) -> Result<Self> {
+        active.require(bundle)?;
+        bundle.verify(payloads)?;
+        let copied = payloads.to_vec();
+        let bundle = bundle.seal()?;
+        bundle.verify(&copied)?;
+        Ok(Self {
+            bundle,
+            payloads: copied,
+        })
+    }
+    pub fn bundle(&self) -> &StateBundle {
+        &self.bundle
+    }
+    pub fn payloads(&self) -> &[Vec<u8>] {
+        &self.payloads
+    }
+}
+
+/// Injected shared governor; runtime owners must NOT create a prefix-only governor.
+pub type SharedGovernor = Arc<std::sync::Mutex<dyn BudgetGovernor + Send>>;
+/// Synchronous owner-only residency charge. Declare this AFTER payload fields so Rust
+/// destroys the bytes before crediting them. Async DMA requires explicit retirement,
+/// not this guard. A failed release retains the governor/lease rather than granting credit.
+pub struct ResidentCharge {
+    governor: SharedGovernor,
+    lease: Option<ChargedLease>,
+}
+impl ResidentCharge {
+    pub fn reserve(governor: SharedGovernor, request: &BudgetRequest) -> Result<Self> {
+        let lease = governor
+            .lock()
+            .map_err(|_| Error::Quarantined)?
+            .reserve(request)?;
+        Ok(Self {
+            governor,
+            lease: Some(lease),
+        })
+    }
+    pub fn lease(&self) -> &ChargedLease {
+        self.lease.as_ref().expect("live residency guard")
+    }
+}
+impl Drop for ResidentCharge {
+    fn drop(&mut self) {
+        let Some(lease) = self.lease.take() else {
+            return;
+        };
+        let result = self
+            .governor
+            .lock()
+            .map_err(|_| Error::Quarantined)
+            .and_then(|mut g| g.release(&lease));
+        if let Err(error) = result {
+            eprintln!("[kv-tier] residency release quarantined: {error:?}");
+            std::mem::forget((self.governor.clone(), lease));
+        }
+    }
+}

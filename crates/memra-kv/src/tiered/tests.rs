@@ -183,6 +183,7 @@ struct Controls {
 }
 struct Transfers {
     owner: DeviceOwner,
+    peer_owner: DeviceOwner,
     next: u64,
     entries: HashMap<TransferTicket, TransferEntry>,
     control: Rc<RefCell<Controls>>,
@@ -191,6 +192,7 @@ impl Transfers {
     fn new(c: Rc<RefCell<Controls>>) -> Self {
         Self {
             owner: DeviceOwner::new(0),
+            peer_owner: DeviceOwner::new(1),
             next: 0,
             entries: HashMap::new(),
             control: c,
@@ -256,9 +258,39 @@ impl TransferEngine for Transfers {
         };
         let mut items = vec![];
         for (i, o) in ops.iter().enumerate() {
-            let (host, device) = match o {
-                TransferOp::NvmeRead(o) => (&o.destination, None),
-                TransferOp::H2d(o) => (&o.host, Some(&o.device)),
+            let (valid, storage, hash, device) = match o {
+                TransferOp::NvmeRead(o) => (
+                    o.destination.valid,
+                    o.destination.storage_bytes(),
+                    checksum(o.destination.bytes().unwrap()),
+                    None,
+                ),
+                TransferOp::H2d(o) => (
+                    o.host.valid,
+                    o.host.storage_bytes(),
+                    checksum(o.host.bytes().unwrap()),
+                    Some(&o.device),
+                ),
+                TransferOp::P2p(o) => {
+                    let owner = if o.source().device() == 0 {
+                        &self.owner
+                    } else {
+                        &self.peer_owner
+                    };
+                    let bytes = owner.resolve::<Vec<u8>>(o.source()).unwrap();
+                    let valid = bundle().layout.segments[i].valid_bytes;
+                    // The fake actually compares the complete retained byte copy.
+                    assert_eq!(
+                        *bytes,
+                        *self.owner.resolve::<Vec<u8>>(o.destination()).unwrap()
+                    );
+                    (
+                        valid,
+                        o.destination_span().bytes(),
+                        checksum(&bytes[..valid as usize]),
+                        Some(o.destination()),
+                    )
+                }
                 _ => panic!(),
             };
             if let Some(d) = device {
@@ -272,9 +304,9 @@ impl TransferEngine for Transfers {
                 segments: vec![SegmentCompletion {
                     segment: 0,
                     status: ItemStatus::Complete,
-                    valid_bytes: host.valid,
-                    io_bytes: host.storage_bytes(),
-                    checksum: Some(checksum(host.bytes().unwrap())),
+                    valid_bytes: valid,
+                    io_bytes: storage,
+                    checksum: Some(hash),
                     epochs: t.epochs,
                     producer_done: true,
                     consumer_fenced: true,
@@ -374,12 +406,14 @@ impl TransferEngine for Transfers {
         if e.cancelled {
             return Err(Error::Cancelled);
         }
-        let TransferOp::H2d(o) = &e.ops[item as usize] else {
-            return Err(Error::NotReady);
+        let device = match &e.ops[item as usize] {
+            TransferOp::H2d(o) => &o.device,
+            TransferOp::P2p(o) => o.destination(),
+            _ => return Err(Error::NotReady),
         };
         let v = self
             .owner
-            .ready_view(&o.device, &c, &expected(&bundle()), current)?;
+            .ready_view(device, &c, &expected(&bundle()), current)?;
         e.published = true;
         Ok(v)
     }
@@ -408,12 +442,24 @@ impl TransferEngine for Transfers {
             return Err(Error::Busy);
         }
         let e = self.entries.remove(t).unwrap();
-        if e.ops.iter().any(|o| matches!(o, TransferOp::H2d(_))) {
+        if e.ops
+            .iter()
+            .any(|o| matches!(o, TransferOp::H2d(_) | TransferOp::P2p(_)))
+        {
             self.owner.retire_binding(t)?;
         }
         for o in e.ops {
-            if let TransferOp::H2d(o) = o {
-                self.owner.release(&o.device)?;
+            match o {
+                TransferOp::H2d(o) => self.owner.release(&o.device)?,
+                TransferOp::P2p(o) => {
+                    self.owner.release(o.destination())?;
+                    if o.source().device() == 0 {
+                        self.owner.release(o.source())?;
+                    } else {
+                        self.peer_owner.release(o.source())?;
+                    }
+                }
+                _ => (),
             }
         }
         Ok(())
@@ -421,6 +467,7 @@ impl TransferEngine for Transfers {
 }
 struct Backing {
     stored: StateBundle,
+    route: Option<Tier>,
     gov: Shared,
     available: Rc<RefCell<bool>>,
 }
@@ -443,6 +490,7 @@ impl KvBacking<Transfers> for Backing {
                 Tier::LocalGpu(0),
             ]
             .iter()
+            .filter(|&&tier| self.route.is_none_or(|r| r == tier))
             .map(|&tier| Lookup {
                 tier,
                 storage_bytes: 128,
@@ -456,16 +504,59 @@ impl KvBacking<Transfers> for Backing {
         if !*self.available.borrow() {
             return Err(Error::NotFound);
         }
-        let charge = self
-            .gov
-            .lock()
-            .unwrap()
-            .reserve(&request(128, Priority::MandatoryActive))?;
+        let mut r = request(128, Priority::MandatoryActive);
+        if let Tier::LocalGpu(d) | Tier::PeerGpu(d) = p.source {
+            r.bytes.pageable = 0;
+            r.bytes.device[d as usize] = 128;
+            if matches!(p.source, Tier::PeerGpu(_)) {
+                r.bytes.peer[d as usize] = 128;
+            }
+        }
+        let charge = self.gov.lock().unwrap().reserve(&r)?;
         Ok(BlockLease {
             bundle: self.stored.clone(),
             tier: p.source,
             charge,
         })
+    }
+    fn prepare_direct(
+        &mut self,
+        b: &BlockLease,
+        p: &TierAdmission,
+        r: &TierReservation,
+        t: &mut Transfers,
+    ) -> Result<Vec<TransferOp<Host>>> {
+        let source = match b.tier {
+            Tier::LocalGpu(d) | Tier::PeerGpu(d) => d,
+            _ => return Err(Error::Unsupported),
+        };
+        let mut ops = vec![];
+        for bytes in payloads() {
+            let owner = if source == 0 {
+                &mut t.owner
+            } else {
+                &mut t.peer_owner
+            };
+            let src = owner.register(p.epochs.src_gen, 64, Box::new(bytes.clone()), &b.charge)?;
+            let producer = FenceId {
+                issuer: owner.issuer(),
+                owner: source,
+                generation: p.epochs.src_gen,
+                sequence: 1,
+            };
+            let dst = t
+                .owner
+                .register(p.epochs.dst_gen, 64, Box::new(bytes), &r.charge)?;
+            ops.push(TransferOp::P2p(ContiguousCopy::new(
+                src,
+                dst,
+                ContiguousSpan::new(0, 64, 64)?,
+                ContiguousSpan::new(0, 64, 64)?,
+                p.epochs,
+                producer,
+            )?));
+        }
+        Ok(ops)
     }
     fn prepare_prefetch(
         &mut self,
@@ -519,8 +610,17 @@ impl KvBacking<Transfers> for Backing {
     }
     fn reclaim_unsubmitted(&mut self, ops: Vec<TransferOp<Host>>, transfer: &mut Transfers) {
         for op in ops {
-            if let TransferOp::H2d(op) = op {
-                transfer.owner.release(&op.device).unwrap();
+            match op {
+                TransferOp::H2d(op) => transfer.owner.release(&op.device).unwrap(),
+                TransferOp::P2p(op) => {
+                    transfer.owner.release(op.destination()).unwrap();
+                    if op.source().device() == 0 {
+                        transfer.owner.release(op.source()).unwrap();
+                    } else {
+                        transfer.peer_owner.release(op.source()).unwrap();
+                    }
+                }
+                _ => (),
             }
         }
     }
@@ -544,6 +644,7 @@ fn fixture() -> (H, Shared, Rc<RefCell<Controls>>, Rc<RefCell<bool>>) {
         Hierarchy::new(
             Backing {
                 stored: bundle(),
+                route: None,
                 gov: gov.clone(),
                 available: available.clone(),
             },
@@ -1405,4 +1506,230 @@ fn unknown_shutdown_retains_source_and_reservation_pins() {
     drop(h);
     assert_eq!(g.lock().unwrap().release(&r.charge), Err(Error::Busy));
     assert_eq!(g.lock().unwrap().used().device[0], 128);
+}
+
+#[test]
+fn direct_local_and_peer_paths_skip_host_stage_but_not_fences() {
+    for source in [Tier::LocalGpu(0), Tier::PeerGpu(1)] {
+        let (mut h, g, c, _) = fixture();
+        let mut p = plan(&bundle());
+        p.source = source;
+        let r = h.admit(p).unwrap();
+        let ticket = h.prefetch(&r).unwrap();
+        assert_eq!(h.phase(&r), Ok(Phase::Loading));
+        assert_eq!(h.transfer.as_ref().unwrap().entries.len(), 1);
+        assert!(
+            h.transfer.as_ref().unwrap().entries[&ticket]
+                .ops
+                .iter()
+                .all(|op| matches!(op, TransferOp::P2p(_)))
+        );
+        assert_eq!(h.load(&r), Err(Error::NotReady));
+        c.borrow_mut().fenced = false;
+        assert_eq!(h.advance(&r, epochs()), Ok(Phase::Loading));
+        assert!(h.ready(&r, &program(), epochs()).is_err());
+        c.borrow_mut().fenced = true;
+        assert_eq!(h.advance(&r, epochs()), Ok(Phase::Ready));
+        assert_eq!(h.ready(&r, &program(), epochs()).unwrap().tier, source);
+        finish(&mut h, &r, &c);
+        assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+    }
+}
+
+#[test]
+fn owned_prefix_seal_copies_committed_bytes_not_an_active_alias() {
+    use hostprefix::SealedImage;
+    let mut active = ActiveEpoch::new(epochs(), 0);
+    let mut b = bundle();
+    let next = active.fork(1).unwrap();
+    b.id.epoch = next.state;
+    assert!(SealedImage::copy_committed(&active, &b, &payloads()).is_err());
+    assert_eq!(active.commit(next, 2), Err(Error::Incomplete));
+    active.commit(next, 1).unwrap();
+    let mut bytes = payloads();
+    let sealed = SealedImage::copy_committed(&active, &b, &bytes).unwrap();
+    assert_ne!(sealed.payloads()[0].as_ptr(), bytes[0].as_ptr());
+    bytes[0][0] ^= 255;
+    active.rollback(0).unwrap();
+    assert!(active.require(&b).is_err());
+    sealed.bundle().verify(sealed.payloads()).unwrap();
+    assert_eq!(sealed.bundle().id.epoch, 0);
+    assert_eq!(sealed.bundle().committed_high_water, 1);
+    assert!(b.verify(&bytes).is_err());
+}
+
+#[test]
+fn fake_scheduler_concurrent_churn_cancel_rollback_and_quota_no_double_charge() {
+    use scheduler::*;
+    let (mut h, g, c, _) = fixture();
+    h.backing.as_mut().unwrap().route = Some(Tier::Nvme);
+    let mut s = Scheduler::new(h, 3);
+    let a = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    let b = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    let d = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    assert_eq!(
+        s.enqueue(plan(&bundle()), PrefetchPolicy::Wait),
+        Err(Error::Capacity)
+    );
+    c.borrow_mut().pending = true;
+    s.tick(1, &[], |_| epochs()).unwrap();
+    assert_eq!(g.lock().unwrap().used().device[0], 128);
+    s.tick(2, &[], |_| epochs()).unwrap();
+    assert_eq!(g.lock().unwrap().used().device[0], 256);
+    assert!(s.consume(a, epochs(), |_| ()).is_err());
+    s.cancel(a).unwrap();
+    assert_eq!(s.release(a), Err(Error::Busy));
+    s.cancel(d).unwrap(); // uncharged queued cancel
+    assert_eq!(g.lock().unwrap().used().device[0], 256);
+    let changed = Epochs {
+        state: epochs().state + 1,
+        ..epochs()
+    };
+    let events = s.tick(3, &[], |_| changed).unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|(id, result)| *id == b && *result == Err(Error::StaleEpoch))
+    );
+    c.borrow_mut().pending = false; // late success cannot resurrect either request
+    assert!(s.consume(a, epochs(), |_| ()).is_err());
+    assert!(s.consume(b, epochs(), |_| ()).is_err());
+    c.borrow_mut().retired = true;
+    s.release(a).unwrap();
+    s.release(b).unwrap();
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+    // Repeated ticks do not re-reserve. Pressure holds the head uncharged.
+    let pressure = g
+        .lock()
+        .unwrap()
+        .reserve(&BudgetRequest {
+            bytes: budget(4096),
+            ..request(0, Priority::MandatoryActive)
+        })
+        .unwrap();
+    let id = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    for _ in 0..10 {
+        assert!(
+            s.tick(4, &[], |_| epochs())
+                .unwrap()
+                .contains(&(id, Ok(Progress::Queued)))
+        );
+    }
+    assert_eq!(g.lock().unwrap().used(), budget(4096));
+    g.lock().unwrap().release(&pressure).unwrap();
+    s.tick(5, &[], |_| epochs()).unwrap();
+    s.tick(6, &[], |_| epochs()).unwrap();
+    c.borrow_mut().fenced = false;
+    s.tick(7, &[], |_| epochs()).unwrap();
+    assert!(s.consume(id, epochs(), |_| ()).is_err());
+    c.borrow_mut().fenced = true;
+    s.tick(8, &[], |_| epochs()).unwrap();
+    assert_eq!(s.consume(id, epochs(), |b| b.bundle.id.end), Ok(1));
+    assert_eq!(s.cancel(id), Ok(CancelState::AlreadyPublished));
+    s.release(id).unwrap();
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+}
+
+#[test]
+fn scheduler_priority_deadline_fifo_bounded_fairness_and_timeout() {
+    use scheduler::*;
+    let (mut h, g, c, _) = fixture();
+    h.backing.as_mut().unwrap().route = Some(Tier::Nvme);
+    let mut s = Scheduler::new(h, 8);
+    let mut ids = vec![];
+    for priority in [
+        Priority::Backup,
+        Priority::Demand,
+        Priority::MandatoryActive,
+        Priority::OptionalPrefetch,
+        Priority::AdmittedRestore,
+    ] {
+        let mut p = plan(&bundle());
+        p.request.priority = priority;
+        ids.push((priority, s.enqueue(p, PrefetchPolicy::Wait).unwrap()));
+    }
+    ids.sort();
+    for (_, id) in ids {
+        assert!(
+            s.tick(1, &[], |_| epochs())
+                .unwrap()
+                .contains(&(id, Ok(Progress::Phase(Phase::Reserved))))
+        );
+        s.cancel(id).unwrap();
+        c.borrow_mut().retired = true;
+        s.release(id).unwrap();
+    }
+    let id = s
+        .enqueue(plan(&bundle()), PrefetchPolicy::Timeout(Deadline(3)))
+        .unwrap();
+    s.tick(1, &[], |_| epochs()).unwrap();
+    assert!(
+        s.tick(3, &[], |_| epochs())
+            .unwrap()
+            .contains(&(id, Err(Error::Deadline)))
+    );
+    assert!(s.consume(id, epochs(), |_| ()).is_err());
+    s.release(id).unwrap();
+    let id = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    assert!(
+        s.tick(100, &[], |_| epochs())
+            .unwrap()
+            .contains(&(id, Err(Error::Deadline)))
+    );
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+}
+
+#[test]
+fn synchronous_residency_guard_charges_once_and_keeps_host_twin_on_promotion() {
+    use hostprefix::ResidentCharge;
+    let g = Arc::new(Mutex::new(governor(1024, TierBudget::zero(2))));
+    let source = ResidentCharge::reserve(g.clone(), &request(128, Priority::Backup)).unwrap();
+    assert_eq!(g.lock().unwrap().used().pageable, 128);
+    let mut r = request(0, Priority::AdmittedRestore);
+    r.bytes.device[0] = 128;
+    let target = ResidentCharge::reserve(g.clone(), &r).unwrap();
+    let pin = source.lease().pin().unwrap();
+    assert_eq!(g.lock().unwrap().used().device[0], 128);
+    assert_eq!(g.lock().unwrap().used().pageable, 128);
+    drop(pin);
+    drop(target);
+    assert_eq!(g.lock().unwrap().used().device[0], 0);
+    assert_eq!(g.lock().unwrap().used().pageable, 128);
+    drop(source);
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+}
+
+#[test]
+fn recompute_load_cross_product_fixture_is_not_a_runtime_default() {
+    use policy::*;
+    let csv = include_str!("../../../../research/spill-b-20260919/fixtures/recompute-load.csv");
+    let mut count = 0;
+    let mut load = 0;
+    for row in csv.lines().skip(1) {
+        let cells: Vec<_> = row.split(',').collect();
+        let tokens: u64 = cells[0].parse().unwrap();
+        let bpt: u64 = cells[1].parse().unwrap();
+        let decision = recompute_vs_load(
+            tokens,
+            tokens * bpt,
+            cells[2].parse().unwrap(),
+            cells[3].parse().unwrap(),
+            cells[4].parse().unwrap(),
+            false,
+            true,
+        )
+        .unwrap();
+        let expected = match cells[5] {
+            "load" => {
+                load += 1;
+                RestoreDecision::Load
+            }
+            "recompute" => RestoreDecision::Recompute,
+            _ => panic!("unknown fixture verdict"),
+        };
+        assert_eq!(decision, expected, "{row}");
+        count += 1;
+    }
+    assert_eq!(count, 48);
+    assert!(load > 0 && load < count);
 }
