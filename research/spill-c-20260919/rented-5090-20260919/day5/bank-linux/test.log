@@ -1,0 +1,54 @@
+   Compiling memra-tier v0.138.0 (/root/wt-c/crates/memra-tier)
+    Finished `release` profile [optimized] target(s) in 3.09s
+     Running tests/bank/main.rs (target/release/deps/bank-8487ed0f0f3c4912)
+
+running 46 tests
+test alternate_layout_cannot_resurrect_masked_original_identity ... ok
+test actual_q2_q3_nvfp4_codes_are_preserved_without_kernel_promotion ... ok
+test bounds_wrong_ids_overflow_and_device_request_fail_closed ... ok
+test all_three_epochs_cross_service_and_publish_replay_refuse ... ok
+test borrowed_view_and_alias_survive_busy_retirement ... ok
+test day4::patch_v2_source_bounds_preserve_split_offset_zero_without_substitution ... ok
+test cancel_retains_charge_until_retirement_and_tombstone_ack ... ok
+test day4::bank_source_installation_refuses_missing_ambiguous_and_wrong_layout ... ok
+test day4::slru_bank_residency_charges_retained_aliases_and_metadata ... ok
+test discontiguous_row_scale_planes_are_required_and_exact ... ok
+test failed_transfer_completion_enumerates_all_records_and_segments ... ok
+test frozen_bank_cancel_schedule_runs_on_implementation ... ok
+test host_bridge::bridge_uses_per_record_metadata_and_preserves_existing_scale_planes ... ok
+test frozen_row_order_schedule_runs_on_implementation ... ok
+test host_exps_uniform_mixed_original_mask_and_split_offsets ... ok
+test integration::governor_rearrival_cannot_starve_backlogged_tenant ... ok
+test integration::ngram_hint_is_byte_bounded_deduplicated_and_domain_separate ... ok
+test missing_or_extra_checksums_and_false_uniform_declarations_refuse ... ok
+test original_masks_foreign_catalog_and_wrong_domain_refuse_before_reads ... ok
+test ple_rows_native::native_ple_rows_legacy_output_and_partial_admission ... ok
+test read_planning_clamps_tail_but_refuses_truncated_payload_and_invalid_granularity ... ok
+test ple_rows_native::native_ple_rows_refuses_invalid_bounds_and_budget_without_leak ... ok
+test pinned_ple_test_oracle_matches_native_function_bodies ... ok
+test integration::shared_governor_hints_cannot_starve_mandatory_loads ... ok
+test predictions_are_bounded_mask_checked_and_not_demand_heat ... ok
+test ple_rows_native::native_ple_rows_bits_duplicates_forced_misses_and_drained_budget ... ok
+test overlapping_cache_hit_tickets_hold_same_allocation_until_all_retire ... ok
+test revision_v11_rows_complete_cancel ... ok
+test integration::object_transfer_experts_partial_failure_never_publishes_successful_sibling ... ok
+test row_release_busy_preserves_retry_after_partial_alias_retirement ... ok
+test shared_budget_atomic_refusal_and_tombstone_bound ... ok
+test refused_publication_retains_owned_charge_until_explicit_retirement ... ok
+test short_and_corrupt_reads_never_publish_partial_batch ... ok
+test uniform_proof_checks_actual_source_even_homogeneous_subset ... ok
+test revision_v11_bank_cancel_identity_uniform ... ok
+test sparse_amplification_and_default_policy_are_explicit_arithmetic_not_io_benchmarks ... ok
+test revision_v11_corrupt_sibling_and_row_namespace ... ok
+test zero_small_full_cache_preserves_exact_bytes_and_scales ... ok
+test synthetic_ple_trace_preserves_chunk_rewind_eos_and_native_expansion_bits ... ok
+test revision_v11_rows_bytes_dedup_bounded_straddles ... ok
+test rows_straddles_duplicates_pool_smaller_than_batch_and_retirement ... ok
+test integration::object_reader_tail_rows_8191 ... ok
+test integration::object_reader_tail_rows_8193 ... ok
+test integration::object_store_transfer_rows_forced_misses_order_and_retirement ... ok
+test day4::slru_matches_recorded_native_semantics_synthetic_trace ... ok
+test day4::slru_banked_residency_serial_trace_matches_oracle_and_releases_charge ... ok
+
+test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
