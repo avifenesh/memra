@@ -167,7 +167,11 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                         .enumerate()
                         .map(|(j, _)| SegmentCompletion {
                             segment: j as u32,
-                            status: ItemStatus::Failed,
+                            status: if error == Some(Error::Cancelled) {
+                                ItemStatus::Cancelled
+                            } else {
+                                ItemStatus::Failed
+                            },
                             valid_bytes: 0,
                             io_bytes: 0,
                             checksum: None,
