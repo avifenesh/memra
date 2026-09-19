@@ -1,0 +1,17 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+warning: struct `HostView` is never constructed
+ --> crates/memra-engine/src/banked_residency.rs:8:8
+  |
+8 | struct HostView<'a>(&'a HostExps);
+  |        ^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `map_host_exps` is never used
+  --> crates/memra-engine/src/banked_residency.rs:36:8
+   |
+36 | pub fn map_host_exps(
+   |        ^^^^^^^^^^^^^
+
+warning: `memra-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 0.05s
