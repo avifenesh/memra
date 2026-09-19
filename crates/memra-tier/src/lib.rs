@@ -9,8 +9,8 @@ pub mod contracts;
 
 pub mod io;
 pub mod object_store;
+pub mod peer;
+pub mod placement;
 pub mod pool;
 pub mod telemetry;
 pub mod tier;
-pub mod peer;
-pub mod placement;
