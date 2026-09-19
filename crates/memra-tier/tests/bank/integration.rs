@@ -409,3 +409,30 @@ fn object_transfer_experts_partial_failure_never_publishes_successful_sibling() 
         assert_eq!(g.borrow().used(), TierBudget::zero(2));
     }
 }
+
+#[test]
+fn governor_rearrival_cannot_starve_backlogged_tenant() {
+    use memra_tier::tier::QueueOutcome;
+    let g = shared(100_000, 0);
+    let b = request(1, Priority::Demand);
+    let mut a = b.clone();
+    a.tenant = [22; 32];
+    let b1 = g.borrow_mut().enqueue(b.clone()).unwrap();
+    let b2 = g.borrow_mut().enqueue(b).unwrap();
+    let a3 = g.borrow_mut().enqueue(a.clone()).unwrap();
+    for want in [b1, a3] {
+        let Some(QueueOutcome::Admitted(id, charge)) = g.borrow_mut().dispatch().unwrap() else {
+            panic!()
+        };
+        assert_eq!(id, want);
+        g.borrow_mut().release(&charge).unwrap();
+    }
+    let a4 = g.borrow_mut().enqueue(a).unwrap();
+    for want in [b2, a4] {
+        let Some(QueueOutcome::Admitted(id, charge)) = g.borrow_mut().dispatch().unwrap() else {
+            panic!()
+        };
+        assert_eq!(id, want);
+        g.borrow_mut().release(&charge).unwrap();
+    }
+}

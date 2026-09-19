@@ -1818,3 +1818,88 @@ fn scheduler_equal_priority_deadline_alternates_tenants_before_second_fifo_turn(
     }
     assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
 }
+
+#[test]
+fn scheduler_rearrival_cannot_starve_backlogged_tenant() {
+    use scheduler::*;
+    let (mut h, g, c, _) = fixture();
+    let mut other = bundle();
+    other.program.tenant_salt = [77; 32];
+    other.id = KvBlockId::new(&other.program, [0; 32], &[42], 0, 0, 0, 7).unwrap();
+    h.backing.as_mut().unwrap().others.push(other.clone());
+    h.backing.as_mut().unwrap().route = Some(Tier::Nvme);
+    let mut s = Scheduler::new(h, 3);
+    let first = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    let last = s.enqueue(plan(&bundle()), PrefetchPolicy::Wait).unwrap();
+    let mut p = plan(&other);
+    p.request.tenant = other.program.tenant_salt;
+    let middle = s.enqueue(p.clone(), PrefetchPolicy::Wait).unwrap();
+    for id in [first, middle] {
+        assert!(
+            s.tick(1, &[], |_| epochs())
+                .unwrap()
+                .contains(&(id, Ok(Progress::Phase(Phase::Reserved))))
+        );
+        s.cancel(id).unwrap();
+        c.borrow_mut().retired = true;
+        s.release(id).unwrap();
+    }
+    let again = s.enqueue(p, PrefetchPolicy::Wait).unwrap();
+    for id in [last, again] {
+        assert!(
+            s.tick(1, &[], |_| epochs())
+                .unwrap()
+                .contains(&(id, Ok(Progress::Phase(Phase::Reserved))))
+        );
+        s.cancel(id).unwrap();
+        c.borrow_mut().retired = true;
+        s.release(id).unwrap();
+    }
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+}
+
+#[test]
+fn scheduler_eviction_floor_protects_backlog_under_priority_churn() {
+    use scheduler::*;
+    let (mut h, g, c, _) = fixture();
+    h.backing.as_mut().unwrap().route = Some(Tier::Nvme);
+    let others: Vec<_> = (100..110)
+        .map(|tenant| {
+            let mut b = bundle();
+            b.program.tenant_salt = [tenant; 32];
+            b.id = KvBlockId::new(&b.program, [0; 32], &[42], 0, 0, 0, 7).unwrap();
+            h.backing.as_mut().unwrap().others.push(b.clone());
+            b
+        })
+        .collect();
+    let mut s = Scheduler::new(h, 3);
+    let mut b = plan(&bundle());
+    b.request.priority = Priority::Demand;
+    let b1 = s.enqueue(b.clone(), PrefetchPolicy::Wait).unwrap();
+    let b2 = s.enqueue(b, PrefetchPolicy::Wait).unwrap();
+    let serve = |s: &mut Scheduler<_>, id| {
+        let events = s.tick(1, &[], |_| epochs()).unwrap();
+        assert!(
+            events.contains(&(id, Ok(Progress::Phase(Phase::Reserved)))),
+            "want {id}, got {events:?}"
+        );
+        s.cancel(id).unwrap();
+        c.borrow_mut().retired = true;
+        s.release(id).unwrap();
+    };
+    serve(&mut s, b1);
+    for other in &others {
+        let mut p = plan(other);
+        p.request.tenant = other.program.tenant_salt;
+        p.request.priority = Priority::MandatoryActive;
+        let id = s.enqueue(p, PrefetchPolicy::Wait).unwrap();
+        serve(&mut s, id);
+    }
+    let mut p = plan(&others[0]);
+    p.request.tenant = others[0].program.tenant_salt;
+    p.request.priority = Priority::Demand;
+    let again = s.enqueue(p, PrefetchPolicy::Wait).unwrap();
+    serve(&mut s, b2);
+    serve(&mut s, again);
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+}
