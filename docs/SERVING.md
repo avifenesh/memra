@@ -1842,6 +1842,20 @@ rejected_allocs` in `/metrics` (the `*_ms` fields are cumulative copy wall-time,
 tick-stall receipt), plus per-copy `[prefix-host]` log lines. See the
 [flag catalog](FLAGS.md) rows for arms, receipts pointers, and the pending pod battery.
 
+**Device memory ownership:** physical admission, driver headroom recovery, OOM teardown
+and the runtime trim handle use the model's primary, PP, Step TP and GLM TP owners.
+Admission reserves lazy rank state, prompt-shaped GLM peer prefill workspace and each
+device's transient workspace floor;
+materialized state is already reflected in that device's live occupancy. Trim fences every
+owning stream before releasing each physical device's default-pool cache once. Its response
+retains the pool entry counts and adds `devices`: `device`, `reclaimed_bytes`,
+`still_owned_bytes` (live default-pool allocations), `pool_reserved_bytes`,
+`pool_cached_bytes`, `driver_free_bytes`, and `synchronization_errors`. Active sessions,
+model allocations and pinned prefix source leases remain owned. A failed fence is reported,
+and driver/query limitations are not evidence of successful hardware qualification.
+The implementation and outstanding native gates are recorded in
+[the device-ownership validation record](../research/glm-tp-device-ownership-20260920/VALIDATION.md).
+
 **Tenant lifecycle purge (lane/kv-tenancy-compaction-20260831, tiering spec §0.5):** key
 revocation or tenant deletion must not leave that tenant's prompt bytes parked in pinned
 host RAM. The engine exposes `RuntimeHandles.purge` (`PurgeHandle::purge_tenant(tenant)`)

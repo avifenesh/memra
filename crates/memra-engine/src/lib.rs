@@ -101,6 +101,8 @@ pub mod kda;
 /// oracle for the MLA kernel family (`research/mla-bringup-20260801/DESIGN.md`). No CUDA deps.
 pub mod mla;
 pub mod mla_ffi;
+mod model_memory;
+mod model_memory_plan;
 pub mod moe_sel_dump;
 pub mod moesd;
 pub mod o2_band;

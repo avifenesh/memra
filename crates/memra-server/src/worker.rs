@@ -15,6 +15,7 @@
 //! interleave: a long generation and a freshly-admitted one make forward progress in the same loop,
 //! so the second produces tokens before the first finishes (not serialized end-to-end).
 
+mod device_memory;
 mod host_glm;
 mod host_memory;
 
@@ -1880,14 +1881,27 @@ pub enum Cmd {
     },
 }
 
-/// What `Cmd::TrimPools` freed, by pool (entry counts, not bytes — the device memory
-/// returns to CUDA on drop and shows up in `nvidia-smi` free within a tick).
+/// Evictable entries dropped and allocator occupancy after fencing every model owner.
 #[derive(Debug, serde::Serialize)]
 pub struct TrimReport {
     pub reuse_entries: usize,
     pub spec_reuse_entries: usize,
     pub dspark_reuse_entries: usize,
     pub prefix_entries: usize,
+    pub devices: Vec<DeviceTrimReport>,
+}
+
+/// Default-pool accounting, once per physical device. Live allocations include active
+/// sessions, model state and pinned source leases; trim never releases those bytes.
+#[derive(Debug, serde::Serialize)]
+pub struct DeviceTrimReport {
+    pub device: usize,
+    pub reclaimed_bytes: usize,
+    pub still_owned_bytes: usize,
+    pub pool_reserved_bytes: usize,
+    pub pool_cached_bytes: usize,
+    pub driver_free_bytes: Option<usize>,
+    pub synchronization_errors: Vec<String>,
 }
 
 /// What `Cmd::PurgeTenantHost` removed (lane/kv-tenancy-compaction-20260831). `host_*`
@@ -5588,8 +5602,9 @@ struct PpStageAdmission {
 struct AdmissionDeviceRequirement {
     device: usize,
     session_bytes: usize,
-    tp_kv_bytes: usize,
-    pending_tp_kv_bytes: usize,
+    state_bytes: usize,
+    pending_state_bytes: usize,
+    workspace_bytes: usize,
     reserve_bytes: usize,
     boundary_bytes: usize,
 }
@@ -5597,8 +5612,9 @@ struct AdmissionDeviceRequirement {
 impl AdmissionDeviceRequirement {
     fn required(self) -> usize {
         self.session_bytes
-            .saturating_add(self.tp_kv_bytes)
-            .saturating_add(self.pending_tp_kv_bytes)
+            .saturating_add(self.state_bytes)
+            .saturating_add(self.pending_state_bytes)
+            .saturating_add(self.workspace_bytes)
             .saturating_add(self.reserve_bytes)
             .saturating_add(self.boundary_bytes)
     }
@@ -5609,11 +5625,11 @@ impl AdmissionDeviceRequirement {
         self.boundary_bytes = self.boundary_bytes.saturating_add(stage.boundary_bytes);
     }
 
-    fn add_tp_kv(&mut self, bytes: usize, pending: bool, reserve_bytes: usize) {
+    fn add_state(&mut self, bytes: usize, pending: bool, reserve_bytes: usize) {
         if pending {
-            self.pending_tp_kv_bytes = self.pending_tp_kv_bytes.saturating_add(bytes);
+            self.pending_state_bytes = self.pending_state_bytes.saturating_add(bytes);
         } else {
-            self.tp_kv_bytes = self.tp_kv_bytes.saturating_add(bytes);
+            self.state_bytes = self.state_bytes.saturating_add(bytes);
         }
         // One device-local transient floor covers the stage walker and its rank-local attention
         // work. Co-located PP stages retain their existing additive reserve above.
@@ -5645,8 +5661,9 @@ fn pp_device_requirements(
             requirements.push(AdmissionDeviceRequirement {
                 device,
                 session_bytes: stage.session_bytes,
-                tp_kv_bytes: 0,
-                pending_tp_kv_bytes: 0,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
                 reserve_bytes: stage.reserve_bytes,
                 boundary_bytes: stage.boundary_bytes,
             });
@@ -5655,7 +5672,7 @@ fn pp_device_requirements(
     requirements
 }
 
-fn add_tp_kv_requirements(
+fn add_state_requirements(
     requirements: &mut Vec<AdmissionDeviceRequirement>,
     charges: &[StepTpKvDeviceAdmission],
     pending: bool,
@@ -5666,17 +5683,18 @@ fn add_tp_kv_requirements(
             .iter_mut()
             .find(|requirement| requirement.device == charge.device)
         {
-            existing.add_tp_kv(charge.bytes, pending, reserve_bytes);
+            existing.add_state(charge.bytes, pending, reserve_bytes);
         } else {
             let mut requirement = AdmissionDeviceRequirement {
                 device: charge.device,
                 session_bytes: 0,
-                tp_kv_bytes: 0,
-                pending_tp_kv_bytes: 0,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
                 reserve_bytes: 0,
                 boundary_bytes: 0,
             };
-            requirement.add_tp_kv(charge.bytes, pending, reserve_bytes);
+            requirement.add_state(charge.bytes, pending, reserve_bytes);
             requirements.push(requirement);
         }
     }
@@ -5687,8 +5705,9 @@ fn parallel_device_requirements(
     primary_cost: usize,
     reserve_bytes: usize,
     pp: Option<(&[usize], &[PpStageAdmission])>,
-    request_tp_kv: &[StepTpKvDeviceAdmission],
-    pending_tp_kv: &[StepTpKvDeviceAdmission],
+    request_state: &[StepTpKvDeviceAdmission],
+    pending_state: &[StepTpKvDeviceAdmission],
+    peer_workspace: &[StepTpKvDeviceAdmission],
 ) -> Vec<AdmissionDeviceRequirement> {
     let mut requirements = if let Some((devices, stages)) = pp {
         pp_device_requirements(devices, stages)
@@ -5696,19 +5715,37 @@ fn parallel_device_requirements(
         vec![AdmissionDeviceRequirement {
             device: primary_device,
             session_bytes: primary_cost,
-            tp_kv_bytes: 0,
-            pending_tp_kv_bytes: 0,
+            state_bytes: 0,
+            pending_state_bytes: 0,
+            workspace_bytes: 0,
             reserve_bytes,
             boundary_bytes: 0,
         }]
     };
-    add_tp_kv_requirements(&mut requirements, request_tp_kv, false, reserve_bytes);
-    add_tp_kv_requirements(&mut requirements, pending_tp_kv, true, reserve_bytes);
+    add_state_requirements(&mut requirements, request_state, false, reserve_bytes);
+    add_state_requirements(&mut requirements, pending_state, true, reserve_bytes);
+    for charge in peer_workspace {
+        // Install participation/reserve without treating workspace as pending cache state.
+        add_state_requirements(
+            &mut requirements,
+            &[StepTpKvDeviceAdmission {
+                device: charge.device,
+                bytes: 0,
+            }],
+            false,
+            reserve_bytes,
+        );
+        let requirement = requirements
+            .iter_mut()
+            .find(|r| r.device == charge.device)
+            .unwrap();
+        requirement.workspace_bytes = requirement.workspace_bytes.saturating_add(charge.bytes);
+    }
     requirements.sort_unstable_by_key(|requirement| requirement.device);
     requirements
 }
 
-fn merge_tp_kv_charges(
+fn merge_state_charges(
     totals: &mut Vec<StepTpKvDeviceAdmission>,
     charges: &[StepTpKvDeviceAdmission],
 ) {
@@ -5722,7 +5759,7 @@ fn merge_tp_kv_charges(
     totals.sort_unstable_by_key(|charge| charge.device);
 }
 
-fn active_unmaterialized_tp_kv(
+fn active_unmaterialized_state(
     active: &[Session],
     loaded: &HashMap<String, LoadedModel>,
 ) -> Result<Vec<StepTpKvDeviceAdmission>, String> {
@@ -5744,8 +5781,8 @@ fn active_unmaterialized_tp_kv(
         };
         let charges = model
             .model
-            .step_tp_unmaterialized_kv_bytes(Some(cache), cache.max_ctx)?;
-        merge_tp_kv_charges(&mut totals, &charges);
+            .unmaterialized_state_bytes(Some(cache), cache.max_ctx)?;
+        merge_state_charges(&mut totals, &charges);
     }
     Ok(totals)
 }
@@ -5909,30 +5946,48 @@ fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>
     if floor == 0 {
         return;
     }
-    for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
-        let Ok((driver_free, _)) = dev_engine.ctx().mem_get_info() else {
-            return;
-        };
-        let (reserved, used) = dev_engine.pool_reserved_used();
-        let Some(keep) = driver_headroom_trim_keep(driver_free, reserved, used, floor) else {
-            return;
-        };
-        let released = dev_engine.pool_trim_to(keep);
-        let after = dev_engine
-            .ctx()
-            .mem_get_info()
-            .map(|(f, _)| f)
-            .unwrap_or(driver_free);
-        eprintln!(
-            "[admit-trim] dev{device} driver free {}MB < floor {}MB with {}MB cached in the \
-             pool: trimmed {}MB (driver free now {}MB) before {why}",
-            driver_free >> 20,
-            floor >> 20,
-            reserved.saturating_sub(used) >> 20,
-            released >> 20,
-            after >> 20,
-        );
-    });
+    let owners = model_device_engines(engine, loaded);
+    let tight_devices: std::collections::HashSet<_> = owners
+        .iter()
+        .filter_map(|owner| {
+            let (free, _) = owner.ctx().mem_get_info().ok()?;
+            // Pending frees can still read as used until every owning stream is drained.
+            (free < floor).then(|| owner.ctx().ordinal())
+        })
+        .collect();
+    let tight_owners: Vec<_> = owners
+        .into_iter()
+        .filter(|owner| tight_devices.contains(&owner.ctx().ordinal()))
+        .collect();
+    device_memory::reclaim(
+        &tight_owners,
+        |owner| owner.ctx().ordinal(),
+        |owner| owner.stream().synchronize().map_err(|err| err.to_string()),
+        |device, dev_engine, errors| {
+            for err in errors {
+                eprintln!("[admit-trim] dev{device} synchronization failed before {why}: {err}");
+            }
+            let Ok((driver_free, _)) = dev_engine.ctx().mem_get_info() else {
+                return;
+            };
+            let (reserved, used) = dev_engine.pool_reserved_used();
+            let Some(keep) = driver_headroom_trim_keep(driver_free, reserved, used, floor) else {
+                return;
+            };
+            let released = dev_engine.pool_trim_to(keep);
+            let (still_reserved, still_owned) = dev_engine.pool_reserved_used();
+            let after = dev_engine
+                .ctx()
+                .mem_get_info()
+                .map(|(f, _)| f)
+                .unwrap_or(driver_free);
+            eprintln!(
+                "[admit-trim] dev{device} driver_free_bytes={driver_free} floor_bytes={floor} \
+                 reclaimed_bytes={released} still_owned_bytes={still_owned} \
+                 pool_reserved_bytes={still_reserved} driver_free_after={after} before {why}",
+            );
+        },
+    );
 }
 
 fn step_oom_retries() -> u32 {
@@ -14251,11 +14306,13 @@ pub fn run(
         // answer the waiting admin caller. In-flight sessions and pinned prefix-cache
         // leases are untouched; the freed device memory returns to CUDA on drop.
         for tx in pending_trims.drain(..) {
-            let report = TrimReport {
+            synchronize_model_devices(&engine, &loaded, "admin-trim-before-drop");
+            let mut report = TrimReport {
                 reuse_entries: reuse.values().map(Vec::len).sum(),
                 spec_reuse_entries: spec_reuse.values().map(Vec::len).sum(),
                 dspark_reuse_entries: dspark_reuse.values().map(Vec::len).sum(),
                 prefix_entries: px.evict_all(),
+                devices: Vec::new(),
             };
             reuse.clear();
             spec_reuse.clear();
@@ -14264,11 +14321,7 @@ pub fn run(
             // RELEASE_THRESHOLD=MAX for graph-launch speed) — invisible to a green
             // process. Hand the cached blocks back to the driver so nvidia-smi free
             // actually rises (measured: 8GB of dropped pools, 0MiB visible until this).
-            let released = engine.pool_trim_to_zero();
-            eprintln!(
-                "[trim] mempool released {}MiB to the driver",
-                released >> 20
-            );
+            report.devices = trim_model_device_pools(&engine, &loaded, "admin-trim");
             eprintln!(
                 "[trim] pools dropped: reuse={} spec={} dspark={} prefix={}",
                 report.reuse_entries,
@@ -14895,26 +14948,47 @@ pub fn run(
                     );
                 }
                 let reserve = reserve.saturating_add(vg_debt);
-                let request_tp_kv = match loaded[&model_key]
+                let request_state = match loaded[&model_key]
                     .model
-                    .step_tp_unmaterialized_kv_bytes(None, admission_cap)
+                    .unmaterialized_state_bytes(None, admission_cap)
                 {
                     Ok(charges) => charges,
                     Err(err) => {
                         fail_request(
                             req,
-                            EngineError::engine(format!("Step TP KV admission plan failed: {err}")),
+                            EngineError::engine(format!(
+                                "model state admission plan failed: {err}"
+                            )),
                         );
                         continue;
                     }
                 };
-                let pending_tp_kv = match active_unmaterialized_tp_kv(&active, &loaded) {
+                let peer_workspace = if admit_prefill_workspace_on() {
+                    match loaded[&model_key]
+                        .model
+                        .peer_prefill_workspace_bytes(prompt_len)
+                    {
+                        Ok(charges) => charges,
+                        Err(err) => {
+                            fail_request(
+                                req,
+                                EngineError::engine(format!(
+                                    "peer prefill workspace admission failed: {err}"
+                                )),
+                            );
+                            continue;
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+                let pending_state = match active_unmaterialized_state(&active, &loaded) {
                     Ok(charges) => charges,
                     Err(err) => {
                         fail_request(
                             req,
                             EngineError::engine(format!(
-                                "active Step TP KV reservation failed: {err}"
+                                "active model state reservation failed: {err}"
                             )),
                         );
                         continue;
@@ -14999,8 +15073,9 @@ pub fn run(
                 let mut required_eager =
                     admission_required(cost.saturating_sub(draft_state_bytes), reserve);
                 let device_requirements = if pp_plan.is_some()
-                    || !request_tp_kv.is_empty()
-                    || !pending_tp_kv.is_empty()
+                    || !request_state.is_empty()
+                    || !pending_state.is_empty()
+                    || !peer_workspace.is_empty()
                 {
                     Some(parallel_device_requirements(
                         engine.ctx().ordinal(),
@@ -15009,8 +15084,9 @@ pub fn run(
                         pp_plan
                             .as_ref()
                             .map(|(devices, stages)| (devices.as_slice(), stages.as_slice())),
-                        &request_tp_kv,
-                        &pending_tp_kv,
+                        &request_state,
+                        &pending_state,
+                        &peer_workspace,
                     ))
                 } else {
                     None
@@ -15020,12 +15096,13 @@ pub fn run(
                         .iter()
                         .map(|requirement| {
                             format!(
-                                "dev{} session {:.0}MB + tp-kv {:.0}MB + pending-tp-kv \
-                                 {:.0}MB + reserve {:.0}MB + boundary {:.3}MB",
+                                "dev{} session {:.0}MB + state {:.0}MB + pending-state \
+                                 {:.0}MB + peer-workspace {:.0}MB + reserve {:.0}MB + boundary {:.3}MB",
                                 requirement.device,
                                 requirement.session_bytes as f64 / 1e6,
-                                requirement.tp_kv_bytes as f64 / 1e6,
-                                requirement.pending_tp_kv_bytes as f64 / 1e6,
+                                requirement.state_bytes as f64 / 1e6,
+                                requirement.pending_state_bytes as f64 / 1e6,
+                                requirement.workspace_bytes as f64 / 1e6,
                                 requirement.reserve_bytes as f64 / 1e6,
                                 requirement.boundary_bytes as f64 / 1e6,
                             )
@@ -15034,9 +15111,18 @@ pub fn run(
                         .join("; ");
                     eprintln!("[admission] parallel device plan: [{budgets}]");
                 }
-                if let Some(mut headroom) =
-                    admission_headroom(&engine, &loaded, device_requirements.as_deref())
-                {
+                let measured_headroom =
+                    admission_headroom(&engine, &loaded, device_requirements.as_deref());
+                if device_requirements.is_some() && measured_headroom.is_none() {
+                    fail_request(
+                        req,
+                        EngineError::engine(
+                            "cannot read every model-owned device for memory admission",
+                        ),
+                    );
+                    continue;
+                }
+                if let Some(mut headroom) = measured_headroom {
                     // EFFECTIVE free, not driver `free`: `mem_get_info` cannot see blocks the
                     // async pool holds mapped-but-not-live (Engine::new pins RELEASE_THRESHOLD
                     // to u64::MAX), yet the next alloc is satisfied from exactly those bytes,
@@ -15326,8 +15412,9 @@ pub fn run(
                         && memra_engine::spec::spec_capture_gate_on()
                         && {
                             let requirements_eager = if pp_plan.is_some()
-                                || !request_tp_kv.is_empty()
-                                || !pending_tp_kv.is_empty()
+                                || !request_state.is_empty()
+                                || !pending_state.is_empty()
+                                || !peer_workspace.is_empty()
                             {
                                 Some(parallel_device_requirements(
                                     engine.ctx().ordinal(),
@@ -15336,8 +15423,9 @@ pub fn run(
                                     pp_plan.as_ref().map(|(devices, stages)| {
                                         (devices.as_slice(), stages.as_slice())
                                     }),
-                                    &request_tp_kv,
-                                    &pending_tp_kv,
+                                    &request_state,
+                                    &pending_state,
+                                    &peer_workspace,
                                 ))
                             } else {
                                 None
@@ -15365,9 +15453,7 @@ pub fn run(
                         // fence every device, hand cached pool blocks back to the
                         // driver, and re-read before declaring headroom unattainable.
                         oom_teardown_fence(&engine, &loaded);
-                        for_each_device_engine(&engine, &loaded, &mut |_d, dev_engine| {
-                            let _ = dev_engine.pool_trim_to_zero();
-                        });
+                        trim_model_device_pools(&engine, &loaded, "admission-drain");
                         // The captured-arm and eager-arm device plans DIFFER, and the
                         // Devices-variant sufficiency check reads its per-device
                         // requirements rather than the scalar — evaluate each arm against
@@ -15375,8 +15461,9 @@ pub fn run(
                         // captured plan and never recovered; measured on the med-class
                         // cell's post-drain 429 cluster).
                         let requirements_eager = if pp_plan.is_some()
-                            || !request_tp_kv.is_empty()
-                            || !pending_tp_kv.is_empty()
+                            || !request_state.is_empty()
+                            || !pending_state.is_empty()
+                            || !peer_workspace.is_empty()
                         {
                             Some(parallel_device_requirements(
                                 engine.ctx().ordinal(),
@@ -15385,8 +15472,9 @@ pub fn run(
                                 pp_plan.as_ref().map(|(devices, stages)| {
                                     (devices.as_slice(), stages.as_slice())
                                 }),
-                                &request_tp_kv,
-                                &pending_tp_kv,
+                                &request_state,
+                                &pending_state,
+                                &peer_workspace,
                             ))
                         } else {
                             None
@@ -15484,16 +15572,17 @@ pub fn run(
                                         .map(|device| {
                                             format!(
                                                 "dev{} free {:.0}MB (pool-cached {:.0}MB) vs \
-                                             required {:.0}MB = session {:.0}MB + tp-kv \
-                                             {:.0}MB + pending-tp-kv {:.0}MB + reserve {:.0}MB \
+                                             required {:.0}MB = session {:.0}MB + state \
+                                             {:.0}MB + pending-state {:.0}MB + peer-workspace {:.0}MB + reserve {:.0}MB \
                                              + boundary {:.3}MB [pool res {:.0}MB used {:.0}MB]",
                                                 device.requirement.device,
                                                 device.free_bytes as f64 / 1e6,
                                                 device.pool_cached_bytes as f64 / 1e6,
                                                 device.requirement.required() as f64 / 1e6,
                                                 device.requirement.session_bytes as f64 / 1e6,
-                                                device.requirement.tp_kv_bytes as f64 / 1e6,
-                                                device.requirement.pending_tp_kv_bytes as f64 / 1e6,
+                                                device.requirement.state_bytes as f64 / 1e6,
+                                                device.requirement.pending_state_bytes as f64 / 1e6,
+                                                device.requirement.workspace_bytes as f64 / 1e6,
                                                 device.requirement.reserve_bytes as f64 / 1e6,
                                                 device.requirement.boundary_bytes as f64 / 1e6,
                                                 device.pool_reserved_bytes as f64 / 1e6,
@@ -17806,12 +17895,11 @@ pub fn run(
             // bytes would starve it (the owner's card sat at 5 MiB driver-free while the
             // pool held the room).
             oom_teardown_fence(&engine, &loaded);
-            let mut trimmed_total = 0usize;
-            let mut trim_devices = 0usize;
-            for_each_device_engine(&engine, &loaded, &mut |_device, dev_engine| {
-                trimmed_total += dev_engine.pool_trim_to_zero();
-                trim_devices += 1;
+            let reports = trim_model_device_pools(&engine, &loaded, "oom-teardown");
+            let trimmed_total = reports.iter().fold(0usize, |total, report| {
+                total.saturating_add(report.reclaimed_bytes)
             });
+            let trim_devices = reports.len();
             eprintln!(
                 "[admit-oom] step-OOM teardown complete: {} session(s) dropped behind a \
                  device fence; pool trim released {}MB across {} device(s)",
@@ -19125,24 +19213,13 @@ fn admission_headroom(
         });
     };
 
+    let owners = model_device_engines(engine, loaded);
     let mut devices = Vec::with_capacity(requirements.len());
     for &requirement in requirements {
-        let device_engine = if engine.ctx().ordinal() == requirement.device {
-            Some(engine)
-        } else {
-            memra_engine::pp::PpNRt::get(engine)
-                .ok()
-                .and_then(|runtime| {
-                    (0..runtime.n_stages())
-                        .map(|stage| runtime.engine(stage, engine))
-                        .find(|stage| stage.ctx().ordinal() == requirement.device)
-                })
-                .or_else(|| {
-                    loaded
-                        .values()
-                        .find_map(|model| model.model.step_tp_rank_engine(requirement.device))
-                })
-        }?;
+        let device_engine = owners
+            .iter()
+            .copied()
+            .find(|owner| owner.ctx().ordinal() == requirement.device)?;
         let (free_bytes, pool_cached_bytes) = effective_free_bytes(device_engine)?;
         let (pool_reserved_bytes, pool_used_bytes) = device_engine.pool_reserved_used();
         devices.push(AdmissionDeviceHeadroom {
@@ -25508,41 +25585,66 @@ fn retire_may_park(aborted: bool, oom_teardown: bool) -> bool {
     !aborted && !oom_teardown
 }
 
-/// Run `f` on every device engine a serving process can hold state on: the worker's
-/// primary engine, every PP stage engine, and every Step-TP rank engine
-/// (lane/step37-vram-admission-20260830). Used by the step-OOM teardown fence and the
-/// post-teardown pool trim — both must cover EVERY device a torn-down session's caches
-/// lived on, not just the primary.
+/// Model-owned topology is shared by admission, recovery, calibration and admin trim.
+/// Deduplicate owners, not ordinals: distinct engines can own streams on one device.
+fn model_device_engines<'a>(
+    engine: &'a Engine,
+    loaded: &'a HashMap<String, LoadedModel>,
+) -> Vec<&'a Engine> {
+    device_memory::unique_owners(
+        std::iter::once(engine).chain(
+            loaded
+                .values()
+                .flat_map(|lm| lm.model.owned_engines(engine)),
+        ),
+    )
+}
+
 fn for_each_device_engine(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
     f: &mut dyn FnMut(usize, &Engine),
 ) {
     let mut seen = std::collections::HashSet::new();
-    let primary = engine.ctx().ordinal();
-    seen.insert(primary);
-    f(primary, engine);
-    if let Ok(runtime) = memra_engine::pp::PpNRt::get(engine) {
-        for stage in 0..runtime.n_stages() {
-            let stage_engine = runtime.engine(stage, engine);
-            if seen.insert(stage_engine.ctx().ordinal()) {
-                f(stage_engine.ctx().ordinal(), stage_engine);
-            }
+    for owner in model_device_engines(engine, loaded) {
+        let device = owner.ctx().ordinal();
+        if seen.insert(device) {
+            f(device, owner);
         }
     }
-    for lm in loaded.values() {
-        // Bounded scan: CUDA device ordinals are small; step_tp_rank_engine returns the
-        // rank engine owning that device's TP allocations, None where there is none.
-        for device in 0..16usize {
-            if seen.contains(&device) {
-                continue;
-            }
-            if let Some(rank_engine) = lm.model.step_tp_rank_engine(device) {
-                seen.insert(device);
-                f(device, rank_engine);
-            }
-        }
-    }
+}
+
+fn trim_model_device_pools(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    why: &str,
+) -> Vec<DeviceTrimReport> {
+    let owners = model_device_engines(engine, loaded);
+    let mut reports = device_memory::reclaim(
+        &owners,
+        |owner| owner.ctx().ordinal(),
+        |owner| owner.stream().synchronize().map_err(|err| err.to_string()),
+        |device, owner, synchronization_errors| {
+            let reclaimed_bytes = owner.pool_trim_to_zero();
+            let (pool_reserved_bytes, still_owned_bytes) = owner.pool_reserved_used();
+            let report = DeviceTrimReport {
+                device,
+                reclaimed_bytes,
+                still_owned_bytes,
+                pool_reserved_bytes,
+                pool_cached_bytes: pool_reserved_bytes.saturating_sub(still_owned_bytes),
+                driver_free_bytes: owner.ctx().mem_get_info().ok().map(|(free, _)| free),
+                synchronization_errors,
+            };
+            eprintln!(
+                "[device-trim] reason={why} {}",
+                serde_json::to_string(&report).unwrap()
+            );
+            report
+        },
+    );
+    reports.sort_unstable_by_key(|report| report.device);
+    reports
 }
 
 /// STEP-OOM TEARDOWN FENCE (lane/step37-vram-admission-20260830, defect 3): synchronize
@@ -25554,13 +25656,18 @@ fn for_each_device_engine(
 /// already drained the stream. A fence failure is LOUD and the drop proceeds — there is
 /// no safer alternative at that point, but the log names the risk instead of hiding it.
 fn oom_teardown_fence(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
-    for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
-        if let Err(err) = dev_engine.stream().synchronize() {
+    synchronize_model_devices(engine, loaded, "step-OOM teardown");
+}
+
+fn synchronize_model_devices(engine: &Engine, loaded: &HashMap<String, LoadedModel>, why: &str) {
+    for owner in model_device_engines(engine, loaded) {
+        if let Err(err) = owner.stream().synchronize() {
             eprintln!(
-                "[admit-oom] WARN: step-OOM teardown fence sync failed on dev{device}: {err}"
+                "[device-fence] WARN: {why} sync failed on dev{}: {err}",
+                owner.ctx().ordinal(),
             );
         }
-    });
+    }
 }
 
 /// `MEMRA_SPEC_FIRST_TOKEN_EAGER` (lane/b200-spec-ttft-20260902), DEFAULT ON since the
@@ -25791,9 +25898,7 @@ fn run_boot_calibration(
                 );
                 // Recover whatever headroom the failed attempt stranded in the pool.
                 oom_teardown_fence(engine, loaded);
-                for_each_device_engine(engine, loaded, &mut |_device, dev_engine| {
-                    let _ = dev_engine.pool_trim_to_zero();
-                });
+                trim_model_device_pools(engine, loaded, "calibration-failure");
                 continue;
             }
             Ok((drafted, accepted)) => {
@@ -25804,7 +25909,7 @@ fn run_boot_calibration(
                 let charged_draft = lm.model.draft_session_admission_bytes();
                 let tp_kv = lm
                     .model
-                    .step_tp_unmaterialized_kv_bytes(None, probe_ctx)
+                    .unmaterialized_state_bytes(None, probe_ctx)
                     .unwrap_or_default();
                 let primary = engine.ctx().ordinal();
                 // Read the driver-visible peak (RESERVED high watermark: everything the pool
@@ -25825,10 +25930,11 @@ fn run_boot_calibration(
                 // reuse them, while eager serving still takes DRIVER allocations (cuBLAS
                 // workspaces, graph plumbing). Hand the cache back; the pool re-maps on
                 // demand (a few one-time re-maps, never a per-token cost class).
-                let mut trimmed = 0usize;
-                for_each_device_engine(engine, loaded, &mut |_device, dev_engine| {
-                    trimmed += dev_engine.pool_trim_to_zero();
-                });
+                let trimmed = trim_model_device_pools(engine, loaded, "calibration-complete")
+                    .iter()
+                    .fold(0usize, |total, report| {
+                        total.saturating_add(report.reclaimed_bytes)
+                    });
                 if trimmed > 0 {
                     eprintln!(
                         "[admit-cal] post-probe pool trim: released {}MB cached back to \
@@ -26327,7 +26433,7 @@ mod tests {
         }
         assert!(oom.message.contains("Retry-After"), "{}", oom.message);
         let fault = super::EngineError::engine(
-            "Step TP KV admission plan failed: DriverError(CUDA_ERROR_INVALID_VALUE, \"invalid argument\") at /src/crates/memra-engine/src/tp.rs:1234",
+            "model state admission plan failed: DriverError(CUDA_ERROR_INVALID_VALUE, \"invalid argument\") at /src/crates/memra-engine/src/tp.rs:1234",
         );
         assert_eq!(fault.class, super::ErrClass::Engine);
         for leak in ["DriverError", "CUDA", "invalid argument", "/src/", ".rs:"] {
@@ -27597,21 +27703,28 @@ mod tests {
                 bytes: 19,
             },
         ];
-        let requirements =
-            parallel_device_requirements(0, 0, 5, Some((&devices, &stages)), &request, &pending);
+        let requirements = parallel_device_requirements(
+            0,
+            0,
+            5,
+            Some((&devices, &stages)),
+            &request,
+            &pending,
+            &[],
+        );
 
         assert_eq!(requirements.len(), 5);
         assert_eq!(requirements[1].device, 1);
         assert_eq!(requirements[1].session_bytes, 20);
-        assert_eq!(requirements[1].tp_kv_bytes, 11);
-        assert_eq!(requirements[1].pending_tp_kv_bytes, 17);
+        assert_eq!(requirements[1].state_bytes, 11);
+        assert_eq!(requirements[1].pending_state_bytes, 17);
         assert_eq!(requirements[1].reserve_bytes, 5);
         assert_eq!(requirements[1].boundary_bytes, 14);
         assert_eq!(requirements[1].required(), 67);
         assert_eq!(requirements[4].device, 4);
         assert_eq!(requirements[4].session_bytes, 0);
-        assert_eq!(requirements[4].tp_kv_bytes, 13);
-        assert_eq!(requirements[4].pending_tp_kv_bytes, 19);
+        assert_eq!(requirements[4].state_bytes, 13);
+        assert_eq!(requirements[4].pending_state_bytes, 19);
         assert_eq!(requirements[4].reserve_bytes, 5);
         assert_eq!(requirements[4].boundary_bytes, 0);
         assert_eq!(requirements[4].required(), 37);
@@ -27673,7 +27786,7 @@ mod tests {
         let legacy = 83_520 * ctx;
         let reserve = 1_500 << 20;
         let requirements =
-            parallel_device_requirements(0, legacy, reserve, None, &request, &pending);
+            parallel_device_requirements(0, legacy, reserve, None, &request, &pending, &[]);
 
         assert_eq!(requirements.len(), 8);
         assert_eq!(bytes_per_rank_token, 2_784);
@@ -27683,13 +27796,13 @@ mod tests {
         // scavenging 32 rows from it; this admission test is the only pin on that number.
         assert_eq!(swa_rows, 5_151);
         assert_eq!(requirements[0].session_bytes, legacy);
-        assert_eq!(requirements[0].tp_kv_bytes, sidecar);
-        assert_eq!(requirements[0].pending_tp_kv_bytes, sidecar);
+        assert_eq!(requirements[0].state_bytes, sidecar);
+        assert_eq!(requirements[0].pending_state_bytes, sidecar);
         assert_eq!(requirements[0].required(), legacy + sidecar * 2 + reserve);
         for peer in &requirements[1..] {
             assert_eq!(peer.session_bytes, 0);
-            assert_eq!(peer.tp_kv_bytes, sidecar);
-            assert_eq!(peer.pending_tp_kv_bytes, sidecar);
+            assert_eq!(peer.state_bytes, sidecar);
+            assert_eq!(peer.pending_state_bytes, sidecar);
             assert_eq!(peer.reserve_bytes, reserve);
             assert_eq!(peer.required(), sidecar * 2 + reserve);
         }
@@ -27709,6 +27822,68 @@ mod tests {
         assert!(
             !AdmissionHeadroom::Devices(devices).sufficient(0),
             "one byte of missing peer headroom must defer the whole TP8 request"
+        );
+    }
+
+    #[test]
+    fn glm_peer_pressure_includes_pending_state_and_recovers_after_refill() {
+        use memra_engine::hybrid::StepTpKvDeviceAdmission;
+        // Root KV is already in the primary estimate. A GLM peer additionally owns
+        // recurrent state and its replicated latent KV, plus a transient workspace floor.
+        let request = [StepTpKvDeviceAdmission {
+            device: 23,
+            bytes: 400,
+        }];
+        let pending = [StepTpKvDeviceAdmission {
+            device: 23,
+            bytes: 100,
+        }];
+        let required = parallel_device_requirements(0, 300, 50, None, &request, &pending, &[]);
+        assert_eq!(required.len(), 2);
+        assert_eq!(required[1].required(), 550);
+        let mut peers = required
+            .iter()
+            .copied()
+            .map(|requirement| AdmissionDeviceHeadroom {
+                requirement,
+                free_bytes: 1_000,
+                pool_cached_bytes: 0,
+                pool_reserved_bytes: 0,
+                pool_used_bytes: 0,
+            })
+            .collect::<Vec<_>>();
+        for _ in 0..3 {
+            // Root has room while only the peer is one byte short.
+            peers[1].free_bytes = 549;
+            assert!(!AdmissionHeadroom::Devices(peers.clone()).sufficient(0));
+            // A peer-only release makes the whole request admissible; no root release.
+            peers[1].free_bytes += 1;
+            assert!(AdmissionHeadroom::Devices(peers.clone()).sufficient(0));
+        }
+        let workspace = [StepTpKvDeviceAdmission {
+            device: 23,
+            bytes: 1_000,
+        }];
+        let long_prompt =
+            parallel_device_requirements(0, 300, 50, None, &request, &pending, &workspace);
+        assert_eq!(long_prompt[1].required(), 1_550);
+        peers[1].requirement = long_prompt[1];
+        peers[1].free_bytes = 550;
+        assert!(
+            !AdmissionHeadroom::Devices(peers.clone()).sufficient(0),
+            "a peer fitting state alone must defer when prefill workspace does not fit"
+        );
+        peers[1].free_bytes = 1_550;
+        assert!(AdmissionHeadroom::Devices(peers).sufficient(0));
+        let materialized = [StepTpKvDeviceAdmission {
+            device: 23,
+            bytes: 0,
+        }];
+        let warm = parallel_device_requirements(0, 300, 50, None, &materialized, &[], &[]);
+        assert_eq!(
+            warm[1].required(),
+            50,
+            "warm peer still needs workspace headroom"
         );
     }
 
@@ -32461,7 +32636,7 @@ mod tests {
         let fence = body
             .find("oom_teardown_fence(&engine,&loaded);")
             .expect("fence");
-        let trim = body.find("pool_trim_to_zero()").expect("trim");
+        let trim = body.find("trim_model_device_pools(").expect("trim");
         assert!(
             reclaim < fence && fence < trim,
             "reclaim, then fence, then trim"
