@@ -258,8 +258,12 @@ if True:
         # Build with the exact compiler/architecture just accepted, even if rustup changes PATH.
         os.environ['MEMRA_NVCC'] = nvcc
         os.environ['MEMRA_CUDA_ARCH'] = '120a'
-        arches = run('nvcc-arches', [nvcc, '--list-gpu-arch'], 'compute_120a\n')
-        check('compute_120a' in arches.split(), 'selected nvcc lacks compute_120a; install supporting CUDA 13.x toolkit')
+        # `--list-gpu-arch` prints base arches only (compute_120), never the arch-specific
+        # `compute_120a` variant, so a list check is a false negative on every toolkit (seen on
+        # CUDA 13.1.2, 2026-09-19). The `cuda-compile` step below with `-arch=sm_120a` is the
+        # real proof; here we only require the base Blackwell arch to be listed.
+        arches = run('nvcc-arches', [nvcc, '--list-gpu-arch'], 'compute_120\n')
+        check('compute_120' in arches.split(), 'selected nvcc lacks compute_120 (Blackwell); install CUDA 13.x toolkit')
         source = scratch/'accept.cu'; source.write_text(CUDA)
         binary = scratch/'accept'
         run('cuda-compile', [nvcc, '-arch=sm_120a', str(source), '-o', str(binary)], timeout=180)
