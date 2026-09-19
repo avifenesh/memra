@@ -229,12 +229,15 @@ fn background_fixture(
     let charge = g.borrow_mut().reserve(&qr).unwrap();
     let mut engine = CpuTransfers::new(store, request, limit, &charge).unwrap();
     engine.enable_background(1).unwrap();
-    (
-        engine,
-        new_pool(limit + 1, 4096, 4096, 0).unwrap(),
-        g,
-        manifest,
-    )
+    let pool_charge = g
+        .borrow_mut()
+        .reserve(&support::request(
+            ((limit + 1) * 8191) as u64,
+            Priority::MandatoryActive,
+        ))
+        .unwrap();
+    let pool = FakePinnedPool::new(limit + 1, 4096, 4096, 0, &pool_charge).unwrap();
+    (engine, pool, g, manifest)
 }
 fn read_plan(
     pool: &FakePinnedPool,
@@ -272,7 +275,10 @@ fn background_bytes_progress_without_drive_and_retire_after_consumer() {
     let (mut engine, pool, g, _) = background_fixture(&dir, 1);
     let t = engine.nvme_read(read_plan(&pool, 0)).unwrap();
     assert_eq!(g.borrow().used().nvme, 16384);
-    assert_eq!(g.borrow().used().pageable, 12287); // framed extent + alignment overhead
+    assert_eq!(
+        g.borrow().used().pageable,
+        12287 + pool.accounting().backing_bytes as u64
+    ); // framed extent + alignment overhead
     assert!(!engine.retired(&t).unwrap());
     let rejected = engine.nvme_read(read_plan(&pool, 0)).unwrap_err();
     assert_eq!(rejected.error, Error::Capacity);
@@ -299,7 +305,10 @@ fn background_bytes_progress_without_drive_and_retire_after_consumer() {
     host.release();
     engine.retire(&t, None).unwrap();
     assert_eq!(g.borrow().used().nvme, 0);
-    assert_eq!(g.borrow().used().pageable, 0);
+    assert_eq!(
+        g.borrow().used().pageable,
+        pool.accounting().backing_bytes as u64
+    );
     assert!(engine.retired(&t).unwrap());
     assert_eq!(
         engine.nvme_read(read_plan(&pool, 0)).unwrap_err().error,
@@ -356,4 +365,32 @@ fn background_cancel_corrupt_and_failed_siblings_never_publish() {
     engine.acknowledge(&batch.ticket).unwrap();
     assert_eq!(g.borrow().used().nvme, 0);
     assert_eq!(pool.accounting().free_slots, 3);
+}
+
+#[test]
+fn background_runs_frozen_cancellation_and_post_completion_schedule() {
+    use memra_tier::contracts::{SegmentExpectation, TransferEngine};
+    let dir = OwnedDirectory::new();
+    let (mut engine, pool, _, _) = background_fixture(&dir, 1);
+    let ticket = engine.nvme_read(read_plan(&pool, 0)).unwrap();
+    conformance::transfer_cancel(&mut engine, ticket, |e, t| {
+        await_completion(e, t);
+        e.retire(t, None).unwrap();
+    });
+    let ticket = engine.nvme_read(read_plan(&pool, 0)).unwrap();
+    conformance::transfer_complete_cancel(
+        &mut engine,
+        ticket,
+        &[vec![SegmentExpectation {
+            valid_bytes: 264,
+            io_bytes: 8192,
+            checksum: digest(&payload(264)),
+        }]],
+        |e, t| {
+            await_completion(e, t);
+        },
+    );
+    engine.retire(&ticket, None).unwrap();
+    engine.acknowledge(&ticket).unwrap();
+    assert_eq!(pool.accounting().free_slots, 2);
 }
