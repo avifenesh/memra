@@ -1,0 +1,73 @@
+CPU FAKE: no model/GPU execution
+ERROR: injected read failure (CPU fixture)
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "on", "migrated_bytes": 3, "duration_ns": 500000000}
+CPU FAKE: no model/GPU execution
+RESULT {"arm": "off", "migrated_bytes": 0, "duration_ns": 500000000}
+{
+  "schema_version": 1,
+  "kind": "cpu-fixture",
+  "status": "dry-run-not-qualification",
+  "thermal_regime": "synthetic-no-thermal-measurement",
+  "percentiles": "descriptive synthetic samples, not tail-confidence evidence",
+  "arms": {
+    "off": {
+      "N": 10,
+      "AB_N": 5,
+      "BA_N": 5,
+      "median_ns": 500000000.0,
+      "p50": 500000000,
+      "p95": 500000000,
+      "p99": 500000000
+    },
+    "on": {
+      "N": 10,
+      "AB_N": 5,
+      "BA_N": 5,
+      "median_ns": 500000000.0,
+      "p50": 500000000,
+      "p95": 500000000,
+      "p99": 500000000
+    }
+  }
+}
