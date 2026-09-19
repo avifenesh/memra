@@ -137,6 +137,30 @@ class Day5Tests(unittest.TestCase):
             (out/'storage-ancestry.log').write_text('tampered')
             with self.assertRaises(ValueError): B.validate_capture(record, out)
 
+    def test_storage_cli_default_refuses_then_explicit_mode_is_labeled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake = root/'storage-bench'
+            fake.write_text('#!' + sys.executable + '\nprint("CPU stub, no storage performance")\n')
+            fake.chmod(0o755)
+            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090']
+            env = {**os.environ, 'PATH': str(root/'no-tools')}
+            for mode, options, expected in [
+                    ('unspecified', [], 2),
+                    ('unproven', ['--storage-root', str(root)], 2),
+                    ('development', ['--storage-root', str(root), '--allow-unproven-storage'], 0)]:
+                out = root/mode
+                proc = subprocess.run([*argv, '--out', str(out), *options, '--execute', str(fake)],
+                                      env=env, text=True, capture_output=True, timeout=10)
+                self.assertEqual(proc.returncode, expected, proc.stderr)
+                if expected:
+                    self.assertFalse((out/'command.log').exists())
+                else:
+                    result = B.validate_cell(out/'CELL.jsonl')
+                    self.assertEqual(result['storage_label'], B.UNPROVEN_STORAGE)
+                    self.assertFalse(result['qualification'])
+                    self.assertFalse(result['legacy_timing'])
+
     def test_real_first_hour_integrity_keeps_failed_cell_and_empty_telemetry(self):
         cells = sorted(REAL.rglob('CELL.jsonl'))
         self.assertEqual(len(cells), 9)
