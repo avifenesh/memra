@@ -1,5 +1,7 @@
 //! PCIe peer transport uses the frozen shared contracts, never a parallel schema.
 //! Native CUDA submission is not implemented here. The owner-thread CPU fake lives in tests.
+/// Explicit opt-in CPU fixtures; no runtime dispatch calls this module.
+pub mod test_support;
 pub mod topology;
 pub use crate::contracts::{
     BatchSubmission, CancelState, Completion, ContiguousCopy, ContiguousSpan, DeviceLease,

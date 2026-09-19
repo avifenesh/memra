@@ -1,0 +1,124 @@
+{
+  "repository": "avifenesh/memra",
+  "source_commit": "2dbe6f3ae37266673cf33b9ab496b110ea66a3c8",
+  "checks": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "started_utc": "2026-09-19T14:12:39.715972+00:00",
+      "exit": 0,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": "fmt.log.gz",
+      "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "name": "check-mac",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets"
+      ],
+      "started_utc": "2026-09-19T14:12:43.883992+00:00",
+      "exit": 0,
+      "raw_log_sha256": "a416bc6de60ff6b233cd07f37d8319ce4379a04748efb96da4d4664bd1df80aa",
+      "log": "check-mac.log.gz",
+      "gzip_sha256": "30e5a08ff9de09dbcc3207f705be02499b6d3aadd0c7142815cf0014e357c7d5"
+    },
+    {
+      "name": "check-linux",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "started_utc": "2026-09-19T14:12:44.094928+00:00",
+      "exit": 0,
+      "raw_log_sha256": "4cf86278c1e6d659943a46a3d7e3da429ac15be90f0f17742e24ef85228e7d3e",
+      "log": "check-linux.log.gz",
+      "gzip_sha256": "d0244c1526bbe682f2990009f64739be60c77070a84c93564da6e5386d51078b"
+    },
+    {
+      "name": "tests",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "started_utc": "2026-09-19T14:12:44.263856+00:00",
+      "exit": 0,
+      "raw_log_sha256": "5a0e91f1485cd9442ecabdaa38a17b748455ded8608e499a0e589e77450d4551",
+      "log": "tests.log.gz",
+      "gzip_sha256": "ab2bafb991e054b2f8e1abc54698c2f082890acd5dca81bab463894032c74e9b"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--no-deps",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_utc": "2026-09-19T14:12:50.101611+00:00",
+      "exit": 0,
+      "raw_log_sha256": "49b58eadefedc9ffdda3de105cc7644021426cb1cf980ae7a57f7f31fa53f61c",
+      "log": "clippy.log.gz",
+      "gzip_sha256": "8736b72f639237e23cdbdbab9932c518d132afe67feac268250cf7ed62d73940"
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "started_utc": "2026-09-19T14:12:50.392341+00:00",
+      "exit": 0,
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": "diff.log.gz",
+      "gzip_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "name": "flags",
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "started_utc": "2026-09-19T14:12:50.461502+00:00",
+      "exit": 0,
+      "raw_log_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+      "log": "flags.log.gz",
+      "gzip_sha256": "76188f1d03361812b7b3efde2e8c60c91be50ac36fee5df164ab0a3da3de27f2"
+    }
+  ]
+}

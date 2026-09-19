@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "kind": "cpu-fixture",
+  "captured_utc": "2026-09-19T08:47:32.227763+00:00",
+  "route_qualification": false,
+  "target": "PCIe Gen5 only; no NVLink assumption",
+  "warning": "Capability queries do not prove context/pool grants, direct DMA, active link health or bandwidth.",
+  "commands": [
+    {
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-m"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "nvidia-smi",
+        "-q"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-p2p",
+        "r"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-p2p",
+        "w"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "lscpu",
+        "--extended=CPU,NODE,SOCKET"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "numactl",
+        "-H"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "lscpu"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "df",
+        "-hT"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "lsblk",
+        "-J",
+        "-o",
+        "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "free",
+        "-g"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/scratch"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": "",
+      "timed_out": false
+    }
+  ]
+}

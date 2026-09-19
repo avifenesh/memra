@@ -25,7 +25,7 @@ impl CatalogRecord {
 }
 pub struct Catalog {
     pub(crate) class: LayoutClass,
-    entries: BTreeMap<BankId, Option<CatalogRecord>>,
+    pub(crate) entries: BTreeMap<BankId, Option<CatalogRecord>>,
 }
 impl Catalog {
     pub fn new(class: LayoutClass, entries: Vec<(BankId, Option<CatalogRecord>)>) -> Result<Self> {

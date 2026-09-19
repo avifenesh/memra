@@ -1,0 +1,644 @@
+{
+  "schema_version": 1,
+  "kind": "rig-bootstrap",
+  "status": "bootstrap-complete-not-tier-qualified",
+  "branch": "lane/spill-integ2-20260919",
+  "minimum_commit": "020d20479cd686835c0fb7743040947d0fc2723b",
+  "started_utc": "20260919T123824407199Z",
+  "expected_power_w": 600,
+  "gap_seconds": 60,
+  "lock": "/tmp/memra-5090.lock",
+  "qualification": false,
+  "steps": [
+    {
+      "name": "distro",
+      "command": [
+        "cat",
+        "/etc/os-release"
+      ],
+      "exit_code": 0,
+      "duration_ns": 3148975,
+      "started_utc": "2026-09-19T12:38:24.408708+00:00",
+      "ended_utc": "2026-09-19T12:38:24.411857+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "distro.log",
+      "failure_quote": null,
+      "sha256": "01af466feb100306498c86aa6bad1815e33036019aa34d4362c20f374ea5c829"
+    },
+    {
+      "name": "power",
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=name,memory.total,power.limit,power.max_limit",
+        "--format=csv,noheader,nounits"
+      ],
+      "exit_code": 0,
+      "duration_ns": 32827995,
+      "started_utc": "2026-09-19T12:38:24.412942+00:00",
+      "ended_utc": "2026-09-19T12:38:24.445770+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "power.log",
+      "failure_quote": null,
+      "sha256": "6b4b10fccb888898df5c65632bbb3a1eb737b0dc5b9b538ec0d19c9bdca11755"
+    },
+    {
+      "name": "openssl-development",
+      "command": [
+        "pkg-config",
+        "--exists",
+        "openssl"
+      ],
+      "exit_code": 0,
+      "duration_ns": 2539274,
+      "started_utc": "2026-09-19T12:38:24.447215+00:00",
+      "ended_utc": "2026-09-19T12:38:24.449754+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "openssl-development.log",
+      "failure_quote": null,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "storage-df",
+      "command": [
+        "df",
+        "-hT"
+      ],
+      "exit_code": 0,
+      "duration_ns": 4799258,
+      "started_utc": "2026-09-19T12:38:24.450802+00:00",
+      "ended_utc": "2026-09-19T12:38:24.455601+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "storage-df.log",
+      "failure_quote": null,
+      "sha256": "210085e8f79372a790132cfeef530fa88ea85ffcf59f9cccfa194ec81e715334"
+    },
+    {
+      "name": "storage-lsblk",
+      "command": [
+        "lsblk",
+        "-J",
+        "-o",
+        "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+      ],
+      "exit_code": 0,
+      "duration_ns": 9127892,
+      "started_utc": "2026-09-19T12:38:24.456786+00:00",
+      "ended_utc": "2026-09-19T12:38:24.465914+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "storage-lsblk.log",
+      "failure_quote": null,
+      "sha256": "0ab94bb46693ff490c08cd0438a87ef97103495f56bc03a250a1ea7bc803fbc4"
+    },
+    {
+      "name": "nvcc-version-1",
+      "command": [
+        "/usr/local/cuda-13.1/bin/nvcc",
+        "--version"
+      ],
+      "exit_code": 0,
+      "duration_ns": 5178822,
+      "started_utc": "2026-09-19T12:38:24.469323+00:00",
+      "ended_utc": "2026-09-19T12:38:24.474502+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "nvcc-version-1.log",
+      "failure_quote": null,
+      "sha256": "d51da6fa301a0c63b030c6a9e45b942c5fe2228e63c0ec276a445943cf0bc6f6"
+    },
+    {
+      "name": "nvcc-arches",
+      "command": [
+        "/usr/local/cuda-13.1/bin/nvcc",
+        "--list-gpu-arch"
+      ],
+      "exit_code": 0,
+      "duration_ns": 4850511,
+      "started_utc": "2026-09-19T12:38:24.476615+00:00",
+      "ended_utc": "2026-09-19T12:38:24.481466+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "nvcc-arches.log",
+      "failure_quote": null,
+      "sha256": "31a581c3e67e10d1e92a86c2b1ff7fda3a8b29f856f646ff1019eb3e3a1946a4"
+    },
+    {
+      "name": "cuda-compile",
+      "command": [
+        "/usr/local/cuda-13.1/bin/nvcc",
+        "-arch=sm_120a",
+        "/root/spill-receipts/5518585feca5-20260919T123824Z.run3/accept.cu",
+        "-o",
+        "/root/spill-receipts/5518585feca5-20260919T123824Z.run3/accept"
+      ],
+      "exit_code": 0,
+      "duration_ns": 1668393668,
+      "started_utc": "2026-09-19T12:38:24.482726+00:00",
+      "ended_utc": "2026-09-19T12:38:26.151124+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "cuda-compile.log",
+      "failure_quote": null,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "compute-before",
+      "command": [
+        "nvidia-smi",
+        "--query-compute-apps=pid,process_name,used_memory",
+        "--format=csv"
+      ],
+      "exit_code": 0,
+      "duration_ns": 34533001,
+      "started_utc": "2026-09-19T12:38:26.154844+00:00",
+      "ended_utc": "2026-09-19T12:38:26.189378+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "compute-before.log",
+      "failure_quote": null,
+      "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+    },
+    {
+      "name": "accept-1",
+      "command": [
+        "/root/spill-receipts/5518585feca5-20260919T123824Z.run3/accept"
+      ],
+      "exit_code": 0,
+      "duration_ns": 15851913881,
+      "started_utc": "2026-09-19T12:38:26.191885+00:00",
+      "ended_utc": "2026-09-19T12:38:42.043802+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "accept-1.log",
+      "failure_quote": null,
+      "sha256": "6f6f6dfae664e4fecacc3bb5a4e7be69e5d52f87037cf0e94aeb819b60e5681b"
+    },
+    {
+      "name": "accept-gap",
+      "command": [
+        "sleep",
+        "60"
+      ],
+      "exit_code": 0,
+      "duration_ns": 60053179023,
+      "started_utc": "2026-09-19T12:38:42.047429+00:00",
+      "ended_utc": "2026-09-19T12:39:42.100612+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "accept-gap.log",
+      "failure_quote": null,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "accept-2",
+      "command": [
+        "/root/spill-receipts/5518585feca5-20260919T123824Z.run3/accept"
+      ],
+      "exit_code": 0,
+      "duration_ns": 15852665504,
+      "started_utc": "2026-09-19T12:39:42.103954+00:00",
+      "ended_utc": "2026-09-19T12:39:57.956623+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "accept-2.log",
+      "failure_quote": null,
+      "sha256": "6f6f6dfae664e4fecacc3bb5a4e7be69e5d52f87037cf0e94aeb819b60e5681b"
+    },
+    {
+      "name": "compute-after",
+      "command": [
+        "nvidia-smi",
+        "--query-compute-apps=pid,process_name,used_memory",
+        "--format=csv"
+      ],
+      "exit_code": 0,
+      "duration_ns": 34762859,
+      "started_utc": "2026-09-19T12:39:57.960156+00:00",
+      "ended_utc": "2026-09-19T12:39:57.994920+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "compute-after.log",
+      "failure_quote": null,
+      "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+    },
+    {
+      "name": "rustup-download",
+      "command": [
+        "curl",
+        "--fail",
+        "--show-error",
+        "--location",
+        "--proto",
+        "=https",
+        "--tlsv1.2",
+        "https://sh.rustup.rs",
+        "--output",
+        "/root/spill-receipts/5518585feca5-20260919T123824Z.run3/rustup-init.sh"
+      ],
+      "exit_code": 0,
+      "duration_ns": 116811449,
+      "started_utc": "2026-09-19T12:39:57.997609+00:00",
+      "ended_utc": "2026-09-19T12:39:58.114424+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "rustup-download.log",
+      "failure_quote": null,
+      "sha256": "bd9d5ffbba43a224a7641995a61f51db7f148ba7323e95c476dcdb073d25a270"
+    },
+    {
+      "name": "rustup-install",
+      "command": [
+        "sh",
+        "/root/spill-receipts/5518585feca5-20260919T123824Z.run3/rustup-init.sh",
+        "-y",
+        "--profile",
+        "minimal",
+        "--default-toolchain",
+        "none"
+      ],
+      "exit_code": 0,
+      "duration_ns": 1921470892,
+      "started_utc": "2026-09-19T12:39:58.117809+00:00",
+      "ended_utc": "2026-09-19T12:40:00.039282+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "rustup-install.log",
+      "failure_quote": null,
+      "sha256": "115b47d956d9337c1128b5ef9e49bfe93f995887ec5e03adc83dfefd95ca5ce3"
+    },
+    {
+      "name": "rustup-stable",
+      "command": [
+        "rustup",
+        "toolchain",
+        "install",
+        "stable",
+        "--profile",
+        "minimal"
+      ],
+      "exit_code": 0,
+      "duration_ns": 15495959677,
+      "started_utc": "2026-09-19T12:40:00.041162+00:00",
+      "ended_utc": "2026-09-19T12:40:15.537126+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "rustup-stable.log",
+      "failure_quote": null,
+      "sha256": "2e0601ea0ed6a6f47df46018d959ba7e5b0bdc51d704f6d1457bb7874f5a2c0f"
+    },
+    {
+      "name": "rust-version",
+      "command": [
+        "rustc",
+        "+stable",
+        "--version"
+      ],
+      "exit_code": 0,
+      "duration_ns": 18226993,
+      "started_utc": "2026-09-19T12:40:15.539809+00:00",
+      "ended_utc": "2026-09-19T12:40:15.558035+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "rust-version.log",
+      "failure_quote": null,
+      "sha256": "2073de5abf149185c2f4d7473dc833bc921b99135560d24ae7b2293f33a9c376"
+    },
+    {
+      "name": "remote-branch",
+      "command": [
+        "git",
+        "ls-remote",
+        "--exit-code",
+        "--heads",
+        "https://github.com/avifenesh/memra",
+        "refs/heads/lane/spill-integ2-20260919"
+      ],
+      "exit_code": 0,
+      "duration_ns": 567098496,
+      "started_utc": "2026-09-19T12:40:15.559685+00:00",
+      "ended_utc": "2026-09-19T12:40:16.126788+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "remote-branch.log",
+      "failure_quote": null,
+      "sha256": "05830c9a2f6e1fa9d4a55759879e1e04f0621b42c4b8b4c7525c287d0410df7c"
+    },
+    {
+      "name": "clone",
+      "command": [
+        "git",
+        "clone",
+        "--single-branch",
+        "--branch",
+        "lane/spill-integ2-20260919",
+        "https://github.com/avifenesh/memra",
+        "/root/memra-spill"
+      ],
+      "exit_code": 0,
+      "duration_ns": 29133069160,
+      "started_utc": "2026-09-19T12:40:16.138191+00:00",
+      "ended_utc": "2026-09-19T12:40:45.271263+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "clone.log",
+      "failure_quote": null,
+      "sha256": "bb1c6246e57c0118709bc723d933cf77d2cd94e09f6aa598e9c2c542a2f6da3e"
+    },
+    {
+      "name": "source-sha",
+      "command": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "duration_ns": 5594789,
+      "started_utc": "2026-09-19T12:40:45.278962+00:00",
+      "ended_utc": "2026-09-19T12:40:45.284557+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "source-sha.log",
+      "failure_quote": null,
+      "sha256": "52ef7bc7c10c7ed12e296cd2fa53d573028b4d84a30a2fdaeabcd65cf161b759"
+    },
+    {
+      "name": "minimum-source",
+      "command": [
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "020d20479cd686835c0fb7743040947d0fc2723b",
+        "01e7b77f29c7b40fb29744e5321ca0e8b0c81f39"
+      ],
+      "exit_code": 0,
+      "duration_ns": 5151442,
+      "started_utc": "2026-09-19T12:40:45.286272+00:00",
+      "ended_utc": "2026-09-19T12:40:45.291425+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "minimum-source.log",
+      "failure_quote": null,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "topology",
+      "command": [
+        "python3",
+        "/root/memra-spill/tools/tier-topology.py",
+        "--storage",
+        "--out",
+        "/root/spill-receipts/5518585feca5-20260919T123824Z.run3/TOPOLOGY.json"
+      ],
+      "exit_code": 0,
+      "duration_ns": 516981143,
+      "started_utc": "2026-09-19T12:40:45.295080+00:00",
+      "ended_utc": "2026-09-19T12:40:45.812063+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "topology.log",
+      "failure_quote": null,
+      "sha256": "67bec4bc5165d9f74104caa3008d0d48ed42cf24e52faed35167b91908227bf8"
+    },
+    {
+      "name": "build-0",
+      "command": [
+        "cargo",
+        "+stable",
+        "build",
+        "--release",
+        "--locked",
+        "-j",
+        "32",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv"
+      ],
+      "exit_code": 0,
+      "duration_ns": 9938547348,
+      "started_utc": "2026-09-19T12:40:45.815589+00:00",
+      "ended_utc": "2026-09-19T12:40:55.754139+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "build-0.log",
+      "failure_quote": null,
+      "sha256": "08345d7d31fa2320d65476fa64fd4a6cb499ba632e5b403cea7053f105a27646"
+    },
+    {
+      "name": "build-1",
+      "command": [
+        "cargo",
+        "+stable",
+        "build",
+        "--release",
+        "--locked",
+        "-j",
+        "32",
+        "-p",
+        "memra-server",
+        "--bin",
+        "memra-server"
+      ],
+      "exit_code": 0,
+      "duration_ns": 294238428244,
+      "started_utc": "2026-09-19T12:40:55.759662+00:00",
+      "ended_utc": "2026-09-19T12:45:49.998094+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "build-1.log",
+      "failure_quote": null,
+      "sha256": "1420b5f1aee4b8a60f7330df7ac67b7542ad067498277c460c43cd1104698e35"
+    },
+    {
+      "name": "build-2",
+      "command": [
+        "cargo",
+        "+stable",
+        "build",
+        "--release",
+        "--locked",
+        "-j",
+        "32",
+        "-p",
+        "memra-engine",
+        "--bin",
+        "storage-bench",
+        "--bin",
+        "pp-transport-smoke",
+        "--bin",
+        "qwen4exp_gpu_gate",
+        "--bin",
+        "run-gen",
+        "--bin",
+        "run-spec"
+      ],
+      "exit_code": 0,
+      "duration_ns": 49518501071,
+      "started_utc": "2026-09-19T12:45:50.002254+00:00",
+      "ended_utc": "2026-09-19T12:46:39.520757+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "build-2.log",
+      "failure_quote": null,
+      "sha256": "226cf83f0275cf10cb9969a4058b488a2db2a89cba79b6e3e5077e7a1225d70f"
+    },
+    {
+      "name": "build-3",
+      "command": [
+        "cargo",
+        "+stable",
+        "test",
+        "--release",
+        "--locked",
+        "-j",
+        "32",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--no-run"
+      ],
+      "exit_code": 0,
+      "duration_ns": 23663639942,
+      "started_utc": "2026-09-19T12:46:39.524143+00:00",
+      "ended_utc": "2026-09-19T12:47:03.187786+00:00",
+      "provider_instance_id": null,
+      "estimated_cost": null,
+      "stubbed": false,
+      "raw_log": "build-3.log",
+      "failure_quote": null,
+      "sha256": "cab4621f74386b9e697e86c3490a522b25a5e764dbf4ec09249131c00001bef9"
+    }
+  ],
+  "provider": "vast",
+  "provider_instance_id": null,
+  "hourly_cost": null,
+  "private_receipt": true,
+  "distro": "PRETTY_NAME=\"Ubuntu 24.04.4 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.4 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n",
+  "power_verbatim": "NVIDIA GeForce RTX 5090, 32607, 600.00, 600.00\n",
+  "power_limit_restricted": false,
+  "paths": {
+    "persistent_root": "/root",
+    "repo": "/root/memra-spill",
+    "build": "/root/memra-spill/target",
+    "scratch": null,
+    "nvme": null,
+    "persistence": "operator/provider contract, not proven by mount name"
+  },
+  "nvcc": "/usr/local/cuda-13.1/bin/nvcc",
+  "cuda_acceptance": "two-full-readbacks",
+  "source_commit": "01e7b77f29c7b40fb29744e5321ca0e8b0c81f39",
+  "accept_binary_sha256": "59bc828651aac20c5394288db363a7d39fa66e9c6060283714cf662c172b4833",
+  "builds": [
+    [
+      "cargo",
+      "+stable",
+      "build",
+      "--release",
+      "--locked",
+      "-j",
+      "32",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv"
+    ],
+    [
+      "cargo",
+      "+stable",
+      "build",
+      "--release",
+      "--locked",
+      "-j",
+      "32",
+      "-p",
+      "memra-server",
+      "--bin",
+      "memra-server"
+    ],
+    [
+      "cargo",
+      "+stable",
+      "build",
+      "--release",
+      "--locked",
+      "-j",
+      "32",
+      "-p",
+      "memra-engine",
+      "--bin",
+      "storage-bench",
+      "--bin",
+      "pp-transport-smoke",
+      "--bin",
+      "qwen4exp_gpu_gate",
+      "--bin",
+      "run-gen",
+      "--bin",
+      "run-spec"
+    ],
+    [
+      "cargo",
+      "+stable",
+      "test",
+      "--release",
+      "--locked",
+      "-j",
+      "32",
+      "-p",
+      "memra-engine",
+      "--lib",
+      "--no-run"
+    ]
+  ],
+  "release_binaries": {
+    "storage-bench": {
+      "sha256": "36ae1b8e8b5b6ef5eb4c8fff223d87e408a280e800fc2c5ddc7cb8271aca409e"
+    },
+    "pp-transport-smoke": {
+      "sha256": "4acf3894f48127289d24b77d8c871ea522392b9ed6f60c0c583427f4dd2da320"
+    },
+    "qwen4exp_gpu_gate": {
+      "sha256": "8d3cad919798e94a1e3a255251b04fe941997fa379d6f1c98cddf42edf92546f"
+    },
+    "run-gen": {
+      "sha256": "149d62ece72418c0f04bbaaaa862db5d25aa24e234c635499bbd948c4136d60e"
+    },
+    "run-spec": {
+      "sha256": "f7c185b18c24295236f06ef6bab0bb97f2b3926366a87bb6b785d2bea041f180"
+    },
+    "memra-server": {
+      "sha256": "45c810000421f098937b44a25431e680c70962f86e991577e9cf873d67dc73a2"
+    }
+  },
+  "ended_utc": "2026-09-19T12:47:03.382810+00:00",
+  "duration_ns": 518975621510
+}

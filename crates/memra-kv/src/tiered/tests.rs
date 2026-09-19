@@ -254,7 +254,11 @@ impl TransferEngine for Transfers {
         let t = TransferTicket {
             issuer: self.owner.issuer(),
             sequence: self.next,
-            epochs: epochs(),
+            epochs: match &ops[0] {
+                TransferOp::H2d(op) | TransferOp::D2h(op) => op.epochs,
+                TransferOp::P2p(op) => op.epochs,
+                TransferOp::NvmeRead(op) => op.epochs,
+            },
         };
         let mut items = vec![];
         for (i, o) in ops.iter().enumerate() {
@@ -1908,3 +1912,6 @@ fn scheduler_eviction_floor_protects_backlog_under_priority_churn() {
     serve(&mut s, again);
     assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
 }
+
+#[path = "day4_tests.rs"]
+mod day4;
