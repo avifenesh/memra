@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -56,6 +57,40 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(result['gpu_telemetry_status'], 'empty')
         self.assertEqual(result['samples'][0]['valid_bytes'], 264)
         self.validate([{'run_id': result['run_id'], 'sample': result['samples'][0]}])
+
+    def test_canonical_shell_wrapper(self):
+        rows = [json.loads(line) for line in self.journal.read_text().splitlines()]
+        wrapped = ['bash', '-c', shlex.join(rows[0]['command'])]
+        for row in rows:
+            row['command'] = wrapped
+        self.journal.write_text(''.join(json.dumps(r)+'\n' for r in rows))
+        self.rewrite_capture(lambda c: c.update(command=wrapped))
+        self.assertEqual(self.validate()['samples'][0]['valid_bytes'], 264)
+        for row in rows:
+            row['command'] = ['bash', '-c', wrapped[2] + '; true']
+        self.journal.write_text(''.join(json.dumps(r)+'\n' for r in rows))
+        self.rewrite_capture(lambda c: c.update(command=rows[0]['command']))
+        with self.assertRaisesRegex(ValueError, 'shell wrapper'):
+            self.validate()
+
+    def test_patch_fragment_explicit_cli_and_no_auto_promotion(self):
+        sandbox = Path(self.temp.name) / 'repo'
+        (sandbox/'tools').mkdir(parents=True)
+        lane = sandbox/'research/spill-a-20260919'
+        lane.mkdir(parents=True)
+        shutil.copy2(ROOT/'tools/tier-battery.py', sandbox/'tools/tier-battery.py')
+        shutil.copy2(LANE/'storage_capture.py', lane/'storage_capture.py')
+        subprocess.run(['git', 'apply', str(LANE/'day5/battery-dispatch.patch')], cwd=sandbox, check=True)
+        output = self.root/'joined.jsonl'
+        argv = [sys.executable, str(sandbox/'tools/tier-battery.py'), '--validate', str(self.journal),
+                '--schema', 'storage-cell', '--out', str(output)]
+        result = subprocess.run(argv, capture_output=True, text=True, check=True)
+        self.assertIn('NOT hardware/serving qualification', result.stdout)
+        self.assertFalse(json.loads(output.read_text())['qualification'])
+        result = subprocess.run(argv, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)  # Existing output is immutable.
+        self.assertNotIn('args.schema == "auto" and rows[0].get("kind") == "CELL"',
+                         (sandbox/'tools/tier-battery.py').read_text())
 
     def test_raw_tamper(self):
         with (self.root / 'command.log').open('ab') as out:
