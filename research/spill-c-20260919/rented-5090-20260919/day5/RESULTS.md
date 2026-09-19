@@ -31,3 +31,9 @@ NVMe storage, or production. Collector status deliberately remains
 `executed-not-qualified`; the explicit gate verdict is the numerical evidence.
 
 Linux bank suite, warning cleanup and final CPU checks follow in separate commits.
+
+## Linux bank suite
+
+At `a5eb77bd`, `cargo test --release -p memra-tier --test bank -j 16`
+passed: **46 passed; 0 failed; 0 ignored**. Raw output and exact source are
+in `bank-linux/`. This is native Linux CPU evidence, not a GPU cell.
