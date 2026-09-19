@@ -42,6 +42,7 @@ pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     limits: BankLimits,
     cache: BTreeMap<BankId, BankLease>,
     owned: BTreeMap<(u64, u64), BankLease>,
+    slru: Option<(SlruPolicy, LeasePin)>,
     pending: HashMap<TransferTicket, Pending>,
     issuer: u64,
     sequence: u64,
@@ -72,11 +73,50 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             limits,
             cache: BTreeMap::new(),
             owned: BTreeMap::new(),
+            slru: None,
             pending: HashMap::new(),
             issuer,
             sequence: 0,
             _domain: PhantomData,
         })
+    }
+    /// Install the CPU SLRU policy before any request. The charge is metadata
+    /// only; exact output/backing remains separately charged by stage until final
+    /// consumer retirement. No fixed CUDA slot pool is allocated by this adapter.
+    pub fn with_slru(mut self, policy: SlruPolicy, metadata: &ChargedLease) -> Result<Self> {
+        if !self.pending.is_empty()
+            || !self.owned.is_empty()
+            || self.slru.is_some()
+            || !policy.is_empty()
+        {
+            return Err(Error::Busy);
+        }
+        let required = self.slru_metadata_bytes(policy.slots())?;
+        if policy.capacity_bytes()? > self.limits.cache_bytes
+            || metadata.bytes().pageable < required
+        {
+            return Err(Error::Capacity);
+        }
+        self.slru = Some((policy, metadata.pin()?));
+        Ok(self)
+    }
+    pub fn slru_metadata_bytes(&self, slots: usize) -> Result<u64> {
+        let max_id = self.catalog.entries.keys().try_fold(0u64, |max_id, id| {
+            id.encode().map(|b| max_id.max(b.len() as u64))
+        })?;
+        // Two full-key maps + occupant key + queues, conservative node allowance.
+        (slots as u64)
+            .checked_mul(
+                max_id
+                    .checked_mul(3)
+                    .and_then(|n| n.checked_add(1024))
+                    .ok_or(Error::Overflow)?,
+            )
+            .and_then(|n| n.checked_add(4096))
+            .ok_or(Error::Overflow)
+    }
+    pub fn slru_policy(&self) -> Option<&SlruPolicy> {
+        self.slru.as_ref().map(|(p, _)| p)
     }
     /// Execute at most one bounded host read. CPU work must be pumped off a
     /// serving scheduler thread. Returning true means producer terminal, NOT GPU ready.
@@ -224,6 +264,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     }
     pub fn evict_cached(&mut self, id: &BankId) -> Result<bool> {
         self.catalog.record(id)?;
+        if let Some((policy, _)) = &mut self.slru {
+            policy.remove(id);
+        }
         Ok(self.cache.remove(id).is_some())
     }
     /// Host consumer adapter calls after its last use (including speculative
@@ -284,6 +327,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 .cloned()
                 .expect("nonempty cache");
             self.cache.remove(&id);
+            if let Some((policy, _)) = &mut self.slru {
+                policy.remove(&id);
+            }
         }
     }
     /// Release inactive evicted allocations, never outstanding consumer tickets.
@@ -550,9 +596,30 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
             }
         }
         p.published = true;
-        self.cache
-            .extend(p.records.iter().map(|(id, l)| (id.clone(), l.clone())));
-        self.trim();
+        if let Some((policy, _)) = &mut self.slru {
+            // Host-only adapter serializes policy decisions at successful publication.
+            // A prefetch hit is a no-op, not demand heat. Duplicate IDs retain order.
+            for id in &p.ids {
+                if policy.resident(id).is_some() {
+                    if p.demand {
+                        policy.hit(id);
+                    }
+                    continue;
+                }
+                let lease = &p.records[id];
+                if let Some(decision) = policy.reserve(id, lease.layout().storage_bytes()?, &[])? {
+                    if let Some(old) = decision.evicted {
+                        self.cache.remove(&old);
+                    }
+                    policy.publish(id)?;
+                    self.cache.insert(id.clone(), lease.clone());
+                }
+            }
+        } else {
+            self.cache
+                .extend(p.records.iter().map(|(id, l)| (id.clone(), l.clone())));
+            self.trim();
+        }
         Ok(output)
     }
     fn cancel(&mut self, ticket: &TransferTicket) -> Result<CancelState> {
@@ -585,6 +652,14 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         self.can_release(lease)?;
         lease.retire_backing()?;
         self.budget.borrow_mut().release(lease.charge())?;
+        if self
+            .cache
+            .get(lease.id())
+            .is_some_and(|r| r.charge().id() == lease.charge().id())
+            && let Some((policy, _)) = &mut self.slru
+        {
+            policy.remove(lease.id());
+        }
         self.cache
             .retain(|_, r| r.charge().id() != lease.charge().id());
         self.owned.remove(&lease.charge().id());
