@@ -1,0 +1,113 @@
+{
+  "kind": "cpu-stub",
+  "route_qualification": false,
+  "commands": [
+    {
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-m"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "nvidia-smi",
+        "-q"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-p2p",
+        "r"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-p2p",
+        "w"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "lscpu",
+        "--extended=CPU,NODE,SOCKET"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "numactl",
+        "-H"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "lscpu"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "df",
+        "-hT"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "lsblk",
+        "-J",
+        "-o",
+        "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "free",
+        "-g"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/scratch"
+      ],
+      "exit_code": 0,
+      "stdout": "STUB inventory, not hardware\n",
+      "stderr": ""
+    }
+  ]
+}
