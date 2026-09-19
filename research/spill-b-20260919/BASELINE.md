@@ -1,5 +1,7 @@
 # WP-B day-1 baseline — 2026-09-19
 
+> Historical day-1 baseline retained. Day-2 migration and current boundaries: `DAY2.md`, `HOSTPREFIX-EXTENSION.md`, `CELLS.md`.
+
 Repository `avifenesh/memra`; base `c5a33b14ff7b6c75a3cd808dbc0ee4f10aa8b33f`.
 Branch `lane/spill-b-20260919`, isolated worktree `../wt-spill-b`.
 This is CPU control-plane work, not RAM/SSD active attention qualification.

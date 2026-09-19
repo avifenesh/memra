@@ -1,6 +1,31 @@
-# WP-B queued GPU cells — NONE EXECUTED
+# WP-B cells — day-2 CPU pass; GPU cells NONE EXECUTED
 
-2026-09-19. Day-1 Mac is CPU-only. Local 5090 availability is not established; the lead's
+## Day-2 executed CPU cells (2026-09-19)
+
+Code tip `7f1a61a09a968ad1386c8c0b5899d8b650c7e27c`; raw output in
+`day2-verification.log`, repeat with `python3 research/spill-b-20260919/verify-day2.py`.
+40 memra-kv tests pass (19 B tier tests plus 21 existing tests); 36 unchanged shared
+contract tests and 3 compile-fail doctests pass. No ignored tests.
+
+| Cell | Actual CPU coverage | Result / limitation |
+|---|---|---|
+| B1-frozen | Imports/re-exports only; canonical JSON/payload pins unchanged; per-group counts, padding, immutable seal | PASS; no persistent production object migration |
+| B1-tier | Frozen `conformance::tier_cancel` run against `Hierarchy` | PASS; fake transfer backend, not GPU/NVMe |
+| B1-budget | Lead governor headroom/foreign/double-release/pin schedule replayed against shared B Governor; dimensions, bounded queue, deadline, tenant fairness, dirty backlog, simultaneous mutex reservations | PASS; concrete lead test was not generic/path-callable, no frozen files modified; serving-load fairness pending |
+| B1-lifetime | Short/missing/rejected/corrupt/duplicate/failed entries, unknown quarantine, three epochs, zero/partial submit cleanup, cancellation/publication and retirement | PASS; real disk/DMA/consumer/graph observers pending |
+| B1-materializer | Frozen trait implementation; one-record and multi-page odd-tail q8_0 K/q5_1 V exact bytes; full identity/order/format checks; allocation retention | PASS CPU binding; no CUDA attention call or complete recurrent continuation |
+| B1-hostprefix | Unbound legacy sidecar, full identity binding, model-generation mismatch, rebind/drop invalidation, old handoff untrusted | PASS primitive tests; six-line worker constructor/field wiring not compiled as full server here |
+| B4-policy | Linear diagnostic plus calibrated suffix/read/copy/materialization fixture table; mandatory/admitted-state refusal | PASS pure policy; synthetic costs, no selected runtime default |
+
+One read-only development-rig SSH attempt returned exit 255:
+`Connection closed by UNKNOWN port 65535`. No second attempt, no inventory returned,
+no GPU commands executed remotely. Full server/engine, true transfers, long-context,
+serving pressure and performance remain pending exactly as below. See
+`HOSTPREFIX-EXTENSION.md` for the native patch map and admission sequence.
+
+## GPU queue (unchanged acceptance bar)
+
+2026-09-19. The Mac remains CPU-only. Local 5090 availability is not established; the lead's
 launch probes failed. Required non-serving PRO pair/artifact permission remains lead-owned.
 No serving instance, paused model path, external runtime or format substitution is a cell.
 

@@ -1,5 +1,7 @@
 # WP-B contracts proposal — day 1, NOT FROZEN
 
+> Superseded by the accepted lead v1 freeze (`259ff819`) and day-2 migration. This proposal and `Cargo.lock.patch` are historical; do NOT apply the old sha2 lock edge or reintroduce these provisional structs. Current contracts are imports from memra-tier; see `DAY2.md`.
+
 Compilable definitions: `crates/memra-kv/src/record.rs`, `src/tiered/mod.rs`,
 `src/tiered/integration.rs`. These are the proposed signatures, compiled together with
 unit tests; lead moves shared types into memra-tier at freeze. No duplicate authoritative
