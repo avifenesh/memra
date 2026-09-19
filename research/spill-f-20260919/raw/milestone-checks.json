@@ -1,0 +1,93 @@
+{
+  "utc": "2026-09-19T22:12:12.927443+00:00",
+  "repository": "memra",
+  "source_commit": "43727c62965fbf2ab2581fb60cee73c531c57da7",
+  "kind": "docs-and-syntax-verification-not-gpu",
+  "checks": [
+    {
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit_code": 0,
+      "stdout": "check-flags: runtime literal reads=864\ncheck-flags: no uncovered runtime names\ncheck-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)\n",
+      "stderr": ""
+    },
+    {
+      "check": "Python AST syntax",
+      "path": "research/spill-f-20260919/probe-box-readonly.py",
+      "status": "pass",
+      "sha256": "35535e9537be2f31ee72d8b9685d47f90979cb172f35eccc0dce571742640cfe"
+    },
+    {
+      "check": "Python AST syntax",
+      "path": "research/spill-f-20260919/search-storage-offers.py",
+      "status": "pass",
+      "sha256": "346c7e72d797cef9576a48d4958282777d0fe51c2f3ecbbdc4f84ab644773d6a"
+    },
+    {
+      "check": "documented shell syntax only (not execution)",
+      "path": "research/spill-f-20260919/BOX-HYGIENE.md",
+      "block": 0,
+      "exit_code": 0,
+      "stderr": ""
+    },
+    {
+      "check": "documented shell syntax only (not execution)",
+      "path": "research/spill-f-20260919/CELLS-ENVELOPE.md",
+      "block": 0,
+      "exit_code": 0,
+      "stderr": ""
+    },
+    {
+      "check": "documented shell syntax only (not execution)",
+      "path": "research/spill-f-20260919/NVME-PROOF-OPTIONS.md",
+      "block": 0,
+      "exit_code": 0,
+      "stderr": ""
+    },
+    {
+      "check": "documented shell syntax only (not execution)",
+      "path": "research/spill-f-20260919/NVME-PROOF-OPTIONS.md",
+      "block": 1,
+      "exit_code": 0,
+      "stderr": ""
+    },
+    {
+      "check": "retained inventory/search JSON parsing",
+      "status": "pass"
+    },
+    {
+      "check": "Mac cargo check",
+      "status": "not-applicable",
+      "reason": "Only documentation and read-only JSON receipt added; no Rust, manifest or probe binary added in this milestone."
+    },
+    {
+      "check": "G2 native probe build/execution",
+      "status": "not-run",
+      "reason": "pre-registration milestone; native G2 runner not implemented"
+    }
+  ]
+}

@@ -814,3 +814,59 @@ fresh child processes for unset, 0, 1, 16, 8, 32, invalid and empty values, chec
 explicit gate rollback and refusal, and verify a new thread's environment policy.
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
+
+## Generic spill / tiered KV (memra-tier)
+
+The shared contract is `crates/memra-tier/src/contracts.rs`; the conformance source
+is `crates/memra-tier/tests/contracts/conformance.rs` (including revision schedules).
+These are **CPU execution gates, not hardware qualification**. Run the whole pair:
+
+```sh
+cargo test -p memra-tier -p memra-kv --offline --no-fail-fast
+cargo check -p memra-tier -p memra-kv --offline --all-targets
+cargo check -p memra-tier -p memra-kv --offline --all-targets --target x86_64-unknown-linux-gnu
+cargo clippy -p memra-tier -p memra-kv --offline --all-targets --no-deps -- -D warnings
+cargo fmt --all -- --check
+python3 crates/memra-tier/tests/contracts/fixture_reference.py --check
+bash tools/check-flags.sh
+bash tools/docs-registry-census.sh
+git diff --check
+```
+
+The tier suite covers contracts, storage, banks/rows, directed peer capacity and
+placement; KV covers the hierarchy, materializers and single-governor scheduling.
+Conformance schedules drive explicit completion/cancellation/retirement, original
+item indices, namespace and epoch refusal, opaque bytes, accounting and borrowed
+release. v1.2 adds owner/fence identities, logical-vs-framed completion bytes,
+source installation and two distinct record materializations; see the
+[interface decision](decisions/GENERIC-SPILL-INTERFACE-V1.md) and
+[freeze ledger](../research/spill-lead-20260919/FREEZE.md).
+Linux cross-target check is compilation only, not Linux syscall execution.
+
+For rented-development collection, start from
+[the first-hour runbook](../research/spill-d-20260919/RIG-DAY1.md) and
+`tools/tier-rig-bootstrap.sh --help`. Bootstrap requires an explicit isolated
+`BRANCH=lane/spill-...`, checks the CUDA target, and records source and binary
+identities. `--dry-run` stubs external effects and is not a rig acceptance result.
+Launch native cells through the collector (absolute executable, new output dir):
+
+```sh
+python3 tools/tier-battery.py --rig rtx5090 --timeout 1200 --out <new-dir> --execute <absolute-bin> <args>
+```
+
+The collector owns `/tmp/memra-5090.lock`; PRO-pair/four-card cells instead use
+`--rig pro-pair` / `--rig pro-four` and `/tmp/memra-gpu.lock`. Do not double-wrap
+its lock or run scored campaigns concurrently on a shared fabric. Keep raw output,
+source/artifact/plan/binary hashes and 250 ms telemetry; sync each completed or
+failed cell before the next one. Bootstrap and collector success are
+**executed-not-qualified**, not model/serving passes. Failed/refused cells remain
+failed; absent counters stay unknown. Unproven storage is not NVMe evidence.
+
+CPU fake fences prove owner/issuer/generation checks and schedule ordering, not
+CUDA waits, physical pinning, graph addresses, P2P routes or last-use completion.
+Native materializer/consumer binding, full-state/logit/token identity, scheduler
+crossings, Linux direct-I/O, local-NVMe ancestry and target-rig batteries remain
+separate gates. No CPU result promotes model support or a runtime default. The
+io_uring proposal is deferred pending a measured positioned-read baseline; it is
+not an implemented comparator. This conformance/doc revision adds **no `.cu` or
+FFI changes**, so it requires no kernel-inventory amendment.
