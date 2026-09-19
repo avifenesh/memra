@@ -1,0 +1,30 @@
+{
+  "utc": "2026-09-19T21:56:03.503054+00:00",
+  "rig": "BOX2",
+  "evidence_class": "read-only-disk-and-power-inventory",
+  "df": {
+    "exit_code": 0,
+    "stdout": "Filesystem        1B-blocks        Used    Available Use% Mounted on\noverlay        214748364800 25365811200 189382553600  12% /\nshm             33285996544           0  33285996544   0% /dev/shm\n",
+    "stderr": ""
+  },
+  "gpu": {
+    "exit_code": 0,
+    "stdout": "name, memory.total [MiB], memory.used [MiB], power.limit [W], power.max_limit [W]\nNVIDIA GeForce RTX 5090, 32607 MiB, 2 MiB, 400.00 W, 600.00 W\n",
+    "stderr": ""
+  },
+  "apps": {
+    "exit_code": 0,
+    "stdout": "pid, process_name, used_gpu_memory [MiB]\n",
+    "stderr": ""
+  },
+  "own_target": {
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "du: cannot access '/root/wt-f/target': No such file or directory\n"
+  },
+  "cargo_cache": {
+    "exit_code": 1,
+    "stdout": "108900352\t/root/.cargo/registry\n",
+    "stderr": "du: cannot access '/root/.cargo/git': No such file or directory\n"
+  }
+}
