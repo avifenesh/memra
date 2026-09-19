@@ -33,6 +33,7 @@ is inferred from registration or synthetic fixtures.
 | `cargo test -p memra-gguf --test model_semantics` on base plus the original three regressions | 0 passed, 3 failed; window, llama3 RoPE and GELU each compiled as full attention/no factors/SiLU | [before.log](raw/before.log) |
 | `cargo test -p memra-gguf --lib model_plan::semantics_tests` | 12 passed | [after.log](raw/after.log) |
 | `cargo test -p memra-gguf -p memra-runtime --lib` | 289 gguf passed, 1 ignored; 1 runtime passed | [gguf-runtime.log](raw/gguf-runtime.log) |
+| `MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 277 -- cargo test -p memra-gguf --lib` | 12 existing artifact-gated tests skipped within the 12-test budget; these are included in Rust's 289 reported passes | [skip-census.log](raw/skip-census.log) |
 | `cargo test -p memra-gguf -p memra-reference -p memra-runtime` | Initial gguf suite passed; reference 65 passed, 1 failed | [cpu-suites.log](raw/cpu-suites.log) |
 | Base: `cargo test -p memra-reference --lib qwen35_fixture_executes_mixed_gdn_and_full_attention_state` | Same bitwise fixture failure and identical output bits on untouched base; tracked separately in #548 | [reference-base.log](raw/reference-base.log) |
 | `cargo clippy -p memra-gguf --lib --tests` | Passed; existing macOS unused `AsRawFd` import warning in source.rs | [clippy.log](raw/clippy.log) |
