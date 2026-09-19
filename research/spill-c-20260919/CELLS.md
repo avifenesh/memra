@@ -65,3 +65,30 @@ cache hits/misses, prefetch useful/wasted bytes, queue depth, staged bytes, H2D 
 Percentiles need enough observations; small samples are descriptive only. Separate spill
 performance from model-quality study. No default claim until balanced runs and exactness
 pass; rejected/flat doors removed if introduced.
+
+## Day-2 migration update — 2026-09-19
+
+The standalone research harness is retired; its day-1 raw receipts remain. Run
+`cargo test -p memra-tier --offline --test bank` in the workspace. Native engine
+exports/dependency wiring remain lead-owned. Details: `HOSTEXPS-ADAPTER.md`.
+
+| Cell | Day-2 execution | Remaining blocking evidence |
+|---|---|---|
+| C1-contract | Frozen `BankedResidency` cancellation schedule directly path-imported, not copied; original masks, three independent epochs, duplicate leases, zero/small/full host cache, late release, retained rejected-publication resources and common-budget pressure tested. | Actual A transfer owner/ReadyView, native SLRU and GPU byte/consumer-fence integration. |
+| C1-hostexps | Typed HostExps metadata/bridge, native qtype-code pins, authoritative per-record offset/len/row_bytes, split offset-zero, macro/block-scale presence/checksums tested. New UniformLease-only boundary has a compile-fail red. | Bridge is unexported; tests compile it against an API-shaped CPU fixture, not CUDA HostExps. Dispatch sites and planned edits are enumerated in HOSTEXPS-ADAPTER.md. No runtime changes authorized here. |
+| C2-contract | Frozen RowService ordered/duplicate schedule runs against BoundedRowService. Multi-plane records, chunked slots smaller than batch, failed completion cardinality, partial-release Busy retry, bounds/corruption/cancel/retire tested. | Async worker, real NVMe/pinned/UVA/device publication and model-scale persistent hot cache. |
+| C2-ngram | Recorded **synthetic** six-step trace reproduced by pinned native full/cached CPU ID functions, then replayed through RowService for F32 and BF16 expansion bit identity. The source-body drift test runs in the same target. | Existing full-geometry `gate_ple_ngram_cache` plus real artifact rewind/spec/projection identity and raw native CPU/GPU row-byte capture. |
+| C3-policy | Portable 512 B requested granularity /4 KiB slot selected from arithmetic table; 512 B/4 KiB/16 KiB sparse and packed cases rerun. No env flag, no hardware/default promotion. | Actual backend alignment, physical SSD counters, latency/IOPS and complete storage→compute A/B. A native backend must raise granularity when its contract requires it. |
+| Inventory | One bounded read-only SSH attempt, exit 255: `Connection closed by UNKNOWN port 65535`. No remote inventory or GPU run succeeded. | Lead supplies reachable designated non-serving rig and immutable Hy3/PLE artifacts. No retry beyond the two-attempt cap; only one attempted this turn. |
+
+All previously queued C1/C2/C3 GPU/model/performance cells remain **pending**;
+none is promoted by CPU conformance. The host implementation explicitly rejects
+requested device/pinned allocation and never claims `consumer_fenced=true`.
+Current stage/gather reads are synchronous; only the ticket/publication/retirement
+lifecycle is asynchronous. A's actual asynchronous byte transport remains required.
+
+Native follow-up order: (1) lead engine dependency/export wiring, (2) loader source
+and manifest registration with full metadata accounting, (3) A ObjectStore + owner
+TransferEngine/ReadyView and B production governor, (4) C1 exact native compute
+adapter and C2 unchanged PLE expansion/projection, (5) all queued real gates.
+No changed hardware default can land from the portable 512 B policy alone.

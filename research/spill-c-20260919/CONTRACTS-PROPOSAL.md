@@ -137,3 +137,16 @@ identical bytes. Pinned/UVA and NVMe OS integrations are not implemented.
 - TESTING: `cargo test -p memra-tier --test bank` plus doctests after integration; CPU tests
   do not satisfy Hy3/PLE GPU cells.
 - INDEX provisional row: `spill-c-20260919 | CPU-only bank/row prototype; Hy3/PLE GPU gates pending. | BASELINE.md`
+
+## Day-2 disposition
+
+The proposal above is historical. Shared names now import `memra_tier::contracts`
+from accepted lead tip `259ff819`; no branch-local duplicate BankId, RecordLayout,
+lease/proof, ticket, row service, domain or governor schema remains. Canonical JSON
+v1 and homogeneous epoch triples are used unchanged. The standalone manifest and
+lockfile are removed; day-1 receipts and their original commit remain reproducible.
+
+The host-only implementation uses the frozen ticket/Completion and explicit
+retirement APIs, retains rejected BankPublication ownership, and injects one shared
+BudgetGovernor. It does not impersonate A's TransferEngine or grant GPU readiness.
+See HOSTEXPS-ADAPTER.md for precise implemented/native-pending boundaries.
