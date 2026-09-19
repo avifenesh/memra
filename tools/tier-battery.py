@@ -249,9 +249,15 @@ class SubprocessRunner:
     def __init__(self, smi="nvidia-smi"):
         self.smi = smi
 
-    def run(self, command, raw_path, timeout=30, echo=True):
+    def run(self, command, raw_path, timeout=30, echo=True, run_id=None, hourly_cost=None, resume_from=None):
         root = raw_path.parent
         stem = raw_path.stem
+        started_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        instance = os.environ.get("RUNPOD_POD_ID") or os.environ.get("CONTAINER_ID")
+        cell = {"kind": "CELL", "run_id": run_id or stem, "command": command,
+                "started_utc": started_utc, "provider_instance_id": instance,
+                "hourly_cost": hourly_cost, "qualification": False, "resume_from": resume_from}
+        append_cell(root / "CELL.jsonl", {**cell, "event": "start"})
         smi = shutil.which(self.smi)
         snapshots = {}
         def snapshot(label):
@@ -327,6 +333,11 @@ class SubprocessRunner:
                   "qualification": False}
         with (root / f"{stem}.capture.json").open("x") as out:
             json.dump(record, out, indent=2); out.write("\n")
+        append_cell(root / "CELL.jsonl", {**cell, "event": "end",
+                    "ended_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "duration_ns": ended-started, "exit_code": code, "status": record["status"],
+                    "estimated_cost": (ended-started)/3.6e12 * hourly_cost if hourly_cost is not None else None,
+                    "capture": descriptor(root, root / f"{stem}.capture.json")})
         return record
 
 
@@ -397,6 +408,7 @@ def run_dry_campaign(out, n=5, rig="pro-pair", thermal="synthetic-no-thermal-mea
                 quote = next((line for line in text.splitlines() if line.startswith("ERROR:")), "died, cause unknown — repro needed")
                 failure = {"schema_version":1,"kind":"cpu-fixture","run_id":rid,"command":command,"exit_code":code,"timed_out":timeout,"failure_quote":quote,"raw_log":descriptor(out,log),"concurrent_gpu_state":"not queried: CPU fake; no GPU invocation"}
                 failures.append(failure)
+                append_cell(out / "failures.jsonl", failure)
                 require(fail, "runner failed; raw failure retained")
                 return
             result = json.loads(next(line[len("RESULT "):] for line in text.splitlines() if line.startswith("RESULT ")))
@@ -406,6 +418,7 @@ def run_dry_campaign(out, n=5, rig="pro-pair", thermal="synthetic-no-thermal-mea
             outputs = {k: descriptor(out,run_dir / f"{k}.bin") for k in ("state","logits","tokens")}
             row = {"schema_version":1,"cell":"boundary","pair_id":pair,"run_id":rid,"arm":arm,**identity,"lock":None,"route":"host" if arm=="on" else "local","direct_path_proven":False,"migrated_bytes":result["migrated_bytes"],**outputs,"raw_log":descriptor(out,log),"telemetry":None,"telemetry_interval_ms":None,"status":"pass","exit_code":0}
             records.append(row)
+            append_cell(out / "runs.jsonl", row)
             # Exercise the sampler schema with an explicitly VIRTUAL 250ms clock.
             sampler = Sampler(lambda ns: sample_fake(ns, min(1, ns//INTERVAL_NS)*result["migrated_bytes"]))
             for i in range(3): sampler.sample_at(i*INTERVAL_NS)
@@ -414,6 +427,7 @@ def run_dry_campaign(out, n=5, rig="pro-pair", thermal="synthetic-no-thermal-mea
             telemetry = out / "telemetry" / f"{rid}.jsonl"
             telemetry.write_text("".join(json.dumps(s,sort_keys=True)+"\n" for s in samples))
             runs.append({"schema_version":1,"kind":"cpu-fixture","phase":phase,"order":order,"pair_id":pair,"run_id":rid,"arm":arm,"thermal_regime":thermal,"duration_ns":result["duration_ns"],"clock":"virtual-monotonic","telemetry":descriptor(out,telemetry),"raw_log":descriptor(out,log),"command":command,**outputs})
+            append_cell(out / "collector.jsonl", runs[-1])
         try:
             run("on","quoted-failure","red","red",True)
             for arm in ("off","on"): run(arm,"control","correctness","AB")
@@ -485,29 +499,144 @@ def validate_campaign(root):
     return len(runs)
 
 
+def validate_schema(value, schema, path="row"):
+    """Offline subset used by the two checked-in schemas; unknown keywords fail closed."""
+    supported = {"$schema", "$id", "$comment", "title", "type", "properties", "required",
+                 "additionalProperties", "items", "minItems", "minimum", "minLength", "pattern", "enum", "const", "anyOf"}
+    require(set(schema) <= supported, "unsupported schema keyword")
+    if "anyOf" in schema:
+        for arm in schema["anyOf"]:
+            try:
+                validate_schema(value, arm, path)
+                return
+            except ValueError:
+                pass
+        raise ValueError(path + ": no schema alternative matched")
+    if "type" in schema:
+        matches = {"object": isinstance(value, dict), "array": isinstance(value, list),
+                   "string": isinstance(value, str), "boolean": type(value) is bool,
+                   "integer": type(value) is int, "number": type(value) in (int, float) and math.isfinite(value),
+                   "null": value is None}
+        require(matches.get(schema["type"], False), path + ": wrong type")
+    if "const" in schema:
+        require(type(value) is type(schema["const"]) and value == schema["const"], path + ": wrong constant")
+    if "enum" in schema:
+        require(any(type(value) is type(v) and value == v for v in schema["enum"]), path + ": wrong enum")
+    if isinstance(value, dict):
+        require(set(schema.get("required", [])) <= set(value), path + ": missing field")
+        props = schema.get("properties", {})
+        if schema.get("additionalProperties") is False:
+            require(set(value) <= set(props), path + ": unknown field")
+        for key in value.keys() & props.keys():
+            validate_schema(value[key], props[key], path + "." + key)
+    if isinstance(value, list):
+        require(len(value) >= schema.get("minItems", 0), path + ": empty array")
+        for item in value:
+            validate_schema(item, schema["items"], path + "[]")
+    if "minimum" in schema:
+        require(value >= schema["minimum"], path + ": below minimum")
+    if "minLength" in schema:
+        require(len(value) >= schema["minLength"], path + ": empty string")
+    if "pattern" in schema:
+        require(re.fullmatch(schema["pattern"], value) is not None, path + ": pattern mismatch")
+
+
+def join_storage(rows, samples):
+    """A's unmodified StorageSample inside a run-id envelope, never guessed by order."""
+    ids = {r["run_id"] for r in rows}
+    require(len(ids) == len(rows), "duplicate run id")
+    joined = {rid: [] for rid in ids}
+    required = {"version", "fixture", "backend_requested", "backend_actual", "status",
+                "valid_bytes", "padded_bytes", "io_bytes", "physical_bytes", "queue_ns", "io_ns",
+                "h2d_ns", "d2h_ns", "p2p_ns", "total_ns", "inflight", "pinned_bytes",
+                "pageable_bytes", "fallbacks", "payload_checksum"}
+    optional = {"physical_bytes", "queue_ns", "io_ns", "h2d_ns", "d2h_ns", "p2p_ns", "pageable_bytes"}
+    for envelope in samples:
+        require(set(envelope) == {"run_id", "sample"}, "storage envelope needs explicit run_id/sample")
+        rid, sample = envelope["run_id"], envelope["sample"]
+        require(isinstance(rid, str) and rid in ids, "orphan storage run id")
+        require(isinstance(sample, dict) and set(sample) == required, "StorageSample fields")
+        require(type(sample["version"]) is int and sample["version"] == 1, "StorageSample version")
+        for field in ("fixture", "backend_requested", "backend_actual", "status"):
+            require(isinstance(sample[field], str) and bool(sample[field]), "StorageSample empty identity")
+        for field in required - {"fixture", "backend_requested", "backend_actual", "status", "payload_checksum"}:
+            value = sample[field]
+            require((field in optional and value is None) or (type(value) is int and 0 <= value < 2**64), "StorageSample invalid counter")
+        checksum = sample["payload_checksum"]
+        require(isinstance(checksum, list) and len(checksum) == 32 and all(type(v) is int and 0 <= v <= 255 for v in checksum), "StorageSample checksum")
+        require(sample["valid_bytes"] <= sample["padded_bytes"], "StorageSample invalid padding")
+        joined[rid].append(sample)
+    require(all(joined.values()), "missing storage samples for a run")
+    # Preserve null physical counters, fallbacks and error statuses; joining is not scoring.
+    return [{"run_id": r["run_id"], "samples": joined[r["run_id"]], "qualification": False} for r in rows]
+
+
+def first_hour_plan():
+    """Booking/order only. Never execute performance cells in the first rental hour."""
+    stages = [("bootstrap-native-compile", 20, "bootstrap"), ("A-filesystem", 5, "lane-self-lock"),
+              ("D1-local-bytes", 5, "collector"), ("C-ple-tiny", 15, "lane-self-lock"),
+              ("B-qwen-fitting", 15, "lane-self-lock")]
+    return {"schema_version": 1, "kind": "plan", "rig": "rtx5090", "qualification": False,
+            "lock": LOCKS["rtx5090"], "stop_starting_after_minutes": 60,
+            "stages": [{"cell": name, "budget_minutes": minutes, "lock_owner": owner,
+                        "status": "planned-not-run"} for name, minutes, owner in stages],
+            "correctness_orders": [{"pair_id": order + "-correctness", "order": order,
+                                    "arms": ["off" if arm == "A" else "on" for arm in order]}
+                                   for order in ("AB", "BA")],
+            "order_applies_to": "future bound tier ON/OFF cells only; baseline runners have no invented arm flags",
+            "performance_cells": [], "performance_medians_allowed": False,
+            "later_performance_minimum": {"AB_pairs": 5, "BA_pairs": 5},
+            "warning": "Cold native build may consume entire hour. Missing adapters remain BLOCKED."}
+
+
+def append_cell(path, row):
+    with path.open("a") as out:
+        out.write(json.dumps(row) + "\n"); out.flush(); os.fsync(out.fileno())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--execute", nargs=argparse.REMAINDER, metavar="ARGV")
     modes.add_argument("--plan", action="store_true")
+    modes.add_argument("--first-hour", action="store_true")
     modes.add_argument("--validate", type=Path, metavar="RUNS_JSONL")
     modes.add_argument("--dry-run", action="store_true")
     modes.add_argument("--validate-campaign", type=Path, metavar="BUNDLE")
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--schema", choices=["auto", "runs", "telemetry"], default="auto")
+    parser.add_argument("--storage-samples", type=Path, help="run-id wrapped canonical StorageSample JSONL")
+    parser.add_argument("--resume", action="store_true", help="read last CELL receipt; rerun in a new attempt")
+    parser.add_argument("--run-id", help="stable cell identity (defaults to output directory name)")
+    parser.add_argument("--hourly-cost", type=float, help="private optional operator rate")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--pairs-per-order", type=int, default=5)
     parser.add_argument("--rig", choices=["rtx5090", "pro-pair", "pro-four"], default="pro-pair")
     args = parser.parse_args()
     if args.execute is not None:
         require(args.execute and args.out is not None and args.timeout > 0, "--execute requires argv, new --out and positive timeout")
+        if args.hourly_cost is not None:
+            require(math.isfinite(args.hourly_cost) and args.hourly_cost >= 0, "invalid hourly cost")
+        previous = None
+        if args.resume:
+            old = args.out / "CELL.jsonl"
+            records = [json.loads(line) for line in old.read_text().splitlines()]
+            require(records and records[-1]["command"] == args.execute, "resume command mismatch")
+            previous = {"receipt": str(old), "sha256": digest(old), "last_event": records[-1]["event"]}
+            args.out = args.out / "attempts" / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         args.out.mkdir(parents=True, exist_ok=False)
         with campaign_lock(args.rig) as lock:
-            record = SubprocessRunner().run(args.execute, args.out / "command.log", args.timeout)
+            record = SubprocessRunner().run(args.execute, args.out / "command.log", args.timeout,
+                                            run_id=args.run_id, hourly_cost=args.hourly_cost, resume_from=previous)
             (args.out / "lock.json").write_text(json.dumps({"rig": args.rig, "lock": lock, "acquired": True}) + "\n")
         print(json.dumps(record, indent=2))
         if record["status"] == "failed":
             sys.exit(record["exit_code"] if 0 < record["exit_code"] < 126 else 2)
         return
+    if args.first_hour:
+        print(json.dumps(first_hour_plan(), indent=2))
+        return
+    require(not args.resume, "--resume requires --execute")
     if args.validate_campaign:
         count = validate_campaign(args.validate_campaign)
         print(f"CPU CAMPAIGN MATCH: {count} runs; synthetic protocol evidence only, NOT GPU qualification")
@@ -520,7 +649,24 @@ def main():
         print(json.dumps({"schema_version": 1, "status": "pending-gpu-adapters", "cases": CASES, "standard_gates": ["kernel-check", "run-gen argmax", "run-spec K=1..8 / manifest refusals", "step-pro"], "locks": LOCKS, "performance": {"AB_pairs": 5, "BA_pairs": 5, "telemetry_interval_ms": 250}, "warning": "Scaffold only. No GPU cell executed; pair is four tiers, not four-card qualification."}, indent=2))
         return
     rows = [json.loads(line) for line in args.validate.read_text().splitlines() if line.strip()]
+    require(rows, "empty JSONL")
+    kind = args.schema if args.schema != "auto" else ("telemetry" if "monotonic_ns" in rows[0] else "runs")
+    schema = json.loads((Path(__file__).resolve().parents[1] / "research/spill-d-20260919" / (kind + ".schema.json")).read_text())
+    for row in rows:
+        validate_schema(row, schema)
+    if kind == "telemetry":
+        require(args.storage_samples is None, "telemetry has no run_id; join storage against runs instead")
+        validate_telemetry(rows, rows[0]["kind"])
+        print(f"TELEMETRY MATCH: {len(rows)} samples; NOT hardware qualification")
+        return
     pairs = validate_rows(rows, args.validate.parent)
+    if args.storage_samples:
+        samples = [json.loads(line) for line in args.storage_samples.read_text().splitlines() if line.strip()]
+        joined = join_storage(rows, samples)
+        require(args.out is not None, "storage join requires new --out JSONL file")
+        with args.out.open("x") as out:
+            for row in joined:
+                out.write(json.dumps(row) + "\n")
     print(f"BYTE-RECEIPTS MATCH: {len(rows)} records / {pairs} forced pairs; not full battery qualification")
 
 

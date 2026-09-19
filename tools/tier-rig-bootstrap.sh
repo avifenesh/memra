@@ -17,18 +17,23 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--dry-run', action='store_true')
 p.add_argument('--out', type=Path, help='new receipt directory (required for dry-run)')
-p.add_argument('--repo', type=Path, default=Path.home() / 'memra-spill')
+p.add_argument('--repo', type=Path)
+p.add_argument('--resume', action='store_true', help='read prior receipt; revalidate in a new attempt')
+p.add_argument('--provider', choices=['auto', 'runpod', 'vast', 'other'], default='auto')
+p.add_argument('--persistent-root', type=Path, help='operator-confirmed provider persistent volume')
+p.add_argument('--nvme-root', type=Path, help='candidate local NVMe mount; verified before use')
+p.add_argument('--set-power', action='store_true', help='request expected limit; refusal is diagnostic')
+p.add_argument('--hourly-cost', type=Decimal, help='optional private operator rate; never publish raw')
 p.add_argument('--expected-power', type=int, default=600)
 p.add_argument('--gap-seconds', type=int, default=60)
 p.add_argument('--jobs', type=int, default=4)
 a = p.parse_args()
-minimum_commit = '914229ae3f706c0581f5d7f7bb415a14795b1640'
+minimum_commit = '020d20479cd686835c0fb7743040947d0fc2723b'
 branch = os.environ.get('BRANCH', '')
 if not re.fullmatch(r'lane/spill-[A-Za-z0-9._/-]+', branch) or '..' in branch or branch.endswith('/'):
     p.error('BRANCH must explicitly name a lane/spill-* remote branch; main/default forbidden')
@@ -36,14 +41,29 @@ if a.gap_seconds < 60 or a.expected_power < 600 or a.jobs < 1:
     p.error('gap >=60 seconds, power >=600 W and jobs >=1 required')
 if a.dry_run and a.out is None:
     p.error('--dry-run requires --out (never writes a live checkout)')
-repo = a.repo.resolve()
+provider = a.provider
+if provider == 'auto':
+    provider = 'runpod' if os.environ.get('RUNPOD_POD_ID') else ('vast' if os.environ.get('CONTAINER_ID') else 'other')
+if a.resume and a.out is None:
+    p.error('--resume requires --out pointing to the prior receipt directory')
+if a.hourly_cost is not None and (not a.hourly_cost.is_finite() or a.hourly_cost < 0):
+    p.error('--hourly-cost must be finite and nonnegative')
+if provider == 'vast' and a.persistent_root is None:
+    p.error('Vast persistence is offer-specific: --persistent-root must be operator-confirmed')
+persistent = (a.persistent_root or (Path('/workspace') if provider == 'runpod' else Path.home())).resolve()
+repo = a.repo.resolve() if a.repo else persistent / 'memra-spill'
+instance = os.environ.get('RUNPOD_POD_ID') if provider == 'runpod' else (os.environ.get('CONTAINER_ID') if provider == 'vast' else None)
+bootstrap_start = time.monotonic_ns()
 utc = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
 host = re.sub('[^A-Za-z0-9_.-]', '_', os.uname().nodename)
 # Raw host identifiers stay machine-local; sanitize before publishing evidence.
 report = {'schema_version': 1, 'kind': 'cpu-stub' if a.dry_run else 'rig-bootstrap',
           'status': 'incomplete', 'branch': branch, 'minimum_commit': minimum_commit, 'started_utc': utc,
           'expected_power_w': a.expected_power, 'gap_seconds': a.gap_seconds,
-          'lock': '/tmp/memra-5090.lock', 'qualification': False, 'steps': []}
+          'lock': '/tmp/memra-5090.lock', 'qualification': False, 'steps': [],
+          'provider': provider, 'provider_instance_id': instance,
+          'hourly_cost': str(a.hourly_cost) if a.hourly_cost is not None else None,
+          'private_receipt': True}
 CUDA = r'''
 #include <cuda_runtime.h>
 #include <cstdio>
@@ -73,14 +93,38 @@ def check(ok, message):
     if not ok:
         raise RuntimeError(message)
 
-with tempfile.TemporaryDirectory(prefix='tier-bootstrap-') as scratch:
-    scratch = Path(scratch)
-    destination = a.out.resolve() if a.out else None
-    if destination is not None and destination.exists():
-        p.error('--out already exists; refusing to overwrite evidence')
+# Persist from the first command; SIGKILL/spot loss must not strand evidence in /tmp.
+# A resume never reuses stale GPU acceptance: every hardware/source check runs again.
+destination = a.out.resolve() if a.out else persistent/'spill-bootstrap-receipts'/f'{host}-{utc}'
+if a.resume:
+    previous_path = destination/'BOOTSTRAP.json'
+    previous = json.loads(previous_path.read_text())
+    check(previous['branch'] == branch and previous['kind'] == report['kind'], 'resume branch/class mismatch')
+    report['resume_from'] = {'path': str(previous_path), 'sha256': hashlib.sha256(previous_path.read_bytes()).hexdigest(),
+                             'last_step': previous['steps'][-1]['name'] if previous['steps'] else None}
+    destination = destination/'attempts'/utc
+if destination.exists():
+    p.error('--out already exists; use --resume to preserve evidence in a new attempt')
+destination.mkdir(parents=True, exist_ok=False)
+scratch = destination
+if True:
+    def checkpoint(event):
+        row = {'kind': 'BOOTSTRAP', 'event': event, 'utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+               'qualification': False, 'last_step': report['steps'][-1] if report['steps'] else None,
+               'active_step': report.get('active_step')}
+        with (destination/'BOOTSTRAP.jsonl').open('a') as stream:
+            stream.write(json.dumps(row)+'\n'); stream.flush(); os.fsync(stream.fileno())
+        temporary = destination/'BOOTSTRAP.partial'
+        with temporary.open('w') as stream:
+            json.dump(report, stream, indent=2); stream.write('\n'); stream.flush(); os.fsync(stream.fileno())
+        temporary.replace(destination/'BOOTSTRAP.json')
+    checkpoint('start')
     def run(label, argv, stub='', timeout=120, allowed=False, cwd=None):
         path = scratch / (label + '.log')
         start = time.monotonic_ns()
+        start_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        report['active_step'] = {'name': label, 'command': argv, 'started_utc': start_utc, 'raw_log': path.name}
+        checkpoint('cell-start')
         if a.dry_run:
             path.write_text(stub)
             code = 0
@@ -101,11 +145,16 @@ with tempfile.TemporaryDirectory(prefix='tier-bootstrap-') as scratch:
         text = path.read_text(errors='replace')
         report['steps'].append({'name': label, 'command': argv, 'exit_code': code,
                                 'duration_ns': time.monotonic_ns()-start,
+                                'started_utc': start_utc, 'ended_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                'provider_instance_id': instance,
+                                'estimated_cost': str(a.hourly_cost * Decimal(time.monotonic_ns()-start) / Decimal(3600000000000)) if a.hourly_cost is not None else None,
                                 'stubbed': a.dry_run, 'raw_log': path.name,
                                 'failure_quote': next((line for line in text.splitlines() if re.search(
                                     r'ERROR|error:|fatal|panic|out of memory|CUDA_ERROR', line)),
                                     'died, cause unknown — repro needed') if code != 0 else None,
                                 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+        report.pop('active_step', None)
+        checkpoint('cell-end')
         print(f'{label}: exit {code}', flush=True)
         check(code == 0 or allowed, f'{label} failed, exit {code}; exact output: {path.name}')
         return text if code == 0 else ''
@@ -115,8 +164,6 @@ with tempfile.TemporaryDirectory(prefix='tier-bootstrap-') as scratch:
         return tuple(map(int, m.groups())) if m else None
 
     try:
-        if destination:
-            destination.mkdir(parents=True, exist_ok=False)
         check(a.dry_run or sys.platform == 'linux', 'Linux VM/container required')
         distro = run('distro', ['cat', '/etc/os-release'], 'ID=ubuntu\nVERSION_ID="24.04"\n')
         report['distro'] = distro
@@ -128,11 +175,28 @@ with tempfile.TemporaryDirectory(prefix='tier-bootstrap-') as scratch:
         try:
             memory, limit, maximum = map(lambda s: Decimal(s.strip()), rows[0][1:])
             check(all(x.is_finite() for x in (memory,limit,maximum)) and memory >= 31000
-                  and limit >= a.expected_power and maximum >= a.expected_power,
-                  'power.limit AND power.max_limit must meet expected power; >=31,000 MiB required')
+                  and maximum >= a.expected_power,
+                  'power.max_limit must meet expected power; >=31,000 MiB required')
         except InvalidOperation:
             raise RuntimeError('unparseable power/memory query; no acceptance')
         report['power_verbatim'] = power
+        report['power_limit_restricted'] = limit < a.expected_power
+        if a.set_power:
+            with open('/tmp/memra-5090.lock', 'a') as power_lock:
+                fcntl.flock(power_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                occupied = run('compute-before-power', ['nvidia-smi', '--query-compute-apps=pid,process_name,used_memory', '--format=csv'], 'pid, process_name, used_memory [MiB]\n')
+                check(len(occupied.strip().splitlines()) == 1 and occupied.startswith('pid,'),
+                      'GPU occupied or inventory malformed; refuse power request')
+                run('set-power', ['nvidia-smi', '-pl', str(a.expected_power)], allowed=True)
+                report['power_set_exit'] = report['steps'][-1]['exit_code']
+                after = run('power-after', ['nvidia-smi', '--query-gpu=power.limit,power.max_limit', '--format=csv,noheader,nounits'], '600.00, 600.00\n')
+                values = [Decimal(v.strip()) for v in after.strip().split(',')]
+                check(len(values) == 2 and all(v.is_finite() for v in values) and values[1] >= a.expected_power,
+                      'invalid power.max_limit after request')
+                report['power_after_verbatim'] = after
+                report['power_limit_restricted'] = values[0] < a.expected_power
+        # Container policy can deny -pl: retain current limit and do not claim expected power.
+        # Neither systemd nor service/driver modifications are needed.
         # Verify prerequisites; install only ordinary distro packages, never GPU drivers.
         packages = ['git', 'build-essential', 'pkg-config', 'libssl-dev', 'numactl', 'util-linux', 'curl', 'ca-certificates']
         tools = ('git', 'g++', 'make', 'pkg-config', 'numactl', 'flock', 'lsblk', 'findmnt', 'curl')
@@ -145,6 +209,20 @@ with tempfile.TemporaryDirectory(prefix='tier-bootstrap-') as scratch:
             privilege = [] if a.dry_run or os.geteuid() == 0 else ['sudo', '-n']
             run('apt-update', privilege + ['apt-get', 'update'], timeout=300)
             run('apt-packages', privilege + ['apt-get', 'install', '-y'] + packages, timeout=600)
+        run('storage-df', ['df', '-hT'], 'STUB df: no storage qualification\n')
+        run('storage-lsblk', ['lsblk', '-J', '-o', 'NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS'], '{"blockdevices": []}\n')
+        report['paths'] = {'persistent_root': str(persistent), 'repo': str(repo),
+                           'build': str(repo/'target'), 'scratch': None, 'nvme': None,
+                           'persistence': 'operator/provider contract, not proven by mount name'}
+        if a.nvme_root:
+            mount = a.nvme_root.resolve()
+            device = run('nvme-mount', ['findmnt', '-n', '-o', 'SOURCE', '-T', str(mount)], '/dev/nvme0n1\n').strip()
+            ancestry = run('nvme-ancestry', ['lsblk', '-s', '-r', '-n', '-o', 'KNAME', device], 'nvme0n1\n')
+            check(any(re.fullmatch(r'nvme[0-9]+n[0-9]+(?:p[0-9]+)?', line.strip()) for line in ancestry.splitlines()),
+                  'local NVMe ancestry not proven; no overlay/network fallback')
+            check(a.dry_run or mount.is_dir(), 'NVMe mount absent')
+            report['paths'].update(scratch=str(mount), nvme=str(mount))
+        checkpoint('paths-selected')
         # Follow engine build.rs: explicit override first, then existing CUDA root;
         # otherwise newest runnable release among PATH and /usr/local/cuda*.
         check(os.environ.get('MEMRA_CUDA_ARCH', '120a') == '120a', 'MEMRA_CUDA_ARCH must be unset or 120a for this rig')
@@ -236,7 +314,7 @@ with tempfile.TemporaryDirectory(prefix='tier-bootstrap-') as scratch:
             destination.mkdir(parents=True, exist_ok=False)
         # Keep the exact standalone acceptance executable/source to re-run D1 local checks.
         if a.dry_run: binary.write_bytes(b'CPU STUB NOT EXECUTABLE\n')
-        shutil.copy2(source,destination/'accept.cu'); shutil.copy2(binary,destination/'accept')
+        # Source and binary already reside in the durable receipt directory.
         report['accept_binary_sha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
         if a.dry_run:
             commands = [['nvidia-smi','topo','-m'], ['nvidia-smi','-q'], ['nvidia-smi','topo','-p2p','r'], ['nvidia-smi','topo','-p2p','w'], ['lscpu','--extended=CPU,NODE,SOCKET'], ['numactl','-H'], ['lscpu'], ['df','-hT'], ['lsblk','-J','-o','NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS'], ['free','-g'], ['findmnt','-J','-T','/scratch']]
@@ -280,20 +358,9 @@ with tempfile.TemporaryDirectory(prefix='tier-bootstrap-') as scratch:
         report['blocker'] = str(error)
         print('BLOCKED: '+str(error), file=sys.stderr)
     finally:
-        if destination is None:
-            destination = Path.home()/'spill-bootstrap-failures'/f'{host}-{utc}'
-            destination.mkdir(parents=True, exist_ok=False)
-        # Existing output is never overwritten: collision/refusal preserves old evidence.
-        if not (destination/'BOOTSTRAP.json').exists():
-            for file in scratch.glob('*.log'):
-                shutil.copy2(file,destination/file.name)
-            # Preserve the failing acceptance program even when checkout/build never ran.
-            for name in ('accept.cu', 'accept'):
-                file = scratch/name
-                if file.is_file():
-                    shutil.copy2(file, destination/name)
-            report['ended_utc'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            (destination/'BOOTSTRAP.json').write_text(json.dumps(report,indent=2)+'\n')
+        report['ended_utc'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        report['duration_ns'] = time.monotonic_ns() - bootstrap_start
+        checkpoint('end')
         print('receipt: '+str(destination/'BOOTSTRAP.json'))
     sys.exit(0 if report['status'].startswith(('dry-run-complete','bootstrap-complete')) else 2)
 PY
