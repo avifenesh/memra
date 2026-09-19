@@ -1,0 +1,44 @@
+{
+  "base_commit": "fa22213526af78e97a33fcb417aff37e57dc64cf",
+  "source_commit": "11c12dcc4186c9fba02ee00d6f9425e7d6c03348",
+  "source_tree": "8a35903daa026220f6d4b40f11fa64f373735385",
+  "merge_strategy": "git merge --no-ff (ort); A then B then C then D",
+  "conflicts": [],
+  "manual_resolutions": [],
+  "merge_commits": [
+    {
+      "commit": "627574dc3a40578344ce073d4a7e4db624fe41eb",
+      "parents": [
+        "fa22213526af78e97a33fcb417aff37e57dc64cf",
+        "7f104abf4f06ad2f4258f0b4c74c366058d6a789"
+      ],
+      "subject": "chore(tier): scratch dry-run A day5 union"
+    },
+    {
+      "commit": "6f9d6fb0bb34edd7221fb3f9e909402783f16af5",
+      "parents": [
+        "627574dc3a40578344ce073d4a7e4db624fe41eb",
+        "fcb10942519cb485386eb15c2c3de79978f8ca62"
+      ],
+      "subject": "chore(tier): scratch dry-run B day5 union"
+    },
+    {
+      "commit": "087602f5974254efbd18863f671943d52561136e",
+      "parents": [
+        "6f9d6fb0bb34edd7221fb3f9e909402783f16af5",
+        "082727f389ff1c0e601b8ef5ce061c8750cab692"
+      ],
+      "subject": "chore(tier): scratch dry-run C day5 union"
+    },
+    {
+      "commit": "11c12dcc4186c9fba02ee00d6f9425e7d6c03348",
+      "parents": [
+        "087602f5974254efbd18863f671943d52561136e",
+        "645602c83ded280bae830a1647e002e8520a8773"
+      ],
+      "subject": "chore(tier): scratch dry-run D day5 union"
+    }
+  ],
+  "status_after_checks": "",
+  "cleanup_decision": "User explicitly requested scratch removal and branch deletion after the dry-run; scratch is not pushed."
+}

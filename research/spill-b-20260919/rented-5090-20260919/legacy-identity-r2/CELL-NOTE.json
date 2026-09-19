@@ -1,0 +1,20 @@
+{
+  "source_commit": "b569164bf9e57aaebcdfbaf5c457ed683e10ff68",
+  "runtime_patch": "HOSTPREFIX-PATCH.diff v2, scratch-only",
+  "cell": "legacy-identity-r2",
+  "exit": 1,
+  "lock": "internal-canonical",
+  "lock_path": "/tmp/memra-5090.lock",
+  "lock_acquisition": "script-owned during server boots",
+  "dedicated_non_serving_dev_box": true,
+  "global_memra_server_teardown": "explicitly authorized by lead for these runs",
+  "compute_before": "compute-before.log.gz",
+  "collector_used": false,
+  "telemetry_250ms": false,
+  "performance_claim": false,
+  "MEMRA_HOSTGATE_CACHE_MB": 1024,
+  "MEMRA_KV_HOST_TENANT_PCT": 50,
+  "MEMRA_HOSTGATE_TEETH": 0,
+  "storage": "overlay, development, not spill speed",
+  "note": "legacy whole-prefix surface only; generic tier bootstrap remains None"
+}

@@ -450,6 +450,8 @@ pub struct Qwen4ExpGpu {
     /// A built trim PARKED by `set_draft_trim(false)` — the A/B's OFF arm keeps the
     /// gathered head allocated (no per-rep realloc churn) while the draft runs full-vocab.
     draft_trim_parked: Option<DraftTrim>,
+    /// Default OFF; installed only during the bounded host-row identity gate.
+    rows_tier: Option<crate::ple_rows_tier::PleRowsTier>,
     /// Deferred-chain device embed table (mtp11, `SpecOpts::defer`) — `None` until a
     /// caller armed it with `arm_spec_devchain`. Default OFF (flags law): the host
     /// chain is the shipped mtp10 program until the deferred round carries its own
@@ -10148,6 +10150,7 @@ impl Qwen4ExpGpu {
             mtp_dev1,
             draft_trim: None,
             draft_trim_parked: None,
+            rows_tier: None,
             chain_embed: None,
         })
     }
@@ -13739,6 +13742,16 @@ impl Qwen4ExpGpu {
                 &ids
             };
             let chunk_ids = &all_ids[(tokens.len() - t) * total_heads..];
+            if let Some(tier) = &self.rows_tier {
+                if heads.checked_mul(head_dim) != Some(embed_dim) {
+                    return Err("PLE tier: invalid embedding geometry".into());
+                }
+                let source = match table {
+                    NgramTable::F32(v) => crate::ple_rows_tier::HostTable::F32(v),
+                    NgramTable::Bf16(v) => crate::ple_rows_tier::HostTable::Bf16(v),
+                };
+                return Ok(tier.gather(source, layer.index, head_dim, chunk_ids)?);
+            }
             let table_rows = table.rows(head_dim);
             let mut gathered = vec![0.0f32; t * embed_dim];
             for token in 0..t {
@@ -13755,7 +13768,7 @@ impl Qwen4ExpGpu {
                     );
                 }
             }
-            Ok(gathered)
+            Ok(crate::ple_rows_tier::GatheredRows::legacy(gathered))
         })?;
         let emb = prof_section(e, "ple.h2d", || e.htod(&gathered))?;
 
@@ -20997,5 +21010,128 @@ mod tp2_placement_tests {
         }
         assert!(seen.into_iter().all(|s| s), "card-1 slots must be dense");
         assert!(!l.is_even());
+    }
+}
+
+impl Qwen4ExpGpu {
+    /// Explicit qualification door only. No serving caller can enable the field.
+    /// Compare the actual unchanged GPU PLE projections, gate, convolution and
+    /// residual planes, not just host rows. Restores OFF even on failure.
+    pub fn gate_ple_rows_tier(&mut self, e: &Engine) -> Res<String> {
+        use memra_tier::{contracts::*, tier::Governor};
+        use std::{cell::RefCell, rc::Rc, sync::Arc};
+        if self.rows_tier.is_some() {
+            return Err("PLE rows gate already armed".into());
+        }
+        let index = self
+            .layers
+            .iter()
+            .position(|l| l.ple.is_some())
+            .ok_or("PLE rows gate requires a PLE layer")?;
+        let ple = self.layers[index].ple.as_ref().unwrap();
+        let table = match &ple.table {
+            NgramTable::F32(v) => v.clone(),
+            NgramTable::Bf16(_) => return Err("PLE rows gate requires the F32 tiny fixture".into()),
+        };
+        // Independent representation fixtures: each compares OFF/ON on identical
+        // source bytes. BF16 is NOT substituted for F32 in a scored model run.
+        let bf16 = table
+            .iter()
+            .flat_map(|v| ((v.to_bits() >> 16) as u16).to_le_bytes())
+            .collect();
+        let tables = [NgramTable::F32(table), NgramTable::Bf16(bf16)];
+        let mut capacity = TierBudget::zero(0);
+        capacity.pageable = 64 * 1024 * 1024;
+        capacity.staging = 8 * 1024 * 1024;
+        capacity.inflight = 4;
+        let budget = Rc::new(RefCell::new(Governor::new(
+            capacity,
+            TierBudget::zero(0),
+            4,
+            0,
+            Arc::new(|| 0),
+        )?));
+        let run = (|| -> Res<String> {
+            let mut values = 0usize;
+            let mut reads = 0u64;
+            let mut calls = 0u64;
+            let histories: &[(&[u32], usize)] = &[
+                (&[1, 7, 13, 63, 7, 1], 6),           // prefill, EOS and repeated tokens
+                (&[1, 7, 13, 63, 7, 1, 12], 1),       // decode
+                (&[1, 7, 13, 63, 7, 1, 12, 5, 4], 3), // verify chunk
+                (&[1, 7, 13, 63, 2], 2),              // diverging shorter history
+            ];
+            for table in &tables {
+                for exact in [false, true] {
+                    for &(tokens, t) in histories {
+                        let mut twins = Vec::new();
+                        for on in [false, true] {
+                            self.rows_tier =
+                                on.then(|| crate::ple_rows_tier::PleRowsTier::new(budget.clone()));
+                            let layer = &self.layers[index];
+                            let ple = layer.ple.as_ref().unwrap();
+                            let pad =
+                                (ple.plan.conv_kernel as usize - 1) * ple.plan.max_ngram as usize;
+                            let mut state = PleState {
+                                conv_hist: (0..self.streams)
+                                    .map(|_| e.zeros(pad * self.hidden))
+                                    .collect::<Res<Vec<_>>>()?,
+                                ngram_ids: Vec::new(),
+                                ngram_history: Vec::new(),
+                                ngram_last_eos: -1,
+                            };
+                            let input: Vec<f32> = (0..t * self.hidden)
+                                .map(|i| ((i % 17) as f32 - 8.) / 16.)
+                                .collect();
+                            let mut planes = (0..self.streams)
+                                .map(|_| e.htod(&input))
+                                .collect::<Res<Vec<_>>>()?;
+                            self.ple_block(
+                                e,
+                                layer,
+                                ple,
+                                table,
+                                &mut state,
+                                &mut planes,
+                                tokens,
+                                t,
+                                exact,
+                                None,
+                            )?;
+                            let mut bits = Vec::new();
+                            for plane in &planes {
+                                bits.extend(e.dtoh(plane)?.iter().map(|v| v.to_bits()));
+                            }
+                            for hist in &state.conv_hist {
+                                bits.extend(e.dtoh(hist)?.iter().map(|v| v.to_bits()));
+                            }
+                            twins.push(bits);
+                            if let Some(tier) = &self.rows_tier {
+                                calls += tier.calls.get();
+                                reads += tier.reads.get();
+                            }
+                            if budget.borrow().used() != TierBudget::zero(0) {
+                                return Err("PLE rows gate leaked a host budget charge".into());
+                            }
+                        }
+                        if twins[0].is_empty() || twins[0] != twins[1] {
+                            return Err(format!(
+                                "rows-via-tier: FAIL bit identity t={t} exact={exact}"
+                            )
+                            .into());
+                        }
+                        values += twins[0].len();
+                    }
+                }
+            }
+            if calls != 16 || reads < calls {
+                return Err("PLE rows tier did not engage every arm".into());
+            }
+            Ok(format!(
+                "rows-via-tier: BIT-IDENTICAL PLE outputs + convolution state; encodings=2 cases=16 values={values} tier_calls={calls} forced_read_chunks={reads} budget_drained=true"
+            ))
+        })();
+        self.rows_tier = None;
+        run
     }
 }
