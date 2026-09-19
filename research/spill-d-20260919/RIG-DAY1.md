@@ -1,4 +1,4 @@
-# First rented RTX 5090 hour — D day 5
+# Rented RTX 5090 runbook — D day 6
 
 **Runbook, not a rig receipt.** Minimum source: **`020d2047`**
 (`020d20479cd686835c0fb7743040947d0fc2723b`) plus this day-4 bootstrap/collector.
@@ -101,6 +101,17 @@ fields even when the request is refused. No Max-Q/listing inference. It verifies
 accepts a card. Source, binary hash, exact query output, both logs and compute snapshots
 are retained. Nothing runs on the Mac GPU in `--dry-run`.
 
+**Per-cell power-cap rule (day 6):** the second rental's read-only query returned
+`power.limit=400.00 W`, `power.max_limit=600.00 W`; source/UTC/raw output are in
+`day6/probes/inventory.json`. Every collector cell now samples both fields at 250 ms
+and records `gpu_power_limits` in its capture and completed CELL (schema field names
+and unknown handling: [CAPTURE-CONTRACT.md](CAPTURE-CONTRACT.md)). Label such cells
+**400 W restricted-power development**, not 600 W/full-power performance. Missing,
+N/A or changing limits cannot establish a fixed power envelope; never borrow an
+old bootstrap cap for a new cell. A refused power change remains a refusal, not a
+reason to silently replace the model or claim a full-power result. Only the operator
+may request `--set-power`; this runbook change requests no power setting.
+
 Inventory through `tools/tier-topology.py --storage`: topo matrix, full `nvidia-smi -q`
 (including P2P-related fields), P2P read/write capability, lscpu full+NUMA/CPU listing,
 numactl, df, lsblk JSON, free, findmnt `/scratch`. A diagnostic inventory does not prove
@@ -188,6 +199,19 @@ Builds (4 jobs, release, locked dependency graph, outside GPU lock):
   copy of unsynced evidence. Once retained results are safe, a missing reproducible scratch
   worktree or partial download is not a reason to wait indefinitely for capacity; operator
   may replace the rental under the existing approval. No automatic destroy/start loop.
+- **Second-rental host stops, reported by the lead 2026-09-19:** two stops today
+  reached `exited/stopped`; `start` was refused once and later succeeded. The checkout
+  and accepted artifact were reported intact. These are operator-reported recovery
+  facts, not independently repeated stop/start operations or proof all scratch survives.
+  **Keep ≤30 min before replacing, by receipt state; sync after every cell.** Start the
+  recovery clock at the observed stop; inspect the last complete versus interrupted
+  CELL and inventory unsynced unique bytes. Once off-box receipts are safe and the
+  pushed source/pinned artifact can be reconstructed, do not extend the 30-minute
+  wait for an empty capacity queue. Replacement remains under the existing operator
+  approval, never an automatic destroy loop. If unique unsynced evidence remains,
+  escalate/preserve that disk rather than deleting the only copy. After a successful
+  restart, revalidate exact source/artifact hashes, current cap and fresh acceptance;
+  surviving files do not carry forward an interrupted cell's qualification.
 - Artifacts must remain re-downloadable from an **immutable pinned locator plus complete
   byte manifest/SHA-256**, independently of the rented disk. Record the full revision and
   expected length/hash before transfer. A partial file is never an accepted artifact; resume
@@ -328,7 +352,12 @@ outputs are not rewritten into positive exactness rows automatically. Exit 0 mea
 hashes or insufficient thermal/window evidence forbids scoring. Failure capture quotes only
 observed lines; no OOM inference without a captured OOM line and concurrent process query.
 The collector owns the canonical lock across binary, sampler and snapshots. Never nest a
-self-locking A/B/C shell runner under `--execute` or `locked-run.sh`.
+self-locking A/B/C shell runner under `--execute` or `locked-run.sh`. The only new
+exception is an explicitly proof-aware legacy gate after the lead applies
+[LEGACY-EXTERNAL-LOCK.diff](LEGACY-EXTERNAL-LOCK.diff): use the collector's
+`--external-lock` and the inherited-FD invocation in
+[day6/EXTERNAL-LOCK.md](day6/EXTERNAL-LOCK.md). The scripts in this lane still have
+not had that fragment applied; do not wrap their current internal-lock versions.
 
 ### Cell budgets / evidence boundary
 

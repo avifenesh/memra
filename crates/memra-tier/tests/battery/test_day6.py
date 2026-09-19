@@ -52,6 +52,13 @@ class CollectorTests(unittest.TestCase):
                     with self.assertRaises(ValueError): B.validate_capture(bad, root)
         self.assertIsNone(B.explicit_refusal('REFUSED: timed out', 2, True))
 
+    def test_recovery_and_per_cell_power_runbook(self):
+        doc = (ROOT/'research/spill-d-20260919/RIG-DAY1.md').read_text()
+        for phrase in ('Keep ≤30 min before replacing, by receipt state; sync after every cell',
+                       'two stops today', '400 W restricted-power development',
+                       'gpu_power_limits', 'CAPTURE-CONTRACT.md', 'not had that fragment applied'):
+            self.assertIn(phrase, doc)
+
     def test_second_rented_topology_is_gen5_capable_not_bandwidth_proof(self):
         spec = importlib.util.spec_from_file_location('topology_day6', ROOT/'tools/tier-topology.py')
         topology = importlib.util.module_from_spec(spec); spec.loader.exec_module(topology)
