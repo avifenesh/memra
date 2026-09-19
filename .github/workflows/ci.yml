@@ -78,6 +78,9 @@ jobs:
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
 
+      - name: Per-card native qualification runner controls
+        run: python3 tools/test_qualify_model_device_memory.py
+
       # The flags census is a gate, so its own coverage needs a gate. v0.94.0 found
       # MEMRA_ALLOW_UNKNOWN_PRETOKENIZER invisible to check-flags on two independent counts
       # (crate outside runtime_dirs, const-indirected read); nothing ran the fix's tests, so

@@ -356,7 +356,8 @@ mod native_tests {
 
     /// Native-only ownership/admission/allocator gate. No model support promotion or
     /// numerical qualification. Run on a designated non-serving rig, with a clean env:
-    /// flock /tmp/memra-gpu.lock cargo test -p memra-engine --lib model_memory::native_tests -- --ignored --test-threads=1 --nocapture
+    /// Use tools/qualify-model-device-memory.py inside the coordinator's per-card
+    /// lock wrapper: same-device stage locks one physical GPU; pair stage locks two.
     /// Record source SHA, binary hash, CUDA/card identity and full output with the receipt.
     fn fixture(same_device: bool) -> (Engine, HybridModel, Arc<Glm5TpRt>) {
         let path = std::env::temp_dir().join(format!(
@@ -364,6 +365,13 @@ mod native_tests {
             std::process::id()
         ));
         memra_gguf::micro_gguf::write_glm_dsa_micro(&path, 544).unwrap();
+        use sha2::Digest;
+        let bytes = std::fs::read(&path).unwrap();
+        eprintln!(
+            "[model-memory-544] fixture=glm-dsa-micro seed=544 bytes={} sha256={:x}",
+            bytes.len(),
+            sha2::Sha256::digest(&bytes)
+        );
         let source = memra_gguf::GgufFile::open(&path).unwrap();
         let primary = Engine::new(0).expect("native CUDA device 0 is required; never skip");
         let mut model = HybridModel::load(&primary, &source).unwrap();
@@ -389,7 +397,7 @@ mod native_tests {
     }
 
     #[test]
-    #[ignore = "native CUDA required; run exclusively under the designated rig lock"]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
     fn glm_same_ordinal_owners_are_not_lost() {
         let (primary, model, rt) = fixture(true);
         let owners = model.owned_engines(&primary);
@@ -408,7 +416,7 @@ mod native_tests {
     }
 
     #[test]
-    #[ignore = "native CUDA pair required; run exclusively under /tmp/memra-gpu.lock"]
+    #[ignore = "native CUDA pair required; run under the provided two-card exclusive locks"]
     fn glm_peer_admission_materialization_trim_and_refill() {
         let (primary, model, rt) = fixture(false);
         let capacity = 32;

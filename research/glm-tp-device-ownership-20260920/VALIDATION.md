@@ -53,25 +53,32 @@ and synchronization errors. Pinned source leases and live session state remain o
   Raw output: `raw/macos-docs-check.log`.
 
 Formatting (`cargo fmt --all -- --check`), `git diff --check`, the flags census,
-and generated performance-board freshness checks passed. Source hashes are in
-`raw/source-hashes.json`.
+and generated performance-board freshness checks passed. Initial implementation hashes
+for `cc348cce32f3d9b677f794032ac2775bb88339bc` are in `raw/source-hashes.json`;
+runner/preparation changes are separately hashed in `raw/qualification-source-hashes.json`.
 
-The full engine/server suites and native CUDA compilation are delegated to the ordinary
-Linux CI jobs. Their result must be read on the PR; the CPU controls above do not substitute
-for those suites.
+Linux CI passed for `cc348cce32f3d9b677f794032ac2775bb88339bc`
+([run 35470038721](https://github.com/avifenesh/memra/actions/runs/35470038721)):
+511 engine tests (zero hidden skips), 715 server tests (5 ignored), both CUDA builds,
+Clippy, boundary/gates and package dry run. Follow-up qualification preparation adds a
+native worker gate and a fail-closed per-card runner. Its local runner controls passed
+7 tests with 1 explicit Linux-only skip on macOS (`raw/runner-controls.log`); a new Linux
+CI run must compile the new ignored test and exercise the actual Linux flock control.
+None of these results is native GPU qualification.
 
 ## Required native qualification
 
-No designated non-serving rig or lock allocation is verified for this task. Do not merge,
-tag or promote model support from this CPU record. On a designated non-serving rig,
-serialize with its existing canonical lock (`/tmp/memra-gpu.lock` for a PRO pair,
-`/tmp/memra-5090.lock` for the local 5090 development rig):
+The coordinator is provisioning one non-serving host. Do not execute GPU work until its
+host and lock wrapper are provided. The owner's current instruction supersedes the older
+whole-rig lock rule for this work: each session holds exclusive locks on exactly the
+physical GPUs it uses; multi-GPU sets are acquired in stable order by the shared wrapper.
+Do not merge, tag or promote model support from CPU results or synthetic seam results.
+The runnable protocol and resource envelope are in [QUALIFICATION.md](QUALIFICATION.md).
 
 1. Build this exact revision natively, recording source SHA, binary SHA-256, CUDA/toolchain,
    device topology and artifact/config manifest hashes.
-2. Run `cargo test -p memra-engine --lib model_memory::native_tests -- --ignored --test-threads=1 --nocapture`
-   inside the lock. This includes the same-device owner test and the physical-pair
-   state/trim/refill test. Verify a GLM peer absent
+2. Use the runner's separate one-card `same-device` and two-card `pair` stages
+   inside their exact per-card lock sets. Verify a GLM peer absent
    from Step-only enumeration is present, and lazy state charges disappear only when its
    allocations exist. Test different physical cards, not only same-card emulation.
 3. Exercise GLM serving with asymmetric peer pressure: healthy primary, limiting peer;

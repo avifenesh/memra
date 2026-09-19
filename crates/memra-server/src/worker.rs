@@ -19214,6 +19214,14 @@ fn admission_headroom(
     };
 
     let owners = model_device_engines(engine, loaded);
+    device_admission_headroom(&owners, requirements)
+}
+
+/// Read the physical owners selected by the model topology, including peer-local pools.
+fn device_admission_headroom(
+    owners: &[&Engine],
+    requirements: &[AdmissionDeviceRequirement],
+) -> Option<AdmissionHeadroom> {
     let mut devices = Vec::with_capacity(requirements.len());
     for &requirement in requirements {
         let device_engine = owners
@@ -25620,8 +25628,13 @@ fn trim_model_device_pools(
     why: &str,
 ) -> Vec<DeviceTrimReport> {
     let owners = model_device_engines(engine, loaded);
+    trim_owned_device_pools(&owners, why)
+}
+
+/// Shared production fence, trim and telemetry path for an explicit set of owners.
+fn trim_owned_device_pools(owners: &[&Engine], why: &str) -> Vec<DeviceTrimReport> {
     let mut reports = device_memory::reclaim(
-        &owners,
+        owners,
         |owner| owner.ctx().ordinal(),
         |owner| owner.stream().synchronize().map_err(|err| err.to_string()),
         |device, owner, synchronization_errors| {
@@ -31272,6 +31285,207 @@ mod tests {
             "past its defer budget with both tiers exhausted it must refuse, not queue"
         );
         drop(resident);
+    }
+
+    /// Native worker admission/reclaim qualification for #544. The runner must hold
+    /// exclusive per-card locks for ordinals 0 and 1, acquired in stable device order,
+    /// on a non-serving pair. No checkpoint or model-support claim is involved here;
+    /// the engine tests separately cover discovery of real sharded GLM owners.
+    ///
+    /// Only 32 MiB of pressure plus a 1 MiB source and a small primary witness are
+    /// allocated. The peer requirement is calibrated to measured headroom instead of
+    /// filling VRAM. Run this exact ignored test alone under the coordinator's locks.
+    #[test]
+    #[ignore = "requires native CUDA on a non-serving pair with stable-order exclusive per-card locks for devices 0 and 1"]
+    fn native_glm_peer_admission_trim_preserves_lease() {
+        use super::{
+            AdmissionDeviceRequirement, AdmissionHeadroom, admission_headroom,
+            device_admission_headroom, trim_model_device_pools, trim_owned_device_pools,
+        };
+
+        const PRESSURE_BYTES: usize = 32 << 20;
+        const SOURCE_BYTES: usize = 1 << 20;
+        const PRIMARY_REQUIRED: usize = 1 << 20;
+        let primary = memra_engine::Engine::new(0).expect("native engine on device 0");
+        let peer = memra_engine::Engine::new(1).expect("native engine on device 1");
+        // Reverse order and a repeated owner also exercise physical report sorting and
+        // deduplication, independently of HashMap/model traversal order in production.
+        let owners = [&peer, &primary, &peer];
+        let loaded = std::collections::HashMap::new();
+        let empty = trim_owned_device_pools(&owners, "worker-544 baseline");
+        assert_eq!(empty.iter().map(|r| r.device).collect::<Vec<_>>(), [0, 1]);
+        assert!(empty.iter().all(|r| r.synchronization_errors.is_empty()));
+
+        let primary_values = [11.0, 12.0, 13.0, 14.0];
+        let primary_witness = primary.htod(&primary_values).unwrap();
+        let source_values = [1.0, 2.0, 3.0, 4.0].repeat(SOURCE_BYTES / 16);
+        let k = key("worker-544-native");
+        let tokens = toks(PREFIX_CACHE_MIN_TOKENS);
+        let mut donor = entry(&k, tokens.clone());
+        donor.pos = tokens.len();
+        donor.conv = vec![Some(peer.htod(&source_values).unwrap())];
+        donor.bytes = SOURCE_BYTES;
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, donor, "worker-544 source", SOURCE_BYTES * 2);
+        let (pin, rows) = px.pin_prompt_prefix(&k, &tokens).expect("source lease");
+        assert_eq!(rows, tokens.len());
+        assert_eq!(px.pinned_bytes(), SOURCE_BYTES);
+        let pinned = trim_owned_device_pools(&owners, "worker-544 pinned source");
+        assert!(pinned.iter().all(|r| r.synchronization_errors.is_empty()));
+        assert_eq!(
+            pinned[1].still_owned_bytes,
+            empty[1].still_owned_bytes + SOURCE_BYTES,
+            "the prefix entry must really own its peer allocation"
+        );
+
+        let mut requirements = [
+            AdmissionDeviceRequirement {
+                device: 0,
+                session_bytes: PRIMARY_REQUIRED,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
+                reserve_bytes: 0,
+                boundary_bytes: 0,
+            },
+            AdmissionDeviceRequirement {
+                device: 1,
+                session_bytes: 0,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
+                reserve_bytes: 0,
+                boundary_bytes: 0,
+            },
+        ];
+        let AdmissionHeadroom::Devices(baseline) =
+            device_admission_headroom(&owners, &requirements).expect("physical device readings")
+        else {
+            panic!("explicit device requirements must read every peer");
+        };
+        assert!(
+            baseline.iter().all(|d| d.free_bytes >= 2 * PRESSURE_BYTES),
+            "this bounded cell needs 64 MiB effective headroom per device: {baseline:?}"
+        );
+        requirements[1].pending_state_bytes = baseline[1].free_bytes - PRESSURE_BYTES / 2;
+        assert!(
+            device_admission_headroom(&[&primary], &requirements).is_none(),
+            "a missing required peer must fail closed"
+        );
+
+        for cycle in 0..3 {
+            let ready = device_admission_headroom(&owners, &requirements).unwrap();
+            assert!(
+                ready.sufficient(PRIMARY_REQUIRED),
+                "cycle {cycle}: {ready:?}"
+            );
+            let pressure = peer.zeros(PRESSURE_BYTES / 4).unwrap();
+            peer.stream().synchronize().unwrap();
+            let old_primary_only = admission_headroom(&primary, &loaded, None).unwrap();
+            let pressured = device_admission_headroom(&owners, &requirements).unwrap();
+            assert!(
+                old_primary_only.sufficient(PRIMARY_REQUIRED),
+                "red control: the old primary-only reading must admit"
+            );
+            assert!(
+                !pressured.sufficient(PRIMARY_REQUIRED),
+                "peer-local pressure must reject the same request: {pressured:?}"
+            );
+            let AdmissionHeadroom::Devices(devices) = &pressured else {
+                unreachable!();
+            };
+            assert!(devices[0].free_bytes >= requirements[0].required());
+            assert!(devices[1].free_bytes < requirements[1].required());
+            assert_eq!(devices[0].pool_used_bytes, pinned[0].still_owned_bytes);
+            assert_eq!(
+                devices[1].pool_used_bytes,
+                pinned[1].still_owned_bytes + PRESSURE_BYTES
+            );
+            assert_eq!(px.evict_all(), 0, "reclaim must spare the source lease");
+            assert_eq!(px.pinned_bytes(), SOURCE_BYTES);
+
+            // Enqueue the free, then rely on the production all-owner fence. There is
+            // deliberately no peer synchronization between drop and the real trim.
+            drop(pressure);
+            let peer_reserved = peer.pool_reserved_used().0;
+            let old_trim = trim_model_device_pools(&primary, &loaded, "worker-544 primary-only");
+            assert_eq!(old_trim.len(), 1);
+            assert_eq!(old_trim[0].device, 0);
+            assert!(old_trim[0].synchronization_errors.is_empty());
+            assert_eq!(
+                peer.pool_reserved_used().0,
+                peer_reserved,
+                "red control: primary-only trim cannot release peer cache"
+            );
+
+            let reports = trim_owned_device_pools(&owners, "worker-544 peer reclaim");
+            assert_eq!(reports.iter().map(|r| r.device).collect::<Vec<_>>(), [0, 1]);
+            assert!(reports.iter().all(|r| r.synchronization_errors.is_empty()));
+            assert!(
+                reports[1].reclaimed_bytes > 0,
+                "peer reclaim must be non-vacuous"
+            );
+            assert_eq!(
+                reports[1].reclaimed_bytes,
+                peer_reserved - reports[1].pool_reserved_bytes
+            );
+            for (report, owner) in reports.iter().zip([&primary, &peer]) {
+                assert_eq!(
+                    report.still_owned_bytes,
+                    pinned[report.device].still_owned_bytes
+                );
+                assert_eq!(
+                    (report.pool_reserved_bytes, report.still_owned_bytes),
+                    owner.pool_reserved_used()
+                );
+                assert_eq!(
+                    report.pool_cached_bytes,
+                    report.pool_reserved_bytes - report.still_owned_bytes
+                );
+                assert!(report.driver_free_bytes.is_some());
+            }
+            let recovered = device_admission_headroom(&owners, &requirements).unwrap();
+            assert!(
+                recovered.sufficient(PRIMARY_REQUIRED),
+                "cycle {cycle}: peer headroom must refill: {recovered:?}"
+            );
+            let source = &px.entries[&k][0];
+            assert_eq!(source.pins, 1);
+            assert_eq!(source.id, pin.id);
+            assert_eq!(
+                peer.dtoh_view(&source.conv[0].as_ref().unwrap().slice(..))
+                    .unwrap(),
+                source_values,
+                "cycle {cycle}: pinned peer bytes changed during trim"
+            );
+            assert_eq!(
+                primary.dtoh_view(&primary_witness.slice(..)).unwrap(),
+                primary_values
+            );
+            eprintln!(
+                "[worker-memory-544] cycle={cycle} primary_only={old_primary_only:?} \
+                 pressured={pressured:?} recovered={recovered:?} source_pins={} \
+                 pinned_bytes={} source_integrity=PASS",
+                source.pins,
+                px.pinned_bytes(),
+            );
+        }
+
+        assert_eq!(px.evict_all(), 0, "source stays pinned across all refills");
+        assert!(px.unpin(&pin));
+        assert_eq!(px.pinned_bytes(), 0);
+        assert_eq!(px.evict_all(), 1, "unpin must restore ordinary eviction");
+        assert_eq!(px.total_bytes, 0);
+        let released = trim_owned_device_pools(&owners, "worker-544 source released");
+        assert!(released.iter().all(|r| r.synchronization_errors.is_empty()));
+        assert_eq!(released[1].still_owned_bytes, empty[1].still_owned_bytes);
+        assert_eq!(released[0].still_owned_bytes, pinned[0].still_owned_bytes);
+        drop(primary_witness);
+        let cleaned = trim_owned_device_pools(&owners, "worker-544 cleanup");
+        for (report, before) in cleaned.iter().zip(&empty) {
+            assert!(report.synchronization_errors.is_empty());
+            assert_eq!(report.still_owned_bytes, before.still_owned_bytes);
+        }
     }
 
     #[test]
