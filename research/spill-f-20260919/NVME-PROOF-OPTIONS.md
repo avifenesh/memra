@@ -15,6 +15,16 @@ at container configuration files, but they are not a writable benchmark
 directory. Device discovery and those file binds **do not connect overlay's
 writable upper layer to md0**. Never benchmark or modify the configuration files.
 
+`stat -f` reports the filesystem class and allocation statistics, not a disk
+serial or ancestry chain: `overlayfs` remains unproven regardless of available
+space. `/proc/self/mountinfo` can identify the matching mount and its
+major:minor, filesystem type, and bind root, but overlay's superblock device
+is virtual. Its `upperdir` option is a host-namespace pathname, not evidence
+that the path is traversable or maps to a particular disk inside this container.
+Even a readable upperdir would need an independent `stat`/mount/sysfs chain;
+inferring the backing disk from neighbouring binds is not sufficient. Keep
+mount options and bind roots private because they can disclose host identities.
+
 A bind mount preserves an existing filesystem's `st_dev`/major:minor; it does
 not manufacture physical ancestry. A provider-created bind of a dedicated,
 empty directory from the md0 filesystem could expose that ancestry without
