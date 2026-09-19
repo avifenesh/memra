@@ -8,6 +8,33 @@ Day 1: two bounded connectivity attempts failed. Day 2: one attempt exited 255
 with `Connection closed by UNKNOWN port 65535`; remote inventory remains unavailable.
 Paused model path stays paused and is absent from every command below.
 
+## Day-3 launcher and scope update
+
+`bash research/spill-a-20260919/rig-cells-a.sh /scratch --approved-non-serving`
+is the fresh-Linux-5090 launcher. It requires proven local NVMe ancestry, the
+canonical `/tmp/memra-5090.lock` across all work, a clean source tree and an
+explicit non-serving approval assertion. It builds storage-bench and the existing
+worker test, logs raw output first, and parses JSONL afterward under
+`raw/<host>-<utc>/`; task-owned scratch is removed on exit. Repeated invocations
+create independent receipt/scratch directories and never overwrite objects.
+
+**Partial launcher, deliberately non-green:** current CPU filesystem modes and
+existing pinned-worker A2 run; GPU A2 and the three M1 trace interfaces below are
+still unimplemented. The launcher preserves their actual unsupported stderr via
+five-second probes, then exits nonzero. It does not claim 250 ms telemetry,
+physical I/O, 30-minute steady state, H2D/D2H or model consumer coverage. A future
+full qualification launcher must replace those probes with the measured windows
+and complete telemetry collectors, not just remove the final failure.
+
+`--dry-run --stub <executable>` routes the complete command plan into a test stub,
+without taking a GPU lock or running hardware/build commands. `day3/test_runner.py`
+checks two identical 32-command plans (24 filesystem cells, build/hash, existing
+A2 and four blocked probes). `bash -n` checks syntax; neither qualifies a rig.
+
+Day 3 adds Linux x86_64 **cross-target compilation**, not Linux execution, plus
+extent-scoped admission and a std-worker background mode. The wire/whole-object
+lease stays frozen; full details and raw checks are in `day3/RESULTS.md`.
+
 ## Preconditions for EVERY scored hardware window
 
 - Non-serving rig explicitly released by its owner; canonical lock held across the

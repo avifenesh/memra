@@ -32,9 +32,21 @@ impl Slot {
     }
 }
 struct Inner {
-    _pin: LeasePin,
+    pin: Option<LeasePin>,
     free: Vec<Slot>,
     quarantined: Vec<Slot>,
+}
+impl Drop for Inner {
+    fn drop(&mut self) {
+        if !self.quarantined.is_empty() {
+            // No all-use retirement authority exists in this CPU fake. Unknown
+            // shutdown must retain BOTH backing and its governor pin, even after
+            // the last pool handle disappears. Intentionally retain until process
+            // exit; never invent recovery from Drop, timeout, or a cancelled bit.
+            let unknown = (std::mem::take(&mut self.quarantined), self.pin.take());
+            std::mem::forget(unknown);
+        }
+    }
 }
 #[derive(Clone)]
 pub struct FakePinnedPool {
@@ -91,7 +103,7 @@ impl FakePinnedPool {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             inner: Arc::new(Mutex::new(Inner {
-                _pin: pin,
+                pin: Some(pin),
                 free,
                 quarantined: Vec::new(),
             })),
@@ -136,7 +148,7 @@ impl FakePinnedPool {
         }
     }
 }
-/// Exclusive, non-Clone lease; dropping an idle lease returns quota and its slot.
+/// Exclusive, non-Clone lease; dropping an idle lease returns its slot, not backing quota.
 /// GPU integration must move it into a retirement record BEFORE submitting DMA.
 pub struct PinnedLease {
     lifetime: Arc<()>,
