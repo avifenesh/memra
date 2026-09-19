@@ -137,3 +137,18 @@ lock or skip switch. Do not read baseline success as bank/row service engagement
 Before performance/default decisions, extend the runner with the actual native
 engagement targets, original byte/logit/token goldens, balanced AB/BA N>=5,
 250 ms telemetry and serving metrics from the protocol above.
+
+## Day-4 queue update — CPU prerequisites, still no GPU receipt
+
+| Cell | CPU status | Rig acceptance still required |
+|---|---|---|
+| C1-SLRU-policy | 2013 recorded synthetic default-SLRU decisions and queue orders matched; charged host BankedResidency/old-allocation alias test. | Native intrusive/fixed-slot adaptation, pending ready wait, LFU/frozen compatibility and model traces. |
+| C1/C2-source-install | Typed BankSource verifies exact expected/supplied source sets, source layouts/generations/lengths; ExtentStore/CpuTransfers expert and PLE tests use installer. | Model-load source registration, original-file/per-extent indexing, metadata/validation-I/O budget, no substituted weights/scales. |
+| C1/C2-ownership | READYVIEW-OWNERSHIP.md maps owner thread, actual copy→consumer wait, take-once and final-consumer fence. | CUDA implementation, unknown-drain quarantine, graph/multiple aliases, complete-byte/logit/token tests. |
+| C1-guard-v2 | Unapplied patch adds CPU-tested exact source-bound check after cardinality/mask checks; patch context/syntax only. | Native compile and all pre/post cells; full conversion remains NO-GO. |
+
+Runner now begins with source-contract CPU tests and v2 patch-context check
+outside the lock, then builds, then **PLE tiny first**. Hy3 remains PRO-pair-only
+unless separately hash-bound fitting evidence is granted. Existing explicit
+BLOCKED records and real exit 3 remain; no stubs become GPU evidence. Dates above
+remain check-ins, no gates advanced by CI compilation or these CPU tests.
