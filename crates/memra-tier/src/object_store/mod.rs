@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+pub mod catalog;
 pub mod prepared;
 
 pub const ALIGNMENT: usize = 4096;
@@ -123,9 +124,19 @@ pub struct StoreTxn {
 }
 /// Immutable insert, never overwrite. `get` must bound allocation by max_bytes.
 /// Implementations distinguish root and chunk namespaces even for equal digests.
+/// Sealed GC authority, issued only after the store checks all live leases.
+pub struct EvictionPermit(());
 pub trait BlobBackend {
     fn persistent(&self) -> bool {
         false
+    }
+    /// Retain process-wide storage ownership through unresolved lease shutdown.
+    fn ownership_guard(&self) -> Option<std::sync::Arc<fs::File>> {
+        None
+    }
+    /// Backends without a process-safe deletion protocol remain read/write only.
+    fn evict_root(&mut self, _id: Digest, _permit: EvictionPermit) -> Result<()> {
+        Err(Error::Unsupported)
     }
     fn get(&self, root: bool, id: Digest, max_bytes: usize) -> Result<Option<Vec<u8>>>;
     fn insert(&mut self, root: bool, id: Digest, bytes: &[u8]) -> Result<()>;
@@ -151,14 +162,17 @@ pub struct ExtentStore<B, G> {
     backend: B,
     governor: Rc<RefCell<G>>,
     owner: u64,
+    ownership_guard: Option<std::sync::Arc<fs::File>>,
     leases: HashMap<(u64, u64), ObjectManifest>,
     extent_leases: HashMap<(u64, u64), (ObjectKey, u32, ChunkRef)>,
 }
 impl<B: BlobBackend, G: BudgetGovernor> ExtentStore<B, G> {
     pub fn new(backend: B, governor: Rc<RefCell<G>>) -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let ownership_guard = backend.ownership_guard();
         Self {
             backend,
+            ownership_guard,
             governor,
             owner: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             leases: HashMap::new(),
@@ -457,14 +471,25 @@ impl<B: BlobBackend, G: BudgetGovernor> ObjectStore for ExtentStore<B, G> {
         {
             return Err(Error::Busy);
         }
-        // No process-shared GC/lock protocol yet. Never unlink another process's backing.
-        Err(Error::Unsupported)
+        self.backend.evict_root(root_id(key)?, EvictionPermit(()))
+    }
+}
+impl<B, G> Drop for ExtentStore<B, G> {
+    fn drop(&mut self) {
+        if !self.leases.is_empty() || !self.extent_leases.is_empty() {
+            // Missing explicit retirement is not proof that an external reader/DMA
+            // stopped. Keep process ownership (and unreleased governor charges).
+            if let Some(guard) = self.ownership_guard.take() {
+                std::mem::forget(guard);
+            }
+        }
     }
 }
 /// No-clobber atomic root publication. Persistent mode syncs file before publication
 /// and directory after link/unlink; ephemeral mode makes no durability promise.
 pub struct FileBackend {
     directory: PathBuf,
+    ownership: std::sync::Arc<fs::File>,
     persistent: bool,
     read_mode: crate::io::direct::ReadMode,
     direct_writes: bool,
@@ -489,7 +514,15 @@ impl FileBackend {
                 .sync_all()?;
             }
         }
+        let ownership = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(directory.join(".ownership"))?;
+        ownership.lock_shared()?;
         Ok(Self {
+            ownership: std::sync::Arc::new(ownership),
             directory: directory.to_owned(),
             persistent: durability == Durability::Persistent,
             read_mode: crate::io::direct::ReadMode::Buffered,
@@ -534,6 +567,21 @@ impl FileBackend {
     }
 }
 impl BlobBackend for FileBackend {
+    fn ownership_guard(&self) -> Option<std::sync::Arc<fs::File>> {
+        Some(self.ownership.clone())
+    }
+    fn evict_root(&mut self, id: Digest, _permit: EvictionPermit) -> Result<()> {
+        // A different store/process keeps a shared lifetime lock even when it has
+        // no lease yet. Upgrade only with exclusive ownership; never wait for GC.
+        self.ownership.unlock()?;
+        if self.ownership.try_lock().is_err() {
+            self.ownership.lock_shared()?;
+            return Err(Error::Busy);
+        }
+        let result = self.evict_exclusive(id);
+        let relock = self.ownership.lock_shared().map_err(Error::from);
+        result.and(relock)
+    }
     fn persistent(&self) -> bool {
         self.persistent
     }
@@ -561,6 +609,9 @@ impl BlobBackend for FileBackend {
         Ok(Some(bytes))
     }
     fn insert(&mut self, root: bool, id: Digest, bytes: &[u8]) -> Result<()> {
+        if root && self.directory.join(format!("tomb-{}", hex(&id))).exists() {
+            return Err(Error::Conflict);
+        }
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let tmp = self.directory.join(format!(
@@ -629,5 +680,70 @@ impl BlobBackend for FileBackend {
             fs::File::open(&self.directory)?.sync_all()?;
         }
         Ok(())
+    }
+}
+
+impl FileBackend {
+    fn sync_directory(&self) -> Result<()> {
+        if self.persistent {
+            fs::File::open(&self.directory)?.sync_all()?;
+        }
+        Ok(())
+    }
+    fn evict_exclusive(&mut self, id: Digest) -> Result<()> {
+        let root = self.path(true, id);
+        let tomb = self.directory.join(format!("tomb-{}", hex(&id)));
+        // Rename is the visibility boundary. Recovery replays an existing tombstone.
+        if root.exists() {
+            if tomb.exists() {
+                return Err(Error::Conflict);
+            }
+            fs::rename(&root, &tomb)?;
+            self.sync_directory()?;
+        } else if !tomb.exists() {
+            return Err(Error::NotFound);
+        }
+        let bytes = read_bounded(&tomb, MAX_ROOT + ALIGNMENT)?;
+        let removed = ObjectManifest::decode(decode_extent(&bytes)?)?;
+        if removed.key.identity()? != id {
+            return Err(Error::Corrupt);
+        }
+        // Count committed references under the exclusive process lock. Fail closed
+        // on ANY malformed root; an unreadable reference must not become zero.
+        let mut references = std::collections::HashMap::<Digest, u64>::new();
+        for entry in fs::read_dir(&self.directory)? {
+            let entry = entry?;
+            if entry.file_name().to_string_lossy().starts_with("root-") {
+                let bytes = read_bounded(&entry.path(), MAX_ROOT + ALIGNMENT)?;
+                for c in ObjectManifest::decode(decode_extent(&bytes)?)?.chunks {
+                    *references.entry(c.encoded_digest).or_default() += 1;
+                }
+            }
+        }
+        for c in removed.chunks {
+            if !references.contains_key(&c.encoded_digest) {
+                remove_if_exists(&self.path(false, c.encoded_digest))?;
+            }
+        }
+        self.sync_directory()?;
+        remove_if_exists(&tomb)?;
+        self.sync_directory()
+    }
+}
+fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(Error::Capacity);
+    }
+    Ok(bytes)
+}
+fn remove_if_exists(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
     }
 }
