@@ -9,8 +9,10 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-OUT = HERE / "day4-checks"
-OUT.mkdir(exist_ok=True)
+OUT = HERE / (sys.argv[1] if len(sys.argv) > 1 else "day4-checks")
+if subprocess.run(["git", "diff", "--quiet", "HEAD"], cwd=ROOT).returncode:
+    raise SystemExit("refuse: commit tracked source before exact-tip verification")
+OUT.mkdir(exist_ok=False)
 checks = [
     ("fmt", ["cargo", "fmt", "--all", "--", "--check"]),
     ("check-mac", ["cargo", "check", "-p", "memra-kv", "-p", "memra-tier", "--offline", "--all-targets"]),

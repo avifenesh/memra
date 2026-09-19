@@ -240,32 +240,36 @@ fn request_plan_records_fixture_policy_and_never_loads_recompute_winners() {
 
 #[test]
 fn active_state_cannot_recompute_even_with_optional_priority() {
-    let (h, _, _, _) = fixture();
-    let mut s = Scheduler::new(h, 2);
-    let mut p = plan(&bundle());
-    p.request.priority = Priority::Demand;
-    let id = s
-        .enqueue_with_costs(
-            p,
-            PrefetchPolicy::Wait,
-            StateKind::Active,
-            PrefixCosts {
-                prompt_tokens: 1,
-                reused_tokens: 1,
-                cold_prefill_ns: 1,
-                suffix_prefill_ns: 2,
-                read_ns: 3,
-                copy_ns: 4,
-                materialize_ns: 5,
-            },
-            true,
-        )
-        .unwrap();
-    assert_eq!(
-        s.restore_decision(id).unwrap().0,
-        RestoreDecision::RequireState
-    );
-    s.cancel(id).unwrap();
+    for state in [0, 7] {
+        let (h, _, _, _) = fixture();
+        let mut s = Scheduler::new(h, 2);
+        let mut p = plan(&bundle());
+        p.request.priority = Priority::Demand;
+        p.id.epoch = state;
+        p.epochs.state = state;
+        let id = s
+            .enqueue_with_costs(
+                p,
+                PrefetchPolicy::Wait,
+                StateKind::Active,
+                PrefixCosts {
+                    prompt_tokens: 1,
+                    reused_tokens: 1,
+                    cold_prefill_ns: 1,
+                    suffix_prefill_ns: 2,
+                    read_ns: 3,
+                    copy_ns: 4,
+                    materialize_ns: 5,
+                },
+                true,
+            )
+            .unwrap();
+        assert_eq!(
+            s.restore_decision(id).unwrap().0,
+            RestoreDecision::RequireState
+        );
+        s.cancel(id).unwrap();
+    }
 }
 
 /// B-owned fake for the frozen seam; no dependency on D's private implementation.
@@ -479,5 +483,53 @@ fn program_residency_refuses_cross_tenant_before_charging_and_retains_full_ident
     assert_eq!(guard.program(), Some(&program()));
     assert_eq!(g.lock().unwrap().used().pageable, 128);
     drop(guard);
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+}
+
+#[test]
+fn fixture_load_winner_advances_frozen_plan_without_losing_decision() {
+    let (mut h, g, c, _) = fixture();
+    let b = bundle().seal().unwrap();
+    h.backing.as_mut().unwrap().stored = b.clone();
+    h.backing.as_mut().unwrap().route = Some(Tier::Nvme);
+    let mut p = plan(&b);
+    p.epochs.state = 0;
+    p.request.priority = Priority::Demand;
+    let current = p.epochs;
+    let mut s = Scheduler::new(h, 2);
+    let cost = PrefixCosts {
+        prompt_tokens: 2,
+        reused_tokens: 1,
+        cold_prefill_ns: 1000,
+        suffix_prefill_ns: 200,
+        read_ns: 300,
+        copy_ns: 100,
+        materialize_ns: 100,
+    };
+    let id = s
+        .enqueue_with_costs(
+            p,
+            PrefetchPolicy::Wait,
+            StateKind::ImmutablePrefix,
+            cost,
+            true,
+        )
+        .unwrap();
+    for now in 1..=3 {
+        let events = s.tick(now, &[], |_| current).unwrap();
+        assert!(events.iter().all(|(_, result)| result.is_ok()));
+        let (decision, saved) = s.restore_decision(id).unwrap();
+        assert_eq!(decision, RestoreDecision::Load);
+        assert_eq!(saved.unwrap().materialize_ns, 100);
+    }
+    assert_eq!(
+        s.consume(id, current, |b| b.bundle.id.clone()).unwrap(),
+        b.id
+    );
+    let charged = g.lock().unwrap().used();
+    assert_eq!(s.release(id), Err(Error::Busy));
+    assert_eq!(g.lock().unwrap().used(), charged);
+    c.borrow_mut().retired = true;
+    s.release(id).unwrap();
     assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
 }
