@@ -1,0 +1,190 @@
+[
+  {
+    "name": "fmt",
+    "argv": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 3.911,
+    "log": "fmt.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "check-mac",
+    "argv": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--all-targets"
+    ],
+    "exit": 0,
+    "seconds": 2.16,
+    "log": "check-mac.log.gz",
+    "raw_sha256": "5b4a983c6b4e15ee704289d8df7c2474d135ec1e984fd12897e79842846cbd89"
+  },
+  {
+    "name": "check-linux",
+    "argv": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--all-targets",
+      "--target",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "exit": 0,
+    "seconds": 2.272,
+    "log": "check-linux.log.gz",
+    "raw_sha256": "4aad3a8645228c4cc983faec558c87825b21cc5ff9e99d4d7eccba98d2e0bf93"
+  },
+  {
+    "name": "test-tier",
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "seconds": 22.175,
+    "log": "test-tier.log.gz",
+    "raw_sha256": "de4e0bee09f279830cc26fb5d2518db2b8825720b06b0edd798c12228812aca7"
+  },
+  {
+    "name": "test-kv",
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "seconds": 7.133,
+    "log": "test-kv.log.gz",
+    "raw_sha256": "4bc5c94e5dc3609eb7513c8c1ec1eaf8147e5d02861833f318280e3b8a8ac07a"
+  },
+  {
+    "name": "clippy",
+    "argv": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 1.707,
+    "log": "clippy.log.gz",
+    "raw_sha256": "815bad5ca70489a800a7188746fd6cf732ede7b516dcd23ecbc17e9c3ee3145e"
+  },
+  {
+    "name": "telemetry",
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--test",
+      "storage",
+      "telemetry::",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "seconds": 0.254,
+    "log": "telemetry.log.gz",
+    "raw_sha256": "82ad6afb1052ae3a7555cb40df11a4d72e70a5ba574fcad78caed6ce4bdaf5a6"
+  },
+  {
+    "name": "runner",
+    "argv": [
+      "python3",
+      "research/spill-a-20260919/day3/test_runner.py"
+    ],
+    "exit": 0,
+    "seconds": 4.856,
+    "log": "runner.log.gz",
+    "raw_sha256": "e73fa131b854840f5f46ab7e5daa1996949e4464ae981152df75f68d1c20ac11"
+  },
+  {
+    "name": "dry-run",
+    "argv": [
+      "bash",
+      "research/spill-a-20260919/rig-cells-a.sh",
+      "/never-created nvme",
+      "--dry-run"
+    ],
+    "exit": 0,
+    "seconds": 0.031,
+    "log": "dry-run.log.gz",
+    "raw_sha256": "80504bac451f5881f9bc11d85bfa862b6a9035342f845fc095e4dde5fb76d07e"
+  },
+  {
+    "name": "shell",
+    "argv": [
+      "bash",
+      "-n",
+      "research/spill-a-20260919/rig-cells-a.sh"
+    ],
+    "exit": 0,
+    "seconds": 0.021,
+    "log": "shell.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "fixtures",
+    "argv": [
+      "python3",
+      "crates/memra-tier/tests/contracts/fixture_reference.py",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 0.13,
+    "log": "fixtures.log.gz",
+    "raw_sha256": "fb7a893b8aba1ae4a5d95898e66b46377c642ee1ae197c76b167a8e781774ef4"
+  },
+  {
+    "name": "diff",
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 0.397,
+    "log": "diff.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "flags",
+    "argv": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "seconds": 3.892,
+    "log": "flags.log.gz",
+    "raw_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+  }
+]

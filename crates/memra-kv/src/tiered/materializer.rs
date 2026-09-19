@@ -215,3 +215,120 @@ impl Drop for QwenMaterializer<'_> {
         }
     }
 }
+
+/// CPU-only packed record fixture. This is NOT an FP8 attention implementation or
+/// a selectable Qwen KV encoding. The caller pins exact layout + program identity.
+pub struct PackedImage {
+    pub bundle: StateBundle,
+    pub payloads: Vec<Vec<u8>>,
+}
+pub struct PackedOperands {
+    materializer: u64,
+    device: DeviceLease,
+    ticket: TransferTicket,
+    binding: u64,
+}
+impl PackedOperands {
+    pub fn allocation_id(&self) -> u64 {
+        self.device.allocation_id()
+    }
+}
+pub struct PackedMaterializer<'a> {
+    id: u64,
+    owner: &'a DeviceOwner,
+    program: ProgramIdentity,
+    layout: RecordLayout,
+    active: HashMap<u64, DeviceLease>,
+    next: u64,
+}
+impl<'a> PackedMaterializer<'a> {
+    pub fn new(owner: &'a DeviceOwner, program: ProgramIdentity, layout: RecordLayout) -> Self {
+        Self {
+            id: NEXT_MATERIALIZER
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .expect("materializer id exhausted"),
+            owner,
+            program,
+            layout,
+            active: HashMap::new(),
+            next: 0,
+        }
+    }
+    /// Exact opaque records in declared page order, INCLUDING storage padding.
+    pub fn capture(&self, op: &PackedOperands) -> Result<Vec<Vec<u8>>> {
+        if op.materializer != self.id || !self.active.contains_key(&op.binding) {
+            return Err(Error::AlreadyReleased);
+        }
+        let image = self.owner.resolve::<PackedImage>(&op.device)?;
+        Ok(image.payloads.clone())
+    }
+}
+impl KvMaterializer for PackedMaterializer<'_> {
+    type Operands = PackedOperands;
+    fn materialize(
+        &mut self,
+        b: &StateBundle,
+        program: &ProgramIdentity,
+        ready: &ReadyView<'_>,
+        current: Epochs,
+    ) -> Result<PackedOperands> {
+        ready.ticket().epochs.require(current)?;
+        if program != &self.program || &b.program != program {
+            return Err(Error::ProgramMismatch);
+        }
+        if b.id.epoch != current.state {
+            return Err(Error::StaleEpoch);
+        }
+        b.require(program, &self.layout, current.state, b.committed_high_water)?;
+        // One opaque encoding for this binding; mixed quant layouts need a different
+        // explicit consumer binding. No codec or reinterpretation is performed.
+        let encoding = &self.layout.segments[0].encoding;
+        if self.layout.segments.iter().any(|s| &s.encoding != encoding) {
+            return Err(Error::Unsupported);
+        }
+        if ready.destination().bytes() < b.layout.storage_bytes()? {
+            return Err(Error::Capacity);
+        }
+        let image = self.owner.resolve::<PackedImage>(ready.destination())?;
+        if &image.bundle != b {
+            return Err(Error::Conflict);
+        }
+        b.verify(&image.payloads)?;
+        let next = self.next.checked_add(1).ok_or(Error::Overflow)?;
+        let device = self.owner.retain(ready.destination())?;
+        let pin = self.owner.retain(ready.destination())?;
+        self.next = next;
+        self.active.insert(next, pin);
+        Ok(PackedOperands {
+            materializer: self.id,
+            device,
+            ticket: ready.ticket(),
+            binding: next,
+        })
+    }
+    fn retire(&mut self, op: &PackedOperands, done: FenceId) -> Result<()> {
+        if op.materializer != self.id {
+            return Err(Error::ForeignLease);
+        }
+        if done.issuer != self.owner.issuer()
+            || done.owner != op.device.device()
+            || done.generation != op.ticket.epochs.dst_gen
+        {
+            return Err(Error::WrongOwner);
+        }
+        // Caller supplies an OBSERVED completed last-use fence; TransferEngine still
+        // retains the destination binding through its disk/DMA/consumer/graph drain.
+        self.active
+            .remove(&op.binding)
+            .ok_or(Error::AlreadyReleased)?;
+        Ok(())
+    }
+}
+impl Drop for PackedMaterializer<'_> {
+    fn drop(&mut self) {
+        // Lost consumer notification is unknown, not permission to recycle an address.
+        for (_, lease) in self.active.drain() {
+            std::mem::forget(lease);
+        }
+    }
+}

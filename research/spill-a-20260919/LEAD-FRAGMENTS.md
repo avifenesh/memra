@@ -128,3 +128,32 @@ INDEX/TESTING milestone fragment:
 
 No new flags, kernels, dependencies or published performance numbers; no FLAGS,
 KERNELS or generated-board amendments needed. io_uring remains proposal-only.
+
+## Day-4 handoff (current)
+
+Source/test tip: `87bba112b3f7b2afb5137fe672679fa0da1a796f`, pushed to the A lane.
+Full report: `day4/RESULTS.md`; reproducible raw checks and source hashes in day4/.
+D's directed-route failure is no longer inherited: integrated CPU suites passed.
+Lead publish-census fix `200a3c66` was merged, not independently edited by A.
+
+C/B: additive `object_store::catalog::CatalogStore` exposes a fixed-row sharded
+catalog (lookup, lease_extent, read_extent, release_extent, tombstone/collect/evict).
+It does NOT change frozen ObjectManifest. Its model-scale binding to C/B and to
+background preparation remains work; do not present small-root CpuTransfers as
+already accepting CatalogHead. Persistent backing is charged once per resident
+catalog; first lease after manager restart must re-admit it. No full payload
+allocation/index scan occurs per lookup/lease. See documented orphan/unknown-I/O
+recovery limits before production binding.
+
+D: `telemetry::join::StorageTelemetry` converts directional operation deltas into
+D-schema JSONL; bounded intervals, cumulative submitted I/O, null physical counters
+when unknown. GPU device/routes come from the real collector, never inferred from
+I/O times. Two synthetic CPU outputs and schema red arms are persisted in day4/.
+This is NOT the full 250ms native collector or a mixed-roundtrip deaggregation.
+
+TESTING/INDEX milestone fragment:
+`spill-a-20260919 | Lazy 200GB-class metadata catalog, charged lease-safe GC and telemetry join pass CPU checks; native bindings and hardware gates pending. | spill-a-20260919/day4/RESULTS.md`
+
+No flags, kernels, dependencies, defaults or published numbers changed. io_uring
+is DEFERRED pending the rig's bounded-pread baseline. The updated runner adds 3
+CPU cells (35 dry commands total) but remains non-green for full A2/M1 qualification.

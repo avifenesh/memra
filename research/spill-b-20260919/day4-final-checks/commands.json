@@ -1,0 +1,211 @@
+[
+  {
+    "check": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/fmt.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "check": "check-mac",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-kv",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/check-mac.log.gz",
+    "sha256": "53244921631e995b3a85156a8581eb853cf69d089ed31d9b6908bcf0d5b0271d",
+    "uncompressed_sha256": "539c4dadd96aee203888b186a946d57277deab34149407b7b3b7ad7125d49b57"
+  },
+  {
+    "check": "check-linux",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-kv",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--target",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/check-linux.log.gz",
+    "sha256": "16b3ebfefaa3cf474e95dc9a922e5880f143648fcc27b4237cf0c256ba7bd42f",
+    "uncompressed_sha256": "b1578747bca7b1e6f874b6c1e36a2be6b2bd2d478e09da60aeaf9d32429bf1c2"
+  },
+  {
+    "check": "test",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-kv",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/test.log.gz",
+    "sha256": "f4bd97583b8962ac248bb29d7e7e954377347272967da035406caa37761403a2",
+    "uncompressed_sha256": "6a9206b47ceffcf248df6fa9d31a47fff6a29449d5eeaace4b9d52acd97d02c8"
+  },
+  {
+    "check": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-kv",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--no-deps",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/clippy.log.gz",
+    "sha256": "062ef784acb5e31837e6edabfca7988760e18e8759cdba62e581423e5b16afe1",
+    "uncompressed_sha256": "fd0f9f6f74477b3f7efba0884d4b551cd94f9e470ad3b47f0121cafab721b9bf"
+  },
+  {
+    "check": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/diff.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "check": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/flags.log.gz",
+    "sha256": "76188f1d03361812b7b3efde2e8c60c91be50ac36fee5df164ab0a3da3de27f2",
+    "uncompressed_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+  },
+  {
+    "check": "patch",
+    "command": [
+      "git",
+      "apply",
+      "--check",
+      "research/spill-b-20260919/HOSTPREFIX-PATCH.diff"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/patch.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "check": "shell",
+    "command": [
+      "bash",
+      "-n",
+      "research/spill-b-20260919/rig-cells-b.sh",
+      "research/spill-b-20260919/rig-stub-b.sh"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/shell.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "check": "runner",
+    "command": [
+      "python3",
+      "research/spill-b-20260919/test-rig-cells-b.py"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/runner.log.gz",
+    "sha256": "644f20e6d93ccd137499a06eb86088277996a45d19ef77f5226bac557cbe72b8",
+    "uncompressed_sha256": "b16dbb46c18c67dca50043a6c2bcb702e6bdac24512777c667ec4aa65ea44e72"
+  },
+  {
+    "check": "frozen",
+    "command": [
+      "git",
+      "diff",
+      "--exit-code",
+      "020d2047",
+      "--",
+      "crates/memra-tier/src/contracts.rs",
+      "crates/memra-tier/tests/contracts"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/frozen.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "check": "d-seam-unchanged",
+    "command": [
+      "git",
+      "diff",
+      "--exit-code",
+      "020d2047",
+      "--",
+      "crates/memra-tier/tests/peer/fake.rs"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/d-seam-unchanged.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "check": "runtime-unapplied",
+    "command": [
+      "git",
+      "diff",
+      "--exit-code",
+      "020d2047",
+      "--",
+      "crates/memra-server/src/worker.rs",
+      "crates/memra-server/src/admit_memory.rs",
+      "crates/memra-server/src/worker/host_glm.rs"
+    ],
+    "exit": 0,
+    "head": "02483bd499728b73557a8aac50f23453678c5914",
+    "raw": "day4-final-checks/runtime-unapplied.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

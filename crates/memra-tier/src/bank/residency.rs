@@ -166,6 +166,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                             ItemStatus::Failed
                         },
                         valid_bytes: s.valid_bytes,
+                        // Host slot -> record materialization bytes. The underlying
+                        // ObjectReader transfer completion reports framed storage I/O;
+                        // coalesced reads cannot be charged once per logical record.
                         io_bytes: s.storage_bytes,
                         checksum: Some(hash),
                         epochs: ticket.epochs,
@@ -467,7 +470,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
                     .zip(&r.checksums)
                     .map(|(s, h)| SegmentExpectation {
                         valid_bytes: s.valid_bytes,
-                        io_bytes: s.storage_bytes,
+                        io_bytes: s.valid_bytes,
                         checksum: *h,
                     })
                     .collect()

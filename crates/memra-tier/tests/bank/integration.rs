@@ -436,3 +436,180 @@ fn object_transfer_experts_partial_failure_never_publishes_successful_sibling() 
         assert_eq!(g.borrow().used(), TierBudget::zero(2));
     }
 }
+
+#[test]
+fn governor_rearrival_cannot_starve_backlogged_tenant() {
+    use memra_tier::tier::QueueOutcome;
+    let g = shared(100_000, 0);
+    let b = request(1, Priority::Demand);
+    let mut a = b.clone();
+    a.tenant = [22; 32];
+    let b1 = g.borrow_mut().enqueue(b.clone()).unwrap();
+    let b2 = g.borrow_mut().enqueue(b).unwrap();
+    let a3 = g.borrow_mut().enqueue(a.clone()).unwrap();
+    for want in [b1, a3] {
+        let Some(QueueOutcome::Admitted(id, charge)) = g.borrow_mut().dispatch().unwrap() else {
+            panic!()
+        };
+        assert_eq!(id, want);
+        g.borrow_mut().release(&charge).unwrap();
+    }
+    let a4 = g.borrow_mut().enqueue(a).unwrap();
+    for want in [b2, a4] {
+        let Some(QueueOutcome::Admitted(id, charge)) = g.borrow_mut().dispatch().unwrap() else {
+            panic!()
+        };
+        assert_eq!(id, want);
+        g.borrow_mut().release(&charge).unwrap();
+    }
+}
+
+struct TailReader<S: ObjectStore> {
+    inner: ObjectReader<S>,
+    extent: u64,
+    reads: Vec<(u64, usize)>,
+}
+impl<S: ObjectStore> ExactReader for TailReader<S> {
+    fn storage_bytes(&self, t: &TensorId) -> Result<u64> {
+        self.inner.storage_bytes(t)
+    }
+    fn read_exact(&mut self, t: &TensorId, offset: u64, dst: &mut [u8]) -> Result<()> {
+        assert!(offset + dst.len() as u64 <= self.extent);
+        self.reads.push((offset, dst.len()));
+        self.inner.read_exact(t, offset, dst)
+    }
+    fn begin_request(&mut self, r: &BudgetRequest, e: Epochs) {
+        self.inner.begin_request(r, e);
+    }
+}
+
+fn tail_rows(payload_len: u64) {
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    let dir = std::env::temp_dir().join(format!(
+        "memra-pr518-tail-{}-{payload_len}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&dir).unwrap();
+    let cleanup = Cleanup(dir);
+    let g = shared(2_000_000, 0);
+    let key = ObjectKey {
+        version: 1,
+        artifact: tensor().artifact,
+        semantic_id: tensor().identity().unwrap(),
+        layout: [11; 32],
+        generation: 0,
+    };
+    let backend = memra_tier::object_store::FileBackend::open(&cleanup.0).unwrap();
+    let mut store = ExtentStore::new(backend, g.clone());
+    let payload: Vec<_> = (0..payload_len).map(|p| byte(&tensor(), p)).collect();
+    let mut txn = store
+        .begin(key.clone(), payload_len, Durability::Ephemeral)
+        .unwrap();
+    for part in payload.chunks(512) {
+        store.put(&mut txn, part).unwrap();
+    }
+    let manifest = store.commit(&mut txn).unwrap();
+    assert_eq!(manifest.valid_bytes, payload_len);
+    assert!(manifest.chunks.last().unwrap().valid_bytes < 512);
+    let pc = g
+        .borrow_mut()
+        .reserve(&request(1023, Priority::MandatoryActive))
+        .unwrap();
+    let pool = FakePinnedPool::new(1, 512, 512, 0, &pc).unwrap();
+    let mut qr = request(0, Priority::MandatoryActive);
+    qr.bytes.inflight = 1;
+    let qc = g.borrow_mut().reserve(&qr).unwrap();
+    let mut io = request(0, Priority::Demand);
+    io.bytes.nvme = 200_000;
+    let inner = ObjectReader::new(store, vec![(tensor(), key)], pool, io, &qc).unwrap();
+    let mut reader = TailReader {
+        inner,
+        extent: payload_len,
+        reads: vec![],
+    };
+    assert_eq!(
+        reader.inner.read_exact(&tensor(), payload_len, &mut [0]),
+        Err(Error::InvalidLayout)
+    );
+    let mut entries = vec![];
+    let mut ids = vec![];
+    // Last byte, short tail row, and a row straddling the last granularity boundary.
+    for (i, len) in [1, 31, 513].into_iter().enumerate() {
+        let mut l = layout(0, 13, len);
+        l.segments.truncate(1);
+        l.requirements.truncate(1);
+        l.segments[0].offset = payload_len - len;
+        let id = BankId {
+            record: RecordId::Row(i as u64),
+            ..bank_id(i as u32, &l)
+        };
+        entries.push((id.clone(), Some(record(l))));
+        ids.push(id);
+    }
+    let cat = Catalog::new(LayoutClass::PerRecord, entries).unwrap();
+    let mut rows = BoundedRowService(
+        BankService::new(
+            cat,
+            g.clone(),
+            Heat::default(),
+            reader,
+            CoalescingPolicy {
+                granularity: 512,
+                slot_bytes: 512,
+            },
+            limits(0),
+        )
+        .unwrap(),
+    );
+    let ticket = rows
+        .gather(RowBatch {
+            ids,
+            epochs: epochs(),
+            request: request(0, Priority::Demand),
+        })
+        .unwrap();
+    let p = rows.0.plan(&ticket).unwrap();
+    assert_eq!(
+        p.extents.last().unwrap().offset + p.extents.last().unwrap().len,
+        payload_len
+    );
+    assert!(p.straddling_segments > 0);
+    drain(&mut rows.0, &ticket);
+    let leases = rows.publish(&ticket, epochs()).unwrap();
+    for (lease, len) in leases.records.iter().zip([1, 31, 513]) {
+        assert_eq!(
+            &*lease.resource::<Vec<u8>>().unwrap(),
+            &payload[payload.len() - len..]
+        );
+    }
+    assert!(
+        rows.0
+            .reader()
+            .reads
+            .iter()
+            .any(|(o, n)| o + *n as u64 == payload_len)
+    );
+    assert_eq!(
+        rows.0.reader().inner.submitted,
+        rows.0.reader().inner.retired
+    );
+    finish(&mut rows.0, &ticket);
+    rows.release(&leases).unwrap();
+    drop(rows);
+    g.borrow_mut().release(&pc).unwrap();
+    g.borrow_mut().release(&qc).unwrap();
+    assert_eq!(g.borrow().used(), TierBudget::zero(2));
+}
+#[test]
+fn object_reader_tail_rows_8191() {
+    tail_rows(8191);
+}
+#[test]
+fn object_reader_tail_rows_8193() {
+    tail_rows(8193);
+}

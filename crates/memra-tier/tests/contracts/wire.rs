@@ -186,3 +186,23 @@ fn placement_negative_headroom_route_labels_and_estimates_survive_wire() {
     p.routes[0].kind = RouteKind::PcieP2p;
     assert_eq!(p.validate(), Err(Error::InvalidLayout));
 }
+
+#[test]
+fn completion_requires_logical_payload_not_framed_io() {
+    let ticket = TransferTicket {
+        issuer: 1,
+        sequence: 1,
+        epochs: epochs(),
+    };
+    let mut c = completion(ticket, 1);
+    c.items[0].segments[0].io_bytes = 8192;
+    c.require(&ticket, &expected(1), false).unwrap();
+    c.items[0].segments[0].valid_bytes = 2;
+    assert_eq!(
+        c.require(&ticket, &expected(1), false),
+        Err(Error::ShortIo {
+            expected: 3,
+            actual: 2
+        })
+    );
+}
