@@ -1,6 +1,9 @@
 //! Checked, model-agnostic payload arithmetic. No allocation or support decisions.
 //! Inputs must come from a compiled plan + tensor/record census. Estimates stay labeled.
 
+use crate::contracts::WIRE_VERSION;
+pub use crate::contracts::{DeviceBudget, Endpoint, PlacementReport, RouteBudget, RouteKind};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BudgetError {
     Overflow,
@@ -49,22 +52,6 @@ pub struct RecordOwner {
     pub record_bytes: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Endpoint {
-    Device(u32),
-    PinnedHost,
-    Nvme,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RouteKind {
-    Local,
-    PcieP2p,
-    HostBounce,
-    HostDevice,
-    Storage,
-}
-
 #[derive(Debug, Clone)]
 pub struct RoutePlan {
     pub from: Endpoint,
@@ -87,41 +74,6 @@ pub struct PlacementPlan {
     pub host_resident_bytes: u64,
     pub host_staging_bytes: u64,
     pub host_loader_and_os_bytes: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeviceBudget {
-    pub device: u32,
-    pub weight_bytes: u64,
-    pub global_kv_bytes: u64,
-    pub fixed_state_bytes: u64,
-    pub staging_bytes: u64,
-    pub loader_bytes: u64,
-    pub scratch_bytes: u64,
-    pub reserve_bytes: u64,
-    pub total_bytes: u64,
-    pub remaining_bytes: i128,
-    pub estimates: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RouteBudget {
-    pub from: Endpoint,
-    pub to: Endpoint,
-    pub kind: RouteKind,
-    /// Useful end-to-end bytes, as supplied by the demand trace.
-    pub demand_bytes_per_second: u64,
-    /// Host bounce traverses two physical legs. Other routes have one.
-    pub physical_bytes_per_second: u64,
-    /// G2 engineering envelope: useful demand <= 70% of measured useful route rate.
-    pub within_measured_envelope: Option<bool>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PlacementReport {
-    pub per_device: Vec<DeviceBudget>,
-    pub routes: Vec<RouteBudget>,
-    pub host_bytes: u64,
 }
 
 /// Returns negative headroom rather than hiding oversubscription or saturating arithmetic.
@@ -183,7 +135,22 @@ pub fn placement_report(
         ]
         .into_iter()
         .try_fold(0, add)?;
+        let replica_bytes = plan
+            .owners
+            .iter()
+            .filter(|o| o.devices.iter().skip(1).any(|d| *d == device.device))
+            .try_fold(0, |n, o| {
+                add(
+                    n,
+                    mul(
+                        mul(context_tokens / o.tokens_per_record, o.record_bytes)?,
+                        requests,
+                    )?,
+                )
+            })?;
         per_device.push(DeviceBudget {
+            version: WIRE_VERSION,
+            replica_bytes,
             device: device.device,
             weight_bytes,
             global_kv_bytes,
@@ -234,6 +201,9 @@ pub fn placement_report(
             mul(route.restore_bytes, route.restores_per_second)?,
         )?;
         routes.push(RouteBudget {
+            version: WIRE_VERSION,
+            measured_bytes_per_second: route.measured_bytes_per_second,
+            estimates: vec!["Caller-supplied demand; shared-fabric capacity unmeasured".into()],
             from: route.from,
             to: route.to,
             kind: route.kind,
@@ -252,6 +222,10 @@ pub fn placement_report(
         });
     }
     Ok(PlacementReport {
+        version: WIRE_VERSION,
+        estimates: vec![
+            "Payload estimate only; unmeasured runtime workspace is not admission evidence".into(),
+        ],
         per_device,
         routes,
         host_bytes: add(

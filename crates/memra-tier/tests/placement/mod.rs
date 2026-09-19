@@ -198,3 +198,14 @@ fn staging_loader_scratch_and_routes_are_explicit() {
         Err(BudgetError::InvalidGeometry)
     );
 }
+
+#[test]
+fn report_is_frozen_wire_and_replica_breakdown_not_extra_charge() {
+    use memra_tier::contracts::Wire;
+    let mut p = fixture(652, [10; 4]);
+    p.owners[0].devices.push(1);
+    let r = placement_report(&p, 100, 2).unwrap();
+    assert_eq!(r.per_device[1].replica_bytes, 65_200);
+    assert_eq!(r.per_device[0].replica_bytes, 0);
+    assert_eq!(PlacementReport::decode(&r.encode().unwrap()).unwrap(), r);
+}

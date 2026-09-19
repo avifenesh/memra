@@ -105,3 +105,31 @@ pub trait TopologyProbe {
     type Error;
     fn snapshot_read_only(&self) -> Result<TopologySnapshot, Self::Error>;
 }
+
+/// Scope supplied by the native owner on each use; never deserialized as a live grant.
+/// A changed context, topology census or executable invalidates an old observation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteScope {
+    pub source_context: u64,
+    pub destination_context: u64,
+    pub topology_digest: crate::contracts::Digest,
+    pub binary_digest: crate::contracts::Digest,
+}
+#[derive(Debug)]
+pub struct ScopedTopology {
+    snapshot: TopologySnapshot,
+    scope: RouteScope,
+}
+impl ScopedTopology {
+    /// The adapter must populate actual context/pool grants and direct byte evidence.
+    /// CPU metadata cannot certify that driver truth; this only enforces expiry.
+    pub fn new(snapshot: TopologySnapshot, scope: RouteScope) -> Self {
+        Self { snapshot, scope }
+    }
+    pub fn peer_available(&self, source: u32, destination: u32, current: &RouteScope) -> bool {
+        current == &self.scope
+            && current.source_context != 0
+            && current.destination_context != 0
+            && self.snapshot.peer_available(source, destination)
+    }
+}
