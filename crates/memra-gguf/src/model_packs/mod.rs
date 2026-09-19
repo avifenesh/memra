@@ -200,21 +200,9 @@ pub fn compile_for_load(config: &ModelConfig) -> Result<ModelPlan, PlanCompileEr
 pub fn compile_for_source(
     source: &dyn crate::source::TensorSource,
 ) -> Result<(ModelConfig, ModelPlan), Box<dyn std::error::Error>> {
-    let config = source.try_config().map_err(std::io::Error::other)?;
+    let mut config = source.try_config().map_err(std::io::Error::other)?;
     let plan = compile_for_load(&config)?;
-    if config.rope_scaling_hint.as_deref() == Some("llama3")
-        && !config
-            .step35
-            .as_ref()
-            .is_some_and(|step| step.rope_freq_factors.is_some())
-        && !source.has("rope_freqs.weight")
-    {
-        return Err(PlanCompileError::UnsupportedSemantics {
-            field: "rope_scaling",
-            value: "llama3 requires rope_freqs.weight or normalized frequency factors".into(),
-        }
-        .into());
-    }
+    step35::prepare_rope_factors(&mut config, &plan, source)?;
     Ok((config, plan))
 }
 

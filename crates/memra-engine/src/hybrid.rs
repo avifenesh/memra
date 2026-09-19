@@ -5754,20 +5754,10 @@ impl HybridModel {
         // GGUF carries the factor tensor; HF carries normalized factors in Step35Config.
         // Preflight requires one when llama3 scaling is declared. Unscaled siblings keep None.
         let step35_aux = if sliding_gated_moe_program {
-            let host = src
-                .find("rope_freqs.weight")
-                .map(|t| {
-                    memra_gguf::dequant::dequantize(
-                        t.ggml_type,
-                        &t.bytes,
-                        t.ne.iter().product::<u64>() as usize,
-                    )
-                })
-                .or_else(|| {
-                    cfg.step35
-                        .as_ref()
-                        .and_then(|step| step.rope_freq_factors.clone())
-                });
+            let host = cfg
+                .step35
+                .as_ref()
+                .and_then(|step| step.rope_freq_factors.as_ref());
             let rope_freqs = match host {
                 Some(host) => {
                     let mut copies = Vec::new();
@@ -5778,11 +5768,11 @@ impl HybridModel {
                             let owner = crate::pp::layer_engine(e, n_trunk, fence[s])?;
                             let dev = owner.ctx().ordinal();
                             if copies.iter().all(|(d, _)| *d != dev) {
-                                copies.push((dev, owner.htod(&host)?));
+                                copies.push((dev, owner.htod(host)?));
                             }
                         }
                     } else {
-                        copies.push((e.ctx().ordinal(), e.htod(&host)?));
+                        copies.push((e.ctx().ordinal(), e.htod(host)?));
                     }
                     Some(copies)
                 }

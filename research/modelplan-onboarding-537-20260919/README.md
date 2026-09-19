@@ -9,6 +9,8 @@ Normalization retains `hidden_act` / `hidden_activation`, scalar HF and GGUF RoP
 Gemma-style per-attention RoPE types. Source preflight requires a tensor or normalized factors
 when Llama3 scaling is declared, including when automatic placement is disabled. Step HF load
 now consumes its already-derived frequency factors instead of silently using no factors.
+The Step pack validates auxiliary dtype, extent, byte length and finite positive values
+before allocation; the engine uploads the same validated buffer, without reading it again.
 Existing Step window/checkpoint factors, Gemma
 window/proportional RoPE/GELU-tanh, and Qwen4Exp YaRN keep their typed programs. OLMoE and
 MiniMax-M3 receive explicit packs for their existing programs so removing the fallback does
@@ -29,8 +31,8 @@ is inferred from registration or synthetic fixtures.
 | Command | Result | Raw evidence |
 |---|---|---|
 | `cargo test -p memra-gguf --test model_semantics` on base plus the original three regressions | 0 passed, 3 failed; window, llama3 RoPE and GELU each compiled as full attention/no factors/SiLU | [before.log](raw/before.log) |
-| `cargo test -p memra-gguf --lib model_plan::semantics_tests` | 11 passed | [after.log](raw/after.log) |
-| `cargo test -p memra-gguf -p memra-runtime --lib` | 288 gguf passed, 1 ignored; 1 runtime passed | [gguf-runtime.log](raw/gguf-runtime.log) |
+| `cargo test -p memra-gguf --lib model_plan::semantics_tests` | 12 passed | [after.log](raw/after.log) |
+| `cargo test -p memra-gguf -p memra-runtime --lib` | 289 gguf passed, 1 ignored; 1 runtime passed | [gguf-runtime.log](raw/gguf-runtime.log) |
 | `cargo test -p memra-gguf -p memra-reference -p memra-runtime` | Initial gguf suite passed; reference 65 passed, 1 failed | [cpu-suites.log](raw/cpu-suites.log) |
 | Base: `cargo test -p memra-reference --lib qwen35_fixture_executes_mixed_gdn_and_full_attention_state` | Same bitwise fixture failure and identical output bits on untouched base; tracked separately in #548 | [reference-base.log](raw/reference-base.log) |
 | `cargo clippy -p memra-gguf --lib --tests` | Passed; existing macOS unused `AsRawFd` import warning in source.rs | [clippy.log](raw/clippy.log) |

@@ -15,12 +15,78 @@ impl crate::source::TensorSource for ConfigOnlySource<'_> {
     fn config(&self) -> ModelConfig {
         self.config.clone()
     }
-    fn find(&self, _name: &str) -> Option<crate::source::TensorView<'_>> {
-        panic!("semantic preflight must not read model weights")
+    fn find(&self, name: &str) -> Option<crate::source::TensorView<'_>> {
+        assert!(
+            self.config.step35.is_some(),
+            "semantic rejection must precede tensor lookup"
+        );
+        assert_eq!(
+            name, "rope_freqs.weight",
+            "preflight must not read model weights"
+        );
+        self.rope_tensor.then(|| crate::source::TensorView {
+            bytes: std::borrow::Cow::Owned(
+                [1.0f32; 32].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            ),
+            ggml_type: crate::GgmlType::F32,
+            ne: vec![32],
+        })
     }
     fn has(&self, name: &str) -> bool {
         assert_eq!(name, "rope_freqs.weight");
         self.rope_tensor
+    }
+}
+
+#[test]
+fn step_gguf_rejects_short_or_invalid_rope_factors_before_upload() {
+    use crate::micro_gguf::{GgufWriter, MetaW};
+    for (name, factors, accepted) in [
+        ("short", vec![1.0], false),
+        ("valid", vec![2.0; 32], true),
+        ("zero", vec![0.0; 32], false),
+        ("nan", vec![f32::NAN; 32], false),
+    ] {
+        let mut writer = GgufWriter::new();
+        writer.kv("general.architecture", MetaW::Str("step35"));
+        for (key, value) in [
+            ("block_count", 2),
+            ("embedding_length", 256),
+            ("feed_forward_length", 512),
+            ("attention.key_length", 128),
+            ("attention.value_length", 128),
+            ("attention.sliding_window", 512),
+            ("vocab_size", 32),
+        ] {
+            writer.kv(&format!("step35.{key}"), MetaW::U32(value));
+        }
+        writer.kv("step35.attention.head_count", MetaW::ArrU32(vec![2, 3]));
+        writer.kv("step35.attention.head_count_kv", MetaW::ArrU32(vec![1, 1]));
+        writer.kv(
+            "step35.attention.sliding_window_pattern",
+            MetaW::ArrBool(vec![false, true]),
+        );
+        writer.kv("step35.rope.scaling.type", MetaW::Str("llama3"));
+        writer.tensor_f32("rope_freqs.weight", &[factors.len() as u64], &factors);
+        let path = std::env::temp_dir().join(format!(
+            "memra-537-step-factors-{name}-{}.gguf",
+            std::process::id()
+        ));
+        writer.write(&path).unwrap();
+        let file = crate::GgufFile::open(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let result = compile_for_source(&crate::source::GgufSource(&file));
+        if accepted {
+            let (cfg, _) = result.unwrap();
+            assert_eq!(cfg.step35.unwrap().rope_freq_factors.unwrap(), factors);
+        } else {
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("rope_freqs.weight")
+            );
+        }
     }
 }
 

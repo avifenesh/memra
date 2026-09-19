@@ -676,7 +676,7 @@ impl TensorContract {
     }
 }
 
-fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
+pub(crate) fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
     plan.layers
         .iter()
         .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
