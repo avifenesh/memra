@@ -94,3 +94,47 @@ fn observation_expires_with_context_topology_or_binary() {
         assert!(!scoped.peer_available(0, 1, &changed));
     }
 }
+
+#[test]
+fn exported_capacity_is_fail_closed_sized_and_shared() {
+    use memra_tier::{contracts::*, peer::test_support::FakePeerCapacity};
+    use std::cell::RefCell;
+    let gov = support::shared();
+    let mut capacity = FakePeerCapacity::new(gov.clone(), 2, 7);
+    let mut request = support::request(0, Priority::MandatoryActive);
+    request.bytes.device[0] = 8;
+    request.bytes.peer[0] = 8;
+    let plan = PeerPlan {
+        owner_device: 0,
+        consumer_device: 1,
+        bytes: 8,
+        alignment: 4,
+        epochs: support::epochs(),
+        request,
+    };
+    assert!(matches!(
+        capacity.reserve(plan.clone()),
+        Err(Error::Unsupported)
+    ));
+    capacity
+        .set_route(0, 1, true, true, LinkHealth::AtMaximum)
+        .unwrap();
+    let lease = capacity.reserve(plan.clone()).unwrap();
+    assert_eq!(
+        capacity.owners[0]
+            .resolve::<RefCell<Vec<u8>>>(&lease.device)
+            .unwrap()
+            .borrow()
+            .len(),
+        8
+    );
+    assert_eq!(gov.borrow().used().peer[0], 8);
+    let retained = capacity.owners[0].retain(&lease.device).unwrap();
+    assert_eq!(capacity.release(&lease), Err(Error::Busy));
+    drop(retained);
+    capacity.state += 1;
+    assert!(matches!(capacity.reserve(plan), Err(Error::StaleEpoch)));
+    capacity.release(&lease).unwrap();
+    assert_eq!(capacity.release(&lease), Err(Error::ForeignLease));
+    assert_eq!(gov.borrow().used(), TierBudget::zero(2));
+}

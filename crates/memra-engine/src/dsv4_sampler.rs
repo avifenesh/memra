@@ -124,6 +124,14 @@ impl Dsv4DeviceSampler {
         if words[2] != 0x5a17cafe {
             return Err("device sampler output canary".into());
         }
+        // Type-directed zero test. `tail[0] != 0 as _` stopped inferring once serde_json
+        // entered the engine's crate graph (via memra-tier): serde_json adds
+        // `impl PartialEq<Value> for f32/i32/u32`, so the cast target became ambiguous.
+        // Comparing against `T::from(0u8)` pins the RHS to the element type itself.
+        // Behavior is identical; this is an inference fix, not a sampler change.
+        fn is_nonzero<T: Copy + PartialEq + From<u8>>(x: T) -> bool {
+            x != T::from(0u8)
+        }
         macro_rules! zero_guard {
             ($buffer:expr) => {{
                 let buffer = &$buffer;
@@ -131,7 +139,7 @@ impl Dsv4DeviceSampler {
                     .stream
                     .clone_dtoh(&buffer.slice(buffer.len() - 1..))
                     .map_err(|e| e.to_string())?;
-                if tail[0] != 0 as _ {
+                if is_nonzero(tail[0]) {
                     return Err("device sampler scratch canary".into());
                 }
             }};

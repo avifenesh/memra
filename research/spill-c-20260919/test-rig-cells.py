@@ -23,8 +23,9 @@ def run(label, extra, expected):
     rows = [json.loads(line) for line in (directory / "runs.jsonl").read_text().splitlines()]
     assert rows and all(row["dry_run"] for row in rows)
     assert all(row["status"] in ("STUB", "BLOCKED") for row in rows)
-    assert rows[0]["cell"] == "build"
-    assert rows[1]["argv"][1] in ("/tmp/memra-5090.lock", "/tmp/memra-gpu.lock")
+    cells = [row["cell"] for row in rows]
+    assert cells[:3] == ["source-contract", "patch-check", "build"]
+    assert next(row for row in rows if row["cell"] == "lock")["argv"][1] in ("/tmp/memra-5090.lock", "/tmp/memra-gpu.lock")
     return directory, rows
 
 

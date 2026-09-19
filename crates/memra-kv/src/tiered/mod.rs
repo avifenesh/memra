@@ -150,7 +150,7 @@ fn expected(bundle: &StateBundle) -> Vec<Vec<SegmentExpectation>> {
         .map(|(s, h)| {
             vec![SegmentExpectation {
                 valid_bytes: s.valid_bytes,
-                io_bytes: s.storage_bytes,
+                io_bytes: s.valid_bytes,
                 checksum: *h,
             }]
         })

@@ -2,7 +2,8 @@
 //! Queued work is uncharged. TierStore::admit is the ONLY reservation path.
 //! This is CPU control-plane integration, not an installed server scheduler.
 use super::*;
-use std::collections::BTreeMap;
+use policy::{PrefixCosts, RestoreDecision, calibrated_recompute_vs_load};
+use std::collections::{BTreeMap, HashSet};
 
 struct Pending {
     admission: TierAdmission,
@@ -10,10 +11,13 @@ struct Pending {
     plan: Option<TierAdmissionPlan>,
     cancelled: bool,
     published: bool,
+    decision: RestoreDecision,
+    costs: Option<PrefixCosts>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Progress {
     Queued,
+    Recompute,
     Phase(Phase),
     Retired,
 }
@@ -22,6 +26,7 @@ pub struct Scheduler<S: TierStore> {
     limit: usize,
     next: u64,
     sequence: u64,
+    evicted_floor: u64,
     requests: BTreeMap<u64, Pending>,
     last_served: HashMap<Digest, u64>,
 }
@@ -32,12 +37,63 @@ impl<S: TierStore> Scheduler<S> {
             limit,
             next: 0,
             sequence: 0,
+            evicted_floor: 0,
             requests: BTreeMap::new(),
             last_served: HashMap::new(),
         }
     }
     pub fn enqueue(&mut self, admission: TierAdmission, policy: PrefetchPolicy) -> Result<u64> {
+        self.enqueue_decided(admission, policy, StateKind::Active, None, false)
+    }
+    /// Fixture costs until rig calibration exists. Decision and inputs remain attached
+    /// to the request alongside its frozen TierAdmissionPlan. No contract extension.
+    pub fn enqueue_with_costs(
+        &mut self,
+        admission: TierAdmission,
+        policy: PrefetchPolicy,
+        kind: StateKind,
+        costs: PrefixCosts,
+        same_program_cold: bool,
+    ) -> Result<u64> {
+        self.enqueue_decided(admission, policy, kind, Some(costs), same_program_cold)
+    }
+    fn enqueue_decided(
+        &mut self,
+        admission: TierAdmission,
+        policy: PrefetchPolicy,
+        kind: StateKind,
+        costs: Option<PrefixCosts>,
+        same_program_cold: bool,
+    ) -> Result<u64> {
         admission.request.validate()?;
+        admission.id.validate()?;
+        admission.program.validate()?;
+        admission.expected_layout.validate()?;
+        if admission.id.namespace != admission.program.namespace()?
+            || admission.request.tenant != admission.program.tenant_salt
+        {
+            return Err(Error::ProgramMismatch);
+        }
+        if admission.id.epoch != admission.epochs.state
+            || admission.id.end > admission.committed_high_water
+            || (kind == StateKind::ImmutablePrefix && admission.id.epoch != 0)
+        {
+            return Err(Error::StaleEpoch);
+        }
+        // State kind is supplied by the native owner, never guessed from priority
+        // or epoch zero (active state may also have epoch zero).
+        let mandatory =
+            kind == StateKind::Active || admission.request.priority == Priority::MandatoryActive;
+        let decision = match costs {
+            Some(cost) => {
+                if cost.reused_tokens != admission.id.end - admission.id.start {
+                    return Err(Error::InvalidLayout);
+                }
+                calibrated_recompute_vs_load(cost, mandatory, false, same_program_cold)?
+            }
+            None if mandatory => RestoreDecision::RequireState,
+            None => RestoreDecision::Load,
+        };
         if self.requests.len() >= self.limit {
             return Err(Error::Capacity);
         }
@@ -50,9 +106,16 @@ impl<S: TierStore> Scheduler<S> {
                 plan: None,
                 cancelled: false,
                 published: false,
+                decision,
+                costs,
             },
         );
         Ok(self.next)
+    }
+    /// Frozen decision; no post-admission policy mutator is exposed.
+    pub fn restore_decision(&self, id: u64) -> Result<(RestoreDecision, Option<PrefixCosts>)> {
+        let p = self.requests.get(&id).ok_or(Error::NotFound)?;
+        Ok((p.decision, p.costs))
     }
     pub fn cancel(&mut self, id: u64) -> Result<CancelState> {
         let p = self.requests.get_mut(&id).ok_or(Error::NotFound)?;
@@ -70,15 +133,30 @@ impl<S: TierStore> Scheduler<S> {
         }
     }
     fn prune(&mut self) {
-        self.last_served.retain(|tenant, _| {
-            self.requests
-                .values()
-                .any(|p| &p.admission.request.tenant == tenant)
-        });
+        let active: HashSet<_> = self
+            .requests
+            .values()
+            .map(|p| p.admission.request.tenant)
+            .collect();
+        let mut idle: Vec<_> = self
+            .last_served
+            .iter()
+            .filter(|(tenant, _)| !active.contains(*tenant))
+            .map(|(&tenant, &stamp)| (stamp, tenant))
+            .collect();
+        idle.sort_unstable();
+        let excess = idle.len().saturating_sub(self.limit);
+        for (stamp, tenant) in idle.into_iter().take(excess) {
+            self.last_served.remove(&tenant);
+            self.evicted_floor = self.evicted_floor.max(stamp);
+        }
     }
     /// Admit at most one request per tick; advance every admitted request once.
     /// Priority > deadline > least recently served tenant > FIFO, with no bypass of a
     /// capacity-blocked head. Fairness is within equal priority/deadline, never priority inversion.
+    /// Unknown/forgotten history is treated as served no later than the oldest
+    /// forgotten tenant. The eviction watermark protects older queued stamps;
+    /// queued and admitted tenants are never evicted from the bounded idle history.
     /// current() reads the native owner's LIVE epochs, not the captured admission epochs.
     pub fn tick(
         &mut self,
@@ -100,13 +178,16 @@ impl<S: TierStore> Scheduler<S> {
         let first = self
             .requests
             .iter()
-            .filter(|(_, p)| p.plan.is_none())
+            .filter(|(_, p)| p.plan.is_none() && p.decision != RestoreDecision::Recompute)
             .min_by_key(|(id, p)| {
                 let r = &p.admission.request;
                 (
                     r.priority,
                     r.deadline,
-                    self.last_served.get(&r.tenant).copied().unwrap_or(0),
+                    self.last_served
+                        .get(&r.tenant)
+                        .copied()
+                        .unwrap_or(self.evicted_floor),
                     **id,
                 )
             })
@@ -141,7 +222,18 @@ impl<S: TierStore> Scheduler<S> {
                 }
             }
         }
+        // Cold decisions are uncharged and stay inspectable until the caller cancels
+        // or releases them. Never call lookup/admit/prefetch/load for these requests.
         for (&id, p) in &mut self.requests {
+            if p.decision == RestoreDecision::Recompute {
+                let result = p
+                    .admission
+                    .epochs
+                    .require(current(id))
+                    .map(|()| Progress::Recompute);
+                events.push((id, result));
+                continue;
+            }
             let Some(plan) = &p.plan else { continue };
             if p.cancelled {
                 continue;
@@ -206,6 +298,11 @@ impl<S: TierStore> Scheduler<S> {
     /// Caller must observe all native last-use fences. Busy retains the request and quota.
     pub fn release(&mut self, id: u64) -> Result<Progress> {
         let p = self.requests.get(&id).ok_or(Error::NotFound)?;
+        if p.decision == RestoreDecision::Recompute {
+            self.requests.remove(&id);
+            self.prune();
+            return Ok(Progress::Retired);
+        }
         let plan = p.plan.as_ref().ok_or(Error::NotReady)?;
         self.store.release(&plan.reservation)?;
         self.requests.remove(&id);

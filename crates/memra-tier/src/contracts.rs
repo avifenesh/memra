@@ -560,7 +560,10 @@ pub enum ItemStatus {
 pub struct SegmentCompletion {
     pub segment: u32,
     pub status: ItemStatus,
+    /// Logical payload bytes delivered/required by the consumer.
     pub valid_bytes: u64,
+    /// Physical bytes submitted to the I/O layer, including framing/padding.
+    /// Telemetry only: never compared by Completion::require.
     pub io_bytes: u64,
     pub checksum: Option<Digest>,
     pub epochs: Epochs,
@@ -585,12 +588,17 @@ pub struct Completion {
 }
 #[derive(Debug, Clone)]
 pub struct SegmentExpectation {
+    /// Exact logical payload length required for publication.
     pub valid_bytes: u64,
+    /// Retained for API compatibility; ignored by Completion::require.
+    /// New logical expectations set this to valid_bytes, not guessed I/O framing.
     pub io_bytes: u64,
     pub checksum: Digest,
 }
 impl Completion {
     /// Reject missing/duplicate/reordered/rejected/short/corrupt entries, not just bad aggregates.
+    /// Require exact logical valid_bytes; physical io_bytes is telemetry only and
+    /// may include backend-specific extent headers/padding. Wire v1 is unchanged.
     pub fn require(
         &self,
         ticket: &TransferTicket,
@@ -629,10 +637,10 @@ impl Completion {
                 if s.error.is_some() {
                     return Err(Error::Corrupt);
                 }
-                if s.valid_bytes != e.valid_bytes || s.io_bytes != e.io_bytes {
+                if s.valid_bytes != e.valid_bytes {
                     return Err(Error::ShortIo {
-                        expected: e.io_bytes,
-                        actual: s.io_bytes,
+                        expected: e.valid_bytes,
+                        actual: s.valid_bytes,
                     });
                 }
                 if s.checksum != Some(e.checksum) {

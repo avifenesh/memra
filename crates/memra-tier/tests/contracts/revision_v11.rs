@@ -604,10 +604,9 @@ pub fn acceptance<T>(
             for (s, e) in c.items[i].segments.iter().zip(item_expected) {
                 assert_eq!(s.epochs, b.ticket.epochs);
                 if Some(i) == short {
-                    assert!(s.io_bytes < e.io_bytes);
+                    assert!(s.valid_bytes < e.valid_bytes);
                 } else {
                     assert_eq!(s.valid_bytes, e.valid_bytes);
-                    assert_eq!(s.io_bytes, e.io_bytes);
                     assert_eq!(s.checksum, Some(e.checksum));
                 }
             }

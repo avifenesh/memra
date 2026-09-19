@@ -36,7 +36,8 @@ class RunnerTests(unittest.TestCase):
                     if row["cell"].endswith(("identity", "teeth", "failures")):
                         self.assertNotIn("flock", cmd)  # existing scripts lock internally
                 cells = [row["cell"] for row in rows]
-                self.assertLess(cells.index("before-qwen-32768-baseline"), cells.index("before-identity"))
+                for earlier, later in [("before-build", "before-teeth"), ("before-failures", "apply-patch"), ("apply-patch", "after-build"), ("after-build", "after-teeth"), ("after-failures", "before-qwen-8192-baseline"), ("before-qwen-32768-baseline", "after-qwen-8192-baseline")]:
+                    self.assertLess(cells.index(earlier), cells.index(later))
                 manifest = json.loads((out / "manifest.json").read_text())
                 self.assertEqual(manifest["contexts"], [8192, 32768])
                 self.assertEqual(manifest["excluded_pro_contexts"], [131072, 262144])

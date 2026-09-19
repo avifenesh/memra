@@ -2,7 +2,7 @@
 use super::support::*;
 use memra_tier::{
     contracts::*,
-    peer::{topology::LinkHealth, validate_peer_charge},
+    peer::{test_support::FakePeerCapacity, topology::LinkHealth},
 };
 use std::{
     cell::RefCell,
@@ -21,57 +21,26 @@ struct Entry {
     graph: bool,
     unknown: bool,
 }
-// Test-owned live route state, keyed by owner/source -> consumer/destination.
-// These injected observations are not driver grants or hardware qualification.
-struct RouteState {
-    context_granted: bool,
-    pool_granted: bool,
-    link_health: LinkHealth,
-}
-impl RouteState {
-    fn available(&self) -> bool {
-        self.context_granted && self.pool_granted && self.link_health == LinkHealth::AtMaximum
-    }
-}
 struct Peer {
-    gov: Shared,
-    owners: [DeviceOwner; 2],
+    capacity: FakePeerCapacity<Governor>,
     entries: HashMap<TransferTicket, Entry>,
-    charges: HashMap<(u64, u64), bool>, // device released, governor release still retryable
     next: u64,
     reject: HashSet<usize>,
-    routes: HashMap<(u32, u32), RouteState>,
-    state: u64,
 }
 impl Peer {
     fn new(gov: Shared) -> Self {
+        let mut capacity = FakePeerCapacity::new(gov, 2, 7);
+        for (s, d) in [(0, 1), (1, 0)] {
+            capacity
+                .set_route(s, d, true, true, LinkHealth::AtMaximum)
+                .unwrap();
+        }
         Self {
-            gov,
-            owners: [DeviceOwner::new(0), DeviceOwner::new(1)],
+            capacity,
             entries: HashMap::new(),
-            charges: HashMap::new(),
             next: 0,
             reject: HashSet::new(),
-            routes: [(0, 1), (1, 0)]
-                .into_iter()
-                .map(|route| {
-                    (
-                        route,
-                        RouteState {
-                            context_granted: true,
-                            pool_granted: true,
-                            link_health: LinkHealth::AtMaximum,
-                        },
-                    )
-                })
-                .collect(),
-            state: 7,
         }
-    }
-    fn route_available(&self, source: u32, destination: u32) -> bool {
-        self.routes
-            .get(&(source, destination))
-            .is_some_and(RouteState::available)
     }
     fn route_fault(
         &mut self,
@@ -113,8 +82,8 @@ impl Peer {
         let s = src.device.device() as usize;
         let d = dst.device.device() as usize;
         ContiguousCopy::new(
-            self.owners[s].retain(&src.device).unwrap(),
-            self.owners[d].retain(&dst.device).unwrap(),
+            self.capacity.owners[s].retain(&src.device).unwrap(),
+            self.capacity.owners[d].retain(&dst.device).unwrap(),
             ContiguousSpan::new(0, 4, 4).unwrap(),
             ContiguousSpan::new(0, 4, 4).unwrap(),
             Epochs {
@@ -123,7 +92,7 @@ impl Peer {
                 dst_gen: dst.device.generation(),
             },
             FenceId {
-                issuer: self.owners[s].issuer(),
+                issuer: self.capacity.owners[s].issuer(),
                 owner: s as u32,
                 generation: src.device.generation(),
                 sequence: 1,
@@ -132,19 +101,20 @@ impl Peer {
         .unwrap()
     }
     fn finish(&mut self, t: &TransferTicket) {
+        let owners = &self.capacity.owners;
         let e = self.entries.get_mut(t).unwrap();
         for (i, copy) in e.copies.iter().enumerate() {
             let Some(copy) = copy else { continue };
             let s = copy.source().device() as usize;
             let d = copy.destination().device() as usize;
-            let bytes = self.owners[s]
+            let bytes = owners[s]
                 .resolve::<RefCell<Vec<u8>>>(copy.source())
                 .unwrap()
                 .borrow()
                 .clone();
             let start = copy.source_span().offset() as usize;
             let n = copy.source_span().bytes() as usize;
-            let out = self.owners[d]
+            let out = owners[d]
                 .resolve::<RefCell<Vec<u8>>>(copy.destination())
                 .unwrap();
             let lo = copy.destination_span().offset() as usize;
@@ -171,63 +141,36 @@ impl Peer {
     }
     fn fence(&self, t: &TransferTicket, device: u32) -> FenceId {
         FenceId {
-            issuer: self.owners[device as usize].issuer(),
+            issuer: self.capacity.owners[device as usize].issuer(),
             owner: device,
             generation: t.epochs.dst_gen,
             sequence: 1,
         }
     }
 }
+impl std::ops::Deref for Peer {
+    type Target = FakePeerCapacity<Governor>;
+    fn deref(&self) -> &Self::Target {
+        &self.capacity
+    }
+}
+impl std::ops::DerefMut for Peer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.capacity
+    }
+}
 impl PeerCapacity for Peer {
     fn reserve(&mut self, plan: PeerPlan) -> Result<PeerLease> {
-        if !self.route_available(plan.owner_device, plan.consumer_device) {
-            return Err(Error::Unsupported);
+        let lease = self.capacity.reserve(plan)?;
+        if lease.device.device() == 0 {
+            *self.capacity.owners[0]
+                .resolve::<RefCell<Vec<u8>>>(&lease.device)?
+                .borrow_mut() = bytes(lease.plan.bytes as usize);
         }
-        if plan.epochs.state != self.state {
-            return Err(Error::StaleEpoch);
-        }
-        validate_peer_charge(&plan)?;
-        let charge = self.gov.borrow_mut().reserve(&plan.request)?;
-        let owner = plan.owner_device as usize;
-        let result = self.owners[owner].register(
-            plan.epochs.dst_gen,
-            plan.bytes,
-            Box::new(RefCell::new(if owner == 0 { bytes(4) } else { vec![0; 4] })),
-            &charge,
-        );
-        match result {
-            Ok(device) => {
-                self.charges.insert(charge.id(), false);
-                Ok(PeerLease {
-                    plan,
-                    charge,
-                    device,
-                })
-            }
-            Err(error) => {
-                self.gov.borrow_mut().release(&charge)?;
-                Err(error)
-            }
-        }
+        Ok(lease)
     }
     fn release(&mut self, lease: &PeerLease) -> Result<()> {
-        let released = self
-            .charges
-            .get_mut(&lease.charge.id())
-            .ok_or(Error::ForeignLease)?;
-        if !matches!(
-            lease.charge.state()?,
-            ChargeState::Reserved | ChargeState::Retired
-        ) {
-            return Err(Error::Busy);
-        }
-        if !*released {
-            self.owners[lease.device.device() as usize].release(&lease.device)?;
-            *released = true;
-        }
-        self.gov.borrow_mut().release(&lease.charge)?;
-        self.charges.remove(&lease.charge.id());
-        Ok(())
+        self.capacity.release(lease)
     }
 }
 impl PeerBackend for Peer {
@@ -268,7 +211,7 @@ impl PeerBackend for Peer {
         }
         self.next += 1;
         let t = TransferTicket {
-            issuer: self.owners[0].issuer(),
+            issuer: self.capacity.owners[0].issuer(),
             sequence: self.next,
             epochs: copies[0].epochs,
         };
@@ -292,7 +235,7 @@ impl PeerBackend for Peer {
         for (i, c) in copies.into_iter().enumerate() {
             let reject = self.reject.contains(&i);
             let n = c.source_span().bytes();
-            let s = self.owners[c.source().device() as usize]
+            let s = self.capacity.owners[c.source().device() as usize]
                 .resolve::<RefCell<Vec<u8>>>(c.source())
                 .unwrap();
             let start = c.source_span().offset() as usize;
@@ -332,7 +275,7 @@ impl PeerBackend for Peer {
                     error: Error::Capacity,
                 });
             } else {
-                self.owners[c.destination().device() as usize]
+                self.capacity.owners[c.destination().device() as usize]
                     .bind_destination(t, c.destination())
                     .unwrap();
                 entry.copies.push(Some(c));
@@ -383,7 +326,7 @@ impl PeerBackend for Peer {
         if copy.destination().device() != consumer {
             return Err(Error::WrongOwner);
         }
-        let ready = self.owners[consumer as usize].ready_view(
+        let ready = self.capacity.owners[consumer as usize].ready_view(
             copy.destination(),
             &e.completion,
             &e.expected,
@@ -396,7 +339,7 @@ impl PeerBackend for Peer {
         let e = self.entries.get_mut(t).ok_or(Error::UnknownTicket)?;
         if !e.copies.iter().flatten().any(|c| {
             c.destination().device() == f.owner
-                && self.owners[f.owner as usize].issuer() == f.issuer
+                && self.capacity.owners[f.owner as usize].issuer() == f.issuer
                 && f.generation == t.epochs.dst_gen
         }) {
             return Err(Error::WrongOwner);
@@ -422,7 +365,7 @@ impl PeerBackend for Peer {
             .map(|c| c.destination().device())
             .collect();
         for d in devices {
-            self.owners[d as usize].retire_binding(t)?;
+            self.capacity.owners[d as usize].retire_binding(t)?;
         }
         Ok(())
     }
@@ -615,7 +558,7 @@ fn short_corrupt_and_wrong_context_completion_refuse() {
     let t = p.submit(vec![p.copy(&src, &dst)]).unwrap().ticket;
     p.finish(&t);
     let original = p.entries[&t].completion.clone();
-    p.entries.get_mut(&t).unwrap().completion.items[0].segments[0].io_bytes = 3;
+    p.entries.get_mut(&t).unwrap().completion.items[0].segments[0].valid_bytes = 3;
     assert!(matches!(
         p.materialize_local(&t, 0, epochs(), 1),
         Err(Error::ShortIo { .. })
@@ -691,7 +634,7 @@ impl super::conformance::CapacityFixture for Peer {
         self.plan(owner, if owner == 0 { 19 } else { 31 })
     }
     fn retain(&self, lease: &PeerLease) -> DeviceLease {
-        self.owners[lease.device.device() as usize]
+        self.capacity.owners[lease.device.device() as usize]
             .retain(&lease.device)
             .unwrap()
     }
@@ -752,7 +695,7 @@ fn revision_v11_peer_indexed_acceptance() {
             .unwrap();
         p.finish(&b.ticket);
         if let Some(i) = short {
-            p.entries.get_mut(&b.ticket).unwrap().completion.items[i].segments[0].io_bytes = 3;
+            p.entries.get_mut(&b.ticket).unwrap().completion.items[i].segments[0].valid_bytes = 3;
         }
         let c = p.poll(&b.ticket).unwrap();
         super::conformance::acceptance(&b, &c, &p.entries[&b.ticket].expected, rejected, short);

@@ -1126,7 +1126,7 @@ fn pinned_ple_test_oracle_matches_native_function_bodies() {
 }
 
 #[test]
-fn read_planning_refuses_undeclared_tail_padding_and_invalid_granularity() {
+fn read_planning_clamps_tail_but_refuses_truncated_payload_and_invalid_granularity() {
     struct Tail;
     impl ExactReader for Tail {
         fn storage_bytes(&self, _: &TensorId) -> Result<u64> {
@@ -1138,8 +1138,13 @@ fn read_planning_refuses_undeclared_tail_padding_and_invalid_granularity() {
     }
     let table = ple(PleEncoding::F32);
     let entries = vec![(table.id(0).unwrap(), record(table.layout(0).unwrap()))];
+    let plan = plan_reads(&entries, 264, &Tail, CoalescingPolicy::default()).unwrap();
+    assert_eq!(plan.extents[0].len, 264);
+    assert_eq!(plan.io_bytes, 264);
+    let mut truncated = entries.clone();
+    truncated[0].1.layout.segments[0].offset = 1;
     assert_eq!(
-        plan_reads(&entries, 264, &Tail, CoalescingPolicy::default()),
+        plan_reads(&truncated, 264, &Tail, CoalescingPolicy::default()),
         Err(Error::InvalidLayout)
     );
     assert_eq!(
@@ -1398,3 +1403,5 @@ fn revision_v11_corrupt_sibling_and_row_namespace() {
     finish(&mut r.0, &t);
     assert_eq!(g.borrow().used(), TierBudget::zero(2));
 }
+
+mod day4;
