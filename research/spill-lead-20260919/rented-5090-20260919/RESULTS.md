@@ -1,12 +1,12 @@
 # Rented RTX 5090 — first hour (2026-09-19)
 
-**Box:** Vast.ai interruptible instance (Japan host; RTX 5090 32 GB, driver 595.84, power 600/600 W,
+**Box 1:** owner-approved marketplace rental, interruptible (single RTX 5090 32 GB, driver 595.84, power 600/600 W,
 PCIe 4.0 x16 max, 128 vCPU, 220 GB host RAM visible, CUDA image `nvidia/cuda:13.1.2-devel-ubuntu24.04`,
 nvcc 13.1 at `/usr/local/cuda`). Container root is **overlay**: the host's NVMe is not visible as a
 block device, so NVMe ancestry is **unproven** and no storage number here is a spill-speed claim.
-Owner-approved rental (Vast/RunPod, spot preferred, development only). One earlier Puerto Rico offer
+Development-only rental, spot preferred (owner call). One earlier offer on another host
 failed to start (host CDI GPU injection error: `unresolvable CDI devices … gpu=2`) and was destroyed.
-Provider ids / cost are private receipt metadata, not published here.
+Provider, instance ids, location and cost are private receipt metadata (gitignored LANE-LOCAL.md), not published here — public-boundary rule.
 
 **Source:** `avifenesh/memra` `lane/spill-integ2-20260919` @ `01e7b77f` (contains main `61be8b0d` = PR #518).
 
@@ -33,8 +33,8 @@ Every cell exit 0 is `executed-not-qualified` by the collector's own status. **N
 advanced by this hour.** What it does establish: the integrated tip builds and runs natively on
 sm_120; PLE n-gram baseline exists on the rented box; storage/PP primitives are byte-exact.
 
-## Box 2 (Czechia; PCIe 5.0 x16, 192 vCPU, 503 GB host RAM, overlay root, CUDA 13.1.2 image) — after box 1 was preempted
-Box 1 (Japan) was preempted mid-download (`exited/stopped`; `start` → "Required resources are currently
+## Box 2 (PCIe 5.0 x16 host, 192 vCPU, 503 GB host RAM, overlay root, CUDA 13.1.2 image) — after box 1 was preempted
+Box 1 was preempted mid-download (`exited/stopped`; `start` → "Required resources are currently
 unavailable"); A/D1/C receipts had already been synced; B's partial artifact and scratch worktree were
 lost; box 1 destroyed. Lesson folded into WP-D: sync after every cell.
 
