@@ -16,6 +16,8 @@ commands = [
     ('check-macos', ['cargo', 'check', '-p', 'memra-tier', '-p', 'memra-kv', '--offline', '--all-targets']),
     ('check-linux', ['cargo', 'check', '-p', 'memra-tier', '-p', 'memra-kv', '--offline', '--all-targets', '--target', 'x86_64-unknown-linux-gnu']),
     ('test', ['cargo', 'test', '-p', 'memra-tier', '--offline']),
+    ('test-storage', ['cargo', 'test', '-p', 'memra-tier', '--offline', '--test', 'storage']),
+    ('test-doc', ['cargo', 'test', '-p', 'memra-tier', '--offline', '--doc']),
     ('test-kv', ['cargo', 'test', '-p', 'memra-kv', '--offline']),
     ('clippy', ['cargo', 'clippy', '-p', 'memra-tier', '--offline', '--all-targets', '--', '-D', 'warnings']),
     ('diff', ['git', 'diff', '--check']),
@@ -37,7 +39,6 @@ for name, argv in commands:
     print(f'{name}: exit={result.returncode}')
     if result.returncode:
         print(data.decode(errors='replace'))
-        raise SystemExit(result.returncode)
 paths = list((ROOT/'crates/memra-tier/src/io').rglob('*.rs'))
 paths += list((ROOT/'crates/memra-tier/src/object_store').rglob('*.rs'))
 paths += list((ROOT/'crates/memra-tier/src/pool').rglob('*.rs'))
@@ -47,4 +48,6 @@ source = dict(source_commit=subprocess.check_output(['git','rev-parse','HEAD'],c
               utc=datetime.now(timezone.utc).isoformat(),
               files={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths})
 (OUT/'source-manifest.json').write_text(json.dumps(source, indent=2)+'\n')
-print('DAY3_CPU_CHECKS_PASS: Linux type-check only, no Linux execution/GPU/NVMe qualification')
+failed = [r['name'] for r in results if r['exit']]
+print('DAY3_CHECKS: failed=' + repr(failed) + '; Linux type-check only, no Linux execution/GPU/NVMe qualification')
+raise SystemExit(bool(failed))
