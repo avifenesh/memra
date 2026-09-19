@@ -21,16 +21,16 @@ with tempfile.TemporaryDirectory(prefix='runner-stub-', dir=Path(__file__).paren
         assert 'DRY-RUN ONLY' in result.stdout
         assert not Path('/never-created nvme').exists()
     calls = [json.loads(line) for line in record.read_text().splitlines()]
-    assert len(calls) == 64, len(calls)
-    assert calls[:32] == calls[32:]
-    names = [row[0] for row in calls[:32]]
-    assert len(set(names)) == 32
+    assert len(calls) == 70, len(calls)
+    assert calls[:35] == calls[35:]
+    names = [row[0] for row in calls[:35]]
+    assert len(set(names)) == 35
     assert sum(name.startswith('roundtrip-') for name in names) == 12
     assert sum(name.startswith('restore-') for name in names) == 12
-    assert all(name in names for name in ['a2-existing-worker', 'a2-byte-roundtrip-unimplemented',
+    assert all(name in names for name in ['a1-sharded-catalog', 'a1-gc', 'a1-telemetry-join', 'a2-existing-worker', 'a2-byte-roundtrip-unimplemented',
                                           'm1-row-unimplemented', 'm1-bulk-unimplemented', 'm1-mixed-unimplemented'])
-    assert all(row[1:3] == ['timeout', '5'] for row in calls[:32] if row[0].endswith('-unimplemented'))
+    assert all(row[1:3] == ['timeout', '5'] for row in calls[:35] if row[0].endswith('-unimplemented'))
     for args in [[], ['/not-created', '--stub', str(stub)], ['/not-created', '--unknown']]:
         result = subprocess.run(['bash', str(RUNNER), *args], cwd=ROOT, capture_output=True)
         assert result.returncode == 2
-print('RUNNER_DRY_PASS: two identical 32-command plans; 24 CPU filesystem + existing A2 + 4 blocked probes; no hardware ran')
+print('RUNNER_DRY_PASS: two identical 35-command plans; 24 filesystem + 3 CPU conformance + existing A2 + 4 blocked probes; no hardware ran')
