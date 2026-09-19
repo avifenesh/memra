@@ -33,12 +33,7 @@ pub fn write_action(
         _ => WriteAction::RetainDirty,
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PrefetchPolicy {
-    BestEffort,
-    Wait,
-    Timeout { deadline_ms: u64 },
-}
+pub use memra_tier::contracts::PrefetchPolicy;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrefetchDecision {
     Load,
@@ -50,7 +45,7 @@ pub fn prefetch_decision(
     policy: PrefetchPolicy,
     complete: bool,
     can_run: bool,
-    now_ms: u64,
+    now_ns: u64,
     mandatory: bool,
     same_program_cold: bool,
 ) -> PrefetchDecision {
@@ -60,7 +55,7 @@ pub fn prefetch_decision(
     let stop = match policy {
         PrefetchPolicy::BestEffort => can_run,
         PrefetchPolicy::Wait => false,
-        PrefetchPolicy::Timeout { deadline_ms } => now_ms >= deadline_ms,
+        PrefetchPolicy::Timeout(deadline) => now_ns >= deadline.0,
     };
     if !stop {
         return PrefetchDecision::Wait;
@@ -144,4 +139,50 @@ pub fn eviction_victim(candidates: &[EvictionCandidate], policy: EvictionPolicy)
             )
         })
         .map(|c| c.id)
+}
+
+/// Measured full-route costs for one (prompt,reused-prefix,tier) cell, in ns.
+/// Unlike the linear diagnostic above this includes the exact suffix program and
+/// materialization. The caller must bind calibration to artifact/plan/binary/device.
+#[derive(Clone, Copy, Debug)]
+pub struct PrefixCosts {
+    pub prompt_tokens: u64,
+    pub reused_tokens: u64,
+    pub cold_prefill_ns: u64,
+    pub suffix_prefill_ns: u64,
+    pub read_ns: u64,
+    pub copy_ns: u64,
+    pub materialize_ns: u64,
+}
+pub fn calibrated_recompute_vs_load(
+    cost: PrefixCosts,
+    mandatory: bool,
+    already_admitted: bool,
+    same_program_cold: bool,
+) -> Result<RestoreDecision, TierError> {
+    if mandatory {
+        return Ok(RestoreDecision::RequireState);
+    }
+    if already_admitted {
+        return Err(TierError::Busy);
+    }
+    if !same_program_cold {
+        return Ok(RestoreDecision::Load);
+    }
+    if cost.reused_tokens > cost.prompt_tokens || cost.cold_prefill_ns == 0 {
+        return Err(TierError::InvalidLayout);
+    }
+    let load = [
+        cost.suffix_prefill_ns,
+        cost.read_ns,
+        cost.copy_ns,
+        cost.materialize_ns,
+    ]
+    .into_iter()
+    .try_fold(0u64, |a, b| a.checked_add(b).ok_or(TierError::Overflow))?;
+    Ok(if load < cost.cold_prefill_ns {
+        RestoreDecision::Load
+    } else {
+        RestoreDecision::Recompute
+    })
 }
