@@ -62,3 +62,23 @@ Strict numerical-program revalidation deliberately checks mutable loaded program
 Its overhead and supported serving shapes require native qualification before integration.
 
 The tested Rust source content is recorded in `source-sha256.json`.
+
+## Native runner preparation (2026-09-20)
+
+The owner authorized centrally provisioned non-serving GPUs with per-card exclusive locks.
+`NATIVE-RUNNER.md` records the exact one-card resource request, immutable source pin, build
+command, and central-wrapper launch. Max-Q 96 GB/sm_120 is suitable for this correctness and
+memory stage; measurements remain specific to the measured hardware.
+
+`rewrite_identity_gate` typechecks and passes clippy with warnings denied using the documented
+Linux/DOCS_RS placeholders; this is preparation only, not GPU qualification. The wrapper
+validation/output-completeness suite passes five CPU tests. The runtime identity suite passes
+11 CPU tests after excluding the lease receipt location from the numerical digest. Raw logs
+are `raw/rewrite-identity-gate-{typecheck,clippy}.log`, `raw/lease-runner-tests.log`, and
+`raw/lease-metadata-host-tests.log`.
+
+The runner refuses absent/foreign/partial GPU ownership, revalidates the ancestor FLOCKs while
+each child runs, compares fresh-process output hashes, retains named negative-control errors,
+and records 250 ms telemetry. GPU execution waits for the coordinator's supplied host/wrapper.
+Broader q9 MTP, paired pipeline, and full serving/performance rows remain pending their exact
+artifacts and separately assigned lock sets. No separate machine has been rented by this lane.

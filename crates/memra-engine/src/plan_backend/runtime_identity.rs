@@ -15,7 +15,10 @@ fn numeric_env_key(key: &str) -> bool {
     (key.starts_with("MEMRA_")
         && !matches!(
             key,
-            "MEMRA_ARTIFACT_LOCK" | "MEMRA_REWRITE_BUNDLE" | "MEMRA_REWRITE_RECEIPT"
+            "MEMRA_ARTIFACT_LOCK"
+                | "MEMRA_REWRITE_BUNDLE"
+                | "MEMRA_REWRITE_RECEIPT"
+                | "MEMRA_GPU_LEASE_FILE"
         ))
         || key.starts_with("CUDA_")
         || key.starts_with("NVIDIA_")
@@ -314,6 +317,7 @@ mod tests {
             ("MEMRA_ARTIFACT_LOCK", "/different/lock"),
             ("MEMRA_REWRITE_BUNDLE", "/bundle"),
             ("MEMRA_REWRITE_RECEIPT", "/out"),
+            ("MEMRA_GPU_LEASE_FILE", "/new-wrapper-receipt/lease.json"),
             ("PATH", "/different"),
         ]);
         assert_eq!(base, moved);
