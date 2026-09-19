@@ -430,7 +430,16 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         let work = if missing.is_empty() {
             None
         } else {
-            Some(ReadWork::new(&missing)?)
+            match ReadWork::new(&missing) {
+                Ok(work) => Some(work),
+                Err(error) => {
+                    for charge in &charges {
+                        self.budget.borrow_mut().release(charge)?;
+                    }
+                    self.budget.borrow_mut().release(&queue)?;
+                    return Err(error);
+                }
+            }
         };
         let items = missing
             .iter()

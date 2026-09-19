@@ -38,6 +38,7 @@ fn shared(cap: u64, reserve: u64) -> Rc<RefCell<SharedGovernor>> {
     let mut h = TierBudget::zero(2);
     h.pageable = reserve;
     h.staging = reserve;
+    h.nvme = reserve;
     h.inflight = 1;
     Rc::new(RefCell::new(
         SharedGovernor::new(c, h, 32, cap, Arc::new(|| 1)).unwrap(),
@@ -46,7 +47,7 @@ fn shared(cap: u64, reserve: u64) -> Rc<RefCell<SharedGovernor>> {
 
 #[test]
 fn object_store_transfer_rows_forced_misses_order_and_retirement() {
-    let g = shared(2_000_000, 10_000);
+    let g = shared(2_000_000, 300_000);
     let table = ple(PleEncoding::F32);
     let ids: Vec<_> = [2, 5, 9].iter().map(|&n| table.id(n).unwrap()).collect();
     let entries = ids
@@ -155,6 +156,38 @@ fn object_store_transfer_rows_forced_misses_order_and_retirement() {
         assert_eq!(g.borrow().used(), baseline);
         assert_eq!(pool.accounting().free_slots, 2);
     }
+    // Saturate optional NVMe capacity with another tenant's prefetch. Mandatory
+    // request identity must propagate through A's store lease, not just bank output.
+    let mut pressure = request(0, Priority::OptionalPrefetch);
+    pressure.bytes.nvme = 1_700_000;
+    let occupied = g.borrow_mut().reserve(&pressure).unwrap();
+    let refused = rows
+        .gather(RowBatch {
+            ids: ids.clone(),
+            epochs: epochs(),
+            request: request(0, Priority::Demand),
+        })
+        .unwrap();
+    drain(&mut rows.0, &refused);
+    assert!(matches!(
+        rows.publish(&refused, epochs()),
+        Err(Error::Capacity)
+    ));
+    rows.cancel(&refused).unwrap();
+    finish(&mut rows.0, &refused);
+    let ticket = rows
+        .gather(RowBatch {
+            ids: ids.clone(),
+            epochs: epochs(),
+            request: request(0, Priority::MandatoryActive),
+        })
+        .unwrap();
+    drain(&mut rows.0, &ticket);
+    let leases = rows.publish(&ticket, epochs()).unwrap();
+    finish(&mut rows.0, &ticket);
+    rows.release(&leases).unwrap();
+    g.borrow_mut().release(&occupied).unwrap();
+    assert_eq!(g.borrow().used(), baseline);
     // Cancel after one physical chunk but before the full logical batch completes.
     let ticket = rows
         .gather(RowBatch {

@@ -6,10 +6,11 @@ use crate::{
     io::transfer::CpuTransfers,
     pool::{Admission, FakePinnedPool},
 };
-use std::collections::BTreeMap;
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 pub struct ObjectReader<S: ObjectStore> {
-    transfers: CpuTransfers<S>,
+    transfers: CpuTransfers<RequestStore<S>>,
+    request_context: Rc<RefCell<BudgetRequest>>,
     pool: FakePinnedPool,
     objects: BTreeMap<TensorId, ObjectManifest>,
     epochs: Epochs,
@@ -41,8 +42,15 @@ impl<S: ObjectStore> ObjectReader<S> {
                 return Err(Error::Conflict);
             }
         }
+        let priority = request.priority;
+        let request_context = Rc::new(RefCell::new(request.clone()));
+        let store = RequestStore {
+            inner: store,
+            current: request_context.clone(),
+        };
         Ok(Self {
             transfers: CpuTransfers::new(store, request, 1, queue_charge)?,
+            request_context,
             pool,
             objects,
             epochs: Epochs {
@@ -50,7 +58,7 @@ impl<S: ObjectStore> ObjectReader<S> {
                 src_gen: 0,
                 dst_gen: 0,
             },
-            priority: Priority::OptionalPrefetch,
+            priority,
             submitted: 0,
             retired: 0,
             io_bytes: 0,
@@ -123,6 +131,7 @@ impl<S: ObjectStore> ObjectReader<S> {
 impl<S: ObjectStore> ExactReader for ObjectReader<S> {
     fn begin_request(&mut self, request: &BudgetRequest, epochs: Epochs) {
         self.priority = request.priority;
+        *self.request_context.borrow_mut() = request.clone();
         self.epochs = epochs;
     }
     fn storage_bytes(&self, tensor: &TensorId) -> Result<u64> {
@@ -162,5 +171,50 @@ impl<S: ObjectStore> ExactReader for ObjectReader<S> {
             });
         }
         Ok(())
+    }
+}
+
+/// A's CPU transfer fixes its byte budget at construction. Preserve those bytes,
+/// but propagate the CURRENT bank request's scheduling identity to ObjectStore
+/// leases; otherwise an optional request could borrow mandatory I/O headroom, or
+/// a mandatory load could be charged as Demand and be starved by hints.
+/// This owner-local context is safe only with the synchronous CPU drive pump.
+struct RequestStore<S> {
+    inner: S,
+    current: Rc<RefCell<BudgetRequest>>,
+}
+impl<S: ObjectStore> ObjectStore for RequestStore<S> {
+    type Transaction = S::Transaction;
+    fn lookup(&self, k: &ObjectKey) -> Result<Option<ObjectManifest>> {
+        self.inner.lookup(k)
+    }
+    fn begin(&mut self, k: ObjectKey, n: u64, d: Durability) -> Result<Self::Transaction> {
+        self.inner.begin(k, n, d)
+    }
+    fn put(&mut self, t: &mut Self::Transaction, p: &[u8]) -> Result<()> {
+        self.inner.put(t, p)
+    }
+    fn commit(&mut self, t: &mut Self::Transaction) -> Result<ObjectManifest> {
+        self.inner.commit(t)
+    }
+    fn cancel(&mut self, t: &mut Self::Transaction) -> Result<CancelState> {
+        self.inner.cancel(t)
+    }
+    fn lease(&mut self, m: &ObjectManifest, r: &BudgetRequest) -> Result<ObjectLease> {
+        let current = self.current.borrow();
+        let mut request = r.clone();
+        request.priority = current.priority;
+        request.deadline = current.deadline;
+        request.tenant = current.tenant;
+        self.inner.lease(m, &request)
+    }
+    fn read(&mut self, l: &ObjectLease, c: u32, d: &mut [u8]) -> Result<u64> {
+        self.inner.read(l, c, d)
+    }
+    fn release(&mut self, l: &ObjectLease) -> Result<()> {
+        self.inner.release(l)
+    }
+    fn evict(&mut self, k: &ObjectKey) -> Result<()> {
+        self.inner.evict(k)
     }
 }

@@ -97,11 +97,12 @@ impl ReadWork {
         let outputs = records
             .iter()
             .map(|(_, r)| {
-                Ok(vec![
-                    0;
-                    usize::try_from(r.layout.storage_bytes()?)
-                        .map_err(|_| Error::Capacity)?
-                ])
+                let len =
+                    usize::try_from(r.layout.storage_bytes()?).map_err(|_| Error::Capacity)?;
+                let mut bytes = Vec::new();
+                bytes.try_reserve_exact(len).map_err(|_| Error::Capacity)?;
+                bytes.resize(len, 0);
+                Ok(bytes)
             })
             .collect::<Result<_>>()?;
         Ok(Self {
@@ -122,7 +123,10 @@ impl ReadWork {
         };
         let position = extent.offset + self.offset;
         let n = (extent.len - self.offset).min(policy.slot_bytes);
-        let mut slot = vec![0; n as usize];
+        let mut slot = Vec::new();
+        slot.try_reserve_exact(n as usize)
+            .map_err(|_| Error::Capacity)?;
+        slot.resize(n as usize, 0);
         reader.read_exact(&extent.tensor, position, &mut slot)?;
         for ((_, record), output) in records.iter().zip(&mut self.outputs) {
             let mut base = 0usize;
