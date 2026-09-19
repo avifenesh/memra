@@ -7,6 +7,9 @@
 //! fatbin router and every cache consumer). memra-engine re-exports this as `cache` so
 //! call sites are unchanged.
 
+pub mod record;
+pub mod tiered;
+
 // ---------------- KV format policy (moved from memra-engine) ----------------
 
 /// Per-32-element block bytes of the trunk KV cache: q8_0 K (34 B) and q5_1 V (24 B), the one

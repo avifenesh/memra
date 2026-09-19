@@ -1,0 +1,64 @@
+$ cargo test -p memra-kv --offline
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+   Compiling memra-kv v0.138.0 (/Users/avifen/tiyuvta/wt-spill-b/crates/memra-kv)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.93s
+     Running unittests src/lib.rs (target/debug/deps/memra_kv-b59b25e8b13106cb)
+
+running 38 tests
+test swa_ring_tests::allocation_rows_cover_window_max_prime_and_alignment_slack ... ok
+test swa_ring_tests::rewind_declines_once_the_required_window_was_lapped ... ok
+test swa_ring_tests::retain_grants_rewind_slack_but_never_asks_below_base ... ok
+test swa_ring_tests::ring_matches_flat_bytes_before_wrap ... ok
+test tiered::tests::active_epochs_rollback_and_committed_high_water_reject_stale ... ok
+test swa_ring_tests::wrap_rebases_the_exact_aligned_prime_view ... ok
+test tiered::tests::measured_frontier_and_invalid_calibration ... ok
+test swa_ring_tests::restore_plan_copies_the_window_not_the_absolute_length ... ok
+test tiered::tests::cancel_suppresses_late_publication_and_holds_budget_until_all_fences ... ok
+test tiered::tests::disk_ready_is_not_gpu_ready_and_fence_required ... ok
+test tiered::tests::mandatory_headroom_and_whole_operand_capacity_are_charged ... ok
+test tiered::tests::mismatch_and_forged_identity_do_not_get_leased_or_restored ... ok
+test tiered::tests::native_records_validate_valid_bytes_not_padding ... ok
+test tiered::tests::malformed_layouts_and_missing_state_fail_closed ... ok
+test tiered::tests::pending_and_unfinished_io_cannot_publish ... ok
+test tiered::tests::write_prefetch_and_eviction_policies ... ok
+test tiered::tests::rollback_during_io_cancels_publication_and_evict_waits_for_fences ... ok
+test tp_transaction_tests::cache_reports_a_materialized_distributed_swa_ring ... ok
+test tiered::tests::search_order_filters_ineligible_peers_and_lookup_is_advisory ... ok
+test tiered::tests::stored_layout_substitution_is_refused_against_admitted_layout ... ok
+test tp_transaction_tests::device_rewind_updates_host_visibility_after_external_rank_writes ... ok
+test tp_transaction_tests::grow_preserves_generation_and_publishes_only_the_checkpoint_prefix ... ok
+test tp_transaction_tests::grow_refuses_active_source_and_invalid_target_state_or_layout ... ok
+test tp_transaction_tests::index_ring_take_drains_instead_of_bounding_the_call ... ok
+test tp_transaction_tests::index_ring_sizing_is_pure_and_carries_no_per_call_t ... ok
+test tp_transaction_tests::partial_commit_publishes_only_the_accepted_prefix ... ok
+test tp_transaction_tests::rejects_nested_stale_and_out_of_range_actions ... ok
+test tp_transaction_tests::rollback_restores_the_committed_boundary ... ok
+test tp_transaction_tests::step_tp8_rank_allocation_matches_the_official_kv_geometry ... ok
+test tp_transaction_tests::rewind_resets_visibility_and_invalidates_an_active_transaction ... ok
+test tp_transaction_tests::swa_grow_normalizes_only_the_live_prefix_and_preserves_generation ... ok
+test tiered::tests::shutdown_unknown_fence_quarantines_instead_of_releasing ... ok
+test tiered::tests::identity_is_deterministic_and_every_program_field_matters ... ok
+test tp_transaction_tests::swa_transaction_rebase_preserves_the_rollback_window ... ok
+test tp_transaction_tests::tp_rank_allocation_refuses_non_divisible_and_non_block_aligned_shards ... ok
+test tp_transaction_tests::the_derived_ring_serves_a_monolithic_prime_of_the_whole_configured_context ... ok
+test tiered::tests::every_partial_short_reject_duplicate_corrupt_and_stale_item_refuses_batch ... ok
+test tiered::tests::opaque_f32_fp8_fp4_and_trailing_requirements ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_kv
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+EXIT=0
