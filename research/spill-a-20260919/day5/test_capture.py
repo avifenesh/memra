@@ -140,6 +140,26 @@ class CaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'capture window'):
             self.validate()
 
+    def test_day5_native_direct_capture_replays(self):
+        source = LANE/'rented-5090-20260919/day5'
+        journals = sorted(source.glob('direct-*/collector/CELL.jsonl'))
+        self.assertEqual(len(journals), 8)
+        checksums = {}
+        for journal in journals:
+            result = join.validate_storage_cell(journal, battery)
+            sample = result['samples'][0]
+            self.assertEqual(sample['backend_actual'], 'linux-o-direct-read-write')
+            self.assertEqual(sample['status'], 'byte-exact')
+            self.assertEqual(sample['fallbacks'], 0)
+            self.assertIsNone(sample['physical_bytes'])
+            self.assertIsNone(sample['h2d_ns'])
+            self.assertFalse(result['qualification'])
+            checksums.setdefault(sample['valid_bytes'], []).append(sample['payload_checksum'])
+        self.assertEqual(set(checksums), {264, 4097, 1048576, 4194568})
+        for pair in checksums.values():
+            self.assertEqual(len(pair), 2)
+            self.assertEqual(pair[0], pair[1])
+
     def test_box2_routing(self):
         scratch = Path('/never-created-a')
         for cell in ('build', 'build-worker', 'storage-tests', 'gc', 'gc-upgrade', 'catalog'):

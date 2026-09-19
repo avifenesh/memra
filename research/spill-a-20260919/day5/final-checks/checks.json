@@ -1,0 +1,149 @@
+[
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:38Z",
+    "wall_seconds": 4.769631862640381,
+    "log": "00.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "local CPU/replay or cross-compile only"
+  },
+  {
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:43Z",
+    "wall_seconds": 0.29823732376098633,
+    "log": "01.log",
+    "sha256": "f2066ca264b9a8598ecd436c70919e1efe1acea4098ad2a13b5d82d67bc049ec",
+    "scope": "local CPU/replay or cross-compile only"
+  },
+  {
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--target",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:43Z",
+    "wall_seconds": 0.17834901809692383,
+    "log": "02.log",
+    "sha256": "22e0df986057b9ba5be07526ac5fb348862a3dedef42108383cc3e088acbb889",
+    "scope": "local CPU/replay or cross-compile only"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:43Z",
+    "wall_seconds": 6.239560842514038,
+    "log": "03.log",
+    "sha256": "24a07d035d3ef3267a670e39760697d313bc82a06c816c3b042a31bf6c160f32",
+    "scope": "local CPU/replay or cross-compile only"
+  },
+  {
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--no-deps",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:49Z",
+    "wall_seconds": 0.30553603172302246,
+    "log": "04.log",
+    "sha256": "4f27ac380b22e1d975eee20ce727fa8cbc09061177f6253af0777fd4de7b7506",
+    "scope": "local CPU/replay or cross-compile only"
+  },
+  {
+    "command": [
+      "python3",
+      "research/spill-a-20260919/day5/test_capture.py"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:50Z",
+    "wall_seconds": 0.7121920585632324,
+    "log": "05.log",
+    "sha256": "4b04dc9e60323d2a85297372527afe475934955411e6088140e52af6e69bbeb4",
+    "scope": "local CPU/replay or cross-compile only"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:50Z",
+    "wall_seconds": 0.07861876487731934,
+    "log": "06.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "local CPU/replay or cross-compile only"
+  },
+  {
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:51Z",
+    "wall_seconds": 4.4098286628723145,
+    "log": "07.log",
+    "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+    "scope": "local CPU/replay or cross-compile only"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--exit-code",
+      "fd49a668",
+      "--",
+      "crates/"
+    ],
+    "exit_code": 0,
+    "source_commit": "2fbf010c04fb9565535e18e361ca1648d0a9b7fe",
+    "started_utc": "2026-09-19T22:49:55Z",
+    "wall_seconds": 0.029963970184326172,
+    "log": "08.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "local CPU/replay or cross-compile only"
+  }
+]
