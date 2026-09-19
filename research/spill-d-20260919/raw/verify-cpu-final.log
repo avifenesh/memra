@@ -1,0 +1,48 @@
+    Checking memra-tier v0.0.0 (/Users/avifen/tiyuvta/wt-spill-d/research/spill-d-20260919/.cpu-check.nNhMtJ)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+   Compiling memra-tier v0.0.0 (/Users/avifen/tiyuvta/wt-spill-d/research/spill-d-20260919/.cpu-check.nNhMtJ)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.83s
+     Running unittests lib.rs (research/spill-d-20260919/.cpu-check.nNhMtJ/target/debug/deps/memra_tier-0198836856eb7e91)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running /Users/avifen/tiyuvta/wt-spill-d/crates/memra-tier/tests/peer/mod.rs (research/spill-d-20260919/.cpu-check.nNhMtJ/target/debug/deps/peer-5770f8238db54c84)
+
+running 8 tests
+test spans_cannot_encode_scatter_or_overflow_or_escape_registration ... ok
+test idle_downshift_is_deferred_active_downgrade_refuses ... ok
+test topology_is_directed_grant_bound_and_never_host_bounce ... ok
+test cancel_after_completion_before_publish_and_stale_epoch_refuse ... ok
+test short_and_unknown_completion_cannot_publish ... ok
+test global_lease_accounting_busy_release_and_epoch_reclamation ... ok
+test late_completion_cancel_and_source_lifetime ... ok
+test per_item_acceptance_and_local_only_materialization ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running /Users/avifen/tiyuvta/wt-spill-d/crates/memra-tier/tests/placement/mod.rs (research/spill-d-20260919/.cpu-check.nNhMtJ/target/debug/deps/placement-42002af7505ed11c)
+
+running 5 tests
+test invalid_geometry_and_integer_overflow_refuse ... ok
+test odd_tails_and_replicas_are_counted_not_quartered ... ok
+test staging_loader_scratch_and_routes_are_explicit ... ok
+test equal_split_reproduces_census_slope_and_frontier ... ok
+test alternate_bytes_and_explicit_reserve_are_not_format_fallbacks ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+test_mismatched_outputs_rejected_even_with_valid_files (__main__.ReceiptTests.test_mismatched_outputs_rejected_even_with_valid_files) ... ok
+test_missing_empty_duplicate_and_partial_batches (__main__.ReceiptTests.test_missing_empty_duplicate_and_partial_batches) ... ok
+test_plan_is_pending_and_requires_standard_gates (__main__.ReceiptTests.test_plan_is_pending_and_requires_standard_gates) ... ok
+test_program_epoch_boundary_identity_and_nonvacuity (__main__.ReceiptTests.test_program_epoch_boundary_identity_and_nonvacuity) ... ok
+test_real_cli_positive_and_corrupted_evidence_red (__main__.ReceiptTests.test_real_cli_positive_and_corrupted_evidence_red) ... ok
+test_schema_and_validator_agree_on_fields (__main__.ReceiptTests.test_schema_and_validator_agree_on_fields) ... ok
+test_third_lock_fake_p2p_and_host_bounce_mislabel (__main__.ReceiptTests.test_third_lock_fake_p2p_and_host_bounce_mislabel) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.327s
+
+OK
+D CPU verification: 8 peer + 5 placement Rust tests, Python receipt teeth, proposal facade compiled. No GPU execution.

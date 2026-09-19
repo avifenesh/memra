@@ -1,0 +1,410 @@
+{
+  "schema_version": 1,
+  "status": "ESTIMATE: payload arithmetic, not allocated peaks or admission",
+  "excluded": "Unmeasured scratch, staging, loader peaks, candidate buffers, compression tails, graphs; no hidden full-cache replicas",
+  "source": "07 \u00a73 ALLOC-4 census rules; attention/indexer residual and norm/router allocation are estimates",
+  "candidates": [
+    {
+      "split": [
+        10,
+        10,
+        10,
+        10
+      ],
+      "class_names": [
+        "routed bank",
+        "attention/indexer ESTIMATE",
+        "shared expert",
+        "norm/router ESTIMATE",
+        "host-table projections",
+        "embedding/head",
+        "draft module",
+        "vision reservation"
+      ],
+      "weight_classes_per_device": [
+        [
+          72194457600,
+          1287889152,
+          354240000,
+          78880880,
+          157521920,
+          1323827200,
+          0,
+          970506240
+        ],
+        [
+          72194457600,
+          1277659776,
+          354240000,
+          78880880,
+          157521920,
+          0,
+          0,
+          0
+        ],
+        [
+          72194457600,
+          1298118528,
+          354240000,
+          78880880,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          72194457600,
+          1287889152,
+          354240000,
+          78921840,
+          0,
+          1323827200,
+          7932874632,
+          0
+        ]
+      ],
+      "weights": [
+        76367322992,
+        74062760176,
+        73925697008,
+        83172210424
+      ],
+      "host_bytes": 242758032400,
+      "grid": [
+        {
+          "record_bytes": 264,
+          "context_tokens": 131072,
+          "requests": 1,
+          "global_bytes": 86507520,
+          "kv_bytes": [
+            35278848,
+            17977344,
+            35278848,
+            878592
+          ],
+          "remaining_bytes": [
+            19597398160,
+            21919262480,
+            22039024144,
+            12826910984
+          ],
+          "minimum_remaining_bytes": 12826910984
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 131072,
+          "requests": 4,
+          "global_bytes": 346030080,
+          "kv_bytes": [
+            141115392,
+            71909376,
+            141115392,
+            3514368
+          ],
+          "remaining_bytes": [
+            19491561616,
+            21865330448,
+            21933187600,
+            12824275208
+          ],
+          "minimum_remaining_bytes": 12824275208
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 131072,
+          "requests": 16,
+          "global_bytes": 1384120320,
+          "kv_bytes": [
+            564461568,
+            287637504,
+            564461568,
+            14057472
+          ],
+          "remaining_bytes": [
+            19068215440,
+            21649602320,
+            21509841424,
+            12813732104
+          ],
+          "minimum_remaining_bytes": 12813732104
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 1048576,
+          "requests": 1,
+          "global_bytes": 692060160,
+          "kv_bytes": [
+            277499904,
+            139087872,
+            277499904,
+            878592
+          ],
+          "remaining_bytes": [
+            19355177104,
+            21798151952,
+            21796803088,
+            12826910984
+          ],
+          "minimum_remaining_bytes": 12826910984
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 1048576,
+          "requests": 4,
+          "global_bytes": 2768240640,
+          "kv_bytes": [
+            1109999616,
+            556351488,
+            1109999616,
+            3514368
+          ],
+          "remaining_bytes": [
+            18522677392,
+            21380888336,
+            20964303376,
+            12824275208
+          ],
+          "minimum_remaining_bytes": 12824275208
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 1048576,
+          "requests": 16,
+          "global_bytes": 11072962560,
+          "kv_bytes": [
+            4439998464,
+            2225405952,
+            4439998464,
+            14057472
+          ],
+          "remaining_bytes": [
+            15192678544,
+            19711833872,
+            17634304528,
+            12813732104
+          ],
+          "minimum_remaining_bytes": 12813732104
+        }
+      ],
+      "frontiers": [
+        {
+          "record_bytes": 264,
+          "reserve_per_device": 0,
+          "first_N": 71,
+          "device": 0,
+          "first_context": 1044852,
+          "first_8192_step": 1048576
+        },
+        {
+          "record_bytes": 264,
+          "reserve_per_device": 4000000000,
+          "first_N": 57,
+          "device": 0,
+          "first_context": 1036296,
+          "first_8192_step": 1040384
+        }
+      ]
+    },
+    {
+      "split": [
+        9,
+        11,
+        9,
+        11
+      ],
+      "class_names": [
+        "routed bank",
+        "attention/indexer ESTIMATE",
+        "shared expert",
+        "norm/router ESTIMATE",
+        "host-table projections",
+        "embedding/head",
+        "draft module",
+        "vision reservation"
+      ],
+      "weight_classes_per_device": [
+        [
+          64975011840,
+          1161146112,
+          318816000,
+          70992792,
+          157521920,
+          1323827200,
+          0,
+          970506240
+        ],
+        [
+          79413903360,
+          1404402816,
+          389664000,
+          86768968,
+          157521920,
+          0,
+          0,
+          0
+        ],
+        [
+          64975011840,
+          1171375488,
+          318816000,
+          70992792,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          79413903360,
+          1414632192,
+          389664000,
+          86809928,
+          0,
+          1323827200,
+          7932874632,
+          0
+        ]
+      ],
+      "weights": [
+        68977822104,
+        81452261064,
+        66536196120,
+        90561711312
+      ],
+      "host_bytes": 242758032400,
+      "grid": [
+        {
+          "record_bytes": 264,
+          "context_tokens": 131072,
+          "requests": 1,
+          "global_bytes": 86507520,
+          "kv_bytes": [
+            35211264,
+            18044928,
+            35211264,
+            946176
+          ],
+          "remaining_bytes": [
+            26986966632,
+            14529694008,
+            29428592616,
+            5437342512
+          ],
+          "minimum_remaining_bytes": 5437342512
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 131072,
+          "requests": 4,
+          "global_bytes": 346030080,
+          "kv_bytes": [
+            140845056,
+            72179712,
+            140845056,
+            3784704
+          ],
+          "remaining_bytes": [
+            26881332840,
+            14475559224,
+            29322958824,
+            5434503984
+          ],
+          "minimum_remaining_bytes": 5434503984
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 131072,
+          "requests": 16,
+          "global_bytes": 1384120320,
+          "kv_bytes": [
+            563380224,
+            288718848,
+            563380224,
+            15138816
+          ],
+          "remaining_bytes": [
+            26458797672,
+            14259020088,
+            28900423656,
+            5423149872
+          ],
+          "minimum_remaining_bytes": 5423149872
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 1048576,
+          "requests": 1,
+          "global_bytes": 692060160,
+          "kv_bytes": [
+            277432320,
+            139155456,
+            277432320,
+            946176
+          ],
+          "remaining_bytes": [
+            26744745576,
+            14408583480,
+            29186371560,
+            5437342512
+          ],
+          "minimum_remaining_bytes": 5437342512
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 1048576,
+          "requests": 4,
+          "global_bytes": 2768240640,
+          "kv_bytes": [
+            1109729280,
+            556621824,
+            1109729280,
+            3784704
+          ],
+          "remaining_bytes": [
+            25912448616,
+            13991117112,
+            28354074600,
+            5434503984
+          ],
+          "minimum_remaining_bytes": 5434503984
+        },
+        {
+          "record_bytes": 264,
+          "context_tokens": 1048576,
+          "requests": 16,
+          "global_bytes": 11072962560,
+          "kv_bytes": [
+            4438917120,
+            2226487296,
+            4438917120,
+            15138816
+          ],
+          "remaining_bytes": [
+            22583260776,
+            12321251640,
+            25024886760,
+            5423149872
+          ],
+          "minimum_remaining_bytes": 5423149872
+        }
+      ],
+      "frontiers": [
+        {
+          "record_bytes": 264,
+          "reserve_per_device": 0,
+          "first_N": 98,
+          "device": 0,
+          "first_context": 1042154,
+          "first_8192_step": 1048576
+        },
+        {
+          "record_bytes": 264,
+          "reserve_per_device": 4000000000,
+          "first_N": 76,
+          "device": 1,
+          "first_context": 1045778,
+          "first_8192_step": 1048576
+        }
+      ]
+    }
+  ]
+}

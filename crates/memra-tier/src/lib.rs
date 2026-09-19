@@ -12,3 +12,5 @@ pub mod object_store;
 pub mod pool;
 pub mod telemetry;
 pub mod tier;
+pub mod peer;
+pub mod placement;

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "status": "pending-gpu-adapters",
+  "cases": {
+    "D1": [
+      "peer-bytes",
+      "grant-failure",
+      "link-downgrade",
+      "timeout",
+      "late-completion",
+      "destination-reuse",
+      "source-free",
+      "graph-address-stability"
+    ],
+    "D2": [
+      "step37-pp-ladder",
+      "qwen-peer-blocks",
+      "boundary",
+      "churn",
+      "spec-rollback",
+      "cancel"
+    ],
+    "D3": [
+      "four-tier-pressure",
+      "tenant-purge",
+      "corrupt-active",
+      "pool-smaller-than-object",
+      "all-directed-routes",
+      "shared-fabric-30min"
+    ],
+    "D4": [
+      "placement-predicted-vs-peak",
+      "owner-replica-accounting",
+      "capacity-refusal"
+    ]
+  },
+  "standard_gates": [
+    "kernel-check",
+    "run-gen argmax",
+    "run-spec K=1..8 / manifest refusals",
+    "step-pro"
+  ],
+  "locks": {
+    "rtx5090": "/tmp/memra-5090.lock",
+    "pro-pair": "/tmp/memra-gpu.lock",
+    "pro-four": "/tmp/memra-gpu.lock",
+    "cpu": null
+  },
+  "performance": {
+    "AB_pairs": 5,
+    "BA_pairs": 5,
+    "telemetry_interval_ms": 250
+  },
+  "warning": "Scaffold only. No GPU cell executed; pair is four tiers, not four-card qualification."
+}
