@@ -1,0 +1,14 @@
+$ cargo check -p memra-kv --offline
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+    Checking memra-kv v0.138.0 (/Users/avifen/tiyuvta/wt-spill-b/crates/memra-kv)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s
+
+EXIT=0

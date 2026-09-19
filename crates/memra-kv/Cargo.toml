@@ -11,5 +11,6 @@ rust-version.workspace = true
 edition = "2021"
 
 [dependencies]
+memra-tier = { path = "../memra-tier" }
 cudarc = { version = "0.19", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver", "cublas", "cublaslt", "nvrtc"] }
 memra-gguf = { workspace = true }

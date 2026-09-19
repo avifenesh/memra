@@ -1,0 +1,18 @@
+    Checking memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tier)
+error: the loop variable `shift` is used to index `multipliers`
+  --> crates/memra-tier/tests/bank/ple_oracle.rs:91:26
+   |
+91 |             for shift in 1..ngram {
+   |                          ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+   = note: `-D clippy::needless-range-loop` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::needless_range_loop)]`
+help: consider using an iterator and enumerate()
+   |
+91 -             for shift in 1..ngram {
+91 +             for (shift, <item>) in multipliers.iter().enumerate().take(ngram).skip(1) {
+   |
+
+error: could not compile `memra-tier` (test "bank") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
