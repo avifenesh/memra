@@ -228,3 +228,52 @@ fn legacy_gc_replays_crash_after_tombstone_and_before_unlink() {
     store.evict(&key()).unwrap();
     assert_eq!(std::fs::read_dir(&d.0).unwrap().count(), 1); // ownership file only
 }
+
+#[test]
+fn legacy_gc_unknown_shutdown_retains_shared_ownership() {
+    let d = OwnedDirectory::new();
+    let g = governor();
+    let mut store = ExtentStore::new(FileBackend::open(&d.0).unwrap(), g.clone());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    store.put(&mut txn, &payload(264)).unwrap();
+    let head = store.commit(&mut txn).unwrap();
+    let _unknown = store.lease_extent(&head, 0, &request(32768)).unwrap();
+    drop(store);
+    assert!(g.borrow().used().nvme > 0);
+    let mut other = new_store(FileBackend::open(&d.0).unwrap());
+    assert_eq!(other.evict(&key()), Err(Error::Busy));
+    assert!(other.lookup(&key()).unwrap().is_some());
+}
+
+#[test]
+fn catalog_gc_process_exit_between_tombstone_and_unlink() {
+    // Actual child process termination without Rust destructors. This tests OS
+    // lock release + persisted restart state, NOT power-loss/controller durability.
+    if let Some(path) = std::env::var_os("SPILL_A_TEST_CRASH_DIR") {
+        let mut store = CatalogStore::open(vec![path.into()], governor()).unwrap();
+        let head = store
+            .install_index(key(), 264, vec![reference(&payload(264))], &request(32768))
+            .unwrap();
+        store.put_extent(&head, 0, &payload(264)).unwrap();
+        store.tombstone(&head).unwrap();
+        std::process::exit(73);
+    }
+    let d = OwnedDirectory::new();
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "day4::catalog_gc_process_exit_between_tombstone_and_unlink",
+        ])
+        .env("SPILL_A_TEST_CRASH_DIR", &d.0)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(73));
+    let id = hex(&key().identity().unwrap());
+    assert!(d.0.join(format!("catalog-{id}.tomb")).exists());
+    assert!(d.0.join(format!("catalog-{id}-0.extent")).exists());
+    let mut recovered = CatalogStore::open(vec![d.0.clone()], governor()).unwrap();
+    assert!(recovered.lookup(&key()).unwrap().is_none());
+    recovered.collect(&key()).unwrap();
+    assert_eq!(std::fs::read_dir(&d.0).unwrap().count(), 1);
+}
