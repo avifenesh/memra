@@ -1,8 +1,11 @@
 # WP-A queued cells / pre-registration — 2026-09-19
 
-**No GPU/NVMe measurement has run.** CPU smoke is not NVMe evidence. Booking M1:
+**No GPU/model or Linux NVMe qualification has run.** Day-2 real filesystem
+roundtrip/restore ran on the development Mac SSD, not as memra spill-speed evidence.
+See [day2/RESULTS.md](day2/RESULTS.md) and its raw 12 single-run JSONL rows. Booking M1:
 2026-09-23; M3 feasibility: 2026-09-24. Rig booking/artifact pins are lead-owned.
-Two bounded connectivity attempts failed; remote inventory is unavailable.
+Day 1: two bounded connectivity attempts failed. Day 2: one attempt exited 255
+with `Connection closed by UNKNOWN port 65535`; remote inventory remains unavailable.
 Paused model path stays paused and is absent from every command below.
 
 ## Preconditions for EVERY scored hardware window
@@ -29,11 +32,12 @@ Paused model path stays paused and is absent from every command below.
 
 ## Runnable now (GPU test command queued, not executed)
 
-A1-CPU runs in the scaffold. No GPU lock is needed:
+A1-CPU runs in the actual workspace crate; the duplicate scaffold was deleted.
+No GPU lock is needed:
 
 ```sh
-cargo test --manifest-path research/spill-a-20260919/scaffold/Cargo.toml \
-  -p memra-tier-spill-a-scaffold --offline
+cargo test -p memra-tier --offline
+python3 research/spill-a-20260919/day2/verify.py
 ```
 
 A2-existing-worker-pinned-I/O, fitting 5090 then non-serving PRO pair. This
@@ -53,11 +57,30 @@ flock -x /tmp/memra-gpu.lock cargo test -p memra-engine --lib \
   -- --ignored --exact --nocapture 2>&1 | tee research/spill-a-20260919/raw/a2-worker-pro.log
 ```
 
-## Proposed CLI commands queued for later implementation (NOT runnable day-1)
+## Day-2 executed CPU cells
 
-The day-1 CLI accepts only `cpu-fixture`; every command here is a precise
-pre-registered intended interface and currently fails closed. Missing real CUDA
-adapter/direct/io_uring/trace engine/telemetry is an implementation blocker, not a
+- Frozen ObjectStore cancellation schedule on actual persistent files: PASS.
+- Frozen TransferEngine cancellation schedule on the CPU host adapter: PASS.
+- Frozen PinnedLease trait assertions (no shared schedule exists): PASS.
+- A1 durable fsync/root-last publication/reopen/partial staging crash, canonical metadata,
+  corruption, short reads, charged backing/foreign release, epochs, partial submission,
+  cancellation, take-once and consumer retirement: PASS; 26 storage tests total.
+- Mac `roundtrip|restore <owned-directory> <bytes> buffered|uncached`: PASS at
+  264 / 1,048,576 / 4,194,568 bytes; actual standalone CLI linked against workspace rlib.
+  `uncached` is labelled F_NOCACHE development fallback; no direct-speed claim.
+- Linux O_DIRECT: implementation present, target not installed here; NOT RUN.
+- Native pinned/DMA/peer/model/scored pipeline cells below: NOT RUN, unchanged blockers.
+
+Current CPU reproducer compiles the CLI without requiring nvcc and removes its scratch:
+`python3 research/spill-a-20260919/day2/verify.py`. Commands, exact outputs and hashes
+are under `day2/`. N=1/cell, uncontrolled thermal/cache regime, no perf/default decision.
+
+## Proposed GPU/trace CLI commands queued for later implementation
+
+The day-2 CLI accepts only positional CPU filesystem `roundtrip` / `restore`;
+the GPU/trace arguments below remain a pre-registered intended interface and fail closed.
+Missing real CUDA adapter, qualified Linux direct path, io_uring, trace engine and
+telemetry are implementation/qualification blockers, not a
 skip/pass. Lead may adjust command spelling at freeze but must retain budgets.
 Run from pinned checkout. `$RECEIPTS` is a caller-owned dated mechanism directory;
 its creation and cleanup of scratch belong to the measurement task.

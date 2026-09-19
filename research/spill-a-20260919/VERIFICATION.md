@@ -1,5 +1,8 @@
 # WP-A day-1 verification receipt — 2026-09-19
 
+> Historical day-1 record. Day-2 migration and current limitations are recorded in
+> [day2/RESULTS.md](day2/RESULTS.md); prototype contracts/scaffold are superseded.
+
 Repo `avifenesh/memra`; branch `lane/spill-a-20260919`;
 source commit `44fbe0515cdeae6199db80e9369c254c45498c61`.
 Base `c5a33b14ff7b6c75a3cd808dbc0ee4f10aa8b33f`.

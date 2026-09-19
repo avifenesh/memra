@@ -1,5 +1,8 @@
 # WP-A concrete contracts proposal — day-1, 2026-09-19
 
+> Historical day-1 record. Day-2 migration and current limitations are recorded in
+> [day2/RESULTS.md](day2/RESULTS.md); prototype contracts/scaffold are superseded.
+
 **Proposed, NOT frozen.** CPU implementation and signatures compile together in
 `scaffold/Cargo.toml`; it is a standalone package named
 `memra-tier-spill-a-scaffold` with library name `memra_tier`. No shared contracts,

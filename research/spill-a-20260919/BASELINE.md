@@ -1,5 +1,8 @@
 # WP-A day-1 baseline — 2026-09-19
 
+> Historical day-1 record. Day-2 migration and current limitations are recorded in
+> [day2/RESULTS.md](day2/RESULTS.md); prototype contracts/scaffold are superseded.
+
 Repository: avifenesh/memra. Inspected base: `c5a33b14ff7b6c75a3cd808dbc0ee4f10aa8b33f`.
 Main was clean at worktree creation. Worktree `../wt-spill-a`, branch
 `lane/spill-a-20260919`, is the only implementation tree used. This is a CPU
