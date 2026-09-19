@@ -43,19 +43,19 @@ fn topology() -> TopologySnapshot {
 fn topology_is_directed_grant_bound_and_never_host_bounce() {
     let mut t = topology();
     assert_eq!(t.edges.len(), 12);
-    assert!(t.peer_available(0, 1));
+    assert!(t.observations_allow(0, 1));
     t.edges
         .iter_mut()
         .find(|e| e.source == 0 && e.destination == 1)
         .unwrap()
         .pool_granted = Observation::Known(false);
-    assert!(!t.peer_available(0, 1));
-    assert!(t.peer_available(1, 0));
+    assert!(!t.observations_allow(0, 1));
+    assert!(t.observations_allow(1, 0));
     t.edges[0].pool_granted = Observation::Known(true);
     t.edges[0].direct_copy_qualified = Observation::Unknown;
-    assert!(!t.peer_available(0, 1));
-    assert!(!t.peer_available(0, 0));
-    assert!(!t.peer_available(0, 7));
+    assert!(!t.observations_allow(0, 1));
+    assert!(!t.observations_allow(0, 0));
+    assert!(!t.observations_allow(0, 7));
 }
 #[test]
 fn idle_downshift_is_deferred_active_downgrade_refuses() {
@@ -63,7 +63,7 @@ fn idle_downshift_is_deferred_active_downgrade_refuses() {
     t.devices[0].current_generation = Observation::Known(1);
     t.devices[0].idle_p8 = Observation::Known(true);
     assert_eq!(t.devices[0].link_health(), LinkHealth::IdleDeferred);
-    assert!(!t.peer_available(0, 1));
+    assert!(!t.observations_allow(0, 1));
     t.devices[0].idle_p8 = Observation::Known(false);
     assert_eq!(t.devices[0].link_health(), LinkHealth::Downgraded);
     t.devices[0].current_generation = Observation::Unknown;
@@ -73,6 +73,8 @@ fn idle_downshift_is_deferred_active_downgrade_refuses() {
 #[test]
 fn observation_expires_with_context_topology_or_binary() {
     let scope = RouteScope {
+        source_device: 0,
+        destination_device: 1,
         source_context: 1,
         destination_context: 2,
         topology_digest: [1; 32],
@@ -80,6 +82,7 @@ fn observation_expires_with_context_topology_or_binary() {
     };
     let scoped = ScopedTopology::new(topology(), scope.clone());
     assert!(scoped.peer_available(0, 1, &scope));
+    assert!(!scoped.peer_available(1, 0, &scope));
     for field in 0..4 {
         let mut changed = scope.clone();
         match field {

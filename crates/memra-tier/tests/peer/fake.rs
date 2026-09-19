@@ -486,6 +486,12 @@ fn quarantine_graph_pins_foreign_tickets_and_shared_budget() {
     let dst = p.reserve(p.plan(1, 31)).unwrap();
     let t = p.submit(vec![p.copy(&src, &dst)]).unwrap().ticket;
     p.entries.get_mut(&t).unwrap().unknown = true;
+    gov.borrow_mut()
+        .mark(&src.charge, ChargeState::Quarantined)
+        .unwrap();
+    gov.borrow_mut()
+        .mark(&dst.charge, ChargeState::Quarantined)
+        .unwrap();
     assert_eq!(p.poll(&t), Err(Error::Quarantined));
     p.finish(&t);
     assert!(!p.retired(&t).unwrap());
@@ -509,6 +515,12 @@ fn quarantine_graph_pins_foreign_tickets_and_shared_budget() {
     let mut foreign = Peer::new(gov.clone());
     assert_eq!(foreign.release(&src), Err(Error::ForeignLease));
     p.state = 8;
+    gov.borrow_mut()
+        .mark(&src.charge, ChargeState::Retired)
+        .unwrap();
+    gov.borrow_mut()
+        .mark(&dst.charge, ChargeState::Retired)
+        .unwrap();
     p.release(&src).unwrap();
     p.release(&dst).unwrap();
     assert!(p.release(&dst).is_err());
@@ -571,5 +583,39 @@ fn short_corrupt_and_wrong_context_completion_refuse() {
     ));
     p.drain(&t);
     p.release(&src).unwrap();
+    p.release(&dst).unwrap();
+}
+
+#[test]
+fn caller_source_drop_keeps_owned_bytes_until_acknowledged() {
+    let mut p = Peer::new(shared());
+    let src = p.reserve(p.plan(0, 19)).unwrap();
+    let dst = p.reserve(p.plan(1, 31)).unwrap();
+    let t = p.submit(vec![p.copy(&src, &dst)]).unwrap().ticket;
+    let PeerLease {
+        plan,
+        charge,
+        device,
+    } = src;
+    drop(device);
+    assert_eq!(p.gov.borrow_mut().release(&charge), Err(Error::Busy));
+    p.finish(&t);
+    assert_eq!(
+        *p.owners[1]
+            .resolve::<RefCell<Vec<u8>>>(&dst.device)
+            .unwrap()
+            .borrow(),
+        bytes(4)
+    );
+    let device = p.owners[0]
+        .retain(p.entries[&t].copies[0].as_ref().unwrap().source())
+        .unwrap();
+    p.drain(&t);
+    p.release(&PeerLease {
+        plan,
+        charge,
+        device,
+    })
+    .unwrap();
     p.release(&dst).unwrap();
 }

@@ -87,7 +87,9 @@ pub struct TopologySnapshot {
     pub edges: Vec<PeerEdge>,
 }
 impl TopologySnapshot {
-    pub fn peer_available(&self, source: u32, destination: u32) -> bool {
+    /// Snapshot diagnostics only, never a live runtime grant. Use ScopedTopology with
+    /// the native owner's current route context before admission.
+    pub fn observations_allow(&self, source: u32, destination: u32) -> bool {
         let endpoints = [source, destination].into_iter().all(|id| {
             let matches: Vec<_> = self.devices.iter().filter(|d| d.device == id).collect();
             matches.len() == 1 && matches[0].link_health() == LinkHealth::AtMaximum
@@ -110,6 +112,8 @@ pub trait TopologyProbe {
 /// A changed context, topology census or executable invalidates an old observation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteScope {
+    pub source_device: u32,
+    pub destination_device: u32,
     pub source_context: u64,
     pub destination_context: u64,
     pub topology_digest: crate::contracts::Digest,
@@ -128,8 +132,10 @@ impl ScopedTopology {
     }
     pub fn peer_available(&self, source: u32, destination: u32, current: &RouteScope) -> bool {
         current == &self.scope
+            && source == current.source_device
+            && destination == current.destination_device
             && current.source_context != 0
             && current.destination_context != 0
-            && self.snapshot.peer_available(source, destination)
+            && self.snapshot.observations_allow(source, destination)
     }
 }
