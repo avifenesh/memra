@@ -153,6 +153,7 @@ impl CoalescingPolicy {
 /// Exact immutable positioned-read seam. A's bounded ObjectStore adapter will
 /// implement it; no CUDA submission, pinning or GPU permission is exposed here.
 pub trait ExactReader {
+    fn begin_request(&mut self, _request: &BudgetRequest, _epochs: Epochs) {}
     fn storage_bytes(&self, tensor: &TensorId) -> Result<u64>;
     fn read_exact(&mut self, tensor: &TensorId, offset: u64, dst: &mut [u8]) -> Result<()>;
 }

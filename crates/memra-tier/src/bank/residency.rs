@@ -9,6 +9,9 @@ use std::{
 static NEXT_SERVICE: AtomicU64 = AtomicU64::new(1);
 struct Pending {
     ids: Vec<BankId>,
+    work: Option<ReadWork>,
+    missing: Vec<(BankId, CatalogRecord)>,
+    charges: Vec<ChargedLease>,
     records: BTreeMap<BankId, BankLease>,
     unpublished: Vec<BankPublication>,
     completion: Completion,
@@ -16,6 +19,7 @@ struct Pending {
     error: Option<Error>,
     plan: RowReadPlan,
     queue: Option<ChargedLease>,
+    request: BudgetRequest,
     demand: bool,
     cancelled: bool,
     published: bool,
@@ -24,7 +28,7 @@ struct Pending {
 }
 
 /// Portable HOST-only implementation of the frozen bank lifecycle. Reads currently
-/// finish synchronously in `stage`, but tickets, publication, cancellation and
+/// run only in the explicit bounded `progress` pump; publication, cancellation and
 /// last-use retirement are separate. This is not A's asynchronous DMA engine and
 /// must not publish device pointers. A native GPU adapter must use TransferEngine
 /// ReadyView plus actual owner/consumer fences instead of this host boundary.
@@ -73,6 +77,120 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             sequence: 0,
             _domain: PhantomData,
         })
+    }
+    /// Execute at most one bounded host read. CPU work must be pumped off a
+    /// serving scheduler thread. Returning true means producer terminal, NOT GPU ready.
+    pub fn progress(&mut self, ticket: &TransferTicket) -> Result<bool> {
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if p.completion.producer_done {
+            return Ok(true);
+        }
+        let read = if p.cancelled {
+            Err(Error::Cancelled)
+        } else {
+            self.reader.begin_request(&p.request, ticket.epochs);
+            let work = p.work.as_mut().ok_or(Error::NotReady)?;
+            match work.step(&p.missing, &p.plan, &mut self.reader, self.policy) {
+                Ok(false) => return Ok(false),
+                Ok(true) => Ok(std::mem::take(&mut work.outputs)),
+                Err(e) => Err(e),
+            }
+        };
+        p.work = None;
+        let missing = std::mem::take(&mut p.missing);
+        let charges = std::mem::take(&mut p.charges);
+
+        let mut error = read.as_ref().err().cloned();
+        let mut unpublished = Vec::new();
+        let mut items = Vec::new();
+        if let Ok(outputs) = read {
+            for (index, (((id, r), charge), bytes)) in
+                missing.into_iter().zip(charges).zip(outputs).enumerate()
+            {
+                let mut base = 0usize;
+                let mut segments = Vec::new();
+                for (j, s) in r.layout.segments.iter().enumerate() {
+                    let valid_end = base + s.valid_bytes as usize;
+                    let end = base + s.storage_bytes as usize;
+                    let hash = checksum(&bytes[base..valid_end]);
+                    let valid =
+                        hash == r.checksums[j] && bytes[valid_end..end].iter().all(|&v| v == 0);
+                    if !valid {
+                        error = Some(Error::Corrupt);
+                    }
+                    segments.push(SegmentCompletion {
+                        segment: j as u32,
+                        status: if valid {
+                            ItemStatus::Complete
+                        } else {
+                            ItemStatus::Failed
+                        },
+                        valid_bytes: s.valid_bytes,
+                        io_bytes: s.storage_bytes,
+                        checksum: Some(hash),
+                        epochs: ticket.epochs,
+                        producer_done: true,
+                        consumer_fenced: false,
+                        consumer_fence: None,
+                        error: (!valid).then_some(Error::Corrupt),
+                    });
+                    base = end;
+                }
+                items.push(ItemOutcome {
+                    item: index as u32,
+                    accepted: true,
+                    segments,
+                });
+                unpublished.push(BankPublication {
+                    id,
+                    layout: r.layout,
+                    class: self.catalog.class,
+                    charge,
+                    backing: Box::new(bytes),
+                });
+            }
+        } else {
+            // Enumerate EVERY accepted record/segment even when a coalesced
+            // read fails. No short status vector or successful sibling survives.
+            // Zero lengths here mean no verified logical bytes were delivered;
+            // the reader's exact I/O error is retained independently.
+            items = missing
+                .iter()
+                .enumerate()
+                .map(|(i, (_, r))| ItemOutcome {
+                    item: i as u32,
+                    accepted: true,
+                    segments: r
+                        .layout
+                        .segments
+                        .iter()
+                        .enumerate()
+                        .map(|(j, _)| SegmentCompletion {
+                            segment: j as u32,
+                            status: ItemStatus::Failed,
+                            valid_bytes: 0,
+                            io_bytes: 0,
+                            checksum: None,
+                            epochs: ticket.epochs,
+                            producer_done: true,
+                            consumer_fenced: false,
+                            consumer_fence: None,
+                            error: error.clone(),
+                        })
+                        .collect(),
+                })
+                .collect();
+            // Synchronous read failed: no DMA exists and all temporary outputs
+            // are gone; charges may be explicitly returned immediately.
+            for charge in &charges {
+                self.budget.borrow_mut().release(charge)?;
+            }
+        }
+        p.error = error;
+        p.unpublished = unpublished;
+        p.completion.items = items;
+        p.completion.producer_done = true;
+        Ok(true)
     }
     /// Bounded lifecycle inventory for orderly host shutdown/receipt collection.
     pub fn tickets(&self) -> Vec<TransferTicket> {
@@ -203,6 +321,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
             return Err(Error::Capacity);
         }
         batch.request.validate()?;
+        // One ticket is reserved for mandatory/demand work, even when hints stall.
+        if batch.request.priority == Priority::OptionalPrefetch
+            && self.pending.len() >= self.limits.tickets.saturating_sub(1)
+        {
+            return Err(Error::Capacity);
+        }
         // This backend can promise host bytes only. Never accept a device request
         // and quietly substitute host readiness.
         if batch
@@ -299,93 +423,38 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
                     .collect()
             })
             .collect();
-        let read = read_records(&missing, &plan, &mut self.reader, self.policy);
-        let mut error = read.as_ref().err().cloned();
-        let mut unpublished = Vec::new();
-        let mut items = Vec::new();
-        if let Ok(outputs) = read {
-            for (index, (((id, r), charge), bytes)) in
-                missing.into_iter().zip(charges).zip(outputs).enumerate()
-            {
-                let mut base = 0usize;
-                let mut segments = Vec::new();
-                for (j, s) in r.layout.segments.iter().enumerate() {
-                    let valid_end = base + s.valid_bytes as usize;
-                    let end = base + s.storage_bytes as usize;
-                    let hash = checksum(&bytes[base..valid_end]);
-                    let valid =
-                        hash == r.checksums[j] && bytes[valid_end..end].iter().all(|&v| v == 0);
-                    if !valid {
-                        error = Some(Error::Corrupt);
-                    }
-                    segments.push(SegmentCompletion {
+        let work = if missing.is_empty() {
+            None
+        } else {
+            Some(ReadWork::new(&missing)?)
+        };
+        let items = missing
+            .iter()
+            .enumerate()
+            .map(|(i, (_, r))| ItemOutcome {
+                item: i as u32,
+                accepted: true,
+                segments: r
+                    .layout
+                    .segments
+                    .iter()
+                    .enumerate()
+                    .map(|(j, _)| SegmentCompletion {
                         segment: j as u32,
-                        status: if valid {
-                            ItemStatus::Complete
-                        } else {
-                            ItemStatus::Failed
-                        },
-                        valid_bytes: s.valid_bytes,
-                        io_bytes: s.storage_bytes,
-                        checksum: Some(hash),
+                        status: ItemStatus::Pending,
+                        valid_bytes: 0,
+                        io_bytes: 0,
+                        checksum: None,
                         epochs: ticket.epochs,
-                        producer_done: true,
+                        producer_done: false,
                         consumer_fenced: false,
                         consumer_fence: None,
-                        error: (!valid).then_some(Error::Corrupt),
-                    });
-                    base = end;
-                }
-                items.push(ItemOutcome {
-                    item: index as u32,
-                    accepted: true,
-                    segments,
-                });
-                unpublished.push(BankPublication {
-                    id,
-                    layout: r.layout,
-                    class: self.catalog.class,
-                    charge,
-                    backing: Box::new(bytes),
-                });
-            }
-        } else {
-            // Enumerate EVERY accepted record/segment even when a coalesced
-            // read fails. No short status vector or successful sibling survives.
-            // Zero lengths here mean no verified logical bytes were delivered;
-            // the reader's exact I/O error is retained independently.
-            items = missing
-                .iter()
-                .enumerate()
-                .map(|(i, (_, r))| ItemOutcome {
-                    item: i as u32,
-                    accepted: true,
-                    segments: r
-                        .layout
-                        .segments
-                        .iter()
-                        .enumerate()
-                        .map(|(j, _)| SegmentCompletion {
-                            segment: j as u32,
-                            status: ItemStatus::Failed,
-                            valid_bytes: 0,
-                            io_bytes: 0,
-                            checksum: None,
-                            epochs: ticket.epochs,
-                            producer_done: true,
-                            consumer_fenced: false,
-                            consumer_fence: None,
-                            error: error.clone(),
-                        })
-                        .collect(),
-                })
-                .collect();
-            // Synchronous read failed: no DMA exists and all temporary outputs
-            // are gone; charges may be explicitly returned immediately.
-            for charge in &charges {
-                self.budget.borrow_mut().release(charge)?;
-            }
-        }
+                        error: None,
+                    })
+                    .collect(),
+            })
+            .collect();
+        let producer_done = missing.is_empty();
         let records = unique
             .into_iter()
             .filter_map(|id| self.cache.get(&id).map(|l| (id, l.clone())))
@@ -394,18 +463,22 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
             ticket,
             Pending {
                 ids: batch.ids,
+                work,
+                missing,
+                charges,
                 records,
-                unpublished,
+                unpublished: Vec::new(),
                 completion: Completion {
                     ticket,
                     items,
-                    producer_done: true,
+                    producer_done,
                     consumer_fenced: false,
                 },
                 expected,
-                error,
+                error: None,
                 plan,
                 queue: Some(queue),
+                request: batch.request.clone(),
                 demand: batch.request.priority != Priority::OptionalPrefetch,
                 cancelled: false,
                 published: false,
@@ -427,6 +500,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         }
         if let Some(e) = &p.error {
             return Err(e.clone());
+        }
+        if !p.completion.producer_done {
+            return Err(Error::NotReady);
         }
         if !p.expected.is_empty() {
             p.completion.require(ticket, &p.expected, false)?;
@@ -474,7 +550,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
     }
     fn retire(&mut self, ticket: &TransferTicket) -> Result<bool> {
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
-        if !p.host_use_done {
+        if !p.host_use_done || !p.completion.producer_done {
             return Ok(false);
         }
         if p.retired {
