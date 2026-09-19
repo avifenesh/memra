@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "kind": "plan",
+  "rig": "rtx5090",
+  "qualification": false,
+  "lock": "/tmp/memra-5090.lock",
+  "stop_starting_after_minutes": 60,
+  "stages": [
+    {
+      "cell": "bootstrap-native-compile",
+      "budget_minutes": 20,
+      "lock_owner": "bootstrap",
+      "status": "planned-not-run"
+    },
+    {
+      "cell": "A-filesystem",
+      "budget_minutes": 5,
+      "lock_owner": "lane-self-lock",
+      "status": "planned-not-run"
+    },
+    {
+      "cell": "D1-local-bytes",
+      "budget_minutes": 5,
+      "lock_owner": "collector",
+      "status": "planned-not-run"
+    },
+    {
+      "cell": "C-ple-tiny",
+      "budget_minutes": 15,
+      "lock_owner": "lane-self-lock",
+      "status": "planned-not-run"
+    },
+    {
+      "cell": "B-qwen-fitting",
+      "budget_minutes": 15,
+      "lock_owner": "lane-self-lock",
+      "status": "planned-not-run"
+    }
+  ],
+  "correctness_orders": [
+    {
+      "pair_id": "AB-correctness",
+      "order": "AB",
+      "arms": [
+        "off",
+        "on"
+      ]
+    },
+    {
+      "pair_id": "BA-correctness",
+      "order": "BA",
+      "arms": [
+        "on",
+        "off"
+      ]
+    }
+  ],
+  "order_applies_to": "future bound tier ON/OFF cells only; baseline runners have no invented arm flags",
+  "performance_cells": [],
+  "performance_medians_allowed": false,
+  "later_performance_minimum": {
+    "AB_pairs": 5,
+    "BA_pairs": 5
+  },
+  "warning": "Cold native build may consume entire hour. Missing adapters remain BLOCKED."
+}
