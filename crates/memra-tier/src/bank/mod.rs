@@ -15,3 +15,8 @@ pub use transport::*;
 
 mod prediction;
 pub use prediction::*;
+
+mod slru;
+pub use slru::*;
+mod source;
+pub use source::*;

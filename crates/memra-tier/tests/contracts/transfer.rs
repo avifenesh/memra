@@ -115,6 +115,11 @@ impl Transfers {
                     error: Error::Capacity,
                 });
             } else {
+                if matches!(&op, TransferOp::NvmeRead(_)) {
+                    c.items[i].segments[0].io_bytes =
+                        (memra_tier::object_store::padded_len(3).unwrap()
+                            + memra_tier::object_store::ALIGNMENT) as u64;
+                }
                 if let TransferOp::H2d(o) = &op {
                     c.items[i].segments[0]
                         .consumer_fence
@@ -129,7 +134,7 @@ impl Transfers {
             }
         }
         if let Some(i) = self.short {
-            c.items[i].segments[0].io_bytes = 2;
+            c.items[i].segments[0].valid_bytes = 2;
         }
         self.entries.insert(
             t,

@@ -140,3 +140,24 @@ Keep QSA remote-scatter refusal unchanged. PP is never TP, host bounce never P2P
 The official Step ladder above is unchanged: `decode-batch-gate --mode pp/ppspec` consumes
 pinned official FP8 safetensors. `ppn-gate` remains **GGUF-only / supplementary**. No PRO pair
 address, artifact permission, CUDA toolchain or GPU was available here. G0–G7 remain pending.
+
+## Day-4 offline validation and storage join
+
+- `python3 tools/tier-battery.py --validate <runs.jsonl>` auto-detects byte receipts;
+  `--validate <telemetry.jsonl>` auto-detects standalone telemetry. Optional explicit
+  `--schema runs|telemetry` refuses wrong input. Both checked-in JSON schemas are enforced
+  offline, followed by semantic checks (pair hashes, routes, monotonicity/cadence).
+- A's canonical `StorageSample` does not have a run id. Wrap each retained row as
+  `{"run_id":"<D-run-id>","sample":<unchanged StorageSample object>}`. Do not infer the
+  mapping by line order or fixture label. Then run
+  `python3 tools/tier-battery.py --validate <runs.jsonl> --storage-samples <wrapped.jsonl> --out <new-joined.jsonl>`.
+  Unknown run ids, missing run coverage, duplicate run ids, wrong counters/checksum/version
+  refuse. Multiple samples per run are retained, including failures, fallbacks and null
+  physical bytes. A successful join is not a performance or hardware receipt. An A runner
+  without run ids needs an explicit raw-log-to-cell mapping, not a canonical schema change.
+- `--first-hour` emits the first 5090 hour's correctness-only plan; future performance
+  scheduling still requires >=5 pairs in **each** order. CPU timing never enters boards.
+- Native `--execute` appends durable CELL start/end rows while raw logs are flushed;
+  `--resume --out <prior-cell>` reads the last CELL and reruns identical argv into a new
+  attempt, never treating an interrupted cell as pass. See RIG-DAY1.md for idempotence and
+  private provider/cost metadata rules. A/B/C self-locking runners run standalone, not here.

@@ -8,6 +8,36 @@ Day 1: two bounded connectivity attempts failed. Day 2: one attempt exited 255
 with `Connection closed by UNKNOWN port 65535`; remote inventory remains unavailable.
 Paused model path stays paused and is absent from every command below.
 
+## Day-4 CPU cells and deferred io_uring
+
+- `cargo test -p memra-tier --offline --test storage day4::sharded_catalog`: fixed
+  112-byte row index across N configured shard directories; 209,715,200,000-byte
+  synthetic object, metadata only, four selected leases read four rows and no
+  payload. Lookup + each lease read only one 8192-byte root. Byte-read tests verify
+  selected payload checksums, missing siblings and index-row swap/corruption.
+- `cargo test -p memra-tier --offline --test storage gc_`: live/repeated lease
+  refusal, persistent backing charge conservation, unknown-completion ownership,
+  deduplicated legacy roots, separate-open exclusion, durable tombstone/reopen
+  before unlink, and replay-safe collection. Includes actual child-process exit
+  without destructors at the tombstone boundary; power-loss and controller
+  durability remain unqualified.
+- `cargo test -p memra-tier --offline --test storage telemetry::`: operation-delta
+  counters to D's telemetry schema, bounded interval storage, cumulative I/O,
+  unknown physical bytes, per-interval percentiles and Python schema red arms.
+  Native 250ms collection and physical counter instrumentation are NOT supplied.
+
+Runner now adds these three CPU conformance cells before native build, for **35
+commands** in its dry plan. The old day-3 32-command receipts remain historical.
+Run `python3 research/spill-a-20260919/day4/verify.py` for all CPU checks. Shard
+lookup/lease correctness is not measured multi-device throughput or native model
+binding. Catalog metadata installation is allowed without payloads; reading an
+absent payload fails, never synthesizes bytes.
+
+**Lead decision: io_uring DEFERRED.** No dependency/ring/dispatch arm. Measure
+bounded pread first; reconsider only with the decision cell in
+IO-URING-PROPOSAL.md. Current intended rig commands below omit uring. Existing
+A2/M1 absent-interface probes still fail closed; no default/policy decision.
+
 ## Day-3 launcher and scope update
 
 `bash research/spill-a-20260919/rig-cells-a.sh /scratch --approved-non-serving`
@@ -115,10 +145,10 @@ its creation and cleanup of scratch belong to the measurement task.
 | Cell | Exact intended command (wrap with correct rig lock below) | Pre-registered budget / pass condition |
 |---|---|---|
 | A2-byte-roundtrip | `target/release/storage-bench roundtrip --directions h2d,d2h --sizes 1,264,288,4095,4096,4097,1048576,933232640 --slot-bytes 1048576 --slots 4 --reserved-demand-slots 1 --repeats 100 --faults cancel,late-fence,lost-fence --telemetry-ms 250 --out "$RECEIPTS"` | 5090 then PRO pair; 15 min each; at most 4 MiB pinned staging, object may exceed pool; zero byte mismatches, no request-path pin/free; quarantine until disk+DMA+consumer retirement. |
-| M1-row-amplification | `target/release/storage-bench trace --trace opaque-row264x48-v1 --logical-table-bytes 202758032400 --requests-per-second 800 --seconds 1800 --backends worker,pread,mmap,direct,uring --slot-bytes 1048576 --slots 8 --reserved-demand-slots 2 --scratch /scratch/spill-a-row --order ab5,ba5 --telemetry-ms 250 --out "$RECEIPTS"` | 5090 and PRO, 8 MiB pinned staging, bounded sparse/streamed fixture not 203 GB allocation; 38,400 row lookups/s and measured straddles/coalescing; row-batch p99 <=10 ms, zero growing queue in final 20 min. Full 30min per arm/order is 10h per pairwise comparison; book one mechanism window, not parallel cards. |
-| M1-bulk-restore | `target/release/storage-bench trace --trace opaque-bulk-v1 --sizes 116654080,933232640 --restores-per-second 1 --seconds 1800 --backends worker,direct,uring --slot-bytes 1048576 --slots 8 --reserved-demand-slots 2 --scratch /scratch/spill-a-bulk --order ab5,ba5 --telemetry-ms 250 --out "$RECEIPTS"` | 5090 then PRO; at most 8 MiB pinned; 116.654 MB restore p99 <=100 ms, 933.233 MB restore p99 <=500 ms; exact valid byte hash; sustained backlog bounded. 933MB/s demand remains conditional on measured <=70% route capacity. |
-| M1-read-write-interference | `target/release/storage-bench trace --trace opaque-mixed-v1 --row-batches-per-second 800 --rows-per-batch 48 --row-bytes 264 --restore-bytes 116654080 --restores-per-second 1 --backup-bytes-per-second 712000 --seconds 1800 --backends worker,direct,uring --slot-bytes 1048576 --slots 8 --reserved-demand-slots 2 --scratch /scratch/spill-a-mixed --order ab5,ba5 --telemetry-ms 250 --out "$RECEIPTS"` | PRO pair then target four-card whole-fabric window with D; same row/restore latency caps; demand <=70% measured sustained SSD and route capacities; no growing queue/dirty backlog over 30 min; explicit admission reduction requires owner approval. |
-| A3-consumer-pipeline | `target/release/storage-bench replay --trace "$PINNED_NATIVE_TRACE" --manifest "$ARTIFACT_MANIFEST" --backends worker,pread,mmap,direct,uring --order ab5,ba5 --telemetry-ms 250 --out "$RECEIPTS"` | Hy3/PLE/Qwen adapter traces provided by C/B; no numeric changes. 5090 fitting cases + PRO full-size; pre-register artifact/trace and actual memory caps before run. Compare storage through GPU consumer, not disk-only. |
+| M1-row-amplification | `target/release/storage-bench trace --trace opaque-row264x48-v1 --logical-table-bytes 202758032400 --requests-per-second 800 --seconds 1800 --backends worker,pread,mmap,direct --slot-bytes 1048576 --slots 8 --reserved-demand-slots 2 --scratch /scratch/spill-a-row --order ab5,ba5 --telemetry-ms 250 --out "$RECEIPTS"` | 5090 and PRO, 8 MiB pinned staging, bounded sparse/streamed fixture not 203 GB allocation; 38,400 row lookups/s and measured straddles/coalescing; row-batch p99 <=10 ms, zero growing queue in final 20 min. Full 30min per arm/order is 10h per pairwise comparison; book one mechanism window, not parallel cards. |
+| M1-bulk-restore | `target/release/storage-bench trace --trace opaque-bulk-v1 --sizes 116654080,933232640 --restores-per-second 1 --seconds 1800 --backends worker,direct --slot-bytes 1048576 --slots 8 --reserved-demand-slots 2 --scratch /scratch/spill-a-bulk --order ab5,ba5 --telemetry-ms 250 --out "$RECEIPTS"` | 5090 then PRO; at most 8 MiB pinned; 116.654 MB restore p99 <=100 ms, 933.233 MB restore p99 <=500 ms; exact valid byte hash; sustained backlog bounded. 933MB/s demand remains conditional on measured <=70% route capacity. |
+| M1-read-write-interference | `target/release/storage-bench trace --trace opaque-mixed-v1 --row-batches-per-second 800 --rows-per-batch 48 --row-bytes 264 --restore-bytes 116654080 --restores-per-second 1 --backup-bytes-per-second 712000 --seconds 1800 --backends worker,direct --slot-bytes 1048576 --slots 8 --reserved-demand-slots 2 --scratch /scratch/spill-a-mixed --order ab5,ba5 --telemetry-ms 250 --out "$RECEIPTS"` | PRO pair then target four-card whole-fabric window with D; same row/restore latency caps; demand <=70% measured sustained SSD and route capacities; no growing queue/dirty backlog over 30 min; explicit admission reduction requires owner approval. |
+| A3-consumer-pipeline | `target/release/storage-bench replay --trace "$PINNED_NATIVE_TRACE" --manifest "$ARTIFACT_MANIFEST" --backends worker,pread,mmap,direct --order ab5,ba5 --telemetry-ms 250 --out "$RECEIPTS"` | Hy3/PLE/Qwen adapter traces provided by C/B; no numeric changes. 5090 fitting cases + PRO full-size; pre-register artifact/trace and actual memory caps before run. Compare storage through GPU consumer, not disk-only. |
 
 Lock invocation for each proposed command: `flock -x /tmp/memra-5090.lock ...`
 on the 5090; `flock -x /tmp/memra-gpu.lock ...` on PRO pair/four-card target.

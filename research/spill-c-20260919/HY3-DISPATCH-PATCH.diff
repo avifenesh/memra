@@ -1,6 +1,6 @@
 --- a/crates/memra-engine/src/hybrid.rs
 +++ b/crates/memra-engine/src/hybrid.rs
-@@ -2831,6 +2831,37 @@
+@@ -2831,6 +2831,65 @@
  }
 
  impl MoeWeights {
@@ -32,6 +32,34 @@
 +            return Err(std::io::Error::other(
 +                "masked original expert cannot be staged",
 +            ));
++        }
++        // v2: validate authoritative metadata before expert_layout or source slicing.
++        // CPU-proven extent rule; no native BankSource/SLRU installation implied.
++        for exps in [&self.gate_exps, &self.up_exps, &self.down_exps] {
++            if exps.layouts.as_ref().is_some_and(|v| v.len() != count)
++                || exps.tiers.as_ref().is_some_and(|v| v.len() != count)
++                || exps.macros.as_ref().is_some_and(|v| v.len() != count)
++            {
++                return Err(std::io::Error::other("inconsistent expert source metadata"));
++            }
++            // expert_layout computes e * stride for uniform sources; prove no overflow first.
++            if exps.layouts.is_none() && original.checked_mul(exps.expert_stride).is_none() {
++                return Err(std::io::Error::other("expert source offset overflow"));
++            }
++            let layout = exps.expert_layout(original);
++            let available = exps
++                .tiers
++                .as_ref()
++                .map_or_else(|| exps.bytes.len(), |tiers| tiers[original].len());
++            memra_tier::bank::validate_bank_source_extent(
++                layout.offset as u64,
++                layout.len as u64,
++                available as u64,
++                exps.tiers.is_some(),
++            )
++            .map_err(|err| {
++                std::io::Error::other(format!("invalid expert source extent: {err:?}"))
++            })?;
 +        }
 +        Ok(())
 +    }

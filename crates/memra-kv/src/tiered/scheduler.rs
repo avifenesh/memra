@@ -3,7 +3,7 @@
 //! This is CPU control-plane integration, not an installed server scheduler.
 use super::*;
 use policy::{PrefixCosts, RestoreDecision, calibrated_recompute_vs_load};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 struct Pending {
     admission: TierAdmission,
@@ -26,6 +26,7 @@ pub struct Scheduler<S: TierStore> {
     limit: usize,
     next: u64,
     sequence: u64,
+    evicted_floor: u64,
     requests: BTreeMap<u64, Pending>,
     last_served: HashMap<Digest, u64>,
 }
@@ -36,6 +37,7 @@ impl<S: TierStore> Scheduler<S> {
             limit,
             next: 0,
             sequence: 0,
+            evicted_floor: 0,
             requests: BTreeMap::new(),
             last_served: HashMap::new(),
         }
@@ -131,15 +133,30 @@ impl<S: TierStore> Scheduler<S> {
         }
     }
     fn prune(&mut self) {
-        self.last_served.retain(|tenant, _| {
-            self.requests
-                .values()
-                .any(|p| &p.admission.request.tenant == tenant)
-        });
+        let active: HashSet<_> = self
+            .requests
+            .values()
+            .map(|p| p.admission.request.tenant)
+            .collect();
+        let mut idle: Vec<_> = self
+            .last_served
+            .iter()
+            .filter(|(tenant, _)| !active.contains(*tenant))
+            .map(|(&tenant, &stamp)| (stamp, tenant))
+            .collect();
+        idle.sort_unstable();
+        let excess = idle.len().saturating_sub(self.limit);
+        for (stamp, tenant) in idle.into_iter().take(excess) {
+            self.last_served.remove(&tenant);
+            self.evicted_floor = self.evicted_floor.max(stamp);
+        }
     }
     /// Admit at most one request per tick; advance every admitted request once.
     /// Priority > deadline > least recently served tenant > FIFO, with no bypass of a
     /// capacity-blocked head. Fairness is within equal priority/deadline, never priority inversion.
+    /// Unknown/forgotten history is treated as served no later than the oldest
+    /// forgotten tenant. The eviction watermark protects older queued stamps;
+    /// queued and admitted tenants are never evicted from the bounded idle history.
     /// current() reads the native owner's LIVE epochs, not the captured admission epochs.
     pub fn tick(
         &mut self,
@@ -167,7 +184,10 @@ impl<S: TierStore> Scheduler<S> {
                 (
                     r.priority,
                     r.deadline,
-                    self.last_served.get(&r.tenant).copied().unwrap_or(0),
+                    self.last_served
+                        .get(&r.tenant)
+                        .copied()
+                        .unwrap_or(self.evicted_floor),
                     **id,
                 )
             })
