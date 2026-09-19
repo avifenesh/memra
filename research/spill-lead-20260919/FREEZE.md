@@ -331,3 +331,16 @@ No `thiserror` was added: it was absent from the pinned lock. sha2 0.10.9,
 serde 1.0.228 and serde_json 1.0.150 were already locked; no network resolution required.
 B's separate memra-kv→sha2 edge was not needed and was deliberately left for B's rebase.
 No push, PR, tag, merge, deployment or support-state promotion occurred.
+
+## Lead ruling on the two flagged choices (2026-09-19, agent-c07799)
+
+1. **Canonical JSON shared metadata (v1) — ACCEPTED.** Metadata is small relative to payloads;
+   a hand-written binary ABI without a decoder/fuzz corpus is the riskier path. A binary encoding
+   may be proposed later as a measured change (size/latency receipts) behind the version field.
+2. **Homogeneous epoch triple per ticket — ACCEPTED.** Mixed allocation generations are split
+   into separate tickets. Revisit only with a receipt showing ticket count is a measured cost.
+
+Both rulings are v1 decisions recorded in `docs/decisions/GENERIC-SPILL-INTERFACE-V1.md`'s
+scope; WPs migrate onto them as-is. lib.rs / Cargo.toml amendment rule for WP lanes: a WP may
+add ONLY its own `pub mod <slot>;` line and its own `[[test]]` entries; everything else in the
+shared crate stays lead-owned.
