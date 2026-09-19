@@ -44,6 +44,10 @@ fn step_gguf_rejects_short_or_invalid_rope_factors_before_upload() {
     for (name, factors, accepted) in [
         ("short", vec![1.0], false),
         ("valid", vec![2.0; 32], true),
+        // Official Step IQ4_XS and Q8_0 MTP headers store the full-head [64]
+        // vector; partial RoPE consumes its first 32 entries. Preserve every byte.
+        ("official_full_head", vec![2.0; 64], true),
+        ("undeclared_width", vec![2.0; 48], false),
         ("zero", vec![0.0; 32], false),
         ("nan", vec![f32::NAN; 32], false),
     ] {
@@ -78,6 +82,24 @@ fn step_gguf_rejects_short_or_invalid_rope_factors_before_upload() {
         let result = compile_for_source(&crate::source::GgufSource(&file));
         if accepted {
             let (cfg, _) = result.unwrap();
+            if name == "official_full_head" {
+                let plan = compile_for_load(&cfg).unwrap();
+                let contract = for_config(&cfg)
+                    .unwrap()
+                    .compile_tensor_contract(
+                        &cfg,
+                        &plan,
+                        crate::tensor_contract::CheckpointDialect::Gguf,
+                        crate::tensor_contract::ContractOptions::default(),
+                    )
+                    .unwrap();
+                let stored = contract
+                    .requirements
+                    .iter()
+                    .find(|tensor| tensor.id == crate::tensor_contract::TensorId::RopeFactors)
+                    .unwrap();
+                assert_eq!(stored.shape, vec![64]);
+            }
             assert_eq!(cfg.step35.unwrap().rope_freq_factors.unwrap(), factors);
         } else {
             assert!(

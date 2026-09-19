@@ -54,6 +54,11 @@ remain in the full gguf suite.
 
 ## Outstanding native qualification
 
+Follow-up 2026-09-20: the owner authorized central provisioning and per-card exclusive locks.
+[QUALIFICATION.md](QUALIFICATION.md) is the current runner, capacity, artifact and lock contract.
+It supersedes the older whole-rig lock reference below for this campaign. No GPU phase has
+run during runner preparation. The original delivery evidence above remains historical.
+
 No designated non-serving GPU rig was available to this task. No CPU test, documentation
 build, or hosted compile check is GPU qualification. Keep the PR draft and the issue open until
 the required native gates have current receipts: engine/server suites and the designated

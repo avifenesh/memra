@@ -1,0 +1,263 @@
+{
+  "schema": 1,
+  "purpose": "issue-537 native qualification; no weight-format substitutions",
+  "artifacts": [
+    {
+      "role": "step_fp8",
+      "repo": "stepfun-ai/Step-3.7-Flash-FP8",
+      "revision": "b3d7916fccac844cca050d7520f2aaa513f9a84f",
+      "files": [
+        {
+          "path": ".gitattributes",
+          "size": 1561,
+          "sha256": "04bc81cb0b1a143a2f8bbeb55e04b607a85d509407eec07eb1cc47cea0e42284"
+        },
+        {
+          "path": "README.md",
+          "size": 14023,
+          "sha256": "b720774885053937f2c424572fb43991d1fcc87b4666e8acec36abbd9fd706d7"
+        },
+        {
+          "path": "assets/benchmarks.png",
+          "size": 321943,
+          "sha256": "3d26171162c0421a57c6c2c22074b9b276b626c5d90fe3a62e9fceb8ad988ae7"
+        },
+        {
+          "path": "chat_template.jinja",
+          "size": 5723,
+          "sha256": "f428623fc81c940c35be3509fbffc086b4b4360d8800e46103e6f34d02891633"
+        },
+        {
+          "path": "config.json",
+          "size": 48851,
+          "sha256": "4cff5ed015bff319274d0967aeca5a4753ad718c3ca4cdcf8216fcd93ba44037"
+        },
+        {
+          "path": "configuration_step3p7.py",
+          "size": 8376,
+          "sha256": "34b4df1071679fa0972e8e4da5168875aef7e9c0a19e37a2b09486952c060d80"
+        },
+        {
+          "path": "model-00001.safetensors",
+          "size": 924094128,
+          "sha256": "680f355dcbe20de4f259a126cebc654bfa530186e200e9733454e3d715a095ee"
+        },
+        {
+          "path": "model-00002.safetensors",
+          "size": 5279413976,
+          "sha256": "dbdf8141aec4c6be2793ba20f221fe837511638abcc50f0dc3a1550dc630a674"
+        },
+        {
+          "path": "model-00003.safetensors",
+          "size": 9499991784,
+          "sha256": "785bc12936510cdb255a4eca1e441c7bc3f69f61ab74e4762369d328195809ac"
+        },
+        {
+          "path": "model-00004.safetensors",
+          "size": 9567362800,
+          "sha256": "39d21e14ec677311bcf1ecf6e1daf57baae334077e9070f3a605871c541cf30f"
+        },
+        {
+          "path": "model-00005.safetensors",
+          "size": 9499991784,
+          "sha256": "550ca3ecfa680414c422484298914e01b21ebf8981a66c8ddb2dc27e6ab86750"
+        },
+        {
+          "path": "model-00006.safetensors",
+          "size": 9567362840,
+          "sha256": "d4ad8ccd605c2577295e9f772116cbb4e052e1096e5cfa621372fa286e26b4e2"
+        },
+        {
+          "path": "model-00007.safetensors",
+          "size": 9499991824,
+          "sha256": "1fed7ca034521377e321f644d87d0a96f58ae4fa26362e5a47388696c5a4bd7e"
+        },
+        {
+          "path": "model-00008.safetensors",
+          "size": 9567362840,
+          "sha256": "974c5dca1863f4f1ca46d07f580c19f2696f0087f5f8501ca409328cafd02040"
+        },
+        {
+          "path": "model-00009.safetensors",
+          "size": 9499991824,
+          "sha256": "fd957867fef5b6cd7aca41e75a800933cddd45dfce4766e344b36b089f2051d9"
+        },
+        {
+          "path": "model-00010.safetensors",
+          "size": 9567362840,
+          "sha256": "0fd1c798fa18bb9bb60980b3c3b831bc84dd48867fbc0c0fcd9a553ca38c5138"
+        },
+        {
+          "path": "model-00011.safetensors",
+          "size": 9499991824,
+          "sha256": "2d36495d0cb1b74b22724390c82583f6dea8cab3d4f8ab48a2697ca8361ced5a"
+        },
+        {
+          "path": "model-00012.safetensors",
+          "size": 9567362840,
+          "sha256": "f850fa4b5ba67a75b41385e8d3a290d8049eba6aaf9347fd0d5bc085454e252c"
+        },
+        {
+          "path": "model-00013.safetensors",
+          "size": 9499991824,
+          "sha256": "1d6533cb79db10c1aad431108daa68b29234f2cd573e4501c95f8ba7a0f11153"
+        },
+        {
+          "path": "model-00014.safetensors",
+          "size": 9567362840,
+          "sha256": "03ec9d090b91f9c3251c2c03e9da879b219e5f3ffd2f55d56591f6c957e9532b"
+        },
+        {
+          "path": "model-00015.safetensors",
+          "size": 9499991824,
+          "sha256": "c25b73d1798ea77108b528d163a67fdd9ff29dd2c9f0856c6d33043a1c2e6d35"
+        },
+        {
+          "path": "model-00016.safetensors",
+          "size": 9567362840,
+          "sha256": "517f677344e531c24208830a6647344a183f73b7445eacb973d3cb53638903a1"
+        },
+        {
+          "path": "model-00017.safetensors",
+          "size": 9499991824,
+          "sha256": "500843e600b375ed36c77da7a8519f1831f5e0bdfc6a293dfa917bb6f8c14398"
+        },
+        {
+          "path": "model-00018.safetensors",
+          "size": 9567362840,
+          "sha256": "974af379a0df59c3c6cb0f4e54ae7011e25c76a55fc0ffb8d0582e52a848f524"
+        },
+        {
+          "path": "model-00019.safetensors",
+          "size": 9499991824,
+          "sha256": "f7d29f634796edf5cd78159b44762b207f97bd4b62927d13b0e25e37c0d1b947"
+        },
+        {
+          "path": "model-00020.safetensors",
+          "size": 9567362840,
+          "sha256": "856f8244a8b8eb1266400aa98139ff08c5fb01a385358642eae5e894629071b1"
+        },
+        {
+          "path": "model-00021.safetensors",
+          "size": 9499991824,
+          "sha256": "13d000fc928a2ec8213e78c310ecc607261d5e976811f14d3c098e5063bdea4a"
+        },
+        {
+          "path": "model-00022.safetensors",
+          "size": 9567362840,
+          "sha256": "f3b9a9f903f92ca66c5b51b069b18e15f142b5349b43562b4097c288ffab8c6a"
+        },
+        {
+          "path": "model-00023.safetensors",
+          "size": 4716310408,
+          "sha256": "deb45c50a6d4835b3fc8bed32d132b8e684036687e1790cb9cce3094d3957bc9"
+        },
+        {
+          "path": "model-00024.safetensors",
+          "size": 6968188496,
+          "sha256": "2d8ff2a547ac5035765ffe20e405b2e1306b805165f0ce22e2e3fd3bcf9eec0d"
+        },
+        {
+          "path": "model-vit-00001.safetensors",
+          "size": 1613990936,
+          "sha256": "b4d10d5b50ca28a37395ea5b9cc0aa26d9d56d08912e7b021767d30d9f180b24"
+        },
+        {
+          "path": "model-vit-00002.safetensors",
+          "size": 2348122408,
+          "sha256": "0c4738739449045551c0167013fd6f42f74111fdf0a88f85adf6a3962c3b8301"
+        },
+        {
+          "path": "model.safetensors.index.json",
+          "size": 119419,
+          "sha256": "aac0a86e46d5bc212ace03d824d893d17ecef09cf3621fde0f79c3847e03ae1e"
+        },
+        {
+          "path": "modeling_step3p7.py",
+          "size": 56765,
+          "sha256": "1a6d88edb1e6c82230f42c71189104a877b5eee17dfd7c165210bffc7714b2a9"
+        },
+        {
+          "path": "processing_step3.py",
+          "size": 18686,
+          "sha256": "983f9fc399a5b14fe3e492f05d4e3c1b2d3b3fc589dc426da9e5a1731ed516ec"
+        },
+        {
+          "path": "special_tokens_map.json",
+          "size": 468,
+          "sha256": "d47424bda11df4cedc3f9458915c465a28e601d3b7df0e78f6dff4d7727006c4"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 9976972,
+          "sha256": "b564c620eb77fa11d0926011c2202347d6cfc358d79724ee04ae7007e13636f0"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 163405,
+          "sha256": "78202af487f4d4360e8d15cb0506d60718f8599770599c6f28f7f1fa045a591f"
+        },
+        {
+          "path": "vision_encoder.py",
+          "size": 17706,
+          "sha256": "88adf0a61c84254c68d3a32544856eff7c3283fa2f3cd6914e94857dba36b5f2"
+        }
+      ],
+      "bytes": 212534420770
+    },
+    {
+      "role": "step_gguf",
+      "repo": "stepfun-ai/Step-3.7-Flash-GGUF",
+      "revision": "0b69336d2fd2adfdef9c66e425f7778196c31482",
+      "files": [
+        {
+          "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+          "size": 46483327296,
+          "sha256": "b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259"
+        },
+        {
+          "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf",
+          "size": 46999941600,
+          "sha256": "e7e0caaaf0057fabc8bf9b71cbe41322f9945a44df7240bb58e6b7c375e7ffec"
+        },
+        {
+          "path": "IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf",
+          "size": 11510293728,
+          "sha256": "ccbd3df81b4f4cb8e73d899734944bcbdefcf436faec9203353419c6750c0590"
+        },
+        {
+          "path": "Step3.7-flash-mtp-Q8_0.gguf",
+          "size": 3707276416,
+          "sha256": "469a81667a6cd6d87a85d501d57155fd90cee5af7010fd289c5169881763fd57"
+        }
+      ],
+      "bytes": 108700839040
+    },
+    {
+      "role": "ornith",
+      "repo": "Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF",
+      "revision": "e058c9f5bcce9234deffc87636bbe7fc61e2b8c5",
+      "files": [
+        {
+          "path": "Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf",
+          "size": 20188038400,
+          "sha256": "72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3"
+        }
+      ],
+      "bytes": 20188038400
+    },
+    {
+      "role": "dense",
+      "repo": "Qwen/Qwen3-1.7B-GGUF",
+      "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "files": [
+        {
+          "path": "Qwen3-1.7B-Q8_0.gguf",
+          "size": 1834426016,
+          "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a"
+        }
+      ],
+      "bytes": 1834426016
+    }
+  ]
+}
