@@ -1,0 +1,26 @@
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib test) generated 1 warning (run `cargo fix --lib -p memra-gguf --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/memra_gguf-e80b7f4edcbfcfe8)
+
+running 11 tests
+test model_plan::semantics_tests::load_selection_does_not_bypass_pack_refusal ... ok
+test model_plan::semantics_tests::minimax_wrapper_keeps_dense_routed_and_shared_programs ... ok
+test model_plan::semantics_tests::nested_text_activation_and_alias_are_preserved ... ok
+test model_plan::semantics_tests::canonical_compiler_refuses_unrepresented_sliding_window ... ok
+test model_plan::semantics_tests::canonical_compiler_refuses_unrepresented_activation ... ok
+test model_plan::semantics_tests::established_olmoe_and_minimax_programs_keep_explicit_packs ... ok
+test model_plan::semantics_tests::gemma_per_attention_rope_declarations_are_not_erased ... ok
+test model_plan::semantics_tests::supported_dense_programs_are_unchanged ... ok
+test model_plan::semantics_tests::canonical_compiler_refuses_unrepresented_rope_scaling ... ok
+test model_plan::semantics_tests::gguf_rope_declarations_reach_the_compiler ... ok
+test model_plan::semantics_tests::step_gguf_checkpoint_factors_and_mtp_survive_pack_selection ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 278 filtered out; finished in 0.00s

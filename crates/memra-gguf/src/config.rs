@@ -1167,6 +1167,12 @@ pub struct ModelConfig {
     /// is a different RoPE program and the canonical plan compiles `RopeFactors::None`.
     /// `None` and `"default"` both mean identity.
     pub rope_scaling_hint: Option<String>,
+    /// Per-attention-class HF RoPE declarations (Gemma-style rope_parameters).
+    /// These must not disappear behind the scalar/default RoPE path.
+    pub layer_rope_scaling: Vec<(String, String)>,
+    /// Explicit text MLP activation, retained so compilation cannot silently replace it
+    /// with the family's default. None means the artifact uses that default.
+    pub hidden_act: Option<String>,
 }
 
 /// qwen4_exp YaRN parse (scope: this family only — see `ModelConfig::rope_yarn`).
@@ -1568,9 +1574,13 @@ impl ModelConfig {
             prefill_activation: crate::model_packs::qwen35::activation::PrefillFp4::from_gguf(g)
                 .unwrap_or_else(|error| panic!("{error}")),
             window_hint: u("attention.sliding_window"),
-            // GGUF spells llama3 rope scaling as per-frequency factors, not a type string;
-            // `rope_factors` carries them and the packs that read them declare it.
-            rope_scaling_hint: None,
+            rope_scaling_hint: g
+                .meta_arch("rope.scaling.type")
+                .and_then(MetaValue::as_str)
+                // GGUF's identity spelling is "none"; HF uses "default".
+                .map(|kind| if kind == "none" { "default" } else { kind }.to_owned()),
+            layer_rope_scaling: Vec::new(),
+            hidden_act: None,
             name: g
                 .metadata
                 .get("general.name")
@@ -2303,6 +2313,8 @@ impl ModelConfig {
             prefill_activation: None,
             window_hint: c.sliding_window,
             rope_scaling_hint: c.rope_scaling_type.clone(),
+            layer_rope_scaling: c.layer_rope_scaling.clone(),
+            hidden_act: c.hidden_act.clone(),
             name: c.name.clone().unwrap_or_default(),
             // GGUF `block_count` INCLUDES the MTP/NextN block(s) (hybrid.rs n_trunk = n_layer -
             // nextn); HF `num_hidden_layers` EXCLUDES them. Add nextn so both sources agree.
@@ -2751,6 +2763,7 @@ pub struct HfConfig {
     /// n_rot), so it lands in `gemma4_partial_rotary_global` instead.
     pub partial_rotary_factor: Option<f32>,
     pub rope_scaling_type: Option<String>,
+    pub layer_rope_scaling: Vec<(String, String)>,
     pub rope_scaling_factor: Option<f32>,
     pub rope_scaling_original_context: Option<u32>,
     pub rope_scaling_low_freq_factor: Option<f32>,
@@ -2930,6 +2943,7 @@ impl Default for HfConfig {
             rope_theta: 10000.0,
             partial_rotary_factor: None,
             rope_scaling_type: None,
+            layer_rope_scaling: Vec::new(),
             rope_scaling_factor: None,
             rope_scaling_original_context: None,
             rope_scaling_low_freq_factor: None,
@@ -3370,6 +3384,16 @@ impl HfConfig {
             self.num_kv_shared_layers = Some(v);
         }
         if let Some(rp) = o.object("rope_parameters") {
+            for class in ["full_attention", "sliding_attention"] {
+                if let Some(parameters) = rp.object(class)
+                    && let Some(kind) = parameters
+                        .string("rope_type")
+                        .or_else(|| parameters.string("type"))
+                {
+                    self.layer_rope_scaling.retain(|(name, _)| name != class);
+                    self.layer_rope_scaling.push((class.to_owned(), kind));
+                }
+            }
             if let Some(fa) = rp.object("full_attention") {
                 if let Some(t) = fa.f32("rope_theta") {
                     self.gemma4_rope_theta_global = Some(t);
@@ -3568,7 +3592,10 @@ impl HfConfig {
         if let Some(v) = o.boolean("qk_norm") {
             self.qk_norm = Some(v);
         }
-        if let Some(v) = o.string("hidden_act") {
+        if let Some(v) = o
+            .string("hidden_act")
+            .or_else(|| o.string("hidden_activation"))
+        {
             self.hidden_act = Some(v);
         }
         // ---- DeepSeek-V4 keys ----
@@ -4658,6 +4685,19 @@ pub(crate) mod hf_tests {
         assert!((factors[0] - 1.0).abs() < 1e-6);
         assert!((factors[31] - 2.0).abs() < 1e-6);
         assert!(factors.iter().all(|&factor| (1.0..=2.0).contains(&factor)));
+
+        // The load-time semantic guard must retain Step's supported window and llama3
+        // program while refusing the same declarations on a plain llama-shaped config.
+        let plan = crate::model_packs::compile_for_load(&mc).unwrap();
+        use crate::model_plan::{AttentionPlan, RopeFactors};
+        let AttentionPlan::Full(full) = &plan.layers[0].attention else {
+            panic!("expected Step full-attention layer");
+        };
+        assert_eq!(full.rope.factors, RopeFactors::Checkpoint);
+        assert!(matches!(
+            plan.layers[1].attention,
+            AttentionPlan::SlidingWindow { window: 512, .. }
+        ));
 
         let explicit_json = json.replacen(
             "\"hidden_size\":256,",

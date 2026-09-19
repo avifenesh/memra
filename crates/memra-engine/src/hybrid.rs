@@ -3528,15 +3528,8 @@ impl MtpHead {
         main_cfg: &ModelConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let src = GgufSource(g);
-        let dcfg = src.try_config().map_err(std::io::Error::other)?;
-        let draft_plan = match memra_gguf::model_packs::for_config(&dcfg) {
-            Some(pack) => pack.compile_plan(&dcfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&dcfg)?,
-        };
-        let main_plan = match memra_gguf::model_packs::for_config(main_cfg) {
-            Some(pack) => pack.compile_plan(main_cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(main_cfg)?,
-        };
+        let (dcfg, draft_plan) = memra_gguf::model_packs::compile_for_source(&src)?;
+        let main_plan = memra_gguf::model_packs::compile_for_load(main_cfg)?;
         // NextN block index INSIDE THE DRAFT FILE (its block_count includes the trunk numbering).
         // Graceful error, not assert: the server's `+draft` attach path surfaces this to the
         // user (a gemma-assistant draft or any non-NextN GGUF lands here; a panic killed the
@@ -4241,11 +4234,7 @@ impl HybridModel {
                 load_prev = now;
             }
         };
-        let cfg = src.try_config().map_err(std::io::Error::other)?;
-        let plan = match memra_gguf::model_packs::for_config(&cfg) {
-            Some(pack) => pack.compile_plan(&cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
-        };
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(src)?;
         let auto_parallel = prepare_auto_parallel(src, &cfg, &plan)?;
         let batch_program = crate::plan_backend::decode_batch_program(&plan);
         let gemma_program = batch_program == crate::plan_backend::DecodeBatchProgram::Gemma;
@@ -5762,16 +5751,25 @@ impl HybridModel {
             None
         };
         // step35: rope_freqs.weight [n_rot_full/2] — FULL-attn layers only (SWA passes null).
-        // Loaded by tensor presence, not required: the key is absent on a sibling without
-        // llama3-style scaling, and `None` is the correct "no factors" signal for rope_neox2.
+        // GGUF carries the factor tensor; HF carries normalized factors in Step35Config.
+        // Preflight requires one when llama3 scaling is declared. Unscaled siblings keep None.
         let step35_aux = if sliding_gated_moe_program {
-            let rope_freqs = match src.find("rope_freqs.weight") {
-                Some(t) => {
-                    let host = memra_gguf::dequant::dequantize(
+            let host = src
+                .find("rope_freqs.weight")
+                .map(|t| {
+                    memra_gguf::dequant::dequantize(
                         t.ggml_type,
                         &t.bytes,
                         t.ne.iter().product::<u64>() as usize,
-                    );
+                    )
+                })
+                .or_else(|| {
+                    cfg.step35
+                        .as_ref()
+                        .and_then(|step| step.rope_freq_factors.clone())
+                });
+            let rope_freqs = match host {
+                Some(host) => {
                     let mut copies = Vec::new();
                     if let Some(fence) = crate::pp::pp_cuts(n_trunk) {
                         #[allow(clippy::needless_range_loop)]

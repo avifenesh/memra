@@ -1625,6 +1625,8 @@ mod tests {
             // packs whose plan does not consume one (see ModelConfig::window_hint).
             window_hint: None,
             rope_scaling_hint: None,
+            layer_rope_scaling: Vec::new(),
+            hidden_act: None,
             name: "Step-3.7-Flash-FP8".to_string(),
             n_layer: total_layers,
             n_embd: 4096,

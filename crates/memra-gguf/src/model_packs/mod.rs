@@ -16,8 +16,10 @@ pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
 pub mod llama_dense;
+pub mod minimax_m3;
 /// Speech packs use their own config normalization until the CLI accepts audio artifacts.
 pub mod nemotron_rnnt;
+pub mod olmoe;
 pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
@@ -156,6 +158,8 @@ pub const PACKS: &[&ModelPack] = &[
     &qwen4_exp::PACK,
     &step35::PACK,
     &hy3::PACK,
+    &olmoe::PACK,
+    &minimax_m3::PACK,
     // Last: the plainest dense stack, so a family with its own pack is always matched first.
     &llama_dense::PACK,
 ];
@@ -177,6 +181,41 @@ pub fn for_config(config: &ModelConfig) -> Option<&'static ModelPack> {
         .iter()
         .copied()
         .find(|pack| pack.matches_config(config))
+}
+
+/// Shared load-time entry point. Pack refusal is final; the canonical compiler is not
+/// a compatibility fallback. Call this before reading or allocating model tensors.
+pub fn compile_for_load(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    config.validate_plan_semantics()?;
+    for_config(config)
+        .ok_or_else(|| PlanCompileError::NoMatchingModelPack {
+            arch: format!("{:?}", config.arch),
+        })?
+        .compile_plan(config)
+}
+
+/// Source-backed preflight shared by the eager loaders, before model-weight allocation.
+/// Declared checkpoint RoPE factors must exist even when automatic placement (and its
+/// tensor census) is disabled. HF Step factors are already derived during normalization.
+pub fn compile_for_source(
+    source: &dyn crate::source::TensorSource,
+) -> Result<(ModelConfig, ModelPlan), Box<dyn std::error::Error>> {
+    let config = source.try_config().map_err(std::io::Error::other)?;
+    let plan = compile_for_load(&config)?;
+    if config.rope_scaling_hint.as_deref() == Some("llama3")
+        && !config
+            .step35
+            .as_ref()
+            .is_some_and(|step| step.rope_freq_factors.is_some())
+        && !source.has("rope_freqs.weight")
+    {
+        return Err(PlanCompileError::UnsupportedSemantics {
+            field: "rope_scaling",
+            value: "llama3 requires rope_freqs.weight or normalized frequency factors".into(),
+        }
+        .into());
+    }
+    Ok((config, plan))
 }
 
 pub(super) fn canonical_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {

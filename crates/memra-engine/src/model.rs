@@ -1571,11 +1571,7 @@ impl Model {
         e: &Engine,
         src: &dyn TensorSource,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cfg = src.try_config().map_err(std::io::Error::other)?;
-        let plan = match memra_gguf::model_packs::for_config(&cfg) {
-            Some(pack) => pack.compile_plan(&cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
-        };
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(src)?;
         if plan.layers.iter().any(|layer| {
             !matches!(
                 layer.attention,

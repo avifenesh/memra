@@ -724,6 +724,13 @@ pub enum PlanCompileError {
         pack: &'static str,
         arch: String,
     },
+    UnsupportedSemantics {
+        field: &'static str,
+        value: String,
+    },
+    NoMatchingModelPack {
+        arch: String,
+    },
     MissingTinyFixture {
         pack: &'static str,
     },
@@ -770,6 +777,15 @@ impl std::fmt::Display for PlanCompileError {
             Self::ModelPackMismatch { pack, arch } => {
                 write!(f, "model pack {pack} does not accept architecture {arch}")
             }
+            Self::UnsupportedSemantics { field, value } => {
+                write!(f, "model plan does not implement declared {field}={value}")
+            }
+            Self::NoMatchingModelPack { arch } => {
+                write!(
+                    f,
+                    "no model pack accepts the semantic contract for architecture {arch}"
+                )
+            }
             Self::MissingTinyFixture { pack } => {
                 write!(f, "model pack {pack} has no native tiny reference fixture")
             }
@@ -808,6 +824,7 @@ impl std::error::Error for PlanCompileError {}
 
 impl ModelPlan {
     pub fn compile(cfg: &ModelConfig) -> Result<Self, PlanCompileError> {
+        cfg.validate_plan_semantics()?;
         const MAX_MODEL_LAYERS: u32 = 1_024;
         const MAX_MTP_LAYERS: u32 = 128;
         const MAX_VISION_LAYERS: u32 = 1_024;
@@ -1363,6 +1380,72 @@ fn compile_vision_glm5(
 }
 
 impl ModelConfig {
+    /// Reject source declarations not consumed by a typed program. This belongs to the
+    /// compiler as well as pack selection: callers of ModelPlan::compile must not be able
+    /// to bypass a pack's refusal and compile a different attention or activation program.
+    pub(crate) fn validate_plan_semantics(&self) -> Result<(), PlanCompileError> {
+        let unsupported = |field, value| PlanCompileError::UnsupportedSemantics { field, value };
+        if let Some(window) = self.window_hint {
+            let represented =
+                self.gemma4
+                    .as_ref()
+                    .is_some_and(|g| g.sliding_window == window)
+                    || self
+                        .step35
+                        .as_ref()
+                        .is_some_and(|s| s.sliding_window == window)
+                    || self
+                        .dsv4
+                        .as_ref()
+                        .is_some_and(|d| d.sliding_window == window)
+                    || self.geometry.as_ref().is_some_and(|g| {
+                        g.classes().iter().any(|layer| layer.window == Some(window))
+                    });
+            if !represented {
+                return Err(unsupported("sliding_window", window.to_string()));
+            }
+        }
+        if let Some(kind) = self.rope_scaling_hint.as_deref() {
+            let represented = match kind {
+                "default" => true,
+                // Step's global plan uses Checkpoint factors: synthesized from HF, or
+                // supplied as rope_freqs.weight by GGUF (tensor presence is its contract).
+                "llama3" => self.step35.is_some(),
+                "yarn" => self.rope_yarn.is_some() || self.dsv4.is_some(),
+                _ => false,
+            };
+            if !represented {
+                return Err(unsupported("rope_scaling", kind.to_owned()));
+            }
+        }
+        for (class, kind) in &self.layer_rope_scaling {
+            let represented = self.gemma4.is_some()
+                && matches!(
+                    (class.as_str(), kind.as_str()),
+                    ("sliding_attention", "default") | ("full_attention", "proportional")
+                );
+            if !represented {
+                return Err(unsupported("rope_scaling", format!("{class}.{kind}")));
+            }
+        }
+        if let Some(kind) = self.hidden_act.as_deref() {
+            let represented = match activation(self, 0, false) {
+                ActivationPlan::Silu
+                | ActivationPlan::SwiGluClamped { .. }
+                | ActivationPlan::SwiGluPreClamped { .. } => {
+                    kind == "silu" || (self.hy3.is_some() && kind == "swiglu")
+                }
+                ActivationPlan::GeluTanh => matches!(kind, "gelu_pytorch_tanh" | "gelu_tanh"),
+                ActivationPlan::SwiGluOai { .. } => kind == "swigluoai",
+                ActivationPlan::Named(_) => false,
+            };
+            if !represented {
+                return Err(unsupported("hidden_act", kind.to_owned()));
+            }
+        }
+        Ok(())
+    }
+
     /// Select the existing handwritten executor from canonical operations. This is a migration
     /// bridge: the generic reference executor consumes the plan directly, while tuned runtime
     /// paths still have two loaders. New families do not enter either path by architecture name.
@@ -2370,6 +2453,9 @@ impl CapabilityStatus {
 }
 
 #[cfg(test)]
+mod semantics_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::HfConfig;
@@ -2508,6 +2594,7 @@ mod tests {
         let plan = ModelPlan::compile(&cfg).unwrap();
         // Every trunk QSA layer and the MTP draft carry the yarn factors; GDN layers have
         // no rope plan to carry.
+        assert_eq!(crate::model_packs::compile_for_load(&cfg).unwrap(), plan);
         for layer in &plan.layers {
             if let AttentionPlan::Full(attention) = &layer.attention {
                 assert_eq!(attention.rope.factors, yarn, "layer {}", layer.index);
