@@ -693,17 +693,16 @@ impl FileBackend {
     fn evict_exclusive(&mut self, id: Digest) -> Result<()> {
         let root = self.path(true, id);
         let tomb = self.directory.join(format!("tomb-{}", hex(&id)));
-        // Rename is the visibility boundary. Recovery replays an existing tombstone.
-        if root.exists() {
-            if tomb.exists() {
-                return Err(Error::Conflict);
-            }
-            fs::rename(&root, &tomb)?;
-            self.sync_directory()?;
-        } else if !tomb.exists() {
+        // Validate the entire deletion plan before revoking visibility. Recovery
+        // uses the same validation for an already durable tombstone.
+        let published = root.exists();
+        if published && tomb.exists() {
+            return Err(Error::Conflict);
+        }
+        if !published && !tomb.exists() {
             return Err(Error::NotFound);
         }
-        let bytes = read_bounded(&tomb, MAX_ROOT + ALIGNMENT)?;
+        let bytes = read_bounded(if published { &root } else { &tomb }, MAX_ROOT + ALIGNMENT)?;
         let removed = ObjectManifest::decode(decode_extent(&bytes)?)?;
         if removed.key.identity()? != id {
             return Err(Error::Corrupt);
@@ -713,12 +712,17 @@ impl FileBackend {
         let mut references = std::collections::HashMap::<Digest, u64>::new();
         for entry in fs::read_dir(&self.directory)? {
             let entry = entry?;
-            if entry.file_name().to_string_lossy().starts_with("root-") {
+            if entry.file_name().to_string_lossy().starts_with("root-") && entry.path() != root {
                 let bytes = read_bounded(&entry.path(), MAX_ROOT + ALIGNMENT)?;
                 for c in ObjectManifest::decode(decode_extent(&bytes)?)?.chunks {
                     *references.entry(c.encoded_digest).or_default() += 1;
                 }
             }
+        }
+        // Last irreversible publication step, after every verification above.
+        if published {
+            fs::rename(&root, &tomb)?;
+            self.sync_directory()?;
         }
         for c in removed.chunks {
             if !references.contains_key(&c.encoded_digest) {

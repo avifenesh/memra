@@ -314,3 +314,21 @@ fn review_catalog_recovers_pending_with_and_without_published_root() {
             .unwrap();
     }
 }
+
+#[test]
+fn review_gc_verification_failure_does_not_revoke_visibility() {
+    let d = OwnedDirectory::new();
+    let mut store = new_store(FileBackend::open(&d.0).unwrap());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    store.put(&mut txn, &payload(264)).unwrap();
+    let head = store.commit(&mut txn).unwrap();
+    let corrupt = d.0.join(format!("root-{}", hex(&[99; 32])));
+    std::fs::write(&corrupt, b"undecodable unrelated root").unwrap();
+    assert_eq!(store.evict(&key()), Err(Error::Corrupt));
+    assert_eq!(store.lookup(&key()).unwrap(), Some(head.clone()));
+    assert_eq!(read_manifest(&mut store, &head, 0).unwrap(), payload(264));
+    assert!(
+        !d.0.join(format!("tomb-{}", hex(&key().identity().unwrap())))
+            .exists()
+    );
+}
