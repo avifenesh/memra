@@ -128,3 +128,26 @@ requested reads; actual physical SSD traffic remains unmeasured.
 - The catalog/source manifest is caller-owned immutable loader metadata, not an
   uncharged dynamically growing cache. Native loader budgeting must include it.
 - All native Hy3/PLE byte/logit/token and performance cells remain required.
+
+
+## Day-3 boundary update
+
+The day-2 synchronous-I/O/governor-pending descriptions above are historical.
+`BankService::stage`/`RowService::gather` now enqueue host work only; explicit
+`progress` drives a bounded chunk. `ObjectReader` uses A's ObjectStore and
+CpuTransfers, validates outcomes and calls `retired` before acknowledge. A
+request-identity forwarding wrapper preserves current priority/deadline/tenant
+while retaining the configured transfer byte budget; the same B Governor
+instance now has real C/A contention tests. It is not a second governor.
+
+This is still a **CPU drive-pump**, not an asynchronous OS worker or native CUDA
+owner. A store lookup/lease currently verifies whole objects, and the table
+catalog is eager metadata; lazy model-scale source indexing and bounded physical
+validation I/O remain unresolved. Between-chunk cancel does not prove mid-DMA
+retirement. Native dispatch still has no bank service installed.
+
+`HY3-DISPATCH-PATCH.diff` is a partial mask-guard proposal, unapplied and not
+native-typechecked; `PATCH-REVIEW.md` explicitly records NO-GO for the complete
+migration. In particular, existing fused kernels still do **not** take
+UniformLease. Do not promote the CPU compile-fail boundary to a runtime claim.
+Trace search and new synthetic amplification table: `TRACE-AUDIT.md`.

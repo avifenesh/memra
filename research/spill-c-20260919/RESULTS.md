@@ -232,3 +232,142 @@ Lead-owned documentation fragments: add a TESTING entry for
 `cargo test -p memra-tier --test bank` and an INDEX outcome of “frozen-contract
 host bank/row lifecycle and CPU metadata adapters; native Hy3/PLE gates pending.”
 No FLAGS/KERNELS or performance-board amendment is needed for this CPU slice.
+
+
+# Day-3 CPU integration milestone — partial native patch, not qualification
+
+Repository **avifenesh/memra**, active worktree `/Users/avifen/tiyuvta/wt-spill-c`,
+branch **lane/spill-c-20260919**. Exact tested Rust source:
+**3e2972fb5a133fdd1c80ec17606820d2c586e47e**. Subsequent receipt/documentation commit
+contains no Rust changes. No push, PR, main merge, tag, deployment or GPU execution.
+
+## Commits and isolation
+
+- `0192d08244612bf430e596e4cfdf419ab1a75e64`: requested `--no-ff` merge of
+  `lane/spill-integ-20260919` at `98e558dc03a0d999cf38db7aa8f27c1a1a4b12fb`.
+  **No conflicts**, no resolution changes; frozen interfaces preserved.
+- `b1df0e73335f61e3e82cc8508ffb5aeab0c30123`: ticketed CPU object transfers,
+  bounded progress, prediction hooks and integration tests.
+- `0e7e388916cb9db1836796e05d9b7f255b0b888c`: cancellation outcomes are Cancelled,
+  not misreported as failed reads.
+- `3e2972fb5a133fdd1c80ec17606820d2c586e47e`: current priority/deadline/tenant
+  forwarded into A's object lease admission; checked allocation refusal releases
+  pre-reserved bank charges.
+
+No changes relative to `98e558dc` in engine, root Cargo manifests/lock, frozen
+contracts, A substrate or B governor. Only C bank sources/tests and C research
+namespace changed after that merge. Existing applied engine/server additions are
+inherited from the explicitly requested integration merge, not newly compiled or
+qualified by C. No unrelated dirty work was found or staged.
+
+## Delivered CPU behavior
+
+`bank/{residency,rows,types,transport,prediction,mod}.rs` and
+`tests/bank/{main,integration}.rs`:
+
+- Stage/gather validate, reserve and enqueue without reading. Publication does
+  not hide synchronous reads. Explicit `progress` performs a bounded chunk and
+  leaves incomplete output private; producer terminal is never GPU-ready.
+- ObjectReader uses **A ExtentStore/ObjectStore → CpuTransfers**. Every accepted
+  read ticket is driven, its per-item outcome checked, the host destination
+  consumed/dropped, `retired` checked and acknowledge called. Forced expert and
+  row misses, scales, duplicate/order output, partial second-chunk corruption,
+  and between-chunk cancellation run non-vacuously. No partial bank publishes.
+- **B's real `tier::Governor`** is shared across C allocations, A object leases,
+  fake pinned-pool backing and transfer queue. No C production governor exists.
+  Mandatory headroom survives optional ticket/quota saturation. In particular,
+  saturating optional NVMe capacity produces a Demand refusal and an admitted
+  MandatoryActive read through the same A adapter, proving priority propagation
+  reaches storage rather than stopping at the bank's output allocation.
+- RouterTopKHint and NgramLookaheadHint have distinct domains, byte/item/scan
+  caps and deduplication. Hints preserve original IDs and never add demand heat
+  or mutate router/history; one bank ticket remains reserved for non-prefetch.
+- Source pool allocation is startup charged. Bank output/working slot allocation
+  refuses capacity rather than silently substituting bytes. Full native RSS and
+  eager catalog/source metadata accounting remains a separate qualification task.
+
+## Exact checks actually run
+
+Reproducer: `python3 research/spill-c-20260919/verify-day3.py`.
+Machine-readable exact argv/exit/source SHA256/log SHA256 receipts:
+`raw/day3/verification.json`. Full output: `raw/day3/verify-1.log` … `verify-13.log`.
+No diagnostic parser preceded raw capture. Terminal surplus newlines only were
+normalized for whitespace checks.
+
+| Command/check | Actual output/result |
+|---|---|
+| `cargo fmt --all -- --check` | exit 0; no diagnostics |
+| `cargo check -p memra-tier --offline --all-targets` (Mac) | exit 0; `Finished dev profile [unoptimized + debuginfo] target(s) in 0.89s` (raw Cargo log includes backticks around dev) |
+| Same check plus `--target x86_64-unknown-linux-gnu` | exit 0; `Finished dev profile [unoptimized + debuginfo] target(s) in 0.91s`; **cross-target type check, not Linux execution/linking** |
+| `cargo test -p memra-tier --offline` | exit 0; bank **31**, contracts **36**, peer **10**, placement **6**, storage **26**, compile-fail doctests **4**; **113 total**, zero failed/ignored |
+| `cargo clippy -p memra-tier --offline --all-targets -- -D warnings` | exit 0; no warnings; finished in 6.15s |
+| `git diff --check`, `git diff --cached --check` | exit 0, no diagnostics |
+| `bash tools/check-flags.sh` | exit 0; `check-flags: runtime literal reads=864`; `check-flags: no uncovered runtime names` |
+| Frozen canonical fixture reference | exit 0; `tier-contract-v1: 8 payload + 3 canonical wire SHA256 pins match` |
+| `bash -n research/spill-c-20260919/rig-cells-c.sh` | exit 0 |
+| Runner tests | exit 0; 5090/PRO dry-run branches, repeat invocation, injected exit 23 and non-serving refusal PASS; no GPU commands executed |
+| `trace-policy.py --check` | exit 0; six synthetic aggregate table rows reproduced; raw values in verify-12.log |
+| `git apply --check …/HY3-DISPATCH-PATCH.diff` | exit 0; patch remains unapplied |
+
+Frozen row conformance assumes immediate publication. Its unchanged schedule is
+now run through a **test-only explicit drive wrapper**; production publish does
+not secretly drive I/O. No frozen schedule or contract was edited.
+
+## Native patch, trace and runner disposition
+
+- **Task 3 incomplete:** `HY3-DISPATCH-PATCH.diff` is a partial original-mask/
+  bounds guard patch only. `PATCH-REVIEW.md` reviews every hunk and every missing
+  native callsite, gives exact before/after rig commands and returns **NO-GO** for
+  the complete conversion. It does not wire staged/SLRU/grouped dispatch through
+  BankedResidency, nor make existing fused kernels take UniformLease.
+- No replayable real PLE trace found in the bounded/streaming local research
+  search; actual gate summaries are not traces. Existing fixture remains labeled
+  **synthetic**. New `fixtures/ple-trace-policy.json` and `TRACE-AUDIT.md` justify
+  the portable 512-byte request granularity arithmetically. No SSD/default claim.
+- `rig-cells-c.sh` builds outside the canonical lock, refuses non-confirmed/
+  occupied rigs, runs tiny PLE first, marks Hy3 PRO-pair scope and records every
+  missing adapter cell as BLOCKED. Fresh per-run directories and tee-first JSONL
+  retain dry-run success and injected failure logs under `raw/stub-*`. Real mode
+  returns **3** while native targets are missing; it cannot pass vacuously.
+- Existing `docs/TESTING.md` contains no named Hy3 spill-gate section. Review
+  points to actual model loader and kernel-check tests, without inventing a
+  registry entry. Kernel-check is GGUF-only; native directory artifacts work in
+  run-gen/run-spec and must not be substituted to make kernel-check green.
+
+## Development findings / reds
+
+The initial transport compile used incorrect Epochs field names; fixed to frozen
+`state/src_gen/dst_gen`. An integration test needed its explicit ExpertDomain
+annotation; Clippy found one collapsible test conditional. Patch generation
+initially assumed private rather than pub(crate) grouped function visibility.
+Those development commands failed and were corrected; their diagnostics are in
+the session transcript, not claimed as successful checks. All final receipts
+above ran afterward. Runner's intentional exit-23 red is retained as a raw log.
+
+Review also found that A's CpuTransfers fixes its lease request at construction:
+without forwarding current scheduling identity, mandatory storage reads could
+be charged as Demand. The C-local ObjectStore decorator fixes that without
+changing A/shared files, and the quota-saturation red/green pair tests it.
+
+## Numbered blockers / next owner work
+
+1. **C + lead/native owner:** complete loader source installation, SLRU-backed
+   BankedResidency and actual UniformLease-only fused dispatch. The supplied
+   patch is deliberately partial, not a ready implementation.
+2. **A + native owner:** real asynchronous OS worker and CUDA ReadyView/producer/
+   consumer/graph lifetime integration. Current CpuTransfers drive is synchronous;
+   cancellation between chunks is not proof of in-flight DMA cancellation.
+   Whole-object lookup/lease verification must become bounded/lazy for model-scale
+   tables; submitted chunk counters omit that validation traffic.
+3. **Rig/artifact owner:** non-serving 5090 fitting fixtures and PRO pair with
+   immutable Hy3/PLE artifacts; compile/type-check native changes, implement
+   missing GPU targets and run byte/logit/token/serving correctness and balanced
+   performance gates. No GPU/nvcc or real Linux runtime check ran on this Mac.
+4. **Lead:** install reviewed native module/dependency wiring and TESTING/INDEX
+   fragments only with corresponding actual gates. No FLAGS/KERNELS/perf-board
+   fragment is needed here: no new env read, kernel or published performance.
+
+Effort this resume: approximately **0.5 agent-hours** at this CPU milestone,
+under the requested two-hour cap. WP-C remains an **8 agent-day** budget; day-1
+burn was not recorded, so cumulative consumption/completion percentage is unknown.
+The active worktree/branch remain for native follow-up, not abandoned or merged.

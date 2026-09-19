@@ -1,0 +1,184 @@
+{
+  "utc": "2026-09-19T07:30:10.643384+00:00",
+  "source_head": "3e2972fb5a133fdd1c80ec17606820d2c586e47e",
+  "scope": "CPU-only; native engine unchanged; Linux cross-target is check only, not Linux execution",
+  "commands": [
+    {
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "verify-1.log",
+      "log_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "log": "verify-2.log",
+      "log_sha256": "25c5e7bd27d351d71432bd99be1fee632cbd61ca3722c26c5c8c4a8b7acd1b47"
+    },
+    {
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "log": "verify-3.log",
+      "log_sha256": "6aba473062bf12b797a6a96a127ff53a620957d982d18101783276c170935e06"
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline"
+      ],
+      "exit": 0,
+      "log": "verify-4.log",
+      "log_sha256": "a958ecb1176a3e6268f948f7ed36d1d146bac0911615f7eab0112947f17aa814"
+    },
+    {
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "log": "verify-5.log",
+      "log_sha256": "070a8f79b41852bc77addfe08f0e38285987201962bed41097b0cb07ee632a2d"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "verify-6.log",
+      "log_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--cached",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "verify-7.log",
+      "log_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "argv": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "log": "verify-8.log",
+      "log_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    },
+    {
+      "argv": [
+        "python3",
+        "crates/memra-tier/tests/contracts/fixture_reference.py",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "verify-9.log",
+      "log_sha256": "fb7a893b8aba1ae4a5d95898e66b46377c642ee1ae197c76b167a8e781774ef4"
+    },
+    {
+      "argv": [
+        "bash",
+        "-n",
+        "research/spill-c-20260919/rig-cells-c.sh"
+      ],
+      "exit": 0,
+      "log": "verify-10.log",
+      "log_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "argv": [
+        "python3",
+        "research/spill-c-20260919/test-rig-cells.py"
+      ],
+      "exit": 0,
+      "log": "verify-11.log",
+      "log_sha256": "ae4cc20e44cb11c79643d1dd70a7dbb7f2cd2441c498a67e79b10fb5904bd737"
+    },
+    {
+      "argv": [
+        "python3",
+        "research/spill-c-20260919/trace-policy.py",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "verify-12.log",
+      "log_sha256": "8199cd9058e3890ceb8d7516913fa12c08708c44c525de01ceb9b608113634ed"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--check",
+        "research/spill-c-20260919/HY3-DISPATCH-PATCH.diff"
+      ],
+      "exit": 0,
+      "log": "verify-13.log",
+      "log_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    }
+  ],
+  "files_sha256": {
+    "crates/memra-tier/src/bank/adapters.rs": "35e2aeb1b38d678f85a63e3b183c62ae3ca8d38b2a61afaf63df77ea8bd96788",
+    "crates/memra-tier/src/bank/mod.rs": "7ad8bfffb210944b473622e784fce00f630416d610532ece91caf29497c777c1",
+    "crates/memra-tier/src/bank/prediction.rs": "e926122d41a3d02f7a5f15e2ce2a00e4e71e87f18047a0dbde97500c2593e04e",
+    "crates/memra-tier/src/bank/residency.rs": "7e83450dbd4ef09d6bca7421536132ae8f72f3b85eefb6c6087ba4dd28d6fb44",
+    "crates/memra-tier/src/bank/rows.rs": "a601b80e34d23769d36e4631539f59c141000a717d4a2274a0940ea04cef16ca",
+    "crates/memra-tier/src/bank/transport.rs": "693fdda39959d3e41c95871cbc678796aee382026cf391a4b3174fa54041fa19",
+    "crates/memra-tier/src/bank/types.rs": "e963840b5b1303bdf98268367a556904b974833e2b195fa578850042c6cbe83c",
+    "crates/memra-tier/tests/bank/host_bridge.rs": "1958e9a6c5a0cbd8719e0525f3ce9f4142ae91a35e1d111aa9921d2c33e6a8c5",
+    "crates/memra-tier/tests/bank/integration.rs": "ee387aa560b7fea05911ee5d956f0dcd0b7fa6eca15ed437b0834013e44011cf",
+    "crates/memra-tier/tests/bank/main.rs": "893fa070887b3197daaf4bca63d45cc776e2d25e3a44dba95c678b63e3cb21dd",
+    "crates/memra-tier/tests/bank/ple_oracle.rs": "8e212391008e750cb35d9f3ff888eba0b09a9c11d20b4845de1a6a4206acda5f",
+    "research/spill-c-20260919/make-dispatch-patch.py": "5ba021b722ae3dde67aea1698e338b196d9d196ca07709b998376c9b44c9e6b3",
+    "research/spill-c-20260919/record-cell.py": "9045775425c9ed0d2e575980890bf14c92560b941a1e741c3b34d12d28fc75fa",
+    "research/spill-c-20260919/test-rig-cells.py": "590693f859c28594d69b33c700abdb4427cd110ab52bb20fd864374ac5c1c20d",
+    "research/spill-c-20260919/trace-policy.py": "398f7444532755ed91e1bde59fa1f7c48da22eeb314b7871506a8d59192e7289",
+    "research/spill-c-20260919/verify-day2.py": "565b5ebf0b8777eff945f5a48699aa0d4a97ad87592c3afdd3b0028ff911ebb6",
+    "research/spill-c-20260919/verify-day3.py": "97a445d8528c5c31c6192e49c4e211a728a6540f7f0c4e9072b33dc655d8470d",
+    "research/spill-c-20260919/fixtures/ple-ngram-synthetic.json": "4bd8667ba6f40fce1a67836602aa65c5bbd176e151e266bd832552e7627de78e",
+    "research/spill-c-20260919/fixtures/ple-trace-policy.json": "4368558023f5701ba1da92c55402a23c3e64f3edaab2249779fbb37e722e3f9b",
+    "research/spill-c-20260919/fixtures/trace-search.json": "9937054ca1f79172f5e23b98dffc88277f3dca8f474a6bdfa7392d971c5e13df",
+    "research/spill-c-20260919/rig-cells-c.sh": "7423453cd7231195909d099f2b231fe9483c7792a10512b4e188d298870f19dd",
+    "research/spill-c-20260919/HY3-DISPATCH-PATCH.diff": "b67559475cdae965e22815f60364b328d66c14cd294edf1382e7d683d814f980",
+    "crates/memra-tier/src/contracts.rs": "8d65f2ae27f481f82b52bcac0e8c53ce8c5d929e1c6f735ae26241aa97bef7e6",
+    "crates/memra-tier/src/tier/governor.rs": "265cc4b69bccff685c43817ed0b0d64362c23ba26fcda7620022990e60aaa248",
+    "crates/memra-tier/src/io/transfer.rs": "9b3a5d64c43d4b3f3f3bd2cc89c63c57ec5b69c44c51dc404ea0f62070df4324",
+    "crates/memra-engine/src/hybrid.rs": "2edd6dba7f1c5cead0e0dcdbe12b92c3956ddaaec20f21261f458317354dc994",
+    "crates/memra-engine/src/hybrid_forward.rs": "b526ca044c8cd2d0d92fde56b8b66145b09287e0e5abecd24265e54ea9b49415"
+  }
+}

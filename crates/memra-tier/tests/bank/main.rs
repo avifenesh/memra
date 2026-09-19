@@ -254,6 +254,7 @@ fn finish<D: BankDomain, H: Hotness<D>, R: ExactReader>(
     b: &mut BankService<D, H, R>,
     t: &TransferTicket,
 ) {
+    drain(b, t);
     b.finish_host_use(t).unwrap();
     assert!(b.retire(t).unwrap());
     b.acknowledge(t).unwrap();
@@ -288,7 +289,10 @@ fn cancel_retains_charge_until_retirement_and_tombstone_ack() {
     assert!(!b.retire(&t).unwrap());
     assert_eq!(g.borrow().used, used);
     assert_eq!(b.acknowledge(&t), Err(Error::Busy));
-    assert!(matches!(b.publish(&t, epochs()), Err(Error::Cancelled)));
+    assert!(matches!(
+        publish_bank(&mut b, &t, epochs()),
+        Err(Error::Cancelled)
+    ));
     finish(&mut b, &t);
     assert_eq!(g.borrow().used, TierBudget::zero(2));
     assert_eq!(b.retire(&t), Err(Error::UnknownTicket));
@@ -306,7 +310,7 @@ fn zero_small_full_cache_preserves_exact_bytes_and_scales() {
         for _ in 0..5 {
             let order = vec![ids[1].clone(), ids[0].clone(), ids[1].clone()];
             let t = b.stage(batch(order.clone())).unwrap();
-            let leases = b.publish(&t, epochs()).unwrap();
+            let leases = publish_bank(&mut b, &t, epochs()).unwrap();
             assert_eq!(
                 leases.iter().map(|r| r.id().clone()).collect::<Vec<_>>(),
                 order
@@ -370,10 +374,16 @@ fn all_three_epochs_cross_service_and_publish_replay_refuse() {
             ..epochs()
         },
     ] {
-        assert!(matches!(b.publish(&t, e), Err(Error::StaleEpoch)));
+        assert!(matches!(
+            publish_bank(&mut b, &t, e),
+            Err(Error::StaleEpoch)
+        ));
     }
-    let l = b.publish(&t, epochs()).unwrap();
-    assert!(matches!(b.publish(&t, epochs()), Err(Error::Busy)));
+    let l = publish_bank(&mut b, &t, epochs()).unwrap();
+    assert!(matches!(
+        publish_bank(&mut b, &t, epochs()),
+        Err(Error::Busy)
+    ));
     finish(&mut b, &t);
     b.release(&l[0]).unwrap();
 }
@@ -382,7 +392,7 @@ fn uniform_proof_checks_actual_source_even_homogeneous_subset() {
     for class in [LayoutClass::Uniform, LayoutClass::PerRecord] {
         let (mut b, ids) = banks(class, 0, Reader::default(), gov());
         let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
-        let leases = b.publish(&t, epochs()).unwrap();
+        let leases = publish_bank(&mut b, &t, epochs()).unwrap();
         let result = UniformLease::try_new(leases);
         let leases = if class == LayoutClass::Uniform {
             let p = result.unwrap();
@@ -440,7 +450,7 @@ fn short_and_corrupt_reads_never_publish_partial_batch() {
         let t = b
             .stage(batch(vec![ids[0].clone(), ids[1].clone()]))
             .unwrap();
-        assert!(b.publish(&t, epochs()).is_err());
+        assert!(publish_bank(&mut b, &t, epochs()).is_err());
         assert_eq!(b.cache_bytes(), 0);
         assert!(!b.retire(&t).unwrap());
         b.cancel(&t).unwrap();
@@ -453,7 +463,7 @@ fn borrowed_view_and_alias_survive_busy_retirement() {
     let g = gov();
     let (mut b, ids) = banks(LayoutClass::Uniform, 20, Reader::default(), g.clone());
     let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
-    let leases = b.publish(&t, epochs()).unwrap();
+    let leases = publish_bank(&mut b, &t, epochs()).unwrap();
     let alias = leases[0].clone();
     finish(&mut b, &t);
     {
@@ -474,9 +484,9 @@ fn overlapping_cache_hit_tickets_hold_same_allocation_until_all_retire() {
     let g = gov();
     let (mut b, ids) = banks(LayoutClass::Uniform, 20, Reader::default(), g.clone());
     let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
-    let a = b.publish(&t, epochs()).unwrap();
+    let a = publish_bank(&mut b, &t, epochs()).unwrap();
     let u = b.stage(batch(vec![ids[0].clone()])).unwrap();
-    let c = b.publish(&u, epochs()).unwrap();
+    let c = publish_bank(&mut b, &u, epochs()).unwrap();
     assert_eq!(a[0].charge().id(), c[0].charge().id());
     finish(&mut b, &t);
     assert_eq!(b.release(&a[0]), Err(Error::Busy));
@@ -528,10 +538,10 @@ fn predictions_are_bounded_mask_checked_and_not_demand_heat() {
     .unwrap();
     let (mut b, _) = banks(LayoutClass::Uniform, 20, Reader::default(), gov());
     let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
-    b.publish(&t, epochs()).unwrap();
+    publish_bank(&mut b, &t, epochs()).unwrap();
     finish(&mut b, &t);
     let u = b.stage(p).unwrap();
-    b.publish(&u, epochs()).unwrap();
+    publish_bank(&mut b, &u, epochs()).unwrap();
     finish(&mut b, &u);
     assert!(b.resident(&ids[0]).unwrap().is_some());
     assert!(b.resident(&ids[1]).unwrap().is_none());
@@ -591,7 +601,7 @@ fn frozen_row_order_schedule_runs_on_implementation() {
     let table = ple(PleEncoding::F32);
     let g = gov();
     let mut r = rows(&table, &[5, 2, 9], g.clone(), CoalescingPolicy::default());
-    let leases = conformance::rows_order(&mut r, row_batch(&table, &[5, 2, 5, 9]));
+    let leases = conformance::rows_order(&mut DrivenRows(&mut r), row_batch(&table, &[5, 2, 5, 9]));
     assert_eq!(
         leases.records[0].charge().id(),
         leases.records[2].charge().id()
@@ -621,7 +631,7 @@ fn rows_straddles_duplicates_pool_smaller_than_batch_and_retirement() {
             },
         );
         let t = r.gather(row_batch(&table, &ns)).unwrap();
-        let l = r.publish(&t, epochs()).unwrap();
+        let l = publish_rows(&mut r, &t, epochs()).unwrap();
         assert_eq!(
             r.0.plan(&t).unwrap().io_bytes,
             12672u64.div_ceil(granularity) * granularity
@@ -716,7 +726,7 @@ fn discontiguous_row_scale_planes_are_required_and_exact() {
             request: request(0, Priority::Demand),
         })
         .unwrap();
-    let lease = r.publish(&t, epochs()).unwrap();
+    let lease = publish_rows(&mut r, &t, epochs()).unwrap();
     assert_eq!(lease.records[0].resource::<Vec<u8>>().unwrap().len(), 268);
     finish(&mut r.0, &t);
     r.release(&lease).unwrap();
@@ -948,7 +958,7 @@ fn synthetic_ple_trace_preserves_chunk_rewind_eos_and_native_expansion_bits() {
             let g = gov();
             let mut r = rows(&table, &ns, g.clone(), CoalescingPolicy::default());
             let t = r.gather(b).unwrap();
-            let l = r.publish(&t, epochs()).unwrap();
+            let l = publish_rows(&mut r, &t, epochs()).unwrap();
             for lease in &l.records {
                 let raw = expected(lease.layout());
                 let floats = table.expand_row(lease).unwrap();
@@ -997,7 +1007,10 @@ fn refused_publication_retains_owned_charge_until_explicit_retirement() {
     let (mut b, ids) = banks(LayoutClass::Uniform, 0, Reader::default(), injected);
     let t = b.stage(batch(vec![ids[0].clone()])).unwrap();
     let before = g.borrow().used.clone();
-    assert!(matches!(b.publish(&t, epochs()), Err(Error::Busy)));
+    assert!(matches!(
+        publish_bank(&mut b, &t, epochs()),
+        Err(Error::Busy)
+    ));
     assert_eq!(g.borrow().used, before); // rejected.op wasn't dropped/lost
     b.cancel(&t).unwrap();
     finish(&mut b, &t);
@@ -1010,7 +1023,7 @@ fn row_release_busy_preserves_retry_after_partial_alias_retirement() {
     let g = gov();
     let mut r = rows(&table, &[2, 5], g.clone(), CoalescingPolicy::default());
     let t = r.gather(row_batch(&table, &[2, 5])).unwrap();
-    let l = r.publish(&t, epochs()).unwrap();
+    let l = publish_rows(&mut r, &t, epochs()).unwrap();
     finish(&mut r.0, &t);
     {
         // Original-id order issues charge 2 after charge 1; release can retire the
@@ -1168,6 +1181,7 @@ fn failed_transfer_completion_enumerates_all_records_and_segments() {
     let t = b
         .stage(batch(vec![ids[0].clone(), ids[1].clone()]))
         .unwrap();
+    drain(&mut b, &t);
     let c = b.completion(&t).unwrap();
     assert_eq!(c.items.len(), 2);
     for (i, item) in c.items.iter().enumerate() {
@@ -1180,7 +1194,7 @@ fn failed_transfer_completion_enumerates_all_records_and_segments() {
             assert_eq!(s.checksum, None);
         }
     }
-    assert!(b.publish(&t, epochs()).is_err());
+    assert!(publish_bank(&mut b, &t, epochs()).is_err());
     b.cancel(&t).unwrap();
     finish(&mut b, &t);
 }
@@ -1326,3 +1340,53 @@ fn revision_v11_corrupt_sibling_and_row_namespace() {
     finish(&mut r.0, &t);
     assert_eq!(g.borrow().used(), TierBudget::zero(2));
 }
+
+fn drain<D: BankDomain, H: Hotness<D>, R: ExactReader>(
+    b: &mut BankService<D, H, R>,
+    t: &TransferTicket,
+) {
+    for _ in 0..10000 {
+        if b.progress(t).unwrap() {
+            return;
+        }
+    }
+    panic!("bounded CPU pump did not terminate");
+}
+fn publish_bank<D: BankDomain, H: Hotness<D>, R: ExactReader>(
+    b: &mut BankService<D, H, R>,
+    t: &TransferTicket,
+    e: Epochs,
+) -> Result<Vec<BankLease>> {
+    drain(b, t);
+    b.publish(t, e)
+}
+fn publish_rows<H: Hotness<RowDomain>, R: ExactReader>(
+    r: &mut BoundedRowService<H, R>,
+    t: &TransferTicket,
+    e: Epochs,
+) -> Result<RowLease> {
+    drain(&mut r.0, t);
+    r.publish(t, e)
+}
+// The frozen immediate-publication schedule needs an explicit test-only driver.
+// Production RowService::publish never pumps I/O implicitly.
+struct DrivenRows<'a, H: Hotness<RowDomain>, R: ExactReader>(&'a mut BoundedRowService<H, R>);
+impl<H: Hotness<RowDomain>, R: ExactReader> RowService for DrivenRows<'_, H, R> {
+    fn gather(&mut self, b: RowBatch) -> Result<TransferTicket> {
+        self.0.gather(b)
+    }
+    fn publish(&mut self, t: &TransferTicket, e: Epochs) -> Result<RowLease> {
+        publish_rows(self.0, t, e)
+    }
+    fn cancel(&mut self, t: &TransferTicket) -> Result<CancelState> {
+        self.0.cancel(t)
+    }
+    fn retire(&mut self, t: &TransferTicket) -> Result<bool> {
+        self.0.retire(t)
+    }
+    fn release(&mut self, l: &RowLease) -> Result<()> {
+        self.0.release(l)
+    }
+}
+
+mod integration;

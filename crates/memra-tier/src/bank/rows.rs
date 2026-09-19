@@ -86,51 +86,71 @@ pub fn plan_reads(
     Ok(plan)
 }
 
-/// CPU-only bounded gather worker. Every storage segment is copied verbatim,
-/// including padding; valid checksums and zero padding are checked before publish.
-pub(crate) fn read_records(
-    records: &[(BankId, CatalogRecord)],
-    plan: &RowReadPlan,
-    reader: &mut dyn ExactReader,
-    policy: CoalescingPolicy,
-) -> Result<Vec<Vec<u8>>> {
-    let mut outputs = records
-        .iter()
-        .map(|(_, r)| {
-            Ok(vec![
-                0;
-                usize::try_from(r.layout.storage_bytes()?)
-                    .map_err(|_| Error::Capacity)?
-            ])
+/// One chunk per explicit pump; output stays private until every chunk verifies.
+pub(crate) struct ReadWork {
+    pub outputs: Vec<Vec<u8>>,
+    extent: usize,
+    offset: u64,
+}
+impl ReadWork {
+    pub fn new(records: &[(BankId, CatalogRecord)]) -> Result<Self> {
+        let outputs = records
+            .iter()
+            .map(|(_, r)| {
+                let len =
+                    usize::try_from(r.layout.storage_bytes()?).map_err(|_| Error::Capacity)?;
+                let mut bytes = Vec::new();
+                bytes.try_reserve_exact(len).map_err(|_| Error::Capacity)?;
+                bytes.resize(len, 0);
+                Ok(bytes)
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self {
+            outputs,
+            extent: 0,
+            offset: 0,
         })
-        .collect::<Result<Vec<_>>>()?;
-    let mut slot = vec![0; policy.slot_bytes as usize];
-    for extent in &plan.extents {
-        let end = extent.offset + extent.len;
-        let mut position = extent.offset;
-        while position < end {
-            let n = (end - position).min(policy.slot_bytes);
-            reader.read_exact(&extent.tensor, position, &mut slot[..n as usize])?;
-            for ((_, record), output) in records.iter().zip(&mut outputs) {
-                let mut base = 0usize;
-                for s in &record.layout.segments {
-                    if s.tensor.as_ref() == Some(&extent.tensor) {
-                        let lo = position.max(s.offset);
-                        let hi = (position + n).min(s.offset + s.storage_bytes);
-                        if lo < hi {
-                            let from = (lo - position) as usize;
-                            let to = base + (lo - s.offset) as usize;
-                            output[to..to + (hi - lo) as usize]
-                                .copy_from_slice(&slot[from..from + (hi - lo) as usize]);
-                        }
-                    }
-                    base += s.storage_bytes as usize;
-                }
-            }
-            position += n;
-        }
     }
-    Ok(outputs)
+    pub fn step(
+        &mut self,
+        records: &[(BankId, CatalogRecord)],
+        plan: &RowReadPlan,
+        reader: &mut dyn ExactReader,
+        policy: CoalescingPolicy,
+    ) -> Result<bool> {
+        let Some(extent) = plan.extents.get(self.extent) else {
+            return Ok(true);
+        };
+        let position = extent.offset + self.offset;
+        let n = (extent.len - self.offset).min(policy.slot_bytes);
+        let mut slot = Vec::new();
+        slot.try_reserve_exact(n as usize)
+            .map_err(|_| Error::Capacity)?;
+        slot.resize(n as usize, 0);
+        reader.read_exact(&extent.tensor, position, &mut slot)?;
+        for ((_, record), output) in records.iter().zip(&mut self.outputs) {
+            let mut base = 0usize;
+            for s in &record.layout.segments {
+                if s.tensor.as_ref() == Some(&extent.tensor) {
+                    let lo = position.max(s.offset);
+                    let hi = (position + n).min(s.offset + s.storage_bytes);
+                    if lo < hi {
+                        let from = (lo - position) as usize;
+                        let to = base + (lo - s.offset) as usize;
+                        output[to..to + (hi - lo) as usize]
+                            .copy_from_slice(&slot[from..from + (hi - lo) as usize]);
+                    }
+                }
+                base += s.storage_bytes as usize;
+            }
+        }
+        self.offset += n;
+        if self.offset == extent.len {
+            self.extent += 1;
+            self.offset = 0;
+        }
+        Ok(self.extent == plan.extents.len())
+    }
 }
 
 /// Row policy and expert heat are deliberately distinct types. This host backend
