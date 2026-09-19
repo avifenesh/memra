@@ -305,7 +305,12 @@ impl TransferEngine for Transfers {
                     segment: 0,
                     status: ItemStatus::Complete,
                     valid_bytes: valid,
-                    io_bytes: storage,
+                    io_bytes: if matches!(o, TransferOp::NvmeRead(_)) {
+                        memra_tier::object_store::padded_len(storage as usize).unwrap() as u64
+                            + memra_tier::object_store::ALIGNMENT as u64
+                    } else {
+                        storage
+                    },
                     checksum: Some(hash),
                     epochs: t.epochs,
                     producer_done: true,
@@ -377,7 +382,7 @@ impl TransferEngine for Transfers {
                 c.items.pop();
             }
             Some(1) => c.items[0].accepted = false,
-            Some(2) => c.items[0].segments[0].io_bytes -= 1,
+            Some(2) => c.items[0].segments[0].valid_bytes -= 1,
             Some(3) => c.items[0].segments[0].epochs.src_gen += 1,
             Some(4) => c.items[1].item = 0,
             Some(5) => c.items[0].segments[0].checksum = Some([99; 32]),

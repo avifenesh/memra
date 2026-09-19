@@ -615,7 +615,7 @@ fn short_corrupt_and_wrong_context_completion_refuse() {
     let t = p.submit(vec![p.copy(&src, &dst)]).unwrap().ticket;
     p.finish(&t);
     let original = p.entries[&t].completion.clone();
-    p.entries.get_mut(&t).unwrap().completion.items[0].segments[0].io_bytes = 3;
+    p.entries.get_mut(&t).unwrap().completion.items[0].segments[0].valid_bytes = 3;
     assert!(matches!(
         p.materialize_local(&t, 0, epochs(), 1),
         Err(Error::ShortIo { .. })
@@ -752,7 +752,7 @@ fn revision_v11_peer_indexed_acceptance() {
             .unwrap();
         p.finish(&b.ticket);
         if let Some(i) = short {
-            p.entries.get_mut(&b.ticket).unwrap().completion.items[i].segments[0].io_bytes = 3;
+            p.entries.get_mut(&b.ticket).unwrap().completion.items[i].segments[0].valid_bytes = 3;
         }
         let c = p.poll(&b.ticket).unwrap();
         super::conformance::acceptance(&b, &c, &p.entries[&b.ticket].expected, rejected, short);
