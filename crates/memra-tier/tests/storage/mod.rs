@@ -13,8 +13,27 @@ fn epochs(state: u64) -> Epochs {
         dst_gen: 31,
     }
 }
-fn governor() -> support::Shared {
-    std::rc::Rc::new(std::cell::RefCell::new(support::Governor::new(1 << 30)))
+type SharedGovernor = std::rc::Rc<std::cell::RefCell<memra_tier::tier::Governor>>;
+fn governor() -> SharedGovernor {
+    let mut cap = memra_tier::contracts::TierBudget::zero(2);
+    cap.pageable = 1 << 30;
+    cap.pinned = 1 << 30;
+    cap.staging = 1 << 30;
+    cap.device = vec![1 << 30; 2];
+    cap.peer = vec![1 << 30; 2];
+    cap.replicas = vec![1 << 30; 2];
+    cap.nvme = 1 << 30;
+    cap.inflight = 1 << 30;
+    std::rc::Rc::new(std::cell::RefCell::new(
+        memra_tier::tier::Governor::new(
+            cap,
+            memra_tier::contracts::TierBudget::zero(2),
+            16,
+            0,
+            Arc::new(|| 0),
+        )
+        .unwrap(),
+    ))
 }
 fn new_pool(slots: usize, size: usize, align: usize, reserved: usize) -> Result<FakePinnedPool> {
     let g = governor();
@@ -24,11 +43,11 @@ fn new_pool(slots: usize, size: usize, align: usize, reserved: usize) -> Result<
     ))?;
     FakePinnedPool::new(slots, size, align, reserved, &charge)
 }
-fn new_store<B: BlobBackend>(backend: B) -> ExtentStore<B, support::Governor> {
+fn new_store<B: BlobBackend>(backend: B) -> ExtentStore<B, memra_tier::tier::Governor> {
     ExtentStore::new(backend, governor())
 }
 fn read_manifest<B: BlobBackend>(
-    s: &mut ExtentStore<B, support::Governor>,
+    s: &mut ExtentStore<B, memra_tier::tier::Governor>,
     m: &ObjectManifest,
     c: u32,
 ) -> Result<Vec<u8>> {
@@ -503,3 +522,5 @@ fn jsonl_escapes_strings_and_unknown_times_are_null() {
 #[path = "../../../memra-engine/src/bin/storage_bench.rs"]
 mod bench;
 mod day2;
+
+mod day3;

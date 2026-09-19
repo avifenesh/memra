@@ -104,3 +104,27 @@ needed and no published number/default changed. Do not put Mac diagnostic timing
 on the engine performance board. They are retained with raw rows as development I/O
 characterization only. Budget/GC/async/native integration blockers are numbered in
 `day2/RESULTS.md`; do not erase them during the merge train.
+
+## Day-3 handoff
+
+Engine dependency/bin fragment was picked up from lead `914229ae`; v1.1 test
+revision came from `ce49cd86`. Source slice `3adf6325` and later receipt-only
+changes are described in `day3/RESULTS.md`. A's own strict quarantine defect is
+fixed with exact red/green logs. Full tier testing still fails D's directed-route
+v1.1 schedule; integrate its owner fix before claiming aggregate green.
+
+C can use `ExtentStore::lease_extent/read_extent/release_extent` for selected
+payloads, or `CpuTransfers<ExtentStore<FileBackend,G>>::enable_background(workers)`
+before submission. Background requests need ceilings for selected framed
+chunk+root NVMe bytes and `storage_bytes + 8191` pageable worker scratch; queue
+and fake-pool physical backing are independently reserved once through the SAME
+injected governor. `poll`/`progress` harvests completions; keep explicit
+retire/acknowledge and host-consumer lifetime rules. Existing sync/whole-object
+APIs retain frozen semantics. Background metadata/open/admission is still owner-
+side; no native serving-latency or GPU-readiness claim.
+
+INDEX/TESTING milestone fragment:
+`spill-a-20260919 | Extent-scoped/background CPU I/O and quarantine-shutdown fix; Linux cross-check only, A2/M1 hardware and full trace runner pending. | spill-a-20260919/day3/RESULTS.md`
+
+No new flags, kernels, dependencies or published performance numbers; no FLAGS,
+KERNELS or generated-board amendments needed. io_uring remains proposal-only.

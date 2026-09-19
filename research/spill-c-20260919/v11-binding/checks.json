@@ -1,0 +1,131 @@
+{
+  "source_commit": "4b50d980234ea75d7302542ca5f52fb3458a7ad0",
+  "utc": "2026-09-19T08:14:50.142410+00:00",
+  "checks": [
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "check-macos",
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "sha256": "fecede7c2157efe2f16c8c8b9dce94b0fb4dd384dca8207046c8bf7636eb0ffe"
+    },
+    {
+      "name": "check-linux",
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "sha256": "a5f4c585ee974ca44916ac30a98bbc189e067a7e0a6bc6d2e8d6bc525be724af"
+    },
+    {
+      "name": "test",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline"
+      ],
+      "exit": 101,
+      "sha256": "a6a683376fc8b0954a8f0f51707c9503fdfcf5230a2d9263d98d0f1f8f668008"
+    },
+    {
+      "name": "test-all",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 101,
+      "sha256": "97febf5047d0fd96d156cd632cb37f0a8164cb46fb9ee5aed3ec6c765633e2b8"
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "fecede7c2157efe2f16c8c8b9dce94b0fb4dd384dca8207046c8bf7636eb0ffe"
+    },
+    {
+      "name": "diff",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "flags",
+      "argv": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    }
+  ],
+  "logs": {
+    "after-bank.log": "1753cef46169a2dc99f94a4fb384c8713b212600eacd1b1fce02195c2ce8b31d",
+    "before-bank.log": "b0eaa349c48cd78e3c7303ced256c5ab73e54286d4f544cc78b96357772b7372",
+    "check-linux.log": "a5f4c585ee974ca44916ac30a98bbc189e067a7e0a6bc6d2e8d6bc525be724af",
+    "check-macos.log": "fecede7c2157efe2f16c8c8b9dce94b0fb4dd384dca8207046c8bf7636eb0ffe",
+    "clippy.log": "fecede7c2157efe2f16c8c8b9dce94b0fb4dd384dca8207046c8bf7636eb0ffe",
+    "diff.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "flags.log": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "test-all.log": "97febf5047d0fd96d156cd632cb37f0a8164cb46fb9ee5aed3ec6c765633e2b8",
+    "test.log": "a6a683376fc8b0954a8f0f51707c9503fdfcf5230a2d9263d98d0f1f8f668008"
+  },
+  "log_storage": "Lossless gzip; sha256 on each check is of decompressed stdout+stderr.",
+  "compressed_logs": {
+    "after-bank.log.gz": "4204e45e2110bfb3e1a4ba9c7cec1a5fe9ff61ff933e55919af426297d71e2fc",
+    "before-bank.log.gz": "a3e7cf5c1eff4825d5d6161ba2e1ef39b7ba009eb781e3adf70c8a7f00d197b8",
+    "check-linux.log.gz": "0964c207edd2e43a938361c555e36eb95d4661319d16b5b9880c8e1b275b3750",
+    "check-macos.log.gz": "f50a2dda5894acdfea4761e767863a1a155d293e1c5cb448a3ccef667f9c2dae",
+    "clippy.log.gz": "f50a2dda5894acdfea4761e767863a1a155d293e1c5cb448a3ccef667f9c2dae",
+    "diff.log.gz": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "flags.log.gz": "76188f1d03361812b7b3efde2e8c60c91be50ac36fee5df164ab0a3da3de27f2",
+    "fmt.log.gz": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "test-all.log.gz": "a11093502feb92b06624282f5fce4381810bfb197f0f8ab9bc24c71f93f80e59",
+    "test.log.gz": "6dd5369404b0ac01ef9e3b5d9716db8d2777f27a874d3455e12db2fcb26255f9"
+  }
+}

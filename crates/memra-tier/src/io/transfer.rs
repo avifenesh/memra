@@ -1,9 +1,22 @@
-//! Bounded CPU host-read adapter. `drive` performs synchronous storage work;
-//! scheduler integration must use a worker adapter before calling this on serving threads.
+//! Bounded CPU host-read adapter. Default `drive` is synchronous; explicit
+//! `enable_background` moves framed byte reads to bounded std workers. Owner-side
+//! root lookup/open/admission remains synchronous, never a serving-latency claim.
 //! CUDA/peer operations fail closed. No host completion can construct device readiness.
+use super::{BoundedReader, ReadRequest};
 use crate::contracts::*;
+use crate::object_store::{
+    ExtentLease,
+    prepared::{BackgroundStore, PreparedExtent},
+};
 use crate::pool::PinnedLease as Host;
 use std::collections::HashMap;
+mod background;
+struct Background<S> {
+    reader: BoundedReader,
+    pending: HashMap<TransferTicket, (TransferTicket, usize, ObjectKey, u32)>,
+    prepare: fn(&mut S, &ObjectKey, u32, u64, &BudgetRequest) -> Result<PreparedExtent>,
+    release: fn(&mut S, &ExtentLease) -> Result<()>,
+}
 
 struct Entry {
     ops: Vec<Option<ReadPlan<Host>>>,
@@ -13,9 +26,11 @@ struct Entry {
     driven: bool,
     retired: bool,
     consumers: Vec<std::sync::Weak<()>>,
+    extents: Vec<ExtentLease>,
 }
 pub struct CpuTransfers<S> {
     store: S,
+    background: Option<Background<S>>,
     request: BudgetRequest,
     entries: HashMap<TransferTicket, Entry>,
     issuer: u64,
@@ -36,6 +51,7 @@ impl<S: ObjectStore> CpuTransfers<S> {
         request.validate()?;
         Ok(Self {
             store,
+            background: None,
             request,
             entries: HashMap::new(),
             issuer: DeviceOwner::new(0).issuer(),
@@ -46,6 +62,9 @@ impl<S: ObjectStore> CpuTransfers<S> {
     }
     /// Explicit CPU work pump; never invent a completion before the actual byte read.
     pub fn drive(&mut self, ticket: &TransferTicket) -> Result<()> {
+        if self.background.is_some() {
+            return self.drive_background(ticket);
+        }
         let e = self.entries.get_mut(ticket).ok_or(Error::UnknownTicket)?;
         if e.driven {
             return Ok(());
@@ -246,11 +265,19 @@ impl<S: ObjectStore> TransferEngine for CpuTransfers<S> {
                 driven: false,
                 retired: false,
                 consumers: vec![],
+                extents: vec![],
             },
         );
+        if self.background.is_some() {
+            // Admission already accepted: preparation failures become item outcomes,
+            // NEVER submission Err that would falsely return live inputs.
+            self.drive_background(&ticket)
+                .expect("newly registered ticket");
+        }
         Ok(BatchSubmission { ticket, items })
     }
     fn poll(&mut self, t: &TransferTicket) -> Result<Completion> {
+        self.progress()?;
         Ok(self.entry(t)?.completion.clone())
     }
     fn cancel(&mut self, t: &TransferTicket) -> Result<CancelState> {
@@ -311,9 +338,16 @@ impl<S: ObjectStore> TransferEngine for CpuTransfers<S> {
         if consumer_done.is_some() {
             return Err(Error::WrongOwner);
         } // no CUDA fence authority
-        let e = self.entry(t)?;
+        self.progress()?;
+        let e = self.entries.get_mut(t).ok_or(Error::UnknownTicket)?;
         if !e.driven || e.consumers.iter().any(|w| w.strong_count() != 0) {
             return Err(Error::Busy);
+        }
+        if let Some(bg) = &self.background {
+            while let Some(lease) = e.extents.last() {
+                (bg.release)(&mut self.store, lease)?;
+                e.extents.pop();
+            }
         }
         e.ops.clear();
         e.retired = true;

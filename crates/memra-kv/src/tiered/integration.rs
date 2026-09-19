@@ -13,6 +13,17 @@ pub use memra_tier::contracts::{BudgetGovernor, PeerCapacity, PinnedLease};
 pub trait KvBacking<T: TransferEngine> {
     fn lookup(&self, id: &KvBlockId) -> Result<Vec<Lookup>>;
     fn acquire(&mut self, plan: &TierAdmission) -> Result<BlockLease>;
+    /// Local/peer sources bypass disk/host staging. Implementations must produce
+    /// owner-bound direct descriptors; unsupported routes refuse, never host-bounce.
+    fn prepare_direct(
+        &mut self,
+        _block: &BlockLease,
+        _plan: &TierAdmission,
+        _reservation: &TierReservation,
+        _transfer: &mut T,
+    ) -> Result<Vec<TransferOp<T::Host>>> {
+        Err(Error::Unsupported)
+    }
     fn prepare_prefetch(
         &mut self,
         block: &BlockLease,

@@ -92,3 +92,48 @@ and manifest registration with full metadata accounting, (3) A ObjectStore + own
 TransferEngine/ReadyView and B production governor, (4) C1 exact native compute
 adapter and C2 unchanged PLE expansion/projection, (5) all queued real gates.
 No changed hardware default can land from the portable 512 B policy alone.
+
+
+## Day-3 CPU integration and rig handoff
+
+Day-2 synchronous stage/gather statements above are historical. Current source
+moves all reads into explicit `BankService::progress`, one bounded gather chunk
+per call. `stage` and `gather` only validate/reserve/enqueue; `publish` returns
+NotReady and never pumps I/O. ObjectReader issues A CpuTransfers tickets against
+ObjectStore, checks every accepted outcome, drops the host consumer, requires
+`retired`, then acknowledges. Host-ready remains explicitly not GPU-ready.
+
+| Cell | Day-3 result | Still required |
+|---|---|---|
+| C1/C2 A integration | Forced expert and PLE row misses through A ExtentStore + CpuTransfers. Duplicate/order/scales exact; partial second-chunk error refuses entire batch; cancel between chunks issues no subsequent read. | Native worker/owner/pinned/DMA/SLRU bindings; mid-DMA cancellation is not simulated by a between-chunk CPU cancel. |
+| Shared B budget | Same `tier::Governor` instance charges banks, A store leases and pool/queue. Optional ticket exhaustion preserves one mandatory slot; saturated optional NVMe capacity refuses Demand but admits MandatoryActive. | Server queues and model-scale pressure with actual allocations. |
+| C1/C2 prediction | RouterTopKHint and NgramLookaheadHint use separate domains, fixed candidate metadata and bounded item/byte/scan caps. No heat from prefetch. | Native router/history hint callsites and usefulness/waste/latency traces. |
+| C2 trace | Full local text/gzip search found summaries, no replayable real row-ID trace. New SHA-bound six-step synthetic last-chunk policy table, see TRACE-AUDIT.md. | Capture real F32/BF16 PLE rows/history/rollback and projection identity. |
+| C1 runtime patch | Unapplied, rustfmt-parsed and `git apply --check` passed. **Partial mask-guard patch only, NO-GO**; full BankedResidency/UniformLease conversion is not implemented. | PATCH-REVIEW.md enumerates every missing native boundary and exact before/after commands. |
+| Rig runner | bash syntax plus 5090/PRO stubs, repeated runs, injected exit-23 failure and missing non-serving confirmation refusal all exercised. | Actual fresh Linux execution and compiled native bank/row test targets. |
+
+### Reproducers
+
+- CPU suite plus cross-target syntax/type checks:
+  `python3 research/spill-c-20260919/verify-day3.py`.
+- Safe orchestration-only check:
+  `bash research/spill-c-20260919/rig-cells-c.sh --dry-run --host-label stub`.
+- On an assigned **non-serving** 5090, with nvcc/toolchain ready:
+  `bash research/spill-c-20260919/rig-cells-c.sh --non-serving-confirmed --host-label dev5090`.
+  Builds outside `/tmp/memra-5090.lock`, acquires that lock nonblocking, refuses
+  an occupied GPU, runs tiny PLE first. Hy3 is explicitly PRO-pair-blocked without
+  a separate fitting receipt. Missing native targets are **BLOCKED, real exit 3**,
+  not an empty-test PASS.
+- PRO pair baseline only:
+  `bash research/spill-c-20260919/rig-cells-c.sh --non-serving-confirmed --rig pro-pair --host-label pro-pair --hy3-artifact "$HY3_ARTIFACT" --hy3-manifest "$HY3_MANIFEST"`.
+  Uses `/tmp/memra-gpu.lock`, validates the caller's standard byte manifest,
+  runs native run-gen/run-spec on the unchanged artifact. `kernel-check` accepts
+  GGUF only; a directory records that missing kernel-artifact cell explicitly.
+
+Each run creates a new `raw/<public-host-alias>-<utc>/` directory (atomic suffix
+on collisions), tees logs before recording JSONL and preserves command failures.
+No install/download, artifact conversion, scored timing, serving change, third
+lock or skip switch. Do not read baseline success as bank/row service engagement.
+Before performance/default decisions, extend the runner with the actual native
+engagement targets, original byte/logit/token goldens, balanced AB/BA N>=5,
+250 ms telemetry and serving metrics from the protocol above.

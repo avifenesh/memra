@@ -4,6 +4,7 @@ pub mod hostprefix;
 pub mod integration;
 pub mod materializer;
 pub mod policy;
+pub mod scheduler;
 #[cfg(test)]
 mod tests;
 
@@ -261,6 +262,17 @@ impl<B: KvBacking<T>, T: TransferEngine, G: BudgetGovernor> TierStore for Hierar
             .ok_or(Error::ForeignLease)?;
         if e.phase != Phase::Reserved {
             return Err(Error::NotReady);
+        }
+        if matches!(e.plan.source, Tier::LocalGpu(_) | Tier::PeerGpu(_)) {
+            let ops = self.backing.as_mut().unwrap().prepare_direct(
+                &e.block,
+                &e.plan,
+                r,
+                self.transfer.as_mut().unwrap(),
+            )?;
+            // Direct local/peer descriptors still need a real consumer fence; never
+            // relabel a source lease Ready or route it silently through pinned host.
+            return self.submit(r, ops, Phase::Loading);
         }
         let ops = self
             .backing
