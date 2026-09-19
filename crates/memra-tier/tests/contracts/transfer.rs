@@ -503,3 +503,60 @@ fn reusable_transfer_schedule() {
     let ticket = t.nvme_read(read).unwrap();
     super::conformance::transfer_cancel(&mut t, ticket, |t, k| t.finish(k));
 }
+impl Drop for Transfers {
+    fn drop(&mut self) {
+        for (_, entry) in self.entries.drain() {
+            if entry.unknown || !entry.disk || !entry.dma || !entry.consumer || !entry.graph {
+                // Deliberate test quarantine; the process owns recovery, not the caller.
+                std::mem::forget(entry);
+            }
+        }
+    }
+}
+#[test]
+fn unknown_backend_shutdown_does_not_free_accepted_host_source() {
+    let gov = shared();
+    let mut transfers = Transfers::new(gov.clone());
+    let (read, charge) = transfers.read();
+    let ticket = transfers.nvme_read(read).unwrap();
+    transfers.entry(&ticket).unwrap().unknown = true;
+    drop(transfers);
+    assert_eq!(gov.borrow_mut().release(&charge), Err(Error::Busy));
+    assert_eq!(gov.borrow().used.pinned, 4);
+}
+#[test]
+fn copy_bounds_and_consumer_context_generation_are_checked() {
+    let gov = shared();
+    let mut t = Transfers::new(gov.clone());
+    let (read, _host_charge) = t.read();
+    let mut req = request(0, Priority::MandatoryActive);
+    req.bytes.device[0] = 4;
+    let device_charge = gov.borrow_mut().reserve(&req).unwrap();
+    let device = t
+        .owner
+        .register(31, 4, Box::new(bytes(4)), &device_charge)
+        .unwrap();
+    let mut op = CopyOp {
+        host: read.destination,
+        device,
+        bytes: 5,
+        epochs: epochs(),
+        producer_fence: None,
+    };
+    assert_eq!(
+        op.validate(CopyDirection::HostToDevice, epochs()),
+        Err(Error::InvalidLayout)
+    );
+    op.bytes = 4;
+    op.validate(CopyDirection::HostToDevice, epochs()).unwrap();
+    let ticket = t.h2d(op).unwrap();
+    t.entry(&ticket).unwrap().c.items[0].segments[0]
+        .consumer_fence
+        .as_mut()
+        .unwrap()
+        .issuer = u64::MAX;
+    assert!(matches!(
+        t.ready_view(&ticket, 0, epochs()),
+        Err(Error::WrongOwner)
+    ));
+}
