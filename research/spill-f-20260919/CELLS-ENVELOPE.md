@@ -94,7 +94,7 @@ The command shape, once that binary exists, is:
 ```sh
 python3 tools/tier-battery.py --rig rtx5090 --timeout 300 \
   --out /root/wt-f/receipts/g2-size-direction-attempt \
-  --execute /root/wt-f/target/release/h2d-probe <registered-arguments>
+  --execute /root/wt-f/target/release/h2d-probe '<registered-arguments>'
 ```
 
 This is a command template, not a run receipt. Resolve arguments before launch;
