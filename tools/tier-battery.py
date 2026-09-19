@@ -112,6 +112,8 @@ import contextlib
 import datetime
 import fcntl
 import math
+import os
+import signal
 import statistics
 import subprocess
 import threading
@@ -179,25 +181,43 @@ def paired_orders(n):
 def tee_run(command, raw_path, timeout=30, echo=True):
     """Drain merged stdout/stderr to a raw file BEFORE parsing, including on timeout."""
     with raw_path.open("xb") as log:
-        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        errors = []
         def pump():
-            for line in iter(p.stdout.readline, b""):
-                log.write(line)
-                log.flush()
-                if echo:
-                    sys.stdout.buffer.write(line)
-                    sys.stdout.buffer.flush()
-        thread = threading.Thread(target=pump)
+            try:
+                for line in iter(p.stdout.readline, b""):
+                    log.write(line)
+                    log.flush()
+                    if echo:
+                        sys.stdout.buffer.write(line)
+                        sys.stdout.buffer.flush()
+            except Exception as error:
+                errors.append(error)
+        def kill_group():
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        thread = threading.Thread(target=pump, daemon=True)
         thread.start()
         timed_out = False
         try:
             code = p.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            p.kill()
+            kill_group()
             code = p.wait()
-        thread.join()
+        thread.join(timeout=1)
+        if thread.is_alive():
+            # Descendants may retain stdout after their parent exits. Bound the drain.
+            timed_out = True
+            kill_group()
+            thread.join(timeout=1)
+        if thread.is_alive():
+            raise TimeoutError("raw log drain remained open; no result may be published")
         p.stdout.close()
+        if errors:
+            raise errors[0]
     return code, timed_out
 
 

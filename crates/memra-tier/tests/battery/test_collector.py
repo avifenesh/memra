@@ -93,6 +93,12 @@ class CollectorTests(unittest.TestCase):
             self.assertTrue(timeout); self.assertNotEqual(code,0)
             self.assertIn('before timeout',log.read_text())
 
+    def test_descendant_stdout_cannot_hang_collector(self):
+        with tempfile.TemporaryDirectory(prefix='tier-tee-child-') as tmp:
+            code,timeout=B.tee_run([sys.executable,'-c',"import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time; time.sleep(10)']); print('parent exiting',flush=True)"],Path(tmp)/'raw.log',timeout=2,echo=False)
+            self.assertTrue(timeout)
+            self.assertEqual(code,0) # parent success is NOT whole-run success
+
     def test_topology_fixture_and_missing_tools(self):
         fixture=json.loads((Path(__file__).parent/'topology.fixture.json').read_text())
         result=T.probe(fixture)
