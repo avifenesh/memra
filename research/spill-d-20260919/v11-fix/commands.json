@@ -1,0 +1,125 @@
+[
+  {
+    "name": "after-peer",
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--test",
+      "peer"
+    ],
+    "exit": 0,
+    "sha256": "2cce941e122eec81de412d86b9a6840272276aeba944a967178e6770ed5b9831",
+    "utc": "2026-09-19T08:11:56.557518+00:00"
+  },
+  {
+    "name": "fmt",
+    "argv": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "utc": "2026-09-19T08:12:00.722997+00:00"
+  },
+  {
+    "name": "check-macos",
+    "argv": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets"
+    ],
+    "exit": 0,
+    "sha256": "95c193ea51a6c1520a7d9e56f674d737df78e02a03bc29a73a411dd43e739d8a",
+    "utc": "2026-09-19T08:12:01.418647+00:00"
+  },
+  {
+    "name": "check-linux",
+    "argv": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--target",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "exit": 0,
+    "sha256": "ef1d645efaf973a3f7c432625484521ddccecf87f514ceb7df3094911e20ceda",
+    "utc": "2026-09-19T08:12:02.439856+00:00"
+  },
+  {
+    "name": "after-all",
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline"
+    ],
+    "exit": 101,
+    "sha256": "b159a401da96673086c4907a6b31ca3d941b97243e92848fd6a7146b9793b649",
+    "utc": "2026-09-19T08:12:05.326998+00:00"
+  },
+  {
+    "name": "clippy",
+    "argv": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "sha256": "f1073fb9ab987fb0597e72926297212b111e0d169a9083f7786fe1882956da4f",
+    "utc": "2026-09-19T08:12:07.290213+00:00"
+  },
+  {
+    "name": "diff",
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "utc": "2026-09-19T08:12:07.361433+00:00"
+  },
+  {
+    "name": "flags",
+    "argv": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+    "utc": "2026-09-19T08:12:11.261501+00:00"
+  },
+  {
+    "name": "after-all-no-fail-fast",
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 101,
+    "sha256": "0564c39f2f2b177b5a693efbd2b65db860eb50bb129e11d19c3b71e98b998127",
+    "utc": "2026-09-19T08:12:37.826407+00:00"
+  }
+]
