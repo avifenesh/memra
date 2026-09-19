@@ -40,7 +40,9 @@ python3 tools/qualify-model-device-memory.py build \
 
 Add `--nvcc /absolute/path/to/nvcc` if the host's chosen toolkit needs an explicit path.
 The runner retains compiler output and an immutable build receipt with test-executable
-paths, hashes, compiler identity and commands. An existing output directory is refused.
+paths, hashes, compiler identity and commands. Each receipt uses its own fresh
+`OUT/cargo-target`, ignoring inherited or default Cargo targets so cached documentation
+stubs cannot enter a native build. An existing output directory is refused.
 
 ## Run only after the coordinator provides the host and wrapper
 
@@ -90,7 +92,7 @@ by the runner itself. `--lock-file GPU-UUID=/canonical/path` is an optional extr
 | `worker` | 2 | Production worker headroom/reclaim helpers with asymmetric physical memory pressure and pinned source ownership. |
 
 CPU refusal controls: `python3 tools/test_qualify_model_device_memory.py` (wired into CI).
-Local macOS result: 7 passed, 1 explicitly skipped Linux-only live-flock test; no GPU run.
+Local macOS result: 8 passed, 1 explicitly skipped Linux-only live-flock test; no GPU run.
 The runner's same-device stage is distinct from a two-card transport proof. The pair
 stages are synthetic native ownership/allocator tests. Full checkpoint serving pressure,
 source-lease replay token identity and affected kernel/run-gen/run-spec exactness remain

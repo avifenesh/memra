@@ -62,7 +62,7 @@ Linux CI passed for `cc348cce32f3d9b677f794032ac2775bb88339bc`
 511 engine tests (zero hidden skips), 715 server tests (5 ignored), both CUDA builds,
 Clippy, boundary/gates and package dry run. Follow-up qualification preparation adds a
 native worker gate and a fail-closed per-card runner. Its local runner controls passed
-7 tests with 1 explicit Linux-only skip on macOS (`raw/runner-controls.log`); a new Linux
+8 tests with 1 explicit Linux-only skip on macOS (`raw/runner-controls.log`); a new Linux
 CI run must compile the new ignored test and exercise the actual Linux flock control.
 None of these results is native GPU qualification.
 

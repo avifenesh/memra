@@ -94,6 +94,15 @@ class QualificationControls(unittest.TestCase):
             with self.assertRaises(ValueError):
                 gate.test_verdict(text)
 
+    def test_native_build_ignores_cached_documentation_target(self):
+        with patch.dict(os.environ, {"DOCS_RS": "1", "CARGO_TARGET_DIR": "/old/docs-target",
+                                     "MEMRA_CUDA_ARCH": "89"}, clear=True):
+            env = gate.native_build_env("120a", Path("/receipt/cargo-target"), None)
+        self.assertNotIn("DOCS_RS", env)
+        self.assertEqual(env["CARGO_TARGET_DIR"], "/receipt/cargo-target")
+        self.assertEqual(env["MEMRA_CUDA_ARCH"], "120a")
+        self.assertEqual(env["CUDA_VISIBLE_DEVICES"], "")
+
     def test_model_flags_and_documentation_stubs_cannot_leak_into_native_build(self):
         with patch.dict(os.environ, {"DOCS_RS": "1", "MEMRA_GLM5_TP": "all@0,1", "PATH": "/bin"}, clear=True):
             self.assertEqual(gate.clean_env(), {"PATH": "/bin"})

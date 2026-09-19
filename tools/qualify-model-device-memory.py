@@ -55,6 +55,18 @@ def clean_env():
     return env
 
 
+def native_build_env(arch, target, nvcc):
+    env = clean_env()
+    env["CUDA_VISIBLE_DEVICES"] = ""
+    env["MEMRA_CUDA_ARCH"] = arch
+    # A clean environment does not invalidate DOCS_RS build-script outputs cached by Cargo.
+    # Each new receipt owns a new target tree; inherited/default artifacts cannot be reused.
+    env["CARGO_TARGET_DIR"] = str(target)
+    if nvcc:
+        env["MEMRA_NVCC"] = str(nvcc.resolve())
+    return env
+
+
 def run_logged(argv, path, env, timeout):
     # Bank stdout AND stderr before parsing any verdict, including failures/timeouts.
     with Path(path).open("w") as log:
@@ -72,14 +84,11 @@ def build(args):
     head = source_identity(args.expected_sha)
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=False)
-    env = clean_env()
-    env["CUDA_VISIBLE_DEVICES"] = ""
-    env["MEMRA_CUDA_ARCH"] = args.arch
-    if args.nvcc:
-        env["MEMRA_NVCC"] = str(args.nvcc.resolve())
+    target = out / "cargo-target"
+    env = native_build_env(args.arch, target, args.nvcc)
     # Explicit arch prevents build.rs GPU auto-detection; --no-run prevents CUDA tests.
     receipt = {"source_sha": head, "arch": args.arch, "cuda_visible_devices": "",
-               "rustc": capture(["rustc", "--version"]), "binaries": {}, "commands": []}
+               "cargo_target_dir": str(target), "rustc": capture(["rustc", "--version"]), "binaries": {}, "commands": []}
     write_json(out / "build.pending.json", receipt)
     for key, crate in [("engine", "memra-engine"), ("server", "memra-server")]:
         argv = ["cargo", "test", "--release", "--locked", "--no-run", "--lib", "-p", crate,
