@@ -62,7 +62,7 @@ allowed build/lock selectors.
 ## Execution / evidence boundary
 
 GPU commands must be launched through `python3 tools/tier-battery.py --rig rtx5090
---timeout 1200 --out <new-collector-dir> --execute '<absolute-bin> ...'` after checking
+--timeout 1200 --out <new-collector-dir> --execute <absolute-bin> ...` after checking
 processes and compute-apps, per BOX-ACCESS.md. Record source commit and binary hash beside
 the collector outputs. Do not wrap the collector in another lock. Artifact directory is
 read-only. The development filesystem is overlay; NVMe ancestry is unproven, and baseline
