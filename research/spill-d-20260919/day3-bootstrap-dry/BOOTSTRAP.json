@@ -1,0 +1,553 @@
+{
+  "schema_version": 1,
+  "kind": "cpu-stub",
+  "status": "dry-run-complete-not-qualified",
+  "branch": "lane/spill-integ-20260919",
+  "started_utc": "20260919T070448601339Z",
+  "expected_power_w": 600,
+  "gap_seconds": 60,
+  "lock": "/tmp/memra-5090.lock",
+  "qualification": false,
+  "steps": [
+    {
+      "name": "distro",
+      "command": [
+        "cat",
+        "/etc/os-release"
+      ],
+      "exit_code": 0,
+      "duration_ns": 552292,
+      "stubbed": true,
+      "raw_log": "distro.log",
+      "sha256": "1c2b79b5ce788da36f752cb418c8424ac4a7a7d5ead94e684d46562e4ee998fc"
+    },
+    {
+      "name": "power",
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=name,memory.total,power.limit,power.max_limit",
+        "--format=csv,noheader,nounits"
+      ],
+      "exit_code": 0,
+      "duration_ns": 459834,
+      "stubbed": true,
+      "raw_log": "power.log",
+      "sha256": "6b4b10fccb888898df5c65632bbb3a1eb737b0dc5b9b538ec0d19c9bdca11755"
+    },
+    {
+      "name": "apt-update",
+      "command": [
+        "apt-get",
+        "update"
+      ],
+      "exit_code": 0,
+      "duration_ns": 390917,
+      "stubbed": true,
+      "raw_log": "apt-update.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "apt-packages",
+      "command": [
+        "apt-get",
+        "install",
+        "-y",
+        "git",
+        "build-essential",
+        "pkg-config",
+        "libssl-dev",
+        "numactl",
+        "util-linux",
+        "curl",
+        "ca-certificates"
+      ],
+      "exit_code": 0,
+      "duration_ns": 315750,
+      "stubbed": true,
+      "raw_log": "apt-packages.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "nvcc-version-0",
+      "command": [
+        "/stub/cuda-12.4/bin/nvcc",
+        "--version"
+      ],
+      "exit_code": 0,
+      "duration_ns": 300000,
+      "stubbed": true,
+      "raw_log": "nvcc-version-0.log",
+      "sha256": "3a060e3f060e6c96554b91fce46ec5632a3158b138ab628260fb0bf1801129f8"
+    },
+    {
+      "name": "nvcc-version-1",
+      "command": [
+        "/stub/cuda-13.2/bin/nvcc",
+        "--version"
+      ],
+      "exit_code": 0,
+      "duration_ns": 357541,
+      "stubbed": true,
+      "raw_log": "nvcc-version-1.log",
+      "sha256": "b735e4f666653b66a6dce88c609643a2dcef12970e05155e2a6fc103e8c8fec3"
+    },
+    {
+      "name": "nvcc-arches",
+      "command": [
+        "/stub/cuda-13.2/bin/nvcc",
+        "--list-gpu-arch"
+      ],
+      "exit_code": 0,
+      "duration_ns": 422917,
+      "stubbed": true,
+      "raw_log": "nvcc-arches.log",
+      "sha256": "37462175607d022ff10558d016cb6774b26d3cae0311a976214023aa1142aa5d"
+    },
+    {
+      "name": "cuda-compile",
+      "command": [
+        "/stub/cuda-13.2/bin/nvcc",
+        "-arch=sm_120a",
+        "/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tier-bootstrap-1egeo2gy/accept.cu",
+        "-o",
+        "/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tier-bootstrap-1egeo2gy/accept"
+      ],
+      "exit_code": 0,
+      "duration_ns": 360875,
+      "stubbed": true,
+      "raw_log": "cuda-compile.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "compute-before",
+      "command": [
+        "nvidia-smi",
+        "--query-compute-apps=pid,process_name,used_memory",
+        "--format=csv"
+      ],
+      "exit_code": 0,
+      "duration_ns": 331917,
+      "stubbed": true,
+      "raw_log": "compute-before.log",
+      "sha256": "5f8499da4ddffffafdb531634e4d08776696e7ddc7c1548ab7e0a60323365dec"
+    },
+    {
+      "name": "accept-1",
+      "command": [
+        "/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tier-bootstrap-1egeo2gy/accept"
+      ],
+      "exit_code": 0,
+      "duration_ns": 319708,
+      "stubbed": true,
+      "raw_log": "accept-1.log",
+      "sha256": "6f6f6dfae664e4fecacc3bb5a4e7be69e5d52f87037cf0e94aeb819b60e5681b"
+    },
+    {
+      "name": "accept-gap",
+      "command": [
+        "sleep",
+        "60"
+      ],
+      "exit_code": 0,
+      "duration_ns": 356584,
+      "stubbed": true,
+      "raw_log": "accept-gap.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "accept-2",
+      "command": [
+        "/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tier-bootstrap-1egeo2gy/accept"
+      ],
+      "exit_code": 0,
+      "duration_ns": 476042,
+      "stubbed": true,
+      "raw_log": "accept-2.log",
+      "sha256": "6f6f6dfae664e4fecacc3bb5a4e7be69e5d52f87037cf0e94aeb819b60e5681b"
+    },
+    {
+      "name": "compute-after",
+      "command": [
+        "nvidia-smi",
+        "--query-compute-apps=pid,process_name,used_memory",
+        "--format=csv"
+      ],
+      "exit_code": 0,
+      "duration_ns": 346500,
+      "stubbed": true,
+      "raw_log": "compute-after.log",
+      "sha256": "5f8499da4ddffffafdb531634e4d08776696e7ddc7c1548ab7e0a60323365dec"
+    },
+    {
+      "name": "rustup-stable",
+      "command": [
+        "rustup",
+        "toolchain",
+        "install",
+        "stable",
+        "--profile",
+        "minimal"
+      ],
+      "exit_code": 0,
+      "duration_ns": 242375,
+      "stubbed": true,
+      "raw_log": "rustup-stable.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "rust-version",
+      "command": [
+        "rustc",
+        "+stable",
+        "--version"
+      ],
+      "exit_code": 0,
+      "duration_ns": 292916,
+      "stubbed": true,
+      "raw_log": "rust-version.log",
+      "sha256": "efd5e2ab62ef6e59acebe530418cdadc885ef3f949bf89432d9fa14d322a8f6f"
+    },
+    {
+      "name": "remote-branch",
+      "command": [
+        "git",
+        "ls-remote",
+        "--exit-code",
+        "--heads",
+        "https://github.com/avifenesh/memra",
+        "refs/heads/lane/spill-integ-20260919"
+      ],
+      "exit_code": 0,
+      "duration_ns": 353125,
+      "stubbed": true,
+      "raw_log": "remote-branch.log",
+      "sha256": "5dd12fbfdb7f7ec1c641768c0247de06b187f69aeda52d3e2f585b6000970a52"
+    },
+    {
+      "name": "clone",
+      "command": [
+        "git",
+        "clone",
+        "--single-branch",
+        "--branch",
+        "lane/spill-integ-20260919",
+        "https://github.com/avifenesh/memra",
+        "/Users/avifen/memra-spill"
+      ],
+      "exit_code": 0,
+      "duration_ns": 229792,
+      "stubbed": true,
+      "raw_log": "clone.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "source-sha",
+      "command": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "duration_ns": 333083,
+      "stubbed": true,
+      "raw_log": "source-sha.log",
+      "sha256": "0e4f6f5ffe8ab285266465bd48989e24fae411b9a759de839aee5dcab192beb7"
+    },
+    {
+      "name": "topology-0",
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-m"
+      ],
+      "exit_code": 0,
+      "duration_ns": 361208,
+      "stubbed": true,
+      "raw_log": "topology-0.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-1",
+      "command": [
+        "nvidia-smi",
+        "-q"
+      ],
+      "exit_code": 0,
+      "duration_ns": 538917,
+      "stubbed": true,
+      "raw_log": "topology-1.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-2",
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-p2p",
+        "r"
+      ],
+      "exit_code": 0,
+      "duration_ns": 263916,
+      "stubbed": true,
+      "raw_log": "topology-2.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-3",
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-p2p",
+        "w"
+      ],
+      "exit_code": 0,
+      "duration_ns": 373708,
+      "stubbed": true,
+      "raw_log": "topology-3.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-4",
+      "command": [
+        "lscpu",
+        "--extended=CPU,NODE,SOCKET"
+      ],
+      "exit_code": 0,
+      "duration_ns": 334833,
+      "stubbed": true,
+      "raw_log": "topology-4.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-5",
+      "command": [
+        "numactl",
+        "-H"
+      ],
+      "exit_code": 0,
+      "duration_ns": 298250,
+      "stubbed": true,
+      "raw_log": "topology-5.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-6",
+      "command": [
+        "lscpu"
+      ],
+      "exit_code": 0,
+      "duration_ns": 371417,
+      "stubbed": true,
+      "raw_log": "topology-6.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-7",
+      "command": [
+        "df",
+        "-hT"
+      ],
+      "exit_code": 0,
+      "duration_ns": 342458,
+      "stubbed": true,
+      "raw_log": "topology-7.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-8",
+      "command": [
+        "lsblk",
+        "-J",
+        "-o",
+        "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+      ],
+      "exit_code": 0,
+      "duration_ns": 227583,
+      "stubbed": true,
+      "raw_log": "topology-8.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-9",
+      "command": [
+        "free",
+        "-g"
+      ],
+      "exit_code": 0,
+      "duration_ns": 379958,
+      "stubbed": true,
+      "raw_log": "topology-9.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "topology-10",
+      "command": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/scratch"
+      ],
+      "exit_code": 0,
+      "duration_ns": 324875,
+      "stubbed": true,
+      "raw_log": "topology-10.log",
+      "sha256": "c178cd4a73155322a83e0278767139bf5ec0287816521dc12138b730ac601bf5"
+    },
+    {
+      "name": "build-0",
+      "command": [
+        "cargo",
+        "+stable",
+        "build",
+        "--release",
+        "--locked",
+        "-j",
+        "4",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv"
+      ],
+      "exit_code": 0,
+      "duration_ns": 390500,
+      "stubbed": true,
+      "raw_log": "build-0.log",
+      "sha256": "9dbbaefed8cc08a8a64f9510196c813ba3a0188814a2675f058e04f2d9acf1cf"
+    },
+    {
+      "name": "build-1",
+      "command": [
+        "cargo",
+        "+stable",
+        "build",
+        "--release",
+        "--locked",
+        "-j",
+        "4",
+        "-p",
+        "memra-server",
+        "--bin",
+        "memra-server"
+      ],
+      "exit_code": 0,
+      "duration_ns": 239709,
+      "stubbed": true,
+      "raw_log": "build-1.log",
+      "sha256": "9dbbaefed8cc08a8a64f9510196c813ba3a0188814a2675f058e04f2d9acf1cf"
+    },
+    {
+      "name": "build-2",
+      "command": [
+        "cargo",
+        "+stable",
+        "build",
+        "--release",
+        "--locked",
+        "-j",
+        "4",
+        "-p",
+        "memra-engine",
+        "--bin",
+        "storage-bench",
+        "--bin",
+        "qwen4exp_gpu_gate",
+        "--bin",
+        "run-gen",
+        "--bin",
+        "run-spec"
+      ],
+      "exit_code": 0,
+      "duration_ns": 368542,
+      "stubbed": true,
+      "raw_log": "build-2.log",
+      "sha256": "9dbbaefed8cc08a8a64f9510196c813ba3a0188814a2675f058e04f2d9acf1cf"
+    },
+    {
+      "name": "build-3",
+      "command": [
+        "cargo",
+        "+stable",
+        "test",
+        "--release",
+        "--locked",
+        "-j",
+        "4",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--no-run"
+      ],
+      "exit_code": 0,
+      "duration_ns": 251458,
+      "stubbed": true,
+      "raw_log": "build-3.log",
+      "sha256": "9dbbaefed8cc08a8a64f9510196c813ba3a0188814a2675f058e04f2d9acf1cf"
+    }
+  ],
+  "distro": "ID=ubuntu\nVERSION_ID=\"24.04\"\n",
+  "power_verbatim": "NVIDIA GeForce RTX 5090, 32607, 600.00, 600.00\n",
+  "nvcc": "/stub/cuda-13.2/bin/nvcc",
+  "cuda_acceptance": "stubbed-not-hardware",
+  "source_commit": "1111111111111111111111111111111111111111",
+  "accept_binary_sha256": "67b1b5460807959707dab959560da09fe35902441c4fefddd8ce3de4b79bcb1f",
+  "builds": [
+    [
+      "cargo",
+      "+stable",
+      "build",
+      "--release",
+      "--locked",
+      "-j",
+      "4",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv"
+    ],
+    [
+      "cargo",
+      "+stable",
+      "build",
+      "--release",
+      "--locked",
+      "-j",
+      "4",
+      "-p",
+      "memra-server",
+      "--bin",
+      "memra-server"
+    ],
+    [
+      "cargo",
+      "+stable",
+      "build",
+      "--release",
+      "--locked",
+      "-j",
+      "4",
+      "-p",
+      "memra-engine",
+      "--bin",
+      "storage-bench",
+      "--bin",
+      "qwen4exp_gpu_gate",
+      "--bin",
+      "run-gen",
+      "--bin",
+      "run-spec"
+    ],
+    [
+      "cargo",
+      "+stable",
+      "test",
+      "--release",
+      "--locked",
+      "-j",
+      "4",
+      "-p",
+      "memra-engine",
+      "--lib",
+      "--no-run"
+    ]
+  ]
+}

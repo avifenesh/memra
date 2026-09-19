@@ -1,0 +1,25 @@
+   Compiling memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-d/crates/memra-tier)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.24s
+     Running tests/peer/mod.rs (target/debug/deps/peer-2abcdff8374b3a8b)
+
+running 17 tests
+test fake::capacity_grants_padding_and_homogeneous_ticket_refusal ... ok
+test fake::directed_fault_controls_are_independent_and_missing_routes_refuse ... ok
+test fake::exact_bytes_epochs_cancel_and_fence_issuer ... ok
+test fake::quarantine_graph_pins_foreign_tickets_and_shared_budget ... ok
+test fake::revision_v11_peer_capacity ... ok
+test fake::revision_v11_directed_capacity ... ok
+test fake::revision_v11_peer_complete_cancel_and_quarantine ... ok
+test fake::caller_source_drop_keeps_owned_bytes_until_acknowledged ... ok
+test fake::partial_acceptance_and_zero_accept_return_owned_inputs ... ok
+test fake::directed_fault_after_reservation_returns_owned_copies_without_acceptance ... ok
+test fake::revision_v11_peer_submit_epochs_and_zero_accept ... ok
+test fake::revision_v11_peer_indexed_acceptance ... ok
+test fake::short_corrupt_and_wrong_context_completion_refuse ... ok
+test fake::shared_schedule_runs_on_d_byte_fake ... ok
+test idle_downshift_is_deferred_active_downgrade_refuses ... ok
+test observation_expires_with_context_topology_or_binary ... ok
+test topology_is_directed_grant_bound_and_never_host_bounce ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
