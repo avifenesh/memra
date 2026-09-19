@@ -1,0 +1,80 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running unittests ../../crates/memra-tier/src/bank/mod.rs (research/spill-c-20260919/target/debug/deps/memra_bank_prototype-f7899a48f55bade1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running ../../crates/memra-tier/tests/bank/main.rs (research/spill-c-20260919/target/debug/deps/bank-0c63f633867a84ba)
+
+running 19 tests
+test duplicate_and_history_reordering_preserve_logical_output_not_io ... ok
+test masked_and_unknown_ids_fail_before_queue_or_cache ... ok
+test disk_ready_is_not_consumer_ready_and_queue_is_bounded ... ok
+test cancellation_and_cross_service_ticket_do_not_publish ... ok
+test ordered_packed_rows_coalesce_and_straddles_count ... ok
+test eviction_under_pressure_does_not_release_consumer_lease ... ok
+test partial_read_error_retires_whole_batch_and_all_permits ... ok
+test mixed_cannot_obtain_uniform_proof_even_for_one_record ... ok
+fixture=sparse264x48 granularity=512 useful=12672 physical=24576 amplification=1.9393939393939394
+test prefetch_is_bounded_mask_checked_and_does_not_add_demand_heat ... ok
+fixture=sparse264x48 granularity=4096 useful=12672 physical=196608 amplification=15.515151515151516
+test row_bounds_overflow_padding_and_empty_are_explicit ... ok
+fixture=sparse264x48 granularity=16384 useful=12672 physical=786432 amplification=62.06060606060606
+test q2_q3_nvfp4_records_keep_distinct_lengths_encodings_and_macro_segments ... ok
+test row_read_error_and_output_pressure_leave_no_partial_lease ... ok
+test shared_governor_admission_is_atomic_and_releases_cancelled_wait ... ok
+test source_identity_keeps_artifact_projection_and_original_router_slot ... ok
+test uniform_compute_proof_is_bound_to_actual_leased_bytes ... ok
+test sparse_264_by_48_amplification_fixture ... ok
+test zero_small_full_cache_exact_bytes_scales_order_and_forced_misses ... ok
+test immutable_host_and_nvme_fake_backends_produce_identical_row_bytes ... ok
+test gather_host_and_fake_nvme_exact_across_straddles_small_slot_and_duplicates ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_bank_prototype
+
+running 2 tests
+error[E0308]: mismatched types
+   --> ../../crates/memra-tier/src/bank/types.rs:194:55
+    |
+194 | fn mixed_dispatch(batch: &BankBatch) { uniform_kernel(batch); }
+    |                                        -------------- ^^^^^ expected `&UniformBatch`, found `&BankBatch`
+    |                                        |
+    |                                        arguments to this function are incorrect
+    |
+    = note: expected reference `&UniformBatch`
+               found reference `&BankBatch`
+note: function defined here
+   --> ../../crates/memra-tier/src/bank/types.rs:193:4
+    |
+193 | fn uniform_kernel(_: &UniformBatch) {}
+    |    ^^^^^^^^^^^^^^ ----------------
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0308`.
+error[E0308]: mismatched types
+  --> ../../crates/memra-tier/src/bank/residency.rs:50:55
+   |
+50 | fn mixed_dispatch(lease: &BankLease) { uniform_kernel(lease); }
+   |                                        -------------- ^^^^^ expected `&UniformLease`, found `&BankLease`
+   |                                        |
+   |                                        arguments to this function are incorrect
+   |
+   = note: expected reference `&UniformLease`
+              found reference `&BankLease`
+note: function defined here
+  --> ../../crates/memra-tier/src/bank/residency.rs:49:4
+   |
+49 | fn uniform_kernel(_: &UniformLease) {}
+   |    ^^^^^^^^^^^^^^ ----------------
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0308`.
+test ../../crates/memra-tier/src/bank/types.rs - types::UniformBatch (line 190) - compile fail ... ok
+test ../../crates/memra-tier/src/bank/residency.rs - residency::UniformLease (line 46) - compile fail ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s

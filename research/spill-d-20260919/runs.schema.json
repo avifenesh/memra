@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memra:tier-battery:byte-receipt:1",
+  "title": "Positive exactness byte receipt (not overall gate verdict)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "binary_sha256",
+    "artifact_sha256",
+    "plan_sha256",
+    "layout_sha256",
+    "prompt_sha256",
+    "run_id",
+    "pair_id",
+    "numeric_class",
+    "context_tokens",
+    "requests",
+    "state",
+    "logits",
+    "tokens",
+    "raw_log",
+    "schema_version",
+    "runtime_commit",
+    "cell",
+    "arm",
+    "kind",
+    "rig",
+    "lock",
+    "route",
+    "direct_path_proven",
+    "migrated_bytes",
+    "telemetry",
+    "telemetry_interval_ms",
+    "status",
+    "exit_code"
+  ],
+  "properties": {
+    "binary_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "layout_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pair_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "numeric_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "requests": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "logits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "raw_log": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "runtime_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "cell": {
+      "enum": [
+        "peer-bytes",
+        "grant-failure",
+        "link-downgrade",
+        "timeout",
+        "late-completion",
+        "destination-reuse",
+        "source-free",
+        "graph-address-stability",
+        "step37-pp-ladder",
+        "qwen-peer-blocks",
+        "boundary",
+        "churn",
+        "spec-rollback",
+        "cancel",
+        "four-tier-pressure",
+        "tenant-purge",
+        "corrupt-active",
+        "pool-smaller-than-object",
+        "all-directed-routes",
+        "shared-fabric-30min",
+        "placement-predicted-vs-peak",
+        "owner-replica-accounting",
+        "capacity-refusal"
+      ]
+    },
+    "arm": {
+      "enum": [
+        "off",
+        "on"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "cpu-fixture",
+        "gpu"
+      ]
+    },
+    "rig": {
+      "enum": [
+        "rtx5090",
+        "pro-pair",
+        "pro-four",
+        "cpu"
+      ]
+    },
+    "lock": {
+      "enum": [
+        "/tmp/memra-5090.lock",
+        "/tmp/memra-gpu.lock",
+        null
+      ]
+    },
+    "route": {
+      "enum": [
+        "host",
+        "host-bounce",
+        "local",
+        "nvme",
+        "pcie-p2p"
+      ]
+    },
+    "direct_path_proven": {
+      "type": "boolean"
+    },
+    "migrated_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "telemetry": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "telemetry_interval_ms": {
+      "enum": [
+        250,
+        null
+      ]
+    },
+    "status": {
+      "const": "pass"
+    },
+    "exit_code": {
+      "const": 0
+    }
+  },
+  "$comment": "Cross-field pairing, path safety, byte/hash validation, hardware/lock and non-vacuity checked by tools/tier-battery.py. Fault/refusal logs are retained separately; no pass inferred from them."
+}
