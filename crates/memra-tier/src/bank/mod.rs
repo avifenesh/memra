@@ -2,6 +2,8 @@
 //! No CUDA, pinning, UVA, real NVMe or runtime dispatch qualification.
 #![forbid(unsafe_code)]
 mod adapters;
+mod device_rows;
+pub use device_rows::*;
 mod residency;
 mod rows;
 mod types;

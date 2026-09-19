@@ -1,4 +1,4 @@
-//! Bounded, host-only PLE qualification adapter. No CUDA permission, persistent
+//! Bounded PLE qualification adapter. No implicit CUDA permission, persistent
 //! cache, source artifact validation, or production governor is implied here.
 //! The owner injects the same budget for every gather. The immutable borrowed
 //! table is already loaded by the native loader; only requested rows are indexed.
@@ -80,6 +80,36 @@ pub(crate) struct GatheredRows {
     reservation: Option<(SharedBudget, ChargedLease)>,
 }
 impl GatheredRows {
+    /// Submit only an exact copy of the already expanded, coalesced row window.
+    /// The backend retains owned pinned/device leases after acceptance. Keeping
+    /// this wrapper alive is not a substitute for DMA or consumer retirement.
+    #[allow(
+        dead_code,
+        reason = "native device adapter is installed by the explicit gate"
+    )]
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn submit_device<T: TransferEngine>(
+        &self,
+        transfers: &mut T,
+        op: CopyOp<T::Host>,
+    ) -> std::result::Result<RowUpload, Rejected<CopyOp<T::Host>>> {
+        let valid = (|| {
+            let bytes = op.host.bytes()?;
+            if bytes.len() != self.values.len().checked_mul(4).ok_or(Error::Overflow)?
+                || bytes
+                    .chunks_exact(4)
+                    .zip(&self.values)
+                    .any(|(raw, value)| raw != value.to_bits().to_le_bytes())
+            {
+                return Err(Error::Corrupt);
+            }
+            Ok(())
+        })();
+        if let Err(error) = valid {
+            return Err(Rejected { op, error });
+        }
+        RowUpload::submit(transfers, op)
+    }
     pub(crate) fn legacy(values: Vec<f32>) -> Self {
         Self {
             values,
@@ -155,8 +185,9 @@ impl PleRowsTier {
         };
         // Charge bounded caller metadata + expansion before allocating the window.
         // The source's existing loader allocation remains owned by that loader.
+        let devices = self.budget.borrow().used().device.len();
         let mut req = BudgetRequest {
-            bytes: TierBudget::zero(0),
+            bytes: TierBudget::zero(devices),
             priority: Priority::Demand,
             deadline: Deadline(u64::MAX),
             tenant: digest("ple-host-gate-owner-v1", &[]),
@@ -210,7 +241,7 @@ impl PleRowsTier {
                     tickets: 1,
                 },
             )?);
-            req.bytes = TierBudget::zero(0);
+            req.bytes = TierBudget::zero(devices);
             let epochs = Epochs {
                 state: 0,
                 src_gen: 0,

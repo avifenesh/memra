@@ -1,6 +1,6 @@
 // Actual native bridge source, compiled without CUDA; no model/GPU claim.
 #[path = "../../../memra-engine/src/ple_rows_tier.rs"]
-mod native;
+pub(super) mod native;
 use memra_tier::{contracts::*, tier::Governor};
 use native::{HostTable, PleRowsTier};
 use std::{cell::RefCell, rc::Rc, sync::Arc};

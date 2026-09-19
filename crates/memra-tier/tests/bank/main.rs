@@ -1407,3 +1407,5 @@ fn revision_v11_corrupt_sibling_and_row_namespace() {
 mod day4;
 
 mod ple_rows_native;
+
+mod device_rows;
