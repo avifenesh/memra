@@ -122,7 +122,8 @@ impl RowService for PackedRows {
                     LayoutClass::PerRecord,
                     charge,
                     Box::new(output),
-                )?,
+                )
+                .map_err(|rejected| rejected.error)?,
             );
         }
         let ordered = b.ids.iter().map(|id| records[id].clone()).collect();

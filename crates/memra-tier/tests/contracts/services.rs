@@ -617,7 +617,8 @@ impl Banks {
                             RecordId::Row(n) => vec![n as u8; 4],
                             _ => bytes(4),
                         }),
-                    )?,
+                    )
+                    .map_err(|rejected| rejected.error)?,
                 );
             }
             result.push(unique[id].clone());
@@ -922,4 +923,31 @@ fn bank_lease_keeps_backing_pinned_and_explicit_retirement_invalidates_aliases()
         alias.resource::<Vec<u8>>(),
         Err(Error::AlreadyReleased)
     ));
+}
+#[test]
+fn invalid_bank_publication_returns_charge_and_backing_for_explicit_release() {
+    let gov = shared();
+    let mut b = Banks::new(gov.clone());
+    let id = b.add(0, false);
+    let mut wrong = BankedResidency::layout(&b, &id).unwrap().clone();
+    wrong.segments.clear();
+    let charge = gov
+        .borrow_mut()
+        .reserve(&request(4, Priority::Demand))
+        .unwrap();
+    let rejected = BankLease::from_backend(
+        id,
+        wrong,
+        LayoutClass::Uniform,
+        charge,
+        Box::new(vec![1u8, 2, 3, 4]),
+    )
+    .unwrap_err();
+    assert_eq!(rejected.error, Error::Incomplete);
+    assert_eq!(
+        rejected.op.backing.downcast_ref::<Vec<u8>>().unwrap(),
+        &[1, 2, 3, 4]
+    );
+    gov.borrow_mut().release(&rejected.op.charge).unwrap();
+    assert_eq!(gov.borrow().used.pageable, 0);
 }

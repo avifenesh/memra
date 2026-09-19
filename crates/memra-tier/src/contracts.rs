@@ -881,7 +881,10 @@ impl ChargedLease {
     /// Retain a physical owner, not another charge. A dropped caller cannot revoke this pin.
     pub fn pin(&self) -> Result<LeasePin> {
         let mut r = self.record.lock().map_err(|_| Error::Quarantined)?;
-        if matches!(r.state, ChargeState::Released | ChargeState::Quarantined) {
+        if matches!(
+            r.state,
+            ChargeState::Released | ChargeState::Quarantined | ChargeState::Retired
+        ) {
             return Err(Error::Busy);
         }
         r.pins = r.pins.checked_add(1).ok_or(Error::Overflow)?;
@@ -1643,6 +1646,21 @@ pub struct BankBatch {
     pub epochs: Epochs,
     pub request: BudgetRequest,
 }
+/// Return these owned inputs unchanged when bank publication construction refuses.
+pub struct BankPublication {
+    pub id: BankId,
+    pub layout: RecordLayout,
+    pub class: LayoutClass,
+    pub charge: ChargedLease,
+    pub backing: Box<dyn std::any::Any>,
+}
+impl std::fmt::Debug for BankPublication {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BankPublication")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
 type RetainedBankBacking = Rc<RefCell<Option<(Box<dyn std::any::Any>, LeasePin)>>>;
 #[derive(Clone)]
 pub struct BankLease {
@@ -1663,33 +1681,48 @@ impl std::fmt::Debug for BankLease {
 impl BankLease {
     /// Backend publication boundary: validate the actual catalog source class, NOT a
     /// homogeneous subset of mixed metadata. The service must first validate ready fences.
+    #[allow(clippy::result_large_err)] // Return every owned resource for explicit release on refusal.
     pub fn from_backend(
         id: BankId,
         layout: RecordLayout,
         class: LayoutClass,
         charge: ChargedLease,
         backing: Box<dyn std::any::Any>,
-    ) -> Result<Self> {
-        id.validate()?;
-        layout.validate()?;
-        if id.layout != layout.identity()? {
-            return Err(Error::InvalidLayout);
+    ) -> std::result::Result<Self, Rejected<BankPublication>> {
+        let validate = || -> Result<LeasePin> {
+            id.validate()?;
+            layout.validate()?;
+            if id.layout != layout.identity()? {
+                return Err(Error::InvalidLayout);
+            }
+            if layout.segments.iter().any(|s| {
+                s.tensor
+                    .as_ref()
+                    .is_none_or(|t| t.artifact != id.tensor.artifact)
+            }) {
+                return Err(Error::InvalidLayout);
+            }
+            charge.pin()
+        };
+        match validate() {
+            Ok(pin) => Ok(Self {
+                id,
+                layout,
+                class,
+                charge: Arc::new(charge),
+                backing: Rc::new(RefCell::new(Some((backing, pin)))),
+            }),
+            Err(error) => Err(Rejected {
+                op: BankPublication {
+                    id,
+                    layout,
+                    class,
+                    charge,
+                    backing,
+                },
+                error,
+            }),
         }
-        if layout.segments.iter().any(|s| {
-            s.tensor
-                .as_ref()
-                .is_none_or(|t| t.artifact != id.tensor.artifact)
-        }) {
-            return Err(Error::InvalidLayout);
-        }
-        let pin = charge.pin()?;
-        Ok(Self {
-            id,
-            layout,
-            class,
-            charge: Arc::new(charge),
-            backing: Rc::new(RefCell::new(Some((backing, pin)))),
-        })
     }
     pub fn id(&self) -> &BankId {
         &self.id
@@ -1789,6 +1822,7 @@ pub trait RowService {
 pub enum ExpertDomain {}
 pub enum RowDomain {}
 mod sealed {
+    /// Permit only the declared expert and row policy domains.
     pub trait Domain {}
 }
 impl sealed::Domain for ExpertDomain {}
