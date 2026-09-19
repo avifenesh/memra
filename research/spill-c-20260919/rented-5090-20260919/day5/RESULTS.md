@@ -37,3 +37,14 @@ Linux bank suite, warning cleanup and final CPU checks follow in separate commit
 At `a5eb77bd`, `cargo test --release -p memra-tier --test bank -j 16`
 passed: **46 passed; 0 failed; 0 ignored**. Raw output and exact source are
 in `bank-linux/`. This is native Linux CPU evidence, not a GPU cell.
+
+## Native strict clippy and bridge warning scope
+
+Both native release clippy commands passed with `-D warnings`: engine library +
+`qwen4exp_gpu_gate`, and tier `--all-targets` (16 build jobs). `clippy-linux/`
+contains exact base source + candidate diff and raw logs. The two dead-code
+warnings were scoped individually with reason-bearing `allow(dead_code)` on
+`HostView` and `map_host_exps`: these remain an uncalled native compile probe,
+exercised with API-shaped host fixtures in the bank test target, NOT connected
+expert dispatch. No numeric path changed. The nvcc-path build-script notice
+remains; it is not a Rust/clippy diagnostic.
