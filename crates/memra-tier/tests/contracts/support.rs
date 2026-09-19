@@ -100,6 +100,7 @@ impl Governor {
         b.pageable = cap;
         b.pinned = cap;
         b.staging = cap;
+        b.loaders = cap;
         b.device = vec![cap; 2];
         b.peer = vec![cap; 2];
         b.replicas = vec![cap; 2];

@@ -1269,3 +1269,124 @@ impl<H: Hotness<RowDomain>, R: ExactReader> RowService for DrivenRows<'_, H, R> 
 }
 
 mod integration;
+
+#[test]
+fn revision_v11_bank_cancel_identity_uniform() {
+    for class in [LayoutClass::Uniform, LayoutClass::PerRecord] {
+        let g = gov();
+        let (mut b, ids) = banks(class, 0, Reader::default(), g.clone());
+        conformance::bank_identity(&mut b, batch(vec![ids[0].clone()]));
+        let t = conformance::bank_complete_cancel(&mut b, batch(vec![ids[0].clone()]), |b, t| {
+            b.completion(t).unwrap().clone()
+        });
+        finish(&mut b, &t);
+        // A homogeneous one-record subset of PerRecord is still not Uniform.
+        conformance::bank_uniform(
+            &mut b,
+            batch(vec![ids[0].clone()]),
+            class,
+            |b, t| {
+                assert!(b.completion(t).unwrap().producer_done);
+            },
+            |b, t| {
+                b.finish_host_use(t).unwrap();
+            },
+        );
+        for t in b.tickets() {
+            b.acknowledge(&t).unwrap();
+        }
+        assert_eq!(g.borrow().used(), TierBudget::zero(2));
+    }
+}
+#[test]
+fn revision_v11_rows_complete_cancel() {
+    let table = ple(PleEncoding::F32);
+    let g = gov();
+    let mut r = rows(&table, &[5, 2, 9], g.clone(), CoalescingPolicy::default());
+    let t = conformance::rows_complete_cancel(&mut r, row_batch(&table, &[5, 2, 5, 9]), |r, t| {
+        r.0.completion(t).unwrap().clone()
+    });
+    finish(&mut r.0, &t);
+    assert_eq!(g.borrow().used(), TierBudget::zero(2));
+}
+#[test]
+fn revision_v11_rows_bytes_dedup_bounded_straddles() {
+    let table = ple(PleEncoding::F32);
+    let ns: Vec<_> = (0..48).rev().chain([0, 47, 16]).collect();
+    let g = gov();
+    let mut r = rows(
+        &table,
+        &ns,
+        g.clone(),
+        CoalescingPolicy {
+            granularity: 4096,
+            slot_bytes: 4096,
+        },
+    );
+    let expected: Vec<_> = ns
+        .iter()
+        .map(|&n| vec![expected(&table.layout(n).unwrap())])
+        .collect();
+    let t = conformance::rows_bytes(
+        &mut r,
+        row_batch(&table, &ns),
+        &expected,
+        |l| vec![l.resource::<Vec<u8>>().unwrap().clone()],
+        |r, t| {
+            assert_eq!(r.0.plan(t).unwrap().straddling_segments, 3);
+            assert_eq!(r.0.reader().calls.len(), 4);
+        },
+        |r, t| {
+            r.0.finish_host_use(t).unwrap();
+        },
+    );
+    assert!(r.0.reader().calls.iter().all(|(_, _, n)| *n <= 4096));
+    r.0.acknowledge(&t).unwrap();
+    assert_eq!(g.borrow().used(), TierBudget::zero(2));
+}
+
+#[test]
+fn revision_v11_corrupt_sibling_and_row_namespace() {
+    let g = gov();
+    let (mut b, ids) = banks(
+        LayoutClass::PerRecord,
+        0,
+        Reader {
+            corrupt: true,
+            ..Reader::default()
+        },
+        g.clone(),
+    );
+    let t = conformance::bank_failed_sibling(&mut b, batch(ids[..3].to_vec()), |b, t| {
+        b.completion(t).unwrap().clone()
+    });
+    finish(&mut b, &t);
+    assert_eq!(g.borrow().used(), TierBudget::zero(2));
+    let table = ple(PleEncoding::F32);
+    let ns: Vec<_> = (0..48).collect();
+    let mut r = BoundedRowService(
+        BankService::new(
+            row_catalog(&table, &ns),
+            g.clone(),
+            Heat::default(),
+            Reader {
+                fail: Some(2),
+                ..Reader::default()
+            },
+            CoalescingPolicy {
+                slot_bytes: 4096,
+                granularity: 4096,
+            },
+            limits(0),
+        )
+        .unwrap(),
+    );
+    conformance::rows_identity(&mut r, row_batch(&table, &ns));
+    let t = conformance::rows_failed_sibling(&mut r, row_batch(&table, &ns), |r, t| {
+        r.0.completion(t).unwrap().clone()
+    });
+    assert_eq!(r.0.reader().calls.len(), 2);
+    assert!(r.0.reader().calls.iter().all(|(_, _, n)| *n <= 4096));
+    finish(&mut r.0, &t);
+    assert_eq!(g.borrow().used(), TierBudget::zero(2));
+}
