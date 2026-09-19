@@ -1818,3 +1818,6 @@ fn scheduler_equal_priority_deadline_alternates_tenants_before_second_fifo_turn(
     }
     assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
 }
+
+#[path = "day4_tests.rs"]
+mod day4;
