@@ -1184,3 +1184,24 @@ fn failed_transfer_completion_enumerates_all_records_and_segments() {
     b.cancel(&t).unwrap();
     finish(&mut b, &t);
 }
+
+#[test]
+fn alternate_layout_cannot_resurrect_masked_original_identity() {
+    let l = layout(9, 13, 16);
+    let id = bank_id(9, &l);
+    let alternative = layout(9, 4, 24);
+    let other = bank_id(9, &alternative);
+    assert_ne!(id.layout, other.layout);
+    for first in [None, Some(record(l.clone()))] {
+        assert!(matches!(
+            Catalog::new(
+                LayoutClass::PerRecord,
+                vec![
+                    (id.clone(), first),
+                    (other.clone(), Some(record(alternative.clone())))
+                ]
+            ),
+            Err(Error::Conflict)
+        ));
+    }
+}

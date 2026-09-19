@@ -1,5 +1,9 @@
 use crate::contracts::*;
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+    rc::Rc,
+};
 
 /// The SAME governor instance is injected into banks, rows, KV and transfers.
 pub type SharedBudget = Rc<RefCell<dyn BudgetGovernor>>;
@@ -26,9 +30,15 @@ pub struct Catalog {
 impl Catalog {
     pub fn new(class: LayoutClass, entries: Vec<(BankId, Option<CatalogRecord>)>) -> Result<Self> {
         let mut map = BTreeMap::new();
+        let mut originals = BTreeSet::new();
         let mut uniform: Option<RecordLayout> = None;
         for (id, record) in entries {
             id.validate()?;
+            // One immutable source assignment per original router/table slot.
+            // A second layout digest must not resurrect a masked original ID.
+            if !originals.insert((id.tensor.clone(), id.record.clone())) {
+                return Err(Error::Conflict);
+            }
             if let Some(record) = &record {
                 let layout = &record.layout;
                 layout.validate()?;
