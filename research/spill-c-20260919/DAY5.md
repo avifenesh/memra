@@ -1,4 +1,4 @@
-# Day 5 — bounded native PLE host-row gate (in progress)
+# Day 5 — bounded native PLE host-row gate (development milestone banked)
 
 Repository: avifenesh/memra. Feature branch: lane/spill-c-20260919.
 
@@ -57,4 +57,15 @@ CPU development checks: 3 new native-source bridge tests pass (raw bits includin
 negative zero / non-finite values, duplicates, F32/BF16, zero-cache repeated reads,
 invalid IDs/shapes, caps, partial admission and drained charge), strict tier clippy
 passes. Final reproducible CPU and rented-development native receipts follow.
-No GPU result is claimed at this source milestone.
+No GPU result was claimed at that initial source milestone.
+
+The follow-up native development cells now pass: existing GPU gate `failures=0`,
+row-tier PLE outputs and convolution state bit-identical (16 cases, 6144 values,
+144 forced read chunks, drained budget), native Linux bank suite 46/46, and strict
+native engine/gate + tier clippy. Power cap was 400 W on a rented RTX 5090.
+Raw logs, frozen goldens, collector lock/capture/telemetry, exact source fragments
+and scope are in `rented-5090-20260919/day5/RESULTS.md`.
+Final Mac CPU checks are in `raw/day5-final-cpu/`: fmt, native and Linux-target
+checks, 174 tier tests including doctests, strict clippy, diff and flags all pass.
+Lead integration still must apply the two module declarations above. No production
+or model-scale serving support state is advanced.

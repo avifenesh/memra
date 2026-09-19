@@ -48,3 +48,48 @@ warnings were scoped individually with reason-bearing `allow(dead_code)` on
 exercised with API-shaped host fixtures in the bank test target, NOT connected
 expert dispatch. No numeric path changed. The nvcc-path build-script notice
 remains; it is not a Rust/clippy diagnostic.
+
+## Final source checks and handoff
+
+Final code revision: `082727f3` (exact SHA in `final-linux/source.txt` and
+`../../raw/day5-final-cpu/source.txt`, relative to this directory).
+The remote candidate file was compared to that committed revision before checkout;
+only the two-declaration module fragment remains as the remote source delta.
+Strict native engine/gate clippy was rerun successfully at the committed revision;
+Linux release bank suite rerun: **46 passed, 0 failed** (`final-linux/`).
+No GPU rerun at this later warning-only revision is claimed: GPU binary/source
+identity remains the earlier exact receipt above.
+
+Final Mac checks all exit 0; commands, exit statuses and raw outputs are in
+`research/spill-c-20260919/raw/day5-final-cpu/`:
+
+| Check | Result / actual scope |
+|---|---|
+| `cargo fmt --all -- --check` | pass, workspace formatting |
+| `cargo check -p memra-tier --offline --all-targets` | pass, macOS type check |
+| Same plus `--target x86_64-unknown-linux-gnu` | pass, cross-target check, not execution |
+| `cargo test -p memra-tier --offline --no-fail-fast` | 174 passed, 0 failed, including 4 compile-fail doctests |
+| `cargo clippy -p memra-tier --offline --all-targets -- -D warnings` | pass |
+| `git diff --check` | pass |
+| `bash tools/check-flags.sh` | pass, 864 runtime reads covered |
+
+Remaining integration fragment: `mod ple_rows_tier; mod banked_residency;` in
+lead-owned engine lib.rs. These declarations were applied only to this lane's
+remote scratch checkout, not the local shared source. No dependency/kernel/FFI,
+flag/default, numerical program or board values changed in this resume.
+
+No blocker to this requested development milestone. HostExps runtime dispatch,
+model-scale source/cache registration, async I/O, NVMe ancestry/storage speed,
+full serving/state-restoration and production qualification remain unrun or unwired.
+The collector's GPU telemetry remains raw/unvalidated for timing claims. No V4.1
+or Engram work was performed.
+
+Effort: approximately **0.7 agent-hours** for this resumed session, below the
+requested two-hour stop; estimate includes access, verification and receipt banking.
+The WP-C allocation remains **8 agent-days**. Earlier total agent-hours were not
+fully recorded, so no fabricated cumulative burn or remaining balance is given.
+Lane worktrees remain open for lead integration, not abandoned/completed scratch.
+
+Receipt hygiene: trailing empty lines only were removed from the two final Cargo
+test logs for `git diff --check`; all output lines are retained. GPU captures and
+their hash-bound raw logs were not rewritten.
