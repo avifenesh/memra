@@ -176,15 +176,18 @@ def validate_telemetry(samples, kind):
 
 
 @contextlib.contextmanager
-def campaign_lock(rig):
+def campaign_lock(rig, inherit=False):
     require(rig in LOCKS and LOCKS[rig] is not None, "GPU-shaped campaign requires canonical rig lock")
     # Never unlink a shared lock inode: waiters and other campaigns must see the same file.
     with open(LOCKS[rig], "a") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         try:
-            yield LOCKS[rig]
+            yield handle if inherit else LOCKS[rig]
         finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            # Inherited open-file descriptions retain ownership until every child
+            # closes its FD. Explicit LOCK_UN here would revoke a surviving child.
+            if not inherit:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def paired_orders(n):
@@ -192,11 +195,12 @@ def paired_orders(n):
     return [(i, order) for i in range(n) for order in ("AB", "BA")]
 
 
-def tee_run(command, raw_path, timeout=30, echo=True):
+def tee_run(command, raw_path, timeout=30, echo=True, pass_fds=()):
     """Drain merged stdout/stderr to a raw file BEFORE parsing, including on timeout."""
     with raw_path.open("xb") as log:
         try:
-            p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+            p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 start_new_session=True, pass_fds=pass_fds)
         except OSError as error:
             log.write((f"ERROR: launch failed: {error}\n").encode())
             log.flush()
@@ -235,6 +239,10 @@ def tee_run(command, raw_path, timeout=30, echo=True):
         if thread.is_alive():
             raise TimeoutError("raw log drain remained open; no result may be published")
         p.stdout.close()
+        if pass_fds:
+            # External-lock commands are scoped jobs, never daemon launchers.
+            # Kill only our command group, including descendants with closed stdout.
+            kill_group()
         if errors:
             raise errors[0]
     return code, timed_out
@@ -250,7 +258,7 @@ class SubprocessRunner:
     def __init__(self, smi="nvidia-smi"):
         self.smi = smi
 
-    def run(self, command, raw_path, timeout=30, echo=True, run_id=None, hourly_cost=None, resume_from=None, storage=None):
+    def run(self, command, raw_path, timeout=30, echo=True, run_id=None, hourly_cost=None, resume_from=None, storage=None, pass_fds=(), lock_proof=None):
         root = raw_path.parent
         stem = raw_path.stem
         started = time.monotonic_ns()
@@ -260,6 +268,8 @@ class SubprocessRunner:
                 "started_utc": started_utc, "provider_instance_id": instance,
                 "hourly_cost": hourly_cost, "qualification": False, "resume_from": resume_from,
                 "storage": storage, "timing_scope": "collector-with-snapshots-and-sampler"}
+        if lock_proof is not None:
+            cell["lock_proof"] = lock_proof
         append_cell(root / "CELL.jsonl", {**cell, "event": "start"})
         smi = shutil.which(self.smi)
         snapshots = {}
@@ -288,7 +298,7 @@ class SubprocessRunner:
                     err.write(str(error).encode()); err.flush()
                     telemetry["reason"] = str(error)
             try:
-                code, expired = tee_run(command, raw_path, timeout, echo)
+                code, expired = tee_run(command, raw_path, timeout, echo, pass_fds=pass_fds)
                 if smi and (code != 0 or expired):
                     snapshot("failure")
             finally:
@@ -342,6 +352,8 @@ class SubprocessRunner:
                   "raw_log": descriptor(root, raw_path), "failure_quote": quote,
                   "result": result, "gpu_telemetry": telemetry, "compute_apps": snapshots,
                   "qualification": False}
+        if lock_proof is not None:
+            record["lock_proof"] = lock_proof
         with (root / f"{stem}.capture.json").open("x") as out:
             json.dump(record, out, indent=2); out.write("\n")
         append_cell(root / "CELL.jsonl", {**cell, "event": "end",
@@ -437,6 +449,13 @@ def validate_capture(record, root):
         require({"elapsed_seconds", "started_utc", "ended_utc"} <= record.keys(), "partial capture timing fields")
         require(type(record["elapsed_seconds"]) in (int, float) and record["elapsed_seconds"] == (end-begin)/1e9, "capture elapsed mismatch")
         require(utc_timestamp(record["ended_utc"]) >= utc_timestamp(record["started_utc"]), "capture UTC regressed")
+    if "lock_proof" in record:
+        proof = json.loads(evidence(root, record["lock_proof"]).read_text())
+        require(proof["rig"] in LOCKS and proof["rig"] != "cpu" and proof["lock"] == LOCKS[proof["rig"]]
+                and proof["acquired"] is True and proof["owner"] == "collector"
+                and proof["mechanism"] == "inherited-flock-same-open-description"
+                and type(proof["device"]) is int and type(proof["inode"]) is int,
+                "invalid inherited collector lock proof")
     text = evidence(root, record["raw_log"], allow_empty=True).read_text(errors="replace")
     if record["status"] == "refused":
         require(explicit_refusal(text, record["exit_code"], record["timed_out"]) == record["failure_quote"]
@@ -482,6 +501,9 @@ def validate_cell(path):
             capture["status"] == end["status"], "CELL capture outcome mismatch")
     if "gpu_power_limits" in capture:
         require(end.get("gpu_power_limits") == capture["gpu_power_limits"], "CELL power limit mismatch")
+    if "lock_proof" in capture:
+        require(start.get("lock_proof") == end.get("lock_proof") == capture["lock_proof"],
+                "CELL inherited lock proof mismatch")
     duration = capture["ended_monotonic_ns"] - capture["started_monotonic_ns"]
     require(type(end["duration_ns"]) is int and end["duration_ns"] == duration, "CELL duration mismatch")
     if "elapsed_seconds" in capture:
@@ -771,6 +793,7 @@ def main():
     modes.add_argument("--dry-run", action="store_true")
     modes.add_argument("--validate-campaign", type=Path, metavar="BUNDLE")
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--external-lock", action="store_true", help="inherit canonical lock FD; replace exactly one @COLLECTOR_LOCK_FD@ child argument (explicit opt-in only)")
     parser.add_argument("--schema", choices=["auto", "runs", "telemetry"], default="auto")
     parser.add_argument("--storage-root", type=Path, help="actual filesystem path for this storage cell; ancestry captured before execution")
     parser.add_argument("--allow-unproven-storage", action="store_true", help="explicit overlay/unproven development mode; never NVMe/spill-speed evidence")
@@ -805,14 +828,30 @@ def main():
                 "storage-bench requires --storage-root; overlay needs --allow-unproven-storage")
         args.out.mkdir(parents=True, exist_ok=False)
         storage = capture_storage(args.storage_root, args.out, args.allow_unproven_storage) if args.storage_root else None
-        with campaign_lock(args.rig) as lock:
+        token = "@COLLECTOR_LOCK_FD@"
+        require(not args.external_lock or args.execute.count(token) == 1,
+                "--external-lock requires exactly one @COLLECTOR_LOCK_FD@ argument")
+        require(not args.external_lock or not args.resume,
+                "external-lock FD argv is ephemeral; use a fresh cell instead of --resume")
+        with campaign_lock(args.rig, inherit=args.external_lock) as lock:
+            proof = {"rig": args.rig, "lock": LOCKS[args.rig], "acquired": True}
+            pass_fds = ()
+            if args.external_lock:
+                pass_fds = (lock.fileno(),)
+                stat = os.fstat(lock.fileno())
+                proof.update(owner="collector", mechanism="inherited-flock-same-open-description",
+                             device=stat.st_dev, inode=stat.st_ino)
+                args.execute = [str(lock.fileno()) if arg == token else arg for arg in args.execute]
+            lock_path = args.out / "lock.json"
+            lock_path.write_text(json.dumps(proof) + "\n")
             record = SubprocessRunner().run(args.execute, args.out / "command.log", args.timeout,
-                                            run_id=args.run_id or args.out.name, hourly_cost=args.hourly_cost, resume_from=previous, storage=storage)
-            (args.out / "lock.json").write_text(json.dumps({"rig": args.rig, "lock": lock, "acquired": True}) + "\n")
+                                            run_id=args.run_id or args.out.name, hourly_cost=args.hourly_cost, resume_from=previous, storage=storage,
+                                            pass_fds=pass_fds, lock_proof=descriptor(args.out, lock_path) if args.external_lock else None)
         print(json.dumps(record, indent=2))
         if record["status"] in {"failed", "refused"}:
             sys.exit(record["exit_code"] if 0 < record["exit_code"] < 126 else 2)
         return
+    require(not args.external_lock, "--external-lock requires --execute")
     if args.first_hour:
         print(json.dumps(first_hour_plan(), indent=2))
         return
