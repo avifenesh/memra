@@ -38,6 +38,10 @@ impl<S: ObjectStore> ObjectReader<S> {
                 return Err(Error::InvalidLayout);
             }
             let manifest = store.lookup(&key)?.ok_or(Error::NotFound)?;
+            manifest.validate()?;
+            if manifest.key != key {
+                return Err(Error::InvalidLayout);
+            }
             if objects.insert(tensor, manifest).is_some() {
                 return Err(Error::Conflict);
             }

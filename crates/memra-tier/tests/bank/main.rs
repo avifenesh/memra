@@ -1398,3 +1398,5 @@ fn revision_v11_corrupt_sibling_and_row_namespace() {
     finish(&mut r.0, &t);
     assert_eq!(g.borrow().used(), TierBudget::zero(2));
 }
+
+mod day4;

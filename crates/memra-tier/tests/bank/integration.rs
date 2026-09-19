@@ -29,7 +29,7 @@ impl BlobBackend for Memory {
         Ok(())
     }
 }
-fn shared(cap: u64, reserve: u64) -> Rc<RefCell<SharedGovernor>> {
+pub(super) fn shared(cap: u64, reserve: u64) -> Rc<RefCell<SharedGovernor>> {
     let mut c = TierBudget::zero(2);
     c.pageable = cap;
     c.staging = cap;
@@ -91,8 +91,21 @@ fn object_store_transfer_rows_forced_misses_order_and_retirement() {
     let queue_charge = g.borrow_mut().reserve(&queue_req).unwrap();
     let mut io_req = request(0, Priority::Demand);
     io_req.bytes.nvme = 200_000;
-    let reader =
-        ObjectReader::new(store, vec![(t, key)], pool.clone(), io_req, &queue_charge).unwrap();
+    let source = BankSource::install(
+        cat,
+        vec![BankSourceSpec {
+            tensor: t.clone(),
+            key: key.clone(),
+            valid_bytes: 8192,
+        }],
+        store,
+        vec![(t, key)],
+        pool.clone(),
+        io_req,
+        &queue_charge,
+    )
+    .unwrap();
+    let (cat, reader) = source.into_parts();
     let mut rows = BoundedRowService(
         BankService::new(
             cat,
@@ -351,7 +364,21 @@ fn object_transfer_experts_partial_failure_never_publishes_successful_sibling() 
         let qc = g.borrow_mut().reserve(&qr).unwrap();
         let mut io = request(0, Priority::Demand);
         io.bytes.nvme = 32768;
-        let reader = ObjectReader::new(store, vec![(tensor(), key)], pool, io, &qc).unwrap();
+        let source = BankSource::install(
+            cat,
+            vec![BankSourceSpec {
+                tensor: tensor(),
+                key: key.clone(),
+                valid_bytes: 1024,
+            }],
+            store,
+            vec![(tensor(), key)],
+            pool,
+            io,
+            &qc,
+        )
+        .unwrap();
+        let (cat, reader) = source.into_parts();
         let mut bank: BankService<ExpertDomain, _, _> = BankService::new(
             cat,
             g.clone(),
