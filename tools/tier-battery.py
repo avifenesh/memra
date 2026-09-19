@@ -589,6 +589,20 @@ def first_hour_plan():
             "warning": "Cold native build may consume entire hour. Missing adapters remain BLOCKED."}
 
 
+def read_cell_journal(path):
+    """Recover only a torn final append; never hide corruption of a complete row."""
+    lines = path.read_text().splitlines(keepends=True)
+    records, torn = [], False
+    for i, line in enumerate(lines):
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            require(i == len(lines)-1 and not line.endswith("\n"), "corrupt completed CELL journal row")
+            torn = True
+    require(records, "no complete CELL receipt to resume")
+    return records, torn
+
+
 def append_cell(path, row):
     with path.open("a") as out:
         out.write(json.dumps(row) + "\n"); out.flush(); os.fsync(out.fileno())
@@ -620,9 +634,9 @@ def main():
         previous = None
         if args.resume:
             old = args.out / "CELL.jsonl"
-            records = [json.loads(line) for line in old.read_text().splitlines()]
+            records, torn = read_cell_journal(old)
             require(records and records[-1]["command"] == args.execute, "resume command mismatch")
-            previous = {"receipt": str(old), "sha256": digest(old), "last_event": records[-1]["event"]}
+            previous = {"receipt": str(old), "sha256": digest(old), "last_event": records[-1]["event"], "torn_tail_preserved": torn}
             args.out = args.out / "attempts" / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         args.out.mkdir(parents=True, exist_ok=False)
         with campaign_lock(args.rig) as lock:

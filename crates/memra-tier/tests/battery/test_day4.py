@@ -141,13 +141,20 @@ class Day4Tests(unittest.TestCase):
             self.assertEqual([r['event'] for r in records], ['start', 'end'])
             self.assertIn('ended_utc', records[-1])
             # Simulate an interrupted cell: only its durable start survives.
-            (out/'CELL.jsonl').write_text(json.dumps(records[0])+'\n')
+            (out/'CELL.jsonl').write_text(json.dumps(records[0])+'\n{"event":')
             second = subprocess.run([*argv, '--resume', '--execute', *command], env=env, capture_output=True)
             self.assertEqual(second.returncode, 0, second.stderr)
             resumed = next((out/'attempts').glob('*/CELL.jsonl'))
             rows = [json.loads(line) for line in resumed.read_text().splitlines()]
             self.assertEqual(rows[0]['resume_from']['last_event'], 'start')
+            self.assertTrue(rows[0]['resume_from']['torn_tail_preserved'])
             self.assertFalse(rows[-1]['qualification'])
+
+    def test_journal_refuses_corruption_before_tail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'CELL.jsonl'
+            path.write_text('{"event":\n{"event":"start"}\n')
+            with self.assertRaises(ValueError): B.read_cell_journal(path)
 
     def test_first_hour_is_correctness_only_both_orders(self):
         plan = B.first_hour_plan()
