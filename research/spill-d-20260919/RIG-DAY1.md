@@ -158,9 +158,43 @@ Builds (4 jobs, release, locked dependency graph, outside GPU lock):
 - Provider id, if exposed as `RUNPOD_POD_ID` or `CONTAINER_ID`, and optional cost are raw
   **private** receipt metadata, never credentials. Keep real ids/cost/host/topology outside
   public git; sanitize before publication and retain original hashes privately. No env
-  dumps or env/auth file reads. Copy raw receipts incrementally off the interruptible
-  disk through the same operator SSH identity (e.g. `rsync -e "ssh -p $DEV_PORT"` to private
-  storage); no script can recover a provider-destroyed volume without that copy.
+  dumps or env/auth file reads. **Sync receipts after EVERY cell, including failures,
+  before starting the next cell** — never only at the end of the sequence. Use the same
+  operator SSH identity to pull to private storage. Run this on the operator workstation
+  after each remote collector invocation (the sequence below must be segmented accordingly):
+
+  ```sh
+  : "${LOCAL_EV:?private local mirror for this campaign}"
+  rsync -a --checksum -e "ssh -p $DEV_PORT -o BatchMode=yes -o ConnectTimeout=25" \
+    "$DEV_HOST:$EV/" "$LOCAL_EV/"
+  # Also pull $BOOT after each bootstrap stage/checkpoint when it is still running.
+  # Inspect/validate the completed CELL + capture hashes in the local mirror before proceeding.
+  python3 tools/tier-battery.py --validate "$LOCAL_EV"
+  ```
+
+  Failed commands can pass **integrity** validation; inspect their retained status before
+  proceeding. A torn/start-only cell remains incomplete and must not be claimed successful.
+  Mirror native output TSVs, manifests and goldens too, not just CELL.jsonl. No script can
+  recover a provider-destroyed volume without the off-box copy.
+- **Observed spot interruption, reported by the lead 2026-09-19:** the first rented box
+  was preempted mid-checkpoint download (approximately 6.4 of 15.7 GB). A/D1/C receipts
+  were already synced; the incomplete B artifact and scratch worktree were lost. Provider
+  state was `exited/stopped`; `vastai start` refused with
+  **"Required resources are currently unavailable"**. This is an operator-reported recovery
+  incident, not an additional GPU result. Restart of a preempted instance can remain queued
+  indefinitely: choose bounded wait versus replacement from **receipt state**, not hope.
+  Inventory which completed receipts are already off-box, which uncompleted cells must
+  rerun, and whether any unique bytes remain only on the old disk. Do not discard the only
+  copy of unsynced evidence. Once retained results are safe, a missing reproducible scratch
+  worktree or partial download is not a reason to wait indefinitely for capacity; operator
+  may replace the rental under the existing approval. No automatic destroy/start loop.
+- Artifacts must remain re-downloadable from an **immutable pinned locator plus complete
+  byte manifest/SHA-256**, independently of the rented disk. Record the full revision and
+  expected length/hash before transfer. A partial file is never an accepted artifact; resume
+  only against the same immutable bytes, verify the full hash, and rebootstrap/rebuild and
+  rerun pending cells on the replacement. Restore the scratch worktree from its **pushed
+  branch/commit**, not from an assumed surviving local branch. B remains unrun in this
+  snapshot; preserved A/D1/C results cannot stand in for B or qualify the new device.
 
 Retain `BOOTSTRAP.json`, journal/logs, `TOPOLOGY.json`, acceptance source/binary and
 `locked-run.sh`. Bootstrap is **not** a schema-v1 byte receipt or tier-qualified GPU pass.

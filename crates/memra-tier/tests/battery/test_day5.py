@@ -193,6 +193,12 @@ class Day5Tests(unittest.TestCase):
             'width_current':16, 'width_max':16, 'bandwidth_measured':False}])
         self.assertEqual(T.pcie_links('unparseable/missing'), [])
 
+    def test_spot_recovery_requires_per_cell_sync_and_pinned_redownload(self):
+        doc = (ROOT/'research/spill-d-20260919/RIG-DAY1.md').read_text()
+        for phrase in ('after EVERY cell', 'Required resources are currently unavailable',
+                       'immutable pinned locator', 'pushed\n  branch/commit', 'receipt state'):
+            self.assertIn(phrase, doc)
+
     def test_c_runbook_stages_existing_goldens_not_a_new_oracle(self):
         doc = (ROOT/'research/spill-d-20260919/RIG-DAY1.md').read_text()
         self.assertIn('cp research/qwen4exp-bringup-20260829/gpu-eager/bank-bytes-goldens.tsv', doc)
