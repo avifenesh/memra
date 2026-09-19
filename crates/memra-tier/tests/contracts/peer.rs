@@ -359,3 +359,53 @@ fn reusable_peer_schedule() {
     let copies = vec![p.copy(&src, &dst)];
     super::conformance::peer_cancel(&mut p, copies, 1);
 }
+
+#[test]
+fn revision_v11_peer_complete_cancel() {
+    let mut p = Peer::new(shared());
+    let src = p.reserve(p.plan(0, 19)).unwrap();
+    let dst = p.reserve(p.plan(1, 31)).unwrap();
+    let copies = vec![p.copy(&src, &dst)];
+    let t = super::conformance::peer_complete_cancel(&mut p, copies, 1, &expected(1), |p, t| {
+        assert!(p.entries[t].c.producer_done);
+    });
+    p.entries.get_mut(&t).unwrap().done = true;
+    p.entries.get_mut(&t).unwrap().graph = true;
+    p.acknowledge(&t).unwrap();
+    p.release(&src).unwrap();
+    p.release(&dst).unwrap();
+}
+
+// A directional reference fake proves all three route fault arms of the shared
+// schedule execute even though D's current global-grant fake stops at the first.
+struct Directed {
+    peer: Peer,
+    denied: bool,
+}
+impl PeerCapacity for Directed {
+    fn reserve(&mut self, plan: PeerPlan) -> Result<PeerLease> {
+        if self.denied && plan.owner_device == 0 && plan.consumer_device == 1 {
+            return Err(Error::Unsupported);
+        }
+        self.peer.reserve(plan)
+    }
+    fn release(&mut self, lease: &PeerLease) -> Result<()> {
+        self.peer.release(lease)
+    }
+}
+#[test]
+fn revision_v11_directed_reference_routes() {
+    let mut p = Directed {
+        peer: Peer::new(shared()),
+        denied: false,
+    };
+    let forward = p.peer.plan(0, 19);
+    let reverse = p.peer.plan(1, 31);
+    super::conformance::peer_directed_grants(
+        &mut p,
+        forward,
+        reverse,
+        |p, _, denied| p.denied = denied,
+        |p| p.peer.gov.borrow().used(),
+    );
+}

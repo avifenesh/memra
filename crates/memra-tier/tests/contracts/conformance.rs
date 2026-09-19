@@ -101,3 +101,10 @@ pub fn peer_cancel<P: PeerBackend>(peer: &mut P, copies: Vec<ContiguousCopy>, co
     assert!(!peer.retired(&ticket).unwrap());
     assert!(peer.acknowledge(&ticket).is_err());
 }
+
+// v1.1 adds schedules only. Runtime traits and wire v1 are unchanged.
+#[allow(dead_code)]
+#[path = "revision_v11.rs"]
+mod revision_v11;
+#[allow(unused_imports)]
+pub use revision_v11::*;
