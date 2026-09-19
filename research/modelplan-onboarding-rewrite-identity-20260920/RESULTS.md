@@ -38,6 +38,8 @@ parity remains diagnostic evidence and cannot issue checkpoint qualification rec
   --target x86_64-unknown-linux-gnu -p memra-engine --lib --bins -p memra-server`.
 - `raw/host-harness-reproduced.log`: reproduction via `python3
   research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py`.
+- `raw/runtime-clippy.log`: documentation-only Linux engine/server clippy with warnings denied
+  passes at the published patch. This uses the same placeholder settings as the type check.
 - `raw/cpu-clippy.log`: Linux cross-target gguf/CLI clippy with warnings denied passes.
 - `raw/cli-typecheck.log`: cross-target Linux CLI all-target type check passes.
 - `raw/cpu-suites.log`: broader CPU sweep includes the reference executor: 65 pass, one existing
