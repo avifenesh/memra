@@ -1,5 +1,5 @@
 use super::*;
-use memra_tier::contracts::{BudgetRequest, Deadline, TierBudget};
+use memra_tier::contracts::{BudgetRequest, Deadline, Digest, TierBudget};
 use memra_tier::io::direct::{AlignedBuffer, AlignedFile};
 use memra_tier::tier::Governor;
 
@@ -133,4 +133,227 @@ fn direct_mode_is_explicit_and_never_silently_falls_back() {
                 .starts_with(".pending")
         }));
     }
+}
+
+#[derive(Default)]
+struct CountedBackend {
+    inner: MemoryBackend,
+    reads: std::cell::RefCell<Vec<(bool, Digest)>>,
+}
+impl BlobBackend for CountedBackend {
+    fn get(&self, root: bool, id: Digest, max: usize) -> Result<Option<Vec<u8>>> {
+        self.reads.borrow_mut().push((root, id));
+        self.inner.get(root, id, max)
+    }
+    fn insert(&mut self, root: bool, id: Digest, bytes: &[u8]) -> Result<()> {
+        self.inner.insert(root, id, bytes)
+    }
+}
+#[test]
+fn extent_lease_is_bounded_lazy_charged_and_rechecks_corruption() {
+    let g = governor();
+    let mut store = ExtentStore::new(CountedBackend::default(), g.clone());
+    let mut t = store.begin(key(), 3 * 4096, Durability::Ephemeral).unwrap();
+    for b in [1, 2, 3] {
+        store.put(&mut t, &vec![b; 4096]).unwrap();
+    }
+    let m = store.commit(&mut t).unwrap();
+    store.backend().reads.borrow_mut().clear();
+    let r = support::request(0, Priority::MandatoryActive);
+    let mut r = r;
+    r.bytes.nvme = 16384;
+    assert_eq!(store.lookup(&key()).unwrap(), Some(m.clone()));
+    assert!(store.backend().reads.borrow().iter().all(|(root, _)| *root));
+    let lease = store.lease_extent(&m, 1, &r).unwrap();
+    assert_eq!(g.borrow().used().nvme, 16384);
+    let chunks: Vec<_> = store
+        .backend()
+        .reads
+        .borrow()
+        .iter()
+        .filter(|(root, _)| !root)
+        .map(|(_, id)| *id)
+        .collect();
+    assert_eq!(chunks, [m.chunks[1].encoded_digest]);
+    assert!(matches!(store.lease(&m, &r), Err(Error::Capacity)));
+    // An unrelated chunk can disappear without breaking the selected extent.
+    store
+        .backend_mut()
+        .inner
+        .blobs
+        .remove(&(false, m.chunks[0].encoded_digest));
+    let mut bytes = vec![0; 4096];
+    assert_eq!(store.read_extent(&lease, &mut bytes), Ok(4096));
+    assert_eq!(bytes, vec![2; 4096]);
+    assert!(matches!(store.lease(&m, &r), Err(Error::NotFound)));
+    assert_eq!(store.evict(&key()), Err(Error::Busy));
+    store
+        .backend_mut()
+        .inner
+        .blobs
+        .get_mut(&(false, m.chunks[1].encoded_digest))
+        .unwrap()[ALIGNMENT] ^= 1;
+    assert_eq!(store.read_extent(&lease, &mut bytes), Err(Error::Corrupt));
+    let used = g.borrow().used();
+    assert!(matches!(store.lease_extent(&m, 1, &r), Err(Error::Corrupt)));
+    assert_eq!(g.borrow().used(), used); // failed validation returns its admission
+    store.release_extent(&lease).unwrap();
+    assert_eq!(g.borrow().used().nvme, 0);
+    assert_eq!(
+        store.read_extent(&lease, &mut bytes),
+        Err(Error::AlreadyReleased)
+    );
+    assert_eq!(store.release_extent(&lease), Err(Error::AlreadyReleased));
+}
+
+type FileTransfers = memra_tier::io::transfer::CpuTransfers<ExtentStore<FileBackend, Governor>>;
+fn background_fixture(
+    dir: &OwnedDirectory,
+    limit: usize,
+) -> (
+    FileTransfers,
+    FakePinnedPool,
+    SharedGovernor,
+    ObjectManifest,
+) {
+    use memra_tier::io::transfer::CpuTransfers;
+    let g = governor();
+    let mut store = ExtentStore::new(FileBackend::open(&dir.0).unwrap(), g.clone());
+    let mut t = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    store.put(&mut t, &payload(264)).unwrap();
+    let manifest = store.commit(&mut t).unwrap();
+    let mut request = support::request(16384, Priority::MandatoryActive);
+    request.bytes.nvme = 16384;
+    let mut qr = support::request(0, Priority::MandatoryActive);
+    qr.bytes.inflight = limit as u64;
+    let charge = g.borrow_mut().reserve(&qr).unwrap();
+    let mut engine = CpuTransfers::new(store, request, limit, &charge).unwrap();
+    engine.enable_background(1).unwrap();
+    (
+        engine,
+        new_pool(limit + 1, 4096, 4096, 0).unwrap(),
+        g,
+        manifest,
+    )
+}
+fn read_plan(
+    pool: &FakePinnedPool,
+    chunk: u32,
+) -> memra_tier::contracts::ReadPlan<memra_tier::pool::PinnedLease> {
+    memra_tier::contracts::ReadPlan {
+        object: key(),
+        chunk,
+        destination: pool.acquire(264, Admission::Demand).unwrap(),
+        epochs: epochs(7),
+    }
+}
+fn await_completion(
+    engine: &mut FileTransfers,
+    t: &TransferTicket,
+) -> memra_tier::contracts::Completion {
+    use memra_tier::contracts::TransferEngine;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let c = engine.poll(t).unwrap();
+        if c.producer_done {
+            return c;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "bounded worker completion timeout"
+        );
+        std::thread::yield_now();
+    }
+}
+#[test]
+fn background_bytes_progress_without_drive_and_retire_after_consumer() {
+    use memra_tier::contracts::{CancelState, Destination, TransferEngine};
+    let dir = OwnedDirectory::new();
+    let (mut engine, pool, g, _) = background_fixture(&dir, 1);
+    let t = engine.nvme_read(read_plan(&pool, 0)).unwrap();
+    assert_eq!(g.borrow().used().nvme, 16384);
+    assert_eq!(g.borrow().used().pageable, 12287); // framed extent + alignment overhead
+    assert!(!engine.retired(&t).unwrap());
+    let rejected = engine.nvme_read(read_plan(&pool, 0)).unwrap_err();
+    assert_eq!(rejected.error, Error::Capacity);
+    drop(rejected);
+    let c = await_completion(&mut engine, &t);
+    c.require(
+        &t,
+        &[vec![memra_tier::contracts::SegmentExpectation {
+            valid_bytes: 264,
+            io_bytes: 8192,
+            checksum: digest(&payload(264)),
+        }]],
+        false,
+    )
+    .unwrap();
+    assert!(engine.ready_view(&t, 0, t.epochs).is_err());
+    let Destination::Host(host) = engine.take_destination(&t, 0, t.epochs).unwrap() else {
+        panic!()
+    };
+    assert_eq!(host.bytes().unwrap(), payload(264));
+    assert_eq!(engine.cancel(&t), Ok(CancelState::AlreadyPublished));
+    assert_eq!(engine.retire(&t, None), Err(Error::Busy));
+    assert_eq!(g.borrow().used().nvme, 16384);
+    host.release();
+    engine.retire(&t, None).unwrap();
+    assert_eq!(g.borrow().used().nvme, 0);
+    assert_eq!(g.borrow().used().pageable, 0);
+    assert!(engine.retired(&t).unwrap());
+    assert_eq!(
+        engine.nvme_read(read_plan(&pool, 0)).unwrap_err().error,
+        Error::Capacity
+    ); // tombstone still bounded
+    engine.acknowledge(&t).unwrap();
+    assert_eq!(engine.retired(&t), Err(Error::UnknownTicket));
+    assert_eq!(pool.accounting().free_slots, 2);
+}
+#[test]
+fn background_cancel_corrupt_and_failed_siblings_never_publish() {
+    use memra_tier::contracts::{CancelState, ItemStatus, TransferEngine, TransferOp};
+    let dir = OwnedDirectory::new();
+    let (mut engine, pool, g, m) = background_fixture(&dir, 2);
+    let t = engine.nvme_read(read_plan(&pool, 0)).unwrap();
+    assert_eq!(engine.cancel(&t), Ok(CancelState::PublicationRevoked));
+    assert!(!engine.retired(&t).unwrap());
+    await_completion(&mut engine, &t);
+    assert!(matches!(
+        engine.take_destination(&t, 0, t.epochs),
+        Err(Error::Cancelled)
+    ));
+    engine.retire(&t, None).unwrap();
+    engine.acknowledge(&t).unwrap();
+    assert_eq!(g.borrow().used().nvme, 0);
+    let path = dir
+        .0
+        .join(format!("chunk-{}", hex(&m.chunks[0].encoded_digest)));
+    let mut corrupt = std::fs::read(&path).unwrap();
+    corrupt[ALIGNMENT] ^= 1;
+    std::fs::write(path, corrupt).unwrap();
+    let batch = engine
+        .submit_batch(vec![
+            TransferOp::NvmeRead(read_plan(&pool, 0)),
+            TransferOp::NvmeRead(read_plan(&pool, 99)),
+        ])
+        .unwrap();
+    batch.validate(2).unwrap();
+    let c = await_completion(&mut engine, &batch.ticket);
+    assert_eq!(c.items.len(), 2);
+    assert_eq!(c.items[0].segments[0].error, Some(Error::Corrupt));
+    assert_eq!(c.items[1].segments[0].error, Some(Error::InvalidLayout));
+    assert!(
+        c.items
+            .iter()
+            .all(|i| i.segments[0].status == ItemStatus::Failed)
+    );
+    assert!(
+        engine
+            .take_destination(&batch.ticket, 0, batch.ticket.epochs)
+            .is_err()
+    );
+    engine.retire(&batch.ticket, None).unwrap();
+    engine.acknowledge(&batch.ticket).unwrap();
+    assert_eq!(g.borrow().used().nvme, 0);
+    assert_eq!(pool.accounting().free_slots, 3);
 }

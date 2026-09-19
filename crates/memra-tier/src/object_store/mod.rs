@@ -9,6 +9,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+pub mod prepared;
+
 pub const ALIGNMENT: usize = 4096;
 pub const MAX_CHUNK: usize = 1024 * 1024;
 pub const MAX_ROOT: usize = 1024 * 1024;
@@ -128,11 +130,29 @@ pub trait BlobBackend {
     fn get(&self, root: bool, id: Digest, max_bytes: usize) -> Result<Option<Vec<u8>>>;
     fn insert(&mut self, root: bool, id: Digest, bytes: &[u8]) -> Result<()>;
 }
+/// A single verified extent reservation, not permission to read sibling chunks.
+/// Whole-object `ObjectStore::lease` remains the frozen, eager-validation mode.
+#[derive(Debug)]
+pub struct ExtentLease {
+    key: ObjectKey,
+    chunk: u32,
+    reference: ChunkRef,
+    charge: contracts::ChargedLease,
+}
+impl ExtentLease {
+    pub fn reference(&self) -> &ChunkRef {
+        &self.reference
+    }
+    pub fn charge(&self) -> &contracts::ChargedLease {
+        &self.charge
+    }
+}
 pub struct ExtentStore<B, G> {
     backend: B,
     governor: Rc<RefCell<G>>,
     owner: u64,
     leases: HashMap<(u64, u64), ObjectManifest>,
+    extent_leases: HashMap<(u64, u64), (ObjectKey, u32, ChunkRef)>,
 }
 impl<B: BlobBackend, G: BudgetGovernor> ExtentStore<B, G> {
     pub fn new(backend: B, governor: Rc<RefCell<G>>) -> Self {
@@ -142,6 +162,7 @@ impl<B: BlobBackend, G: BudgetGovernor> ExtentStore<B, G> {
             governor,
             owner: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             leases: HashMap::new(),
+            extent_leases: HashMap::new(),
         }
     }
     pub fn backend(&self) -> &B {
@@ -149,6 +170,85 @@ impl<B: BlobBackend, G: BudgetGovernor> ExtentStore<B, G> {
     }
     pub fn backend_mut(&mut self) -> &mut B {
         &mut self.backend
+    }
+    /// Bound payload validation and NVMe reservation to one selected extent plus
+    /// its framed root. The caller's NVMe request is a ceiling; other dimensions
+    /// remain caller-supplied. Metadata remains bounded by MAX_ROOT, not table size.
+    pub fn lease_extent(
+        &mut self,
+        m: &ObjectManifest,
+        chunk: u32,
+        r: &BudgetRequest,
+    ) -> Result<ExtentLease> {
+        let lease = self.reserve_extent(m, chunk, r)?;
+        if let Err(error) = self.verify_chunk(&lease.reference) {
+            self.release_extent(&lease)?;
+            return Err(error);
+        }
+        Ok(lease)
+    }
+    fn reserve_extent(
+        &mut self,
+        m: &ObjectManifest,
+        chunk: u32,
+        r: &BudgetRequest,
+    ) -> Result<ExtentLease> {
+        m.validate()?;
+        if self.lookup(&m.key)?.as_ref() != Some(m) {
+            return Err(Error::Conflict);
+        }
+        let reference = m
+            .chunks
+            .get(chunk as usize)
+            .ok_or(Error::InvalidLayout)?
+            .clone();
+        let root_bytes = (ALIGNMENT + padded_len(m.encode()?.len())?) as u64;
+        let size = reference
+            .storage_bytes
+            .checked_add(ALIGNMENT as u64)
+            .and_then(|n| n.checked_add(root_bytes))
+            .ok_or(Error::Overflow)?;
+        if r.bytes.nvme < size {
+            return Err(Error::Capacity);
+        }
+        let mut request = r.clone();
+        request.bytes.nvme = size;
+        let charge = self.governor.borrow_mut().reserve(&request)?;
+        self.extent_leases
+            .insert(charge.id(), (m.key.clone(), chunk, reference.clone()));
+        Ok(ExtentLease {
+            key: m.key.clone(),
+            chunk,
+            reference,
+            charge,
+        })
+    }
+    fn check_extent(&self, lease: &ExtentLease) -> Result<()> {
+        if lease.charge.state()? == contracts::ChargeState::Released {
+            return Err(Error::AlreadyReleased);
+        }
+        if self.extent_leases.get(&lease.charge.id())
+            != Some(&(lease.key.clone(), lease.chunk, lease.reference.clone()))
+        {
+            return Err(Error::ForeignLease);
+        }
+        Ok(())
+    }
+    pub fn read_extent(&self, lease: &ExtentLease, destination: &mut [u8]) -> Result<u64> {
+        self.check_extent(lease)?;
+        if destination.len() < lease.reference.valid_bytes as usize {
+            return Err(Error::Capacity);
+        }
+        // Immutable content address is revalidated on EVERY read; no unchecked cache.
+        let payload = self.verify_chunk(&lease.reference)?;
+        destination[..payload.len()].copy_from_slice(&payload);
+        Ok(payload.len() as u64)
+    }
+    pub fn release_extent(&mut self, lease: &ExtentLease) -> Result<()> {
+        self.check_extent(lease)?;
+        self.governor.borrow_mut().release(&lease.charge)?;
+        self.extent_leases.remove(&lease.charge.id());
+        Ok(())
     }
     fn check_txn(&self, t: &StoreTxn) -> Result<()> {
         if t.owner != self.owner {
@@ -352,7 +452,9 @@ impl<B: BlobBackend, G: BudgetGovernor> ObjectStore for ExtentStore<B, G> {
         Ok(())
     }
     fn evict(&mut self, key: &ObjectKey) -> Result<()> {
-        if self.leases.values().any(|m| &m.key == key) {
+        if self.leases.values().any(|m| &m.key == key)
+            || self.extent_leases.values().any(|(k, _, _)| k == key)
+        {
             return Err(Error::Busy);
         }
         // No process-shared GC/lock protocol yet. Never unlink another process's backing.

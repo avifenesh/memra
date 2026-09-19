@@ -52,6 +52,9 @@ impl AlignedFile {
     pub fn from_configured_file(file: File) -> Self {
         Self { file }
     }
+    pub(crate) fn into_file(self) -> File {
+        self.file
+    }
     pub fn backend_label() -> &'static str {
         if cfg!(target_os = "macos") {
             "macos-f-nocache-development-fallback"
