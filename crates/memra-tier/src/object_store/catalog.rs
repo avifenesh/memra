@@ -203,17 +203,21 @@ impl<G: BudgetGovernor> CatalogStore<G> {
         request: &BudgetRequest,
     ) -> Result<CatalogHead> {
         let id = key.identity()?;
-        if self.root(id).exists() || self.tomb(id).exists() {
+        // Exclusive catalog ownership proves no installer is still writing.
+        // A published root is immutable; only its abandoned staging link goes.
+        // Without a root/tomb, an incomplete index is private and can be retried.
+        if self.tomb(id).exists() {
+            return Err(Error::Conflict); // collect owns tombstoned backing
+        }
+        remove_if_exists(&self.root(id).with_extension("pending"))?;
+        if self.root(id).exists() {
+            self.sync_all()?;
             return Err(Error::Conflict);
         }
         for shard in 0..self.directories.len() {
-            if self.index_path(id, shard).exists() {
-                return Err(Error::Conflict);
-            }
+            remove_if_exists(&self.index_path(id, shard))?;
         }
-        if self.root(id).with_extension("pending").exists() {
-            return Err(Error::Conflict);
-        }
+        self.sync_all()?;
         // Charge the caller's conservative ceiling BEFORE any index write. This
         // remains charged through collection, not just while consumers hold it.
         let charge = self.governor.borrow_mut().reserve(request)?;
@@ -472,6 +476,7 @@ impl<G: BudgetGovernor> CatalogStore<G> {
         for shard in 0..head.shards {
             remove_if_exists(&self.index_path(id, shard))?;
         }
+        remove_if_exists(&self.root(id).with_extension("pending"))?;
         self.sync_all()?;
         // Keep a tombstone until the final governor release succeeds. Replaying
         // partial unlinks is safe and missing files do not resurrect visibility.

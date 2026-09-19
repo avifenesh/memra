@@ -7,7 +7,11 @@ pub use crate::contracts::{ChunkRef, ObjectLease, ObjectManifest, ObjectStore};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 pub mod catalog;
 pub mod prepared;
@@ -117,6 +121,7 @@ fn root_id(key: &ObjectKey) -> Result<Digest> {
 /// Transactions belong to exactly one store instance, and remain retryable on errors.
 pub struct StoreTxn {
     owner: u64,
+    id: u64,
     object: ObjectManifest,
     written: u64,
     cancelled: bool,
@@ -125,7 +130,13 @@ pub struct StoreTxn {
 /// Immutable insert, never overwrite. `get` must bound allocation by max_bytes.
 /// Implementations distinguish root and chunk namespaces even for equal digests.
 /// Sealed GC authority, issued only after the store checks all live leases.
-pub struct EvictionPermit(());
+pub struct EvictionPermit(HashSet<Digest>);
+fn next_transaction_id() -> Result<u64> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+        .map_err(|_| Error::Overflow)
+}
 pub trait BlobBackend {
     fn persistent(&self) -> bool {
         false
@@ -137,6 +148,16 @@ pub trait BlobBackend {
     /// Backends without a process-safe deletion protocol remain read/write only.
     fn evict_root(&mut self, _id: Digest, _permit: EvictionPermit) -> Result<()> {
         Err(Error::Unsupported)
+    }
+    /// Additive backend staging protocol; the frozen ObjectStore contract is unchanged.
+    fn begin_transaction(&mut self) -> Result<u64> {
+        next_transaction_id()
+    }
+    fn stage_chunk(&mut self, _txn: u64, id: Digest, bytes: &[u8]) -> Result<()> {
+        self.insert(false, id, bytes)
+    }
+    fn finish_transaction(&mut self, _txn: u64) -> Result<()> {
+        Ok(())
     }
     fn get(&self, root: bool, id: Digest, max_bytes: usize) -> Result<Option<Vec<u8>>>;
     fn insert(&mut self, root: bool, id: Digest, bytes: &[u8]) -> Result<()>;
@@ -163,6 +184,7 @@ pub struct ExtentStore<B, G> {
     governor: Rc<RefCell<G>>,
     owner: u64,
     ownership_guard: Option<std::sync::Arc<fs::File>>,
+    staged: HashMap<u64, HashSet<Digest>>,
     leases: HashMap<(u64, u64), ObjectManifest>,
     extent_leases: HashMap<(u64, u64), (ObjectKey, u32, ChunkRef)>,
 }
@@ -175,6 +197,7 @@ impl<B: BlobBackend, G: BudgetGovernor> ExtentStore<B, G> {
             ownership_guard,
             governor,
             owner: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            staged: HashMap::new(),
             leases: HashMap::new(),
             extent_leases: HashMap::new(),
         }
@@ -335,8 +358,11 @@ impl<B: BlobBackend, G: BudgetGovernor> ObjectStore for ExtentStore<B, G> {
         if durability == Durability::Persistent && !self.backend.persistent() {
             return Err(Error::Unsupported);
         }
+        let id = self.backend.begin_transaction()?;
+        self.staged.insert(id, HashSet::new());
         Ok(StoreTxn {
             owner: self.owner,
+            id,
             object: ObjectManifest {
                 version: 1,
                 key,
@@ -379,7 +405,14 @@ impl<B: BlobBackend, G: BudgetGovernor> ObjectStore for ExtentStore<B, G> {
         if !fits {
             return Err(Error::Capacity);
         }
-        self.backend.insert(false, chunk.encoded_digest, &encoded)?;
+        // Register before insertion: a partial/failed write also remains protected
+        // until explicit commit/cancel, rather than relying on the caller's handle.
+        self.staged
+            .get_mut(&txn.id)
+            .ok_or(Error::Conflict)?
+            .insert(chunk.encoded_digest);
+        self.backend
+            .stage_chunk(txn.id, chunk.encoded_digest, &encoded)?;
         self.verify_chunk(&chunk)?;
         txn.object.chunks.push(chunk);
         txn.written = next;
@@ -400,6 +433,8 @@ impl<B: BlobBackend, G: BudgetGovernor> ObjectStore for ExtentStore<B, G> {
         if self.lookup(&txn.object.key)?.as_ref() != Some(&txn.object) {
             return Err(Error::Corrupt);
         }
+        self.backend.finish_transaction(txn.id)?;
+        self.staged.remove(&txn.id);
         Ok(txn.object.clone())
     }
     fn cancel(&mut self, txn: &mut StoreTxn) -> Result<CancelState> {
@@ -408,9 +443,13 @@ impl<B: BlobBackend, G: BudgetGovernor> ObjectStore for ExtentStore<B, G> {
         }
         if txn.published || self.lookup(&txn.object.key)?.as_ref() == Some(&txn.object) {
             txn.published = true;
+            self.backend.finish_transaction(txn.id)?;
+            self.staged.remove(&txn.id);
             return Ok(CancelState::AlreadyPublished);
         }
         txn.cancelled = true;
+        self.backend.finish_transaction(txn.id)?;
+        self.staged.remove(&txn.id);
         Ok(CancelState::PublicationRevoked)
     }
     fn lease(&mut self, m: &ObjectManifest, r: &BudgetRequest) -> Result<ObjectLease> {
@@ -471,7 +510,9 @@ impl<B: BlobBackend, G: BudgetGovernor> ObjectStore for ExtentStore<B, G> {
         {
             return Err(Error::Busy);
         }
-        self.backend.evict_root(root_id(key)?, EvictionPermit(()))
+        let protected = self.staged.values().flatten().copied().collect();
+        self.backend
+            .evict_root(root_id(key)?, EvictionPermit(protected))
     }
 }
 impl<B, G> Drop for ExtentStore<B, G> {
@@ -490,6 +531,7 @@ impl<B, G> Drop for ExtentStore<B, G> {
 pub struct FileBackend {
     directory: PathBuf,
     ownership: std::sync::Arc<fs::File>,
+    transactions: HashMap<u64, (PathBuf, fs::File)>,
     persistent: bool,
     read_mode: crate::io::direct::ReadMode,
     direct_writes: bool,
@@ -514,6 +556,9 @@ impl FileBackend {
                 .sync_all()?;
             }
         }
+        // Open/admission and every GC conversion take the gate FIRST. The gate
+        // stays locked until shared lifetime ownership is established/restored.
+        let _gate = lock_gc_gate(directory)?;
         let ownership = OpenOptions::new()
             .read(true)
             .write(true)
@@ -523,6 +568,7 @@ impl FileBackend {
         ownership.lock_shared()?;
         Ok(Self {
             ownership: std::sync::Arc::new(ownership),
+            transactions: HashMap::new(),
             directory: directory.to_owned(),
             persistent: durability == Durability::Persistent,
             read_mode: crate::io::direct::ReadMode::Buffered,
@@ -571,19 +617,69 @@ impl BlobBackend for FileBackend {
         Some(self.ownership.clone())
     }
     fn evict_root(&mut self, id: Digest, _permit: EvictionPermit) -> Result<()> {
-        // A different store/process keeps a shared lifetime lock even when it has
-        // no lease yet. Upgrade only with exclusive ownership; never wait for GC.
-        self.ownership.unlock()?;
-        if self.ownership.try_lock().is_err() {
-            self.ownership.lock_shared()?;
-            return Err(Error::Busy);
-        }
-        let result = self.evict_exclusive(id);
-        let relock = self.ownership.lock_shared().map_err(Error::from);
-        result.and(relock)
+        self.evict_with_hook(id, _permit, || {})
     }
     fn persistent(&self) -> bool {
         self.persistent
+    }
+    fn begin_transaction(&mut self) -> Result<u64> {
+        loop {
+            let id = next_transaction_id()?;
+            let path = self
+                .directory
+                .join(format!(".txn-{}-{id}", std::process::id()));
+            match fs::create_dir(&path) {
+                Ok(()) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e.into()),
+            }
+            let owner = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(path.join(".owner"))?;
+            owner.try_lock().map_err(|_| Error::Busy)?;
+            self.transactions.insert(id, (path, owner));
+            self.sync_directory()?;
+            return Ok(id);
+        }
+    }
+    fn stage_chunk(&mut self, txn: u64, id: Digest, bytes: &[u8]) -> Result<()> {
+        let path = self
+            .transactions
+            .get(&txn)
+            .ok_or(Error::Conflict)?
+            .0
+            .clone();
+        // Lifetime ownership excludes other collectors during this synchronous
+        // insertion. Persist the txn-scoped hard link before acknowledging put.
+        self.insert(false, id, bytes)?;
+        match fs::hard_link(
+            self.path(false, id),
+            path.join(format!("chunk-{}", hex(&id))),
+        ) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(e) => return Err(e.into()),
+        }
+        if self.persistent {
+            fs::File::open(path)?.sync_all()?;
+        }
+        Ok(())
+    }
+    fn finish_transaction(&mut self, txn: u64) -> Result<()> {
+        if let Some((path, _owner)) = self.transactions.get(&txn) {
+            // On commit the root is already durable; cancel explicitly revokes
+            // publication. Failed cleanup keeps the owner lock and registry.
+            match fs::remove_dir_all(path) {
+                Ok(()) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(e.into()),
+            }
+            self.sync_directory()?;
+            self.transactions.remove(&txn);
+        }
+        Ok(())
     }
     fn get(&self, root: bool, id: Digest, max_bytes: usize) -> Result<Option<Vec<u8>>> {
         let file = match fs::File::open(self.path(root, id)) {
@@ -684,51 +780,150 @@ impl BlobBackend for FileBackend {
 }
 
 impl FileBackend {
+    // Private callback makes the lock-conversion schedule deterministic in tests.
+    fn evict_with_hook(
+        &mut self,
+        id: Digest,
+        permit: EvictionPermit,
+        after_unlock: impl FnOnce(),
+    ) -> Result<()> {
+        // flock conversions are NOT atomic (including try_lock upgrades). Keep
+        // a distinct gate held throughout, so no peer can collect in the gap.
+        // Existing peers retain their shared lifetime locks and force Busy.
+        let gate = lock_gc_gate(&self.directory)?;
+        self.ownership.unlock()?;
+        after_unlock();
+        if self.ownership.try_lock().is_err() {
+            self.restore_shared(gate)?;
+            return Err(Error::Busy);
+        }
+        let result = self.evict_exclusive(id, permit);
+        result.and(self.restore_shared(gate))
+    }
+    fn restore_shared(&self, gate: fs::File) -> Result<()> {
+        if let Err(error) = self.ownership.lock_shared() {
+            // Failure to restore a lifetime fence is unknown ownership. Keep the
+            // gate locked until process exit rather than admit unsafe collection.
+            std::mem::forget(gate);
+            return Err(error.into());
+        }
+        Ok(())
+    }
     fn sync_directory(&self) -> Result<()> {
         if self.persistent {
             fs::File::open(&self.directory)?.sync_all()?;
         }
         Ok(())
     }
-    fn evict_exclusive(&mut self, id: Digest) -> Result<()> {
+    fn evict_exclusive(&mut self, id: Digest, permit: EvictionPermit) -> Result<()> {
         let root = self.path(true, id);
         let tomb = self.directory.join(format!("tomb-{}", hex(&id)));
-        // Rename is the visibility boundary. Recovery replays an existing tombstone.
-        if root.exists() {
-            if tomb.exists() {
-                return Err(Error::Conflict);
-            }
-            fs::rename(&root, &tomb)?;
-            self.sync_directory()?;
-        } else if !tomb.exists() {
+        // Validate the entire deletion plan before revoking visibility. Recovery
+        // uses the same validation for an already durable tombstone.
+        let published = root.exists();
+        if published && tomb.exists() {
+            return Err(Error::Conflict);
+        }
+        if !published && !tomb.exists() {
             return Err(Error::NotFound);
         }
-        let bytes = read_bounded(&tomb, MAX_ROOT + ALIGNMENT)?;
+        let bytes = read_bounded(if published { &root } else { &tomb }, MAX_ROOT + ALIGNMENT)?;
         let removed = ObjectManifest::decode(decode_extent(&bytes)?)?;
         if removed.key.identity()? != id {
             return Err(Error::Corrupt);
         }
         // Count committed references under the exclusive process lock. Fail closed
         // on ANY malformed root; an unreadable reference must not become zero.
-        let mut references = std::collections::HashMap::<Digest, u64>::new();
+        let mut references = permit.0;
+        let mut stale_transactions = Vec::new();
+        let mut candidates: HashSet<_> = removed.chunks.iter().map(|c| c.encoded_digest).collect();
         for entry in fs::read_dir(&self.directory)? {
             let entry = entry?;
-            if entry.file_name().to_string_lossy().starts_with("root-") {
+            if entry.file_name().to_string_lossy().starts_with("root-") && entry.path() != root {
                 let bytes = read_bounded(&entry.path(), MAX_ROOT + ALIGNMENT)?;
                 for c in ObjectManifest::decode(decode_extent(&bytes)?)?.chunks {
-                    *references.entry(c.encoded_digest).or_default() += 1;
+                    references.insert(c.encoded_digest);
+                }
+            } else if entry.file_name().to_string_lossy().starts_with(".txn-") {
+                // No clock/PID heuristic can retire a live transaction. Only a
+                // successful independent owner lock proves it is abandoned.
+                // Reap at most 32 stale directories per GC; defer the rest as
+                // references. Unknown/malformed metadata fails before rename.
+                let owner = match OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(entry.path().join(".owner"))
+                {
+                    Ok(file) => Some(file),
+                    // Crash between mkdir and owner creation. Exclusive store
+                    // ownership proves no other writer can still create it.
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                    Err(e) => return Err(e.into()),
+                };
+                let stale = match owner.as_ref().map(fs::File::try_lock) {
+                    None | Some(Ok(())) => true,
+                    Some(Err(std::fs::TryLockError::WouldBlock)) => false,
+                    Some(Err(std::fs::TryLockError::Error(e))) => return Err(e.into()),
+                };
+                let mut staged = Vec::new();
+                for chunk in fs::read_dir(entry.path())? {
+                    let chunk = chunk?;
+                    let name = chunk.file_name();
+                    let name = name.to_str().ok_or(Error::Corrupt)?;
+                    if name != ".owner" {
+                        staged.push(parse_chunk_name(name)?);
+                    }
+                }
+                if stale && stale_transactions.len() < 32 {
+                    candidates.extend(staged);
+                    stale_transactions.push((entry.path(), owner));
+                } else {
+                    references.extend(staged);
                 }
             }
         }
-        for c in removed.chunks {
-            if !references.contains_key(&c.encoded_digest) {
-                remove_if_exists(&self.path(false, c.encoded_digest))?;
+        // Last irreversible publication step, after every verification above.
+        if published {
+            fs::rename(&root, &tomb)?;
+            self.sync_directory()?;
+        }
+        for candidate in candidates {
+            if !references.contains(&candidate) {
+                remove_if_exists(&self.path(false, candidate))?;
             }
+        }
+        for (path, _owner) in stale_transactions {
+            fs::remove_dir_all(path)?;
         }
         self.sync_directory()?;
         remove_if_exists(&tomb)?;
         self.sync_directory()
     }
+}
+fn parse_chunk_name(name: &str) -> Result<Digest> {
+    let hex = name.strip_prefix("chunk-").ok_or(Error::Corrupt)?;
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(Error::Corrupt);
+    }
+    let mut digest = [0; 32];
+    for (i, byte) in digest.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).map_err(|_| Error::Corrupt)?;
+    }
+    Ok(digest)
+}
+fn lock_gc_gate(directory: &Path) -> Result<fs::File> {
+    let gate = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(directory.join(".ownership-gc"))?;
+    gate.try_lock().map_err(|_| Error::Busy)?;
+    Ok(gate)
 }
 fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
@@ -747,3 +942,6 @@ fn remove_if_exists(path: &Path) -> Result<()> {
         Err(e) => Err(e.into()),
     }
 }
+
+#[cfg(test)]
+mod tests;
