@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """CPU checks only; a Linux cargo check is not a linked Linux test or GPU result."""
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -32,7 +33,10 @@ for name, command in checks:
         result = subprocess.run(command, cwd=ROOT, stdout=raw, stderr=subprocess.STDOUT, check=False)
     # Raw file is complete before any parsing/hash/summary.
     data = path.read_bytes()
-    row = {"check": name, "command": command, "exit": result.returncode, "head": head, "raw": str(path.relative_to(HERE)), "sha256": hashlib.sha256(data).hexdigest()}
+    archive = path.with_suffix(".log.gz")
+    archive.write_bytes(gzip.compress(data, mtime=0))
+    path.unlink()
+    row = {"check": name, "command": command, "exit": result.returncode, "head": head, "raw": str(archive.relative_to(HERE)), "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "uncompressed_sha256": hashlib.sha256(data).hexdigest()}
     rows.append(row)
     print(f"{name}: exit {result.returncode}", flush=True)
     if result.returncode:

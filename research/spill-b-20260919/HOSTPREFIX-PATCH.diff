@@ -14,7 +14,7 @@ diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.
      pins: usize,
 +    _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
  }
- 
+
  #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 @@ -7391,6 +7392,9 @@
      /// MEMRA_KV_HOST_VERIFY=1 arm: `prefix_entry_state_digest` of the device entry at demote,
@@ -24,7 +24,7 @@ diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.
 +    _tier_metadata_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
 +    _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
  }
- 
+
  /// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU on purpose:
 @@ -7399,6 +7403,7 @@
  /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
@@ -245,7 +245,7 @@ diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.
 +        Ok(())
      }
  }
- 
+
 @@ -8002,6 +8205,9 @@
          _ => None,
      };
@@ -319,7 +319,7 @@ diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.
 @@ -8576,12 +8819,39 @@
          return None;
      }
- 
+
 +    let tier_identity = if let Some(tier) = &host.tier {
 +        let (program, generation) = tier.programs.get(pool_key)?;
 +        // Old imports are unbound and cannot masquerade as generic-tier hits.
@@ -414,7 +414,7 @@ diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.
              dspark_draft: None,
              pool_key: pool_key.clone(),
 @@ -33289,6 +33573,9 @@
- 
+
      fn host_entry(pool_key: &PoolKey, toks: Vec<u32>, bytes: usize) -> HostPrefixEntry {
          HostPrefixEntry {
 +            _tier_charge: None,

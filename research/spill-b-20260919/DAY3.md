@@ -50,7 +50,7 @@ docs were edited. No new MEMRA_* read, kernel, hardware default or published num
 Reproducer: `python3 research/spill-b-20260919/verify-day3.py`.
 Every command ran on the Mac at the exact code tip above. Complete stdout/stderr
 and command/exit/source/hash records are in **`day3-checks/commands.json`** and
-its named `.log` files; raw output was closed before parsing or summarizing.
+its named `.log.gz` archives; raw output was closed before parsing or summarizing.
 
 | Command | Actual result / exact relevant output |
 |---|---|
@@ -74,7 +74,7 @@ failure is `injected stub failure, not a GPU failure`, captured as child exit 7 
 runner exit 1. The raw dry-run manifest always says `gpu_claim: false`.
 
 Latest explicit stub receipt at the checked tip:
-`raw/cpu-stub-20260919T073624Z-69985/` plus `day3-dry-run.log`.
+`raw/cpu-stub-20260919T073624Z-69985/` plus `day3-dry-run.log.gz`.
 Earlier stub receipts are retained as development evidence, not relabeled as final-tip
 runs. No GPU/device/server/build result is inferred from a stub log.
 
@@ -113,3 +113,20 @@ The open lane worktree/branch remain intentionally available for the lead's next
 integration milestone; no merge/bank/abandon decision has closed the lane. Only B code
 and receipts were staged; no unrelated dirty work was absorbed. Final receipt commit
 records a clean lane `git status --short` (empty) after committing the listed evidence.
+
+
+### Receipt packaging correction
+
+A post-commit `git diff --check HEAD^ HEAD` found trailing blank lines in four
+verbatim libtest raw logs (`new blank line at EOF`). No test failed. Rather than
+trim or alter raw evidence, day-3 logs are now deterministic gzip archives preserving
+all original bytes. `commands.json` records both archive and uncompressed SHA256;
+the verifier now archives captures the same way. The subsequent range diff check
+includes this correction and must be clean. This packaging change does not alter
+the checked CPU/runtime implementation.
+
+The full integration-range whitespace check also exposed five blank context lines
+inside the tracked `.diff`. They were normalized to empty context lines; `git apply
+--check` still accepts the patch, and `git diff --check 98e558dc` now exits 0.
+No runtime hunk content was changed. Original stub manifests retain their original
+patch hashes rather than pretending they ran after this packaging normalization.
