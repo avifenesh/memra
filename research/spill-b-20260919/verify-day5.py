@@ -41,7 +41,7 @@ for name, cmd in [
     ("test", ["cargo", "test", "-p", "memra-kv", "-p", "memra-tier", "--offline", "--no-fail-fast"]),
     ("clippy", ["cargo", "clippy", "-p", "memra-kv", "-p", "memra-tier", "--offline", "--all-targets", "--no-deps", "--", "-D", "warnings"]),
     ("diff", ["git", "diff", "--check"]),
-    ("lane-diff", ["git", "diff", "--check", "fb870849"]),
+    ("lane-diff", ["git", "diff", "--check", "cc2a7df638fc4ba84d5545c7b0685a60a10229cf"]),
     ("flags", ["bash", "tools/check-flags.sh"]),
     ("patch", ["git", "apply", "--check", "research/spill-b-20260919/HOSTPREFIX-PATCH.diff"]),
     ("runner", ["python3", "research/spill-b-20260919/test-rig-cells-b.py"]),
