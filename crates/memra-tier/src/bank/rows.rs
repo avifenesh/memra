@@ -13,7 +13,7 @@ pub struct RowReadPlan {
     pub extents: Vec<ReadExtent>,
     pub logical_bytes: u64,
     pub unique_useful_bytes: u64,
-    /// Submitted aligned bytes, NOT measured SSD physical traffic.
+    /// Submitted bytes (short final extent allowed), NOT measured SSD physical traffic.
     pub io_bytes: u64,
     pub straddling_segments: u64,
 }
@@ -46,14 +46,18 @@ pub fn plan_reads(
                 .checked_add(segment.storage_bytes)
                 .ok_or(Error::Overflow)?;
             let lo = segment.offset / policy.granularity * policy.granularity;
+            let readable = reader.storage_bytes(tensor)?;
+            // Required storage must exist. Only coalescing padding may be clipped;
+            // never turn a truncated payload into a successful zero-filled record.
+            if end > readable {
+                return Err(Error::InvalidLayout);
+            }
             let hi = end
                 .checked_add(policy.granularity - 1)
                 .ok_or(Error::Overflow)?
                 / policy.granularity
                 * policy.granularity;
-            if hi > reader.storage_bytes(tensor)? {
-                return Err(Error::InvalidLayout);
-            }
+            let hi = hi.min(readable);
             plan.unique_useful_bytes = plan
                 .unique_useful_bytes
                 .checked_add(segment.valid_bytes)
