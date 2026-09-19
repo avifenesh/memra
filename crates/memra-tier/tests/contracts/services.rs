@@ -951,3 +951,93 @@ fn invalid_bank_publication_returns_charge_and_backing_for_explicit_release() {
     gov.borrow_mut().release(&rejected.op.charge).unwrap();
     assert_eq!(gov.borrow().used.pageable, 0);
 }
+
+#[test]
+fn revision_v11_generic_governor_and_object() {
+    super::conformance::budget_governor(&mut Governor::new(100), &mut Governor::new(100));
+    let mut s = Objects::new(shared());
+    super::conformance::object_publish_release(&mut s, key(), request(4, Priority::Demand));
+}
+
+#[test]
+fn revision_v11_bank_and_rows_complete_before_cancel() {
+    let mut b = Banks::new(shared());
+    let id = b.add(0, false);
+    super::conformance::bank_complete_cancel(
+        &mut b,
+        BankBatch {
+            ids: vec![id],
+            epochs: epochs(),
+            request: request(4, Priority::Demand),
+        },
+        |b, t| {
+            assert!(b.pending[t].complete);
+            completion(*t, 1)
+        },
+    );
+    let id = b.add(5, true);
+    super::conformance::rows_complete_cancel(
+        &mut b,
+        RowBatch {
+            ids: vec![id],
+            epochs: epochs(),
+            request: request(4, Priority::Demand),
+        },
+        |b, t| {
+            assert!(b.pending[t].complete);
+            completion(*t, 1)
+        },
+    );
+}
+
+#[test]
+fn revision_v11_bank_row_unknown_retirement_hooks() {
+    use super::conformance::{self, LifetimeStep};
+    // The frozen fake has synchronous stage; completion is deliberately withheld
+    // to model a future asynchronous backend. This is NOT C's host-only adapter.
+    let mut b = Banks::new(shared());
+    let id = b.add(0, false);
+    let t = b
+        .stage(BankBatch {
+            ids: vec![id],
+            epochs: epochs(),
+            request: request(4, Priority::Demand),
+        })
+        .unwrap();
+    conformance::bank_lifetime(
+        &mut b,
+        t,
+        |b, t, step| {
+            let e = b.pending.get_mut(t).unwrap();
+            if matches!(step, LifetimeStep::Unknown) {
+                e.complete = false;
+            }
+            if matches!(step, LifetimeStep::Graph) {
+                e.retired = true;
+            }
+        },
+        |b| b.gov.borrow().used(),
+    );
+    let id = b.add(5, true);
+    let t = b
+        .gather(RowBatch {
+            ids: vec![id],
+            epochs: epochs(),
+            request: request(4, Priority::Demand),
+        })
+        .unwrap();
+    conformance::rows_lifetime(
+        &mut b,
+        t,
+        |b, t, step| {
+            let e = b.pending.get_mut(t).unwrap();
+            if matches!(step, LifetimeStep::Unknown) {
+                e.complete = false;
+            }
+            if matches!(step, LifetimeStep::Graph) {
+                e.retired = true;
+            }
+        },
+        |b| b.gov.borrow().used(),
+    );
+}
