@@ -7,6 +7,7 @@ content, only addresses; read the target before acting. Paths are relative to th
 
 - Which kernels exist, symbol tables, build/binding model, dead files -> docs/KERNELS.md (audited per-file kernel inventory, pinned to a commit; regenerate rows with the .cu change)
 - What does flag X do, defaults, rollback seams -> docs/FLAGS.md (audited MEMRA_* catalog; law: a new MEMRA_* read needs its row in the SAME commit, pre-push enforces, no grandfather list; winners are defaults)
+- Which tuned program (batched decode, carried prime, graph, spec, pipeline) implements plan operation X -> docs/EXECUTION-SURFACES.md (generated from crates/memra-gguf/src/op_registry.rs; the manifests derive from it; a row of dashes = reference executor only)
 - Component map / execution architecture -> ARCHITECTURE.md; H100 lane evidence ledger -> ARCHITECTURE-H100.md
 
 ## Models
