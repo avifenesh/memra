@@ -12,6 +12,11 @@ use std::thread::{self, JoinHandle};
 
 pub trait ReadAt: Send + Sync + 'static {
     fn read_at(&self, dst: &mut [u8], offset: u64) -> io::Result<usize>;
+    /// Override for framed sources that must validate the complete extent before
+    /// initializing destination bytes. Typed checksum errors stay intact.
+    fn read_exact(&self, dst: &mut [u8], offset: u64) -> Result<u64> {
+        read_exact_at(self, dst, offset)
+    }
 }
 #[cfg(unix)]
 impl ReadAt for std::fs::File {
@@ -20,7 +25,7 @@ impl ReadAt for std::fs::File {
     }
 }
 /// Exact-loop behavior matches spill_pread::pread_exact_at; errors retain OS code.
-pub fn read_exact_at(source: &dyn ReadAt, dst: &mut [u8], offset: u64) -> Result<u64> {
+pub fn read_exact_at(source: &(impl ReadAt + ?Sized), dst: &mut [u8], offset: u64) -> Result<u64> {
     offset
         .checked_add(dst.len() as u64)
         .ok_or(Error::Overflow)?;
@@ -101,9 +106,9 @@ impl BoundedReader {
                         } = job;
                         // A malicious/faulty fake backend panic must still return ownership.
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            request.lease.read_into(|dst| {
-                                read_exact_at(request.source.as_ref(), dst, request.offset)
-                            })
+                            request
+                                .lease
+                                .read_into(|dst| request.source.read_exact(dst, request.offset))
                         }))
                         .unwrap_or(Err(Error::Quarantined));
                         if completions

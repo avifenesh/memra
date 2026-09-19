@@ -98,6 +98,7 @@ fn heterogeneous_all_trailing_groups_aliases_and_padding() {
     assert_eq!(b.layout.storage_bytes().unwrap(), 12);
     let data = vec![vec![3, 20, 37, 0]; 3];
     b.verify(&data).unwrap();
+    super::conformance::bundle_planes(&b, &data);
     let mut bad = data;
     bad[0][3] = 1;
     assert_eq!(b.verify(&bad), Err(Error::Corrupt));

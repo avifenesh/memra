@@ -1406,3 +1406,48 @@ fn unknown_shutdown_retains_source_and_reservation_pins() {
     assert_eq!(g.lock().unwrap().release(&r.charge), Err(Error::Busy));
     assert_eq!(g.lock().unwrap().used().device[0], 128);
 }
+
+#[test]
+fn revision_v11_generic_governor() {
+    let mut head = TierBudget::zero(2);
+    head.pageable = 25;
+    conformance::budget_governor(&mut governor(100, head.clone()), &mut governor(100, head));
+}
+#[test]
+fn revision_v11_governor_actual_dispatch_priority() {
+    conformance::governor_priority(
+        &mut governor(100, TierBudget::zero(2)),
+        |g, r| g.enqueue(r).unwrap(),
+        |g| match g.dispatch().unwrap().unwrap() {
+            QueueOutcome::Admitted(id, lease) => (id, lease),
+            QueueOutcome::Expired(_) => panic!("fixture deadline not expired"),
+        },
+    );
+}
+#[test]
+fn revision_v11_tier_complete_cancel_identity_and_planes() {
+    let (mut h, g, c, _) = fixture();
+    let b = bundle();
+    let r = conformance::tier_identity(&mut h, plan(&b));
+    // Existing hierarchy keeps the cancelled reservation; drain using its owner hook.
+    c.borrow_mut().retired = true;
+    assert_eq!(g.lock().unwrap().used().device[0], 128);
+    finish(&mut h, &r, &c);
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+    conformance::bundle_planes(&b, &payloads());
+}
+
+#[test]
+fn revision_v11_tier_unknown_and_missing_backing() {
+    let (mut h, g, c, available) = fixture();
+    conformance::tier_unknown(
+        &mut h,
+        plan(&bundle()),
+        |_, unknown| c.borrow_mut().unknown = unknown,
+        |_| c.borrow_mut().retired = true,
+        |_| g.lock().unwrap().used(),
+    );
+    *available.borrow_mut() = false;
+    conformance::tier_miss(&mut h, plan(&bundle()));
+    assert_eq!(g.lock().unwrap().used(), TierBudget::zero(2));
+}
