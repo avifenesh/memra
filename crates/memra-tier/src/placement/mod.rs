@@ -171,10 +171,10 @@ pub fn placement_report(
     let mut routes = Vec::new();
     for route in &plan.routes {
         for endpoint in [route.from, route.to] {
-            if let Endpoint::Device(d) = endpoint {
-                if !devices.contains(&d) {
-                    return Err(BudgetError::UnknownDevice);
-                }
+            if let Endpoint::Device(d) = endpoint
+                && !devices.contains(&d)
+            {
+                return Err(BudgetError::UnknownDevice);
             }
         }
         let valid = match (route.from, route.to, route.kind) {
