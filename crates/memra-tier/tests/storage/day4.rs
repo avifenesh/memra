@@ -277,3 +277,40 @@ fn catalog_gc_process_exit_between_tombstone_and_unlink() {
     recovered.collect(&key()).unwrap();
     assert_eq!(std::fs::read_dir(&d.0).unwrap().count(), 1);
 }
+
+#[test]
+fn review_catalog_recovers_pending_with_and_without_published_root() {
+    for published in [false, true] {
+        let d = OwnedDirectory::new();
+        let mut store = CatalogStore::open(vec![d.0.clone()], governor()).unwrap();
+        let head = store
+            .install_index(key(), 264, vec![reference(&payload(264))], &request(32768))
+            .unwrap();
+        let root =
+            d.0.join(format!("catalog-{}.root", hex(&key().identity().unwrap())));
+        let pending = root.with_extension("pending");
+        std::fs::hard_link(&root, &pending).unwrap();
+        if !published {
+            std::fs::remove_file(&root).unwrap();
+        }
+        drop(store);
+        let mut recovered = CatalogStore::open(vec![d.0.clone()], governor()).unwrap();
+        let result =
+            recovered.install_index(key(), 264, vec![reference(&payload(264))], &request(32768));
+        if published {
+            assert_eq!(result, Err(Error::Conflict)); // Immutable root is never replaced.
+            assert_eq!(recovered.lookup(&key()).unwrap(), Some(head.clone()));
+        } else {
+            assert_eq!(result.unwrap(), head);
+        }
+        assert!(!pending.exists(), "stale pending must not wedge reuse");
+        // Also exercise collect directly at the post-link crash boundary.
+        std::fs::hard_link(&root, &pending).unwrap();
+        recovered.tombstone(&head).unwrap();
+        recovered.collect(&key()).unwrap();
+        assert!(!pending.exists());
+        recovered
+            .install_index(key(), 264, vec![reference(&payload(264))], &request(32768))
+            .unwrap();
+    }
+}
