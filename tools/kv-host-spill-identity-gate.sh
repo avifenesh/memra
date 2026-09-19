@@ -38,6 +38,16 @@
 # Boots its own servers one arm at a time (flock ${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}).
 # Exit 0 = every assertion held. Evidence: <evidence_dir>/host-{on,off}-r{1..4}.json + logs.
 set -euo pipefail
+# Optional proof argument precedes the unchanged MODEL BIN EV positional contract.
+LOCK_FD=""
+LOCK_OWNER=internal-canonical
+if [[ ${1:-} == --external-lock ]]; then
+    [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "REFUSED: inherited lock FD required" >&2; exit 2; }
+    LOCK_FD=$2
+    LOCK_OWNER=collector
+    shift 2
+fi
+[[ $# == 3 ]] || { echo "REFUSED: expected MODEL BIN EV" >&2; exit 2; }
 MODEL=$1
 BIN=$2
 EV=$3
@@ -49,7 +59,20 @@ HERE=$(cd "$(dirname "$0")" && pwd)
     exit 1
 }
 . "$HERE/port-guard.sh"
+case "$GPU_LOCK" in
+    /tmp/memra-5090.lock|/tmp/memra-gpu.lock) ;;
+    *) echo "REFUSED: noncanonical GPU lock" >&2; exit 2 ;;
+esac
+# One owner across ALL boots, requests, probes and teardown, never per-server locks.
+if [[ $LOCK_OWNER == internal-canonical ]]; then
+    exec 9>"$GPU_LOCK"
+    LOCK_FD=9
+    flock -n "$LOCK_FD" || { echo "REFUSED: canonical GPU lock busy" >&2; exit 2; }
+fi
+# Verify before making a receipt directory or launching/killing any process.
+LOCK_PROOF=$(python3 "$HERE/tier-lock-proof.py" --fd "$LOCK_FD" --lock "$GPU_LOCK" --owner "$LOCK_OWNER")
 mkdir -p "$EV"
+printf '%s\n' "$LOCK_PROOF" > "$EV/LOCK.json"
 SERVER_PID=""
 CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-1024}
 HOST_MB=${MEMRA_HOSTGATE_HOST_MB:-8192}
@@ -62,7 +85,7 @@ boot() { # $1 extra-env-string  $2 log
         return 1
     fi
     # shellcheck disable=SC2086
-    flock -w 300 "$GPU_LOCK" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
+    env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
         MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$MODEL" \
         "MEMRA_ADDR=127.0.0.1:$PORT" MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 \
         "MEMRA_PREFIX_CACHE_MB=$CACHE_MB" $1 "$BIN" >"$2" 2>&1 &
@@ -82,18 +105,17 @@ boot() { # $1 extra-env-string  $2 log
     return 1
 }
 stop() {
-    pkill -x memra-server 2>/dev/null || true
+    # Only the server this script spawned. Keep it in the collector's process
+    # group (no setsid/daemonization); collector timeout kills that entire group.
+    [[ -n $SERVER_PID ]] || return 0
+    kill -TERM "$SERVER_PID" 2>/dev/null || true
     for _ in $(seq 1 30); do
-        curl -s --max-time 1 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1 || {
-            SERVER_PID=""
-            sleep 2
-            return 0
-        }
+        kill -0 "$SERVER_PID" 2>/dev/null || break
         sleep 1
     done
-    pkill -9 -x memra-server 2>/dev/null || true
+    kill -KILL "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
     SERVER_PID=""
-    sleep 3
 }
 trap stop EXIT
 
