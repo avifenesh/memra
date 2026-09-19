@@ -20,9 +20,15 @@ COMMANDS = [
 ]
 
 
-def probe(fixture=None):
+STORAGE_COMMANDS = [
+    ['lscpu'], ['df', '-hT'], ['lsblk', '-J', '-o', 'NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS'],
+    ['free', '-g'], ['findmnt', '-J', '-T', '/scratch'],
+]
+
+
+def probe(fixture=None, storage=False):
     captures = []
-    for command in COMMANDS:
+    for command in COMMANDS + (STORAGE_COMMANDS if storage else []):
         if fixture is not None:
             value = fixture.get(' '.join(command))
             if value is None:
@@ -49,10 +55,11 @@ def probe(fixture=None):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--dry-run', type=Path, metavar='FIXTURE_JSON')
+    p.add_argument('--storage', action='store_true')
     p.add_argument('--out', type=Path, required=True)
     a = p.parse_args()
     fixture = json.loads(a.dry_run.read_text()) if a.dry_run else None
-    report = probe(fixture)
+    report = probe(fixture, a.storage)
     with a.out.open('x') as out:
         out.write(json.dumps(report,indent=2)+'\n')
     print(f"{report['kind']}: {len(report['commands'])} commands; direct P2P remains unqualified")

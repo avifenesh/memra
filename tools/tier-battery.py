@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Four-tier qualification scaffold: plan and strict byte-receipt comparison, NOT GPU runner.
+"""Four-tier qualification scaffold: plan and strict byte-receipt comparison, and bounded native subprocess capture.
 
 A validation pass proves supplied byte evidence agrees; it does not prove every required
 model/cell ran, qualify a numeric program, or replace step-pro and the standard battery.
@@ -114,6 +114,7 @@ import fcntl
 import math
 import os
 import signal
+import shutil
 import statistics
 import subprocess
 import threading
@@ -193,7 +194,12 @@ def paired_orders(n):
 def tee_run(command, raw_path, timeout=30, echo=True):
     """Drain merged stdout/stderr to a raw file BEFORE parsing, including on timeout."""
     with raw_path.open("xb") as log:
-        p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as error:
+            log.write((f"ERROR: launch failed: {error}\n").encode())
+            log.flush()
+            return 127, False
         errors = []
         def pump():
             try:
@@ -231,6 +237,97 @@ def tee_run(command, raw_path, timeout=30, echo=True):
         if errors:
             raise errors[0]
     return code, timed_out
+
+
+class SubprocessRunner:
+    """Same argv/raw-path/timeout interface for fake and native binaries.
+
+    The CSV is diagnostic hardware telemetry, NOT fabricated tier counters or a positive
+    schema-v1 gate row. Missing sampler/counters block scoring, not raw failure retention.
+    Caller holds the canonical lock across this call (including sampler and snapshots).
+    """
+    def __init__(self, smi="nvidia-smi"):
+        self.smi = smi
+
+    def run(self, command, raw_path, timeout=30, echo=True):
+        root = raw_path.parent
+        stem = raw_path.stem
+        smi = shutil.which(self.smi)
+        snapshots = {}
+        def snapshot(label):
+            path = root / f"{stem}.{label}.log"
+            code, expired = tee_run([smi, "--query-compute-apps=pid,process_name,used_memory",
+                                    "--format=csv"], path, timeout=20, echo=False)
+            snapshots[label] = {"exit_code": code, "timed_out": expired,
+                                "raw_log": descriptor(root, path)}
+        telemetry = {"status": "unavailable", "interval_ms": 250,
+                     "reason": "nvidia-smi not found", "tier_counters": "not collected"}
+        sampler = None
+        started = time.monotonic_ns()
+        csv_path = root / f"{stem}.gpu.csv"
+        sampler_log = root / f"{stem}.sampler.log"
+        with contextlib.ExitStack() as stack:
+            if smi:
+                snapshot("before")
+                csv = stack.enter_context(csv_path.open("xb"))
+                err = stack.enter_context(sampler_log.open("xb"))
+                argv = [smi, "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current", "--format=csv", "-lms", "250"]
+                try:
+                    sampler = subprocess.Popen(argv, stdout=csv, stderr=err, start_new_session=True)
+                    telemetry = {"status": "started", "interval_ms": 250, "command": argv,
+                                 "tier_counters": "not collected"}
+                except OSError as error:
+                    err.write(str(error).encode()); err.flush()
+                    telemetry["reason"] = str(error)
+            try:
+                code, expired = tee_run(command, raw_path, timeout, echo)
+                if smi and (code != 0 or expired):
+                    snapshot("failure")
+            finally:
+                if sampler is not None:
+                    previous = sampler.poll()
+                    try:
+                        os.killpg(sampler.pid, signal.SIGTERM)
+                        sampler.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(sampler.pid, signal.SIGKILL); sampler.wait()
+                    except ProcessLookupError:
+                        pass
+                    telemetry.update(status="captured-unvalidated" if previous is None else "exited-early",
+                                     exit_code=sampler.returncode)
+                if smi:
+                    snapshot("after")
+        ended = time.monotonic_ns()
+        if smi:
+            telemetry.update(raw_csv=descriptor(root, csv_path), stderr=descriptor(root, sampler_log))
+            if csv_path.stat().st_size == 0:
+                telemetry["status"] = "empty"
+        # Only now parse: the merged log and sampler files are closed and durable to readers.
+        text = raw_path.read_text(errors="replace")
+        result_lines = [line[7:] for line in text.splitlines() if line.startswith("RESULT ")]
+        result = None
+        parse_error = None
+        if code == 0 and not expired and result_lines:
+            try:
+                require(len(result_lines) == 1, "multiple RESULT records")
+                result = json.loads(result_lines[0])
+                require(isinstance(result, dict), "RESULT must be an object")
+            except (ValueError, TypeError) as error:
+                parse_error = str(error)
+        failed = code != 0 or expired or parse_error is not None
+        quote = next((line for line in text.splitlines() if re.search(
+            r"ERROR|error:|out of memory|CUDA_ERROR|fatal|panic", line)),
+            "died, cause unknown — repro needed") if failed else None
+        record = {"schema_version": 1, "kind": "subprocess-capture", "command": command,
+                  "exit_code": code, "timed_out": expired, "parse_error": parse_error,
+                  "status": "failed" if failed else "executed-not-qualified",
+                  "started_monotonic_ns": started, "ended_monotonic_ns": ended,
+                  "raw_log": descriptor(root, raw_path), "failure_quote": quote,
+                  "result": result, "gpu_telemetry": telemetry, "compute_apps": snapshots,
+                  "qualification": False}
+        with (root / f"{stem}.capture.json").open("x") as out:
+            json.dump(record, out, indent=2); out.write("\n")
+        return record
 
 
 def descriptor(root, path):
@@ -292,7 +389,8 @@ def run_dry_campaign(out, n=5, rig="pro-pair", thermal="synthetic-no-thermal-mea
             log = out / "raw" / f"{rid}.log"
             command = [sys.executable, str(runner), "--out", str(run_dir), "--arm", arm]
             if fail: command.append("--fail")
-            code, timeout = tee_run(command, log, echo=echo)
+            capture = SubprocessRunner(smi=str(out / "no-gpu-in-cpu-fixture")).run(command, log, echo=echo)
+            code, timeout = capture["exit_code"], capture["timed_out"]
             # The complete raw file exists and has been closed before parsing anything.
             text = log.read_text()
             if code != 0 or timeout:
@@ -390,14 +488,26 @@ def validate_campaign(root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group(required=True)
+    modes.add_argument("--execute", nargs=argparse.REMAINDER, metavar="ARGV")
     modes.add_argument("--plan", action="store_true")
     modes.add_argument("--validate", type=Path, metavar="RUNS_JSONL")
     modes.add_argument("--dry-run", action="store_true")
     modes.add_argument("--validate-campaign", type=Path, metavar="BUNDLE")
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--pairs-per-order", type=int, default=5)
     parser.add_argument("--rig", choices=["rtx5090", "pro-pair", "pro-four"], default="pro-pair")
     args = parser.parse_args()
+    if args.execute is not None:
+        require(args.execute and args.out is not None and args.timeout > 0, "--execute requires argv, new --out and positive timeout")
+        args.out.mkdir(parents=True, exist_ok=False)
+        with campaign_lock(args.rig) as lock:
+            record = SubprocessRunner().run(args.execute, args.out / "command.log", args.timeout)
+            (args.out / "lock.json").write_text(json.dumps({"rig": args.rig, "lock": lock, "acquired": True}) + "\n")
+        print(json.dumps(record, indent=2))
+        if record["status"] == "failed":
+            sys.exit(record["exit_code"] if 0 < record["exit_code"] < 126 else 2)
+        return
     if args.validate_campaign:
         count = validate_campaign(args.validate_campaign)
         print(f"CPU CAMPAIGN MATCH: {count} runs; synthetic protocol evidence only, NOT GPU qualification")
