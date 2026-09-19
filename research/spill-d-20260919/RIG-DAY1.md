@@ -1,11 +1,11 @@
-# First rented RTX 5090 hour — D day 4
+# Rented RTX 5090 runbook — D day 6
 
 **Runbook, not a rig receipt.** Minimum source: **`020d2047`**
 (`020d20479cd686835c0fb7743040947d0fc2723b`) plus this day-4 bootstrap/collector.
 That integrated source includes A/B/C day-3 runners and reviewed fixes. Bootstrap checks
 ancestry and pins the exact remote head. Earlier `914229ae` only fixed target discovery.
-No rental exists yet. Development only, never
-an existing serving box. Target remains 4× RTX PRO 6000, PCIe Gen5, **no NVLink**.
+The first rental ran on 2026-09-19; see the observed-duration section below.
+Development only, never an existing serving box. Target remains 4× RTX PRO 6000, PCIe Gen5, **no NVLink**.
 One 5090 is not peer/four-tier qualification and never vetoes Step-only PRO delivery.
 
 ## Before rental / source handoff (blocking)
@@ -49,17 +49,45 @@ Use only validated `lane/spill-*` branch text in the remote command (letters/dig
 a failed connection establishes no remote state. Read the failure receipt before rerunning
 bootstrap. Do not automatically destroy/rent/reconfigure boxes from this script.
 
+**Observed SSH pitfall (2026-09-19):** the account-level Vast public key association did
+not inject the key into the container. Operator command
+`vastai attach ssh <instance-id> "<public-key with a NEW comment>"` succeeded; reusing the
+same comment returned "already associated" without fixing access. This is public key
+material only; never copy a private key. Prefer the provider's **SSH proxy** over the
+flaky direct-IP route. Resolve host/port only from the gitignored `LANE-LOCAL.md` and obey
+`BOX-ACCESS.md` (up to 3 tries with 30 s backoff on this rig). Never put those values or
+provider ids into tracked examples. Key attachment remains an operator action, not an
+automatic bootstrap API call.
+
 Bootstrap is repeatable: preserves dirty tracked work and old receipts; existing clean
 checkout is detached at the exact requested remote head. Existing untracked receipts are
 preserved. Explicit `--out` must be new unless `--resume` is used. No driver/clock/ACS/IOMMU changes
-or systemd dependency. `--set-power` optionally requests the expected limit under the
+or systemd dependency. `--pidfile <persistent-path>/spill-bootstrap.pid` explicitly selects
+process status metadata. This is **not another GPU campaign lock**: all GPU work still uses
+`/tmp/memra-5090.lock`. The pidfile's advisory lock lives for the bootstrap process lifetime;
+a crash releases it, so stale/recycled PIDs cannot report "running". Do not unlink the inode
+while an invocation may be active. Default: `<persistent-root>/spill-bootstrap.pid`
+(dry-run: alongside its output directory).
+
+```sh
+# Read-only; no BRANCH required and no inventory/build/GPU operation is started.
+bash tools/tier-rig-bootstrap.sh --status --pidfile "$PIDFILE"
+# Alias: --already-running. Exit 0=active, 1=inactive/missing, 2=invalid/unreadable.
+# Handle exit 1 explicitly under set -e; it is not a failed qualification cell.
+```
+
+Do **not** use `pgrep -f tier-rig-bootstrap.sh`: an SSH command containing that text
+matches itself. Duplicate bootstrap invocations at the same pidfile refuse before creating
+receipt directories. Builds cap `--jobs` at **16** (default 4) for box responsiveness.
+`--set-power` optionally requests the expected limit under the
 canonical lock after an empty compute-apps check; container refusal is logged, not fatal
 when max power is adequate. No power request occurs without this explicit option. It installs
 ordinary missing Ubuntu/Debian packages; other distros work if dependencies exist, otherwise
 name the missing tools and refuse. It installs/verifies rustup **stable >=1.97**; if rustup is absent it downloads the official HTTPS installer to
 a temporary file and installs the minimal profile (no pipe-to-shell). CUDA resolution matches `build.rs`:
 explicit `MEMRA_NVCC`, existing CUDA root, otherwise newest runnable PATH/local toolkit;
-selected CUDA must be >=13 and list `compute_120a`; the accepted absolute compiler and
+selected CUDA must be >=13 and list base `compute_120` (the list omits architecture-specific
+`compute_120a`); the subsequent **`-arch=sm_120a` compile probe** must succeed; the accepted absolute compiler and
 `120a` architecture are pinned for these builds so rustup's PATH change cannot alter selection.
 Missing toolkit fails with the exact
 installation requirement, not an attempted old distro CUDA or model-format fallback.
@@ -72,6 +100,17 @@ fields even when the request is refused. No Max-Q/listing inference. It verifies
 **all 8 GiB** back in 4 MiB chunks, twice with a real >=60-second gap. NVML alone never
 accepts a card. Source, binary hash, exact query output, both logs and compute snapshots
 are retained. Nothing runs on the Mac GPU in `--dry-run`.
+
+**Per-cell power-cap rule (day 6):** the second rental's read-only query returned
+`power.limit=400.00 W`, `power.max_limit=600.00 W`; source/UTC/raw output are in
+`day6/probes/inventory.json`. Every collector cell now samples both fields at 250 ms
+and records `gpu_power_limits` in its capture and completed CELL (schema field names
+and unknown handling: [CAPTURE-CONTRACT.md](CAPTURE-CONTRACT.md)). Label such cells
+**400 W restricted-power development**, not 600 W/full-power performance. Missing,
+N/A or changing limits cannot establish a fixed power envelope; never borrow an
+old bootstrap cap for a new cell. A refused power change remains a refusal, not a
+reason to silently replace the model or claim a full-power result. Only the operator
+may request `--set-power`; this runbook change requests no power setting.
 
 Inventory through `tools/tier-topology.py --storage`: topo matrix, full `nvidia-smi -q`
 (including P2P-related fields), P2P read/write capability, lscpu full+NUMA/CPU listing,
@@ -95,9 +134,17 @@ Builds (4 jobs, release, locked dependency graph, outside GPU lock):
   rental, provider API request, key installation, systemd or serving-host operation.
 - Bootstrap captures `df -hT` and `lsblk -J` **before selecting paths**. Build artifacts
   stay at `<repo>/target` on the chosen persistent volume so all lane runners agree.
-  `--nvme-root <mount>` requires `findmnt` + `lsblk -s` NVMe ancestry. Missing proof leaves
-  scratch/NVMe **null**, or refuses an explicitly supplied invalid mount. Overlay/network
-  storage is never relabeled NVMe. A's local-NVMe cells remain blocked until proven.
+  `--nvme-root <mount>` requires `findmnt` + `lsblk -s` NVMe ancestry. Default refuses
+  an explicitly supplied unproven mount. No selected storage leaves scratch/NVMe **null**.
+  The sanctioned **development exactness only** alternative is
+  `--nvme-root <actual-path> --allow-unproven-storage`. It retains failed ancestry output,
+  `findmnt` and `lsblk` verbatim; sets scratch but leaves NVMe **null**; labels storage
+  **"overlay/unproven — not NVMe, not spill speed"** in the bootstrap receipt. This is not
+  a fallback format or a waived NVMe gate. Missing actual directories still refuse.
+  Every storage collector invocation must separately receive `--storage-root "$SCRATCH"`
+  and, on an unproven filesystem, `--allow-unproven-storage`; it reprobes before execution
+  and copies that label into both CELL rows and capture JSON. `STORAGE.json` and raw
+  ancestry diagnostics survive refusal. Local-NVMe/O_DIRECT/spill-speed gates remain pending.
 - Default receipts: `<persistent-root>/spill-bootstrap-receipts/<host>-<utc>/`.
   Every external step writes its raw log there as it runs; `BOOTSTRAP.jsonl` records start
   and end incrementally (fsync), and `BOOTSTRAP.json` is atomically checkpointed. An abrupt
@@ -108,7 +155,10 @@ Builds (4 jobs, release, locked dependency graph, outside GPU lock):
   as fresh qualification. Package installs, clean checkout/fetch and Cargo builds are
   repeatable. Dirty tracked work is preserved/refused. The old receipt is never replaced.
 - Each collector command also writes `CELL.jsonl` start/end with run id, UTC, elapsed time,
-  exit/result and optional `--hourly-cost` estimate. `--resume --out <prior-cell>` reads
+  exit/result and optional `--hourly-cost` estimate. End rows and `command.capture.json`
+  now share `started_utc`, `ended_utc`, `elapsed_seconds`; this is **collector elapsed**
+  (includes compute snapshots/sampler), not CUDA device time or binary-only duration.
+  A's `StorageSample.total_ns` remains its separate internal measurement. `--resume --out <prior-cell>` reads
   the last CELL and requires identical argv, then reruns in a new attempt. Only rerun
   idempotent commands; binaries creating named output files need new explicit output
   paths and a new cell. A start without end means **interrupted, outcome unknown**.
@@ -119,12 +169,86 @@ Builds (4 jobs, release, locked dependency graph, outside GPU lock):
 - Provider id, if exposed as `RUNPOD_POD_ID` or `CONTAINER_ID`, and optional cost are raw
   **private** receipt metadata, never credentials. Keep real ids/cost/host/topology outside
   public git; sanitize before publication and retain original hashes privately. No env
-  dumps or env/auth file reads. Copy raw receipts incrementally off the interruptible
-  disk through the same operator SSH identity (e.g. `rsync -e "ssh -p $DEV_PORT"` to private
-  storage); no script can recover a provider-destroyed volume without that copy.
+  dumps or env/auth file reads. **Sync receipts after EVERY cell, including failures,
+  before starting the next cell** — never only at the end of the sequence. Use the same
+  operator SSH identity to pull to private storage. Run this on the operator workstation
+  after each remote collector invocation (the sequence below must be segmented accordingly):
+
+  ```sh
+  : "${LOCAL_EV:?private local mirror for this campaign}"
+  rsync -a --checksum -e "ssh -p $DEV_PORT -o BatchMode=yes -o ConnectTimeout=25" \
+    "$DEV_HOST:$EV/" "$LOCAL_EV/"
+  # Also pull $BOOT after each bootstrap stage/checkpoint when it is still running.
+  # Inspect/validate the completed CELL + capture hashes in the local mirror before proceeding.
+  python3 tools/tier-battery.py --validate "$LOCAL_EV"
+  ```
+
+  Failed commands can pass **integrity** validation; inspect their retained status before
+  proceeding. A torn/start-only cell remains incomplete and must not be claimed successful.
+  Mirror native output TSVs, manifests and goldens too, not just CELL.jsonl. No script can
+  recover a provider-destroyed volume without the off-box copy.
+- **Observed spot interruption, reported by the lead 2026-09-19:** the first rented box
+  was preempted mid-checkpoint download (approximately 6.4 of 15.7 GB). A/D1/C receipts
+  were already synced; the incomplete B artifact and scratch worktree were lost. Provider
+  state was `exited/stopped`; `vastai start` refused with
+  **"Required resources are currently unavailable"**. This is an operator-reported recovery
+  incident, not an additional GPU result. Restart of a preempted instance can remain queued
+  indefinitely: choose bounded wait versus replacement from **receipt state**, not hope.
+  Inventory which completed receipts are already off-box, which uncompleted cells must
+  rerun, and whether any unique bytes remain only on the old disk. Do not discard the only
+  copy of unsynced evidence. Once retained results are safe, a missing reproducible scratch
+  worktree or partial download is not a reason to wait indefinitely for capacity; operator
+  may replace the rental under the existing approval. No automatic destroy/start loop.
+- **Second-rental host stops, reported by the lead 2026-09-19:** two stops today
+  reached `exited/stopped`; `start` was refused once and later succeeded. The checkout
+  and accepted artifact were reported intact. These are operator-reported recovery
+  facts, not independently repeated stop/start operations or proof all scratch survives.
+  **Keep ≤30 min before replacing, by receipt state; sync after every cell.** Start the
+  recovery clock at the observed stop; inspect the last complete versus interrupted
+  CELL and inventory unsynced unique bytes. Once off-box receipts are safe and the
+  pushed source/pinned artifact can be reconstructed, do not extend the 30-minute
+  wait for an empty capacity queue. Replacement remains under the existing operator
+  approval, never an automatic destroy loop. If unique unsynced evidence remains,
+  escalate/preserve that disk rather than deleting the only copy. After a successful
+  restart, revalidate exact source/artifact hashes, current cap and fresh acceptance;
+  surviving files do not carry forward an interrupted cell's qualification.
+- Artifacts must remain re-downloadable from an **immutable pinned locator plus complete
+  byte manifest/SHA-256**, independently of the rented disk. Record the full revision and
+  expected length/hash before transfer. A partial file is never an accepted artifact; resume
+  only against the same immutable bytes, verify the full hash, and rebootstrap/rebuild and
+  rerun pending cells on the replacement. Restore the scratch worktree from its **pushed
+  branch/commit**, not from an assumed surviving local branch. B remains unrun in this
+  snapshot; preserved A/D1/C results cannot stand in for B or qualify the new device.
 
 Retain `BOOTSTRAP.json`, journal/logs, `TOPOLOGY.json`, acceptance source/binary and
 `locked-run.sh`. Bootstrap is **not** a schema-v1 byte receipt or tier-qualified GPU pass.
+
+## Observed 2026-09-19 (one run; not booking budgets)
+
+Source `01e7b77f29c7b40fb29744e5321ca0e8b0c81f39`, one RTX 5090, 600 W current/max.
+Raw: `research/spill-lead-20260919/rented-5090-20260919/receipts/` (`*run3` bootstrap,
+`first-hour*` CELL/capture/driver logs). No repeated/thermal-steady-state timing claim.
+PCIe inventory: host/effective max **Gen4 x16**, device max Gen5; idle sample **Gen1 x16**.
+Current is not max, and neither measures bandwidth. No peer pair exists on one device.
+
+| Stage | Observed duration | Evidence/meaning |
+|---|---:|---|
+| Successful bootstrap, 12:38:24–12:47:03 UTC | 518.976 s (8.65 min) | includes all following bootstrap stages; not additive to them |
+| Two 8 GiB readbacks and gap | 15.852 +60.053 +15.853 s | standalone acceptance, not tier qualification |
+| Rust install +stable download | 17.417 s | install/stable commands only |
+| Clone | 29.133 s | source retrieval only |
+| Builds 0/1/2/3 | 9.939 /294.238 /49.519 /23.664 s | libraries /server /five bins /engine lib no-run; **-j32 historical**, future cap16 |
+| A 264 B roundtrip /restore | 0.074769 /0.068704 s | collector elapsed; **overlay/unproven — not NVMe, not spill speed** |
+| A 1 MiB roundtrip /restore | 0.362527 /0.088735 s | same scope |
+| A 4,194,568 B roundtrip /restore | 0.394961 /0.362578 s | same scope |
+| D1 local | 0.645826 s | collector elapsed; same-device only |
+| C first attempt /corrected attempt | 0.377596 /6.877514 s | missing-goldens failure /executed after goldens copied |
+
+ADC driver started 13:00:57 UTC; corrected C ended 13:10:55.983 UTC. That interval
+includes operator recovery/gaps, not summed GPU time. No B duration is present in this
+snapshot (`driver-b.log` has only a start marker). Earlier two bootstrap failures remain
+recorded (unproven ancestry; obsolete arch-list predicate). These observations replace
+**no budgets** below; they are one-run observations on the original binary only.
 
 ## Exact serialized sequence after bootstrap
 
@@ -152,7 +276,8 @@ from pathlib import Path
 r=json.load(open(sys.argv[1]))
 assert r['status']=='bootstrap-complete-not-tier-qualified'
 assert r['cuda_acceptance']=='two-full-readbacks'
-assert not r['qualification']
+assert r['qualification'] is False
+assert set(r['release_binaries']) == {'storage-bench','pp-transport-smoke','qwen4exp_gpu_gate','run-gen','run-spec','memra-server'}
 assert r['source_commit']==subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
 for name, pin in r['release_binaries'].items():
     h=hashlib.sha256()
@@ -165,15 +290,20 @@ git rev-parse HEAD > "$EV/source.commit"
 sha256sum target/release/{storage-bench,pp-transport-smoke,qwen4exp_gpu_gate,run-gen,run-spec,memra-server} > "$EV/binaries.sha256"
 
 # A: local filesystem exactness baseline (NOT SSD→GPU performance).
-# Verify /scratch is physically backed by local NVMe from lsblk/findmnt, not overlay/network.
+# Default: verify local NVMe ancestry. For overlay/unproven development only, explicitly
+# use STORAGE_OPTIONS=(--allow-unproven-storage). Never call these numbers spill speed.
+STORAGE_OPTIONS=()
+: "${STORAGE_ROOT:?existing owned development storage parent; NVMe or explicit unproven mode}"
 # Create one owned directory; do not remove an existing campaign's scratch.
-SCRATCH=$(mktemp -d /scratch/spill-first-hour.XXXXXXXX)
+SCRATCH=$(mktemp -d "$STORAGE_ROOT/spill-first-hour.XXXXXXXX")
 trap 'rm -rf -- "$SCRATCH"' EXIT
 for size in 264 1048576 4194568; do
   python3 tools/tier-battery.py --rig rtx5090 --timeout 120 \
+    --storage-root "$SCRATCH" "${STORAGE_OPTIONS[@]}" \
     --out "$EV/a-roundtrip-$size" --execute \
     target/release/storage-bench roundtrip "$SCRATCH/object-$size" "$size" buffered
   python3 tools/tier-battery.py --rig rtx5090 --timeout 120 \
+    --storage-root "$SCRATCH" "${STORAGE_OPTIONS[@]}" \
     --out "$EV/a-restore-$size" --execute \
     target/release/storage-bench restore "$SCRATCH/object-$size" "$size" buffered
 done
@@ -186,10 +316,15 @@ python3 tools/tier-battery.py --rig rtx5090 --timeout 300 \
   target/release/pp-transport-smoke
 
 # C: CPU/fixture bank tests are separate from actual GPU PLE history baseline.
-# qwen4exp_gpu_gate synthesizes its own tiny checkpoint fixtures; no full PLE download.
+# It synthesizes tiny checkpoints, BUT requires the PRE-STREAMING byte goldens beside
+# the output TSV. Never mint replacement goldens with the current loader.
+mkdir -p "$EV/c-ple-tiny/receipt"
+cp research/qwen4exp-bringup-20260829/gpu-eager/bank-bytes-goldens.tsv \
+  "$EV/c-ple-tiny/receipt/bank-bytes-goldens.tsv"
+sha256sum "$EV/c-ple-tiny/receipt/bank-bytes-goldens.tsv" > "$EV/c-ple-tiny/goldens.sha256"
 python3 tools/tier-battery.py --rig rtx5090 --timeout 1800 \
-  --out "$EV/c-ple-tiny" --execute \
-  target/release/qwen4exp_gpu_gate "$EV/ple-tiny.tsv"
+  --out "$EV/c-ple-tiny/cell" --execute \
+  target/release/qwen4exp_gpu_gate "$EV/c-ple-tiny/receipt/ple-tiny.tsv"
 
 # B: fitting native checkpoint baseline, not new active demote/reload proof.
 : "${QWEN:?pinned Qwen3.8-27B NVFP4+Q5_K GGUF with qualified MTP attachment}"
@@ -201,6 +336,14 @@ python3 tools/tier-battery.py --rig rtx5090 --timeout 1800 \
   target/release/run-spec "$QWEN"
 ```
 
+`python3 tools/tier-battery.py --validate "$EV"` validates all completed CELL/capture
+hashes and outcomes (including failed commands and empty diagnostic telemetry). It is
+**archive integrity only**, not a byte gate or GPU qualification. `--validate` also accepts
+one `CELL.jsonl` or `*.capture.json`. Legacy first-hour records remain immutable: the
+validator derives seconds from recorded ns and uses the journal UTC; it reports missing
+storage labels as "not recorded; no NVMe/spill-speed claim". Torn/start-only journals fail
+as incomplete. The original strict byte-receipt and telemetry validators remain separate.
+
 These commands capture merged stdout/stderr to `command.log` **before** RESULT parsing,
 plus `command.capture.json`, `command.gpu.csv`, sampler stderr, and before/after/failure
 compute-apps logs per cell. Native output TSV/JSONL remains adjacent; binary-specific
@@ -209,7 +352,12 @@ outputs are not rewritten into positive exactness rows automatically. Exit 0 mea
 hashes or insufficient thermal/window evidence forbids scoring. Failure capture quotes only
 observed lines; no OOM inference without a captured OOM line and concurrent process query.
 The collector owns the canonical lock across binary, sampler and snapshots. Never nest a
-self-locking A/B/C shell runner under `--execute` or `locked-run.sh`.
+self-locking A/B/C shell runner under `--execute` or `locked-run.sh`. The only new
+exception is an explicitly proof-aware legacy gate after the lead applies
+[LEGACY-EXTERNAL-LOCK.diff](LEGACY-EXTERNAL-LOCK.diff): use the collector's
+`--external-lock` and the inherited-FD invocation in
+[day6/EXTERNAL-LOCK.md](day6/EXTERNAL-LOCK.md). The scripts in this lane still have
+not had that fragment applied; do not wrap their current internal-lock versions.
 
 ### Cell budgets / evidence boundary
 
@@ -218,13 +366,15 @@ self-locking A/B/C shell runner under `--execute` or `locked-run.sh`.
 | 0 | Bootstrap, no model | 8 GiB CUDA allocation +4 MiB readback; gap 60 s, each allocation timeout 180 s; build -j4 | both exact full readbacks, adequate power, exact branch, all native builds; `$BOOT/*` |
 | 1 | A filesystem fixture, internally deterministic bytes | <=4,194,568 useful bytes per object; bounded 1 MiB chunks in current store; 5 min initial | roundtrip/restore exact counts/hash; `$EV/a-*`; buffered is not O_DIRECT and no H2D occurred |
 | 2 | D1 PP primitive, no checkpoint | 4096/5120 f32 elements +runtime pools, <32 GB budget; 5 min | same-context `bytediff=0`, four slot roundtrips; `$EV/d1-local`; no peer pairs on single GPU |
-| 3 | C PLE tiny native gate, fixture generated by binary | tiny 4-layer hidden16/expert8 geometry; reserve <=4 GiB GPU operational ceiling, stop if unexpectedly larger; 15 min first-hour slice /30 min full | PLE history +tiny loader/forward rows; `$EV/ple-tiny.tsv`, `$EV/c-ple-tiny`; does NOT prove bounded NVMe service or full-model PLE |
+| 3 | C PLE tiny native gate, fixture generated by binary | tiny 4-layer hidden16/expert8 geometry; reserve <=4 GiB GPU operational ceiling, stop if unexpectedly larger; 15 min first-hour slice /30 min full | PLE history +tiny loader/forward rows; `$EV/c-ple-tiny/receipt/ple-tiny.tsv`, `$EV/c-ple-tiny/cell`; does NOT prove bounded NVMe service or full-model PLE |
 | 4 | B Qwen fitting baseline | 32 GiB total card; admit only measured free minus model/workspace reserve, single request; 15 min first-hour slice /60 min baseline | `run-gen` argmax and supported `run-spec` outputs; `$EV/b-*`; no invented 8k/32k context from a short-prompt baseline |
 | 5 | B active-8k then prefix-8k | <=32 GiB, original q8_0 K/q5_1 V, working-set refusal required; 20 min/cell after native binding | **BLOCKED**: proposed `$GATE_BIN --artifact "$QWEN" --case active --context 8192 --tiers host,nvme --same-program --out ...` is not present; no fake substitution |
 
-A's existing pinned-worker exact-byte test is a subsequent 5-minute cell after `--no-run`:
+A2's existing `spill_pread::tests` pinned-worker exact-byte test is a subsequent 5-minute cell after `--no-run`:
 `cargo +stable test --release -p memra-engine --lib spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read -- --ignored --exact --nocapture`
-under the 5090 lock via the collector (single run, timeout 300 seconds):
+under the 5090 lock via the collector (single run, timeout 300 seconds). Keep the literal
+`-- --ignored --exact --nocapture`: the collector forwards it verbatim to cargo/libtest.
+The exact spelling below names the existing test; do not abbreviate the module or test name:
 
 ```sh
 python3 tools/tier-battery.py --rig rtx5090 --timeout 300 \
@@ -252,7 +402,10 @@ are still proposed-only here.
   `docs/COOKBOOK.md` Qwen section, `docs/models/qwen38-27b.md`, B `CELLS.md`.
   Lead supplies immutable revision/full byte manifest, plan, tokenizer/template, native KV
   and prompt-token pins. No guessed drafter and no switching to DFlash2 mid-request.
-- **PLE/Qwen4Exp:** tiny fixture is generated locally. Full model source
+- **PLE/Qwen4Exp:** tiny checkpoints are generated locally, but pre-streaming
+  `research/qwen4exp-bringup-20260829/gpu-eager/bank-bytes-goldens.tsv` is mandatory
+  **beside** the output TSV. Copy the checked-in file and record its SHA-256 first;
+  never use `--write-bank-goldens` to repair missing oracle input. Full model source
   `Qwen/Qwen3.8-Flash-Next` and `tiyuvta/Qwen3.8-Flash-Next-NVFP4` mint are documented in
   `docs/models/qwen38-flash-next.md` and `research/qwen4exp-bringup-20260829/REAL-CHECKPOINT-GATE.md`.
   Short source revision in card is NOT an immutable lock; lead must supply full lock/manifest.
@@ -280,7 +433,10 @@ bash research/spill-a-20260919/rig-cells-a.sh "$NVME" --approved-non-serving
 # D1: non-locking binary through D's collector, as above.
 python3 tools/tier-battery.py --rig rtx5090 --timeout 300 --out "$EV/d1-local" \
   --execute env -u MEMRA_PP_DEVICES -u MEMRA_PP_HOST_BOUNCE target/release/pp-transport-smoke
-# C: builds before acquiring /tmp/memra-5090.lock.
+# C: builds before acquiring /tmp/memra-5090.lock. Before ple-tiny, its own runner
+# must copy+hash bank-bytes-goldens.tsv beside $out/ple-tiny.tsv (not collector output).
+# D's C-RUNNER-GOLDENS.diff is the handoff to C; apply via C owner before invoking
+# an older runner. D's bounded C cell above already includes the precondition.
 bash research/spill-c-20260919/rig-cells-c.sh \
   --non-serving-confirmed --rig 5090 --host-label development
 # B: per-GPU-command lock; legacy self-locking gates are not nested. Exact pinned inputs.

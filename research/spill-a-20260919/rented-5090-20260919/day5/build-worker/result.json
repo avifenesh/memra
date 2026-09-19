@@ -1,0 +1,22 @@
+{
+  "runtime_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+  "storage_label": "overlay, development, not spill speed",
+  "cell": "build-worker",
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "-p",
+    "memra-engine",
+    "--lib",
+    "--no-run",
+    "-j",
+    "16"
+  ],
+  "qualification": false,
+  "started_utc": "2026-09-19T22:20:43Z",
+  "binary_sha256": "916e9168a2c3692767274edad015c86421404bff1c41985becb7d88b5a28f19b",
+  "exit_code": 0,
+  "wall_ns": 20273559915,
+  "status": "executed-not-qualified"
+}

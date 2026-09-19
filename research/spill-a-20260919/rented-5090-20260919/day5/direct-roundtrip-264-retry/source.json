@@ -1,0 +1,24 @@
+{
+  "runtime_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+  "storage_label": "overlay, development, not spill speed",
+  "cell": "direct-roundtrip-264",
+  "command": [
+    "python3",
+    "tools/tier-battery.py",
+    "--rig",
+    "rtx5090",
+    "--timeout",
+    "300",
+    "--out",
+    "/root/spill-receipts/a-day5/direct-roundtrip-264-retry/collector",
+    "--run-id",
+    "direct-roundtrip-264",
+    "--execute",
+    "bash",
+    "-c",
+    "target/release/storage-bench roundtrip /root/spill-a-scratch/direct-264 264 direct"
+  ],
+  "qualification": false,
+  "started_utc": "2026-09-19T22:27:49Z",
+  "binary_sha256": "916e9168a2c3692767274edad015c86421404bff1c41985becb7d88b5a28f19b"
+}

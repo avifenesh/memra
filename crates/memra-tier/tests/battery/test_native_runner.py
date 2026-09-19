@@ -152,7 +152,7 @@ class BootstrapTests(unittest.TestCase):
             original.replace('32607, 600.00, 600.00','32607, 600.00, 575.00'),
             original.replace('32607, 600.00, 600.00','32607, NaN, 600.00'),
             original.replace("'rustc 1.97.0 (stub)\\n'", "'rustc 1.96.0 (stub)\\n'"),
-            original.replace("'compute_120a\\n'", "'compute_90a\\n'"),
+            original.replace("'compute_120\\n'", "'compute_90\\n'"),
             original.replace("code = 0", "code = 1 if label.startswith('nvcc-version') else 0"),
             original.replace("code = 0", "code = 1 if label == 'minimum-source' else 0"),
             original.replace("code = 0", "code = 1 if label == 'build-1' else 0"),
