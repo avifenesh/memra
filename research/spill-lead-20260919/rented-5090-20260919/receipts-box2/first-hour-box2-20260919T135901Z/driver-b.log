@@ -1,0 +1,284 @@
+UTC B start 2026-09-19T13:59:01Z
+-rw-r--r-- 1 root root 15705922304 Sep 19 14:07 /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+{
+ "repo": "tiyuvta/Qwen3.8-27B-NVFP4-MTP-GGUF",
+ "revision": "0f82b27dbb264b731e7d20f576582c871ef1969c",
+ "file": "Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+ "published_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+ "local_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+ "match": true
+}
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+prompt tokens: [55]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+prefill argmax=258  decode argmax=258  logit maxdiff=3.910e-1  MATCH
+generated 16 tokens in 0.181s = 88.63 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.011s) [stop: MaxNew]
+tokens: [258, 176277, 75547, 86360, 11, 198, 39, 91107, 170074, 169947, 169854, 170274, 170168, 75547, 86360, 169919]
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "target/release/run-gen",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "started_monotonic_ns": 675424403121816,
+  "ended_monotonic_ns": 675433507073014,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 453,
+    "sha256": "4b98816e9889c90c6ec2eb09c7871c966e9e76f1e2cc9623f70e6727349bf52a"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 3246,
+      "sha256": "e6d336036b1783ba879764672a9584924f61c01e2319748b19b4b65352bb4ba3"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}
+b-qwen-argmax exit 0
+loaded qwen35 (65 layers, nextn=1)
+prompt tokens: [55]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+
+[generate]   31 tok in 0.369s = 83.94 tok/s (gen-only; this run's prime 0.011s)
+  tokens: [258, 176277, 75547, 86360, 11, 198, 39, 91107, 170074, 169947, 169854, 170274, 170168, 75547, 86360, 169919, 169996, 169837, 3779, 170194, 59674, 170013, 19202, 13, 198, 1237, 149378, 170405, 11, 75547, 86360, 169962]
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_partial_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): argmax_final_f32
+[spec] draft-session state high-water: 35MB (max of parked delta 35MB and capture-time pool peak 4MB; charged per spec admission and gating future captures)
+
+[generate_spec K=1] 32 tok in 0.495s = 62.62 tok/s (0.75x vs generate; this run's prime 0.012s)
+  acceptance: 12/19 = 63.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.250s = 123.80 tok/s (1.47x vs generate; this run's prime 0.012s)
+  acceptance: 16/32 = 50.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 32 tok in 0.279s = 111.15 tok/s (1.32x vs generate; this run's prime 0.012s)
+  acceptance: 16/48 = 33.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.314s = 98.63 tok/s (1.17x vs generate; this run's prime 0.012s)
+  acceptance: 16/64 = 25.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 0.349s = 88.91 tok/s (1.06x vs generate; this run's prime 0.012s)
+  acceptance: 16/80 = 20.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 32 tok in 0.387s = 80.19 tok/s (0.96x vs generate; this run's prime 0.012s)
+  acceptance: 16/96 = 16.7%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 0.422s = 73.40 tok/s (0.87x vs generate; this run's prime 0.012s)
+  acceptance: 16/112 = 14.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 0.560s = 55.40 tok/s (0.66x vs generate; this run's prime 0.012s)
+  acceptance: 16/128 = 12.5%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "env",
+    "-u",
+    "MEMRA_SPEC_K",
+    "-u",
+    "MEMRA_PROMPT_DIR",
+    "-u",
+    "MEMRA_GEN_ONLY",
+    "target/release/run-spec",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "started_monotonic_ns": 675433613175632,
+  "ended_monotonic_ns": 675445119767417,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2316,
+    "sha256": "f711632e2ce4b912169bb3529674d4d4469015707c51a6c07d854ce47820d97d"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 4167,
+      "sha256": "9136a515c7898b78f1659d1782478e70946ac486c78cbe6384280462290cb92b"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}
+b-qwen-spec exit 0
+usage: tier-battery.py [-h]
+                       (--execute ... | --plan | --first-hour | --validate RUNS_JSONL | --dry-run | --validate-campaign BUNDLE)
+                       [--out OUT] [--schema {auto,runs,telemetry}]
+                       [--storage-samples STORAGE_SAMPLES] [--resume]
+                       [--run-id RUN_ID] [--hourly-cost HOURLY_COST]
+                       [--timeout TIMEOUT] [--pairs-per-order PAIRS_PER_ORDER]
+                       [--rig {rtx5090,pro-pair,pro-four}]
+tier-battery.py: error: unrecognized arguments: -- --ignored --exact --nocapture
+a-worker-pinned exit 2
+UTC B end 2026-09-19T14:07:49Z
+B_DONE
+   Compiling memra-engine v0.138.0 (/root/memra-spill/crates/memra-engine)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 3m 34s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-1e4958a09df9cc15)
+
+running 1 test
+[spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=64 total_pinned_bytes=128 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=8 bytes=175 errors=1 short_reads=1 fallbacks=0 buffer_waits=5 ring_full=3
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 523 filtered out; finished in 0.49s
+
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "-c",
+    "/root/.cargo/bin/cargo +stable test --release -p memra-engine --lib spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read -- --ignored --exact --nocapture"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "started_monotonic_ns": 675674049933916,
+  "ended_monotonic_ns": 675889251259332,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1044,
+    "sha256": "58adfa7b784d280df46ab0a39bade30e1c13fa819c0f55bdafba5c0b3ff682c3"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 69703,
+      "sha256": "0caecdb0c5b3c1dd961015211ee670c0fb654f45b983a15c71c694eb9dedb967"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}
+a-worker-pinned-r2 exit 0

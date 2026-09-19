@@ -226,7 +226,7 @@ fn legacy_gc_replays_crash_after_tombstone_and_before_unlink() {
     assert!(store.lookup(&key()).unwrap().is_none());
     assert_eq!(store.commit(&mut txn), Err(Error::ForeignLease));
     store.evict(&key()).unwrap();
-    assert_eq!(std::fs::read_dir(&d.0).unwrap().count(), 1); // ownership file only
+    assert_eq!(std::fs::read_dir(&d.0).unwrap().count(), 2); // lifetime + GC gate files
 }
 
 #[test]
@@ -276,4 +276,246 @@ fn catalog_gc_process_exit_between_tombstone_and_unlink() {
     assert!(recovered.lookup(&key()).unwrap().is_none());
     recovered.collect(&key()).unwrap();
     assert_eq!(std::fs::read_dir(&d.0).unwrap().count(), 1);
+}
+
+#[test]
+fn review_catalog_recovers_pending_with_and_without_published_root() {
+    for published in [false, true] {
+        let d = OwnedDirectory::new();
+        let mut store = CatalogStore::open(vec![d.0.clone()], governor()).unwrap();
+        let head = store
+            .install_index(key(), 264, vec![reference(&payload(264))], &request(32768))
+            .unwrap();
+        let root =
+            d.0.join(format!("catalog-{}.root", hex(&key().identity().unwrap())));
+        let pending = root.with_extension("pending");
+        std::fs::hard_link(&root, &pending).unwrap();
+        if !published {
+            std::fs::remove_file(&root).unwrap();
+        }
+        drop(store);
+        let mut recovered = CatalogStore::open(vec![d.0.clone()], governor()).unwrap();
+        let result =
+            recovered.install_index(key(), 264, vec![reference(&payload(264))], &request(32768));
+        if published {
+            assert_eq!(result, Err(Error::Conflict)); // Immutable root is never replaced.
+            assert_eq!(recovered.lookup(&key()).unwrap(), Some(head.clone()));
+        } else {
+            assert_eq!(result.unwrap(), head);
+        }
+        assert!(!pending.exists(), "stale pending must not wedge reuse");
+        // Also exercise collect directly at the post-link crash boundary.
+        std::fs::hard_link(&root, &pending).unwrap();
+        recovered.tombstone(&head).unwrap();
+        recovered.collect(&key()).unwrap();
+        assert!(!pending.exists());
+        recovered
+            .install_index(key(), 264, vec![reference(&payload(264))], &request(32768))
+            .unwrap();
+    }
+}
+
+#[test]
+fn review_gc_preserves_uncommitted_transaction_chunks() {
+    let d = OwnedDirectory::new();
+    let mut store = new_store(FileBackend::open(&d.0).unwrap());
+    let mut victim = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    store.put(&mut victim, &payload(264)).unwrap();
+    store.commit(&mut victim).unwrap();
+    let mut other = key();
+    other.generation += 1;
+    let mut pending = store
+        .begin(other.clone(), 264, Durability::Ephemeral)
+        .unwrap();
+    store.put(&mut pending, &payload(264)).unwrap();
+    store.evict(&key()).unwrap();
+    let committed = store.commit(&mut pending).unwrap();
+    assert_eq!(
+        read_manifest(&mut store, &committed, 0).unwrap(),
+        payload(264)
+    );
+    store.evict(&other).unwrap();
+}
+
+#[test]
+fn review_gc_verification_failure_does_not_revoke_visibility() {
+    let d = OwnedDirectory::new();
+    let mut store = new_store(FileBackend::open(&d.0).unwrap());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    store.put(&mut txn, &payload(264)).unwrap();
+    let head = store.commit(&mut txn).unwrap();
+    let corrupt = d.0.join(format!("root-{}", hex(&[99; 32])));
+    std::fs::write(&corrupt, b"undecodable unrelated root").unwrap();
+    assert_eq!(store.evict(&key()), Err(Error::Corrupt));
+    assert_eq!(store.lookup(&key()).unwrap(), Some(head.clone()));
+    assert_eq!(read_manifest(&mut store, &head, 0).unwrap(), payload(264));
+    assert!(
+        !d.0.join(format!("tomb-{}", hex(&key().identity().unwrap())))
+            .exists()
+    );
+}
+
+#[test]
+fn review_gc_staged_transaction_process_exit_and_bounded_recovery() {
+    // Child exits without destructors: the txn-scoped links must survive, but
+    // their independent owner lock must not. No age/PID reuse heuristic is used.
+    if let Some(path) = std::env::var_os("SPILL_A_TEST_TXN_CRASH_DIR") {
+        let mut store = new_store(FileBackend::open(std::path::Path::new(&path)).unwrap());
+        let mut other = key();
+        other.generation += 1;
+        let mut pending = store.begin(other, 265, Durability::Ephemeral).unwrap();
+        store.put(&mut pending, &payload(265)).unwrap();
+        std::process::exit(73);
+    }
+    let d = OwnedDirectory::new();
+    let mut store = new_store(FileBackend::open(&d.0).unwrap());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    store.put(&mut txn, &payload(264)).unwrap();
+    let head = store.commit(&mut txn).unwrap();
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "day4::review_gc_staged_transaction_process_exit_and_bounded_recovery",
+        ])
+        .env("SPILL_A_TEST_TXN_CRASH_DIR", &d.0)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(73));
+    let orphan = d.0.join(format!(
+        "chunk-{}",
+        hex(&reference(&payload(265)).encoded_digest)
+    ));
+    assert!(orphan.exists());
+    // Include the earlier mkdir-before-owner crash, and more than one sweep's
+    // quota. All empty abandoned dirs are safe; no filesystem clock involved.
+    for i in 0..40 {
+        std::fs::create_dir(d.0.join(format!(".txn-abandoned-{i}"))).unwrap();
+    }
+    let count = || {
+        std::fs::read_dir(&d.0)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".txn-")
+            })
+            .count()
+    };
+    assert_eq!(count(), 41);
+    store.evict(&key()).unwrap();
+    assert_eq!(count(), 9); // at most 32 per collection, independent of order
+    // A second real GC target allows the remaining bounded cleanup to run.
+    let mut next = key();
+    next.generation += 2;
+    let mut txn = store
+        .begin(next.clone(), 264, Durability::Ephemeral)
+        .unwrap();
+    store.put(&mut txn, &payload(264)).unwrap();
+    store.commit(&mut txn).unwrap();
+    store.evict(&next).unwrap();
+    assert_eq!(count(), 0);
+    assert!(!orphan.exists());
+    assert!(store.lookup(&head.key).unwrap().is_none());
+}
+
+#[test]
+fn review_gc_cancel_removes_staging_and_corrupt_staging_is_noop() {
+    let d = OwnedDirectory::new();
+    let mut store = new_store(FileBackend::open(&d.0).unwrap());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    store.put(&mut txn, &payload(264)).unwrap();
+    let head = store.commit(&mut txn).unwrap();
+    let mut next = key();
+    next.generation += 1;
+    let mut pending = store.begin(next, 264, Durability::Ephemeral).unwrap();
+    store.put(&mut pending, &payload(264)).unwrap();
+    let dir = std::fs::read_dir(&d.0)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".txn-")
+        })
+        .unwrap();
+    assert!(
+        dir.join(format!("chunk-{}", hex(&head.chunks[0].encoded_digest)))
+            .exists()
+    );
+    std::fs::write(dir.join("unknown-reference"), b"corrupt metadata").unwrap();
+    assert_eq!(store.evict(&key()), Err(Error::Corrupt));
+    assert_eq!(store.lookup(&key()).unwrap(), Some(head.clone()));
+    assert_eq!(read_manifest(&mut store, &head, 0).unwrap(), payload(264));
+    std::fs::remove_file(dir.join("unknown-reference")).unwrap();
+    assert_eq!(
+        store.cancel(&mut pending),
+        Ok(memra_tier::contracts::CancelState::PublicationRevoked)
+    );
+    assert!(!dir.exists());
+    store.evict(&key()).unwrap();
+    assert!(
+        !d.0.join(format!("chunk-{}", hex(&head.chunks[0].encoded_digest)))
+            .exists()
+    );
+}
+
+#[test]
+fn review_gc_live_cross_process_transaction_commits_byte_exact() {
+    use std::io::{BufRead, Write};
+    if let Some(path) = std::env::var_os("SPILL_A_TEST_TXN_LIVE_DIR") {
+        let mut store = new_store(FileBackend::open(std::path::Path::new(&path)).unwrap());
+        let mut next = key();
+        next.generation += 1;
+        let mut txn = store.begin(next, 264, Durability::Ephemeral).unwrap();
+        store.put(&mut txn, &payload(264)).unwrap();
+        println!("STAGED");
+        std::io::stdout().flush().unwrap();
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).unwrap();
+        assert_eq!(line, "COMMIT\n");
+        let head = store.commit(&mut txn).unwrap();
+        assert_eq!(read_manifest(&mut store, &head, 0).unwrap(), payload(264));
+        return;
+    }
+    let d = OwnedDirectory::new();
+    let mut store = new_store(FileBackend::open(&d.0).unwrap());
+    let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
+    store.put(&mut txn, &payload(264)).unwrap();
+    store.commit(&mut txn).unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "day4::review_gc_live_cross_process_transaction_commits_byte_exact",
+            "--nocapture",
+        ])
+        .env("SPILL_A_TEST_TXN_LIVE_DIR", &d.0)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut output = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if output.read_line(&mut line).unwrap() == 0 || line == "STAGED\n" {
+            break;
+        }
+    }
+    let result = store.evict(&key());
+    let sent = child.stdin.take().unwrap().write_all(b"COMMIT\n");
+    let status = child.wait().unwrap();
+    assert_eq!(line, "STAGED\n");
+    sent.unwrap();
+    assert!(status.success());
+    assert_eq!(result, Err(Error::Busy));
+    store.evict(&key()).unwrap();
+    let mut next = key();
+    next.generation += 1;
+    let head = store.lookup(&next).unwrap().unwrap();
+    assert_eq!(read_manifest(&mut store, &head, 0).unwrap(), payload(264));
+    store.evict(&next).unwrap();
 }

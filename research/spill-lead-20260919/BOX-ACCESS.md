@@ -1,6 +1,6 @@
 # Rented 5090 box — access + rules for lane sessions (2026-09-19)
 
-Owner-approved development rental (Vast.ai interruptible; NOT production). Details of the box are
+Owner-approved development rental (marketplace GPU, interruptible; NOT production). Details of the box are
 private receipt metadata; the connection below uses the operator's existing SSH identity only.
 
 - Connect **via the provider's SSH proxy** (the direct-IP path is flaky). The proxy host/port is a
