@@ -87,6 +87,8 @@ def validate_storage_cell(journal, battery, envelopes=None):
     result.update(schema_version=1, kind="storage-cell-join", capture=end["capture"],
                   raw_log=capture["raw_log"], rig=lock["rig"], lock=lock["lock"],
                   gpu_telemetry_status=telemetry["status"], diagnostics=diagnostics,
+                  gpu_telemetry=telemetry, started_monotonic_ns=first, ended_monotonic_ns=last,
+                  duration_ns=last-first,
                   storage_label="filesystem development characterization, not spill speed",
                   status="capture-matched-not-qualified")
     return result
