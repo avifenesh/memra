@@ -1270,6 +1270,8 @@ impl<H: Hotness<RowDomain>, R: ExactReader> RowService for DrivenRows<'_, H, R> 
 
 mod integration;
 
+// v1.1 completion/observation hooks drive the day-3 queued host reader.
+// Keep stage/gather enqueue-only and publication/retirement separate from progress.
 #[test]
 fn revision_v11_bank_cancel_identity_uniform() {
     for class in [LayoutClass::Uniform, LayoutClass::PerRecord] {
@@ -1277,6 +1279,7 @@ fn revision_v11_bank_cancel_identity_uniform() {
         let (mut b, ids) = banks(class, 0, Reader::default(), g.clone());
         conformance::bank_identity(&mut b, batch(vec![ids[0].clone()]));
         let t = conformance::bank_complete_cancel(&mut b, batch(vec![ids[0].clone()]), |b, t| {
+            drain(b, t);
             b.completion(t).unwrap().clone()
         });
         finish(&mut b, &t);
@@ -1286,6 +1289,7 @@ fn revision_v11_bank_cancel_identity_uniform() {
             batch(vec![ids[0].clone()]),
             class,
             |b, t| {
+                drain(b, t);
                 assert!(b.completion(t).unwrap().producer_done);
             },
             |b, t| {
@@ -1304,6 +1308,7 @@ fn revision_v11_rows_complete_cancel() {
     let g = gov();
     let mut r = rows(&table, &[5, 2, 9], g.clone(), CoalescingPolicy::default());
     let t = conformance::rows_complete_cancel(&mut r, row_batch(&table, &[5, 2, 5, 9]), |r, t| {
+        drain(&mut r.0, t);
         r.0.completion(t).unwrap().clone()
     });
     finish(&mut r.0, &t);
@@ -1333,6 +1338,7 @@ fn revision_v11_rows_bytes_dedup_bounded_straddles() {
         &expected,
         |l| vec![l.resource::<Vec<u8>>().unwrap().clone()],
         |r, t| {
+            drain(&mut r.0, t);
             assert_eq!(r.0.plan(t).unwrap().straddling_segments, 3);
             assert_eq!(r.0.reader().calls.len(), 4);
         },
@@ -1358,6 +1364,7 @@ fn revision_v11_corrupt_sibling_and_row_namespace() {
         g.clone(),
     );
     let t = conformance::bank_failed_sibling(&mut b, batch(ids[..3].to_vec()), |b, t| {
+        drain(b, t);
         b.completion(t).unwrap().clone()
     });
     finish(&mut b, &t);
@@ -1383,6 +1390,7 @@ fn revision_v11_corrupt_sibling_and_row_namespace() {
     );
     conformance::rows_identity(&mut r, row_batch(&table, &ns));
     let t = conformance::rows_failed_sibling(&mut r, row_batch(&table, &ns), |r, t| {
+        drain(&mut r.0, t);
         r.0.completion(t).unwrap().clone()
     });
     assert_eq!(r.0.reader().calls.len(), 2);
