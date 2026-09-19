@@ -1,6 +1,7 @@
 # What a serving inference engine must have for real inference usage — and where memra stands
 
 Lane `serving-musthaves-20260919`. Audit at memra `61be8b0d` (origin/main, 2026-09-19).
+Tracking issues for the ranked gaps: #521–#533 (one per gap, §7).
 Method: (1) the converged 2026 industry baseline (every mainstream engine ships it, so a
 customer assumes it); (2) the production incident record of this program's own serving
 (private sibling repo, `../darklanes/ops/incidents/` and `research/*incident*`), which is the
@@ -112,13 +113,13 @@ tuning.
 
 ## 7. Ranked gaps, by what they have already cost
 
-1. **Prefill fairness default-OFF (3.1).** One incident, 11.5 h, three tenants, every monitor green. The industry default is chunked-prefill-interleaved-with-decode; memra has the door (`MEMRA_PRIME_YIELD`) and the receipts, and the decide-by date is the deadline to make it the naked default or delete it.
-2. **Health/readiness fault-injection (4.1, 4.4, 6.3).** Two outages (2026-09-11, 2026-09-13) where the engine was healthy and a check was wrong. A latch-forever canary needs a hysteresis or a re-probe; readiness needs a warmup phase that includes graph capture.
-3. **Fleet-fatal panic policy (4.2).** "One respawn then exit" turns a single bad request into a box outage. Rust-side asserts in per-request paths should fail the request with a typed error; only a poisoned CUDA context justifies exit 70.
-4. **Release battery has no serving-shape cell (6.1).** Every serving guarantee is a research receipt. Promote `serve-smoke` + `serve-stress-gate` (with completion counting) + `cache-meter-gate` into `tools/release-battery.sh`, GPU-gated like the rest.
-5. **Prometheus + latency histograms (4.5).** Not an incident cause, but every incident above was detected by the owner or a customer, not a dashboard; TPOT/ITL/queue-time histograms per model are the alerting substrate.
-6. **API breadth (2.4–2.6, 2.8, 2.10).** `logprobs`, `n>1`, `include_usage`, named `tool_choice`, `parallel_tool_calls`, `/tokenize`. Each is small; together they are the difference between "OpenAI-compatible" and "works with my SDK".
-7. **Prefix-cache policy fragility (3.2).** LRU-by-launcher is a fix, not a design; the cache needs an admission rule that guarantees the newest turn fits, and `cached_tokens` needs to be asserted on turn 2 of every replayed conversation (cutover gate G4).
+1. **Prefill fairness default-OFF (3.1) — #521.** One incident, 11.5 h, three tenants, every monitor green. The industry default is chunked-prefill-interleaved-with-decode; memra has the door (`MEMRA_PRIME_YIELD`) and the receipts, and the decide-by date is the deadline to make it the naked default or delete it.
+2. **Health/readiness fault-injection (4.1, 4.4, 6.3) — #524 (mechanism: #516).** Two outages (2026-09-11, 2026-09-13) where the engine was healthy and a check was wrong. A latch-forever canary needs a hysteresis or a re-probe; readiness needs a warmup phase that includes graph capture.
+3. **Fleet-fatal panic policy (4.2) — #525.** "One respawn then exit" turns a single bad request into a box outage. Rust-side asserts in per-request paths should fail the request with a typed error; only a poisoned CUDA context justifies exit 70.
+4. **Release battery has no serving-shape cell (6.1) — #526.** Every serving guarantee is a research receipt. Promote `serve-smoke` + `serve-stress-gate` (with completion counting) + `cache-meter-gate` into `tools/release-battery.sh`, GPU-gated like the rest.
+5. **Prometheus + latency histograms (4.5) — #522.** Not an incident cause, but every incident above was detected by the owner or a customer, not a dashboard; TPOT/ITL/queue-time histograms per model are the alerting substrate.
+6. **API breadth (2.4–2.6, 2.8–2.10, 2.12) — #527 logprobs, #528 n>1, #529 include_usage, #530 tool_choice/parallel, #531 tokenize, #532 stop_token_ids, #533 image_url.** `logprobs`, `n>1`, `include_usage`, named `tool_choice`, `parallel_tool_calls`, `/tokenize`. Each is small; together they are the difference between "OpenAI-compatible" and "works with my SDK".
+7. **Prefix-cache policy fragility (3.2) — #523.** LRU-by-launcher is a fix, not a design; the cache needs an admission rule that guarantees the newest turn fits, and `cached_tokens` needs to be asserted on turn 2 of every replayed conversation (cutover gate G4).
 
 ## 8. What this means under the 2026-09-12 ruling
 
