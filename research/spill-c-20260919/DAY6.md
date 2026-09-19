@@ -33,3 +33,35 @@ host-only GPU PLE gate verdict from day 5 is not device-transfer evidence.
 Rented RTX 5090 cells must record configured power cap **400 W / 600 W maximum**,
 verify current power metadata, use the canonical collector/lock and archive per
 cell. No cell has run for this step.
+
+## Step 2: expert dispatch adapter and native integration refusal
+
+Selected public source: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` at HF revision
+`5bc3e238d916f48a861bac2f8a1990a0e9b7e98d`; file
+`Qwen3.6-35B-A3B-UD-IQ4_XS.gguf`, 18,209,036,576 bytes, SHA256
+`df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf`.
+Unauthenticated HF API returned 200; metadata receipt `raw/day6-model-access.json`.
+This matches the historical artifact hash in `research/percard-20260812/RESULTS.md`.
+The non-MTP repository has different bytes and is not substituted. No download
+was started before establishing a usable native injection boundary.
+
+`SlruExpertDispatch` binds an already-installed immutable bank/source map to
+original `(layer, projection, expert)` IDs; refuses absent IDs, wrong projection,
+wrong byte lengths, and multi-plane records (this payload-only slice does not
+silently drop scales). A host demand stays open through H2D and only finishes on
+explicit completion. The underlying `BankService::with_slru` retains resident
+bytes across repeated demands; tests show 4 demands / 2 physical reads, exact
+bytes, unknown-ID refusal, and explicit drained charges. Native intrusive SLRU
+is not replaced by the O(n) CPU policy model.
+
+**experts-via-tier: NOT RUN — native owner-thread injection boundary unresolved.**
+`DAY6-EXPERT-DISPATCH-PROPOSAL.diff` is an UNAPPLIED, rejected integration probe,
+not working code: storing the owner-thread bank and BankLease in `MoeSlotCache`
+makes `Engine` non-Sync, failing scoped pipeline worker compilation. The frozen
+Rc ownership is intentional; neither unsafe Send nor cross-worker substitution
+is acceptable. The patch also still needs every direct warmup/admit bypass fenced.
+Raw DOCS_RS compile diagnostics are retained in `raw/day6-device-cpu/engine-check.log`;
+that run is a Mac compile probe, not native CUDA evidence. The unsafe/incomplete
+wiring was removed from live code; only the independently CPU-tested adapter lands.
+No model argmax/spec PASS is claimed; the artifact is available and below the cap,
+so this is a runtime integration blocker, NOT an artifact/size excuse.

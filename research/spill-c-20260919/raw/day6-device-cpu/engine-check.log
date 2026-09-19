@@ -1,0 +1,792 @@
+   Compiling libc v0.2.186
+   Compiling crc32fast v1.5.0
+    Checking simd-adler32 v0.3.10
+   Compiling autocfg v1.5.1
+    Checking adler2 v2.0.1
+   Compiling cudarc v0.19.8
+    Checking libloading v0.9.0
+    Checking quick-error v2.0.1
+   Compiling num-traits v0.2.19
+    Checking byteorder-lite v0.1.0
+    Checking zune-core v0.5.3
+    Checking miniz_oxide v0.8.9
+    Checking fdeflate v0.3.7
+    Checking pxfm v0.1.30
+    Checking weezl v0.1.12
+    Checking bitflags v2.13.1
+    Checking color_quant v1.1.0
+    Checking gif v0.14.2
+    Checking zune-jpeg v0.5.15
+    Checking flate2 v1.1.9
+    Checking image-webp v0.2.4
+    Checking png v0.18.1
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-engine)
+    Checking cpufeatures v0.2.17
+    Checking memmap2 v0.9.11
+    Checking sha2 v0.10.9
+    Checking bytemuck v1.25.2
+    Checking memra-sampling v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-sampling)
+    Checking memra-gguf v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-gguf)
+    Checking memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tier)
+    Checking base64 v0.22.1
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+    Checking moxcms v0.8.1
+    Checking memra-validate v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-validate)
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tokenizer)
+    Checking memra-runtime v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-runtime)
+    Checking memra-kv v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-kv)
+    Checking image v0.25.10
+    Checking memra-reference v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-reference)
+error: environment variable `MEMRA_MMQ_ARCHIVE_HASH` not defined at compile time
+   --> crates/memra-engine/src/lib.rs:880:36
+    |
+880 | pub const MMQ_ARCHIVE_HASH: &str = env!("MEMRA_MMQ_ARCHIVE_HASH");
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: use `std::env::var("MEMRA_MMQ_ARCHIVE_HASH")` to read the variable at run time
+
+error[E0425]: cannot find type `cpu_set_t` in crate `libc`
+   --> crates/memra-engine/src/cpu_experts.rs:567:28
+    |
+567 |         let mut set: libc::cpu_set_t = std::mem::zeroed();
+    |                            ^^^^^^^^^ not found in `libc`
+
+error[E0425]: cannot find function, tuple struct or tuple variant `CPU_SET` in crate `libc`
+    --> crates/memra-engine/src/cpu_experts.rs:569:19
+     |
+ 569 |             libc::CPU_SET(cpu, &mut set);
+     |                   ^^^^^^^
+     |
+    ::: /Users/avifen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/bsd/apple/mod.rs:3786:1
+     |
+3786 | pub const IPC_SET: c_int = 1;
+     | ------------------------ similarly named constant `IPC_SET` defined here
+     |
+help: a constant with a similar name exists
+     |
+ 569 -             libc::CPU_SET(cpu, &mut set);
+ 569 +             libc::IPC_SET(cpu, &mut set);
+     |
+
+error[E0425]: cannot find function `sched_setaffinity` in crate `libc`
+   --> crates/memra-engine/src/cpu_experts.rs:571:15
+    |
+571 |         libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &set);
+    |               ^^^^^^^^^^^^^^^^^ not found in `libc`
+
+error[E0425]: cannot find type `cpu_set_t` in crate `libc`
+   --> crates/memra-engine/src/cpu_experts.rs:571:62
+    |
+571 |         libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &set);
+    |                                                              ^^^^^^^^^ not found in `libc`
+
+error[E0425]: cannot find function `posix_fadvise` in crate `libc`
+   --> crates/memra-engine/src/spill_pread.rs:501:36
+    |
+501 |                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+    |                                    ^^^^^^^^^^^^^
+    |
+   ::: /Users/avifen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/bsd/mod.rs:624:5
+    |
+624 |     pub fn posix_madvise(addr: *mut c_void, len: size_t, advice: c_int) -> c_int;
+    |     ----------------------------------------------------------------------------- similarly named function `posix_madvise` defined here
+    |
+help: a function with a similar name exists
+    |
+501 -                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+501 +                     unsafe { libc::posix_madvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+    |
+
+error[E0425]: cannot find value `POSIX_FADV_RANDOM` in crate `libc`
+    --> crates/memra-engine/src/spill_pread.rs:501:80
+     |
+ 501 |                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+     |                                                                                ^^^^^^^^^^^^^^^^^
+     |
+    ::: /Users/avifen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/bsd/apple/mod.rs:2477:1
+     |
+2477 | pub const POSIX_MADV_RANDOM: c_int = 1;
+     | ---------------------------------- similarly named constant `POSIX_MADV_RANDOM` defined here
+     |
+help: a constant with a similar name exists
+     |
+ 501 -                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+ 501 +                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_MADV_RANDOM) };
+     |
+
+error[E0425]: cannot find value `O_DIRECT` in crate `libc`
+   --> crates/memra-engine/src/spill_pread.rs:519:37
+    |
+519 |                 .custom_flags(libc::O_DIRECT)
+    |                                     ^^^^^^^^ not found in `libc`
+
+error[E0277]: `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+    --> crates/memra-engine/src/pp.rs:1646:13
+     |
+1646 | static RTN: OnceLock<Result<PpNRt, String>> = OnceLock::new();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+     |
+     = help: the trait `Send` is not implemented for `(dyn ExpertDispatchBank + 'static)`
+     = note: required for `std::ptr::Unique<(dyn ExpertDispatchBank + 'static)>` to implement `Send`
+note: required because it appears within the type `Box<(dyn ExpertDispatchBank + 'static)>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/boxed.rs:234:11
+note: required because it appears within the type `Option<Box<(dyn ExpertDispatchBank + 'static)>>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+note: required because it appears within the type `Option<Engine>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `StageRt`
+    --> crates/memra-engine/src/pp.rs:934:12
+     |
+ 934 | pub struct StageRt {
+     |            ^^^^^^^
+note: required because it appears within the type `PhantomData<StageRt>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/marker.rs:811:11
+note: required because it appears within the type `alloc::raw_vec::RawVec<StageRt>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/raw_vec/mod.rs:73:18
+note: required because it appears within the type `Vec<StageRt>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/vec/mod.rs:438:11
+note: required because it appears within the type `PpNRt`
+    --> crates/memra-engine/src/pp.rs:1526:12
+     |
+1526 | pub struct PpNRt {
+     |            ^^^^^
+note: required because it appears within the type `std::result::Result<PpNRt, std::string::String>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:557:9
+     = note: required for `OnceLock<std::result::Result<PpNRt, std::string::String>>` to implement `std::marker::Sync`
+     = note: shared static variables must have a type that implements `Sync`
+
+error[E0277]: `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+    --> crates/memra-engine/src/pp.rs:1646:13
+     |
+1646 | static RTN: OnceLock<Result<PpNRt, String>> = OnceLock::new();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+     |
+     = help: within `Option<MoeSlotCache>`, the trait `Send` is not implemented for `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>`
+note: required because it appears within the type `BankLease`
+    --> crates/memra-tier/src/contracts.rs:1674:12
+     |
+1674 | pub struct BankLease {
+     |            ^^^^^^^^^
+note: required because it appears within the type `ExpertDemand`
+    --> crates/memra-tier/src/bank/expert_dispatch.rs:12:12
+     |
+  12 | pub struct ExpertDemand {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<ExpertDemand>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+note: required because it appears within the type `Option<Engine>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `StageRt`
+    --> crates/memra-engine/src/pp.rs:934:12
+     |
+ 934 | pub struct StageRt {
+     |            ^^^^^^^
+note: required because it appears within the type `PhantomData<StageRt>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/marker.rs:811:11
+note: required because it appears within the type `alloc::raw_vec::RawVec<StageRt>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/raw_vec/mod.rs:73:18
+note: required because it appears within the type `Vec<StageRt>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/vec/mod.rs:438:11
+note: required because it appears within the type `PpNRt`
+    --> crates/memra-engine/src/pp.rs:1526:12
+     |
+1526 | pub struct PpNRt {
+     |            ^^^^^
+note: required because it appears within the type `std::result::Result<PpNRt, std::string::String>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:557:9
+     = note: required for `OnceLock<std::result::Result<PpNRt, std::string::String>>` to implement `std::marker::Sync`
+     = note: shared static variables must have a type that implements `Sync`
+
+error[E0277]: `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+    --> crates/memra-engine/src/hybrid_forward/glm5_prime.rs:283:33
+     |
+ 283 |                       scope.spawn(move || -> Result<usize, String> {
+     |  ___________________________-----_^
+     | |                           |
+     | |                           required by a bound introduced by this call
+ 284 | |                         let slot = m
+ 285 | |                             .prime_hyper_pp2_stage0_enqueue(
+ 286 | |                                 e,
+...    |
+ 298 | |                         Ok(slot)
+ 299 | |                     })
+     | |_____________________^ `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+     |
+     = help: the trait `Send` is not implemented for `(dyn ExpertDispatchBank + 'static)`
+     = note: required for `std::ptr::Unique<(dyn ExpertDispatchBank + 'static)>` to implement `Send`
+note: required because it appears within the type `Box<(dyn ExpertDispatchBank + 'static)>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/boxed.rs:234:11
+note: required because it appears within the type `Option<Box<(dyn ExpertDispatchBank + 'static)>>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/hybrid_forward/glm5_prime.rs:283:33
+     |
+ 283 |                     scope.spawn(move || -> Result<usize, String> {
+     |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+    --> crates/memra-engine/src/hybrid_forward/glm5_prime.rs:283:33
+     |
+ 283 |                       scope.spawn(move || -> Result<usize, String> {
+     |  ___________________________-----_^
+     | |                           |
+     | |                           required by a bound introduced by this call
+ 284 | |                         let slot = m
+ 285 | |                             .prime_hyper_pp2_stage0_enqueue(
+ 286 | |                                 e,
+...    |
+ 298 | |                         Ok(slot)
+ 299 | |                     })
+     | |_____________________^ `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+     |
+     = help: within `Option<MoeSlotCache>`, the trait `Send` is not implemented for `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>`
+note: required because it appears within the type `BankLease`
+    --> crates/memra-tier/src/contracts.rs:1674:12
+     |
+1674 | pub struct BankLease {
+     |            ^^^^^^^^^
+note: required because it appears within the type `ExpertDemand`
+    --> crates/memra-tier/src/bank/expert_dispatch.rs:12:12
+     |
+  12 | pub struct ExpertDemand {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<ExpertDemand>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/hybrid_forward/glm5_prime.rs:283:33
+     |
+ 283 |                     scope.spawn(move || -> Result<usize, String> {
+     |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+    --> crates/memra-engine/src/hybrid_forward.rs:4714:46
+     |
+4714 |                       let stage0 = scope.spawn(move || -> Result<usize, String> {
+     |  ________________________________________-----_^
+     | |                                        |
+     | |                                        required by a bound introduced by this call
+4715 | |                         let next = self
+4716 | |                             .prime_hyper_pp2_stage0_enqueue(
+4717 | |                                 e,
+...    |
+4729 | |                         Ok(next)
+4730 | |                     });
+     | |_____________________^ `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+     |
+     = help: the trait `Send` is not implemented for `(dyn ExpertDispatchBank + 'static)`
+     = note: required for `std::ptr::Unique<(dyn ExpertDispatchBank + 'static)>` to implement `Send`
+note: required because it appears within the type `Box<(dyn ExpertDispatchBank + 'static)>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/boxed.rs:234:11
+note: required because it appears within the type `Option<Box<(dyn ExpertDispatchBank + 'static)>>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/hybrid_forward.rs:4714:46
+     |
+4714 |                     let stage0 = scope.spawn(move || -> Result<usize, String> {
+     |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+    --> crates/memra-engine/src/hybrid_forward.rs:4714:46
+     |
+4714 |                       let stage0 = scope.spawn(move || -> Result<usize, String> {
+     |  ________________________________________-----_^
+     | |                                        |
+     | |                                        required by a bound introduced by this call
+4715 | |                         let next = self
+4716 | |                             .prime_hyper_pp2_stage0_enqueue(
+4717 | |                                 e,
+...    |
+4729 | |                         Ok(next)
+4730 | |                     });
+     | |_____________________^ `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+     |
+     = help: within `Option<MoeSlotCache>`, the trait `Send` is not implemented for `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>`
+note: required because it appears within the type `BankLease`
+    --> crates/memra-tier/src/contracts.rs:1674:12
+     |
+1674 | pub struct BankLease {
+     |            ^^^^^^^^^
+note: required because it appears within the type `ExpertDemand`
+    --> crates/memra-tier/src/bank/expert_dispatch.rs:12:12
+     |
+  12 | pub struct ExpertDemand {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<ExpertDemand>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/hybrid_forward.rs:4714:46
+     |
+4714 |                     let stage0 = scope.spawn(move || -> Result<usize, String> {
+     |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+    --> crates/memra-engine/src/hybrid_forward.rs:5975:46
+     |
+5975 |                       let stage0 = scope.spawn(move || -> Result<usize, String> {
+     |  ________________________________________-----_^
+     | |                                        |
+     | |                                        required by a bound introduced by this call
+5976 | |                         let next = self
+5977 | |                             .prime_pp2_stage0_enqueue(
+5978 | |                                 e,
+...    |
+5989 | |                         Ok(next)
+5990 | |                     });
+     | |_____________________^ `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+     |
+     = help: the trait `Send` is not implemented for `(dyn ExpertDispatchBank + 'static)`
+     = note: required for `std::ptr::Unique<(dyn ExpertDispatchBank + 'static)>` to implement `Send`
+note: required because it appears within the type `Box<(dyn ExpertDispatchBank + 'static)>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/boxed.rs:234:11
+note: required because it appears within the type `Option<Box<(dyn ExpertDispatchBank + 'static)>>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/hybrid_forward.rs:5975:46
+     |
+5975 |                     let stage0 = scope.spawn(move || -> Result<usize, String> {
+     |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+    --> crates/memra-engine/src/hybrid_forward.rs:5975:46
+     |
+5975 |                       let stage0 = scope.spawn(move || -> Result<usize, String> {
+     |  ________________________________________-----_^
+     | |                                        |
+     | |                                        required by a bound introduced by this call
+5976 | |                         let next = self
+5977 | |                             .prime_pp2_stage0_enqueue(
+5978 | |                                 e,
+...    |
+5989 | |                         Ok(next)
+5990 | |                     });
+     | |_____________________^ `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+     |
+     = help: within `Option<MoeSlotCache>`, the trait `Send` is not implemented for `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>`
+note: required because it appears within the type `BankLease`
+    --> crates/memra-tier/src/contracts.rs:1674:12
+     |
+1674 | pub struct BankLease {
+     |            ^^^^^^^^^
+note: required because it appears within the type `ExpertDemand`
+    --> crates/memra-tier/src/bank/expert_dispatch.rs:12:12
+     |
+  12 | pub struct ExpertDemand {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<ExpertDemand>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/hybrid_forward.rs:5975:46
+     |
+5975 |                     let stage0 = scope.spawn(move || -> Result<usize, String> {
+     |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+    --> crates/memra-engine/src/hybrid_forward.rs:6152:42
+     |
+6152 |                   handles.push(scope.spawn(move || -> Result<(), String> {
+     |  ____________________________________-----_^
+     | |                                    |
+     | |                                    required by a bound introduced by this call
+6153 | |                     let result = self.prime_ppn_wave_worker(
+6154 | |                         e,
+6155 | |                         rt,
+...    |
+6170 | |                     result.map_err(|error| error.to_string())
+6171 | |                 }));
+     | |_________________^ `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+     |
+     = help: the trait `Send` is not implemented for `(dyn ExpertDispatchBank + 'static)`
+     = note: required for `std::ptr::Unique<(dyn ExpertDispatchBank + 'static)>` to implement `Send`
+note: required because it appears within the type `Box<(dyn ExpertDispatchBank + 'static)>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/boxed.rs:234:11
+note: required because it appears within the type `Option<Box<(dyn ExpertDispatchBank + 'static)>>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/hybrid_forward.rs:6152:42
+     |
+6152 |                 handles.push(scope.spawn(move || -> Result<(), String> {
+     |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+    --> crates/memra-engine/src/hybrid_forward.rs:6152:42
+     |
+6152 |                   handles.push(scope.spawn(move || -> Result<(), String> {
+     |  ____________________________________-----_^
+     | |                                    |
+     | |                                    required by a bound introduced by this call
+6153 | |                     let result = self.prime_ppn_wave_worker(
+6154 | |                         e,
+6155 | |                         rt,
+...    |
+6170 | |                     result.map_err(|error| error.to_string())
+6171 | |                 }));
+     | |_________________^ `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+     |
+     = help: within `Option<MoeSlotCache>`, the trait `Send` is not implemented for `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>`
+note: required because it appears within the type `BankLease`
+    --> crates/memra-tier/src/contracts.rs:1674:12
+     |
+1674 | pub struct BankLease {
+     |            ^^^^^^^^^
+note: required because it appears within the type `ExpertDemand`
+    --> crates/memra-tier/src/bank/expert_dispatch.rs:12:12
+     |
+  12 | pub struct ExpertDemand {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<ExpertDemand>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/hybrid_forward.rs:6152:42
+     |
+6152 |                 handles.push(scope.spawn(move || -> Result<(), String> {
+     |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+    --> crates/memra-engine/src/decode_batch.rs:1668:42
+     |
+1668 |                   workers.push(scope.spawn(move || {
+     |  ____________________________________-----_^
+     | |                                    |
+     | |                                    required by a bound introduced by this call
+1669 | |                     self.decode_step_batch_wave_worker(
+1670 | |                         e,
+1671 | |                         rt,
+...    |
+1679 | |                 }));
+     | |_________________^ `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+     |
+     = help: the trait `Send` is not implemented for `(dyn ExpertDispatchBank + 'static)`
+     = note: required for `std::ptr::Unique<(dyn ExpertDispatchBank + 'static)>` to implement `Send`
+note: required because it appears within the type `Box<(dyn ExpertDispatchBank + 'static)>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/boxed.rs:234:11
+note: required because it appears within the type `Option<Box<(dyn ExpertDispatchBank + 'static)>>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/decode_batch.rs:1668:42
+     |
+1668 |                 workers.push(scope.spawn(move || {
+     |                                          ^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+    --> crates/memra-engine/src/decode_batch.rs:1668:42
+     |
+1668 |                   workers.push(scope.spawn(move || {
+     |  ____________________________________-----_^
+     | |                                    |
+     | |                                    required by a bound introduced by this call
+1669 | |                     self.decode_step_batch_wave_worker(
+1670 | |                         e,
+1671 | |                         rt,
+...    |
+1679 | |                 }));
+     | |_________________^ `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+     |
+     = help: within `Option<MoeSlotCache>`, the trait `Send` is not implemented for `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>`
+note: required because it appears within the type `BankLease`
+    --> crates/memra-tier/src/contracts.rs:1674:12
+     |
+1674 | pub struct BankLease {
+     |            ^^^^^^^^^
+note: required because it appears within the type `ExpertDemand`
+    --> crates/memra-tier/src/bank/expert_dispatch.rs:12:12
+     |
+  12 | pub struct ExpertDemand {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<ExpertDemand>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/decode_batch.rs:1668:42
+     |
+1668 |                 workers.push(scope.spawn(move || {
+     |                                          ^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+    --> crates/memra-engine/src/decode_batch.rs:2147:44
+     |
+2147 |                   let stage0_b = scope.spawn(move || {
+     |  ______________________________________-----_^
+     | |                                      |
+     | |                                      required by a bound introduced by this call
+2148 | |                     let staged = self
+2149 | |                         .decode_step_batch_dual_stage0(
+2150 | |                             e,
+...    |
+2159 | |                     Ok::<_, String>((staged, caches_b))
+2160 | |                 });
+     | |_________________^ `(dyn ExpertDispatchBank + 'static)` cannot be sent between threads safely
+     |
+     = help: the trait `Send` is not implemented for `(dyn ExpertDispatchBank + 'static)`
+     = note: required for `std::ptr::Unique<(dyn ExpertDispatchBank + 'static)>` to implement `Send`
+note: required because it appears within the type `Box<(dyn ExpertDispatchBank + 'static)>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/alloc/src/boxed.rs:234:11
+note: required because it appears within the type `Option<Box<(dyn ExpertDispatchBank + 'static)>>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/decode_batch.rs:2147:44
+     |
+2147 |                 let stage0_b = scope.spawn(move || {
+     |                                            ^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+error[E0277]: `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+    --> crates/memra-engine/src/decode_batch.rs:2147:44
+     |
+2147 |                   let stage0_b = scope.spawn(move || {
+     |  ______________________________________-----_^
+     | |                                      |
+     | |                                      required by a bound introduced by this call
+2148 | |                     let staged = self
+2149 | |                         .decode_step_batch_dual_stage0(
+2150 | |                             e,
+...    |
+2159 | |                     Ok::<_, String>((staged, caches_b))
+2160 | |                 });
+     | |_________________^ `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>` cannot be sent between threads safely
+     |
+     = help: within `Option<MoeSlotCache>`, the trait `Send` is not implemented for `Rc<RefCell<Option<(Box<(dyn Any + 'static)>, LeasePin)>>>`
+note: required because it appears within the type `BankLease`
+    --> crates/memra-tier/src/contracts.rs:1674:12
+     |
+1674 | pub struct BankLease {
+     |            ^^^^^^^^^
+note: required because it appears within the type `ExpertDemand`
+    --> crates/memra-tier/src/bank/expert_dispatch.rs:12:12
+     |
+  12 | pub struct ExpertDemand {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<ExpertDemand>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required because it appears within the type `Option<MoeSlotCache>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+     = note: required for `std::sync::Mutex<Option<MoeSlotCache>>` to implement `std::marker::Sync`
+note: required because it appears within the type `Engine`
+    --> crates/memra-engine/src/lib.rs:1741:12
+     |
+1741 | pub struct Engine {
+     |            ^^^^^^
+     = note: required for `&Engine` to implement `Send`
+note: required because it's used within this closure
+    --> crates/memra-engine/src/decode_batch.rs:2147:44
+     |
+2147 |                 let stage0_b = scope.spawn(move || {
+     |                                            ^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/thread/scoped.rs:201:4
+
+Some errors have detailed explanations: E0277, E0425.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `memra-engine` (lib) due to 22 previous errors
