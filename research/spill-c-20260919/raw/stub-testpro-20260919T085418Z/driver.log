@@ -1,0 +1,26 @@
+CELL source-contract: cargo test -p memra-tier --offline --test bank day4
+STUB ONLY, not executed: cargo test -p memra-tier --offline --test bank day4
+CELL patch-check: git apply --check research/spill-c-20260919/HY3-DISPATCH-PATCH.diff
+STUB ONLY, not executed: git apply --check research/spill-c-20260919/HY3-DISPATCH-PATCH.diff
+CELL build: cargo build --release -p memra-engine --bin qwen4exp_gpu_gate --bin kernel-check --bin run-gen --bin run-spec
+STUB ONLY, not executed: cargo build --release -p memra-engine --bin qwen4exp_gpu_gate --bin kernel-check --bin run-gen --bin run-spec
+CELL lock: flock /tmp/memra-gpu.lock true
+STUB ONLY, not executed: flock /tmp/memra-gpu.lock true
+CELL topology: nvidia-smi topo -m
+STUB ONLY, not executed: nvidia-smi topo -m
+CELL processes-before: nvidia-smi --query-compute-apps=pid\,process_name\,used_memory --format=csv
+STUB ONLY, not executed: nvidia-smi --query-compute-apps=pid\,process_name\,used_memory --format=csv
+CELL ple-tiny: /Users/avifen/tiyuvta/wt-spill-c/target/release/qwen4exp_gpu_gate /Users/avifen/tiyuvta/wt-spill-c/research/spill-c-20260919/raw/stub-testpro-20260919T085418Z/ple-tiny.tsv
+STUB ONLY, not executed: /Users/avifen/tiyuvta/wt-spill-c/target/release/qwen4exp_gpu_gate /Users/avifen/tiyuvta/wt-spill-c/research/spill-c-20260919/raw/stub-testpro-20260919T085418Z/ple-tiny.tsv
+CELL kernel-check: /Users/avifen/tiyuvta/wt-spill-c/target/release/kernel-check
+STUB ONLY, not executed: /Users/avifen/tiyuvta/wt-spill-c/target/release/kernel-check
+BLOCKED: table_rows_gpu native target/owner binding is not implemented; day-4 source/SLRU CPU contracts do not qualify ReadyView or projection consumption
+BLOCKED: kernel-check model reader is GGUF-only; retain generic kernel result, request compatible kernel fixture without substituting the Hy3 artifact
+CELL hy3-gen: /Users/avifen/tiyuvta/wt-spill-c/target/release/run-gen /fixture/hy3 --prompt Compute\ 17\ times\ 23\ and\ explain\ briefly.
+STUB ONLY, not executed: /Users/avifen/tiyuvta/wt-spill-c/target/release/run-gen /fixture/hy3 --prompt Compute\ 17\ times\ 23\ and\ explain\ briefly.
+CELL hy3-spec: env -u MEMRA_SPEC_K /Users/avifen/tiyuvta/wt-spill-c/target/release/run-spec /fixture/hy3
+STUB ONLY, not executed: env -u MEMRA_SPEC_K /Users/avifen/tiyuvta/wt-spill-c/target/release/run-spec /fixture/hy3
+BLOCKED: banked_residency_gpu missing; native mixed/pruned/SLRU/staged/grouped engagement and before/after identity remain required
+CELL processes-after: nvidia-smi --query-compute-apps=pid\,process_name\,used_memory --format=csv
+STUB ONLY, not executed: nvidia-smi --query-compute-apps=pid\,process_name\,used_memory --format=csv
+Receipt directory: research/spill-c-20260919/raw/stub-testpro-20260919T085418Z (baseline/dry-run only; adapter qualification BLOCKED)

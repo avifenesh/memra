@@ -1,0 +1,21 @@
+CELL source-contract: cargo test -p memra-tier --offline --test bank day4
+STUB ONLY, not executed: cargo test -p memra-tier --offline --test bank day4
+CELL patch-check: git apply --check research/spill-c-20260919/HY3-DISPATCH-PATCH.diff
+STUB ONLY, not executed: git apply --check research/spill-c-20260919/HY3-DISPATCH-PATCH.diff
+CELL build: cargo build --release -p memra-engine --bin qwen4exp_gpu_gate --bin kernel-check --bin run-gen --bin run-spec
+STUB ONLY, not executed: cargo build --release -p memra-engine --bin qwen4exp_gpu_gate --bin kernel-check --bin run-gen --bin run-spec
+CELL lock: flock /tmp/memra-5090.lock true
+STUB ONLY, not executed: flock /tmp/memra-5090.lock true
+CELL topology: nvidia-smi topo -m
+STUB ONLY, not executed: nvidia-smi topo -m
+CELL processes-before: nvidia-smi --query-compute-apps=pid\,process_name\,used_memory --format=csv
+STUB ONLY, not executed: nvidia-smi --query-compute-apps=pid\,process_name\,used_memory --format=csv
+CELL ple-tiny: /Users/avifen/tiyuvta/wt-spill-c/target/release/qwen4exp_gpu_gate /Users/avifen/tiyuvta/wt-spill-c/research/spill-c-20260919/raw/stub-test5090-20260919T085418Z/ple-tiny.tsv
+STUB ONLY, not executed: /Users/avifen/tiyuvta/wt-spill-c/target/release/qwen4exp_gpu_gate /Users/avifen/tiyuvta/wt-spill-c/research/spill-c-20260919/raw/stub-test5090-20260919T085418Z/ple-tiny.tsv
+CELL kernel-check: /Users/avifen/tiyuvta/wt-spill-c/target/release/kernel-check
+STUB ONLY, not executed: /Users/avifen/tiyuvta/wt-spill-c/target/release/kernel-check
+BLOCKED: table_rows_gpu native target/owner binding is not implemented; day-4 source/SLRU CPU contracts do not qualify ReadyView or projection consumption
+BLOCKED: Hy3 full-artifact cells require a non-serving PRO pair; a 5090 needs a separately hash-bound host-spill fitting receipt
+CELL processes-after: nvidia-smi --query-compute-apps=pid\,process_name\,used_memory --format=csv
+STUB ONLY, not executed: nvidia-smi --query-compute-apps=pid\,process_name\,used_memory --format=csv
+Receipt directory: research/spill-c-20260919/raw/stub-test5090-20260919T085418Z (baseline/dry-run only; adapter qualification BLOCKED)

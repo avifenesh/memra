@@ -142,7 +142,7 @@ engagement targets, original byte/logit/token goldens, balanced AB/BA N>=5,
 
 | Cell | CPU status | Rig acceptance still required |
 |---|---|---|
-| C1-SLRU-policy | 2013 recorded synthetic default-SLRU decisions and queue orders matched; charged host BankedResidency/old-allocation alias test. | Native intrusive/fixed-slot adaptation, pending ready wait, LFU/frozen compatibility and model traces. |
+| C1-SLRU-policy | 2013 recorded synthetic default-SLRU decisions and queue orders plus 256 serialized BankedResidency demands matched; charged host/old-allocation alias tests. | Native intrusive/fixed-slot adaptation, pending ready wait, LFU/frozen compatibility and model traces. |
 | C1/C2-source-install | Typed BankSource verifies exact expected/supplied source sets, source layouts/generations/lengths; ExtentStore/CpuTransfers expert and PLE tests use installer. | Model-load source registration, original-file/per-extent indexing, metadata/validation-I/O budget, no substituted weights/scales. |
 | C1/C2-ownership | READYVIEW-OWNERSHIP.md maps owner thread, actual copy→consumer wait, take-once and final-consumer fence. | CUDA implementation, unknown-drain quarantine, graph/multiple aliases, complete-byte/logit/token tests. |
 | C1-guard-v2 | Unapplied patch adds CPU-tested exact source-bound check after cardinality/mask checks; patch context/syntax only. | Native compile and all pre/post cells; full conversion remains NO-GO. |
