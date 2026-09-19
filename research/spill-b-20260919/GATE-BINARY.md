@@ -68,8 +68,11 @@ the collector outputs. Do not wrap the collector in another lock. Artifact direc
 read-only. The development filesystem is overlay; NVMe ancestry is unproven, and baseline
 requests for `host,nvme` engage NEITHER tier. No storage/performance claim follows.
 
-The initial build-launch SSH attempts failed after scratch creation; see rented evidence.
-Until a native build and collector execution are recorded, this source is **UNCOMPILED as
-an engine executable, BASELINE UNRUN**, not a delivered active-8k result. CPU argument and
-B→D seam tests are separate evidence. PRO-pair, active reload, prefix engagement, native
-materializer/fences and long-context gates remain blocking.
+The initial build-launch SSH attempts failed after scratch creation; those historical
+receipts remain. Native builds subsequently passed (DAY5.md, DAY6.md). At native source
+ac67071e plus the scratch-only HostPrefix patch, the corrected capture contract produced
+complete 8192- and 32768-context baseline bundles; see DAY6.md and its exact hashes.
+Neither tier engaged. The native active case explicitly refused its missing CUDA
+materializer/scheduler binding. CPU argument and B→D seam tests remain separate evidence.
+PRO-pair, active reload, prefix engagement, native materializer/fences and full-context
+qualification remain blocking; a captured 32k trunk baseline is not an active-tier pass.
