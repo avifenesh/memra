@@ -371,3 +371,97 @@ Effort this resume: approximately **0.5 agent-hours** at this CPU milestone,
 under the requested two-hour cap. WP-C remains an **8 agent-day** budget; day-1
 burn was not recorded, so cumulative consumption/completion percentage is unknown.
 The active worktree/branch remain for native follow-up, not abandoned or merged.
+
+# Day-4 CPU prerequisite milestone
+
+Repository **avifenesh/memra**, branch **lane/spill-c-20260919**. Source checked:
+**e57a9fe5f0193467935f281937a82440430fd3c7**; the final receipt commit adds only
+this record and raw checks/stubs. No main merge, tag, deployment or GPU qualification
+performed by this session. Native engine sources and frozen contracts are unchanged.
+
+## Commits and push evidence
+
+1. `1b1f934e37bf6bdcbc5b71b19eb78720d5f9e957`: first action merged day-3 integration
+   `020d2047` into the lane, no conflicts. Initial push was **REFUSED**:
+   `publish-census: publishable workspace member(s) memra-tier absent from the crate list in .github/workflows/publish.yml`.
+2. `13ebdce1eb7937e8691c67e58638cf2b430be25b`: merged lead-owned repair `200a3c66`;
+   normal `git push -u origin lane/spill-c-20260919` succeeded, all hooks enabled.
+3. `a5bd734dd56c4d6e03a57e76709ea67212c3bf21`: SLRU CPU policy, typed source
+   installation, five new tests, source-semantics trace and scope docs. Push
+   succeeded; independent `git ls-remote` returned this exact branch SHA.
+4. `e57a9fe5f0193467935f281937a82440430fd3c7`: CUDA ownership mapping, conservative
+   unapplied patch v2, PLE-first rig runner and reproducible CPU verification.
+   Push succeeded (`a5bd734d..e57a9fe5`). Final remote SHA is reported after the
+   receipt-only commit's push; no self-referential guessed final hash here.
+
+One intermediate `git ls-remote` attempt failed with `Failed to connect to github.com
+port 443 after 75057 ms: Couldn't connect to server`. Later normal push and independent
+ls-remote succeeded. No bypass, skip override, credential access or shared-file fix
+was used by this session. The lead supplied the publish workflow repair.
+
+## (a), (b), (c) status
+
+| Prerequisite | CPU deliverable | Still blocking native conversion |
+|---|---|---|
+| (a) Loader source installation | `bank/source.rs`: typed BankSource install binds full expected/supplied key, layout, generation and extent sets; ten fake construction outcomes; real ExtentStore/CpuTransfers expert + PLE byte tests use it. | Model loader integration, original-file/per-extent source indexing, retained file/scale owners and loader metadata/validation-I/O accounting. Frozen A API used; no unmerged day-4 catalog guessed. |
+| (b) SLRU residency | `bank/slru.rs`: **2013 synthetic** decisions and all queue orders match source-semantics oracle; **256 additional serialized BankedResidency demands** match it, preserve exact bytes and drain charges. Metadata pins and evicted old-generation alias charging tested. | Native intrusive-list/fixed-slot integration, pending CUDA submission schedule, existing LFU/frozen policy compatibility. CPU VecDeque model is not a tuned replacement or a perf result. |
+| (c) Ready/consumer ownership | READYVIEW-OWNERSHIP.md maps frozen ready_view/take_destination/consumer_fenced and final retirement to actual owner-thread/CUDA-event code paths. | CUDA implementation, event issuer registry, late/unknown DMA + consumer + graph retirement and rig qualification. **Mapping only, not implemented.** |
+
+Details: [SLRU.md](SLRU.md), [BANK-SOURCE.md](BANK-SOURCE.md),
+[READYVIEW-OWNERSHIP.md](READYVIEW-OWNERSHIP.md). No new numeric program,
+model format, external runtime, environment flag or hardware default.
+
+**Patch v2 remains UNAPPLIED and NO-GO for full conversion.** Only safe source
+extent/cardinality guards were added; shared pure extent checks have CPU tests.
+It does not install a native BankSource or replace native SLRU/UniformLease
+consumers. Native compilation of the patch has not run. Lead's compiling CI is
+not evidence of this unapplied patch or GPU ownership.
+
+## Checks actually executed
+
+Authoritative raw logs: [`day4-checks/20260919T090151119466Z-e57a9fe5/`](day4-checks/20260919T090151119466Z-e57a9fe5/).
+`receipt.json` records exact argv, exit, source SHA, per-file hashes and lossless
+stdout+stderr SHA256; numbered `.log.gz` files preserve the complete output.
+Earlier development check at `13ebdce1` records uncommitted source hashes and
+39 bank tests; it is retained, superseded by the exact-source run below.
+
+| Command | Exit / exact result |
+|---|---|
+| `cargo fmt --all -- --check` | 0; empty output |
+| `cargo check -p memra-tier --offline --all-targets` | 0; `Finished dev profile`; macOS type check |
+| same + `--target x86_64-unknown-linux-gnu` | 0; `Finished dev profile`; **compile-check only**, not Linux execution/link/GPU proof |
+| `cargo test -p memra-tier --offline --no-fail-fast` | 0; bank **40**, contracts **44**, peer **17**, placement **6**, storage **37**, doctests **4**: **148 passed, 0 failed, 0 ignored** |
+| `cargo test -p memra-tier --offline --test bank day4 -- --nocapture` | 0; **5 passed**, 0 failed; full synthetic decision arm counts retained in `04.log.gz` |
+| `cargo clippy -p memra-tier --offline --all-targets -- -D warnings` | 0; no warnings |
+| `git diff --check` | 0; empty output |
+| `bash tools/check-flags.sh` | 0; `runtime literal reads=864`, `no uncovered runtime names` |
+| `git apply --check research/spill-c-20260919/HY3-DISPATCH-PATCH.diff` | 0; empty output; context check, **not native type check** |
+| `python3 research/spill-c-20260919/slru-trace.py --check` | 0; `SYNTHETIC SLRU decisions: 2013; source/trace matched` (also compares serialized 256-demand trace) |
+| `bash -n research/spill-c-20260919/rig-cells-c.sh` | 0; empty output |
+| `python3 research/spill-c-20260919/test-rig-cells.py` | 0; dry-run 5090 + PRO, repeated invocation, injected exit 23, missing non-serving confirmation refusal passed; **no GPU commands executed** |
+| `git diff --exit-code 020d2047 -- crates/memra-tier/src/contracts.rs crates/memra-tier/tests/contracts` | 0; frozen shared surfaces unchanged |
+| `git diff --exit-code 020d2047 -- crates/memra-engine/src` | 0; runtime patches remain unapplied |
+
+`make-dispatch-patch.py` also ran successfully: candidate rustfmt parsed in memory,
+then `git apply --check` passed. The first new source-pin test initially failed
+because it used the domain-separated contract checksum against raw SHA256. Fixed
+the test to raw Sha256; the native source and fixture pin were not weakened.
+
+## Numbered blockers / handoff
+
+1. **A+C native source installation:** per-extent/original-file binding and model
+   loader accounting; no source substitution or unbounded full-object pinning.
+2. **C native cache conversion:** preserve tuned intrusive policy, fixed slots,
+   pending-copy lifecycle, frozen/LFU arms, original masks and all scale planes.
+3. **A+C+D CUDA ownership:** implement the ReadyView/fence map, graph pins and
+   failed-drain quarantine; no CPU-ready vector can satisfy this gate.
+4. **Rig gates:** PLE fitting fixture first on approved non-serving 5090; full
+   Hy3 mixed/pruned and PLE PRO-pair cells, byte/logit/token/serving boundaries,
+   balanced N>=5 AB/BA and 250 ms telemetry remain unrun. No performance claim.
+
+Effort this session: approximately **0.35 agent-hours** (08:44–09:05 UTC), **0 GPU
+hours**, against the **8 agent-day WP-C plan**. This is this turn's observed time,
+not a reconstructed cumulative total or an assumption about hours per agent-day.
+Worktree remains active for the next native/integration round; no scratch or
+unrelated work was absorbed. All new raw stub/check directories are retained
+as clearly labeled CPU evidence, not GPU measurements.

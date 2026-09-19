@@ -148,7 +148,17 @@ def main():
             target = work / "target" / f"spill-b-{arm}"
             run(f"{arm}-build", ["cargo", "build", "--release", "-p", "memra-server", "-p", "memra-engine", "--bin", "memra-server", "--bin", "run-gen", "--target-dir", str(target)], work)
             run(f"{arm}-server-tests", ["cargo", "test", "-p", "memra-server", "--lib", "--target-dir", str(target)], work)
-            # Qwen fitting contexts FIRST. These prove baseline execution, NOT active tiering.
+            binary = str(target / "release/memra-server")
+            if not args.dry_run:
+                (out / f"{arm}-binary.sha256").write_text(sha(binary) + "\n")
+            # Legacy scripts own flock internally. NEVER wrap these in another flock.
+            for label, script, extra in [("identity", "kv-host-spill-identity-gate.sh", []), ("teeth", "kv-host-spill-identity-gate.sh", ["MEMRA_HOSTGATE_TEETH=1"]), ("failures", "kv-host-spill-failure-gate.sh", [])]:
+                idle()
+                run(f"{arm}-{label}", ["env", f"MEMRA_GPU_LOCK={LOCK}", *extra, "bash", f"tools/{script}", artifact, binary, str(out / f"{arm}-{label}")], work, gpu=True, internal_lock=True)
+        for arm in ["before", "after"]:
+            target = work / "target" / f"spill-b-{arm}"
+            # Fitting probes only AFTER both build + existing prefix teeth arms.
+            # These prove baseline execution, NOT active tiering.
             for context, token_file in [(8192, args.tokens_8k), (32768, args.tokens_32k)]:
                 idle()
                 if not args.dry_run:
@@ -157,13 +167,6 @@ def main():
                         raise RuntimeError(f"{context}: does not fit available VRAM; no cell executed, no format fallback")
                 tokens = ["<PINNED_U32_TOKENS>"] if args.dry_run else [str(t) for t in json.loads(token_file.read_text())]
                 run(f"{arm}-qwen-{context}-baseline", ["env", f"MEMRA_MAX_CTX={context}", "MEMRA_NGEN=128", str(target / "release/run-gen"), artifact, *tokens], work, gpu=True)
-            binary = str(target / "release/memra-server")
-            if not args.dry_run:
-                (out / f"{arm}-binary.sha256").write_text(sha(binary) + "\n")
-            # Legacy scripts own flock internally. NEVER wrap these in another flock.
-            for label, script, extra in [("identity", "kv-host-spill-identity-gate.sh", []), ("teeth", "kv-host-spill-identity-gate.sh", ["MEMRA_HOSTGATE_TEETH=1"]), ("failures", "kv-host-spill-failure-gate.sh", [])]:
-                idle()
-                run(f"{arm}-{label}", ["env", f"MEMRA_GPU_LOCK={LOCK}", *extra, "bash", f"tools/{script}", artifact, binary, str(out / f"{arm}-{label}")], work, gpu=True, internal_lock=True)
         # No shipped binary consumes the generic active materializer yet. A supplied future
         # gate must write exact-state, logits and token receipts plus nonzero engagement.
         if not args.active_gate and not args.dry_run:

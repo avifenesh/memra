@@ -1,0 +1,200 @@
+{
+   "blockdevices": [
+      {
+         "name": "nbd0",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd1",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd2",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd3",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd4",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd5",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd6",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd7",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd8",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd9",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd10",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd11",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd12",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd13",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd14",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nbd15",
+         "type": "disk",
+         "size": "0B",
+         "rota": false,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "nvme0n1",
+         "type": "disk",
+         "size": "3.6T",
+         "rota": false,
+         "tran": "nvme",
+         "mountpoints": [
+             null
+         ],
+         "children": [
+            {
+               "name": "nvme0n1p1",
+               "type": "part",
+               "size": "3.6T",
+               "rota": false,
+               "tran": "nvme",
+               "mountpoints": [
+                   "/etc/hosts", "/etc/hostname", "/etc/resolv.conf"
+               ]
+            }
+         ]
+      },{
+         "name": "nvme1n1",
+         "type": "disk",
+         "size": "238.5G",
+         "rota": false,
+         "tran": "nvme",
+         "mountpoints": [
+             null
+         ],
+         "children": [
+            {
+               "name": "nvme1n1p1",
+               "type": "part",
+               "size": "1G",
+               "rota": false,
+               "tran": "nvme",
+               "mountpoints": [
+                   null
+               ]
+            },{
+               "name": "nvme1n1p2",
+               "type": "part",
+               "size": "237.4G",
+               "rota": false,
+               "tran": "nvme",
+               "mountpoints": [
+                   "/usr/lib/x86_64-linux-gnu/nvidia/xorg/nvidia_drv.so", "/usr/lib/x86_64-linux-gnu/nvidia/xorg/libglxserver_nvidia.so.595.84", "/usr/share/glvnd/egl_vendor.d/10_nvidia.json", "/usr/share/egl/egl_external_platform.d/15_nvidia_gbm.json", "/usr/share/egl/egl_external_platform.d/10_nvidia_wayland.json", "/usr/share/egl/egl_external_platform.d/09_nvidia_wayland2.json", "/usr/share/X11/xorg.conf.d/10-nvidia.conf", "/usr/lib/x86_64-linux-gnu/vdpau/libvdpau_nvidia.so.595.84", "/usr/lib/firmware/nvidia/595.84/gsp_tu10x.bin", "/usr/lib/firmware/nvidia/595.84/gsp_ga10x.bin", "/usr/share/nvidia/nvoptix.bin", "/usr/lib/x86_64-linux-gnu/libnvoptix.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-vksc-core.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-tls.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-tileiras.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-rtcore.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-present.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-pkcs11.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-pkcs11-openssl3.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-opticalflow.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-opencl.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-ngx.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-glvkspirv.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-glsi.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-glcore.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-fbc.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-encode.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-eglcore.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-egl-wayland2.so.1.0.1", "/usr/lib/x86_64-linux-gnu/libnvidia-egl-wayland.so.1.1.13", "/usr/lib/x86_64-linux-gnu/libnvidia-egl-gbm.so.1.1.3", "/usr/lib/x86_64-linux-gnu/libnvidia-cfg.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvidia-allocator.so.595.84", "/usr/lib/x86_64-linux-gnu/libnvcuvid.so.595.84", "/usr/lib/x86_64-linux-gnu/libcudadebugger.so.595.84", "/usr/lib/x86_64-linux-gnu/libcuda.so.595.84", "/usr/lib/x86_64-linux-gnu/libGLX_nvidia.so.595.84", "/usr/lib/x86_64-linux-gnu/libGLESv2_nvidia.so.595.84", "/usr/lib/x86_64-linux-gnu/libGLESv1_CM_nvidia.so.595.84", "/usr/lib/x86_64-linux-gnu/libEGL_nvidia.so.595.84", "/etc/vulkan/implicit_layer.d/nvidia_layers.json", "/etc/vulkan/icd.d/nvidia_icd.json", "/usr/bin/nvidia-smi", "/usr/bin/nvidia-persistenced", "/usr/bin/nvidia-debugdump", "/usr/bin/nvidia-cuda-mps-server", "/usr/bin/nvidia-cuda-mps-control"
+               ]
+            }
+         ]
+      }
+   ]
+}

@@ -83,6 +83,10 @@ else
     scratch="$nvme/spill-a.DRY-RUN"
     printf 'DRY-RUN lock: flock -x /tmp/memra-5090.lock (entire window)\n'
 fi
+# CPU conformance rerun on the actual Linux filesystem; these do not qualify GPU I/O.
+run a1-sharded-catalog cargo test -p memra-tier --offline --test storage day4::sharded_catalog -- --nocapture
+run a1-gc cargo test -p memra-tier --offline --test storage gc_ -- --nocapture
+run a1-telemetry-join cargo test -p memra-tier --offline --test storage telemetry:: -- --nocapture
 run build-storage cargo build -p memra-engine --release --bin storage-bench
 run build-worker cargo test -p memra-engine --lib --no-run
 run binary-hash sha256sum target/release/storage-bench
@@ -107,17 +111,17 @@ run a2-byte-roundtrip-unimplemented timeout 5 target/release/storage-bench round
     --faults cancel,late-fence,lost-fence --telemetry-ms 250 --out "$out" || true
 run m1-row-unimplemented timeout 5 target/release/storage-bench trace \
     --trace opaque-row264x48-v1 --logical-table-bytes 202758032400 \
-    --requests-per-second 800 --seconds 1800 --backends worker,pread,mmap,direct,uring \
+    --requests-per-second 800 --seconds 1800 --backends worker,pread,mmap,direct \
     --slot-bytes 1048576 --slots 8 --reserved-demand-slots 2 --scratch "$scratch/row" \
     --order ab5,ba5 --telemetry-ms 250 --out "$out" || true
 run m1-bulk-unimplemented timeout 5 target/release/storage-bench trace \
     --trace opaque-bulk-v1 --sizes 116654080,933232640 --restores-per-second 1 \
-    --seconds 1800 --backends worker,direct,uring --slot-bytes 1048576 --slots 8 \
+    --seconds 1800 --backends worker,direct --slot-bytes 1048576 --slots 8 \
     --reserved-demand-slots 2 --scratch "$scratch/bulk" --order ab5,ba5 --telemetry-ms 250 --out "$out" || true
 run m1-mixed-unimplemented timeout 5 target/release/storage-bench trace \
     --trace opaque-mixed-v1 --row-batches-per-second 800 --rows-per-batch 48 \
     --row-bytes 264 --restore-bytes 116654080 --restores-per-second 1 \
-    --backup-bytes-per-second 712000 --seconds 1800 --backends worker,direct,uring \
+    --backup-bytes-per-second 712000 --seconds 1800 --backends worker,direct \
     --slot-bytes 1048576 --slots 8 --reserved-demand-slots 2 --scratch "$scratch/mixed" \
     --order ab5,ba5 --telemetry-ms 250 --out "$out" || true
 if [[ $dry -eq 0 ]]; then

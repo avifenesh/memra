@@ -1,0 +1,209 @@
+{
+  "utc": "2026-09-19T09:01:51.119466+00:00",
+  "source_head": "e57a9fe5f0193467935f281937a82440430fd3c7",
+  "scope": "CPU only; Linux is compile-check only; no native engine/server or CUDA qualification",
+  "commands": [
+    {
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "00.log.gz",
+      "stdout_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "log": "01.log.gz",
+      "stdout_stderr_sha256": "b36b1e3bf9ae431af34f52b74962616c841dedc4ef7fea957232586e0833e5e0"
+    },
+    {
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "log": "02.log.gz",
+      "stdout_stderr_sha256": "c2ccae29be8ebbd8973f3201e5f6646ec32bdad22fe9c3866ff8d1618ed74896"
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "log": "03.log.gz",
+      "stdout_stderr_sha256": "769521358ddf6fcb09de3b51e7629089694229ff6d02d9e84ffc8f708a043b1d"
+    },
+    {
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--test",
+        "bank",
+        "day4",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "log": "04.log.gz",
+      "stdout_stderr_sha256": "1ef529d4f981add96462f2b3bba7c5fa08ec1046403149e1063e843bbe13d160"
+    },
+    {
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "log": "05.log.gz",
+      "stdout_stderr_sha256": "fecede7c2157efe2f16c8c8b9dce94b0fb4dd384dca8207046c8bf7636eb0ffe"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "06.log.gz",
+      "stdout_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "log": "07.log.gz",
+      "stdout_stderr_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    },
+    {
+      "argv": [
+        "git",
+        "apply",
+        "--check",
+        "research/spill-c-20260919/HY3-DISPATCH-PATCH.diff"
+      ],
+      "exit": 0,
+      "log": "08.log.gz",
+      "stdout_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "python3",
+        "research/spill-c-20260919/slru-trace.py",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "09.log.gz",
+      "stdout_stderr_sha256": "a856e996999863668ffc175ada1b533bd48512ac6a6b8e8af249116f3a3137dd"
+    },
+    {
+      "argv": [
+        "bash",
+        "-n",
+        "research/spill-c-20260919/rig-cells-c.sh"
+      ],
+      "exit": 0,
+      "log": "10.log.gz",
+      "stdout_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "python3",
+        "research/spill-c-20260919/test-rig-cells.py"
+      ],
+      "exit": 0,
+      "log": "11.log.gz",
+      "stdout_stderr_sha256": "ae4cc20e44cb11c79643d1dd70a7dbb7f2cd2441c498a67e79b10fb5904bd737"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--exit-code",
+        "020d2047",
+        "--",
+        "crates/memra-tier/src/contracts.rs",
+        "crates/memra-tier/tests/contracts"
+      ],
+      "exit": 0,
+      "log": "12.log.gz",
+      "stdout_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--exit-code",
+        "020d2047",
+        "--",
+        "crates/memra-engine/src"
+      ],
+      "exit": 0,
+      "log": "13.log.gz",
+      "stdout_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "files_sha256": {
+    "crates/memra-tier/src/bank/adapters.rs": "35e2aeb1b38d678f85a63e3b183c62ae3ca8d38b2a61afaf63df77ea8bd96788",
+    "crates/memra-tier/src/bank/mod.rs": "4f90abe68daad1010373c4eb22a08d59824829eda1e2da1b187e1ac36b1415fc",
+    "crates/memra-tier/src/bank/prediction.rs": "e926122d41a3d02f7a5f15e2ce2a00e4e71e87f18047a0dbde97500c2593e04e",
+    "crates/memra-tier/src/bank/residency.rs": "fae629ad0f93b1ada7257b89cd0fcaa094aa66bf2eb4333af668acab6f4ef2f7",
+    "crates/memra-tier/src/bank/rows.rs": "a601b80e34d23769d36e4631539f59c141000a717d4a2274a0940ea04cef16ca",
+    "crates/memra-tier/src/bank/slru.rs": "05faf96edd81f4302b6a542e1c527b09faae6683557a7531d1660b4541d084fd",
+    "crates/memra-tier/src/bank/source.rs": "4f3317c496859cb5b62254d7730e89c443e3e69671254623816400f7e21251e7",
+    "crates/memra-tier/src/bank/transport.rs": "6e32280a5cb36e2cfe2949ce20c124d7b63a8d2b7f3686237a5f66b38d9fffed",
+    "crates/memra-tier/src/bank/types.rs": "10b5911895d757893faae80d7e4b4a998310d94acbb3b4a5560b472c3571aff0",
+    "crates/memra-tier/tests/bank/day4.rs": "7456d534bd4667a643fe34cec6ff1a52ccd0d2bf32efaceec07bb0b68bdabcbc",
+    "crates/memra-tier/tests/bank/host_bridge.rs": "1958e9a6c5a0cbd8719e0525f3ce9f4142ae91a35e1d111aa9921d2c33e6a8c5",
+    "crates/memra-tier/tests/bank/integration.rs": "22128cfd9cf9c87367b5e3087de69117446aaf9f9d8a1986c27fea373d0d47e3",
+    "crates/memra-tier/tests/bank/main.rs": "c8d7ac357d3863e99c0ae66e50d6100f6c57cc1b6f1c53e027e3810b1a8569a4",
+    "crates/memra-tier/tests/bank/ple_oracle.rs": "8e212391008e750cb35d9f3ff888eba0b09a9c11d20b4845de1a6a4206acda5f",
+    "research/spill-c-20260919/HY3-DISPATCH-PATCH.diff": "b1f3cdabc2062242a3c3f1711fe0a31f05328bcb7c886b3fe8f28e664dfe1a37",
+    "research/spill-c-20260919/fixtures/ple-ngram-synthetic.json": "4bd8667ba6f40fce1a67836602aa65c5bbd176e151e266bd832552e7627de78e",
+    "research/spill-c-20260919/fixtures/ple-trace-policy.json": "4368558023f5701ba1da92c55402a23c3e64f3edaab2249779fbb37e722e3f9b",
+    "research/spill-c-20260919/fixtures/slru-synthetic.json": "5c67b5e53796952c0055e30fea7dcfd8d5190f0349209fcca51726a6511a9dc5",
+    "research/spill-c-20260919/fixtures/trace-search.json": "9937054ca1f79172f5e23b98dffc88277f3dca8f474a6bdfa7392d971c5e13df",
+    "research/spill-c-20260919/make-dispatch-patch.py": "169c0d725000cf6a8100d24cc5b581d0a9cf881df67c4491b8964ae3e7e9e1ac",
+    "research/spill-c-20260919/record-cell.py": "9045775425c9ed0d2e575980890bf14c92560b941a1e741c3b34d12d28fc75fa",
+    "research/spill-c-20260919/rig-cells-c.sh": "1e1ed1f04940dac55bb09e3fafe53a7b05d9fcfbc7eda20335e0c29ad5922bf4",
+    "research/spill-c-20260919/slru-trace.py": "2506c946843087da7d812f1145d82bf0dda5e96b844fc60d7db5fc090bddc5a3",
+    "research/spill-c-20260919/test-rig-cells.py": "17d44d24a4e3bf70f44b252f2bae911e52f692afb2bffc01a7eb33042680e387",
+    "research/spill-c-20260919/trace-policy.py": "398f7444532755ed91e1bde59fa1f7c48da22eeb314b7871506a8d59192e7289",
+    "research/spill-c-20260919/verify-day2.py": "565b5ebf0b8777eff945f5a48699aa0d4a97ad87592c3afdd3b0028ff911ebb6",
+    "research/spill-c-20260919/verify-day3.py": "97a445d8528c5c31c6192e49c4e211a728a6540f7f0c4e9072b33dc655d8470d",
+    "research/spill-c-20260919/verify-day4.py": "4b246abfe75cae79b411aaace87ae0b86ac82ca7891f280f08f95179ca8d87b9"
+  }
+}

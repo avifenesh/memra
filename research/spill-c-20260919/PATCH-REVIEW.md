@@ -135,3 +135,33 @@ The exact existing Hy3-adjacent checks above come from `model.rs:3547,3570,3643`
 and `kernel_check.rs:8087-8176`, not an invented TESTING entry. `kernel-check`
 accepts GGUF, whereas run-gen/run-spec accept native directories. Add the correct
 Hy3/native-bank entry to the lead-owned registry only with actual compiled gates.
+
+## Day-4 v2 review — still NO-GO for full conversion
+
+Engine files are unchanged from integration `020d2047`; the v2 patch remains
+**UNAPPLIED**. No native compiler or independent reviewer has approved these
+hunks. The patch generator rustfmt-parses the candidate and `git apply --check`
+checks context only. Default-SLRU CPU transitions and a typed BankSource installer
+now exist (SLRU.md, BANK-SOURCE.md); neither is installed into native MoeWeights.
+
+The sole v2 extension is inside `require_active_expert`: after mask/ID checks,
+validate all three projection layouts/tiers/macros vector lengths, prove the
+uniform stride multiplication cannot overflow, and validate the exact source
+extent using the CPU-tested `memra_tier::bank::validate_bank_source_extent`.
+Split storage checks its own exact length and source offset zero; unsplit storage
+checks the original layout offset against backing length. Failure returns an
+error, never another tensor, qtype, fallback program or repaired mask.
+
+`HostExps` fields used are public (`model.rs:1900–1925`), HostBuf::len exists at
+1737, and the shared memra-tier dependency is already on the integrated engine
+manifest. These are source-review facts, not proof that the engine compiles.
+No new dispatch conversion hunk is justified by a CPU SLRU model alone. Existing
+v1 callsite coverage gaps, unwrapped fused kernels, scale ownership, loader source
+registration and native SLRU/pending bindings remain owed.
+
+Prerequisites: (a) CPU source installer + byte-path fakes/tests present, native
+load wiring pending; (b) CPU default-SLRU trace equivalence + charged host
+BankedResidency seam present, native tuned list/slot adoption pending; (c) exact
+ownership mapping in READYVIEW-OWNERSHIP.md, **not implemented or qualified**.
+Full conversion remains **NO-GO until owner/consumer fence implementation lands
+and passes real rig gates**, including the remaining native (a)/(b) bindings.

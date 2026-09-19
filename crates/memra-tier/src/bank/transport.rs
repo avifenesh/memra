@@ -38,6 +38,10 @@ impl<S: ObjectStore> ObjectReader<S> {
                 return Err(Error::InvalidLayout);
             }
             let manifest = store.lookup(&key)?.ok_or(Error::NotFound)?;
+            manifest.validate()?;
+            if manifest.key != key {
+                return Err(Error::InvalidLayout);
+            }
             if objects.insert(tensor, manifest).is_some() {
                 return Err(Error::Conflict);
             }
@@ -134,6 +138,8 @@ impl<S: ObjectStore> ExactReader for ObjectReader<S> {
         *self.request_context.borrow_mut() = request.clone();
         self.epochs = epochs;
     }
+    // Tensor-readable extent excludes per-chunk framing/padding. Short tail reads
+    // are copied from validated chunk payloads; the pool initializes only padding.
     fn storage_bytes(&self, tensor: &TensorId) -> Result<u64> {
         Ok(self.objects.get(tensor).ok_or(Error::NotFound)?.valid_bytes)
     }

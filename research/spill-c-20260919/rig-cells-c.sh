@@ -68,6 +68,9 @@ blocked() {
   printf 'BLOCKED: %s\n' "$2" | tee "$out/$1.log"
   record "$1" 3 "$out/$1.log" BLOCKED "$2"
 }
+# Day-4 CPU/source checks precede native work; they do not qualify CUDA ownership.
+run source-contract cargo test -p memra-tier --offline --test bank day4
+run patch-check git apply --check "$lane/HY3-DISPATCH-PATCH.diff"
 # Build before flock: sccache/cargo daemons must never inherit the GPU lock.
 run build cargo build --release -p memra-engine --bin qwen4exp_gpu_gate --bin kernel-check --bin run-gen --bin run-spec
 if ((dry)); then
@@ -87,7 +90,7 @@ run ple-tiny "$root/target/release/qwen4exp_gpu_gate" "$root/$out/ple-tiny.tsv"
 run kernel-check "$root/target/release/kernel-check"
 # These baseline gates do not exercise the proposed bank/row GPU adapter.
 # Refuse instead of treating absent tests as a successful empty test run.
-blocked ple-adapter 'table_rows_gpu native target/owner binding is not implemented; CPU tests do not qualify projection consumption'
+blocked ple-adapter 'table_rows_gpu native target/owner binding is not implemented; day-4 source/SLRU CPU contracts do not qualify ReadyView or projection consumption'
 if [[ $rig == 5090 ]]; then
   blocked hy3-pro-pair 'Hy3 full-artifact cells require a non-serving PRO pair; a 5090 needs a separately hash-bound host-spill fitting receipt'
 elif [[ -z $hy3 || -z $hy3_manifest ]]; then

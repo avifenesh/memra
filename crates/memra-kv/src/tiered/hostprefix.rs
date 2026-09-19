@@ -123,6 +123,7 @@ pub type SharedGovernor = Arc<std::sync::Mutex<dyn BudgetGovernor + Send>>;
 pub struct ResidentCharge {
     governor: SharedGovernor,
     lease: Option<ChargedLease>,
+    program: Option<ProgramIdentity>,
 }
 impl ResidentCharge {
     pub fn reserve(governor: SharedGovernor, request: &BudgetRequest) -> Result<Self> {
@@ -133,7 +134,26 @@ impl ResidentCharge {
         Ok(Self {
             governor,
             lease: Some(lease),
+            program: None,
         })
+    }
+    /// Program-bound runtime residency. Reject a tenant mismatch BEFORE quota changes;
+    /// keep the complete identity on the payload guard, not just the lookup sidecar.
+    pub fn reserve_for_program(
+        governor: SharedGovernor,
+        program: &ProgramIdentity,
+        request: &BudgetRequest,
+    ) -> Result<Self> {
+        program.validate()?;
+        if request.tenant != program.tenant_salt {
+            return Err(Error::ProgramMismatch);
+        }
+        let mut guard = Self::reserve(governor, request)?;
+        guard.program = Some(program.clone());
+        Ok(guard)
+    }
+    pub fn program(&self) -> Option<&ProgramIdentity> {
+        self.program.as_ref()
     }
     pub fn lease(&self) -> &ChargedLease {
         self.lease.as_ref().expect("live residency guard")

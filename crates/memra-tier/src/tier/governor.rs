@@ -1,6 +1,6 @@
 //! Atomic multidimensional admission; fixed backing is charged once, slices hold pins.
 use crate::contracts::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub enum QueueOutcome {
@@ -20,6 +20,8 @@ pub struct Governor {
     queue: Vec<(u64, BudgetRequest)>,
     last_served: HashMap<Digest, u64>,
     service_sequence: u64,
+    evicted_floor: u64,
+    charged_tenants: HashMap<(u64, u64), Digest>,
     next: u64,
 }
 impl Governor {
@@ -46,6 +48,8 @@ impl Governor {
             queue: vec![],
             last_served: HashMap::new(),
             service_sequence: 0,
+            evicted_floor: 0,
+            charged_tenants: HashMap::new(),
             next: 0,
         })
     }
@@ -78,8 +82,24 @@ impl Governor {
         Ok(self.next)
     }
     fn prune_fairness(&mut self) {
-        self.last_served
-            .retain(|tenant, _| self.queue.iter().any(|(_, r)| &r.tenant == tenant));
+        let active: HashSet<_> = self
+            .queue
+            .iter()
+            .map(|(_, r)| r.tenant)
+            .chain(self.charged_tenants.values().copied())
+            .collect();
+        let mut idle: Vec<_> = self
+            .last_served
+            .iter()
+            .filter(|(tenant, _)| !active.contains(*tenant))
+            .map(|(&tenant, &stamp)| (stamp, tenant))
+            .collect();
+        idle.sort_unstable();
+        let excess = idle.len().saturating_sub(self.queue_limit);
+        for (stamp, tenant) in idle.into_iter().take(excess) {
+            self.last_served.remove(&tenant);
+            self.evicted_floor = self.evicted_floor.max(stamp);
+        }
     }
     pub fn cancel_queued(&mut self, id: u64) -> Result<()> {
         let i = self
@@ -93,6 +113,9 @@ impl Governor {
     }
     /// Priority, deadline, least-recently-served tenant, FIFO. A blocked head is not
     /// bypassed by lower-priority work; caller retries after release/backpressure.
+    /// Unknown/forgotten history is treated as served no later than the oldest
+    /// forgotten tenant. The eviction watermark prevents a forgotten tenant from
+    /// jumping ahead of an older queued stamp; only idle history is capped.
     pub fn dispatch(&mut self) -> Result<Option<QueueOutcome>> {
         if let Some(i) = self
             .queue
@@ -107,7 +130,10 @@ impl Governor {
             (
                 r.priority,
                 r.deadline,
-                self.last_served.get(&r.tenant).copied().unwrap_or(0),
+                self.last_served
+                    .get(&r.tenant)
+                    .copied()
+                    .unwrap_or(self.evicted_floor),
                 *n,
             )
         }) else {
@@ -144,6 +170,7 @@ impl Governor {
         let next = self.used.checked_add(&r.bytes)?;
         let lease = self.issuer.issue(r.bytes.clone())?;
         self.used = next;
+        self.charged_tenants.insert(lease.id(), r.tenant);
         Ok(lease)
     }
 }
@@ -169,6 +196,63 @@ impl BudgetGovernor for Governor {
         // Capability validation precedes accounting, including foreign/double release.
         self.issuer.release(l)?;
         self.used = self.used.checked_sub(l.bytes())?;
+        self.charged_tenants.remove(&l.id());
+        self.prune_fairness();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn fairness_idle_cap_keeps_inflight_and_queued_stamps_and_eviction_floor() {
+        let mut cap = TierBudget::zero(1);
+        cap.pageable = 100;
+        let mut g = Governor::new(cap, TierBudget::zero(1), 2, 0, Arc::new(|| 0)).unwrap();
+        let request = |tenant, priority| {
+            let mut bytes = TierBudget::zero(1);
+            bytes.pageable = 1;
+            BudgetRequest {
+                bytes,
+                priority,
+                deadline: Deadline(10),
+                tenant: [tenant; 32],
+            }
+        };
+        let admit = |g: &mut Governor, want| {
+            let Some(QueueOutcome::Admitted(id, charge)) = g.dispatch().unwrap() else {
+                panic!()
+            };
+            assert_eq!(id, want);
+            charge
+        };
+        // B has the oldest stamp and a backlog; C has an outstanding charge only.
+        let b1 = g.enqueue(request(1, Priority::Demand)).unwrap();
+        let b = admit(&mut g, b1);
+        g.release(&b).unwrap();
+        let c1 = g.enqueue(request(2, Priority::Demand)).unwrap();
+        let c = admit(&mut g, c1);
+        let b2 = g.enqueue(request(1, Priority::Demand)).unwrap();
+        for tenant in 3..12 {
+            let id = g
+                .enqueue(request(tenant, Priority::MandatoryActive))
+                .unwrap();
+            let charge = admit(&mut g, id);
+            g.release(&charge).unwrap();
+            assert!(g.last_served.len() <= 4); // 2 protected + 2 idle
+            assert_eq!(g.last_served[&[1; 32]], 1);
+            assert_eq!(g.last_served[&[2; 32]], 2);
+        }
+        assert_eq!(g.evicted_floor, 9);
+        assert_eq!(g.last_served[&[10; 32]], 10);
+        assert_eq!(g.last_served[&[11; 32]], 11);
+        let again = g.enqueue(request(3, Priority::Demand)).unwrap();
+        let b = admit(&mut g, b2); // evicted tenant cannot jump ahead of backlog
+        g.release(&b).unwrap();
+        let a = admit(&mut g, again);
+        g.release(&a).unwrap();
+        g.release(&c).unwrap();
+        assert!(g.last_served.len() <= 2);
     }
 }
