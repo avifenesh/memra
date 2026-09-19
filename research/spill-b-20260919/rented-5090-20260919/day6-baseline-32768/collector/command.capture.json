@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "/root/wt-b/target/release/kv_tier_gate",
+    "--artifact",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--case",
+    "baseline",
+    "--context",
+    "32768",
+    "--tiers",
+    "host",
+    "--same-program",
+    "--out",
+    "/root/spill-receipts/b-day6-baseline-32768/receipt"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "started_monotonic_ns": 705310394419532,
+  "ended_monotonic_ns": 705736059110854,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 4818,
+    "sha256": "4602fa378ff6d866762f598bda3a4926074f3c1e45675101930658e93737f0bf"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 152492,
+      "sha256": "7cff2c9c6eb806a0194cdf5d7a6cd763f6b3c192f95bd02009a204b0b6ec305b"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}
