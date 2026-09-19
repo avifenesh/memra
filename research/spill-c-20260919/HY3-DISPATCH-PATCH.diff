@@ -1,0 +1,121 @@
+--- a/crates/memra-engine/src/hybrid.rs
++++ b/crates/memra-engine/src/hybrid.rs
+@@ -2831,6 +2831,37 @@
+ }
+
+ impl MoeWeights {
++    /// Validate original router positions before layout lookup, cache admission,
++    /// page hints, or staging. A masked position never acquires backing bytes.
++    pub(crate) fn require_active_expert(&self, original: usize) -> std::io::Result<()> {
++        let count = self.gate_exps.n_expert;
++        if self.up_exps.n_expert != count
++            || self.down_exps.n_expert != count
++            || self
++                .active_experts
++                .as_ref()
++                .is_some_and(|mask| mask.len() != count)
++        {
++            return Err(std::io::Error::other(
++                "inconsistent expert bank geometry/mask",
++            ));
++        }
++        if original >= count || original > u16::MAX as usize {
++            return Err(std::io::Error::other(
++                "original expert id out of dispatch range",
++            ));
++        }
++        if self
++            .active_experts
++            .as_ref()
++            .is_some_and(|mask| !mask[original])
++        {
++            return Err(std::io::Error::other(
++                "masked original expert cannot be staged",
++            ));
++        }
++        Ok(())
++    }
+     #[inline]
+     pub fn has_uniform_expert_layout(&self) -> bool {
+         self.gate_exps.is_uniform_layout()
+--- a/crates/memra-engine/src/hybrid_forward.rs
++++ b/crates/memra-engine/src/hybrid_forward.rs
+@@ -14639,6 +14639,7 @@
+                     continue;
+                 }
+                 let ex = ex as usize;
++                m.require_active_expert(ex)?;
+                 // PER-EXPERT SLAB READ (lane/pp-leverb 2026-08-08): the layers the fused
+                 // pair above excludes — step35's CLAMPED layers 43/44 (ffn_act_lim has no
+                 // fused form) and macro-carrying artifacts — still have their bytes in the
+@@ -19833,6 +19834,7 @@
+         aq: &CudaSlice<i8>,
+         ad: &CudaSlice<f32>,
+     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
++        m.require_active_expert(ex)?;
+         use crate::moe_cache::{BlockId, DispatchSlot, PROJ_GATE, PROJ_UP};
+         let exps = match proj {
+             PROJ_GATE => &m.gate_exps,
+@@ -19869,6 +19871,7 @@
+         max_block: usize,
+         x: &cudarc::driver::CudaView<f32>,
+     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
++        m.require_active_expert(ex)?;
+         use crate::moe_cache::{BlockId, DispatchSlot, PROJ_GATE, PROJ_UP};
+         let exps = match proj {
+             PROJ_GATE => &m.gate_exps,
+@@ -19909,6 +19912,7 @@
+         m: &MoeWeights,
+         max_block: usize,
+     ) -> Result<(), Box<dyn std::error::Error>> {
++        m.require_active_expert(ex)?;
+         use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
+         e.with_moe_cache(max_block, |cache, eng| {
+             for (proj, exps) in [
+@@ -19937,6 +19941,7 @@
+         scratch: &mut Option<CudaSlice<u8>>,
+         scratch_len: usize,
+     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
++        m.require_active_expert(ex)?;
+         use crate::moe_cache::{BlockId, PROJ_GATE, PROJ_UP};
+         let exps = match proj {
+             PROJ_GATE => &m.gate_exps,
+@@ -19990,6 +19995,7 @@
+         max_block: usize,
+         keep: &[crate::moe_cache::BlockId],
+     ) -> Result<(), Box<dyn std::error::Error>> {
++        m.require_active_expert(ex)?;
+         use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
+         e.with_moe_cache(max_block, |c, eng| {
+             for (proj, exps) in [
+@@ -20014,6 +20020,7 @@
+         max_block: usize,
+         keep: &[crate::moe_cache::BlockId],
+     ) -> Result<(), Box<dyn std::error::Error>> {
++        m.require_active_expert(ex)?;
+         use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
+         e.with_moe_cache(max_block, |c, eng| {
+             for (proj, exps) in [
+@@ -21145,6 +21152,9 @@
+         } else {
+             Self::moe_route_cfg(e, &logits, t, n_expert, n_used, m.active_experts.as_deref())?
+         };
++        for &original in &sel_all {
++            m.require_active_expert(original as usize)?;
++        }
+         crate::moesd::record_host_routes(il, n_expert, n_used, &sel_all)?;
+         Self::trace_moe_routes(il, t, &sel_all, &w_all)?;
+         Self::trace_moe_input(e, il, t, n_embd, z)?;
+@@ -21217,6 +21227,12 @@
+         let moe_q8 = moe_q8_enabled_for_model(cfg, m);
+         // The per-expert slab view is legal only for the ordinary contiguous uniform layout.
+         // Interleaved GU slabs require the pointer-table fast path above.
++        if m.dev_exps.is_some() && !m.has_uniform_expert_layout() {
++            return Err(std::io::Error::other(
++                "mixed expert bank cannot own a uniform resident slab",
++            )
++            .into());
++        }
+         let slab_local = m
+             .dev_exps
+             .as_ref()

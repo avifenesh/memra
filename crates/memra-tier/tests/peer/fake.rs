@@ -1,6 +1,9 @@
 //! D's CPU byte-moving fake. These are NOT CUDA allocations, events, or P2P receipts.
 use super::support::*;
-use memra_tier::{contracts::*, peer::validate_peer_charge};
+use memra_tier::{
+    contracts::*,
+    peer::{topology::LinkHealth, validate_peer_charge},
+};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -18,6 +21,18 @@ struct Entry {
     graph: bool,
     unknown: bool,
 }
+// Test-owned live route state, keyed by owner/source -> consumer/destination.
+// These injected observations are not driver grants or hardware qualification.
+struct RouteState {
+    context_granted: bool,
+    pool_granted: bool,
+    link_health: LinkHealth,
+}
+impl RouteState {
+    fn available(&self) -> bool {
+        self.context_granted && self.pool_granted && self.link_health == LinkHealth::AtMaximum
+    }
+}
 struct Peer {
     gov: Shared,
     owners: [DeviceOwner; 2],
@@ -25,7 +40,7 @@ struct Peer {
     charges: HashMap<(u64, u64), bool>, // device released, governor release still retryable
     next: u64,
     reject: HashSet<usize>,
-    grants: bool,
+    routes: HashMap<(u32, u32), RouteState>,
     state: u64,
 }
 impl Peer {
@@ -37,8 +52,45 @@ impl Peer {
             charges: HashMap::new(),
             next: 0,
             reject: HashSet::new(),
-            grants: true,
+            routes: [(0, 1), (1, 0)]
+                .into_iter()
+                .map(|route| {
+                    (
+                        route,
+                        RouteState {
+                            context_granted: true,
+                            pool_granted: true,
+                            link_health: LinkHealth::AtMaximum,
+                        },
+                    )
+                })
+                .collect(),
             state: 7,
+        }
+    }
+    fn route_available(&self, source: u32, destination: u32) -> bool {
+        self.routes
+            .get(&(source, destination))
+            .is_some_and(RouteState::available)
+    }
+    fn route_fault(
+        &mut self,
+        route: (u32, u32),
+        kind: super::conformance::RouteFault,
+        denied: bool,
+    ) {
+        use super::conformance::RouteFault;
+        let state = self.routes.get_mut(&route).unwrap();
+        match kind {
+            RouteFault::Context => state.context_granted = !denied,
+            RouteFault::Pool => state.pool_granted = !denied,
+            RouteFault::Downgrade => {
+                state.link_health = if denied {
+                    LinkHealth::Downgraded
+                } else {
+                    LinkHealth::AtMaximum
+                };
+            }
         }
     }
     fn plan(&self, device: u32, generation: u64) -> PeerPlan {
@@ -128,7 +180,7 @@ impl Peer {
 }
 impl PeerCapacity for Peer {
     fn reserve(&mut self, plan: PeerPlan) -> Result<PeerLease> {
-        if !self.grants {
+        if !self.route_available(plan.owner_device, plan.consumer_device) {
             return Err(Error::Unsupported);
         }
         if plan.epochs.state != self.state {
@@ -182,7 +234,10 @@ impl PeerBackend for Peer {
     fn submit(&mut self, copies: Vec<ContiguousCopy>) -> Submission<ContiguousCopy> {
         let error = if copies.is_empty() {
             Some(Error::EmptyBatch)
-        } else if !self.grants {
+        } else if copies
+            .iter()
+            .any(|c| !self.route_available(c.source().device(), c.destination().device()))
+        {
             Some(Error::Unsupported)
         } else if copies[0].epochs.state != self.state
             || copies.iter().any(|c| c.validate(copies[0].epochs).is_err())
@@ -529,9 +584,9 @@ fn quarantine_graph_pins_foreign_tickets_and_shared_budget() {
 #[test]
 fn capacity_grants_padding_and_homogeneous_ticket_refusal() {
     let mut p = Peer::new(shared());
-    p.grants = false;
+    p.route_fault((0, 1), super::conformance::RouteFault::Context, true);
     assert!(matches!(p.reserve(p.plan(0, 19)), Err(Error::Unsupported)));
-    p.grants = true;
+    p.route_fault((0, 1), super::conformance::RouteFault::Context, false);
     let mut under = p.plan(0, 19);
     under.request.bytes.peer[0] = 0;
     assert!(matches!(p.reserve(under), Err(Error::Capacity)));
@@ -618,4 +673,195 @@ fn caller_source_drop_keeps_owned_bytes_until_acknowledged() {
     })
     .unwrap();
     p.release(&dst).unwrap();
+}
+
+impl super::conformance::CapacityFixture for Peer {
+    fn used(&self) -> TierBudget {
+        self.gov.borrow().used()
+    }
+    fn non_peer(&mut self) -> ChargedLease {
+        let mut r = request(4, Priority::MandatoryActive);
+        r.bytes.device[0] = 4;
+        self.gov.borrow_mut().reserve(&r).unwrap()
+    }
+    fn release_non_peer(&mut self, lease: &ChargedLease) -> Result<()> {
+        self.gov.borrow_mut().release(lease)
+    }
+    fn plan(&self, owner: u32) -> PeerPlan {
+        self.plan(owner, if owner == 0 { 19 } else { 31 })
+    }
+    fn retain(&self, lease: &PeerLease) -> DeviceLease {
+        self.owners[lease.device.device() as usize]
+            .retain(&lease.device)
+            .unwrap()
+    }
+    fn next_state(&mut self) {
+        self.state += 1;
+    }
+}
+#[test]
+fn revision_v11_peer_capacity() {
+    super::conformance::peer_capacity(&mut Peer::new(shared()), &mut Peer::new(shared()));
+}
+#[test]
+fn revision_v11_peer_complete_cancel_and_quarantine() {
+    let mut p = Peer::new(shared());
+    let src = p.reserve(p.plan(0, 19)).unwrap();
+    let dst = p.reserve(p.plan(1, 31)).unwrap();
+    let copies = vec![p.copy(&src, &dst)];
+    let expect = vec![vec![SegmentExpectation {
+        valid_bytes: 4,
+        io_bytes: 4,
+        checksum: checksum(&bytes(4)),
+    }]];
+    let t =
+        super::conformance::peer_complete_cancel(&mut p, copies, 1, &expect, |p, t| p.finish(t));
+    super::conformance::peer_lifetime(
+        &mut p,
+        t,
+        |p, t, step| {
+            use super::conformance::LifetimeStep::*;
+            if matches!(step, Producer) {
+                p.finish(t);
+                return;
+            }
+            let e = p.entries.get_mut(t).unwrap();
+            match step {
+                Unknown => e.unknown = true,
+                Recover => e.unknown = false,
+                Consumer => e.consumer = true,
+                Graph => e.graph = true,
+                Producer => unreachable!(),
+            }
+        },
+        |p| p.gov.borrow().used(),
+    );
+    p.release(&src).unwrap();
+    p.release(&dst).unwrap();
+    assert_eq!(p.gov.borrow().used(), TierBudget::zero(2));
+}
+#[test]
+fn revision_v11_peer_indexed_acceptance() {
+    for (rejected, short) in [(2, Some(1)), (0, None), (1, None)] {
+        let mut p = Peer::new(shared());
+        let src = p.reserve(p.plan(0, 19)).unwrap();
+        let dst = p.reserve(p.plan(1, 31)).unwrap();
+        p.reject.insert(rejected);
+        let b = p
+            .submit((0..3).map(|_| p.copy(&src, &dst)).collect())
+            .unwrap();
+        p.finish(&b.ticket);
+        if let Some(i) = short {
+            p.entries.get_mut(&b.ticket).unwrap().completion.items[i].segments[0].io_bytes = 3;
+        }
+        let c = p.poll(&b.ticket).unwrap();
+        super::conformance::acceptance(&b, &c, &p.entries[&b.ticket].expected, rejected, short);
+        assert!(
+            p.materialize_local(&b.ticket, 2, b.ticket.epochs, 1)
+                .is_err()
+        );
+        drop(b.items);
+        p.cancel(&b.ticket).unwrap();
+        p.drain(&b.ticket);
+        p.release(&src).unwrap();
+        p.release(&dst).unwrap();
+        assert_eq!(p.gov.borrow().used(), TierBudget::zero(2));
+    }
+}
+#[test]
+fn revision_v11_directed_capacity() {
+    for (source, destination) in [(0, 1), (1, 0)] {
+        let mut p = Peer::new(shared());
+        let forward = p.plan(source, 19);
+        let reverse = p.plan(destination, 31);
+        super::conformance::peer_directed_grants(
+            &mut p,
+            forward,
+            reverse,
+            |p, kind, denied| p.route_fault((source, destination), kind, denied),
+            |p| p.gov.borrow().used(),
+        );
+    }
+}
+
+#[test]
+fn directed_fault_controls_are_independent_and_missing_routes_refuse() {
+    use super::conformance::RouteFault::{Context, Downgrade, Pool};
+    let mut p = Peer::new(shared());
+    let baseline = p.gov.borrow().used();
+    for kind in [Context, Pool, Downgrade] {
+        p.route_fault((0, 1), kind, true);
+    }
+    // Restoring one control cannot silently restore another denied control.
+    for kind in [Context, Pool] {
+        p.route_fault((0, 1), kind, false);
+        assert!(matches!(p.reserve(p.plan(0, 19)), Err(Error::Unsupported)));
+        assert_eq!(p.gov.borrow().used(), baseline);
+    }
+    p.route_fault((0, 1), Downgrade, false);
+    // Do not impose a reverse-physical-health prerequisite on forward admission.
+    p.route_fault((1, 0), Downgrade, true);
+    let lease = p.reserve(p.plan(0, 19)).unwrap();
+    p.release(&lease).unwrap();
+    for health in [LinkHealth::Unknown, LinkHealth::IdleDeferred] {
+        p.routes.get_mut(&(0, 1)).unwrap().link_health = health;
+        assert!(matches!(p.reserve(p.plan(0, 19)), Err(Error::Unsupported)));
+        assert_eq!(p.gov.borrow().used(), baseline);
+    }
+    p.routes.remove(&(0, 1));
+    assert!(matches!(p.reserve(p.plan(0, 19)), Err(Error::Unsupported)));
+    assert_eq!(p.gov.borrow().used(), baseline);
+}
+
+#[test]
+fn directed_fault_after_reservation_returns_owned_copies_without_acceptance() {
+    use super::conformance::RouteFault::{Context, Downgrade, Pool};
+    let mut p = Peer::new(shared());
+    let src = p.reserve(p.plan(0, 19)).unwrap();
+    let dst = p.reserve(p.plan(1, 31)).unwrap();
+    let charged = p.gov.borrow().used();
+    for kind in [Context, Pool, Downgrade] {
+        p.route_fault((0, 1), kind, true);
+        let rejected = p.submit(vec![p.copy(&src, &dst)]).unwrap_err();
+        assert_eq!(rejected.error, Error::Unsupported);
+        assert_eq!(rejected.op.len(), 1);
+        assert_eq!(
+            rejected.op[0].source().allocation_id(),
+            src.device.allocation_id()
+        );
+        assert!(p.entries.is_empty());
+        assert_eq!(p.gov.borrow().used(), charged);
+        drop(rejected);
+        p.route_fault((0, 1), kind, false);
+        let t = p.submit(vec![p.copy(&src, &dst)]).unwrap().ticket;
+        p.drain(&t);
+    }
+    p.release(&src).unwrap();
+    p.release(&dst).unwrap();
+    assert_eq!(p.gov.borrow().used(), TierBudget::zero(2));
+}
+
+#[test]
+fn revision_v11_peer_submit_epochs_and_zero_accept() {
+    let mut p = Peer::new(shared());
+    let src = p.reserve(p.plan(0, 19)).unwrap();
+    let dst = p.reserve(p.plan(1, 31)).unwrap();
+    super::conformance::peer_submit_epochs(
+        &mut p,
+        |p| vec![p.copy(&src, &dst), p.copy(&src, &dst)],
+        |p, t| p.drain(t),
+    );
+    p.reject.extend([0, 1]);
+    let copies = vec![p.copy(&src, &dst), p.copy(&src, &dst)];
+    let returned = super::conformance::peer_zero_accept(&mut p, copies, |ops| {
+        assert!(
+            ops.iter()
+                .all(|o| o.source().allocation_id() == src.device.allocation_id())
+        );
+    });
+    assert!(p.entries.is_empty());
+    drop(returned);
+    p.release(&src).unwrap();
+    p.release(&dst).unwrap();
+    assert_eq!(p.gov.borrow().used(), TierBudget::zero(2));
 }

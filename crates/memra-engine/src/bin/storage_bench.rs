@@ -3,6 +3,7 @@
 use memra_tier::contracts::*;
 use memra_tier::io::direct::{AlignedFile, ReadMode};
 use memra_tier::object_store::{ExtentStore, FileBackend, MAX_CHUNK};
+use memra_tier::tier::Governor;
 use std::{cell::RefCell, path::Path, rc::Rc};
 
 /// Native syscall stays outside the unsafe-free metadata/storage crate.
@@ -28,34 +29,6 @@ pub fn open_uncached(path: &Path) -> Result<std::fs::File> {
     }
 }
 
-// CPU benchmark-only bounded ledger; not a serving governor or alternative to WP-B.
-struct BenchBudget {
-    issuer: LeaseIssuer,
-    used: TierBudget,
-    cap: TierBudget,
-}
-impl BudgetGovernor for BenchBudget {
-    fn reserve(&mut self, r: &BudgetRequest) -> Result<ChargedLease> {
-        r.validate()?;
-        if !r.bytes.fits(&self.used, &self.cap)? {
-            return Err(Error::Capacity);
-        }
-        let charge = self.issuer.issue(r.bytes.clone())?;
-        self.used = self.used.checked_add(&r.bytes)?;
-        Ok(charge)
-    }
-    fn used(&self) -> TierBudget {
-        self.used.clone()
-    }
-    fn mark(&mut self, l: &ChargedLease, state: ChargeState) -> Result<()> {
-        self.issuer.mark(l, state)
-    }
-    fn release(&mut self, l: &ChargedLease) -> Result<()> {
-        self.issuer.release(l)?;
-        self.used = self.used.checked_sub(l.bytes())?;
-        Ok(())
-    }
-}
 fn fixture(offset: usize, len: usize) -> Vec<u8> {
     (offset..offset + len)
         .map(|i| (i.wrapping_mul(17).wrapping_add(3) % 251) as u8)
@@ -63,7 +36,7 @@ fn fixture(offset: usize, len: usize) -> Vec<u8> {
 }
 pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::error::Error>> {
     if !(3..=5).contains(&args.len()) || !matches!(args[1].as_str(), "roundtrip" | "restore") {
-        return Err("usage: storage-bench roundtrip|restore <owned-directory> [bytes<=1073741824] [buffered|uncached]".into());
+        return Err("usage: storage-bench roundtrip|restore <owned-directory> [bytes<=1073741824] [buffered|uncached|direct]".into());
     }
     let restore = args[1] == "restore";
     let directory = Path::new(&args[2]);
@@ -71,10 +44,11 @@ pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::e
     if len == 0 || len > 1 << 30 {
         return Err("bytes must be 1..=1073741824".into());
     }
+    let direct_writes = args.get(4).is_some_and(|s| s == "direct");
     let mode = match args.get(4).map(String::as_str).unwrap_or("buffered") {
         "buffered" => ReadMode::Buffered,
-        "uncached" => ReadMode::Uncached,
-        _ => return Err("backend must be buffered or uncached".into()),
+        "uncached" | "direct" => ReadMode::Uncached,
+        _ => return Err("backend must be buffered, uncached or direct".into()),
     };
     if restore {
         if !directory.is_dir() {
@@ -92,17 +66,21 @@ pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::e
     };
     let mut backend = FileBackend::open_mode(directory, Durability::Persistent)?;
     backend.set_read_mode(mode);
+    backend.set_direct_writes(direct_writes)?;
     #[cfg(target_os = "macos")]
     if mode == ReadMode::Uncached {
         backend.set_uncached_opener(open_uncached);
     }
     let mut cap = TierBudget::zero(0);
     cap.nvme = 2 * (len as u64) + (1 << 24);
-    let gov = Rc::new(RefCell::new(BenchBudget {
-        issuer: LeaseIssuer::default(),
-        used: TierBudget::zero(0),
-        cap: cap.clone(),
-    }));
+    let clock = std::time::Instant::now();
+    let gov = Rc::new(RefCell::new(Governor::new(
+        cap.clone(),
+        TierBudget::zero(0),
+        1,
+        0,
+        std::sync::Arc::new(move || clock.elapsed().as_nanos().try_into().unwrap_or(u64::MAX)),
+    )?));
     let mut store = ExtentStore::new(backend, gov.clone());
     let start = std::time::Instant::now();
     if !restore {
@@ -153,14 +131,20 @@ pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::e
             args[1],
             std::env::consts::OS
         ),
-        backend_requested: if mode == ReadMode::Buffered {
+        backend_requested: if direct_writes {
+            "direct"
+        } else if mode == ReadMode::Buffered {
             "buffered"
         } else {
             "uncached"
         }
         .into(),
-        backend_actual: if mode == ReadMode::Buffered {
+        backend_actual: if direct_writes {
+            "linux-o-direct-read-write"
+        } else if mode == ReadMode::Buffered {
             "buffered-filesystem-persistent"
+        } else if cfg!(target_os = "linux") {
+            "linux-o-direct-read-buffered-write"
         } else {
             AlignedFile::backend_label()
         }
@@ -187,7 +171,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() == 2 && args[1] == "--help" {
         println!(
-            "storage-bench roundtrip|restore <owned-directory> [bytes<=1073741824] [buffered|uncached]\nCPU filesystem only. Development-Mac I/O characterization, not memra spill speed. No GPU modes."
+            "storage-bench roundtrip|restore <owned-directory> [bytes<=1073741824] [buffered|uncached|direct]\nCPU filesystem only. Development-Mac I/O characterization, not memra spill speed. No GPU modes."
         );
         return Ok(());
     }

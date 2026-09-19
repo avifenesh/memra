@@ -1,0 +1,213 @@
+{
+  "source_commit": "60ceca2e52cd8cfadb93f25fa32d4f86184a70eb",
+  "commands": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 3.8598320484161377,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": "fmt.log.gz"
+    },
+    {
+      "name": "check-macos",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "seconds": 3.0406060218811035,
+      "raw_sha256": "cda62dc32c5d0ad05c8e93eab1f632cd5ead7cea7cd2477731c88f54f0cb87e8",
+      "log": "check-macos.log.gz"
+    },
+    {
+      "name": "check-linux",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "seconds": 0.3819398880004883,
+      "raw_sha256": "c9c5ac058f1f45b81513a51dd0b0823d19deabf1ddac9532a03027e719f3b52f",
+      "log": "check-linux.log.gz"
+    },
+    {
+      "name": "test-required",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline"
+      ],
+      "exit": 101,
+      "seconds": 10.379640102386475,
+      "raw_sha256": "6803fd52fd0a6da9e2cacd2ed49ee34cd0812c8415ea4ea3fee1738b39700abb",
+      "log": "test-required.log.gz"
+    },
+    {
+      "name": "test-all",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 101,
+      "seconds": 2.540550947189331,
+      "raw_sha256": "4512cb90efcc0b186287049ce36e6f08a0f230e03b00d34d2cbfc9b8ed265f16",
+      "log": "test-all.log.gz"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--no-deps",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.8732118606567383,
+      "raw_sha256": "b665460143123e117e047ac00da8a6058bd62719eba18495c7e36a4fc1c13731",
+      "log": "clippy.log.gz"
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.07610487937927246,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": "diff.log.gz"
+    },
+    {
+      "name": "flags",
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "seconds": 3.691624164581299,
+      "raw_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+      "log": "flags.log.gz"
+    },
+    {
+      "name": "fixtures",
+      "command": [
+        "python3",
+        "crates/memra-tier/tests/contracts/fixture_reference.py",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.14327383041381836,
+      "raw_sha256": "fb7a893b8aba1ae4a5d95898e66b46377c642ee1ae197c76b167a8e781774ef4",
+      "log": "fixtures.log.gz"
+    },
+    {
+      "name": "schema-unchanged",
+      "command": [
+        "git",
+        "diff",
+        "--exit-code",
+        "98e558dc",
+        "--",
+        "crates/memra-tier/src/contracts.rs",
+        "crates/memra-tier/tests/contracts/fixtures.json",
+        "Cargo.toml",
+        "Cargo.lock"
+      ],
+      "exit": 0,
+      "seconds": 0.027316808700561523,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": "schema-unchanged.log.gz"
+    }
+  ],
+  "sources": {
+    "crates/memra-kv/Cargo.toml": "ec3a7f46bff723a86c793083e0783c91182bd5f12cb06214385a742153c9a740",
+    "crates/memra-kv/src/lib.rs": "f0d1b73cfa345c88f64eaa44cea6d314fdbac1cdea5b630829ee143c08dd8444",
+    "crates/memra-kv/src/record.rs": "93402204a99bdf0b72d03456581e2ab794568f99a3137522b8aa74f44afa29d6",
+    "crates/memra-kv/src/tiered/hostprefix.rs": "d522e71ddc4799b2f651c32ff783130e6e6918ca0074f153ebdec4b7880bb19a",
+    "crates/memra-kv/src/tiered/integration.rs": "84671538f7c07b98070044d18b09240222bb52dc3b7d4e62f2abfd1bd8b46429",
+    "crates/memra-kv/src/tiered/materializer.rs": "657e92491fed40321ea13dbcd5e156e3eae5f8af2625dd54d41abdcf6a8fc4cb",
+    "crates/memra-kv/src/tiered/mod.rs": "18ff80630bfeb85192621bc4ad1706b16f1f270ec8f83c5795c55111715f06bf",
+    "crates/memra-kv/src/tiered/policy.rs": "a8125f07c92770fa0e42c4bb7ac6580d59f18dca7add057ec966f525741c895a",
+    "crates/memra-kv/src/tiered/tests.rs": "c8f883384230934cdb9f16fdec663ac91e774049191b36c6e18fe91058cc6af2",
+    "crates/memra-tier/Cargo.toml": "d316d3580dd3ab5996a7d0c76d3e30183574f04aaa3c3a6b0f7d6b8a26008b73",
+    "crates/memra-tier/src/bank/adapters.rs": "35e2aeb1b38d678f85a63e3b183c62ae3ca8d38b2a61afaf63df77ea8bd96788",
+    "crates/memra-tier/src/bank/mod.rs": "e6be6423ed90c8e5162cdaddf09ffb8b0f2965864c34e19ee471d9fecb2fc8e7",
+    "crates/memra-tier/src/bank/residency.rs": "5d1c157a7bad92fb9097e7b2897dcbc9fe862f1fe88befce223ae02378fd13a0",
+    "crates/memra-tier/src/bank/rows.rs": "be4e337b264c811f973b0dd830a7b9034cd32c1b1d0ca4d9b320bfd53f96e374",
+    "crates/memra-tier/src/bank/types.rs": "c09fff98bf54809149bfc8efb9ccb56ed983c317b4ec8928555c8126b40a0b4d",
+    "crates/memra-tier/src/contracts.rs": "8d65f2ae27f481f82b52bcac0e8c53ce8c5d929e1c6f735ae26241aa97bef7e6",
+    "crates/memra-tier/src/io/direct.rs": "4cbeb9296ec246909f1849a845bfe441428b55639ad2eea5e2e8e8b47890bcae",
+    "crates/memra-tier/src/io/mod.rs": "3458691e0f169a24641b4f46d121c7061b61b27baa3629b0dbeec0046d90de02",
+    "crates/memra-tier/src/io/retirement.rs": "758e68d57543244ae7f3e914678fae39c47a7ccf47b6dc7d168919563b178bf2",
+    "crates/memra-tier/src/io/transfer.rs": "9b3a5d64c43d4b3f3f3bd2cc89c63c57ec5b69c44c51dc404ea0f62070df4324",
+    "crates/memra-tier/src/lib.rs": "d981cb755c2ed0a8b382258ff95770e7e6d6d16c9671631f91d330de0aafc6f3",
+    "crates/memra-tier/src/object_store/mod.rs": "829b3699e92c0a896887b7db7665dcf10fa650993e3490c7879b4ed2e2f0ba4f",
+    "crates/memra-tier/src/peer/mod.rs": "f0af38d9734a56bfbeb4bf31394ec59b2cdaafcbd1ebb7fd60c05199ce9a2974",
+    "crates/memra-tier/src/peer/topology.rs": "04afd45b9a13c8decea388939b6a5b21bd4d5ec2e3e2566a5064ad47ab9ddd4a",
+    "crates/memra-tier/src/placement/mod.rs": "6eae83b42184aab778b255fd8d56c40cbaedd9345a5f994f6544694f87588b61",
+    "crates/memra-tier/src/pool/mod.rs": "d0019a9c0572536bc26a765a7cb703b774777c38aef1775f68d29d0e991ad097",
+    "crates/memra-tier/src/telemetry/mod.rs": "6910f2875872d292dcc19ceb0c4954b318b26515763fe1f6cb1263a805feceaf",
+    "crates/memra-tier/src/tier/governor.rs": "265cc4b69bccff685c43817ed0b0d64362c23ba26fcda7620022990e60aaa248",
+    "crates/memra-tier/src/tier/mod.rs": "e617fc2b49b8f5896f7da23d7588888705751007ee821cab1a3e0ec2bdb16329",
+    "crates/memra-tier/tests/bank/host_bridge.rs": "1958e9a6c5a0cbd8719e0525f3ce9f4142ae91a35e1d111aa9921d2c33e6a8c5",
+    "crates/memra-tier/tests/bank/main.rs": "487cd68e03f3839d0b14bc6f67bf20334eb1783595e8f2f367e0f57a6123961e",
+    "crates/memra-tier/tests/bank/ple_oracle.rs": "8e212391008e750cb35d9f3ff888eba0b09a9c11d20b4845de1a6a4206acda5f",
+    "crates/memra-tier/tests/battery/topology.fixture.json": "a6ae0c5746f497f232e0f8044da1609b8f1a02c34964b9a90877c366d86a7b2e",
+    "crates/memra-tier/tests/contracts/conformance.rs": "17e378e17037e3fe8da86f1e6f356e46135a3f14666d18c3f54f75fd48fda1bb",
+    "crates/memra-tier/tests/contracts/fixtures.json": "1b722a5eb6022b60bf7c62817c3ce773ea6459131af395a7df73dcff41aff18b",
+    "crates/memra-tier/tests/contracts/mod.rs": "e80490d5e6c69490a64fa6c74e326e404787a668304d021571966d38f40ff02f",
+    "crates/memra-tier/tests/contracts/peer.rs": "4db99e04b5046d19969b7cee924d73558099d57e8994d873e4606902e4078bd5",
+    "crates/memra-tier/tests/contracts/revision_v11.rs": "db5123f8815fb74ef37d943f4c31a3fc429328a412b718132d81e3a966d6685a",
+    "crates/memra-tier/tests/contracts/rows.rs": "2a58f573f148b1124e738b68e0d95fc3d7c9de9230dba90caa2c74d555f82616",
+    "crates/memra-tier/tests/contracts/services.rs": "3678c3e196d8afa5f54aac54fbec6e4a2b0b365f35aa42fc8a81ce2be2082e75",
+    "crates/memra-tier/tests/contracts/support.rs": "9631030eeb789223170c182eede489851d3d5f0dca9e1f87cb1c899b57014e7f",
+    "crates/memra-tier/tests/contracts/transfer.rs": "8a3ce1c343547168d352b4f1382faec0823b62c5fdfa74b131abfc64b5fda37a",
+    "crates/memra-tier/tests/contracts/wire.rs": "06c03c245097f9b3c9bead1a798707eace66922197fb8616dfe73ee195b6512b",
+    "crates/memra-tier/tests/peer/fake.rs": "8f790b3bb5f9ae86059f8ccbe92bbcb38bbfe67921a0362237972c7d293b8d16",
+    "crates/memra-tier/tests/peer/mod.rs": "bedf02425aac3d87c577a78141af86060c1803af76d442f898b62ddbfb0d4298",
+    "crates/memra-tier/tests/placement/mod.rs": "79fecef0ee65633d8ad51d3661f402ae07f56d7b4cdf849222638e029475570b",
+    "crates/memra-tier/tests/storage/day2.rs": "c7ee1dd921118c20141f11551789a0435e38ffdbbc307618f622aa762599f192",
+    "crates/memra-tier/tests/storage/mod.rs": "cd9e601537e384326d2c5e4b2e064ee262a52e09bcc3b1bf0bcc99331ed7c3ca",
+    "crates/memra-tier/tests/storage/retirement.rs": "4569c298d82e775dd40116ec713905dbf1d7a691eb943479417378cc27f32334"
+  }
+}

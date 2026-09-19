@@ -560,3 +560,90 @@ fn copy_bounds_and_consumer_context_generation_are_checked() {
         Err(Error::WrongOwner)
     ));
 }
+
+#[test]
+fn revision_v11_complete_cancel_and_lifetime() {
+    let gov = shared();
+    let mut t = Transfers::new(gov.clone());
+    let (read, charge) = t.read();
+    let ticket = t.nvme_read(read).unwrap();
+    super::conformance::transfer_complete_cancel(&mut t, ticket, &expected(1), |t, k| {
+        t.entry(k).unwrap().disk = true;
+        t.entry(k).unwrap().dma = true;
+    });
+    super::conformance::transfer_lifetime(
+        &mut t,
+        ticket,
+        |t, k, step| {
+            use super::conformance::LifetimeStep::*;
+            let e = t.entry(k).unwrap();
+            match step {
+                Unknown => e.unknown = true,
+                Producer => {
+                    e.disk = true;
+                    e.dma = true;
+                }
+                Recover => e.unknown = false,
+                Consumer => e.consumer = true,
+                Graph => e.graph = true,
+            }
+        },
+        |t| t.gov.borrow().used(),
+    );
+    gov.borrow_mut().release(&charge).unwrap();
+    assert_eq!(gov.borrow().used(), TierBudget::zero(2));
+}
+#[test]
+fn revision_v11_indexed_acceptance() {
+    for (rejected, short) in [(2, Some(1)), (0, None), (1, None)] {
+        let gov = shared();
+        let mut t = Transfers::new(gov.clone());
+        t.rejects = vec![rejected];
+        t.short = short;
+        let mut charges = vec![];
+        let ops = (0..3)
+            .map(|_| {
+                let (op, charge) = t.read();
+                charges.push(charge);
+                TransferOp::NvmeRead(op)
+            })
+            .collect();
+        let b = t.submit_batch(ops).unwrap();
+        let c = t.poll(&b.ticket).unwrap();
+        super::conformance::acceptance(&b, &c, &expected(3), rejected, short);
+        drop(b.items);
+        t.cancel(&b.ticket).unwrap();
+        t.finish(&b.ticket);
+        t.acknowledge(&b.ticket).unwrap();
+        for charge in charges {
+            gov.borrow_mut().release(&charge).unwrap();
+        }
+        assert_eq!(gov.borrow().used(), TierBudget::zero(2));
+    }
+}
+
+#[test]
+fn revision_v11_zero_accept_preserves_owned_hosts() {
+    let gov = shared();
+    let mut t = Transfers::new(gov.clone());
+    t.rejects = vec![0, 1];
+    let (a, ca) = t.read();
+    let (b, cb) = t.read();
+    let returned = super::conformance::transfer_zero_accept(
+        &mut t,
+        vec![TransferOp::NvmeRead(a), TransferOp::NvmeRead(b)],
+        |ops| {
+            for op in ops {
+                let TransferOp::NvmeRead(op) = op else {
+                    panic!()
+                };
+                assert_eq!(op.destination.bytes().unwrap(), bytes(3));
+            }
+        },
+    );
+    assert!(t.entries.is_empty());
+    drop(returned);
+    gov.borrow_mut().release(&ca).unwrap();
+    gov.borrow_mut().release(&cb).unwrap();
+    assert_eq!(gov.borrow().used(), TierBudget::zero(2));
+}
