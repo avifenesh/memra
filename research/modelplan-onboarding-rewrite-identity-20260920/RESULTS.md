@@ -1,10 +1,44 @@
 # Rewrite qualification identity — #542
 
-Status: implementation and CPU regression evidence; native GPU qualification pending. Draft PR only.
+Status: the single-card native identity-admission gate passed at
+`62113383d63a0bac510279b954080c592c156630`. Draft PR remains scoped to this fix;
+whole-model, serving, MTP/pipeline, and performance qualification are not promoted.
 
 Base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/542-trusted-rewrite-identity`.
 Environment: macOS arm64, no CUDA toolkit or GPU. No serving machine was accessed.
+
+## Final native result
+
+On one exclusively locked RTX PRO6000 Blackwell Server Edition (driver595.58.03,
+CUDA13.1, XFS/Ceph-RBD-backed scratch), attempt007 passed all11 operational cases with a
+fresh private CUDA cache. Independent quantized-cache verify-prefill and tokenwise eager
+outputs passed unchanged tolerances on3 prompts. Installed eager output and two fresh-process
+replays were bit-identical, including replay after the separate fresh-KV diagnostic.
+
+A matching bundle installed; missing bundle, changed checkpoint bytes at identical geometry,
+changed executable bytes, and changed numerical settings refused for their named reasons.
+Failed reinstall revoked eager access without changing any cache plane. Eager-only receipts
+refused graph execution and fresh-KV `forward`/`forward_last`. Fresh-KV outputs were produced
+only in a separate unqualified process, with no qualification receipt emitted. Standing
+`run-gen` and `decode-batch-gate --mode config --batch 2 --steps 16` also passed.
+
+The apparent lazy-library failure was caused by mixing the unqualified fresh-KV diagnostic
+into cached-eager capture. Phase-boundary probes established that cached execution did not
+invalidate identity. That diagnostic was isolated; the driver-link/head/scratch initialization
+experiments were removed from production. No model mathematics or tolerance changed, and
+all later library/plan/environment/tensor-program drift checks remain active.
+
+Authoritative final records: `native-server-20260920/server-admission-007/`, its finished
+`server-lease-007/lease.json`, and `server-preflight-009/`. Wrapper/child exit0, no timeout,
+no interruption, no lingering compute. Exact tested ELF bytes are retained locally under
+`local-artifacts/`; `native-server-20260920/tested-binary-preservation.json` seals the archive
+and all four executable hashes. The gate executable SHA-256 is
+`5eef5b6324578f455ff9b8139d832518e372f6fc88100fada0ce6cbf1a1bef79`.
+
+Historical attempts below are preserved chronologically; their failures are not relabeled
+as passes. No full-power/Max-Q performance transfer, NVMe claim, or model/serving promotion
+is inferred from this admission test. No merge, tag, or deployment was performed.
 
 ## Change
 

@@ -45,3 +45,17 @@ retains its initialization-only module with the model. The ret entry is never la
 changes no model arithmetic. Explicit linking initializes the compiler even with a warm
 disk cache; library validation is retained and any later drift still refuses. A fresh native
 build/run is required before this is considered qualified.
+
+## Final attempt007 — PASS
+
+At62113383, with a fresh private CUDA cache and no production initializer, all11 cases
+passed. Cached verify-prefill/tokenwise parity passed on3 prompts; installed and two
+fresh-process outputs were bit-identical. Identity mismatches and failed reinstall refused
+correctly; graph and fresh-KV execution were refused under eager-only qualification.
+Fresh-KV diagnostics ran in a separate unqualified process and emitted no receipt.
+Standing argmax and batch config regressions also passed.
+
+The final wrapper and child exited0 with no timeout, signal, or lingering compute. Final
+receipts, output planes, and exact tested binaries are preserved offbox with verified hashes.
+No further remote work is required for this assigned stage. The q9/MTP, paired-pipeline,
+whole-model/serving, and performance gates are outside this narrow passed result.
