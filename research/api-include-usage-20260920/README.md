@@ -107,3 +107,11 @@ copying the receipts.
 No live speculative decode, live failure injection, metering-plugin ledger,
 full cache-meter fanout gate, other model, or multi-GPU battery was run. Those are
 not implied by these CPU tests and bounded live serialization checks.
+
+## Null-shape follow-up (local RTX 5090 Laptop, CUDA 13.1)
+
+Revuto's review of the rebased head found that `include_usage: bool` turned an explicit
+`"include_usage": null` into a serde 400 on both OpenAI routes, where the field used to be
+ignored. The field is now `Option<bool>`: only `true` opts in, `null` and `{}` join absent and
+`false` in the legacy-bytes test. `cargo test --release -p memra-server --lib` on the fix:
+714 passed, 0 failed, 5 ignored (`cuda-local-5090/test-null-shape.log`).

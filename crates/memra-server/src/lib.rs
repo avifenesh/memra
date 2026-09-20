@@ -3004,10 +3004,12 @@ fn acquire_request_slot(
 }
 
 /// OpenAI streaming options; omitted/null options preserve the legacy finish-chunk usage.
+/// `include_usage` is `Option<bool>` so an explicit `null` (clients that serialize unset
+/// optionals) parses as the legacy shape instead of a 400; only `true` opts in.
 #[derive(Default, Deserialize)]
 struct StreamOptions {
     #[serde(default)]
-    include_usage: bool,
+    include_usage: Option<bool>,
 }
 
 /// POST /v1/completions request body.
@@ -9300,7 +9302,11 @@ async fn completions_with_admission(
     let (tx, rx) = worker::event_channel();
     let model = req.model.clone();
     let stream = req.stream;
-    let include_usage = req.stream_options.as_ref().is_some_and(|o| o.include_usage);
+    let include_usage = req
+        .stream_options
+        .as_ref()
+        .and_then(|o| o.include_usage)
+        .unwrap_or(false);
     let affinity = match affinity_key(&req.session_id, &req.user, &headers) {
         Ok(affinity) => affinity,
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
@@ -9619,7 +9625,11 @@ async fn chat_completions_with_admission(
     };
     let model = req.model.clone();
     let stream = req.stream;
-    let include_usage = req.stream_options.as_ref().is_some_and(|o| o.include_usage);
+    let include_usage = req
+        .stream_options
+        .as_ref()
+        .and_then(|o| o.include_usage)
+        .unwrap_or(false);
     // Snapshot the capture payload BEFORE the plan build consumes the request. Only
     // marked tenants pay for the copy; everyone else gets a lock-read and a None.
     let capture_prompt = st
@@ -15858,7 +15868,12 @@ default_reasoning_effort = "always"
     #[tokio::test]
     async fn absent_or_false_include_usage_preserves_legacy_stream_bytes() {
         for chat in [true, false] {
-            for options in [None, Some(json!({"include_usage": false}))] {
+            for options in [
+                None,
+                Some(json!({"include_usage": false})),
+                Some(json!({"include_usage": null})),
+                Some(json!({})),
+            ] {
                 let mut request = json!({"model": "m", "prompt": "hi",
                     "messages": [{"role": "user", "content": "hi"}], "stream": true});
                 if let Some(options) = options {
@@ -15873,7 +15888,10 @@ default_reasoning_effort = "always"
                         .unwrap()
                         .stream_options
                 };
-                let include_usage = options.as_ref().is_some_and(|o| o.include_usage);
+                let include_usage = options
+                    .as_ref()
+                    .and_then(|o| o.include_usage)
+                    .unwrap_or(false);
                 let env = Envelope::new(chat);
                 let lines = sse_data_lines(
                     sse_response_for_format(
@@ -19756,7 +19774,10 @@ temperature = 0.6
         }))
         .unwrap();
         // No-op semantic forms and cosmetic user are accepted; usage is an active option.
-        assert!(req.stream_options.as_ref().unwrap().include_usage);
+        assert_eq!(
+            req.stream_options.as_ref().unwrap().include_usage,
+            Some(true)
+        );
         assert_eq!(req.response_format.as_ref().unwrap()["type"], "text");
         assert_eq!(req.logprobs.as_ref().unwrap().as_bool(), Some(false));
         assert_eq!(req.n, Some(1));
