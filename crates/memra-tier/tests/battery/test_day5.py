@@ -150,7 +150,8 @@ class Day5Tests(unittest.TestCase):
                     ('unproven', ['--storage-root', str(root)], 2),
                     ('development', ['--storage-root', str(root), '--allow-unproven-storage'], 0)]:
                 out = root/mode
-                proc = subprocess.run([*argv, '--out', str(out), *options, '--execute', str(fake)],
+                proc = subprocess.run([*argv, '--out', str(out), *options, '--execute', str(fake),
+                                      'roundtrip', str(root/'object'), '264', 'buffered'],
                                       env=env, text=True, capture_output=True, timeout=10)
                 self.assertEqual(proc.returncode, expected, proc.stderr)
                 if expected:

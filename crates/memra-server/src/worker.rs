@@ -6121,6 +6121,7 @@ struct PrefixEntry {
     /// In-flight fanout/cache-hit leases. A pinned entry is absent from the evictable LRU
     /// index until the last participating session retires.
     pins: usize,
+    _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -7391,6 +7392,9 @@ struct HostPrefixEntry {
     /// MEMRA_KV_HOST_VERIFY=1 arm: `prefix_entry_state_digest` of the device entry at demote,
     /// re-checked against the re-materialized entry at promote. None with the flag off.
     verify_digest: Option<String>,
+    _tier_metadata: Vec<u8>,
+    _tier_metadata_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
 }
 
 /// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU on purpose:
@@ -7399,6 +7403,7 @@ struct HostPrefixEntry {
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
 #[derive(Default)]
 struct HostPrefixCache {
+    tier: Option<HostTierContext>,
     arena: Option<memra_engine::PinnedHostArena>,
     arena_reserve_ms: f64,
     model_generations: HashMap<String, Arc<()>>,
@@ -7671,6 +7676,16 @@ impl HostPrefixCache {
     /// entry is the last-evicted device state: it may carry draft planes an older twin
     /// lacks, so it wins), then LRU-evict back under the host byte budget.
     fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry) -> bool {
+        if let Some(tier) = &self.tier {
+            let Some((program, generation)) = tier.programs.get(key) else {
+                return false;
+            };
+            if e._tier_charge.as_ref().and_then(|c| c.program()) != Some(program)
+                || e._tier_identity.lease(program, generation).is_err()
+            {
+                return false;
+            }
+        }
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
                 "[prefix-host] REFUSED demote insert: entry identity/version mismatch \
@@ -7789,6 +7804,204 @@ impl HostPrefixCache {
         self.purged_entries += entries as u64;
         self.purged_bytes += bytes as u64;
         (victims.len(), entries, bytes)
+    }
+}
+
+// Explicit owner injection only: None is the unchanged legacy path. The bootstrap must
+// supply artifact/plan/numeric/tenant provenance; it must never infer it from token IDs.
+struct HostTierContext {
+    governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
+    programs: HashMap<PoolKey, (memra_engine::cache::record::ProgramIdentity, Arc<()>)>,
+    device: u32,
+}
+impl HostPrefixCache {
+    fn tier_charge(
+        &self,
+        key: &PoolKey,
+        bytes: u64,
+        pageable: u64,
+        device: bool,
+    ) -> Result<Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>, String> {
+        use memra_engine::cache::tiered::*;
+        let Some(tier) = &self.tier else {
+            return Ok(None);
+        };
+        // A fixed arena is already charged by its owner. Until its backing lease is
+        // handed over, refuse rather than double-charge its slices or omit its quota.
+        if self.arena.is_some() {
+            return Err("tier fixed-arena lease handoff pending".into());
+        }
+        let (program, _) = tier
+            .programs
+            .get(key)
+            .ok_or("tier program identity missing")?;
+        let dimensions = tier
+            .governor
+            .lock()
+            .map_err(|_| "tier governor poisoned")?
+            .used()
+            .device
+            .len();
+        let mut request = BudgetRequest {
+            bytes: TierBudget::zero(dimensions),
+            priority: if device {
+                Priority::AdmittedRestore
+            } else {
+                Priority::Backup
+            },
+            deadline: Deadline(u64::MAX),
+            tenant: program.tenant_salt,
+        };
+        request.bytes.pageable = pageable;
+        if device {
+            *request
+                .bytes
+                .device
+                .get_mut(tier.device as usize)
+                .ok_or("tier device missing")? = bytes;
+        } else {
+            request.bytes.pinned = bytes;
+        }
+        crate::admit_memory::reserve_tier_image(tier.governor.clone(), program, &request)
+            .map(Some)
+            .map_err(|e| format!("tier admission refused: {e:?}"))
+    }
+
+    fn bind_tier_image(&self, entry: &mut HostPrefixEntry) -> Result<(), String> {
+        use memra_engine::cache::tiered::*;
+        let Some(tier) = &self.tier else {
+            return Ok(());
+        };
+        let (program, generation) = tier
+            .programs
+            .get(&entry.pool_key)
+            .ok_or("tier program identity missing")?;
+        if entry
+            .model_generation
+            .as_ref()
+            .is_none_or(|g| !Arc::ptr_eq(g, generation))
+        {
+            return Err("tier model generation mismatch".into());
+        }
+        // Narrow first slice: native plain KV + recurrent continuation. Other surfaces
+        // remain legacy-only when tier=None; enabled unsupported routes fail closed.
+        if entry.glm.is_some()
+            || entry.draft.is_some()
+            || entry.dspark_draft.is_some()
+            || entry.pos != entry.toks.len()
+            || entry.toks.is_empty()
+            || entry.last_logits.is_empty()
+            || entry.kv.len() != entry.conv.len()
+            || entry.kv.len() != entry.ssm.len()
+            || entry.kv.iter().all(Option::is_none)
+        {
+            return Err("tier image surface is not qualified".into());
+        }
+        let mut layout = RecordLayout {
+            version: WIRE_VERSION,
+            segments: vec![],
+            requirements: vec![],
+        };
+        let mut checksums = vec![];
+        let mut add = |role: Role,
+                       row: u64,
+                       encoding: &[u8],
+                       bytes: &[u8]|
+         -> std::result::Result<(), String> {
+            if bytes.is_empty() {
+                return Ok(());
+            }
+            let group = u32::try_from(layout.segments.len()).map_err(|_| "tier group overflow")?;
+            layout.segments.push(ByteSegment {
+                version: WIRE_VERSION,
+                group,
+                page: 0,
+                owner: tier.device,
+                role,
+                tensor: None,
+                offset: 0,
+                valid_bytes: bytes.len() as u64,
+                storage_bytes: bytes.len() as u64,
+                alignment: 1,
+                encoding: EncodingId {
+                    version: WIRE_VERSION,
+                    program: digest("native-kv-encoding", encoding),
+                    row_bytes: row,
+                },
+            });
+            layout.requirements.push(GroupRequirement {
+                version: WIRE_VERSION,
+                group,
+                owner: tier.device,
+                role,
+                page_count: 1,
+                pages: PageRequirement::AllPages,
+            });
+            checksums.push(checksum(bytes));
+            Ok(())
+        };
+        // Capture presence/length/order metadata as well as every payload. No raw pointers,
+        // padding, codec, alternate attention program or old handoff identity is imported.
+        let mut metadata = vec![];
+        metadata.extend((entry.pos as u64).to_le_bytes());
+        for planes in [&entry.conv, &entry.ssm] {
+            metadata.extend((planes.len() as u64).to_le_bytes());
+            for plane in planes {
+                metadata.push(u8::from(plane.is_some()));
+                metadata.extend((plane.as_ref().map_or(0, |p| p.len()) as u64).to_le_bytes());
+            }
+        }
+        metadata.extend((entry.kv.len() as u64).to_le_bytes());
+        for plane in &entry.kv {
+            metadata.push(u8::from(plane.is_some()));
+            if let Some(p) = plane {
+                if !p.k_tok_bytes.is_multiple_of(34)
+                    || !p.v_tok_bytes.is_multiple_of(24)
+                    || p.k_tok_bytes == 0
+                    || p.v_tok_bytes == 0
+                    || p.len != entry.pos
+                {
+                    return Err("tier native KV geometry mismatch".into());
+                }
+                for n in [p.len, p.k_tok_bytes, p.v_tok_bytes] {
+                    metadata.extend((n as u64).to_le_bytes());
+                }
+                add(Role::Key, p.k_tok_bytes as u64, b"q8_0", p.k.as_slice())?;
+                add(Role::Value, p.v_tok_bytes as u64, b"q5_1", p.v.as_slice())?;
+            }
+        }
+        for p in entry.conv.iter().chain(&entry.ssm).flatten() {
+            add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p))?;
+        }
+        add(
+            Role::Logits,
+            4,
+            b"f32-native",
+            f32s_as_bytes(&entry.last_logits),
+        )?;
+        add(Role::Hidden, 4, b"f32-native", f32s_as_bytes(&entry.last_h))?;
+        add(Role::Transaction, 1, b"host-prefix-shape-v1", &metadata)?;
+        let id = KvBlockId::new(program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
+            .map_err(|e| format!("{e:?}"))?;
+        let bundle = StateBundle {
+            version: WIRE_VERSION,
+            id,
+            program: program.clone(),
+            layout: layout.clone(),
+            kind: StateKind::ImmutablePrefix,
+            committed_high_water: entry.pos as u64,
+            owner_aliases: vec![],
+            checksums,
+        };
+        let metadata_charge =
+            self.tier_charge(&entry.pool_key, 0, metadata.capacity() as u64, false)?;
+        entry
+            ._tier_identity
+            .bind(bundle, &entry.toks, program, &layout, generation.clone())
+            .map_err(|e| format!("tier image identity refused: {e:?}"))?;
+        entry._tier_metadata_charge = metadata_charge;
+        entry._tier_metadata = metadata;
+        Ok(())
     }
 }
 
@@ -8002,6 +8215,9 @@ fn host_entry_from_device(
         _ => None,
     };
     let entry = HostPrefixEntry {
+        _tier_charge: None,
+        _tier_metadata_charge: None,
+        _tier_metadata: Vec::new(),
         _tier_identity: Default::default(),
         model_generation,
         glm,
@@ -8191,6 +8407,36 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Evaporated;
     }
+    let tier_charge = if host.tier.is_some() {
+        if dead.tp.is_some()
+            || dead.latent.iter().any(Option::is_some)
+            || dead.draft.is_some()
+            || dead.dspark_draft.is_some()
+        {
+            return HostDemoteOutcome::Failed;
+        }
+        let pinned = dead.kv.iter().flatten().try_fold(0usize, |n, p| {
+            p.k_tok_bytes
+                .checked_add(p.v_tok_bytes)
+                .and_then(|row| p.len.checked_mul(row))
+                .and_then(|bytes| n.checked_add(bytes))
+        });
+        let Some(pinned) = pinned else {
+            return HostDemoteOutcome::Failed;
+        };
+        let Some(pageable) = host_bytes.checked_sub(pinned) else {
+            return HostDemoteOutcome::Failed;
+        };
+        match host.tier_charge(&dead.pool_key, pinned as u64, pageable as u64, false) {
+            Ok(charge) => charge,
+            Err(err) => {
+                eprintln!("[prefix-host] {err}");
+                return HostDemoteOutcome::Failed;
+            }
+        }
+    } else {
+        None
+    };
     let t0 = Instant::now();
     let verify_digest = if kv_host_verify_on() {
         match host_roundtrip_digest(engine, dead) {
@@ -8204,7 +8450,13 @@ fn host_demote_prefix_ref(
         None
     };
     match host_entry_from_device(engine, host, dead, verify_digest) {
-        Ok(e) => {
+        Ok(mut e) => {
+            // Native D2H has completed and owns a distinct immutable image before bind.
+            e._tier_charge = tier_charge;
+            if let Err(err) = host.bind_tier_image(&mut e) {
+                eprintln!("[prefix-host] demote failed ({err}); nothing published");
+                return HostDemoteOutcome::Failed;
+            }
             let toks = e.toks.len();
             let bytes = e.bytes;
             if host.insert(&dead.pool_key, e) {
@@ -8494,6 +8746,7 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         None => None,
     };
     Ok(PrefixEntry {
+        _tier_charge: None,
         layout_version: src.layout_version,
         pool_key: src.pool_key.clone(),
         toks: src.toks.clone(),
@@ -8576,12 +8829,39 @@ fn host_promote_prefix_hit(
         return None;
     }
 
+    let tier_identity = if let Some(tier) = &host.tier {
+        let (program, generation) = tier.programs.get(pool_key)?;
+        // Old imports are unbound and cannot masquerade as generic-tier hits.
+        Some(candidate._tier_identity.lease(program, generation).ok()?)
+    } else {
+        None
+    };
+    // Synchronous borrow retains the actual host payload; no async submission is added.
+    let tier_charge = if host.tier.is_some() {
+        let hidden = candidate.last_h.len().checked_mul(4)?;
+        let device_bytes = candidate.device_bytes.checked_sub(hidden)?;
+        let pageable = candidate
+            .toks
+            .len()
+            .checked_add(candidate.last_logits.len())?
+            .checked_mul(4)?
+            .checked_add(hidden)?;
+        match host.tier_charge(pool_key, device_bytes as u64, pageable as u64, true) {
+            Ok(charge) => charge,
+            Err(err) => {
+                eprintln!("[prefix-host] promote refused ({err})");
+                return None;
+            }
+        }
+    } else {
+        None
+    };
     let (host_len, expected_digest) = {
         let e = &host.entries[pool_key][hi];
         (e.toks.len(), e.verify_digest.clone())
     };
     let t0 = Instant::now();
-    let e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
+    let mut e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
         Ok(e) => e,
         Err(err) => {
             host.rejected_allocs += 1;
@@ -8612,6 +8892,13 @@ fn host_promote_prefix_hit(
             }
         }
     }
+    if let (Some(identity), Some(tier)) = (&tier_identity, &host.tier) {
+        let (program, generation) = tier.programs.get(pool_key)?;
+        identity.require(program, generation).ok()?;
+    }
+    // Keep destination residency charged until this PrefixEntry is actually destroyed;
+    // the retained host twin keeps its independent source charge.
+    e._tier_charge = tier_charge;
     // Recency BEFORE the device insert: its demote sink can evict/replace host entries and
     // shift pool indexes, so `hi` must not be used past this point.
     host.touch(pool_key, hi);
@@ -9632,6 +9919,9 @@ fn host_entry_from_owned(
         })
         .transpose()?;
     Ok(HostPrefixEntry {
+        _tier_charge: None,
+        _tier_metadata_charge: None,
+        _tier_metadata: Vec::new(),
         _tier_identity: Default::default(),
         model_generation: None,
         glm: None,
@@ -10127,6 +10417,7 @@ fn prefix_snapshot(
         None
     };
     Ok(PrefixEntry {
+        _tier_charge: None,
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
         pool_key: pool_key.clone(),
         toks: toks.to_vec(),
@@ -11058,6 +11349,7 @@ fn prefix_insert_from_spec_boundary(
         bytes += tail.bytes();
     }
     let e = PrefixEntry {
+        _tier_charge: None,
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
         pool_key: pool_key.clone(),
         toks: committed[..pos].to_vec(),
@@ -30810,6 +31102,7 @@ mod tests {
     /// under test live entirely in the host-side key/toks matching.
     fn entry(pool_key: &PoolKey, toks: Vec<u32>) -> PrefixEntry {
         PrefixEntry {
+            _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
             pool_key: pool_key.clone(),
@@ -33267,6 +33560,7 @@ mod tests {
     /// exact-key dedupe never collides and survivors are readable back out of the pools).
     fn entry_b(pool_key: &PoolKey, ident: u32, bytes: usize) -> PrefixEntry {
         PrefixEntry {
+            _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
             pool_key: pool_key.clone(),
@@ -33306,6 +33600,9 @@ mod tests {
 
     fn host_entry(pool_key: &PoolKey, toks: Vec<u32>, bytes: usize) -> HostPrefixEntry {
         HostPrefixEntry {
+            _tier_charge: None,
+            _tier_metadata_charge: None,
+            _tier_metadata: Vec::new(),
             _tier_identity: Default::default(),
             model_generation: None,
             glm: None,

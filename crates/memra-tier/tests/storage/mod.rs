@@ -1,6 +1,4 @@
-#[allow(dead_code)]
-#[path = "../contracts/conformance.rs"]
-mod conformance;
+use memra_tier::conformance;
 mod retirement;
 #[allow(dead_code)]
 #[path = "../contracts/support.rs"]
