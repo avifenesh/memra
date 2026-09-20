@@ -250,6 +250,9 @@ impl SlotClass {
 /// SLRU GPU expert-residency cache. Slots remain fixed-address for the cache lifetime. Uniform
 /// models use one class; mixed-layout models may preallocate several exact-capacity classes.
 pub struct MoeSlotCache {
+    // Typed qualification door, default OFF. Owner-only service is never stored here.
+    banked: Option<memra_tier::bank::ExpertBankProxy>,
+    banked_pending: Option<memra_tier::bank::ExpertLeaseToken>,
     slots: Vec<CudaSlice<u8>>, // fixed GPU buffers; capacities live in `classes`
     slot_class: Vec<usize>,    // slot index -> size-class index
     classes: Vec<SlotClass>,
@@ -325,6 +328,8 @@ pub struct MoeSlotCache {
     prewarm_tried: HashSet<u16>,
 
     // --- §D.4 instrumentation ---
+    // Lifetime counter, only for the explicit bank qualification installer.
+    banked_evictions: u64,
     pub hits: u64,
     pub misses: u64,
     pub staged_bytes: u64, // total H2D bytes the cache caused (admit + first-miss transient)
@@ -581,6 +586,8 @@ impl MoeSlotCache {
         };
 
         Ok(MoeSlotCache {
+            banked: None,
+            banked_pending: None,
             slots,
             slot_class,
             classes,
@@ -612,6 +619,7 @@ impl MoeSlotCache {
             per_layer: HashMap::new(),
             dev_rows: HashMap::new(),
             prewarm_tried: HashSet::new(),
+            banked_evictions: 0,
             hits: 0,
             misses: 0,
             staged_bytes: 0,
@@ -738,6 +746,9 @@ impl MoeSlotCache {
 
     fn remove_occupant(&mut self, slot: usize) {
         if let Some(old) = self.occupant[slot].take() {
+            if self.banked.is_some() {
+                self.banked_evictions += 1;
+            }
             self.table.remove(&old);
             self.on_block_evicted(old.layer);
         }
@@ -879,7 +890,79 @@ impl MoeSlotCache {
 
     /// Admit a block: evict a victim, stage `host_bytes` into its slot, register residency, place in
     /// probation (new admissions enter probation — they earn promotion on a later hit).
+    /// All synchronous admission routes (demand, force, restage and prewarm) meet
+    /// here, so installing the typed door cannot retain a legacy mmap bypass.
     fn admit(
+        &mut self,
+        id: BlockId,
+        host_bytes: &[u8],
+        e: &Engine,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        if self.banked.is_some() {
+            return self.admit_banked(id, host_bytes.len(), e);
+        }
+        self.admit_native(id, host_bytes, e)
+    }
+
+    pub(crate) fn bank_pressure(&self) -> (usize, usize, u64) {
+        (
+            self.slots.len(),
+            self.slots.iter().map(|s| s.len()).sum(),
+            self.banked_evictions,
+        )
+    }
+
+    pub(crate) fn install_banked(
+        &mut self,
+        bank: memra_tier::bank::ExpertBankProxy,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.banked.is_some()
+            || !self.table.is_empty()
+            || !self.pending.is_empty()
+            || !self.worker_reads.is_empty()
+            || self.frequency_evict
+            || self.frozen
+            || self.pread_requested
+            || self.staged_bytes != 0
+        {
+            return Err("banked experts require an untouched default-SLRU cache".into());
+        }
+        self.banked = Some(bank);
+        Ok(())
+    }
+
+    fn admit_banked(
+        &mut self,
+        id: BlockId,
+        bytes: usize,
+        e: &Engine,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        if self.banked_pending.is_some() || self.frozen {
+            return Err("banked expert has unretired H2D or unsupported frozen dispatch".into());
+        }
+        let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
+        let local = (id.layer, id.proj, id.ex);
+        bank.validate(local, bytes)?;
+        if let Some(slot) = self.table.get(&id).copied() {
+            self.hits += 1;
+            self.on_hit(slot);
+            return Ok(slot);
+        }
+        self.misses += 1;
+        let token = bank.demand(local, bytes)?;
+        self.banked_pending = Some(token);
+        // Move only the identity out while borrowing payload on the owner. Put it
+        // back before observing completion, including any failed enqueue.
+        let token = self.banked_pending.take().unwrap();
+        let result = bank.with_bytes(&token, |payload| self.admit_native(id, payload, e));
+        self.banked_pending = Some(token);
+        e.stream().synchronize()?;
+        bank.finish(self.banked_pending.as_ref().unwrap())?;
+        self.banked_pending = None;
+        result?
+    }
+
+    fn admit_native(
         &mut self,
         id: BlockId,
         host_bytes: &[u8],
@@ -909,6 +992,16 @@ impl MoeSlotCache {
                     )).into())
                 }
             };
+        }
+        // The bank door must not publish a native-cache slot before its explicit
+        // copy completion is known. On an unknown result, leave it outside every
+        // cache table/queue so a later resident fast path cannot bypass the token
+        // refusal; Drop retries the drain and leaks slots if CUDA stays unknown.
+        if self.banked.is_some()
+            && let Err(err) = e.stream().synchronize()
+        {
+            self.compute_stream_unknown = true;
+            return Err(err.into());
         }
         self.staged_bytes += host_bytes.len() as u64;
         self.publish(id, slot);
@@ -1103,6 +1196,13 @@ impl MoeSlotCache {
         source: ExpertSource<'_>,
         e: &Engine,
     ) -> Result<DispatchSlot, Box<dyn std::error::Error>> {
+        if self.banked.is_some() {
+            let bytes = match &source {
+                ExpertSource::Memory { bytes, .. } => bytes.len(),
+                ExpertSource::Disk { len, .. } => *len,
+            };
+            return self.admit_banked(id, bytes, e).map(DispatchSlot::Resident);
+        }
         self.reap_copy_sources();
         let increment = self.frequency_increment(id);
         *self.frequencies.entry(id).or_insert(0.0) += increment;
@@ -1244,6 +1344,10 @@ impl MoeSlotCache {
         keep: &[BlockId],
         e: &Engine,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.banked.is_some() {
+            // No detached legacy prefetch may bypass the owner service.
+            return Ok(false);
+        }
         self.reap_copy_sources();
         if self.table.contains_key(&id)
             || self.pending.contains_key(&id)
@@ -1295,6 +1399,9 @@ impl MoeSlotCache {
         host_bytes: &[u8],
         e: &Engine,
     ) -> Result<usize, Box<dyn std::error::Error>> {
+        if self.banked.is_some() {
+            return self.admit_banked(id, host_bytes.len(), e);
+        }
         if let Some(s) = self.table.get(&id).copied() {
             return Ok(s);
         }
@@ -1326,6 +1433,9 @@ impl MoeSlotCache {
         m: &crate::hybrid::MoeWeights,
         e: &Engine,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.banked.is_some() {
+            return Err("banked expert freeze-profile restage is not qualified".into());
+        }
         if self.table.contains_key(&id) {
             return Ok(true);
         }
@@ -1900,6 +2010,16 @@ impl Drop for MoeSlotCache {
         // Event tracking is intentionally disabled in Engine. Drain explicit copy-stream handoffs
         // before either the destination slots or pinned read buffers begin field destruction.
         let mut safe_to_drop_slots = true;
+        if let Some(token) = &self.banked_pending {
+            if self.compute_stream.synchronize().is_err() {
+                safe_to_drop_slots = false;
+            } else if let Some(bank) = &self.banked {
+                // Wrong-thread teardown refuses; owner registry retains backing.
+                if bank.finish(token).is_ok() {
+                    self.banked_pending = None;
+                }
+            }
+        }
         if self.compute_stream_unknown || !self.compute_sources.is_empty() {
             if let Err(err) = self.compute_stream.synchronize() {
                 safe_to_drop_slots = false;
@@ -1957,3 +2077,6 @@ impl Drop for MoeSlotCache {
         }
     }
 }
+
+#[path = "banked_residency/native.rs"]
+mod banked_native;

@@ -1,0 +1,94 @@
+[
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 3.9714860916137695
+  },
+  {
+    "name": "mac-check",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0,
+    "seconds": 1.745678186416626
+  },
+  {
+    "name": "linux-check",
+    "command": [
+      "cargo",
+      "check",
+      "--target",
+      "x86_64-unknown-linux-gnu",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0,
+    "seconds": 0.7095680236816406
+  },
+  {
+    "name": "tests",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "seconds": 12.708418130874634
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 101,
+    "seconds": 3.1086950302124023
+  },
+  {
+    "name": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 0.25922489166259766
+  },
+  {
+    "name": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "seconds": 3.4779369831085205
+  }
+]

@@ -1,0 +1,130 @@
+diff --git a/crates/memra-engine/src/moe_cache.rs b/crates/memra-engine/src/moe_cache.rs
+index cf317061..5c1754e0 100644
+--- a/crates/memra-engine/src/moe_cache.rs
++++ b/crates/memra-engine/src/moe_cache.rs
+@@ -250,6 +250,10 @@ impl SlotClass {
+ /// SLRU GPU expert-residency cache. Slots remain fixed-address for the cache lifetime. Uniform
+ /// models use one class; mixed-layout models may preallocate several exact-capacity classes.
+ pub struct MoeSlotCache {
++    /// Explicit qualification-only byte source. Never installed by a default/env path.
++    banked: Option<Box<dyn memra_tier::bank::ExpertDispatchBank>>,
++    /// Failed H2D observation must retain the bank ticket/backing until owner drain.
++    banked_pending: Option<memra_tier::bank::ExpertDemand>,
+     slots: Vec<CudaSlice<u8>>, // fixed GPU buffers; capacities live in `classes`
+     slot_class: Vec<usize>,    // slot index -> size-class index
+     classes: Vec<SlotClass>,
+@@ -581,6 +585,8 @@ impl MoeSlotCache {
+         };
+ 
+         Ok(MoeSlotCache {
++            banked: None,
++            banked_pending: None,
+             slots,
+             slot_class,
+             classes,
+@@ -1097,12 +1103,66 @@ impl MoeSlotCache {
+         )
+     }
+ 
++    /// Install only on an empty cache, before the request starts. The source must
++    /// already bind the locked artifact, original ids and authoritative layouts.
++    #[allow(
++        dead_code,
++        reason = "qualification installer; model-scale gate pending"
++    )]
++    pub(crate) fn install_banked(
++        &mut self,
++        bank: Box<dyn memra_tier::bank::ExpertDispatchBank>,
++    ) -> Result<(), Box<dyn std::error::Error>> {
++        if self.banked.is_some()
++            || !self.table.is_empty()
++            || !self.pending.is_empty()
++            || !self.worker_reads.is_empty()
++            || self.frequency_evict
++            || self.frozen
++            || self.pread_requested
++        {
++            return Err("banked experts require empty default-SLRU mmap cache".into());
++        }
++        self.banked = Some(bank);
++        Ok(())
++    }
++
+     pub(crate) fn dispatch_source(
+         &mut self,
+         id: BlockId,
+         source: ExpertSource<'_>,
+         e: &Engine,
+     ) -> Result<DispatchSlot, Box<dyn std::error::Error>> {
++        if self.banked.is_some() {
++            let bytes = match &source {
++                ExpertSource::Memory { bytes, .. } => bytes.len(),
++                ExpertSource::Disk { len, .. } => *len,
++            };
++            if self.banked_pending.is_some() {
++                return Err("banked expert has unretired H2D; owner drain required".into());
++            }
++            let local = (id.layer, id.proj, id.ex);
++            self.banked.as_ref().unwrap().validate(local, bytes)?;
++            if let Some(slot) = self.table.get(&id).copied() {
++                self.hits += 1;
++                self.on_hit(slot);
++                return Ok(DispatchSlot::Resident(slot));
++            }
++            self.misses += 1;
++            let demand = self.banked.as_mut().unwrap().demand(local, bytes)?;
++            self.banked_pending = Some(demand);
++            let lease = self.banked_pending.as_ref().unwrap().lease.clone();
++            let backing = lease.resource::<Vec<u8>>()?;
++            let result = self.admit(id, &backing, e);
++            drop(backing);
++            drop(lease);
++            // Qualification-only serialized transfer: the existing numeric launch
++            // follows this call unchanged. Not a throughput/default promotion.
++            e.stream().synchronize()?;
++            let demand = self.banked_pending.take().unwrap();
++            self.banked.as_mut().unwrap().finish(demand)?;
++            return result.map(DispatchSlot::Resident);
++        }
+         self.reap_copy_sources();
+         let increment = self.frequency_increment(id);
+         *self.frequencies.entry(id).or_insert(0.0) += increment;
+@@ -1244,6 +1304,11 @@ impl MoeSlotCache {
+         keep: &[BlockId],
+         e: &Engine,
+     ) -> Result<bool, Box<dyn std::error::Error>> {
++        // No detached legacy byte source may bypass the installed bank. Native
++        // asynchronous bank prefetch awaits transfer-owned last-use retirement.
++        if self.banked.is_some() {
++            return Ok(false);
++        }
+         self.reap_copy_sources();
+         if self.table.contains_key(&id)
+             || self.pending.contains_key(&id)
+@@ -1900,6 +1965,26 @@ impl Drop for MoeSlotCache {
+         // Event tracking is intentionally disabled in Engine. Drain explicit copy-stream handoffs
+         // before either the destination slots or pinned read buffers begin field destruction.
+         let mut safe_to_drop_slots = true;
++        if self.banked_pending.is_some() {
++            match self.compute_stream.synchronize() {
++                Ok(()) => {
++                    if let (Some(bank), Some(demand)) =
++                        (&mut self.banked, self.banked_pending.take())
++                    {
++                        let _ = bank.finish(demand);
++                    }
++                }
++                Err(_) => {
++                    safe_to_drop_slots = false;
++                    if let Some(bank) = self.banked.take() {
++                        std::mem::forget(bank);
++                    }
++                    if let Some(demand) = self.banked_pending.take() {
++                        std::mem::forget(demand);
++                    }
++                }
++            }
++        }
+         if self.compute_stream_unknown || !self.compute_sources.is_empty() {
+             if let Err(err) = self.compute_stream.synchronize() {
+                 safe_to_drop_slots = false;

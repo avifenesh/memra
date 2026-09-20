@@ -104,6 +104,10 @@ pub mod kda;
 /// oracle for the MLA kernel family (`research/mla-bringup-20260801/DESIGN.md`). No CUDA deps.
 pub mod mla;
 pub mod mla_ffi;
+mod model_memory;
+#[cfg(test)]
+mod model_memory_fixture;
+mod model_memory_plan;
 pub mod moe_sel_dump;
 pub mod moesd;
 pub mod o2_band;
@@ -125,6 +129,8 @@ pub mod spec;
 /// caller-tagged emit lines so banked receipts keep their grep shape. No CUDA deps
 /// beyond the stream drains at phase boundaries.
 pub mod spec_phase;
+/// Owner-stream CUDA `TransferEngine` (memra-tier v1.3) used by the tier qualification gates.
+pub mod tier_transfer;
 pub mod tp;
 pub mod tp_ar;
 pub mod tp_expert_split;
@@ -5838,8 +5844,8 @@ impl Engine {
         &self,
         k_rows: &CudaSlice<f32>,
         v_rows: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t0_dev: &CudaSlice<i32>,
         t: usize,
         kv_dim_k: usize,
@@ -5848,6 +5854,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let f = if g {
             self.func_g("append_quantize_kv_q8_0_q5_1_rows_dc")
         } else {
@@ -5885,8 +5894,8 @@ impl Engine {
         &self,
         k_row: &CudaSlice<f32>,
         v_row: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t0_dev: &mut CudaSlice<i32>,
         kv_dim_k: usize,
         kv_dim_v: usize,
@@ -5894,6 +5903,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let f = if g {
             self.func_g("append_quantize_kv_q8_0_q5_1_dc_inc")
         } else {
@@ -6668,11 +6680,13 @@ impl Engine {
     /// u8 twin of copy_into (D2D byte-range copy at an offset).
     pub fn copy_u8_into(
         &self,
-        dst: &mut CudaSlice<u8>,
+        dst: &mut impl memra_kv::KvWrite,
         off: usize,
         src: &CudaSlice<u8>,
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let dst = &mut dst.kv_view_mut();
+
         // try_slice_mut, not slice_mut: an out-of-bounds range here panics the GPU worker
         // thread and takes the whole server with it (2026-08-29 warm-turn-at-40k incident).
         // A bounds miss is a caller bug, but it must fail the request, not the fleet.
@@ -6692,12 +6706,14 @@ impl Engine {
     /// D2D byte-range copy with explicit source and destination offsets.
     pub fn copy_u8_range_into(
         &self,
-        dst: &mut CudaSlice<u8>,
+        dst: &mut impl memra_kv::KvWrite,
         dst_off: usize,
         src: &CudaSlice<u8>,
         src_off: usize,
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let dst = &mut dst.kv_view_mut();
+
         // try_slice_mut for the same reason as copy_u8_into: bounds misses fail the request,
         // never panic the worker.
         let cap = dst.len();
@@ -6789,10 +6805,12 @@ impl Engine {
     /// adaptive trim head: no realloc, so captured graphs keep their baked addresses.
     pub fn htod_u8_into(
         &self,
-        dst: &mut CudaSlice<u8>,
+        dst: &mut impl memra_kv::KvWrite,
         off: usize,
         src: &[u8],
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let dst = &mut dst.kv_view_mut();
+
         let mut view = dst.slice_mut(off..off + src.len());
         self.gpu.stream().memcpy_htod(src, &mut view)?;
         Ok(())
@@ -6828,8 +6846,8 @@ impl Engine {
         &self,
         k_row: &CudaSlice<f32>,
         v_row: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t: usize,
         kv_dim_k: usize,
         kv_dim_v: usize,
@@ -6837,6 +6855,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let f = if g {
             self.func_g("append_quantize_kv_q8_0_q5_1")
         } else {
@@ -6875,8 +6896,8 @@ impl Engine {
         &self,
         k_row: &CudaSlice<f32>,
         v_row: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t_dev: &CudaSlice<i32>,
         kv_dim_k: usize,
         kv_dim_v: usize,
@@ -6884,6 +6905,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let nblk = (kv_dim_k.max(kv_dim_v) / 32) as u32;
         let (kdk, kdv) = (kv_dim_k as i32, kv_dim_v as i32);
         let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
@@ -6957,8 +6981,8 @@ impl Engine {
         &self,
         k_rows: &CudaSlice<f32>,
         v_rows: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t0: usize,
         t: usize,
         kv_dim_k: usize,
@@ -6967,6 +6991,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         if std::env::var("MEMRA_PRIME_APPEND_LOOP").is_ok() {
             for i in 0..t {
                 let k_row = k_rows.slice(i * kv_dim_k..(i + 1) * kv_dim_k);
@@ -7045,8 +7072,8 @@ impl Engine {
         &self,
         k_row: &cudarc::driver::CudaView<f32>,
         v_row: &cudarc::driver::CudaView<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t: usize,
         kv_dim_k: usize,
         kv_dim_v: usize,
@@ -7054,6 +7081,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let stream = self.gpu.stream();
         ensure_tensor_stream_device(k_row, &stream, "append_kv_quantized_view.k_row")?;
         ensure_tensor_stream_device(v_row, &stream, "append_kv_quantized_view.v_row")?;
@@ -16676,13 +16706,16 @@ impl Engine {
         freq_scale: f32,
         ff: Option<&CudaSlice<f32>>,
         eps: f32,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t_dev: &CudaSlice<i32>,
         k_tok_bytes: usize,
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         // 0 = this family has no such norm; every kernel here reads a null
         // weight as "pass the row through" (an all-ones weight would not be).
         let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
@@ -16865,13 +16898,16 @@ impl Engine {
         freq_scale: f32,
         ff: Option<&CudaSlice<f32>>,
         eps: f32,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t: usize,
         k_tok_bytes: usize,
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         // 0 = this family has no such norm; every kernel here reads a null
         // weight as "pass the row through" (an all-ones weight would not be).
         let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
@@ -27735,10 +27771,56 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.sdpa_naive_quantized_view_fmt(
+            q,
+            k,
+            v,
+            o,
+            head_dim,
+            n_head,
+            n_head_kv,
+            t,
+            t_kv,
+            scale,
+            causal,
+            k_tok_bytes,
+            v_tok_bytes,
+            false,
+        )
+    }
+
+    /// `sdpa_naive_quantized_view` with the KV plane FORMAT named: `fp8_planes` selects the
+    /// kf8vf8 flash module's `fa_dequant_kv_ws_f32` (gemma's e4m3 global/windowed layers,
+    /// `MEMRA_GEMMA_GKV` / `MEMRA_GEMMA_WKV`), the default selects the q8_0/q5_1 module. Same
+    /// entry name, compile-time format (build.rs), so the caller must say which planes it holds
+    /// — reading e4m3 bytes through the q8_0 dequant is silent garbage, not an error.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn sdpa_naive_quantized_view_fmt(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &cudarc::driver::CudaView<u8>,
+        v: &cudarc::driver::CudaView<u8>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        t: usize,
+        t_kv: usize,
+        scale: f32,
+        causal: bool,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        fp8_planes: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let kv_dim = n_head_kv * head_dim;
         let mut kf = self.uninit(t_kv * kv_dim)?;
         let mut vf = self.uninit(t_kv * kv_dim)?;
-        let f = self.func("fa_dequant_kv_ws_f32");
+        let f = if fp8_planes {
+            self.func_g("fa_dequant_kv_ws_f32")
+        } else {
+            self.func("fa_dequant_kv_ws_f32")
+        };
         let total = (2 * t_kv * kv_dim) as u64;
         #[allow(clippy::manual_div_ceil)]
         // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
@@ -27796,10 +27878,54 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.sdpa_naive_w_quantized_view_fmt(
+            q,
+            k,
+            v,
+            o,
+            head_dim,
+            n_head,
+            n_head_kv,
+            t,
+            t_kv,
+            scale,
+            causal,
+            window,
+            k_tok_bytes,
+            v_tok_bytes,
+            false,
+        )
+    }
+
+    /// Format-named twin of `sdpa_naive_w_quantized_view`; see `sdpa_naive_quantized_view_fmt`.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn sdpa_naive_w_quantized_view_fmt(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &cudarc::driver::CudaView<u8>,
+        v: &cudarc::driver::CudaView<u8>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        t: usize,
+        t_kv: usize,
+        scale: f32,
+        causal: bool,
+        window: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        fp8_planes: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let kv_dim = n_head_kv * head_dim;
         let mut kf = self.uninit(t_kv * kv_dim)?;
         let mut vf = self.uninit(t_kv * kv_dim)?;
-        let f = self.func("fa_dequant_kv_ws_f32");
+        let f = if fp8_planes {
+            self.func_g("fa_dequant_kv_ws_f32")
+        } else {
+            self.func("fa_dequant_kv_ws_f32")
+        };
         let total = (2 * t_kv * kv_dim) as u64;
         #[allow(clippy::manual_div_ceil)]
         // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
@@ -29333,6 +29459,103 @@ impl Engine {
         Ok(())
     }
 
+    /// GEMMA VIEW TWIN (memra#535 P1a speed fix): attention for a prime chunk over the
+    /// quantized KV planes, at FA speed. Pass 1 dequants the byte view `[0, t_kv)` ONCE into the
+    /// shared bf16 workspace (`fa_prefill_view_ws`'s pass 1 — `fa_dequant_kv_ws_bf16`, module
+    /// selected by the planes' format: `fp8_planes` = gemma's e4m3 globals/windowed layers via
+    /// the kf8vf8 fatbin). Pass 2 runs the bf16 FA kernels gemma's fresh prime already uses —
+    /// `fa_prefill_w_pre` (hd 256, windowed; `window == t_kv` when no window is live) or
+    /// `fa_prefill_hd512_pre` (the globals) — with the causal offset `t_kv - t`, so chunk 0 and
+    /// every later chunk attend the same dequantized values through the same reduction. The
+    /// naive `sdpa_naive[_w]_quantized_view_fmt` twins remain the `MEMRA_NOFA` diagnostic arm;
+    /// measured without this twin the 12B primed a 4882-token prompt in 11.78 s against 0.52 s
+    /// on the fresh path (research/exec-p1a-gemma-prime-20260919/).
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn gemma_prefill_view_bf16(
+        &self,
+        qb: &CudaSlice<u8>,
+        k: &cudarc::driver::CudaView<u8>,
+        v: &cudarc::driver::CudaView<u8>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        t: usize,
+        t_kv: usize,
+        scale: f32,
+        window: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        fp8_planes: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let kv_dim_k = n_head_kv * head_dim;
+        let kv_dim_v = n_head_kv * head_dim;
+        let k_ws_bytes = t_kv * kv_dim_k * 2; // bf16
+        let v_ws_bytes = t_kv * kv_dim_v * 2;
+        // Lock held across both launches: enqueue-only, all compute serializes on gpu.stream.
+        let mut guard = self.prime_deqw_ws.lock().unwrap();
+        let need_grow = match guard.as_ref() {
+            Some((kw, vw)) => kw.len() < k_ws_bytes || vw.len() < v_ws_bytes,
+            None => true,
+        };
+        if need_grow {
+            let grow = |cur: usize, need: usize| if cur >= need { cur } else { need };
+            let (ck, cv) = guard
+                .as_ref()
+                .map(|(a, b)| (a.len(), b.len()))
+                .unwrap_or((0, 0));
+            *guard = Some((
+                self.alloc_u8(grow(ck, k_ws_bytes))?,
+                self.alloc_u8(grow(cv, v_ws_bytes))?,
+            ));
+        }
+        let (kw, vw) = guard.as_mut().unwrap();
+        {
+            let f = if fp8_planes {
+                self.func_g("fa_dequant_kv_ws_bf16")
+            } else {
+                self.func("fa_dequant_kv_ws_bf16")
+            };
+            let total = (t_kv * (kv_dim_k + kv_dim_v)) as u64;
+            let nblk = total.div_ceil(256).min(65535 * 16) as u32;
+            let cfg = LaunchConfig {
+                grid_dim: (nblk.max(1), 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let (kdk, kdv, tkvi) = (kv_dim_k as i32, kv_dim_v as i32, t_kv as i32);
+            let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(k)
+                .arg(v)
+                .arg(&mut *kw)
+                .arg(&mut *vw)
+                .arg(&kdk)
+                .arg(&kdv)
+                .arg(&tkvi)
+                .arg(&ktb)
+                .arg(&vtb);
+            unsafe {
+                b.launch(cfg)?;
+            }
+        }
+        // Pass 2: the workspace holds bf16 K and bf16 V (v_f16 = false: the wrappers re-encode V
+        // to f16 themselves where a stamp reads f16).
+        let kw: &CudaSlice<u8> = kw;
+        let vw: &CudaSlice<u8> = vw;
+        if head_dim == 512 {
+            self.fa_prefill_hd512_pre(
+                qb, kw, vw, o, head_dim, n_head, n_head_kv, t, t_kv, scale, true, false,
+            )
+        } else {
+            let win = if window > 0 { window } else { t_kv };
+            self.fa_prefill_w_pre(
+                qb, kw, vw, o, head_dim, n_head, n_head_kv, t, t_kv, scale, true, win, false,
+            )
+        }
+    }
+
     /// ARC B (2026-07-05): dequant-once chunk-prime FA. Same contract as `fa_prefill_view`, but
     /// instead of every (q-block, head) CTA re-dequanting the whole quantized KV stream inline
     /// (T/64 x n_head redundant at chunk prime — 30.5% of the 32k prime wall), dequant the full
@@ -29343,7 +29566,8 @@ impl Engine {
     /// The workspace allocation is REUSED across layers/chunks (grown to the largest shape);
     /// contents are rewritten per call. MEMRA_PRIME_DEQW=0 falls back to fa_prefill_view (callers gate).
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
+    #[allow(clippy::manual_div_ceil)]
+    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn fa_prefill_view_ws(
         &self,
         q: &CudaSlice<f32>,
@@ -31911,8 +32135,8 @@ impl Engine {
         &self,
         k_row: &CudaSlice<f32>,
         v_row: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         len_dev: &CudaSlice<i32>,
         base_dev: Option<&CudaSlice<i32>>,
         kv_dim_k: usize,
@@ -31920,6 +32144,9 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let f = self.func("append_quantize_kv_q8_0_q5_1_dcw");
         let nblk = (kv_dim_k.max(kv_dim_v) / 32) as u32;
         let cfg = LaunchConfig {

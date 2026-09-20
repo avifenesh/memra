@@ -1,5 +1,5 @@
 //! CPU reference schedules. These do not qualify any production backend or device.
-pub mod conformance;
+pub use memra_tier::conformance;
 mod peer;
 mod rows;
 mod services;

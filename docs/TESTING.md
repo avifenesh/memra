@@ -742,6 +742,13 @@ is a rig extrapolation.
 
 ### Fixtures
 
+`python3 tools/test_release_battery_coverage.py` runs the release battery against controlled
+CPU stand-ins for its GPU binaries. It verifies environment sanitation, the exact K=1..8
+greedy verdict set, required kernel manifests, named skips and their fixed release budget,
+and nonzero-exit rejection. Narrowed, duplicated, missing, failed, and malformed results must
+fail while complete coverage passes. CI runs this fixture; it is control-flow evidence and
+does not qualify any model or GPU kernel.
+
 `tools/test_check_flags.sh` (flags census), `tools/test_flags_guard.sh` (the PRE-PUSH census arm
 **and both of the hook's escape hatches**: a real `git push` through the real hook into a bare
 local origin, so the wiring is exercised rather than grepped; arms 5 and 8 assert that
@@ -814,6 +821,19 @@ fresh child processes for unset, 0, 1, 16, 8, 32, invalid and empty values, chec
 explicit gate rollback and refusal, and verify a new thread's environment policy.
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
+
+
+### Model-owned device admission and reclaim (#544)
+
+`tools/qualify-model-device-memory.py` runs the named native ownership/memory stages
+under an external exact per-card lease: one physical card for same-device owner coverage,
+two for GLM peer state/reclaim and worker admission/pinned-source refill. Each stage
+requires a source/binary-bound build receipt and preserves raw output, telemetry and
+lease completion. See [protocol](../research/glm-tp-device-ownership-20260920/QUALIFICATION.md)
+and [native results](../research/glm-tp-device-ownership-20260920/NATIVE-RESULTS.md).
+The 2026-09-20 PRO 6000 run passed all three synthetic stages. GPU KDA/lazy-index-key
+allocation coverage, full-checkpoint serving and performance remain pending; these are
+not model-support or full release-battery receipts.
 
 ## Generic spill / tiered KV (memra-tier)
 

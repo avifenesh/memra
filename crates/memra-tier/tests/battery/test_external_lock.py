@@ -92,12 +92,16 @@ class ExternalLockTests(unittest.TestCase):
             for name in [*names, 'tier-lock-proof.py', 'port-guard.sh']:
                 shutil.copy(ROOT/'tools'/name, tools/name)
             patch = ROOT/'research/spill-d-20260919/LEGACY-EXTERNAL-LOCK.diff'
+            # The authorized fragment is now applied in-tree. Reverse/reapply in
+            # the disposable tree to keep its historical assertion-preservation teeth.
+            subprocess.run(['git', 'apply', '--reverse', str(patch)], cwd=root, check=True, capture_output=True)
+            originals = {name: (tools/name).read_text() for name in names}
             subprocess.run(['git', 'apply', str(patch)], cwd=root, check=True, capture_output=True)
             for i, name in enumerate(names):
                 script = tools/name
                 source = script.read_text()
                 marker = '# Two DISJOINT' if i == 0 else '# Same fixtures'
-                original = (ROOT/'tools'/name).read_text()
+                original = originals[name]
                 self.assertEqual(source[source.index(marker):], original[original.index(marker):])
                 self.assertNotIn('pkill', source)
                 self.assertNotIn('flock -w', source)

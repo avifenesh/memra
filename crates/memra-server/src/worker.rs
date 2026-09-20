@@ -15,6 +15,7 @@
 //! interleave: a long generation and a freshly-admitted one make forward progress in the same loop,
 //! so the second produces tokens before the first finishes (not serialized end-to-end).
 
+mod device_memory;
 mod host_glm;
 mod host_memory;
 
@@ -1880,14 +1881,27 @@ pub enum Cmd {
     },
 }
 
-/// What `Cmd::TrimPools` freed, by pool (entry counts, not bytes — the device memory
-/// returns to CUDA on drop and shows up in `nvidia-smi` free within a tick).
+/// Evictable entries dropped and allocator occupancy after fencing every model owner.
 #[derive(Debug, serde::Serialize)]
 pub struct TrimReport {
     pub reuse_entries: usize,
     pub spec_reuse_entries: usize,
     pub dspark_reuse_entries: usize,
     pub prefix_entries: usize,
+    pub devices: Vec<DeviceTrimReport>,
+}
+
+/// Default-pool accounting, once per physical device. Live allocations include active
+/// sessions, model state and pinned source leases; trim never releases those bytes.
+#[derive(Debug, serde::Serialize)]
+pub struct DeviceTrimReport {
+    pub device: usize,
+    pub reclaimed_bytes: usize,
+    pub still_owned_bytes: usize,
+    pub pool_reserved_bytes: usize,
+    pub pool_cached_bytes: usize,
+    pub driver_free_bytes: Option<usize>,
+    pub synchronization_errors: Vec<String>,
 }
 
 /// What `Cmd::PurgeTenantHost` removed (lane/kv-tenancy-compaction-20260831). `host_*`
@@ -5588,8 +5602,9 @@ struct PpStageAdmission {
 struct AdmissionDeviceRequirement {
     device: usize,
     session_bytes: usize,
-    tp_kv_bytes: usize,
-    pending_tp_kv_bytes: usize,
+    state_bytes: usize,
+    pending_state_bytes: usize,
+    workspace_bytes: usize,
     reserve_bytes: usize,
     boundary_bytes: usize,
 }
@@ -5597,8 +5612,9 @@ struct AdmissionDeviceRequirement {
 impl AdmissionDeviceRequirement {
     fn required(self) -> usize {
         self.session_bytes
-            .saturating_add(self.tp_kv_bytes)
-            .saturating_add(self.pending_tp_kv_bytes)
+            .saturating_add(self.state_bytes)
+            .saturating_add(self.pending_state_bytes)
+            .saturating_add(self.workspace_bytes)
             .saturating_add(self.reserve_bytes)
             .saturating_add(self.boundary_bytes)
     }
@@ -5609,11 +5625,11 @@ impl AdmissionDeviceRequirement {
         self.boundary_bytes = self.boundary_bytes.saturating_add(stage.boundary_bytes);
     }
 
-    fn add_tp_kv(&mut self, bytes: usize, pending: bool, reserve_bytes: usize) {
+    fn add_state(&mut self, bytes: usize, pending: bool, reserve_bytes: usize) {
         if pending {
-            self.pending_tp_kv_bytes = self.pending_tp_kv_bytes.saturating_add(bytes);
+            self.pending_state_bytes = self.pending_state_bytes.saturating_add(bytes);
         } else {
-            self.tp_kv_bytes = self.tp_kv_bytes.saturating_add(bytes);
+            self.state_bytes = self.state_bytes.saturating_add(bytes);
         }
         // One device-local transient floor covers the stage walker and its rank-local attention
         // work. Co-located PP stages retain their existing additive reserve above.
@@ -5645,8 +5661,9 @@ fn pp_device_requirements(
             requirements.push(AdmissionDeviceRequirement {
                 device,
                 session_bytes: stage.session_bytes,
-                tp_kv_bytes: 0,
-                pending_tp_kv_bytes: 0,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
                 reserve_bytes: stage.reserve_bytes,
                 boundary_bytes: stage.boundary_bytes,
             });
@@ -5655,7 +5672,7 @@ fn pp_device_requirements(
     requirements
 }
 
-fn add_tp_kv_requirements(
+fn add_state_requirements(
     requirements: &mut Vec<AdmissionDeviceRequirement>,
     charges: &[StepTpKvDeviceAdmission],
     pending: bool,
@@ -5666,17 +5683,18 @@ fn add_tp_kv_requirements(
             .iter_mut()
             .find(|requirement| requirement.device == charge.device)
         {
-            existing.add_tp_kv(charge.bytes, pending, reserve_bytes);
+            existing.add_state(charge.bytes, pending, reserve_bytes);
         } else {
             let mut requirement = AdmissionDeviceRequirement {
                 device: charge.device,
                 session_bytes: 0,
-                tp_kv_bytes: 0,
-                pending_tp_kv_bytes: 0,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
                 reserve_bytes: 0,
                 boundary_bytes: 0,
             };
-            requirement.add_tp_kv(charge.bytes, pending, reserve_bytes);
+            requirement.add_state(charge.bytes, pending, reserve_bytes);
             requirements.push(requirement);
         }
     }
@@ -5687,8 +5705,9 @@ fn parallel_device_requirements(
     primary_cost: usize,
     reserve_bytes: usize,
     pp: Option<(&[usize], &[PpStageAdmission])>,
-    request_tp_kv: &[StepTpKvDeviceAdmission],
-    pending_tp_kv: &[StepTpKvDeviceAdmission],
+    request_state: &[StepTpKvDeviceAdmission],
+    pending_state: &[StepTpKvDeviceAdmission],
+    peer_workspace: &[StepTpKvDeviceAdmission],
 ) -> Vec<AdmissionDeviceRequirement> {
     let mut requirements = if let Some((devices, stages)) = pp {
         pp_device_requirements(devices, stages)
@@ -5696,19 +5715,37 @@ fn parallel_device_requirements(
         vec![AdmissionDeviceRequirement {
             device: primary_device,
             session_bytes: primary_cost,
-            tp_kv_bytes: 0,
-            pending_tp_kv_bytes: 0,
+            state_bytes: 0,
+            pending_state_bytes: 0,
+            workspace_bytes: 0,
             reserve_bytes,
             boundary_bytes: 0,
         }]
     };
-    add_tp_kv_requirements(&mut requirements, request_tp_kv, false, reserve_bytes);
-    add_tp_kv_requirements(&mut requirements, pending_tp_kv, true, reserve_bytes);
+    add_state_requirements(&mut requirements, request_state, false, reserve_bytes);
+    add_state_requirements(&mut requirements, pending_state, true, reserve_bytes);
+    for charge in peer_workspace {
+        // Install participation/reserve without treating workspace as pending cache state.
+        add_state_requirements(
+            &mut requirements,
+            &[StepTpKvDeviceAdmission {
+                device: charge.device,
+                bytes: 0,
+            }],
+            false,
+            reserve_bytes,
+        );
+        let requirement = requirements
+            .iter_mut()
+            .find(|r| r.device == charge.device)
+            .unwrap();
+        requirement.workspace_bytes = requirement.workspace_bytes.saturating_add(charge.bytes);
+    }
     requirements.sort_unstable_by_key(|requirement| requirement.device);
     requirements
 }
 
-fn merge_tp_kv_charges(
+fn merge_state_charges(
     totals: &mut Vec<StepTpKvDeviceAdmission>,
     charges: &[StepTpKvDeviceAdmission],
 ) {
@@ -5722,7 +5759,7 @@ fn merge_tp_kv_charges(
     totals.sort_unstable_by_key(|charge| charge.device);
 }
 
-fn active_unmaterialized_tp_kv(
+fn active_unmaterialized_state(
     active: &[Session],
     loaded: &HashMap<String, LoadedModel>,
 ) -> Result<Vec<StepTpKvDeviceAdmission>, String> {
@@ -5744,8 +5781,8 @@ fn active_unmaterialized_tp_kv(
         };
         let charges = model
             .model
-            .step_tp_unmaterialized_kv_bytes(Some(cache), cache.max_ctx)?;
-        merge_tp_kv_charges(&mut totals, &charges);
+            .unmaterialized_state_bytes(Some(cache), cache.max_ctx)?;
+        merge_state_charges(&mut totals, &charges);
     }
     Ok(totals)
 }
@@ -5909,30 +5946,48 @@ fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>
     if floor == 0 {
         return;
     }
-    for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
-        let Ok((driver_free, _)) = dev_engine.ctx().mem_get_info() else {
-            return;
-        };
-        let (reserved, used) = dev_engine.pool_reserved_used();
-        let Some(keep) = driver_headroom_trim_keep(driver_free, reserved, used, floor) else {
-            return;
-        };
-        let released = dev_engine.pool_trim_to(keep);
-        let after = dev_engine
-            .ctx()
-            .mem_get_info()
-            .map(|(f, _)| f)
-            .unwrap_or(driver_free);
-        eprintln!(
-            "[admit-trim] dev{device} driver free {}MB < floor {}MB with {}MB cached in the \
-             pool: trimmed {}MB (driver free now {}MB) before {why}",
-            driver_free >> 20,
-            floor >> 20,
-            reserved.saturating_sub(used) >> 20,
-            released >> 20,
-            after >> 20,
-        );
-    });
+    let owners = model_device_engines(engine, loaded);
+    let tight_devices: std::collections::HashSet<_> = owners
+        .iter()
+        .filter_map(|owner| {
+            let (free, _) = owner.ctx().mem_get_info().ok()?;
+            // Pending frees can still read as used until every owning stream is drained.
+            (free < floor).then(|| owner.ctx().ordinal())
+        })
+        .collect();
+    let tight_owners: Vec<_> = owners
+        .into_iter()
+        .filter(|owner| tight_devices.contains(&owner.ctx().ordinal()))
+        .collect();
+    device_memory::reclaim(
+        &tight_owners,
+        |owner| owner.ctx().ordinal(),
+        |owner| owner.stream().synchronize().map_err(|err| err.to_string()),
+        |device, dev_engine, errors| {
+            for err in errors {
+                eprintln!("[admit-trim] dev{device} synchronization failed before {why}: {err}");
+            }
+            let Ok((driver_free, _)) = dev_engine.ctx().mem_get_info() else {
+                return;
+            };
+            let (reserved, used) = dev_engine.pool_reserved_used();
+            let Some(keep) = driver_headroom_trim_keep(driver_free, reserved, used, floor) else {
+                return;
+            };
+            let released = dev_engine.pool_trim_to(keep);
+            let (still_reserved, still_owned) = dev_engine.pool_reserved_used();
+            let after = dev_engine
+                .ctx()
+                .mem_get_info()
+                .map(|(f, _)| f)
+                .unwrap_or(driver_free);
+            eprintln!(
+                "[admit-trim] dev{device} driver_free_bytes={driver_free} floor_bytes={floor} \
+                 reclaimed_bytes={released} still_owned_bytes={still_owned} \
+                 pool_reserved_bytes={still_reserved} driver_free_after={after} before {why}",
+            );
+        },
+    );
 }
 
 fn step_oom_retries() -> u32 {
@@ -6121,6 +6176,7 @@ struct PrefixEntry {
     /// In-flight fanout/cache-hit leases. A pinned entry is absent from the evictable LRU
     /// index until the last participating session retires.
     pins: usize,
+    _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -7391,6 +7447,9 @@ struct HostPrefixEntry {
     /// MEMRA_KV_HOST_VERIFY=1 arm: `prefix_entry_state_digest` of the device entry at demote,
     /// re-checked against the re-materialized entry at promote. None with the flag off.
     verify_digest: Option<String>,
+    _tier_metadata: Vec<u8>,
+    _tier_metadata_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
 }
 
 /// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU on purpose:
@@ -7399,6 +7458,7 @@ struct HostPrefixEntry {
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
 #[derive(Default)]
 struct HostPrefixCache {
+    tier: Option<HostTierContext>,
     arena: Option<memra_engine::PinnedHostArena>,
     arena_reserve_ms: f64,
     model_generations: HashMap<String, Arc<()>>,
@@ -7671,6 +7731,16 @@ impl HostPrefixCache {
     /// entry is the last-evicted device state: it may carry draft planes an older twin
     /// lacks, so it wins), then LRU-evict back under the host byte budget.
     fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry) -> bool {
+        if let Some(tier) = &self.tier {
+            let Some((program, generation)) = tier.programs.get(key) else {
+                return false;
+            };
+            if e._tier_charge.as_ref().and_then(|c| c.program()) != Some(program)
+                || e._tier_identity.lease(program, generation).is_err()
+            {
+                return false;
+            }
+        }
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
                 "[prefix-host] REFUSED demote insert: entry identity/version mismatch \
@@ -7789,6 +7859,204 @@ impl HostPrefixCache {
         self.purged_entries += entries as u64;
         self.purged_bytes += bytes as u64;
         (victims.len(), entries, bytes)
+    }
+}
+
+// Explicit owner injection only: None is the unchanged legacy path. The bootstrap must
+// supply artifact/plan/numeric/tenant provenance; it must never infer it from token IDs.
+struct HostTierContext {
+    governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
+    programs: HashMap<PoolKey, (memra_engine::cache::record::ProgramIdentity, Arc<()>)>,
+    device: u32,
+}
+impl HostPrefixCache {
+    fn tier_charge(
+        &self,
+        key: &PoolKey,
+        bytes: u64,
+        pageable: u64,
+        device: bool,
+    ) -> Result<Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>, String> {
+        use memra_engine::cache::tiered::*;
+        let Some(tier) = &self.tier else {
+            return Ok(None);
+        };
+        // A fixed arena is already charged by its owner. Until its backing lease is
+        // handed over, refuse rather than double-charge its slices or omit its quota.
+        if self.arena.is_some() {
+            return Err("tier fixed-arena lease handoff pending".into());
+        }
+        let (program, _) = tier
+            .programs
+            .get(key)
+            .ok_or("tier program identity missing")?;
+        let dimensions = tier
+            .governor
+            .lock()
+            .map_err(|_| "tier governor poisoned")?
+            .used()
+            .device
+            .len();
+        let mut request = BudgetRequest {
+            bytes: TierBudget::zero(dimensions),
+            priority: if device {
+                Priority::AdmittedRestore
+            } else {
+                Priority::Backup
+            },
+            deadline: Deadline(u64::MAX),
+            tenant: program.tenant_salt,
+        };
+        request.bytes.pageable = pageable;
+        if device {
+            *request
+                .bytes
+                .device
+                .get_mut(tier.device as usize)
+                .ok_or("tier device missing")? = bytes;
+        } else {
+            request.bytes.pinned = bytes;
+        }
+        crate::admit_memory::reserve_tier_image(tier.governor.clone(), program, &request)
+            .map(Some)
+            .map_err(|e| format!("tier admission refused: {e:?}"))
+    }
+
+    fn bind_tier_image(&self, entry: &mut HostPrefixEntry) -> Result<(), String> {
+        use memra_engine::cache::tiered::*;
+        let Some(tier) = &self.tier else {
+            return Ok(());
+        };
+        let (program, generation) = tier
+            .programs
+            .get(&entry.pool_key)
+            .ok_or("tier program identity missing")?;
+        if entry
+            .model_generation
+            .as_ref()
+            .is_none_or(|g| !Arc::ptr_eq(g, generation))
+        {
+            return Err("tier model generation mismatch".into());
+        }
+        // Narrow first slice: native plain KV + recurrent continuation. Other surfaces
+        // remain legacy-only when tier=None; enabled unsupported routes fail closed.
+        if entry.glm.is_some()
+            || entry.draft.is_some()
+            || entry.dspark_draft.is_some()
+            || entry.pos != entry.toks.len()
+            || entry.toks.is_empty()
+            || entry.last_logits.is_empty()
+            || entry.kv.len() != entry.conv.len()
+            || entry.kv.len() != entry.ssm.len()
+            || entry.kv.iter().all(Option::is_none)
+        {
+            return Err("tier image surface is not qualified".into());
+        }
+        let mut layout = RecordLayout {
+            version: WIRE_VERSION,
+            segments: vec![],
+            requirements: vec![],
+        };
+        let mut checksums = vec![];
+        let mut add = |role: Role,
+                       row: u64,
+                       encoding: &[u8],
+                       bytes: &[u8]|
+         -> std::result::Result<(), String> {
+            if bytes.is_empty() {
+                return Ok(());
+            }
+            let group = u32::try_from(layout.segments.len()).map_err(|_| "tier group overflow")?;
+            layout.segments.push(ByteSegment {
+                version: WIRE_VERSION,
+                group,
+                page: 0,
+                owner: tier.device,
+                role,
+                tensor: None,
+                offset: 0,
+                valid_bytes: bytes.len() as u64,
+                storage_bytes: bytes.len() as u64,
+                alignment: 1,
+                encoding: EncodingId {
+                    version: WIRE_VERSION,
+                    program: digest("native-kv-encoding", encoding),
+                    row_bytes: row,
+                },
+            });
+            layout.requirements.push(GroupRequirement {
+                version: WIRE_VERSION,
+                group,
+                owner: tier.device,
+                role,
+                page_count: 1,
+                pages: PageRequirement::AllPages,
+            });
+            checksums.push(checksum(bytes));
+            Ok(())
+        };
+        // Capture presence/length/order metadata as well as every payload. No raw pointers,
+        // padding, codec, alternate attention program or old handoff identity is imported.
+        let mut metadata = vec![];
+        metadata.extend((entry.pos as u64).to_le_bytes());
+        for planes in [&entry.conv, &entry.ssm] {
+            metadata.extend((planes.len() as u64).to_le_bytes());
+            for plane in planes {
+                metadata.push(u8::from(plane.is_some()));
+                metadata.extend((plane.as_ref().map_or(0, |p| p.len()) as u64).to_le_bytes());
+            }
+        }
+        metadata.extend((entry.kv.len() as u64).to_le_bytes());
+        for plane in &entry.kv {
+            metadata.push(u8::from(plane.is_some()));
+            if let Some(p) = plane {
+                if !p.k_tok_bytes.is_multiple_of(34)
+                    || !p.v_tok_bytes.is_multiple_of(24)
+                    || p.k_tok_bytes == 0
+                    || p.v_tok_bytes == 0
+                    || p.len != entry.pos
+                {
+                    return Err("tier native KV geometry mismatch".into());
+                }
+                for n in [p.len, p.k_tok_bytes, p.v_tok_bytes] {
+                    metadata.extend((n as u64).to_le_bytes());
+                }
+                add(Role::Key, p.k_tok_bytes as u64, b"q8_0", p.k.as_slice())?;
+                add(Role::Value, p.v_tok_bytes as u64, b"q5_1", p.v.as_slice())?;
+            }
+        }
+        for p in entry.conv.iter().chain(&entry.ssm).flatten() {
+            add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p))?;
+        }
+        add(
+            Role::Logits,
+            4,
+            b"f32-native",
+            f32s_as_bytes(&entry.last_logits),
+        )?;
+        add(Role::Hidden, 4, b"f32-native", f32s_as_bytes(&entry.last_h))?;
+        add(Role::Transaction, 1, b"host-prefix-shape-v1", &metadata)?;
+        let id = KvBlockId::new(program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
+            .map_err(|e| format!("{e:?}"))?;
+        let bundle = StateBundle {
+            version: WIRE_VERSION,
+            id,
+            program: program.clone(),
+            layout: layout.clone(),
+            kind: StateKind::ImmutablePrefix,
+            committed_high_water: entry.pos as u64,
+            owner_aliases: vec![],
+            checksums,
+        };
+        let metadata_charge =
+            self.tier_charge(&entry.pool_key, 0, metadata.capacity() as u64, false)?;
+        entry
+            ._tier_identity
+            .bind(bundle, &entry.toks, program, &layout, generation.clone())
+            .map_err(|e| format!("tier image identity refused: {e:?}"))?;
+        entry._tier_metadata_charge = metadata_charge;
+        entry._tier_metadata = metadata;
+        Ok(())
     }
 }
 
@@ -8002,6 +8270,9 @@ fn host_entry_from_device(
         _ => None,
     };
     let entry = HostPrefixEntry {
+        _tier_charge: None,
+        _tier_metadata_charge: None,
+        _tier_metadata: Vec::new(),
         _tier_identity: Default::default(),
         model_generation,
         glm,
@@ -8191,6 +8462,36 @@ fn host_demote_prefix_ref(
         );
         return HostDemoteOutcome::Evaporated;
     }
+    let tier_charge = if host.tier.is_some() {
+        if dead.tp.is_some()
+            || dead.latent.iter().any(Option::is_some)
+            || dead.draft.is_some()
+            || dead.dspark_draft.is_some()
+        {
+            return HostDemoteOutcome::Failed;
+        }
+        let pinned = dead.kv.iter().flatten().try_fold(0usize, |n, p| {
+            p.k_tok_bytes
+                .checked_add(p.v_tok_bytes)
+                .and_then(|row| p.len.checked_mul(row))
+                .and_then(|bytes| n.checked_add(bytes))
+        });
+        let Some(pinned) = pinned else {
+            return HostDemoteOutcome::Failed;
+        };
+        let Some(pageable) = host_bytes.checked_sub(pinned) else {
+            return HostDemoteOutcome::Failed;
+        };
+        match host.tier_charge(&dead.pool_key, pinned as u64, pageable as u64, false) {
+            Ok(charge) => charge,
+            Err(err) => {
+                eprintln!("[prefix-host] {err}");
+                return HostDemoteOutcome::Failed;
+            }
+        }
+    } else {
+        None
+    };
     let t0 = Instant::now();
     let verify_digest = if kv_host_verify_on() {
         match host_roundtrip_digest(engine, dead) {
@@ -8204,7 +8505,13 @@ fn host_demote_prefix_ref(
         None
     };
     match host_entry_from_device(engine, host, dead, verify_digest) {
-        Ok(e) => {
+        Ok(mut e) => {
+            // Native D2H has completed and owns a distinct immutable image before bind.
+            e._tier_charge = tier_charge;
+            if let Err(err) = host.bind_tier_image(&mut e) {
+                eprintln!("[prefix-host] demote failed ({err}); nothing published");
+                return HostDemoteOutcome::Failed;
+            }
             let toks = e.toks.len();
             let bytes = e.bytes;
             if host.insert(&dead.pool_key, e) {
@@ -8494,6 +8801,7 @@ fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<Pref
         None => None,
     };
     Ok(PrefixEntry {
+        _tier_charge: None,
         layout_version: src.layout_version,
         pool_key: src.pool_key.clone(),
         toks: src.toks.clone(),
@@ -8576,12 +8884,39 @@ fn host_promote_prefix_hit(
         return None;
     }
 
+    let tier_identity = if let Some(tier) = &host.tier {
+        let (program, generation) = tier.programs.get(pool_key)?;
+        // Old imports are unbound and cannot masquerade as generic-tier hits.
+        Some(candidate._tier_identity.lease(program, generation).ok()?)
+    } else {
+        None
+    };
+    // Synchronous borrow retains the actual host payload; no async submission is added.
+    let tier_charge = if host.tier.is_some() {
+        let hidden = candidate.last_h.len().checked_mul(4)?;
+        let device_bytes = candidate.device_bytes.checked_sub(hidden)?;
+        let pageable = candidate
+            .toks
+            .len()
+            .checked_add(candidate.last_logits.len())?
+            .checked_mul(4)?
+            .checked_add(hidden)?;
+        match host.tier_charge(pool_key, device_bytes as u64, pageable as u64, true) {
+            Ok(charge) => charge,
+            Err(err) => {
+                eprintln!("[prefix-host] promote refused ({err})");
+                return None;
+            }
+        }
+    } else {
+        None
+    };
     let (host_len, expected_digest) = {
         let e = &host.entries[pool_key][hi];
         (e.toks.len(), e.verify_digest.clone())
     };
     let t0 = Instant::now();
-    let e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
+    let mut e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
         Ok(e) => e,
         Err(err) => {
             host.rejected_allocs += 1;
@@ -8612,6 +8947,13 @@ fn host_promote_prefix_hit(
             }
         }
     }
+    if let (Some(identity), Some(tier)) = (&tier_identity, &host.tier) {
+        let (program, generation) = tier.programs.get(pool_key)?;
+        identity.require(program, generation).ok()?;
+    }
+    // Keep destination residency charged until this PrefixEntry is actually destroyed;
+    // the retained host twin keeps its independent source charge.
+    e._tier_charge = tier_charge;
     // Recency BEFORE the device insert: its demote sink can evict/replace host entries and
     // shift pool indexes, so `hi` must not be used past this point.
     host.touch(pool_key, hi);
@@ -9632,6 +9974,9 @@ fn host_entry_from_owned(
         })
         .transpose()?;
     Ok(HostPrefixEntry {
+        _tier_charge: None,
+        _tier_metadata_charge: None,
+        _tier_metadata: Vec::new(),
         _tier_identity: Default::default(),
         model_generation: None,
         glm: None,
@@ -10127,6 +10472,7 @@ fn prefix_snapshot(
         None
     };
     Ok(PrefixEntry {
+        _tier_charge: None,
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
         pool_key: pool_key.clone(),
         toks: toks.to_vec(),
@@ -11058,6 +11404,7 @@ fn prefix_insert_from_spec_boundary(
         bytes += tail.bytes();
     }
     let e = PrefixEntry {
+        _tier_charge: None,
         layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
         pool_key: pool_key.clone(),
         toks: committed[..pos].to_vec(),
@@ -14251,11 +14598,13 @@ pub fn run(
         // answer the waiting admin caller. In-flight sessions and pinned prefix-cache
         // leases are untouched; the freed device memory returns to CUDA on drop.
         for tx in pending_trims.drain(..) {
-            let report = TrimReport {
+            synchronize_model_devices(&engine, &loaded, "admin-trim-before-drop");
+            let mut report = TrimReport {
                 reuse_entries: reuse.values().map(Vec::len).sum(),
                 spec_reuse_entries: spec_reuse.values().map(Vec::len).sum(),
                 dspark_reuse_entries: dspark_reuse.values().map(Vec::len).sum(),
                 prefix_entries: px.evict_all(),
+                devices: Vec::new(),
             };
             reuse.clear();
             spec_reuse.clear();
@@ -14264,11 +14613,7 @@ pub fn run(
             // RELEASE_THRESHOLD=MAX for graph-launch speed) — invisible to a green
             // process. Hand the cached blocks back to the driver so nvidia-smi free
             // actually rises (measured: 8GB of dropped pools, 0MiB visible until this).
-            let released = engine.pool_trim_to_zero();
-            eprintln!(
-                "[trim] mempool released {}MiB to the driver",
-                released >> 20
-            );
+            report.devices = trim_model_device_pools(&engine, &loaded, "admin-trim");
             eprintln!(
                 "[trim] pools dropped: reuse={} spec={} dspark={} prefix={}",
                 report.reuse_entries,
@@ -14895,26 +15240,47 @@ pub fn run(
                     );
                 }
                 let reserve = reserve.saturating_add(vg_debt);
-                let request_tp_kv = match loaded[&model_key]
+                let request_state = match loaded[&model_key]
                     .model
-                    .step_tp_unmaterialized_kv_bytes(None, admission_cap)
+                    .unmaterialized_state_bytes(None, admission_cap)
                 {
                     Ok(charges) => charges,
                     Err(err) => {
                         fail_request(
                             req,
-                            EngineError::engine(format!("Step TP KV admission plan failed: {err}")),
+                            EngineError::engine(format!(
+                                "model state admission plan failed: {err}"
+                            )),
                         );
                         continue;
                     }
                 };
-                let pending_tp_kv = match active_unmaterialized_tp_kv(&active, &loaded) {
+                let peer_workspace = if admit_prefill_workspace_on() {
+                    match loaded[&model_key]
+                        .model
+                        .peer_prefill_workspace_bytes(prompt_len)
+                    {
+                        Ok(charges) => charges,
+                        Err(err) => {
+                            fail_request(
+                                req,
+                                EngineError::engine(format!(
+                                    "peer prefill workspace admission failed: {err}"
+                                )),
+                            );
+                            continue;
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+                let pending_state = match active_unmaterialized_state(&active, &loaded) {
                     Ok(charges) => charges,
                     Err(err) => {
                         fail_request(
                             req,
                             EngineError::engine(format!(
-                                "active Step TP KV reservation failed: {err}"
+                                "active model state reservation failed: {err}"
                             )),
                         );
                         continue;
@@ -14999,8 +15365,9 @@ pub fn run(
                 let mut required_eager =
                     admission_required(cost.saturating_sub(draft_state_bytes), reserve);
                 let device_requirements = if pp_plan.is_some()
-                    || !request_tp_kv.is_empty()
-                    || !pending_tp_kv.is_empty()
+                    || !request_state.is_empty()
+                    || !pending_state.is_empty()
+                    || !peer_workspace.is_empty()
                 {
                     Some(parallel_device_requirements(
                         engine.ctx().ordinal(),
@@ -15009,8 +15376,9 @@ pub fn run(
                         pp_plan
                             .as_ref()
                             .map(|(devices, stages)| (devices.as_slice(), stages.as_slice())),
-                        &request_tp_kv,
-                        &pending_tp_kv,
+                        &request_state,
+                        &pending_state,
+                        &peer_workspace,
                     ))
                 } else {
                     None
@@ -15020,12 +15388,13 @@ pub fn run(
                         .iter()
                         .map(|requirement| {
                             format!(
-                                "dev{} session {:.0}MB + tp-kv {:.0}MB + pending-tp-kv \
-                                 {:.0}MB + reserve {:.0}MB + boundary {:.3}MB",
+                                "dev{} session {:.0}MB + state {:.0}MB + pending-state \
+                                 {:.0}MB + peer-workspace {:.0}MB + reserve {:.0}MB + boundary {:.3}MB",
                                 requirement.device,
                                 requirement.session_bytes as f64 / 1e6,
-                                requirement.tp_kv_bytes as f64 / 1e6,
-                                requirement.pending_tp_kv_bytes as f64 / 1e6,
+                                requirement.state_bytes as f64 / 1e6,
+                                requirement.pending_state_bytes as f64 / 1e6,
+                                requirement.workspace_bytes as f64 / 1e6,
                                 requirement.reserve_bytes as f64 / 1e6,
                                 requirement.boundary_bytes as f64 / 1e6,
                             )
@@ -15034,9 +15403,18 @@ pub fn run(
                         .join("; ");
                     eprintln!("[admission] parallel device plan: [{budgets}]");
                 }
-                if let Some(mut headroom) =
-                    admission_headroom(&engine, &loaded, device_requirements.as_deref())
-                {
+                let measured_headroom =
+                    admission_headroom(&engine, &loaded, device_requirements.as_deref());
+                if device_requirements.is_some() && measured_headroom.is_none() {
+                    fail_request(
+                        req,
+                        EngineError::engine(
+                            "cannot read every model-owned device for memory admission",
+                        ),
+                    );
+                    continue;
+                }
+                if let Some(mut headroom) = measured_headroom {
                     // EFFECTIVE free, not driver `free`: `mem_get_info` cannot see blocks the
                     // async pool holds mapped-but-not-live (Engine::new pins RELEASE_THRESHOLD
                     // to u64::MAX), yet the next alloc is satisfied from exactly those bytes,
@@ -15326,8 +15704,9 @@ pub fn run(
                         && memra_engine::spec::spec_capture_gate_on()
                         && {
                             let requirements_eager = if pp_plan.is_some()
-                                || !request_tp_kv.is_empty()
-                                || !pending_tp_kv.is_empty()
+                                || !request_state.is_empty()
+                                || !pending_state.is_empty()
+                                || !peer_workspace.is_empty()
                             {
                                 Some(parallel_device_requirements(
                                     engine.ctx().ordinal(),
@@ -15336,8 +15715,9 @@ pub fn run(
                                     pp_plan.as_ref().map(|(devices, stages)| {
                                         (devices.as_slice(), stages.as_slice())
                                     }),
-                                    &request_tp_kv,
-                                    &pending_tp_kv,
+                                    &request_state,
+                                    &pending_state,
+                                    &peer_workspace,
                                 ))
                             } else {
                                 None
@@ -15365,9 +15745,7 @@ pub fn run(
                         // fence every device, hand cached pool blocks back to the
                         // driver, and re-read before declaring headroom unattainable.
                         oom_teardown_fence(&engine, &loaded);
-                        for_each_device_engine(&engine, &loaded, &mut |_d, dev_engine| {
-                            let _ = dev_engine.pool_trim_to_zero();
-                        });
+                        trim_model_device_pools(&engine, &loaded, "admission-drain");
                         // The captured-arm and eager-arm device plans DIFFER, and the
                         // Devices-variant sufficiency check reads its per-device
                         // requirements rather than the scalar — evaluate each arm against
@@ -15375,8 +15753,9 @@ pub fn run(
                         // captured plan and never recovered; measured on the med-class
                         // cell's post-drain 429 cluster).
                         let requirements_eager = if pp_plan.is_some()
-                            || !request_tp_kv.is_empty()
-                            || !pending_tp_kv.is_empty()
+                            || !request_state.is_empty()
+                            || !pending_state.is_empty()
+                            || !peer_workspace.is_empty()
                         {
                             Some(parallel_device_requirements(
                                 engine.ctx().ordinal(),
@@ -15385,8 +15764,9 @@ pub fn run(
                                 pp_plan.as_ref().map(|(devices, stages)| {
                                     (devices.as_slice(), stages.as_slice())
                                 }),
-                                &request_tp_kv,
-                                &pending_tp_kv,
+                                &request_state,
+                                &pending_state,
+                                &peer_workspace,
                             ))
                         } else {
                             None
@@ -15484,16 +15864,17 @@ pub fn run(
                                         .map(|device| {
                                             format!(
                                                 "dev{} free {:.0}MB (pool-cached {:.0}MB) vs \
-                                             required {:.0}MB = session {:.0}MB + tp-kv \
-                                             {:.0}MB + pending-tp-kv {:.0}MB + reserve {:.0}MB \
+                                             required {:.0}MB = session {:.0}MB + state \
+                                             {:.0}MB + pending-state {:.0}MB + peer-workspace {:.0}MB + reserve {:.0}MB \
                                              + boundary {:.3}MB [pool res {:.0}MB used {:.0}MB]",
                                                 device.requirement.device,
                                                 device.free_bytes as f64 / 1e6,
                                                 device.pool_cached_bytes as f64 / 1e6,
                                                 device.requirement.required() as f64 / 1e6,
                                                 device.requirement.session_bytes as f64 / 1e6,
-                                                device.requirement.tp_kv_bytes as f64 / 1e6,
-                                                device.requirement.pending_tp_kv_bytes as f64 / 1e6,
+                                                device.requirement.state_bytes as f64 / 1e6,
+                                                device.requirement.pending_state_bytes as f64 / 1e6,
+                                                device.requirement.workspace_bytes as f64 / 1e6,
                                                 device.requirement.reserve_bytes as f64 / 1e6,
                                                 device.requirement.boundary_bytes as f64 / 1e6,
                                                 device.pool_reserved_bytes as f64 / 1e6,
@@ -17806,12 +18187,11 @@ pub fn run(
             // bytes would starve it (the owner's card sat at 5 MiB driver-free while the
             // pool held the room).
             oom_teardown_fence(&engine, &loaded);
-            let mut trimmed_total = 0usize;
-            let mut trim_devices = 0usize;
-            for_each_device_engine(&engine, &loaded, &mut |_device, dev_engine| {
-                trimmed_total += dev_engine.pool_trim_to_zero();
-                trim_devices += 1;
+            let reports = trim_model_device_pools(&engine, &loaded, "oom-teardown");
+            let trimmed_total = reports.iter().fold(0usize, |total, report| {
+                total.saturating_add(report.reclaimed_bytes)
             });
+            let trim_devices = reports.len();
             eprintln!(
                 "[admit-oom] step-OOM teardown complete: {} session(s) dropped behind a \
                  device fence; pool trim released {}MB across {} device(s)",
@@ -19125,24 +19505,21 @@ fn admission_headroom(
         });
     };
 
+    let owners = model_device_engines(engine, loaded);
+    device_admission_headroom(&owners, requirements)
+}
+
+/// Read the physical owners selected by the model topology, including peer-local pools.
+fn device_admission_headroom(
+    owners: &[&Engine],
+    requirements: &[AdmissionDeviceRequirement],
+) -> Option<AdmissionHeadroom> {
     let mut devices = Vec::with_capacity(requirements.len());
     for &requirement in requirements {
-        let device_engine = if engine.ctx().ordinal() == requirement.device {
-            Some(engine)
-        } else {
-            memra_engine::pp::PpNRt::get(engine)
-                .ok()
-                .and_then(|runtime| {
-                    (0..runtime.n_stages())
-                        .map(|stage| runtime.engine(stage, engine))
-                        .find(|stage| stage.ctx().ordinal() == requirement.device)
-                })
-                .or_else(|| {
-                    loaded
-                        .values()
-                        .find_map(|model| model.model.step_tp_rank_engine(requirement.device))
-                })
-        }?;
+        let device_engine = owners
+            .iter()
+            .copied()
+            .find(|owner| owner.ctx().ordinal() == requirement.device)?;
         let (free_bytes, pool_cached_bytes) = effective_free_bytes(device_engine)?;
         let (pool_reserved_bytes, pool_used_bytes) = device_engine.pool_reserved_used();
         devices.push(AdmissionDeviceHeadroom {
@@ -22842,14 +23219,15 @@ fn prefill_tick(
         return Ok(0);
     }
     let mut consumed = 0usize;
-    // EAGER-ONLY prime shape (lane/gemma4-serve-gaps, 2026-08-07): gemma4's prime is
-    // fresh-monolithic ONLY — no chunked and no continuation prime (the engine refuses
-    // pos > 0; before it refused, chunk 2 of a >tick-budget prompt KILLED the worker on
-    // gemma4_prime's assert, in both scheduler modes). So: fresh prompts prime WHOLE
-    // (budget uncapped — a long gemma4 prompt trades one long tick for correctness),
-    // carried suffixes (reuse/prefix resume) ride the tokenwise decode_step path, and the
-    // LCP split is skipped (its boundary-stop would turn the tail into a continuation).
-    let eager_mono = eager_only_model(lm);
+    // MONOLITHIC-PRIME shape (lane/gemma4-serve-gaps, 2026-08-07; narrowed by memra#535 P1a):
+    // a model whose prime has no chunked/continuation program takes the WHOLE queued prompt
+    // in one call (budget uncapped — one long tick, the incident class of 2026-09-05) and
+    // rides carried suffixes tokenwise. Dense gemma left this class: its text prime now runs
+    // the generic chunked driver (`prime_layers_gemma`), chunkinv/tickinv bit-identical at
+    // model scale, so it takes tick-budget chunks like the serial trunk (26B-A4B included once
+    // its router left cuBLAS, memra#562). Still monolithic: E4B (PLE), hyper trunks (own walker).
+    let eager_only = eager_only_model(lm);
+    let eager_mono = monolithic_prime_model(lm);
     let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
     // CARRIED-SUFFIX PRIME CARVE-OUT (lane/glm5-prefix-latent2, 2026-09-01): hyper trunks
     // (glm5_next) are eager-only for BATCHING reasons, not prime reasons — their engine
@@ -22877,17 +23255,20 @@ fn prefill_tick(
             s.model
         );
     }
-    if eager_mono && !suffix_prime {
+    if eager_only && !suffix_prime {
+        // Captures stay keyed on the EAGER-ONLY class, not the monolithic-prime class: dense
+        // gemma can continuation-prime now (memra#535 P1a), but its prefix snapshot is still
+        // refused by the SWA flat-history layout (memra#151) and its plain-affinity resume has
+        // no gate yet, so a boundary stop here would buy a capture nothing can consume.
         s.snapshot_at = None;
     }
-    if eager_mono {
-        // eager-only models (gemma4) cannot continuation-prime a suffix over a rewound cache
-        // (the engine refuses pos > 0 prime), so plain-affinity resume excludes them — no
-        // point capturing a checkpoint they can never resume from. This stays cleared for
-        // hyper trunks under the carve-out too: `maybe_plain_checkpoint` refuses to arm on
-        // latent-bearing caches in its own right (the parent lane's guard), so a checkpoint
-        // here could never be consumed — the LCP-split retention above is the deliberate
-        // delta, the checkpoint clearing is not.
+    if eager_only {
+        // eager-only models cannot (gemma4: not YET, see above) consume a plain-affinity
+        // checkpoint — no point capturing one. This stays cleared for hyper trunks under the
+        // carve-out too: `maybe_plain_checkpoint` refuses to arm on latent-bearing caches in
+        // its own right (the parent lane's guard), so a checkpoint here could never be
+        // consumed — the LCP-split retention above is the deliberate delta, the checkpoint
+        // clearing is not.
         s.ckpt_at = None;
     }
     // BOUNDARY STOP: the prime must stop exactly at the NEXT of two pre-generation boundaries
@@ -23147,6 +23528,19 @@ fn eager_only_model(lm: &LoadedModel) -> bool {
         // `engine_error` after one token. The converted paths — forward, forward_last,
         // prime_cache, decode_step — are exactly the ones the eager-only class uses.
         || memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
+}
+
+/// MONOLITHIC-PRIME class (memra#535 P1a, lane/exec-p1a-gemma-prime): must this model's prime
+/// take the WHOLE queued prompt in one call? Derived, not asserted: the eager-only class minus
+/// the gemma plans whose every trunk operation carries the generic chunked-prime receipt
+/// (`op_registry` column `chunked_prime`, manifest `CHUNKED_PRIME`, `docs/EXECUTION-SURFACES.md`).
+/// Dense gemma (12B / 31B: chunkinv and tickinv bit-identical on the rented 5090,
+/// `research/exec-p1a-gemma-prime-20260919/`) therefore primes in tick-budget chunks like the
+/// serial trunk. gemma-4-26B-A4B joined once its MoE router left the m-dependent cuBLAS matmul
+/// (memra#562; chunkinv/tickinv EXACT). E4B (PLE prime) and hyper trunks (their own walker
+/// program) keep the whole-prompt take.
+fn monolithic_prime_model(lm: &LoadedModel) -> bool {
+    eager_only_model(lm) && !(lm.model.uses_gemma_program() && lm.model.chunked_prime_supported())
 }
 
 /// BATCHED-DECODE carve-out from the eager-only class (lane/gemma-batched, 2026-08-16):
@@ -24269,12 +24663,12 @@ fn step_session(
             trace.mark_prime_start();
         }
         let q = s.prefill_queue.len();
-        // EAGER-ONLY prime shape (lane/gemma4-serve-gaps): same law as prefill_tick —
-        // gemma4 primes fresh prompts WHOLE (no chunked prime in the engine; chunk 2 used
-        // to kill the worker) and carried suffixes tokenwise (no continuation prime).
-        // Hyper trunks carve out of the carried veto under MEMRA_HYPER_SUFFIX_PRIME
-        // exactly as in prefill_tick (lane/glm5-prefix-latent2 — one law, both sites).
-        let eager_mono = eager_only_model(lm);
+        // MONOLITHIC-PRIME shape: same law as prefill_tick — models without the chunked-prime
+        // receipt prime fresh prompts WHOLE and carried suffixes tokenwise; dense gemma left
+        // this class in memra#535 P1a (`monolithic_prime_model`). Hyper trunks carve out of
+        // the carried veto under MEMRA_HYPER_SUFFIX_PRIME exactly as in prefill_tick
+        // (lane/glm5-prefix-latent2 — one law, both sites).
+        let eager_mono = monolithic_prime_model(lm);
         let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
         let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
         let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
@@ -25508,41 +25902,71 @@ fn retire_may_park(aborted: bool, oom_teardown: bool) -> bool {
     !aborted && !oom_teardown
 }
 
-/// Run `f` on every device engine a serving process can hold state on: the worker's
-/// primary engine, every PP stage engine, and every Step-TP rank engine
-/// (lane/step37-vram-admission-20260830). Used by the step-OOM teardown fence and the
-/// post-teardown pool trim — both must cover EVERY device a torn-down session's caches
-/// lived on, not just the primary.
+/// Model-owned topology is shared by admission, recovery, calibration and admin trim.
+/// Deduplicate owners, not ordinals: distinct engines can own streams on one device.
+fn model_device_engines<'a>(
+    engine: &'a Engine,
+    loaded: &'a HashMap<String, LoadedModel>,
+) -> Vec<&'a Engine> {
+    device_memory::unique_owners(
+        std::iter::once(engine).chain(
+            loaded
+                .values()
+                .flat_map(|lm| lm.model.owned_engines(engine)),
+        ),
+    )
+}
+
 fn for_each_device_engine(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
     f: &mut dyn FnMut(usize, &Engine),
 ) {
     let mut seen = std::collections::HashSet::new();
-    let primary = engine.ctx().ordinal();
-    seen.insert(primary);
-    f(primary, engine);
-    if let Ok(runtime) = memra_engine::pp::PpNRt::get(engine) {
-        for stage in 0..runtime.n_stages() {
-            let stage_engine = runtime.engine(stage, engine);
-            if seen.insert(stage_engine.ctx().ordinal()) {
-                f(stage_engine.ctx().ordinal(), stage_engine);
-            }
+    for owner in model_device_engines(engine, loaded) {
+        let device = owner.ctx().ordinal();
+        if seen.insert(device) {
+            f(device, owner);
         }
     }
-    for lm in loaded.values() {
-        // Bounded scan: CUDA device ordinals are small; step_tp_rank_engine returns the
-        // rank engine owning that device's TP allocations, None where there is none.
-        for device in 0..16usize {
-            if seen.contains(&device) {
-                continue;
-            }
-            if let Some(rank_engine) = lm.model.step_tp_rank_engine(device) {
-                seen.insert(device);
-                f(device, rank_engine);
-            }
-        }
-    }
+}
+
+fn trim_model_device_pools(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    why: &str,
+) -> Vec<DeviceTrimReport> {
+    let owners = model_device_engines(engine, loaded);
+    trim_owned_device_pools(&owners, why)
+}
+
+/// Shared production fence, trim and telemetry path for an explicit set of owners.
+fn trim_owned_device_pools(owners: &[&Engine], why: &str) -> Vec<DeviceTrimReport> {
+    let mut reports = device_memory::reclaim(
+        owners,
+        |owner| owner.ctx().ordinal(),
+        |owner| owner.stream().synchronize().map_err(|err| err.to_string()),
+        |device, owner, synchronization_errors| {
+            let reclaimed_bytes = owner.pool_trim_to_zero();
+            let (pool_reserved_bytes, still_owned_bytes) = owner.pool_reserved_used();
+            let report = DeviceTrimReport {
+                device,
+                reclaimed_bytes,
+                still_owned_bytes,
+                pool_reserved_bytes,
+                pool_cached_bytes: pool_reserved_bytes.saturating_sub(still_owned_bytes),
+                driver_free_bytes: owner.ctx().mem_get_info().ok().map(|(free, _)| free),
+                synchronization_errors,
+            };
+            eprintln!(
+                "[device-trim] reason={why} {}",
+                serde_json::to_string(&report).unwrap()
+            );
+            report
+        },
+    );
+    reports.sort_unstable_by_key(|report| report.device);
+    reports
 }
 
 /// STEP-OOM TEARDOWN FENCE (lane/step37-vram-admission-20260830, defect 3): synchronize
@@ -25554,13 +25978,18 @@ fn for_each_device_engine(
 /// already drained the stream. A fence failure is LOUD and the drop proceeds — there is
 /// no safer alternative at that point, but the log names the risk instead of hiding it.
 fn oom_teardown_fence(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
-    for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
-        if let Err(err) = dev_engine.stream().synchronize() {
+    synchronize_model_devices(engine, loaded, "step-OOM teardown");
+}
+
+fn synchronize_model_devices(engine: &Engine, loaded: &HashMap<String, LoadedModel>, why: &str) {
+    for owner in model_device_engines(engine, loaded) {
+        if let Err(err) = owner.stream().synchronize() {
             eprintln!(
-                "[admit-oom] WARN: step-OOM teardown fence sync failed on dev{device}: {err}"
+                "[device-fence] WARN: {why} sync failed on dev{}: {err}",
+                owner.ctx().ordinal(),
             );
         }
-    });
+    }
 }
 
 /// `MEMRA_SPEC_FIRST_TOKEN_EAGER` (lane/b200-spec-ttft-20260902), DEFAULT ON since the
@@ -25791,9 +26220,7 @@ fn run_boot_calibration(
                 );
                 // Recover whatever headroom the failed attempt stranded in the pool.
                 oom_teardown_fence(engine, loaded);
-                for_each_device_engine(engine, loaded, &mut |_device, dev_engine| {
-                    let _ = dev_engine.pool_trim_to_zero();
-                });
+                trim_model_device_pools(engine, loaded, "calibration-failure");
                 continue;
             }
             Ok((drafted, accepted)) => {
@@ -25804,7 +26231,7 @@ fn run_boot_calibration(
                 let charged_draft = lm.model.draft_session_admission_bytes();
                 let tp_kv = lm
                     .model
-                    .step_tp_unmaterialized_kv_bytes(None, probe_ctx)
+                    .unmaterialized_state_bytes(None, probe_ctx)
                     .unwrap_or_default();
                 let primary = engine.ctx().ordinal();
                 // Read the driver-visible peak (RESERVED high watermark: everything the pool
@@ -25825,10 +26252,11 @@ fn run_boot_calibration(
                 // reuse them, while eager serving still takes DRIVER allocations (cuBLAS
                 // workspaces, graph plumbing). Hand the cache back; the pool re-maps on
                 // demand (a few one-time re-maps, never a per-token cost class).
-                let mut trimmed = 0usize;
-                for_each_device_engine(engine, loaded, &mut |_device, dev_engine| {
-                    trimmed += dev_engine.pool_trim_to_zero();
-                });
+                let trimmed = trim_model_device_pools(engine, loaded, "calibration-complete")
+                    .iter()
+                    .fold(0usize, |total, report| {
+                        total.saturating_add(report.reclaimed_bytes)
+                    });
                 if trimmed > 0 {
                     eprintln!(
                         "[admit-cal] post-probe pool trim: released {}MB cached back to \
@@ -26327,7 +26755,7 @@ mod tests {
         }
         assert!(oom.message.contains("Retry-After"), "{}", oom.message);
         let fault = super::EngineError::engine(
-            "Step TP KV admission plan failed: DriverError(CUDA_ERROR_INVALID_VALUE, \"invalid argument\") at /src/crates/memra-engine/src/tp.rs:1234",
+            "model state admission plan failed: DriverError(CUDA_ERROR_INVALID_VALUE, \"invalid argument\") at /src/crates/memra-engine/src/tp.rs:1234",
         );
         assert_eq!(fault.class, super::ErrClass::Engine);
         for leak in ["DriverError", "CUDA", "invalid argument", "/src/", ".rs:"] {
@@ -27597,21 +28025,28 @@ mod tests {
                 bytes: 19,
             },
         ];
-        let requirements =
-            parallel_device_requirements(0, 0, 5, Some((&devices, &stages)), &request, &pending);
+        let requirements = parallel_device_requirements(
+            0,
+            0,
+            5,
+            Some((&devices, &stages)),
+            &request,
+            &pending,
+            &[],
+        );
 
         assert_eq!(requirements.len(), 5);
         assert_eq!(requirements[1].device, 1);
         assert_eq!(requirements[1].session_bytes, 20);
-        assert_eq!(requirements[1].tp_kv_bytes, 11);
-        assert_eq!(requirements[1].pending_tp_kv_bytes, 17);
+        assert_eq!(requirements[1].state_bytes, 11);
+        assert_eq!(requirements[1].pending_state_bytes, 17);
         assert_eq!(requirements[1].reserve_bytes, 5);
         assert_eq!(requirements[1].boundary_bytes, 14);
         assert_eq!(requirements[1].required(), 67);
         assert_eq!(requirements[4].device, 4);
         assert_eq!(requirements[4].session_bytes, 0);
-        assert_eq!(requirements[4].tp_kv_bytes, 13);
-        assert_eq!(requirements[4].pending_tp_kv_bytes, 19);
+        assert_eq!(requirements[4].state_bytes, 13);
+        assert_eq!(requirements[4].pending_state_bytes, 19);
         assert_eq!(requirements[4].reserve_bytes, 5);
         assert_eq!(requirements[4].boundary_bytes, 0);
         assert_eq!(requirements[4].required(), 37);
@@ -27673,7 +28108,7 @@ mod tests {
         let legacy = 83_520 * ctx;
         let reserve = 1_500 << 20;
         let requirements =
-            parallel_device_requirements(0, legacy, reserve, None, &request, &pending);
+            parallel_device_requirements(0, legacy, reserve, None, &request, &pending, &[]);
 
         assert_eq!(requirements.len(), 8);
         assert_eq!(bytes_per_rank_token, 2_784);
@@ -27683,13 +28118,13 @@ mod tests {
         // scavenging 32 rows from it; this admission test is the only pin on that number.
         assert_eq!(swa_rows, 5_151);
         assert_eq!(requirements[0].session_bytes, legacy);
-        assert_eq!(requirements[0].tp_kv_bytes, sidecar);
-        assert_eq!(requirements[0].pending_tp_kv_bytes, sidecar);
+        assert_eq!(requirements[0].state_bytes, sidecar);
+        assert_eq!(requirements[0].pending_state_bytes, sidecar);
         assert_eq!(requirements[0].required(), legacy + sidecar * 2 + reserve);
         for peer in &requirements[1..] {
             assert_eq!(peer.session_bytes, 0);
-            assert_eq!(peer.tp_kv_bytes, sidecar);
-            assert_eq!(peer.pending_tp_kv_bytes, sidecar);
+            assert_eq!(peer.state_bytes, sidecar);
+            assert_eq!(peer.pending_state_bytes, sidecar);
             assert_eq!(peer.reserve_bytes, reserve);
             assert_eq!(peer.required(), sidecar * 2 + reserve);
         }
@@ -27709,6 +28144,68 @@ mod tests {
         assert!(
             !AdmissionHeadroom::Devices(devices).sufficient(0),
             "one byte of missing peer headroom must defer the whole TP8 request"
+        );
+    }
+
+    #[test]
+    fn glm_peer_pressure_includes_pending_state_and_recovers_after_refill() {
+        use memra_engine::hybrid::StepTpKvDeviceAdmission;
+        // Root KV is already in the primary estimate. A GLM peer additionally owns
+        // recurrent state and its replicated latent KV, plus a transient workspace floor.
+        let request = [StepTpKvDeviceAdmission {
+            device: 23,
+            bytes: 400,
+        }];
+        let pending = [StepTpKvDeviceAdmission {
+            device: 23,
+            bytes: 100,
+        }];
+        let required = parallel_device_requirements(0, 300, 50, None, &request, &pending, &[]);
+        assert_eq!(required.len(), 2);
+        assert_eq!(required[1].required(), 550);
+        let mut peers = required
+            .iter()
+            .copied()
+            .map(|requirement| AdmissionDeviceHeadroom {
+                requirement,
+                free_bytes: 1_000,
+                pool_cached_bytes: 0,
+                pool_reserved_bytes: 0,
+                pool_used_bytes: 0,
+            })
+            .collect::<Vec<_>>();
+        for _ in 0..3 {
+            // Root has room while only the peer is one byte short.
+            peers[1].free_bytes = 549;
+            assert!(!AdmissionHeadroom::Devices(peers.clone()).sufficient(0));
+            // A peer-only release makes the whole request admissible; no root release.
+            peers[1].free_bytes += 1;
+            assert!(AdmissionHeadroom::Devices(peers.clone()).sufficient(0));
+        }
+        let workspace = [StepTpKvDeviceAdmission {
+            device: 23,
+            bytes: 1_000,
+        }];
+        let long_prompt =
+            parallel_device_requirements(0, 300, 50, None, &request, &pending, &workspace);
+        assert_eq!(long_prompt[1].required(), 1_550);
+        peers[1].requirement = long_prompt[1];
+        peers[1].free_bytes = 550;
+        assert!(
+            !AdmissionHeadroom::Devices(peers.clone()).sufficient(0),
+            "a peer fitting state alone must defer when prefill workspace does not fit"
+        );
+        peers[1].free_bytes = 1_550;
+        assert!(AdmissionHeadroom::Devices(peers).sufficient(0));
+        let materialized = [StepTpKvDeviceAdmission {
+            device: 23,
+            bytes: 0,
+        }];
+        let warm = parallel_device_requirements(0, 300, 50, None, &materialized, &[], &[]);
+        assert_eq!(
+            warm[1].required(),
+            50,
+            "warm peer still needs workspace headroom"
         );
     }
 
@@ -30793,6 +31290,7 @@ mod tests {
     /// under test live entirely in the host-side key/toks matching.
     fn entry(pool_key: &PoolKey, toks: Vec<u32>) -> PrefixEntry {
         PrefixEntry {
+            _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
             pool_key: pool_key.clone(),
@@ -31097,6 +31595,207 @@ mod tests {
             "past its defer budget with both tiers exhausted it must refuse, not queue"
         );
         drop(resident);
+    }
+
+    /// Native worker admission/reclaim qualification for #544. The runner must hold
+    /// exclusive per-card locks for ordinals 0 and 1, acquired in stable device order,
+    /// on a non-serving pair. No checkpoint or model-support claim is involved here;
+    /// the engine tests separately cover discovery of real sharded GLM owners.
+    ///
+    /// Only 32 MiB of pressure plus a 1 MiB source and a small primary witness are
+    /// allocated. The peer requirement is calibrated to measured headroom instead of
+    /// filling VRAM. Run this exact ignored test alone under the coordinator's locks.
+    #[test]
+    #[ignore = "requires native CUDA on a non-serving pair with stable-order exclusive per-card locks for devices 0 and 1"]
+    fn native_glm_peer_admission_trim_preserves_lease() {
+        use super::{
+            AdmissionDeviceRequirement, AdmissionHeadroom, admission_headroom,
+            device_admission_headroom, trim_model_device_pools, trim_owned_device_pools,
+        };
+
+        const PRESSURE_BYTES: usize = 32 << 20;
+        const SOURCE_BYTES: usize = 1 << 20;
+        const PRIMARY_REQUIRED: usize = 1 << 20;
+        let primary = memra_engine::Engine::new(0).expect("native engine on device 0");
+        let peer = memra_engine::Engine::new(1).expect("native engine on device 1");
+        // Reverse order and a repeated owner also exercise physical report sorting and
+        // deduplication, independently of HashMap/model traversal order in production.
+        let owners = [&peer, &primary, &peer];
+        let loaded = std::collections::HashMap::new();
+        let empty = trim_owned_device_pools(&owners, "worker-544 baseline");
+        assert_eq!(empty.iter().map(|r| r.device).collect::<Vec<_>>(), [0, 1]);
+        assert!(empty.iter().all(|r| r.synchronization_errors.is_empty()));
+
+        let primary_values = [11.0, 12.0, 13.0, 14.0];
+        let primary_witness = primary.htod(&primary_values).unwrap();
+        let source_values = [1.0, 2.0, 3.0, 4.0].repeat(SOURCE_BYTES / 16);
+        let k = key("worker-544-native");
+        let tokens = toks(PREFIX_CACHE_MIN_TOKENS);
+        let mut donor = entry(&k, tokens.clone());
+        donor.pos = tokens.len();
+        donor.conv = vec![Some(peer.htod(&source_values).unwrap())];
+        donor.bytes = SOURCE_BYTES;
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, donor, "worker-544 source", SOURCE_BYTES * 2);
+        let (pin, rows) = px.pin_prompt_prefix(&k, &tokens).expect("source lease");
+        assert_eq!(rows, tokens.len());
+        assert_eq!(px.pinned_bytes(), SOURCE_BYTES);
+        let pinned = trim_owned_device_pools(&owners, "worker-544 pinned source");
+        assert!(pinned.iter().all(|r| r.synchronization_errors.is_empty()));
+        assert_eq!(
+            pinned[1].still_owned_bytes,
+            empty[1].still_owned_bytes + SOURCE_BYTES,
+            "the prefix entry must really own its peer allocation"
+        );
+
+        let mut requirements = [
+            AdmissionDeviceRequirement {
+                device: 0,
+                session_bytes: PRIMARY_REQUIRED,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
+                reserve_bytes: 0,
+                boundary_bytes: 0,
+            },
+            AdmissionDeviceRequirement {
+                device: 1,
+                session_bytes: 0,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
+                reserve_bytes: 0,
+                boundary_bytes: 0,
+            },
+        ];
+        let AdmissionHeadroom::Devices(baseline) =
+            device_admission_headroom(&owners, &requirements).expect("physical device readings")
+        else {
+            panic!("explicit device requirements must read every peer");
+        };
+        assert!(
+            baseline.iter().all(|d| d.free_bytes >= 2 * PRESSURE_BYTES),
+            "this bounded cell needs 64 MiB effective headroom per device: {baseline:?}"
+        );
+        requirements[1].pending_state_bytes = baseline[1].free_bytes - PRESSURE_BYTES / 2;
+        assert!(
+            device_admission_headroom(&[&primary], &requirements).is_none(),
+            "a missing required peer must fail closed"
+        );
+
+        for cycle in 0..3 {
+            let ready = device_admission_headroom(&owners, &requirements).unwrap();
+            assert!(
+                ready.sufficient(PRIMARY_REQUIRED),
+                "cycle {cycle}: {ready:?}"
+            );
+            let pressure = peer.zeros(PRESSURE_BYTES / 4).unwrap();
+            peer.stream().synchronize().unwrap();
+            let old_primary_only = admission_headroom(&primary, &loaded, None).unwrap();
+            let pressured = device_admission_headroom(&owners, &requirements).unwrap();
+            assert!(
+                old_primary_only.sufficient(PRIMARY_REQUIRED),
+                "red control: the old primary-only reading must admit"
+            );
+            assert!(
+                !pressured.sufficient(PRIMARY_REQUIRED),
+                "peer-local pressure must reject the same request: {pressured:?}"
+            );
+            let AdmissionHeadroom::Devices(devices) = &pressured else {
+                unreachable!();
+            };
+            assert!(devices[0].free_bytes >= requirements[0].required());
+            assert!(devices[1].free_bytes < requirements[1].required());
+            assert_eq!(devices[0].pool_used_bytes, pinned[0].still_owned_bytes);
+            assert_eq!(
+                devices[1].pool_used_bytes,
+                pinned[1].still_owned_bytes + PRESSURE_BYTES
+            );
+            assert_eq!(px.evict_all(), 0, "reclaim must spare the source lease");
+            assert_eq!(px.pinned_bytes(), SOURCE_BYTES);
+
+            // Enqueue the free, then rely on the production all-owner fence. There is
+            // deliberately no peer synchronization between drop and the real trim.
+            drop(pressure);
+            let peer_reserved = peer.pool_reserved_used().0;
+            let old_trim = trim_model_device_pools(&primary, &loaded, "worker-544 primary-only");
+            assert_eq!(old_trim.len(), 1);
+            assert_eq!(old_trim[0].device, 0);
+            assert!(old_trim[0].synchronization_errors.is_empty());
+            assert_eq!(
+                peer.pool_reserved_used().0,
+                peer_reserved,
+                "red control: primary-only trim cannot release peer cache"
+            );
+
+            let reports = trim_owned_device_pools(&owners, "worker-544 peer reclaim");
+            assert_eq!(reports.iter().map(|r| r.device).collect::<Vec<_>>(), [0, 1]);
+            assert!(reports.iter().all(|r| r.synchronization_errors.is_empty()));
+            assert!(
+                reports[1].reclaimed_bytes > 0,
+                "peer reclaim must be non-vacuous"
+            );
+            assert_eq!(
+                reports[1].reclaimed_bytes,
+                peer_reserved - reports[1].pool_reserved_bytes
+            );
+            for (report, owner) in reports.iter().zip([&primary, &peer]) {
+                assert_eq!(
+                    report.still_owned_bytes,
+                    pinned[report.device].still_owned_bytes
+                );
+                assert_eq!(
+                    (report.pool_reserved_bytes, report.still_owned_bytes),
+                    owner.pool_reserved_used()
+                );
+                assert_eq!(
+                    report.pool_cached_bytes,
+                    report.pool_reserved_bytes - report.still_owned_bytes
+                );
+                assert!(report.driver_free_bytes.is_some());
+            }
+            let recovered = device_admission_headroom(&owners, &requirements).unwrap();
+            assert!(
+                recovered.sufficient(PRIMARY_REQUIRED),
+                "cycle {cycle}: peer headroom must refill: {recovered:?}"
+            );
+            let source = &px.entries[&k][0];
+            assert_eq!(source.pins, 1);
+            assert_eq!(source.id, pin.id);
+            assert_eq!(
+                peer.dtoh_view(&source.conv[0].as_ref().unwrap().slice(..))
+                    .unwrap(),
+                source_values,
+                "cycle {cycle}: pinned peer bytes changed during trim"
+            );
+            assert_eq!(
+                primary.dtoh_view(&primary_witness.slice(..)).unwrap(),
+                primary_values
+            );
+            eprintln!(
+                "[worker-memory-544] cycle={cycle} primary_only={old_primary_only:?} \
+                 pressured={pressured:?} recovered={recovered:?} source_pins={} \
+                 pinned_bytes={} source_integrity=PASS",
+                source.pins,
+                px.pinned_bytes(),
+            );
+        }
+
+        assert_eq!(px.evict_all(), 0, "source stays pinned across all refills");
+        assert!(px.unpin(&pin));
+        assert_eq!(px.pinned_bytes(), 0);
+        assert_eq!(px.evict_all(), 1, "unpin must restore ordinary eviction");
+        assert_eq!(px.total_bytes, 0);
+        let released = trim_owned_device_pools(&owners, "worker-544 source released");
+        assert!(released.iter().all(|r| r.synchronization_errors.is_empty()));
+        assert_eq!(released[1].still_owned_bytes, empty[1].still_owned_bytes);
+        assert_eq!(released[0].still_owned_bytes, pinned[0].still_owned_bytes);
+        drop(primary_witness);
+        let cleaned = trim_owned_device_pools(&owners, "worker-544 cleanup");
+        for (report, before) in cleaned.iter().zip(&empty) {
+            assert!(report.synchronization_errors.is_empty());
+            assert_eq!(report.still_owned_bytes, before.still_owned_bytes);
+        }
     }
 
     #[test]
@@ -32461,7 +33160,7 @@ mod tests {
         let fence = body
             .find("oom_teardown_fence(&engine,&loaded);")
             .expect("fence");
-        let trim = body.find("pool_trim_to_zero()").expect("trim");
+        let trim = body.find("trim_model_device_pools(").expect("trim");
         assert!(
             reclaim < fence && fence < trim,
             "reclaim, then fence, then trim"
@@ -33250,6 +33949,7 @@ mod tests {
     /// exact-key dedupe never collides and survivors are readable back out of the pools).
     fn entry_b(pool_key: &PoolKey, ident: u32, bytes: usize) -> PrefixEntry {
         PrefixEntry {
+            _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             dspark_draft: None,
             pool_key: pool_key.clone(),
@@ -33289,6 +33989,9 @@ mod tests {
 
     fn host_entry(pool_key: &PoolKey, toks: Vec<u32>, bytes: usize) -> HostPrefixEntry {
         HostPrefixEntry {
+            _tier_charge: None,
+            _tier_metadata_charge: None,
+            _tier_metadata: Vec::new(),
             _tier_identity: Default::default(),
             model_generation: None,
             glm: None,

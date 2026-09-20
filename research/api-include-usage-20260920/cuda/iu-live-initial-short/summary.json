@@ -1,0 +1,88 @@
+[
+  {
+    "dialect": "chat",
+    "result": "PASS",
+    "usage": {
+      "nonstream": {
+        "prompt_tokens": 25,
+        "completion_tokens": 8,
+        "total_tokens": 33,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.077521685
+      },
+      "true": {
+        "prompt_tokens": 25,
+        "completion_tokens": 8,
+        "total_tokens": 33,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.077035541
+      },
+      "absent": {
+        "prompt_tokens": 25,
+        "completion_tokens": 8,
+        "total_tokens": 33,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.076843601
+      },
+      "false": {
+        "prompt_tokens": 25,
+        "completion_tokens": 8,
+        "total_tokens": 33,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.076996779
+      }
+    },
+    "comparison": "all usage fields except per-request elapsed_s"
+  },
+  {
+    "dialect": "completions",
+    "result": "PASS",
+    "usage": {
+      "nonstream": {
+        "prompt_tokens": 13,
+        "completion_tokens": 8,
+        "total_tokens": 21,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.122600183
+      },
+      "true": {
+        "prompt_tokens": 13,
+        "completion_tokens": 8,
+        "total_tokens": 21,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.123854853
+      },
+      "absent": {
+        "prompt_tokens": 13,
+        "completion_tokens": 8,
+        "total_tokens": 21,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.12199743
+      },
+      "false": {
+        "prompt_tokens": 13,
+        "completion_tokens": 8,
+        "total_tokens": 21,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.122193819
+      }
+    },
+    "comparison": "all usage fields except per-request elapsed_s"
+  }
+]
