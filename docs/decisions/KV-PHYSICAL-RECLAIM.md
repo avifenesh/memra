@@ -9,6 +9,11 @@ and `DAY10.md` (one RTX PRO 6000 Blackwell).
 the PRO card reports `not-applicable-pooled`. B's verifier prints the 32k label with a dash; the wording here
 follows the writing rule, the content is unchanged.
 
+**G1 as of 2026-09-21 (Day 11 to 12 below):** the 32k five-cycle series printed, on one RTX PRO 6000
+Blackwell and on the local RTX 5090 Laptop GPU, verbatim
+`ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles)` under lead ruling 6. Every
+single-roundtrip 32k cell before it stays `not G1 PASS`. Still a gate-only door; nothing promoted.
+
 ## Question
 When the tiered-KV materializer demotes a prefix (D2H via `memra_engine::tier_transfer::CudaTransfers`)
 and the governor drops the device charge, does device memory actually come back?
@@ -128,6 +133,22 @@ base, the probe freed the stray reservation and refused, as designed, verbatim
 Fail-closed: no token executed against the suspended cache, no `ACTIVE.txt`, no cycle row. No probe or CLI
 change. The 8k evidence stays the single-roundtrip `ACTIVE-8K G1 PASS` with residual 0 on both cards (day 10
 PRO, day 9 rented RTX 5090). Revisited only if the door is promoted at decide-by.
+
+**Day 12 rerun (`DAY12.md`, gate source `c7dd20cc5`, N=1 cell per card, no timing compared).** Both cards
+repeated the day-11 bytes exactly: free before demote, after demote and after restore identical to the tables
+above in every cycle (PRO 85,313,847,296 / 86,217,719,808 / 85,313,847,296; laptop 8,784,248,832 /
+9,688,121,344 / 8,784,248,832), released 905,969,664 B, residual 2,097,152 B, restore residual 0, drift 0,
+restored prefix bit-identical in every cycle, class `one-time-driver-mapping-metadata`, series
+`g1_reclaim_qualified=true`. Printed status line on both cards, verbatim:
+
+```text
+ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles) committed=32768 generated=128
+```
+
+The PRO continuation matches the frozen target-card bundle; the laptop card has no frozen bundle of its own
+(the 128 generated tokens match the rented RTX 5090 day-6 bundle, logits and state differ), so its
+continuation identity is in-process only. The per-cycle `g1_reclaim_qualified` column is `false` in every
+cycle on both cards: the lift is the series verdict, nothing else.
 
 ## Scope
 The gate constructs the cache directly with VMM planes (`Cache::new_with_allocator(…, KvAllocator::Vmm)`;

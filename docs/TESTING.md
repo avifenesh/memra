@@ -1023,6 +1023,16 @@ bit-identical, one granule (2,097,152 B) of residual unclassified (the mapped-VA
 returned 0 B, so VA-reservation release is not the mechanism), not G1 PASS. B's verifier prints that
 label with a dash; the wording here follows the writing rule.
 
+Status on 2026-09-21 (`research/spill-b-20260919/DAY12.md`, gate source `c7dd20cc5`): the 32k
+five-cycle series rerun printed, on one RTX PRO 6000 Blackwell and on the local RTX 5090 Laptop
+GPU, verbatim `ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles)`
+(residual 2,097,152 B in every cycle, drift 0, restored prefix bit-identical in every cycle; the
+PRO continuation matches its frozen bundle, the laptop card has no frozen bundle and its
+continuation identity is in-process only). The 8k series control is not rerun: the mapped-VA
+probe refuses to re-reserve the original address for the small 8k planes on both cards (lead
+ruling 7, open item in the decision record); the 8k evidence stays the single-roundtrip
+`ACTIVE-8K G1 PASS` with residual 0. Gate-only door, decide-by 2026-10-04 unchanged.
+
 ### Experts-via-tier gate (`run-gen` / `run-spec --experts-via-tier`)
 
 `--experts-via-tier` on `run-gen` or `run-spec` (GGUF path only) calls
