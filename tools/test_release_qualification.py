@@ -200,6 +200,14 @@ class QualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "source inputs changed"):
             q.verify_published(checkout, "HEAD")
 
+    def test_unknown_tested_commit_is_not_an_accepted_source_label(self):
+        self.f.source["commit"] = "f" * 40
+        self.f.put("source.json", self.f.source)
+        self.f.build["source"] = self.f.ref("source.json")
+        self.f.refresh()
+        with self.assertRaisesRegex(q.GateError, "tested source object missing"):
+            self.f.verify()
+
     def test_stale_binary_and_model_inputs(self):
         (self.f.binary_dir / "run-spec").write_bytes(b"different binary")
         with self.assertRaisesRegex(q.GateError, "stale binary"):

@@ -33,7 +33,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Require content-bound native qualification
-        run: python3 tools/release_qualification.py verify --head "$GITHUB_SHA"
+        run: python3 tools/release_qualification.py verify --fetch-source --head "$GITHUB_SHA"
       - name: Refuse version mismatch / unclaimed tag
         run: tools/release-guard.sh "$GITHUB_REF_NAME"
       # The structural censuses run here too, even though ci.yml runs them on every push: a tag
@@ -71,7 +71,7 @@ jobs:
       # the tested revision, then require exact ELF identity before packaging.
       - name: Check out the qualified build source
         run: |
-          python3 tools/release_qualification.py verify --head "$GITHUB_SHA" --profile "${{ matrix.os }}" > /tmp/build-qualification.json
+          python3 tools/release_qualification.py verify --fetch-source --head "$GITHUB_SHA" --profile "${{ matrix.os }}" > /tmp/build-qualification.json
           tested_source=$(python3 -c 'import json; print(json.load(open("/tmp/build-qualification.json"))["tested_commit"])')
           git fetch --no-tags origin "$tested_source"
           git checkout --detach "$tested_source"
@@ -97,7 +97,7 @@ jobs:
           MEMRA_CUDA_ARCH: ${{ matrix.cuda_arch }}
 
       - name: Refuse unqualified rebuilt binary bytes
-        run: python3 tools/release_qualification.py verify --head "$GITHUB_SHA" --binaries target/release --profile "${{ matrix.os }}"
+        run: python3 tools/release_qualification.py verify --fetch-source --head "$GITHUB_SHA" --binaries target/release --profile "${{ matrix.os }}"
 
       - name: Package binaries
         run: |

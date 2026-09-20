@@ -37,7 +37,7 @@ jobs:
 
       - name: Require content-bound native qualification for publication
         if: github.event_name == 'push' || inputs.publish == true
-        run: python3 tools/release_qualification.py verify --head "$GITHUB_SHA"
+        run: python3 tools/release_qualification.py verify --fetch-source --head "$GITHUB_SHA"
 
       # Shared guard (tools/release-guard.sh, teeth in ci.yml): workspace version must
       # equal the tag AND the release/claim-<tag> branch must exist (docs/RELEASING.md

@@ -50,7 +50,9 @@ is an audited content-equivalence claim, not qualification of a newly rebuilt bi
 
 `current.json` inside that namespace pins one or more `record.json` files by SHA-256.
 Each record seals the complete evidence manifest; paths must remain within its directory
-and cannot be symlinks. Banked records are read from immutable Git objects. Source inventory
+and cannot be symlinks. Banked records are read from immutable Git objects. A missing tested
+commit is unqualified until fetched; CI uses `--fetch-source` to retrieve that exact SHA
+from origin before checking its snapshot. Source inventory
 and raw evidence remain usable on a clean checkout without requiring local model files,
 CUDA or the original absolute build directory. Their absence does not create new evidence.
 

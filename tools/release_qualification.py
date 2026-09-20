@@ -121,10 +121,12 @@ def verify_source(source, repo, head):
     require(not changed, "UNQUALIFIED: source inputs changed: " + ", ".join(changed[:20]))
     require(actual["index_prefix"].startswith(source["index_prefix"]),
             "UNQUALIFIED: research index changed beyond an append-only publication")
-    # When the tested commit is available, independently check the captured inventory.
-    if subprocess.run(["git", "-C", str(repo), "cat-file", "-e", source["commit"] + "^{commit}"],
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-        require(source_snapshot(repo, source["commit"]) == source, "tested source snapshot was altered")
+    # The pinned Git object is independent source provenance, not an optional label.
+    # A shallow/squashed checkout must fetch it; file timestamps cannot replace it.
+    present = subprocess.run(["git", "-C", str(repo), "cat-file", "-e", source["commit"] + "^{commit}"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    require(present, "tested source object missing; fetch the pinned commit or use --fetch-source")
+    require(source_snapshot(repo, source["commit"]) == source, "tested source snapshot was altered")
     return {"tested_commit": source["commit"], "candidate_commit": actual["commit"],
             "inputs_sha256": source["inputs_sha256"],
             "publication_equivalent": actual["commit"] != source["commit"],
@@ -360,9 +362,17 @@ def published_records(repo, head):
     return records
 
 
-def verify_published(repo, head, binaries=None, profile=None):
+def verify_published(repo, head, binaries=None, profile=None, fetch_source=False):
     results = []
     for record, evidence, resolved in published_records(repo, head):
+        if fetch_source:
+            source = evidence.obj(record["source"])
+            tested = source["commit"]
+            require(isinstance(tested, str) and COMMIT.fullmatch(tested), "invalid tested commit")
+            present = subprocess.run(["git", "-C", str(repo), "cat-file", "-e", tested + "^{commit}"],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+            if not present:
+                subprocess.run(["git", "-C", str(repo), "fetch", "--no-tags", "origin", tested], check=True)
         results.append(validate_record(record, evidence, repo, resolved))
     # Every indexed record must be current. Separate OS builds can each have native
     # evidence without pretending their different ELF bytes are one qualified binary.
@@ -399,6 +409,7 @@ def main():
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--binaries", type=Path)
     parser.add_argument("--profile")
+    parser.add_argument("--fetch-source", action="store_true", help="fetch a missing pinned tested Git commit from origin")
     parser.add_argument("--refs-file", type=Path)
     parser.add_argument("--development", action="store_true")
     args = parser.parse_args()
@@ -409,7 +420,7 @@ def main():
                        "development" if args.development else "qualified")
         else:
             require(not args.development, "release verification has no development waiver")
-            result = verify_published(args.repo, args.head, args.binaries, args.profile)
+            result = verify_published(args.repo, args.head, args.binaries, args.profile, args.fetch_source)
             print(json.dumps(result, sort_keys=True))
         return 0
     except (GateError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
