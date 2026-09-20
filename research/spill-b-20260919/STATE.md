@@ -1,14 +1,14 @@
-# WP-B day 10 checkpoint
-- Branch: lane/spill-b-20260919; integ5 merge 8ef562b12f16fd3378f866939be347df3a6d3d96 pushed.
-- Native checkout: /root/wt-b at c619b008e (direct allocation re-engaged; diagnostic captured separately).
-- Finished diagnostic: mapped unmap/VA-free delta both 0; 32k residual 2097152 B stays unclassified/non-PASS.
-- Runner: /root/b-day10-cell.sh (tracked copy run-day10-cell.sh); canonical pro-single collector; bounded lock retries.
-- Finished: original native build, 8k/32k baselines and ACTIVE-8K G1 PASS (600/600 W); receipts pushed.
-- 8k receipts + build are preserved in pro-single-day10/ in this checkpoint; raw logits losslessly gzip archived.
-- No B job running: final native build/clippy PASS, injected-8192 PASS with 34 VMM/0 pooled planes, no swap.
-- Mac kv+tier 262 tests/check/cross-check/clippy/fmt/flags passed; engine Mac blocked by missing nvcc (log saved).
-- Original cells all pushed: baselines, VMM8 PASS, VMM32 unclassified 1-granule non-PASS, pooled8 not-applicable-pooled.
-- All 7 requested cells complete/preserved; next: final report/check manifest, push, remove helper /root/b-day10-cell.sh.
-- Add DAY10.md, BOX3 baseline hashes, verify-day10.py and raw manifest; push after every cell.
-- Decision: prior 5090 probe freed never-mapped VA only; new nonzero PRO metadata class cannot satisfy BOTH-card evidence.
-- 32k VMM + diagnostic: bit-identical, 2097152 B residual, unclassified, not G1 PASS; injected 8k G1 PASS.
+# WP-B day 10 — checkpoint closed; lane open for lead integration
+- Branch: lane/spill-b-20260919; see git HEAD/origin for final receipt/report commit.
+- Native checkout /root/wt-b remains clean at c619b008ed9f359c51bca7e0d8d1e8a74edbc17a (final runtime).
+- No B tmux/GPU/build job running; /root/b-day10-cell.sh removed; tracked runner remains run-day10-cell.sh.
+- All 7 requested cells finished and pushed; /root/spill-receipts/b-day10 preserved and mirrored in pro-single-day10/.
+- New 8k/32k PRO baselines frozen separately in BOX3-BASELINES.json; 600/600 W on every cell.
+- Original and direct-construction VMM 8k: ACTIVE-8K G1 PASS; 201326592 B exact reclaim/reacquisition.
+- VMM 32k + isolated diagnostic: bit-identical; 2097152 B residual, unclassified, not G1 PASS.
+- Actual demoted-plane unmap and VA-free deltas both 0; original VA/accounting restored exactly.
+- Pooled 8k: g1_reclaim_qualified=not-applicable-pooled; no fixed-VA claim.
+- Direct allocation implemented: 34 VMM/0 pooled planes at position 0, no swap; native build/clippy and 8k PASS.
+- Mac + native scoped tests: 262 each; Mac/cross-check/fmt/clippy/flags PASS; Mac engine nvcc missing (native builds PASS).
+- Replay: python3 research/spill-b-20260919/verify-day10.py --require-complete; DAY10.md has sources/hashes/verdicts.
+- Lead decision/next lane: unresolved 32k residual and unrun serving/prefix/graph/spec/PP/PRO-pair gates; no defaults changed.
