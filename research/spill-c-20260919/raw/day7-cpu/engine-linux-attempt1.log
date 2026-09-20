@@ -1,0 +1,45 @@
+   Compiling libc v0.2.186
+   Compiling crc32fast v1.5.0
+    Checking simd-adler32 v0.3.10
+   Compiling autocfg v1.5.1
+   Compiling cudarc v0.19.8
+    Checking adler2 v2.0.1
+    Checking libloading v0.9.0
+    Checking miniz_oxide v0.8.9
+    Checking fdeflate v0.3.7
+   Compiling num-traits v0.2.19
+    Checking quick-error v2.0.1
+    Checking color_quant v1.1.0
+    Checking pxfm v0.1.30
+    Checking zune-core v0.5.3
+    Checking byteorder-lite v0.1.0
+    Checking bitflags v2.13.1
+    Checking weezl v0.1.12
+    Checking gif v0.14.2
+    Checking image-webp v0.2.4
+    Checking zune-jpeg v0.5.15
+    Checking flate2 v1.1.9
+    Checking memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tier)
+    Checking memmap2 v0.9.11
+    Checking png v0.18.1
+    Checking memra-gguf v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-gguf)
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-engine)
+    Checking bytemuck v1.25.2
+    Checking moxcms v0.8.1
+    Checking base64 v0.22.1
+    Checking memra-validate v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-validate)
+    Checking memra-sampling v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-sampling)
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tokenizer)
+    Checking memra-runtime v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-runtime)
+    Checking memra-kv v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-kv)
+    Checking image v0.25.10
+    Checking memra-reference v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-reference)
+error: environment variable `MEMRA_MMQ_ARCHIVE_HASH` not defined at compile time
+   --> crates/memra-engine/src/lib.rs:880:36
+    |
+880 | pub const MMQ_ARCHIVE_HASH: &str = env!("MEMRA_MMQ_ARCHIVE_HASH");
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: use `std::env::var("MEMRA_MMQ_ARCHIVE_HASH")` to read the variable at run time
+
+error: could not compile `memra-engine` (lib) due to 1 previous error

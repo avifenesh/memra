@@ -1,0 +1,105 @@
+== host-tier ON boot (MEMRA_KV_HOST_MB=8192, verify on) ==
+  ok: device budget forced an eviction (the tier's feed)
+  ok: E_A demoted to the host tier (named log line)
+  ok: E_A promoted back on the r3 probe (named log line)
+  ok: MEMRA_KV_HOST_VERIFY digest matched across the round trip
+  ok: no verify mismatch anywhere in the run
+  ok: metrics: demotions >= 1, promotions >= 1, zero rejected allocs
+  ok: r3 served a strict-prefix hit through the promoted entry
+  ok: r4 repeats r3 byte-for-byte (deterministic promoted path)
+== host-tier OFF twin boot (MEMRA_KV_HOST_MB=0: the rollback seam) ==
+  ok: OFF boot never touches the tier (no [prefix-host] line at all)
+  ok: OFF r3 re-primed cold (nothing preserved the evicted entry)
+  ok: r1 ON == OFF byte identity (cold path unperturbed)
+  ok: r3 ON == OFF byte identity (promoted restore == cold re-prime)
+KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "env",
+    "MEMRA_HOSTGATE_CACHE_MB=256",
+    "MEMRA_KV_HOST_TENANT_PCT=50",
+    "bash",
+    "receipts/day8/legacy-copy/tools/kv-host-spill-identity-gate.sh",
+    "--external-lock",
+    "3",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "/root/wt-d/target/release/memra-server",
+    "/root/wt-d/receipts/day8/legacy-identity/state"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "400.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 713163984061911,
+  "ended_monotonic_ns": 713193398955116,
+  "started_utc": "2026-09-20T00:36:28.625729+00:00",
+  "ended_utc": "2026-09-20T00:36:58.040622+00:00",
+  "elapsed_seconds": 29.414893205,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 910,
+    "sha256": "17601b551c3fd1959ebf5cf56acfeef31fcba9d2bc2dac5813fd20a6ccf76665"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 12761,
+      "sha256": "9b4aa3ae6c05ef47a6996c2777acb16a2656ac5c56ee28e017b1de7354da2ab5"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 181,
+    "sha256": "1fdead5b969fa62539fbf49e598120753415362f734334e44b824395fe26c084"
+  }
+}

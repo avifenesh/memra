@@ -12,8 +12,9 @@ name = "kv-tier-gate"
 path = "src/bin/kv_tier_gate.rs"
 ```
 
-Until that fragment lands Cargo's automatic binary discovery exposes `kv_tier_gate`
-(underscore). Build with `cargo build --release -p memra-engine --bin kv_tier_gate -j 16`.
+The fragment is applied: build with `cargo build --release -p memra-engine --bin kv-tier-gate -j 16`
+and invoke `target/release/kv-tier-gate`. Historical day-5/day-6 captures used the
+then-valid auto-discovered underscore binary; their immutable commands/hashes are retained.
 No external dependency added: SHA256 is the engine's existing sha2 dependency.
 
 ## Exact contract

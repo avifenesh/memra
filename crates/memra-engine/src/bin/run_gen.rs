@@ -129,6 +129,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DIRECTORY path = safetensors HF checkpoint (MiniMax-M3 first-load path) OR a memra repack
     // dir (Hy3 Q4_K transcode: manifest.json + tensors/ + experts/). GGUF stays the dense norm.
     if std::path::Path::new(&path).is_dir() {
+        if std::env::args().any(|a| a == "--experts-via-tier") {
+            return Err("experts-via-tier requires the approved GGUF artifact".into());
+        }
         let dir = std::path::Path::new(&path);
         // Repack dirs carry only weights; tokenizer files live in the manifest's source_dir.
         let is_repack = dir.join("manifest.json").exists();
@@ -1016,6 +1019,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let g = GgufFile::open(&path)?;
     let model = HybridModel::load_without_mtp(&e, &g)?;
+    let _expert_bank_owner = if std::env::args().any(|a| a == "--experts-via-tier") {
+        Some(e.install_expert_bank_gate(&model, &g)?)
+    } else {
+        None
+    };
     println!(
         "loaded {} ({} trunk layers; optional MTP skipped)",
         g.arch().unwrap_or("?"),

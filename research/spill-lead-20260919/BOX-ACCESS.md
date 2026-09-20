@@ -34,3 +34,11 @@ reused). Check first: `ssh -O check -o ControlPath=$HOME/.ssh/cm/box2 root@<prox
 `scp`/`rsync`: `-o ControlPath=$HOME/.ssh/cm/box2`. If the socket is gone, report it to the lead
 (who re-establishes it with `ControlMaster=auto ControlPersist=yes`) rather than looping retries.
 A direct-IP path also exists in LANE-LOCAL.md as a fallback.
+
+## Proxy vs direct path (2026-09-20)
+
+The provider's ssh proxy has refused connections while the instance stayed `running`; the direct
+port (both in `LANE-LOCAL.md`) kept working. The lead re-establishes the master over whichever path
+answers. Because the `ControlPath` is a fixed socket (no `%h`), lanes change nothing: `ssh -O check`
+then `ssh -o ControlPath=$HOME/.ssh/cm/box2 -o ControlMaster=no root@<either-host> <cmd>` multiplexes
+over the live master regardless of the hostname given.
