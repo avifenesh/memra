@@ -161,3 +161,23 @@ address, artifact permission, CUDA toolchain or GPU was available here. G0–G7 
   `--resume --out <prior-cell>` reads the last CELL and reruns identical argv into a new
   attempt, never treating an interrupted cell as pass. See RIG-DAY1.md for idempotence and
   private provider/cost metadata rules. A/B/C self-locking runners run standalone, not here.
+
+## Day-5 first-rental capture integrity (not a positive gate)
+
+`--validate <CELL.jsonl|command.capture.json|receipt-directory>` also checks archived
+subprocess evidence. This mode reports **integrity**, not byte exactness: failed commands
+and empty diagnostic telemetry are retained as such, never promoted into `runs.schema.json`.
+Explicit `--schema runs|telemetry` still rejects capture journals. See
+[DAY5-VERIFICATION.md](DAY5-VERIFICATION.md) for the nine real first-hour capture results.
+
+New capture/end rows include `started_utc`, `ended_utc` and `elapsed_seconds` for the
+collector window (snapshots/sampler included); device and StorageSample timings are
+separate. For storage use `--storage-root <actual-path>`; unproven storage requires explicit
+`--allow-unproven-storage` and retains the overlay/unproven label in every receipt. This
+opt-in is development exactness only, not a waived local-NVMe or spill-speed gate.
+
+The current launch and recovery sequence is [RIG-DAY1.md](RIG-DAY1.md): mandatory C
+pre-streaming goldens copy/hash, pidfile rather than process-name matching, separate
+current/max PCIe interpretation, and off-box receipt sync after **every** cell. Interrupted
+cells stay incomplete, artifacts require a pinned locator/hash, and a replacement rig
+requires fresh bootstrap/source/binary acceptance.

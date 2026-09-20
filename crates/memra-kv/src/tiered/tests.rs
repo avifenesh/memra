@@ -1915,3 +1915,5 @@ fn scheduler_eviction_floor_protects_backlog_under_priority_churn() {
 
 #[path = "day4_tests.rs"]
 mod day4;
+#[path = "day5_tests.rs"]
+mod day5;
