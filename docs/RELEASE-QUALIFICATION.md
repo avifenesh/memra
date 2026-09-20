@@ -98,6 +98,16 @@ uses `--offline`; dependency fetching does not execute workspace build scripts. 
 the declared filesystem boundary, rather than assuming a direct include or script never reads
 publication data. It is not a claim to have audited every host library or arbitrary compiler.
 
+On Ubuntu with restricted unprivileged user namespaces, installing bubblewrap alone is
+insufficient: AppArmor can deny loopback setup before the compiler starts. The disposable
+GitHub-hosted jobs use `tools/install-release-sandbox-ci.sh` to install a dedicated,
+root-owned bwrap copy and grant that exact executable the `userns` permission. The host
+restriction remains enabled; the producer retains its private network/filesystem namespaces,
+read-only source and dropped capabilities. Linux controls verify an actual successful
+sandbox launch, absence of compiler capabilities, and isolation from a live host loopback
+listener, in addition to the source/provenance checks. Other build hosts must supply a
+working, appropriately permitted bwrap executable; there is no unisolated retry.
+
 The build has its own config-free Cargo home. It may
 reuse downloaded archive and index caches, but never inherited configuration, credentials
 or extracted source trees.

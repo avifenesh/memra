@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -124,6 +125,15 @@ class InputViewTests(unittest.TestCase):
                 path = parent
         self.assertEqual(view.verify(staged, source), view.identity(source))
 
+    def test_ci_setup_refuses_nonhosted_machines(self):
+        setup = Path(__file__).with_name("install-release-sandbox-ci.sh")
+        for actions, runner in (("false", "github-hosted"), ("true", "self-hosted")):
+            with self.subTest(actions=actions, runner=runner):
+                result = subprocess.run(["bash", str(setup)], capture_output=True, text=True,
+                    env={**os.environ, "GITHUB_ACTIONS": actions, "RUNNER_ENVIRONMENT": runner})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("only for disposable GitHub-hosted runners", result.stderr)
+
     @unittest.skipUnless(sys.platform == "linux", "Linux compiler filesystem isolation")
     def test_linux_namespace_refuses_build_script_provenance_reads(self):
         bwrap = shutil.which("bwrap")
@@ -145,6 +155,7 @@ test ! -e "$1/research/INDEX.md"
 test ! -e "$2/research/INDEX.md"
 test ! -e /source/.git/objects/info/alternates
 test ! -e /cuda/provenance-objects/payload
+test ! -e /dev/nvidia0
 test "$(git rev-parse --short=12 HEAD)" = "$3"
 if git show HEAD:research/INDEX.md 2>/dev/null; then exit 1; fi
 if touch /source/research/INDEX.md 2>/dev/null; then exit 1; fi
@@ -154,6 +165,31 @@ printf 'filesystem-boundary-pass\n'
                                           str(out / "provenance"), source["commit"][:12]], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("filesystem-boundary-pass", result.stdout)
+        # These must run inside a successfully created sandbox: a startup failure
+        # is not evidence that a read, capability or network route was denied.
+        probe = r'''
+import pathlib, socket, sys
+status = dict(line.split(":", 1) for line in pathlib.Path("/proc/self/status").read_text().splitlines() if ":" in line)
+for name in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"):
+    assert int(status[name].strip(), 16) == 0, (name, status[name])
+assert pathlib.Path("/proc/self/ns/net").readlink().as_posix() != sys.argv[1]
+interfaces = {line.split(":", 1)[0].strip() for line in pathlib.Path("/proc/net/dev").read_text().splitlines()[2:]}
+assert interfaces == {"lo"}, interfaces
+with socket.socket() as client:
+    client.settimeout(1)
+    assert client.connect_ex(("127.0.0.1", int(sys.argv[2]))) != 0, "host loopback escaped network namespace"
+print("capability-network-boundary-pass")
+'''
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            with socket.create_connection(listener.getsockname(), timeout=1):
+                pass  # Positive control: the host listener really is reachable.
+            result = subprocess.run(prefix + ["/usr/bin/python3", "-c", probe,
+                os.readlink("/proc/self/ns/net"), str(listener.getsockname()[1])],
+                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("capability-network-boundary-pass", result.stdout)
         # Execute an actual build-script-shaped shell read, not a scan of macro text.
         for path in ("/source/research/INDEX.md", "/source/" + q.PUBLICATION + "direct/value.txt",
                      str(out / "provenance/research/INDEX.md")):
@@ -198,7 +234,16 @@ printf 'filesystem-boundary-pass\n'
             args = argparse.Namespace(repo=repo, expected_head=source["commit"], out=out,
                                       nvcc=nvcc, bwrap=Path(bwrap), jobs=1)
             with patch.dict(os.environ, {"CARGO_HOME": str(empty_cache), "CUDA_VISIBLE_DEVICES": ""}):
-                capture.build(args)
+                try:
+                    capture.build(args)
+                except q.GateError:
+                    # unittest cleanup removes fixtures, so preserve the actual
+                    # compiler/sandbox failure in the CI log before re-raising.
+                    for name in ("fetch.log", "build.log"):
+                        log = out / name
+                        if log.is_file():
+                            print(f"CPU fixture {log}:\n{log.read_text()}", file=sys.stderr)
+                    raise
             record = q.json_bytes((out / "build.json").read_bytes())
             q.validate_build(record, source, record["source"], q.Evidence(out))
             return source, record
