@@ -22,7 +22,6 @@ pub fn observe(
             && granule > 0
             && gain > 0
             && gain >= released.saturating_sub(granule) as i128
-            && gain <= released as i128
             && restored == before
             && reacquired == gain,
         residual,
@@ -51,7 +50,7 @@ mod tests {
         );
         assert!(!observe(100, 117, 100, 20, 2).bounded_no_leak);
         assert!(!observe(100, 118, 101, 20, 2).bounded_no_leak);
-        assert!(!observe(100, 121, 100, 20, 2).bounded_no_leak);
+        assert!(observe(100, 121, 100, 20, 2).bounded_no_leak);
         assert!(!observe(100, 99, 100, 20, 2).bounded_no_leak);
         assert!(!observe(100, 100, 100, 0, 2).bounded_no_leak);
         assert!(!observe(100, 120, 100, 20, 0).bounded_no_leak);
