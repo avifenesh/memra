@@ -23,7 +23,8 @@ Program: tokenwise `decode_step_h`, trunk-only, no MTP or alternate prefill.
 - Original VMM 8k: **ACTIVE-8K G1 PASS**. All seven frozen surfaces and restored prefix match; exact physical release/reacquisition, no residual.
 - Original VMM 32k: **ACTIVE-32K physical reclaim/restore bit-identical, residual 2097152 B, class unclassified — not G1 PASS**.
 - Original pooled 8k: **ACTIVE-8K pooled control: not-applicable-pooled**; no fixed-VA or G1 claim.
-- Mapped-VA residual diagnostic 32k and directly injected VMM 8k: **pending**.
+- Mapped-VA diagnostic 32k: **residual_class=unclassified**, same non-PASS verdict; both unmap and VA-free deltas are **0 B**, all 32 per-plane remap observations restore free bytes exactly.
+- Directly injected VMM 8k: **pending**.
 
 `BOX3-BASELINES.json` freezes the seven decoded continuation-surface hashes and
 artifact/binary/plan/prompt/source identity for each completed baseline. These are
@@ -75,7 +76,8 @@ The existing gate-only `--kv-allocator vmm` door remains default-OFF;
 - Additional Mac **engine** check: BLOCKED, exit 101, `spawn nvcc: ... No such file or directory`;
   preserved in `day10-checks/engine-mac-check.log`. This does not replace a native build.
 - Native original gate build: PASS, raw build and binary/source identity archived.
-- Native refined implementation build and GPU cells: NOT RUN yet.
+- Native isolated diagnostic build + engine/gate clippy `-D warnings` + kv/tier release tests: PASS on **61eb02acb**.
+- Direct-allocation native build and 8k GPU cell: NOT RUN yet.
 
 CPU logs and commands are in `day10-checks/`; native receipts in `pro-single-day10/`.
 Migration-safe running-cell details and exact next action live in `STATE.md`.
