@@ -24,6 +24,16 @@ surfaces** over a causal LM, with their own schemas, caps and worker semantics, 
 They share the accounting described below: one admitted worker request per input, billed
 as prompt tokens.
 
+## OpenAI chat/completions streaming usage
+
+On `/v1/chat/completions` and OpenAI-mode `/v1/completions`,
+`stream_options.include_usage: true` sends `usage: null` on content and finish chunks,
+then one `choices: []` chunk with the full non-stream usage object (including cached
+prompt tokens and any speculative acceptance fields) before `[DONE]`. Absent/false
+preserves the legacy stream byte shape: usage appears on the choices-bearing finish
+chunk, not on content chunks. Failed streams keep their error + `[DONE]` ending,
+without fabricating a successful terminal usage chunk.
+
 ## `/v1/messages`: Anthropic Messages API
 
 `POST /v1/messages` (query strings such as `?beta=true` are accepted). Streaming and
