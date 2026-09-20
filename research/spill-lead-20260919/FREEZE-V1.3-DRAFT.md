@@ -1,5 +1,9 @@
 # Freeze v1.3 draft — real-backend conformance bindings
 
+> Historical draft. [FREEZE-V1.3.md](FREEZE-V1.3.md) freezes the two accepted
+> additive ownership seams. This draft's native binding matrix remains required;
+> unresolved native qualification cells are not cleared by the CPU freeze.
+
 Repository: **avifenesh/memra**. Planning baseline: PR #560 head
 **dcbc1bc089a6f95ad7f5e4bc7e90aa658dadd69d**; Lane E review merge
 **d3d054a8e2a177c10e5e923614945eba96c1d069**.
