@@ -58,10 +58,21 @@ def main():
                     try:
                         with urllib.request.urlopen(base + "/readyz", timeout=2) as response:
                             if response.status == 200:
-                                owner = subprocess.run(
-                                    ["ss", "-ltnp", "sport = :18091"],
-                                    capture_output=True, text=True, check=True)
-                                assert f"pid={proc.pid}," in owner.stdout, "foreign readiness responder"
+                                # Minimal CUDA images need not carry ss/lsof. Match the
+                                # listening socket inode against this child's open fds.
+                                listeners = set()
+                                for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+                                    for line in Path(table).read_text().splitlines()[1:]:
+                                        fields = line.split()
+                                        if fields[1].split(":")[-1] == f"{18091:04X}" and fields[3] == "0A":
+                                            listeners.add("socket:[" + fields[9] + "]")
+                                owned = set()
+                                for fd in Path(f"/proc/{proc.pid}/fd").iterdir():
+                                    try:
+                                        owned.add(os.readlink(fd))
+                                    except FileNotFoundError:
+                                        pass
+                                assert listeners & owned, "foreign readiness responder"
                                 break
                     except (urllib.error.URLError, TimeoutError):
                         pass
