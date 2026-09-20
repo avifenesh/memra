@@ -860,6 +860,8 @@ second public name for a model.
 
 ## OpenAI compatibility contract (serve-compat lane, 2026-08-03)
 
+- **Token-id stops:** chat/completions accept `stop_token_ids` (up to 16 vocabulary-validated u32 ids); the first raw match ends with `finish_reason: "stop"`, excluding the matching id and speculative tail from output and `usage.completion_tokens` (see [API surfaces](API-SURFACES.md#token-id-stops-on-chat-and-completions)).
+
 The five gap-scan listing-blockers (`research/gap-scan-20260802/REPORT.md`), fixed and
 gated by the official `openai` Python SDK against a live server
 (`research/serve-compat-20260802/`):

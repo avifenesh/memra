@@ -1,0 +1,86 @@
+{
+  "result": "PASS",
+  "prefix_tokens": 2,
+  "stop_id": 236771,
+  "baseline_tokens": 64,
+  "baseline_stop_reason": "MaxNew",
+  "binary_sha256": "1d6e75537f366d5f4c664fb3634337eb02cae346cc2d37a7746f849e84db633e",
+  "requests": [
+    {
+      "name": "native-baseline",
+      "request": {
+        "model": "g",
+        "prompt": "<bos><start_of_turn>user\nCount from one to ten, separated by commas.<end_of_turn>\n<start_of_turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64
+      },
+      "response_sha256": "fdf6d977d82e58f880c09b3b55f1f849a7fcf4fefdacd93ad3012b694ea20fe4"
+    },
+    {
+      "name": "native-prefix",
+      "request": {
+        "model": "g",
+        "prompt": "<bos><start_of_turn>user\nCount from one to ten, separated by commas.<end_of_turn>\n<start_of_turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 2
+      },
+      "response_sha256": "e850b35cd77ba2fdd56101ba464d4c2fdaec19f648563fa3426d3a695c7e53ac"
+    },
+    {
+      "name": "openai-baseline",
+      "request": {
+        "model": "g",
+        "prompt": "<bos><start_of_turn>user\nCount from one to ten, separated by commas.<end_of_turn>\n<start_of_turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64
+      },
+      "response_sha256": "0f05ec8f0f3d0de7f3a06923a055cdcd51019a4aab279dee5137c384ba5d40f2"
+    },
+    {
+      "name": "openai-stop",
+      "request": {
+        "model": "g",
+        "prompt": "<bos><start_of_turn>user\nCount from one to ten, separated by commas.<end_of_turn>\n<start_of_turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64,
+        "stop_token_ids": [
+          236771
+        ]
+      },
+      "response_sha256": "073cec7e939e0c480f6a41a447c4782fd4ec90bd061a149f5f2eb602559ee99d"
+    },
+    {
+      "name": "openai-first-stop",
+      "request": {
+        "model": "g",
+        "prompt": "<bos><start_of_turn>user\nCount from one to ten, separated by commas.<end_of_turn>\n<start_of_turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64,
+        "stop_token_ids": [
+          100
+        ]
+      },
+      "response_sha256": "2969521614c0f1e06bd9a7e7dffcaf4e8a239e94a8c80c5f9f82b6c39c84cc96"
+    },
+    {
+      "name": "openai-stream-stop",
+      "request": {
+        "model": "g",
+        "prompt": "<bos><start_of_turn>user\nCount from one to ten, separated by commas.<end_of_turn>\n<start_of_turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64,
+        "stop_token_ids": [
+          236771
+        ],
+        "stream": true
+      },
+      "response_sha256": "378104147e468537a743b5a875a446060f9ae22bd7fbf6d2015f0d9a1de334f5"
+    }
+  ]
+}

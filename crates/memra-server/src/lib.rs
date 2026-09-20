@@ -188,6 +188,7 @@ const BODY_READ_RATE_BYTES_PER_SEC: u64 = 2 * 1024 * 1024;
 const BODY_READ_TIMEOUT_MAX: std::time::Duration = std::time::Duration::from_secs(180);
 const BODY_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const BODY_ADMISSION_RETRY_AFTER_S: u64 = 1;
+const MAX_STOP_TOKEN_IDS: usize = 16;
 const MAX_STOP_SEQUENCES: usize = 16;
 const MAX_STOP_SEQUENCE_BYTES: usize = 1_024;
 const MAX_STOP_SEQUENCES_BYTES: usize = 4 * 1_024;
@@ -3064,6 +3065,10 @@ struct CompletionReq {
     seed: Option<u64>,
     #[serde(default)]
     stop: StopSequences,
+    /// Raw token-id stops (at most 16). The matched id is not emitted or counted in
+    /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
+    #[serde(default)]
+    stop_token_ids: Vec<u32>,
     /// Unsupported-but-semantic fields (gap-scan F4): captured so they 400 loudly instead
     /// of being silently swallowed by serde (policy: clean 400s, not silent downgrades).
     #[serde(default)]
@@ -3249,6 +3254,10 @@ struct ChatCompletionReq {
     seed: Option<u64>,
     #[serde(default)]
     stop: StopSequences,
+    /// Raw token-id stops (at most 16). The matched id is not emitted or counted in
+    /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
+    #[serde(default)]
+    stop_token_ids: Vec<u32>,
     #[serde(default)]
     stream: bool,
     #[serde(default)]
@@ -7774,6 +7783,7 @@ fn build_request_with_trace(
         params,
         sampler_cfg,
         stop_strings: req.stop.clone().into_vec(),
+        stop_token_ids: req.stop_token_ids.clone(),
         trace_id: req.trace_id.clone(),
         // Stamped with the envelope id by the handler before submission (the builder
         // does not see the envelope).
@@ -7947,6 +7957,7 @@ fn build_chat_request_with_trace(
     sampling_defaults: &ModelSamplingDefaults,
 ) -> Result<ChatPlan, String> {
     req.stop.validate()?;
+    validate_stop_token_ids(&req.stop_token_ids, caps)?;
     // The client's own expression is snapshotted here; the omitted fields resolve to a
     // vendor arm only once the thinking mode is final (see `sampler_cfg` below).
     let client_sampling: ClientSampling = (&req).into();
@@ -8249,6 +8260,7 @@ fn build_chat_request_with_trace(
                 eos: Vec::new(),
             },
             sampler_cfg,
+            stop_token_ids: req.stop_token_ids,
             stop_strings: {
                 // gemma4 tooluse: the model emits `<|tool_call>call:…<tool_call|>` and would
                 // then run past its handoff into a hallucinated `<|tool_response>`; stop when
@@ -9165,9 +9177,91 @@ fn validate_prompt_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), Stri
     Ok(())
 }
 
+/// Reuse the prompt-id vocabulary gate, preserving its diagnostic shape with the right field.
+fn validate_stop_token_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), String> {
+    if ids.len() > MAX_STOP_TOKEN_IDS {
+        return Err(format!(
+            "stop_token_ids accepts at most {MAX_STOP_TOKEN_IDS} ids"
+        ));
+    }
+    validate_prompt_ids(ids, caps).map_err(|msg| msg.replacen("prompt_ids", "stop_token_ids", 1))
+}
+
 #[cfg(test)]
 mod prompt_ids_tests {
     use super::*;
+
+    #[test]
+    fn stop_token_ids_parse_validate_and_reach_both_request_builders() {
+        let caps = ModelCaps {
+            n_vocab: 8,
+            chat_ok: true,
+            ..Default::default()
+        };
+        for ids in [vec![], vec![0, 3, 7], vec![7; MAX_STOP_TOKEN_IDS]] {
+            let body = json!({"model":"test", "prompt":"hello",
+                "messages":[{"role":"user", "content":"hello"}], "stop_token_ids":ids});
+            let req: CompletionReq = serde_json::from_value(body.clone()).unwrap();
+            assert!(validate_stop_token_ids(&req.stop_token_ids, Some(&caps)).is_ok());
+            let (tx, _rx) = worker::event_channel();
+            assert_eq!(
+                build_request(&req, tx, lanes::Lane::Interactive, None).stop_token_ids,
+                ids
+            );
+            let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
+            let (tx, _rx) = worker::event_channel();
+            assert_eq!(
+                build_chat_request(req, Some(&caps), tx, lanes::Lane::Interactive, None)
+                    .unwrap()
+                    .request
+                    .stop_token_ids,
+                ids
+            );
+        }
+        let body = json!({"model":"test", "messages":[]});
+        assert!(
+            serde_json::from_value::<CompletionReq>(body.clone())
+                .unwrap()
+                .stop_token_ids
+                .is_empty()
+        );
+        assert!(
+            serde_json::from_value::<ChatCompletionReq>(body)
+                .unwrap()
+                .stop_token_ids
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn stop_token_ids_cap_oov_and_unsigned_shape() {
+        let caps = ModelCaps {
+            n_vocab: 8,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_stop_token_ids(&[0; 17], Some(&caps)).unwrap_err(),
+            "stop_token_ids accepts at most 16 ids"
+        );
+        assert_eq!(
+            validate_stop_token_ids(&[1, 8, 2], Some(&caps)).unwrap_err(),
+            validate_prompt_ids(&[1, 8, 2], Some(&caps))
+                .unwrap_err()
+                .replace("prompt_ids", "stop_token_ids")
+        );
+        assert!(validate_stop_token_ids(&[u32::MAX], Some(&caps)).is_err());
+        assert!(validate_stop_token_ids(&[u32::MAX], None).is_ok());
+        for invalid in [
+            json!([-1]),
+            json!([4294967296u64]),
+            json!([1.5]),
+            json!("7"),
+        ] {
+            let body = json!({"model":"test", "messages":[], "stop_token_ids":invalid});
+            assert!(serde_json::from_value::<CompletionReq>(body.clone()).is_err());
+            assert!(serde_json::from_value::<ChatCompletionReq>(body).is_err());
+        }
+    }
 
     #[test]
     fn prompt_ids_are_bounded_by_the_model_vocab_at_intake() {
@@ -9288,6 +9382,9 @@ async fn completions_with_admission(
     // before the request costs a slot or reaches the worker's embed gather.
     if let Err(msg) = validate_prompt_ids(&req.prompt_ids, st.caps.get(&req.model)) {
         return with_request_id(&env.id, bad_request(&msg, Some("prompt_ids")));
+    }
+    if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
+        return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
     }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.
@@ -9557,6 +9654,9 @@ async fn chat_completions_with_admission(
         None => {
             return with_request_id(&env.id, model_not_found_response(&st.models, &req.model));
         }
+    }
+    if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
+        return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
     }
     let ttft = trace.and_then(|Extension(trace)| trace.0);
     if let Some(trace) = ttft.as_ref() {
@@ -23053,6 +23153,55 @@ request = "0"
             error,
             "OpenModels feed requires MEMRA_MODEL_METADATA for model \"qwen/qwen3.6-27b\""
         );
+    }
+
+    #[tokio::test]
+    async fn stop_token_ids_handlers_return_named_400s() {
+        let mut st = fake_worker_state();
+        let model = st.models[0].clone();
+        Arc::make_mut(&mut st.caps).insert(
+            model.clone(),
+            ModelCaps {
+                n_vocab: 8,
+                ..Default::default()
+            },
+        );
+        for ids in [vec![0; 17], vec![8], vec![u32::MAX]] {
+            for chat in [false, true] {
+                let body = json!({"model":model, "prompt":"hello",
+                    "messages":[{"role":"user", "content":"hello"}], "stop_token_ids":ids});
+                let response = if chat {
+                    chat_completions(
+                        State(st.clone()),
+                        Default::default(),
+                        None,
+                        Json(serde_json::from_value(body).unwrap()),
+                    )
+                    .await
+                } else {
+                    completions(
+                        State(st.clone()),
+                        Default::default(),
+                        None,
+                        Json(serde_json::from_value(body).unwrap()),
+                    )
+                    .await
+                };
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(body["error"]["param"], "stop_token_ids");
+                assert_eq!(body["error"]["type"], "invalid_request_error");
+                assert!(
+                    body["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("stop_token_ids")
+                );
+            }
+        }
     }
 
     #[tokio::test]
