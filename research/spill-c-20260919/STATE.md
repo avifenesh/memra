@@ -1,15 +1,15 @@
-# Session C day-nine handoff
+# Session C day-nine handoff — complete assigned cells
 - Active local lane `lane/spill-c-20260919`, checkout `wt-spill-c`; no main changes.
-- RUNNING: remote tmux `c-day9-pressure`, script `research/spill-c-20260919/run-day9-pressure.py`.
-- Receipts `/root/spill-receipts/c-day9/`; read `pressure-status.json` / `pressure-driver.log`.
-- Script waits 60s on exact lock refusal, up to 60 min; four gen/spec ON/OFF 8GiB cells, then exits.
-- Uses own `/root/wt-c`; collector pro-single with canonical lock; no C bare GPU process.
-- Finished/pushed: integ5 merge 148e7f0e9, four default gen/spec ON/OFF cells through c270d1f4a.
-- First 8GiB gen ON passed, 12091 GPU evictions, pushed 13db273ef; new script repeats the full set.
-- Baseline binaries remain from 148e7f0e9, hashes/build in pro-single-day9/build; never overwrite.
-- Engine Send+Sync/cache Send assertion and corrected frozen source hash pushed 748903f73.
-- Mac eight checks PASS; native strict release engine clippy PASS at 748903f73; see DAY9.md.
-- Existing inherited owner-proxy wiring is complete, default-OFF; no duplicate implementation added.
-- NEXT: sync whole receipt dir, run verify-day9.py, commit/push full pressure set once complete.
-- If 60-min refusal: bank all logs, report pending; do not chase gaps or override lock.
-- Then add final report/binary postcheck/verifier red tests; budget proposal needs lead's future decision.
+- NOTHING RUNNING for C: tmux `c-day9-pressure` exited; pressure-status state is complete.
+- Native receipts `/root/spill-receipts/c-day9/`, copied into `pro-single-day9/` and pushed.
+- Complete pressure set + binary postcheck pushed at `f157269e1`; verify-day9.py replays PASS.
+- Default ON/OFF and 8GiB ON/OFF generation MATCH; all spec K1–8 PASS; same-card tapes identical.
+- 8GiB banked GPU evictions gen/spec=12091/63996; host evictions=22061/73966.
+- Physical reads gen/spec=22077/73982; bounded collector wait succeeded on second attempt.
+- Frozen native binaries at `/root/wt-c/target/release/` are from source 148e7f0e9; hashes retained.
+- Engine Send+Sync, cache Send, pread Receiver !Sync; native clippy passes at 748903f73.
+- Mac ten checks PASS (196 tier tests), six verifier tests; source hashes and raw logs committed.
+- Existing inherited owner-proxy wiring is complete/default-OFF; no duplicate wiring added.
+- Budget refusal proposal is in BUDGET-REFUSAL.md; legacy flag behavior unchanged.
+- NEXT: lead independently replay verify-day9.py and review/integrate lane; no GPU rerun pending.
+- Local lane/remote build retained as active integration handoff; no release/PP runtime claim.
