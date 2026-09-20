@@ -1,0 +1,125 @@
+[q8rp] split-plane decode mirrors built: 191 tensors
+loaded qwen35moe (41 layers, nextn=1)
+prompt tokens: [55, 88, 13]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+
+[generate]   31 tok in 0.174s = 178.46 tok/s (gen-only; this run's prime 0.015s)
+  tokens: [198, 760, 1118, 3065, 310, 635, 369, 310, 1791, 264, 491, 2313, 13, 353, 2688, 2019, 310, 958, 279, 1581, 46796, 35309, 9237, 4736, 7093, 3683, 13, 198, 5666, 11, 353, 2688]
+[spec] draft graph unavailable: non-resident MoE MTP head; eager draft chain engaged
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=1] 32 tok in 0.184s = 168.45 tok/s (0.94x vs generate; this run's prime 0.015s)
+  acceptance: 11/20 = 55.0%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=2] 32 tok in 0.143s = 216.37 tok/s (1.21x vs generate; this run's prime 0.015s)
+  acceptance: 17/28 = 60.7%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=3] 32 tok in 0.173s = 179.50 tok/s (1.01x vs generate; this run's prime 0.015s)
+  acceptance: 17/42 = 40.5%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=4] 32 tok in 0.203s = 152.60 tok/s (0.86x vs generate; this run's prime 0.015s)
+  acceptance: 17/56 = 30.4%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=5] 32 tok in 0.232s = 133.50 tok/s (0.75x vs generate; this run's prime 0.015s)
+  acceptance: 17/70 = 24.3%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=6] 32 tok in 0.261s = 118.90 tok/s (0.67x vs generate; this run's prime 0.015s)
+  acceptance: 17/84 = 20.2%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=7] 32 tok in 0.290s = 106.77 tok/s (0.60x vs generate; this run's prime 0.015s)
+  acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=8] 32 tok in 0.319s = 97.20 tok/s (0.54x vs generate; this run's prime 0.015s)
+  acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "env",
+    "MEMRA_MOE_RESIDENT=0",
+    "MEMRA_NGEN=32",
+    "/root/wt-c/target/release/run-spec",
+    "/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+    "55",
+    "88",
+    "13"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 2519223872922,
+  "ended_monotonic_ns": 2526849490102,
+  "started_utc": "2026-09-20T15:33:54.217730+00:00",
+  "ended_utc": "2026-09-20T15:34:01.843350+00:00",
+  "elapsed_seconds": 7.62561718,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2720,
+    "sha256": "2b6621750e0434d9910f5602597fb02ee1b1cdaeb56cd87810409eea8b53ff72"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 3478,
+      "sha256": "8f3fb85b68e5886102490525793f1413673315aec72c8516765665dd8628c9de"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

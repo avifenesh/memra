@@ -450,6 +450,44 @@ pub fn roundtrip(
         )?;
     }
 
+    // Probe actual demoted planes (not the never-mapped spare reservation above).
+    // Retained edge handles stay alive so their physical bytes cannot masquerade as metadata.
+    let mut mapped_va_probe = None;
+    if diagnostic {
+        let mut rows = String::from("plane\tbefore\tafter_unmap\tafter_va_free\tafter_remap\n");
+        let mut va_delta = 0i128;
+        let mut unmap_delta = 0i128;
+        let mut roundtrip_equal = true;
+        for (index, plane) in suspended
+            .iter_mut()
+            .flat_map(|(_, _, k, v)| [k, v])
+            .enumerate()
+        {
+            let [before, unmapped, freed, remapped] = plane
+                .vmm
+                .as_mut()
+                .ok_or("REFUSED: mapped VA probe requires VMM")?
+                .probe_demoted_va_release()?;
+            va_delta += freed as i128 - unmapped as i128;
+            unmap_delta += unmapped as i128 - before as i128;
+            roundtrip_equal &= before == remapped;
+            rows.push_str(&format!(
+                "{index}\t{before}\t{unmapped}\t{freed}\t{remapped}\n"
+            ));
+        }
+        let after_probe = e.ctx().mem_get_info()?.0;
+        roundtrip_equal &= residual_probe.is_some_and(|(_, synced)| after_probe == synced);
+        fs::write(out.join("mapped-va-probe.tsv"), rows)?;
+        let mut probe = fs::OpenOptions::new()
+            .append(true)
+            .open(out.join("residual-diagnostic.txt"))?;
+        writeln!(
+            probe,
+            "mapped_va_release_delta_bytes={va_delta}\nmapped_unmap_delta_bytes={unmap_delta}\nmapped_va_roundtrip_equal={roundtrip_equal}\nfree_after_mapped_va_probe_bytes={after_probe}"
+        )?;
+        mapped_va_probe = Some((va_delta, unmap_delta, roundtrip_equal));
+    }
+
     let used = transfers.borrow().used();
     fs::write(out.join("active-bundles.tsv"), manifest)?;
     fs::write(out.join("vmm-planes.tsv"), vmm_manifest)?;
@@ -507,6 +545,10 @@ pub fn roundtrip(
         "not-applicable-pooled"
     } else if observation.residual == 0 {
         "none"
+    } else if mapped_va_probe
+        .is_some_and(|(va, unmap, equal)| va == observation.residual && unmap == 0 && equal)
+    {
+        "va-reservation-page-table"
     } else if let Some((va_free, ctx_sync)) = residual_probe {
         if va_free as i128 - after as i128 == observation.residual && ctx_sync == va_free {
             "spare-VA-release-sensitive-driver-accounting"
@@ -525,7 +567,9 @@ pub fn roundtrip(
     } else {
         after > before && restored == before
     };
-    let reclaimed = vmm_granularity != 0 && reclaim_observed && residual_class != "unclassified";
+    // A classification on this card alone is not the required two-card evidence.
+    // The earlier card has no classified nonzero residual; keep every such arm non-PASS.
+    let reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0;
     let g1_reclaim_qualified = if vmm_granularity == 0 {
         "not-applicable-pooled".to_string()
     } else {
