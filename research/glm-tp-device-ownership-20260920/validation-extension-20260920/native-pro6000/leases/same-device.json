@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 19478,
+  "child_pid": 19483,
+  "requested_uuids": [
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+  ],
+  "lock_order": [
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+  ],
+  "lock_files": {
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a": "/tmp/memra-gpu-locks/GPU-c2a89142-c177-b92a-1366-d58822694f0a.lock"
+  },
+  "lock_inodes": {
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a": {
+      "inode": 142684498,
+      "device_major": 0,
+      "device_minor": 51
+    }
+  },
+  "devices": [
+    {
+      "index": 1,
+      "uuid": "GPU-c2a89142-c177-b92a-1366-d58822694f0a",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:83:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-25877c8d-b222-b270-400d-aca5a809f23c",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:55:00.0"
+    },
+    {
+      "index": 1,
+      "uuid": "GPU-c2a89142-c177-b92a-1366-d58822694f0a",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:83:00.0"
+    },
+    {
+      "index": 2,
+      "uuid": "GPU-554f7aeb-578c-187f-4f29-af06f2170507",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:84:00.0"
+    },
+    {
+      "index": 3,
+      "uuid": "GPU-f9f892ec-ab88-822a-0054-e9c2e7bf591f",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:D4:00.0"
+    }
+  ],
+  "command": [
+    "python3",
+    "tools/qualify-model-device-memory.py",
+    "run",
+    "--expected-sha",
+    "fcb1b986b742a91cf960e5a6fea671779cce79c7",
+    "--out",
+    "target/qualify-544-indexed-a1",
+    "--stage",
+    "same-device",
+    "--timeout",
+    "600",
+    "--gpu-uuid",
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+  ],
+  "started_unix": 1789890078.71671,
+  "state": "finished",
+  "exit_code": 0,
+  "child_exit_code": 0,
+  "finished_unix": 1789890080.1640155,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": []
+}
