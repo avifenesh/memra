@@ -144,3 +144,8 @@ hours including transport waits), within the three-hour session bound. This
 closes the assigned day-eight scope of the eight-day lane; cumulative active
 hours for the preceding seven days are not present in this receipt and are not
 invented here.
+
+Task-created day-eight disposable local/device and remote worktrees, branches,
+bundle and remote scratch were removed after the receipts were pushed. The
+primary C lane remains an active lead handoff; prior C scratch and other lanes
+were not changed. `raw/day8-cpu/cleanup.json` records the final removal checks.
