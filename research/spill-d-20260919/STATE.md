@@ -1,15 +1,14 @@
 # Session D day 10 handoff
-- Lane: `lane/spill-d-20260919`; integ5 merged and pushed as `9f849978bac72cf2a4b608873a49341eafb7ab56`.
-- G2 on BOX3: tmux `spill-d-g2-day10`; holds collector lock (15:58 UTC, scoring 16 MiB; calibration complete).
-- Own clone `/root/wt-d`; do not modify reference `/root/memra-spill`.
-- Native release `h2d-probe` + `pp-transport-smoke` build passed at merged source above (3m03s).
-- Build receipts: `/root/spill-receipts/d-day10/build`, copied to `rented-pro6000-20260920/build/` here.
-- Reviewed pro-single match/memory/stub/wrapper/lock: correct; fixed missing runs.schema.json rig enum.
-- Added three Python profile tests (plan/schema, actual lock/refusal, bootstrap dry-run/red controls); all pass.
-- Sanitized successful 31-step bootstrap copied to `rented-pro6000-20260920/bootstrap/BOOTSTRAP.json`.
-- G2 runner/protocol pushed `44840aed3`; receipts `/root/spill-receipts/d-day10/g2`; console `d-day10/g2-console.log`; exit `d-day10/g2.exit`.
-- Next: inspect exit/console, sync all receipts, hash/validate and summarize; never relaunch if tmux or collector is still active.
-- Coordinate quiet window through lead; bounded lock wait <=45min, no bypass; socket reuse only.
-- Then collector pp-transport-smoke, validate all D BOX3 receipts, full checks and DAY10-VERIFICATION.md.
-- Full local checks pushed `fcb9fd161`: 83 Python tests + all checks PASS on retry; initial Darwin killpg PermissionError retained.
-- Replay summary tool pushed `08d1a7dc4`; no decision needed; not multi-rig/board qualification.
+- Lane `lane/spill-d-20260919`; integ5 merged/pushed `9f849978bac72cf2a4b608873a49341eafb7ab56`.
+- G2 FINISHED exit0, lock released; scored raw+summary pushed `7bcc27ba1` (200 samples, 5AB+5BA, all >=497ms).
+- **Running BOX3:** tmux `spill-d-smoke-day10`, bounded wait for `/tmp/memra-gpu.lock` (no D lock held as of 16:02 UTC).
+- Smoke receipts `/root/spill-receipts/d-day10/smoke`; console `d-day10/smoke-console.log`; exit `d-day10/smoke.exit`.
+- G2 receipts `/root/spill-receipts/d-day10/g2` safely archived under `rented-pro6000-20260920/` here; 140 hashes match.
+- Own remote clone `/root/wt-d`; never modify `/root/memra-spill`. Native probe/smoke built at merged tip above.
+- Profile review/tests fixed missing pro-single schema enum; sanitized 31-step bootstrap retained, `527373c3a`.
+- G2 runner/protocol `44840aed3`; summarizer `08d1a7dc4`; summary red tests `76723d258`.
+- Full checks `fcb9fd161`: 83 tests PASS retry; initial Darwin killpg PermissionError retained (no suppression/fix).
+- Next: inspect smoke exit, sync/hash its closed receipts, then `--validate` D archive and all BOX3 receipts.
+- Global validation 16:02 UTC refused `interrupted/invalid CELL journal`; another active cell, not D G2 failure.
+- Then rerun final checks (now 85 tests), write DAY10-VERIFICATION.md, commit/push all state.
+- No decision needed. Single target-class development evidence, not multi-rig/default/serving qualification.

@@ -20,10 +20,17 @@ commands = [
     ['python3', '-B', '-m', 'unittest', 'discover', '-s', 'crates/memra-tier/tests/battery', '-p', 'test_*.py'],
     ['python3', '-m', 'py_compile', *sorted(str(f.relative_to(ROOT)) for f in (ROOT/'tools').glob('tier-*.py')),
      *sorted(str(f.relative_to(ROOT)) for f in (ROOT/'crates/memra-tier/tests/battery').glob('*.py')),
-     'research/spill-d-20260919/validate-day8-archives.py', 'research/spill-d-20260919/run-g2.py', str(Path(__file__).relative_to(ROOT))],
+     'research/spill-d-20260919/validate-day8-archives.py', 'research/spill-d-20260919/run-g2.py',
+     'research/spill-d-20260919/summarize-g2.py', str(Path(__file__).relative_to(ROOT))],
     *[['bash', '-n', path] for path in ['tools/tier-rig-bootstrap.sh', 'tools/kv-host-spill-identity-gate.sh',
-                                      'tools/kv-host-spill-failure-gate.sh']],
-    ['shellcheck', 'tools/tier-rig-bootstrap.sh'],
+                                      'tools/kv-host-spill-failure-gate.sh', 'research/spill-d-20260919/run-smoke.sh']],
+    ['shellcheck', 'tools/tier-rig-bootstrap.sh', 'research/spill-d-20260919/run-smoke.sh'],
+    ['python3', 'research/spill-d-20260919/summarize-g2.py',
+     'research/spill-d-20260919/rented-pro6000-20260920/g2'],
+    ['python3', 'tools/tier-battery.py', '--validate', 'research/spill-d-20260919/rented-pro6000-20260920'],
+    ['python3', '-c', 'from pathlib import Path; lines=Path("tools/tier-rig-bootstrap.sh").read_text().splitlines(); '
+     'begin=next(i for i,line in enumerate(lines) if line.startswith("exec python3"))+1; '
+     'compile(chr(10).join(lines[begin:-1]),"bootstrap-heredoc","exec"); print("BOOTSTRAP PYTHON SYNTAX PASS")'],
     ['git', 'diff', '--check'],
     ['bash', 'tools/check-flags.sh'],
     ['python3', '-c', 'import re,subprocess; from pathlib import Path; '
