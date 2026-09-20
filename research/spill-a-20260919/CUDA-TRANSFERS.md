@@ -1,4 +1,4 @@
-# Native CUDA transfer substrate — day 6
+# Native CUDA transfer substrate — days 6–7
 
 Status: implementation under qualification; no serving/default/performance promotion.
 
@@ -67,7 +67,8 @@ cannot recover an absent event or a failed copy into success.
 `retire` requires observed copy completion, all graph pins dropped, all taken host
 leases released, and (after any publication) the exact ticket-bound consumer event
 observed complete. `retired` is false until this controlled retirement succeeds.
-Tombstones remain until `acknowledge`. Queue occupancy is charged through the same
+Tombstones remain until `acknowledge`. This whole-ticket meaning is unchanged by
+source-only retirement below. Queue occupancy is charged through the same
 governor and retained through acknowledgement-independent retirement. Buffers have
 explicit device release; host backing frees only after its tracked event completes.
 
@@ -76,6 +77,45 @@ and subsequently re-observes the real event. This is not physical context-loss
 recovery evidence. Graph pins require the owner to drop them only after actual
 graph execution/destruction retires; the generic substrate does not inspect a
 scheduler or CUDA graph object itself.
+
+## Additive day-7 contract — proposed for E's v1.3 schedules
+
+`CudaTransfers::take_device(&DeviceLease) -> Result<CudaSlice<u8>>` synchronizes
+the designated owner stream, requires no live transfer/consumer binding or other
+retained device lease, removes the sealed registry entry and its governor charge,
+and returns the exact native allocation without freeing it or copying bytes.
+The caller assumes the allocation's accounting after hand-back. A live binding or
+retained lease returns `Busy` without consuming the retry handle; a second take
+returns `ForeignLease`. It does not promote an unretired ticket or bypass its
+consumer/graph retirement. The frozen `DeviceOwner` and `TransferEngine` are
+unchanged; this is an additive native adapter API.
+
+`CudaTransfers::retire_source(ticket) -> Result<()>` retires only that ticket's
+source-side ownership, idempotently, after observed producer/DMA completion and
+no graph retention or source-side consumer binding. It never marks the whole
+ticket `retired`, removes destination bindings, or drops a taken destination.
+Unknown completion remains `Quarantined`; pending DMA or live graph/source
+consumer binding returns `Busy` without releasing either side.
+
+- D2H: drop the ticket's source `DeviceLease`; the caller may then call
+  `release_device(&source)` to free its registry allocation (or `take_device` to
+  recover backing). Other retained source leases still prevent that release.
+  The destination host lease remains readable, exclusively owned by its tier,
+  and governor-charged until that host lease is dropped, independently of source
+  residency. `retire_source` alone does not implicitly free a registry allocation.
+- H2D: drop the source host lease and its pinned-memory charge after DMA completes;
+  the destination device allocation and consumer binding remain live. A published
+  destination still needs its authentic consumer fence and graph retirement
+  before `retire`; only then can its sole remaining device lease be handed back.
+- Frozen `retired(ticket)` continues to mean whole-ticket retirement, including
+  destination consumer lifetime. In particular, a live taken host lease still
+  makes whole-ticket `retire` return `Busy`, but no longer prevents source release.
+
+Native gate cases exercise a bound-source refusal, graph and retained-lease
+refusals, exactly-once native hand-back, D2H source release with a live hash-equal
+host image, H2D source retirement, and exact operand readback at 4 KiB–256 MiB.
+These changes add no wire fields or runtime-trait methods. E should add these
+per-side schedules to v1.3 without redefining v1/v1.1/v1.2 retirement.
 
 ## Still Unsupported / pending
 

@@ -6,12 +6,6 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 #[allow(dead_code)]
 #[path = "../../../memra-tier/tests/contracts/conformance.rs"]
 mod v1;
-#[allow(dead_code)]
-#[path = "../../../memra-tier/tests/contracts/revision_v11.rs"]
-mod v11;
-#[allow(dead_code)]
-#[path = "../../../memra-tier/tests/contracts/revision_v12.rs"]
-mod v12;
 
 fn epochs() -> Epochs {
     Epochs {
@@ -32,6 +26,7 @@ fn setup() -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
     let ctx = CudaContext::new(0).unwrap();
     let stream = ctx.new_stream().unwrap();
     let cap = TierBudget {
+        version: 1,
         device: vec![2 << 30],
         peer: vec![0],
         replicas: vec![0],
@@ -96,7 +91,7 @@ fn conformance() {
 
     let (op, keep) = h2d(&mut t, &bytes);
     let ticket = t.h2d(op).unwrap();
-    v11::transfer_complete_cancel(&mut t, ticket, &expected(&bytes), |t, ticket| {
+    v1::transfer_complete_cancel(&mut t, ticket, &expected(&bytes), |t, ticket| {
         t.synchronize(ticket).unwrap()
     });
     clean(&mut t, &ticket, &keep);
@@ -105,17 +100,17 @@ fn conformance() {
     let (op, keep) = h2d(&mut t, &bytes);
     let ticket = t.h2d(op).unwrap();
     let mut graph = Some(t.pin_graph(&ticket).unwrap());
-    v11::transfer_lifetime(
+    v1::transfer_lifetime(
         &mut t,
         ticket,
         |t, ticket, step| match step {
-            v11::LifetimeStep::Unknown => t.quarantine_observation(ticket).unwrap(),
-            v11::LifetimeStep::Producer => stream.synchronize().unwrap(),
-            v11::LifetimeStep::Recover => t.synchronize(ticket).unwrap(),
-            v11::LifetimeStep::Consumer => {
+            v1::LifetimeStep::Unknown => t.quarantine_observation(ticket).unwrap(),
+            v1::LifetimeStep::Producer => stream.synchronize().unwrap(),
+            v1::LifetimeStep::Recover => t.synchronize(ticket).unwrap(),
+            v1::LifetimeStep::Consumer => {
                 assert_eq!(t.retire(ticket, None), Err(Error::Busy));
             }
-            v11::LifetimeStep::Graph => {
+            v1::LifetimeStep::Graph => {
                 drop(graph.take());
                 t.retire(ticket, None).unwrap();
             }
@@ -140,7 +135,7 @@ fn conformance() {
         destination: host,
         epochs: epochs(),
     });
-    let rejected = v11::transfer_zero_accept(&mut t, vec![read], |ops| {
+    let rejected = v1::transfer_zero_accept(&mut t, vec![read], |ops| {
         assert!(matches!(&ops[0], TransferOp::NvmeRead(_)));
     });
     drop(rejected);
@@ -158,7 +153,7 @@ fn conformance() {
         .unwrap();
     t.synchronize(&batch.ticket).unwrap();
     let e = vec![expected(&bytes)[0].clone(); 3];
-    v11::acceptance(&batch, &t.poll(&batch.ticket).unwrap(), &e, 1, None);
+    v1::acceptance(&batch, &t.poll(&batch.ticket).unwrap(), &e, 1, None);
     assert!(matches!(
         t.take_destination(&batch.ticket, 0, epochs()),
         Err(Error::Rejected)
@@ -175,8 +170,8 @@ fn conformance() {
     let (op, keep) = h2d(&mut t, &bytes);
     let ticket = t.h2d(op).unwrap();
     t.synchronize(&ticket).unwrap();
-    v12::transfer_completion_bytes(&mut t, &ticket, &expected(&bytes), true);
-    for stale in v11::stale_epochs(epochs()) {
+    v1::transfer_completion_bytes(&mut t, &ticket, &expected(&bytes), true);
+    for stale in v1::stale_epochs(epochs()) {
         assert!(matches!(
             t.ready_view(&ticket, 0, stale),
             Err(Error::StaleEpoch)
@@ -210,6 +205,51 @@ fn conformance() {
     println!(
         "PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence"
     );
+    // A live destination consumer on an allocation also blocks its D2H-source
+    // retirement. The source must not become reusable just because DMA finished.
+    let (op, keep) = h2d(&mut t, &bytes);
+    let up = t.h2d(op).unwrap();
+    t.synchronize(&up).unwrap();
+    t.with_destination(&up, 0, epochs(), |device, stream| {
+        assert_eq!(stream.clone_dtoh(device).unwrap(), bytes);
+        Ok(())
+    })
+    .unwrap();
+    let producer = t.record_producer(epochs().src_gen).unwrap();
+    let down_host = t.alloc_host(bytes.len(), request()).unwrap();
+    let down_device = t.retain_device(&keep).unwrap();
+    let down = t
+        .d2h(CopyOp {
+            host: down_host,
+            device: down_device,
+            bytes: bytes.len() as u64,
+            epochs: epochs(),
+            producer_fence: Some(producer),
+        })
+        .unwrap();
+    t.synchronize(&down).unwrap();
+    assert_eq!(t.retire_source(&down), Err(Error::Busy));
+    assert!(matches!(t.take_device(&keep), Err(Error::Busy)));
+    let consumer = t.record_consumer(&up).unwrap();
+    stream.synchronize().unwrap();
+    t.retire(&up, Some(consumer)).unwrap();
+    t.acknowledge(&up).unwrap();
+    t.retire_source(&down).unwrap();
+    t.release_device(&keep).unwrap();
+    let Destination::Host(host) = t.take_destination(&down, 0, epochs()).unwrap() else {
+        panic!("D2H destination is not host")
+    };
+    assert_eq!(host.bytes().unwrap(), bytes);
+    let consumer = t.record_consumer(&down).unwrap();
+    stream.synchronize().unwrap();
+    assert_eq!(t.retire(&down, Some(consumer)), Err(Error::Busy));
+    drop(host);
+    t.retire(&down, Some(consumer)).unwrap();
+    t.acknowledge(&down).unwrap();
+    t.release_producer(producer).unwrap();
+    println!(
+        "PASS additive source retirement Busy while source consumer bound; host destination survives source release"
+    );
     assert_eq!(gov.borrow().used(), TierBudget::zero(1));
     println!("PASS native governor zero after controlled drain");
 }
@@ -236,10 +276,21 @@ fn roundtrip() {
             })
             .unwrap();
         t.synchronize(&down).unwrap();
-        v12::transfer_completion_bytes(&mut t, &down, &expected(&bytes), false);
+        v1::transfer_completion_bytes(&mut t, &down, &expected(&bytes), false);
         let Destination::Host(host) = t.take_destination(&down, 0, epochs()).unwrap() else {
             panic!("D2H destination is not host")
         };
+        assert!(matches!(t.take_device(&source), Err(Error::Busy)));
+        let graph = t.pin_graph(&down).unwrap();
+        assert_eq!(t.retire_source(&down), Err(Error::Busy));
+        drop(graph);
+        t.retire_source(&down).unwrap();
+        t.retire_source(&down).unwrap(); // additive API is idempotent
+        assert!(!t.retired(&down).unwrap());
+        t.release_device(&source).unwrap();
+        assert_eq!(gov.borrow().used().device[0], 0);
+        assert_eq!(gov.borrow().used().pinned, n as u64);
+        assert_eq!(host.bytes().unwrap(), bytes);
         assert_eq!(checksum(host.bytes().unwrap()), checksum(&bytes));
         assert_eq!(t.retire(&down, None), Err(Error::Busy));
         let target = t.alloc_device(n, epochs().dst_gen, request()).unwrap();
@@ -254,31 +305,44 @@ fn roundtrip() {
             })
             .unwrap();
         t.synchronize(&up).unwrap();
-        v12::transfer_completion_bytes(&mut t, &up, &expected(&bytes), true);
-        let actual = t
-            .with_destination(&up, 0, epochs(), |device, stream| {
-                stream.clone_dtoh(device).map_err(|_| Error::Quarantined)
-            })
-            .unwrap();
-        let want = checksum(&bytes);
-        let got = checksum(&actual);
-        assert_eq!(got, want, "real destination bytes differ at size {n}");
-        assert_eq!(actual, bytes);
+        v1::transfer_completion_bytes(&mut t, &up, &expected(&bytes), true);
+        let Destination::Device(destination) = t.take_destination(&up, 0, epochs()).unwrap() else {
+            panic!("H2D destination is not device")
+        };
+        assert!(matches!(t.take_device(&destination), Err(Error::Busy)));
+        t.retire_source(&up).unwrap();
+        assert_eq!(gov.borrow().used().pinned, 0);
+        assert!(!t.retired(&up).unwrap());
+        assert!(matches!(t.take_device(&destination), Err(Error::Busy)));
         let up_done = t.record_consumer(&up).unwrap();
         stream.synchronize().unwrap();
         t.retire(&up, Some(up_done)).unwrap();
         t.acknowledge(&up).unwrap();
+        assert!(matches!(t.take_device(&destination), Err(Error::Busy))); // retained keep
+        drop(keep);
+        let operand = t.take_device(&destination).unwrap();
+        assert_eq!(operand.len(), n);
+        assert_eq!(gov.borrow().used().device[0], 0);
+        assert!(matches!(
+            t.take_device(&destination),
+            Err(Error::ForeignLease)
+        ));
+        let actual = stream.clone_dtoh(&operand).unwrap();
+        let want = checksum(&bytes);
+        let got = checksum(&actual);
+        assert_eq!(got, want, "real destination bytes differ at size {n}");
+        assert_eq!(actual, bytes);
+        drop(operand);
         let down_done = t.record_consumer(&down).unwrap();
         stream.synchronize().unwrap();
         t.retire(&down, Some(down_done)).unwrap();
         t.acknowledge(&down).unwrap();
-        t.release_device(&keep).unwrap();
-        t.release_device(&source).unwrap();
+
         t.release_producer(producer).unwrap();
         assert_eq!(gov.borrow().used(), TierBudget::zero(1));
         let hex = |d: Digest| d.iter().map(|b| format!("{b:02x}")).collect::<String>();
         println!(
-            "PASS native D2H-H2D roundtrip bytes={n} N=1 expected_sha256={} actual_sha256={} byte_exact=true governor_zero=true",
+            "PASS native D2H-H2D roundtrip bytes={n} N=1 expected_sha256={} actual_sha256={} byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true",
             hex(want),
             hex(got)
         );

@@ -90,18 +90,21 @@ impl Drop for CudaPinnedLease {
         }
         drop(self.backing.take());
         drop(self.pin.take());
-        if let Some(c) = self.charge.take() {
-            if self.governor.borrow_mut().release(&c).is_err() {
-                std::mem::forget(c);
-            }
+        if let Some(c) = self.charge.take()
+            && self.governor.borrow_mut().release(&c).is_err()
+        {
+            std::mem::forget(c);
         }
     }
 }
 struct Item {
-    op: CopyOp<CudaPinnedLease>,
+    host: Option<CudaPinnedLease>,
+    device: Option<DeviceLease>,
+    bytes: u64,
     direction: CopyDirection,
     event: Option<CudaEvent>,
     taken: bool,
+    source_retired: bool,
 }
 struct Entry {
     items: Vec<Option<Item>>,
@@ -266,7 +269,7 @@ impl CudaTransfers {
         let lease = self.owner.register(
             generation,
             backing.len() as u64,
-            Box::new(RefCell::new(backing)),
+            Box::new(Rc::new(RefCell::new(backing))),
             &charge,
         )?;
         self.allocations.insert(lease.allocation_id(), charge);
@@ -287,6 +290,80 @@ impl CudaTransfers {
         self.allocations.remove(&lease.allocation_id());
         Ok(())
     }
+    /// Transfer native backing out without a copy. The caller assumes accounting
+    /// after this returns; live leases/bindings fail Busy without losing ownership.
+    pub fn take_device(&mut self, lease: &DeviceLease) -> Result<CudaSlice<u8>> {
+        self.check_thread()?;
+        cuda(self.stream.synchronize())?;
+        let backing = self
+            .owner
+            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(lease)?
+            .clone();
+        self.owner.release(lease)?;
+        let charge = self
+            .allocations
+            .get(&lease.allocation_id())
+            .ok_or(Error::ForeignLease)?;
+        self.governor.borrow_mut().release(charge)?;
+        self.allocations.remove(&lease.allocation_id());
+        // No public API can clone this private Rc. Registry release removed the
+        // sole other owner after checking all sealed lease and binding retention.
+        Ok(Rc::try_unwrap(backing)
+            .map_err(|_| Error::Busy)?
+            .into_inner())
+    }
+    /// Retire only source ownership after observed DMA completion. This never
+    /// marks the whole ticket retired or releases destination consumer bindings.
+    /// D2H callers can then release_device their source registry lease; H2D host
+    /// source backing and its pinned-budget charge are dropped here.
+    pub fn retire_source(&mut self, ticket: &TransferTicket) -> Result<()> {
+        self.progress(ticket)?;
+        let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
+        if e.retired {
+            return Ok(());
+        }
+        if !e.completion.producer_done || Rc::strong_count(&e.graph_pins) != 1 {
+            return Err(Error::Busy);
+        }
+        // Another live H2D ticket may still bind this D2H source as a consumer
+        // destination. Do not detach the source while that binding remains live.
+        for source in e
+            .items
+            .iter()
+            .flatten()
+            .filter(|i| i.direction == CopyDirection::DeviceToHost)
+        {
+            if let Some(device) = &source.device
+                && self.entries.values().any(|other| {
+                    !other.retired
+                        && other.items.iter().flatten().any(|i| {
+                            i.direction == CopyDirection::HostToDevice
+                                && i.device
+                                    .as_ref()
+                                    .is_some_and(|d| d.allocation_id() == device.allocation_id())
+                        })
+                })
+            {
+                return Err(Error::Busy);
+            }
+        }
+        let e = self.entries.get_mut(ticket).unwrap();
+        for item in e.items.iter_mut().flatten() {
+            if item.source_retired {
+                continue;
+            }
+            match item.direction {
+                CopyDirection::HostToDevice => {
+                    item.host.take();
+                }
+                CopyDirection::DeviceToHost => {
+                    item.device.take();
+                }
+            }
+            item.source_retired = true;
+        }
+        Ok(())
+    }
     /// Resolve only a sealed view issued by this backend, while its exact ticket
     /// is still live. Consumers must launch on owner_stream(), then record_consumer.
     pub fn resolve_ready(&self, ready: &ReadyView<'_>) -> Result<Ref<'_, RefCell<CudaSlice<u8>>>> {
@@ -298,7 +375,9 @@ impl CudaTransfers {
         if e.cancelled || e.retired {
             return Err(Error::NotReady);
         }
-        self.owner.resolve(ready.destination())
+        self.owner
+            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(ready.destination())
+            .map(|r| Ref::map(r, |b| b.as_ref()))
     }
     /// Launch/read the exact ready destination without escaping its lease. The
     /// callback must submit all uses on the supplied owner stream, not a peer.
@@ -320,10 +399,16 @@ impl CudaTransfers {
         if i.direction != CopyDirection::HostToDevice {
             return Err(Error::Unsupported);
         }
-        self.owner
-            .ready_view(&i.op.device, &e.completion, &e.expected, current)?;
+        self.owner.ready_view(
+            i.device.as_ref().ok_or(Error::AlreadyReleased)?,
+            &e.completion,
+            &e.expected,
+            current,
+        )?;
         e.published = true;
-        let backing = self.owner.resolve::<RefCell<CudaSlice<u8>>>(&i.op.device)?;
+        let backing = self.owner.resolve::<Rc<RefCell<CudaSlice<u8>>>>(
+            i.device.as_ref().ok_or(Error::AlreadyReleased)?,
+        )?;
         use_device(&backing.borrow(), &self.stream)
     }
     pub fn owner_stream(&self) -> &Arc<CudaStream> {
@@ -417,7 +502,9 @@ impl CudaTransfers {
         if o.bytes != o.host.valid_bytes() {
             return Err(Error::InvalidLayout);
         }
-        let backing = self.owner.resolve::<RefCell<CudaSlice<u8>>>(&o.device)?;
+        let backing = self
+            .owner
+            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(&o.device)?;
         if !Arc::ptr_eq(backing.borrow().stream(), &self.stream)
             || !Arc::ptr_eq(
                 o.host
@@ -430,14 +517,13 @@ impl CudaTransfers {
         {
             return Err(Error::WrongOwner);
         }
-        if let Some(f) = o.producer_fence {
-            if self
+        if let Some(f) = o.producer_fence
+            && self
                 .producers
                 .get(&f.sequence)
                 .is_none_or(|(actual, _)| actual != &f)
-            {
-                return Err(Error::WrongOwner);
-            }
+        {
+            return Err(Error::WrongOwner);
         }
         Ok(())
     }
@@ -474,8 +560,10 @@ impl CudaTransfers {
             }
             s.producer_done = true;
             s.status = ItemStatus::Complete;
-            s.valid_bytes = item.op.bytes;
-            s.checksum = Some(checksum(item.op.host.bytes()?));
+            s.valid_bytes = item.bytes;
+            s.checksum = Some(checksum(
+                item.host.as_ref().ok_or(Error::AlreadyReleased)?.bytes()?,
+            ));
             e.expected[i][0].checksum = s.checksum.unwrap();
         }
         e.completion.producer_done = e
@@ -659,50 +747,57 @@ impl TransferEngine for CudaTransfers {
                     io_bytes: op.bytes,
                     checksum: [0; 32],
                 }]);
+                let producer_fence = op.producer_fence;
                 let mut item = Item {
-                    op,
+                    host: Some(op.host),
+                    device: Some(op.device),
+                    bytes: op.bytes,
                     direction,
                     event: None,
                     taken: false,
+                    source_retired: false,
                 };
                 // From this point any CUDA error may mean work was submitted:
                 // accept + quarantine, NEVER return potentially-live owned inputs.
-                let submit =
-                    (|| {
-                        if let Some(f) = item.op.producer_fence {
-                            cuda(self.stream.wait(&self.producers[&f.sequence].1))?;
-                        }
-                        if direction == CopyDirection::HostToDevice {
-                            self.owner.bind_destination(ticket, &item.op.device)?;
-                        }
-                        let backing = self
-                            .owner
-                            .resolve::<RefCell<CudaSlice<u8>>>(&item.op.device)?;
-                        let host = item
-                            .op
-                            .host
-                            .backing
-                            .as_mut()
-                            .ok_or(Error::AlreadyReleased)?;
-                        match direction {
-                            CopyDirection::HostToDevice => cuda(self.stream.memcpy_htod(
-                                host,
-                                &mut backing.borrow_mut().slice_mut(..item.op.bytes as usize),
-                            ))?,
-                            CopyDirection::DeviceToHost => cuda(self.stream.memcpy_dtoh(
-                                &backing.borrow().slice(..item.op.bytes as usize),
-                                host,
-                            ))?,
-                        }
-                        drop(backing);
-                        item.event = Some(cuda(self.stream.record_event(None))?);
-                        // Install the wait separately from observing producer completion.
-                        cuda(self.stream.wait(item.event.as_ref().unwrap()))?;
-                        s.consumer_fence = Some(self.next_fence(epochs.dst_gen)?);
-                        s.consumer_fenced = true;
-                        s.io_bytes = item.op.bytes;
-                        Ok(())
-                    })();
+                let submit = (|| {
+                    if let Some(f) = producer_fence {
+                        cuda(self.stream.wait(&self.producers[&f.sequence].1))?;
+                    }
+                    if direction == CopyDirection::HostToDevice {
+                        self.owner.bind_destination(
+                            ticket,
+                            item.device.as_ref().ok_or(Error::AlreadyReleased)?,
+                        )?;
+                    }
+                    let backing = self.owner.resolve::<Rc<RefCell<CudaSlice<u8>>>>(
+                        item.device.as_ref().ok_or(Error::AlreadyReleased)?,
+                    )?;
+                    let host = item
+                        .host
+                        .as_mut()
+                        .ok_or(Error::AlreadyReleased)?
+                        .backing
+                        .as_mut()
+                        .ok_or(Error::AlreadyReleased)?;
+                    match direction {
+                        CopyDirection::HostToDevice => cuda(self.stream.memcpy_htod(
+                            host,
+                            &mut backing.borrow_mut().slice_mut(..item.bytes as usize),
+                        ))?,
+                        CopyDirection::DeviceToHost => cuda(
+                            self.stream
+                                .memcpy_dtoh(&backing.borrow().slice(..item.bytes as usize), host),
+                        )?,
+                    }
+                    drop(backing);
+                    item.event = Some(cuda(self.stream.record_event(None))?);
+                    // Install the wait separately from observing producer completion.
+                    cuda(self.stream.wait(item.event.as_ref().unwrap()))?;
+                    s.consumer_fence = Some(self.next_fence(epochs.dst_gen)?);
+                    s.consumer_fenced = true;
+                    s.io_bytes = item.bytes;
+                    Ok(())
+                })();
                 if let Err(error) = submit {
                     s.status = ItemStatus::Quarantined;
                     s.error = Some(error);
@@ -756,9 +851,12 @@ impl TransferEngine for CudaTransfers {
         if i.taken {
             return Err(Error::AlreadyReleased);
         }
-        let ready = self
-            .owner
-            .ready_view(&i.op.device, &e.completion, &e.expected, current)?;
+        let ready = self.owner.ready_view(
+            i.device.as_ref().ok_or(Error::AlreadyReleased)?,
+            &e.completion,
+            &e.expected,
+            current,
+        )?;
         // Exposing a consumer-ready view IS publication, not just take().
         e.published = true;
         Ok(ready)
@@ -781,18 +879,13 @@ impl TransferEngine for CudaTransfers {
             return Err(Error::AlreadyReleased);
         }
         let destination = if i.direction == CopyDirection::HostToDevice {
-            Destination::Device(self.owner.retain(&i.op.device)?)
+            Destination::Device(
+                self.owner
+                    .retain(i.device.as_ref().ok_or(Error::AlreadyReleased)?)?,
+            )
         } else {
-            // Retain a lifetime token for host consumer retirement. Keep the
-            // device source separately until the ticket retires.
-            let placeholder = CudaPinnedLease {
-                backing: None,
-                charge: None,
-                pin: None,
-                governor: self.governor.clone(),
-                lifetime: Rc::new(()),
-            };
-            let host = std::mem::replace(&mut i.op.host, placeholder);
+            // Destination residency is independent of source-side retirement.
+            let host = i.host.take().ok_or(Error::AlreadyReleased)?;
             e.host_consumers.push(Rc::downgrade(&host.lifetime));
             Destination::Host(host)
         };
