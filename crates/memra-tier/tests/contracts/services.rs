@@ -1058,3 +1058,23 @@ fn revision_v12_tier_logical_record_preserved() {
     tier.release(&r).unwrap();
     assert_eq!(gov.borrow().used, TierBudget::zero(2));
 }
+
+#[test]
+fn revision_v13_unmodified_backend_defaults_to_unsupported() {
+    let gov = shared();
+    let mut req = request(0, Priority::Demand);
+    req.bytes.inflight = 1;
+    let charge = gov.borrow_mut().reserve(&req).unwrap();
+    let mut engine =
+        memra_tier::io::transfer::CpuTransfers::new(Objects::new(gov.clone()), req, 1, &charge)
+            .unwrap();
+    let ticket = TransferTicket {
+        issuer: 1,
+        sequence: 1,
+        epochs: epochs(),
+    };
+    assert_eq!(engine.retire_source(&ticket), Err(Error::Unsupported));
+    drop(engine);
+    gov.borrow_mut().release(&charge).unwrap();
+    assert_eq!(gov.borrow().used, TierBudget::zero(2));
+}

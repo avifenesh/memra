@@ -4,9 +4,7 @@ use memra_tier::tier::{Governor, QueueOutcome};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[allow(dead_code)]
-#[path = "../../../memra-tier/tests/contracts/conformance.rs"]
-mod conformance;
+use memra_tier::conformance;
 
 fn program() -> ProgramIdentity {
     ProgramIdentity {
