@@ -2025,8 +2025,8 @@ struct AppState {
     /// The stock binary wires `ledger::Ledger`; limits enforcement (the old
     /// `tenant_budgets`) is the same object answering `enforces_limits()`.
     metering: Option<Arc<dyn metering::Metering>>,
-    /// HTTP-side tokenizer copies for token APIs and prepaid prompt reservations. Always
-    /// loaded from the same verified source as the worker, without issuing GPU commands.
+    /// The worker's immutable startup tokenizer objects, shared with token APIs and
+    /// prepaid prompt reservations. Worker respawns retain these same objects.
     budget_tokenizers: Option<Arc<HashMap<String, Arc<Tokenizer>>>>,
     /// Immutable request-auth sources resolved before model load. The keyring itself
     /// hot-reloads internally; the source selection must not drift after bind validation.
@@ -5764,13 +5764,6 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
             }
         }
     };
-    let budget_tokenizers = match load_budget_tokenizers(&models) {
-        Ok(tokenizers) => Some(tokenizers),
-        Err(err) => {
-            eprintln!("[server] FATAL: HTTP tokenizers: {err}");
-            std::process::exit(1);
-        }
-    };
     eprintln!("[server] starting; models config = {models:?}");
 
     // Inference-liveness state (G5). Created BEFORE the worker so the whole weight load is
@@ -5785,7 +5778,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     health::spawn_sd_watchdog(health_state.clone());
 
     // Spawn the GPU worker thread and block until every model is loaded (or it fails).
-    let (cmd_tx, model_names, caps, metrics, worker_thread) =
+    let (cmd_tx, model_names, caps, tokenizers, metrics, worker_thread) =
         match worker::spawn(models, health_state.clone()) {
             Ok(v) => v,
             Err(err) => {
@@ -5845,7 +5838,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         caps,
         openrouter_metadata: metadata_cell,
         metering: metering_obj,
-        budget_tokenizers,
+        budget_tokenizers: Some(tokenizers),
         api_auth,
         metrics_auth,
         metrics,
@@ -6147,53 +6140,6 @@ fn parse_models_config() -> Vec<(String, String, Option<String>)> {
             None,
         ),
     ]
-}
-
-/// Load the HTTP tokenizer map unconditionally, for token APIs as well as reservations.
-/// Previously this was prepaid-only and ignored the worker's verified GGUF override for
-/// Gemma HF directories. Use the worker's SAME source resolver and vocabulary verifier:
-/// an independently selected tokenizer cannot promise count == billed prompt_tokens.
-fn load_budget_tokenizers(
-    models: &[(String, String, Option<String>)],
-) -> Result<Arc<HashMap<String, Arc<Tokenizer>>>, String> {
-    let mut tokenizers = HashMap::new();
-    for (alias, path, _) in models {
-        let path = std::path::Path::new(path);
-        let tokenizer = if path.is_dir() {
-            let tokenizer_dir = if path.join("manifest.json").exists() {
-                let repack = memra_gguf::source::Hy3RepackSource::open(path).map_err(|err| {
-                    format!("model {alias:?}: open repack tokenizer source: {err}")
-                })?;
-                repack
-                    .source_dir()
-                    .filter(|source| source.join("tokenizer.json").exists())
-                    .unwrap_or(path)
-                    .to_path_buf()
-            } else {
-                path.to_path_buf()
-            };
-            // The dedicated DSv4 route takes its tokenizer directly from the directory;
-            // every other directory route honours the shared, model-scoped override.
-            let override_path = if dsv4_serve::is_dsv4_dir(path) {
-                None
-            } else {
-                worker::tokenizer_gguf_override(alias)
-            };
-            match override_path {
-                Some(gguf_path) => worker::load_verified_tokenizer(&gguf_path, &tokenizer_dir)
-                    .map(|(tokenizer, _)| tokenizer),
-                None => Tokenizer::from_hf_dir(&tokenizer_dir),
-            }
-            .map_err(|err| format!("model {alias:?}: HTTP tokenizer: {err}"))?
-        } else {
-            let gguf = memra_gguf::GgufFile::open(path)
-                .map_err(|err| format!("model {alias:?}: open reservation tokenizer: {err}"))?;
-            Tokenizer::from_gguf(&gguf)
-                .map_err(|err| format!("model {alias:?}: reservation tokenizer: {err}"))?
-        };
-        tokenizers.insert(alias.clone(), Arc::new(tokenizer));
-    }
-    Ok(Arc::new(tokenizers))
 }
 
 /// Shared body for both probes: the honest state, plus the numbers that explain it.
@@ -20609,27 +20555,19 @@ temperature = 0.6
     }
 
     #[test]
-    fn http_tokenizer_loader_matches_worker_source_identity() {
+    fn http_tokenizers_share_the_workers_loaded_snapshot() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../research/dsv4-template-20260818/ref");
-        let alias = "token-api-source-identity-fixture";
-        assert!(worker::tokenizer_gguf_override(alias).is_none());
-        let http =
-            load_budget_tokenizers(&[(alias.into(), path.to_str().unwrap().into(), None)]).unwrap();
-        // Mirrors the worker's no-override directory branch on the SAME source path;
-        // the override branch uses its shared resolver/verifier and asserts the path at load.
-        let worker = Tokenizer::from_hf_dir(&path).unwrap();
-        let http = &http[alias];
-        assert_eq!(http.vocab_size(), worker.vocab_size());
-        for id in 0..worker.vocab_size() as u32 {
-            assert_eq!(
-                http.decode_bytes_special(&[id], true),
-                worker.decode_bytes_special(&[id], true),
-                "tokenizer identity differs at id {id}"
-            );
-        }
+        let snapshots = worker::tokenizers::TokenizerSnapshots::default();
+        let worker = snapshots
+            .load("m", path.to_str().unwrap(), || {
+                Tokenizer::from_hf_dir(&path)
+            })
+            .unwrap();
+        let http = snapshots.snapshot(&["m".into()]).unwrap();
+        assert!(Arc::ptr_eq(&worker, &http["m"]));
         assert_eq!(
-            http.encode("identity שלום", true),
+            http["m"].encode("identity שלום", true),
             worker.encode("identity שלום", true)
         );
     }

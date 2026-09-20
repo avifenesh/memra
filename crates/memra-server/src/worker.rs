@@ -18,6 +18,7 @@
 mod device_memory;
 mod host_glm;
 mod host_memory;
+pub(crate) mod tokenizers;
 
 #[cfg(test)]
 mod rewrite_native_tests;
@@ -13133,6 +13134,7 @@ pub fn run(
     ready_tx: Sender<Result<(Vec<String>, HashMap<String, ModelCaps>), String>>,
     metrics: SharedMetrics,
     health: crate::health::SharedHealth,
+    tokenizer_snapshots: &tokenizers::TokenizerSnapshots,
 ) {
     // ---- one-time init on the worker thread: Engine + all models resident ----
     //
@@ -13233,8 +13235,8 @@ pub fn run(
                 return;
             }
             let dir = std::path::Path::new(path);
-            let tok = match Tokenizer::from_hf_dir(dir) {
-                Ok(t) => Arc::new(t),
+            let tok = match tokenizer_snapshots.load(name, path, || Tokenizer::from_hf_dir(dir)) {
+                Ok(t) => t,
                 Err(err) => {
                     let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
                     return;
@@ -13307,28 +13309,23 @@ pub fn run(
             // tokenizer is verified id by id against the directory's own `tokenizer.json`
             // before it is used, and a disagreement is a loud boot failure. Without that,
             // pointing at the wrong GGUF would silently corrupt every prompt.
-            let tok = match tokenizer_gguf_override(name) {
-                Some(gguf_path) => match load_verified_tokenizer(&gguf_path, &tok_dir) {
-                    Ok((t, n_ids)) => {
+            let tok = match tokenizer_snapshots.load(name, path, || {
+                match tokenizer_gguf_override(name) {
+                    Some(gguf_path) => load_verified_tokenizer(&gguf_path, &tok_dir).map(|(t, n_ids)| {
                         eprintln!(
-                            "[tokenizer] {name}: taken from {gguf_path} (MEMRA_TOKENIZER_GGUF), \
-                             VERIFIED against {} — {n_ids} ids byte-identical",
+                            "[tokenizer] {name}: taken from {gguf_path} (MEMRA_TOKENIZER_GGUF), VERIFIED against {} — {n_ids} ids byte-identical",
                             tok_dir.display()
                         );
                         t
-                    }
-                    Err(err) => {
-                        let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
-                        return;
-                    }
-                },
-                None => match Tokenizer::from_hf_dir(&tok_dir) {
-                    Ok(t) => t,
-                    Err(err) => {
-                        let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
-                        return;
-                    }
-                },
+                    }),
+                    None => Tokenizer::from_hf_dir(&tok_dir),
+                }
+            }) {
+                Ok(tok) => tok,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                    return;
+                }
             };
             (model, tok)
         } else {
@@ -13346,7 +13343,7 @@ pub fn run(
                     return;
                 }
             };
-            let tok = match Tokenizer::from_gguf(&g) {
+            let tok = match tokenizer_snapshots.load(name, path, || Tokenizer::from_gguf(&g)) {
                 Ok(t) => t,
                 Err(err) => {
                     let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
@@ -13483,7 +13480,6 @@ pub fn run(
             "[worker]   loaded {name:?}: {} layers, eos={eos_id}, stop={stop_ids:?}",
             model.cfg.n_layer
         );
-        let tok = Arc::new(tok);
         let constraints = match crate::constrained::ConstraintCompiler::spawn(
             name,
             tok.clone(),
@@ -26655,6 +26651,7 @@ pub fn spawn(
         Sender<Cmd>,
         Arc<Vec<String>>,
         Arc<HashMap<String, ModelCaps>>,
+        tokenizers::SharedTokenizers,
         SharedMetrics,
         std::thread::JoinHandle<()>,
     ),
@@ -26669,6 +26666,8 @@ pub fn spawn(
     let metrics: SharedMetrics = Default::default();
     let m2 = metrics.clone();
     let h2 = health.clone();
+    let tokenizers = Arc::new(tokenizers::TokenizerSnapshots::default());
+    let worker_tokenizers = tokenizers.clone();
     let worker_thread = std::thread::Builder::new()
         .name("memra-gpu-worker".into())
         .spawn(move || {
@@ -26711,7 +26710,7 @@ pub fn spawn(
                         }
                     });
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    run(models, &rx, rtx, m, h)
+                    run(models, &rx, rtx, m, h, &worker_tokenizers)
                 }));
                 // `run` has returned, so its `rtx` is dropped and the relay cannot block.
                 if let Ok(t) = relay {
@@ -26783,13 +26782,17 @@ pub fn spawn(
         })
         .map_err(|e| format!("spawn worker thread: {e}"))?;
     match ready_rx.recv() {
-        Ok(Ok((names, caps))) => Ok((
-            cmd_tx,
-            Arc::new(names),
-            Arc::new(caps),
-            metrics,
-            worker_thread,
-        )),
+        Ok(Ok((names, caps))) => {
+            let shared_tokenizers = tokenizers.snapshot(&names)?;
+            Ok((
+                cmd_tx,
+                Arc::new(names),
+                Arc::new(caps),
+                shared_tokenizers,
+                metrics,
+                worker_thread,
+            ))
+        }
         Ok(Err(err)) => Err(err),
         Err(_) => Err("worker died during init".into()),
     }
@@ -32908,7 +32911,7 @@ mod tests {
                 if cuda_available() {
                     let health = crate::health::SharedHealth::default();
                     match spawn(vec![], health) {
-                        Ok((cmd_tx, _names, _caps, _metrics, worker_thread)) => {
+                        Ok((cmd_tx, _names, _caps, _tokenizers, _metrics, worker_thread)) => {
                             drop(cmd_tx);
                             let _ = worker_thread.join();
                             std::process::exit(0);
@@ -32930,7 +32933,7 @@ mod tests {
             "pp" => {
                 let health = crate::health::SharedHealth::default();
                 match spawn(vec![], health) {
-                    Ok((cmd_tx, _, _, _, worker_thread)) => {
+                    Ok((cmd_tx, _, _, _, _, worker_thread)) => {
                         drop(cmd_tx);
                         let _ = worker_thread.join();
                         eprintln!("pp unexpectedly succeeded boot");
@@ -32945,7 +32948,7 @@ mod tests {
             "explicit_tp_ep" => {
                 let health = crate::health::SharedHealth::default();
                 match spawn(vec![], health) {
-                    Ok((cmd_tx, _, _, _, worker_thread)) => {
+                    Ok((cmd_tx, _, _, _, _, worker_thread)) => {
                         drop(cmd_tx);
                         let _ = worker_thread.join();
                         eprintln!("explicit_tp_ep unexpectedly succeeded boot");
@@ -32960,7 +32963,7 @@ mod tests {
             "automatic_ep" => {
                 let health = crate::health::SharedHealth::default();
                 match spawn(vec![], health) {
-                    Ok((cmd_tx, _, _, _, worker_thread)) => {
+                    Ok((cmd_tx, _, _, _, _, worker_thread)) => {
                         drop(cmd_tx);
                         let _ = worker_thread.join();
                         eprintln!("automatic_ep unexpectedly succeeded boot");
