@@ -79,6 +79,7 @@ pub mod cache {
 /// WP-C: HostExps -> `memra_tier::bank` bridge. Native compile probe only; no HostExps
 /// dispatch is changed. Unexported until the SLRU-backed residency + ready-view seam lands.
 mod banked_residency;
+pub use banked_residency::{ExpertBankBudget, expert_bank_cli, refusal_reason};
 pub mod decode;
 pub mod decode_batch;
 pub mod dflash;
@@ -6495,6 +6496,27 @@ impl Engine {
         }
         let cache = guard.as_mut().unwrap();
         f(cache, self)
+    }
+
+    /// Build the shared MoE residency cache with an exact uniform slot count. Gate-only
+    /// (`--experts-via-tier --expert-bank-gpu-bytes=N`): the installer has already refused an
+    /// impossible budget, and this refuses if any cache exists so the count can never replace
+    /// or resize a cache a forward has touched. Legacy `with_moe_cache` sizing is untouched.
+    pub(crate) fn build_moe_cache_exact(
+        &self,
+        max_block_bytes: usize,
+        slots: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.moe_cache.lock().unwrap();
+        if guard.is_some() {
+            return Err("experts-via-tier GPU bank budget requires an unbuilt cache".into());
+        }
+        *guard = Some(crate::moe_cache::MoeSlotCache::with_exact_slots(
+            self,
+            max_block_bytes,
+            slots,
+        )?);
+        Ok(())
     }
 
     /// Freeze the already-built MoE residency set. This never constructs a cache: callers use it
@@ -35692,6 +35714,9 @@ mod target_dispatch_tests {
 /// The memra-kv device seam (Phase D): the cache's 7 ops delegate to the engine's
 /// inherent methods (inherent methods win name resolution, so no recursion).
 impl memra_kv::KvDev for Engine {
+    fn alloc_vmm_u8(&self, n: usize) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
+        memra_kv::KvPlane::vmm(self.stream(), n)
+    }
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         Engine::zeros(self, n)
     }

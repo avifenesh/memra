@@ -1,0 +1,41 @@
+    Checking memra-gguf v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-gguf)
+    Checking memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-engine)
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tokenizer)
+    Checking memra-kv v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-kv)
+    Checking memra-runtime v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-runtime)
+    Checking memra-reference v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-reference)
+error[E0277]: `std::sync::mpsc::Receiver<spill_pread::ReadCompletion>` cannot be shared between threads safely
+    --> crates/memra-engine/src/moe_cache.rs:2087:17
+     |
+2087 |     send_sync::<MoeSlotCache>();
+     |                 ^^^^^^^^^^^^ `std::sync::mpsc::Receiver<spill_pread::ReadCompletion>` cannot be shared between threads safely
+     |
+     = help: within `moe_cache::MoeSlotCache`, the trait `std::marker::Sync` is not implemented for `std::sync::mpsc::Receiver<spill_pread::ReadCompletion>`
+note: required because it appears within the type `spill_pread::WorkerPool`
+    --> crates/memra-engine/src/spill_pread.rs:300:8
+     |
+ 300 | struct WorkerPool {
+     |        ^^^^^^^^^^
+note: required because it appears within the type `std::option::Option<spill_pread::WorkerPool>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `spill_pread::PreadPool`
+    --> crates/memra-engine/src/spill_pread.rs:407:19
+     |
+ 407 | pub(crate) struct PreadPool {
+     |                   ^^^^^^^^^
+note: required because it appears within the type `std::option::Option<spill_pread::PreadPool>`
+    --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/option.rs:597:9
+note: required because it appears within the type `moe_cache::MoeSlotCache`
+    --> crates/memra-engine/src/moe_cache.rs:252:12
+     |
+ 252 | pub struct MoeSlotCache {
+     |            ^^^^^^^^^^^^
+note: required by a bound in `moe_cache::_::{closure#0}::send_sync`
+    --> crates/memra-engine/src/moe_cache.rs:2085:28
+     |
+2085 |     fn send_sync<T: Send + Sync>() {}
+     |                            ^^^^ required by this bound in `send_sync`
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `memra-engine` (lib) due to 1 previous error

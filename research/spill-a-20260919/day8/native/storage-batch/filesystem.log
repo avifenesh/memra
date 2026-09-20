@@ -1,0 +1,10 @@
+storage_class=block-device ext4 (virtio; NVMe ancestry provider-claimed, not proven)
+  File: "/root/wt-a"
+    ID: 9b69791540b0aa9c Namelen: 255     Type: ext2/ext3
+Block size: 4096       Fundamental block size: 4096
+Blocks: Total: 75906107   Free: 60475278   Available: 52606988
+Inodes: Total: 39190528   Free: 38767728
+TARGET SOURCE    FSTYPE
+/      /dev/vda1 ext4
+lrwxrwxrwx 1 root root 0 Sep 20 14:51 /sys/block/vda/device -> ../../../virtio3
+/sys/devices/pci0000:00/0000:00:02.3/0000:04:00.0/virtio3
