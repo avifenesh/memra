@@ -418,6 +418,17 @@ fn run() -> Result<()> {
         "LOADED artifact_sha256={} implementation_sha256={} numeric_program_sha256={}",
         identity.artifact_sha256, identity.implementation_sha256, identity.numeric_program_sha256
     );
+    if mode == "capture" {
+        let input = engine.htod(&vec![0.0f32; model.output.in_features() * 4])?;
+        let scratch = engine.matmul(&model.output, &input, 4)?;
+        engine.stream().synchronize()?;
+        drop(scratch);
+        drop(input);
+        println!(
+            "HEAD_SCRATCH_WARMUP identity_after={:?} model_weights_unchanged=true",
+            model.rewrite_identity()
+        );
+    }
     let pack = memra_gguf::model_packs::for_config(&model.cfg).ok_or("PACK_UNAVAILABLE")?;
     let tolerance = pack
         .checkpoint_parity
