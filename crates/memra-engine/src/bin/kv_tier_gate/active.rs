@@ -567,11 +567,9 @@ pub fn roundtrip(
     } else {
         after > before && restored == before
     };
-    // A mapped-VA classification on this card alone is not the required two-card evidence.
-    let reclaimed = vmm_granularity != 0
-        && reclaim_observed
-        && residual_class != "unclassified"
-        && residual_class != "va-reservation-page-table";
+    // A classification on this card alone is not the required two-card evidence.
+    // The earlier card has no classified nonzero residual; keep every such arm non-PASS.
+    let reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0;
     let g1_reclaim_qualified = if vmm_granularity == 0 {
         "not-applicable-pooled".to_string()
     } else {
