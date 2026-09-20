@@ -7,6 +7,8 @@ mod active;
 mod capture_contract;
 #[path = "kv_tier_gate/cli.rs"]
 mod cli;
+#[path = "kv_tier_gate/reclaim_contract.rs"]
+mod reclaim_contract;
 use memra_engine::tier_transfer;
 
 use memra_engine::{Engine, forward::argmax, hybrid::HybridModel};
@@ -222,6 +224,15 @@ fn baseline(args: &cli::Args) -> Result<()> {
         ),
     )?;
     let mut cache = memra_engine::pp::new_cache(&e, &model.cfg, args.context)?;
+    if args.kv_allocator == cli::KvAllocator::Vmm {
+        // Empty cache only: no source state/numerical execution to migrate.
+        for layer in cache.kv.iter_mut().flatten() {
+            layer.k = memra_kv::KvPlane::vmm(e.stream(), layer.k.len())?;
+            layer.v = memra_kv::KvPlane::vmm(e.stream(), layer.v.len())?;
+        }
+        e.stream().synchronize()?;
+        e.pool_trim_to_zero();
+    }
     let mut last = None;
     for (i, &token) in prompt.iter().enumerate() {
         last = Some(model.decode_step_h(&e, token, &mut cache)?);
@@ -255,7 +266,8 @@ fn baseline(args: &cli::Args) -> Result<()> {
             position: digest("prompt-u32le", &prompt_bytes),
             tenant_salt: digest("tenant", b"gate-exclusive-request"),
         };
-        reclaim_observed = active::roundtrip(&e, &mut cache, program, &args.out)?;
+        reclaim_observed =
+            active::roundtrip(&e, &mut cache, program, &args.out, args.reclaim_diagnostic)?;
         let restored = capture(
             &e,
             &cache,
@@ -311,7 +323,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
     let status = if active && reclaim_observed {
         "ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS"
     } else if active {
-        "ACTIVE_COPY_RESTORE_CAPTURED; no reclaim; continuation comparison pending; not G1 PASS"
+        "ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation comparison pending; not G1 PASS"
     } else {
         "BASELINE_CAPTURED"
     };

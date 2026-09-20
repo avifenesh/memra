@@ -1,0 +1,131 @@
+{
+  "source": "f3a3247a027ca2f36bff2cf194669712f564c76b",
+  "checks": [
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 4.7962144580087624,
+      "log": "check-0.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "seconds": 1.1435312920366414,
+      "log": "check-1.log",
+      "sha256": "9bf0f9b8ccfaef16ae10063dd965fa4232da2e452bbfb04dd8cf4b09c2c1dec7"
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "seconds": 1.2792467910330743,
+      "log": "check-2.log",
+      "sha256": "c37c04a077073c29ca5b0197fa86390cd191648844c9d19d156609c02bffdcdf"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "seconds": 11.697946582979057,
+      "log": "check-3.log",
+      "sha256": "f3088e2b20a5e6a5761bf7915eba39eee95a5354be36b32b1fae1b4a70bf17fb"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--no-deps",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.28802245802944526,
+      "log": "check-4.log",
+      "sha256": "2b34696728dc82b03cbf6311d7e3a6a41658bbde097834c3010a78bc82842c1a"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.08867224998539314,
+      "log": "check-5.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "seconds": 4.748372208967339,
+      "log": "check-6.log",
+      "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    },
+    {
+      "command": [
+        "rustc",
+        "--test",
+        "crates/memra-engine/src/bin/kv_tier_gate/cli.rs",
+        "-o",
+        ".day9-scratch/cli-test"
+      ],
+      "exit": 0,
+      "seconds": 0.37667554104700685,
+      "log": "check-7.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        ".day9-scratch/cli-test"
+      ],
+      "exit": 0,
+      "seconds": 0.19319904199801385,
+      "log": "check-8.log",
+      "sha256": "0a7ba77d1a7674816ff1c09ffde5d9fc41d668e854f061f74eda2e9e96006464"
+    }
+  ]
+}
