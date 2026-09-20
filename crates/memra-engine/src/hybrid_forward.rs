@@ -5803,11 +5803,11 @@ impl HybridModel {
         }
         let ranges = if self.uses_gemma_program() && !self.chunked_prime_supported() {
             // REGISTRY SAYS NO (memra#535 P1a): a gemma plan with an operation whose chunked
-            // prime is not receipted — today `GemmaParallelMoeResidual` (gemma-4-26B-A4B),
-            // MEASURED chunk-dependent: prefill logits move O(1) with the chunk size, first
-            // divergence at row 0, i.e. an m-dependent expert kernel class, not a boundary
-            // carry — primes in ONE range. Same bytes as before this lane for that family; the
-            // dense gemma plans take the chunked walk below. `docs/EXECUTION-SURFACES.md`.
+            // prime is not receipted primes in ONE range — the family's pre-lane bytes. Today
+            // that is E4B's PLE (which returns above anyway); the 26B's parallel-MoE row was
+            // no until its router left the m-dependent cuBLAS matmul (memra#562) and read EXACT
+            // on chunkinv/tickinv. The receipt flips the row; nothing here changes.
+            // `docs/EXECUTION-SURFACES.md`.
             vec![(0, t)]
         } else {
             prime_chunk_ranges(t, self.layers.len(), self.gdn_prime_grid_on())
@@ -22609,14 +22609,18 @@ impl HybridModel {
         let n_used = moe.expert_used_count as usize;
         let n_ff_exp = moe.expert_ff_length as usize;
 
-        // Router: the in-house GEMV for ALL small t (decode AND verify ride the same per-column
-        // kernel — the cuBLASLt n-dependence flipped top-k at verify t on the 27B, d994271);
-        // batched matmul only at real prefill.
-        let logits = if t < PRIME_MIN_T {
-            e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?
-        } else {
-            e.matmul(&m.gate_inp, router_in, t)?
-        };
+        // Router: the in-house GEMV at EVERY t (memra#535 P1a). Decode and verify always rode
+        // it (the cuBLASLt n-dependence flipped top-k at verify t on the 27B, d994271); prefill
+        // used the batched cuBLAS matmul, whose reduction changes with m — so the expert SET a
+        // token got depended on the chunk it happened to be primed in. MEASURED on
+        // gemma-4-26B-A4B (research/exec-p1a-gemma-prime-20260919/): prefill logits moved
+        // O(1) with MEMRA_PRIME_CHUNK, first divergence at row 0 — routing flips at near-ties,
+        // amplified through 48 MoE layers. The serial trunk closed the same class in
+        // lane/concat-prime-exact (`moe_router_logits`: "cuBLASLt's reduction changes with m");
+        // this is that fix for the gemma arm. `router_gemv`'s batch twin is bit-identical per
+        // row to the w8 form at every m (kernel-check m=1..2048), so one routing program serves
+        // decode, verify and any prime split.
+        let logits = e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?;
 
         // FAST SMALL-T ARM (decode t=1 AND spec verify t=2..15): device softmax-topk router,
         // then PER TOKEN the same fused gate_up GELU + down8 FMA launch pair over the resident

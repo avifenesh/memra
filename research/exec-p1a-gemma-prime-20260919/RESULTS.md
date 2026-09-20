@@ -29,30 +29,43 @@ only — no timing claims in this lane. Raw logs: `raw/`.
 | `chunk-invariance-gate.sh` (same chunks) | gemma-4-31B QAT Q4_0 (dense), T=4882 | **CHUNK-INVARIANT** | `raw/31b/chunkinv-pp6257.log` |
 | `tickinv` (same budgets/splits) | gemma-4-31B | **TICK-INVARIANT**, 7/7 EXACT | `raw/31b/tickinv-pp6257.log` |
 | `argmax-margin-gate.sh` | gemma-4-31B, NEW binary | flips=1 bad=0 PASS (within the calibrated 31B budget; every flip margin-explained) | `raw/31b/argmax-new/` |
-| `chunk-invariance-gate.sh` (same chunks), FIRST pass — chunked walk allowed | gemma-4-26B-A4B QAT Q4_0 (parallel MoE), T=4882 | **CHUNK-DEPENDENT**: logits differ at EVERY chunk size, first divergence row 0, maxdiff 3.6–8.2 (O(1)); streams part at step 4–8 | `raw/26b-a4b/chunkinv-pp6257.log` |
-| `tickinv`, FIRST pass | gemma-4-26B-A4B | **TICK-DEPENDENT**: 0/7 EXACT, row 0, maxdiff 4.9–8.2 | `raw/26b-a4b/tickinv-pp6257.log` |
-| `argmax-margin-gate.sh` | gemma-4-26B-A4B, NEW binary | flips=1 bad=0 PASS | `raw/26b-a4b/argmax-new/` |
+| `chunk-invariance-gate.sh` (same chunks), FIRST pass (cuBLAS router) | gemma-4-26B-A4B QAT Q4_0 (parallel MoE), T=4882 | **CHUNK-DEPENDENT**: logits differ at EVERY chunk size, first divergence row 0, maxdiff 3.6–8.2 (O(1)); streams part at step 4–8 → root-caused and fixed below (#562) | `raw/26b-a4b/chunkinv-pp6257.log` |
+| `chunk-invariance-gate.sh`, AFTER the router fix | gemma-4-26B-A4B | **CHUNK-INVARIANT**, EXACT at 4096/1024/513/256/64 | `raw/26b-a4b/routerfix/chunkinv.log` |
+| `tickinv`, AFTER the router fix | gemma-4-26B-A4B | **TICK-INVARIANT**, 7/7 EXACT | `raw/26b-a4b/routerfix/tickinv.log` |
+| `tickinv`, FIRST pass (cuBLAS router) | gemma-4-26B-A4B | **TICK-DEPENDENT**: 0/7 EXACT, row 0, maxdiff 4.9–8.2 | `raw/26b-a4b/tickinv-pp6257.log` |
+| `argmax-margin-gate.sh` | gemma-4-26B-A4B, cuBLAS-router binary | flips=1 bad=0 (default budget 1) | `raw/26b-a4b/argmax-new/` |
+| `argmax-margin-gate.sh`, AFTER the router fix | gemma-4-26B-A4B | flips=2 bad=0, both margin-explained; PASS under the calibrated 26B row (3/12), see below | `raw/26b-a4b/routerfix/argmax/`, `raw/fin/` |
 | greedy A/B old vs new, 96 tokens, chat template, 3 prompts (60 / 60 / 4882 tokens) | same | p1, p2 (60 tokens, under the window): tokens and text IDENTICAL. p3 (4882 tokens, window live): identical for 10 generated tokens, then a near-tie flip ("technical description regarding the optimization of" vs "technical sentence regarding"); both continuations coherent and on-topic | `raw/12b/greedy/` |
 
-## Finding: the gemma MoE arm is not chunk-invariant (26B-A4B)
+## Finding → root cause → fix: the gemma MoE router (26B-A4B), memra#562
 
-Row 0 diverging is the signature that rules out a boundary-carry defect (row 0 sees no
-cross-chunk state); O(1) logit movement at every chunk size is an **m-dependent kernel class** in
-the parallel-MoE arm of `gemma4_layer_tail_core_pn` — the rows a chunk routes to each expert
-change with the chunk size, and the expert kernels' arithmetic changes with that row count. Same
-family as the Q35-MoE carried-prime exclusion (`SERVING.md` §isolation) and the reason
-`MEMRA_MOE_GROUPED` was withdrawn. The dense arm (12B, 31B) is bit-identical, so the attention
-view path and the shared tail are not the mover.
+Row 0 diverging rules out a boundary-carry defect (row 0 sees no cross-chunk state); O(1)
+movement at every chunk size means a **discrete decision** changed — expert selection. Attribution
+(`raw/26b-a4b/diag/`): the dependence is unchanged with `MEMRA_GEMMA_MOE_MMA=0` (dp4a expert pairs
+instead of the int8-MMA expert GEMM), so the expert kernels are not the mover. The mover is the
+router: `gemma4_moe` computed prefill router logits with `e.matmul(&m.gate_inp, router_in, t)` —
+cuBLAS, whose reduction order depends on m — so a token's top-k over 128 experts depended on the
+chunk it was primed in; near-tie flips then amplified through 48 MoE layers. The serial trunk
+closed exactly this class in lane/concat-prime-exact (`moe_router_logits`: "cuBLASLt's reduction
+changes with m") by routing every t through the m-invariant `router_gemv`; the gemma arm never
+needed it while its prime was monolithic.
 
-Resolution in this lane (fail closed, no new door): the registry column `chunked_prime` is
-**no** for `GemmaParallelMoeResidual`; `prime_cache` primes such a plan in ONE range, refuses a
-continuation (`cache.pos != 0`) by name — the contract `gemma4_prime` had — and the worker keeps
-its whole-prompt take, so the 26B's bytes are exactly what they were before this lane. Second
-pass (`raw/v2/`, `raw/v3/`): 26B chunkinv PASS (one range), 26B multi-call tickinv → named
-refusal; 12B/31B chunkinv + tickinv still bit-identical. The
-row flips when a row-count-exact expert arm lands with its own chunkinv receipt (the "decode-exact
-shexp arm" class the hyper batch cap already names). Dense gemma's row is **yes** on the 12B/31B
-receipts above.
+**Fix** (this lane): `gemma4_moe` routes through `router_gemv` at every t. **Receipt**
+(`raw/26b-a4b/routerfix/`, chunking allowed): chunkinv **CHUNK-INVARIANT** (4096/1024/513/256/64
+EXACT, 24-step streams identical); tickinv **TICK-INVARIANT** (5/20/77 calls + off-grid resumes
+64/256/512/1000 all EXACT). The registry row `GemmaParallelMoeResidual.chunked_prime` flips to
+yes on that receipt; the 26B leaves the monolithic-prime class with the dense gemmas.
+
+argmax-margin on the fixed 26B: flips=2, both margin-explained (margins 0.014 / 0.0135 vs config
+spreads 0.64 / 3.02), decision position agreed — over the UNCALIBRATED default budget of 1. The
+26B had no calibration row; its decode margins are identical across the two binaries (min 0.014,
+p10 0.342, p50 0.695) and 6 of 12 / 5 of 12 positions are arithmetically flippable, the 31B's
+coin distribution. A `gemma-4-26B*` row (budget 3 per 12-window, from those margins, the 31B
+rule) is added to `tools/argmax-margin-gate.sh`; the pre-fix run (1 flip) was luck inside the
+same distribution, not a better program.
+
+Same class, not fixed here: `moe_ffn_lockstep` routes all lockstep-decode streams through one
+cuBLAS call with m = stream count (CLI `run_lockstep` only; no serving caller) — tracked in #562.
 
 ## Measured numeric classes (fixture, `2394110f`)
 
@@ -77,6 +90,6 @@ receipt plus the tuned view twins (naked prefill speed must not regress).
 
 ## Not done in this lane
 
-- A row-count-exact gemma MoE expert arm (26B-A4B chunked prime) + its receipt.
+- `moe_ffn_lockstep`'s cuBLAS router (lockstep decode, CLI-only) → `router_gemv` (#562).
 - Tuned view twins for hd256-windowed and hd512; TTFT A/B before the default flip.
 - Vision-overlay continuation (islands through the view path); E4B PLE prime (P3).

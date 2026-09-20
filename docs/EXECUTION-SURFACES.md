@@ -24,11 +24,12 @@ and paste the output between the markers.
   the mixer/residual classes, so no plan is ever eligible for both.
 - `chunked_prime` (added by memra#535 P1a): the generic `prime_cache` chunked / continuation
   prime program, with a chunk-invariance receipt per operation (`tools/chunk-invariance-gate.sh`,
-  `concat-prime-probe tickinv`). `GemmaParallelMoeResidual` says no because it was MEASURED
-  chunk-dependent (gemma-4-26B-A4B: prefill logits move O(1) with the chunk size, first
-  divergence at row 0 — an m-dependent expert kernel class, not a boundary carry); the driver
-  primes such a plan monolithically. `HyperConnections` says no because glm5 chunks through its
-  own `prime_cache_hyper` / walker program, not this one.
+  `concat-prime-probe tickinv`). A row flips only on the receipt: `GemmaParallelMoeResidual` was
+  first MEASURED chunk-dependent (gemma-4-26B-A4B: prefill logits moved O(1) with the chunk size,
+  first divergence at row 0) — the gemma MoE arm routed prefill through the m-dependent cuBLAS
+  matmul (memra#562) — and became yes when the router moved to `router_gemv` and the 26B read
+  EXACT on both gates. `HyperConnections` says no because glm5 chunks through its own
+  `prime_cache_hyper` / walker program, not this one.
 - Dedicated per-family arms that bypass the canonical programs are **not** rows here until they
   implement the shared contract. Today that is the `HyperConnections` batched-decode walk
   (`decode_step_batch_hyper`), `prime_cache_hyper`, the glm5 TP walk and the dsv4 serial route;
@@ -91,7 +92,7 @@ pre-existing allowlists for every operation, pinned by
 | `NamedActivation` | — | — | — | — | — | — | — | — | — | — |
 | `SerialResidual` | yes | yes | yes | yes | yes | yes | yes | — | yes | yes |
 | `GemmaResidual` | — | — | yes | — | — | — | — | — | — | yes |
-| `GemmaParallelMoeResidual` | — | — | yes | — | — | — | — | — | — | — |
+| `GemmaParallelMoeResidual` | — | — | yes | — | — | — | — | — | — | yes |
 | `HyperConnections` | — | — | — | — | — | — | — | yes | yes | — |
 | `GatedResidualConnections` | — | — | — | — | — | — | — | — | — | — |
 | `GatedResidualMixer` | — | — | — | — | — | — | — | — | — | — |

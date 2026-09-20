@@ -22847,8 +22847,8 @@ fn prefill_tick(
     // in one call (budget uncapped — one long tick, the incident class of 2026-09-05) and
     // rides carried suffixes tokenwise. Dense gemma left this class: its text prime now runs
     // the generic chunked driver (`prime_layers_gemma`), chunkinv/tickinv bit-identical at
-    // model scale, so it takes tick-budget chunks like the serial trunk. Still monolithic:
-    // gemma-4-26B-A4B (measured chunk-dependent MoE arm), E4B (PLE), hyper trunks (own walker).
+    // model scale, so it takes tick-budget chunks like the serial trunk (26B-A4B included once
+    // its router left cuBLAS, memra#562). Still monolithic: E4B (PLE), hyper trunks (own walker).
     let eager_only = eager_only_model(lm);
     let eager_mono = monolithic_prime_model(lm);
     let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
@@ -23159,8 +23159,9 @@ fn eager_only_model(lm: &LoadedModel) -> bool {
 /// (`op_registry` column `chunked_prime`, manifest `CHUNKED_PRIME`, `docs/EXECUTION-SURFACES.md`).
 /// Dense gemma (12B / 31B: chunkinv and tickinv bit-identical on the rented 5090,
 /// `research/exec-p1a-gemma-prime-20260919/`) therefore primes in tick-budget chunks like the
-/// serial trunk; gemma-4-26B-A4B (`GemmaParallelMoeResidual`, MEASURED chunk-dependent), E4B
-/// (PLE prime) and hyper trunks (their own walker program) keep the whole-prompt take.
+/// serial trunk. gemma-4-26B-A4B joined once its MoE router left the m-dependent cuBLAS matmul
+/// (memra#562; chunkinv/tickinv EXACT). E4B (PLE prime) and hyper trunks (their own walker
+/// program) keep the whole-prompt take.
 fn monolithic_prime_model(lm: &LoadedModel) -> bool {
     eager_only_model(lm) && !(lm.model.uses_gemma_program() && lm.model.chunked_prime_supported())
 }

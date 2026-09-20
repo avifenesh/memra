@@ -56,10 +56,13 @@ pub struct Surfaces {
     /// implemented for this operation AND its chunk/tick invariance is gated at model scale
     /// (`tools/chunk-invariance-gate.sh`, `concat-prime-probe tickinv`). Operations with their
     /// own prime program (HyperConnections via `prime_cache_hyper`, PLE via `gemma4_e4b_prime`)
-    /// and operations MEASURED chunk-dependent (`GemmaParallelMoeResidual`, memra#535 P1a: the
-    /// gemma MoE arm moves prefill logits O(1) with the chunk size, first divergence at row 0)
-    /// say no here, and the driver primes them monolithically. Consulted today only inside the
-    /// gemma family; widening it to a global predicate needs the per-op receipts first.
+    /// say no here, and the driver primes them monolithically. A row flips only on the model-
+    /// scale receipt: `GemmaParallelMoeResidual` was MEASURED chunk-dependent first (memra#562:
+    /// the gemma MoE arm routed prefill through the m-dependent cuBLAS matmul, prefill logits
+    /// moved O(1) with the chunk size, first divergence at row 0) and became yes when the router
+    /// moved to `router_gemv` and the 26B read EXACT on chunkinv and tickinv. Consulted today
+    /// only inside the gemma family; widening it to a global predicate needs the per-op
+    /// receipts first.
     pub chunked_prime: bool,
 }
 
@@ -336,7 +339,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .pipeline()
             .chunked_prime(),
         OperationKind::GemmaResidual => Surfaces::NONE.decode_batch().chunked_prime(),
-        OperationKind::GemmaParallelMoeResidual => Surfaces::NONE.decode_batch(),
+        OperationKind::GemmaParallelMoeResidual => Surfaces::NONE.decode_batch().chunked_prime(),
         OperationKind::HyperConnections => Surfaces::NONE.glm5_spec_verify().pipeline(),
         OperationKind::KvState => Surfaces::NONE
             .carried_prime()
