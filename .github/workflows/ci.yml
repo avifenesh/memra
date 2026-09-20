@@ -152,6 +152,14 @@ jobs:
         run: tools/test_release_guard.sh
       - name: Release-battery coverage fixtures (CPU only)
         run: python3 tools/test_release_battery_coverage.py
+      - name: Native environment controller CPU protocol and Linux stop-world tests
+        run: python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_native_env_controller.py --require-linux -v
+      - name: Native build provenance and caller scheduling CPU controls
+        run: |
+          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_native.py
+          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py
+          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py
+          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py
 
       # Changelog teeth (2026-09-02): the tag walk, the skip list, the explicit FROM, and the
       # history-root baseline that keeps the first tag on the rebuilt history from dropping the
@@ -203,6 +211,8 @@ jobs:
           MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
+      - name: Model inspection CLI contracts (including Step RoPE storage extents)
+        run: cargo test -p memra-cli
       - name: Indexed MLA and KDA memory fixture contracts (CPU-only)
         run: tools/test-model-memory-fixture.sh
 

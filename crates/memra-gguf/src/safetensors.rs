@@ -513,6 +513,12 @@ impl StModel {
         }
     }
 
+    /// Complete bytes of the opened mappings, including their tensor headers. The shard order
+    /// depends on index filenames; content identities must canonicalize it without using paths.
+    pub(crate) fn opened_shard_bytes(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.shards.iter().map(|shard| &shard.mmap[..])
+    }
+
     /// Zero-copy bytes + header info for a tensor, routed to the owning shard.
     pub fn raw(&self, name: &str) -> Option<(&StInfo, &[u8])> {
         let &si = self.map.get(name)?;

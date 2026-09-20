@@ -1,0 +1,125 @@
+test_cleanup_timeout_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_timeout_never_leaves_passed_result) ... 
+  test_cleanup_timeout_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_timeout_never_leaves_passed_result) (phase='callers') ... FAIL
+  test_cleanup_timeout_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_timeout_never_leaves_passed_result) (phase='battery') ... FAIL
+test_cleanup_error_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_error_never_leaves_passed_result) ... 
+  test_cleanup_error_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_error_never_leaves_passed_result) (phase='callers') ... FAIL
+  test_cleanup_error_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_error_never_leaves_passed_result) (phase='battery') ... FAIL
+test_manifest_failure_never_leaves_passed_result (__main__.FinalizationTests.test_manifest_failure_never_leaves_passed_result) ... /opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed file <_io.FileIO name='/private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmpri4wwxo7/evidence/all-card-telemetry-250ms.csv' mode='wb' closefd=True>
+  def __init__(self, name, parent):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+
+  test_manifest_failure_never_leaves_passed_result (__main__.FinalizationTests.test_manifest_failure_never_leaves_passed_result) (phase='callers') ... FAIL
+  test_manifest_failure_never_leaves_passed_result (__main__.FinalizationTests.test_manifest_failure_never_leaves_passed_result) (phase='battery') ... FAIL
+test_final_invariant_failure_never_leaves_passed_result (__main__.FinalizationTests.test_final_invariant_failure_never_leaves_passed_result) ... /opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed file <_io.BufferedWriter name='/private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmp1mxerizs/evidence/all-card-telemetry-250ms.csv'>
+  def __init__(self, name, parent):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed file <_io.BufferedWriter name='/private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmp9l96n5w3/evidence/all-card-telemetry-250ms.csv'>
+  def __init__(self, name, parent):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed file <_io.BufferedWriter name='/private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmp4uf94g_z/evidence/all-card-telemetry-250ms.csv'>
+  def __init__(self, name, parent):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+
+  test_final_invariant_failure_never_leaves_passed_result (__main__.FinalizationTests.test_final_invariant_failure_never_leaves_passed_result) (phase='callers') ... FAIL
+  test_final_invariant_failure_never_leaves_passed_result (__main__.FinalizationTests.test_final_invariant_failure_never_leaves_passed_result) (phase='battery') ... FAIL
+
+======================================================================
+FAIL: test_cleanup_timeout_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_timeout_never_leaves_passed_result) (phase='callers')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 225, in test_cleanup_timeout_never_leaves_passed_result
+    with self.subTest(phase=phase): self.exercise(phase, 'timeout')
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 212, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'finalization failure left a stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : finalization failure left a stale passed result
+
+======================================================================
+FAIL: test_cleanup_timeout_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_timeout_never_leaves_passed_result) (phase='battery')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 225, in test_cleanup_timeout_never_leaves_passed_result
+    with self.subTest(phase=phase): self.exercise(phase, 'timeout')
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 212, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'finalization failure left a stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : finalization failure left a stale passed result
+
+======================================================================
+FAIL: test_cleanup_error_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_error_never_leaves_passed_result) (phase='callers')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 229, in test_cleanup_error_never_leaves_passed_result
+    with self.subTest(phase=phase): self.exercise(phase, 'terminate')
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 212, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'finalization failure left a stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : finalization failure left a stale passed result
+
+======================================================================
+FAIL: test_cleanup_error_never_leaves_passed_result (__main__.FinalizationTests.test_cleanup_error_never_leaves_passed_result) (phase='battery')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 229, in test_cleanup_error_never_leaves_passed_result
+    with self.subTest(phase=phase): self.exercise(phase, 'terminate')
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 212, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'finalization failure left a stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : finalization failure left a stale passed result
+
+======================================================================
+FAIL: test_manifest_failure_never_leaves_passed_result (__main__.FinalizationTests.test_manifest_failure_never_leaves_passed_result) (phase='callers')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 233, in test_manifest_failure_never_leaves_passed_result
+    with self.subTest(phase=phase): self.exercise(phase, 'manifest')
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 212, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'finalization failure left a stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : finalization failure left a stale passed result
+
+======================================================================
+FAIL: test_manifest_failure_never_leaves_passed_result (__main__.FinalizationTests.test_manifest_failure_never_leaves_passed_result) (phase='battery')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 233, in test_manifest_failure_never_leaves_passed_result
+    with self.subTest(phase=phase): self.exercise(phase, 'manifest')
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 212, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'finalization failure left a stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : finalization failure left a stale passed result
+
+======================================================================
+FAIL: test_final_invariant_failure_never_leaves_passed_result (__main__.FinalizationTests.test_final_invariant_failure_never_leaves_passed_result) (phase='callers')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 237, in test_final_invariant_failure_never_leaves_passed_result
+    with self.subTest(phase=phase): self.exercise(phase, 'verify')
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 211, in exercise
+    self.assertIsNotNone(failure, 'finalization failure was ignored')
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: unexpectedly None : finalization failure was ignored
+
+======================================================================
+FAIL: test_final_invariant_failure_never_leaves_passed_result (__main__.FinalizationTests.test_final_invariant_failure_never_leaves_passed_result) (phase='battery')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 237, in test_final_invariant_failure_never_leaves_passed_result
+    with self.subTest(phase=phase): self.exercise(phase, 'verify')
+                                    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 211, in exercise
+    self.assertIsNotNone(failure, 'finalization failure was ignored')
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: unexpectedly None : finalization failure was ignored
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.524s
+
+FAILED (failures=8)

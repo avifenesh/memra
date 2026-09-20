@@ -13,7 +13,6 @@ use memra_engine::Engine;
 use memra_engine::forward::argmax;
 use memra_engine::hybrid::HybridModel;
 use memra_gguf::GgufFile;
-use sha2::{Digest, Sha256};
 
 // MEMRA_PROFILE_SPEC=1: bracket ONLY the generate_spec calls with cudaProfiler{Start,Stop} —
 // with `nsys profile -c cudaProfilerApi` the capture then contains the spec phase alone
@@ -553,14 +552,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into_iter()
             .find(|rewrite| rewrite.surface == memra_engine::plan_backend::RewriteSurface::MtpSpec)
             .ok_or("MTP rewrite manifest is missing")?;
-        let executable = std::fs::read(std::env::current_exe()?)?;
-        let executable_sha256 = Sha256::digest(&executable)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+        let executable_sha256 = memra_engine::plan_backend::running_implementation_sha256()?;
         let receipt =
             rewrite.verify_tokens(&executable_sha256, &receipt_reference, &receipt_candidate)?;
-        let receipt = memra_engine::plan_backend::bind_rewrite_artifact(receipt)?;
+        let receipt = memra_engine::plan_backend::bind_rewrite_artifact(&model, receipt)?;
         receipt.validate_for(&rewrite)?;
         std::fs::write(&path, receipt.to_tsv())?;
         println!("rewrite receipt: {}", std::path::Path::new(&path).display());

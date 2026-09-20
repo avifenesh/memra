@@ -1,0 +1,34 @@
+[
+  {
+    "case": "inspect",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/memra",
+      "model",
+      "inspect",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "--against",
+      "qwen3",
+      "--out",
+      "/home/memra-qual/scratch/memra-542/server-admission-005/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "5b4a5ffe2984400beb8c4b841f0107f07a90c2827e568d094a9c578e26335943",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 0.015875473618507385
+  },
+  {
+    "case": "native-capture-and-reinstall",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate",
+      "capture",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "/home/memra-qual/scratch/memra-542/server-admission-005/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "e117bb04f3cafe499568f39a44f952cd0221a210fdb922c1ccb3848436f25eac",
+    "passed": false,
+    "returncode": 1,
+    "wall_seconds": 3.191902056336403
+  }
+]

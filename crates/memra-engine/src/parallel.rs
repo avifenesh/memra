@@ -1586,6 +1586,59 @@ mod tests {
     use memra_gguf::source::{Fp8StackedNative, TensorView};
     use std::path::Path;
 
+    #[test]
+    fn auto_placement_binds_the_actual_step_rope_extent() {
+        use memra_gguf::source::GgufSource;
+        let mut fixed_bytes = Vec::new();
+        for (case, shape, accepted) in [
+            ("compact", vec![32], true),
+            ("full", vec![64], true),
+            ("short", vec![1], false),
+            ("intermediate", vec![48], false),
+            ("oversized", vec![65], false),
+            ("matrix", vec![2, 16], false),
+            ("compact_rank2", vec![32, 1], false),
+            ("full_rank2", vec![64, 1], false),
+        ] {
+            let path = std::env::temp_dir().join(format!(
+                "memra-auto-step-rope-{case}-{}.gguf",
+                std::process::id()
+            ));
+            memra_gguf::micro_gguf::write_step35_rope_contract_fixture(&path, &shape).unwrap();
+            let file = memra_gguf::GgufFile::open(&path).unwrap();
+            std::fs::remove_file(&path).unwrap();
+            let source = GgufSource(&file);
+            let raw_config = source.config();
+            let plan = memra_gguf::model_packs::compile_for_load(&raw_config).unwrap();
+            // This is the real metadata/census binding entry used by plan_auto_parallel,
+            // before querying CUDA capacity or choosing a placement.
+            let raw = artifact_costs(&source, &raw_config, &plan);
+            if accepted {
+                let (config, plan) = memra_gguf::model_packs::compile_for_source(&source).unwrap();
+                let loaded = artifact_costs(&source, &config, &plan).unwrap();
+                let raw = raw.unwrap_or_else(|error| panic!("{case}: {error}"));
+                assert_eq!(raw.first_fixed_bytes, loaded.first_fixed_bytes, "{case}");
+                assert_eq!(
+                    raw.non_distributed_bytes, loaded.non_distributed_bytes,
+                    "{case}"
+                );
+                fixed_bytes.push(loaded.first_fixed_bytes);
+            } else {
+                let error = raw.unwrap_err().to_string();
+                assert!(
+                    error.contains("RopeFactors") && error.contains("shape mismatch"),
+                    "{case}: {error}"
+                );
+                assert!(memra_gguf::model_packs::compile_for_source(&source).is_err());
+            }
+        }
+        assert_eq!(
+            fixed_bytes[1] - fixed_bytes[0],
+            32 * 4,
+            "placement must account for actual bytes without padding/truncation"
+        );
+    }
+
     fn step37_contract() -> ModelParallelContract {
         let total_layers = 48;
         ModelParallelContract {
@@ -1625,6 +1678,8 @@ mod tests {
             // packs whose plan does not consume one (see ModelConfig::window_hint).
             window_hint: None,
             rope_scaling_hint: None,
+            layer_rope_scaling: Vec::new(),
+            hidden_act: None,
             name: "Step-3.7-Flash-FP8".to_string(),
             n_layer: total_layers,
             n_embd: 4096,
@@ -1668,6 +1723,7 @@ mod tests {
                 rope_dims_full: 64,
                 rope_dims_swa: 128,
                 rope_freq_factors: None,
+                rope_freq_shape: None,
                 swiglu_clamp_exp: vec![0.0; total_layers as usize],
                 swiglu_clamp_shexp: vec![0.0; total_layers as usize],
                 sigmoid_routing: true,

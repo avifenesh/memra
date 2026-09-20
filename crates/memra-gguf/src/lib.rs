@@ -1103,6 +1103,12 @@ impl GgufFile {
         self.shards.len()
     }
 
+    /// Complete bytes of the opened mappings, including metadata and padding. Identity callers
+    /// must use these views rather than reopening the diagnostic shard paths.
+    pub(crate) fn opened_shard_bytes(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.shards.iter().map(|shard| &shard.mmap[..])
+    }
+
     /// On-disk path of a given shard.
     pub fn shard_path(&self, i: usize) -> &Path {
         &self.shards[i].path
@@ -1335,6 +1341,38 @@ mod split_tests {
             assert_eq!(from1.tensor_data(u), from0.tensor_data(t));
         }
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn artifact_sha256_gguf_binds_every_opened_shard_after_path_replacement() {
+        use crate::source::{GgufSource, TensorSource};
+
+        let (dir, p0, p1) = write_split_pair("identity");
+        let original = GgufFile::open(&p0).unwrap();
+        let identity = GgufSource(&original).artifact_sha256().unwrap();
+        let from_last = GgufFile::open(&p1).unwrap();
+        assert_eq!(GgufSource(&from_last).artifact_sha256().unwrap(), identity);
+        let renamed = dir.join("renamed-00001-of-00002.gguf");
+        let renamed_last = dir.join("renamed-00002-of-00002.gguf");
+        std::fs::rename(&p0, &renamed).unwrap();
+        std::fs::rename(&p1, &renamed_last).unwrap();
+        let moved = GgufFile::open(&renamed).unwrap();
+        assert_eq!(GgufSource(&moved).artifact_sha256().unwrap(), identity);
+
+        let mut replacement = std::fs::read(&renamed_last).unwrap();
+        *replacement.last_mut().unwrap() ^= 1;
+        std::fs::copy(&renamed, &p0).unwrap();
+        std::fs::write(&p1, replacement).unwrap();
+        let replaced = GgufFile::open(&p0).unwrap();
+        assert_ne!(GgufSource(&replaced).artifact_sha256().unwrap(), identity);
+        std::fs::remove_file(&renamed).unwrap();
+        std::fs::remove_file(&renamed_last).unwrap();
+        assert_eq!(GgufSource(&original).artifact_sha256().unwrap(), identity);
+        assert_eq!(
+            original.tensor_data(original.find("blk.2.w").unwrap()),
+            &[0xB1; 64]
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

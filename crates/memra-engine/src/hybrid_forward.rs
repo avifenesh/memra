@@ -2521,6 +2521,8 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         cache.ensure_usable("decode_step_glm5_tp_device_logits")?;
         if !self.glm5_tp_device_sample_supported() {
             return Err("device logits require GLM TP-2 without pipeline stages".into());
@@ -5163,6 +5165,8 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::ForwardFreshKv)?;
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, false);
         }
@@ -5263,6 +5267,8 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::ForwardFreshKv)?;
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, true);
         }
@@ -5498,6 +5504,8 @@ impl HybridModel {
         queued_after: usize,
         overlay: Option<&crate::vision::EmbedOverlay>,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         // FORWARD PROGRESS (memra#50), the CALL-granularity half. Every chunked walk below
         // stamps `crate::progress` per chunk; a MONOLITHIC walk (a prompt at or under one
         // chunk, `MEMRA_PRIME_CHUNK=0`, gemma4 v0, the E4B arm) stamps nothing on its way
@@ -6532,7 +6540,7 @@ impl HybridModel {
     /// its OWN slabs on its own device (a dev0 slab dereferenced by a dev1 kernel would be
     /// a peer read per GEMM operand, the exact class Lever B removes). Single-device rigs
     /// see one entry, byte-identical behavior.
-    pub fn prime_slabs_get(
+    pub(crate) fn prime_slabs_get(
         &self,
         e: &Engine,
         t: usize,
@@ -7568,6 +7576,8 @@ impl HybridModel {
         logits_out: &mut CudaSlice<f32>,
         h_seed_out: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)?;
         self.refuse_hyper("prime_chunk_captured")?;
         cache.ensure_usable("prime_chunk_captured")?;
         let cfg = &self.cfg;
@@ -21810,7 +21820,13 @@ impl HybridModel {
         let lim_exp = cfg.clamp_exp_at(il as u32);
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
 
-        let logits = e.matmul(&m.gate_inp, zbatch, mrows)?;
+        // Router: lockstep's cuBLAS matmul reduced all stream rows at once, so its `m =
+        // stream_count` made one session's expert selection depend on how many peers shared the
+        // decode batch. Keep lockstep on the fixed per-row reduction program instead. The serial
+        // trunk's `moe_router_logits` and Gemma's `gemma4_moe` already use this m-invariant
+        // `router_gemv` selector; it preserves each row's logits shape for the sigmoid-router
+        // trace and every downstream routing/dispatch step.
+        let logits = Self::moe_router_logits(e, m, zbatch, mrows, cfg)?;
         if let Some(sig) = cfg.sigmoid_router() {
             Self::trace_sigmoid_router_logits(e, il, mrows, n_expert, n_used, &logits, m, sig)?;
         }
@@ -24168,6 +24184,8 @@ impl HybridModel {
         cap_bucket_max: Option<(usize, usize)>,
         tok_out: &mut CudaSlice<u32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
@@ -24318,6 +24336,8 @@ impl HybridModel {
         tok_out: &mut CudaSlice<u32>,
         ring: Option<(&mut CudaSlice<u32>, usize)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         e.embed_gather_device_into(embd_gpu, token_d, &mut sl.x, n_embd, embd_qt, embd_rb)?;
@@ -25127,6 +25147,8 @@ impl HybridModel {
         eos: &[u32],
         mut on_token: impl FnMut(u32) -> bool,
     ) -> Result<(Vec<u32>, crate::decode::StopReason), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         if self.is_gemma4_e4b() {
             return Err(
                 "E4B graph serving is unwired (HANDOVER-E4B.md) — dc-eager is the serving arm"
@@ -30102,6 +30124,10 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<(CudaSlice<u32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // Shared teacher-forced/prefill rows need a live eager baseline. Speculative
+        // session entry points additionally require their MTP/GLM5 surface receipt.
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let pos: Vec<i32> = (0..t).map(|i| (pos0 + i) as i32).collect();
@@ -30165,6 +30191,8 @@ impl HybridModel {
         n_vocab: usize,
         bucket: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         let n_embd = self.cfg.n_embd as usize;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
         e.scale_inplace(&mut x, (n_embd as f32).sqrt(), n_embd)?;
@@ -30195,6 +30223,8 @@ impl HybridModel {
         cache: &mut Cache,
         n_vocab: usize,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
         let mut x = e.embed_gather_device(embd_gpu, token_d, n_embd, embd_qt, embd_rb)?;
@@ -30910,6 +30940,8 @@ impl HybridModel {
         {
             return Ok(None);
         }
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): the eager
         // token step is this route's byte-identical twin — warmup and rebase tokens
         // already ride it — so below the driver-free floor the token goes eager

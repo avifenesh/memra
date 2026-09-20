@@ -1,0 +1,140 @@
+........Warning: truncated output (original token count: 65074)
+Total output lines: 2249
+
+....FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+======================================================================
+FAIL: test_complete_output_cannot_override_failed_or_cancelled_exit (__main__.TransferRunnerTests.test_complete_output_cannot_override_failed_or_cancelled_exit) (mode='conformance', code=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 144, in test_complete_output_cannot_override_failed_or_cancelled_exit
+    with self.subTest(mode=mode, code=code): self.exercise(mode, code=code)
+                                             ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 76, in exercise
+    runner.run(args)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 289, in run
+    raise failure
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 252, in run
+    case(f'transfer-{mode}', [binaries / 'tier-transfer-gate', mode], validate=validator)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 173, in case
+    code = plain(command, environment, directory, args.timeout_seconds)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 54, in fake
+    self.assertEqual(command[0], str(owned / 'target/release/tier-transfer-gate'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '/private/var/folders/x7/jjkpm1dj6ybc9rhmdr[62 chars]gate' != '/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h00[54 chars]gate'
+- /private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmp3t4q05op/owned/target/release/tier-transfer-gate
+? --------
++ /var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmp3t4q05op/owned/target/release/tier-transfer-gate
+
+
+======================================================================
+FAIL: test_complete_output_cannot_override_failed_or_cancelled_exit (__main__.TransferRunnerTests.test_complete_output_cannot_override_failed_or_cancelled_exit) (mode='conformance', code=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 144, in test_complete_output_cannot_override_failed_or_cancelled_exit
+    with self.subTest(mode=mode, code=code): self.exercise(mode, code=code)
+                                             ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 76, in exercise
+    runner.run(args)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 289, in run
+    raise failure
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 252, in run
+    case(f'transfer-{mode}', [binaries / 'tier-transfer-gate', mode], validate=validator)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 173, in case
+    code = plain(command, environment, directory, args.timeout_seconds)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 54, in fake
+    self.assertEqual(command[0], str(owned / 'target/release/tier-transfer-gate'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '/private/var/folders/x7/jjkpm1dj6ybc9rhmdr[62 chars]gate' != '/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h00[54 chars]gate'
+- /private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmpcdy3kpxt/owned/target/release/tier-transfer-gate
+? --------
++ /var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmpcdy3kpxt/owned/target/release/tier-transfer-gate
+
+
+======================================================================
+FAIL: test_complete_output_cannot_override_failed_or_cancelled_exit (__main__.TransferRunnerTests.test_complete_output_cannot_override_failed_or_cancelled_exit) (mode='conformance', code=-15)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 144, in test_complete_output_cannot_override_failed_or_cancelled_exit
+    with self.subTest(mode=mode, code=code): self.exercise(mode, code=code)
+        …61574 tokens truncated…alify-callers.py", line 289, in run
+    raise failure
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 252, in run
+    case(f'transfer-{mode}', [binaries / 'tier-transfer-gate', mode], validate=validator)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 173, in case
+    code = plain(command, environment, directory, args.timeout_seconds)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 54, in fake
+    self.assertEqual(command[0], str(owned / 'target/release/tier-transfer-gate'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '/private/var/folders/x7/jjkpm1dj6ybc9rhmdr[62 chars]gate' != '/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h00[54 chars]gate'
+- /private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmpstwcbzbq/owned/target/release/tier-transfer-gate
+? --------
++ /var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmpstwcbzbq/owned/target/release/tier-transfer-gate
+
+
+======================================================================
+FAIL: test_roundtrip_lifecycle_flags_cannot_be_missing_or_false (__main__.TransferRunnerTests.test_roundtrip_lifecycle_flags_cannot_be_missing_or_false) (flag='governor_zero', text='PASS native D2H-H2D roundtrip bytes=4096 N=1 expected_sha256=8b926d75599a618e21f1341318e66517be26e18cc7496783d2b59758c1333be8 actual_sha256=8b926d75599a618e21f1341318e66517be26e18cc7496783d2b59758c1333be8 byte_exact=true source_freed_host_live=true handback_no_copy=true \nPASS native D2H-H2D roundtrip bytes=65536 N=1 expected_sha256=0f255ec16482c343fd099ba9668863778be40dc166a6856b1d470e0bc97cc6fd actual_sha256=0f255ec16482c343fd099ba9668863778be40dc166a6856b1d470e0bc97cc6fd byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true\nPASS native D2H-H2D roundtrip bytes=1048576 N=1 expected_sha256=50b4b069390c1d7966da182649bb2caddb412a2f9012425b5e9ec0ef4ec68545 actual_sha256=50b4b069390c1d7966da182649bb2caddb412a2f9012425b5e9ec0ef4ec68545 byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true\nPASS native D2H-H2D roundtrip bytes=16777216 N=1 expected_sha256=9641f70524a01757c47c6b10fe7f1c97c36f877ec9b8f7c73e010416540183da actual_sha256=9641f70524a01757c47c6b10fe7f1c97c36f877ec9b8f7c73e010416540183da byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true\nPASS native D2H-H2D roundtrip bytes=67108864 N=1 expected_sha256=2b3c03c5ccada6653dbda9569697a6722493f214aca1faff12532bfe271ee240 actual_sha256=2b3c03c5ccada6653dbda9569697a6722493f214aca1faff12532bfe271ee240 byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true\nPASS native D2H-H2D roundtrip bytes=268435456 N=1 expected_sha256=510f683005588fb4d96169c03bd2d1c120fcd0ae13e24d2dd8040600f25b8dff actual_sha256=510f683005588fb4d96169c03bd2d1c120fcd0ae13e24d2dd8040600f25b8dff byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true\n')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 139, in test_roundtrip_lifecycle_flags_cannot_be_missing_or_false
+    with self.subTest(flag=flag, text=bad): self.exercise('roundtrip', bad)
+                                            ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 76, in exercise
+    runner.run(args)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 289, in run
+    raise failure
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 252, in run
+    case(f'transfer-{mode}', [binaries / 'tier-transfer-gate', mode], validate=validator)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py", line 173, in case
+    code = plain(command, environment, directory, args.timeout_seconds)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+  File "/Users/avifen/.codex/worktrees/pr557-pinned-transfer-stack/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 54, in fake
+    self.assertEqual(command[0], str(owned / 'target/release/tier-transfer-gate'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '/private/var/folders/x7/jjkpm1dj6ybc9rhmdr[62 chars]gate' != '/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h00[54 chars]gate'
+- /private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmp8b630mwh/owned/target/release/tier-transfer-gate
+? --------
++ /var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmp8b630mwh/owned/target/release/tier-transfer-gate
+
+
+----------------------------------------------------------------------
+Ran 17 tests in 1.981s
+
+FAILED (failures=66)

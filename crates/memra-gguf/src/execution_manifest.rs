@@ -12,7 +12,7 @@
 use crate::model_plan::{ModelPlan, OperationKind, OperationSupport, PlanCapabilities};
 use crate::op_registry;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -47,6 +47,9 @@ impl KernelManifest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RewriteSurface {
     CarriedPrime,
+    /// Monolithic forward/forward_last uses fresh KV (F32 in the generic attention
+    /// executor), a distinct program from quantized-cache eager/verify execution.
+    ForwardFreshKv,
     DecodeEager,
     DecodeBatch,
     DecodeGraph,
@@ -60,13 +63,75 @@ pub enum RewriteSurface {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RewriteIdentity {
+    /// Digest of the source bytes/interpretation captured by the actual loader.
+    pub artifact_sha256: String,
+    /// Digest of the running executable, never a value read from the supplied bundle.
+    pub implementation_sha256: String,
+    /// Digest of the loaded numerical settings and device program.
+    pub numeric_program_sha256: String,
+}
+
+impl RewriteIdentity {
+    pub fn validate(&self) -> Result<(), String> {
+        for (key, value) in self.fields() {
+            if !is_sha256(value) {
+                return Err(format!(
+                    "trusted rewrite identity {key} must be a lowercase SHA-256"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn fields(&self) -> [(&'static str, &str); 3] {
+        [
+            ("artifact_sha256", &self.artifact_sha256),
+            ("implementation_sha256", &self.implementation_sha256),
+            ("numeric_program_sha256", &self.numeric_program_sha256),
+        ]
+    }
+}
+
+/// Legacy permission is explicitly unqualified. A requested strict policy starts closed,
+/// including while loading and after a failed installation attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RewriteAdmission {
+    LegacyUnbundled,
+    StrictPending,
+    Qualified(RewriteQualifications),
+}
+
+impl RewriteAdmission {
+    pub fn allows(&self, surface: RewriteSurface) -> bool {
+        match self {
+            Self::LegacyUnbundled => true,
+            Self::StrictPending => false,
+            Self::Qualified(qualifications) => qualifications.allows(surface),
+        }
+    }
+
+    pub fn is_qualified(&self) -> bool {
+        matches!(self, Self::Qualified(_))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RewriteQualifications {
     pub plan_sha256: String,
+    identity: RewriteIdentity,
     passed: BTreeSet<RewriteSurface>,
 }
 
 impl RewriteQualifications {
-    pub fn load(bundle: &Path, plan: &ModelPlan) -> Result<Self, String> {
+    /// `identity` must come from the loader and running implementation, independently of
+    /// the bundle. Bundle hashes alone only establish internal consistency.
+    pub fn load(
+        bundle: &Path,
+        plan: &ModelPlan,
+        identity: &RewriteIdentity,
+    ) -> Result<Self, String> {
+        identity.validate()?;
         let expected = execution_rewrites(plan);
         let artifact_lock = std::fs::read(bundle.join("artifact.lock"))
             .map_err(|error| format!("read artifact.lock: {error}"))?;
@@ -74,7 +139,11 @@ impl RewriteQualifications {
         let index = std::fs::read_to_string(bundle.join("rewrite-receipts.tsv"))
             .map_err(|error| format!("read rewrite receipt index: {error}"))?;
         let mut passed = BTreeSet::new();
-        for line in index.lines().skip(1) {
+        let mut rows = index.lines();
+        if rows.next() != Some("rewrite\tplan_sha256\treceipt_sha256\tstatus") {
+            return Err("invalid rewrite receipt index header".into());
+        }
+        for line in rows {
             let columns: Vec<_> = line.split('\t').collect();
             if columns.len() != 4 || columns[3] != "passed" {
                 return Err(format!("malformed rewrite receipt index row {line:?}"));
@@ -99,28 +168,43 @@ impl RewriteQualifications {
             }
             let text = std::str::from_utf8(&receipt)
                 .map_err(|error| format!("rewrite receipt is not UTF-8: {error}"))?;
+            let fields = parse_qualified_rewrite_receipt(text)?;
             for (key, value) in [
-                ("status", "passed"),
                 ("rewrite", rewrite.id),
                 ("surface", rewrite.surface.as_str()),
                 ("implementation", rewrite.implementation),
                 ("plan_sha256", rewrite.plan_sha256.as_str()),
                 ("artifact_lock_sha256", artifact_lock_sha256.as_str()),
-                ("first_violation", "none"),
-            ] {
-                if !text.lines().any(|line| line == format!("{key}\t{value}")) {
+            ]
+            .into_iter()
+            .chain(identity.fields())
+            {
+                if fields.get(key).copied() != Some(value) {
                     return Err(format!(
                         "rewrite receipt {} does not bind {key}={value}",
                         rewrite.id
                     ));
                 }
             }
-            passed.insert(rewrite.surface);
+            if !passed.insert(rewrite.surface) {
+                return Err(format!(
+                    "duplicate rewrite receipt index row for {}",
+                    rewrite.id
+                ));
+            }
+        }
+        if passed.is_empty() {
+            return Err("rewrite bundle contains no qualified surfaces".into());
         }
         Ok(Self {
             plan_sha256: plan_sha256(plan),
+            identity: identity.clone(),
             passed,
         })
+    }
+
+    pub fn matches(&self, plan: &ModelPlan, identity: &RewriteIdentity) -> bool {
+        self.plan_sha256 == plan_sha256(plan) && self.identity == *identity
     }
 
     pub fn allows(&self, surface: RewriteSurface) -> bool {
@@ -128,10 +212,11 @@ impl RewriteQualifications {
     }
 
     pub fn all_eligible(&self, plan: &ModelPlan) -> bool {
-        execution_rewrites(plan)
-            .into_iter()
-            .filter(ExecutionRewrite::eligible)
-            .all(|rewrite| self.allows(rewrite.surface))
+        self.plan_sha256 == plan_sha256(plan)
+            && execution_rewrites(plan)
+                .into_iter()
+                .filter(ExecutionRewrite::eligible)
+                .all(|rewrite| self.allows(rewrite.surface))
     }
 }
 
@@ -139,6 +224,7 @@ impl RewriteSurface {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::CarriedPrime => "carried-prime",
+            Self::ForwardFreshKv => "forward-fresh-kv",
             Self::DecodeEager => "decode-eager",
             Self::DecodeBatch => "decode-batch",
             Self::DecodeGraph => "decode-graph",
@@ -147,6 +233,127 @@ impl RewriteSurface {
             Self::Pipeline => "pipeline",
         }
     }
+}
+
+/// Shared admission parser for the CLI and runtime. No last/first-field-wins semantics:
+/// duplicates, missing identity fields and old unbound receipts are errors.
+pub fn parse_qualified_rewrite_receipt(text: &str) -> Result<BTreeMap<&str, &str>, String> {
+    const KEYS: &[&str] = &[
+        "format",
+        "status",
+        "rewrite",
+        "surface",
+        "implementation",
+        "implementation_sha256",
+        "plan_sha256",
+        "artifact_lock_sha256",
+        "artifact_sha256",
+        "numeric_program_sha256",
+        "reference_sha256",
+        "candidate_sha256",
+        "value_kind",
+        "values",
+        "max_abs",
+        "max_rel",
+        "reference_argmax",
+        "candidate_argmax",
+        "atol",
+        "rtol",
+        "require_argmax",
+        "first_violation",
+    ];
+    let mut fields = BTreeMap::new();
+    for line in text.lines() {
+        let (key, value) = line
+            .split_once('\t')
+            .ok_or_else(|| format!("malformed rewrite receipt line {line:?}"))?;
+        if !KEYS.contains(&key) || value.is_empty() || value.contains('\t') {
+            return Err(format!("invalid rewrite receipt field {key:?}"));
+        }
+        if fields.insert(key, value).is_some() {
+            return Err(format!("duplicate rewrite receipt field {key}"));
+        }
+    }
+    for key in KEYS {
+        if !fields.contains_key(key) {
+            return Err(format!("rewrite receipt has no {key}"));
+        }
+    }
+    for (key, value) in [
+        ("format", "memra-rewrite-parity-v2"),
+        ("status", "passed"),
+        ("first_violation", "none"),
+    ] {
+        if fields[key] != value {
+            return Err(format!("rewrite receipt requires {key}={value}"));
+        }
+    }
+    for key in [
+        "implementation_sha256",
+        "artifact_sha256",
+        "numeric_program_sha256",
+        "artifact_lock_sha256",
+        "plan_sha256",
+        "reference_sha256",
+        "candidate_sha256",
+    ] {
+        if !is_sha256(fields[key]) {
+            return Err(format!("rewrite receipt {key} is not a lowercase SHA-256"));
+        }
+    }
+    let integer = |key| {
+        fields[key]
+            .parse::<usize>()
+            .map_err(|_| format!("rewrite receipt {key} is not an unsigned integer"))
+    };
+    let values = integer("values")?;
+    if values == 0 {
+        return Err("rewrite receipt compared no values".into());
+    }
+    let nonnegative = |key| -> Result<f32, String> {
+        let value = fields[key]
+            .parse::<f32>()
+            .map_err(|_| format!("rewrite receipt {key} is not a number"))?;
+        if !value.is_finite() || value < 0.0 {
+            return Err(format!(
+                "rewrite receipt {key} is not finite and nonnegative"
+            ));
+        }
+        Ok(value)
+    };
+    let atol = nonnegative("atol")?;
+    let rtol = nonnegative("rtol")?;
+    let max_abs = nonnegative("max_abs")?;
+    let max_rel = nonnegative("max_rel")?;
+    let reference_argmax = integer("reference_argmax")?;
+    let candidate_argmax = integer("candidate_argmax")?;
+    // A receipt cannot declare passed while violating a pure absolute/relative bound.
+    // With both terms nonzero the two maxima may occur at different elements, so they
+    // cannot reconstruct the per-element combined tolerance on their own.
+    if (rtol == 0.0 && max_abs > atol) || (atol == 0.0 && max_rel > rtol) {
+        return Err("rewrite receipt errors exceed its declared tolerance".into());
+    }
+    match (fields["value_kind"], fields["require_argmax"]) {
+        ("logits-f32", "true")
+            if reference_argmax == candidate_argmax && reference_argmax < values => {}
+        ("token-ids-u32", "false")
+            if atol == 0.0
+                && rtol == 0.0
+                && max_abs == 0.0
+                && max_rel == 0.0
+                && reference_argmax == 0
+                && candidate_argmax == 0 => {}
+        _ => return Err("rewrite receipt has an invalid value_kind/argmax policy".into()),
+    }
+    if atol == 0.0
+        && rtol == 0.0
+        && (max_abs != 0.0
+            || max_rel != 0.0
+            || fields["reference_sha256"] != fields["candidate_sha256"])
+    {
+        return Err("exact rewrite receipt has nonzero error or different stream hashes".into());
+    }
+    Ok(fields)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,6 +421,8 @@ impl ExecutionRewrite {
             implementation_sha256: implementation_sha256.to_string(),
             plan_sha256: self.plan_sha256.clone(),
             artifact_lock_sha256: None,
+            artifact_sha256: None,
+            numeric_program_sha256: None,
             reference_sha256: f32_stream_sha256(reference),
             candidate_sha256: f32_stream_sha256(candidate),
             value_kind: RewriteValueKind::LogitsF32,
@@ -266,6 +475,8 @@ impl ExecutionRewrite {
             implementation_sha256: implementation_sha256.to_string(),
             plan_sha256: self.plan_sha256.clone(),
             artifact_lock_sha256: None,
+            artifact_sha256: None,
+            numeric_program_sha256: None,
             reference_sha256: u32_stream_sha256(reference),
             candidate_sha256: u32_stream_sha256(candidate),
             value_kind: RewriteValueKind::TokenIdsU32,
@@ -300,6 +511,8 @@ pub struct RewriteParityReceipt {
     pub implementation_sha256: String,
     pub plan_sha256: String,
     pub artifact_lock_sha256: Option<String>,
+    pub artifact_sha256: Option<String>,
+    pub numeric_program_sha256: Option<String>,
     pub reference_sha256: String,
     pub candidate_sha256: String,
     pub value_kind: RewriteValueKind,
@@ -329,6 +542,16 @@ impl RewriteValueKind {
 }
 
 impl RewriteParityReceipt {
+    pub fn bind_runtime_identity(mut self, identity: &RewriteIdentity) -> Result<Self, String> {
+        identity.validate()?;
+        if self.implementation_sha256 != identity.implementation_sha256 {
+            return Err("rewrite receipt does not match the running implementation".into());
+        }
+        self.artifact_sha256 = Some(identity.artifact_sha256.clone());
+        self.numeric_program_sha256 = Some(identity.numeric_program_sha256.clone());
+        Ok(self)
+    }
+
     pub fn bind_artifact_lock(mut self, artifact_lock: &[u8]) -> Self {
         self.artifact_lock_sha256 = Some(hex_sha256(artifact_lock));
         self
@@ -356,7 +579,7 @@ impl RewriteParityReceipt {
 
     pub fn to_tsv(&self) -> String {
         let mut output = String::new();
-        writeln!(output, "format\tmemra-rewrite-parity-v1").unwrap();
+        writeln!(output, "format\tmemra-rewrite-parity-v2").unwrap();
         writeln!(
             output,
             "status\t{}",
@@ -375,6 +598,12 @@ impl RewriteParityReceipt {
         writeln!(output, "plan_sha256\t{}", self.plan_sha256).unwrap();
         if let Some(hash) = self.artifact_lock_sha256.as_ref() {
             writeln!(output, "artifact_lock_sha256\t{hash}").unwrap();
+        }
+        if let Some(hash) = self.artifact_sha256.as_ref() {
+            writeln!(output, "artifact_sha256\t{hash}").unwrap();
+        }
+        if let Some(hash) = self.numeric_program_sha256.as_ref() {
+            writeln!(output, "numeric_program_sha256\t{hash}").unwrap();
         }
         writeln!(output, "reference_sha256\t{}", self.reference_sha256).unwrap();
         writeln!(output, "candidate_sha256\t{}", self.candidate_sha256).unwrap();
@@ -406,6 +635,13 @@ pub fn execution_rewrites(plan: &ModelPlan) -> Vec<ExecutionRewrite> {
         .unwrap_or_else(|| vec![OperationKind::DraftPlan]);
     spec_operations.extend(plan.trunk_operations());
     let selections = [
+        (
+            "forward-fresh-kv.v1",
+            RewriteSurface::ForwardFreshKv,
+            NATIVE_FRESH_KV,
+            trunk.clone(),
+            NATIVE_FRESH_KV.trunk_capabilities(plan).batch,
+        ),
         (
             "carried-prime.v1",
             RewriteSurface::CarriedPrime,
@@ -650,6 +886,10 @@ fn native_eager_support(operation: OperationKind) -> OperationSupport {
 }
 
 pub const NATIVE_EAGER: KernelManifest = KernelManifest::new("native-eager", native_eager_support);
+/// Operation coverage is shared, but receipt identity is not: fresh KV and cached KV
+/// are different numerical programs even for the same artifact, plan and executable.
+pub const NATIVE_FRESH_KV: KernelManifest =
+    KernelManifest::new("native-fresh-kv-forward", native_eager_support);
 
 fn mtp_spec_support(operation: OperationKind) -> OperationSupport {
     let row = op_registry::surfaces(operation);
@@ -818,6 +1058,364 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    fn test_identity() -> RewriteIdentity {
+        RewriteIdentity {
+            artifact_sha256: "22".repeat(32),
+            implementation_sha256: "00".repeat(32),
+            numeric_program_sha256: "33".repeat(32),
+        }
+    }
+
+    struct QualificationFixture {
+        root: std::path::PathBuf,
+        plan: ModelPlan,
+        rewrite: ExecutionRewrite,
+        receipt: String,
+    }
+
+    impl QualificationFixture {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let root = std::env::temp_dir().join(format!(
+                "memra-bound-rewrite-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            let plan = crate::model_packs::by_alias("qwen3")
+                .unwrap()
+                .compile_tiny_plan()
+                .unwrap();
+            let rewrite = execution_rewrites(&plan)
+                .into_iter()
+                .find(|rewrite| rewrite.surface == RewriteSurface::DecodeEager)
+                .unwrap();
+            let lock = b"format_version=2\nfamily=qwen3\n";
+            let receipt = rewrite
+                .verify_tokens(
+                    &test_identity().implementation_sha256,
+                    &[1, 2, 3],
+                    &[1, 2, 3],
+                )
+                .unwrap()
+                .bind_artifact_lock(lock)
+                .bind_runtime_identity(&test_identity())
+                .unwrap()
+                .to_tsv();
+            std::fs::create_dir_all(root.join("rewrite-receipts")).unwrap();
+            std::fs::write(root.join("artifact.lock"), lock).unwrap();
+            let fixture = Self {
+                root,
+                plan,
+                rewrite,
+                receipt,
+            };
+            fixture.write_receipt(&fixture.receipt);
+            fixture
+        }
+
+        /// Rehash the index too: these attacks remain internally consistent.
+        fn write_receipt(&self, receipt: &str) {
+            std::fs::write(
+                self.root
+                    .join("rewrite-receipts")
+                    .join(format!("{}.tsv", self.rewrite.id)),
+                receipt,
+            )
+            .unwrap();
+            std::fs::write(
+                self.root.join("rewrite-receipts.tsv"),
+                format!(
+                    "rewrite\tplan_sha256\treceipt_sha256\tstatus\n{}\t{}\t{}\tpassed\n",
+                    self.rewrite.id,
+                    self.rewrite.plan_sha256,
+                    hex_sha256(receipt.as_bytes())
+                ),
+            )
+            .unwrap();
+        }
+
+        fn load(&self, identity: &RewriteIdentity) -> Result<RewriteQualifications, String> {
+            RewriteQualifications::load(&self.root, &self.plan, identity)
+        }
+    }
+
+    impl Drop for QualificationFixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
+
+    #[test]
+    fn qualification_requires_each_actual_identity_even_with_consistent_bundle_hashes() {
+        let fixture = QualificationFixture::new();
+        let identity = test_identity();
+        let qualified = fixture.load(&identity).unwrap();
+        assert!(qualified.allows(RewriteSurface::DecodeEager));
+        assert!(qualified.matches(&fixture.plan, &identity));
+        for field in [
+            "artifact_sha256",
+            "implementation_sha256",
+            "numeric_program_sha256",
+        ] {
+            let mut different = identity.clone();
+            let target = match field {
+                "artifact_sha256" => &mut different.artifact_sha256,
+                "implementation_sha256" => &mut different.implementation_sha256,
+                _ => &mut different.numeric_program_sha256,
+            };
+            *target = "ff".repeat(32);
+            let error = fixture.load(&different).unwrap_err();
+            assert!(error.contains(field), "{error}");
+            assert!(!qualified.matches(&fixture.plan, &different));
+
+            let original = identity
+                .fields()
+                .into_iter()
+                .find(|(key, _)| *key == field)
+                .unwrap()
+                .1;
+            let missing = fixture
+                .receipt
+                .replace(&format!("{field}\t{original}\n"), "");
+            fixture.write_receipt(&missing);
+            assert!(fixture.load(&identity).unwrap_err().contains(field));
+            let stale = fixture.receipt.replace(
+                &format!("{field}\t{original}"),
+                &format!("{field}\t{}", "ff".repeat(32)),
+            );
+            fixture.write_receipt(&stale);
+            assert!(fixture.load(&identity).unwrap_err().contains(field));
+            fixture.write_receipt(&fixture.receipt);
+        }
+        let mut missing = identity;
+        missing.artifact_sha256.clear();
+        assert!(
+            fixture
+                .load(&missing)
+                .unwrap_err()
+                .contains("trusted rewrite identity")
+        );
+        let mut changed_plan = fixture.plan.clone();
+        changed_plan.layers.pop();
+        assert!(!qualified.matches(&changed_plan, &test_identity()));
+        assert!(!qualified.all_eligible(&changed_plan));
+        assert!(
+            RewriteQualifications::load(&fixture.root, &changed_plan, &test_identity()).is_err()
+        );
+    }
+
+    #[test]
+    fn qualification_rejects_changed_opened_weights_with_identical_geometry() {
+        use crate::source::{GgufSource, TensorSource};
+        let fixture = QualificationFixture::new();
+        let path = fixture.root.join("weights.gguf");
+        let write_weights = |path: &Path, value| {
+            let mut writer = crate::micro_gguf::GgufWriter::new();
+            writer.tensor_f32("fixture.weight", &[2], &[value, 1.0]);
+            writer.write(path).unwrap();
+        };
+        write_weights(&path, 0.0);
+        let opened = crate::GgufFile::open(&path).unwrap();
+        let mut identity = test_identity();
+        identity.artifact_sha256 = GgufSource(&opened).artifact_sha256().unwrap();
+        let receipt = fixture
+            .rewrite
+            .verify_tokens(&identity.implementation_sha256, &[1, 2], &[1, 2])
+            .unwrap()
+            .bind_runtime_identity(&identity)
+            .unwrap()
+            .bind_artifact_lock(&std::fs::read(fixture.root.join("artifact.lock")).unwrap())
+            .to_tsv();
+        fixture.write_receipt(&receipt);
+        assert!(fixture.load(&identity).is_ok());
+        let replacement = fixture.root.join("replacement.gguf");
+        write_weights(&replacement, 0.5);
+        std::fs::rename(&replacement, &path).unwrap();
+        let changed = crate::GgufFile::open(&path).unwrap();
+        assert_eq!(opened.tensors[0].ne, changed.tensors[0].ne);
+        assert_eq!(
+            GgufSource(&opened).artifact_sha256().unwrap(),
+            identity.artifact_sha256
+        );
+        identity.artifact_sha256 = GgufSource(&changed).artifact_sha256().unwrap();
+        assert!(
+            fixture
+                .load(&identity)
+                .unwrap_err()
+                .contains("artifact_sha256")
+        );
+    }
+
+    #[test]
+    fn qualification_rejects_ambiguous_and_invalid_receipts() {
+        let fixture = QualificationFixture::new();
+        for malformed in [
+            format!("{}status\tfailed\n", fixture.receipt),
+            format!(
+                "{}implementation_sha256\t{}\n",
+                fixture.receipt,
+                "ff".repeat(32)
+            ),
+            fixture
+                .receipt
+                .replace("memra-rewrite-parity-v2", "memra-rewrite-parity-v1"),
+            fixture.receipt.replace("values\t3", "values\t0"),
+            fixture.receipt.replace("max_abs\t0", "max_abs\tNaN"),
+            fixture.receipt.replace("rtol\t0", "rtol\tinf"),
+            fixture.receipt.replace("max_rel\t0", "max_rel\t-1"),
+            fixture
+                .receipt
+                .replace("require_argmax\tfalse", "require_argmax\ttrue"),
+            fixture.receipt.replace("token-ids-u32", "unknown-stream"),
+        ] {
+            fixture.write_receipt(&malformed);
+            assert!(
+                fixture.load(&test_identity()).is_err(),
+                "accepted {malformed}"
+            );
+        }
+        fixture.write_receipt(&fixture.receipt);
+        let index_path = fixture.root.join("rewrite-receipts.tsv");
+        let index = std::fs::read_to_string(&index_path).unwrap();
+        std::fs::write(
+            &index_path,
+            format!("{index}{}\n", index.lines().nth(1).unwrap()),
+        )
+        .unwrap();
+        assert!(
+            fixture
+                .load(&test_identity())
+                .unwrap_err()
+                .contains("duplicate")
+        );
+        std::fs::write(
+            &index_path,
+            "rewrite\tplan_sha256\treceipt_sha256\tstatus\n",
+        )
+        .unwrap();
+        assert!(
+            fixture
+                .load(&test_identity())
+                .unwrap_err()
+                .contains("no qualified surfaces")
+        );
+        std::fs::write(
+            &index_path,
+            index.replace("receipt_sha256", "ignored-header"),
+        )
+        .unwrap();
+        assert!(
+            fixture
+                .load(&test_identity())
+                .unwrap_err()
+                .contains("index header")
+        );
+    }
+
+    #[test]
+    fn qualification_rejects_failed_nonzero_tolerance_claims() {
+        let fixture = QualificationFixture::new();
+        let logits = fixture
+            .receipt
+            .replace("token-ids-u32", "logits-f32")
+            .replace("require_argmax\tfalse", "require_argmax\ttrue");
+        for malformed in [
+            logits
+                .replace("atol\t0", "atol\t0.1")
+                .replace("max_abs\t0", "max_abs\t1"),
+            logits
+                .replace("rtol\t0", "rtol\t0.1")
+                .replace("max_rel\t0", "max_rel\t1"),
+        ] {
+            fixture.write_receipt(&malformed);
+            assert!(
+                fixture
+                    .load(&test_identity())
+                    .unwrap_err()
+                    .contains("declared tolerance")
+            );
+        }
+    }
+
+    #[test]
+    fn strict_pending_never_inherits_legacy_unbundled_permission() {
+        let surface = RewriteSurface::DecodeEager;
+        assert!(RewriteAdmission::LegacyUnbundled.allows(surface));
+        assert!(!RewriteAdmission::LegacyUnbundled.is_qualified());
+        assert!(!RewriteAdmission::StrictPending.allows(surface));
+        assert!(!RewriteAdmission::StrictPending.is_qualified());
+        let fixture = QualificationFixture::new();
+        let admission = RewriteAdmission::Qualified(fixture.load(&test_identity()).unwrap());
+        assert!(admission.is_qualified());
+        assert!(admission.allows(surface));
+        assert!(!admission.allows(RewriteSurface::DecodeGraph));
+        assert!(!admission.allows(RewriteSurface::ForwardFreshKv));
+    }
+
+    #[test]
+    fn cached_eager_receipt_cannot_authorize_fresh_kv_forward() {
+        let fixture = QualificationFixture::new();
+        let qualified = fixture.load(&test_identity()).unwrap();
+        let fresh = execution_rewrites(&fixture.plan)
+            .into_iter()
+            .find(|rewrite| rewrite.surface == RewriteSurface::ForwardFreshKv)
+            .unwrap();
+        assert!(fresh.eligible());
+        assert_ne!(fresh.id, fixture.rewrite.id);
+        assert_ne!(fresh.implementation, fixture.rewrite.implementation);
+        assert!(qualified.allows(RewriteSurface::DecodeEager));
+        assert!(!qualified.allows(RewriteSurface::ForwardFreshKv));
+        let receipt = fixture
+            .rewrite
+            .verify_tokens(&test_identity().implementation_sha256, &[1, 2], &[1, 2])
+            .unwrap();
+        assert!(receipt.validate_for(&fresh).is_err());
+    }
+
+    #[test]
+    fn qualification_rejects_bundle_without_loaded_runtime_identity() {
+        let dense = crate::model_packs::by_alias("qwen3")
+            .unwrap()
+            .compile_tiny_plan()
+            .unwrap();
+        let rewrite = execution_rewrites(&dense)
+            .into_iter()
+            .find(|rewrite| rewrite.surface == RewriteSurface::DecodeEager)
+            .unwrap();
+        let lock = b"format_version=2\nfamily=qwen3\nsource=unrelated-same-geometry\n";
+        let receipt = rewrite
+            .verify_tokens(&"11".repeat(32), &[1, 2, 3], &[1, 2, 3])
+            .unwrap()
+            .bind_artifact_lock(lock)
+            .to_tsv();
+        let root =
+            std::env::temp_dir().join(format!("memra-rewrite-unbound-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("rewrite-receipts")).unwrap();
+        std::fs::write(root.join("artifact.lock"), lock).unwrap();
+        std::fs::write(
+            root.join("rewrite-receipts")
+                .join(format!("{}.tsv", rewrite.id)),
+            &receipt,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("rewrite-receipts.tsv"),
+            format!(
+                "rewrite\tplan_sha256\treceipt_sha256\tstatus\n{}\t{}\t{}\tpassed\n",
+                rewrite.id,
+                rewrite.plan_sha256,
+                hex_sha256(receipt.as_bytes())
+            ),
+        )
+        .unwrap();
+        let result = RewriteQualifications::load(&root, &dense, &test_identity());
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            result.is_err(),
+            "internally consistent bundle must not qualify without loaded runtime identity"
+        );
+    }
+
     #[test]
     fn rewrite_receipts_bind_plan_program_binary_and_outputs() {
         let dense = plan(
@@ -852,7 +1450,9 @@ mod tests {
                 policy,
             )
             .unwrap()
-            .bind_artifact_lock(artifact_lock);
+            .bind_artifact_lock(artifact_lock)
+            .bind_runtime_identity(&test_identity())
+            .unwrap();
         assert!(receipt.passed);
         receipt.validate_for(batch).unwrap();
         let tsv = receipt.to_tsv();
@@ -878,11 +1478,11 @@ mod tests {
             ),
         )
         .unwrap();
-        let qualifications = RewriteQualifications::load(&root, &dense).unwrap();
+        let qualifications = RewriteQualifications::load(&root, &dense, &test_identity()).unwrap();
         assert!(qualifications.allows(RewriteSurface::DecodeBatch));
         assert!(!qualifications.allows(RewriteSurface::DecodeGraph));
         std::fs::write(receipts.join("decode-batch.v1.tsv"), "tampered").unwrap();
-        assert!(RewriteQualifications::load(&root, &dense).is_err());
+        assert!(RewriteQualifications::load(&root, &dense, &test_identity()).is_err());
         std::fs::remove_dir_all(root).unwrap();
 
         let failed = batch

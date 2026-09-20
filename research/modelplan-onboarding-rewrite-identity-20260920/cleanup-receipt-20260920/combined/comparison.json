@@ -1,0 +1,18 @@
+{
+  "base": "1aeea4c0b6a514e034e087e6cb55c866c7b0f448",
+  "finding": "TC557-CALLERS-01 consolidated across both runners",
+  "native_run": false,
+  "files": {
+    "qualify-native.py": "9540b60b7b42849302fb394f5b799f7b39a5fca8ff6d8c4be69bfd4f1f34e372",
+    "qualify-callers.py": "bcd2b6044281bfd8fd2ad308c641ebda8b8ee8116fb51bfe7c8d183ac5ddab23",
+    "native_finalization.py": "c1d7f1d9d323185f7eb310cce42a35147bbb4cca7b6081ca70ae52cec1ce00bd",
+    "test_native_finalization.py": "d3df8596aa777d1f5b5361246848134780f145c88a190fc1b5ff2fc168175c41",
+    "test_qualify_callers.py": "ab939fe3568262d98f406021f4214f6a1cb66e63d0abbcbb5b8fb229c3c27cc6"
+  },
+  "logs": {
+    "baseline-green-after.log": "0128435eb3e7a63358bee000a4571145d871d9ab8c752d5f42229676fd2e02fa",
+    "baseline-red-before.log": "c76d1816dcf316b35c4ef91b5c549c560bb3b40ae51a9fd3da1443cb1142e29e",
+    "callers-green-after.log": "0e3e56f1ad592752a7958d4875851024498c88b6755ec7816ed15fa68ef1d7c5"
+  },
+  "result": "baseline red before, seven baseline and twelve caller tests green after; no native qualification transfer"
+}

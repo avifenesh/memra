@@ -5,6 +5,7 @@ use super::*;
 use crate::prime_walker::{PrimeChunk, PrimeError, PrimeWalker};
 
 pub(super) struct PreparedMtp {
+    pub(super) rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     pub(super) prompt: Vec<u32>,
     pub(super) base: usize,
     pub(super) wall: std::time::Duration,
@@ -34,6 +35,7 @@ struct TrunkChunk {
 /// All mutable request state is owned here or in its SpecSession. The temporary
 /// walker binds that state to an engine/model only for the duration of one advance.
 pub struct MtpPrimeState {
+    rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     prompt: Vec<u32>,
     base: usize,
     chunks: Vec<TrunkChunk>,
@@ -243,6 +245,10 @@ impl HybridModel {
         sampling: Option<SpecSampling>,
         prime_split: Option<usize>,
     ) -> Result<MtpPrimeState, PrimeError> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
+        let _origin = self.enter_rewrite_execution(&sess.rewrite_execution)?;
+        let rewrite_execution = sess.rewrite_execution.clone();
         if prompt.is_empty() || !self.mtp_prime_walk_supported() || k == 0 {
             return Err("MTP prime walker requires a nonempty supported prime and K>0".into());
         }
@@ -297,6 +303,7 @@ impl HybridModel {
             && k + 2 < 96
             && !crate::model::full_prec_enabled();
         Ok(MtpPrimeState {
+            rewrite_execution,
             prompt: prompt.to_vec(),
             base,
             chunks,
@@ -514,6 +521,7 @@ impl MtpPrimeWalker<'_> {
         )?;
         self.sess.scratch.set_len(self.e, s.base)?;
         s.prepared = Some(PreparedMtp {
+            rewrite_execution: s.rewrite_execution.clone(),
             prompt: s.prompt.clone(),
             base: s.base,
             wall: std::time::Duration::ZERO,
@@ -594,6 +602,18 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
     }
 
     fn advance_chunk(&mut self) -> Result<PrimeChunk, PrimeError> {
+        let _request = self.model.protect_rewrite_execution()?;
+        let _session_origin = self
+            .model
+            .enter_rewrite_execution(&self.sess.rewrite_execution)?;
+        let origin = &self
+            .state
+            .as_ref()
+            .ok_or("MTP prime already finalized")?
+            .rewrite_execution;
+        let _prime_origin = self.model.enter_rewrite_execution(origin)?;
+        self.model
+            .require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
         let s = self.state.as_ref().ok_or("MTP prime already finalized")?;
         let tracking = s.graph_draft && self.e.ctx().is_event_tracking();
         if tracking {
@@ -651,6 +671,18 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
     }
 
     fn finish(self) -> Result<(), PrimeError> {
+        let _request = self.model.protect_rewrite_execution()?;
+        let _session_origin = self
+            .model
+            .enter_rewrite_execution(&self.sess.rewrite_execution)?;
+        let origin = &self
+            .state
+            .as_ref()
+            .ok_or("MTP prime already finalized")?
+            .rewrite_execution;
+        let _prime_origin = self.model.enter_rewrite_execution(origin)?;
+        self.model
+            .require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
         if self.remaining_chunks() != 0 {
             return Err("MTP prime incomplete".into());
         }

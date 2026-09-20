@@ -7,25 +7,22 @@ use crate::forward::argmax;
 use crate::hybrid::{FullAttnLayer, HybridModel, LinearAttnLayer, Mixer};
 use cudarc::driver::CudaSlice;
 use memra_gguf::config::SwigluClamp;
-use std::collections::HashMap;
 
 /// Persistent CUDA-graph decode state (CUDA-GRAPH-PLAN Phase 3). Holds the device-resident counters
 /// the captured graph reads/writes (`token_d` = current/next token id, `pos_d` = rope position) — both
-/// at FIXED addresses baked into every captured graph — plus the per-`t_kv`-bucket graph cache. The
-/// bucket key is the eager `(fa_vec, n_splits)` pair (see `Engine::fa_bucket_key`): every t_kv that
-/// maps to the same key reproduces eager's split geometry, so one captured graph replays bit-identically
-/// for the whole bucket. A new key triggers a re-capture (n_splits changes ~every 64 tokens).
+/// at FIXED addresses baked into captured graphs. Graphs are owned by the active loop
+/// or retained session; this state retains the originating program for its counters.
 pub struct GraphDecodeState {
+    rewrite_execution: Option<crate::plan_backend::RewriteExecutionSnapshot>,
     pub token_d: CudaSlice<u32>, // [1] resident next-token id (argmax writes, embed reads)
     pub pos_d: CudaSlice<i32>,   // [1] resident rope position counter
-    pub graphs: HashMap<(bool, usize), cudarc::driver::CudaGraph>,
-    pub bucket_max: HashMap<(bool, usize), usize>, // bucket key -> bucket_max fed to the capture
-    pub captures: usize,                           // count of (re)captures, for reporting
+    pub captures: usize,         // count of (re)captures, for reporting
 }
 
 /// Long-lived step-wise CUDA-graph decode session (see HybridModel::graph_session_new).
 /// One replay per step(); the only steady-state D2H is the 4-byte next-token read.
 pub struct GraphSession {
+    rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     pub gs: GraphDecodeState,
     pub cache: Cache,
     /// LOAD-BEARING hold: the captured graph's embed-gather node references this
@@ -52,6 +49,36 @@ pub struct GraphSession {
 }
 
 impl GraphSession {
+    /// Read-only gate diagnostic: the live driver-owned split-argument staging that
+    /// fa_apply edits before updating the executable graph. No launch or admission check.
+    /// This is not an exec-update counter or a query of the executable's private state.
+    pub fn diagnostic_split_arguments(
+        &self,
+    ) -> Result<Vec<(String, i32)>, Box<dyn std::error::Error>> {
+        let mut values = Vec::new();
+        for node in crate::graph_update::kernel_nodes(&self.graph)? {
+            let index = match node.name.as_str() {
+                "fa_decode_vec_q_v4_dc"
+                | "fa_decode_vec_q_v4_deep_dc"
+                | "fa_decode_vec_q_v3_dc"
+                | "fa_decode_vec_q_v2_dc"
+                | "fa_decode_vec_q_dc"
+                | "fa_decode_vec_q_dpl16_dc" => 11,
+                "fa_decode_f32" => 12,
+                "fa_decode_combine_f32" => 6,
+                "fa_decode_combine_q8_1" => 7,
+                _ => continue,
+            };
+            // SAFETY: these are the same symbol-specific i32 argument slots read by
+            // fa_plan and written by fa_apply. The owning graph is borrowed and live.
+            let value = unsafe { crate::graph_update::read_i32_arg(&node.params, index) };
+            values.push((node.name, value));
+        }
+        // CUDA does not promise a stable enumeration order. Retain duplicates (layers).
+        values.sort();
+        Ok(values)
+    }
+
     /// One graph-replay decode step. Returns the next token (already fed back into the
     /// resident token_d — the following step consumes it). Errors past bucket_max
     /// (the caller sized max_new at capture). Transparently recaptures when the eager
@@ -61,6 +88,8 @@ impl GraphSession {
         e: &Engine,
         m: &crate::hybrid::HybridModel,
     ) -> Result<u32, Box<dyn std::error::Error>> {
+        let _rewrite_scope = m.enter_rewrite_execution(&self.rewrite_execution)?;
+        m.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         if self.cache.pos + 1 >= self.bucket_max {
             return Err("GraphSession: past bucket_max (generation budget exceeded)".into());
         }
@@ -124,7 +153,13 @@ impl GraphSession {
     /// Profiling decomposition of step() (graph-session-gate MEMRA_GS_PROF): the three
     /// phases exposed separately. prof_launch is ASYNC (no sync) — prof_read carries the
     /// sync+D2H. Advances the session exactly like step().
-    pub fn prof_apply(&mut self, _e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn prof_apply(
+        &mut self,
+        _e: &Engine,
+        m: &HybridModel,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_scope = m.enter_rewrite_execution(&self.rewrite_execution)?;
+        m.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         crate::graph_update::fa_apply(
             &self.graph,
             &mut self.plan,
@@ -132,7 +167,9 @@ impl GraphSession {
             crate::fa_split_keys,
         )
     }
-    pub fn prof_launch(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn prof_launch(&mut self, m: &HybridModel) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_scope = m.enter_rewrite_execution(&self.rewrite_execution)?;
+        m.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         self.graph.launch()?;
         self.cache.pos += 1;
         for kvl in self.cache.kv.iter_mut().filter_map(|k| k.as_mut()) {
@@ -140,7 +177,13 @@ impl GraphSession {
         }
         Ok(())
     }
-    pub fn prof_read(&mut self, e: &Engine) -> Result<u32, Box<dyn std::error::Error>> {
+    pub fn prof_read(
+        &mut self,
+        e: &Engine,
+        m: &HybridModel,
+    ) -> Result<u32, Box<dyn std::error::Error>> {
+        let _rewrite_scope = m.enter_rewrite_execution(&self.rewrite_execution)?;
+        m.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         e.dtoh_u32_one(&self.gs.token_d)
     }
 }
@@ -148,10 +191,9 @@ impl GraphSession {
 impl GraphDecodeState {
     pub fn new(e: &Engine) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(GraphDecodeState {
+            rewrite_execution: None,
             token_d: e.stream().clone_htod(&[0u32])?,
             pos_d: e.htod_i32(&[0])?,
-            graphs: HashMap::new(),
-            bucket_max: HashMap::new(),
             captures: 0,
         })
     }
@@ -199,6 +241,15 @@ pub struct Hy3Layer0Stages {
 }
 
 impl HybridModel {
+    fn bind_graph_decode_state(&self, state: &mut GraphDecodeState) -> Result<(), String> {
+        if let Some(snapshot) = &state.rewrite_execution {
+            self.check_rewrite_execution(snapshot)?;
+        } else {
+            state.rewrite_execution = Some(self.current_rewrite_execution_snapshot()?);
+        }
+        Ok(())
+    }
+
     /// Device embed table for the dc fast loops (lazy ~0.5GB upload). On OOM — tight fits
     /// where resident experts + KV leave no headroom (35B ct-NVFP4 artifact at default
     /// budget, 2026-07-17) — returns None and the caller stays on the host-embd eager loop
@@ -706,6 +757,8 @@ impl HybridModel {
         capture_hy3_layer0: bool,
     ) -> Result<(Vec<f32>, Vec<CudaSlice<f32>>, Option<Hy3Layer0Stages>), Box<dyn std::error::Error>>
     {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -782,6 +835,8 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         cache.ensure_usable("decode_step_h")?;
         if self.hyper.is_some() {
             return self.decode_step_hyper(e, token, cache);
@@ -1078,6 +1133,8 @@ impl HybridModel {
         cache: &mut Cache,
         samp: Option<&crate::decode_batch::DevSamp>,
     ) -> Result<Option<(Vec<u32>, Vec<f32>)>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         self.refuse_hyper("decode_step_chain")?;
         cache.ensure_usable("decode_step_chain")?;
         if !self.device_chain_plan_eligible() {
@@ -1555,6 +1612,8 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<crate::pp::PendingLogits, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         self.refuse_hyper("decode_step_h_ppn_deferred")?;
         cache.ensure_usable("decode_step_h_ppn_deferred")?;
         let fence = crate::pp::pp_cuts(self.layers.len())
@@ -1643,6 +1702,8 @@ impl HybridModel {
         tokens: &[u32],
         caches: &mut [Cache],
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeBatch)?;
         self.refuse_hyper("decode_step_lockstep")?;
         for cache in caches.iter() {
             cache.ensure_usable("decode_step_lockstep")?;
@@ -1826,6 +1887,8 @@ impl HybridModel {
         cache: &mut Cache,
         n_vocab: usize,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         self.refuse_hyper("decode_step_dc")?;
         cache.ensure_usable("decode_step_dc")?;
         // Route gemma4 to ITS dc twin (mirrors decode_step_h): the generic walk below is the
@@ -1973,6 +2036,8 @@ impl HybridModel {
         bucket_max: usize,
         mask: Option<(&CudaSlice<u32>, usize)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         self.refuse_hyper("decode_step_dc_cap_masked")?;
         cache.ensure_usable("decode_step_dc_cap")?;
         let cfg = &self.cfg;
@@ -2052,6 +2117,8 @@ impl HybridModel {
         prompt: &[u32],
         max_new: usize,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        self.bind_graph_decode_state(gs)?;
+        let _rewrite_execution = self.protect_rewrite_execution()?;
         self.refuse_hyper("generate_graph")?;
         if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph) {
             if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeEager) {
@@ -2197,6 +2264,7 @@ impl HybridModel {
         max_new: usize,
         mut emit: impl FnMut(u32) -> Option<StopReason>,
     ) -> Result<StopReason, Box<dyn std::error::Error>> {
+        self.bind_graph_decode_state(gs)?;
         let _ = head_dim;
         let n_vocab = self.output.out_features();
         let final_max = cache.pos + max_new + 1;
@@ -2251,6 +2319,8 @@ impl HybridModel {
         prompt: &[u32],
         max_new: usize,
     ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
+        let _rewrite_scope = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         self.refuse_hyper("graph_session_new")?;
         let n_embd = self.cfg.n_embd as usize;
         let (qt, row_bytes) = self.embd.qt_and_row_bytes(n_embd);
@@ -2336,6 +2406,8 @@ impl HybridModel {
         max_new: usize,
         mask_init: Option<&[u32]>,
     ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
+        let _rewrite_scope = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         cache.ensure_usable("graph_session_from_cache")?;
         if e.ctx().is_event_tracking() {
             return Err(
@@ -2418,6 +2490,7 @@ impl HybridModel {
         ),
         Box<dyn std::error::Error>,
     > {
+        self.bind_graph_decode_state(gs)?;
         self.graph_capture_segment_masked(
             e, cache, gs, embd_gpu, qt, row_bytes, n_vocab, final_max, None,
         )
@@ -2444,6 +2517,7 @@ impl HybridModel {
         ),
         Box<dyn std::error::Error>,
     > {
+        self.bind_graph_decode_state(gs)?;
         let t0 = cache.pos + 1;
         let seg_end = self.fa_segment_end(e, t0, final_max);
         let bucket_max = seg_end;
@@ -2507,6 +2581,8 @@ impl HybridModel {
         e: &Engine,
         sess: &mut GraphSession,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_scope = self.enter_rewrite_execution(&sess.rewrite_execution)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         let mask = sess.mask_dev.take();
         let (graph, plan, seg_end) = self.graph_capture_segment_masked(
             e,
@@ -2541,6 +2617,9 @@ impl HybridModel {
         mask_dev: Option<CudaSlice<u32>>,
         mask_words: usize,
     ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
+        self.bind_graph_decode_state(&mut gs)?;
+        let rewrite_execution = self.current_rewrite_execution_snapshot()?;
+        let _rewrite_scope = self.enter_rewrite_execution(&rewrite_execution)?;
         let embd_gpu = embd_gpu_owned;
         let bucket_max = cache.pos + max_new + 1;
         let (graph, plan, seg_end) = self.graph_capture_segment_masked(
@@ -2557,6 +2636,7 @@ impl HybridModel {
         let first = e.dtoh_u32_one(&gs.token_d)?;
         Ok((
             GraphSession {
+                rewrite_execution,
                 gs,
                 cache,
                 embd_gpu,
@@ -2847,6 +2927,8 @@ impl HybridModel {
         prompt: &[u32],
         max_new: usize,
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         let max_ctx = prompt.len() + max_new + 8;
         let mut cache = Cache::new(e, &self.cfg, max_ctx)?;
         let mut last_logits = Vec::new();
@@ -2913,7 +2995,11 @@ impl HybridModel {
                 Ok("0") => false,
                 _ => max_new >= 256,
             };
-            if e4b && cache.pos + max_new + 2 < win && e4b_graph {
+            if e4b
+                && cache.pos + max_new + 2 < win
+                && e4b_graph
+                && self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)
+            {
                 self.gemma4_e4b_graph_exec_loop(
                     e,
                     &mut cache,
@@ -3012,6 +3098,8 @@ impl HybridModel {
         ctx_cap: usize,
         mut emit: impl FnMut(u32) -> Option<StopReason>,
     ) -> Result<StopReason, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)?;
         // BISECT ARM (MEMRA_E4B_DCG_EAGER=1): run the dcg step EAGERLY per token at the
         // exact live bucket — no capture/replay/exec-update. Separates "the dc-bucket path
         // diverges from dc-eager numerically" from "the replay/update mechanism is wrong".
@@ -3138,6 +3226,8 @@ impl HybridModel {
         sampler: &mut crate::sampler::Sampler,
         mut on_token: F,
     ) -> Result<GenOutput, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
         // Context guard: prompt + generated must fit max_ctx (caller-supplied or model default).
         let ctx_cap = params.max_ctx.unwrap_or(prompt.len() + params.max_new + 8);
         if prompt.len() >= ctx_cap {
@@ -3208,7 +3298,11 @@ impl HybridModel {
                 Ok("0") => false,
                 _ => budget >= 256,
             };
-            if e4b && cache.pos + budget + 2 < win && e4b_graph {
+            if e4b
+                && cache.pos + budget + 2 < win
+                && e4b_graph
+                && self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeGraph)
+            {
                 let (out_cell, sampler_cell) = (&mut out, &mut *sampler);
                 let reason = self.gemma4_e4b_graph_exec_loop(
                     e,

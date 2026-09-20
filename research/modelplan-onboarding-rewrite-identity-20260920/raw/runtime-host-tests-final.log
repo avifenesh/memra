@@ -1,0 +1,34 @@
+warning: unused import: `std::os::fd::AsRawFd`
+  --> /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/source.rs:21:5
+   |
+21 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+   Compiling memra-rewrite-identity-host-tests v0.0.0 (/Users/avifen/.codex/worktrees/1fc5/memra/target/rewrite-identity-host)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
+     Running unittests src/lib.rs (target/rewrite-identity-host/target/debug/deps/memra_rewrite_identity_host_tests-a18da66902df8de1)
+
+running 11 tests
+test runtime_identity::tests::mapped_library_parser_preserves_paths_and_refuses_deleted_code ... ok
+test runtime_identity::tests::numerical_snapshot_frames_values_and_keeps_unknown_memra_settings ... ok
+test runtime_identity::tests::accessor_rejects_absent_invalid_or_stale_loaded_identity ... ok
+test runtime_identity::tests::numerical_identity_ignores_receipt_locations_but_binds_runtime_settings ... ok
+test runtime_identity::tests::loaded_snapshot_rejects_plan_program_and_environment_mutation ... ok
+test runtime_identity::tests::unsupported_source_is_legacy_only_and_refuses_before_tensor_loading ... ok
+test runtime_identity::tests::missing_bundle_never_preserves_legacy_permission ... ok
+test runtime_identity::tests::public_output_admission_refuses_unqualified_graph_spec_and_stale_eager ... ok
+test runtime_identity::tests::strict_install_requires_eager_and_failed_reinstall_revokes_all_permission ... ok
+test runtime_identity::tests::public_output_boundaries_check_admission_before_work ... ok
+test runtime_identity::tests::implementation_identity_hashes_running_executable ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+   Doc-tests memra_rewrite_identity_host_tests
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

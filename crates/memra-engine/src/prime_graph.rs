@@ -21,6 +21,7 @@ use crate::hybrid::HybridModel;
 use cudarc::driver::{CudaGraph, CudaSlice};
 
 pub struct PrimeGraph {
+    rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     pub bucket: usize,
     graph: CudaGraph,
     /// CAPTURE-RETAIN keeper (draft-graph law): holds every allocation the closure made so
@@ -44,6 +45,24 @@ pub struct PrimeGraph {
 }
 
 impl PrimeGraph {
+    /// Read-only gate diagnostic of stable graph IO, including the embedding input,
+    /// true length, logits and seed. Scratch KV/state is available through scratch().
+    /// Copies bytes only; does not launch, update parameters or validate admission.
+    pub fn diagnostic_io_bytes(&self, e: &Engine) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut bytes = Vec::new();
+        for buffer in [&self.x_in, &self.logits_out, &self.h_seed_out] {
+            let values = e.dtoh(buffer)?;
+            bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
+            for value in values {
+                bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+            }
+        }
+        for value in e.dtoh_i32(&self.len_d)? {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        Ok(bytes)
+    }
+
     /// Gate/debug accessor: the graph's bound scratch cache (read-only).
     pub fn scratch(&self) -> &Cache {
         &self.scratch
@@ -58,6 +77,8 @@ impl HybridModel {
         e: &Engine,
         bucket: usize,
     ) -> Result<PrimeGraph, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)?;
         self.refuse_hyper("prime_graph_new")?;
         use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
         let n_embd = self.cfg.n_embd as usize;
@@ -122,6 +143,7 @@ impl HybridModel {
         let _ = CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED;
         let _ = CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH;
         Ok(PrimeGraph {
+            rewrite_execution: self.current_rewrite_execution_snapshot()?,
             bucket,
             graph,
             _keeper: keeper,
@@ -144,6 +166,8 @@ impl HybridModel {
         tokens: &[u32],
         session: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.enter_rewrite_execution(&pg.rewrite_execution)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)?;
         let t = tokens.len();
         assert!(
             t >= 2 && t <= pg.bucket,
