@@ -38,3 +38,12 @@ G1: 8k PASS on both card classes; 32k held by the unclassified one-granule resid
 reservation). Suggested next probe: repeat demote/restore cycles in one process — a non-growing residual is
 one-time driver metadata (non-leak). G2: first scored envelope exists (development evidence, one card class).
 G0, G3–G7 unchanged.
+
+## Review round on PR #573 (`55895c18`)
+CI: every job pass. Automated review: six inline findings, all documentation drift against the merged tree, all
+valid, fixed in the follow-up commit: `docs/TESTING.md` tier-transfer-gate section (canonical v1.3 is now bound
+and passing; eleven-line verdict block; per-side pins), `--kv-allocator vmm` mechanism (direct construction;
+containment is a call-site policy since `Cache::new_with_allocator` / `KvDev::alloc_vmm_u8` are public), the
+mapped-VA probe receipt surface, the three probe-derived residual classes, the day-10 **zero-residual tightening
+(e)** and the `verify-day10.py` pointer; `docs/decisions/KV-PHYSICAL-RECLAIM.md` scope (direct construction
+landed; the surface the decide-by promotes or deletes) and criterion (e) recorded as an explicit tightening.
