@@ -983,6 +983,16 @@ impl MoeSlotCache {
                 }
             };
         }
+        // The bank door must not publish a native-cache slot before its explicit
+        // copy completion is known. On an unknown result, leave it outside every
+        // cache table/queue so a later resident fast path cannot bypass the token
+        // refusal; Drop retries the drain and leaks slots if CUDA stays unknown.
+        if self.banked.is_some()
+            && let Err(err) = e.stream().synchronize()
+        {
+            self.compute_stream_unknown = true;
+            return Err(err.into());
+        }
         self.staged_bytes += host_bytes.len() as u64;
         self.publish(id, slot);
         Ok(slot)
