@@ -22254,7 +22254,6 @@ impl HybridModel {
         // Island primes take the mask-capable naive kernel below; keep the operands f32
         // (the bf16 FA emit path has no island consumer). Text-only keeps emit unchanged.
         let emit = island.is_none()
-            && !view_attend
             && t >= 16
             && crate::Engine::qkvnorm_w_on_prefill(nh * t + 2 * nkv * t, hd)
             && *EMIT.get_or_init(|| {
@@ -22383,7 +22382,36 @@ impl HybridModel {
             let k_view = e.view_u8(&kvl.k, t_kv * k_tok_bytes);
             let v_view = e.view_u8(&kvl.v, t_kv * v_tok_bytes);
             let w = if swa && t_kv > win { win } else { 0 };
-            if w > 0 {
+            if std::env::var("MEMRA_NOFA").is_err() {
+                // FA-speed twin (dequant-once bf16 workspace + the bf16 FA kernels the fresh
+                // path uses). `qb` is the emitted bf16 query when the emit path ran, else a
+                // one-off conversion of the f32 q (same __float2bfloat16).
+                let q_bf16: CudaSlice<u8>;
+                let qb_ref: &CudaSlice<u8> = if emit {
+                    &qb
+                } else {
+                    let mut tmp = e.alloc_uninit::<u8>(t * nh * hd * 2)?;
+                    e.f32_to_bf16_into(&q, &mut tmp, t * nh * hd)?;
+                    q_bf16 = tmp;
+                    &q_bf16
+                };
+                e.gemma_prefill_view_bf16(
+                    qb_ref,
+                    &k_view,
+                    &v_view,
+                    &mut attn,
+                    hd,
+                    nh,
+                    nkv,
+                    t,
+                    t_kv,
+                    scale,
+                    w,
+                    k_tok_bytes,
+                    v_tok_bytes,
+                    fp8,
+                )?;
+            } else if w > 0 {
                 e.sdpa_naive_w_quantized_view_fmt(
                     &q,
                     &k_view,

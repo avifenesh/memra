@@ -1491,6 +1491,14 @@ pub trait TransferEngine {
         item: u32,
         current: Epochs,
     ) -> Result<Destination<Self::Host>>;
+    /// v1.3 additive, optional per-source retirement. Observe producer completion
+    /// and absence of source consumer/graph pins before releasing source ownership.
+    /// Unknown completion must retain ownership/charge; destination lifetime and
+    /// whole-ticket `retired`/acknowledgement are unchanged. Success is idempotent
+    /// until acknowledgement. Unsupported backends retain the whole-ticket path.
+    fn retire_source(&mut self, _ticket: &TransferTicket) -> Result<()> {
+        Err(Error::Unsupported)
+    }
     fn retire(&mut self, ticket: &TransferTicket, consumer_done: Option<FenceId>) -> Result<()>;
     fn retired(&mut self, ticket: &TransferTicket) -> Result<bool>;
     fn acknowledge(&mut self, ticket: &TransferTicket) -> Result<()>;
