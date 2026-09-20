@@ -382,3 +382,17 @@ fn slru_banked_residency_serial_trace_matches_oracle_and_releases_charge() {
     g.borrow_mut().release(&metadata).unwrap();
     assert_eq!(g.borrow().used(), TierBudget::zero(2));
 }
+
+#[test]
+fn banked_residency_budget_refuses_instead_of_rounding_up() {
+    use engine_bridge::host_bank_slots;
+    assert_eq!(
+        host_bank_slots(0, 860160),
+        Err("experts-via-tier host bank budget cannot hold one expert record")
+    );
+    assert_eq!(host_bank_slots(860159, 860160), host_bank_slots(0, 860160));
+    assert_eq!(host_bank_slots(860160, 860160), Ok(1));
+    assert_eq!(host_bank_slots(256 * 1024 * 1024, 860160), Ok(16));
+    assert!(host_bank_slots(256 * 1024 * 1024 + 1, 860160).is_err());
+    assert!(host_bank_slots(1, 0).is_err());
+}
