@@ -742,6 +742,13 @@ is a rig extrapolation.
 
 ### Fixtures
 
+`python3 tools/test_release_battery_coverage.py` runs the release battery against controlled
+CPU stand-ins for its GPU binaries. It verifies environment sanitation, the exact K=1..8
+greedy verdict set, required kernel manifests, named skips and their fixed release budget,
+and nonzero-exit rejection. Narrowed, duplicated, missing, failed, and malformed results must
+fail while complete coverage passes. CI runs this fixture; it is control-flow evidence and
+does not qualify any model or GPU kernel.
+
 `tools/test_check_flags.sh` (flags census), `tools/test_flags_guard.sh` (the PRE-PUSH census arm
 **and both of the hook's escape hatches**: a real `git push` through the real hook into a bare
 local origin, so the wiring is exercised rather than grepped; arms 5 and 8 assert that

@@ -1,0 +1,19 @@
+[moe] resident-experts decision (dev0): experts 12.85GB + trunk 1.58GB vs free 32.46GB (expert budget 28.89GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 210 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 16311 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+loaded gemma4 (30 layers)
+tickinv: T=4882 chat=false budgets=[0, 1024, 256, 64] splits=[64, 256, 512, 1000] steps=24 PRIME_MIN_T=16 (budget 0 = single monolithic call)
+[fa-pool] grow #0 dev=0 o_len 0 -> 131072 ml_len 0 -> 512 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 131072 -> 2506752 ml_len 512 -> 4896 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 2506752 -> 5013504 ml_len 4896 -> 9792 (retired kept, zero=false)
+ref budget=0 calls=1 argmax=100
+ budget | calls | logits | first_div_row | maxdiff   | argmax | stream_div
+   1024 |     5 | DIFFER |             0 | 8.227e0 | - | step 4
+    256 |    20 | DIFFER |             0 | 4.558e0 | - | step 8
+     64 |    77 | DIFFER |             0 | 5.249e0 | - | step 4
+   sp64 |     2 | DIFFER |             0 | 6.859e0 | - | step 4
+  sp256 |     2 | DIFFER |             0 | 5.166e0 | - | step 18
+  sp512 |     2 | DIFFER |             0 | 4.920e0 | - | step 8
+ sp1000 |     2 | DIFFER |             0 | 4.873e0 | - | step 8
+tickinv verdict: *** TICK-DEPENDENT: prefill logits move with the per-tick prefill budget (MEMRA_PREFILL_TICK / _JUDGE / _HARVEST) ***

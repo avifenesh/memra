@@ -1,0 +1,17 @@
+ M crates/memra-engine/src/hybrid_forward.rs
+ M crates/memra-gguf/src/op_registry.rs
+ M crates/memra-server/src/worker.rs
+ M docs/EXECUTION-SURFACES.md
+ M tools/argmax-margin-gate.sh
+   Compiling memra-engine v0.138.0 (/root/lane/memra/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 3m 12s
+BUILD_RC=0
+test result: ok. 280 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.78s
+test result: ok. 711 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 5.07s
+== 26B argmax-margin, calibrated row
+  SUMMARY flips=2 bad=0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+== 12B chunkinv (dense unaffected by router change, control)
+chunk-invariance-gate: PASS (raw log /root/lane/receipts/fin-26b/chunkinv-12b.log)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.76s
+FIN_DONE

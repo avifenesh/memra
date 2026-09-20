@@ -1,0 +1,19 @@
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 24111 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+loaded gemma4 (48 layers)
+tickinv: T=4882 chat=false budgets=[0, 1024, 256, 64] splits=[64, 256, 512, 1000] steps=24 PRIME_MIN_T=16 (budget 0 = single monolithic call)
+[fa-pool] grow #0 dev=0 o_len 0 -> 65536 ml_len 0 -> 256 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 65536 -> 1253376 ml_len 256 -> 2448 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 1253376 -> 2506752 ml_len 2448 -> 4896 (retired kept, zero=false)
+ref budget=0 calls=1 argmax=236779
+ budget | calls | logits | first_div_row | maxdiff   | argmax | stream_div
+   1024 |     5 | EXACT |            -1 | 0.000e0 | - | identical
+    256 |    20 | EXACT |            -1 | 0.000e0 | - | identical
+     64 |    77 | EXACT |            -1 | 0.000e0 | - | identical
+   sp64 |     2 | EXACT |            -1 | 0.000e0 | - | identical
+  sp256 |     2 | EXACT |            -1 | 0.000e0 | - | identical
+  sp512 |     2 | EXACT |            -1 | 0.000e0 | - | identical
+ sp1000 |     2 | EXACT |            -1 | 0.000e0 | - | identical
+tickinv verdict: TICK-INVARIANT — prefill logits bit-identical at every per-tick prefill budget
