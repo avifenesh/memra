@@ -1,0 +1,61 @@
+{
+  "schema": "memra-router-baseline-proof-v1",
+  "head": "7b0df4f70540aa71e40f85812f620a5725032d3c",
+  "source_digest": "4cc77a957b05776382280170e881881aac8a08668bd7d57ed5ada94649c73e8c",
+  "generic_record_sha256": "39edf96bfb60f87a0cf523099e4812d8b8115494fd7281e83747b93555931e89",
+  "generic_identity_sha256": "68bb4f47520f8e448b5923cad2af6f6c62e74582728a9db2aa5429849f035940",
+  "raw_log": {
+    "path": "cells/1-kernel.log",
+    "sha256": "abf1be97b2ae418e5c7aa229f44d0cbfdee12c00c6b155b55340dda38996da36"
+  },
+  "positive_lines": [
+    {
+      "line": 515,
+      "text": "router batch-twin bit-identity (real q35 router, 32 m-points 1..2048): mism=0 OK"
+    },
+    {
+      "line": 516,
+      "text": "router batch-twin m-invariance (rows vs plain m=2048 prefix): mism=0 OK"
+    }
+  ],
+  "router_verdict": {
+    "cell": "fast-router-batch",
+    "m_points": 32,
+    "m_range": [
+      1,
+      2048
+    ],
+    "bit_mismatches": 0,
+    "m_invariance_mismatches": 0,
+    "lines": [
+      "router batch-twin bit-identity (real q35 router, 32 m-points 1..2048): mism=0 OK",
+      "router batch-twin m-invariance (rows vs plain m=2048 prefix): mism=0 OK"
+    ]
+  },
+  "kernel_ELF": {
+    "bytes": 43885344,
+    "format": "ELF-x86_64",
+    "sha256": "787c06deba24f84a1e1b6078a81664b90997b94356f4ae3e4fdbaf7373e3680a"
+  },
+  "build": {
+    "path": "build.json",
+    "sha256": "cc75f2a8424eef891f26261051f768e9ae39687f4c1f7b715158da159797e966"
+  },
+  "model_path": "/data/models/kernel-oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+  "model_before_after": {
+    "bytes": 17730509792,
+    "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3"
+  },
+  "completed_lease": {
+    "path": "lease.json",
+    "sha256": "401817f2c02b1583e20d2535a83d65b44e328d33bdcb13bac410b1b5fb451e8e"
+  },
+  "wrapper_pid": 325700,
+  "child_pid": 325705,
+  "wrapper_exit": 0,
+  "child_exit": 0,
+  "separate_router_GPU_run": false,
+  "inspection_correction": "Initial literal fast-router-batch search missed the human-readable router batch-twin success labels. Actual baseline lines prove the case. Generic counts alone were not used.",
+  "prepared_duplicate": "superseded before any launch or lease; CPU parser helper retained as evidence only",
+  "claim_scope": "real35Brouter batch-twin32m-points1..2048 bitidentity andm-invariance; no broaderlockstep/servingshape claim"
+}
