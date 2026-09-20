@@ -42,3 +42,12 @@ The spot instance was host-stopped three times today; the power cap read 400/600
 G1: 8k PASS; 32k pending residual classification. G0/G2–G7 unchanged. Next: classify the one-granule residual
 (driver mapping metadata vs. anything else) with a targeted probe; allocator injection into `Cache` construction;
 C's proxy boundary into `MoeSlotCache` behind its door; D's scored N≥5 G2 when a clean window is authorized.
+
+## Review round on PR #568 (`8affcf88`)
+CI: every job pass. Automated review (`revuto`, one inline finding, valid): `active-reclaim.txt` emitted
+`vmm_fixed_va_restored=true` unconditionally, so a `--kv-allocator pooled` receipt would have asserted a
+VMM-only property it never measured (the guard compares `None != None`). Fixed: the field is now derived from
+observation — counts planes whose VA was `Some` before and `Some`-equal after restore; emits `true` only when
+that count equals `reload_count`, `false` otherwise, `not-applicable-pooled` when no VMM granularity was
+queried. All four existing receipts carrying the field are VMM cells (granularity 2,097,152 B), so no published
+line was false; `verify-day9.py` still passes.

@@ -468,6 +468,9 @@ pub fn roundtrip(
     }
     let demote_count = suspended.len() * 2;
     let mut reload_count = 0;
+    // Counts planes whose fixed VA was actually OBSERVED (Some before and Some-equal after); a pooled
+    // plane has no VA to compare, so it never counts and the receipt cannot claim the property.
+    let mut fixed_va_observed = 0usize;
     for (i, mut layer, k, v) in suspended {
         let k_address = k.vmm.as_ref().and_then(KvPlane::virtual_address);
         let v_address = v.vmm.as_ref().and_then(KvPlane::virtual_address);
@@ -475,6 +478,14 @@ pub fn roundtrip(
         layer.v = restore(e, &transfers, v)?;
         if layer.k.virtual_address() != k_address || layer.v.virtual_address() != v_address {
             return Err("VMM fixed virtual address changed during restore".into());
+        }
+        for (before, after) in [
+            (k_address, layer.k.virtual_address()),
+            (v_address, layer.v.virtual_address()),
+        ] {
+            if before.is_some() && before == after {
+                fixed_va_observed += 1;
+            }
         }
         reload_count += 2;
         cache.kv[i] = Some(layer);
@@ -523,12 +534,19 @@ pub fn roundtrip(
             observation.residual
         )?;
     }
+    let vmm_fixed_va_restored = if vmm_granularity == 0 {
+        "not-applicable-pooled"
+    } else if fixed_va_observed == reload_count {
+        "true"
+    } else {
+        "false"
+    };
     let mut metrics = fs::OpenOptions::new()
         .append(true)
         .open(out.join("active-reclaim.txt"))?;
     writeln!(
         metrics,
-        "vmm_fixed_va_restored=true\nvmm_retained_edge_and_capacity_bytes={}\nvmm_granularity_bytes={vmm_granularity}\nvmm_released_chunk_bytes={vmm_released_bytes}\ndemote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaim_observed}\nreclaim_exact_equal={}\nresidual_bytes={}\nresidual_class={residual_class}\ng1_reclaim_qualified={reclaimed}",
+        "vmm_fixed_va_restored={vmm_fixed_va_restored}\nvmm_retained_edge_and_capacity_bytes={}\nvmm_granularity_bytes={vmm_granularity}\nvmm_released_chunk_bytes={vmm_released_bytes}\ndemote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaim_observed}\nreclaim_exact_equal={}\nresidual_bytes={}\nresidual_class={residual_class}\ng1_reclaim_qualified={reclaimed}",
         if vmm_granularity == 0 {
             0
         } else {
