@@ -3259,9 +3259,9 @@ impl HfConfig {
             .as_deref()
             == Some("perception_encoder")
         {
-            // Step's perception encoder has no executable Memra vision plan. Its width/layers
-            // keys are not Gemma's hidden_size/num_hidden_layers: filling those defaults would
-            // invent a different tower. This removes that invented program, not source assets;
+            // Step's native perception encoder is not represented by this canonical vision
+            // variant. Filling Gemma's hidden_size/num_hidden_layers defaults for Step's
+            // width/layers keys would invent a different tower. Remove that program, not assets;
             // the captured config and complete shard census retain the declared vision surface.
             // Text-only qualification must not be presented as vision qualification.
             cfg.vision = None;

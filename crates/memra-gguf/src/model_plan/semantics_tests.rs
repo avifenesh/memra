@@ -658,7 +658,7 @@ fn step_perception_encoder_is_not_a_fabricated_factored_vision_program() {
     let parsed = HfConfig::parse(&composite);
     assert!(
         parsed.vision.is_none(),
-        "unsupported perception encoder must not acquire Gemma defaults"
+        "unrepresented perception encoder must not acquire Gemma defaults"
     );
     assert!(parsed.vision_glm5.is_none());
     let plan = compile_for_load(&ModelConfig::from_hf(&parsed)).unwrap();
@@ -667,6 +667,6 @@ fn step_perception_encoder_is_not_a_fabricated_factored_vision_program() {
     assert!(plan.multimodal.is_none());
     assert_eq!(
         plan, text_plan,
-        "the supported Step text program must stay unchanged"
+        "the Step text program must stay unchanged; native vision uses its separate existing route"
     );
 }
