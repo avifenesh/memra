@@ -152,6 +152,47 @@ cycle cell runs on a 5090 (the local laptop card if the Qwen3.8-27B NVFP4 artifa
 so the two-card rule can be met. Only with the class on both cards does the gate line `reclaimed = … && residual == 0`
 get revisited (criterion (d) accepts a classified residual); until then `not G1 PASS` stands. Decide-by 2026-10-04.
 
+## integ7 (`lane/spill-integ7-20260920`): two integ6 trees, one branch name
+
+At 20:31Z the push of this tree as `lane/spill-integ6-20260920` was refused (non-fast-forward): the old Mac session
+had already pushed its own `lane/spill-integ6-20260920` (commits 19:29Z to 20:15Z) and opened **PR #573** at 19:35Z,
+under the owner order "if something can merge, merge it" (HANDOVER §LIVE COORDINATION). Its tree: `main` `dbf88d46`
+(#572 merged) plus A `b3dc864c`, B `7d213551`, C **`90c7e68e9`** (day 9; the three day-10 commits
+`79353d53d`, `1de17d41f`, `0a974ea8a` pushed at 17:19Z are not in it), D `a3aff2ae0`, E `483f7d3d`, a docs commit
+`a054266d3` (TESTING.md, KV-PHYSICAL-RECLAIM.md aligned to the merged tree). #573 CI on `a054266d3`: build, clippy,
+engine-tests, server-tests, gates, boundary, publish-dryrun, arch-coverage (100a), changes all `SUCCESS`;
+GitGuardian `NEUTRAL`; `revuto-review` `FAILURE` with the check text `PR #573 reached the 2-round review limit
+(2 prior rounds). Automatic review/fix cycles stop here; remaining findings require manual review. This is not an
+approval.`; Cursor Bugbot: `couldn't run - usage limit reached`. The PR has no self-review comment yet.
+
+Resolution (no push to the old session's branch, it was still moving at 20:15Z):
+- this tree's branch renamed `lane/spill-integ7-20260920`, worktree `~/projects/wt-spill-integ7`;
+- `git merge --no-ff origin/lane/spill-integ6-20260920` → `d5c747fb1`. One conflict, this file: #573's commit
+  replaced it with the PR text (101 lines of the day-10 record dropped, 44 added). Resolved by keeping the record and
+  appending the #573 text as the last section. `docs/TESTING.md`, `docs/decisions/KV-PHYSICAL-RECLAIM.md` and
+  `research/spill-e-20260919/STATE.md` merged clean (E's text identical on both sides);
+- integ7 over #573 = C day 10 only in code: `banked_residency.rs` (+146), `banked_residency/native.rs`,
+  `bin/run_gen.rs`, `bin/run_spec.rs`, `lib.rs`, `moe_cache.rs`, `memra-tier/tests/bank/{day10,main}.rs`
+  (8 files, +469/-36), reviewed in `PR-INTEG6-SELF-REVIEW.md` finding 4;
+- order: #573 merges first (self-review comment from this session if the old session has not merged it by 21:15Z),
+  then integ7 as its own PR onto `main`; its GitHub diff collapses to the C day-10 delta plus records once #573 is in.
+
+### Battery on `d5c747fb1` (Linux rig, `--offline`, CPUQuota 1200%, `integration-day10/integ7-cpu-battery/`)
+`fmt rc=0` · `cargo test -p memra-tier -p memra-kv`: 265 passed, 0 failed (`rc=0`) · clippy `-D warnings` engine,
+server, tier, kv, gguf, all-targets, Linux target, `DOCS_RS=1`: `rc=0` · `check-flags: runtime literal reads=864`,
+`no uncovered runtime names` · `publish-census: OK, 12 publishable members` · docs-registry census
+`ROUTER.md lines=44 (cap 60)` · collector pytest `85 passed, 32 subtests passed` · `perf board is up to date` ·
+`git diff --check rc=0`. Target dir was warm (fmt to diff-check in 59 s).
+
+5090 `tools/local-ci.sh` correctness stage on `d5c747fb1`: started 20:36:41Z behind `/tmp/memra-5090.lock`
+(`integration-day10/integ7-local-ci-5090/`); result appended below when it finishes. Coverage on this rig per the
+integ6 run: run-gen/run-spec/VERIFY-GATE/prime-gate/accept-gate SKIP (models absent); the argmax and K=1..8 evidence
+for C's files is C's own target-card cells (`research/spill-c-20260919/`).
+
+Push of integ7: perf-ci freshness gate refuses (the merge of #572 via origin integ6 is the newest crates/ commit);
+pushed with the announced, logged `MEMRA_SKIP_PERF_CI=1` (row in `.git/memra-gate-skips.log` names the engine files)
+on the same grounds as the #568 decision above. Owner may reverse.
+
 ## PR #573 text from the old Mac session (their integ6 from `main` `dbf88d46`, verbatim apart from heading level and dash style)
 
 Their commit replaced this file with the text below (101 lines of the day-10 record above were dropped). The record is restored here and their text kept as a section, so both survive on `main`.

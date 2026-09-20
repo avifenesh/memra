@@ -1,0 +1,56 @@
+   Compiling aho-corasick v1.1.4
+   Compiling unicode-normalization-alignments v0.1.12
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-integ7/crates/memra-server)
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/projects/wt-spill-integ7/crates/memra-tokenizer)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/projects/wt-spill-integ7/crates/memra-reference)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-integ7/crates/memra-engine)
+   Compiling memra-cli v0.138.0 (/home/avifenesh/projects/wt-spill-integ7/crates/memra-cli)
+    Finished `release` profile [optimized] target(s) in 1m 07s
+local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite) running alongside the GPU gates; log /tmp/local-ci-cpu-chain.qlyt5U
+check-flags: runtime literal reads=864
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+check-no-remove-var-gates: OK (66 allowlisted unsets, 0 un-allowlisted across 11 target dirs)
+== drafter-attach wiring gate ==
+root: /home/avifenesh/projects/wt-spill-integ7
+
+-- A. CENSUS: every call site under tools/ must be registered --
+  call sites found: btemp-power.sh sampled-restore-ab.sh spec-cache-gate.sh spec-cache-mixed-gate.sh spec-on-cache-hit-gate.sh
+  ok: no unregistered call sites
+  ok: every registered gate still calls it
+
+-- B. COUPLING: the asserted variable is the one handed to the engine --
+  ok: spec-on-cache-hit-gate.sh (qwen): asserts "$MTP_DRAFT"
+  ok: spec-on-cache-hit-gate.sh (qwen): boots with MEMRA_MTP_DRAFT=$MTP_DRAFT
+  ok: spec-on-cache-hit-gate.sh (gemma): asserts "$DRAFT"
+  ok: spec-on-cache-hit-gate.sh (gemma): boots with MEMRA_DRAFT=$DRAFT
+  ok: spec-cache-gate.sh (qwen): asserts "$MTP_DRAFT"
+  ok: spec-cache-gate.sh (qwen): boots with MEMRA_MTP_DRAFT=$MTP_DRAFT
+  ok: spec-cache-mixed-gate.sh (qwen): asserts "$MTP_DRAFT"
+  ok: spec-cache-mixed-gate.sh (qwen): boots with MEMRA_MTP_DRAFT=$MTP_DRAFT
+  ok: spec-cache-mixed-gate.sh (gemma): asserts "$DRAFT"
+  ok: spec-cache-mixed-gate.sh (gemma): boots with MEMRA_DRAFT=$DRAFT
+  ok: btemp-power.sh (qwen): asserts "$DRAFT"
+  ok: btemp-power.sh (qwen): boots with MEMRA_MTP_DRAFT=$DRAFT
+  ok: sampled-restore-ab.sh (qwen): asserts "$MTP_DRAFT"
+  ok: sampled-restore-ab.sh (qwen): boots with MEMRA_MTP_DRAFT=$MTP_DRAFT
+
+-- C. SATISFIABLE: each seam's engine log line interpolates its path --
+  ok: mtp: emit site at crates/memra-engine/src/hybrid.rs:5050 interpolates {path}
+  ok: regime: emit site at crates/memra-server/src/worker.rs:13390 interpolates {dpath}
+  ok: gemma: emit site at crates/memra-server/src/worker.rs:13720 interpolates {dpath}
+
+-- D. EXECUTED: the assertion runs per seam, both directions --
+  ok: mtp    attach present, path matches: rc=0 (expected 0)
+  ok: regime attach present, path matches: rc=0 (expected 0)
+  ok: gemma  attach present, path matches: rc=0 (expected 0)
+  ok: mtp    wrong artifact must FAIL: rc=1 (expected 1)
+  ok: gemma  wrong artifact must FAIL: rc=1 (expected 1)
+  ok: mtp    no attach line must FAIL: rc=1 (expected 1)
+  ok: gemma  no attach line must FAIL: rc=1 (expected 1)
+  ok: unreadable log must FAIL: rc=1 (expected 1)
+
+DRAFTER-ATTACH WIRING GATE: ALL GREEN
+== test A: two concurrent local-ci invocations serialize (second waits, both green) ==

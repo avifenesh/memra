@@ -1,5 +1,10 @@
 # integ6 self-review (lead, 2026-09-20)
 
+Scope note (20:40Z): the same diff reaches `main` in two PRs. #573 (old Mac session, `lane/spill-integ6-20260920`)
+carries A, B, D, E and C at `90c7e68e9` (day 9). `lane/spill-integ7-20260920` carries C `79353d53d..0a974ea8a`
+(day 10: typed budgets, `ExpertBankRefusal`, native `REFUSED:` exit 2, `with_exact_slots`, day-ten bank tests) plus
+the restored day-10 record. Finding 4 below is the integ7 part; findings 1 to 3 describe code that lands via #573.
+
 Read in full: the 17-file crate diff vs `main` `847168642` (A `tier_transfer.rs`, `tier_transfer_gate.rs`; B
 `memra-kv/lib.rs`, `plane.rs`, `kv_tier_gate.rs`, `active.rs`; C `banked_residency.rs`, `native.rs`, `moe_cache.rs`,
 `lib.rs`, `run_gen.rs`, `run_spec.rs`; tier tests). Docs and receipts spot-checked against the verifiers.
