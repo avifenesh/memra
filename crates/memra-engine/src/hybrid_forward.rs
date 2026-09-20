@@ -5758,21 +5758,28 @@ impl HybridModel {
         // class as decode reading the cache. Prompts <= one chunk take the ORIGINAL monolithic
         // body byte-for-byte (chunk 0 short-circuits to the f32 fa_prefill path).
         // MEMRA_PRIME_CHUNK sets the chunk size (tokens); 0 disables chunking (monolithic).
-        if self.is_gemma4_e4b() || self.uses_gemma_program() {
-            if self.is_gemma4_e4b() {
-                if overlay.is_some() {
-                    return Err(
-                        "vision embedding overlay is unsupported on gemma4 E4B (PLE prime)".into(),
-                    );
-                }
-                return self.gemma4_e4b_prime(e, tokens, cache);
+        if self.is_gemma4_e4b() {
+            if overlay.is_some() {
+                return Err(
+                    "vision embedding overlay is unsupported on gemma4 E4B (PLE prime)".into(),
+                );
             }
-            // gemma4 v0: monolithic fresh-prompt prime (chunked/continuation arms later).
-            // An overlay takes the masked-prefill arm: image rows splice in unscaled
-            // (gemma4.cpp:182 — embd batches skip the sqrt(n_embd) scale) and the image
-            // spans become bidirectional attention islands (lane/gemma-vision).
+            return self.gemma4_e4b_prime(e, tokens, cache);
+        }
+        if self.uses_gemma_program() && overlay.is_some() {
+            // VISION ARM (lane/gemma-vision), unchanged: image rows splice in unscaled
+            // (gemma4.cpp:182 — embd batches skip the sqrt(n_embd) scale) and the image spans
+            // become bidirectional attention islands through the mask-capable naive kernel.
+            // Fresh-prompt only until the island mask rides the quantized-view path.
             return self.gemma4_prime(e, tokens, cache, overlay);
         }
+        // TEXT-ONLY GEMMA (memra#535 P1a, lane/exec-p1a-gemma-prime): rides THIS driver —
+        // chunked, continuation-capable (`cache.pos > 0`), `prefill_tick`-splittable. The
+        // per-chunk layer stack is `prime_layers_gemma` (post-norm residual, layer scale,
+        // GELU_PAR / parallel MoE via the shared `gemma4_layer_tail_add`), the attention is
+        // quantize-then-attend over the KV planes for EVERY chunk including the first (the
+        // serial trunk's chunkinv law: one numeric class per row, so the chunk size cannot
+        // steer arithmetic). Gate: tests/gemma4_chunked_prime_gpu.rs.
         if crate::pp::prime_pipe_on()
             && crate::pp::prime_pp_on()
             && !crate::pp::pp2_streams_off()
@@ -5782,7 +5789,29 @@ impl HybridModel {
             crate::pp::pp_wave_on()
                 .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
         }
-        let ranges = prime_chunk_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
+        if self.uses_gemma_program() && !self.chunked_prime_supported() && cache.pos != 0 {
+            // Same contract the family had before this lane (`gemma4_prime` refused pos > 0):
+            // without the chunked-prime receipt a continuation would produce the m-dependent
+            // bytes the 26B chunkinv row measured, so it is refused by name rather than served.
+            return Err(format!(
+                "gemma plan without the chunked-prime receipt (see docs/EXECUTION-SURFACES.md \
+                 column chunked_prime): continuation prime at pos {} refused — prime the full \
+                 prompt in one call or decode tokenwise",
+                cache.pos
+            )
+            .into());
+        }
+        let ranges = if self.uses_gemma_program() && !self.chunked_prime_supported() {
+            // REGISTRY SAYS NO (memra#535 P1a): a gemma plan with an operation whose chunked
+            // prime is not receipted primes in ONE range — the family's pre-lane bytes. Today
+            // that is E4B's PLE (which returns above anyway); the 26B's parallel-MoE row was
+            // no until its router left the m-dependent cuBLAS matmul (memra#562) and read EXACT
+            // on chunkinv/tickinv. The receipt flips the row; nothing here changes.
+            // `docs/EXECUTION-SURFACES.md`.
+            vec![(0, t)]
+        } else {
+            prime_chunk_ranges(t, self.layers.len(), self.gdn_prime_grid_on())
+        };
         // CHUNK-ORDER INVARIANCE (lane/chunk-invariance, 2026-08-05; vLLM #38561 shape).
         // MEMRA_PRIME_CHUNK is documented as a memory-transient knob, but it also decides
         // the prefill's ARITHMETIC, so two rigs with different values produced different
@@ -6602,6 +6631,13 @@ impl HybridModel {
         let pos_d = e.htod_i32(&pos)?;
 
         let mut x_embed = self.embed(e, tokens)?; // [T, n_embd]
+        let gemma = self.uses_gemma_program();
+        if gemma {
+            // gemma scales token embeddings by sqrt(n_embd) (gemma4.cpp:182); the vision arm's
+            // image rows are exempt, which is why that arm keeps its own graph.
+            let n_embd = self.cfg.n_embd as usize;
+            e.scale_inplace(&mut x_embed, (n_embd as f32).sqrt(), t * n_embd)?;
+        }
         if let Some(ov) = overlay {
             // Mixed-embedding splice: image rows overwrite the pad-token embeddings that
             // fall inside this chunk's prompt-relative window [chunk_off, chunk_off+t).
@@ -6622,17 +6658,21 @@ impl HybridModel {
                 cache.qwen_prime_graph = None;
                 e.trim_device_graph_mem()?;
             }
-            self.prime_layers(
-                e,
-                x_embed,
-                0,
-                self.layers.len(),
-                &pos_d,
-                t,
-                base,
-                cache,
-                seq_end,
-            )?
+            if gemma {
+                self.prime_layers_gemma(e, x_embed, 0, self.layers.len(), &pos_d, t, cache)?
+            } else {
+                self.prime_layers(
+                    e,
+                    x_embed,
+                    0,
+                    self.layers.len(),
+                    &pos_d,
+                    t,
+                    base,
+                    cache,
+                    seq_end,
+                )?
+            }
         };
         if base + t == seq_end && cache.qwen_prime_graph.is_some() {
             e.stream().synchronize()?;
@@ -7155,6 +7195,62 @@ impl HybridModel {
         Ok(x)
     }
 
+    /// Does every trunk operation of this plan carry the generic chunked-prime receipt
+    /// (`op_registry` column `chunked_prime`, manifest `CHUNKED_PRIME`)? The prime driver and
+    /// the worker's tick budget both key on this; consulted inside the gemma family today.
+    pub fn chunked_prime_supported(&self) -> bool {
+        crate::plan_backend::CHUNKED_PRIME
+            .trunk_capabilities(&self.plan)
+            .batch
+            .supported
+    }
+
+    /// GEMMA LAYER STACK for one prime chunk (memra#535 P1a): the per-layer body of
+    /// `gemma4_prime`, verbatim in ORDER — attn_norm, attention, post_attention_norm, then the
+    /// shared `gemma4_layer_tail_add` (residual add fused with the ffn norms, GELU_PAR or
+    /// parallel MoE, post_ffw_norm, layer scale) — but with the attention reading the KV planes
+    /// the chunk just appended, so `cache.pos > 0` is an ordinary call. `pos_d` carries the
+    /// request-absolute positions (`base..base+t`) the driver computed; rope reads them.
+    /// Enters with a materialized `[T, n_embd]` residual (already sqrt(n_embd)-scaled by the
+    /// driver), exits with the range's final residual.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list mirrors `prime_layers`'s contract; bundling into a struct is a refactor, not a lint fix
+    pub(crate) fn prime_layers_gemma(
+        &self,
+        e: &Engine,
+        x_in: CudaSlice<f32>,
+        lo: usize,
+        hi: usize,
+        pos_d: &CudaSlice<i32>,
+        t: usize,
+        cache: &mut Cache,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let n_embd = self.cfg.n_embd as usize;
+        let eps = self.cfg.rms_eps;
+        let mut x = x_in;
+        for il in lo..hi {
+            let layer = &self.layers[il];
+            let Mixer::Full(fa) = &layer.mixer else {
+                return Err(format!("prime_layers_gemma: layer {il} is not full attention").into());
+            };
+            let mut h = e.zeros(t * n_embd)?;
+            e.rms_norm(&x, layer.attn_norm.float_data(), &mut h, n_embd, t, eps)?;
+            let o = self.gemma4_attn_prime(e, fa, il, &h, pos_d, t, Some(cache), None, true)?;
+            // gemma order: post_attention_norm applies to the ATTENTION OUTPUT, then the residual.
+            let mut cur = e.zeros(t * n_embd)?;
+            e.rms_norm(
+                &o,
+                layer.post_attn_norm.float_data(),
+                &mut cur,
+                n_embd,
+                t,
+                eps,
+            )?;
+            x = self.gemma4_layer_tail_add(e, layer, &cur, &x, t)?;
+        }
+        Ok(x)
+    }
+
     /// The prime chunk's tail — h_seed + output_norm + one-row lm head + cache.pos advance —
     /// shared verbatim by the unsplit walk and the last stage of the ppN walk (`e` = the
     /// engine that produced `x`, i.e. the last stage's under the split; output_norm/output
@@ -7196,7 +7292,22 @@ impl HybridModel {
         let last_row = last.slice((t - 1) * n_embd..t * n_embd);
         let mut hlast = e.uninit(n_embd)?;
         e.copy_view_into(&mut hlast, 0, &last_row, n_embd)?;
-        let logits = e.matmul(&self.output, &hlast, 1)?;
+        let mut logits = e.matmul(&self.output, &hlast, 1)?;
+        if let Some(bits) = self
+            .cfg
+            .gemma4
+            .as_ref()
+            .filter(|_| self.uses_gemma_program())
+        {
+            // gemma's logit head: final softcap then the vocabulary suppression mask — the
+            // same two launches `gemma4_prime`/`gemma4_forward` apply, in the same order.
+            e.softcap(
+                &mut logits,
+                bits.final_logit_softcapping,
+                self.output.out_features(),
+            )?;
+            self.gemma4_suppress(e, &mut logits, 1)?;
+        }
         cache.pos += t;
         // Hidden stack handed to generate_spec as prompt_h: pre-norm x (default) or the full
         // post-norm stack hn (MEMRA_SPEC_HPOST).
@@ -22090,6 +22201,7 @@ impl HybridModel {
         t: usize,
         cache: Option<&mut Cache>,
         island: Option<&CudaSlice<i32>>,
+        view_attend: bool,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let (hd, nkv, nh, base, scale, swa) = self.gemma4_geom(il);
         let eps = self.cfg.rms_eps;
@@ -22142,6 +22254,7 @@ impl HybridModel {
         // Island primes take the mask-capable naive kernel below; keep the operands f32
         // (the bf16 FA emit path has no island consumer). Text-only keeps emit unchanged.
         let emit = island.is_none()
+            && !view_attend
             && t >= 16
             && crate::Engine::qkvnorm_w_on_prefill(nh * t + 2 * nkv * t, hd)
             && *EMIT.get_or_init(|| {
@@ -22221,9 +22334,19 @@ impl HybridModel {
             e.rope_neox2(&mut q, &mut k, pos_d, hd, hd, nh, nkv, t, base, 1.0, ff)?;
         }
 
-        if let Some(cache) = cache {
+        // Quantized-view geometry for the one-program arm: (t_kv after append, k/v token bytes,
+        // whether this layer's planes are e4m3). Filled only when `view_attend`.
+        let mut view_geom: Option<(usize, usize, usize, bool)> = None;
+        let fp8_planes = (!swa && crate::Engine::gkv_on()) || (swa && crate::Engine::wkv_on());
+        let mut cache = cache;
+        if let Some(cache) = cache.as_deref_mut() {
             let kvl = cache.kv[il].as_mut().unwrap();
-            assert_eq!(kvl.len, 0, "gemma4 prime is fresh-prompt only (v0)");
+            if !view_attend {
+                assert_eq!(
+                    kvl.len, 0,
+                    "gemma4 prime v0 (island arm) is fresh-prompt only"
+                );
+            }
             e.append_kv_quantized_rows(
                 &k,
                 &v,
@@ -22235,16 +22358,68 @@ impl HybridModel {
                 kvl.kv_dim_v,
                 kvl.k_tok_bytes,
                 kvl.v_tok_bytes,
-                (!swa && crate::Engine::gkv_on()) || (swa && crate::Engine::wkv_on()),
+                fp8_planes,
             )?;
             kvl.len += t;
+            if view_attend {
+                view_geom = Some((kvl.len, kvl.k_tok_bytes, kvl.v_tok_bytes, fp8_planes));
+            }
         }
         let mut attn = e.zeros(t * nh * hd)?;
         // R6: SWA layers mask keys older than sliding_window once the prompt exceeds it
         // (windowed naive twin; fa windowed stamps later). Under the window, full attention
         // is exact — SWA rides fa_prefill (hd-256 stamp), the hd-512 globals stay naive.
         let win = self.cfg.gemma4.as_ref().unwrap().sliding_window as usize;
-        if let Some(span) = island {
+        if let Some((t_kv, k_tok_bytes, v_tok_bytes, fp8)) = view_geom {
+            // ONE-PROGRAM ARM (memra#535 P1a): every row — chunk 0 included — attends over the
+            // quantized planes it just appended, [0, t_kv) with the causal offset t_kv - t, the
+            // serial trunk's quantize-then-attend law (`full_attn_prime_fa_dispatch`). The
+            // window is the request-absolute R6 rule: live once the attended span exceeds it.
+            // Naive dequant-once kernels for now (any hd, windowed twin for SWA); the tuned
+            // view twins (hd256 windowed, hd512) are the receipt-bound follow-up before this
+            // arm becomes the naked default (docs/FLAGS.md `MEMRA_PRIME_CHUNK`).
+            let cache_ref = cache.as_deref().expect("view geometry implies a cache");
+            let kvl = cache_ref.kv[il].as_ref().unwrap();
+            let k_view = e.view_u8(&kvl.k, t_kv * k_tok_bytes);
+            let v_view = e.view_u8(&kvl.v, t_kv * v_tok_bytes);
+            let w = if swa && t_kv > win { win } else { 0 };
+            if w > 0 {
+                e.sdpa_naive_w_quantized_view_fmt(
+                    &q,
+                    &k_view,
+                    &v_view,
+                    &mut attn,
+                    hd,
+                    nh,
+                    nkv,
+                    t,
+                    t_kv,
+                    scale,
+                    true,
+                    w,
+                    k_tok_bytes,
+                    v_tok_bytes,
+                    fp8,
+                )?;
+            } else {
+                e.sdpa_naive_quantized_view_fmt(
+                    &q,
+                    &k_view,
+                    &v_view,
+                    &mut attn,
+                    hd,
+                    nh,
+                    nkv,
+                    t,
+                    t_kv,
+                    scale,
+                    true,
+                    k_tok_bytes,
+                    v_tok_bytes,
+                    fp8,
+                )?;
+            }
+        } else if let Some(span) = island {
             // Masked-prefill arm: every layer routes through the island-aware naive
             // kernel (correctness-first, same posture as the vision tower v1). The
             // window argument keeps the R6 shortcut: 0 while the prompt fits the
@@ -22293,7 +22468,7 @@ impl HybridModel {
         pos_d: &CudaSlice<i32>,
         t: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        self.gemma4_attn_prime(e, fa, il, h, pos_d, t, None, None)
+        self.gemma4_attn_prime(e, fa, il, h, pos_d, t, None, None, false)
     }
 
     /// gemma4 MoE with the expert input PRE-QUANTIZED (the q8z tail fusion). Caller guarantees
@@ -22434,14 +22609,18 @@ impl HybridModel {
         let n_used = moe.expert_used_count as usize;
         let n_ff_exp = moe.expert_ff_length as usize;
 
-        // Router: the in-house GEMV for ALL small t (decode AND verify ride the same per-column
-        // kernel — the cuBLASLt n-dependence flipped top-k at verify t on the 27B, d994271);
-        // batched matmul only at real prefill.
-        let logits = if t < PRIME_MIN_T {
-            e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?
-        } else {
-            e.matmul(&m.gate_inp, router_in, t)?
-        };
+        // Router: the in-house GEMV at EVERY t (memra#535 P1a). Decode and verify always rode
+        // it (the cuBLASLt n-dependence flipped top-k at verify t on the 27B, d994271); prefill
+        // used the batched cuBLAS matmul, whose reduction changes with m — so the expert SET a
+        // token got depended on the chunk it happened to be primed in. MEASURED on
+        // gemma-4-26B-A4B (research/exec-p1a-gemma-prime-20260919/): prefill logits moved
+        // O(1) with MEMRA_PRIME_CHUNK, first divergence at row 0 — routing flips at near-ties,
+        // amplified through 48 MoE layers. The serial trunk closed the same class in
+        // lane/concat-prime-exact (`moe_router_logits`: "cuBLASLt's reduction changes with m");
+        // this is that fix for the gemma arm. `router_gemv`'s batch twin is bit-identical per
+        // row to the w8 form at every m (kernel-check m=1..2048), so one routing program serves
+        // decode, verify and any prime split.
+        let logits = e.router_gemv(m.gate_inp.float_data(), router_in, n_embd, n_expert, t)?;
 
         // FAST SMALL-T ARM (decode t=1 AND spec verify t=2..15): device softmax-topk router,
         // then PER TOKEN the same fused gate_up GELU + down8 FMA launch pair over the resident
@@ -23588,8 +23767,17 @@ impl HybridModel {
                 let nan = v.iter().filter(|x| x.is_nan()).count();
                 eprintln!("[g4-prime-trace] L0 post-attn_norm: nan={nan}/{}", v.len());
             }
-            let o =
-                self.gemma4_attn_prime(e, fa, il, &h, &pos_d, t, Some(cache), island.as_ref())?;
+            let o = self.gemma4_attn_prime(
+                e,
+                fa,
+                il,
+                &h,
+                &pos_d,
+                t,
+                Some(cache),
+                island.as_ref(),
+                false,
+            )?;
             if trace {
                 let v = e.dtoh(&o)?;
                 let nan = v.iter().filter(|x| x.is_nan()).count();

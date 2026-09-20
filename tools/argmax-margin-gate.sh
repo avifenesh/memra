@@ -114,9 +114,17 @@ fi
 # Budget 3 per 12-window, CALIBRATED FROM MEASURED MARGINS (not loosened-to-green):
 # every flip must still be individually margin-explained; the budget only bounds how
 # many explained coins may land differently. All other models keep the original 1.
+# gemma-4-26B-A4B (added 2026-09-20, lane/exec-p1a-gemma-prime, research/exec-p1a-gemma-prime-
+# 20260919/raw/26b-a4b + raw/26b-routerfix): the same board-2048 window read 6 of 12 and 5 of 12
+# positions arithmetically flippable (min(margin_p, margin_d) < config spread) on two binaries
+# whose DECODE margins were identical (min 0.014 / p10 0.342 / p50 0.695, spreads to 3.02) — the
+# 31B's coin distribution on a 128-expert MoE; expectation ~2.5 flips per 12-window. The runs
+# landed 1 and 2 flips, every one margin-explained; the decision position agreed both times.
+# Budget 3 per 12-window from those margins, same rule as the 31B row above.
 if [ -z "$MAX_FLIPS" ]; then
     case "$(basename "$MODEL")" in
         gemma-4-31B*) MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )) ;;
+        gemma-4-26B*) MAX_FLIPS=$(( (3 * WINDOW + 11) / 12 )) ;;
         *)            MAX_FLIPS=1 ;;
     esac
 fi

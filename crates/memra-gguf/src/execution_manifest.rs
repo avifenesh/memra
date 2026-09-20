@@ -524,6 +524,21 @@ fn carried_prime_support(operation: OperationKind) -> OperationSupport {
 pub const CARRIED_PRIME: KernelManifest =
     KernelManifest::new("carried-prime-batch", carried_prime_support);
 
+fn chunked_prime_support(operation: OperationKind) -> OperationSupport {
+    let mut support = OperationSupport::none();
+    support.batch = op_registry::surfaces(operation).chunked_prime;
+    support
+}
+
+/// The generic chunked / continuation prime program (`prime_cache` → `prime_chunk_ranges`,
+/// `cache.pos > 0` resumes) with a chunk-invariance receipt per operation — see the
+/// `chunked_prime` column in `op_registry`. A plan whose trunk is fully covered may be primed in
+/// any split (inside a call or across `prefill_tick` calls) and produce the same bytes; a plan
+/// that is not is primed monolithically by the driver. Consulted inside the gemma family today
+/// (memra#535 P1a); the serial trunk keeps its existing chunking until every op carries a receipt.
+pub const CHUNKED_PRIME: KernelManifest =
+    KernelManifest::new("prime-chunked-continuation", chunked_prime_support);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeBatchProgram {
     Generic,
