@@ -1,0 +1,12 @@
+--- a/research/spill-c-20260919/rig-cells-c.sh
++++ b/research/spill-c-20260919/rig-cells-c.sh
+@@ -86,6 +86,9 @@
+ if ((!dry)); then
+   python3 -c 'import pathlib,sys; lines=pathlib.Path(sys.argv[1]).read_text().splitlines(); sys.exit(0 if len(lines)==1 else 3)' "$out/processes-before.log" || { blocked occupied 'GPU compute processes present or inventory malformed; no interference authorized'; exit 3; }
+ fi
++# PRE-STREAMING goldens must accompany the TSV; never mint them with this loader.
++run ple-goldens-copy cp "$root/research/qwen4exp-bringup-20260829/gpu-eager/bank-bytes-goldens.tsv" "$root/$out/bank-bytes-goldens.tsv"
++run ple-goldens-sha256 sha256sum "$root/$out/bank-bytes-goldens.tsv"
+ run ple-tiny "$root/target/release/qwen4exp_gpu_gate" "$root/$out/ple-tiny.tsv"
+ run kernel-check "$root/target/release/kernel-check"
+ # These baseline gates do not exercise the proposed bank/row GPU adapter.

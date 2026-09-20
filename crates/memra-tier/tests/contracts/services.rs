@@ -1041,3 +1041,20 @@ fn revision_v11_bank_row_unknown_retirement_hooks() {
         |b| b.gov.borrow().used(),
     );
 }
+
+#[test]
+fn revision_v12_tier_logical_record_preserved() {
+    let gov = shared();
+    let mut tier = Tiers::new(gov.clone());
+    let r = tier.admit(tier.plan()).unwrap();
+    tier.prefetch(&r).unwrap();
+    assert_eq!(tier.advance(&r, epochs()).unwrap(), Phase::HostReady);
+    tier.load(&r).unwrap();
+    assert_eq!(tier.advance(&r, epochs()).unwrap(), Phase::Ready);
+    let expected = tier.stored.clone();
+    super::conformance::tier_logical_bytes(&mut tier, &r, &expected, epochs());
+    assert_eq!(tier.release(&r), Err(Error::Busy));
+    tier.entry(&r).unwrap().retired = true;
+    tier.release(&r).unwrap();
+    assert_eq!(gov.borrow().used, TierBudget::zero(2));
+}

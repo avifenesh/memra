@@ -409,3 +409,32 @@ fn revision_v11_directed_reference_routes() {
         |p| p.peer.gov.borrow().used(),
     );
 }
+
+#[test]
+fn revision_v12_peer_framed_logical_bytes() {
+    let gov = shared();
+    let mut p = Peer::new(gov.clone());
+    let src = p.reserve(p.plan(0, 19)).unwrap();
+    let dst = p.reserve(p.plan(1, 31)).unwrap();
+    let t = p.submit(vec![p.copy(&src, &dst)]).unwrap().ticket;
+    super::conformance::peer_completion_bytes(&mut p, &t, &expected(1));
+    // Exercise actual publication as well as the reusable snapshot matrix.
+    p.entries.get_mut(&t).unwrap().c.items[0].segments[0].io_bytes = 8192;
+    p.entries.get_mut(&t).unwrap().c.items[0].segments[0].valid_bytes = 2;
+    assert!(matches!(
+        p.materialize_local(&t, 0, epochs(), 1),
+        Err(Error::ShortIo {
+            expected: 3,
+            actual: 2
+        })
+    ));
+    p.entries.get_mut(&t).unwrap().c.items[0].segments[0].valid_bytes = 3;
+    p.materialize_local(&t, 0, epochs(), 1).unwrap();
+    assert!(!p.retired(&t).unwrap());
+    p.entries.get_mut(&t).unwrap().done = true;
+    p.entries.get_mut(&t).unwrap().graph = true;
+    p.acknowledge(&t).unwrap();
+    p.release(&src).unwrap();
+    p.release(&dst).unwrap();
+    assert_eq!(gov.borrow().used, TierBudget::zero(2));
+}

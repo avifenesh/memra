@@ -869,11 +869,11 @@ fn main() -> Res<()> {
     // on the streaming loader would rubber-stamp whatever that loader produces, so the
     // receipt records which build minted the file.
     let write_bank_goldens = argv.iter().any(|a| a == "--write-bank-goldens");
-    let receipt_path = argv
-        .iter()
-        .find(|a| !a.starts_with("--"))
-        .cloned()
-        .ok_or("usage: qwen4exp-gpu-gate <receipt.tsv> [--write-bank-goldens]")?;
+    let rows_via_tier = argv.iter().any(|a| a == "--rows-via-tier");
+    let receipt_path =
+        argv.iter().find(|a| !a.starts_with("--")).cloned().ok_or(
+            "usage: qwen4exp-gpu-gate <receipt.tsv> [--write-bank-goldens] [--rows-via-tier]",
+        )?;
     let pack =
         memra_gguf::model_packs::by_alias("qwen4_exp").ok_or("qwen4_exp pack is not registered")?;
     let plan = pack.compile_tiny_plan()?;
@@ -1130,6 +1130,12 @@ fn main() -> Res<()> {
     // Arm A: deterministic tiny fixture.
     let fixture = deterministic_fixture(&plan)?;
     let mut model = Qwen4ExpGpu::from_reference_weights(&engine, &plan, &fixture.weights)?;
+    if rows_via_tier {
+        let verdict = model.gate_ple_rows_tier(&engine)?;
+        lines.push(format!("rows-via-tier\t{verdict}\tpass=true"));
+        summaries.push(verdict);
+    }
+
     let result = run_arm(
         "fixture",
         &engine,
