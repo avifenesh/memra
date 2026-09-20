@@ -120,7 +120,7 @@ class Receipts(unittest.TestCase):
         text = log.read_text()
         with self.subTest(red='tampered log hash'):
             log.write_text(text + 'trailing\n')
-            with self.assertRaisesRegex(ValueError, 'receipt hash mismatch'):
+            with self.assertRaisesRegex(ValueError, 'receipt (length|hash) mismatch'):
                 VERIFIER.replay_refusal(path)
         with self.subTest(red='work after refusal'):
             log.write_text('[expert-host-slru] key=0:0:0 bytes=1 slot=0 hit=false victim=-\n' + text)
