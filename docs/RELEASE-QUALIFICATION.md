@@ -73,6 +73,12 @@ fresh cache locations.
 File and directory symlinks resolve transitively within the tracked Git closure, including
 links through research directories. External, missing or cyclic terminals refuse; a research
 link cannot introduce an unrecorded compiler input. Valid historical links remain intact.
+Every link outside the metadata-only namespace is conservatively a source input. Such links
+must not traverse or terminate in `research/release-qualification/` or `research/INDEX.md`,
+including an excluded intermediate link between two otherwise bound files. Directory aliases
+that expose those metadata subtrees also refuse. Unreferenced metadata-only additions and
+index appends remain eligible for publication equivalence; they cannot change linked compiler
+inputs under an unchanged source identity.
 
 The controlled v2 build uses a fresh, detached Git-defined source checkout outside the
 caller checkout and its own config-free Cargo home. The actual staged source is checked

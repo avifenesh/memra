@@ -175,6 +175,56 @@ class ReleaseInputTests(unittest.TestCase):
         with self.assertRaisesRegex(q.GateError, "symlink target is not tracked"):
             capture.clean_source(self.f.repo)
 
+    def assert_publication_link_refused(self):
+        self.f.commit("publication metadata cannot be a linked source input")
+        for check in (capture.clean_source, q.source_snapshot):
+            with self.assertRaisesRegex(q.GateError, "source input symlink.*publication metadata"):
+                check(self.f.repo)
+
+    def test_publication_terminal_cannot_be_a_linked_source_input(self):
+        terminal = self.f.repo / q.PUBLICATION / "fixture/value.txt"
+        terminal.parent.mkdir(parents=True); terminal.write_text("compiler payload\n")
+        alias = self.f.repo / "crates/memra-engine/src/payload"
+        alias.symlink_to("../../../research/release-qualification/fixture/value.txt")
+        self.assert_publication_link_refused()
+
+    def test_append_only_index_cannot_be_a_linked_source_input(self):
+        alias = self.f.repo / "crates/memra-engine/src/payload"
+        alias.symlink_to("../../../research/INDEX.md")
+        self.assert_publication_link_refused()
+
+    def test_excluded_intermediate_link_cannot_retarget_between_bound_inputs(self):
+        for name in ("a", "b"):
+            (self.f.repo / f"research/{name}.txt").write_text(name + "\n")
+        bridge = self.f.repo / q.PUBLICATION / "bridge"
+        bridge.parent.mkdir(parents=True); bridge.symlink_to("../a.txt")
+        alias = self.f.repo / "crates/memra-engine/src/payload"
+        alias.symlink_to("../../../research/release-qualification/bridge")
+        self.assert_publication_link_refused()
+        bridge.unlink(); bridge.symlink_to("../b.txt")
+        self.assert_publication_link_refused()
+
+    def test_directory_alias_cannot_expose_excluded_metadata_children(self):
+        alias = self.f.repo / "crates/memra-engine/src/payload"
+        for target in ("../../../research", "../../.."):
+            with self.subTest(target=target):
+                alias.symlink_to(target)
+                self.assert_publication_link_refused()
+                alias.unlink(); self.f.commit("remove refused alias")
+
+    def test_unreferenced_metadata_links_and_index_append_remain_publication_only(self):
+        before = capture.clean_source(self.f.repo)
+        metadata = self.f.repo / q.PUBLICATION / "fixture"
+        metadata.mkdir(parents=True)
+        (metadata / "receipt.txt").write_text("CPU fixture metadata only\n")
+        (metadata / "link").symlink_to("../../runtime-input.json")
+        index = self.f.repo / "research/INDEX.md"
+        index.write_text(index.read_text() + "CPU fixture evidence publication\n")
+        self.f.commit("metadata-only publication")
+        after = capture.clean_source(self.f.repo)
+        self.assertEqual(before["inputs_sha256"], after["inputs_sha256"])
+        self.assertTrue(q.verify_source(before, self.f.repo, "HEAD")["publication_equivalent"])
+
     def test_compiler_injection_and_search_environment_is_not_inherited(self):
         injected = {"NVCC_PREPEND_FLAGS": "--use_fast_math",
                     "NVCC_APPEND_FLAGS": "--pre-include=/outside/foreign.cuh",

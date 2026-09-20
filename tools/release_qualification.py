@@ -86,6 +86,11 @@ def tree_files(repo, ref):
     return files
 
 
+def publication_metadata(path):
+    return (path == "research/INDEX.md" or path == PUBLICATION.rstrip("/")
+            or path.startswith(PUBLICATION))
+
+
 def source_symlink_targets(repo, head, files):
     """Resolve file and directory links using only the immutable Git tree."""
     links = {path: git(repo, "show", f"{head}:{path}").decode()
@@ -95,6 +100,7 @@ def source_symlink_targets(repo, head, files):
         directories.update(str(parent) for parent in PurePosixPath(path).parents if str(parent) != ".")
     resolved = {}
     for path in links:
+        input_link = not publication_metadata(path)
         pending, parts, followed = deque(path.split("/")), [], 0
         while pending:
             component = pending.popleft()
@@ -105,6 +111,8 @@ def source_symlink_targets(repo, head, files):
                 parts.pop()
                 continue
             prefix = "/".join([*parts, component])
+            require(not input_link or not publication_metadata(prefix),
+                    f"source input symlink crosses publication metadata: {path} via {prefix}")
             if prefix in links:
                 target = links[prefix]
                 followed += 1
@@ -118,7 +126,14 @@ def source_symlink_targets(repo, head, files):
                 require(not pending or prefix in directories,
                         f"source symlink traverses a non-directory: {path}")
                 parts.append(component)
-        resolved[path] = "/".join(parts)
+        destination = "/".join(parts)
+        if input_link and destination in directories:
+            # A directory alias can expose excluded children without naming them
+            # in its own target. Refuse ancestors even before metadata is added.
+            require(destination and not any(p.startswith(destination + "/") for p in
+                    (PUBLICATION.rstrip("/"), "research/INDEX.md")),
+                    f"source input symlink exposes publication metadata subtree: {path}")
+        resolved[path] = destination
     return resolved
 
 
@@ -128,7 +143,7 @@ def source_snapshot(repo, ref="HEAD"):
     source_symlink_targets(repo, head, files)
     # All tracked inputs are conservative dependencies, including research data consumed by
     # include_str!/build scripts. Only this reserved evidence namespace is metadata-only.
-    inputs = {p: v for p, v in files.items() if not p.startswith(PUBLICATION) and p != "research/INDEX.md"}
+    inputs = {p: v for p, v in files.items() if not publication_metadata(p)}
     require(inputs, "empty source inventory")
     index = (git(repo, "show", f"{head}:research/INDEX.md").decode()
              if "research/INDEX.md" in files else "")
