@@ -1,6 +1,6 @@
 # integ8 self-review (lead, 2026-09-20)
 
-Read in full: the crate diff vs `main` `30e9c7a38` (C day 11: `memra-gguf/src/expert_banks.rs`, `banked_residency.rs`, `banked_residency/native.rs`, `moe_cache.rs`, `lib.rs`, `run_gen.rs`, `run_spec.rs`, `tests/bank/day10.rs`; B day 11: `kv_tier_gate/cli.rs`, `kv_tier_gate/reclaim_contract.rs`,
+Read in full: the crate diff vs `main` `30e9c7a38` (A day 10: `memra-tier/tests/storage/{mod,day4,telemetry}.rs`; C day 11: `memra-gguf/src/expert_banks.rs`, `banked_residency.rs`, `banked_residency/native.rs`, `moe_cache.rs`, `lib.rs`, `run_gen.rs`, `run_spec.rs`, `tests/bank/day10.rs`; B day 11 and 12: `kv_tier_gate/cli.rs`, `kv_tier_gate/reclaim_contract.rs`,
 `kv_tier_gate/active.rs`, `bin/kv_tier_gate.rs`, `memra-tier/tests/reclaim/{main,day11}.rs`, `memra-tier/Cargo.toml`).
 Docs and receipts spot-checked against `verify-day11.py`.
 
@@ -44,6 +44,25 @@ Docs and receipts spot-checked against `verify-day11.py`.
    usage error (six look-alikes tested); a bare door flag with a value is an error. `SLOT_TAIL_PAD_BYTES = 8` lives in
    `banked_residency.rs` because the tier bank tests compile that file verbatim; `moe_cache.rs` imports it.
    `#[doc(hidden)] pub mod banked_residency`; the gate binaries import through the module path.
+8. **A, storage test fence.** `tests/storage/mod.rs` adds a process-wide `RwLock`: `OwnedDirectory::new()` holds it
+   shared for the directory's lifetime, `OwnedDirectory::spawning()` / `Fence::exclusive()` hold it exclusively around
+   the four tests that spawn a child. This serialises only spawn against lock re-acquisition; no engine file, no
+   frozen schedule, no assertion changed. The strace evidence names the exact `clone3`/`close`/`flock EAGAIN` window.
+9. **Boundary scanner parity.** The checkout scan prefilters with `git grep --text -P` over raw bytes; the commit and
+   ref scans did not, and scanned ignore-decoded text where compressed bytes glued into a provider name the raw-byte
+   walker never saw. `raw_bytes_prefilter` gives the commit and ref scans the same first question (rule sources
+   compiled as bytes patterns, fail open into the text scan if one will not compile; all shipped rules compile), so
+   both halves judge one candidate set. `scan_secret_bytes` itself is unchanged, so no blob already on `main` changes
+   status (an `errors="replace"` attempt was rejected because it surfaced four `final-logits.f32le.gz` receipts).
+   Existing `CommitBlobTests` unchanged and green. The two allowlist pins that existed only for the artefact are
+   removed. Gate tooling change inside an integration PR: flagged in the body for the owner.
+10. **B day 12, series verdict.** `series_verdict` is the only source of the classified label; it requires N >= 5,
+   the one-time class, every cycle `bounded_no_leak`, restore hash equal to the suspended hash in every cycle, and
+   `free_before` identical to the first cycle; an exact series is true without a label; pooled stays
+   `not-applicable-pooled`. The per-cycle `reclaimed` line is untouched. Unit test covers N=4, one drifting cycle,
+   growing, other classes, differing restore, exact, pooled; `day12.rs` replays both cards' committed bytes with
+   mutations. Matches ruling 6 word for word, plus the stated tightening (exact cycles over a drifting baseline are
+   `false`), which is stricter, not looser.
 
 ## Verification this review relied on
 CPU battery on the integ8 tree (`integration-day11/integ8-cpu-battery/`): fmt, `cargo test -p memra-tier -p memra-kv -p memra-gguf`,
