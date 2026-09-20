@@ -730,7 +730,19 @@ fi
 # names that condition in its own ignore reason). Serial runs have CPU_PID empty; join is a no-op.
 join_cpu_chain
 echo "== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) =="
-if ! cargo test --release -p memra-engine --lib -j8 -- --ignored; then
+# Pair-only tests (the exclusively locked development pair) print `SKIP-PAIR <test> ...` and
+# return on a rig with one CUDA device; `--show-output` surfaces those lines from passing
+# tests so the skip is counted here, never silent (#484: account for every skip).
+LIB_LOG=$(mktemp -t memra-lib-gpu.XXXXXX)
+cargo test --release -p memra-engine --lib -j8 -- --ignored --show-output 2>&1 | tee "$LIB_LOG"
+LIB_RC=${PIPESTATUS[0]}
+PAIR_SKIPS=$(grep -c '^SKIP-PAIR ' "$LIB_LOG" || true)
+if [ "$PAIR_SKIPS" -gt 0 ]; then
+    echo "local-ci: SKIP $PAIR_SKIPS pair-only GPU test(s) on this rig (need 2 CUDA devices):"
+    grep '^SKIP-PAIR ' "$LIB_LOG" | sed 's/^/    /'
+fi
+rm -f "$LIB_LOG"
+if [ "$LIB_RC" -ne 0 ]; then
     echo "local-ci: memra-engine GPU-only lib tests FAILED"; exit 1
 fi
 [ "$MODE" = "--correctness" ] && exit 0

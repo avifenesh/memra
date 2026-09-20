@@ -110,6 +110,29 @@ pub mod mla_ffi;
 mod model_memory;
 #[cfg(test)]
 mod model_memory_fixture;
+/// Pair-only GPU tests (the exclusively locked development pair) announce an explicit skip on
+/// a rig with fewer than two CUDA devices instead of failing on `CUDA_ERROR_INVALID_DEVICE`.
+/// `tools/local-ci.sh` counts the `SKIP-PAIR` lines, so the skip is reported, never silent;
+/// on a pair box the test runs unchanged (the "never skip" expectations still hold there).
+#[cfg(test)]
+pub(crate) mod test_support {
+    pub(crate) fn native_device_count() -> usize {
+        cudarc::driver::result::init().ok();
+        cudarc::driver::result::device::get_count()
+            .map(|n| usize::try_from(n).unwrap_or(0))
+            .unwrap_or(0)
+    }
+
+    /// True when the test must return early: fewer than two native devices are present.
+    pub(crate) fn skip_unless_native_pair(test: &str) -> bool {
+        let found = native_device_count();
+        if found >= 2 {
+            return false;
+        }
+        eprintln!("SKIP-PAIR {test} needs 2 CUDA devices, found {found}");
+        true
+    }
+}
 mod model_memory_plan;
 pub mod moe_sel_dump;
 pub mod moesd;
