@@ -2,8 +2,9 @@ name: release
 
 # Tag push vX.Y.Z => compile gate across the target matrix, auto-draft changelog from
 # conventional commits, publish the GitHub release with prebuilt binaries attached.
-# The exactness battery already ran on the rig before the tag (docs/RELEASING.md) —
-# CI here is the build check + the paperwork. Matrix: glibc floor (ubuntu-22.04 = 2.35,
+# The guard validates content-bound native evidence before building. Rebuilt ELF
+# bytes must also match a qualified build before packaging; compilation grants no GPU proof.
+# Matrix: glibc floor (ubuntu-22.04 = 2.35,
 # ubuntu-24.04 = 2.39) x CUDA arch (sm_120a — the only prebuilt since 2026-09-02; Ada/Hopper
 # build from source, B200 is CI-covered but not shipped).
 # Binaries are self-contained (fatbins embedded, crates-release lane 2026-08-04); users
@@ -29,6 +30,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Require content-bound native qualification
+        run: python3 tools/release_qualification.py verify --head "$GITHUB_SHA"
       - name: Refuse version mismatch / unclaimed tag
         run: tools/release-guard.sh "$GITHUB_REF_NAME"
       # The structural censuses run here too, even though ci.yml runs them on every push: a tag
@@ -62,6 +67,15 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # A research-only receipt commit is not a newly qualified executable. Rebuild
+      # the tested revision, then require exact ELF identity before packaging.
+      - name: Check out the qualified build source
+        run: |
+          python3 tools/release_qualification.py verify --head "$GITHUB_SHA" --profile "${{ matrix.os }}" > /tmp/build-qualification.json
+          tested_source=$(python3 -c 'import json; print(json.load(open("/tmp/build-qualification.json"))["tested_commit"])')
+          git fetch --no-tags origin "$tested_source"
+          git checkout --detach "$tested_source"
+
       - name: Install CUDA 13.1 (nvcc + headers)
         run: tools/install-cuda-ci.sh
 
@@ -77,10 +91,13 @@ jobs:
           key: ${{ matrix.os }}-sm${{ matrix.cuda_arch }}
 
       - name: Build
-        run: cargo build --release --bins
+        run: cargo build --release --locked --bins
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: ${{ matrix.cuda_arch }}
+
+      - name: Refuse unqualified rebuilt binary bytes
+        run: python3 tools/release_qualification.py verify --head "$GITHUB_SHA" --binaries target/release --profile "${{ matrix.os }}"
 
       - name: Package binaries
         run: |
