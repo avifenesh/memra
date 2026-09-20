@@ -73,3 +73,7 @@ The raw corpus/reference TSVs and logs are retained as gzip files beside this re
 No model weights, GPU generation, server smoke, throughput measurement, deployment, or
 support-state promotion was performed. Artifact-specific end-to-end generation remains a
 separate qualification step.
+
+## Native integration follow-up
+
+The later [native integration record](native-integration-20260920/RESULTS.md) records a fresh native build, both 551-case normalized-input tokenizer checks, and the complete GPU release battery. The raw-input NFC omission remains #554. The CPU-only scope above describes the original capture, not this later run.
