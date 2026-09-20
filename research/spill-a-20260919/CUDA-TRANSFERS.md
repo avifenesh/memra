@@ -128,6 +128,8 @@ per-side schedules to v1.3 without redefining v1/v1.1/v1.2 retirement.
 - This initial implementation uses charged native pinned allocations, not a
   reusable startup arena. Allocation behavior must not be sold as steady-state
   spill performance. Native qualification is N=1 correctness only.
-- Native conformance and 4 KiB–256 MiB roundtrip receipts: pending at source landing.
+- Native conformance and 4 KiB–256 MiB roundtrip receipts: day-7 development
+  correctness PASS at source `92d332b9`; see `day7/RESULTS.md`. Full native
+  workspace clippy remains red on Rust 1.98 dependency lints; no release claim.
 
 No new environment reads, dependencies, flags or kernel entrypoints.
