@@ -70,7 +70,8 @@ def preflight(root):
 
 def telemetry_check(path, started_utc, ended_utc, expected_cap):
     """Conservative coverage: complete probe-process windows, not just copy time."""
-    rows = list(csv.DictReader(path.open()))
+    with path.open() as stream:
+        rows = list(csv.DictReader(stream))
     B.require(len(rows) >= 2, 'insufficient telemetry')
     stamps = []
     for raw in rows:
