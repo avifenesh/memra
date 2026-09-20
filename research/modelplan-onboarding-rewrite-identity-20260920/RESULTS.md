@@ -92,3 +92,14 @@ its partial log already contained the expected refusal. The runner now requires 
 exit1 plus the native gate failure marker and exact identity-refusal phrase, and revalidates
 the lease after child exit. `raw/negative-interruption-fail-before.log` reproduces the old
 false pass; `raw/negative-interruption-pass-after.log` records six passing CPU tests.
+
+## Replacement CPU preparation
+
+The replacement checkout was first verified at73324210 with GPU visibility empty. Its
+Python interpreters are3.10, so the runner's Python3.11-only file_digest helper was replaced
+with equivalent streaming SHA256. Empty and binary/chunked payload controls confirm the
+same hashes without that API. Seven CPU controls pass; fail-before/pass-after logs are
+`raw/python310-digest-{fail-before,pass-after}.log`. No system libraries were changed,
+and CUDA compilation/execution waits for coordinator acceptance. The replacement storage
+is XFS on Ceph RBD, not proven physical local NVMe; this lane's admission checks remain
+eligible, with no NVMe or spill-performance claim.

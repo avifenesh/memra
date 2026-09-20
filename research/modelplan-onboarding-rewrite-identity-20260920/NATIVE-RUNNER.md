@@ -7,7 +7,8 @@ Prepared on 2026-09-20. No GPU execution is claimed by this runbook or the local
 Initial session: exactly **one RTX PRO 6000 Blackwell, 96 GB**, Linux x86_64, CUDA 13.1 or newer,
 16 vCPUs, 64 GB host RAM, and 150 GB free fast scratch storage. RTX 5090 32 GB can carry development
 rows, but does not replace the PRO qualification target. Record the actual storage backing; do not call overlay storage physical NVMe.
-The assigned qualification host exposes overlay-backed scratch storage. These admission
+The first host exposed overlay-backed scratch storage. The replacement exposes XFS on
+Ceph RBD-backed storage; neither proves physical local NVMe. These admission
 checks are not a spill-throughput qualification. The single-card admission test does not require a second GPU. A 96 GB sm_120 Max-Q
 variant is sufficient for these correctness/memory rows; record its exact hardware and
 do not transfer timings to a full-power card.
@@ -31,7 +32,8 @@ required. A different quantization is not a substitute.
 
 ## Prepare and build before acquiring GPUs
 
-Run from this issue's isolated checkout on the centrally provided host:
+Run from this issue's isolated checkout on the centrally provided host. Python 3.10 or
+newer is sufficient; hashing uses bounded streaming reads:
 
 ```sh
 python3 research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py \

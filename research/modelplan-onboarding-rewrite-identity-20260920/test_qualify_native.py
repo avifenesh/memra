@@ -4,6 +4,8 @@ import importlib.util
 import os
 from pathlib import Path
 import stat
+import tempfile
+from unittest.mock import patch
 from types import SimpleNamespace
 import unittest
 
@@ -25,6 +27,15 @@ class LeaseTests(unittest.TestCase):
         gate.verify_lock_records(lease or self.lease, visible or self.gpu,
                                  {4101, 4102, os.getpid()} if ancestors is None else ancestors,
                                  self.rows if rows is None else rows, lambda _: self.info)
+
+    def test_digest_does_not_require_python311_file_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'bytes'
+            for payload in (b'', b'\x00\xffcheckpoint\n' * 100000):
+                path.write_bytes(payload)
+                expected = gate.hashlib.sha256(payload).hexdigest()
+                with patch.object(gate.hashlib, 'file_digest', None, create=True):
+                    self.assertEqual(gate.digest(path), expected)
 
     def test_real_wrapper_shape_accepts_exact_exclusive_card(self):
         self.verify()
