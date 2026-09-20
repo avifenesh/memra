@@ -12,20 +12,33 @@ pub struct Args {
     pub artifact: PathBuf,
     pub kv_allocator: KvAllocator,
     pub reclaim_diagnostic: bool,
+    /// Day 11: repeat the demote/restore program N >= 2 times in one process (diagnostic only).
+    pub reclaim_cycles: Option<usize>,
     pub case: String,
     pub context: usize,
     pub tiers: String,
     pub out: PathBuf,
 }
 
-pub const USAGE: &str = "kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic] --out <new-directory>";
+pub const USAGE: &str = "kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic [--reclaim-cycles N]] --out <new-directory>";
+const CYCLES_REFUSAL: &str = "REFUSED: --reclaim-cycles requires an integer count >= 2";
 
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut iter = args.into_iter();
     let mut fields = std::collections::BTreeMap::new();
     let mut same = false;
     let mut reclaim_diagnostic = false;
+    let mut reclaim_cycles = None;
     while let Some(key) = iter.next() {
+        if key == "--reclaim-cycles" {
+            if reclaim_cycles.is_some() {
+                return Err("REFUSED: duplicate --reclaim-cycles".into());
+            }
+            // Junk is never echoed: the collector reads the refusal from the last console line.
+            let value = iter.next().ok_or(CYCLES_REFUSAL)?;
+            reclaim_cycles = Some(parse_cycles(&value)?);
+            continue;
+        }
         if key == "--reclaim-diagnostic" {
             if reclaim_diagnostic {
                 return Err("duplicate --reclaim-diagnostic".into());
@@ -65,6 +78,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     if !same {
         return Err("--same-program is mandatory; no alternate numerical program permitted".into());
     }
+    if reclaim_cycles.is_some() && !reclaim_diagnostic {
+        return Err("REFUSED: --reclaim-cycles requires --reclaim-diagnostic".into());
+    }
     let kv_allocator = match fields
         .remove("--kv-allocator")
         .as_deref()
@@ -74,6 +90,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         "vmm" => KvAllocator::Vmm,
         _ => return Err("REFUSED: unknown KV allocator (expected pooled or vmm)".into()),
     };
+    if reclaim_cycles.is_some() && kv_allocator != KvAllocator::Vmm {
+        return Err(
+            "REFUSED: --reclaim-cycles requires --kv-allocator vmm; a pooled cache releases no chunk"
+                .into(),
+        );
+    }
     let mut get = |key: &str| fields.remove(key).ok_or_else(|| format!("missing {key}"));
     let artifact = get("--artifact")?.into();
     let case = get("--case")?;
@@ -100,11 +122,20 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         artifact,
         kv_allocator,
         reclaim_diagnostic,
+        reclaim_cycles,
         case,
         context,
         tiers,
         out,
     })
+}
+
+/// ASCII digits only and N >= 2: one cycle is the existing single roundtrip, not a series.
+fn parse_cycles(value: &str) -> Result<usize, String> {
+    match value.parse::<usize>() {
+        Ok(n) if n >= 2 && value.bytes().all(|b| b.is_ascii_digit()) => Ok(n),
+        _ => Err(CYCLES_REFUSAL.into()),
+    }
 }
 
 /// The collector recognizes an explicit refusal only at the start of the last line.
@@ -191,6 +222,74 @@ mod tests {
         assert!(parse(args.clone()).unwrap().reclaim_diagnostic);
         args[3] = "baseline".into();
         assert!(parse(args).is_err());
+    }
+    fn diagnostic_vmm() -> Vec<String> {
+        let mut args = base();
+        args[3] = "active".into();
+        args[7] = "host".into();
+        args.extend(["--kv-allocator", "vmm", "--reclaim-diagnostic"].map(String::from));
+        args
+    }
+    #[test]
+    fn reclaim_cycles_accepts_a_count_of_at_least_two_under_the_diagnostic() {
+        assert_eq!(parse(diagnostic_vmm()).unwrap().reclaim_cycles, None);
+        for (value, expected) in [("2", 2usize), ("5", 5), ("64", 64)] {
+            let mut args = diagnostic_vmm();
+            args.extend(["--reclaim-cycles".into(), value.into()]);
+            let parsed = parse(args).unwrap();
+            assert_eq!(parsed.reclaim_cycles, Some(expected));
+            assert!(parsed.reclaim_diagnostic);
+            assert_eq!(parsed.kv_allocator, KvAllocator::Vmm);
+        }
+        // Argument order is not part of the contract.
+        let mut args = vec!["--reclaim-cycles".to_string(), "3".to_string()];
+        args.extend(diagnostic_vmm());
+        assert_eq!(parse(args).unwrap().reclaim_cycles, Some(3));
+    }
+    #[test]
+    fn reclaim_cycles_refusals_are_explicit_and_fail_closed() {
+        let refused = |args: Vec<String>| {
+            let error = parse(args).unwrap_err();
+            assert!(error.starts_with("REFUSED:"), "{error}");
+            assert!(!error.contains('\n'), "{error}");
+            error
+        };
+        // N < 2, junk, negative, fractional, empty, another flag, hex and a missing value.
+        for value in [
+            "0", "1", "five", "-2", "2.5", "", "--out", "+3", "3 ", "0x10",
+        ] {
+            let mut args = diagnostic_vmm();
+            args.extend(["--reclaim-cycles".into(), value.into()]);
+            assert!(refused(args).contains(">= 2"), "{value:?}");
+        }
+        let mut args = diagnostic_vmm();
+        args.push("--reclaim-cycles".into());
+        assert!(refused(args).contains(">= 2"));
+        let mut args = diagnostic_vmm();
+        args.extend(["--reclaim-cycles", "3", "--reclaim-cycles", "3"].map(String::from));
+        assert!(refused(args).contains("duplicate --reclaim-cycles"));
+        let mut args = diagnostic_vmm();
+        args.retain(|a| a != "--reclaim-diagnostic");
+        args.extend(["--reclaim-cycles".into(), "3".into()]);
+        assert!(refused(args).contains("requires --reclaim-diagnostic"));
+        // A pooled cache, explicit or by default, has no released chunk to cycle.
+        for allocator in [Some("pooled"), None] {
+            let mut args = base();
+            args[3] = "active".into();
+            args[7] = "host".into();
+            if let Some(allocator) = allocator {
+                args.extend(["--kv-allocator".into(), allocator.into()]);
+            }
+            args.extend(["--reclaim-diagnostic", "--reclaim-cycles", "3"].map(String::from));
+            refused(args);
+        }
+        // Neither a baseline case nor a second storage route may carry the series.
+        for (index, value) in [(3, "baseline"), (7, "host,nvme")] {
+            let mut args = diagnostic_vmm();
+            args[index] = value.into();
+            args.extend(["--reclaim-cycles".into(), "3".into()]);
+            refused(args);
+        }
     }
     #[test]
     fn unsupported_ladder_and_routes_refuse() {

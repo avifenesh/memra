@@ -293,6 +293,89 @@ fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result
     Ok(t.take_plane(&keep)?) // No D2D; original native operand type/accounting returns to Cache.
 }
 
+/// What one demote/restore roundtrip observed, exactly as written to `active-reclaim.txt`.
+/// `reclaimed` is the unchanged G1 line (criteria (a)-(d) plus tightening (e)).
+pub struct Roundtrip {
+    pub reclaimed: bool,
+    pub cycle: super::reclaim_contract::Cycle,
+    pub granularity: usize,
+    pub residual: i128,
+    pub reclaim_observed: bool,
+    pub exact: bool,
+    pub residual_class: &'static str,
+    pub g1_reclaim_qualified: String,
+}
+
+/// Day 11 series receipt (`--reclaim-cycles N`): one row per cycle, the class from
+/// `reclaim_contract::classify_cycles`, and the series verdict from
+/// `reclaim_contract::series_verdict` (lead ruling 6, day 12). The per-cycle
+/// `g1_reclaim_qualified` column keeps tightening (e); only the series field and the printed
+/// label may lift it, and only for the classified one-time class on N >= 5 cycles with (a) to
+/// (c) in every cycle, drift 0 and a bit-identical restore in every cycle.
+pub fn write_cycles(
+    out: &Path,
+    rows: &[(Roundtrip, String)],
+    prefix_hash: &str,
+    context: usize,
+) -> super::Result<super::reclaim_contract::SeriesVerdict> {
+    let cycles: Vec<_> = rows.iter().map(|(r, _)| r.cycle).collect();
+    let granularity = rows.iter().map(|(r, _)| r.granularity).max().unwrap_or(0);
+    let identical: Vec<bool> = rows
+        .iter()
+        .map(|(_, restored)| restored == prefix_hash)
+        .collect();
+    let verdict =
+        super::reclaim_contract::series_verdict(&cycles, granularity, &identical, context);
+    let class = verdict.class;
+    let first = cycles.first().map_or(0, |c| c.free_before) as i128;
+    let mut table = String::from(
+        "cycle\tfree_before_bytes\tfree_after_demote_bytes\tfree_after_restore_bytes\tvmm_released_chunk_bytes\treclaimed_bytes\treacquired_bytes\tresidual_bytes\trestore_residual_bytes\tfree_before_drift_bytes\treclaim_observed\treclaim_exact_equal\tresidual_class\tg1_reclaim_qualified\trestored_prefix_state_manifest_sha256\n",
+    );
+    for (index, (r, restored)) in rows.iter().enumerate() {
+        let c = r.cycle;
+        table.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{restored}\n",
+            index + 1,
+            c.free_before,
+            c.free_after_demote,
+            c.free_after_restore,
+            c.released,
+            c.free_after_demote as i128 - c.free_before as i128,
+            c.free_after_demote as i128 - c.free_after_restore as i128,
+            r.residual,
+            c.free_before as i128 - c.free_after_restore as i128,
+            c.free_before as i128 - first,
+            r.reclaim_observed,
+            r.exact,
+            r.residual_class,
+            r.g1_reclaim_qualified,
+        ));
+    }
+    fs::write(out.join("reclaim-cycles.tsv"), table)?;
+    let residuals: Vec<String> = rows.iter().map(|(r, _)| r.residual.to_string()).collect();
+    let g1_reclaim_qualified = verdict.g1_reclaim_qualified;
+    let all_identical = identical.iter().all(|&same| same);
+    let series_label = verdict.label.as_deref().unwrap_or("not-printed");
+    let summary = format!(
+        "cycles={}\nvmm_granularity_bytes={granularity}\nresidual_series_class={class}\nresidual_series_bytes={}\nresidual_first_cycle_bytes={}\nresidual_last_cycle_bytes={}\nfree_before_drift_last_bytes={}\nall_cycles_reclaim_observed={}\nall_cycles_restored_bit_identical={all_identical}\ng1_reclaim_qualified={g1_reclaim_qualified}\nseries_min_cycles={}\nseries_label={series_label}\n",
+        rows.len(),
+        residuals.join(","),
+        residuals.first().map_or("", String::as_str),
+        residuals.last().map_or("", String::as_str),
+        cycles.last().map_or(0, |c| c.free_before as i128 - first),
+        rows.iter().all(|(r, _)| r.reclaim_observed),
+        super::reclaim_contract::SERIES_MIN_CYCLES,
+    );
+    fs::write(out.join("reclaim-cycles.txt"), summary)?;
+    eprintln!(
+        "RECLAIM-CYCLES: class={class} cycles={} granule={granularity} residual_first={} residual_last={} g1_reclaim_qualified={g1_reclaim_qualified}",
+        rows.len(),
+        residuals.first().map_or("", String::as_str),
+        residuals.last().map_or("", String::as_str),
+    );
+    Ok(verdict)
+}
+
 /// Returns only after all cache slots have been restored, or aborts the gate.
 /// This gate is the exclusive scheduler: it cannot decode with a suspended cache.
 pub fn roundtrip(
@@ -301,7 +384,7 @@ pub fn roundtrip(
     program: ProgramIdentity,
     out: &Path,
     diagnostic: bool,
-) -> super::Result<bool> {
+) -> super::Result<Roundtrip> {
     let mut capacity = TierBudget::zero(1);
     capacity.device[0] = 2 << 30;
     capacity.pinned = 2 << 30;
@@ -567,8 +650,9 @@ pub fn roundtrip(
     } else {
         after > before && restored == before
     };
-    // A classification on this card alone is not the required two-card evidence.
-    // The earlier card has no classified nonzero residual; keep every such arm non-PASS.
+    // The per-cycle G1 line: criteria (a) to (d) plus tightening (e). A classified nonzero
+    // residual stays `false` here; the only lift is the series verdict in `write_cycles`
+    // (lead ruling 6, day 12), never a single roundtrip.
     let reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0;
     let g1_reclaim_qualified = if vmm_granularity == 0 {
         "not-applicable-pooled".to_string()
@@ -612,7 +696,21 @@ pub fn roundtrip(
         observation.exact,
     )?;
     metrics.sync_all()?;
-    Ok(reclaimed)
+    Ok(Roundtrip {
+        reclaimed,
+        cycle: super::reclaim_contract::Cycle {
+            free_before: before,
+            free_after_demote: after,
+            free_after_restore: restored,
+            released: vmm_released_bytes,
+        },
+        granularity: vmm_granularity,
+        residual: observation.residual,
+        reclaim_observed,
+        exact: observation.exact,
+        residual_class,
+        g1_reclaim_qualified,
+    })
 }
 
 /// Unlike the engine's best-effort trim, a failed diagnostic API is an error.
