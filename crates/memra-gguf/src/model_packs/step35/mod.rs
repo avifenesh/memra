@@ -61,13 +61,20 @@ fn tensor_schema(
     let mut contract = canonical_tensor_schema(config, plan, dialect, options)?;
     if dialect == CheckpointDialect::Gguf
         && let Some(width) = checkpoint_factor_width(plan)
+        && width >= crate::tensor_contract::rope_factor_width(plan).unwrap_or(0)
+        && config
+            .step35
+            .as_ref()
+            .and_then(|step| step.rope_freq_shape.as_deref())
+            .is_some_and(|shape| shape == [width as u64])
         && let Some(factors) = contract
             .requirements
             .iter_mut()
             .find(|tensor| tensor.id == crate::tensor_contract::TensorId::RopeFactors)
     {
-        // The official GGUF keeps full-head factors even though Step's global
-        // partial rotary reads only the prefix. Its stored shape is not n_rot/2.
+        // Preserve full-head storage only when the source actually declares it.
+        // Compact sources keep the canonical n_rot/2 contract. Never copy arbitrary
+        // header shapes into the requirement: malformed extents/ranks must fail bind.
         factors.shape = vec![width as u64];
     }
     Ok(contract)
@@ -108,6 +115,7 @@ pub(super) fn prepare_rope_factors(
                     tensor.bytes.len()
                 )));
             }
+            step.rope_freq_shape = Some(tensor.ne.clone());
             Some(crate::dequant::dequantize(
                 tensor.ggml_type,
                 &tensor.bytes,

@@ -643,6 +643,10 @@ pub struct Step35Config {
     /// GGUF sources carry the equivalent values in `rope_freqs.weight`, so this is `None`
     /// for that source class. Only full-attention layers consume the factors.
     pub rope_freq_factors: Option<Vec<f32>>,
+    /// Source shape of `rope_freqs.weight`, retained from GGUF headers without reading
+    /// its payload. Load preflight also fills this from an accepted source tensor view.
+    /// HF-derived factors have no checkpoint tensor and leave this as None.
+    pub rope_freq_shape: Option<Vec<u64>>,
     /// `swiglu_clamp_exp` [f32; n_layer] — routed-expert SwiGLU clamp limit per layer.
     /// Nonzero only on layers 43-44 of 3.7-Flash. Semantics (llama-graph.cpp:2146): the limit
     /// applies when > 1e-6 as `up = clamp(up, -L, L); act = min(silu(gate), L); out = act * up`.
@@ -1429,6 +1433,7 @@ impl ModelConfig {
                 rope_dims_full: rope_dims_swa / 2,
                 rope_dims_swa,
                 rope_freq_factors: None,
+                rope_freq_shape: g.find("rope_freqs.weight").map(|tensor| tensor.ne.clone()),
                 swiglu_clamp_exp: arr_f("swiglu_clamp_exp"),
                 swiglu_clamp_shexp: arr_f("swiglu_clamp_shexp"),
                 // expert_gating_func 2 = sigmoid; ABSENT defaults to sigmoid (step35.cpp:19-21).
@@ -1821,6 +1826,7 @@ impl ModelConfig {
                 rope_dims_full,
                 rope_dims_swa: (partial[first_swa] * head_dim_k as f32).round() as u32,
                 rope_freq_factors: c.llama3_rope_factors(rope[first_full], rope_dims_full),
+                rope_freq_shape: None,
                 swiglu_clamp_exp: clamps,
                 swiglu_clamp_shexp: shared_clamps,
                 sigmoid_routing: c.moe_router_activation.as_deref() == Some("sigmoid"),

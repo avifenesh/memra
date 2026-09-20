@@ -11,6 +11,88 @@ struct ConfigOnlySource<'a> {
     rope_tensor: bool,
 }
 
+#[test]
+#[allow(clippy::result_large_err)] // allow: assert the shared tensor-contract diagnostic unchanged
+fn step_rope_source_shapes_bind_consistently_before_and_after_preflight() {
+    use crate::source::{GgufSource, TensorSource};
+    use crate::tensor_contract::{ContractOptions, TensorContractError, TensorId};
+    for (case, shape, accepted) in [
+        ("compact", vec![32], true),
+        ("full", vec![64], true),
+        ("short", vec![1], false),
+        ("intermediate", vec![48], false),
+        ("oversized", vec![65], false),
+        ("matrix", vec![2, 16], false),
+        ("compact_rank2", vec![32, 1], false),
+        ("full_rank2", vec![64, 1], false),
+    ] {
+        let path = std::env::temp_dir().join(format!(
+            "memra-537-binding-{case}-{}.gguf",
+            std::process::id()
+        ));
+        crate::micro_gguf::write_step35_rope_contract_fixture(&path, &shape).unwrap();
+        let gguf = crate::GgufFile::open(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let source = GgufSource(&gguf);
+        let raw_config = source.config();
+        assert_eq!(
+            raw_config
+                .step35
+                .as_ref()
+                .unwrap()
+                .rope_freq_shape
+                .as_deref(),
+            Some(shape.as_slice()),
+            "{case}"
+        );
+        let plan = compile_for_load(&raw_config).unwrap();
+        let census = source.tensor_census().unwrap();
+        let entries = census
+            .tensors
+            .iter()
+            .map(|row| row.entry.clone())
+            .collect::<Vec<_>>();
+        let bind = |config| {
+            for_config(config)
+                .unwrap()
+                .compile_tensor_contract(config, &plan, census.dialect, ContractOptions::default())
+                .and_then(|contract| contract.bind(&entries))
+        };
+        let raw_binding = bind(&raw_config);
+        let loaded = compile_for_source(&source);
+        if accepted {
+            let (loaded_config, loaded_plan) = loaded.unwrap();
+            assert_eq!(loaded_plan, plan);
+            let raw_binding = raw_binding
+                .unwrap_or_else(|error| panic!("{case}: raw config bind failed: {error}"));
+            let loaded_binding = bind(&loaded_config).unwrap();
+            assert_eq!(raw_binding, loaded_binding, "{case}");
+            let factors = &raw_binding.tensors[&TensorId::RopeFactors];
+            assert_eq!(factors.shapes, vec![shape.clone()], "{case}");
+            assert_eq!(factors.physical_bytes, shape[0] * 4, "{case}");
+            let step = loaded_config.step35.unwrap();
+            assert_eq!(
+                step.rope_freq_shape.as_deref(),
+                Some(shape.as_slice()),
+                "{case}"
+            );
+            assert_eq!(step.rope_freq_factors.unwrap().len(), shape[0] as usize);
+        } else {
+            assert!(loaded.is_err(), "{case}: malformed source passed preflight");
+            assert!(
+                matches!(
+                    raw_binding,
+                    Err(TensorContractError::ShapeMismatch {
+                        id: TensorId::RopeFactors,
+                        ..
+                    })
+                ),
+                "{case}: {raw_binding:?}"
+            );
+        }
+    }
+}
+
 impl crate::source::TensorSource for ConfigOnlySource<'_> {
     fn config(&self) -> ModelConfig {
         self.config.clone()
