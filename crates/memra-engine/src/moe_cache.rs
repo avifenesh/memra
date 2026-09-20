@@ -2057,3 +2057,6 @@ impl Drop for MoeSlotCache {
         }
     }
 }
+
+#[path = "banked_residency/native.rs"]
+mod banked_native;
