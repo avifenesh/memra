@@ -44,3 +44,11 @@ bank the manifested evidence. Commands and profile requirements are in
 The tag workflows require valid records and exact binary equality for their OS profiles.
 A fresh CI build does not inherit GPU qualification from a matching source revision.
 No source/binary/model/numeric/hardware/cell proof has been inferred from these CPU tests.
+
+## Pinned-source provenance follow-up
+
+At `3ec03594de10a579c24129a2e1f9f009f91e33c0`, the qualification suite passes 15 tests. A tested commit missing from the
+checkout is now an explicit unqualified state until its exact Git object is fetched; it
+cannot be treated as an unchecked source label. The tag workflows use `--fetch-source`
+against origin for that immutable SHA. `pinned-source-cpu.log.gz` and
+`pinned-source-sha256.json` bind this follow-up. No native execution is implied.
