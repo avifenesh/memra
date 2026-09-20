@@ -65,8 +65,29 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     })
 }
 
+/// The collector recognizes an explicit refusal only at the start of the last line.
+/// Do not turn unexpected runtime errors into unsupported-route refusals.
+pub fn diagnostic(error: &str) -> String {
+    if error.starts_with("REFUSED:") {
+        error.to_owned()
+    } else {
+        format!("kv-tier-gate: {error}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn collector_refusal_is_unwrapped_but_failures_are_not_refusals() {
+        assert_eq!(
+            super::diagnostic("REFUSED: missing binding"),
+            "REFUSED: missing binding"
+        );
+        assert_eq!(
+            super::diagnostic("CUDA failed"),
+            "kv-tier-gate: CUDA failed"
+        );
+    }
     use super::*;
     fn base() -> Vec<String> {
         "--artifact fixture.gguf --case baseline --context 8192 --tiers host,nvme --same-program --out receipts"
