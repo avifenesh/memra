@@ -1,0 +1,19 @@
+{
+  "receipt_replay": "PASS",
+  "scope": "rented RTX 5090 development correctness only",
+  "production_qualified": false,
+  "cells": [
+    {
+      "case": "8g-gen-on",
+      "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH",
+      "tokens": 32,
+      "gpu_slots": 9986,
+      "gpu_allocated_bytes": 8589637648,
+      "gpu_evictions": 12091,
+      "host_demands": 22077,
+      "host_evictions": 22061,
+      "physical_reads": 22077,
+      "rereads": 4389
+    }
+  ]
+}

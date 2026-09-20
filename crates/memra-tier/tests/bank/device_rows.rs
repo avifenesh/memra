@@ -338,3 +338,58 @@ fn row_device_native_gather_submits_exact_coalesced_bits() {
     gov.borrow_mut().release(&charge).unwrap();
     assert_eq!(gov.borrow().used, TierBudget::zero(2));
 }
+
+// Shared by the frozen SLRU trace arm: one fake transfer per admitted/reserved
+// expert, held across delayed completion/cancellation. No CUDA execution claim.
+pub(super) struct FrozenUpload {
+    fake: Fake,
+    upload: RowUpload,
+    gov: Rc<RefCell<Governor>>,
+    charge: ChargedLease,
+}
+impl FrozenUpload {
+    pub(super) fn new(key: u8, bytes: usize) -> Self {
+        let (gov, charge) = charge();
+        let mut fake = Fake::new();
+        let op = fake.op(vec![key; bytes], &charge);
+        let mut upload = RowUpload::submit(&mut fake, op).unwrap();
+        assert!(matches!(
+            upload.publish(&mut fake, epochs()),
+            Err(Error::NotReady)
+        ));
+        assert_eq!(gov.borrow_mut().release(&charge), Err(Error::Busy));
+        Self {
+            fake,
+            upload,
+            gov,
+            charge,
+        }
+    }
+    pub(super) fn finish(mut self, consumed: bool) {
+        if consumed {
+            self.fake.ready();
+            let destination = self.upload.publish(&mut self.fake, epochs()).unwrap();
+            assert_eq!(
+                self.gov.borrow_mut().release(&self.charge),
+                Err(Error::Busy)
+            );
+            drop(destination);
+        } else {
+            assert_eq!(
+                self.upload.cancel(&mut self.fake).unwrap(),
+                CancelState::PublicationRevoked
+            );
+            assert!(matches!(
+                self.upload.publish(&mut self.fake, epochs()),
+                Err(Error::Cancelled)
+            ));
+        }
+        assert!(!self.upload.retire(&mut self.fake, None).unwrap());
+        assert_eq!(self.upload.acknowledge(&mut self.fake), Err(Error::Busy));
+        self.fake.done = true;
+        assert!(self.upload.retire(&mut self.fake, None).unwrap());
+        self.upload.acknowledge(&mut self.fake).unwrap();
+        self.gov.borrow_mut().release(&self.charge).unwrap();
+        assert_eq!(self.gov.borrow().used(), TierBudget::zero(2));
+    }
+}

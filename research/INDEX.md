@@ -504,10 +504,11 @@ glm5-kda-verify-20260909 | SUPERSEDED MECHANISM: one t-row register-state scan a
 glm-tp-device-ownership-20260920 | 3/3 synthetic native ownership and memory seam stages passed; full-checkpoint and performance qualification remain pending. | glm-tp-device-ownership-20260920/NATIVE-RESULTS.md
 
 spill-a-20260919 | O_DIRECT read/write was accepted on this overlay filesystem. All eight roundtrip/restore cells returned byte-exact data with zero fallbacks. No EINVAL was observed. This does not prove physical NVMe ancestry or spill throughput. | spill-a-20260919/day5/RESULTS.md
-spill-b-20260919 | REFUSED: active requires a native CUDA materializer + scheduler binding with nonzero demote/reload engagement; CPU fixtures and HostPrefix patch do not provide that binding | spill-b-20260919/DAY6.md
-spill-c-20260919 | qwen4exp-gpu-gate PASS [rows-via-tier: BIT-IDENTICAL PLE outputs + convolution state; encodings=2 cases=16 values=6144 tier_calls=16 forced_read_chunks=144 budget_drained=true] | spill-c-20260919/rented-5090-20260919/day5/RESULTS.md
-spill-d-20260919 | Multi-card transport, model-scale mixed tiering and full serving/performance gates remain outside this CPU/read-only milestone; do not promote their state. | spill-d-20260919/DAY6-VERIFICATION.md
-spill-lead-20260919 | **8192 and 32768** same-program captures PASS (8064+128 / 32640+128 tokens; full prefix/final state + logit + token hashes) | spill-lead-20260919/INTEGRATION-DAY6.md
+spill-b-20260919 | ACTIVE-8K G1 PASS — reclaim and reacquisition both exactly 201,326,592 B; ACTIVE-32K physical reclaim/restore bit-identical, one-granule residual unclassified — not G1 PASS | spill-b-20260919/DAY9.md
+spill-c-20260919 | 8/4 GiB banked experts-via-tier ON/OFF all MATCH + SELF-CONSISTENCY PASS with eviction engaged; REFUSED: experts-via-tier host bank budget cannot hold one expert record | spill-c-20260919/DAY8.md
+spill-d-20260919 | CAPTURE ARCHIVES MATCH: 14 cells; 12 executed-not-qualified; 1 failed command; 1 refused command; qualification=false | spill-d-20260919/DAY9-VERIFICATION.md
+spill-f-20260919 | NVMe VM spend NO-GO until in-guest block ancestry is provable; h2d-probe --copies N=1 plumbing cell, 32 visits, no medians | spill-f-20260919/NVME-DECISION.md
+spill-lead-20260919 | First gate passed — ACTIVE-8K G1 PASS; G0/G2–G7 unchanged; 32k pending residual classification; session handed over 2026-09-20 | spill-lead-20260919/HANDOVER-20260920.md
 
 qwen2-tokenizer-20260920 | Literal Qwen2 split/BPE parity passes in HF and GGUF loaders. Full raw-input parity for a tokenizer declaring NFC remains blocked by the separately tracked normalization omission. | qwen2-tokenizer-20260920/RESULTS.md
 

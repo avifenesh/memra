@@ -50,14 +50,24 @@ impl Hotness<ExpertDomain> for Heat {
 }
 /// !Send owner guard, retained by the gate on the CUDA thread for the entire run.
 /// The Engine itself contains only its Send+Sync proxy.
-pub struct BankedExpertGate {
+pub struct BankedExpertGate<'a> {
+    engine: &'a Engine,
+    max_bytes: usize,
     owner: ExpertBankOwner,
     reads: Rc<Cell<u64>>,
     budget: SharedBudget,
     metadata: ChargedLease,
 }
-impl Drop for BankedExpertGate {
+impl Drop for BankedExpertGate<'_> {
     fn drop(&mut self) {
+        let report = self.engine.with_moe_cache(self.max_bytes, |cache, _| {
+            let (slots, allocated_bytes, evictions) = cache.bank_pressure();
+            eprintln!("[expert-gpu-slru] slots={slots} allocated_bytes={allocated_bytes} evictions={evictions}");
+            Ok(())
+        });
+        if let Err(err) = report {
+            eprintln!("[expert-gpu-slru] report refused: {err}");
+        }
         eprintln!(
             "[experts-via-tier] physical_reads={} owner_close={:?}",
             self.reads.get(),
@@ -76,7 +86,7 @@ impl Engine {
         &self,
         model: &HybridModel,
         gguf: &GgufFile,
-    ) -> std::result::Result<BankedExpertGate, Box<dyn std::error::Error>> {
+    ) -> std::result::Result<BankedExpertGate<'_>, Box<dyn std::error::Error>> {
         if gguf.n_shards() != 1 || !Engine::moe_cache_enabled() || !model.mtp_extra.is_empty() {
             return Err(
                 "experts-via-tier requires one immutable GGUF, cache, and at most one MTP head"
@@ -226,6 +236,16 @@ impl Engine {
         if ids.is_empty() || max_bytes == 0 || max_bytes > 16 * 1024 * 1024 {
             return Err("experts-via-tier empty or oversized bank".into());
         }
+        // Gate-only CLI budget; native cache GiB pressure uses MEMRA_MOE_SLOTS.
+        let host_bytes = std::env::args()
+            .find_map(|a| {
+                a.strip_prefix("--expert-bank-host-bytes=")
+                    .map(str::to_owned)
+            })
+            .map(|s| s.parse::<u64>())
+            .transpose()?
+            .unwrap_or(256 * 1024 * 1024);
+        let slots = crate::banked_residency::host_bank_slots(host_bytes, max_bytes)?;
         let mut capacity = TierBudget::zero(1);
         capacity.pageable = 512 * 1024 * 1024;
         capacity.staging = max_bytes;
@@ -247,13 +267,12 @@ impl Engine {
                 slot_bytes: max_bytes,
             },
             BankLimits {
-                cache_bytes: 256 * 1024 * 1024,
+                cache_bytes: host_bytes,
                 batch_bytes: max_bytes,
                 items: 1,
                 tickets: 1,
             },
         )?;
-        let slots = 16;
         let mut request = BudgetRequest {
             bytes: TierBudget::zero(1),
             priority: Priority::Demand,
@@ -266,7 +285,7 @@ impl Engine {
         request.bytes = TierBudget::zero(1);
         let dispatch = SlruExpertDispatch::new(
             bank,
-            ids,
+            ids.clone(),
             request,
             Epochs {
                 state: 0,
@@ -274,7 +293,14 @@ impl Engine {
                 dst_gen: 0,
             },
         )?;
-        let owner = ExpertBankOwner::register(Box::new(dispatch), 1)?;
+        let owner = ExpertBankOwner::register(
+            Box::new(TracedDispatch {
+                inner: dispatch,
+                ids,
+                occupants: BTreeMap::new(),
+            }),
+            1,
+        )?;
         self.with_moe_cache(max_bytes as usize, |cache, _| {
             cache.install_banked(owner.proxy())
         })?;
@@ -282,10 +308,64 @@ impl Engine {
             "[experts-via-tier] installed artifact_sha256={actual} host_slots={slots} max_expert_bytes={max_bytes}"
         );
         Ok(BankedExpertGate {
+            engine: self,
+            max_bytes: max_bytes as usize,
             owner,
             reads,
             budget,
             metadata,
         })
+    }
+}
+
+// Complete host-bank demand trace, not a model-route or GPU-hit trace. IDs and
+// extents are validated by the exact catalog; the bounded occupant map has at
+// most host_slots entries. No numeric data or machine identity is logged.
+struct TracedDispatch {
+    inner: SlruExpertDispatch<Heat, FileReader>,
+    ids: BTreeMap<ExpertDispatchId, BankId>,
+    occupants: BTreeMap<usize, ExpertDispatchId>,
+}
+impl ExpertDispatchBank for TracedDispatch {
+    fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()> {
+        self.inner.validate(local, bytes)
+    }
+    fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
+        let id = self.ids.get(&local).ok_or(Error::NotFound)?;
+        let hit = self
+            .inner
+            .bank()
+            .slru_policy()
+            .unwrap()
+            .resident(id)
+            .is_some();
+        let demand = self.inner.demand(local, bytes)?;
+        let slot = self
+            .inner
+            .bank()
+            .slru_policy()
+            .unwrap()
+            .resident(id)
+            .ok_or(Error::Incomplete)?;
+        let victim = self
+            .occupants
+            .insert(slot, local)
+            .filter(|old| *old != local);
+        eprintln!(
+            "[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}",
+            local.0,
+            local.1,
+            local.2,
+            bytes,
+            slot,
+            hit,
+            victim
+                .map(|v| format!("{}:{}:{}", v.0, v.1, v.2))
+                .unwrap_or_else(|| "-".into())
+        );
+        Ok(demand)
+    }
+    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+        self.inner.finish(demand)
     }
 }
