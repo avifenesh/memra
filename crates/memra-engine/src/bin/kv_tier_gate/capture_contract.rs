@@ -79,7 +79,7 @@ pub fn classify(
             if g.len != 0 {
                 return Err(fail("trunk-only execution requires MTP KV len == 0"));
             }
-            validate_geometry(&block.layer.state, g).map_err(|p| fail(p))?;
+            validate_geometry(&block.layer.state, g).map_err(&fail)?;
         }
         return Ok(Plane::AbsentUnexecutedMtp);
     }
@@ -88,7 +88,7 @@ pub fn classify(
             if g.len != pos {
                 return Err(fail("executed trunk KV len == cache.pos"));
             }
-            validate_geometry(&plan.layers[index].state, g).map_err(|p| fail(p))?;
+            validate_geometry(&plan.layers[index].state, g).map_err(&fail)?;
             Ok(Plane::Kv)
         }
         (StatePlan::Recurrent { .. }, None, true) => Ok(Plane::Recurrent),
