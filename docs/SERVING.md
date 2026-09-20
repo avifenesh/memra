@@ -592,6 +592,10 @@ live-lease pressure as `prefix_cache_skips_pinned`; the first refusal is also a 
 
 `POST /v1/tokenize` and `/v1/detokenize` provide CPU-only prompt sizing and token inspection; the messages form shares chat's template/accounting path ([schemas](API-SURFACES.md#v1tokenize-and-v1detokenize-token-inspection)).
 
+Token inspection, prepaid prompt rendering, and inference share the worker's loaded
+tokenizer objects. These snapshots survive worker respawns; replacing tokenizer or
+template files takes effect only after a full server-process restart.
+
 **STANDARD-SURFACE CONTRACT (2026-08-17).** Every model this engine serves to
 customers speaks the same full surface, identically: the three wire formats
 (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`) and the tools surface
