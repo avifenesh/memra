@@ -90,3 +90,14 @@ it uses no concurrent in-process environment setter. `NATIVE-REFUSAL-PLAN.md` na
 the conditions and mandatory CPU/Linux/native gates. Previous
 native receipts remain historical; the changed executable needs fresh native admission,
 affected exactness and controlled performance validation.
+
+
+TC557-CALLERS-01: caller/battery result publication is a final commit. The runner
+first records an incomplete result, then completes the cases, terminates telemetry
+(with bounded kill/reap after failure), closes its log, writes the evidence manifest,
+and revalidates source/binary/lease invariants. Only then does atomic result replacement
+publish passed. Cleanup or finalization failures publish failed; a failed atomic
+replacement leaves incomplete. The manifest excludes the mutable root result and the
+result binds the manifest hash. Raw child/case evidence survives failed finalization.
+Both phases have cleanup timeout/error, manifest, final-invariant and publication
+fault controls. The original1aee runner fails them; the corrected runner passes.

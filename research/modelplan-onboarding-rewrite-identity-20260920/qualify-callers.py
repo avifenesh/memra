@@ -40,6 +40,46 @@ def write(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
 
 
+def publish_result(out, result):
+    # An interrupted/failed final write leaves the earlier incomplete receipt intact.
+    pending = out / 'result.json.pending'
+    write(pending, result)
+    pending.replace(out / 'result.json')
+
+
+def finalize_evidence(out, telemetry, telemetry_log, verify):
+    errors = []
+    if telemetry is not None:
+        try:
+            telemetry.terminate()
+            telemetry.wait(timeout=15)
+        except BaseException as error:
+            errors.append(f'telemetry cleanup: {type(error).__name__}: {error}')
+            try:
+                telemetry.kill()
+                telemetry.wait(timeout=15)
+            except BaseException as reap_error:
+                errors.append(f'telemetry kill/reap: {type(reap_error).__name__}: {reap_error}')
+    try:
+        telemetry_log.close()
+    except BaseException as error:
+        errors.append(f'telemetry log close: {type(error).__name__}: {error}')
+    manifest_sha = None
+    try:
+        excluded = {out / 'files-sha256.json', out / 'result.json', out / 'result.json.pending'}
+        write(out / 'files-sha256.json', {str(path.relative_to(out)): build.digest(path)
+              for path in sorted(out.rglob('*')) if path.is_file() and path not in excluded})
+        manifest_sha = build.digest(out / 'files-sha256.json')
+    except BaseException as error:
+        errors.append(f'evidence manifest: {type(error).__name__}: {error}')
+    try:
+        controller.check_deadline(float('inf'))  # Deferred interruption must not become success.
+        verify()
+    except BaseException as error:
+        errors.append(f'final invariants: {type(error).__name__}: {error}')
+    return errors, manifest_sha
+
+
 def plain(command, environment, out, timeout_seconds):
     out.mkdir(parents=True, exist_ok=False)
     deadline = time.monotonic() + timeout_seconds
@@ -136,10 +176,16 @@ def run(args):
     if any(line.split(',')[0].strip() in lease['requested_uuids'] for line in inventory.splitlines()[1:]):
         raise RuntimeError('a compute process occupies the selected GPU')
     telemetry_log = (out / 'all-card-telemetry-250ms.csv').open('wb')
-    telemetry = subprocess.Popen(['nvidia-smi', '--query-gpu=timestamp,uuid,name,index,memory.used,utilization.gpu,power.draw,clocks.sm,temperature.gpu',
-                                  '--format=csv', '--loop-ms=250'], stdout=telemetry_log, stderr=subprocess.STDOUT)
-    try:
-        with controller.cleanup_signals():
+    summary = {'status': 'incomplete', 'phase': args.phase, 'cases': 0,
+               'build_record_sha256': record_sha, 'model_support_promotion': False,
+               'serving_binary_qualification': False}
+    publish_result(out, summary)
+    telemetry = None
+    failure = None
+    with controller.cleanup_signals():
+        try:
+            telemetry = subprocess.Popen(['nvidia-smi', '--query-gpu=timestamp,uuid,name,index,memory.used,utilization.gpu,power.draw,clocks.sm,temperature.gpu',
+            '--format=csv', '--loop-ms=250'], stdout=telemetry_log, stderr=subprocess.STDOUT)
             if args.phase == 'callers':
                 bundle = out / 'retained-bundle'
                 inspect('inspect-retained', bundle)
@@ -201,15 +247,19 @@ def run(args):
                         if link.is_symlink() and link.resolve() == (binaries / link.name).resolve():
                             link.unlink()
             verify()
-            write(out / 'result.json', {'status': 'passed', 'phase': args.phase, 'cases': len(cases),
-                                       'build_record_sha256': record_sha, 'model_support_promotion': False,
-                                       'serving_binary_qualification': False})
-    finally:
-        telemetry.terminate()
-        telemetry.wait(timeout=15)
-        telemetry_log.close()
-        write(out / 'files-sha256.json', {str(path.relative_to(out)): build.digest(path)
-                                        for path in sorted(out.rglob('*')) if path.is_file() and path.name != 'files-sha256.json'})
+        except BaseException as error:
+            failure = error
+        errors, manifest_sha = finalize_evidence(out, telemetry, telemetry_log, verify)
+    summary.update({'cases': len(cases), 'evidence_manifest_sha256': manifest_sha})
+    if failure is not None or errors:
+        summary.update({'status': 'failed', 'error': str(failure) if failure else None,
+                        'finalization_errors': errors})
+        publish_result(out, summary)
+        if failure is not None:
+            raise failure
+        raise RuntimeError('; '.join(errors))
+    summary['status'] = 'passed'
+    publish_result(out, summary)  # Last operation: teardown, evidence and checks already succeeded.
 
 
 if __name__ == '__main__':

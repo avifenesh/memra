@@ -9,9 +9,9 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-spec = importlib.util.spec_from_file_location('qualify_callers', Path(__file__).with_name('qualify-callers.py'))
+spec = importlib.util.spec_from_file_location('qualify_callers', Path(os.environ.get('REWRITE_RUNNER_UNDER_TEST', Path(__file__).with_name('qualify-callers.py'))))
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
@@ -125,6 +125,124 @@ class CallerRunnerTests(unittest.TestCase):
             self.assertIn('lost lease', result['error'])
             self.assertIsNotNone(result['child_returncode'])
             group.assert_not_called()
+
+
+class FinalizationTests(unittest.TestCase):
+    def exercise(self, phase, fault):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root, out, owned = base / 'repo', base / 'evidence', base / 'owned'
+            root.mkdir()
+            binary = owned / 'target/release'
+            binary.mkdir(parents=True)
+            roster = base / 'roster'
+            roster.write_text('CPU fixture')
+            record = {'binaries': {}, 'tests': {
+                key: {'artifact': {'path': f'test-target/release/deps/{key}'}}
+                for key in ('worker', 'repack', 'gemma-prime')}}
+            for name in ('kernel-check', 'run-spec', 'argmax-margin-probe'):
+                path = binary / name
+                path.write_bytes(b'CPU executable fixture')
+                record['binaries'][name] = {'sha256': runner.build.digest(path)}
+            finalizing = False
+            verified_after_cleanup = False
+            telemetry = Mock()
+            waits = 0
+            def wait(**kwargs):
+                nonlocal finalizing, waits
+                finalizing = True
+                waits += 1
+                if fault == 'timeout' and waits == 1:
+                    raise subprocess.TimeoutExpired(['nvidia-smi'], kwargs['timeout'])
+                return 0
+            telemetry.wait.side_effect = wait
+            if fault == 'terminate':
+                telemetry.terminate.side_effect = OSError('deliberate terminate failure')
+            def verify(*_args):
+                nonlocal verified_after_cleanup
+                if finalizing:
+                    verified_after_cleanup = True
+                    if fault == 'verify':
+                        raise RuntimeError('deliberate final source/binary/lease failure')
+                return record, 'a' * 64
+            original_write = runner.write
+            def write(path, value):
+                if path.name == 'files-sha256.json' and fault == 'manifest':
+                    raise OSError('deliberate manifest failure')
+                if path.name == 'result.json.pending' and value.get('status') == 'passed':
+                    self.assertTrue(finalizing and verified_after_cleanup)
+                    self.assertTrue((out / 'files-sha256.json').exists())
+                    if fault == 'publish':
+                        raise OSError('deliberate atomic publication failure')
+                original_write(path, value)
+            def fake(command, environment, target, timeout):
+                target.mkdir(parents=True)
+                if 'inspect' in command:
+                    bundle = Path(command[-1]); bundle.mkdir()
+                    (bundle / 'artifact.lock').write_text('CPU fixture')
+                text = ('RETAINED_CAPTURE_PASS\nRETAINED_CALLER_PASS\nNATIVE_WORKER_BOUNDARY_PASS\n'
+                        'test result: ok. 1 passed; 0 failed; 0 ignored;\n=== RELEASE BATTERY PASS ===\n')
+                (target / 'stdout.log').write_text(text)
+                (target / 'stderr.log').write_text('raw stderr witness\n')
+                return 0
+            def controlled(command, target, timeout, *, environment, check_invariants):
+                check_invariants()
+                return {'controller_returncode': fake(command, environment, target, timeout)}
+            args = SimpleNamespace(phase=phase, model=base / 'model', out=out, roster=roster,
+                                   build_record=owned / 'build.json', timeout_seconds=5)
+            failure = None
+            with patch.object(runner, 'ROOT', root), \
+                    patch.object(runner.build, 'verify_build_record', side_effect=verify), \
+                    patch.object(runner.admission, 'verify_source', return_value={'fixture': True}), \
+                    patch.object(runner.admission, 'verify_lease', return_value={'requested_uuids': []}), \
+                    patch.object(runner, 'plain', side_effect=fake), \
+                    patch.object(runner.controller, 'run_controlled', side_effect=controlled), \
+                    patch.object(runner.subprocess, 'check_output', return_value='gpu_uuid,pid\n'), \
+                    patch.object(runner.subprocess, 'Popen', return_value=telemetry), \
+                    patch.object(runner, 'write', side_effect=write), \
+                    patch.dict(os.environ, {'MEMRA_GPU_LEASE_FILE': 'CPU fixture'}), patch('builtins.print'):
+                try:
+                    runner.run(args)
+                except BaseException as error:
+                    failure = error
+            result = json.loads((out / 'result.json').read_text())
+            self.assertTrue(list((out / 'cases').rglob('stdout.log')))
+            if fault:
+                self.assertIsNotNone(failure, 'finalization failure was ignored')
+                self.assertIn(result['status'], ('failed', 'incomplete'), 'finalization failure left a stale passed result')
+                if fault in ('timeout', 'terminate'):
+                    telemetry.kill.assert_called_once()
+                    self.assertGreaterEqual(telemetry.wait.call_count, 1)
+            else:
+                self.assertIsNone(failure)
+                self.assertEqual(result['status'], 'passed')
+                self.assertTrue(verified_after_cleanup)
+                self.assertEqual(result['evidence_manifest_sha256'], runner.build.digest(out / 'files-sha256.json'))
+                self.assertNotIn('result.json', json.loads((out / 'files-sha256.json').read_text()))
+
+    def test_cleanup_timeout_never_leaves_passed_result(self):
+        for phase in ('callers', 'battery'):
+            with self.subTest(phase=phase): self.exercise(phase, 'timeout')
+
+    def test_cleanup_error_never_leaves_passed_result(self):
+        for phase in ('callers', 'battery'):
+            with self.subTest(phase=phase): self.exercise(phase, 'terminate')
+
+    def test_manifest_failure_never_leaves_passed_result(self):
+        for phase in ('callers', 'battery'):
+            with self.subTest(phase=phase): self.exercise(phase, 'manifest')
+
+    def test_final_invariant_failure_never_leaves_passed_result(self):
+        for phase in ('callers', 'battery'):
+            with self.subTest(phase=phase): self.exercise(phase, 'verify')
+
+    def test_atomic_publication_failure_keeps_incomplete_result(self):
+        for phase in ('callers', 'battery'):
+            with self.subTest(phase=phase): self.exercise(phase, 'publish')
+
+    def test_success_is_sealed_after_cleanup_and_final_verification(self):
+        for phase in ('callers', 'battery'):
+            with self.subTest(phase=phase): self.exercise(phase, None)
 
 
 if __name__ == '__main__':

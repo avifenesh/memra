@@ -9,6 +9,17 @@ Base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/542-trusted-rewrite-identity`.
 Environment: macOS arm64, no CUDA toolkit or GPU. No serving machine was accessed.
 
+## Caller receipt finalization correction (CPU only)
+
+TC557-CALLERS-01 exposed passed publication before telemetry teardown and manifest
+completion. The separate cleanup-fix lane keeps1aee source/ELFs frozen. Its caller
+runner starts incomplete and atomically publishes passed only after cleanup, manifest
+writing and final source/binary/lease checks. Failure never retains a passed root result.
+The exact new controls fail on1aee and all12caller-runner CPU tests pass after the fix;
+`cleanup-receipt-20260920/comparison.json` records sources and raw logs. Rust/Cargo
+runtime inputs are unchanged, but one recorded gate input changed, so no1aee build
+record or native qualification is silently transferred to this new source.
+
 ## Final-program integration and native caller preparation
 
 The current lane integrates main `cf4f317e` (including Gemma prime/view and generic
