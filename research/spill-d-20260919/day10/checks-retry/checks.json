@@ -1,0 +1,170 @@
+[
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:53:24.140547+00:00",
+    "elapsed_seconds": 5.508999375044368,
+    "exit_code": 0,
+    "raw_gzip": "check-00.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "qualification": false
+  },
+  {
+    "command": [
+      "python3",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "crates/memra-tier/tests/battery",
+      "-p",
+      "test_*.py"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:53:29.650374+00:00",
+    "elapsed_seconds": 39.14742329204455,
+    "exit_code": 0,
+    "raw_gzip": "check-01.log.gz",
+    "raw_sha256": "bfbc4dad9019dda97b6a7127856c1d73eaf8fe8876d79df8b80ecc601e04d51c",
+    "qualification": false
+  },
+  {
+    "command": [
+      "python3",
+      "-m",
+      "py_compile",
+      "tools/tier-battery.py",
+      "tools/tier-envelope.py",
+      "tools/tier-lock-proof.py",
+      "tools/tier-placement.py",
+      "tools/tier-topology.py",
+      "crates/memra-tier/tests/battery/fake_runner.py",
+      "crates/memra-tier/tests/battery/test_collector.py",
+      "crates/memra-tier/tests/battery/test_day10.py",
+      "crates/memra-tier/tests/battery/test_day4.py",
+      "crates/memra-tier/tests/battery/test_day5.py",
+      "crates/memra-tier/tests/battery/test_day6.py",
+      "crates/memra-tier/tests/battery/test_day8.py",
+      "crates/memra-tier/tests/battery/test_envelope.py",
+      "crates/memra-tier/tests/battery/test_external_lock.py",
+      "crates/memra-tier/tests/battery/test_g2_campaign.py",
+      "crates/memra-tier/tests/battery/test_native_runner.py",
+      "crates/memra-tier/tests/battery/test_receipts.py",
+      "crates/memra-tier/tests/battery/test_storage_cell.py",
+      "crates/memra-tier/tests/battery/test_timeout_tree.py",
+      "research/spill-d-20260919/validate-day8-archives.py",
+      "research/spill-d-20260919/run-g2.py",
+      "research/spill-d-20260919/verify-day10.py"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:54:08.798887+00:00",
+    "elapsed_seconds": 0.15466849994845688,
+    "exit_code": 0,
+    "raw_gzip": "check-02.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "qualification": false
+  },
+  {
+    "command": [
+      "bash",
+      "-n",
+      "tools/tier-rig-bootstrap.sh"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:54:08.954063+00:00",
+    "elapsed_seconds": 0.018072707927785814,
+    "exit_code": 0,
+    "raw_gzip": "check-03.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "qualification": false
+  },
+  {
+    "command": [
+      "bash",
+      "-n",
+      "tools/kv-host-spill-identity-gate.sh"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:54:08.972579+00:00",
+    "elapsed_seconds": 0.018338083056733012,
+    "exit_code": 0,
+    "raw_gzip": "check-04.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "qualification": false
+  },
+  {
+    "command": [
+      "bash",
+      "-n",
+      "tools/kv-host-spill-failure-gate.sh"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:54:08.991588+00:00",
+    "elapsed_seconds": 0.019056749995797873,
+    "exit_code": 0,
+    "raw_gzip": "check-05.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "qualification": false
+  },
+  {
+    "command": [
+      "shellcheck",
+      "tools/tier-rig-bootstrap.sh"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:54:09.011164+00:00",
+    "elapsed_seconds": 0.13712766696698964,
+    "exit_code": 0,
+    "raw_gzip": "check-06.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "qualification": false
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:54:09.148796+00:00",
+    "elapsed_seconds": 0.342732583056204,
+    "exit_code": 0,
+    "raw_gzip": "check-07.log.gz",
+    "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "qualification": false
+  },
+  {
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:54:09.492012+00:00",
+    "elapsed_seconds": 5.581910874927416,
+    "exit_code": 0,
+    "raw_gzip": "check-08.log.gz",
+    "raw_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+    "qualification": false
+  },
+  {
+    "command": [
+      "python3",
+      "-c",
+      "import re,subprocess; from pathlib import Path; blocks=re.findall(r\"```sh\\n(.*?)```\",Path(\"research/spill-d-20260919/DAY8-CELLS.md\").read_text(),re.S); [subprocess.run([\"bash\",\"-n\"],input=b,text=True,check=True) for b in blocks]; print(\"RUNBOOK SYNTAX MATCH:\",len(blocks),\"shell blocks\")"
+    ],
+    "source_commit": "c2aca1770764b78981a1f56fe26050b20878e19c",
+    "started_utc": "2026-09-20T15:54:15.074651+00:00",
+    "elapsed_seconds": 0.2729773339815438,
+    "exit_code": 0,
+    "raw_gzip": "check-09.log.gz",
+    "raw_sha256": "4e1a3a55595ca6dfd087ba5f22e0ca30acdd6f91f1e4563c89d7afa87b95b606",
+    "qualification": false
+  }
+]

@@ -1,0 +1,101 @@
+COMPUTE INVENTORY: ''
+SMOKE HOST_BOUNCE=0
+primary device: 0
+devices: 1
+(single device: no peer pairs — matrix section is census-only here; the cross-device arm gates on the 8x box)
+peer-arm copy (cuMemcpyPeerAsync, same-ctx degenerate): bytediff=0 OK
+Pp2Rt built: cross_device=false
+boundary roundtrip step 0 slot 0: bytediff=0 OK
+boundary roundtrip step 1 slot 1: bytediff=0 OK
+boundary roundtrip step 2 slot 0: bytediff=0 OK
+boundary roundtrip step 3 slot 1: bytediff=0 OK
+pp-transport-smoke PASS
+SMOKE HOST_BOUNCE=1
+primary device: 0
+devices: 1
+(single device: no peer pairs — matrix section is census-only here; the cross-device arm gates on the 8x box)
+peer-arm copy skipped: MEMRA_PP_HOST_BOUNCE=1
+Pp2Rt built: cross_device=false
+boundary roundtrip step 0 slot 0: bytediff=0 OK
+boundary roundtrip step 1 slot 1: bytediff=0 OK
+boundary roundtrip step 2 slot 0: bytediff=0 OK
+boundary roundtrip step 3 slot 1: bytediff=0 OK
+pp-transport-smoke PASS
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess\napps=subprocess.check_output([\"nvidia-smi\",\"--query-compute-apps=pid,process_name\",\"--format=csv,noheader\"],text=True)\nprint(\"COMPUTE INVENTORY: \"+repr(apps),flush=True)\nif apps.strip(): raise SystemExit(\"REFUSED: competing GPU process\")\nfor arm in (\"0\",\"1\"):\n print(\"SMOKE HOST_BOUNCE=\"+arm,flush=True)\n subprocess.run([\"env\",\"MEMRA_PP_HOST_BOUNCE=\"+arm,\"target/release/pp-transport-smoke\"],check=True)\n"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 4344122304719,
+  "ended_monotonic_ns": 4344935077407,
+  "started_utc": "2026-09-20T16:04:19.116162+00:00",
+  "ended_utc": "2026-09-20T16:04:19.928937+00:00",
+  "elapsed_seconds": 0.812772688,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 956,
+    "sha256": "f9317865d13b55298435dd6aab2e1a17065b689416ad46b46fc5340be2bfa958"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 550,
+      "sha256": "1fd444e365ac11e2c2929705516167e0cfe10805f06c7502cf04821cec018df8"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}
