@@ -1,8 +1,10 @@
 # GLM TP device ownership — issue #544
 
-Status: implementation under review; native GPU qualification pending. No support-state,
-rewrite-certificate, loader acceptance, kernel, numerical-program or performance-default
-change is claimed by this record.
+Status: the three planned synthetic native device/memory stages passed. Full-checkpoint,
+KDA/lazy-index-key GPU coverage and release/performance qualification remain pending.
+See [NATIVE-RESULTS.md](NATIVE-RESULTS.md) for exact scope, hashes and raw receipts.
+No support-state, rewrite-certificate, loader acceptance, kernel, numerical-program or
+performance-default change is claimed by this record.
 
 Source base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/544-glm-tp-device-ownership`.
@@ -68,12 +70,13 @@ None of these results is native GPU qualification.
 
 ## Required native qualification
 
-The coordinator is provisioning one non-serving host. Do not execute GPU work until its
-host and lock wrapper are provided. The owner's current instruction supersedes the older
-whole-rig lock rule for this work: each session holds exclusive locks on exactly the
-physical GPUs it uses; multi-GPU sets are acquired in stable order by the shared wrapper.
-Do not merge, tag or promote model support from CPU results or synthetic seam results.
-The runnable protocol and resource envelope are in [QUALIFICATION.md](QUALIFICATION.md).
+The coordinator supplied and accepted a non-serving host; the three planned native seam
+stages ran under exact per-card leases and passed. Their receipts bind source `d413747d`
+and the two native test-binary hashes recorded in [NATIVE-RESULTS.md](NATIVE-RESULTS.md).
+Each session held exactly its physical GPU set, acquired in stable order by the shared
+wrapper. No task lease remains held. Do not merge, tag or promote model support from
+synthetic seam results alone. The protocol is [QUALIFICATION.md](QUALIFICATION.md);
+the remaining qualification requirements follow.
 
 1. Build this exact revision natively, recording source SHA, binary SHA-256, CUDA/toolchain,
    device topology and artifact/config manifest hashes.

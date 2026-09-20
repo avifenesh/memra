@@ -4,7 +4,7 @@ The coordinator owns rental and the canonical per-card lock wrapper, `memra-gpu-
 This runner does neither. Each invocation runs exactly one test in one fresh process, with exactly its
 physical GPU set locked. Multi-card locks must be acquired in stable order by that wrapper.
 The owner's current per-card instruction supersedes the older whole-rig lock convention
-for these runs. No host or wrapper was available when this protocol was prepared.
+for these runs. The executed native seam results and remaining limits are recorded in [NATIVE-RESULTS.md](NATIVE-RESULTS.md).
 
 ## Resource envelope
 
@@ -18,7 +18,7 @@ for these runs. No host or wrapper was available when this protocol was prepared
 - Linux x86_64, Rust 1.97.1, CUDA 13.1 or newer (13.2 preferred); 16 vCPU, 64 GiB CPU RAM,
   150 GiB local build/scratch space. Build parallelism defaults to 8 jobs.
 - No model download for the seam stages. The engine test generates a deterministic
-  approximately 100 KB GLM-DSA micro GGUF (seed 544) and records its SHA-256. This proves
+  627,136-byte GLM-DSA micro GGUF (seed 544, measured in the native run) and records its SHA-256. This proves
   loaded ownership and allocator behavior, not full GLM-5.3 checkpoint qualification.
 - A later full-checkpoint stage uses the official FP8 source
   `zai-org/GLM-5.3-Flash@04c4e9e95c5da8862dced7e5056455116f83a7e0`:
@@ -96,6 +96,7 @@ by the runner itself. `--lock-file GPU-UUID=/canonical/path` is an optional extr
 CPU refusal controls: `python3 tools/test_qualify_model_device_memory.py` (wired into CI).
 Local macOS result: 8 passed, 1 explicitly skipped Linux-only live-flock test; no GPU run.
 The runner's same-device stage is distinct from a two-card transport proof. The pair
-stages are synthetic native ownership/allocator tests. Full checkpoint serving pressure,
+stages are synthetic native ownership/allocator tests. The measured fixture has
+`partial_key_bytes=0`, so it does not prove GPU lazy-index-key or KDA allocation coverage. Full checkpoint serving pressure,
 source-lease replay token identity and affected kernel/run-gen/run-spec exactness remain
 separate required rows in [VALIDATION.md](VALIDATION.md), never inferred from these passes.
