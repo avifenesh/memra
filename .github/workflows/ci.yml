@@ -132,6 +132,8 @@ jobs:
       # builds, and this fixture proves both refusals fail for the right reason.
       - name: Release-guard teeth fixture
         run: tools/test_release_guard.sh
+      - name: Release-battery coverage fixtures (CPU only)
+        run: python3 tools/test_release_battery_coverage.py
 
       # Changelog teeth (2026-09-02): the tag walk, the skip list, the explicit FROM, and the
       # history-root baseline that keeps the first tag on the rebuilt history from dropping the
