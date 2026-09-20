@@ -221,6 +221,7 @@ impl Engine {
         }
         let mut capacity = TierBudget::zero(1);
         capacity.pageable = 512 * 1024 * 1024;
+        capacity.staging = max_bytes;
         capacity.inflight = 1;
         let budget: SharedBudget = Rc::new(RefCell::new(Governor::new(
             capacity,
