@@ -51,3 +51,11 @@ observation — counts planes whose VA was `Some` before and `Some`-equal after 
 that count equals `reload_count`, `false` otherwise, `not-applicable-pooled` when no VMM granularity was
 queried. All four existing receipts carrying the field are VMM cells (granularity 2,097,152 B), so no published
 line was false; `verify-day9.py` still passes.
+Second review pass (`a799cf5d`), one inline finding, valid: the pooled arm of the qualification rule
+bypassed the documented criterion — `residual_class` short-circuited to `not-applicable-pooled` (never
+`unclassified`) and `reclaim_observed` was just `after > before && restored < after`, so a default-allocator run
+could publish `g1_reclaim_qualified=true` from an unattributed free-VRAM wiggle, even with `restored < before`,
+beside a negative `residual_bytes`. Fixed: pooled runs report `reclaim_observed` only as an observed *leak-free*
+rise (`restored == before`), and publish `g1_reclaim_qualified=not-applicable-pooled` and
+`residual_bytes=not-applicable-pooled` — the G1 label is VMM-only, exactly as the criterion (a)–(d) requires.
+No pooled receipt with these fields exists in the tree; `verify-day9.py` still passes on the VMM receipts.

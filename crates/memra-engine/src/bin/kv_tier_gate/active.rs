@@ -518,20 +518,31 @@ pub fn roundtrip(
     } else {
         "unclassified"
     };
+    // Pooled runs have no released-chunk quantity to bound against, so they can report an observed,
+    // leak-free rise but can never publish the G1 label: `g1_reclaim_qualified=not-applicable-pooled`.
     let reclaim_observed = if vmm_granularity != 0 {
         observation.bounded_no_leak
     } else {
-        after > before && restored < after
+        after > before && restored == before
     };
-    let reclaimed = reclaim_observed && residual_class != "unclassified";
+    let reclaimed = vmm_granularity != 0 && reclaim_observed && residual_class != "unclassified";
+    let g1_reclaim_qualified = if vmm_granularity == 0 {
+        "not-applicable-pooled".to_string()
+    } else {
+        reclaimed.to_string()
+    };
+    let residual_bytes = if vmm_granularity == 0 {
+        "not-applicable-pooled".to_string()
+    } else {
+        observation.residual.to_string()
+    };
     if diagnostic {
         let mut probe = fs::OpenOptions::new()
             .append(true)
             .open(out.join("residual-diagnostic.txt"))?;
         writeln!(
             probe,
-            "residual_bytes={}\nresidual_class={residual_class}\nfree_after_restore_bytes={restored}",
-            observation.residual
+            "residual_bytes={residual_bytes}\nresidual_class={residual_class}\nfree_after_restore_bytes={restored}",
         )?;
     }
     let vmm_fixed_va_restored = if vmm_granularity == 0 {
@@ -546,7 +557,7 @@ pub fn roundtrip(
         .open(out.join("active-reclaim.txt"))?;
     writeln!(
         metrics,
-        "vmm_fixed_va_restored={vmm_fixed_va_restored}\nvmm_retained_edge_and_capacity_bytes={}\nvmm_granularity_bytes={vmm_granularity}\nvmm_released_chunk_bytes={vmm_released_bytes}\ndemote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaim_observed}\nreclaim_exact_equal={}\nresidual_bytes={}\nresidual_class={residual_class}\ng1_reclaim_qualified={reclaimed}",
+        "vmm_fixed_va_restored={vmm_fixed_va_restored}\nvmm_retained_edge_and_capacity_bytes={}\nvmm_granularity_bytes={vmm_granularity}\nvmm_released_chunk_bytes={vmm_released_bytes}\ndemote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaim_observed}\nreclaim_exact_equal={}\nresidual_bytes={residual_bytes}\nresidual_class={residual_class}\ng1_reclaim_qualified={g1_reclaim_qualified}",
         if vmm_granularity == 0 {
             0
         } else {
@@ -555,7 +566,6 @@ pub fn roundtrip(
         after as i128 - before as i128,
         after as i128 - restored as i128,
         observation.exact,
-        observation.residual
     )?;
     metrics.sync_all()?;
     Ok(reclaimed)
