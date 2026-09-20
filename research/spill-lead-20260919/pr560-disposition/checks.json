@@ -1,0 +1,58 @@
+{
+  "review_source_B": "06e9ea7ea57cb48b1b0713b94d53bed5d397c2e1",
+  "review_source_D": "a8ce78f2b1fd280f45975e64cad53179a8e9859a",
+  "utc": "2026-09-20T00:37:39.070654+00:00",
+  "scope": "source + CPU/stub filesystem control flow; no GPU or native engine build",
+  "commands": [
+    {
+      "label": "d-regressions-attempt1",
+      "exit": 1,
+      "raw": "d-regressions-attempt1.log.gz",
+      "uncompressed_sha256": "5d89b4c2bd1b49473866622fa1d10bf06728d000b1461d5cd1c982ceb4824026",
+      "result": "Recheck harness omitted RIG-DAY1.md and topology fixture; 2 FileNotFoundError; corrected extraction below, not backend failures"
+    },
+    {
+      "label": "d-regressions",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "crates/memra-tier/tests/battery",
+        "-p",
+        "test_day[68].py"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 2.6761876250384375,
+      "raw": "d-regressions.log.gz",
+      "uncompressed_sha256": "a7c2f623b4658ae62d877b7e4246d1ff6c8113d980bc907886e59a4dc9bd0d72"
+    },
+    {
+      "label": "b-cli-compile",
+      "command": [
+        "rustc",
+        "--edition=2024",
+        "--test",
+        "cli.rs",
+        "-o",
+        "cli-test"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 1.607730709016323,
+      "raw": "b-cli-compile.log.gz",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "b-cli-tests",
+      "command": [
+        "/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/memra-e-disposition-0_7c0t4f/cli-test"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.7841523329843767,
+      "raw": "b-cli-tests.log.gz",
+      "uncompressed_sha256": "f86b5187354ce3359fa646a6b8ccbeb005e37e9505763e8ef5d9d8bce5778d24"
+    }
+  ]
+}
