@@ -22,6 +22,19 @@ published and are the only endpoint for — is REQUIRED: the battery refuses the
 its GGUF is absent from the rig rather than reporting it skipped.** A `vendor` model is
 required when present and needs an explicit `--allow-missing-vendor` when not.
 
+The battery clears `MEMRA_KC_FAST` and `MEMRA_KC_ONLY`, requires the cells in
+`tools/kernel-check-27b.cells` and `tools/kernel-check-step35.cells`, and checks the final
+kernel cell/skip summary against the named results. The receipt reports executed and required
+counts and every effective skip. The skip ceiling is 11, matching `tools/local-ci.sh`;
+`MEMRA_CI_KC_SKIP_BUDGET` cannot raise it for a release. A required cell cannot be skipped.
+
+For each model, the battery clears `MEMRA_SPEC_K`, `MEMRA_PROMPT_DIR`, and `MEMRA_GEN_ONLY`,
+pins `MEMRA_SPEC_TEMP=0` and `MEMRA_NGEN=32`, and requires exactly one greedy PASS for each
+K=1 through K=8 plus the final success summary and a zero exit status. Sampled reproducibility,
+duplicate depths, and a success marker without the per-depth results are refused. The CPU
+fixtures in `tools/test_release_battery_coverage.py` test these refusals; GPU qualification
+still requires running the battery with native binaries and the roster artifacts.
+
 That rule is owner policy (2026-08-28: *"the main models that need to be tested are my
 models"*) and it exists because the previous wording here — `run-gen <each affected model>` —
 let v0.118.0 ship without ever running `ornith-1.5-35b-a3b`. The change touched no kernel and
