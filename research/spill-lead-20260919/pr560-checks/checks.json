@@ -1,0 +1,120 @@
+{
+  "source_commit": "e18f563e349b2859ad55fb3e496dd0990e4880b4",
+  "scope": "Mac CPU only; no nvcc/GPU/serving execution",
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-19T23:12:45.546240+00:00",
+      "elapsed_seconds": 3.836698833038099,
+      "raw": "check-0.log.gz",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-19T23:12:49.383349+00:00",
+      "elapsed_seconds": 11.752753042033873,
+      "raw": "check-1.log.gz",
+      "uncompressed_sha256": "258938a5629f8d9cf3e92f9b78c75dc679f3031a6805b31d1d88c778ca9484af"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-19T23:13:01.136492+00:00",
+      "elapsed_seconds": 0.2735429159947671,
+      "raw": "check-2.log.gz",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-19T23:13:01.410329+00:00",
+      "elapsed_seconds": 3.5884094170178287,
+      "raw": "check-3.log.gz",
+      "uncompressed_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    },
+    {
+      "command": [
+        "bash",
+        "tools/docs-registry-census.sh"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-19T23:13:04.999065+00:00",
+      "elapsed_seconds": 2.656008040998131,
+      "raw": "check-4.log.gz",
+      "uncompressed_sha256": "2c0f0db8a42852955445769133b87341e8d8a80d1d24653880fa04b27aaa8f04"
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-19T23:21:35.831739+00:00",
+      "elapsed_seconds": 1.1321745419991203,
+      "raw": "check-5.log.gz",
+      "uncompressed_sha256": "0140cbb8d3953db0f55641378ecff36de6cb84268a1bc37cbd4522cf8cafb035"
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "crates/memra-tier/tests/battery",
+        "-p",
+        "test_*.py"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-19T23:21:36.964377+00:00",
+      "elapsed_seconds": 25.337782332964707,
+      "raw": "check-6.log.gz",
+      "uncompressed_sha256": "1e09ca0c00bed1d44077a437b40e03e4cef73678a7d04486df304f53a3f051c0"
+    },
+    {
+      "command": [
+        "bash",
+        "-n",
+        "tools/tier-rig-bootstrap.sh"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-19T23:22:02.302706+00:00",
+      "elapsed_seconds": 0.01687187497736886,
+      "raw": "check-7.log.gz",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
