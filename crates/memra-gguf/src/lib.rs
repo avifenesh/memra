@@ -35,6 +35,7 @@ pub mod dsv4_decode;
 pub mod dsv4_dspark;
 pub mod dsv4_forward;
 pub mod execution_manifest;
+pub mod expert_banks;
 pub mod hf;
 pub mod hf_mapping;
 pub mod micro_gguf;
