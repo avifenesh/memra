@@ -63,6 +63,7 @@ def platform_identity():
 
 def build(args):
     source = clean_source(args.repo)
+    q.require(source["commit"] == args.expected_head, "build checkout differs from requested source")
     args.out.mkdir(parents=True, exist_ok=False)
     env = environment()
     env.update(CUDA_VISIBLE_DEVICES="", MEMRA_CUDA_ARCH="120a", MEMRA_NVCC=str(args.nvcc.resolve()),
@@ -99,7 +100,8 @@ def live_lease():
     q.require(path.is_file(), "invoke capture through the coordinator's memra-gpu-run wrapper")
     lease = q.json_bytes(path.read_bytes())
     ids = lease["requested_uuids"]
-    q.require(len(ids) == 1 and lease["lock_order"] == sorted(ids), "capture requires exactly one physical card")
+    q.require(len(ids) == 1 and isinstance(ids[0], str) and q.GPU_UUID.fullmatch(ids[0])
+              and lease["lock_order"] == sorted(ids), "capture requires exactly one physical card")
     q.require(os.environ.get("CUDA_VISIBLE_DEVICES") == ",".join(ids), "visible GPU differs from lease")
     ancestors, pid = set(), os.getpid()
     while pid and pid not in ancestors:
@@ -138,6 +140,8 @@ def observe_hardware(ids):
                                             "--format=csv,noheader,nounits"], text=True).strip()
     q.require(ids == [headroom_uuid] and by_uuid[headroom_uuid]["index"] == "0",
               "battery headroom queries NVML GPU0; leased CUDA UUID differs")
+    q.require(all("RTX PRO 6000 Blackwell" in d["name"] and d["compute_cap"] == "12.0"
+                  for d in devices), "capture requires the designated PRO 6000 Blackwell hardware class")
     topology = subprocess.check_output(["nvidia-smi", "topo", "-m"])
     return {"devices": [by_uuid[x] for x in ids], "topology_sha256": q.digest(topology),
             "headroom_query": {"nvml_index": 0, "uuid": headroom_uuid},
@@ -155,6 +159,7 @@ def model_inventory(repo, oracle_dir):
 def capture(args):
     lease = live_lease()
     source = clean_source(args.repo)
+    q.require(source["commit"] == args.expected_head, "capture checkout differs from requested source")
     built = q.json_bytes((args.build / "build.json").read_bytes())
     q.require(q.json_bytes((args.build / "source.json").read_bytes()) == source, "build is for different source")
     q.require(built["exit_code"] == 0 and built["source_before"] == source["inputs_sha256"]
@@ -292,6 +297,7 @@ def main():
     parser.add_argument("--repo", type=Path, default=q.ROOT)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--build", type=Path)
+    parser.add_argument("--expected-head")
     parser.add_argument("--nvcc", type=Path)
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--oracles", type=Path)
@@ -302,10 +308,12 @@ def main():
     args.repo, args.out = args.repo.resolve(), args.out.resolve()
     try:
         q.require(args.jobs > 0, "jobs must be positive")
-        for mode, required in {"build": ("nvcc",), "capture": ("build", "oracles"),
+        for mode, required in {"build": ("nvcc", "expected_head"), "capture": ("build", "oracles", "expected_head"),
                                "seal": ("lease", "oracles"), "bank": ("name",)}.items():
             if args.mode == mode:
                 q.require(all(getattr(args, key) is not None for key in required), f"{mode} requires {required}")
+        if args.expected_head is not None:
+            q.require(q.COMMIT.fullmatch(args.expected_head), "expected-head must be an immutable 40-character commit")
         globals()[args.mode](args)
         return 0
     except (q.GateError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:

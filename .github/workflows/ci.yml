@@ -73,7 +73,9 @@ jobs:
         run: tools/test_ci_change_class.sh
 
       - name: Content-bound release qualification controls (CPU-only)
-        run: python3 tools/test_release_qualification.py
+        run: |
+          python3 tools/test_release_qualification.py
+          python3 -m unittest tools.test_check_hardware_gate
 
       - name: Cache qualification harness regressions
         run: python3 -m unittest discover -s tools -p test_cache_qualification.py

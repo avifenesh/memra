@@ -22,6 +22,7 @@ BINARIES = ("kernel-check", "run-gen", "run-spec", "argmax-margin-probe", "memra
 MANIFESTS = ("tools/kernel-check-27b.cells", "tools/kernel-check-step35.cells")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
+GPU_UUID = re.compile(r"GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\Z")
 
 
 def require(condition, message):
@@ -108,7 +109,7 @@ def source_snapshot(repo, ref="HEAD"):
 def verify_source(source, repo, head):
     require(COMMIT.fullmatch(source["commit"]) and COMMIT.fullmatch(source["tree"]),
             "invalid tested source identity")
-    require(source["files"] and object_digest(source["files"]) == source["inputs_sha256"],
+    require(isinstance(source["files"], dict) and source["files"] and object_digest(source["files"]) == source["inputs_sha256"],
             "source inventory digest mismatch")
     actual = source_snapshot(repo, head)
     changed = sorted(p for p, value in source["files"].items() if actual["files"].get(p) != value)
@@ -176,7 +177,7 @@ class Evidence:
         return path.read_bytes()
 
     def bound(self, reference):
-        require(set(reference) == {"path", "sha256"} and SHA.fullmatch(reference["sha256"]),
+        require(isinstance(reference, dict) and set(reference) == {"path", "sha256"} and SHA.fullmatch(reference["sha256"]),
                 "invalid evidence reference")
         if self.payloads is not None:
             require(self.payloads.get(reference["path"]) == reference["sha256"], "unmanifested evidence reference")
@@ -185,7 +186,9 @@ class Evidence:
         return data
 
     def obj(self, reference):
-        return json_bytes(self.bound(reference))
+        value = json_bytes(self.bound(reference))
+        require(isinstance(value, dict), "evidence metadata must be a JSON object")
+        return value
 
 
 def coverage_module():
@@ -197,7 +200,7 @@ def coverage_module():
 
 def validate_lease(lease, run):
     ids = lease["requested_uuids"]
-    require(ids and len(set(ids)) == len(ids) and all(re.fullmatch(r"GPU-[0-9a-fA-F-]{36}", x) for x in ids),
+    require(ids and len(set(ids)) == len(ids) and all(isinstance(x, str) and GPU_UUID.fullmatch(x) for x in ids),
             "invalid physical GPU set")
     require(lease["lock_order"] == sorted(ids) and lease["lock_files"] ==
             {x: f"/tmp/memra-gpu-locks/{x}.lock" for x in ids}, "lease physical locks mismatch")
@@ -224,6 +227,7 @@ def validate_lease(lease, run):
 
 
 def validate_record(record, evidence, repo, head, binaries=None, models=None, hardware=None):
+    require(isinstance(record, dict), "record must be a JSON object")
     require(record.get("schema") == "memra-release-qualification-v1" and record.get("status") == "qualified",
             "UNQUALIFIED: absent, failed or unsupported qualification record")
     require(isinstance(record.get("payloads"), dict) and record["payloads"], "missing evidence manifest")

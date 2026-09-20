@@ -61,7 +61,7 @@ in command arguments or receipt paths. Numeric launch values are recorded as SHA
 not raw environment dumps. Build is GPU-free and creates a fresh target tree:
 
 ```sh
-python3 tools/qualify-release.py build --out "$BUILD" \
+python3 tools/qualify-release.py build --expected-head "$COMMIT" --out "$BUILD" \
   --nvcc /usr/local/cuda-13.1/bin/nvcc --jobs 8
 ```
 
@@ -77,7 +77,7 @@ qualification stays with its existing gates.
 
 ```sh
 memra-gpu-run --gpus "$GPU0_UUID" --receipt "$LEASE" -- \
-  python3 tools/qualify-release.py capture --build "$BUILD" --out "$RUN" \
+  python3 tools/qualify-release.py capture --expected-head "$COMMIT" --build "$BUILD" --out "$RUN" \
   --oracles /data/models/kernel-oracles
 ```
 
