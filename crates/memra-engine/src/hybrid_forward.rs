@@ -22100,21 +22100,38 @@ impl HybridModel {
             (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
         {
             let n_ff_sh = gate_shexp.out_features();
-            let sg_gate = e.matmul(gate_shexp, zbatch, mrows)?;
-            let sg_up = e.matmul(up_shexp, zbatch, mrows)?;
-            let mut sa = e.zeros(mrows * n_ff_sh)?;
-            Self::ffn_act_lim(
-                e,
-                cfg,
-                &sg_gate,
-                &sg_up,
-                1.0,
-                1.0,
-                lim_shexp,
-                &mut sa,
-                mrows * n_ff_sh,
-            )?;
-            let sh = e.matmul(down_shexp, &sa, mrows)?;
+            // Shared expert per ROW, `m = 1` each (memra#577). One `mrows`-wide matmul over
+            // the stream batch changes the reduction program with the row count (M=2 stays
+            // bit-identical to M=1, M=3 and M=4 do not, same prompt or mixed), so a
+            // stream's bytes depended on how many peers shared the step. `m = 1` per row is
+            // the single-sequence decode chain's own call, exact by construction; lockstep
+            // rows are few (`1..=16`), so the extra launches are not a cost that matters.
+            let mut sh = e.zeros(mrows * n_embd)?;
+            for row in 0..mrows {
+                let mut zrow = e.uninit(n_embd)?;
+                e.copy_view_into(
+                    &mut zrow,
+                    0,
+                    &zbatch.slice(row * n_embd..(row + 1) * n_embd),
+                    n_embd,
+                )?;
+                let sg_gate = e.matmul(gate_shexp, &zrow, 1)?;
+                let sg_up = e.matmul(up_shexp, &zrow, 1)?;
+                let mut sa_row = e.zeros(n_ff_sh)?;
+                Self::ffn_act_lim(
+                    e,
+                    cfg,
+                    &sg_gate,
+                    &sg_up,
+                    1.0,
+                    1.0,
+                    lim_shexp,
+                    &mut sa_row,
+                    n_ff_sh,
+                )?;
+                let sh_row = e.matmul(down_shexp, &sa_row, 1)?;
+                e.copy_into(&mut sh, row * n_embd, &sh_row, n_embd)?;
+            }
             // lockstep rows ARE decode tokens: fused sigmoid-dot per row so batched serving
             // decode matches the single-sequence decode chain bit-for-bit.
             match &m.gate_inp_shexp {
