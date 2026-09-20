@@ -1,5 +1,7 @@
 """Day-eight token and actual-filesystem binding regressions (CPU only)."""
 import copy
+import gzip
+import shutil
 import importlib.util
 import json
 import os
@@ -64,6 +66,26 @@ class StorageBindingTests(unittest.TestCase):
             with patch.object(B, 'storage_binding', return_value=changed):
                 with self.assertRaisesRegex(ValueError, 'changed during'):
                     B.verify_storage_binding(storage)
+
+    def test_archived_active_and_row_receipts_are_integrity_not_qualification(self):
+        paths = [
+            ('research/spill-b-20260919/rented-5090-20260919/day6-active-8192/collector', 'failed'),
+            ('research/spill-c-20260919/rented-5090-20260919/day5/gates/rows-via-tier-collector',
+             'executed-not-qualified'),
+        ]
+        for rel, expected in paths:
+            with self.subTest(path=rel), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)/'cell'
+                shutil.copytree(ROOT/rel, root)
+                for compressed in root.glob('*.gz'):
+                    compressed.with_suffix('').write_bytes(gzip.decompress(compressed.read_bytes()))
+                result = B.validate_cell(root/'CELL.jsonl')
+                self.assertEqual(result['status'], expected)
+                self.assertFalse(result['qualification'])
+                # Archival failed status is immutable; a new active capture uses
+                # the exact refusal token rather than relying on this old status.
+                if expected == 'failed':
+                    self.assertIsNotNone(B.explicit_refusal((root/'command.log').read_text(), 2, False))
 
     def test_capture_binds_command_and_both_cell_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
