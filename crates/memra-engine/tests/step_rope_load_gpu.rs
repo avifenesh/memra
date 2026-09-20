@@ -168,8 +168,9 @@ fn hf_factors_match_explicit_tensor_and_the_omitted_factor_mutation_diverges()
     assert!(!visible.is_empty() && visible.split(',').count() == 1);
     assert_eq!(std::env::var("NVIDIA_TF32_OVERRIDE").as_deref(), Ok("0"));
     let (mut source, _, factors) = fixture()?;
-    let engine = Engine::new(0)?;
-    let hf = logits(&engine, &source, Some(&factors))?;
+    // Engine caches are model-owned: configure_moe_cache_layout must precede lazy
+    // cache construction. Each arm therefore gets and drops its own Engine.
+    let hf = logits(&Engine::new(0)?, &source, Some(&factors))?;
     source.config.step35.as_mut().unwrap().rope_freq_factors = None;
     source.tensors.insert(
         "rope_freqs.weight".into(),
@@ -182,7 +183,7 @@ fn hf_factors_match_explicit_tensor_and_the_omitted_factor_mutation_diverges()
             dtype: GgmlType::F32,
         },
     );
-    let checkpoint = logits(&engine, &source, Some(&factors))?;
+    let checkpoint = logits(&Engine::new(0)?, &source, Some(&factors))?;
     assert_eq!(
         hf.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
         checkpoint
@@ -207,7 +208,7 @@ fn hf_factors_match_explicit_tensor_and_the_omitted_factor_mutation_diverges()
             dtype: GgmlType::F32,
         },
     );
-    let stored = logits(&engine, &source, Some(&full_head))?;
+    let stored = logits(&Engine::new(0)?, &source, Some(&full_head))?;
     assert_eq!(
         hf.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
         stored
@@ -219,7 +220,7 @@ fn hf_factors_match_explicit_tensor_and_the_omitted_factor_mutation_diverges()
     // Diagnostic mutation recreates the old omission; it is never a supported model arm.
     source.tensors.remove("rope_freqs.weight");
     source.config.rope_scaling_hint = None;
-    let omitted = logits(&engine, &source, None)?;
+    let omitted = logits(&Engine::new(0)?, &source, None)?;
     let max_delta = hf
         .iter()
         .zip(omitted)
