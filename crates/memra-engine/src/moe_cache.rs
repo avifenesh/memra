@@ -328,6 +328,8 @@ pub struct MoeSlotCache {
     prewarm_tried: HashSet<u16>,
 
     // --- §D.4 instrumentation ---
+    // Lifetime counter, only for the explicit bank qualification installer.
+    banked_evictions: u64,
     pub hits: u64,
     pub misses: u64,
     pub staged_bytes: u64, // total H2D bytes the cache caused (admit + first-miss transient)
@@ -617,6 +619,7 @@ impl MoeSlotCache {
             per_layer: HashMap::new(),
             dev_rows: HashMap::new(),
             prewarm_tried: HashSet::new(),
+            banked_evictions: 0,
             hits: 0,
             misses: 0,
             staged_bytes: 0,
@@ -743,6 +746,9 @@ impl MoeSlotCache {
 
     fn remove_occupant(&mut self, slot: usize) {
         if let Some(old) = self.occupant[slot].take() {
+            if self.banked.is_some() {
+                self.banked_evictions += 1;
+            }
             self.table.remove(&old);
             self.on_block_evicted(old.layer);
         }
@@ -896,6 +902,14 @@ impl MoeSlotCache {
             return self.admit_banked(id, host_bytes.len(), e);
         }
         self.admit_native(id, host_bytes, e)
+    }
+
+    pub(crate) fn bank_pressure(&self) -> (usize, usize, u64) {
+        (
+            self.slots.len(),
+            self.slots.iter().map(|s| s.len()).sum(),
+            self.banked_evictions,
+        )
     }
 
     pub(crate) fn install_banked(

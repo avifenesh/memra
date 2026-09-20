@@ -1,0 +1,19 @@
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-engine)
+error[E0425]: cannot find function `host_bank_slots` in module `super`
+   --> crates/memra-engine/src/banked_residency/native.rs:247:28
+    |
+247 |         let slots = super::host_bank_slots(host_bytes, max_bytes)?;
+    |                            ^^^^^^^^^^^^^^^ not found in `super`
+    |
+help: consider importing this function
+    |
+  3 + use crate::banked_residency::host_bank_slots;
+    |
+help: if you import `host_bank_slots`, refer to it directly
+    |
+247 -         let slots = super::host_bank_slots(host_bytes, max_bytes)?;
+247 +         let slots = host_bank_slots(host_bytes, max_bytes)?;
+    |
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `memra-engine` (lib) due to 1 previous error
