@@ -21,6 +21,7 @@ content, only addresses; read the target before acting. Paths are relative to th
 
 ## Gates, releases, performance
 
+- Generic spill contracts, CPU schedules and native qualification boundaries -> docs/TESTING.md (Generic spill / tiered KV); docs/decisions/GENERIC-SPILL-INTERFACE-V1.md; research/spill-lead-20260919/
 - Which gate to run, fast-gate vs full battery, hardware-gate receipts -> docs/TESTING.md
 - How to cut a release -> docs/RELEASING.md (version scheme; tools/release-battery.sh over tools/release-roster.tsv; own model REQUIRED, a SKIP renders as refusal)
 - Tracked perf boards, measurement doctrine, refutation history -> docs/PERFORMANCE.md (generated from research/tune-data/current-board.json by tools/update-perf-board.py; edit the board, never the tables)

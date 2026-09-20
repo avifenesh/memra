@@ -1,0 +1,158 @@
+{
+  "source_commit": "11c12dcc4186c9fba02ee00d6f9425e7d6c03348",
+  "kind": "cpu-cross-compile-not-qualified",
+  "checks": [
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "started_utc": "2026-09-19T22:19:45.725434+00:00",
+      "exit_code": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archive_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "name": "mac-check",
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets"
+      ],
+      "started_utc": "2026-09-19T22:19:50.721037+00:00",
+      "exit_code": 0,
+      "raw_sha256": "27ee675a8a2a07bf983b1c998936a58d34abf7f320ac337d13db837868dad6f3",
+      "archive_sha256": "0250dbf0d6f3c493ed2ef826ab414436090f264bb34fe30203b5cb501138f30c"
+    },
+    {
+      "name": "linux-check",
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "started_utc": "2026-09-19T22:20:01.162323+00:00",
+      "exit_code": 0,
+      "raw_sha256": "a2dc98a963409f4816075465060acbd8954b174105e93ea3fd4425f33b8cedc0",
+      "archive_sha256": "8fc695240421af31b2490b192af043974272e29264d59fe7177c2ce2909d31ec"
+    },
+    {
+      "name": "tests",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "started_utc": "2026-09-19T22:20:11.407492+00:00",
+      "exit_code": 0,
+      "raw_sha256": "bd69458d04a4d114b4fdef0c042027ac3aaf02672018f73a012ce7481d8becbc",
+      "archive_sha256": "cb6afb953fa40cab00dd14c569cb969353428ae528e50669f1e1b2b423150aef"
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--no-deps",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_utc": "2026-09-19T22:20:40.903108+00:00",
+      "exit_code": 0,
+      "raw_sha256": "97de8df90395f874dc5819702f2ca63601cbe182f49d01b58ca9275512f50cfb",
+      "archive_sha256": "9556dbb9f0ad2a53976b4c36580e852c0752378bb024413cff0a108a0b862b92"
+    },
+    {
+      "name": "diff",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "started_utc": "2026-09-19T22:20:44.390085+00:00",
+      "exit_code": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archive_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "name": "flags",
+      "argv": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "started_utc": "2026-09-19T22:20:44.559180+00:00",
+      "exit_code": 0,
+      "raw_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+      "archive_sha256": "76188f1d03361812b7b3efde2e8c60c91be50ac36fee5df164ab0a3da3de27f2"
+    },
+    {
+      "name": "docs",
+      "argv": [
+        "bash",
+        "tools/docs-registry-census.sh"
+      ],
+      "started_utc": "2026-09-19T22:20:49.135168+00:00",
+      "exit_code": 0,
+      "raw_sha256": "2c0f0db8a42852955445769133b87341e8d8a80d1d24653880fa04b27aaa8f04",
+      "archive_sha256": "9a7a230f23869460198c3fc3ff1c44c1918f141486bfa81919cd2d5d1216dc36"
+    },
+    {
+      "name": "wire",
+      "argv": [
+        "python3",
+        "crates/memra-tier/tests/contracts/fixture_reference.py",
+        "--check"
+      ],
+      "started_utc": "2026-09-19T22:20:52.296257+00:00",
+      "exit_code": 0,
+      "raw_sha256": "fb7a893b8aba1ae4a5d95898e66b46377c642ee1ae197c76b167a8e781774ef4",
+      "archive_sha256": "8b87a4c2d4d9bd3fac4349a4301d920df6c0efc401233ee6ddbf5d924c5bb217"
+    },
+    {
+      "name": "frozen",
+      "argv": [
+        "git",
+        "diff",
+        "--exit-code",
+        "b3487a03b0ee3f833c1157e7b7d68f2cb35a3843",
+        "--",
+        "crates/memra-tier/src/contracts.rs",
+        "crates/memra-tier/tests/contracts/fixtures.json",
+        "Cargo.toml",
+        "Cargo.lock"
+      ],
+      "started_utc": "2026-09-19T22:20:52.432156+00:00",
+      "exit_code": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "archive_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    }
+  ]
+}

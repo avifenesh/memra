@@ -24,3 +24,13 @@ private receipt metadata; the connection below uses the operator's existing SSH 
   before reporting; nothing counts until it is committed and pushed.
 - Never: touch `/root/artifacts`, `/root/memra-spill` checkout, other lanes' worktrees or receipts; embed
   credentials; run anything on any other host.
+
+## Transport (added 2026-09-20 after intermittent connect timeouts from the operator Mac)
+The lead keeps a persistent SSH ControlMaster to BOX2. Lanes MUST reuse it instead of opening new
+TCP connections (each new connection has been timing out intermittently):
+`ssh -o ControlPath=$HOME/.ssh/cm/box2 -o ControlMaster=no -o BatchMode=yes root@<proxy-host-from-LANE-LOCAL>`
+(the host/port matter only when the socket is absent; with the socket present the connection is
+reused). Check first: `ssh -O check -o ControlPath=$HOME/.ssh/cm/box2 root@<proxy-host>`. For
+`scp`/`rsync`: `-o ControlPath=$HOME/.ssh/cm/box2`. If the socket is gone, report it to the lead
+(who re-establishes it with `ControlMaster=auto ControlPersist=yes`) rather than looping retries.
+A direct-IP path also exists in LANE-LOCAL.md as a fallback.

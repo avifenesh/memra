@@ -61,3 +61,31 @@ Consequently this revision is **not a green integration/release gate**. See
 D's nine-item disposition, executed commands, before/after counts, and unrun native
 surfaces. `StateBundleAdapter` has no cancellation method; adding one is deliberately
 not smuggled into a schedule-only revision.
+
+## Freeze revision v1.2 — additive schedule decision
+
+The v1.1 directed-grant schedule already accepts any `PeerCapacity`; bind it to
+D's exported `peer::test_support::FakePeerCapacity`, not a new trait or a duplicate
+capacity implementation. One injected governor remains authoritative. Add source-
+shared CPU schedules for ReadyView owner/fence identity, logical valid bytes versus
+framed I/O telemetry, immutable BankSource installation (missing, ambiguous and
+mismatched bindings refuse), and KvMaterializer over two opaque record layouts.
+
+`consumer_fenced` denotes an installed consumer dependency, **not consumer
+completion**. Only the native CUDA owner may translate real event/wait observations
+into these capabilities; it must retain source, destination and governor pins until
+all producer, consumer and graph uses retire. Fake-owner checks test this contract's
+identity boundary, never driver truth. See C's
+[ownership mapping](../../research/spill-c-20260919/READYVIEW-OWNERSHIP.md).
+
+The PR #518 logical-byte correction is retained: `Completion::require` checks
+`valid_bytes` exactly; `io_bytes` is telemetry, not a second logical-length gate.
+Framing must neither cause false short-I/O nor hide genuinely short valid payloads.
+PR #519's catalog/GC ownership and pre-publication verification fixes remain intact.
+The historical v1.1 failure report above is not a claim those fixes are still absent.
+
+No frozen trait, persisted structure or wire fixture is changed by this revision:
+**WIRE_VERSION stays 1**. No dependency, new MEMRA read, CUDA/FFI, numerical program,
+or default is added. A's io_uring proposal remains deferred until the bounded-pread
+baseline is measured. CPU integration and native qualification are separate gates;
+a dry-run union cannot authorize deployment or any new-model work.
