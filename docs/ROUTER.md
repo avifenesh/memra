@@ -40,3 +40,5 @@ content, only addresses; read the target before acting. Paths are relative to th
 
 - Tuning knees, measurement laws, model quirk cards, serving lessons, gate craft -> ../darklanes/agent-knowledge/gpu/ (index: ../darklanes/agent-knowledge/gpu/README.md; grep-first ID lines: `rg '^LAW:|^TRAP:|^GATE:|^VERDICT:|^KNEE:|^QUIRK:'`)
 - Lane-to-verdict map of past research lanes -> ../darklanes/research/INDEX.md
+
+- Tokenizer normalization, added-token ordering and explicit HF-to-GGUF input programs -> docs/TOKENIZER-PROGRAM.md

@@ -874,11 +874,14 @@ never a copy) and `transfer_source_retirement` (`retire_source`, default body
 [v1.3 freeze](../research/spill-lead-20260919/FREEZE-V1.3.md).
 Linux cross-target check is compilation only, not Linux syscall execution.
 
-### Native conformance: `tier-transfer-gate`, and what is HELD
+### Native conformance: `tier-transfer-gate` (v1 through canonical v1.3)
 
 `tier-transfer-gate` (`crates/memra-engine/src/bin/tier_transfer_gate.rs`) runs the shared
-schedules against the native `CudaTransfers` backend and prints one verdict line per
-schedule, only after the schedule function returns:
+schedules from `memra_tier::conformance` against the native `CudaTransfers` backend and prints
+one verdict line per schedule, only after the schedule function returns. It calls the frozen
+canonical v1.3 functions directly (`v1::transfer_source_retirement(...)`,
+`v1::device_hand_back(&mut fixture)`); the additive day-7 cases stay as extra lines and are not
+the canonical evidence:
 
 ```text
 PASS v1 transfer_cancel native CUDA
@@ -889,27 +892,21 @@ PASS v1.1 acceptance exhaustive native mixed batch; rejected sibling blocks publ
 PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence
 PASS additive source retirement Busy while source consumer bound; host destination survives source release
 PASS native governor zero after controlled drain
+PASS v1.3 transfer_source_retirement native CUDA
+PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement
+PASS v1.3 device_hand_back native CUDA
 ```
 
-All eight lines were recorded on one RTX PRO 6000 Blackwell through the collector
-(`research/spill-a-20260919/day8/RESULTS.md`, disposition `executed-not-qualified`), so
-v1, v1.1 and v1.2 pass natively. **Canonical v1.3 is HELD in this tree.** The gate imports
-`memra_tier::conformance` but never calls `device_hand_back` or
-`transfer_source_retirement`; the "additive source retirement" line above is an older
-additive test, not the frozen schedule. Lane A's day 8 record states the binding
-limitation: "`CudaTransfers::pin_graph` retains one ticket-wide graph pin, and
-`retire_source` refuses while that pin remains. The canonical source-retirement schedule
-requires source retirement while an independent destination graph lifetime stays live. The
-D2H implementation also retains a taken host destination as a whole-ticket consumer until
-that lease drops; the frozen schedule checks destination lifetime after acknowledgement."
-Its disposition: "The pending native bindings are a blocker to **all-v1.3 PASS**, not a
-failure of the observed byte roundtrips." Lane A's later day 9 record on
-`lane/spill-a-20260919` (`day9/RESULTS.md`, native source `1adf2be3d`) reports
-`PASS v1.3 transfer_source_retirement native CUDA` and
-`PASS v1.3 device_hand_back native CUDA` from per-side graph pins; that lane is not
-integrated here, and the label in this tree moves only when it is and this gate calls the
-canonical functions. HELD is not a failure and not a waiver: passing the CPU slice does not
-discharge the native cells the freeze lists as required.
+plus one `PASS native D2H-H2D roundtrip bytes=… byte_exact=true source_freed_host_live=true` line per
+size (4 KiB to 256 MiB). All lines were recorded on one RTX PRO 6000 Blackwell through the collector
+(`research/spill-a-20260919/day9/RESULTS.md`, native source `1adf2be3d`, disposition
+`executed-not-qualified`), so v1, v1.1, v1.2 **and canonical v1.3** pass natively. What the binding
+took (`research/spill-a-20260919/V13-BINDING.md`): per-side retention (`pin_source_graph` /
+`pin_destination_graph` replace the ticket-wide `pin_graph`), a destination lease that keeps its
+governor charge past `acknowledge`, and a taken pinned destination that shares the physical
+allocation with the ticket until acknowledgement. The frozen schedules were not changed. Native
+PASS here is development correctness on one card class; it does not discharge the serving-shape
+cells the freeze lists as required.
 
 ### `kv-tier-gate`: fitting-context KV tiering under one numeric program
 
@@ -934,28 +931,41 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   eager baseline`); the gate inspects names only, values never enter a receipt.
 - `--kv-allocator pooled|vmm` (default `pooled`) is a gate-only door with
   **decide-by: 2026-10-04** ([decision record](decisions/KV-PHYSICAL-RECLAIM.md)). The gate
-  swaps the still-empty planes of an ordinary `Cache::new` for VMM-backed planes before the
-  first token; the serving path never constructs a VMM plane, and the kernels and addresses
-  are unchanged. Any other value refuses:
+  constructs the cache directly with VMM-backed planes
+  (`Cache::new_with_allocator(&e, &model.cfg, args.context, memra_kv::KvAllocator::Vmm)`) and
+  records `construction=direct` / `empty_plane_swap=false` in `allocation-construction.txt`; the
+  kernels and addresses are unchanged. Containment is a call-site policy, not a structural
+  property: `memra-kv` exposes `Cache::new_with_allocator` and `KvAllocator` publicly and
+  `impl KvDev for Engine` implements `alloc_vmm_u8`, so any caller *could* construct VMM planes;
+  today only this gate does, and the decide-by decides whether that surface is promoted or
+  deleted. Any other value refuses:
   `REFUSED: unknown KV allocator (expected pooled or vmm)`. It is a CLI door, so it has no
   `docs/FLAGS.md` row; the decide-by lives in the decision record.
 - `--reclaim-diagnostic` requires `--case active --tiers host --kv-allocator vmm`
   (`REFUSED: reclaim diagnostic requires active VMM host mode`). After demote it frees a
   never-mapped spare VA reservation, re-reads free VRAM, calls `cuCtxSynchronize` and
-  re-reads again, and appends `residual_bytes`, `residual_class` and
+  re-reads again, and also runs a mapped-VA probe over every demoted plane
+  (`KvPlane::probe_demoted_va_release`: unmap the retained chunks, `cuMemAddressFree`,
+  re-reserve the same base, remap), writing `mapped-va-probe.tsv` and appending
+  `mapped_va_release_delta_bytes`, `mapped_unmap_delta_bytes`, `mapped_va_roundtrip_equal`,
+  `free_after_mapped_va_probe_bytes`, `residual_bytes`, `residual_class` and
   `free_after_restore_bytes` to `residual-diagnostic.txt`.
 - Receipts: `BASELINE.txt` (first line `BASELINE_CAPTURED`) or `ACTIVE.txt` (first line
   `ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS` or
   `ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation
   comparison pending; not G1 PASS`), plus `active-reclaim.txt` carrying `reclaim_observed`,
-  `reclaim_exact_equal`, `residual_bytes`, `residual_class` (`none`, `unclassified`, one of
-  the two probe-derived classes, or `not-applicable-pooled`) and `g1_reclaim_qualified`
-  (`true`, `false`, or `not-applicable-pooled`: a pooled run can never publish the G1 label,
-  `kv_tier_gate/active.rs`). The pure criterion is `kv_tier_gate/reclaim_contract.rs`. The
-  binary never prints a G1 verdict; the lane's offline replay
-  (`research/spill-b-20260919/verify-day9.py`) compares the receipt with the frozen baseline
-  bundle and assigns `ACTIVE-8K G1 PASS` only when criterion (a) to (d) of the decision
-  record hold and the residual is classified.
+  `reclaim_exact_equal`, `residual_bytes`, `residual_class` (`none`, `unclassified`,
+  `va-reservation-page-table`, `spare-VA-release-sensitive-driver-accounting`,
+  `deferred-driver-release-completed-by-context-sync`, or `not-applicable-pooled`) and
+  `g1_reclaim_qualified` (`true`, `false`, or `not-applicable-pooled`: a pooled run can never
+  publish the G1 label, `kv_tier_gate/active.rs`). The pure criterion is
+  `kv_tier_gate/reclaim_contract.rs`; on top of criteria (a) to (d) the gate applies the day-10
+  tightening (e): `g1_reclaim_qualified=true` requires `residual_bytes=0`
+  (`active.rs`: `reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0`),
+  so a *classified* nonzero residual is recorded but does not qualify. The binary never prints a G1
+  verdict; the lane's offline replay (`research/spill-b-20260919/verify-day10.py`, which enforces
+  the same zero-residual rule) compares the receipt with the frozen baseline bundle and assigns
+  `ACTIVE-8K G1 PASS` only when (a) to (e) hold.
 - Refusal token contract (lead ruling): a refusal is a final console line
   `REFUSED: <reason>`, exit 2. `cli::diagnostic` leaves `REFUSED:` lines unwrapped and
   prefixes every other error with `kv-tier-gate: `; the collector matches
@@ -964,9 +974,10 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   the diagnostic for every error; classification comes from the console token, not the file.
 
 Status on 2026-09-20: `ACTIVE-8K G1 PASS` on the rented RTX 5090
-(`research/spill-b-20260919/DAY9.md`) and on one RTX PRO 6000 Blackwell (`DAY10.md` on
-`lane/spill-b-20260919`, pending integration). 32k on both cards: bit-identical, one
-granule (2,097,152 B) of residual unclassified, not G1 PASS. B's verifier prints that
+(`research/spill-b-20260919/DAY9.md`) and twice on one RTX PRO 6000 Blackwell (`DAY10.md`:
+empty-plane swap, then direct construction with 34 VMM planes). 32k on both cards:
+bit-identical, one granule (2,097,152 B) of residual unclassified (the mapped-VA probe
+returned 0 B, so VA-reservation release is not the mechanism), not G1 PASS. B's verifier prints that
 label with a dash; the wording here follows the writing rule.
 
 ### Experts-via-tier gate (`run-gen` / `run-spec --experts-via-tier`)
@@ -1007,7 +1018,7 @@ rejection to `REFUSED: experts-via-tier host bank budget cannot hold one expert 
 exit 2 (collector status `refused`); any other failure stays `failed`. Evidence:
 `research/spill-c-20260919/DAY8.md` (rented RTX 5090, 8 GiB and 4 GiB banks, ON and OFF
 controls, every cell `MATCH` / `SELF-CONSISTENCY PASS` with eviction engaged) and `DAY9.md`
-on `lane/spill-c-20260919` (one RTX PRO 6000 Blackwell, pending integration). All cells are
+(one RTX PRO 6000 Blackwell: default and 8 GiB banks, ON and OFF, same verdicts). All cells are
 N=1 and `executed-not-qualified`; no support state or default moves on them.
 
 ### `h2d-probe --copies`

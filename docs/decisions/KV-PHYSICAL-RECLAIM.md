@@ -2,7 +2,7 @@
 
 **Status:** gate-only door (`kv-tier-gate --kv-allocator vmm`, default `pooled`), decide-by 2026-10-04.
 Not a serving default. Lane: `research/spill-b-20260919/{DAY8.md,DAY9.md,RECLAIM-DESIGN.md}` (rented RTX 5090)
-and `DAY10.md` on `lane/spill-b-20260919` (one RTX PRO 6000 Blackwell, pending integration).
+and `DAY10.md` (one RTX PRO 6000 Blackwell).
 
 **G1 as of 2026-09-20:** `ACTIVE-8K G1 PASS` on the rented RTX 5090 and on one RTX PRO 6000 Blackwell.
 32k on both cards: bit-identical, one-granule residual unclassified, not G1 PASS. The 8k pooled control on
@@ -49,17 +49,25 @@ change; recorded in `RECLAIM-DESIGN.md`, not implemented.
 ## G1 reclaim criterion (fixed before the 32k label, applies to every run)
 (a) observed free-VRAM rise >= released chunk bytes minus one allocation granule; (b) `free_restored ==
 free_before` exactly; (c) demote and restore deltas identical; (d) any residual is *classified* by a
-diagnostic, never inferred. The gate prints the raw equality field and the residual bytes and class
-(`kv_tier_gate/reclaim_contract.rs`, `kv_tier_gate/active.rs`); a pooled run publishes
-`g1_reclaim_qualified=not-applicable-pooled` and can never carry the label.
+diagnostic, never inferred. **Tightening (e), day 10:** `g1_reclaim_qualified=true` additionally requires
+`residual_bytes=0` (`kv_tier_gate/active.rs`: `reclaimed = vmm_granularity != 0 && reclaim_observed &&
+observation.residual == 0`; `research/spill-b-20260919/verify-day10.py` enforces the same). A classified
+nonzero residual is recorded with its class and bytes but does not qualify; lifting (e) for a specific class
+needs a lead ruling backed by evidence on both card classes. The gate prints the raw equality field and the
+residual bytes and class (`kv_tier_gate/reclaim_contract.rs`); a pooled run publishes
+`g1_reclaim_qualified=not-applicable-pooled` and can never carry the label. (e) is a tightening, never a
+relaxation, of (a) to (d).
 
 ## Scope
-The gate swaps freshly allocated, still-empty planes for VMM planes before the first token; bootstrap still
-goes through ordinary `Cache::new`, so the pooled reservation stays. No footprint, admission, or serving
-claim. `unsafe` is confined to the driver FFI plus one documented `upgrade_device_ptr` inside a private
-`KvPlane` owner whose `Drop` always `leak`s the slice before unmap/release/address-free. Lane B's day 10
-branch adds direct construction (`Cache::new_with_allocator`, 34 VMM / 0 pooled planes at position 0, 8k
-G1 PASS rerun); it is lane evidence pending integration, not a change to this tree.
+The gate constructs the cache directly with VMM planes (`Cache::new_with_allocator(…, KvAllocator::Vmm)`;
+34 VMM / 0 pooled planes at position 0 on the 8k rerun, `construction=direct`, `empty_plane_swap=false`); the
+earlier empty-plane swap is retained only as history in `DAY9.md`. No footprint, admission, or serving claim.
+`unsafe` is confined to the driver FFI plus one documented `upgrade_device_ptr` inside a private `KvPlane`
+owner whose `Drop` always `leak`s the slice before unmap/release/address-free. **Surface this door owns
+(what the decide-by promotes or deletes):** `KvAllocator` + `Cache::new_with_allocator` in `memra-kv`,
+`KvDev::alloc_vmm_u8` on `Engine`, `KvPlane` (`crates/memra-kv`), the `vmm` arm and its receipts in
+`kv_tier_gate/active.rs`, and the lane cells. Containment is a call-site policy (only the gate constructs
+VMM planes today), not a type-level guarantee.
 
 ## Decide-by 2026-10-04
 Promote to the naked default for the tiered materializer only with the 32k residual classified on the
