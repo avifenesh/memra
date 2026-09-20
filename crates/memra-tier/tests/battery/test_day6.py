@@ -33,7 +33,8 @@ class CollectorTests(unittest.TestCase):
     def test_refusals_require_terminal_diagnostic_and_exit_two(self):
         for text, code, expected in [
             ('REFUSED: unsupported route\n', 2, 'refused'),
-            ('noise\nError: operation not supported\n', 2, 'refused'),
+            ('noise\nError: operation not supported\n', 2, 'failed'),
+            ('kv-tier-gate: REFUSED: unsupported route\n', 2, 'refused'),
             ('REFUSED: unsupported route\n', 9, 'failed'),
             ('REFUSED: unsupported route\ntrailer\n', 2, 'failed'),
             ('Error: diagnostic only\n', 0, 'executed-not-qualified'),
