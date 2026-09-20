@@ -144,7 +144,9 @@ def calibrate(args):
         if fastest_ns >= target_ns:
             return copies
         B.require(copies < 100000, 'calibration capped before required visit duration')
-        copies = min(100000, max(copies+1, math.ceil(copies*target_ns/fastest_ns)))
+        # Count scaling is approximate: launch/warmup overhead shrinks per copy.
+        # Headroom avoids asymptotic under-target retries as clocks settle.
+        copies = min(100000, max(copies+1, math.ceil(1.25*copies*target_ns/fastest_ns)))
     raise ValueError('calibration did not converge; no rehearsal/scored samples run')
 
 

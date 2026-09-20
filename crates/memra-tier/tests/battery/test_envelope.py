@@ -45,10 +45,18 @@ class EnvelopeTests(unittest.TestCase):
                 return [{'sample': {'wall_ns': 1_000_000*copies}},
                         {'sample': {'wall_ns': 2_000_000*copies}}]
             with patch.object(E, 'visit', side_effect=samples):
-                self.assertEqual(E.calibrate(args), 350)
+                self.assertEqual(E.calibrate(args), 438)
             receipt = json.loads((args.out/'calibration.json').read_text())
             self.assertTrue(receipt['discarded'])
             self.assertEqual(len(receipt['attempts']), 2)
+
+    def test_calibration_converges_with_fixed_launch_overhead(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = SimpleNamespace(out=Path(temp), correctness_only=True)
+            def samples(_args, phase, attempt, order, copies):
+                return [{'sample': {'wall_ns': 20_000_000 + copies*1_000_000}}]
+            with patch.object(E, 'visit', side_effect=samples):
+                self.assertGreaterEqual(E.calibrate(args), 330)
 
     def test_calibration_refuses_insufficient_copy_cap(self):
         with tempfile.TemporaryDirectory() as temp:
