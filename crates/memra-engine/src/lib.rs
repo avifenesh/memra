@@ -125,6 +125,8 @@ pub mod spec;
 /// caller-tagged emit lines so banked receipts keep their grep shape. No CUDA deps
 /// beyond the stream drains at phase boundaries.
 pub mod spec_phase;
+/// Owner-stream CUDA `TransferEngine` (memra-tier v1.3) used by the tier qualification gates.
+pub mod tier_transfer;
 pub mod tp;
 pub mod tp_ar;
 pub mod tp_expert_split;

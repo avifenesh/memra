@@ -7,10 +7,7 @@ mod active;
 mod capture_contract;
 #[path = "kv_tier_gate/cli.rs"]
 mod cli;
-// Gate-local binding until the lead installs the library module fragment.
-#[allow(dead_code)]
-#[path = "../tier_transfer.rs"]
-mod tier_transfer;
+use memra_engine::tier_transfer;
 
 use memra_engine::{Engine, forward::argmax, hybrid::HybridModel};
 use memra_gguf::{GgufFile, model_plan::ModelPlan};
