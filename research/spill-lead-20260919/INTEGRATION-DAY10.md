@@ -184,10 +184,32 @@ server, tier, kv, gguf, all-targets, Linux target, `DOCS_RS=1`: `rc=0` · `check
 `ROUTER.md lines=44 (cap 60)` · collector pytest `85 passed, 32 subtests passed` · `perf board is up to date` ·
 `git diff --check rc=0`. Target dir was warm (fmt to diff-check in 59 s).
 
-5090 `tools/local-ci.sh` correctness stage on `d5c747fb1`: started 20:36:41Z behind `/tmp/memra-5090.lock`
-(`integration-day10/integ7-local-ci-5090/`); result appended below when it finishes. Coverage on this rig per the
-integ6 run: run-gen/run-spec/VERIFY-GATE/prime-gate/accept-gate SKIP (models absent); the argmax and K=1..8 evidence
-for C's files is C's own target-card cells (`research/spill-c-20260919/`).
+5090 `tools/local-ci.sh` on `d5c747fb1` (20:36:41Z to 20:49:46Z, `/tmp/memra-5090.lock`,
+`integration-day10/integ7-local-ci-5090/`): `kernel-check: ALL GREEN (109 cells, 10 skipped)` · `prime-gate: SKIP`,
+`run-spec K=1..8: SKIP`, `run-gen/VERIFY-GATE/spec: SKIP`, `12B run-gen/VERIFY-GATE: SKIP` (models absent on this rig)
+· `decode-batch-gate config B=8: ALL GREEN (9B NVFP4)`, `strict B=4 equalized: ALL GREEN (9B NVFP4)`, same two
+lines `(9B Q8_0)` · `ALL GREEN: graph-warmup-stress gate (10 cycles + canary)` · `decode-dc-gate: PASS` ·
+`graph-decode-gate: PASS` · `graph-session-gate: ALL GREEN` · `correctness stage: GREEN` · then
+`serve-smoke: 6 failed`, `serve-smoke FAIL`, `rc=1`: the plain arm's `/models lists the model` passed and every
+generation request returned a non-JSON body (`json.decoder.JSONDecodeError: Expecting value`; `FAIL: chat
+non-stream`, `chat stream`, `/v1/completions`, `greedy determinism`, `concurrency (0/3)`, `long generation`), while
+the cache-metering arm right after it passed (`cache-meter-gate: 0 failed`). Concurrent GPU state during the plain
+arm: a second `memra-server` (pid 2024269, 5058 MiB) from another session's worktree `wt-fix-379-suffix`
+(`lane/fix-carried-suffix-prime-20260920`, the #379 hit-gate fix) was resident on the card; it was gone by 20:50Z.
+The plain arm's server stderr was overwritten by the next arm (`/tmp/serve-smoke.log` is reused), so the failure
+cause is "died with a co-tenant, stderr lost", not a classified error. serve-stress and spec-on-cache-hit did not
+run in this invocation (the script exits at the first smoke failure).
+Rerun of `tools/serve-smoke.sh` alone on the same binaries, no co-tenant (20:51:21Z to 20:51:37Z,
+`serve-smoke-rerun.log`, `serve-smoke-rerun-window.txt`): `ok: chat non-stream (text + usage + finish_reason)`,
+`ok: chat stream (SSE chunks + [DONE])`, `ok: /v1/completions`, `ok: greedy determinism (2 runs identical)`,
+`ok: 3 concurrent chats`, `ok: long generation (>=100 tok)`, `cache-meter-gate: 0 failed`, spec/gemma4/Q35 arms
+SKIP (models absent), `serve-smoke: 0 failed`, `rc=0`. The argmax and K=1..8 evidence for C's files stays C's own
+target-card cells (`research/spill-c-20260919/`); this rig cannot run them.
+
+`origin/lane/spill-c-device-day7` deleted 20:42Z (content banked in `research/spill-c-20260919/DAY7-DEVICE-PUBLISH.diff`
+per C's DAY7.md; the old session left the deletion to this session). Local `hold/spill-b-docs-20260920`
+(`6ca65010d`: a B day-10 docs draft by this session's B agent, parked when the Mac's live B lane was noticed)
+abandoned and deleted: B's own sealed `7d213551a` carries the day-10 ledger and the allocator injection landed in code.
 
 Push of integ7: perf-ci freshness gate refuses (the merge of #572 via origin integ6 is the newest crates/ commit);
 pushed with the announced, logged `MEMRA_SKIP_PERF_CI=1` (row in `.git/memra-gate-skips.log` names the engine files)
