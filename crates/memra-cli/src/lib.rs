@@ -1214,13 +1214,29 @@ fn inspect_gguf_tokenizer(gguf: &GgufFile) -> Result<TokenizerEvidence, String> 
         hasher.update([0]);
         hasher.update(token.as_bytes());
     }
+    let legacy_digest = hasher.finalize();
+    let digest = if let Some(program) = gguf.metadata.get(memra_tokenizer::GGUF_INPUT_PROGRAM_KEY) {
+        let text = program.as_str().ok_or_else(|| {
+            format!(
+                "{} must be a JSON string",
+                memra_tokenizer::GGUF_INPUT_PROGRAM_KEY
+            )
+        })?;
+        // The tokenizer contract must validate the same declaration as execution.
+        memra_tokenizer::Tokenizer::from_gguf(gguf)?;
+        let mut hasher = Sha256::new();
+        hasher.update(b"memra-tokenizer-input-program-v1\0");
+        hasher.update(legacy_digest);
+        hasher.update((text.len() as u64).to_le_bytes());
+        hasher.update(text.as_bytes());
+        hasher.finalize()
+    } else {
+        // Preserve the identity of existing artifacts without this extension.
+        legacy_digest
+    };
     Ok(TokenizerEvidence {
         source: TokenizerSource::GgufMetadata,
-        tokenizer_sha256: hasher
-            .finalize()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect(),
+        tokenizer_sha256: digest.iter().map(|byte| format!("{byte:02x}")).collect(),
         template: Some(TemplateEvidence {
             sha256: hex_sha256(template.as_bytes()),
             bytes: template.len(),
@@ -2092,6 +2108,98 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gguf_tokenizer_identity_binds_validated_input_program() {
+        use memra_gguf::MetaValue;
+        use memra_tokenizer::{GGUF_INPUT_PROGRAM_KEY, Tokenizer};
+
+        let path = std::env::temp_dir().join(format!(
+            "memra-cli-input-program-{}.gguf",
+            std::process::id()
+        ));
+        memra_gguf::micro_gguf::write_glm_dsa_micro(&path, 0x554).unwrap();
+        let mut gguf = GgufFile::open(&path).unwrap();
+        gguf.metadata.insert(
+            "tokenizer.ggml.pre".into(),
+            MetaValue::String("qwen2".into()),
+        );
+        // Include each byte piece needed by both normalized and original input.
+        let pieces = ["e", "Ì", "ģ", "Ã", "©", "<x>"];
+        gguf.metadata.insert(
+            "tokenizer.ggml.tokens".into(),
+            MetaValue::Array(
+                pieces
+                    .iter()
+                    .map(|s| MetaValue::String((*s).into()))
+                    .collect(),
+            ),
+        );
+        gguf.metadata.insert(
+            "tokenizer.ggml.token_type".into(),
+            MetaValue::Array([1, 1, 1, 1, 1, 4].into_iter().map(MetaValue::U32).collect()),
+        );
+        gguf.metadata.insert(
+            "tokenizer.ggml.add_bos_token".into(),
+            MetaValue::Bool(false),
+        );
+        let absent = inspect_gguf_tokenizer(&gguf).unwrap().tokenizer_sha256;
+        let mut legacy = Sha256::new();
+        legacy.update(b"gpt2\0qwen2");
+        for piece in pieces {
+            legacy.update([0]);
+            legacy.update(piece.as_bytes());
+        }
+        assert_eq!(absent, format!("{:x}", legacy.finalize()));
+
+        let mut identities = vec![absent.clone()];
+        for (normalizer, strip) in [
+            ("null", false),
+            (r#"{"type":"NFC"}"#, false),
+            (r#"{"type":"NFC"}"#, true),
+        ] {
+            let program = format!(
+                r#"{{"version":1,"normalizer":{normalizer},"added_tokens":[{{"id":5,"content":"<x>","special":false,"normalized":true,"lstrip":{strip},"rstrip":false,"single_word":false}}]}}"#
+            );
+            gguf.metadata
+                .insert(GGUF_INPUT_PROGRAM_KEY.into(), MetaValue::String(program));
+            identities.push(inspect_gguf_tokenizer(&gguf).unwrap().tokenizer_sha256);
+            let tokenizer = Tokenizer::from_gguf(&gguf).unwrap();
+            assert_eq!(
+                tokenizer.encode("e\u{301}", false),
+                if normalizer == "null" {
+                    vec![0, 1, 2]
+                } else {
+                    vec![3, 4]
+                }
+            );
+            assert_eq!(tokenizer.encode(" <x>", false).last(), Some(&5));
+        }
+        identities.sort();
+        identities.dedup();
+        assert_eq!(
+            identities.len(),
+            4,
+            "absent, identity, NFC and changed flags must differ"
+        );
+        for invalid in [
+            MetaValue::U32(1),
+            MetaValue::String(r#"{"version":2,"normalizer":null,"added_tokens":[]}"#.into()),
+            MetaValue::String(
+                r#"{"version":1,"normalizer":{"type":"NFKC"},"added_tokens":[]}"#.into(),
+            ),
+        ] {
+            gguf.metadata.insert(GGUF_INPUT_PROGRAM_KEY.into(), invalid);
+            assert!(inspect_gguf_tokenizer(&gguf).is_err());
+        }
+        gguf.metadata.remove(GGUF_INPUT_PROGRAM_KEY);
+        assert_eq!(
+            inspect_gguf_tokenizer(&gguf).unwrap().tokenizer_sha256,
+            absent
+        );
+        drop(gguf);
+        std::fs::remove_file(path).unwrap();
+    }
 
     /// Red arm for the template contract, crosswise BOTH ways. Each contract accepts
     /// exactly one artifact shape and refuses the other; without this, flipping a pack to

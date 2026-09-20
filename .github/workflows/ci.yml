@@ -199,6 +199,8 @@ jobs:
           MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
+      - name: Model inspection CLI contracts (including Step RoPE storage extents)
+        run: cargo test -p memra-cli
       - name: Indexed MLA and KDA memory fixture contracts (CPU-only)
         run: tools/test-model-memory-fixture.sh
 

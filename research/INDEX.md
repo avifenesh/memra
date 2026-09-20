@@ -511,6 +511,7 @@ spill-c-20260919 | 8/4 GiB banked experts-via-tier ON/OFF all MATCH + SELF-CONSI
 spill-d-20260919 | CAPTURE ARCHIVES MATCH: 14 cells; 12 executed-not-qualified; 1 failed command; 1 refused command; qualification=false | spill-d-20260919/DAY9-VERIFICATION.md
 spill-f-20260919 | NVMe VM spend NO-GO until in-guest block ancestry is provable; h2d-probe --copies N=1 plumbing cell, 32 visits, no medians | spill-f-20260919/NVME-DECISION.md
 spill-lead-20260919 | First gate passed — ACTIVE-8K G1 PASS; G0/G2–G7 unchanged; 32k pending residual classification; session handed over 2026-09-20 | spill-lead-20260919/HANDOVER-20260920.md
+
 qwen2-tokenizer-20260920 | Literal Qwen2 split/BPE parity passes in HF and GGUF loaders. Full raw-input parity for a tokenizer declaring NFC remains blocked by the separately tracked normalization omission. | qwen2-tokenizer-20260920/RESULTS.md
 
 release-coverage-546-20260920 | Native release battery PASS at a0a27c3f: 103 kernel cells executed, all 10 required, 7 named skips; Ornith and Qwen3.8 calibrated argmax and exact K=1..8 pass. | release-coverage-546-20260920/RESULTS.md
