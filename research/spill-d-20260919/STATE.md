@@ -1,14 +1,14 @@
 # Session D day 10 handoff
 - Lane `lane/spill-d-20260919`; integ5 merged/pushed `9f849978bac72cf2a4b608873a49341eafb7ab56`.
-- G2 FINISHED exit0, lock released; scored raw+summary pushed `7bcc27ba1` (200 samples, 5AB+5BA, all >=497ms).
-- **Running BOX3:** tmux `spill-d-smoke-day10`, bounded wait for `/tmp/memra-gpu.lock` (no D lock held as of 16:02 UTC).
-- Smoke receipts `/root/spill-receipts/d-day10/smoke`; console `d-day10/smoke-console.log`; exit `d-day10/smoke.exit`.
-- G2 receipts `/root/spill-receipts/d-day10/g2` safely archived under `rented-pro6000-20260920/` here; 140 hashes match.
-- Own remote clone `/root/wt-d`; never modify `/root/memra-spill`. Native probe/smoke built at merged tip above.
-- Profile review/tests fixed missing pro-single schema enum; sanitized 31-step bootstrap retained, `527373c3a`.
-- G2 runner/protocol `44840aed3`; summarizer `08d1a7dc4`; summary red tests `76723d258`.
-- Full checks `fcb9fd161`: 83 tests PASS retry; initial Darwin killpg PermissionError retained (no suppression/fix).
-- Next: inspect smoke exit, sync/hash its closed receipts, then `--validate` D archive and all BOX3 receipts.
-- Global validation 16:02 UTC refused `interrupted/invalid CELL journal`; another active cell, not D G2 failure.
-- Then rerun final checks (now 85 tests), write DAY10-VERIFICATION.md, commit/push all state.
-- No decision needed. Single target-class development evidence, not multi-rig/default/serving qualification.
+- **No D job running on BOX3**; tmux G2/smoke sessions closed; no D lock held.
+- G2 finished exit0; raw+summary pushed `7bcc27ba1`: 200 samples, N10/arm (5AB+5BA), all >=497ms, 37–41C/600W.
+- Smoke finished exit0; pushed `ac5a8badc`: loopback PASS both host-bounce flag positions; not cross-card staging.
+- Native receipts `/root/spill-receipts/d-day10/` copied under `rented-pro6000-20260920/` here; G2/smoke 140+21 hashes match.
+- Own remote clone `/root/wt-d` remains clean for integration; never modify reference `/root/memra-spill`.
+- Profile/schema fix+tests `527373c3a`; tool lock/match/memory/stub/wrapper were correct.
+- Bootstrap status successful, 31 steps: 30 exit0 + allowed initial pkg-config absence; not 31 all-green.
+- Final local checks: `day10/checks-final/`, all14 exit0, 85 tests PASS; first Darwin killpg failure retained (cause unknown).
+- D archive `--validate`: cells2, failed0, refused0; global BOX3 still refuses an incomplete peer journal.
+- Next lead step: rerun `python3 tools/tier-battery.py --validate /root/spill-receipts` after all peer collectors close.
+- Full report/table: DAY10-VERIFICATION.md / G2-RESULTS.md. No further D GPU work required.
+- About 0.9 agent-hours this session; active lane awaits integration, not main/release/serving qualification.
