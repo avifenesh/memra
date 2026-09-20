@@ -115,3 +115,10 @@ pub use revision_v11::*;
 mod revision_v12;
 #[allow(unused_imports)]
 pub use revision_v12::*;
+
+// v1.3 adds optional source retirement and concrete-owner hand-back schedules.
+#[allow(dead_code)]
+#[path = "revision_v13.rs"]
+mod revision_v13;
+#[allow(unused_imports)]
+pub use revision_v13::*;
