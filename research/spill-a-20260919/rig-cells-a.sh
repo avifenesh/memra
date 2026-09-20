@@ -2,6 +2,12 @@
 # Correctness/qualification launcher, not a performance receipt by itself.
 # Every command is raw-logged before parsing. Unsupported A2/M1 commands FAIL.
 set -euo pipefail
+# Isolated one-cell development mode: collector owns the lock, sync after each call.
+# Existing proven-NVMe qualification mode below keeps its original fail-closed policy.
+if [[ ${1:-} == --box2 ]]; then
+    shift
+    exec python3 "$(dirname "$0")/box2_cells.py" "$@"
+fi
 usage() {
     echo "usage: $0 <existing-local-NVMe-directory> [--approved-non-serving] [--dry-run [--stub executable]]" >&2
     exit 2

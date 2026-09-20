@@ -1,0 +1,14 @@
+.....F...................................................
+======================================================================
+FAIL: test_raw_timeout_and_unknown_cause_preserved (test_collector.CollectorTests.test_raw_timeout_and_unknown_cause_preserved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/tiyuvta/wt-spill-d/crates/memra-tier/tests/battery/test_collector.py", line 94, in test_raw_timeout_and_unknown_cause_preserved
+    self.assertIn('before timeout',log.read_text())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'before timeout' not found in ''
+
+----------------------------------------------------------------------
+Ran 57 tests in 30.916s
+
+FAILED (failures=1)

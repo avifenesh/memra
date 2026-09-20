@@ -1,0 +1,18 @@
+{
+  "runtime_commit": "fd49a668ca30a63808c7bad6e7612c38445c3b82",
+  "storage_label": "overlay, development, not spill speed",
+  "cell": "build",
+  "command": [
+    "cargo",
+    "build",
+    "--release",
+    "-p",
+    "memra-engine",
+    "--bin",
+    "storage-bench",
+    "-j",
+    "16"
+  ],
+  "qualification": false,
+  "started_utc": "2026-09-19T22:06:17Z"
+}
