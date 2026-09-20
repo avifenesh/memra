@@ -1,0 +1,10 @@
+   Compiling memra-engine v0.138.0 (/root/lane/memra/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 2m 35s
+BUILD_RC=0
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.89s
+== 26B tickinv (expect named refusal)
+probe rc=1
+Error: "gemma plan without the chunked-prime receipt (see docs/EXECUTION-SURFACES.md column chunked_prime): continuation prime at pos 1024 refused — prime the full prompt in one call or decode tokenwise"
+== 12B tickinv (expect INVARIANT)
+tickinv verdict: TICK-INVARIANT — prefill logits bit-identical at every per-tick prefill budget
+V3_DONE

@@ -51,6 +51,19 @@ pub struct Surfaces {
     pub glm5_spec_verify: bool,
     /// `PIPELINE`: stage-split trunk with boundary state transport.
     pub pipeline: bool,
+    /// `CHUNKED_PRIME`: the GENERIC `prime_cache` chunked, continuation-capable prime program
+    /// (`prime_chunk_ranges` splits inside a call; `cache.pos > 0` resumes across calls) is
+    /// implemented for this operation AND its chunk/tick invariance is gated at model scale
+    /// (`tools/chunk-invariance-gate.sh`, `concat-prime-probe tickinv`). Operations with their
+    /// own prime program (HyperConnections via `prime_cache_hyper`, PLE via `gemma4_e4b_prime`)
+    /// say no here, and the driver primes them monolithically. A row flips only on the model-
+    /// scale receipt: `GemmaParallelMoeResidual` was MEASURED chunk-dependent first (memra#562:
+    /// the gemma MoE arm routed prefill through the m-dependent cuBLAS matmul, prefill logits
+    /// moved O(1) with the chunk size, first divergence at row 0) and became yes when the router
+    /// moved to `router_gemv` and the 26B read EXACT on chunkinv and tickinv. Consulted today
+    /// only inside the gemma family; widening it to a global predicate needs the per-op
+    /// receipts first.
+    pub chunked_prime: bool,
 }
 
 impl Surfaces {
@@ -65,6 +78,7 @@ impl Surfaces {
         glm5_spec_draft: false,
         glm5_spec_verify: false,
         pipeline: false,
+        chunked_prime: false,
     };
 
     pub const fn carried_prime(self) -> Self {
@@ -121,6 +135,12 @@ impl Surfaces {
             ..self
         }
     }
+    pub const fn chunked_prime(self) -> Self {
+        Self {
+            chunked_prime: true,
+            ..self
+        }
+    }
 
     /// True when no surface is implemented for the operation.
     pub const fn is_none(self) -> bool {
@@ -132,11 +152,12 @@ impl Surfaces {
             || self.mtp_spec_verify
             || self.glm5_spec_draft
             || self.glm5_spec_verify
-            || self.pipeline)
+            || self.pipeline
+            || self.chunked_prime)
     }
 
     /// Column order of the rendered table and of [`Surfaces::flags`].
-    pub const COLUMNS: [&'static str; 9] = [
+    pub const COLUMNS: [&'static str; 10] = [
         "carried_prime",
         "decode_eager",
         "decode_batch",
@@ -146,10 +167,11 @@ impl Surfaces {
         "glm5_spec_draft",
         "glm5_spec_verify",
         "pipeline",
+        "chunked_prime",
     ];
 
     /// The row as booleans in [`Surfaces::COLUMNS`] order.
-    pub const fn flags(self) -> [bool; 9] {
+    pub const fn flags(self) -> [bool; 10] {
         [
             self.carried_prime,
             self.decode_eager,
@@ -160,6 +182,7 @@ impl Surfaces {
             self.glm5_spec_draft,
             self.glm5_spec_verify,
             self.pipeline,
+            self.chunked_prime,
         ]
     }
 }
@@ -181,7 +204,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_verify()
             .glm5_spec_draft()
             .glm5_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::RmsNorm => Surfaces::NONE
             .carried_prime()
             .decode_eager()
@@ -191,7 +215,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_verify()
             .glm5_spec_draft()
             .glm5_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::FullAttention => Surfaces::NONE
             .carried_prime()
             .decode_eager()
@@ -199,12 +224,14 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .decode_graph()
             .mtp_spec_draft()
             .mtp_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::SlidingWindowAttention => Surfaces::NONE
             .decode_batch()
             .mtp_spec_draft()
             .mtp_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::LatentMlaAttention => Surfaces::NONE
             .glm5_spec_draft()
             .glm5_spec_verify()
@@ -219,7 +246,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .decode_batch()
             .decode_graph()
             .mtp_spec_draft()
-            .mtp_spec_verify(),
+            .mtp_spec_verify()
+            .chunked_prime(),
         OperationKind::KimiDeltaNet => Surfaces::NONE
             .glm5_spec_draft()
             .glm5_spec_verify()
@@ -229,12 +257,14 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .decode_batch()
             .decode_graph()
             .mtp_spec_draft()
-            .mtp_spec_verify(),
+            .mtp_spec_verify()
+            .chunked_prime(),
         OperationKind::SeparateAttentionGate => Surfaces::NONE
             .decode_batch()
             .mtp_spec_draft()
             .mtp_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::DenseMlp => Surfaces::NONE
             .carried_prime()
             .decode_eager()
@@ -243,7 +273,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_draft()
             .mtp_spec_verify()
             .glm5_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::MoeMlp => Surfaces::NONE
             .decode_batch()
             .decode_graph()
@@ -251,12 +282,14 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_verify()
             .glm5_spec_draft()
             .glm5_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::SoftmaxRouter => Surfaces::NONE
             .decode_batch()
             .decode_graph()
             .mtp_spec_draft()
-            .mtp_spec_verify(),
+            .mtp_spec_verify()
+            .chunked_prime(),
         OperationKind::SigmoidRouter => Surfaces::NONE
             .decode_batch()
             .decode_graph()
@@ -264,7 +297,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_verify()
             .glm5_spec_draft()
             .glm5_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::SharedMlp => Surfaces::NONE
             .decode_batch()
             .decode_graph()
@@ -272,7 +306,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_verify()
             .glm5_spec_draft()
             .glm5_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::SiluActivation => Surfaces::NONE
             .carried_prime()
             .decode_eager()
@@ -280,13 +315,15 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .decode_graph()
             .mtp_spec_draft()
             .mtp_spec_verify()
-            .pipeline(),
-        OperationKind::GeluTanhActivation => Surfaces::NONE.decode_batch(),
+            .pipeline()
+            .chunked_prime(),
+        OperationKind::GeluTanhActivation => Surfaces::NONE.decode_batch().chunked_prime(),
         OperationKind::SwiGluClampedActivation => Surfaces::NONE
             .decode_batch()
             .mtp_spec_draft()
             .mtp_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::SwiGluPreClampedActivation => Surfaces::NONE
             .glm5_spec_draft()
             .glm5_spec_verify()
@@ -299,9 +336,10 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_draft()
             .mtp_spec_verify()
             .glm5_spec_draft()
-            .pipeline(),
-        OperationKind::GemmaResidual => Surfaces::NONE.decode_batch(),
-        OperationKind::GemmaParallelMoeResidual => Surfaces::NONE.decode_batch(),
+            .pipeline()
+            .chunked_prime(),
+        OperationKind::GemmaResidual => Surfaces::NONE.decode_batch().chunked_prime(),
+        OperationKind::GemmaParallelMoeResidual => Surfaces::NONE.decode_batch().chunked_prime(),
         OperationKind::HyperConnections => Surfaces::NONE.glm5_spec_verify().pipeline(),
         OperationKind::KvState => Surfaces::NONE
             .carried_prime()
@@ -310,12 +348,14 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .decode_graph()
             .mtp_spec_draft()
             .mtp_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::SlidingKvState => Surfaces::NONE
             .decode_batch()
             .mtp_spec_draft()
             .mtp_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::RecurrentState => Surfaces::NONE
             .carried_prime()
             .decode_batch()
@@ -324,7 +364,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_verify()
             .glm5_spec_draft()
             .glm5_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::LatentKvState => Surfaces::NONE
             .glm5_spec_draft()
             .glm5_spec_verify()
@@ -333,7 +374,9 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         OperationKind::MtpFusion => Surfaces::NONE.mtp_spec_draft().glm5_spec_draft().pipeline(),
         OperationKind::MtpHead => Surfaces::NONE.mtp_spec_draft().glm5_spec_draft().pipeline(),
         OperationKind::PipelineBoundary => Surfaces::NONE.pipeline(),
-        OperationKind::LogitsSoftcap => Surfaces::NONE.decode_eager().decode_batch(),
+        OperationKind::LogitsSoftcap => {
+            Surfaces::NONE.decode_eager().decode_batch().chunked_prime()
+        }
         OperationKind::LogitsMask => Surfaces::NONE
             .carried_prime()
             .decode_eager()
@@ -341,7 +384,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .decode_graph()
             .mtp_spec_draft()
             .mtp_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         OperationKind::OutputProjection => Surfaces::NONE
             .carried_prime()
             .decode_eager()
@@ -351,7 +395,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
             .mtp_spec_verify()
             .glm5_spec_draft()
             .glm5_spec_verify()
-            .pipeline(),
+            .pipeline()
+            .chunked_prime(),
         // ---- no tuned surface implemented (reference executor only) ----
         OperationKind::AudioLogMel
         | OperationKind::AudioStridedConv

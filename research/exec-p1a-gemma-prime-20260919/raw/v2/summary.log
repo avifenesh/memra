@@ -1,0 +1,17 @@
+   Compiling toml v0.8.23
+   Compiling memra-lanes v0.138.0 (/root/lane/memra/crates/memra-lanes)
+    Finished `release` profile [optimized] target(s) in 3m 07s
+BUILD_RC=0
+test result: ok. 280 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.02s
+test result: ok. 711 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 5.09s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.77s
+== gemma-4-12b-it-qat-q4_0
+chunk-invariance-gate: PASS (raw log /root/lane/receipts/v2-gemma-4-12b-it-qat-q4_0/chunkinv.log)
+tickinv verdict: TICK-INVARIANT — prefill logits bit-identical at every per-tick prefill budget
+== gemma-4-31B_q4_0-it
+chunk-invariance-gate: PASS (raw log /root/lane/receipts/v2-gemma-4-31B_q4_0-it/chunkinv.log)
+tickinv verdict: TICK-INVARIANT — prefill logits bit-identical at every per-tick prefill budget
+== gemma-4-26B_q4_0-it
+chunk-invariance-gate: PASS (raw log /root/lane/receipts/v2-gemma-4-26B_q4_0-it/chunkinv.log)
+tickinv verdict: *** TICK-DEPENDENT: prefill logits move with the per-tick prefill budget (MEMRA_PREFILL_TICK / _JUDGE / _HARVEST) ***
+V2_DONE
