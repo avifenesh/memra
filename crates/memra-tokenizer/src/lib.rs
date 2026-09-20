@@ -15,6 +15,9 @@ pub mod json;
 mod unicode;
 mod unicode_data;
 
+#[cfg(test)]
+mod qwen2_tests;
+
 pub use chat::apply_chat_template_str;
 
 use memra_gguf::{GgufFile, MetaValue};
@@ -33,8 +36,8 @@ const MAX_TOKENIZER_SPARSE_FACTOR: usize = 16;
 const MAX_TOKENIZER_SPARSE_SLACK: usize = 4096;
 const QWEN35_PRETOKENIZE_REGEX: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
 /// llama.cpp `LLAMA_VOCAB_PRE_TYPE_QWEN2`. Differs from qwen35 in exactly two places —
-/// `\p{L}+` vs `[\p{L}\p{M}]+` and `[^\s\p{L}\p{N}]+` vs `[^\s\p{L}\p{M}\p{N}]+` — both of
-/// which the qwen35 state machine covers (see the `"qwen2"` arm in `PreSplit::resolve`).
+/// `\p{L}+` vs `[\p{L}\p{M}]+` and `[^\s\p{L}\p{N}]+` vs `[^\s\p{L}\p{M}\p{N}]+`.
+/// These classes require their own split: folding marks into letters changes BPE token IDs.
 const QWEN2_PRETOKENIZE_REGEX: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
 /// The three `Split` steps of the `deepseek-v3` (DEEPSEEK3_LLM) pre-tokenizer Sequence, in the
 /// order HF serializes them: `\p{N}{1,3}` digit grouping, an isolated CJK/kana pass, then the
@@ -132,8 +135,10 @@ impl std::error::Error for UnknownPretokenizer {}
 /// tokenizer can be in unless the operator asked for it via the env opt-out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreSplit {
-    /// `unicode::split_qwen35` — serves both `qwen35` and `qwen2`.
+    /// `unicode::split_qwen35` — letter runs include combining marks.
     Qwen35,
+    /// `unicode::split_qwen2` — literal Qwen2 classes, with one token per digit.
+    Qwen2,
     /// `unicode::split_deepseek_v3` — DeepSeek-V3 and the Step-3.5/3.7-Flash family.
     DeepseekV3,
     /// `unicode::split_glm4` — the zai-org GLM-4.x / GLM-5.x line (llama.cpp
@@ -165,7 +170,8 @@ impl PreSplit {
         // reverse) is a metadata disagreement, and picking either side of it silently is how a
         // wrong split gets chosen for a right-looking model.
         match (pre, spm_style) {
-            ("qwen35" | "qwen2", false) => Ok(PreSplit::Qwen35),
+            ("qwen35", false) => Ok(PreSplit::Qwen35),
+            ("qwen2", false) => Ok(PreSplit::Qwen2),
             ("deepseek-v3", false) => Ok(PreSplit::DeepseekV3),
             ("glm4", false) => Ok(PreSplit::Glm4),
             ("gemma4", true) => Ok(PreSplit::Spm),
@@ -1053,9 +1059,8 @@ impl Tokenizer {
         // this" case was resolved (and refused) at load, so it cannot arrive here. Adding a
         // `PreSplit` variant must fail to compile until this match handles it.
         let words: Vec<String> = match self.split {
-            // qwen35 also serves qwen2: llama.cpp's qwen2 regex differs from qwen35's only in
-            // [\p{L}\p{M}]+ vs \p{L}+, which the qwen35 state machine covers.
             PreSplit::Qwen35 => unicode::split_qwen35(text),
+            PreSplit::Qwen2 => unicode::split_qwen2(text),
             // Step-3.5/3.7-Flash and the DeepSeek-V3 family
             // (llama.cpp LLAMA_VOCAB_PRE_TYPE_DEEPSEEK3_LLM). Materially different from qwen2:
             // \p{N}{1,3} digit grouping, an isolated CJK/kana pass, and \p{P}/\p{S}-only runs.
@@ -1495,7 +1500,7 @@ mod pretokenizer_tests {
         );
         assert_eq!(
             PreSplit::resolve_with("qwen2", false, false),
-            Ok(PreSplit::Qwen35)
+            Ok(PreSplit::Qwen2)
         );
         assert_eq!(
             PreSplit::resolve_with("deepseek-v3", false, false),
@@ -2058,7 +2063,7 @@ mod hf_tests {
     }
 
     /// The `qwen2` regex differs from qwen35 by two character classes and must be identified as
-    /// qwen2, not silently mistaken for qwen35 (they share a state machine but not an id).
+    /// qwen2, not silently mistaken for qwen35 (combining marks produce different splits).
     #[test]
     fn hf_dir_identifies_qwen2_regex() {
         let json = TOKENIZER_JSON.replace(
@@ -2079,8 +2084,8 @@ mod hf_tests {
         assert_eq!(tok.pre(), "qwen2");
         assert_eq!(
             tok.split(),
-            PreSplit::Qwen35,
-            "qwen2 rides the qwen35 split"
+            PreSplit::Qwen2,
+            "qwen2 must execute its declared regex"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2131,11 +2136,11 @@ mod hf_tests {
         .unwrap();
         let qtok = Tokenizer::from_hf_dir(&qwen_dir).expect("from_hf_dir(qwen2 control)");
         assert_eq!(qtok.pre(), "qwen2");
-        assert_eq!(qtok.split(), PreSplit::Qwen35);
+        assert_eq!(qtok.split(), PreSplit::Qwen2);
         assert_ne!(tok.split(), qtok.split());
         // the two splits disagree on a 4-digit run — the reason the variant exists
         assert_eq!(unicode::split_glm4("1234"), ["123", "4"]);
-        assert_eq!(unicode::split_qwen35("1234"), ["1", "2", "3", "4"]);
+        assert_eq!(unicode::split_qwen2("1234"), ["1", "2", "3", "4"]);
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&qwen_dir);
     }

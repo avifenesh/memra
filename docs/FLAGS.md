@@ -2428,6 +2428,12 @@ These configure release tooling, not model dispatch. CPU development is explicit
 | `MEMRA_SKIP_PERF_CI` | Retired input: `=1` now refuses the push. It cannot skip content-bound qualification. Historical perf data remains research evidence. |
 | `MEMRA_HARDWARE_GATE` | `generic` uses content-bound release qualification. `step-pro` additionally requires the existing Step-specific source/model/topology receipt; development mode cannot claim it. |
 | `MEMRA_STEP_PRO_RECEIPT` | Path to the existing additional Step PRO receipt; never a replacement for the generic full input/build record. |
-| `MEMRA_GPU_LEASE_FILE` | Native qualification capture only: attestation from the coordinator's per-card wrapper. Exact CUDA UUID, physical NVML GPU0 UUID, live owner ancestry and canonical exclusive FLOCK must agree; absent or mismatched lease refuses GPU execution. |
+| `MEMRA_GPU_LEASE_FILE` | Unset unless the coordinator's `memra-gpu-run` wrapper supplies the held per-card lease JSON: wrapper/child PID, requested physical GPU UUIDs, stable lock order and canonical lock-file mapping. Qualification tooling verifies the live owner and exclusive FLOCK before native tests. Generic release capture additionally requires CUDA visibility to match the physical NVML GPU0 UUID. An absent or mismatched lease refuses execution; this is not an engine behavior switch. |
 
 See [Release qualification](RELEASE-QUALIFICATION.md).
+
+### Per-card qualification context
+
+`tools/qualify-model-device-memory.py` requires and verifies the `MEMRA_GPU_LEASE_FILE`
+context above for its requested physical-card set before native tests. Generic release
+capture has the additional GPU0 restriction described in [Release qualification](RELEASE-QUALIFICATION.md).

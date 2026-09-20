@@ -1,0 +1,178 @@
+[
+  {
+    "dialect": "chat",
+    "cache_regime": "short",
+    "result": "PASS",
+    "usage": {
+      "nonstream": {
+        "prompt_tokens": 25,
+        "completion_tokens": 8,
+        "total_tokens": 33,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.077524672
+      },
+      "true": {
+        "prompt_tokens": 25,
+        "completion_tokens": 8,
+        "total_tokens": 33,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.076967294
+      },
+      "absent": {
+        "prompt_tokens": 25,
+        "completion_tokens": 8,
+        "total_tokens": 33,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.076875962
+      },
+      "false": {
+        "prompt_tokens": 25,
+        "completion_tokens": 8,
+        "total_tokens": 33,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.076866955
+      }
+    },
+    "comparison": "all usage fields except per-request elapsed_s"
+  },
+  {
+    "dialect": "chat",
+    "cache_regime": "cached",
+    "result": "PASS",
+    "usage": {
+      "nonstream": {
+        "prompt_tokens": 905,
+        "completion_tokens": 8,
+        "total_tokens": 913,
+        "prompt_tokens_details": {
+          "cached_tokens": 905
+        },
+        "elapsed_s": 0.051934802
+      },
+      "true": {
+        "prompt_tokens": 905,
+        "completion_tokens": 8,
+        "total_tokens": 913,
+        "prompt_tokens_details": {
+          "cached_tokens": 905
+        },
+        "elapsed_s": 0.051927067
+      },
+      "absent": {
+        "prompt_tokens": 905,
+        "completion_tokens": 8,
+        "total_tokens": 913,
+        "prompt_tokens_details": {
+          "cached_tokens": 905
+        },
+        "elapsed_s": 0.051945682
+      },
+      "false": {
+        "prompt_tokens": 905,
+        "completion_tokens": 8,
+        "total_tokens": 913,
+        "prompt_tokens_details": {
+          "cached_tokens": 905
+        },
+        "elapsed_s": 0.051922809
+      }
+    },
+    "comparison": "all usage fields except per-request elapsed_s"
+  },
+  {
+    "dialect": "completions",
+    "cache_regime": "short",
+    "result": "PASS",
+    "usage": {
+      "nonstream": {
+        "prompt_tokens": 13,
+        "completion_tokens": 8,
+        "total_tokens": 21,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.12297516
+      },
+      "true": {
+        "prompt_tokens": 13,
+        "completion_tokens": 8,
+        "total_tokens": 21,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.122126134
+      },
+      "absent": {
+        "prompt_tokens": 13,
+        "completion_tokens": 8,
+        "total_tokens": 21,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.122142244
+      },
+      "false": {
+        "prompt_tokens": 13,
+        "completion_tokens": 8,
+        "total_tokens": 21,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.12232642
+      }
+    },
+    "comparison": "all usage fields except per-request elapsed_s"
+  },
+  {
+    "dialect": "completions",
+    "cache_regime": "cached",
+    "result": "PASS",
+    "usage": {
+      "nonstream": {
+        "prompt_tokens": 893,
+        "completion_tokens": 8,
+        "total_tokens": 901,
+        "prompt_tokens_details": {
+          "cached_tokens": 893
+        },
+        "elapsed_s": 0.051961492
+      },
+      "true": {
+        "prompt_tokens": 893,
+        "completion_tokens": 8,
+        "total_tokens": 901,
+        "prompt_tokens_details": {
+          "cached_tokens": 893
+        },
+        "elapsed_s": 0.051910546
+      },
+      "absent": {
+        "prompt_tokens": 893,
+        "completion_tokens": 8,
+        "total_tokens": 901,
+        "prompt_tokens_details": {
+          "cached_tokens": 893
+        },
+        "elapsed_s": 0.051905096
+      },
+      "false": {
+        "prompt_tokens": 893,
+        "completion_tokens": 8,
+        "total_tokens": 901,
+        "prompt_tokens_details": {
+          "cached_tokens": 893
+        },
+        "elapsed_s": 0.051945582
+      }
+    },
+    "comparison": "all usage fields except per-request elapsed_s"
+  }
+]

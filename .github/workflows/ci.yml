@@ -84,6 +84,9 @@ jobs:
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
 
+      - name: Per-card native qualification runner controls
+        run: python3 tools/test_qualify_model_device_memory.py
+
       # The flags census is a gate, so its own coverage needs a gate. v0.94.0 found
       # MEMRA_ALLOW_UNKNOWN_PRETOKENIZER invisible to check-flags on two independent counts
       # (crate outside runtime_dirs, const-indirected read); nothing ran the fix's tests, so
@@ -194,6 +197,9 @@ jobs:
           MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
+      - name: Indexed MLA and KDA memory fixture contracts (CPU-only)
+        run: tools/test-model-memory-fixture.sh
+
       # memra-lanes is CUDA-free and was outside every unit suite, so the lane admission
       # policy and the streaming-audio scheduler had NO caller in CI: the audio red arms
       # (a batch-1 per-lane drive shedding at c4, a short probe that cannot see it) would
