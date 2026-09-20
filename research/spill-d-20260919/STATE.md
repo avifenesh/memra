@@ -1,0 +1,13 @@
+# Session D day 10 handoff
+- Lane: `lane/spill-d-20260919`; integ5 merged and pushed as `9f849978bac72cf2a4b608873a49341eafb7ab56`.
+- Nothing running on BOX3; no D collector, tmux session, or GPU lock held.
+- Own clone `/root/wt-d`; do not modify reference `/root/memra-spill`.
+- Native release `h2d-probe` + `pp-transport-smoke` build passed at merged source above (3m03s).
+- Build receipts: `/root/spill-receipts/d-day10/build`, copied to `rented-pro6000-20260920/build/` here.
+- Reviewed pro-single match/memory/stub/wrapper/lock: correct; fixed missing runs.schema.json rig enum.
+- Added three Python profile tests (plan/schema, actual lock/refusal, bootstrap dry-run/red controls); all pass.
+- Sanitized successful 31-step bootstrap copied to `rented-pro6000-20260920/bootstrap/BOOTSTRAP.json`.
+- Next: implement committed G2 runner + protocol; calibrate >=250ms then 5 AB + 5 BA per size/direction, all under one collector lock.
+- Coordinate quiet window through lead; bounded lock wait <=45min, no bypass; socket reuse only.
+- Then collector pp-transport-smoke, validate all D BOX3 receipts, full checks and DAY10-VERIFICATION.md.
+- No decision needed; G2 authorized. Not yet G2 evidence, not multi-rig or board qualification.
