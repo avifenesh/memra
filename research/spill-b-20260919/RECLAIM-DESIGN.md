@@ -51,7 +51,7 @@ No allocator door has been introduced by the diagnosis.
 
 ## Candidate physical-reclaim designs
 
-### Fixed-VA CUDA VMM (only if diagnosis requires it)
+### Fixed-VA CUDA VMM (selected by diagnosis; implemented at f3a3247a)
 
 Reserve each plane's virtual range once using `cuMemAddressReserve`. Query device
 VMM support and allocation granularity; refuse explicitly if either cannot be
@@ -63,14 +63,17 @@ checksum verification before publication. No token or graph may execute while
 any required range is suspended. Unknown completion quarantines ownership.
 
 The numerical kernels, strides, encodings and request program do not change.
-Admission accounts rounded physical bytes, not merely logical bytes. No VMM
+The transfer governor accounts rounded physical bytes, not merely logical bytes.
+The gate replaces freshly allocated empty cache planes before any token executes;
+unused pooled bootstrap reservation can remain. Direct VMM allocation inside
+Cache construction and serving admission are not yet integrated. No VMM
 allocation is freed with `cudaFree[Async]`. A private `KvPlane` owns the mapping
 and its cudarc operand; Drop consumes the operand with `CudaSlice::leak` before
 unmap/release/address-free. The lead authorizes the single documented unsafe
 `upgrade_device_ptr` constructor in that owner, in addition to CUDA FFI calls.
 The VMM slice must never escape as an independently owned `CudaSlice`.
 
-If implemented, the gate-only typed door is `--kv-allocator vmm`, default
+The implemented gate-only typed door is `--kv-allocator vmm`, default
 `pooled`, **decide-by: 2026-10-04**. No `MEMRA_*` read or shared FLAGS edit.
 Absence of proof leaves it unqualified; a negative/no-go receipt deletes the door.
 
@@ -101,3 +104,14 @@ The gate suspends **128 tokens before** the requested final context; this is why
 nominal 8k/32k prefix arithmetic is not its expected physical-release count.
 A different queried G must produce a newly recorded calculation, never silently
 pretend that 2 MiB is the device contract.
+
+## Native 8k VMM evidence
+
+At `f3a3247a027ca2f36bff2cf194669712f564c76b`, the native query returns
+G=2,097,152 B. The 8064-token suspension releases exactly **201,326,592 B**:
+free VRAM **17,613,651,968 → 17,814,978,560 → 17,613,651,968 B**.
+All 32 planes restore at their original VA; all frozen continuation bytes match.
+Verdict: **ACTIVE-8K G1 PASS**. Raw receipt: `rented-5090-20260919/day9-vmm-8192/`.
+Per-plane physical capacity, valid bytes, granularity and VA are in `vmm-planes.tsv`.
+Rounded capacity is 301,989,888 B, including 100,663,296 B of retained edge/unused
+capacity chunks. No total-footprint or performance improvement is inferred.
