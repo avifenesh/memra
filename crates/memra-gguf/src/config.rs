@@ -3257,6 +3257,18 @@ impl HfConfig {
             .object("vision_config")
             .and_then(|v| v.string("model_type"))
             .as_deref()
+            == Some("perception_encoder")
+        {
+            // Step's perception encoder has no executable Memra vision plan. Its width/layers
+            // keys are not Gemma's hidden_size/num_hidden_layers: filling those defaults would
+            // invent a different tower. This removes that invented program, not source assets;
+            // the captured config and complete shard census retain the declared vision surface.
+            // Text-only qualification must not be presented as vision qualification.
+            cfg.vision = None;
+        } else if top
+            .object("vision_config")
+            .and_then(|v| v.string("model_type"))
+            .as_deref()
             == Some("gemma4_unified_vision")
         {
             // Gemma-4 12B "Unified" is ENCODER-FREE: raw image patches (48px) and audio
