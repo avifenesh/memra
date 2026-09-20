@@ -1,0 +1,40 @@
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 24111 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+loaded gemma4 (48 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|turn>user
+You are a terse assistant. Answer in one short sentence.
+
+FACTS: copies overlap with compute; pinned buffers bound host memory; bytes per token set the budget.
+
+user: Why does overlapping copies with compute matter?
+assistant: 
+
+<think>
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *rt sentence.
+    *   Input Facts: "copies overlap with compute;
+user: How do pinned buffers relate to that?
+assistant:<turn|>
+<|turn>model
+<|channel>thought
+<channel|>
+prompt text: "You are a terse assistant. Answer in one short sentence.\n\nFACTS: copies overlap with compute; pinned buffers bound host memory; bytes per token set the budget.\n\nuser: Why does overlapping copies with compute matter?\nassistant: \n\n<think>\nThinking Process:\n\n1.  **Analyze the Request:**\n    *rt sentence.\n    *   Input Facts: \"copies overlap with compute;\nuser: How do pinned buffers relate to that?\nassistant:"
+prompt tokens: [2, 105, 2364, 107, 3048, 659, 496, 17514, 16326, 236761, 25685, 528, 886, 2822, 13315, 236761, 108, 62753, 236773, 236787, 16258, 28981, 607, 16333, 236793, 69700, 68378, 4470, 4253, 6571, 236793, 17234, 810, 8369, 1076, 506, 7715, 236761, 108, 2364, 236787, 8922, 1677, 48490, 16258, 607, 16333, 4217, 236881, 107, 111457, 236787, 236743, 108, 236820, 36345, 236813, 107, 120474, 12364, 236787, 108, 236770, 236761, 138, 1018, 115863, 506, 16499, 53121, 107, 140, 236829, 2776, 13315, 236761, 107, 140, 236829, 139, 4661, 51901, 236787, 623, 171772, 28981, 607, 16333, 236793, 107, 2364, 236787, 2088, 776, 69700, 68378, 23194, 531, 600, 236881, 107, 111457, 236787, 106, 107, 105, 4368, 107, 100, 45518, 107, 101]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 8192 ml_len 16 -> 32 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 8192 -> 16384 ml_len 32 -> 64 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 16384 -> 32768 ml_len 64 -> 128 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 32768 -> 65536 ml_len 128 -> 256 (retired kept, zero=false)
+prefill argmax=218121  decode argmax=218121  logit maxdiff=1.249e0  MATCH
+batched-prime argmax=218121  tokenwise argmax=218121  logit maxdiff=1.534e0  MATCH
+prefill 112 tok in 0.0309s = 3625.2 tok/s (pp112)
+generated 17 tokens in 0.095s = 178.14 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.038s) [stop: Eos]
+tokens: [218121, 68378, 9369, 82956, 6571, 29181, 684, 10678, 506, 39937, 531, 2802, 4253, 6571, 5467, 236761, 106]
+OUTPUT TEXT: "Pinned buffers enable asynchronous memory transfers by allowing the GPU to access host memory directly.<turn|>"
+--- generated text ---
+Pinned buffers enable asynchronous memory transfers by allowing the GPU to access host memory directly.<turn|>
