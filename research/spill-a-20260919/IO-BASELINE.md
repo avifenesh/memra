@@ -81,6 +81,27 @@ bounded positioned-reader worker, not just this isolated synchronous syscall
 probe. Preserve the same bytes, chunk sizes, cache states, binary and device
 conditions. Correctness ON/OFF and raw failures are mandatory before timing.
 
+### Numerical screening targets (decision inputs, not scored thresholds)
+
+Using the observed **O_DIRECT cold** N=1 rows only to size the experiment, a
+5% throughput improvement on the same 64 MiB read pass would mean:
+
+| Chunk | Observed pread MiB/s (N=1) | Illustrative io_uring minimum MiB/s (+5%) | Equivalent maximum read-call sum, ms |
+| --- | ---: | ---: | ---: |
+| 1 MiB | 1215.751 | 1276.539 | 50.135 |
+| 16 MiB | 3335.625 | 3502.406 | 18.273 |
+
+These targets are arithmetic projections (rate × 1.05; time ÷ 1.05), **not an
+io_uring measurement or a go verdict**. Re-measure both pread and io_uring on the
+same box/window at each chunk size with cold host-cache preparation and exact
+bytes, **five AB plus five BA pairs (N≥5 per order)**, raw failures/hashes and
+250 ms telemetry. The real threshold is ≥1.05× the fresh pread control, not the
+historical absolute number above. Require consistent direction in both orders;
+a failure at either chunk size is no-go for a generic replacement. Passing the
+syscall screen alone is insufficient: the ≥5% composed storage-to-compute gain,
+≤2% serving-tail regression, correctness, and measured headroom gates above still
+apply. A flat/negative/unsafe candidate loses its exclusive door in that lane.
+
 N=1 syscall numbers alone do not establish headroom or justify a dependency.
 Still required: native worker + CUDA consumer baseline, verified storage-route
 ancestry for an NVMe claim, same-window candidate measurements, queue/CPU/storage
