@@ -33,6 +33,18 @@ prompt tokens and any speculative acceptance fields) before `[DONE]`. Absent/fal
 preserves the legacy stream byte shape: usage appears on the choices-bearing finish
 chunk, not on content chunks. Failed streams keep their error + `[DONE]` ending,
 without fabricating a successful terminal usage chunk.
+## Token-id stops on chat and completions
+`POST /v1/chat/completions` and `POST /v1/completions` accept optional
+`stop_token_ids: [u32]` (default `[]`, at most 16 entries). A longer list or an id
+outside the loaded model's vocabulary returns HTTP 400 `invalid_request_error`
+with `param: "stop_token_ids"`. Vocabulary validation follows `prompt_ids` when
+model vocabulary metadata is unknown.
+Matching uses the raw sampled/accepted id **before detokenization**. The first
+matching id ends generation with `finish_reason: "stop"`; that id and any later
+ids in its speculative burst are neither emitted nor included in
+`usage.completion_tokens`. Explicit token stops take precedence over EOS (ordinary
+EOS accounting is unchanged when not explicitly listed). This applies to streaming
+and non-streaming responses. String `stop` remains independently supported.
 
 ## `/v1/messages`: Anthropic Messages API
 
