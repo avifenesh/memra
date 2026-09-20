@@ -1,0 +1,71 @@
+{
+  "family": "gemma",
+  "segments": {
+    "initial_requests": {
+      "totals": {
+        "fixed": {
+          "tokens": 16384,
+          "seconds": 80.025302435,
+          "requests": 16
+        },
+        "native": {
+          "tokens": 16384,
+          "seconds": 74.708442656,
+          "requests": 16
+        },
+        "measured": {
+          "tokens": 16384,
+          "seconds": 74.95660218799998,
+          "requests": 16
+        },
+        "learned": {
+          "tokens": 16384,
+          "seconds": 75.31536397100001,
+          "requests": 16
+        }
+      },
+      "pooled_e2e_tok_s": {
+        "fixed": 204.73524624674542,
+        "native": 219.30586982573334,
+        "measured": 218.5798118077311,
+        "learned": 217.5386154451649
+      },
+      "learned_vs_fixed_percent": 6.253622389468272,
+      "learned_vs_native_percent": -0.8058399813797745
+    },
+    "later_requests": {
+      "totals": {
+        "fixed": {
+          "tokens": 113245,
+          "seconds": 659.3382121910001,
+          "requests": 112
+        },
+        "native": {
+          "tokens": 113196,
+          "seconds": 614.2539436080002,
+          "requests": 112
+        },
+        "measured": {
+          "tokens": 113196,
+          "seconds": 615.9271693030003,
+          "requests": 112
+        },
+        "learned": {
+          "tokens": 113059,
+          "seconds": 609.971589298,
+          "requests": 112
+        }
+      },
+      "pooled_e2e_tok_s": {
+        "fixed": 171.75555413917778,
+        "native": 184.28208915535842,
+        "measured": 183.78146904624396,
+        "learned": 185.35125567096753
+      },
+      "learned_vs_fixed_percent": 7.915727441787901,
+      "learned_vs_native_percent": 0.5801792895389513
+    }
+  },
+  "audited_turns": 512,
+  "note": "Request-position segments are descriptive; this is not a pure initialization-cost ablation."
+}

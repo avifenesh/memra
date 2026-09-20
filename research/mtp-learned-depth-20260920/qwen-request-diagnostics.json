@@ -1,0 +1,71 @@
+{
+  "family": "qwen",
+  "segments": {
+    "initial_requests": {
+      "totals": {
+        "fixed": {
+          "tokens": 8192,
+          "seconds": 64.83401334599999,
+          "requests": 8
+        },
+        "native": {
+          "tokens": 8192,
+          "seconds": 65.895819205,
+          "requests": 8
+        },
+        "measured": {
+          "tokens": 8192,
+          "seconds": 65.923984056,
+          "requests": 8
+        },
+        "learned": {
+          "tokens": 8192,
+          "seconds": 69.753907124,
+          "requests": 8
+        }
+      },
+      "pooled_e2e_tok_s": {
+        "fixed": 126.35343051002741,
+        "native": 124.3174468248877,
+        "measured": 124.26433440432238,
+        "learned": 117.44145006009857
+      },
+      "learned_vs_fixed_percent": -7.053216057494838,
+      "learned_vs_native_percent": -5.530999019369009
+    },
+    "later_requests": {
+      "totals": {
+        "fixed": {
+          "tokens": 57344,
+          "seconds": 612.5415350240002,
+          "requests": 56
+        },
+        "native": {
+          "tokens": 57344,
+          "seconds": 604.796103585,
+          "requests": 56
+        },
+        "measured": {
+          "tokens": 57344,
+          "seconds": 605.491016805,
+          "requests": 56
+        },
+        "learned": {
+          "tokens": 57344,
+          "seconds": 624.6535802090001,
+          "requests": 56
+        }
+      },
+      "pooled_e2e_tok_s": {
+        "fixed": 93.61650879356807,
+        "native": 94.8154256617837,
+        "measured": 94.70660737889658,
+        "learned": 91.80128284994944
+      },
+      "learned_vs_fixed_percent": -1.9390019634478617,
+      "learned_vs_native_percent": -3.178958266333176
+    }
+  },
+  "audited_turns": 256,
+  "note": "Request-position segments are descriptive; this is not a pure initialization-cost ablation."
+}

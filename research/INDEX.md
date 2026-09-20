@@ -509,3 +509,5 @@ spill-lead-20260919 | **8192 and 32768** same-program captures PASS (8064+128 / 
 qwen2-tokenizer-20260920 | Literal Qwen2 split/BPE parity passes in HF and GGUF loaders. Full raw-input parity for a tokenizer declaring NFC remains blocked by the separately tracked normalization omission. | qwen2-tokenizer-20260920/RESULTS.md
 
 release-coverage-546-20260920 | Native release battery PASS at a0a27c3f: 103 kernel cells executed, all 10 required, 7 named skips; Ornith and Qwen3.8 calibrated argmax and exact K=1..8 pass. | release-coverage-546-20260920/RESULTS.md
+
+mtp-learned-depth-20260920 | The learner lost to fixed K=3 on Qwen; Gemma improved over fixed K=5, with little extra benefit over native adaptation. | mtp-learned-depth-20260920/RESULTS.md
