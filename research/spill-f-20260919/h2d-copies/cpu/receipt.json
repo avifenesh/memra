@@ -1,0 +1,11 @@
+{
+  "base_commit": "eca3139ebdaa51419674f17778286c03ce04b47d",
+  "probe_source_sha256": "fd06a9ea9f27ccf38348d46aa2d6426289f12737e3363bc174baf38c91ce6eb8",
+  "unit_tests": 3,
+  "dry_run_invocations": 12,
+  "rustfmt_check": "pass",
+  "linux_check": "pass with DOCS_RS=1 MEMRA_MMQ_ARCHIVE_HASH=docs-rs-typecheck-only",
+  "initial_docs_rs_check": "failed: missing MEMRA_MMQ_ARCHIVE_HASH compile-time value",
+  "cuda_execution": false,
+  "qualification": false
+}

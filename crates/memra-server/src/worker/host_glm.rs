@@ -533,6 +533,7 @@ mod tests {
             bytes: 1312,
         };
         PrefixEntry {
+            _tier_charge: None,
             layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
             pool_key: ("model-a".into(), "tenant-a\u{1f}ns".into()),
             toks: (0..128).collect(),

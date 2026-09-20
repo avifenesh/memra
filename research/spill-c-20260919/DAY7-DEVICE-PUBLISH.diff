@@ -1,0 +1,239 @@
+diff --git a/crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs b/crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs
+index dc2f3b4f..d6a2a10c 100644
+--- a/crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs
++++ b/crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs
+@@ -870,6 +870,10 @@ fn main() -> Res<()> {
+     // receipt records which build minted the file.
+     let write_bank_goldens = argv.iter().any(|a| a == "--write-bank-goldens");
+     let rows_via_tier = argv.iter().any(|a| a == "--rows-via-tier");
++    let device_publish = argv.iter().any(|a| a == "--device-publish");
++    if device_publish && !rows_via_tier {
++        return Err("--device-publish requires --rows-via-tier".into());
++    }
+     let receipt_path =
+         argv.iter().find(|a| !a.starts_with("--")).cloned().ok_or(
+             "usage: qwen4exp-gpu-gate <receipt.tsv> [--write-bank-goldens] [--rows-via-tier]",
+@@ -1131,7 +1135,7 @@ fn main() -> Res<()> {
+     let fixture = deterministic_fixture(&plan)?;
+     let mut model = Qwen4ExpGpu::from_reference_weights(&engine, &plan, &fixture.weights)?;
+     if rows_via_tier {
+-        let verdict = model.gate_ple_rows_tier(&engine)?;
++        let verdict = model.gate_ple_rows_tier(&engine, device_publish)?;
+         lines.push(format!("rows-via-tier\t{verdict}\tpass=true"));
+         summaries.push(verdict);
+     }
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index b5ebadad..798dbd75 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -35628,3 +35628,5 @@ mod fused_rope_width_tests {
+         assert!(Engine::full_width_rope_only("rms_norm_qkv_rope", 256, 128).is_err());
+     }
+ }
++
++pub mod tier_transfer;
+diff --git a/crates/memra-engine/src/ple_rows_tier.rs b/crates/memra-engine/src/ple_rows_tier.rs
+index 3af6095a..468413ad 100644
+--- a/crates/memra-engine/src/ple_rows_tier.rs
++++ b/crates/memra-engine/src/ple_rows_tier.rs
+@@ -136,13 +136,17 @@ impl Drop for GatheredRows {
+ /// This typed door is only installed by the explicit native gate. It is not an
+ /// env switch and cannot change an existing request's numerical program.
+ pub(crate) struct PleRowsTier {
+-    budget: SharedBudget,
++    pub(crate) device_publish: bool,
++    pub(crate) device_uploads: Cell<u64>,
++    pub(crate) budget: SharedBudget,
+     pub(crate) calls: Cell<u64>,
+     pub(crate) reads: Cell<u64>,
+ }
+ impl PleRowsTier {
+     pub(crate) fn new(budget: SharedBudget) -> Self {
+         Self {
++            device_publish: false,
++            device_uploads: Cell::new(0),
+             budget,
+             calls: Cell::new(0),
+             reads: Cell::new(0),
+diff --git a/crates/memra-engine/src/ple_rows_tier/device.rs b/crates/memra-engine/src/ple_rows_tier/device.rs
+new file mode 100644
+index 00000000..17e9c674
+--- /dev/null
++++ b/crates/memra-engine/src/ple_rows_tier/device.rs
+@@ -0,0 +1,72 @@
++//! Qualification-only native upload and exclusive handback. The exact sealed
++//! allocation is handed to the existing PLE projections without another H2D/D2D
++//! copy. The ticket's explicit consumer is a byte-check D2H; subsequent native
++//! projection lifetime/accounting belongs to the returned cudarc allocation.
++use crate::ple_rows_tier::*;
++use crate::{Engine, tier_transfer::CudaTransfers};
++use cudarc::driver::CudaSlice;
++use memra_tier::contracts::*;
++
++impl PleRowsTier {
++    pub(crate) fn upload_device(
++        &self,
++        e: &Engine,
++        rows: &GatheredRows,
++    ) -> std::result::Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
++        let mut transfers = CudaTransfers::new(e.stream().clone(), self.budget.clone())?;
++        let bytes: Vec<u8> = rows
++            .iter()
++            .flat_map(|v| v.to_bits().to_le_bytes())
++            .collect();
++        let request = BudgetRequest {
++            bytes: TierBudget::zero(1),
++            priority: Priority::Demand,
++            deadline: Deadline(u64::MAX),
++            tenant: digest("ple-native-device-gate-v1", &[]),
++        };
++        let mut host = transfers.alloc_host(bytes.len(), request.clone())?;
++        host.write(&bytes)?;
++        let epochs = Epochs {
++            state: 0,
++            src_gen: 0,
++            dst_gen: 0,
++        };
++        let device = transfers.alloc_device(bytes.len(), epochs.dst_gen, request)?;
++        let op = CopyOp {
++            host,
++            device,
++            bytes: bytes.len() as u64,
++            epochs,
++            producer_fence: None,
++        };
++        let mut upload = rows
++            .submit_device(&mut transfers, op)
++            .map_err(|r| r.error)?;
++        transfers.synchronize(&upload.ticket())?;
++        let lease = upload.publish(&mut transfers, epochs)?;
++        let copied =
++            transfers.with_destination(&upload.ticket(), 0, epochs, |device, stream| {
++                stream.clone_dtoh(device).map_err(|_| Error::Corrupt)
++            })?;
++        if copied != bytes {
++            return Err("device-publish: sealed row bytes differ".into());
++        }
++        let done = transfers.record_consumer(&upload.ticket())?;
++        transfers.synchronize(&upload.ticket())?;
++        if !upload.retire(&mut transfers, Some(done))? {
++            return Err("device-publish: consumer not retired".into());
++        }
++        upload.acknowledge(&mut transfers)?;
++        let raw = transfers.take_device(&lease)?;
++        if raw.len() != rows.len() * 4 {
++            return Err("device-publish: handback length differs".into());
++        }
++        // SAFETY: exclusive handback of a CUDA allocation aligned for f32, exactly
++        // N*4 initialized bytes copied from F32 bits (all f32 bit patterns valid).
++        // take_device synchronized prior CUDA uses, and leak transfers ownership
++        // exactly once into the same owner stream's typed allocation.
++        let out = unsafe { e.stream().upgrade_device_ptr::<f32>(raw.leak(), rows.len()) };
++        self.device_uploads.set(self.device_uploads.get() + 1);
++        Ok(out)
++    }
++}
+diff --git a/crates/memra-engine/src/qwen4exp_gpu.rs b/crates/memra-engine/src/qwen4exp_gpu.rs
+index 92b37462..bb4a84de 100644
+--- a/crates/memra-engine/src/qwen4exp_gpu.rs
++++ b/crates/memra-engine/src/qwen4exp_gpu.rs
+@@ -13770,7 +13770,15 @@ impl Qwen4ExpGpu {
+             }
+             Ok(crate::ple_rows_tier::GatheredRows::legacy(gathered))
+         })?;
+-        let emb = prof_section(e, "ple.h2d", || e.htod(&gathered))?;
++        let emb = prof_section(e, "ple.h2d", || {
++            if let Some(tier) = &self.rows_tier
++                && tier.device_publish
++            {
++                tier.upload_device(e, &gathered)
++            } else {
++                e.htod(&gathered)
++            }
++        })?;
+ 
+         // Per-token cuBLASLt twin (verify-exact): every m == 1 launch matches the
+         // decode dispatch for that projection, so chunk rows equal decode rows bitwise.
+@@ -21017,7 +21025,7 @@ impl Qwen4ExpGpu {
+     /// Explicit qualification door only. No serving caller can enable the field.
+     /// Compare the actual unchanged GPU PLE projections, gate, convolution and
+     /// residual planes, not just host rows. Restores OFF even on failure.
+-    pub fn gate_ple_rows_tier(&mut self, e: &Engine) -> Res<String> {
++    pub fn gate_ple_rows_tier(&mut self, e: &Engine, device_publish: bool) -> Res<String> {
+         use memra_tier::{contracts::*, tier::Governor};
+         use std::{cell::RefCell, rc::Rc, sync::Arc};
+         if self.rows_tier.is_some() {
+@@ -21040,13 +21048,15 @@ impl Qwen4ExpGpu {
+             .flat_map(|v| ((v.to_bits() >> 16) as u16).to_le_bytes())
+             .collect();
+         let tables = [NgramTable::F32(table), NgramTable::Bf16(bf16)];
+-        let mut capacity = TierBudget::zero(0);
++        let mut capacity = TierBudget::zero(1);
+         capacity.pageable = 64 * 1024 * 1024;
++        capacity.pinned = 8 * 1024 * 1024;
++        capacity.device[0] = 8 * 1024 * 1024;
+         capacity.staging = 8 * 1024 * 1024;
+         capacity.inflight = 4;
+         let budget = Rc::new(RefCell::new(Governor::new(
+             capacity,
+-            TierBudget::zero(0),
++            TierBudget::zero(1),
+             4,
+             0,
+             Arc::new(|| 0),
+@@ -21055,6 +21065,7 @@ impl Qwen4ExpGpu {
+             let mut values = 0usize;
+             let mut reads = 0u64;
+             let mut calls = 0u64;
++            let mut device_uploads = 0u64;
+             let histories: &[(&[u32], usize)] = &[
+                 (&[1, 7, 13, 63, 7, 1], 6),           // prefill, EOS and repeated tokens
+                 (&[1, 7, 13, 63, 7, 1, 12], 1),       // decode
+@@ -21066,8 +21077,12 @@ impl Qwen4ExpGpu {
+                     for &(tokens, t) in histories {
+                         let mut twins = Vec::new();
+                         for on in [false, true] {
+-                            self.rows_tier =
+-                                on.then(|| crate::ple_rows_tier::PleRowsTier::new(budget.clone()));
++                            self.rows_tier = on.then(|| {
++                                let mut tier =
++                                    crate::ple_rows_tier::PleRowsTier::new(budget.clone());
++                                tier.device_publish = device_publish;
++                                tier
++                            });
+                             let layer = &self.layers[index];
+                             let ple = layer.ple.as_ref().unwrap();
+                             let pad =
+@@ -21108,9 +21123,10 @@ impl Qwen4ExpGpu {
+                             twins.push(bits);
+                             if let Some(tier) = &self.rows_tier {
+                                 calls += tier.calls.get();
++                                device_uploads += tier.device_uploads.get();
+                                 reads += tier.reads.get();
+                             }
+-                            if budget.borrow().used() != TierBudget::zero(0) {
++                            if budget.borrow().used() != TierBudget::zero(1) {
+                                 return Err("PLE rows gate leaked a host budget charge".into());
+                             }
+                         }
+@@ -21124,14 +21140,18 @@ impl Qwen4ExpGpu {
+                     }
+                 }
+             }
+-            if calls != 16 || reads < calls {
++            if calls != 16 || reads < calls || device_uploads != if device_publish { 16 } else { 0 }
++            {
+                 return Err("PLE rows tier did not engage every arm".into());
+             }
+             Ok(format!(
+-                "rows-via-tier: BIT-IDENTICAL PLE outputs + convolution state; encodings=2 cases=16 values={values} tier_calls={calls} forced_read_chunks={reads} budget_drained=true"
++                "rows-via-tier: BIT-IDENTICAL PLE outputs + convolution state; encodings=2 cases=16 values={values} tier_calls={calls} forced_read_chunks={reads} device_uploads={device_uploads} exclusive_handback={device_publish} budget_drained=true"
+             ))
+         })();
+         self.rows_tier = None;
+         run
+     }
+ }
++
++#[path = "ple_rows_tier/device.rs"]
++mod ple_device;

@@ -349,7 +349,7 @@ pub fn split_qwen35(text: &str) -> Vec<String> {
     words
 }
 
-// ---- glm4 pre-tokenizer split (GLM-4.x / GLM-5.x, llama.cpp LLAMA_VOCAB_PRE_TYPE_CHATGLM4) ----
+// ---- literal Qwen2 / GLM-4.x pre-tokenizer splits ---------------------------------------
 //
 // The zai-org GLM line's `tokenizer.json` declares ONE `Split` regex:
 //
@@ -364,20 +364,16 @@ pub fn split_qwen35(text: &str) -> Vec<String> {
 // instead of `\p{N}`, i.e. digit runs group up to three (the cl100k / LLaMA-3 convention)
 // instead of one token per digit.
 //
-// It is nonetheless a SEPARATE state machine rather than a parameterized `split_qwen35`,
-// because `split_qwen35` implements the qwen35 pattern — `[\p{L}\p{M}]+` and
-// `[^\s\p{L}\p{M}\p{N}]+` — and llama.cpp deliberately runs qwen2 through those same
-// mark-folding classes. The literal GLM/qwen2 classes do NOT fold marks, and the two
-// disagree on any text carrying combining marks. Measured against the checkpoint's own
-// tokenizer through HF `tokenizers`:
+// Qwen2 and GLM share these literal character classes and differ only in digit grouping.
+// They cannot use `split_qwen35`, whose `[\p{L}\p{M}]+` and `[^\s\p{L}\p{M}\p{N}]+`
+// fold combining marks into letter runs. Measured against HF `tokenizers`:
 //
-//   "cafe\u{301}"     glm4 ["cafe", "\u{301}"]      split_qwen35 ["café"]
+//   "cafe\u{301}"     glm4 ["cafe", "\u{301}"]      split_qwen35 ["cafe\u{301}"]
 //   "x\u{301}y"       glm4 ["x", "\u{301}y"]        split_qwen35 ["x\u{301}y"]
 //   "مُحَمَّد"           glm4 ["م","ُح","َم","َّ","د"]     split_qwen35 ["مُحَمَّد"]
 //
-// So a parameterized reuse would have had to change three class predicates as well as the
-// digit arm, and any slip would have moved qwen35/qwen2 ids. A separate machine leaves both
-// byte-untouched by construction.
+// Share only the literal Qwen2/GLM scanner, selecting one or three digits per number run.
+// The existing Qwen3.5 scanner remains independent.
 //
 // Three class facts, each measured against the real engine (HF `tokenizers`, oniguruma) over
 // the full codepoint space rather than assumed:
@@ -405,12 +401,22 @@ fn contraction_fold(cpt: u32) -> u32 {
     }
 }
 
+/// Pre-tokenizer split for Qwen2's literal `Split` regex, including its Unicode case folding.
+pub fn split_qwen2(text: &str) -> Vec<String> {
+    split_qwen2_with_digit_limit::<1>(text)
+}
+
 /// Pre-tokenizer split for the GLM-4.x / GLM-5.x `Split` regex (see the module note above).
+pub fn split_glm4(text: &str) -> Vec<String> {
+    split_qwen2_with_digit_limit::<3>(text)
+}
+
+/// Shared character classes; the two regexes differ only in the digit-run bound.
 ///
 /// A deterministic codepoint-class scan of the ordered alternation, NOT a regex engine:
 /// alternatives are tried leftmost-first at each position and every one of them is
 /// anchored-and-bounded, so there is no backtracking and `pos` advances every iteration.
-pub fn split_glm4(text: &str) -> Vec<String> {
+fn split_qwen2_with_digit_limit<const DIGITS: usize>(text: &str) -> Vec<String> {
     let cpts: Vec<u32> = text.chars().map(|c| c as u32).collect();
     let cpt_bytes: Vec<usize> = text.chars().map(|c| c.len_utf8()).collect();
     let n = cpts.len();
@@ -495,10 +501,10 @@ pub fn split_glm4(text: &str) -> Vec<String> {
             continue;
         }
 
-        // alt 3: \p{N}{1,3} — the ONE atom that differs from qwen2's `\p{N}`.
+        // alt 3: Qwen2 `\p{N}` or GLM `\p{N}{1,3}`.
         if is_number(pos) {
             let mut end = pos + 1;
-            while end < pos + 3 && is_number(end) {
+            while end < pos + DIGITS && is_number(end) {
                 end += 1;
             }
             pos = end;
@@ -1398,12 +1404,9 @@ mod tests {
         assert_eq!(split_glm4("1a2"), ["1", "a", "2"]);
     }
 
-    /// The SECOND divergence, which the one-atom regex diff does not show: the shared qwen35
-    /// machine folds `\p{M}` into its letter runs (llama.cpp deliberately routes qwen2 through
-    /// qwen35's mark-including classes), while the GLM/qwen2 pattern's `\p{L}+` stops at a
-    /// combining mark and ` ?[^\s\p{L}\p{N}]+` picks it up instead. That is why this is a
-    /// separate state machine and not a `bool` on the old one. Every expectation here is the
-    /// checkpoint's own tokenizer.
+    /// Qwen3.5 folds `\p{M}` into letter runs, while the literal GLM/Qwen2 pattern's
+    /// `\p{L}+` stops at a combining mark and ` ?[^\s\p{L}\p{N}]+` picks it up instead.
+    /// Every expectation here comes from the checkpoint's own tokenizer.
     #[test]
     fn glm4_does_not_fold_combining_marks_like_qwen35() {
         let pairs: &[(&str, &[&str], &[&str])] = &[

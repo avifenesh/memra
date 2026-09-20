@@ -1,0 +1,17 @@
+{
+  "verdict": "ACTIVE-8K copy/restore bit-identical, no reclaim \u2014 not G1 PASS",
+  "native_source": "c95691692949561dddcf7e0e49bd6c6ba778036b",
+  "baseline_receipt_commit": "ce447c98",
+  "compared_sha256": {
+    "prefix-state.tsv": "ce48492d782d34cb4562cd11ca6d8b610f43efd50137f36da50f93f08b49dace",
+    "final-state.tsv": "ec49a40a42f7336a53f2d606cfc2167a31a5d4e0edcd15f3c5032dad8d412af4",
+    "tokens.u32le": "c7f6b2cd4fb42a2008d96832dea5260212f64a7f8397d55c9ae7b3c2af13f6ea",
+    "logits.tsv": "7ec02bb7052e2083ec120d7491d87d6b2b83af41528c2f82a7efb9166bd135b0",
+    "final-logits.f32le": "6df198aea3b5c62ef75e87429bbbb68b95570c1d58418443e94016ed88f0cb17",
+    "prompt.u32le": "079672d3960a7bd57cc472c9254cb9a0b58ea3aec1e9908ca805a0066c70677f",
+    "plan.debug": "8fc1154223424f168e69fdf10f4befec7a9af75544e385bb773759954ff427e5"
+  },
+  "baseline_directory": "day6-baseline-8192/receipt",
+  "reclaim_observed": false,
+  "scope": "N=1, 400/600 W restricted-power RTX 5090 development; no performance/serving qualification; 32k not run"
+}
