@@ -72,7 +72,8 @@ fn target_card_receipts_replayed_as_series_classify_without_promotion() {
         assert!(!unchanged_g1_line(c, granule));
     }
     // Repeating the identical one-granule roundtrip is the lead-ruled metadata class,
-    // and the per-cycle G1 line stays false in every cycle: the class never promotes.
+    // and the per-cycle G1 line stays false in every cycle. The class alone never promotes;
+    // the series-level lift of lead ruling 6 (N >= 5) is `series_verdict`, tested in day12.rs.
     for n in 2..=5 {
         assert_eq!(
             classify_cycles(&vec![diag; n], granule),

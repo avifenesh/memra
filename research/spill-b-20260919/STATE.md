@@ -1,12 +1,11 @@
-# WP-B day 11 checkpoint: series classification done on both cards, push blocked by the perf-ci gate
-- Branch lane/spill-b-20260919; local tip = merge of origin/main 34d6bce35 (1fcef31da) + 1566d4f81 (--reclaim-cycles) + day-11 data commit (see git log).
-- Push refused by tools/hooks/pre-push perf-ci freshness (engine files from the main merge); no override used. Lead pushes the tip SHA with the logged override.
-- Native checkout /root/wt-b at 1566d4f81 (synced by git bundle), clean; no B tmux running; /root/spill-receipts/b-day11 mirrored to pro-single-day11/.
-- --reclaim-cycles N landed: cli.rs, reclaim_contract.rs (classify_cycles), active.rs (Roundtrip, write_cycles), kv_tier_gate.rs; tests in crates/memra-tier/tests/reclaim/; docs/TESTING.md.
-- 32k PRO: 5 cycles, residual 2097152 B each, drift 0, class one-time-driver-mapping-metadata, g1_reclaim_qualified=false, not G1 PASS.
-- 32k 5090 laptop: identical shape and class; tokens match the rented 5090 bundle, logits/state differ; no frozen bundle for this card; not G1 PASS.
-- 8k control REFUSED on both cards inside the mapped-VA probe: "REFUSED: diagnostic could not re-reserve original VMM address" (PRO twice, laptop once). No 8k series exists.
-- Verdicts verbatim in DAY11.md; replay: python3 research/spill-b-20260919/verify-day11.py --require-complete; battery: run-day11-checks.py -> day11-checks/final/.
-- Storage day4 Err(Busy) flakes (lane A code) reproduce on the local rig only; reported, not touched.
-- Lead decisions pending: lift (e) for the one-time class or not; an 8k series control without the mapped-VA probe; nothing relaxed here.
+# WP-B day 12 checkpoint: ruling 6 landed, both cards printed the classified label
+- Branch lane/spill-b-20260919 on top of the pushed day-11 tip d1844b3c0: c7dd20cc5 (gate: series_verdict, write_cycles, status line, tests), 152c736cf (TESTING.md, decision record, verify-day12.py, test-day12.py, run-day12-checks.py), then the day-12 data commit (see git log).
+- Gate source for every cell: c7dd20cc5. Native checkout /root/wt-b at c7dd20cc5 (git bundle), clean; no B tmux on either rig; /root/spill-receipts/b-day12 mirrored to pro-single-day12/.
+- 32k series, both cards, verbatim: ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles). Residual 2097152 B every cycle, drift 0, restore bit-identical every cycle, series g1_reclaim_qualified=true, per-cycle line false.
+- PRO continuation matches the frozen target-card bundle; the laptop card has no frozen bundle (tokens match the rented bundle, logits/state differ), continuation identity in-process only.
+- 8k series control not rerun (ruling 7: mapped-VA probe refuses to re-reserve small planes; open item in the decision record; no probe or CLI change).
+- Replay: python3 research/spill-b-20260919/verify-day12.py --require-complete; battery: run-day12-checks.py -> day12-checks/final/ (8/8 exit 0, 280 tests).
+- Local release kv+tier tests: 2 storage day4 Err flakes (lane A code, day4.rs:143 and :471), reported, not touched; PRO 280/280.
+- Nothing relaxed beyond ruling 6; (a) to (d) unchanged; (e) in force for every other shape.
+- Push refused by tools/hooks/pre-push perf-ci freshness: "engine files touched after the last perf-ci battery" (base d1844b3c0; crates/memra-engine/src/bin/kv_tier_gate.rs, kv_tier_gate/active.rs, kv_tier_gate/reclaim_contract.rs). No override used. Unpushed tip = the data commit at the top of git log; the lead pushes it with the logged override.
 - Decide-by 2026-10-04 for the --kv-allocator vmm door unchanged.
