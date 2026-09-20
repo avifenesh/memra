@@ -121,3 +121,9 @@ receipt binding fails closed on stale identity. Complete vectors and logs are pr
 Diagnostic validation now identifies the stale component without disclosing environment
 values or relaxing any identity comparison. Host tests and Linux cross-target test typechecks
 pass; next native run will localize the failure.
+
+Attempt003 localized the stale identity to lazily loaded NVIDIA PTX/compiler libraries.
+The loader now materializes the driver JIT path before freezing identity, without a kernel
+launch, model arithmetic change, environment override, or removal of library validation.
+The initialization module has explicit model ownership. This correction is pending a fresh
+native attempt; the failing row is retained.

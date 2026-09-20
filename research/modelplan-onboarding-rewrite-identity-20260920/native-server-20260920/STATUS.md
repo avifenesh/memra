@@ -32,3 +32,16 @@ The wrapper ended normally with exit1 and no lingering compute.
 The next patch preserves the validation predicates and reports the specific stale component:
 loaded executable mappings, plan, environment keys (without values), or tensor-program hashes.
 This is diagnostic preparation for the next frozen native attempt; admission remains closed.
+
+## Attempt003: lazy NVIDIA compiler libraries
+
+At6c56c6bf, matched-class parity again passed all3 prompts. The detailed refusal identified
+new executable mappings for libnvidia-gpucomp and libnvidia-ptxjitcompiler; no library was
+removed or modified. These driver JIT components load lazily at execution, after the old
+identity snapshot.
+
+The correction initializes the actual CUDA driver linker before capturing identity and
+retains its initialization-only module with the model. The ret entry is never launched and
+changes no model arithmetic. Explicit linking initializes the compiler even with a warm
+disk cache; library validation is retained and any later drift still refuses. A fresh native
+build/run is required before this is considered qualified.
