@@ -1,0 +1,37 @@
+{
+  "gpu_refused": {
+    "case": "budget-refuse-7-attempt1",
+    "n": 1,
+    "verdict": "REFUSED: experts-via-tier GPU bank budget cannot hold the eight-slot minimum (requested 6021176, minimum 6881344, ceiling 78022085820)",
+    "requested_bytes": 6021176,
+    "minimum_bytes": 6881344,
+    "hard_ceiling_bytes": 78022085820,
+    "ended_utc": "2026-09-20T17:14:33.134986+00:00",
+    "attempts": 1
+  },
+  "host_refused": {
+    "case": "budget-host-refuse-1-attempt1",
+    "n": 1,
+    "verdict": "REFUSED: experts-via-tier host bank budget cannot hold one expert record (requested 1, minimum 860160, ceiling 268435456)",
+    "requested_bytes": 1,
+    "minimum_bytes": 860160,
+    "ceiling_bytes": 268435456,
+    "ended_utc": "2026-09-20T17:17:47.423419+00:00",
+    "attempts": 1
+  },
+  "exact": {
+    "case": "budget-exact-8-attempt1",
+    "n": 1,
+    "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH",
+    "gpu_slots": 8,
+    "gpu_evictions": 103651,
+    "host_evictions": 103502,
+    "physical_reads": 103518,
+    "rereads": 91440,
+    "hard_ceiling_bytes": 78022085820,
+    "ended_utc": "2026-09-20T17:16:26.970406+00:00",
+    "attempts": 1,
+    "tape_matches_day9_default_gen_off": true
+  },
+  "runtime_source": "79353d53d7f69713177caf2e9830b48f9e600fa3"
+}

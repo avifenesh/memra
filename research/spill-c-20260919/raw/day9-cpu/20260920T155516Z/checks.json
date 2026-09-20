@@ -1,0 +1,116 @@
+{
+  "source": "85677e50c89dab35dff9089c92d10026b14ab143",
+  "checks": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "mac-check",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "sha256": "273bb658dee9a8efea5d5f3c05f425285f4de03d08a4abe37a3aa19d622c7ee7"
+    },
+    {
+      "name": "linux-check",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "sha256": "0e8ee1bf0b8664cda40291090169a1a0e729e83d1d0515bc66eeec8a4b8296f7"
+    },
+    {
+      "name": "tests",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "sha256": "1d55fd92453a9c36ad5a319a64f396adfcba8646e656defadc25e854b3953799"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "694bc24c8c25b3e6a33eef3d105c10c96f548efd2f58985509aa415db5896512"
+    },
+    {
+      "name": "engine-linux-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-engine",
+        "--offline",
+        "--lib",
+        "--bin",
+        "run-gen",
+        "--bin",
+        "run-spec",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "11c090e631e5415b708d2da6827a302291bf0445fe95766a13c878b41be18531"
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "flags",
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    }
+  ],
+  "engine_scope": "Linux compile only, DOCS_RS placeholders"
+}

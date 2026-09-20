@@ -2,6 +2,7 @@
 //! artifact conversion, external source, or alternative numeric executor.
 use crate::{
     Engine,
+    banked_residency::{ExpertBankBudget, ExpertBankRefusal, gpu_bank_budget, host_bank_budget},
     hybrid::{Ffn, HybridModel, MoeWeights},
 };
 use memra_gguf::GgufFile;
@@ -82,10 +83,15 @@ impl Engine {
     /// Call after loading and before the first forward; keeps the existing native
     /// SLRU slot addresses, expert kernels and routing unchanged. Resident slabs,
     /// scale-bearing formats and parallel/frozen paths are intentionally refused.
+    ///
+    /// `budget` is the gate binary's parsed CLI budget (`ExpertBankBudget`); the installer
+    /// reads no argv and no environment for it. A budget the bank cannot hold returns the
+    /// typed `ExpertBankRefusal` before any bank, CUDA slot or source read exists.
     pub fn install_expert_bank_gate(
         &self,
         model: &HybridModel,
         gguf: &GgufFile,
+        budget: ExpertBankBudget,
     ) -> std::result::Result<BankedExpertGate<'_>, Box<dyn std::error::Error>> {
         if gguf.n_shards() != 1 || !Engine::moe_cache_enabled() || !model.mtp_extra.is_empty() {
             return Err(
@@ -236,16 +242,29 @@ impl Engine {
         if ids.is_empty() || max_bytes == 0 || max_bytes > 16 * 1024 * 1024 {
             return Err("experts-via-tier empty or oversized bank".into());
         }
-        // Gate-only CLI budget; native cache GiB pressure uses MEMRA_MOE_SLOTS.
-        let host_bytes = std::env::args()
-            .find_map(|a| {
-                a.strip_prefix("--expert-bank-host-bytes=")
-                    .map(str::to_owned)
-            })
-            .map(|s| s.parse::<u64>())
-            .transpose()?
-            .unwrap_or(256 * 1024 * 1024);
-        let slots = crate::banked_residency::host_bank_slots(host_bytes, max_bytes)?;
+        // Gate-only CLI budgets. Without a GPU budget, native slot sizing (MEMRA_MOE_SLOTS or
+        // auto) is untouched; with one, the exact count is fixed here, before any allocation,
+        // and a MEMRA_MOE_SLOTS request alongside it is a conflict, never a silent loser.
+        let host_bytes = budget.host_bytes;
+        let slots = host_bank_budget(host_bytes, max_bytes)?;
+        let gpu_slots = match budget.gpu_bytes {
+            Some(bytes) => {
+                if std::env::var_os("MEMRA_MOE_SLOTS").is_some() {
+                    return Err(ExpertBankRefusal(format!(
+                        "experts-via-tier GPU bank budget conflicts with MEMRA_MOE_SLOTS (requested {bytes})"
+                    ))
+                    .into());
+                }
+                let (free, _total) = self.ctx().mem_get_info()?;
+                let hard_bytes = crate::moe_cache::hard_slot_bytes(free, max_bytes as usize);
+                let slots = gpu_bank_budget(bytes, max_bytes, hard_bytes as u64)?;
+                eprintln!(
+                    "[experts-via-tier] gpu_bank_budget bytes={bytes} slots={slots} hard_ceiling={hard_bytes}"
+                );
+                Some(slots)
+            }
+            None => None,
+        };
         let mut capacity = TierBudget::zero(1);
         capacity.pageable = 512 * 1024 * 1024;
         capacity.staging = max_bytes;
@@ -301,6 +320,9 @@ impl Engine {
             }),
             1,
         )?;
+        if let Some(slots) = gpu_slots {
+            self.build_moe_cache_exact(max_bytes as usize, slots)?;
+        }
         self.with_moe_cache(max_bytes as usize, |cache, _| {
             cache.install_banked(owner.proxy())
         })?;
@@ -336,7 +358,7 @@ impl ExpertDispatchBank for TracedDispatch {
             .inner
             .bank()
             .slru_policy()
-            .unwrap()
+            .ok_or(Error::Incomplete)?
             .resident(id)
             .is_some();
         let demand = self.inner.demand(local, bytes)?;
@@ -344,7 +366,7 @@ impl ExpertDispatchBank for TracedDispatch {
             .inner
             .bank()
             .slru_policy()
-            .unwrap()
+            .ok_or(Error::Incomplete)?
             .resident(id)
             .ok_or(Error::Incomplete)?;
         let victim = self
