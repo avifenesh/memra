@@ -138,5 +138,18 @@ are fully copied and committed; no temporary GPU process or campaign remains.
 - Repeatability cell: `run-day10-repeat.py` in remote tmux `c-day10-repeat`,
   receipts `/root/spill-receipts/c-day10/`, one N=1 8 GiB `spec-on` through the
   collector, 60 s waits, 60 min cap from 16:28Z. Lane B held the canonical lock
-  at launch; every refusal is preserved. Outcome is appended below when the
-  driver exits.
+  at launch; every refusal is preserved.
+- Repeat outcome: complete on attempt 6; the five canonical-lock refusals are
+  kept as 53-byte `REFUSED: [Errno 11] Resource temporarily unavailable` console
+  logs (lane B's `kv-tier-gate` cells held the lock). The cell ran 16:33:13Z to
+  16:35:01Z, exit 0, `executed-not-qualified`, 600 W envelope, 250 ms telemetry
+  (435 rows), canonical lock. `verify-day10.py` **PASS**:
+  `=== SELF-CONSISTENCY PASS ===`, all K1..8 rows PASS; GPU evictions **63,996**,
+  host evictions **73,966**, physical reads **73,982**, re-reads **53,684**,
+  9,986 slots. Tape and acceptance rows are identical to the day-nine native
+  `default-spec-off` control and to `pressure-spec-on`, and every count equals
+  the day-nine `pressure-spec-on` cell exactly. This is an N=1 repeat of an N=1
+  cell: two executions agree; it is not a median and not a repeatability
+  statistic. Post-cell binary hashes unchanged
+  (`pro-single-day10/binary-postcheck.json`, 16:37:44Z). Receipts and
+  `VERDICT.json` are in `pro-single-day10/`.
