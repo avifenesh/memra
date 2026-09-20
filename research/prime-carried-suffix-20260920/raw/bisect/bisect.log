@@ -1,0 +1,389 @@
+Bisecting: a merge base must be tested
+[e266cf4f78803b211dfde7180e46bc1de20144ed] hc pre: the Sinkhorn was never the cost — an instrument, and a measured-dead arm removed (#196)
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:18:22Z step e266cf4f7 hc pre: the Sinkhorn was never the cost — an instrument, and a measu
+   gate GREEN -> good
+Bisecting: 327 revisions left to test after this (roughly 8 steps)
+[586cbf30bec32d156734a36449d4005c27e50987] Support native HF inputs in the argmax-margin instrument (#291)
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:22:04Z step 586cbf30b Support native HF inputs in the argmax-margin instrument (#291)
+   gate RED (2 fails: r3 spec-on text != spec-off text;g2 spec-on text != spec-off text;) -> bad
+Bisecting: 163 revisions left to test after this (roughly 7 steps)
+[cc9d593be7efa8d80e8a9669df668b892becd6f7] feat: yield speculative prime chunks for shared-card fairness (#379)
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:25:18Z step cc9d593be feat: yield speculative prime chunks for shared-card fairness (#379)
+   gate RED (2 fails: r3 spec-on text != spec-off text;g2 spec-on text != spec-off text;) -> bad
+Bisecting: 81 revisions left to test after this (roughly 6 steps)
+[228d898e5637a415a26f5ab84ef838713d516ca8] glm5 TP: the symmetric walk, two crossings per layer (#285)
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:28:28Z step 228d898e5 glm5 TP: the symmetric walk, two crossings per layer (#285)
+   gate GREEN -> good
+Bisecting: 40 revisions left to test after this (roughly 5 steps)
+[99c2c4e4d1976caa61ca6a833ef45f2a06d42179] perf(dsv4): gate adaptive M1 expert split-K (#337)
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:31:18Z step 99c2c4e4d perf(dsv4): gate adaptive M1 expert split-K (#337)
+   gate GREEN -> good
+Bisecting: 20 revisions left to test after this (roughly 4 steps)
+[cb1fb499b7599871ddedb63293d8403c07cf175a] fix: make cache qualification reject invalid identity rows (#360)
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:34:27Z step cb1fb499b fix: make cache qualification reject invalid identity rows (#360)
+   gate GREEN -> good
+Bisecting: 10 revisions left to test after this (roughly 3 steps)
+[8a98f078f8b48522e2efcad8fb2ad56707f204d8] Merge pull request #376 from avifenesh/lane/dsv4f-replay-map-20260908
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:37:32Z step 8a98f078f Merge pull request #376 from avifenesh/lane/dsv4f-replay-map-20260908
+   gate GREEN -> good
+Bisecting: 5 revisions left to test after this (roughly 3 steps)
+[cbf1e07c72a55da5cccb8721aff3a7ac2256b050] Merge pull request #382 from avifenesh/lane/dsv4f-launch-boundary-20260909
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:40:37Z step cbf1e07c7 Merge pull request #382 from avifenesh/lane/dsv4f-launch-boundary-2026
+   gate GREEN -> good
+Bisecting: 2 revisions left to test after this (roughly 2 steps)
+[1cb3d0f9e7962b85f4e8910d1ea440132b166d9e] perf: add qualified graph split-K as a default-OFF door (#380)
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:41:18Z step 1cb3d0f9e perf: add qualified graph split-K as a default-OFF door (#380)
+   gate GREEN -> good
+Bisecting: 0 revisions left to test after this (roughly 1 step)
+[4896327d9e8a94ba5741b7c4950a9e2b93f95a35] Merge pull request #390 from avifenesh/lane/dsv4f-splitk-profile-build-20260909
+running '/tmp/memra-lane-logs/bisect-step.sh'
+== 2026-09-20T15:44:27Z step 4896327d9 Merge pull request #390 from avifenesh/lane/dsv4f-splitk-profile-build
+   gate GREEN -> good
+cc9d593be7efa8d80e8a9669df668b892becd6f7 is the first bad commit
+commit cc9d593be7efa8d80e8a9669df668b892becd6f7
+Author: Avi Fenesh <55848801+avifenesh@users.noreply.github.com>
+Date:   Wed Sep 9 04:37:47 2026 +0300
+
+    feat: yield speculative prime chunks for shared-card fairness (#379)
+    
+    * feat: add shared cooperative prime walker and fairness policy
+    
+    * feat: resume DFlash and MTP primes through the shared walker
+    
+    * docs: record source-bound CPU validation for prime fairness
+    
+    * fix: mark empty-suffix MTP continuations as prefilled
+    
+    * docs: seal the corrected continuation CPU checkpoint
+    
+    * test: persist serving fairness harness and frozen Ornith prompt
+    
+    * test: make the GPU campaign resumable across controller restarts
+    
+    * test: add eligibility-aware GPU receipt reduction
+    
+    * test: separate worker queue delay in fairness receipts
+    
+    * test: isolate 1024-row prime wall probes
+    
+    * test: verify saved per-request bytes and boundary oracles
+    
+    * test: retain scored speculative engagement log evidence
+    
+    * test: bank compact source-bound GPU receipts
+    
+    * docs: bank mixed-load and exactness GPU receipts
+    
+    * test: parameterize source-composition qualification
+    
+    * docs: report per-route fairness verdicts and measured chunk bounds
+    
+    * test: retain a vendor-default eight-turn cache twin
+    
+    * docs: bind latest-main composition to CPU checks and binary
+    
+    * test: continue correctness after retaining a failed capacity cell
+    
+    * docs: preserve composed receipts and failed capacity evidence
+    
+    * docs: bank completed composed byte and sampled cache gates
+    
+    ---------
+    
+    Co-authored-by: memra-lane <lane@localhost>
+
+ crates/memra-engine/src/bin/run_spec.rs            |    7 +
+ crates/memra-engine/src/dflash.rs                  |  587 ++++--
+ crates/memra-engine/src/hybrid_forward.rs          |    2 +-
+ crates/memra-engine/src/lib.rs                     |    2 +
+ crates/memra-engine/src/prime_receipt.rs           |   52 +
+ crates/memra-engine/src/prime_walker.rs            |  184 ++
+ crates/memra-engine/src/spec.rs                    | 1938 ++++++++++---------
+ crates/memra-engine/src/spec/prime.rs              |  684 +++++++
+ crates/memra-server/src/lib.rs                     |    1 +
+ crates/memra-server/src/prime_fairness.rs          |  168 ++
+ crates/memra-server/src/worker.rs                  |  222 ++-
+ docs/FLAGS.md                                      |    2 +
+ docs/TESTING.md                                    |   19 +
+ research/INDEX.md                                  |    2 +
+ research/prefill-fairness-20260908/CHUNKS.md       |   67 +
+ research/prefill-fairness-20260908/COMPOSITION.md  |   66 +
+ research/prefill-fairness-20260908/CPU.md          |   69 +
+ research/prefill-fairness-20260908/DFLASH.md       |   33 +
+ research/prefill-fairness-20260908/MECHANISM.md    |  151 ++
+ research/prefill-fairness-20260908/MTP.md          |   41 +
+ research/prefill-fairness-20260908/RESULTS.md      |  140 ++
+ research/prefill-fairness-20260908/SEAM.md         |   73 +
+ research/prefill-fairness-20260908/bank_gpu.py     |   52 +
+ research/prefill-fairness-20260908/campaign.py     |  115 ++
+ .../prefill-fairness-20260908/cpu-adapters.json    |  105 ++
+ research/prefill-fairness-20260908/cpu-seam.json   |   33 +
+ .../cpu/composed/binary.sha256                     |    1 +
+ .../cpu/composed/build.log                         |    3 +
+ .../cpu/composed/clippy.log                        |    5 +
+ .../cpu/composed/dflash.log                        |   64 +
+ .../prefill-fairness-20260908/cpu/composed/fmt.log |    0
+ .../prefill-fairness-20260908/cpu/composed/mtp.log |   11 +
+ .../cpu/composed/path-bootstrap.log                |    1 +
+ .../cpu/composed/server.log                        |  667 +++++++
+ .../cpu/composed/source.txt                        |    1 +
+ .../cpu/composed/walker.log                        |   12 +
+ .../cpu/cpu-continuation-build.log                 |    3 +
+ .../cpu/cpu-continuation-clippy.log                |    5 +
+ .../cpu/cpu-continuation-server.log                |  649 +++++++
+ .../cpu/cpu-delivery-build.log                     |    6 +
+ .../cpu/cpu-delivery-clippy.log                    |    5 +
+ .../cpu/cpu-delivery-engine.log                    |   86 +
+ .../cpu/cpu-delivery-server.log                    |  650 +++++++
+ .../cpu/cpu-pinned-build.log                       |    7 +
+ research/prefill-fairness-20260908/gate_http.py    |  189 ++
+ .../gpu/byte-boundary.json                         |  147 ++
+ .../gpu/composed/byte-boundary.json                |  147 ++
+ .../gpu/composed/manifest.json                     |  130 ++
+ .../gpu/composed/ornith-chain-off.json             |  140 ++
+ .../gpu/composed/ornith-chain-off.trace.gz         |  Bin 0 -> 2148 bytes
+ .../gpu/composed/ornith-chain-on.json              |  140 ++
+ .../gpu/composed/ornith-chain-on.trace.gz          |  Bin 0 -> 2153 bytes
+ .../gpu/composed/ornith-pair-on.json               |   84 +
+ .../gpu/composed/ornith-pair-on.trace.gz           |  Bin 0 -> 7676 bytes
+ .../gpu/composed/ornith-r1-off-v2.json             | 1039 +++++++++++
+ .../gpu/composed/ornith-r1-off-v2.trace.gz         |  Bin 0 -> 9547 bytes
+ .../gpu/composed/ornith-r1-on.json                 | 1039 +++++++++++
+ .../gpu/composed/ornith-r1-on.trace.gz             |  Bin 0 -> 14567 bytes
+ .../gpu/composed/ornith-sampled-chain-off.json     |  237 +++
+ .../gpu/composed/ornith-sampled-chain-off.trace.gz |  Bin 0 -> 1922 bytes
+ .../gpu/composed/ornith-sampled-chain-on.json      |  237 +++
+ .../gpu/composed/ornith-sampled-chain-on.trace.gz  |  Bin 0 -> 2113 bytes
+ .../gpu/composed/ornith-solo-off.json              |   90 +
+ .../gpu/composed/ornith-solo-off.trace.gz          |  Bin 0 -> 2114 bytes
+ .../gpu/composed/qwen-chain-off.json               |  140 ++
+ .../gpu/composed/qwen-chain-off.trace.gz           |  Bin 0 -> 1930 bytes
+ .../gpu/composed/qwen-chain-on.json                |  140 ++
+ .../gpu/composed/qwen-chain-on.trace.gz            |  Bin 0 -> 2128 bytes
+ .../gpu/composed/qwen-pair-on.json                 |   90 +
+ .../gpu/composed/qwen-pair-on.trace.gz             |  Bin 0 -> 6431 bytes
+ .../gpu/composed/qwen-r1-off.json                  |  885 +++++++++
+ .../gpu/composed/qwen-r1-off.trace.gz              |  Bin 0 -> 6205 bytes
+ .../gpu/composed/qwen-r1-on.json                   |  846 +++++++++
+ .../gpu/composed/qwen-r1-on.trace.gz               |  Bin 0 -> 14059 bytes
+ .../gpu/composed/qwen-sampled-chain-off.json       |  237 +++
+ .../gpu/composed/qwen-sampled-chain-off.trace.gz   |  Bin 0 -> 2224 bytes
+ .../gpu/composed/qwen-sampled-chain-on.json        |  237 +++
+ .../gpu/composed/qwen-sampled-chain-on.trace.gz    |  Bin 0 -> 2739 bytes
+ .../gpu/composed/qwen-solo-off.json                |   90 +
+ .../gpu/composed/qwen-solo-off.trace.gz            |  Bin 0 -> 2458 bytes
+ .../gpu/composed/reduced.json                      | 1944 ++++++++++++++++++++
+ .../prefill-fairness-20260908/gpu/manifest.json    |  226 +++
+ .../gpu/mtp-boundary-check.log                     |   45 +
+ .../gpu/ornith-1024-off.json                       |   62 +
+ .../gpu/ornith-1024-off.trace.gz                   |  Bin 0 -> 1776 bytes
+ .../gpu/ornith-1024-on.json                        |   62 +
+ .../gpu/ornith-1024-on.trace.gz                    |  Bin 0 -> 5510 bytes
+ .../gpu/ornith-4096-off.json                       |   62 +
+ .../gpu/ornith-4096-off.trace.gz                   |  Bin 0 -> 1117 bytes
+ .../gpu/ornith-4096-on.json                        |   62 +
+ .../gpu/ornith-4096-on.trace.gz                    |  Bin 0 -> 2247 bytes
+ .../gpu/ornith-chain-off.json                      |  140 ++
+ .../gpu/ornith-chain-off.trace.gz                  |  Bin 0 -> 2152 bytes
+ .../gpu/ornith-chain-on.json                       |  140 ++
+ .../gpu/ornith-chain-on.trace.gz                   |  Bin 0 -> 2161 bytes
+ .../gpu/ornith-pair-on.json                        |   84 +
+ .../gpu/ornith-pair-on.trace.gz                    |  Bin 0 -> 7730 bytes
+ .../gpu/ornith-r1-off-v2.json                      | 1039 +++++++++++
+ .../gpu/ornith-r1-off-v2.trace.gz                  |  Bin 0 -> 9888 bytes
+ .../gpu/ornith-r1-on.json                          | 1039 +++++++++++
+ .../gpu/ornith-r1-on.trace.gz                      |  Bin 0 -> 17276 bytes
+ .../gpu/ornith-r2-off.json                         | 1039 +++++++++++
+ .../gpu/ornith-r2-off.trace.gz                     |  Bin 0 -> 11552 bytes
+ .../gpu/ornith-r2-on.json                          | 1039 +++++++++++
+ .../gpu/ornith-r2-on.trace.gz                      |  Bin 0 -> 16513 bytes
+ .../gpu/ornith-r3-off.json                         | 1039 +++++++++++
+ .../gpu/ornith-r3-off.trace.gz                     |  Bin 0 -> 9867 bytes
+ .../gpu/ornith-r3-on.json                          | 1039 +++++++++++
+ .../gpu/ornith-r3-on.trace.gz                      |  Bin 0 -> 14904 bytes
+ .../gpu/ornith-solo-off.json                       |   90 +
+ .../gpu/ornith-solo-off.trace.gz                   |  Bin 0 -> 2112 bytes
+ .../gpu/qwen-1024-off.json                         |   62 +
+ .../gpu/qwen-1024-off.trace.gz                     |  Bin 0 -> 2113 bytes
+ .../gpu/qwen-1024-on.json                          |   62 +
+ .../gpu/qwen-1024-on.trace.gz                      |  Bin 0 -> 4511 bytes
+ .../gpu/qwen-4096-off.json                         |   62 +
+ .../gpu/qwen-4096-off.trace.gz                     |  Bin 0 -> 1130 bytes
+ .../gpu/qwen-4096-on.json                          |   62 +
+ .../gpu/qwen-4096-on.trace.gz                      |  Bin 0 -> 1633 bytes
+ .../gpu/qwen-chain-off.json                        |  140 ++
+ .../gpu/qwen-chain-off.trace.gz                    |  Bin 0 -> 1943 bytes
+ .../gpu/qwen-chain-on.json                         |  140 ++
+ .../gpu/qwen-chain-on.trace.gz                     |  Bin 0 -> 2129 bytes
+ .../gpu/qwen-pair-on.json                          |   90 +
+ .../gpu/qwen-pair-on.trace.gz                      |  Bin 0 -> 6439 bytes
+ .../prefill-fairness-20260908/gpu/qwen-r1-off.json |  896 +++++++++
+ .../gpu/qwen-r1-off.trace.gz                       |  Bin 0 -> 5983 bytes
+ .../prefill-fairness-20260908/gpu/qwen-r1-on.json  |  907 +++++++++
+ .../gpu/qwen-r1-on.trace.gz                        |  Bin 0 -> 11737 bytes
+ .../prefill-fairness-20260908/gpu/qwen-r2-off.json |  896 +++++++++
+ .../gpu/qwen-r2-off.trace.gz                       |  Bin 0 -> 6495 bytes
+ .../prefill-fairness-20260908/gpu/qwen-r2-on.json  |  896 +++++++++
+ .../gpu/qwen-r2-on.trace.gz                        |  Bin 0 -> 11158 bytes
+ .../prefill-fairness-20260908/gpu/qwen-r3-off.json |  885 +++++++++
+ .../gpu/qwen-r3-off.trace.gz                       |  Bin 0 -> 6061 bytes
+ .../prefill-fairness-20260908/gpu/qwen-r3-on.json  |  907 +++++++++
+ .../gpu/qwen-r3-on.trace.gz                        |  Bin 0 -> 11380 bytes
+ .../gpu/qwen-solo-off.json                         |   90 +
+ .../gpu/qwen-solo-off.trace.gz                     |  Bin 0 -> 2455 bytes
+ .../prefill-fairness-20260908/gpu/reduced.json     | 1822 ++++++++++++++++++
+ research/prefill-fairness-20260908/mixed_load.py   |  178 ++
+ research/prefill-fairness-20260908/reduce_gpu.py   |   91 +
+ .../templates/ornith-long.json                     |    1 +
+ research/prefill-fairness-20260908/verify_bytes.py |   56 +
+ 144 files changed, 29626 insertions(+), 1043 deletions(-)
+ create mode 100644 crates/memra-engine/src/prime_receipt.rs
+ create mode 100644 crates/memra-engine/src/prime_walker.rs
+ create mode 100644 crates/memra-engine/src/spec/prime.rs
+ create mode 100644 crates/memra-server/src/prime_fairness.rs
+ create mode 100644 research/prefill-fairness-20260908/CHUNKS.md
+ create mode 100644 research/prefill-fairness-20260908/COMPOSITION.md
+ create mode 100644 research/prefill-fairness-20260908/CPU.md
+ create mode 100644 research/prefill-fairness-20260908/DFLASH.md
+ create mode 100644 research/prefill-fairness-20260908/MECHANISM.md
+ create mode 100644 research/prefill-fairness-20260908/MTP.md
+ create mode 100644 research/prefill-fairness-20260908/RESULTS.md
+ create mode 100644 research/prefill-fairness-20260908/SEAM.md
+ create mode 100644 research/prefill-fairness-20260908/bank_gpu.py
+ create mode 100644 research/prefill-fairness-20260908/campaign.py
+ create mode 100644 research/prefill-fairness-20260908/cpu-adapters.json
+ create mode 100644 research/prefill-fairness-20260908/cpu-seam.json
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/binary.sha256
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/build.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/clippy.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/dflash.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/fmt.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/mtp.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/path-bootstrap.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/server.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/source.txt
+ create mode 100644 research/prefill-fairness-20260908/cpu/composed/walker.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/cpu-continuation-build.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/cpu-continuation-clippy.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/cpu-continuation-server.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/cpu-delivery-build.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/cpu-delivery-clippy.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/cpu-delivery-engine.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/cpu-delivery-server.log
+ create mode 100644 research/prefill-fairness-20260908/cpu/cpu-pinned-build.log
+ create mode 100644 research/prefill-fairness-20260908/gate_http.py
+ create mode 100644 research/prefill-fairness-20260908/gpu/byte-boundary.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/byte-boundary.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/manifest.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-chain-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-chain-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-chain-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-chain-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-pair-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-pair-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-r1-off-v2.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-r1-off-v2.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-r1-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-r1-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-sampled-chain-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-sampled-chain-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-sampled-chain-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-sampled-chain-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-solo-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/ornith-solo-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-chain-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-chain-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-chain-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-chain-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-pair-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-pair-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-r1-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-r1-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-r1-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-r1-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-sampled-chain-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-sampled-chain-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-sampled-chain-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-sampled-chain-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-solo-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/qwen-solo-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/composed/reduced.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/manifest.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/mtp-boundary-check.log
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-1024-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-1024-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-1024-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-1024-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-4096-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-4096-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-4096-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-4096-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-chain-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-chain-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-chain-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-chain-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-pair-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-pair-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r1-off-v2.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r1-off-v2.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r1-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r1-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r2-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r2-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r2-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r2-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r3-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r3-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r3-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-r3-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-solo-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/ornith-solo-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-1024-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-1024-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-1024-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-1024-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-4096-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-4096-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-4096-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-4096-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-chain-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-chain-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-chain-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-chain-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-pair-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-pair-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r1-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r1-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r1-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r1-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r2-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r2-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r2-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r2-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r3-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r3-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r3-on.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-r3-on.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-solo-off.json
+ create mode 100644 research/prefill-fairness-20260908/gpu/qwen-solo-off.trace.gz
+ create mode 100644 research/prefill-fairness-20260908/gpu/reduced.json
+ create mode 100644 research/prefill-fairness-20260908/mixed_load.py
+ create mode 100644 research/prefill-fairness-20260908/reduce_gpu.py
+ create mode 100644 research/prefill-fairness-20260908/templates/ornith-long.json
+ create mode 100644 research/prefill-fairness-20260908/verify_bytes.py
+bisect found first bad commit
+== bisect finished 2026-09-20T15:45:05Z
+# good: [1cb3d0f9e7962b85f4e8910d1ea440132b166d9e] perf: add qualified graph split-K as a default-OFF door (#380)
+git bisect good 1cb3d0f9e7962b85f4e8910d1ea440132b166d9e
+# good: [4896327d9e8a94ba5741b7c4950a9e2b93f95a35] Merge pull request #390 from avifenesh/lane/dsv4f-splitk-profile-build-20260909
+git bisect good 4896327d9e8a94ba5741b7c4950a9e2b93f95a35
+# first bad commit: [cc9d593be7efa8d80e8a9669df668b892becd6f7] feat: yield speculative prime chunks for shared-card fairness (#379)
