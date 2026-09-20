@@ -1,12 +1,11 @@
-# Session C day-ten handoff
-- Lane `lane/spill-c-20260919`, checkout `wt-spill-c`; no commits on main or the lead branch; origin tip 066afe918 is an ancestor (merged, no-op).
-- NOTHING RUNNING for C: tmux `c-day10-repeat` exited; `repeat-status.json` state complete; no C GPU process.
-- UNPUSHED: `git push` refused by perf-ci gate at a413937f2 and again on every later commit (lead's engine files in the integ5 merge); no skip, no --no-verify; the lead pushes.
-- Finished: ff to 066afe918; merge of lane/spill-integ5-20260920 (a413937f2); verify-day9.py PASS + 6 red arms; MOE-SLOT-CACHE-DOOR.md (5cf9579a1); BUDGET-REFUSAL.md options (aa8e8516f); DAY9.md finished (c3a2168d2); day-ten repeat cell banked.
-- Day-nine verdicts: gen MATCH x4, spec SELF-CONSISTENCY PASS x4; 8 GiB banked GPU evictions 12091/63996, re-reads 4389/53684; same-card tapes identical.
-- Day-ten N=1 8 GiB spec-on repeat: SELF-CONSISTENCY PASS on attempt 6 (five lock refusals kept); 63996/73966/73982/53684, identical to day nine; verify-day10.py PASS; receipts `pro-single-day10/`, remote `/root/spill-receipts/c-day10/`.
-- Push gate on the merged tree: fmt clean, tier+kv 261 tests pass, DOCS_RS engine clippy clean.
-- Frozen native binaries `/root/wt-c/target/release/run-{gen,spec}` are source 148e7f0e9; hashes re-checked 16:37:44Z; never rebuilt.
-- `/root/wt-c` at 748903f7; only dirty items are the two untracked lane driver scripts (tracked here).
-- NEXT (lead): push the lane, replay verify-day9.py and verify-day10.py, integrate onto integ6; no GPU rerun pending for C.
-- DECISIONS NEEDED (lead): budget refusal option A/B/C (BUDGET-REFUSAL.md); PP owner placement for the door; door decide-by 2026-10-04.
+# Session C day-eleven handoff (installer catalog from the plan)
+- Lane `lane/spill-c-20260919`, checkout `wt-spill-c`; merged main `34d6bce35` and `30e9c7a38` (PR #573 and #576); no commits on main or the lead branch.
+- NOTHING RUNNING for C: tmux `c-day11` exited (driver.exit 0); no C GPU process; `/root/wt-c` at 6defcd604, clean; `target-day11/` holds the day-eleven binaries, `target-cli/` the CPU memra-cli, `target/` and `target-day10/` untouched.
+- UNPUSHED: `git push` refused by the perf-ci pre-push gate on this lane (engine files touched after the last perf-ci battery); no skip, no --no-verify; the lead pushes. The tree reached the target card as a git bundle over the lead's ssh master.
+- Code: `6db8ac122` installer catalog from the compiled plan and the model pack's GGUF tensor contract (`memra_gguf::expert_banks`), typed catalog refusals (`REFUSED: experts-via-tier expert catalog refused: <detail>`, exit 2), catalog line with `catalog_sha256` / `records_sha256`; `76f78c569` exact flag keys, `SLOT_TAIL_PAD_BYTES` shared with `moe_cache.rs`, `#[doc(hidden)] pub mod banked_residency`; `6defcd604` `run-day11.py`.
+- Tests: `expert_banks.rs` 10 (parity with the literal day-ten spelling, one per refusal); `day10.rs` exact-key red arms; memra-gguf lib 290, tier bank 61; fmt, clippy (gguf, tier, DOCS_RS engine), flags census, diff --check clean; `slru-synthetic.json` re-pinned (rows identical).
+- Target-card cells (`pro-single-day11/`, remote `c-day11/`, build 6defcd604, 600 W, N=1 executed-not-qualified, attempt 1 each): gen default `MATCH`, installed line identical to day ten, tape equal to the day-nine control, catalog_sha256 `2204b159…fde8` == literal digest from memra's census; spec 7-slot `refused` (`REFUSED: ... eight-slot minimum (requested 6021176, minimum 6881344, ceiling 77968398729)`); spec exact 8 `=== SELF-CONSISTENCY PASS ===`, `[expert-gpu-slru] slots=8 allocated_bytes=6881344 evictions=674569`, tape and acceptance equal to the day-nine spec control.
+- Collector `--validate` on the receipt dir: exit 0, 3 cells, 0 failed, 1 refused, qualification=false. `verify-day11.py` PASS (`VERDICT.json`).
+- Docs: `DAY11.md`, `MOE-SLOT-CACHE-DOOR.md` (item 3 first half landed, scale admission pending, Catalog row, deletion list), `docs/TESTING.md` §experts-via-tier (catalog refusals, exact keys, catalog line).
+- NEXT (lead): push the lane, replay `verify-day11.py`, integrate. No GPU rerun pending for C.
+- OPEN: scale admission (door doc item 3, second half) and the one-artifact hash lock; `run-spec`'s only budget cells are day eleven's; the ceiling number in a refusal is card- and tenant-dependent (77,968,398,729 today vs 78,022,085,820 on day ten).

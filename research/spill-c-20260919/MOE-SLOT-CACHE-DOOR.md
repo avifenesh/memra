@@ -8,11 +8,18 @@ development evidence on one card class; nothing here is a support state.
 
 ## What is landed
 
-Door name: `--experts-via-tier` on `run-gen` and `run-spec`. Absent, the legacy
-SLRU slot cache is byte-for-byte the pre-lane program. No new `MEMRA_*` read.
+Door name: `--experts-via-tier` on `run-gen` and `run-spec`, with the gate-only
+budgets `--expert-bank-host-bytes=N` and `--expert-bank-gpu-bytes=N`. Absent, the
+legacy SLRU slot cache is byte-for-byte the pre-lane program. No new `MEMRA_*` read.
 Landing commits (oldest first): `e21870438`, `82d75d9cd`, `ec1c356de`,
 `3d9e28b07`, `e962407df`, `d0acf6f03`, `18b2f092f`, `44f87f181`, `85677e50c`,
-`748903f73`.
+`748903f73`, `79353d53d` (typed budgets, GPU slot refusal, native refusal
+token), `1de17d41f` (day-ten cell driver and verifier), `6db8ac122` (installer catalog from
+the model plan and tensor contract, typed catalog refusals), `76f78c569` (exact flag keys,
+shared slot tail pad, gate helpers off the crate root), `6defcd604` (day-eleven driver).
+
+decide-by: 2026-10-04 (covers the door and both budget flags; CLI doors carry
+their decide-by here, not in `docs/FLAGS.md`).
 
 | Surface | File | What it does |
 |---|---|---|
@@ -23,16 +30,23 @@ Landing commits (oldest first): `e21870438`, `82d75d9cd`, `ec1c356de`,
 | Admission | `moe_cache.rs::admit_banked` | `validate` then hit check, else `demand` one lease, `with_bytes` borrows the payload on the owner and runs the unchanged `admit_native` H2D, `stream().synchronize()`, `finish`. One pending lease at a time; a second demand or a frozen cache refuses. `admit_native` publishes a banked slot only after an explicit stream sync; an unknown result leaves the slot outside every table and queue. |
 | Guards | `moe_cache.rs` `admit`, `dispatch_source`, `force_admit`, `prefetch_source`, `restage_block`, `remove_occupant`, `Drop` | Admit and dispatch route through the bank; prefetch returns `false` (no detached legacy prefetch may bypass the owner); freeze-profile restage refuses; evictions under the bank are counted; `Drop` finishes a pending lease only after a successful stream drain and otherwise retains it. |
 | Compile assertion | `moe_cache.rs`, `const _: fn()` after `impl Drop` | Ordinary library build (not a test) asserts `Engine: Send + Sync`, `MoeSlotCache: Send`, `ExpertBankProxy: Send + Sync`, `ExpertLeaseToken: Send + Sync`. The cache is `Send` only because its pread receiver is `!Sync`; `Engine` holds it in `Mutex<Option<MoeSlotCache>>` (`lib.rs`), which is what makes `Engine: Sync` hold. Putting an owner-only bank or lease into the cache fails here, before the scoped PP-worker spawns cascade. |
-| Native installer | `crates/memra-engine/src/banked_residency/native.rs` `Engine::install_expert_bank_gate` | Hash-locks the already-open inode to `APPROVED_SHA` `df27a780…7adf` (Qwen3.6-35B-A3B-UD-IQ4_XS). Requires one GGUF shard, `MEMRA_MOE_CACHE` enabled, at most one MTP head. Refuses `dev_exps`, `step_ep`, `step_tp`, `glm5_ep`, `glm5_tp_split` and any scale plane (`macros`, `fp8_blk`). Builds Governor, `BankService` (per-record catalog), `SlruPolicy`, `SlruExpertDispatch`, a `TracedDispatch` that prints `[expert-host-slru] key= bytes= slot= hit= victim=`, and registers the owner with `max_pending = 1`. Returns `BankedExpertGate` (`!Send`, held on the CUDA thread for the run); its `Drop` prints `[expert-gpu-slru] slots= allocated_bytes= evictions=` and `[experts-via-tier] physical_reads= owner_close=`. |
-| Host budget | `crates/memra-engine/src/banked_residency.rs::host_bank_slots` and `--expert-bank-host-bytes=N` | Refuses a budget below one record, refuses above the 256 MiB qualification ceiling, clamps to 16 records. This is the only fail-closed budget refusal the door has today. |
-| CLI | `run_gen.rs:132,1022`, `run_spec.rs:149` | Installs the gate after load, before the first forward; run-gen refuses the flag without the approved artifact. |
+| Native installer | `crates/memra-engine/src/banked_residency/native.rs` `Engine::install_expert_bank_gate(model, gguf, budget: ExpertBankBudget)` | Takes the typed CLI budget as a parameter (no argv or env scan). Hash-locks the already-open inode to `APPROVED_SHA` `df27a780…7adf` (Qwen3.6-35B-A3B-UD-IQ4_XS). Requires one GGUF shard, `MEMRA_MOE_CACHE` enabled, at most one MTP head. Takes its expert catalog from the compiled `ModelPlan` and the model pack's GGUF `TensorContract` bound against the artifact census (`memra_gguf::expert_banks::expert_bank_catalog`, day eleven): semantic ids `LayerTensor::MoeExpert{Gate,Up,Down}Bank`, accepted names, required shapes, quant layouts; no checkpoint name is spelled in the installer and no architecture name is consulted. Typed catalog refusals (`REFUSED: experts-via-tier expert catalog refused: <detail>`, exit 2): no MoE expert projections in the plan; a contract entry missing, duplicated, ambiguous, shape- or layout-incompatible (the contract's own verdict text); a scale plane the artifact carries for a bank (`.scale`, `.input_scale` census rows) or on the loaded `HostExps` (`macros`, `fp8_blk`); a plan/model disagreement (layer count, dense vs routed, MTP head without a plan block). Plain failures (`Error:`, exit 1) stay for shards/cache/MTP-count, the SHA lock, and `dev_exps`, `step_ep`, `step_tp`, `glm5_ep`, `glm5_tp_split` bypasses. Every retained record is still compared byte-for-byte with the loaded `HostExps`. Prints `[experts-via-tier] catalog blocks= banked= projections= catalog_sha256= records= records_sha256=` (identity of the bound catalog and chained record checksums) before `installed`. Builds Governor, `BankService` (per-record catalog), `SlruPolicy`, `SlruExpertDispatch`, a `TracedDispatch` that prints `[expert-host-slru] key= bytes= slot= hit= victim=`, and registers the owner with `max_pending = 1`. Returns `BankedExpertGate` (`!Send`, held on the CUDA thread for the run); its `Drop` prints `[expert-gpu-slru] slots= allocated_bytes= evictions=` and `[experts-via-tier] physical_reads= owner_close=`. |
+| Catalog | `crates/memra-gguf/src/expert_banks.rs` `expert_bank_catalog(plan, contract, census)`, `ExpertBankCatalog { projections }`, `ExpertBankProjection`, `ExpertBankBlock::{Trunk, Mtp}`, `ExpertBankCatalogError` | Plan-derived, GGUF-only, no name spelled: for every MoE block of the plan (trunk by position, then MTP by depth) it selects the three bank requirements by semantic id, carries their declared `QuantAux` requirements along, and binds the sub-contract against exactly the census rows those names match through `TensorContract::bind`, so a duplicated name is `DuplicateCensusName` and never a first match. A bound auxiliary is `ScalePlanes { names }`. `identity()` is the hashed text (one line per projection: block, layer, projection, name, shape, storage, bytes). |
+| Budgets | `crates/memra-engine/src/banked_residency.rs`: `ExpertBankBudget { host_bytes, gpu_bytes }`, `expert_bank_cli`, `host_bank_slots` / `host_bank_budget`, `SLOT_TAIL_PAD_BYTES`, `gpu_slot_bytes`, `gpu_bank_slots(bytes, max_record, hard_bytes)` / `gpu_bank_budget`, `ExpertBankRefusal`, `refusal_reason` | Host (`--expert-bank-host-bytes=N`, default 256 MiB): refuses below one record and above the 256 MiB qualification ceiling, clamps to 16 records. GPU (`--expert-bank-gpu-bytes=N`, default unset = native sizing untouched): exact slot count `N / (max_record + SLOT_TAIL_PAD_BYTES)`, the one eight-byte constant `moe_cache.rs` imports for its own sizing and allocation (day eleven; every replaced literal was 8); refuses below eight slots, above the machine hard ceiling (`moe_cache::hard_slot_bytes`, the same value the native constructor applies), on checked overflow, and when `MEMRA_MOE_SLOTS` is also set (a conflict, never a silent loser). Both refusals are the typed `ExpertBankRefusal`, raised before any bank, CUDA slot or source read; the exact count reaches the cache through `MoeSlotCache::with_exact_slots` / `Engine::build_moe_cache_exact`, which refuse an already built cache or a count below eight instead of clamping. The `MEMRA_MOE_SLOTS` clamp itself is untouched (lead ruling 2, option A of `BUDGET-REFUSAL.md`). |
+| CLI | `run_gen.rs` (`expert_bank_cli` after the path, install after load), `run_spec.rs` (same) | Parses the door and its budgets once; keys match exactly (`--expert-bank-host-bytes-x=1` is `unknown expert bank flag`, `--experts-via-tier=1` is `takes no value`); a budget flag without the door, a bare flag, junk, or a repeat is a usage error (`Error:`, exit 1). The helpers are reached through the `#[doc(hidden)] pub mod banked_residency` path; the crate root re-exports nothing from the gate. Installs the gate after load, before the first forward; run-gen refuses the door without the approved artifact. Refusal token contract: only the typed `ExpertBankRefusal` becomes the final stderr line `REFUSED: <reason>` with exit 2; every other installer error stays `Error:` exit 1. `pressure-refusal.py` is a red arm that must see that native token. |
 
 Tests that exist: `crates/memra-tier/tests/bank/owner_proxy.rs` (three tests:
 Send+Sync assertions plus `WrongOwner` from a spawned thread; pending bound,
 foreign token, failed `finish` retained; dropping the owner invalidates the proxy
 without auto-finishing open DMA), `crates/memra-tier/tests/bank/day4.rs:413-422`
-(`host_bank_slots` boundaries), the compile assertion above, and the receipt
-verifiers `verify-day8.py` / `verify-day9.py` with their red arms. No CUDA-free
+(`host_bank_slots` boundaries), `crates/memra-tier/tests/bank/day10.rs`
+(`gpu_bank_slots` boundaries and overflow, typed refusal text and downcast, argv
+parse including the exact-key red arms), `crates/memra-gguf/src/expert_banks.rs`
+(plan-derived catalog equals the literal day-ten spelling on a qwen3_5_moe plan with an
+MTP block; dense plan, missing tensor, duplicated tensor, shape mismatch, scale plane,
+missing or duplicated contract entry, non-GGUF dialect each refuse), the compile
+assertion above, and the receipt verifiers `verify-day8.py` / `verify-day9.py` /
+`verify-day10.py` / `verify-day10-budget.py` / `verify-day11.py` with their red arms. No CUDA-free
 test can construct `MoeSlotCache`, so `install_banked` and `admit_banked`
 refusals are exercised only by native cells.
 
@@ -53,18 +67,30 @@ or is a transport, so this document records them rather than speculating in code
    registered per CUDA owner thread (per stage), or a typed owner-thread hand-off
    (channel or RPC) that keeps `ExpertBankOwner` `!Send`. Neither is small; the
    choice depends on the PP placement design the lead owns.
-2. **GPU-side budget refusal.** `MEMRA_MOE_SLOTS` clamps to eight slots and
-   saturates on overflow, so the GPU bank cannot express a fail-closed budget the
-   way `host_bank_slots` does. Options and test shapes: `BUDGET-REFUSAL.md`,
-   marked lead decision needed. No default changes until decided.
-3. **Installer generality.** `install_expert_bank_gate` is hash-locked to one
-   artifact, hard-codes `blk.N.ffn_{gate,up,down}_exps.weight`, and refuses scale
-   planes. Behind the materializer it must take its catalog from the model plan
-   and `tensor_contract` (semantic tensor ids, required shapes, quant layouts)
-   and admit scale-bearing records for the Hy3/Step ladder (`banked_residency.rs`
-   already checksums scale planes on the tier side; the native installer does
-   not consume them). Each new artifact and family is its own census, gates and
-   receipts; the shared loader proves nothing.
+2. **GPU-side budget refusal.** Landed on day ten as option A (lead ruling 2):
+   `--expert-bank-gpu-bytes=N` (Budgets row above), `MEMRA_MOE_SLOTS` untouched.
+   Cells and receipts: `DAY10.md`. Still open inside this item: the door budget
+   is uniform-layout only (mixed layouts need per-class minima, option C's
+   shape) and the refusal reads free VRAM at install time, so a cache built by
+   an earlier forward would be refused rather than resized. Both stay as they
+   are unless the door wins its decide-by.
+3. **Installer generality.** First half landed on day eleven (`6db8ac122`, `DAY11.md`):
+   `install_expert_bank_gate` takes its catalog from the compiled model plan and the
+   model pack's GGUF tensor contract bound against the artifact census
+   (`memra_gguf::expert_banks`, Catalog row above); it spells no checkpoint name and
+   consults no architecture name, and a plan without MoE projections, a missing,
+   ambiguous or shape-incompatible contract entry, and a scale plane the artifact
+   carries are typed refusals. The bank for the approved artifact is byte-identical to
+   day ten (catalog parity replayed by `verify-day11.py`, gen tape equal to the day-nine
+   control). Still pending inside this item: the hash lock to one artifact, and **scale
+   admission**: the installer refuses `.scale` / `.input_scale` census rows and loaded
+   `macros` / `fp8_blk` planes (`experts-via-tier expert catalog refused: artifact
+   carries expert scale planes the consumer does not declare: <names>` / `loaded bank
+   <name> carries scale planes (macro or block scales) the native installer does not
+   consume`) instead of banking scale-bearing records for the Hy3/Step ladder
+   (`banked_residency.rs` already checksums scale planes on the tier side). Each new
+   artifact and family is its own census, gates and receipts; the shared loader proves
+   nothing.
 4. **Overlap.** `max_pending = 1`, `items: 1`, `tickets: 1`: every miss is
    synchronous (demand, H2D, full `stream().synchronize()`, finish), and
    `prefetch_source` returns `false`. Speed behind the materializer needs several
@@ -86,6 +112,12 @@ or is a transport, so this document records them rather than speculating in code
 Either the pending items 1 to 3 are landed with their gates and the door is
 promoted per the flags doctrine, or the door is deleted in one PR: the `banked*`
 fields, `install_banked`, `admit_banked`, the guards, `banked_residency/`,
-`host_bank_slots`, the CLI arms, the owner registry if nothing else uses it,
-their tests, and a "Removed doors" ledger row pointing at `DAY8.md` and
-`DAY9.md`. The compile assertion on `Engine: Send + Sync` stays either way.
+`host_bank_slots` and the whole budget layer (`ExpertBankBudget`,
+`expert_bank_cli`, `gpu_bank_slots`, `ExpertBankRefusal`, `refusal_reason`,
+`MoeSlotCache::with_exact_slots`, `Engine::build_moe_cache_exact`), the CLI
+arms and their refusal mapping, the owner registry if nothing else uses it,
+`memra_gguf::expert_banks` if the installer is still its only consumer,
+their tests, and a "Removed doors" ledger row pointing at `DAY8.md`, `DAY9.md`,
+`DAY10.md` and `DAY11.md`. `SLOT_TAIL_PAD_BYTES` moves back into `moe_cache.rs` as
+the naked constant it names. The compile assertion on `Engine: Send + Sync` stays
+either way.

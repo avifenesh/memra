@@ -76,9 +76,12 @@ pub mod vision_step;
 pub mod cache {
     pub use memra_kv::*;
 }
-/// WP-C: HostExps -> `memra_tier::bank` bridge. Native compile probe only; no HostExps
-/// dispatch is changed. Unexported until the SLRU-backed residency + ready-view seam lands.
-mod banked_residency;
+/// WP-C: HostExps -> `memra_tier::bank` bridge and the `--experts-via-tier` gate door.
+/// Gate plumbing, not engine API: the gate binaries reach `expert_bank_cli`,
+/// `refusal_reason` and `ExpertBankBudget` through this path; nothing is re-exported
+/// at the crate root and the module is hidden from the crate documentation.
+#[doc(hidden)]
+pub mod banked_residency;
 pub mod decode;
 pub mod decode_batch;
 pub mod dflash;
@@ -6495,6 +6498,27 @@ impl Engine {
         }
         let cache = guard.as_mut().unwrap();
         f(cache, self)
+    }
+
+    /// Build the shared MoE residency cache with an exact uniform slot count. Gate-only
+    /// (`--experts-via-tier --expert-bank-gpu-bytes=N`): the installer has already refused an
+    /// impossible budget, and this refuses if any cache exists so the count can never replace
+    /// or resize a cache a forward has touched. Legacy `with_moe_cache` sizing is untouched.
+    pub(crate) fn build_moe_cache_exact(
+        &self,
+        max_block_bytes: usize,
+        slots: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.moe_cache.lock().unwrap();
+        if guard.is_some() {
+            return Err("experts-via-tier GPU bank budget requires an unbuilt cache".into());
+        }
+        *guard = Some(crate::moe_cache::MoeSlotCache::with_exact_slots(
+            self,
+            max_block_bytes,
+            slots,
+        )?);
+        Ok(())
     }
 
     /// Freeze the already-built MoE residency set. This never constructs a cache: callers use it

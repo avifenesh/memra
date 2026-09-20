@@ -1038,31 +1038,73 @@ ruling 7, open item in the decision record); the 8k evidence stays the single-ro
 `--experts-via-tier` on `run-gen` or `run-spec` (GGUF path only) calls
 `Engine::install_expert_bank_gate` (`crates/memra-engine/src/banked_residency/native.rs`)
 after load and before the first forward. It hashes the already-open artifact inode against
-the approved SHA-256, builds a bounded host expert bank over the file, and installs it into
-the MoE slot cache (`cache.install_banked`), so slot misses are served through the bank
-while the native SLRU slot addresses, expert kernels and routing stay unchanged. It is an
-explicit default-OFF qualification door, not a runtime flag; no `MEMRA_*` read is added.
-Fail-closed refusals are returned as the binary's error (`Error: "<reason>"`, exit 1) before
-any bank demand:
+the approved SHA-256, derives its expert catalog from the compiled model plan and the model
+pack's GGUF tensor contract bound against the artifact's tensor census
+(`memra_gguf::expert_banks::expert_bank_catalog`: semantic ids, accepted names, required
+shapes and quant layouts; the installer spells no checkpoint name and keeps no architecture
+allowlist), checks every retained expert record byte-for-byte against the loaded `HostExps`,
+builds a bounded host expert bank over the file, and installs it into the MoE slot cache
+(`cache.install_banked`), so slot misses are served through the bank while the native SLRU
+slot addresses, expert kernels and routing stay unchanged. It is an explicit default-OFF
+qualification door, not a runtime flag; no `MEMRA_*` read is added.
+Two failure classes leave the door. A budget the bank cannot hold, or an expert catalog the
+plan and contract cannot bind for the artifact, is a typed `ExpertBankRefusal`
+(`crates/memra-engine/src/banked_residency.rs`): the binary prints `REFUSED: <reason>` as its
+final stderr line and exits 2, and `tools/tier-battery.py` records the cell as `refused`.
+Every other error stays the binary's failure (`Error: "<reason>"`, exit 1). Both are returned
+before any bank demand:
 
-- `experts-via-tier requires the approved GGUF artifact` (`run-gen`) and
+- Failures: `experts-via-tier requires the approved GGUF artifact` (`run-gen`) and
   `experts-via-tier requires approved GGUF` (`run-spec`) for directory sources;
   `experts-via-tier artifact SHA256 mismatch`;
   `experts-via-tier requires one immutable GGUF, cache, and at most one MTP head`;
   `experts-via-tier refuses resident or parallel expert bypasses; use the cache baseline`
-  (resident slabs, Step EP/TP and GLM EP/TP splits).
-- `--expert-bank-host-bytes=N` (default 256 MiB) sets the host bank budget.
-  `host_bank_slots` (`crates/memra-engine/src/banked_residency.rs`) refuses
-  `experts-via-tier host bank budget cannot hold one expert record` below one record and
-  `experts-via-tier host bank budget exceeds qualification ceiling` above 256 MiB, and caps
-  the bank at 16 records. The installer reads the budget from the process arguments (a
-  gate-only CLI budget).
-- GPU pressure comes from `MEMRA_MOE_SLOTS`; `MoeSlotCache::new` clamps the forced count to
-  at least 8 slots (`crates/memra-engine/src/moe_cache.rs`), so it cannot express a
-  GPU-budget refusal (`research/spill-c-20260919/DAY8.md`, seam note).
+  (resident slabs, Step EP/TP and GLM EP/TP splits); and the budget flags' usage errors
+  (`expert_bank_cli`: a bare flag, a repeat, a malformed value, a budget without
+  `--experts-via-tier`, or a key that merely starts with a flag name: keys match exactly, so
+  `--expert-bank-host-bytes-x=1` is `unknown expert bank flag ...` and `--experts-via-tier=1`
+  is `--experts-via-tier takes no value`, never the flag they resemble and never ignored).
+  The helpers live at `memra_engine::banked_residency::{expert_bank_cli, refusal_reason,
+  ExpertBankBudget}` (a `#[doc(hidden)]` gate module, nothing re-exported at the crate root).
+- Catalog refusals: `REFUSED: experts-via-tier expert catalog refused: <detail>`, where the
+  detail is `the compiled plan has no MoE expert projections`; the tensor contract's own
+  verdict for a bank tensor that is missing, duplicated (`DuplicateCensusName`), ambiguous,
+  shape-incompatible (`ShapeMismatch`) or layout-incompatible; `tensor contract has no entry
+  for <id>` or `tensor contract has <n> entries for <id>`; `artifact carries expert scale
+  planes the consumer does not declare: <names>` (a `blk.N.ffn_*_exps.scale` or
+  `.input_scale` row in the census) or `loaded bank <name> carries scale planes (macro or
+  block scales) the native installer does not consume`; and a plan/model disagreement
+  (`loaded model has N layers, compiled plan has M`, `plan layer N routes experts but the
+  loaded layer is dense`, `loaded MTP head routes experts but the compiled plan has no MTP
+  expert bank`). Scale admission is not landed: a scale-bearing artifact is refused, never
+  banked payload-only. Unit cells: `crates/memra-gguf/src/expert_banks.rs` (plan-derived
+  names equal the former literal `blk.N.ffn_{gate,up,down}_exps.weight` spelling on a
+  qwen3_5_moe plan with an MTP block, plus one test per refusal).
+- `--expert-bank-host-bytes=N` (default 256 MiB) sets the host bank budget. `host_bank_budget`
+  refuses `experts-via-tier host bank budget cannot hold one expert record` below one record
+  and `experts-via-tier host bank budget exceeds qualification ceiling` above 256 MiB, each
+  suffixed `(requested N, minimum M, ceiling C)`, and caps the bank at 16 records.
+- `--expert-bank-gpu-bytes=N` fixes the GPU slot count before any allocation
+  (`MoeSlotCache::with_exact_slots`, never clamps). `gpu_bank_budget` refuses
+  `experts-via-tier GPU bank budget cannot hold the eight-slot minimum` below eight slots and
+  `experts-via-tier GPU bank budget exceeds the hard VRAM ceiling` above the machine ceiling
+  (`hard_slot_bytes`: the `MEMRA_MOE_HARD_VRAM_FRAC` share of free VRAM minus two slots,
+  measured by the installer), with the same `(requested, minimum, ceiling)` suffix. One slot
+  is the record plus `banked_residency::SLOT_TAIL_PAD_BYTES` (8), the one constant the native
+  slot sizing in `moe_cache.rs` and the budget arithmetic share. Setting
+  `MEMRA_MOE_SLOTS` alongside a GPU budget is a refusal
+  (`experts-via-tier GPU bank budget conflicts with MEMRA_MOE_SLOTS`), never a silent
+  precedence. Without a GPU budget the native slot sizing (`MEMRA_MOE_SLOTS` or auto) is
+  untouched. The installer takes both budgets as a typed `ExpertBankBudget`; it reads no
+  argv and no environment for them.
 
 Verdicts are the standard gates: `run-gen` argmax `MATCH` and `run-spec`
 `=== SELF-CONSISTENCY PASS ===` over K=1..8. The gate prints
+`[experts-via-tier] catalog blocks=<n> banked=<n> projections=<n> catalog_sha256=<hex>
+records=<n> records_sha256=<hex>` once the catalog is bound (`catalog_sha256` is SHA-256 over
+`ExpertBankCatalog::identity()`, one line per projection; `records_sha256` chains the
+per-record checksums in catalog order; `banked` is below `blocks` when the gate loads without
+the MTP head), then
 `[experts-via-tier] installed artifact_sha256=<hex> host_slots=<n> max_expert_bytes=<n>` at
 install, and on drop `[expert-gpu-slru] slots=<n> allocated_bytes=<n> evictions=<n>` then
 `[experts-via-tier] physical_reads=<n> owner_close=<result>`. Under the collector, lane C's

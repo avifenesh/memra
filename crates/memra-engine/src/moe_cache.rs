@@ -34,6 +34,7 @@
 //! it was quoted as the live default in a placement plan.
 
 use crate::Engine;
+use crate::banked_residency::SLOT_TAIL_PAD_BYTES;
 use crate::model::{ExpertKeepalive, ExpertSource};
 use crate::spill_pread::{PreadPool, PreadStats, ReadTicket, SpillIoMode};
 use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, HostSlice, SyncOnDrop};
@@ -444,7 +445,7 @@ fn size_class_plan(block_bytes: &[usize], budget_bytes: usize) -> Vec<(usize, us
     }
     let total_bytes: u128 = counts
         .iter()
-        .map(|(&bytes, &count)| (bytes as u128 + 8) * count as u128)
+        .map(|(&bytes, &count)| (bytes as u128 + SLOT_TAIL_PAD_BYTES as u128) * count as u128)
         .sum();
     let budget = budget_bytes as u128;
     let mut plan: Vec<(usize, usize, u128)> = counts
@@ -460,7 +461,7 @@ fn size_class_plan(block_bytes: &[usize], budget_bytes: usize) -> Vec<(usize, us
         .collect();
     let mut used: u128 = plan
         .iter()
-        .map(|(bytes, count, _)| (*bytes as u128 + 8) * *count as u128)
+        .map(|(bytes, count, _)| (*bytes as u128 + SLOT_TAIL_PAD_BYTES as u128) * *count as u128)
         .sum();
 
     // Hamilton-style remainder pass keeps class proportions close after flooring. There are only
@@ -470,7 +471,7 @@ fn size_class_plan(block_bytes: &[usize], budget_bytes: usize) -> Vec<(usize, us
     for index in order {
         let (bytes, count, _) = plan[index];
         let available = counts[&bytes];
-        let required = bytes as u128 + 8;
+        let required = bytes as u128 + SLOT_TAIL_PAD_BYTES as u128;
         if count < available && used + required <= budget {
             plan[index].1 += 1;
             used += required;
@@ -489,17 +490,36 @@ impl MoeSlotCache {
     /// reaches ~85%+ steady-state. So the DEFAULT auto-sizes N to fill `MEMRA_MOE_VRAM_FRAC` (default
     /// 0.85) of free VRAM, clamped to [256, ~hot-set]. `MEMRA_MOE_SLOTS` forces an exact N.
     pub fn new(e: &Engine, max_block_bytes: usize) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::build(e, max_block_bytes, None)
+    }
+
+    /// Exact uniform slot count for the `--experts-via-tier --expert-bank-gpu-bytes=N`
+    /// door. The installer already refused a budget below eight slots or above the hard
+    /// ceiling, so this path reads no `MEMRA_MOE_SLOTS`, never clamps and never raises
+    /// the count; below eight it refuses instead of allocating the floor.
+    pub(crate) fn with_exact_slots(
+        e: &Engine,
+        max_block_bytes: usize,
+        slots: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::build(e, max_block_bytes, Some(slots))
+    }
+
+    fn build(
+        e: &Engine,
+        max_block_bytes: usize,
+        exact_slots: Option<usize>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let (free, _total) = e.ctx().mem_get_info()?;
-        // Keep two blocks of slack after the machine-specific hard ceiling. The default remains
-        // 80%; tightly provisioned spill rigs may raise it only after an OOM-gated local sweep.
-        let hard_frac = cache_hard_vram_frac();
-        let hard_bytes =
-            ((free as f64 * hard_frac) as usize).saturating_sub(2 * (max_block_bytes + 8));
-        let forced_slots = std::env::var("MEMRA_MOE_SLOTS")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok());
+        let hard_bytes = hard_slot_bytes(free, max_block_bytes);
+        let forced_slots = match exact_slots {
+            Some(slots) => Some(slots),
+            None => std::env::var("MEMRA_MOE_SLOTS")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok()),
+        };
         let requested_bytes = if let Some(n) = forced_slots {
-            n.saturating_mul(max_block_bytes + 8)
+            n.saturating_mul(max_block_bytes + SLOT_TAIL_PAD_BYTES)
         } else {
             // auto: fill MEMRA_MOE_VRAM_FRAC of free VRAM with slots (default 85%).
             // DEFAULT 0.85 (2026-07-06 local sweep: 0.40=25.0, 0.60=28.0, 0.85=28.5 tok/s on the
@@ -529,8 +549,16 @@ impl MoeSlotCache {
         } else {
             Vec::new()
         };
-        if class_plan.iter().map(|(_, count)| count).sum::<usize>() < 8 {
-            let n = (budget_bytes / (max_block_bytes + 8)).max(8);
+        if let Some(n) = exact_slots {
+            if n < 8 {
+                return Err(format!(
+                    "experts-via-tier GPU bank slot count {n} is below the eight-slot minimum"
+                )
+                .into());
+            }
+            class_plan = vec![(max_block_bytes, n)];
+        } else if class_plan.iter().map(|(_, count)| count).sum::<usize>() < 8 {
+            let n = (budget_bytes / (max_block_bytes + SLOT_TAIL_PAD_BYTES)).max(8);
             class_plan = vec![(max_block_bytes, n)];
         }
         let n: usize = class_plan.iter().map(|(_, count)| count).sum();
@@ -542,8 +570,8 @@ impl MoeSlotCache {
         for (class_index, &(capacity, count)) in class_plan.iter().enumerate() {
             let start = slots.len();
             for _ in 0..count {
-                // +8 tail pad: wide expert dots may issue an aligned read past the final block.
-                slots.push(e.alloc_u8(capacity + 8)?);
+                // Tail pad: wide expert dots may issue an aligned read past the final block.
+                slots.push(e.alloc_u8(capacity + SLOT_TAIL_PAD_BYTES)?);
                 slot_class.push(class_index);
                 occupant.push(None);
             }
@@ -560,7 +588,7 @@ impl MoeSlotCache {
         if size_aware {
             let allocated: usize = class_plan
                 .iter()
-                .map(|(bytes, count)| (bytes + 8) * count)
+                .map(|(bytes, count)| (bytes + SLOT_TAIL_PAD_BYTES) * count)
                 .sum();
             eprintln!(
                 "[moe-cache] size-aware fixed slots: {n} slots in {} classes, {:.2} GB / {:.2} GB budget",
@@ -1667,6 +1695,16 @@ fn parse_cache_lfu_decay(raw: Option<&str>) -> Result<Option<f32>, &'static str>
     }
 }
 
+/// Machine hard ceiling for the slot bank: `MEMRA_MOE_HARD_VRAM_FRAC` of free VRAM with
+/// two slots of slack. One implementation for the native constructor and for the
+/// experts-via-tier installer that refuses a budget above it before any allocation.
+pub(crate) fn hard_slot_bytes(free: usize, max_block_bytes: usize) -> usize {
+    // Keep two blocks of slack after the machine-specific hard ceiling. The default remains
+    // 80%; tightly provisioned spill rigs may raise it only after an OOM-gated local sweep.
+    let hard_frac = cache_hard_vram_frac();
+    ((free as f64 * hard_frac) as usize).saturating_sub(2 * (max_block_bytes + SLOT_TAIL_PAD_BYTES))
+}
+
 fn cache_hard_vram_frac() -> f64 {
     const DEFAULT: f64 = 0.80;
     let raw = std::env::var("MEMRA_MOE_HARD_VRAM_FRAC").ok();
@@ -1931,8 +1969,8 @@ mod slru_intrusive_tests {
 #[cfg(test)]
 mod vram_fraction_tests {
     use super::{
-        parse_cache_hard_vram_frac, parse_cache_lfu_decay, parse_cache_lfu_mtp_weight,
-        size_class_plan,
+        SLOT_TAIL_PAD_BYTES, parse_cache_hard_vram_frac, parse_cache_lfu_decay,
+        parse_cache_lfu_mtp_weight, size_class_plan,
     };
 
     #[test]
@@ -1979,7 +2017,7 @@ mod vram_fraction_tests {
         assert!(plan.iter().all(|(_, count)| *count > 0));
         assert!(
             plan.iter()
-                .map(|(bytes, count)| (bytes + 8) * count)
+                .map(|(bytes, count)| (bytes + SLOT_TAIL_PAD_BYTES) * count)
                 .sum::<usize>()
                 <= budget
         );
@@ -1991,7 +2029,7 @@ mod vram_fraction_tests {
     #[test]
     fn size_class_plan_returns_full_inventory_when_it_fits() {
         let blocks = [100usize, 100, 200, 400];
-        let budget: usize = blocks.iter().map(|bytes| bytes + 8).sum();
+        let budget: usize = blocks.iter().map(|bytes| bytes + SLOT_TAIL_PAD_BYTES).sum();
         assert_eq!(
             size_class_plan(&blocks, budget),
             vec![(100, 2), (200, 1), (400, 1)]
