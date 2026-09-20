@@ -136,9 +136,10 @@ impl MatchStage {
                     end = right;
                 }
             }
-            // HF discards a selected match when whitespace expansion consumed its
-            // complete adjusted span. Keep nonempty overlapping matches unchanged.
-            if start == end {
+            // Whitespace expansion may consume a later match completely. An empty
+            // or inverted adjusted span must not emit an ID or rewind the cursor.
+            // Keep nonempty overlapping matches unchanged.
+            if start >= end {
                 continue;
             }
             if cursor < start {

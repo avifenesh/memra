@@ -256,6 +256,53 @@ fn whitespace_consumed_added_tokens_match_independent_oracle() {
 }
 
 #[test]
+fn inverted_whitespace_spans_do_not_reemit_consumed_tokens() {
+    // HF 0.22.2 panics on these inverted spans, so this is a native robustness
+    // contract, separate from the oracle-defined parity cases above. <X>'s rstrip
+    // already consumed the entire suffix; later adjusted tab spans emit no IDs.
+    let fixture = data("whitespace-oracle.json");
+    let mut variants = 0;
+    for variant in fixture.get("variants").unwrap().as_arr().unwrap() {
+        let name = variant.get("name").unwrap().as_str().unwrap();
+        if !name.starts_with("consumed-tab-") {
+            continue;
+        }
+        variants += 1;
+        let mut source = data("tiny-base-tokenizer.json");
+        let json::Value::Obj(ref mut fields) = source else {
+            unreachable!()
+        };
+        for field in ["normalizer", "added_tokens"] {
+            fields.insert(field.into(), variant.get(field).unwrap().clone());
+        }
+        let dir = FixtureDir::new();
+        std::fs::write(dir.0.join("tokenizer.json"), json_text(&source)).unwrap();
+        std::fs::write(
+            dir.0.join("generation_config.json"),
+            r#"{"eos_token_id":519}"#,
+        )
+        .unwrap();
+        let hf = Tokenizer::from_hf_dir(&dir.0).unwrap();
+        let imported =
+            load_gguf(&gguf(&source, "qwen2", Some(&imported_program(&source)))).unwrap();
+        for text in ["<X>\t\t", "<X>\t \t", "<X>\t\t\t"] {
+            for add in [false, true] {
+                for parse in [false, true] {
+                    for (loader, tokenizer) in [("HF", &hf), ("GGUF", &imported)] {
+                        assert_eq!(
+                            tokenizer.encode_special(text, add, parse),
+                            vec![520],
+                            "{name} {loader}: {text:?}, add={add}, parse={parse}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(variants, 4);
+}
+
+#[test]
 fn staged_nfc_and_added_tokens_match_independent_oracle() {
     let fixture = data("fixtures.json");
     let variants = fixture.get("variants").unwrap().as_arr().unwrap();

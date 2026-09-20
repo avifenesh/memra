@@ -32,3 +32,9 @@ The onboarding tokenizer fingerprint now validates and binds the explicit input-
 JSON value parsing now rejects nesting beyond 128 levels before building a deeply nested declaration. Accepted 32-level program bounds remain separate and smaller. Boundary tests exercise arrays and objects.
 
 The security reviewer service stopped before issuing a final report. It is recorded as incomplete, not passed. Completed independent domain findings are repaired here; focused re-review and final native/integration gates remain pending.
+
+## External review: inverted whitespace spans
+
+The external review found that a cursor clamp can create a start greater than end, in addition to the previously tested empty span. The native regression first reproduced extra IDs for `<X>` followed by two tabs. The guard now discards both empty and inverted adjusted spans, preserving nonempty overlapping behavior. Tests cover identity/NFC, raw/normalized matching, both loaders and all parse/add-special modes (96 comparisons).
+
+Pinned HF 0.22.2 itself reports `PanicException: AddedVocabulary bad split` for these three inverted-span inputs. The recorded oracle errors are retained; no token-ID parity claim is made for inputs on which the oracle provides no result. The new tests instead require consumed suffixes not to emit another token or replay text. All 79 tokenizer unit tests and strict Clippy pass after this correction; original oracle-defined parity tests remain green.
