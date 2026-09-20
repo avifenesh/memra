@@ -305,7 +305,7 @@ fn run() -> Result<()> {
 }
 fn main() {
     if let Err(error) = run() {
-        eprintln!("kv-tier-gate: {error}");
+        eprintln!("{}", cli::diagnostic(&error.to_string()));
         std::process::exit(2);
     }
 }
