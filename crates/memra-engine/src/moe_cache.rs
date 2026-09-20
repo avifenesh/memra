@@ -2083,8 +2083,10 @@ impl Drop for MoeSlotCache {
 // before the scoped worker spawns produce a cascade of Send/Sync diagnostics.
 const _: fn() = || {
     fn send_sync<T: Send + Sync>() {}
+    fn send<T: Send>() {}
     send_sync::<Engine>();
-    send_sync::<MoeSlotCache>();
+    // Engine protects the cache with a Mutex; its pread receiver is !Sync.
+    send::<MoeSlotCache>();
     send_sync::<memra_tier::bank::ExpertBankProxy>();
     send_sync::<memra_tier::bank::ExpertLeaseToken>();
 };
