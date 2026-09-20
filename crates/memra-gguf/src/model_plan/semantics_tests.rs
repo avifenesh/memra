@@ -650,3 +650,23 @@ fn step_plan_declares_centered_norms_and_gguf_contract_preserves_folded_weights(
         "GGUF already stores folded weights; it must not acquire a second +1"
     );
 }
+
+#[test]
+fn step_perception_encoder_is_not_a_fabricated_factored_vision_program() {
+    let text = include_str!("../model_packs/step35/contract-fixture.json");
+    let composite = text.replacen('{', r#"{"vision_config":{"model_type":"perception_encoder","width":1536,"layers":47,"heads":16,"image_size":728,"patch_size":14},"#, 1);
+    let parsed = HfConfig::parse(&composite);
+    assert!(
+        parsed.vision.is_none(),
+        "unrepresented perception encoder must not acquire Gemma defaults"
+    );
+    assert!(parsed.vision_glm5.is_none());
+    let plan = compile_for_load(&ModelConfig::from_hf(&parsed)).unwrap();
+    let text_plan = compile_for_load(&ModelConfig::from_hf(&HfConfig::parse(text))).unwrap();
+    assert!(plan.vision.is_none());
+    assert!(plan.multimodal.is_none());
+    assert_eq!(
+        plan, text_plan,
+        "the Step text program must stay unchanged; native vision uses its separate existing route"
+    );
+}
