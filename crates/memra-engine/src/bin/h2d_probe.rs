@@ -15,6 +15,7 @@ struct Options {
     sizes: Vec<usize>,
     directions: Vec<&'static str>,
     reverse: bool,
+    copies: u32,
 }
 impl Options {
     fn parse(args: impl Iterator<Item = String>) -> Result<Self> {
@@ -23,6 +24,7 @@ impl Options {
             sizes: SIZES.to_vec(),
             directions: vec!["h2d", "d2h"],
             reverse: false,
+            copies: 1,
         };
         let mut args = args;
         while let Some(arg) = args.next() {
@@ -48,10 +50,17 @@ impl Options {
                     Some("ba") => out.reverse = true,
                     _ => return Err("--order must be ab|ba".into()),
                 },
-                // Deliberately do not expose a scored mode before the full G2 protocol exists.
-                "--repeats" | "--copies" => {
+                // Outer balancing/calibration belongs to the G2 runner. Copies within
+                // one visit do not increase its independent observation count (N=1).
+                "--repeats" => {
                     if args.next().as_deref() != Some("1") {
-                        return Err("plumbing probe requires --repeats 1 --copies 1".into());
+                        return Err("probe requires --repeats 1".into());
+                    }
+                }
+                "--copies" => {
+                    out.copies = args.next().ok_or("--copies needs an integer")?.parse()?;
+                    if !(1..=100_000).contains(&out.copies) {
+                        return Err("--copies must be in 1..100000".into());
                     }
                 }
                 _ => return Err(format!("unknown argument: {arg}").into()),
@@ -90,7 +99,7 @@ struct Sample {
     mono_start_ns: u128,
     mono_end_ns: u128,
     wall_ns: Option<u128>,
-    event_ms: Option<f32>,
+    event_ms: Option<f64>,
     setup_ns: Option<u128>,
     verify_ns: Option<u128>,
     expected_sha256: Option<String>,
@@ -100,11 +109,14 @@ struct Sample {
 }
 
 impl Sample {
-    fn print(&self, bytes: usize, direction: &str, pinned: bool, dry: bool) {
+    fn print(&self, bytes: usize, direction: &str, pinned: bool, opts: &Options) {
+        let dry = opts.dry;
+        let copies = opts.copies;
+        let order = if opts.reverse { "ba" } else { "ab" };
         let num = |x: Option<u128>| x.map_or("null".into(), |x| x.to_string());
         let string = |x: &Option<String>| x.as_ref().map_or("null".into(), |x| format!("{x:?}"));
         println!(
-            "{{\"schema_version\":1,\"record\":\"sample\",\"evidence_class\":{:?},\"bytes\":{bytes},\"direction\":{direction:?},\"arm\":{:?},\"pinned_flags\":{},\"n\":1,\"copies\":1,\"completed_bytes\":{},\"verified_bytes\":{},\"unix_start_ns\":{},\"unix_end_ns\":{},\"mono_start_ns\":{},\"mono_end_ns\":{},\"wall_ns\":{},\"event_ms\":{},\"setup_ns\":{},\"verify_ns\":{},\"expected_sha256\":{},\"actual_sha256\":{},\"power_before\":{},\"power_after\":{},\"identity\":{}}}",
+            "{{\"schema_version\":1,\"record\":\"sample\",\"evidence_class\":{:?},\"bytes\":{bytes},\"direction\":{direction:?},\"arm\":{:?},\"pinned_flags\":{},\"n\":1,\"copies\":{copies},\"order\":{order:?},\"event_timing\":\"sum-per-operation-owner-stream\",\"completed_bytes\":{},\"verified_bytes\":{},\"unix_start_ns\":{},\"unix_end_ns\":{},\"mono_start_ns\":{},\"mono_end_ns\":{},\"wall_ns\":{},\"event_ms\":{},\"setup_ns\":{},\"verify_ns\":{},\"expected_sha256\":{},\"actual_sha256\":{},\"power_before\":{},\"power_after\":{},\"identity\":{}}}",
             if dry {
                 "dry-run-no-cuda"
             } else {
@@ -116,7 +128,11 @@ impl Sample {
                 "pageable"
             },
             if pinned { "0" } else { "null" },
-            if dry { 0 } else { bytes },
+            if dry {
+                0
+            } else {
+                bytes as u64 * u64::from(copies)
+            },
             if dry { 0 } else { bytes },
             self.unix_start_ns,
             self.unix_end_ns,
@@ -236,6 +252,7 @@ mod native {
             direction: &str,
             seed: u8,
             clock: &Instant,
+            copies: u32,
         ) -> Result<Sample> {
             let setup = Instant::now();
             for (i, b) in host.iter_mut().enumerate() {
@@ -254,21 +271,28 @@ mod native {
             let unix_start_ns = unix_ns();
             let mono_start_ns = clock.elapsed().as_nanos();
             let wall = Instant::now();
-            let start = self
-                .stream
-                .record_event(Some(sys::CUevent_flags::CU_EVENT_DEFAULT))?;
-            self.copy(dev, host, direction)?;
-            let end = self
-                .stream
-                .record_event(Some(sys::CUevent_flags::CU_EVENT_DEFAULT))?;
-            end.synchronize()?;
+            // One interval per completed copy, not an interval spanning the loop.
+            // copy() fences on the owner stream, so event time includes the host
+            // submission/fence gap before recording the end (not DMA-only time).
+            let mut event_ms = 0.0_f64;
+            for _ in 0..copies {
+                let start = self
+                    .stream
+                    .record_event(Some(sys::CUevent_flags::CU_EVENT_DEFAULT))?;
+                self.copy(dev, host, direction)?;
+                let end = self
+                    .stream
+                    .record_event(Some(sys::CUevent_flags::CU_EVENT_DEFAULT))?;
+                end.synchronize()?;
+                let operation_ms = start.elapsed_ms(&end)?;
+                if !operation_ms.is_finite() || operation_ms < 0.0 {
+                    return Err("invalid event timing".into());
+                }
+                event_ms += f64::from(operation_ms);
+            }
             let wall_ns = wall.elapsed().as_nanos();
             let mono_end_ns = clock.elapsed().as_nanos();
             let unix_end_ns = unix_ns();
-            let event_ms = start.elapsed_ms(&end)?;
-            if !event_ms.is_finite() || event_ms < 0.0 {
-                return Err("invalid event timing".into());
-            }
             let power_after = self.power()?;
             if power_before != power_after {
                 return Err("power envelope changed within visit".into());
@@ -326,14 +350,14 @@ mod native {
                         &mut pageable
                     };
                     for seed in [3, 71] {
-                        let control = self.visit(&mut dev, host, direction, seed, clock)?;
+                        let control = self.visit(&mut dev, host, direction, seed, clock, 1)?;
                         println!(
                             "{{\"schema_version\":1,\"record\":\"control\",\"bytes\":{bytes},\"direction\":{direction:?},\"pinned\":{is_pinned},\"seed\":{seed},\"identity\":true,\"sha256\":{:?}}}",
                             control.actual_sha256.unwrap()
                         );
                     }
-                    self.visit(&mut dev, host, direction, 113, clock)?
-                        .print(bytes, direction, is_pinned, false);
+                    self.visit(&mut dev, host, direction, 113, clock, opts.copies)?
+                        .print(bytes, direction, is_pinned, opts);
                 }
             }
             Ok(())
@@ -367,7 +391,7 @@ fn run() -> Result<()> {
                         mono_end_ns: clock.elapsed().as_nanos(),
                         ..Sample::default()
                     }
-                    .print(bytes, direction, pinned, true);
+                    .print(bytes, direction, pinned, &opts);
                 }
             }
         }
@@ -408,7 +432,12 @@ mod tests {
     fn options_fail_closed() {
         for args in [
             vec!["--bytes", "0"],
-            vec!["--copies", "2"],
+            vec!["--copies", "0"],
+            vec!["--copies", "100001"],
+            vec!["--copies", "-1"],
+            vec!["--copies", "nope"],
+            vec!["--copies"],
+            vec!["--repeats", "2"],
             vec!["--direction", "bad"],
             vec!["--surprise"],
         ] {
@@ -423,6 +452,14 @@ mod tests {
             .unwrap()
             .reverse
         );
+    }
+    #[test]
+    fn copies_bounds_and_default() {
+        assert_eq!(Options::parse(std::iter::empty()).unwrap().copies, 1);
+        for n in [1, 2, 100_000] {
+            let opts = Options::parse(["--copies".to_owned(), n.to_string()].into_iter()).unwrap();
+            assert_eq!(opts.copies, n);
+        }
     }
     #[test]
     fn full_byte_comparator() {

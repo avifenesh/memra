@@ -14,18 +14,20 @@ The F-only remote build uses that auto-discovered target; neither a manifest
 mutation nor an engine runtime default is needed. The final desired public
 spelling is `h2d-probe`.
 
-On Mac the package build is blocked by nvcc/CUDA, **not attempted as a CUDA
-qualification**. Compile this exact standalone source with `rustc --edition=2024`
+A native Mac package CUDA build is unavailable and is not CUDA qualification.
+The Linux-target `DOCS_RS=1` engine/bin typecheck passed with the explicit
+compile-only archive-hash sentinel; native Linux release build and the
+N=1 collector receipt are recorded in `H2D-RESULTS.md`. Compile this exact standalone source with `rustc --edition=2024`
 and execute `--dry-run` (no dependencies/CUDA on Mac); the output exercises
 all 40 sample shapes and the RESULT record with null GPU measurements.
 `rustc --test` exercises CLI refusal and complete-byte comparator red controls.
 Linux builds use existing engine `PinnedHostBuf` and cudarc/sha2 dependencies.
 
 `--bytes` selects one registered size; omit it for all ten sizes. `--direction`
-is `h2d|d2h|both`; `--order ab|ba` sets allocation-arm order. `--repeats` and
-`--copies` accept only `1`: this binary deliberately cannot be mistaken for the
-full calibrated, balanced N>=5 G2 experiment. Each arm/direction/size gets two
-complete untimed correctness controls (seeds 3 and 71), then one copy sample
+is `h2d|d2h|both`; `--order ab|ba` sets allocation-arm order. `--repeats` accepts only `1`; `--copies` accepts `1..100000` (default `1`).
+Copies are operations inside one arm visit, never independent observations;
+calibration and balanced N>=5 execution belong to D's `tools/tier-envelope.py`. Each arm/direction/size gets two
+complete untimed correctness controls (seeds 3 and 71), then one visit containing the requested number of copies
 (seed 113). The comparator corrupt-byte red control runs before any GPU work.
 
 The pinned arm uses cacheable flags=0, **not** write-combined memory. Host data
@@ -39,3 +41,11 @@ computed. Power snapshots use CUDA UUID solely to select the correct NVML
 index; only device index and raw limit strings appear in JSONL.
 
 No new environment reads, kernels, flags, model paths or serving claims.
+
+Each visit emits bare JSON (`record=sample`), with `order=ab|ba`, total
+`completed_bytes=bytes*copies`, and `event_ms` summed from independently
+synchronized per-operation owner-stream intervals. This intentionally matches
+D at `7f7bf547`: `tier-envelope.py` parses bare JSON, while `tier-battery.py`
+rejects multiple line-start `RESULT ` tokens. The final probe summary is also
+bare JSON (`record=RESULT`); only the outer collector worker emits one
+`RESULT `-prefixed aggregate. Do not prefix individual visits.
