@@ -108,6 +108,8 @@ The additional `indexed-kda` stage uses exactly two physical GPUs and a new four
 GLM5-next fixture. It requires positive cold and partial KDA/index-key obligations,
 materializes them through the real allocation paths, and requires zero remaining debt
 once warm. See [extension plan and CPU results](validation-extension-20260920/PLAN.md).
-It has not yet produced a native receipt; the historical three-stage result is unchanged.
+The native stage and all three original regressions passed at `fcb1b986`; see
+[extension native results](validation-extension-20260920/NATIVE-RESULTS.md). The historical
+three-stage `d413747d` result remains unchanged; no result transfers to a later merge.
 Use a fresh source/build receipt and the same two-card wrapper form with
 `--stage indexed-kda`.

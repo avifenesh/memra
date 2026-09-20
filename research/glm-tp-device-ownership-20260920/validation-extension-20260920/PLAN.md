@@ -88,3 +88,9 @@ remaining integrated release exactness/artifact checks. Full-checkpoint, actual 
 complete HTTP/token-stream and performance work is not implied by the new fixture.
 
 Raw CPU logs are stored losslessly with gzip; no failure or skip was removed.
+
+## Execution receipt
+
+This plan subsequently passed all four exact native stages at `fcb1b986`, including
+positive partial key bytes and warm/append zero. See [NATIVE-RESULTS.md](NATIVE-RESULTS.md).
+The preparation-time CPU record above and historical `d413747d` data remain unchanged.

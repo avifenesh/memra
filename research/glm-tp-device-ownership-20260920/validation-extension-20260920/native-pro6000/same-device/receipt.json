@@ -1,0 +1,50 @@
+{
+  "arch": "120a",
+  "binary": {
+    "path": "/home/memra-five/scratch/issue544/repo/target/qualify-544-indexed-a1/cargo-target/release/deps/memra_engine-05ce0169e5599d69",
+    "sha256": "d2fe8a6ac41c5465189a8ec4f289ebc33cdba2c46da4f68ed907a822bb46865f"
+  },
+  "command": [
+    "/home/memra-five/scratch/issue544/repo/target/qualify-544-indexed-a1/cargo-target/release/deps/memra_engine-05ce0169e5599d69",
+    "--exact",
+    "model_memory::native_tests::glm_same_ordinal_owners_are_not_lost",
+    "--ignored",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "files": {
+    "devices.csv": "90683234ab14a03512d55a32fe31e499b9390ce5f610c2a9ec9f828bdf35a05a",
+    "host-processes-before.csv": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "processes-after.csv": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "processes-before.csv": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "telemetry.csv": "2e57344e85079b6c5f01c68db30342a2d74b6135cb509447c111fcfded671da6",
+    "test-list.txt": "cb606f36ef7e6672c427d41da2da318abcf953ff340348c7832d9261ebdcbc05",
+    "test.log": "029d8a8b3126cd10079e8b3b3c6163abc14be8e9a99c8a6e9b989715ed6d0630",
+    "topology.txt": "72f380a061fc7c4ba7d31a02873939def050554588bbcb5f5594428ee111f18b"
+  },
+  "finished_unix": 1789890079.9997766,
+  "gpu_uuids": [
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+  ],
+  "lease": {
+    "child_pid": 19483,
+    "lock_files": {
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a": "/tmp/memra-gpu-locks/GPU-c2a89142-c177-b92a-1366-d58822694f0a.lock"
+    },
+    "lock_order": [
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+    ],
+    "requested_uuids": [
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+    ],
+    "wrapper_pid": 19478
+  },
+  "lock_files": {
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a": "/tmp/memra-gpu-locks/GPU-c2a89142-c177-b92a-1366-d58822694f0a.lock"
+  },
+  "source_sha": "fcb1b986b742a91cf960e5a6fea671779cce79c7",
+  "stage": "same-device",
+  "started_unix": 1789890078.8276172,
+  "status": "passed",
+  "test": "model_memory::native_tests::glm_same_ordinal_owners_are_not_lost"
+}
