@@ -2078,5 +2078,18 @@ impl Drop for MoeSlotCache {
     }
 }
 
+// Compile in ordinary library builds, not only tests: PP workers share Engine.
+// Putting an owner-only bank/lease in this graph must fail at this boundary,
+// before the scoped worker spawns produce a cascade of Send/Sync diagnostics.
+const _: fn() = || {
+    fn send_sync<T: Send + Sync>() {}
+    fn send<T: Send>() {}
+    send_sync::<Engine>();
+    // Engine protects the cache with a Mutex; its pread receiver is !Sync.
+    send::<MoeSlotCache>();
+    send_sync::<memra_tier::bank::ExpertBankProxy>();
+    send_sync::<memra_tier::bank::ExpertLeaseToken>();
+};
+
 #[path = "banked_residency/native.rs"]
 mod banked_native;
