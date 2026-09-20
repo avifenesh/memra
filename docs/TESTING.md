@@ -966,18 +966,32 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   cycle N, criteria (a) to (c) holding every cycle, no drift of the process free baseline),
   `growing-residual` (the residual, or the bytes still unreturned against the first cycle's
   baseline, grows across cycles), otherwise `unclassified`. The per-cycle G1 line is unchanged
-  and the series `g1_reclaim_qualified` is the AND of the cycles, so any nonzero residual stays
-  `false` and the status line stays `not G1 PASS`: a class is recorded, never promoted. The
-  console prints `reclaim-cycle k/N: ...` per cycle and one `RECLAIM-CYCLES: class=...
-  cycles=N granule=... residual_first=... residual_last=... g1_reclaim_qualified=...` line.
+  (`reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0`, tightening
+  (e)). The series `g1_reclaim_qualified` follows lead ruling 6 (day 12,
+  `reclaim_contract::series_verdict`): `true` with a nonzero residual only when all of these hold:
+  the run is a `--reclaim-cycles N` series with N >= 5 (`series_min_cycles=5`), the class is
+  `one-time-driver-mapping-metadata`, criteria (a) to (c) hold in every cycle, the restored prefix
+  is bit-identical in every cycle, and the free baseline drifts by 0. Then, and only then, the gate
+  prints `ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, N cycles)` as its
+  status line (the `K` tag follows the committed context) and writes it as `series_label`;
+  otherwise `series_label=not-printed`. A series whose every cycle is exact (class `none`) is
+  `true` with no new label. A single roundtrip with a nonzero residual, a series shorter than 5,
+  any other class, a drifting baseline, a differing restore, and any pooled run stay `false` /
+  `not-applicable-pooled` with their existing status lines. Criteria (a) to (d) are unchanged and
+  (e) stays in force for every other shape. The console prints `reclaim-cycle k/N: ...` per cycle
+  and one `RECLAIM-CYCLES: class=... cycles=N granule=... residual_first=... residual_last=...
+  g1_reclaim_qualified=...` line before the status line.
   Refusals (exit 2, `REFUSED:` last line): without `--reclaim-diagnostic`
   (`REFUSED: --reclaim-cycles requires --reclaim-diagnostic`), a pooled allocator
   (`REFUSED: --reclaim-cycles requires --kv-allocator vmm; a pooled cache releases no chunk`),
   a duplicate (`REFUSED: duplicate --reclaim-cycles`), and N < 2, a missing value or junk
   (`REFUSED: --reclaim-cycles requires an integer count >= 2`; the value is never echoed). No
   new `MEMRA_*` read. CPU replay: `crates/memra-tier/tests/reclaim/` includes the gate's pure
-  modules by path and replays the committed day-10 target-card receipts as series; the lane's
-  offline replay is `research/spill-b-20260919/verify-day11.py`.
+  modules by path and replays the committed day-10 target-card receipts as series (`day11.rs`) and
+  the committed day-11 series bytes of both card classes under ruling 6 (`day12.rs`); the lane's
+  offline replays are `research/spill-b-20260919/verify-day11.py` (day-11 rule) and
+  `verify-day12.py` (ruling 6: the label must have been printed by the gate as the final status
+  line, exactly once, and the receipt fields must follow the pure verdict).
 - Receipts: `BASELINE.txt` (first line `BASELINE_CAPTURED`) or `ACTIVE.txt` (first line
   `ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS` or
   `ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation
@@ -990,8 +1004,9 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   `kv_tier_gate/reclaim_contract.rs`; on top of criteria (a) to (d) the gate applies the day-10
   tightening (e): `g1_reclaim_qualified=true` requires `residual_bytes=0`
   (`active.rs`: `reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0`),
-  so a *classified* nonzero residual is recorded but does not qualify. The binary never prints a G1
-  verdict; the lane's offline replay (`research/spill-b-20260919/verify-day10.py`, which enforces
+  so a *classified* nonzero residual is recorded but does not qualify in any single roundtrip. The
+  binary prints a G1 label in exactly one shape, the ruling-6 series label above; for every other
+  shape the lane's offline replay (`research/spill-b-20260919/verify-day10.py`, which enforces
   the same zero-residual rule) compares the receipt with the frozen baseline bundle and assigns
   `ACTIVE-8K G1 PASS` only when (a) to (e) hold.
 - Refusal token contract (lead ruling): a refusal is a final console line
