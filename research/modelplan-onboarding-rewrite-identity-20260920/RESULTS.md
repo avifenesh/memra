@@ -9,6 +9,17 @@ Base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/542-trusted-rewrite-identity`.
 Environment: macOS arm64, no CUDA toolkit or GPU. No serving machine was accessed.
 
+## Consolidated native-runner finalization correction
+
+TC557-CALLERS-01 also covers the baseline `qualify-native.py` pattern. Both runners
+now share `native_finalization.py`, including owned variant/binary cleanup before
+manifest construction. Seven baseline and twelve caller CPU controls pass, as do all31 build-provenance
+and runner controls. Frozen
+baseline failure and final source/log hashes are in
+`cleanup-receipt-20260920/combined/sealed-comparison.json`. No Rust/Cargo runtime
+input changed. The frozen1aee and dea9 CPU build records remain their own records;
+no new native build or GPU attempt is implied by this gate-code correction.
+
 ## Caller receipt finalization correction (CPU only)
 
 TC557-CALLERS-01 exposed passed publication before telemetry teardown and manifest

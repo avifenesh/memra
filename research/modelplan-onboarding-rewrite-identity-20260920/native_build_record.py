@@ -32,7 +32,7 @@ BINARIES = ('memra', 'rewrite_identity_gate', 'run-gen', 'decode-batch-gate', 'r
 CALLER_RUNNER = 'research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py'
 ENV_CONTROLLER = 'research/modelplan-onboarding-rewrite-identity-20260920/native_env_controller.py'
 SOURCE_PATHS = ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo', 'crates', PRODUCER, RUNNER,
-                CALLER_RUNNER, ENV_CONTROLLER)
+                CALLER_RUNNER, ENV_CONTROLLER, 'research/modelplan-onboarding-rewrite-identity-20260920/native_finalization.py')
 TEST_TARGETS = {
     'worker': ('memra-server', '--lib', None, 'memra_server'),
     'repack': ('memra-engine', '--test', 'native_repack_gpu', 'native_repack_gpu'),

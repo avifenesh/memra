@@ -101,3 +101,13 @@ replacement leaves incomplete. The manifest excludes the mutable root result and
 result binds the manifest hash. Raw child/case evidence survives failed finalization.
 Both phases have cleanup timeout/error, manifest, final-invariant and publication
 fault controls. The original1aee runner fails them; the corrected runner passes.
+
+
+The same TC557-CALLERS-01 finalization rule now covers `qualify-native.py` too.
+Both runners use `native_finalization.py`; baseline variant/binary cleanup is part
+of that shared failure accounting. No runner publishes passed before telemetry,
+artifact cleanup, log close, evidence hashing and final identity checks complete.
+Seven baseline CPU fault controls preserve the twelve-case schedule and expected
+refusal semantics, including variant cleanup, and complement the twelve caller
+controls. Existing source/build trees remain frozen; this is a gate-code change,
+not permission to relabel their executables or qualification records.

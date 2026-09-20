@@ -26,6 +26,17 @@ build_record = importlib.util.module_from_spec(_build_spec)
 _build_spec.loader.exec_module(build_record)
 
 
+def adjacent_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
+    value = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(value)
+    return value
+
+
+finalization = adjacent_module('native_finalization', 'native_finalization.py')
+controller = adjacent_module('native_env_controller', 'native_env_controller.py')
+
+
 def digest(path):
     value = hashlib.sha256()
     with open(path, 'rb') as stream:
@@ -208,6 +219,7 @@ def run(args):
             process = subprocess.Popen([str(x) for x in command], cwd=ROOT, env={**base, **(changes or {})}, stdout=log, stderr=subprocess.STDOUT)
             try:
                 while process.poll() is None:
+                    controller.check_deadline(float('inf'))
                     verify_lease()
                     try:
                         process.wait(timeout=0.5)
@@ -243,62 +255,83 @@ def run(args):
         if line.split(',')[0].strip() in lease['requested_uuids']:
             raise RuntimeError('a compute process already occupies the locked GPU')
     verify_build()
+    summary = {'status': 'incomplete', 'scope': 'single-card native identity admission and named regression cases only',
+               'build_record_sha256': provenance_sha256, 'mtp': 'pending exact artifact',
+               'multi_card': 'pending separate locked pair', 'model_support_promotion': False,
+               'serving_binary_qualification': False}
+    finalization.publish_result(out, summary, writer=write_json)
     telemetry_file = (out / 'all-card-telemetry-250ms.csv').open('wb')
-    telemetry = subprocess.Popen(['nvidia-smi', '--query-gpu=timestamp,uuid,name,index,memory.total,memory.used,utilization.gpu,power.draw,clocks.sm,temperature.gpu', '--format=csv', '--loop-ms=250'], stdout=telemetry_file, stderr=subprocess.STDOUT)
+    telemetry = None
     variant = out / 'wrong-weights'
     changed_binary = out / 'changed-executable'
-    try:
-        bundle = out / 'bundle'
-        case('inspect', [tools['memra'], 'model', 'inspect', model, '--against', 'qwen3', '--out', bundle])
-        capture = {'MEMRA_ARTIFACT_LOCK': str(bundle / 'artifact.lock')}
-        strict = {**capture, 'MEMRA_REWRITE_BUNDLE': str(bundle)}
-        captured = case('native-capture-and-reinstall', [tools['rewrite_identity_gate'], 'capture', model, bundle], capture)
-        checked = case('native-positive-fresh-process', [tools['rewrite_identity_gate'], 'check', model, bundle], strict)
-        expected = output_hashes(captured, 'installed-eager')
-        actual = output_hashes(checked, 'check-eager')
-        write_json(out / 'fresh-process-output-parity.json', {'expected': expected, 'actual': actual, 'passed': expected == actual})
-        if expected != actual:
-            raise RuntimeError('fresh-process eager output differs despite matching runtime identity')
-        case('retained-library-drift', [tools['rewrite_identity_gate'], 'library-drift', model, bundle], strict)
-        case('missing-bundle', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_REWRITE_BUNDLE': str(out / 'missing')}, 'read artifact.lock')
-        case('different-numerical-program', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_FAST': '0'}, 'does not bind numeric_program_sha256=')
-        write_json(out / 'weight-mutation.json', mutate_weight(model, variant))
-        case('different-weights-same-geometry', [tools['rewrite_identity_gate'], 'check', variant, bundle], strict, 'does not bind artifact_sha256=')
-        shutil.copy2(tools['rewrite_identity_gate'], changed_binary)
-        with changed_binary.open('ab') as stream:
-            stream.write(b'\nmemra-542-binary-identity-negative\n')
-        write_json(out / 'binary-mutation.json', {'sha256': digest(changed_binary), 'original_sha256': digest(tools['rewrite_identity_gate']), 'change': 'appended inert bytes to ELF'})
-        case('different-executable-same-source', [changed_binary, 'check', model, bundle], strict, 'does not bind implementation_sha256=')
-        fresh = out / 'fresh-kv-control'
-        fresh.mkdir()
-        shutil.copy2(bundle / 'artifact.lock', fresh / 'artifact.lock')
-        fresh_text = case('fresh-kv-output-control-unqualified', [tools['rewrite_identity_gate'], 'fresh-control', model, fresh], {'MEMRA_ARTIFACT_LOCK': str(fresh / 'artifact.lock')})
-        if (fresh / 'rewrite-receipts.tsv').exists():
-            raise RuntimeError('unqualified fresh-KV control emitted a qualification receipt')
-        write_json(out / 'separate-program-outputs.json', {'cached': expected, 'fresh': output_hashes(fresh_text, 'fresh-kv-diagnostic'), 'same_program': False})
-        replayed = case('cached-replay-after-isolated-fresh-control', [tools['rewrite_identity_gate'], 'check', model, bundle], strict)
-        if output_hashes(replayed, 'check-eager') != expected:
-            raise RuntimeError('isolated fresh-KV diagnostic changed cached eager output')
-        case('legacy-argmax-regression', [tools['run-gen'], model, '1', '2', '3', '4'], {'MEMRA_NGEN': '32'})
-        case('legacy-batch-regression', [tools['decode-batch-gate'], model, '--mode', 'config', '--batch', '2', '--steps', '16'])
-        if args.mtp_model:
-            if not args.mtp_sha256 or digest(args.mtp_model) != args.mtp_sha256:
-                raise RuntimeError('MTP artifact requires its exact owner-supplied SHA-256')
-            case('mtp-k1-through-k8', [tools['run-spec'], args.mtp_model, '1', '2', '3', '4'], {'MEMRA_NGEN': '32'})
-        verify_build()
-        write_json(out / 'result.json', {'status': 'passed', 'scope': 'single-card native identity admission and named regression cases only',
-            'build_record_sha256': provenance_sha256,
-            'completed_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'mtp': 'ran' if args.mtp_model else 'pending exact artifact', 'multi_card': 'pending separate locked pair',
-            'model_support_promotion': False, 'serving_binary_qualification': False})
-    finally:
-        telemetry.terminate()
-        telemetry.wait(timeout=15)
-        telemetry_file.close()
-        changed_binary.unlink(missing_ok=True)
-        if variant.exists():
+    failure = None
+    with controller.cleanup_signals():
+        try:
+            telemetry = subprocess.Popen(['nvidia-smi', '--query-gpu=timestamp,uuid,name,index,memory.total,memory.used,utilization.gpu,power.draw,clocks.sm,temperature.gpu', '--format=csv', '--loop-ms=250'], stdout=telemetry_file, stderr=subprocess.STDOUT)
+            bundle = out / 'bundle'
+            case('inspect', [tools['memra'], 'model', 'inspect', model, '--against', 'qwen3', '--out', bundle])
+            capture = {'MEMRA_ARTIFACT_LOCK': str(bundle / 'artifact.lock')}
+            strict = {**capture, 'MEMRA_REWRITE_BUNDLE': str(bundle)}
+            captured = case('native-capture-and-reinstall', [tools['rewrite_identity_gate'], 'capture', model, bundle], capture)
+            checked = case('native-positive-fresh-process', [tools['rewrite_identity_gate'], 'check', model, bundle], strict)
+            expected = output_hashes(captured, 'installed-eager')
+            actual = output_hashes(checked, 'check-eager')
+            write_json(out / 'fresh-process-output-parity.json', {'expected': expected, 'actual': actual, 'passed': expected == actual})
+            if expected != actual:
+                raise RuntimeError('fresh-process eager output differs despite matching runtime identity')
+            case('retained-library-drift', [tools['rewrite_identity_gate'], 'library-drift', model, bundle], strict)
+            case('missing-bundle', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_REWRITE_BUNDLE': str(out / 'missing')}, 'read artifact.lock')
+            case('different-numerical-program', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_FAST': '0'}, 'does not bind numeric_program_sha256=')
+            write_json(out / 'weight-mutation.json', mutate_weight(model, variant))
+            case('different-weights-same-geometry', [tools['rewrite_identity_gate'], 'check', variant, bundle], strict, 'does not bind artifact_sha256=')
+            shutil.copy2(tools['rewrite_identity_gate'], changed_binary)
+            with changed_binary.open('ab') as stream:
+                stream.write(b'\nmemra-542-binary-identity-negative\n')
+            write_json(out / 'binary-mutation.json', {'sha256': digest(changed_binary), 'original_sha256': digest(tools['rewrite_identity_gate']), 'change': 'appended inert bytes to ELF'})
+            case('different-executable-same-source', [changed_binary, 'check', model, bundle], strict, 'does not bind implementation_sha256=')
+            fresh = out / 'fresh-kv-control'
+            fresh.mkdir()
+            shutil.copy2(bundle / 'artifact.lock', fresh / 'artifact.lock')
+            fresh_text = case('fresh-kv-output-control-unqualified', [tools['rewrite_identity_gate'], 'fresh-control', model, fresh], {'MEMRA_ARTIFACT_LOCK': str(fresh / 'artifact.lock')})
+            if (fresh / 'rewrite-receipts.tsv').exists():
+                raise RuntimeError('unqualified fresh-KV control emitted a qualification receipt')
+            write_json(out / 'separate-program-outputs.json', {'cached': expected, 'fresh': output_hashes(fresh_text, 'fresh-kv-diagnostic'), 'same_program': False})
+            replayed = case('cached-replay-after-isolated-fresh-control', [tools['rewrite_identity_gate'], 'check', model, bundle], strict)
+            if output_hashes(replayed, 'check-eager') != expected:
+                raise RuntimeError('isolated fresh-KV diagnostic changed cached eager output')
+            case('legacy-argmax-regression', [tools['run-gen'], model, '1', '2', '3', '4'], {'MEMRA_NGEN': '32'})
+            case('legacy-batch-regression', [tools['decode-batch-gate'], model, '--mode', 'config', '--batch', '2', '--steps', '16'])
+            if args.mtp_model:
+                if not args.mtp_sha256 or digest(args.mtp_model) != args.mtp_sha256:
+                    raise RuntimeError('MTP artifact requires its exact owner-supplied SHA-256')
+                case('mtp-k1-through-k8', [tools['run-spec'], args.mtp_model, '1', '2', '3', '4'], {'MEMRA_NGEN': '32'})
+            verify_build()
+        except BaseException as error:
+            failure = error
+        def final_verify():
+            controller.check_deadline(float('inf'))
+            verify_lease()
+            verify_build()
+        def remove_variant():
+            try:
+                variant.lstat()
+            except FileNotFoundError:
+                return
             shutil.rmtree(variant)
-        write_json(out / 'files-sha256.json', {str(p.relative_to(out)): digest(p) for p in sorted(out.rglob('*')) if p.is_file() and p.name != 'files-sha256.json'})
+        errors, manifest_sha = finalization.finalize_evidence(
+            out, telemetry, telemetry_file, final_verify, writer=write_json, digest=digest,
+            cleanups=(lambda: changed_binary.unlink(missing_ok=True), remove_variant))
+    summary.update({'evidence_manifest_sha256': manifest_sha, 'cases': len(results),
+                    'mtp': 'ran' if args.mtp_model else 'pending exact artifact'})
+    if failure is not None or errors:
+        summary.update({'status': 'failed', 'error': str(failure) if failure else None,
+                        'finalization_errors': errors})
+        finalization.publish_result(out, summary, writer=write_json)
+        if failure is not None:
+            raise failure
+        raise RuntimeError('; '.join(errors))
+    summary.update({'status': 'passed', 'completed_utc': datetime.datetime.now(datetime.timezone.utc).isoformat()})
+    finalization.publish_result(out, summary, writer=write_json)
 
 
 def main():

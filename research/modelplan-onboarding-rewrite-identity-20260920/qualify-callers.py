@@ -40,44 +40,19 @@ def write(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
 
 
+finalization = module('native_finalization', 'native_finalization.py')
+
+
 def publish_result(out, result):
-    # An interrupted/failed final write leaves the earlier incomplete receipt intact.
-    pending = out / 'result.json.pending'
-    write(pending, result)
-    pending.replace(out / 'result.json')
+    finalization.publish_result(out, result, writer=write)
 
 
 def finalize_evidence(out, telemetry, telemetry_log, verify):
-    errors = []
-    if telemetry is not None:
-        try:
-            telemetry.terminate()
-            telemetry.wait(timeout=15)
-        except BaseException as error:
-            errors.append(f'telemetry cleanup: {type(error).__name__}: {error}')
-            try:
-                telemetry.kill()
-                telemetry.wait(timeout=15)
-            except BaseException as reap_error:
-                errors.append(f'telemetry kill/reap: {type(reap_error).__name__}: {reap_error}')
-    try:
-        telemetry_log.close()
-    except BaseException as error:
-        errors.append(f'telemetry log close: {type(error).__name__}: {error}')
-    manifest_sha = None
-    try:
-        excluded = {out / 'files-sha256.json', out / 'result.json', out / 'result.json.pending'}
-        write(out / 'files-sha256.json', {str(path.relative_to(out)): build.digest(path)
-              for path in sorted(out.rglob('*')) if path.is_file() and path not in excluded})
-        manifest_sha = build.digest(out / 'files-sha256.json')
-    except BaseException as error:
-        errors.append(f'evidence manifest: {type(error).__name__}: {error}')
-    try:
-        controller.check_deadline(float('inf'))  # Deferred interruption must not become success.
+    def checked():
+        controller.check_deadline(float('inf'))
         verify()
-    except BaseException as error:
-        errors.append(f'final invariants: {type(error).__name__}: {error}')
-    return errors, manifest_sha
+    return finalization.finalize_evidence(out, telemetry, telemetry_log, checked,
+                                         writer=write, digest=build.digest)
 
 
 def plain(command, environment, out, timeout_seconds):

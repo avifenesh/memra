@@ -486,7 +486,7 @@ if control.get('change_tool'):
         with self.assertRaisesRegex(RuntimeError, 'stale-binary'):
             self.simulated_qualification(change_after_launch=True)
         self.assertFalse((self.args.out / 'cases.json').exists())
-        self.assertFalse((self.args.out / 'result.json').exists())
+        self.assertNotEqual(json.loads((self.args.out / 'result.json').read_text())['status'], 'passed')
 
     def test_missing_native_test_executable_refuses_before_gpu(self):
         record = self.build()
@@ -510,7 +510,7 @@ if control.get('change_tool'):
         with self.assertRaisesRegex(RuntimeError, 'clean source'):
             self.simulated_qualification(change_after_last_case=True)
         self.assertTrue((self.args.out / 'cases.json').exists())
-        self.assertFalse((self.args.out / 'result.json').exists())
+        self.assertNotEqual(json.loads((self.args.out / 'result.json').read_text())['status'], 'passed')
 
 
 if __name__ == '__main__':
