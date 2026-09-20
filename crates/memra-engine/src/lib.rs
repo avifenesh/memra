@@ -125,6 +125,8 @@ pub mod spec;
 /// caller-tagged emit lines so banked receipts keep their grep shape. No CUDA deps
 /// beyond the stream drains at phase boundaries.
 pub mod spec_phase;
+/// Owner-stream CUDA `TransferEngine` (memra-tier v1.3) used by the tier qualification gates.
+pub mod tier_transfer;
 pub mod tp;
 pub mod tp_ar;
 pub mod tp_expert_split;
@@ -27735,10 +27737,56 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.sdpa_naive_quantized_view_fmt(
+            q,
+            k,
+            v,
+            o,
+            head_dim,
+            n_head,
+            n_head_kv,
+            t,
+            t_kv,
+            scale,
+            causal,
+            k_tok_bytes,
+            v_tok_bytes,
+            false,
+        )
+    }
+
+    /// `sdpa_naive_quantized_view` with the KV plane FORMAT named: `fp8_planes` selects the
+    /// kf8vf8 flash module's `fa_dequant_kv_ws_f32` (gemma's e4m3 global/windowed layers,
+    /// `MEMRA_GEMMA_GKV` / `MEMRA_GEMMA_WKV`), the default selects the q8_0/q5_1 module. Same
+    /// entry name, compile-time format (build.rs), so the caller must say which planes it holds
+    /// — reading e4m3 bytes through the q8_0 dequant is silent garbage, not an error.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn sdpa_naive_quantized_view_fmt(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &cudarc::driver::CudaView<u8>,
+        v: &cudarc::driver::CudaView<u8>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        t: usize,
+        t_kv: usize,
+        scale: f32,
+        causal: bool,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        fp8_planes: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let kv_dim = n_head_kv * head_dim;
         let mut kf = self.uninit(t_kv * kv_dim)?;
         let mut vf = self.uninit(t_kv * kv_dim)?;
-        let f = self.func("fa_dequant_kv_ws_f32");
+        let f = if fp8_planes {
+            self.func_g("fa_dequant_kv_ws_f32")
+        } else {
+            self.func("fa_dequant_kv_ws_f32")
+        };
         let total = (2 * t_kv * kv_dim) as u64;
         #[allow(clippy::manual_div_ceil)]
         // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
@@ -27796,10 +27844,54 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.sdpa_naive_w_quantized_view_fmt(
+            q,
+            k,
+            v,
+            o,
+            head_dim,
+            n_head,
+            n_head_kv,
+            t,
+            t_kv,
+            scale,
+            causal,
+            window,
+            k_tok_bytes,
+            v_tok_bytes,
+            false,
+        )
+    }
+
+    /// Format-named twin of `sdpa_naive_w_quantized_view`; see `sdpa_naive_quantized_view_fmt`.
+    #[allow(clippy::too_many_arguments)]
+    // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn sdpa_naive_w_quantized_view_fmt(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &cudarc::driver::CudaView<u8>,
+        v: &cudarc::driver::CudaView<u8>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        t: usize,
+        t_kv: usize,
+        scale: f32,
+        causal: bool,
+        window: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        fp8_planes: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let kv_dim = n_head_kv * head_dim;
         let mut kf = self.uninit(t_kv * kv_dim)?;
         let mut vf = self.uninit(t_kv * kv_dim)?;
-        let f = self.func("fa_dequant_kv_ws_f32");
+        let f = if fp8_planes {
+            self.func_g("fa_dequant_kv_ws_f32")
+        } else {
+            self.func("fa_dequant_kv_ws_f32")
+        };
         let total = (2 * t_kv * kv_dim) as u64;
         #[allow(clippy::manual_div_ceil)]
         // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math

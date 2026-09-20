@@ -1,0 +1,47 @@
+    Checking spill-a-native-typecheck v0.0.0 (/Users/avifen/tiyuvta/wt-spill-a/target/spill-a-native-typecheck)
+error: this `if` statement can be collapsed
+  --> src/../../../crates/memra-engine/src/tier_transfer.rs:93:9
+   |
+93 | /         if let Some(c) = self.charge.take() {
+94 | |             if self.governor.borrow_mut().release(&c).is_err() {
+95 | |                 std::mem::forget(c);
+96 | |             }
+97 | |         }
+   | |_________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
+   = note: `-D clippy::collapsible-if` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+   |
+93 ~         if let Some(c) = self.charge.take()
+94 ~             && self.governor.borrow_mut().release(&c).is_err() {
+95 |                 std::mem::forget(c);
+96 ~             }
+   |
+
+error: this `if` statement can be collapsed
+   --> src/../../../crates/memra-engine/src/tier_transfer.rs:433:9
+    |
+433 | /         if let Some(f) = o.producer_fence {
+434 | |             if self
+435 | |                 .producers
+436 | |                 .get(&f.sequence)
+...   |
+441 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+433 ~         if let Some(f) = o.producer_fence
+434 ~             && self
+435 |                 .producers
+...
+439 |                 return Err(Error::WrongOwner);
+440 ~             }
+    |
+
+error: could not compile `spill-a-native-typecheck` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `spill-a-native-typecheck` (lib test) due to 2 previous errors

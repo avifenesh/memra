@@ -1,0 +1,129 @@
+//! Serial native-cache demand adapter. This changes byte provenance only; the
+//! native cache still owns fixed CUDA slots, its intrusive SLRU and numeric code.
+//! Optional lookahead is deliberately refused until bank transfers own its fences.
+use super::*;
+use crate::contracts::*;
+use std::collections::BTreeMap;
+
+pub type ExpertDispatchId = (u16, u8, u16);
+/// A host ticket remains open across native H2D. Only a physically observed
+/// transfer completion may call finish; unknown completion retains this object.
+#[derive(Debug)]
+pub struct ExpertDemand {
+    pub ticket: TransferTicket,
+    pub lease: BankLease,
+}
+/// Typed default-OFF native installation point. No synthetic artifact identities,
+/// lazy source registration or implicit fallback is permitted here.
+pub trait ExpertDispatchBank {
+    fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()>;
+    fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand>;
+    fn finish(&mut self, demand: ExpertDemand) -> Result<()>;
+}
+
+pub struct SlruExpertDispatch<H: Hotness<ExpertDomain>, R: ExactReader> {
+    bank: BankService<ExpertDomain, H, R>,
+    ids: BTreeMap<ExpertDispatchId, BankId>,
+    request: BudgetRequest,
+    epochs: Epochs,
+}
+impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
+    pub fn new(
+        bank: BankService<ExpertDomain, H, R>,
+        ids: BTreeMap<ExpertDispatchId, BankId>,
+        request: BudgetRequest,
+        epochs: Epochs,
+    ) -> Result<Self> {
+        if bank.slru_policy().is_none() || ids.is_empty() {
+            return Err(Error::InvalidLayout);
+        }
+        request.validate()?;
+        for (&(layer, proj, expert), id) in &ids {
+            let projection = match proj {
+                0 => Projection::Gate,
+                1 => Projection::Up,
+                2 => Projection::Down,
+                _ => return Err(Error::InvalidLayout),
+            };
+            if id.record
+                != (RecordId::Expert {
+                    layer: u32::from(layer),
+                    projection,
+                    original_id: u32::from(expert),
+                })
+            {
+                return Err(Error::InvalidLayout);
+            }
+            let layout = bank.layout(id)?;
+            // Scale-bearing records require a multi-plane dispatch adapter first;
+            // never discard macro/block scales to qualify the payload-only slice.
+            if layout.segments.len() != 1
+                || layout.segments[0].role != Role::Payload
+                || layout.segments[0].valid_bytes != layout.segments[0].storage_bytes
+            {
+                return Err(Error::Unsupported);
+            }
+        }
+        Ok(Self {
+            bank,
+            ids,
+            request,
+            epochs,
+        })
+    }
+    pub fn bank(&self) -> &BankService<ExpertDomain, H, R> {
+        &self.bank
+    }
+    pub fn into_bank(self) -> BankService<ExpertDomain, H, R> {
+        self.bank
+    }
+}
+impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpertDispatch<H, R> {
+    fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()> {
+        let id = self.ids.get(&local).ok_or(Error::NotFound)?;
+        let layout = self.bank.layout(id)?;
+        if layout.segments[0].valid_bytes != bytes as u64 {
+            return Err(Error::InvalidLayout);
+        }
+        Ok(())
+    }
+    fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
+        self.validate(local, bytes)?;
+        let ticket = self.bank.stage(BankBatch {
+            ids: vec![self.ids[&local].clone()],
+            epochs: self.epochs,
+            request: self.request.clone(),
+        })?;
+        let result = (|| {
+            while !self.bank.progress(&ticket)? {}
+            let mut leases = self.bank.publish(&ticket, self.epochs)?;
+            if leases.len() != 1 {
+                return Err(Error::Incomplete);
+            }
+            Ok(ExpertDemand {
+                ticket,
+                lease: leases.remove(0),
+            })
+        })();
+        if result.is_err() {
+            self.bank.cancel(&ticket)?;
+            while !self.bank.progress(&ticket)? {}
+            self.bank.finish_host_use(&ticket)?;
+            if !self.bank.retire(&ticket)? {
+                return Err(Error::NotReady);
+            }
+            self.bank.acknowledge(&ticket)?;
+            self.bank.collect_evicted()?;
+        }
+        result
+    }
+    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+        self.bank.finish_host_use(&demand.ticket)?;
+        if !self.bank.retire(&demand.ticket)? {
+            return Err(Error::NotReady);
+        }
+        self.bank.acknowledge(&demand.ticket)?;
+        drop(demand);
+        self.bank.collect_evicted()
+    }
+}

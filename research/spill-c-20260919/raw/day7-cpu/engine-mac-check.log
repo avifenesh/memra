@@ -1,0 +1,92 @@
+    Checking memra-gguf v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-gguf)
+    Checking memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-engine)
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tokenizer)
+    Checking memra-runtime v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-runtime)
+    Checking memra-kv v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-kv)
+    Checking memra-reference v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-reference)
+error: environment variable `MEMRA_MMQ_ARCHIVE_HASH` not defined at compile time
+   --> crates/memra-engine/src/lib.rs:880:36
+    |
+880 | pub const MMQ_ARCHIVE_HASH: &str = env!("MEMRA_MMQ_ARCHIVE_HASH");
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: use `std::env::var("MEMRA_MMQ_ARCHIVE_HASH")` to read the variable at run time
+
+error[E0425]: cannot find type `cpu_set_t` in crate `libc`
+   --> crates/memra-engine/src/cpu_experts.rs:567:28
+    |
+567 |         let mut set: libc::cpu_set_t = std::mem::zeroed();
+    |                            ^^^^^^^^^ not found in `libc`
+
+error[E0425]: cannot find function, tuple struct or tuple variant `CPU_SET` in crate `libc`
+    --> crates/memra-engine/src/cpu_experts.rs:569:19
+     |
+ 569 |             libc::CPU_SET(cpu, &mut set);
+     |                   ^^^^^^^
+     |
+    ::: /Users/avifen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/bsd/apple/mod.rs:3786:1
+     |
+3786 | pub const IPC_SET: c_int = 1;
+     | ------------------------ similarly named constant `IPC_SET` defined here
+     |
+help: a constant with a similar name exists
+     |
+ 569 -             libc::CPU_SET(cpu, &mut set);
+ 569 +             libc::IPC_SET(cpu, &mut set);
+     |
+
+error[E0425]: cannot find function `sched_setaffinity` in crate `libc`
+   --> crates/memra-engine/src/cpu_experts.rs:571:15
+    |
+571 |         libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &set);
+    |               ^^^^^^^^^^^^^^^^^ not found in `libc`
+
+error[E0425]: cannot find type `cpu_set_t` in crate `libc`
+   --> crates/memra-engine/src/cpu_experts.rs:571:62
+    |
+571 |         libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &set);
+    |                                                              ^^^^^^^^^ not found in `libc`
+
+error[E0425]: cannot find function `posix_fadvise` in crate `libc`
+   --> crates/memra-engine/src/spill_pread.rs:501:36
+    |
+501 |                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+    |                                    ^^^^^^^^^^^^^
+    |
+   ::: /Users/avifen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/bsd/mod.rs:624:5
+    |
+624 |     pub fn posix_madvise(addr: *mut c_void, len: size_t, advice: c_int) -> c_int;
+    |     ----------------------------------------------------------------------------- similarly named function `posix_madvise` defined here
+    |
+help: a function with a similar name exists
+    |
+501 -                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+501 +                     unsafe { libc::posix_madvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+    |
+
+error[E0425]: cannot find value `POSIX_FADV_RANDOM` in crate `libc`
+    --> crates/memra-engine/src/spill_pread.rs:501:80
+     |
+ 501 |                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+     |                                                                                ^^^^^^^^^^^^^^^^^
+     |
+    ::: /Users/avifen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.186/src/unix/bsd/apple/mod.rs:2477:1
+     |
+2477 | pub const POSIX_MADV_RANDOM: c_int = 1;
+     | ---------------------------------- similarly named constant `POSIX_MADV_RANDOM` defined here
+     |
+help: a constant with a similar name exists
+     |
+ 501 -                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM) };
+ 501 +                     unsafe { libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_MADV_RANDOM) };
+     |
+
+error[E0425]: cannot find value `O_DIRECT` in crate `libc`
+   --> crates/memra-engine/src/spill_pread.rs:519:37
+    |
+519 |                 .custom_flags(libc::O_DIRECT)
+    |                                     ^^^^^^^^ not found in `libc`
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `memra-engine` (lib) due to 8 previous errors

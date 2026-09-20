@@ -1,0 +1,30 @@
+{
+  "kind": "CPU-stub-control-flow-reproducer",
+  "gpu_or_storage_executed": false,
+  "lock_acquired": false,
+  "results": [
+    {
+      "command": [
+        "bash",
+        "-c",
+        "/bin/storage-bench roundtrip /different-filesystem/object 264 direct"
+      ],
+      "storage": null,
+      "storage_root_supplied": false
+    },
+    {
+      "command": [
+        "bash",
+        "-c",
+        "/bin/storage-bench roundtrip /different-filesystem/object 264 direct"
+      ],
+      "storage": {
+        "root": "<unrelated claimed root>",
+        "nvme_proven": false,
+        "qualification": false,
+        "test_stub": true
+      },
+      "storage_root_supplied": true
+    }
+  ]
+}

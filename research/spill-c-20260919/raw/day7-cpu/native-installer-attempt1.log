@@ -1,0 +1,26 @@
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-engine)
+error[E0308]: mismatched types
+   --> crates/memra-engine/src/banked_residency/native.rs:217:27
+    |
+217 |             add(u16::MAX, model.cfg.n_layer, moe)?;
+    |             ---           ^^^^^^^^^^^^^^^^^ expected `usize`, found `u32`
+    |             |
+    |             arguments to this function are incorrect
+    |
+note: expected because the closure was earlier called with an argument of type `usize`
+   --> crates/memra-engine/src/banked_residency/native.rs:211:44
+    |
+211 |                 add(u16::try_from(layer)?, layer, moe)?;
+    |                 --- in this closure call   ^^^^^ expected because this argument is of type `usize`
+note: closure parameter defined here
+   --> crates/memra-engine/src/banked_residency/native.rs:113:24
+    |
+113 |                        checkpoint_layer: usize,
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^
+help: you can convert a `u32` to a `usize` and panic if the converted value doesn't fit
+    |
+217 |             add(u16::MAX, model.cfg.n_layer.try_into().unwrap(), moe)?;
+    |                                            ++++++++++++++++++++
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `memra-engine` (lib) due to 1 previous error
