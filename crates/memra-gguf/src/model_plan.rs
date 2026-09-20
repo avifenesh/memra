@@ -2278,6 +2278,7 @@ fn norm_weight_transform(cfg: &ModelConfig) -> WeightTransform {
     // weights, SEMANTICS.md §Gated residual — _init_weights zero-inits RMSNorm).
     if matches!(cfg.arch, Arch::Qwen35 | Arch::Qwen35Moe | Arch::Qwen4Exp)
         || cfg.m3.as_ref().is_some_and(|m3| m3.use_gemma_norm)
+        || cfg.step35.is_some()
     {
         WeightTransform::AddOne
     } else {

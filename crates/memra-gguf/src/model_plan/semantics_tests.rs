@@ -599,3 +599,54 @@ fn step_gguf_checkpoint_factors_and_mtp_survive_pack_selection() {
         }
     }
 }
+
+#[test]
+fn step_plan_declares_centered_norms_and_gguf_contract_preserves_folded_weights() {
+    use crate::tensor_contract::{CheckpointDialect, ContractOptions, TensorTransform};
+    let path =
+        std::env::temp_dir().join(format!("memra-541-step-norm-{}.gguf", std::process::id()));
+    crate::micro_gguf::write_step35_mtp_meta_only(&path).unwrap();
+    let file = crate::GgufFile::open(&path).unwrap();
+    std::fs::remove_file(path).unwrap();
+    let cfg = ModelConfig::from_gguf(&file);
+    let plan = compile_for_load(&cfg).unwrap();
+    assert_eq!(plan.output_norm.weight_transform, WeightTransform::AddOne);
+    for layer in plan
+        .layers
+        .iter()
+        .chain(plan.mtp_blocks.iter().map(|block| &block.layer))
+    {
+        assert_eq!(
+            layer.pre_attention_norm.weight_transform,
+            WeightTransform::AddOne
+        );
+        assert_eq!(layer.pre_mlp_norm.weight_transform, WeightTransform::AddOne);
+    }
+    assert!(!plan.mtp_blocks.is_empty());
+    for block in &plan.mtp_blocks {
+        assert_eq!(
+            block.input.embedding_norm.weight_transform,
+            WeightTransform::AddOne
+        );
+        assert_eq!(
+            block.input.hidden_norm.weight_transform,
+            WeightTransform::AddOne
+        );
+    }
+    let contract = for_config(&cfg)
+        .unwrap()
+        .compile_tensor_contract(
+            &cfg,
+            &plan,
+            CheckpointDialect::Gguf,
+            ContractOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        contract
+            .requirements
+            .iter()
+            .all(|r| r.transform == TensorTransform::Identity),
+        "GGUF already stores folded weights; it must not acquire a second +1"
+    );
+}
