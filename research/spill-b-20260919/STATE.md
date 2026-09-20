@@ -5,10 +5,10 @@
 - Runner: /root/b-day10-cell.sh (tracked copy run-day10-cell.sh); canonical pro-single collector; bounded lock retries.
 - Finished: original native build, 8k/32k baselines and ACTIVE-8K G1 PASS (600/600 W); receipts pushed.
 - 8k receipts + build are preserved in pro-single-day10/ in this checkpoint; raw logits losslessly gzip archived.
-- Running native build/clippy: tmux b-day10-injection-build; /root/spill-receipts/b-day10/injection-build.
+- No B job running: final native build/clippy PASS, injected-8192 PASS with 34 VMM/0 pooled planes, no swap.
 - Mac kv+tier 262 tests/check/cross-check/clippy/fmt/flags passed; engine Mac blocked by missing nvcc (log saved).
 - Original cells all pushed: baselines, VMM8 PASS, VMM32 unclassified 1-granule non-PASS, pooled8 not-applicable-pooled.
-- Next: confirm injection-build exit 0; run injected-8192 via /root/b-day10-cell.sh; sync/push and final replay.
+- All 7 requested cells complete/preserved; next: final report/check manifest, push, remove helper /root/b-day10-cell.sh.
 - Add DAY10.md, BOX3 baseline hashes, verify-day10.py and raw manifest; push after every cell.
 - Decision: prior 5090 probe freed never-mapped VA only; new nonzero PRO metadata class cannot satisfy BOTH-card evidence.
-- 32k VMM: bit-identical, 2097152 B residual, unclassified, not G1 PASS; diagnostic and injected rerun pending.
+- 32k VMM + diagnostic: bit-identical, 2097152 B residual, unclassified, not G1 PASS; injected 8k G1 PASS.
