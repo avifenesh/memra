@@ -68,7 +68,8 @@ ratios and per-round signs beside any pooled median. No best-of-N selection.
   actual aggregate timed work is below 60 seconds, retain it as diagnostic
   and rerun with a larger shared count; do not silently combine attempts.
 - Record host monotonic wall time around submission **and completion**, and
-  CUDA-event elapsed time on the same stream. Wall includes host API/staging
+  CUDA-event elapsed time on the same stream, summed from one independently
+  synchronized event pair per operation. Wall includes host API/staging
   overhead; event time is device-stream elapsed, not assumed DMA-only time.
   Allocation, initialization, hashing and verification are timed separately.
   Small-copy event quantization/launch overhead must remain visible.
@@ -89,8 +90,11 @@ binary SHA-256. `crates/memra-engine/src/bin/h2d_probe.rs` now implements the
 **N=1 plumbing subset**, not the full balanced/calibrated sweep above. See
 `H2D-BIN-FRAGMENT.md` for the lead-owned manifest fragment, allocation type,
 Mac dry-run and timing interpretation. It accepts bytes/direction/order and
-only `--repeats 1 --copies 1`; larger counts fail closed. N=1 output has no
-medians. Cacheable pinned allocation (CUDA flags=0) is the concrete B arm;
+`--repeats 1 --copies C`, where `C` is in `1..100000` (default `1`).
+Other repeat counts and out-of-range copy counts fail closed. Copies are
+operations inside a visit, not independent observations. N=1 output has no
+medians. D's `tools/tier-envelope.py` is the G2 calibration/balancing executor;
+the probe does not implement that outer protocol. Cacheable pinned allocation (CUDA flags=0) is the concrete B arm;
 write-combined host memory is not substituted for it.
 
 The current auto-discovered binary command shape is:
@@ -156,11 +160,12 @@ exists in this copy-only experiment. Do not change generated performance boards.
 
 ## N=1 amendment and receipt shape (2026-09-20)
 
-The plumbing run emits JSONL version 1: `allocation`, two `control` records
+The plumbing run emits **bare JSONL** version 1: `allocation`, two `control` records
 per sample (distinct patterns), `sample`, and a final `RESULT`. Sample rows
-carry `arm`, `direction`, `bytes`, `n=1`, `copies=1`, complete-byte identity and
+carry `arm`, `direction`, `bytes`, `n=1`, `copies=C`, `order=ab|ba`, complete-byte identity and
 expected/actual SHA256, setup/verification duration, both clock boundaries,
-wall completion duration and CUDA event elapsed. The RESULT explicitly says
+`completed_bytes=bytes*C`, wall completion duration and summed per-operation
+CUDA event elapsed (`event_timing=sum-per-operation-owner-stream`). The RESULT explicitly says
 `qualified=false`; a missing RESULT, nonzero exit or incomplete matrix means
 incomplete/refused. `--dry-run` emits all 40 sample shapes with null identity,
 hashes, durations and power, zero completed bytes, and `dry-run-no-cuda`;
@@ -179,3 +184,53 @@ These are G2 implementation/execution gates, not an NVMe blocker and not a
 reason to run a bare GPU test. This dated amendment narrows the initial run
 to plumbing before any GPU observations, without changing the full scored
 protocol above or retroactively selecting faster cells.
+
+
+## Copies extension and D token binding (2026-09-20)
+
+Final auto-discovered CLI (underscore; no shared manifest edit):
+
+```sh
+h2d_probe [--dry-run] [--bytes BYTES] [--direction h2d|d2h|both] \
+  [--order ab|ba] [--repeats 1] [--copies 1..100000]
+```
+
+D revision `7f7bf547` is the compatibility authority. Its
+`tools/tier-envelope.py::visit` consumes bare JSON rows beginning with `{`,
+including one final `record=RESULT` summary. Its collector rejects multiple
+line-start `RESULT ` tokens. Consequently **individual probe visits are not
+`RESULT `-prefixed**; the outer worker emits that token exactly once. This is
+an explicit correction of the initial prefix request to match the actual runner.
+The CAPTURE-CONTRACT power fields and refusal token rules are unchanged.
+
+A single plumbing-only collector invocation exercises 4 KiB and 16 MiB,
+`copies=1` and `1000`, H2D and D2H, AB then BA: 32 visits, N=1 per
+size/count/direction/arm/order, no calibration, aggregation or medians. Run:
+
+```sh
+python3 tools/tier-battery.py --rig rtx5090 --timeout 300 \
+  --out /root/wt-f/receipts/h2d-copies-n1/collector --external-lock \
+  --execute python3 research/spill-f-20260919/run-h2d-copies-plumbing.py \
+  --probe /root/wt-f/target/release/h2d_probe \
+  --out /root/wt-f/receipts/h2d-copies-n1/visits \
+  --lock-fd @COLLECTOR_LOCK_FD@
+```
+
+The worker verifies the inherited canonical lock descriptor before executing
+anything on CUDA; invoking it without that proof refuses. Nested probe children
+remain in the collector worker process group so its timeout kills them before
+releasing the lock. A CPU-only test exercises this and detects a deliberately
+detached-child red control. Every probe invocation
+retains raw output before parsing. `check-h2d-output.py` validates matrix shape,
+copy accounting, order, flags=0, identity and the summary. This one-cell worker
+is only CLI plumbing proof; **D's runner remains the G2 executor**. D's full
+20-cell calibration/balancing/telemetry acceptance remains an independent gate.
+
+Local CPU checks: three Rust unit tests, 12 dry-run invocations (including
+100000-copy boundaries), and Linux-target engine/bin typecheck passed. The
+`DOCS_RS=1` first attempt failed because `MEMRA_MMQ_ARCHIVE_HASH` is required at
+compile time; rerunning with the explicit compile-only
+`MEMRA_MMQ_ARCHIVE_HASH=docs-rs-typecheck-only` sentinel passed. Neither docs
+stubs nor a cross-target check constitute native CUDA execution. Raw CPU logs
+live in `h2d-copies/cpu/`; native build and single-cell status are in
+`H2D-RESULTS.md`.
