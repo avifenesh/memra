@@ -7,6 +7,27 @@ use std::{
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// Allocation policy for native K/V planes only; recurrent/latent state is unchanged.
+/// Existing cache constructors always select `Pooled`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KvAllocator {
+    #[default]
+    Pooled,
+    Vmm,
+}
+impl KvAllocator {
+    pub(crate) fn allocate<T>(
+        self,
+        pooled: impl FnOnce() -> Result<T>,
+        vmm: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        match self {
+            Self::Pooled => pooled(),
+            Self::Vmm => vmm(),
+        }
+    }
+}
+
 /// Mutable access exposes a borrow only, never a replaceable owning slice.
 pub trait KvWrite {
     fn kv_view_mut(&mut self) -> CudaViewMut<'_, u8>;
@@ -75,6 +96,7 @@ struct Chunk {
 }
 struct Mapping {
     base: sys::CUdeviceptr,
+    reserved: bool,
     bytes: usize,
     granularity: usize,
     device: i32,
@@ -83,6 +105,9 @@ struct Mapping {
 }
 impl Mapping {
     fn map_chunk(&mut self, i: usize) -> Result<()> {
+        if !self.reserved {
+            return Err("REFUSED: VMM reservation is absent".into());
+        }
         let prop = properties(self.device);
         let chunk = &mut self.chunks[i];
         if chunk.handle.is_none() {
@@ -138,6 +163,9 @@ impl Drop for Mapping {
                 eprintln!("VMM cleanup quarantined: {e}");
                 return;
             }
+        }
+        if !self.reserved {
+            return;
         }
         // SAFETY: every mapping/handle has been released; base and bytes are our reservation.
         if let Err(e) = unsafe { sys::cuMemAddressFree(self.base, self.bytes).result() } {
@@ -253,6 +281,7 @@ impl KvPlane {
         unsafe { sys::cuMemAddressReserve(&mut base, size, granularity, 0, 0).result()? };
         let mut mapping = Mapping {
             base,
+            reserved: true,
             bytes: size,
             granularity,
             device,
@@ -299,6 +328,58 @@ impl KvPlane {
         }
         Ok(chunks.len() * m.granularity)
     }
+    /// Diagnostic only, while suspended: unmap the retained edge/capacity chunks WITHOUT
+    /// releasing their physical handles, then release/re-reserve the original VA and
+    /// re-map those same handles. No data is lost or copied. The four observations isolate
+    /// unmap accounting from VA-reservation accounting; no consumer may execute here.
+    /// Any failure leaves the operand suspended and the owner safely droppable.
+    pub fn probe_demoted_va_release(&mut self) -> Result<[usize; 4]> {
+        if self.suspended.is_none() {
+            return Err("REFUSED: VA probe requires a suspended plane".into());
+        }
+        let m = self
+            .mapping
+            .as_mut()
+            .ok_or("REFUSED: VA probe requires VMM")?;
+        m.stream.context().bind_to_thread()?;
+        m.stream.synchronize()?;
+        let before = m.stream.context().mem_get_info()?.0;
+        let retained: Vec<usize> = m
+            .chunks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| c.mapped.then_some(i))
+            .collect();
+        for &i in &retained {
+            // SAFETY: exclusive suspended owner, stream retired; preserve handle/content.
+            unsafe {
+                sys::cuMemUnmap(m.base + (i * m.granularity) as u64, m.granularity).result()?
+            };
+            m.chunks[i].mapped = false;
+        }
+        let unmapped = m.stream.context().mem_get_info()?.0;
+        // SAFETY: all chunks are now unmapped; this owner holds the entire reservation.
+        unsafe { sys::cuMemAddressFree(m.base, m.bytes).result()? };
+        m.reserved = false;
+        let freed = m.stream.context().mem_get_info()?.0;
+        let mut address = 0;
+        // SAFETY: request the original aligned VA; success address is checked before use.
+        unsafe {
+            sys::cuMemAddressReserve(&mut address, m.bytes, m.granularity, m.base, 0).result()?
+        };
+        if address != m.base {
+            // SAFETY: the unexpected reservation is unexposed and has no mappings.
+            unsafe { sys::cuMemAddressFree(address, m.bytes).result()? };
+            return Err("REFUSED: diagnostic could not re-reserve original VMM address".into());
+        }
+        m.reserved = true;
+        for i in retained {
+            m.map_chunk(i)?;
+        }
+        let restored = m.stream.context().mem_get_info()?.0;
+        Ok([before, unmapped, freed, restored])
+    }
+
     /// Remap fixed VA; caller must restore the host image before any consumer publication.
     pub fn remap_prefix(&mut self) -> Result<usize> {
         let chunks = self
@@ -332,6 +413,26 @@ impl Drop for KvPlane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn allocator_dispatch_has_no_bootstrap_or_fallback() {
+        assert_eq!(KvAllocator::default(), KvAllocator::Pooled);
+        assert_eq!(
+            KvAllocator::Vmm
+                .allocate(|| panic!("pooled bootstrap"), || Ok(7))
+                .unwrap(),
+            7
+        );
+        assert_eq!(
+            KvAllocator::Pooled
+                .allocate(|| Ok(9), || panic!("changed default"))
+                .unwrap(),
+            9
+        );
+        let error = KvAllocator::Vmm
+            .allocate::<()>(|| panic!("silent fallback"), || Err("VMM refused".into()))
+            .unwrap_err();
+        assert_eq!(error.to_string(), "VMM refused");
+    }
     #[test]
     fn frozen_qwen_prefix_whole_chunk_counts() {
         for (tokens, count) in [(8192, 7), (8064, 6), (32768, 29), (32640, 27)] {
