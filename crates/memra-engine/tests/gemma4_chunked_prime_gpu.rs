@@ -317,6 +317,7 @@ impl Harness {
 ///   * default planes (e4m3 globals `MEMRA_GEMMA_GKV`, e4m3 windowed `MEMRA_GEMMA_WKV`):
 ///     1.115e-2 (T=40), 4.183e-2 (T=200 window live), 1.339e-2 (T=200 window inactive);
 ///   * q8_0 K / q5_1 V (`MEMRA_GEMMA_GKV=0 MEMRA_GEMMA_WKV=0`): 1.873e-2 / 1.319e-2 / 1.167e-2.
+///
 /// SEMANTICS were pinned separately at 1.2e-6 (T=40..200, both windows) by the pre-change
 /// f32-attention path under `MEMRA_NOFA=1 MEMRA_FA_EMIT=0` against the same reference — so
 /// window rule, rope factors, residual order and softcap agree with the reference exactly, and
