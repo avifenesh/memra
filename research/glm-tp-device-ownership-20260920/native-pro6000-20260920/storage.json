@@ -1,0 +1,17 @@
+{
+  "mount": "/dev/rbd64 xfs    /home",
+  "interpretation": "Ceph RBD-backed XFS; no physical NVMe or storage performance qualification",
+  "stage_gpu_uuids": {
+    "same-device": [
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+    ],
+    "pair": [
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a",
+      "GPU-554f7aeb-578c-187f-4f29-af06f2170507"
+    ],
+    "worker": [
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a",
+      "GPU-554f7aeb-578c-187f-4f29-af06f2170507"
+    ]
+  }
+}

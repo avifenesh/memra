@@ -2250,6 +2250,8 @@ pub struct StepTpAttention {
     pub gate_shards_bf16: Option<Vec<CudaSlice<u8>>>,
 }
 
+/// Additional lazy state bytes grouped by physical CUDA device. The historical Step name
+/// is retained for callers; `HybridModel::unmaterialized_state_bytes` also reports GLM state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StepTpKvDeviceAdmission {
     pub device: usize,
@@ -4046,6 +4048,9 @@ impl HybridModel {
             devs.extend(&state.devices);
         }
 
+        for runtime in self.glm_tp_runtimes() {
+            devs.extend(runtime.devices());
+        }
         devs.extend(&self.test_extra_devices);
 
         devs.into_iter().collect()

@@ -1,0 +1,52 @@
+{
+  "source_sha": "fcb1b986b742a91cf960e5a6fea671779cce79c7",
+  "result": "4/4 exact native stages passed; indexed MLA/KDA future-state allocation gap closed for this source and these binaries",
+  "fixture": {
+    "tensors": 106,
+    "bytes": 2771952,
+    "sha256": "f186baf6671362e3f288e1e057eac611bcdeb305a614e23f811c5e1ab49c1e14",
+    "capacity": 8192,
+    "kda_layers": 2,
+    "indexed_mla_layers": 2,
+    "ranks": 2
+  },
+  "indexed_kda": {
+    "cold": [
+      271360,
+      2106376
+    ],
+    "partial_ranks_and_keys": [
+      135680,
+      266752
+    ],
+    "partial_keys": [
+      135680,
+      201216
+    ],
+    "keys_only": [
+      0,
+      65536
+    ],
+    "warm": [
+      0,
+      0
+    ],
+    "warm_append": [
+      0,
+      0
+    ],
+    "partial_key_bytes": 65536,
+    "allocation_conservation": "allocated+remaining=cold on each rank at every phase"
+  },
+  "regressions": {
+    "same-device": "pass",
+    "pair": "pass, 67108864 bytes reclaimed, live allocations unchanged, refill pass",
+    "worker": "pass, three peer-pressure/pinned-source cycles"
+  },
+  "lease_release": "all wrappers exited zero; no timeout/interruption/lingering compute; final own PID/FLOCK checks empty",
+  "limits": [
+    "Allocation extents, not allocator reservation granularity or peak workspace.",
+    "No full-checkpoint/HTTP/token-stream/actual CUDA OOM/indexer-quality/ring-wrap/performance qualification.",
+    "No source/binary qualification transfer to a later main merge."
+  ]
+}

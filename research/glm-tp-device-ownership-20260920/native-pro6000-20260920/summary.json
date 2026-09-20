@@ -1,0 +1,65 @@
+{
+  "source_sha": "d413747d3b8a72c5af472300d1c65307133c1a37",
+  "result": "3/3 synthetic native ownership and memory seam stages passed; full-checkpoint and performance qualification remain pending.",
+  "hardware": "NVIDIA RTX PRO 6000 Blackwell Server Edition, 600 W, sm_120; one card then a PIX-connected pair",
+  "driver": "595.58.03",
+  "cuda": "13.1.115",
+  "rust": "1.97.1",
+  "fixture": {
+    "kind": "GLM-DSA micro GGUF, F32; not the full GLM-5.3-Flash checkpoint",
+    "seed": 544,
+    "bytes": 627136,
+    "sha256": "06fcb3c32d503a0d22125606bb4cf91871d53301a22437ec20e8ccb556f75c53"
+  },
+  "build": {
+    "engine": {
+      "path": "/home/memra-qual/scratch/memra-544/repo/target/qualify-544-replacement1/cargo-target/release/deps/memra_engine-05ce0169e5599d69",
+      "sha256": "fd252922b71faf61768aa488846d93bda0a6f7364df720ce10c34a010b3b0987"
+    },
+    "server": {
+      "path": "/home/memra-qual/scratch/memra-544/repo/target/qualify-544-replacement1/cargo-target/release/deps/memra_server-78a7f7e05e0c9770",
+      "sha256": "6e4c91d1256ae5ed081f0c789c067b414b096aa0bd3361c79510593cc765213f"
+    }
+  },
+  "stages": {
+    "same-device": {
+      "passed": true,
+      "gpu_count": 1,
+      "executed_tests": 1
+    },
+    "pair": {
+      "passed": true,
+      "gpu_count": 2,
+      "executed_tests": 1,
+      "old_step_entries": 0,
+      "cold_peer_bytes": 6152,
+      "partial_key_bytes": 0,
+      "reclaimed_bytes": 67108864,
+      "used_bytes_before": 33653144,
+      "used_bytes_after": 33653144
+    },
+    "worker": {
+      "passed": true,
+      "gpu_count": 2,
+      "executed_tests": 1,
+      "refill_cycles": 3,
+      "peer_reclaimed_bytes_each_cycle": 33554432,
+      "pinned_source_bytes": 1048576,
+      "pinned_source_integrity": "passed; unpin restores eviction"
+    }
+  },
+  "limits": [
+    "GLM microfixture did not instantiate lazy index-key planes: partial_key_bytes=0.",
+    "KDA rank allocation and peer prefill-workspace sizing retain CPU/source evidence only.",
+    "Worker uses bounded physical allocations and synthetic requirements through production helpers, not a full HTTP checkpoint load.",
+    "Full checkpoint serving, token/program identity, release exactness batteries and performance qualification remain pending.",
+    "Storage is Ceph RBD-backed XFS; no physical NVMe or storage-performance claim."
+  ],
+  "release": {
+    "all_leases_finished_exit_zero": true,
+    "own_wrappers_alive": [],
+    "own_flock_rows": [],
+    "lingering_compute": []
+  },
+  "private_preservation": "All raw receipts and both native executables copied off-box and hashes verified; binaries are not embedded in the public repository."
+}

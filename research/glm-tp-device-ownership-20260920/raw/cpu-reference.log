@@ -1,0 +1,96 @@
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/memra_reference-89d9c76964145031)
+
+running 66 tests
+test speech::decode::tests::closed_segment_admits_only_text_and_moves_time_forward ... ok
+test speech::decode::tests::first_step_suppresses_blank_eos_and_late_timestamps ... ok
+test speech::decode::tests::open_segment_admits_only_a_closing_timestamp_or_the_end ... ok
+test speech::decode::tests::seek_advance_reproduces_pinned_oracle_window_starts ... ok
+test speech::decode::tests::suppressed_ids_are_masked_at_every_step ... ok
+test speech::decode::tests::timestamp_mass_over_the_best_text_id_forces_a_timestamp ... ok
+test speech::decode::tests::window_mel_zero_fills_past_the_audio ... ok
+test speech::decoder::tests::cached_steps_hidden_logits_and_kv_match_independent_hf ... ok
+test speech::decoder::tests::sessions_are_independent_and_invalid_steps_do_not_advance_caches ... ok
+test speech::encoder::tests::changed_encoder_programs_fail_before_loading_weights ... ok
+test speech::encoder::tests::every_encoder_stage_matches_independent_hf_f32_and_f16_fixtures ... ok
+test speech::encoder::tests::gelu_matches_the_pinned_hf_vector_numeric_program ... ok
+test speech::encoder::tests::half_rounding_is_nearest_even_and_erf_gelu_is_not_tanh_gelu ... ok
+test speech::fastconformer::tests::a_wider_chunk_is_refused_rather_than_approximated ... ok
+test speech::fastconformer::tests::causal_convolution_reads_the_past_and_a_stride_of_zeros_after_it ... ok
+test speech::fastconformer::tests::the_cache_rolls_oldest_out_and_reports_only_written_rows ... ok
+test speech::fastconformer::tests::the_position_table_centres_on_the_current_frame ... ok
+test speech::fastconformer::tests::the_stem_reduces_one_hundred_twenty_eight_bins_to_seventeen ... ok
+test speech::frontend::tests::clip_features_use_a_clip_wide_clamp_and_read_zeros_past_the_last_sample ... ok
+test speech::frontend::tests::padding_happens_before_reflection_and_invalid_audio_is_rejected ... ok
+test speech::frontend::tests::silence_has_the_analytic_floor_in_both_whisper_mel_geometries ... ok
+test speech::frontend::tests::two_second_waveform_matches_the_pinned_hf_fp32_frontend ... ok
+test speech::matrix::tests::column_blocking_is_bit_identical_so_thread_count_cannot_move_a_number ... ok
+test speech::matrix::tests::grouping_is_bit_identical_across_group_and_lane_boundaries ... ok
+test speech::matrix::tests::independent_row_vectorization_preserves_fma_order_with_tails ... ok
+test speech::rnnt_frontend::tests::a_mismatched_window_or_filterbank_is_refused ... ok
+test speech::rnnt_frontend::tests::a_short_or_non_finite_waveform_is_refused ... ok
+test speech::rnnt_frontend::tests::frames_past_the_valid_length_are_the_pad_value_not_a_log_floor ... ok
+test speech::rnnt_frontend::tests::silence_reaches_the_log_guard_and_not_negative_infinity ... ok
+test speech::rnnt_frontend::tests::the_transform_is_five_hundred_twelve_over_a_four_hundred_sample_window ... ok
+test speech::rnnt_head::tests::the_blank_is_the_last_class_and_the_joint_is_one_wider_than_the_vocabulary ... ok
+test speech::rnnt_head::tests::the_predictor_packs_four_gates_into_every_row ... ok
+test speech::rnnt_head::tests::the_prompt_slot_is_a_language_index_not_a_token ... ok
+test speech::text::tests::a_window_of_pinned_oracle_ids_reads_as_hebrew ... skipping: whisper checkpoint is not on this machine
+ok
+test speech::text::tests::timestamps_and_the_terminator_never_reach_the_transcript ... skipping: whisper checkpoint is not on this machine
+ok
+test speech_refusal_tests::speech_cannot_execute_as_an_empty_text_trunk ... ok
+test tests::compressed_mla_executes_window_compressor_indexer_and_grouped_output ... ok
+test tests::dense_gemma_executes_scaled_parallel_residual_and_k_as_v ... ok
+test tests::dspark_executes_trunk_tap_ring_blocks_markov_and_confidence ... ok
+test tests::dsv4_shaped_trunk_executes_one_canonical_plan ... ok
+test tests::embedded_mtp_executes_typed_fusion_block_and_fallback_head ... ok
+test tests::eos_segment_reset_reads_eos_across_boundaries ... ok
+test tests::full_attention_selection_mask_restricts_sources_to_hand_derived_rows ... ok
+test tests::gated_residual_read_and_write_match_hand_derived_two_stream_toy ... ok
+test tests::gdn_sigmoid_gate_matches_hand_derived_single_token ... ok
+test tests::gemma4_parallel_moe_executes_shared_routed_and_scaled_residual_branches ... ok
+test tests::gemma4_vision_executes_patch_rope_pool_standardize_and_projection ... ok
+test tests::generated_tiny_fixture_is_deterministic_and_executable ... ok
+test tests::glm5_shaped_tiny_plan_executes_kda_kpool_mla_and_mean_collapse_deterministically ... ok
+test tests::hyperconnections_execute_stream_state_and_head_collapse ... ok
+test tests::kimi_delta_net_matches_hand_derived_three_token_recurrence ... ok
+test tests::kpool_indexer_selects_causal_pools_and_appends_visible_tail ... ok
+test tests::micro_block_indexer_selects_unambiguous_block_and_always_keeps_the_tail ... ok
+test tests::mla_fixture_emits_latent_state_and_sparse_overflow_refuses ... ok
+test tests::multi_depth_mtp_threads_hidden_through_every_typed_block ... ok
+test tests::ngram_ids_match_independently_computed_hash_chain ... ok
+test tests::one_token_dense_plan_matches_hand_derived_logits_and_emits_kv_state ... ok
+test tests::ple_block_matches_hand_derived_scalar_gather_gate_and_dilated_conv ... ok
+test tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state ... 
+thread 'tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state' (18779237) panicked at crates/memra-reference/src/lib.rs:8147:9:
+assertion `left == right` failed
+  left: [3182242064, 1053299395, 3199800549, 3198737447, 3180184138, 3187768632, 1057556100, 1035812927]
+ right: [3182242076, 1053299392, 3199800546, 3198737445, 3180184136, 3187768631, 1057556100, 1035812924]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test tests::qwen3_moe_fixture_executes_routed_and_shared_branches ... ok
+test tests::qwen4exp_tiny_plan_executes_gated_residual_qsa_ple_moe_and_mtp ... ok
+test tests::rope_uses_neox_split_half_pairs ... ok
+test tests::router_laws_pin_stable_ties_and_selection_only_bias ... ok
+test tests::sliding_window_limits_attention_and_trims_reference_state ... ok
+test tests::the_mla_fixture_shapes_match_the_tensor_contract ... ok
+test tests::token_hash_moe_fixture_executes_from_semantic_token_table ... ok
+
+failures:
+
+failures:
+    tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state
+
+test result: FAILED. 65 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s
+
+error: test failed, to rerun pass `-p memra-reference --lib`
