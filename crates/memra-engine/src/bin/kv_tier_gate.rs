@@ -216,7 +216,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
     fs::write(
         args.out.join("identity.txt"),
         format!(
-            "artifact_sha256={artifact_hash}\nbinary_sha256={binary_hash}\nplan_debug_sha256={}\nprompt_sha256={}\nprogram=native-decode_step_h-tokenwise-trunk-no-mtp\nmode=raw-token-no-chat-template\ncontext={}\nprompt_tokens={}\ngenerate={GENERATE}\nrequested_tiers={}\nengaged_tier_bytes=0\nscope=baseline-only; no tier qualification or performance claim\n",
+            "artifact_sha256={artifact_hash}\nbinary_sha256={binary_hash}\nplan_debug_sha256={}\nprompt_sha256={}\nprogram=native-decode_step_h-tokenwise-trunk-no-mtp\nmode=raw-token-no-chat-template\ncontext={}\nprompt_tokens={}\ngenerate={GENERATE}\nrequested_tiers={}\nexecution_status=pending\nscope=identity-only; consult completion and active-reclaim receipts for engagement; no tier qualification or performance claim\n",
             hash(plan.as_bytes()),
             hash(&prompt_bytes),
             args.context,
