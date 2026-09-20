@@ -22927,14 +22927,15 @@ fn prefill_tick(
         return Ok(0);
     }
     let mut consumed = 0usize;
-    // EAGER-ONLY prime shape (lane/gemma4-serve-gaps, 2026-08-07): gemma4's prime is
-    // fresh-monolithic ONLY — no chunked and no continuation prime (the engine refuses
-    // pos > 0; before it refused, chunk 2 of a >tick-budget prompt KILLED the worker on
-    // gemma4_prime's assert, in both scheduler modes). So: fresh prompts prime WHOLE
-    // (budget uncapped — a long gemma4 prompt trades one long tick for correctness),
-    // carried suffixes (reuse/prefix resume) ride the tokenwise decode_step path, and the
-    // LCP split is skipped (its boundary-stop would turn the tail into a continuation).
-    let eager_mono = eager_only_model(lm);
+    // MONOLITHIC-PRIME shape (lane/gemma4-serve-gaps, 2026-08-07; narrowed by memra#535 P1a):
+    // a model whose prime has no chunked/continuation program takes the WHOLE queued prompt
+    // in one call (budget uncapped — one long tick, the incident class of 2026-09-05) and
+    // rides carried suffixes tokenwise. Dense gemma left this class: its text prime now runs
+    // the generic chunked driver (`prime_layers_gemma`), chunkinv/tickinv bit-identical at
+    // model scale, so it takes tick-budget chunks like the serial trunk (26B-A4B included once
+    // its router left cuBLAS, memra#562). Still monolithic: E4B (PLE), hyper trunks (own walker).
+    let eager_only = eager_only_model(lm);
+    let eager_mono = monolithic_prime_model(lm);
     let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
     // CARRIED-SUFFIX PRIME CARVE-OUT (lane/glm5-prefix-latent2, 2026-09-01): hyper trunks
     // (glm5_next) are eager-only for BATCHING reasons, not prime reasons — their engine
@@ -22962,17 +22963,20 @@ fn prefill_tick(
             s.model
         );
     }
-    if eager_mono && !suffix_prime {
+    if eager_only && !suffix_prime {
+        // Captures stay keyed on the EAGER-ONLY class, not the monolithic-prime class: dense
+        // gemma can continuation-prime now (memra#535 P1a), but its prefix snapshot is still
+        // refused by the SWA flat-history layout (memra#151) and its plain-affinity resume has
+        // no gate yet, so a boundary stop here would buy a capture nothing can consume.
         s.snapshot_at = None;
     }
-    if eager_mono {
-        // eager-only models (gemma4) cannot continuation-prime a suffix over a rewound cache
-        // (the engine refuses pos > 0 prime), so plain-affinity resume excludes them — no
-        // point capturing a checkpoint they can never resume from. This stays cleared for
-        // hyper trunks under the carve-out too: `maybe_plain_checkpoint` refuses to arm on
-        // latent-bearing caches in its own right (the parent lane's guard), so a checkpoint
-        // here could never be consumed — the LCP-split retention above is the deliberate
-        // delta, the checkpoint clearing is not.
+    if eager_only {
+        // eager-only models cannot (gemma4: not YET, see above) consume a plain-affinity
+        // checkpoint — no point capturing one. This stays cleared for hyper trunks under the
+        // carve-out too: `maybe_plain_checkpoint` refuses to arm on latent-bearing caches in
+        // its own right (the parent lane's guard), so a checkpoint here could never be
+        // consumed — the LCP-split retention above is the deliberate delta, the checkpoint
+        // clearing is not.
         s.ckpt_at = None;
     }
     // BOUNDARY STOP: the prime must stop exactly at the NEXT of two pre-generation boundaries
@@ -23232,6 +23236,19 @@ fn eager_only_model(lm: &LoadedModel) -> bool {
         // `engine_error` after one token. The converted paths — forward, forward_last,
         // prime_cache, decode_step — are exactly the ones the eager-only class uses.
         || memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
+}
+
+/// MONOLITHIC-PRIME class (memra#535 P1a, lane/exec-p1a-gemma-prime): must this model's prime
+/// take the WHOLE queued prompt in one call? Derived, not asserted: the eager-only class minus
+/// the gemma plans whose every trunk operation carries the generic chunked-prime receipt
+/// (`op_registry` column `chunked_prime`, manifest `CHUNKED_PRIME`, `docs/EXECUTION-SURFACES.md`).
+/// Dense gemma (12B / 31B: chunkinv and tickinv bit-identical on the rented 5090,
+/// `research/exec-p1a-gemma-prime-20260919/`) therefore primes in tick-budget chunks like the
+/// serial trunk. gemma-4-26B-A4B joined once its MoE router left the m-dependent cuBLAS matmul
+/// (memra#562; chunkinv/tickinv EXACT). E4B (PLE prime) and hyper trunks (their own walker
+/// program) keep the whole-prompt take.
+fn monolithic_prime_model(lm: &LoadedModel) -> bool {
+    eager_only_model(lm) && !(lm.model.uses_gemma_program() && lm.model.chunked_prime_supported())
 }
 
 /// BATCHED-DECODE carve-out from the eager-only class (lane/gemma-batched, 2026-08-16):
@@ -24354,12 +24371,12 @@ fn step_session(
             trace.mark_prime_start();
         }
         let q = s.prefill_queue.len();
-        // EAGER-ONLY prime shape (lane/gemma4-serve-gaps): same law as prefill_tick —
-        // gemma4 primes fresh prompts WHOLE (no chunked prime in the engine; chunk 2 used
-        // to kill the worker) and carried suffixes tokenwise (no continuation prime).
-        // Hyper trunks carve out of the carried veto under MEMRA_HYPER_SUFFIX_PRIME
-        // exactly as in prefill_tick (lane/glm5-prefix-latent2 — one law, both sites).
-        let eager_mono = eager_only_model(lm);
+        // MONOLITHIC-PRIME shape: same law as prefill_tick — models without the chunked-prime
+        // receipt prime fresh prompts WHOLE and carried suffixes tokenwise; dense gemma left
+        // this class in memra#535 P1a (`monolithic_prime_model`). Hyper trunks carve out of
+        // the carried veto under MEMRA_HYPER_SUFFIX_PRIME exactly as in prefill_tick
+        // (lane/glm5-prefix-latent2 — one law, both sites).
+        let eager_mono = monolithic_prime_model(lm);
         let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
         let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
         let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
