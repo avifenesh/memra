@@ -336,6 +336,8 @@ fn protected_inference_path(path: &str) -> bool {
         "/v1/auth/check"
             | "/v1/completions"
             | "/v1/chat/completions"
+            | "/v1/tokenize"
+            | "/v1/detokenize"
             | "/v1/messages"
             | "/v1/responses"
             | "/v1/embeddings"
@@ -2019,8 +2021,8 @@ struct AppState {
     /// The stock binary wires `ledger::Ledger`; limits enforcement (the old
     /// `tenant_budgets`) is the same object answering `enforces_limits()`.
     metering: Option<Arc<dyn metering::Metering>>,
-    /// HTTP-side tokenizer copies used only when prepaid enforcement is enabled. Reservations
-    /// price the same rendered prompt before worker admission, without moving auth into worker.rs.
+    /// HTTP-side tokenizer copies for token APIs and prepaid prompt reservations. Always
+    /// loaded from the same verified source as the worker, without issuing GPU commands.
     budget_tokenizers: Option<Arc<HashMap<String, Arc<Tokenizer>>>>,
     /// Immutable request-auth sources resolved before model load. The keyring itself
     /// hot-reloads internally; the source selection must not drift after bind validation.
@@ -5758,19 +5760,12 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
             }
         }
     };
-    let budget_tokenizers = if metering_obj
-        .as_ref()
-        .is_some_and(|manager| manager.enforces_limits())
-    {
-        match load_budget_tokenizers(&models) {
-            Ok(tokenizers) => Some(tokenizers),
-            Err(err) => {
-                eprintln!("[server] FATAL: prepaid reservation tokenizers: {err}");
-                std::process::exit(1);
-            }
+    let budget_tokenizers = match load_budget_tokenizers(&models) {
+        Ok(tokenizers) => Some(tokenizers),
+        Err(err) => {
+            eprintln!("[server] FATAL: HTTP tokenizers: {err}");
+            std::process::exit(1);
         }
-    } else {
-        None
     };
     eprintln!("[server] starting; models config = {models:?}");
 
@@ -5891,6 +5886,8 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         .route("/v1/embeddings", post(embed_api::embeddings_admitted))
         .route("/v1/rerank", post(embed_api::rerank_admitted))
         .route("/v1/chat/completions", post(chat_completions_admitted))
+        .route("/v1/tokenize", post(tokenize_admitted))
+        .route("/v1/detokenize", post(detokenize_admitted))
         // Translation surfaces (lane/api-surfaces): Anthropic Messages + OpenAI
         // Responses over the same core. Axum matches the PATH only, so the
         // `?beta=true` query some clients append arrives here too.
@@ -6148,6 +6145,10 @@ fn parse_models_config() -> Vec<(String, String, Option<String>)> {
     ]
 }
 
+/// Load the HTTP tokenizer map unconditionally, for token APIs as well as reservations.
+/// Previously this was prepaid-only and ignored the worker's verified GGUF override for
+/// Gemma HF directories. Use the worker's SAME source resolver and vocabulary verifier:
+/// an independently selected tokenizer cannot promise count == billed prompt_tokens.
 fn load_budget_tokenizers(
     models: &[(String, String, Option<String>)],
 ) -> Result<Arc<HashMap<String, Arc<Tokenizer>>>, String> {
@@ -6167,8 +6168,26 @@ fn load_budget_tokenizers(
             } else {
                 path.to_path_buf()
             };
-            Tokenizer::from_hf_dir(&tokenizer_dir)
-                .map_err(|err| format!("model {alias:?}: reservation tokenizer: {err}"))?
+            // The dedicated DSv4 route takes its tokenizer directly from the directory;
+            // every other directory route honours the shared, model-scoped override.
+            let override_path = if dsv4_serve::is_dsv4_dir(path) {
+                None
+            } else {
+                worker::tokenizer_gguf_override(alias)
+            };
+            match override_path {
+                Some(gguf_path) => {
+                    debug_assert_eq!(
+                        Some(gguf_path.as_str()),
+                        worker::tokenizer_gguf_override(alias).as_deref(),
+                        "HTTP and worker tokenizer source identities must match"
+                    );
+                    worker::load_verified_tokenizer(&gguf_path, &tokenizer_dir)
+                        .map(|(tokenizer, _)| tokenizer)
+                }
+                None => Tokenizer::from_hf_dir(&tokenizer_dir),
+            }
+            .map_err(|err| format!("model {alias:?}: HTTP tokenizer: {err}"))?
         } else {
             let gguf = memra_gguf::GgufFile::open(path)
                 .map_err(|err| format!("model {alias:?}: open reservation tokenizer: {err}"))?;
@@ -8858,6 +8877,64 @@ impl BudgetRejection {
     }
 }
 
+/// One HTTP-side render-to-ids path, shared by chat budget admission and /v1/tokenize.
+/// The completion path always requests the generation suffix; inspection may omit it.
+fn render_prompt_ids(
+    request: &Request,
+    tokenizer: Option<&Tokenizer>,
+    add_generation_prompt: bool,
+) -> Result<Vec<u32>, String> {
+    let prompt = if !request.prompt_ids.is_empty() {
+        request.prompt_ids.clone()
+    } else if !request.chat_turns.is_empty() {
+        let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
+        // The SHARED fast-path predicate (worker::plain_chat_render_path) — this is the
+        // render that actually serves: the worker's `prepare` only re-renders when
+        // `prepared_prompt` is still None, and this budget-admission path fills it first.
+        // v0.109.1's first cut fixed the worker copies only, and the live probe showed
+        // why one predicate must exist ONCE: unset q38 chats still served the bare bytes
+        // because THIS third copy kept routing them down the legacy render.
+        let plain = worker::plain_chat_render_path(
+            &request.tools_json,
+            &request.think,
+            request.reasoning_effort.as_deref(),
+            &request.chat_turns,
+            tokenizer.has_qwen_effort_ladder(),
+        );
+        let rendered = if plain {
+            let messages: Vec<_> = request
+                .chat_turns
+                .iter()
+                .map(|turn| (turn.role.as_str(), turn.content.as_str()))
+                .collect();
+            tokenizer.apply_chat_template(&messages, add_generation_prompt)
+        } else {
+            tokenizer
+                .apply_chat_template_tools_ex(
+                    &request.chat_turns,
+                    add_generation_prompt,
+                    &request.tools_json,
+                    &request.tools_struct,
+                    request.think,
+                    request.reasoning_effort.as_deref(),
+                )
+                .map_err(|err| format!("chat template: {err}"))?
+        };
+        tokenizer.encode(&rendered, true)
+    } else if request.chat {
+        let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
+        let rendered = tokenizer.apply_chat_template(
+            &[("user", request.prompt_text.as_str())],
+            add_generation_prompt,
+        );
+        tokenizer.encode(&rendered, true)
+    } else {
+        let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
+        tokenizer.encode(&request.prompt_text, true)
+    };
+    Ok(prompt)
+}
+
 fn prepare_budget_prompt(
     request: &mut Request,
     tokenizer: Option<&Tokenizer>,
@@ -8869,52 +8946,7 @@ fn prepare_budget_prompt(
         if let Some(trace) = request.ttft.as_ref() {
             trace.mark_tokenize_start();
         }
-        let prompt = if !request.prompt_ids.is_empty() {
-            request.prompt_ids.clone()
-        } else if !request.chat_turns.is_empty() {
-            let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
-            // The SHARED fast-path predicate (worker::plain_chat_render_path) — this is the
-            // render that actually serves: the worker's `prepare` only re-renders when
-            // `prepared_prompt` is still None, and this budget-admission path fills it first.
-            // v0.109.1's first cut fixed the worker copies only, and the live probe showed
-            // why one predicate must exist ONCE: unset q38 chats still served the bare bytes
-            // because THIS third copy kept routing them down the legacy render.
-            let plain = worker::plain_chat_render_path(
-                &request.tools_json,
-                &request.think,
-                request.reasoning_effort.as_deref(),
-                &request.chat_turns,
-                tokenizer.has_qwen_effort_ladder(),
-            );
-            let rendered = if plain {
-                let messages: Vec<_> = request
-                    .chat_turns
-                    .iter()
-                    .map(|turn| (turn.role.as_str(), turn.content.as_str()))
-                    .collect();
-                tokenizer.apply_chat_template(&messages, true)
-            } else {
-                tokenizer
-                    .apply_chat_template_tools_ex(
-                        &request.chat_turns,
-                        true,
-                        &request.tools_json,
-                        &request.tools_struct,
-                        request.think,
-                        request.reasoning_effort.as_deref(),
-                    )
-                    .map_err(|err| format!("chat template: {err}"))?
-            };
-            tokenizer.encode(&rendered, true)
-        } else if request.chat {
-            let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
-            let rendered =
-                tokenizer.apply_chat_template(&[("user", request.prompt_text.as_str())], true);
-            tokenizer.encode(&rendered, true)
-        } else {
-            let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
-            tokenizer.encode(&request.prompt_text, true)
-        };
+        let prompt = render_prompt_ids(request, tokenizer, true)?;
         if prompt.is_empty() {
             return Err("empty prompt after tokenization".into());
         }
@@ -9618,6 +9650,193 @@ async fn completions_with_admission(
     rl.attach(with_request_id(&env.id, resp))
 }
 
+/// Token inspection is CPU-only: no request is sent to the GPU worker.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TokenizeReq {
+    model: String,
+    prompt: Option<String>,
+    messages: Option<serde_json::Value>,
+    tools: Option<serde_json::Value>,
+    chat_template_kwargs: Option<serde_json::Value>,
+    add_generation_prompt: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DetokenizeReq {
+    model: String,
+    tokens: Vec<u32>,
+}
+
+fn token_api_request_id(headers: &axum::http::HeaderMap) -> String {
+    headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| Envelope::new(true).id)
+}
+
+/// Reuse chat's semantic builder (tools, history, thinking and metadata defaults), then
+/// the exact render-to-ids function used by chat's HTTP-side prompt accounting.
+fn tokenize_request(
+    req: TokenizeReq,
+    tokenizer: &Tokenizer,
+    caps: Option<&ModelCaps>,
+    metadata: Option<&OpenRouterModelMetadata>,
+) -> Result<Vec<u32>, (String, &'static str)> {
+    match (req.prompt, req.messages) {
+        (Some(prompt), None) => {
+            if req.tools.is_some()
+                || req.chat_template_kwargs.is_some()
+                || req.add_generation_prompt.is_some()
+            {
+                return Err((
+                    "chat options require messages, not prompt".into(),
+                    "messages",
+                ));
+            }
+            Ok(tokenizer.encode(&prompt, true))
+        }
+        (None, Some(messages)) => {
+            let chat: ChatCompletionReq = serde_json::from_value(json!({
+                "model": req.model,
+                "messages": messages,
+                "tools": req.tools,
+                "chat_template_kwargs": req.chat_template_kwargs,
+            }))
+            .map_err(|err| (err.to_string(), "messages"))?;
+            validate_chat_messages(&chat.messages).map_err(|err| (err.to_string(), "messages"))?;
+            // Token inspection must not download, decode or execute multimodal inputs.
+            // Refuse them explicitly rather than returning an incomplete billed count.
+            if request_has_vision(&chat) {
+                return Err(("tokenize supports text messages only".into(), "messages"));
+            }
+            let (tx, _rx) = worker::event_channel();
+            let plan = build_chat_request_with_trace(
+                chat,
+                caps,
+                tx,
+                lanes::Lane::Interactive,
+                None,
+                None,
+                metadata.and_then(|m| m.default_reasoning_effort.as_deref()),
+                &ModelSamplingDefaults::resolve(metadata, caps),
+            )
+            .map_err(|err| (err, "messages"))?;
+            render_prompt_ids(
+                &plan.request,
+                Some(tokenizer),
+                req.add_generation_prompt.unwrap_or(true),
+            )
+            .map_err(|err| (err, "messages"))
+        }
+        _ => Err(("provide exactly one of prompt or messages".into(), "prompt")),
+    }
+}
+
+fn token_api_tokenizer<'a>(st: &'a AppState, model: &str) -> Result<&'a Tokenizer, Response> {
+    st.budget_tokenizers
+        .as_ref()
+        .and_then(|tokenizers| tokenizers.get(model))
+        .map(Arc::as_ref)
+        .ok_or_else(|| {
+            error_response_coded(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "HTTP tokenizer is unavailable",
+                "server_error",
+                Some("model"),
+                Some("tokenizer_unavailable"),
+            )
+        })
+}
+
+async fn tokenize_admitted(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: Result<AdmittedJson<TokenizeReq>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let id = token_api_request_id(&headers);
+    if let Err(response) = authenticate(&st.api_auth, &headers) {
+        return with_request_id(&id, response);
+    }
+    let AdmittedJson(mut req, _admission) = match body {
+        Ok(body) => body,
+        Err(err) => return with_request_id(&id, bad_request(&err.body_text(), None)),
+    };
+    req.model = match canonical_model_id(&st.models, &req.model) {
+        Some(model) => model,
+        None => return with_request_id(&id, model_not_found_response(&st.models, &req.model)),
+    };
+    let tokenizer = match token_api_tokenizer(&st, &req.model) {
+        Ok(tokenizer) => tokenizer,
+        Err(response) => return with_request_id(&id, response),
+    };
+    let metadata = st.metadata();
+    let model_metadata = metadata.models.get(&req.model);
+    let caps = st.caps.get(&req.model);
+    let max_model_len = published_context_length(caps, model_metadata);
+    match tokenize_request(req, tokenizer, caps, model_metadata) {
+        Ok(tokens) => with_request_id(
+            &id,
+            Json(json!({"count": tokens.len(), "tokens": tokens, "max_model_len": max_model_len}))
+                .into_response(),
+        ),
+        Err((message, param)) => with_request_id(&id, bad_request(&message, Some(param))),
+    }
+}
+
+async fn detokenize_admitted(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: Result<AdmittedJson<DetokenizeReq>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let id = token_api_request_id(&headers);
+    if let Err(response) = authenticate(&st.api_auth, &headers) {
+        return with_request_id(&id, response);
+    }
+    let AdmittedJson(req, _admission) = match body {
+        Ok(body) => body,
+        Err(err) => return with_request_id(&id, bad_request(&err.body_text(), None)),
+    };
+    let model = match canonical_model_id(&st.models, &req.model) {
+        Some(model) => model,
+        None => return with_request_id(&id, model_not_found_response(&st.models, &req.model)),
+    };
+    let tokenizer = match token_api_tokenizer(&st, &model) {
+        Ok(tokenizer) => tokenizer,
+        Err(response) => return with_request_id(&id, response),
+    };
+    // Same named 400 as raw prompt_ids. The tokenizer bounds ids even when caps are unknown.
+    let caps = ModelCaps {
+        n_vocab: tokenizer.vocab_size(),
+        ..Default::default()
+    };
+    if let Err(message) = validate_prompt_ids(&req.tokens, Some(&caps)) {
+        return with_request_id(&id, bad_request(&message, Some("prompt_ids")));
+    }
+    with_request_id(
+        &id,
+        Json(json!({"prompt": tokenizer.decode(&req.tokens)})).into_response(),
+    )
+}
+
+fn validate_chat_messages(messages: &[ChatMessage]) -> Result<(), &'static str> {
+    if messages.is_empty()
+        || messages.iter().any(|message| {
+            !matches!(
+                message.role.as_str(),
+                "system" | "developer" | "user" | "assistant" | "tool"
+            )
+        })
+    {
+        Err("messages must use system/developer/user/assistant/tool roles")
+    } else {
+        Ok(())
+    }
+}
+
 async fn chat_completions_admitted(
     state: State<AppState>,
     headers: axum::http::HeaderMap,
@@ -9671,21 +9890,8 @@ async fn chat_completions_with_admission(
         Ok(ns) => ns,
         Err(msg) => return with_request_id(&env.id, bad_request(msg, Some("cache_salt"))),
     };
-    if req.messages.is_empty()
-        || req.messages.iter().any(|message| {
-            !matches!(
-                message.role.as_str(),
-                "system" | "developer" | "user" | "assistant" | "tool"
-            )
-        })
-    {
-        return with_request_id(
-            &env.id,
-            bad_request(
-                "messages must use system/developer/user/assistant/tool roles",
-                Some("messages"),
-            ),
-        );
+    if let Err(message) = validate_chat_messages(&req.messages) {
+        return with_request_id(&env.id, bad_request(message, Some("messages")));
     }
     // HONESTY GATE (gap-scan F4): semantic params we can't honor 400 loudly, never
     // silent downgrades. response_format json_object/json_schema are now REAL
@@ -20036,6 +20242,248 @@ temperature = 0.6
     /// It also drives the SAME health handle the real worker does (mark_ready at "load"
     /// completion, beat_busy per iteration), which is what lets the /health and /readyz tests
     /// exercise the real handlers instead of a mock.
+    fn token_api_fixture() -> (AppState, Arc<Tokenizer>) {
+        static TOKENIZER: std::sync::OnceLock<Arc<Tokenizer>> = std::sync::OnceLock::new();
+        let tokenizer = TOKENIZER
+            .get_or_init(|| {
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../research/dsv4-template-20260818/ref");
+                Arc::new(Tokenizer::from_hf_dir(&path).expect("existing CPU tokenizer fixture"))
+            })
+            .clone();
+        let mut st = fake_worker_state();
+        st.budget_tokenizers = Some(Arc::new(HashMap::from([("m".into(), tokenizer.clone())])));
+        st.caps = Arc::new(HashMap::from([(
+            "m".into(),
+            ModelCaps {
+                n_vocab: tokenizer.vocab_size(),
+                context_length: 4096,
+                chat_ok: true,
+                tools_branch: true,
+                ..Default::default()
+            },
+        )]));
+        (st, tokenizer)
+    }
+
+    fn token_api_test_router(st: AppState) -> Router {
+        apply_body_limit(
+            Router::new()
+                .route("/v1/tokenize", post(tokenize_admitted))
+                .route("/v1/detokenize", post(detokenize_admitted))
+                .with_state(st.clone()),
+        )
+        .layer(middleware::from_fn_with_state(
+            st,
+            authenticate_inference_before_body,
+        ))
+    }
+
+    async fn token_api_post(app: Router, path: &str, body: serde_json::Value) -> Response {
+        use tower::ServiceExt;
+        app.oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(path)
+                .header("content-type", "application/json")
+                .header("x-request-id", "token-api-test")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn token_api_json(response: Response) -> serde_json::Value {
+        serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), MAX_BODY_BYTES)
+                .await
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn tokenize_prompt_round_trips_through_detokenize_without_gpu() {
+        let (st, _) = token_api_fixture();
+        let mut metadata = ModelMetadataSet::default();
+        metadata.models.insert(
+            "m".into(),
+            OpenRouterModelMetadata {
+                max_prompt_length: Some(1000),
+                max_output_length: Some(500),
+                ..Default::default()
+            },
+        );
+        *st.openrouter_metadata.write().unwrap() = Arc::new(metadata);
+        let app = token_api_test_router(st.clone());
+        let response = token_api_post(
+            app.clone(),
+            "/v1/tokenize",
+            json!({"model":"m", "prompt":"Hello, שלום!"}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-request-id"], "token-api-test");
+        let body = token_api_json(response).await;
+        assert_eq!(
+            body["count"].as_u64().unwrap() as usize,
+            body["tokens"].as_array().unwrap().len()
+        );
+        assert_eq!(
+            body["max_model_len"],
+            model_entry_v1("m", st.caps.get("m"), st.metadata().models.get("m"))["context_length"]
+        );
+        assert_eq!(body["max_model_len"], 1500);
+        let response = token_api_post(
+            app,
+            "/v1/detokenize",
+            json!({"model":"m", "tokens":body["tokens"]}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(token_api_json(response).await["prompt"], "Hello, שלום!");
+    }
+
+    #[tokio::test]
+    async fn tokenize_messages_count_equals_chat_prompt_accounting() {
+        let (st, tokenizer) = token_api_fixture();
+        // Uses the existing chat builder and actual budget-accounting waist, not a fake
+        // worker's hard-coded usage. This is CPU accounting parity, not live generation.
+        for tools in [
+            serde_json::Value::Null,
+            json!([{"type":"function", "function":{
+                "name":"weather", "description":"Weather", "parameters":{
+                    "type":"object", "properties":{"city":{"type":"string"}}
+                }
+            }}]),
+        ] {
+            let body = json!({"model":"m", "messages":[
+                {"role":"system", "content":"Be concise."},
+                {"role":"user", "content":"Weather in Paris?"}
+            ], "tools":tools, "chat_template_kwargs":{"enable_thinking":false}});
+            let (tx, _rx) = worker::event_channel();
+            let mut plan = build_chat_request(
+                serde_json::from_value(body.clone()).unwrap(),
+                st.caps.get("m"),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .unwrap();
+            let billed = prepare_budget_prompt(&mut plan.request, Some(&tokenizer)).unwrap();
+            let response = token_api_post(
+                token_api_test_router(st.clone()),
+                "/v1/tokenize",
+                body.clone(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let result = token_api_json(response).await;
+            assert_eq!(result["count"], billed);
+            assert_eq!(
+                result["tokens"],
+                json!(plan.request.prepared_prompt.unwrap())
+            );
+            let mut without_suffix = body;
+            without_suffix["add_generation_prompt"] = json!(false);
+            let response = token_api_post(
+                token_api_test_router(st.clone()),
+                "/v1/tokenize",
+                without_suffix,
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_ne!(token_api_json(response).await["tokens"], result["tokens"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn detokenize_oov_uses_named_prompt_ids_error() {
+        let (st, tokenizer) = token_api_fixture();
+        let response = token_api_post(
+            token_api_test_router(st),
+            "/v1/detokenize",
+            json!({"model":"m", "tokens":[0, tokenizer.vocab_size()]}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["x-request-id"], "token-api-test");
+        let body = token_api_json(response).await;
+        assert_eq!(body["error"]["param"], "prompt_ids");
+        assert_eq!(body["error"]["type"], "invalid_request_error");
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("prompt_ids[1]")
+        );
+    }
+
+    #[tokio::test]
+    async fn token_endpoints_unknown_model_matches_chat_error() {
+        let (st, _) = token_api_fixture();
+        let expected = token_api_json(model_not_found_response(&st.models, "missing")).await;
+        for (path, body) in [
+            ("/v1/tokenize", json!({"model":"missing", "prompt":"hi"})),
+            ("/v1/detokenize", json!({"model":"missing", "tokens":[0]})),
+        ] {
+            let response = token_api_post(token_api_test_router(st.clone()), path, body).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(response.headers()["x-request-id"], "token-api-test");
+            assert_eq!(token_api_json(response).await, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn token_endpoints_reject_ambiguous_or_invalid_messages() {
+        let (st, _) = token_api_fixture();
+        for body in [
+            json!({"model":"m"}),
+            json!({"model":"m", "prompt":"hi", "messages":[]}),
+            json!({"model":"m", "messages":[]}),
+            json!({"model":"m", "messages":[{"role":"bogus", "content":"hi"}]}),
+            json!({"model":"m", "prompt":"hi", "tools":[]}),
+            json!({"model":"m", "messages":[{"role":"user", "content":[
+                {"type":"image_url", "image_url":{"url":"https://invalid/image.png"}}
+            ]}]}),
+        ] {
+            let response =
+                token_api_post(token_api_test_router(st.clone()), "/v1/tokenize", body).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(
+                token_api_json(response).await["error"]["type"],
+                "invalid_request_error"
+            );
+        }
+    }
+
+    #[test]
+    fn http_tokenizer_loader_matches_worker_source_identity() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../research/dsv4-template-20260818/ref");
+        let alias = "token-api-source-identity-fixture";
+        assert!(worker::tokenizer_gguf_override(alias).is_none());
+        let http =
+            load_budget_tokenizers(&[(alias.into(), path.to_str().unwrap().into(), None)]).unwrap();
+        // Mirrors the worker's no-override directory branch on the SAME source path;
+        // the override branch uses its shared resolver/verifier and asserts the path at load.
+        let worker = Tokenizer::from_hf_dir(&path).unwrap();
+        let http = &http[alias];
+        assert_eq!(http.vocab_size(), worker.vocab_size());
+        for id in 0..worker.vocab_size() as u32 {
+            assert_eq!(
+                http.decode_bytes_special(&[id], true),
+                worker.decode_bytes_special(&[id], true),
+                "tokenizer identity differs at id {id}"
+            );
+        }
+        assert_eq!(
+            http.encode("identity שלום", true),
+            worker.encode("identity שלום", true)
+        );
+    }
+
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }

@@ -45,6 +45,27 @@ ids in its speculative burst are neither emitted nor included in
 `usage.completion_tokens`. Explicit token stops take precedence over EOS (ordinary
 EOS accounting is unchanged when not explicitly listed). This applies to streaming
 and non-streaming responses. String `stop` remains independently supported.
+## `/v1/tokenize` and `/v1/detokenize`: token inspection
+Both are CPU-only `POST` endpoints using the same bearer authentication, 192 MiB
+body ceiling and bounded body-admission pools as chat completions. They do not
+queue GPU work or bill generation usage.
+- `/v1/tokenize`: `{"model":"id","prompt":"text"}` or
+  `{"model":"id","messages":[...],"tools":[...],"chat_template_kwargs":{...},"add_generation_prompt":true}`.
+  Returns `{"tokens":[...],"count":N,"max_model_len":...}`. Send exactly one of
+  `prompt` and `messages`; the other chat fields are optional and require `messages`.
+  Text messages use chat completion's semantic builder and prompt-accounting renderer,
+  including tools and model metadata defaults. `add_generation_prompt` defaults to
+  `true`, matching chat's billed `prompt_tokens`; `false` omits the generation suffix.
+  Image/video messages are explicitly refused, not partially counted. Raw prompts use
+  the model's normal special-token policy. `max_model_len` is the context cap advertised
+  by `/v1/models` (null when unknown), not a separate guessed limit.
+- `/v1/detokenize`: `{"model":"id","tokens":[0,1,...]}` returns `{"prompt":"text"}`.
+  Control tokens decode to their literal strings. OOV ids receive the same named
+  HTTP 400 (`param: "prompt_ids"`) as raw-id completions.
+Unknown models use chat's HTTP 400 `model_not_found` error (`param: "model"`).
+Errors are OpenAI-shaped; handler responses carry `x-request-id` and echo a supplied
+request id. Token inspection uses the worker's verified tokenizer source, including
+GGUF tokenizer overrides for HF-directory models, even without prepaid enforcement.
 
 ## `/v1/messages`: Anthropic Messages API
 
