@@ -1,0 +1,62 @@
+{
+   "blockdevices": [
+      {
+         "name": "sr0",
+         "type": "rom",
+         "size": "10M",
+         "rota": true,
+         "tran": null,
+         "mountpoints": [
+             null
+         ]
+      },{
+         "name": "vda",
+         "type": "disk",
+         "size": "300G",
+         "rota": true,
+         "tran": "virtio",
+         "mountpoints": [
+             null
+         ],
+         "children": [
+            {
+               "name": "vda1",
+               "type": "part",
+               "size": "299G",
+               "rota": true,
+               "tran": "virtio",
+               "mountpoints": [
+                   "/"
+               ]
+            },{
+               "name": "vda14",
+               "type": "part",
+               "size": "4M",
+               "rota": true,
+               "tran": "virtio",
+               "mountpoints": [
+                   null
+               ]
+            },{
+               "name": "vda15",
+               "type": "part",
+               "size": "106M",
+               "rota": true,
+               "tran": "virtio",
+               "mountpoints": [
+                   "/boot/efi"
+               ]
+            },{
+               "name": "vda16",
+               "type": "part",
+               "size": "913M",
+               "rota": true,
+               "tran": "virtio",
+               "mountpoints": [
+                   "/boot"
+               ]
+            }
+         ]
+      }
+   ]
+}

@@ -1,11 +1,12 @@
 //! Native owner-stream H2D/D2H implementation of the frozen tier contract.
 //! No worker may submit CUDA work. Unknown completion retains backing and quota.
 use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, PinnedHostSlice, result, sys};
+use memra_kv::KvPlane;
 use memra_tier::{bank::SharedBudget, contracts::*};
 use std::{
     cell::{Ref, RefCell},
     collections::HashMap,
-    rc::{Rc, Weak},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -28,11 +29,13 @@ fn event_done(e: &CudaEvent) -> Result<bool> {
 /// A real CUDA-pinned, exclusive and initialized host allocation. Not Send.
 /// All bytes, including padding, are initialized before any safe slice exists.
 pub struct CudaPinnedLease {
+    allocation: Rc<PinnedAllocation>,
+}
+struct PinnedAllocation {
     backing: Option<PinnedHostSlice<u8>>,
     charge: Option<ChargedLease>,
     pin: Option<LeasePin>,
     governor: SharedBudget,
-    lifetime: Rc<()>,
 }
 impl std::fmt::Debug for CudaPinnedLease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -43,7 +46,10 @@ impl std::fmt::Debug for CudaPinnedLease {
 }
 impl PinnedLease for CudaPinnedLease {
     fn storage_bytes(&self) -> u64 {
-        self.backing.as_ref().map_or(0, |b| b.len() as u64)
+        self.allocation
+            .backing
+            .as_ref()
+            .map_or(0, |b| b.len() as u64)
     }
     fn valid_bytes(&self) -> u64 {
         self.storage_bytes()
@@ -56,7 +62,8 @@ impl PinnedLease for CudaPinnedLease {
     }
     fn bytes(&self) -> Result<&[u8]> {
         cuda(
-            self.backing
+            self.allocation
+                .backing
                 .as_ref()
                 .ok_or(Error::AlreadyReleased)?
                 .as_slice(),
@@ -69,7 +76,9 @@ impl CudaPinnedLease {
             return Err(Error::InvalidLayout);
         }
         cuda(
-            self.backing
+            Rc::get_mut(&mut self.allocation)
+                .ok_or(Error::Busy)?
+                .backing
                 .as_mut()
                 .ok_or(Error::AlreadyReleased)?
                 .as_mut_slice(),
@@ -78,7 +87,7 @@ impl CudaPinnedLease {
         Ok(())
     }
 }
-impl Drop for CudaPinnedLease {
+impl Drop for PinnedAllocation {
     fn drop(&mut self) {
         // Live/unknown DMA leases never reach here: Entry's shutdown path leaks them.
         // Synchronize the pinned allocation's own cudarc tracking event before free.
@@ -106,6 +115,20 @@ struct Item {
     taken: bool,
     source_retired: bool,
 }
+#[derive(Default)]
+struct Retention {
+    graph_pins: Rc<()>,
+    consumer_event: Option<(FenceId, CudaEvent)>,
+}
+impl Retention {
+    fn idle(&self) -> Result<bool> {
+        Ok(Rc::strong_count(&self.graph_pins) == 1
+            && match &self.consumer_event {
+                Some((_, event)) => event_done(event)?,
+                None => true,
+            })
+    }
+}
 struct Entry {
     items: Vec<Option<Item>>,
     completion: Completion,
@@ -115,9 +138,8 @@ struct Entry {
     published: bool,
     retired: bool,
     unknown: bool,
-    host_consumers: Vec<Weak<()>>,
-    graph_pins: Rc<()>,
-    consumer_event: Option<(FenceId, CudaEvent)>,
+    source: Retention,
+    destination: Retention,
 }
 impl Drop for Entry {
     fn drop(&mut self) {
@@ -131,7 +153,7 @@ impl Drop for Entry {
 }
 /// Opaque graph-use retention. Drop only after graph execution/destruction retires.
 pub struct GraphPin {
-    _pin: Rc<()>,
+    _pins: Vec<Rc<()>>,
 }
 
 pub struct CudaTransfers {
@@ -208,11 +230,12 @@ impl CudaTransfers {
         })();
         match allocation {
             Ok(backing) => Ok(CudaPinnedLease {
-                backing: Some(backing),
-                pin: Some(charge.pin()?),
-                charge: Some(charge),
-                governor: self.governor.clone(),
-                lifetime: Rc::new(()),
+                allocation: Rc::new(PinnedAllocation {
+                    backing: Some(backing),
+                    pin: Some(charge.pin()?),
+                    charge: Some(charge),
+                    governor: self.governor.clone(),
+                }),
             }),
             Err(e) => {
                 self.governor.borrow_mut().release(&charge)?;
@@ -232,7 +255,7 @@ impl CudaTransfers {
         }
         let charge = self.device_charge(bytes, request)?;
         match cuda(self.stream.alloc_zeros::<u8>(bytes)) {
-            Ok(backing) => self.register_charged(backing, generation, charge),
+            Ok(backing) => self.register_charged(backing.into(), generation, charge),
             Err(e) => {
                 self.governor.borrow_mut().release(&charge)?;
                 Err(e)
@@ -249,20 +272,21 @@ impl CudaTransfers {
     /// buffer already accounted elsewhere; callers must transfer its admission first.
     pub fn register_device(
         &mut self,
-        backing: CudaSlice<u8>,
+        backing: impl Into<KvPlane>,
         generation: u64,
         request: BudgetRequest,
     ) -> Result<DeviceLease> {
         self.check_thread()?;
+        let backing = backing.into();
         if !Arc::ptr_eq(backing.stream(), &self.stream) || backing.is_empty() {
             return Err(Error::WrongOwner);
         }
-        let charge = self.device_charge(backing.len(), request)?;
+        let charge = self.device_charge(backing.physical_bytes(), request)?;
         self.register_charged(backing, generation, charge)
     }
     fn register_charged(
         &mut self,
-        backing: CudaSlice<u8>,
+        backing: KvPlane,
         generation: u64,
         charge: ChargedLease,
     ) -> Result<DeviceLease> {
@@ -278,8 +302,26 @@ impl CudaTransfers {
     pub fn retain_device(&self, lease: &DeviceLease) -> Result<DeviceLease> {
         self.owner.retain(lease)
     }
+    /// Refuse live ticket ownership without waiting on the CUDA stream. A
+    /// synchronous wait here would consume the producer-pending refusal state
+    /// (and deadlock callers whose producer needs an explicit owner advance).
+    fn require_unbound(&self, lease: &DeviceLease) -> Result<()> {
+        self.owner.resolve::<Rc<RefCell<KvPlane>>>(lease)?;
+        if self.entries.values().any(|e| {
+            !e.retired
+                && e.items.iter().flatten().any(|i| {
+                    i.device
+                        .as_ref()
+                        .is_some_and(|d| d.allocation_id() == lease.allocation_id())
+                })
+        }) {
+            return Err(Error::Busy);
+        }
+        Ok(())
+    }
     pub fn release_device(&mut self, lease: &DeviceLease) -> Result<()> {
         self.check_thread()?;
+        self.require_unbound(lease)?;
         cuda(self.stream.synchronize())?;
         self.owner.release(lease)?;
         let charge = self
@@ -290,15 +332,42 @@ impl CudaTransfers {
         self.allocations.remove(&lease.allocation_id());
         Ok(())
     }
+    /// Diagnostic release: observe the private backing Rc without retaining it.
+    /// A zero post-release count proves the RefCell<CudaSlice> destructor ran;
+    /// it does NOT prove the async pool returned physical memory to the driver.
+    pub fn release_device_observed(&mut self, lease: &DeviceLease) -> Result<(usize, usize)> {
+        let (before, weak) = {
+            let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(lease)?;
+            (Rc::strong_count(&backing), Rc::downgrade(&backing))
+        };
+        self.release_device(lease)?;
+        Ok((before, weak.strong_count()))
+    }
+    /// Registry occupancy, not physical residency.
+    pub fn device_registry_len(&self) -> usize {
+        self.allocations.len()
+    }
     /// Transfer native backing out without a copy. The caller assumes accounting
     /// after this returns; live leases/bindings fail Busy without losing ownership.
     pub fn take_device(&mut self, lease: &DeviceLease) -> Result<CudaSlice<u8>> {
-        self.check_thread()?;
-        cuda(self.stream.synchronize())?;
-        let backing = self
+        if self
             .owner
-            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(lease)?
-            .clone();
+            .resolve::<Rc<RefCell<KvPlane>>>(lease)?
+            .borrow()
+            .is_vmm()
+        {
+            return Err(Error::Unsupported);
+        }
+        self.take_plane(lease)?
+            .into_pooled()
+            .map_err(|_| Error::Unsupported)
+    }
+    /// Transfer the complete typed owner, never a raw VMM CudaSlice.
+    pub fn take_plane(&mut self, lease: &DeviceLease) -> Result<KvPlane> {
+        self.check_thread()?;
+        self.require_unbound(lease)?;
+        cuda(self.stream.synchronize())?;
+        let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(lease)?.clone();
         self.owner.release(lease)?;
         let charge = self
             .allocations
@@ -322,7 +391,7 @@ impl CudaTransfers {
         if e.retired {
             return Ok(());
         }
-        if !e.completion.producer_done || Rc::strong_count(&e.graph_pins) != 1 {
+        if !e.completion.producer_done || !e.source.idle()? {
             return Err(Error::Busy);
         }
         // Another live H2D ticket may still bind this D2H source as a consumer
@@ -366,7 +435,7 @@ impl CudaTransfers {
     }
     /// Resolve only a sealed view issued by this backend, while its exact ticket
     /// is still live. Consumers must launch on owner_stream(), then record_consumer.
-    pub fn resolve_ready(&self, ready: &ReadyView<'_>) -> Result<Ref<'_, RefCell<CudaSlice<u8>>>> {
+    pub fn resolve_ready(&self, ready: &ReadyView<'_>) -> Result<Ref<'_, RefCell<KvPlane>>> {
         self.check_thread()?;
         let e = self
             .entries
@@ -376,7 +445,7 @@ impl CudaTransfers {
             return Err(Error::NotReady);
         }
         self.owner
-            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(ready.destination())
+            .resolve::<Rc<RefCell<KvPlane>>>(ready.destination())
             .map(|r| Ref::map(r, |b| b.as_ref()))
     }
     /// Launch/read the exact ready destination without escaping its lease. The
@@ -406,9 +475,9 @@ impl CudaTransfers {
             current,
         )?;
         e.published = true;
-        let backing = self.owner.resolve::<Rc<RefCell<CudaSlice<u8>>>>(
-            i.device.as_ref().ok_or(Error::AlreadyReleased)?,
-        )?;
+        let backing = self
+            .owner
+            .resolve::<Rc<RefCell<KvPlane>>>(i.device.as_ref().ok_or(Error::AlreadyReleased)?)?;
         use_device(&backing.borrow(), &self.stream)
     }
     pub fn owner_stream(&self) -> &Arc<CudaStream> {
@@ -457,18 +526,54 @@ impl CudaTransfers {
         }
         let f = self.next_fence(ticket.epochs.dst_gen)?;
         let event = cuda(self.stream.record_event(None))?;
-        self.entries.get_mut(ticket).unwrap().consumer_event = Some((f, event));
+        self.entries
+            .get_mut(ticket)
+            .unwrap()
+            .destination
+            .consumer_event = Some((f, event));
         Ok(f)
     }
+    /// Retain both sides for legacy whole-transfer graph users.
     pub fn pin_graph(&mut self, ticket: &TransferTicket) -> Result<GraphPin> {
+        let source = self.pin_source_graph(ticket)?;
+        let destination = self.pin_destination_graph(ticket)?;
+        Ok(GraphPin {
+            _pins: source._pins.into_iter().chain(destination._pins).collect(),
+        })
+    }
+    /// Source and destination graph lifetimes are independent. A new source
+    /// graph cannot be attached after source ownership has been retired.
+    pub fn pin_source_graph(&mut self, ticket: &TransferTicket) -> Result<GraphPin> {
+        self.check_thread()?;
+        let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
+        if e.retired || e.cancelled || e.items.iter().flatten().any(|i| i.source_retired) {
+            return Err(Error::NotReady);
+        }
+        Ok(GraphPin {
+            _pins: vec![e.source.graph_pins.clone()],
+        })
+    }
+    pub fn pin_destination_graph(&mut self, ticket: &TransferTicket) -> Result<GraphPin> {
         self.check_thread()?;
         let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
         if e.retired || e.cancelled {
             return Err(Error::NotReady);
         }
         Ok(GraphPin {
-            _pin: e.graph_pins.clone(),
+            _pins: vec![e.destination.graph_pins.clone()],
         })
+    }
+    /// Record after source consumer work submitted on the owner stream.
+    pub fn record_source_consumer(&mut self, ticket: &TransferTicket) -> Result<FenceId> {
+        self.check_thread()?;
+        let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
+        if e.retired || e.items.iter().flatten().any(|i| i.source_retired) {
+            return Err(Error::NotReady);
+        }
+        let f = self.next_fence(ticket.epochs.src_gen)?;
+        let event = cuda(self.stream.record_event(None))?;
+        self.entries.get_mut(ticket).unwrap().source.consumer_event = Some((f, event));
+        Ok(f)
     }
     /// A lost observation is not completion. Explicit recovery re-observes real
     /// recorded CUDA events; it never synthesizes an event or a successful copy.
@@ -499,15 +604,17 @@ impl CudaTransfers {
         o.validate(direction, epochs)?;
         // The frozen host contract has no subrange mutation: this implementation
         // accepts exactly the whole initialized logical host range, not a short prefix.
+        if direction == CopyDirection::DeviceToHost && Rc::strong_count(&o.host.allocation) != 1 {
+            return Err(Error::Busy);
+        }
         if o.bytes != o.host.valid_bytes() {
             return Err(Error::InvalidLayout);
         }
-        let backing = self
-            .owner
-            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(&o.device)?;
+        let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(&o.device)?;
         if !Arc::ptr_eq(backing.borrow().stream(), &self.stream)
             || !Arc::ptr_eq(
                 o.host
+                    .allocation
                     .backing
                     .as_ref()
                     .ok_or(Error::AlreadyReleased)?
@@ -704,9 +811,8 @@ impl TransferEngine for CudaTransfers {
             published: false,
             retired: false,
             unknown: false,
-            host_consumers: vec![],
-            graph_pins: Rc::new(()),
-            consumer_event: None,
+            source: Retention::default(),
+            destination: Retention::default(),
         };
         let mut acceptances = vec![];
         for (i, (op, error)) in ops.into_iter().zip(errors).enumerate() {
@@ -769,25 +875,30 @@ impl TransferEngine for CudaTransfers {
                             item.device.as_ref().ok_or(Error::AlreadyReleased)?,
                         )?;
                     }
-                    let backing = self.owner.resolve::<Rc<RefCell<CudaSlice<u8>>>>(
+                    let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(
                         item.device.as_ref().ok_or(Error::AlreadyReleased)?,
                     )?;
-                    let host = item
-                        .host
-                        .as_mut()
-                        .ok_or(Error::AlreadyReleased)?
-                        .backing
-                        .as_mut()
-                        .ok_or(Error::AlreadyReleased)?;
+                    let host = item.host.as_mut().ok_or(Error::AlreadyReleased)?;
                     match direction {
-                        CopyDirection::HostToDevice => cuda(self.stream.memcpy_htod(
-                            host,
-                            &mut backing.borrow_mut().slice_mut(..item.bytes as usize),
-                        ))?,
-                        CopyDirection::DeviceToHost => cuda(
-                            self.stream
-                                .memcpy_dtoh(&backing.borrow().slice(..item.bytes as usize), host),
+                        // A taken host destination may be used as an immutable
+                        // H2D source before the earlier ticket is acknowledged.
+                        CopyDirection::HostToDevice => cuda(
+                            self.stream.memcpy_htod(
+                                host.allocation
+                                    .backing
+                                    .as_ref()
+                                    .ok_or(Error::AlreadyReleased)?,
+                                &mut backing.borrow_mut().slice_mut(..item.bytes as usize),
+                            ),
                         )?,
+                        CopyDirection::DeviceToHost => {
+                            let allocation =
+                                Rc::get_mut(&mut host.allocation).ok_or(Error::Busy)?;
+                            cuda(self.stream.memcpy_dtoh(
+                                &backing.borrow().slice(..item.bytes as usize),
+                                allocation.backing.as_mut().ok_or(Error::AlreadyReleased)?,
+                            ))?;
+                        }
                     }
                     drop(backing);
                     item.event = Some(cuda(self.stream.record_event(None))?);
@@ -885,9 +996,17 @@ impl TransferEngine for CudaTransfers {
             )
         } else {
             // Destination residency is independent of source-side retirement.
-            let host = i.host.take().ok_or(Error::AlreadyReleased)?;
-            e.host_consumers.push(Rc::downgrade(&host.lifetime));
-            Destination::Host(host)
+            // Keep a sealed backing owner until acknowledgement: graph uses
+            // must survive even if the caller drops its returned lease early.
+            // Both owners share ONE physical allocation and governor charge.
+            Destination::Host(CudaPinnedLease {
+                allocation: i
+                    .host
+                    .as_ref()
+                    .ok_or(Error::AlreadyReleased)?
+                    .allocation
+                    .clone(),
+            })
         };
         i.taken = true;
         e.published = true;
@@ -899,14 +1018,15 @@ impl TransferEngine for CudaTransfers {
         if e.retired {
             return Ok(());
         }
-        if !e.completion.producer_done
-            || Rc::strong_count(&e.graph_pins) != 1
-            || e.host_consumers.iter().any(|w| w.strong_count() != 0)
-        {
+        if !e.completion.producer_done || !e.source.idle()? || !e.destination.idle()? {
             return Err(Error::Busy);
         }
         if let Some(f) = consumer_done {
-            let (actual, event) = e.consumer_event.as_ref().ok_or(Error::WrongOwner)?;
+            let (actual, event) = e
+                .destination
+                .consumer_event
+                .as_ref()
+                .ok_or(Error::WrongOwner)?;
             if actual != &f {
                 return Err(Error::WrongOwner);
             }
@@ -923,12 +1043,28 @@ impl TransferEngine for CudaTransfers {
         {
             self.owner.retire_binding(ticket)?;
         }
-        e.items.clear();
+        // Detach the taken host destination only at acknowledgement. Source
+        // ownership and untaken destinations can retire now that all uses ended.
+        for slot in &mut e.items {
+            if let Some(item) = slot
+                && item.direction == CopyDirection::DeviceToHost
+                && item.taken
+            {
+                item.device.take();
+                item.event.take();
+                item.source_retired = true;
+            } else {
+                slot.take();
+            }
+        }
         let charge = e.charge.as_ref().ok_or(Error::AlreadyReleased)?;
         self.governor.borrow_mut().release(charge)?;
         e.charge.take();
         e.retired = true;
         Ok(())
+    }
+    fn retire_source(&mut self, ticket: &TransferTicket) -> Result<()> {
+        CudaTransfers::retire_source(self, ticket)
     }
     fn retired(&mut self, ticket: &TransferTicket) -> Result<bool> {
         self.check_thread()?;

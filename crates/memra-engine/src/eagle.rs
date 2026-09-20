@@ -444,8 +444,8 @@ impl Eagle3Scratch {
         let v_tok_bytes = (kv_dim_v / 32) * vbb;
         Ok(Eagle3Scratch {
             kv: KvLayer {
-                k: e.alloc_u8(cap * k_tok_bytes)?,
-                v: e.alloc_u8(cap * v_tok_bytes)?,
+                k: e.alloc_u8(cap * k_tok_bytes)?.into(),
+                v: e.alloc_u8(cap * v_tok_bytes)?.into(),
                 kv_dim_k,
                 kv_dim_v,
                 k_tok_bytes,

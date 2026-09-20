@@ -328,6 +328,8 @@ pub struct MoeSlotCache {
     prewarm_tried: HashSet<u16>,
 
     // --- §D.4 instrumentation ---
+    // Lifetime counter, only for the explicit bank qualification installer.
+    banked_evictions: u64,
     pub hits: u64,
     pub misses: u64,
     pub staged_bytes: u64, // total H2D bytes the cache caused (admit + first-miss transient)
@@ -487,15 +489,34 @@ impl MoeSlotCache {
     /// reaches ~85%+ steady-state. So the DEFAULT auto-sizes N to fill `MEMRA_MOE_VRAM_FRAC` (default
     /// 0.85) of free VRAM, clamped to [256, ~hot-set]. `MEMRA_MOE_SLOTS` forces an exact N.
     pub fn new(e: &Engine, max_block_bytes: usize) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::build(e, max_block_bytes, None)
+    }
+
+    /// Exact uniform slot count for the `--experts-via-tier --expert-bank-gpu-bytes=N`
+    /// door. The installer already refused a budget below eight slots or above the hard
+    /// ceiling, so this path reads no `MEMRA_MOE_SLOTS`, never clamps and never raises
+    /// the count; below eight it refuses instead of allocating the floor.
+    pub(crate) fn with_exact_slots(
+        e: &Engine,
+        max_block_bytes: usize,
+        slots: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::build(e, max_block_bytes, Some(slots))
+    }
+
+    fn build(
+        e: &Engine,
+        max_block_bytes: usize,
+        exact_slots: Option<usize>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let (free, _total) = e.ctx().mem_get_info()?;
-        // Keep two blocks of slack after the machine-specific hard ceiling. The default remains
-        // 80%; tightly provisioned spill rigs may raise it only after an OOM-gated local sweep.
-        let hard_frac = cache_hard_vram_frac();
-        let hard_bytes =
-            ((free as f64 * hard_frac) as usize).saturating_sub(2 * (max_block_bytes + 8));
-        let forced_slots = std::env::var("MEMRA_MOE_SLOTS")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok());
+        let hard_bytes = hard_slot_bytes(free, max_block_bytes);
+        let forced_slots = match exact_slots {
+            Some(slots) => Some(slots),
+            None => std::env::var("MEMRA_MOE_SLOTS")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok()),
+        };
         let requested_bytes = if let Some(n) = forced_slots {
             n.saturating_mul(max_block_bytes + 8)
         } else {
@@ -527,7 +548,15 @@ impl MoeSlotCache {
         } else {
             Vec::new()
         };
-        if class_plan.iter().map(|(_, count)| count).sum::<usize>() < 8 {
+        if let Some(n) = exact_slots {
+            if n < 8 {
+                return Err(format!(
+                    "experts-via-tier GPU bank slot count {n} is below the eight-slot minimum"
+                )
+                .into());
+            }
+            class_plan = vec![(max_block_bytes, n)];
+        } else if class_plan.iter().map(|(_, count)| count).sum::<usize>() < 8 {
             let n = (budget_bytes / (max_block_bytes + 8)).max(8);
             class_plan = vec![(max_block_bytes, n)];
         }
@@ -617,6 +646,7 @@ impl MoeSlotCache {
             per_layer: HashMap::new(),
             dev_rows: HashMap::new(),
             prewarm_tried: HashSet::new(),
+            banked_evictions: 0,
             hits: 0,
             misses: 0,
             staged_bytes: 0,
@@ -743,6 +773,9 @@ impl MoeSlotCache {
 
     fn remove_occupant(&mut self, slot: usize) {
         if let Some(old) = self.occupant[slot].take() {
+            if self.banked.is_some() {
+                self.banked_evictions += 1;
+            }
             self.table.remove(&old);
             self.on_block_evicted(old.layer);
         }
@@ -896,6 +929,14 @@ impl MoeSlotCache {
             return self.admit_banked(id, host_bytes.len(), e);
         }
         self.admit_native(id, host_bytes, e)
+    }
+
+    pub(crate) fn bank_pressure(&self) -> (usize, usize, u64) {
+        (
+            self.slots.len(),
+            self.slots.iter().map(|s| s.len()).sum(),
+            self.banked_evictions,
+        )
     }
 
     pub(crate) fn install_banked(
@@ -1653,6 +1694,16 @@ fn parse_cache_lfu_decay(raw: Option<&str>) -> Result<Option<f32>, &'static str>
     }
 }
 
+/// Machine hard ceiling for the slot bank: `MEMRA_MOE_HARD_VRAM_FRAC` of free VRAM with
+/// two slots of slack. One implementation for the native constructor and for the
+/// experts-via-tier installer that refuses a budget above it before any allocation.
+pub(crate) fn hard_slot_bytes(free: usize, max_block_bytes: usize) -> usize {
+    // Keep two blocks of slack after the machine-specific hard ceiling. The default remains
+    // 80%; tightly provisioned spill rigs may raise it only after an OOM-gated local sweep.
+    let hard_frac = cache_hard_vram_frac();
+    ((free as f64 * hard_frac) as usize).saturating_sub(2 * (max_block_bytes + 8))
+}
+
 fn cache_hard_vram_frac() -> f64 {
     const DEFAULT: f64 = 0.80;
     let raw = std::env::var("MEMRA_MOE_HARD_VRAM_FRAC").ok();
@@ -2063,6 +2114,19 @@ impl Drop for MoeSlotCache {
         }
     }
 }
+
+// Compile in ordinary library builds, not only tests: PP workers share Engine.
+// Putting an owner-only bank/lease in this graph must fail at this boundary,
+// before the scoped worker spawns produce a cascade of Send/Sync diagnostics.
+const _: fn() = || {
+    fn send_sync<T: Send + Sync>() {}
+    fn send<T: Send>() {}
+    send_sync::<Engine>();
+    // Engine protects the cache with a Mutex; its pread receiver is !Sync.
+    send::<MoeSlotCache>();
+    send_sync::<memra_tier::bank::ExpertBankProxy>();
+    send_sync::<memra_tier::bank::ExpertLeaseToken>();
+};
 
 #[path = "banked_residency/native.rs"]
 mod banked_native;

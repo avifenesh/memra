@@ -188,6 +188,7 @@ const BODY_READ_RATE_BYTES_PER_SEC: u64 = 2 * 1024 * 1024;
 const BODY_READ_TIMEOUT_MAX: std::time::Duration = std::time::Duration::from_secs(180);
 const BODY_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const BODY_ADMISSION_RETRY_AFTER_S: u64 = 1;
+const MAX_STOP_TOKEN_IDS: usize = 16;
 const MAX_STOP_SEQUENCES: usize = 16;
 const MAX_STOP_SEQUENCE_BYTES: usize = 1_024;
 const MAX_STOP_SEQUENCES_BYTES: usize = 4 * 1_024;
@@ -310,7 +311,7 @@ async fn shape_payload_too_large(req: AxumRequest, next: Next) -> Response {
     if resp.status() != StatusCode::PAYLOAD_TOO_LARGE {
         return resp;
     }
-    error_response_coded(
+    let mut shaped = error_response_coded(
         StatusCode::PAYLOAD_TOO_LARGE,
         &format!(
             "request body exceeds the {} MiB limit",
@@ -319,7 +320,11 @@ async fn shape_payload_too_large(req: AxumRequest, next: Next) -> Response {
         "invalid_request_error",
         None,
         Some("request_too_large"),
-    )
+    );
+    if let Some(id) = resp.headers().get("x-request-id") {
+        shaped.headers_mut().insert("x-request-id", id.clone());
+    }
+    shaped
 }
 
 /// The one place the body-size policy is applied (tested directly in `body_limit_tests`;
@@ -335,6 +340,8 @@ fn protected_inference_path(path: &str) -> bool {
         "/v1/auth/check"
             | "/v1/completions"
             | "/v1/chat/completions"
+            | "/v1/tokenize"
+            | "/v1/detokenize"
             | "/v1/messages"
             | "/v1/responses"
             | "/v1/embeddings"
@@ -2018,8 +2025,8 @@ struct AppState {
     /// The stock binary wires `ledger::Ledger`; limits enforcement (the old
     /// `tenant_budgets`) is the same object answering `enforces_limits()`.
     metering: Option<Arc<dyn metering::Metering>>,
-    /// HTTP-side tokenizer copies used only when prepaid enforcement is enabled. Reservations
-    /// price the same rendered prompt before worker admission, without moving auth into worker.rs.
+    /// The worker's immutable startup tokenizer objects, shared with token APIs and
+    /// prepaid prompt reservations. Worker respawns retain these same objects.
     budget_tokenizers: Option<Arc<HashMap<String, Arc<Tokenizer>>>>,
     /// Immutable request-auth sources resolved before model load. The keyring itself
     /// hot-reloads internally; the source selection must not drift after bind validation.
@@ -3003,6 +3010,15 @@ fn acquire_request_slot(
     }
 }
 
+/// OpenAI streaming options; omitted/null options preserve the legacy finish-chunk usage.
+/// `include_usage` is `Option<bool>` so an explicit `null` (clients that serialize unset
+/// optionals) parses as the legacy shape instead of a 400; only `true` opts in.
+#[derive(Default, Deserialize)]
+struct StreamOptions {
+    #[serde(default)]
+    include_usage: Option<bool>,
+}
+
 /// POST /v1/completions request body.
 #[derive(Deserialize)]
 struct CompletionReq {
@@ -3055,6 +3071,10 @@ struct CompletionReq {
     seed: Option<u64>,
     #[serde(default)]
     stop: StopSequences,
+    /// Raw token-id stops (at most 16). The matched id is not emitted or counted in
+    /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
+    #[serde(default)]
+    stop_token_ids: Vec<u32>,
     /// Unsupported-but-semantic fields (gap-scan F4): captured so they 400 loudly instead
     /// of being silently swallowed by serde (policy: clean 400s, not silent downgrades).
     #[serde(default)]
@@ -3071,6 +3091,8 @@ struct CompletionReq {
     /// stream tokens via SSE; else return one JSON when done.
     #[serde(default)]
     stream: bool,
+    #[serde(default)]
+    stream_options: Option<StreamOptions>,
     /// optional hard context cap.
     #[serde(default)]
     max_ctx: Option<usize>,
@@ -3238,8 +3260,14 @@ struct ChatCompletionReq {
     seed: Option<u64>,
     #[serde(default)]
     stop: StopSequences,
+    /// Raw token-id stops (at most 16). The matched id is not emitted or counted in
+    /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
+    #[serde(default)]
+    stop_token_ids: Vec<u32>,
     #[serde(default)]
     stream: bool,
+    #[serde(default)]
+    stream_options: Option<StreamOptions>,
     #[serde(default)]
     max_ctx: Option<usize>,
     /// OpenAI `response_format` (constrained decoding, lane/constrained 2026-08-03):
@@ -4752,8 +4780,10 @@ fn fresh_seed() -> u64 {
 
 /// Honesty gate (gap-scan F4): semantic params we cannot honor are explicit 400s with the
 /// offending param named — never silent downgrades (a client sending response_format:
-/// json_object would get unvalidated free text and no error). Cosmetic fields (`user`,
-/// `stream_options`) stay accept-and-ignore.
+/// json_object would get unvalidated free text and no error). Cosmetic fields (`user`)
+/// stay accept-and-ignore. `stream_options.include_usage: true` selects null usage on
+/// content/finish chunks plus one empty-choices usage chunk before DONE; absent/false
+/// preserves the legacy usage object on the choices-bearing finish chunk.
 fn reject_unsupported(fields: &[(&str, bool, &str)]) -> Result<(), (String, String)> {
     for (param, present, why) in fields {
         if *present {
@@ -5734,20 +5764,6 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
             }
         }
     };
-    let budget_tokenizers = if metering_obj
-        .as_ref()
-        .is_some_and(|manager| manager.enforces_limits())
-    {
-        match load_budget_tokenizers(&models) {
-            Ok(tokenizers) => Some(tokenizers),
-            Err(err) => {
-                eprintln!("[server] FATAL: prepaid reservation tokenizers: {err}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        None
-    };
     eprintln!("[server] starting; models config = {models:?}");
 
     // Inference-liveness state (G5). Created BEFORE the worker so the whole weight load is
@@ -5762,7 +5778,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     health::spawn_sd_watchdog(health_state.clone());
 
     // Spawn the GPU worker thread and block until every model is loaded (or it fails).
-    let (cmd_tx, model_names, caps, metrics, worker_thread) =
+    let (cmd_tx, model_names, caps, tokenizers, metrics, worker_thread) =
         match worker::spawn(models, health_state.clone()) {
             Ok(v) => v,
             Err(err) => {
@@ -5822,7 +5838,7 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         caps,
         openrouter_metadata: metadata_cell,
         metering: metering_obj,
-        budget_tokenizers,
+        budget_tokenizers: Some(tokenizers),
         api_auth,
         metrics_auth,
         metrics,
@@ -5867,6 +5883,8 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         .route("/v1/embeddings", post(embed_api::embeddings_admitted))
         .route("/v1/rerank", post(embed_api::rerank_admitted))
         .route("/v1/chat/completions", post(chat_completions_admitted))
+        .route("/v1/tokenize", post(tokenize_admitted))
+        .route("/v1/detokenize", post(detokenize_admitted))
         // Translation surfaces (lane/api-surfaces): Anthropic Messages + OpenAI
         // Responses over the same core. Axum matches the PATH only, so the
         // `?beta=true` query some clients append arrives here too.
@@ -6122,38 +6140,6 @@ fn parse_models_config() -> Vec<(String, String, Option<String>)> {
             None,
         ),
     ]
-}
-
-fn load_budget_tokenizers(
-    models: &[(String, String, Option<String>)],
-) -> Result<Arc<HashMap<String, Arc<Tokenizer>>>, String> {
-    let mut tokenizers = HashMap::new();
-    for (alias, path, _) in models {
-        let path = std::path::Path::new(path);
-        let tokenizer = if path.is_dir() {
-            let tokenizer_dir = if path.join("manifest.json").exists() {
-                let repack = memra_gguf::source::Hy3RepackSource::open(path).map_err(|err| {
-                    format!("model {alias:?}: open repack tokenizer source: {err}")
-                })?;
-                repack
-                    .source_dir()
-                    .filter(|source| source.join("tokenizer.json").exists())
-                    .unwrap_or(path)
-                    .to_path_buf()
-            } else {
-                path.to_path_buf()
-            };
-            Tokenizer::from_hf_dir(&tokenizer_dir)
-                .map_err(|err| format!("model {alias:?}: reservation tokenizer: {err}"))?
-        } else {
-            let gguf = memra_gguf::GgufFile::open(path)
-                .map_err(|err| format!("model {alias:?}: open reservation tokenizer: {err}"))?;
-            Tokenizer::from_gguf(&gguf)
-                .map_err(|err| format!("model {alias:?}: reservation tokenizer: {err}"))?
-        };
-        tokenizers.insert(alias.clone(), Arc::new(tokenizer));
-    }
-    Ok(Arc::new(tokenizers))
 }
 
 /// Shared body for both probes: the honest state, plus the numbers that explain it.
@@ -7759,6 +7745,7 @@ fn build_request_with_trace(
         params,
         sampler_cfg,
         stop_strings: req.stop.clone().into_vec(),
+        stop_token_ids: req.stop_token_ids.clone(),
         trace_id: req.trace_id.clone(),
         // Stamped with the envelope id by the handler before submission (the builder
         // does not see the envelope).
@@ -7932,6 +7919,7 @@ fn build_chat_request_with_trace(
     sampling_defaults: &ModelSamplingDefaults,
 ) -> Result<ChatPlan, String> {
     req.stop.validate()?;
+    validate_stop_token_ids(&req.stop_token_ids, caps)?;
     // The client's own expression is snapshotted here; the omitted fields resolve to a
     // vendor arm only once the thinking mode is final (see `sampler_cfg` below).
     let client_sampling: ClientSampling = (&req).into();
@@ -8234,6 +8222,7 @@ fn build_chat_request_with_trace(
                 eos: Vec::new(),
             },
             sampler_cfg,
+            stop_token_ids: req.stop_token_ids,
             stop_strings: {
                 // gemma4 tooluse: the model emits `<|tool_call>call:…<tool_call|>` and would
                 // then run past its handoff into a hallucinated `<|tool_response>`; stop when
@@ -8831,6 +8820,64 @@ impl BudgetRejection {
     }
 }
 
+/// One HTTP-side render-to-ids path, shared by chat budget admission and /v1/tokenize.
+/// The completion path always requests the generation suffix; inspection may omit it.
+fn render_prompt_ids(
+    request: &Request,
+    tokenizer: Option<&Tokenizer>,
+    add_generation_prompt: bool,
+) -> Result<Vec<u32>, String> {
+    let prompt = if !request.prompt_ids.is_empty() {
+        request.prompt_ids.clone()
+    } else if !request.chat_turns.is_empty() {
+        let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
+        // The SHARED fast-path predicate (worker::plain_chat_render_path) — this is the
+        // render that actually serves: the worker's `prepare` only re-renders when
+        // `prepared_prompt` is still None, and this budget-admission path fills it first.
+        // v0.109.1's first cut fixed the worker copies only, and the live probe showed
+        // why one predicate must exist ONCE: unset q38 chats still served the bare bytes
+        // because THIS third copy kept routing them down the legacy render.
+        let plain = worker::plain_chat_render_path(
+            &request.tools_json,
+            &request.think,
+            request.reasoning_effort.as_deref(),
+            &request.chat_turns,
+            tokenizer.has_qwen_effort_ladder(),
+        );
+        let rendered = if plain {
+            let messages: Vec<_> = request
+                .chat_turns
+                .iter()
+                .map(|turn| (turn.role.as_str(), turn.content.as_str()))
+                .collect();
+            tokenizer.apply_chat_template(&messages, add_generation_prompt)
+        } else {
+            tokenizer
+                .apply_chat_template_tools_ex(
+                    &request.chat_turns,
+                    add_generation_prompt,
+                    &request.tools_json,
+                    &request.tools_struct,
+                    request.think,
+                    request.reasoning_effort.as_deref(),
+                )
+                .map_err(|err| format!("chat template: {err}"))?
+        };
+        tokenizer.encode(&rendered, true)
+    } else if request.chat {
+        let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
+        let rendered = tokenizer.apply_chat_template(
+            &[("user", request.prompt_text.as_str())],
+            add_generation_prompt,
+        );
+        tokenizer.encode(&rendered, true)
+    } else {
+        let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
+        tokenizer.encode(&request.prompt_text, true)
+    };
+    Ok(prompt)
+}
+
 fn prepare_budget_prompt(
     request: &mut Request,
     tokenizer: Option<&Tokenizer>,
@@ -8842,52 +8889,7 @@ fn prepare_budget_prompt(
         if let Some(trace) = request.ttft.as_ref() {
             trace.mark_tokenize_start();
         }
-        let prompt = if !request.prompt_ids.is_empty() {
-            request.prompt_ids.clone()
-        } else if !request.chat_turns.is_empty() {
-            let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
-            // The SHARED fast-path predicate (worker::plain_chat_render_path) — this is the
-            // render that actually serves: the worker's `prepare` only re-renders when
-            // `prepared_prompt` is still None, and this budget-admission path fills it first.
-            // v0.109.1's first cut fixed the worker copies only, and the live probe showed
-            // why one predicate must exist ONCE: unset q38 chats still served the bare bytes
-            // because THIS third copy kept routing them down the legacy render.
-            let plain = worker::plain_chat_render_path(
-                &request.tools_json,
-                &request.think,
-                request.reasoning_effort.as_deref(),
-                &request.chat_turns,
-                tokenizer.has_qwen_effort_ladder(),
-            );
-            let rendered = if plain {
-                let messages: Vec<_> = request
-                    .chat_turns
-                    .iter()
-                    .map(|turn| (turn.role.as_str(), turn.content.as_str()))
-                    .collect();
-                tokenizer.apply_chat_template(&messages, true)
-            } else {
-                tokenizer
-                    .apply_chat_template_tools_ex(
-                        &request.chat_turns,
-                        true,
-                        &request.tools_json,
-                        &request.tools_struct,
-                        request.think,
-                        request.reasoning_effort.as_deref(),
-                    )
-                    .map_err(|err| format!("chat template: {err}"))?
-            };
-            tokenizer.encode(&rendered, true)
-        } else if request.chat {
-            let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
-            let rendered =
-                tokenizer.apply_chat_template(&[("user", request.prompt_text.as_str())], true);
-            tokenizer.encode(&rendered, true)
-        } else {
-            let tokenizer = tokenizer.ok_or("reservation tokenizer is unavailable")?;
-            tokenizer.encode(&request.prompt_text, true)
-        };
+        let prompt = render_prompt_ids(request, tokenizer, true)?;
         if prompt.is_empty() {
             return Err("empty prompt after tokenization".into());
         }
@@ -9150,9 +9152,91 @@ fn validate_prompt_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), Stri
     Ok(())
 }
 
+/// Reuse the prompt-id vocabulary gate, preserving its diagnostic shape with the right field.
+fn validate_stop_token_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), String> {
+    if ids.len() > MAX_STOP_TOKEN_IDS {
+        return Err(format!(
+            "stop_token_ids accepts at most {MAX_STOP_TOKEN_IDS} ids"
+        ));
+    }
+    validate_prompt_ids(ids, caps).map_err(|msg| msg.replacen("prompt_ids", "stop_token_ids", 1))
+}
+
 #[cfg(test)]
 mod prompt_ids_tests {
     use super::*;
+
+    #[test]
+    fn stop_token_ids_parse_validate_and_reach_both_request_builders() {
+        let caps = ModelCaps {
+            n_vocab: 8,
+            chat_ok: true,
+            ..Default::default()
+        };
+        for ids in [vec![], vec![0, 3, 7], vec![7; MAX_STOP_TOKEN_IDS]] {
+            let body = json!({"model":"test", "prompt":"hello",
+                "messages":[{"role":"user", "content":"hello"}], "stop_token_ids":ids});
+            let req: CompletionReq = serde_json::from_value(body.clone()).unwrap();
+            assert!(validate_stop_token_ids(&req.stop_token_ids, Some(&caps)).is_ok());
+            let (tx, _rx) = worker::event_channel();
+            assert_eq!(
+                build_request(&req, tx, lanes::Lane::Interactive, None).stop_token_ids,
+                ids
+            );
+            let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
+            let (tx, _rx) = worker::event_channel();
+            assert_eq!(
+                build_chat_request(req, Some(&caps), tx, lanes::Lane::Interactive, None)
+                    .unwrap()
+                    .request
+                    .stop_token_ids,
+                ids
+            );
+        }
+        let body = json!({"model":"test", "messages":[]});
+        assert!(
+            serde_json::from_value::<CompletionReq>(body.clone())
+                .unwrap()
+                .stop_token_ids
+                .is_empty()
+        );
+        assert!(
+            serde_json::from_value::<ChatCompletionReq>(body)
+                .unwrap()
+                .stop_token_ids
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn stop_token_ids_cap_oov_and_unsigned_shape() {
+        let caps = ModelCaps {
+            n_vocab: 8,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_stop_token_ids(&[0; 17], Some(&caps)).unwrap_err(),
+            "stop_token_ids accepts at most 16 ids"
+        );
+        assert_eq!(
+            validate_stop_token_ids(&[1, 8, 2], Some(&caps)).unwrap_err(),
+            validate_prompt_ids(&[1, 8, 2], Some(&caps))
+                .unwrap_err()
+                .replace("prompt_ids", "stop_token_ids")
+        );
+        assert!(validate_stop_token_ids(&[u32::MAX], Some(&caps)).is_err());
+        assert!(validate_stop_token_ids(&[u32::MAX], None).is_ok());
+        for invalid in [
+            json!([-1]),
+            json!([4294967296u64]),
+            json!([1.5]),
+            json!("7"),
+        ] {
+            let body = json!({"model":"test", "messages":[], "stop_token_ids":invalid});
+            assert!(serde_json::from_value::<CompletionReq>(body.clone()).is_err());
+            assert!(serde_json::from_value::<ChatCompletionReq>(body).is_err());
+        }
+    }
 
     #[test]
     fn prompt_ids_are_bounded_by_the_model_vocab_at_intake() {
@@ -9274,6 +9358,9 @@ async fn completions_with_admission(
     if let Err(msg) = validate_prompt_ids(&req.prompt_ids, st.caps.get(&req.model)) {
         return with_request_id(&env.id, bad_request(&msg, Some("prompt_ids")));
     }
+    if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
+        return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
+    }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.
     let deadline = match parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
@@ -9287,6 +9374,11 @@ async fn completions_with_admission(
     let (tx, rx) = worker::event_channel();
     let model = req.model.clone();
     let stream = req.stream;
+    let include_usage = req
+        .stream_options
+        .as_ref()
+        .and_then(|o| o.include_usage)
+        .unwrap_or(false);
     let affinity = match affinity_key(&req.session_id, &req.user, &headers) {
         Ok(affinity) => affinity,
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
@@ -9474,6 +9566,7 @@ async fn completions_with_admission(
             stop_strings,
             Some(guard),
             receipt,
+            include_usage,
         )
         .into_response()
     } else {
@@ -9498,6 +9591,274 @@ async fn completions_with_admission(
         resp.into_response()
     };
     rl.attach(with_request_id(&env.id, resp))
+}
+
+/// Token inspection is CPU-only: no request is sent to the GPU worker.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TokenizeReq {
+    model: String,
+    prompt: Option<String>,
+    messages: Option<serde_json::Value>,
+    tools: Option<serde_json::Value>,
+    chat_template_kwargs: Option<serde_json::Value>,
+    add_generation_prompt: Option<bool>,
+    /// Prompt form only. Default `true` mirrors `/v1/completions`: the model's BOS is added when
+    /// it asks for one, so `count` is that route's billed `prompt_tokens`. `false` yields the
+    /// reversible ids that `/v1/detokenize` turns back into the exact input.
+    add_special_tokens: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DetokenizeReq {
+    model: String,
+    tokens: Vec<u32>,
+}
+
+/// Envelope for the token APIs: a supplied `x-request-id` is echoed, else a fresh id is minted.
+fn token_api_envelope(headers: &axum::http::HeaderMap) -> Envelope {
+    let mut env = Envelope::new(true);
+    if let Some(id) = headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+    {
+        env.id = id.to_owned();
+    }
+    env
+}
+
+/// Reuse chat's semantic builder (tools, history, thinking and metadata defaults), then
+/// the exact render-to-ids function used by chat's HTTP-side prompt accounting.
+fn tokenize_request(
+    req: TokenizeReq,
+    tokenizer: &Tokenizer,
+    caps: Option<&ModelCaps>,
+    metadata: Option<&OpenRouterModelMetadata>,
+) -> Result<Vec<u32>, (String, &'static str)> {
+    match (req.prompt, req.messages) {
+        (Some(prompt), None) => {
+            if req.tools.is_some()
+                || req.chat_template_kwargs.is_some()
+                || req.add_generation_prompt.is_some()
+            {
+                return Err((
+                    "chat options require messages, not prompt".into(),
+                    "messages",
+                ));
+            }
+            // Default mirrors `/v1/completions` accounting (`render_prompt_ids`' raw branch
+            // encodes with `add_special = true`), so `count` is the billed prompt_tokens on a
+            // BOS-adding model. `add_special_tokens: false` is the reversible form.
+            Ok(tokenizer.encode(&prompt, req.add_special_tokens.unwrap_or(true)))
+        }
+        (None, Some(messages)) => {
+            if req.add_special_tokens.is_some() {
+                return Err((
+                    "add_special_tokens applies to prompt, not messages".into(),
+                    "add_special_tokens",
+                ));
+            }
+            let mut body = json!({"model": req.model, "messages": messages});
+            // Omitted tools must stay omitted: ChatCompletionReq's default Vec accepts
+            // absence but not JSON null. Do not manufacture a field the caller did not send.
+            if let Some(tools) = req.tools {
+                body["tools"] = tools;
+            }
+            if let Some(kwargs) = req.chat_template_kwargs {
+                body["chat_template_kwargs"] = kwargs;
+            }
+            let chat: ChatCompletionReq =
+                serde_json::from_value(body).map_err(|err| (err.to_string(), "messages"))?;
+            validate_chat_messages(&chat.messages).map_err(|err| (err.to_string(), "messages"))?;
+            // Token inspection must not download, decode or execute multimodal inputs.
+            // Refuse them explicitly rather than returning an incomplete billed count.
+            if request_has_vision(&chat) {
+                return Err(("tokenize supports text messages only".into(), "messages"));
+            }
+            let (tx, _rx) = worker::event_channel();
+            let plan = build_chat_request_with_trace(
+                chat,
+                caps,
+                tx,
+                lanes::Lane::Interactive,
+                None,
+                None,
+                metadata.and_then(|m| m.default_reasoning_effort.as_deref()),
+                &ModelSamplingDefaults::resolve(metadata, caps),
+            )
+            .map_err(|err| (err, "messages"))?;
+            render_prompt_ids(
+                &plan.request,
+                Some(tokenizer),
+                req.add_generation_prompt.unwrap_or(true),
+            )
+            .map_err(|err| (err, "messages"))
+        }
+        _ => Err(("provide exactly one of prompt or messages".into(), "prompt")),
+    }
+}
+
+fn token_api_tokenizer(st: &AppState, model: &str) -> Result<Arc<Tokenizer>, Box<Response>> {
+    st.budget_tokenizers
+        .as_ref()
+        .and_then(|tokenizers| tokenizers.get(model))
+        .cloned()
+        .ok_or_else(|| {
+            Box::new(error_response_coded(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "HTTP tokenizer is unavailable",
+                "server_error",
+                Some("model"),
+                Some("tokenizer_unavailable"),
+            ))
+        })
+}
+
+async fn tokenize_admitted(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: Result<AdmittedJson<TokenizeReq>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let env = token_api_envelope(&headers);
+    let id = env.id.clone();
+    let tenant = match authenticate(&st.api_auth, &headers) {
+        Ok(tenant) => tenant,
+        Err(response) => return with_request_id(&id, response),
+    };
+    let AdmittedJson(mut req, _admission) = match body {
+        Ok(body) => body,
+        Err(err) => {
+            // Preserve extractor 413s so the common body-limit layer can shape them;
+            // malformed JSON remains the endpoint's OpenAI-shaped named 400.
+            let response = if err.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                err.into_response()
+            } else {
+                bad_request(&err.body_text(), None)
+            };
+            return with_request_id(&id, response);
+        }
+    };
+    req.model = match canonical_model_id(&st.models, &req.model) {
+        Some(model) => model,
+        None => return with_request_id(&id, model_not_found_response(&st.models, &req.model)),
+    };
+    let tokenizer = match token_api_tokenizer(&st, &req.model) {
+        Ok(tokenizer) => tokenizer,
+        Err(response) => return with_request_id(&id, *response),
+    };
+    // Same per-tenant concurrency gate and x-ratelimit trio as every other authenticated
+    // surface. The request's semantic validation happens inside the render below, so unlike
+    // chat a named 400 here holds the slot for the length of that CPU pass.
+    let (_slot, rl) = match acquire_request_slot(&st, lanes::Lane::Interactive, &tenant, &env) {
+        Ok(slot) => slot,
+        Err(response) => return response,
+    };
+    let caps_map = st.caps.clone();
+    let metadata = st.metadata();
+    let model = req.model.clone();
+    let max_model_len = published_context_length(caps_map.get(&model), metadata.models.get(&model));
+    // Template rendering and BPE over a request-sized body are CPU work; keep them off the
+    // async workers that drive the streaming responses.
+    let rendered = tokio::task::spawn_blocking(move || {
+        tokenize_request(
+            req,
+            &tokenizer,
+            caps_map.get(&model),
+            metadata.models.get(&model),
+        )
+    })
+    .await;
+    let response = match rendered {
+        Ok(Ok(tokens)) => {
+            Json(json!({"count": tokens.len(), "tokens": tokens, "max_model_len": max_model_len}))
+                .into_response()
+        }
+        Ok(Err((message, param))) => bad_request(&message, Some(param)),
+        Err(join) => error_response_coded(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("tokenize task failed: {join}"),
+            "server_error",
+            None,
+            None,
+        ),
+    };
+    rl.attach(with_request_id(&id, response))
+}
+
+async fn detokenize_admitted(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: Result<AdmittedJson<DetokenizeReq>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let env = token_api_envelope(&headers);
+    let id = env.id.clone();
+    let tenant = match authenticate(&st.api_auth, &headers) {
+        Ok(tenant) => tenant,
+        Err(response) => return with_request_id(&id, response),
+    };
+    let AdmittedJson(req, _admission) = match body {
+        Ok(body) => body,
+        Err(err) => {
+            // Preserve extractor 413s so the common body-limit layer can shape them;
+            // malformed JSON remains the endpoint's OpenAI-shaped named 400.
+            let response = if err.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                err.into_response()
+            } else {
+                bad_request(&err.body_text(), None)
+            };
+            return with_request_id(&id, response);
+        }
+    };
+    let model = match canonical_model_id(&st.models, &req.model) {
+        Some(model) => model,
+        None => return with_request_id(&id, model_not_found_response(&st.models, &req.model)),
+    };
+    let tokenizer = match token_api_tokenizer(&st, &model) {
+        Ok(tokenizer) => tokenizer,
+        Err(response) => return with_request_id(&id, *response),
+    };
+    // Same named 400 as raw prompt_ids. The tokenizer bounds ids even when caps are unknown.
+    let caps = ModelCaps {
+        n_vocab: tokenizer.vocab_size(),
+        ..Default::default()
+    };
+    if let Err(message) = validate_prompt_ids(&req.tokens, Some(&caps)) {
+        return with_request_id(&id, bad_request(&message, Some("prompt_ids")));
+    }
+    // Slot after validation (a named 400 never held one), then decode off the async workers.
+    let (_slot, rl) = match acquire_request_slot(&st, lanes::Lane::Interactive, &tenant, &env) {
+        Ok(slot) => slot,
+        Err(response) => return response,
+    };
+    let decoded = tokio::task::spawn_blocking(move || tokenizer.decode(&req.tokens)).await;
+    let response = match decoded {
+        Ok(prompt) => Json(json!({"prompt": prompt})).into_response(),
+        Err(join) => error_response_coded(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("detokenize task failed: {join}"),
+            "server_error",
+            None,
+            None,
+        ),
+    };
+    rl.attach(with_request_id(&id, response))
+}
+
+fn validate_chat_messages(messages: &[ChatMessage]) -> Result<(), &'static str> {
+    if messages.is_empty()
+        || messages.iter().any(|message| {
+            !matches!(
+                message.role.as_str(),
+                "system" | "developer" | "user" | "assistant" | "tool"
+            )
+        })
+    {
+        Err("messages must use system/developer/user/assistant/tool roles")
+    } else {
+        Ok(())
+    }
 }
 
 async fn chat_completions_admitted(
@@ -9537,6 +9898,9 @@ async fn chat_completions_with_admission(
             return with_request_id(&env.id, model_not_found_response(&st.models, &req.model));
         }
     }
+    if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
+        return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
+    }
     let ttft = trace.and_then(|Extension(trace)| trace.0);
     if let Some(trace) = ttft.as_ref() {
         trace.mark_parsed();
@@ -9550,21 +9914,8 @@ async fn chat_completions_with_admission(
         Ok(ns) => ns,
         Err(msg) => return with_request_id(&env.id, bad_request(msg, Some("cache_salt"))),
     };
-    if req.messages.is_empty()
-        || req.messages.iter().any(|message| {
-            !matches!(
-                message.role.as_str(),
-                "system" | "developer" | "user" | "assistant" | "tool"
-            )
-        })
-    {
-        return with_request_id(
-            &env.id,
-            bad_request(
-                "messages must use system/developer/user/assistant/tool roles",
-                Some("messages"),
-            ),
-        );
+    if let Err(message) = validate_chat_messages(&req.messages) {
+        return with_request_id(&env.id, bad_request(message, Some("messages")));
     }
     // HONESTY GATE (gap-scan F4): semantic params we can't honor 400 loudly, never
     // silent downgrades. response_format json_object/json_schema are now REAL
@@ -9604,6 +9955,11 @@ async fn chat_completions_with_admission(
     };
     let model = req.model.clone();
     let stream = req.stream;
+    let include_usage = req
+        .stream_options
+        .as_ref()
+        .and_then(|o| o.include_usage)
+        .unwrap_or(false);
     // Snapshot the capture payload BEFORE the plan build consumes the request. Only
     // marked tenants pay for the copy; everyone else gets a lock-read and a None.
     let capture_prompt = st
@@ -9886,6 +10242,7 @@ async fn chat_completions_with_admission(
             stop_strings,
             Some(guard),
             receipt,
+            include_usage,
         )
         .into_response()
     } else {
@@ -9927,25 +10284,83 @@ fn sse_response(
     stop_strings: Vec<String>,
     guard: Option<InflightGuard>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
-    sse_response_with_receipt(rx, model, chat, parser, env, stop_strings, guard, None)
+    sse_response_with_receipt(
+        rx,
+        model,
+        chat,
+        parser,
+        env,
+        stop_strings,
+        guard,
+        None,
+        false,
+    )
 }
 
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn sse_response_with_receipt(
-    mut rx: worker::EventReceiver,
+    rx: worker::EventReceiver,
     model: String,
     chat: bool,
+    parser: Option<ToolStreamParser>,
+    env: Envelope,
+    stop_strings: Vec<String>,
+    guard: Option<InflightGuard>,
+    receipt: Option<Box<dyn metering::Receipt>>,
+    include_usage: bool,
+) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    sse_response_for_format(
+        rx,
+        model,
+        SseFormat {
+            chat,
+            openai: chat || openai_compat(),
+            include_usage,
+        },
+        parser,
+        env,
+        stop_strings,
+        guard,
+        receipt,
+    )
+}
+
+/// Pin the wire format once per stream; explicit here so CPU tests can exercise both
+/// OpenAI dialects without mutating the process-global compatibility setting.
+struct SseFormat {
+    chat: bool,
+    openai: bool,
+    include_usage: bool,
+}
+
+#[allow(clippy::too_many_arguments)] // allow: mirrors the SSE rendering contract
+fn sse_response_for_format(
+    mut rx: worker::EventReceiver,
+    model: String,
+    format: SseFormat,
     mut parser: Option<ToolStreamParser>,
     env: Envelope,
     stop_strings: Vec<String>,
     guard: Option<InflightGuard>,
     mut receipt: Option<Box<dyn metering::Receipt>>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    let SseFormat {
+        chat,
+        openai,
+        include_usage,
+    } = format;
     // STOP-LEAK holdback (gap-scan F9), OpenAI shapes only: content deltas buffer until
     // they can't start a stop string; matched stop text is excluded exactly like the
     // non-stream shape. The memra-native stream stays byte-identical (no scrubber).
-    let mut scrub = (!stop_strings.is_empty() && (chat || openai_compat()))
-        .then(|| StopScrubber::new(stop_strings));
+    let mut scrub = (!stop_strings.is_empty() && openai).then(|| StopScrubber::new(stop_strings));
+    let chunk_env = env.clone();
+    let stamp_chunk = move |payload| {
+        let mut payload = chunk_env.stamp(payload);
+        if include_usage {
+            payload["usage"] = serde_json::Value::Null;
+        }
+        payload
+    };
     let stream = async_stream::stream! {
         // in-flight slot rides the stream: freed when the stream completes or the
         // client disconnects (drop) — the rate-limit gauge + drain barrier source.
@@ -9961,7 +10376,7 @@ fn sse_response_with_receipt(
                     role_sent = true;
                     delta["role"] = json!("assistant");
                 }
-                env.stamp(json!({ "object": "chat.completion.chunk", "model": model,
+                stamp_chunk(json!({ "object": "chat.completion.chunk", "model": model,
                                   "choices": [{ "index": 0, "delta": delta,
                                                 "finish_reason": $finish }] }))
                     .to_string()
@@ -10024,7 +10439,7 @@ fn sse_response_with_receipt(
                         // bookkeeping failure as a billable client abandon.
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         let payload = request_ledger_error_body().to_string();
-                        if chat || openai_compat() {
+                        if openai {
                             yield Ok(SseEvent::default().data(payload));
                             yield Ok(SseEvent::default().data("[DONE]"));
                         } else {
@@ -10051,7 +10466,7 @@ fn sse_response_with_receipt(
                     } else {
                         deadline_exceeded_error(ms, true).to_string()
                     };
-                    if chat || openai_compat() {
+                    if openai {
                         yield Ok(SseEvent::default().data(payload));
                         yield Ok(SseEvent::default().data("[DONE]"));
                     } else {
@@ -10070,7 +10485,7 @@ fn sse_response_with_receipt(
                         );
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         let payload = request_ledger_error_body().to_string();
-                        if chat || openai_compat() {
+                        if openai {
                             yield Ok(SseEvent::default().data(payload));
                             yield Ok(SseEvent::default().data("[DONE]"));
                         } else {
@@ -10101,8 +10516,8 @@ fn sse_response_with_receipt(
                     }
                     let payload = if chat {
                         chat_chunk!(json!({ "content": text }), serde_json::Value::Null)
-                    } else if openai_compat() {
-                        env.stamp(json!({ "object": "text_completion", "model": model,
+                    } else if openai {
+                        stamp_chunk(json!({ "object": "text_completion", "model": model,
                                 "choices": [{ "index": 0, "text": text, "finish_reason": null }] }))
                             .to_string()
                     } else {
@@ -10132,7 +10547,7 @@ fn sse_response_with_receipt(
                                 chat_chunk!(json!({ "content": tail }),
                                             serde_json::Value::Null)
                             } else {
-                                env.stamp(json!({ "object": "text_completion",
+                                stamp_chunk(json!({ "object": "text_completion",
                                     "model": model,
                                     "choices": [{ "index": 0, "text": tail,
                                                   "finish_reason": null }] })).to_string()
@@ -10159,7 +10574,7 @@ fn sse_response_with_receipt(
                         // the append itself already latched) so Drop cannot bill it.
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         let payload = request_ledger_error_body().to_string();
-                        if chat || openai_compat() {
+                        if openai {
                             yield Ok(SseEvent::default().data(payload));
                             yield Ok(SseEvent::default().data("[DONE]"));
                         } else {
@@ -10168,10 +10583,10 @@ fn sse_response_with_receipt(
                         terminal = true;
                         break;
                     }
-                    if chat || openai_compat() {
+                    if openai {
                         let usage = usage_json(n_prompt, n_tokens, n_cached, elapsed_s, spec);
                         let fin = if chat {
-                            let mut v = env.stamp(json!({
+                            let mut v = stamp_chunk(json!({
                                 "object": "chat.completion.chunk", "model": model,
                                 "choices": [{ "index": 0, "delta": {},
                                               "finish_reason": finish }],
@@ -10182,12 +10597,20 @@ fn sse_response_with_receipt(
                             }
                             v
                         } else {
-                            env.stamp(json!({ "object": "text_completion", "model": model,
+                            stamp_chunk(json!({ "object": "text_completion", "model": model,
                                 "choices": [{ "index": 0, "text": "",
                                               "finish_reason": finish }],
                                 "usage": usage }))
                         }.to_string();
                         yield Ok(SseEvent::default().data(fin));
+                        if include_usage {
+                            let usage = env.stamp(json!({
+                                "object": if chat { "chat.completion.chunk" } else { "text_completion" },
+                                "model": model, "choices": [],
+                                "usage": usage,
+                            }));
+                            yield Ok(SseEvent::default().data(usage.to_string()));
+                        }
                         yield Ok(SseEvent::default().data("[DONE]"));
                     } else {
                         let payload = json!({
@@ -10228,7 +10651,7 @@ fn sse_response_with_receipt(
                     } else {
                         engine_error_body(&err).to_string()
                     };
-                    if chat || openai_compat() {
+                    if openai {
                         // OpenAI clients only parse `data:` lines — a named `event: error`
                         // reads as a silent hang. Error object as the final data chunk.
                         yield Ok(SseEvent::default().data(payload));
@@ -10264,7 +10687,7 @@ fn sse_response_with_receipt(
                 );
             }
             let payload = engine_error_body(&e).to_string();
-            if chat || openai_compat() {
+            if openai {
                 yield Ok(SseEvent::default().data(payload));
                 yield Ok(SseEvent::default().data("[DONE]"));
             } else {
@@ -15662,6 +16085,247 @@ default_reasoning_effort = "always"
         }
     }
 
+    fn usage_stream_fixture(n_tokens: usize, spec: bool) -> worker::EventReceiver {
+        let (tx, rx) = worker::event_channel();
+        for id in 0..n_tokens {
+            tx.send(Event::Token {
+                id: id as u32,
+                text: "hello".into(),
+            })
+            .unwrap();
+        }
+        tx.send(Event::Done {
+            stop_reason: "Eos".into(),
+            n_tokens,
+            n_prompt: 42,
+            n_cached: 30,
+            elapsed_s: 0.5,
+            spec: spec.then_some(worker::SpecUsage {
+                rounds: 10,
+                drafted: 30,
+                accepted: 21,
+            }),
+        })
+        .unwrap();
+        drop(tx);
+        rx
+    }
+
+    #[tokio::test]
+    async fn include_usage_matches_blocking_usage_and_receipt_for_both_dialects() {
+        for chat in [true, false] {
+            for n_tokens in [0, 2] {
+                for spec in [false, true] {
+                    // Both non-stream OpenAI dialects use usage_json with the same Done
+                    // fields. Use the chat collector here without changing global compat.
+                    let twin = blocking_response(
+                        usage_stream_fixture(n_tokens, spec),
+                        "m".into(),
+                        true,
+                        Vec::new(),
+                        None,
+                        Envelope::new(true),
+                    )
+                    .await;
+                    let bytes = axum::body::to_bytes(twin.into_body(), usize::MAX)
+                        .await
+                        .unwrap();
+                    let twin: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+                    let receipt = MockReceipt {
+                        events: events.clone(),
+                        wants_capture: false,
+                        prompt: 0,
+                        cached: 0,
+                        completion: 0,
+                        finalized: false,
+                    };
+                    let env = Envelope::new(chat);
+                    let lines = sse_data_lines(
+                        sse_response_for_format(
+                            usage_stream_fixture(n_tokens, spec),
+                            "m".into(),
+                            SseFormat {
+                                chat,
+                                openai: true,
+                                include_usage: true,
+                            },
+                            None,
+                            env.clone(),
+                            Vec::new(),
+                            None,
+                            Some(Box::new(receipt)),
+                        )
+                        .into_response(),
+                    )
+                    .await;
+                    assert_eq!(lines.last().map(String::as_str), Some("[DONE]"));
+                    assert_eq!(lines.len(), n_tokens + 3);
+                    let chunks: Vec<serde_json::Value> = lines[..lines.len() - 1]
+                        .iter()
+                        .map(|line| serde_json::from_str(line).unwrap())
+                        .collect();
+                    for chunk in &chunks[..chunks.len() - 1] {
+                        assert_eq!(chunk.get("usage"), Some(&serde_json::Value::Null));
+                        assert_eq!(chunk["choices"].as_array().unwrap().len(), 1);
+                    }
+                    assert_eq!(
+                        chunks[chunks.len() - 2]["choices"][0]["finish_reason"],
+                        "stop"
+                    );
+                    let terminal = chunks.last().unwrap();
+                    assert_eq!(terminal["choices"], json!([]));
+                    assert_eq!(terminal["usage"], twin["usage"]);
+                    assert_eq!(terminal["id"], env.id);
+                    assert_eq!(
+                        terminal["object"],
+                        if chat {
+                            "chat.completion.chunk"
+                        } else {
+                            "text_completion"
+                        }
+                    );
+                    assert!(events.lock().unwrap().contains(&MeterEvent::Complete {
+                        prompt: 42,
+                        cached: 30,
+                        completion: n_tokens as u64,
+                    }));
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn absent_or_false_include_usage_preserves_legacy_stream_bytes() {
+        for chat in [true, false] {
+            for options in [
+                None,
+                Some(json!({"include_usage": false})),
+                Some(json!({"include_usage": null})),
+                Some(json!({})),
+            ] {
+                let mut request = json!({"model": "m", "prompt": "hi",
+                    "messages": [{"role": "user", "content": "hi"}], "stream": true});
+                if let Some(options) = options {
+                    request["stream_options"] = options;
+                }
+                let options = if chat {
+                    serde_json::from_value::<ChatCompletionReq>(request)
+                        .unwrap()
+                        .stream_options
+                } else {
+                    serde_json::from_value::<CompletionReq>(request)
+                        .unwrap()
+                        .stream_options
+                };
+                let include_usage = options
+                    .as_ref()
+                    .and_then(|o| o.include_usage)
+                    .unwrap_or(false);
+                let env = Envelope::new(chat);
+                let lines = sse_data_lines(
+                    sse_response_for_format(
+                        usage_stream_fixture(1, true),
+                        "m".into(),
+                        SseFormat {
+                            chat,
+                            openai: true,
+                            include_usage,
+                        },
+                        None,
+                        env.clone(),
+                        Vec::new(),
+                        None,
+                        None,
+                    )
+                    .into_response(),
+                )
+                .await;
+                let content = if chat {
+                    json!({"object": "chat.completion.chunk", "model": "m",
+                        "choices": [{"index": 0, "delta": {"content": "hello", "role": "assistant"}, "finish_reason": null}]})
+                } else {
+                    json!({"object": "text_completion", "model": "m",
+                        "choices": [{"index": 0, "text": "hello", "finish_reason": null}]})
+                };
+                let usage = usage_json(
+                    42,
+                    1,
+                    30,
+                    0.5,
+                    Some(worker::SpecUsage {
+                        rounds: 10,
+                        drafted: 30,
+                        accepted: 21,
+                    }),
+                );
+                let finish = if chat {
+                    json!({"object": "chat.completion.chunk", "model": "m",
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": usage})
+                } else {
+                    json!({"object": "text_completion", "model": "m",
+                        "choices": [{"index": 0, "text": "", "finish_reason": "stop"}], "usage": usage})
+                };
+                assert_eq!(
+                    lines,
+                    vec![
+                        env.stamp(content).to_string(),
+                        env.stamp(finish).to_string(),
+                        "[DONE]".into()
+                    ]
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn include_usage_does_not_fabricate_usage_on_failed_streams() {
+        for chat in [true, false] {
+            for terminal in [
+                None,
+                Some(Event::Error(worker::EngineError::overloaded("fixture"))),
+                Some(Event::DeadlineExceeded { ms: 10 }),
+            ] {
+                let (tx, rx) = worker::event_channel();
+                tx.send(Event::Token {
+                    id: 1,
+                    text: "hello".into(),
+                })
+                .unwrap();
+                if let Some(terminal) = terminal {
+                    tx.send(terminal).unwrap();
+                }
+                drop(tx);
+                let lines = sse_data_lines(
+                    sse_response_for_format(
+                        rx,
+                        "m".into(),
+                        SseFormat {
+                            chat,
+                            openai: true,
+                            include_usage: true,
+                        },
+                        None,
+                        Envelope::new(chat),
+                        Vec::new(),
+                        None,
+                        None,
+                    )
+                    .into_response(),
+                )
+                .await;
+                assert_eq!(lines.len(), 3);
+                assert_eq!(lines.last().map(String::as_str), Some("[DONE]"));
+                let content: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+                let error: serde_json::Value = serde_json::from_str(&lines[1]).unwrap();
+                assert_eq!(content.get("usage"), Some(&serde_json::Value::Null));
+                assert!(error.get("error").is_some());
+                assert!(error.get("usage").is_none());
+                assert!(error.get("choices").is_none());
+            }
+        }
+    }
+
     #[tokio::test]
     async fn stream_chunks_carry_envelope_and_first_delta_role() {
         let (tx, rx) = worker::event_channel();
@@ -16713,6 +17377,7 @@ default_reasoning_effort = "always"
             Vec::new(),
             None,
             Some(receipt),
+            false,
         )
         .into_response();
         let lines = sse_data_lines(resp).await;
@@ -16768,6 +17433,7 @@ default_reasoning_effort = "always"
             Vec::new(),
             None,
             receipt,
+            false,
         )
         .into_response();
         let mut body = Box::pin(response.into_body().into_data_stream());
@@ -16851,6 +17517,7 @@ default_reasoning_effort = "always"
             Vec::new(),
             None,
             receipt,
+            false,
         )
         .into_response();
         let lines = sse_data_lines(response).await;
@@ -19436,7 +20103,11 @@ temperature = 0.6
             "user": "u-1", "stream_options": {"include_usage": true}
         }))
         .unwrap();
-        // the no-op forms + cosmetic fields: all fine (accept-and-ignore class).
+        // No-op semantic forms and cosmetic user are accepted; usage is an active option.
+        assert_eq!(
+            req.stream_options.as_ref().unwrap().include_usage,
+            Some(true)
+        );
         assert_eq!(req.response_format.as_ref().unwrap()["type"], "text");
         assert_eq!(req.logprobs.as_ref().unwrap().as_bool(), Some(false));
         assert_eq!(req.n, Some(1));
@@ -19595,6 +20266,312 @@ temperature = 0.6
     /// It also drives the SAME health handle the real worker does (mark_ready at "load"
     /// completion, beat_busy per iteration), which is what lets the /health and /readyz tests
     /// exercise the real handlers instead of a mock.
+    fn token_api_fixture() -> (AppState, Arc<Tokenizer>) {
+        static TOKENIZER: std::sync::OnceLock<Arc<Tokenizer>> = std::sync::OnceLock::new();
+        let tokenizer = TOKENIZER
+            .get_or_init(|| {
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../research/dsv4-template-20260818/ref");
+                // Reuse the banked vocabulary with a ChatML tools template and BOS enabled.
+                // This exercises tools rendering AND raw round-trips on a BOS-adding model.
+                let fixture = std::env::temp_dir()
+                    .join(format!("memra-token-api-fixture-{}", std::process::id()));
+                std::fs::create_dir(&fixture).unwrap();
+                std::fs::copy(path.join("tokenizer.json"), fixture.join("tokenizer.json")).unwrap();
+                let mut config: serde_json::Value = serde_json::from_slice(
+                    &std::fs::read(path.join("tokenizer_config.json")).unwrap(),
+                )
+                .unwrap();
+                config["chat_template"] = json!("<|im_start|> <tools> enable_thinking");
+                config["add_bos_token"] = json!(true);
+                std::fs::write(fixture.join("tokenizer_config.json"), config.to_string()).unwrap();
+                let tokenizer = Tokenizer::from_hf_dir(&fixture);
+                std::fs::remove_dir_all(&fixture).unwrap();
+                Arc::new(tokenizer.expect("CPU token API fixture"))
+            })
+            .clone();
+        let mut st = fake_worker_state();
+        st.budget_tokenizers = Some(Arc::new(HashMap::from([("m".into(), tokenizer.clone())])));
+        st.caps = Arc::new(HashMap::from([(
+            "m".into(),
+            ModelCaps {
+                n_vocab: tokenizer.vocab_size(),
+                context_length: 4096,
+                chat_ok: true,
+                tools_branch: true,
+                ..Default::default()
+            },
+        )]));
+        (st, tokenizer)
+    }
+
+    fn token_api_test_router(st: AppState) -> Router {
+        apply_body_limit(
+            Router::new()
+                .route("/v1/tokenize", post(tokenize_admitted))
+                .route("/v1/detokenize", post(detokenize_admitted))
+                .with_state(st.clone()),
+        )
+        .layer(middleware::from_fn_with_state(
+            st,
+            authenticate_inference_before_body,
+        ))
+    }
+
+    async fn token_api_post(app: Router, path: &str, body: serde_json::Value) -> Response {
+        use tower::ServiceExt;
+        app.oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(path)
+                .header("content-type", "application/json")
+                .header("x-request-id", "token-api-test")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn token_api_json(response: Response) -> serde_json::Value {
+        serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), MAX_BODY_BYTES)
+                .await
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn tokenize_prompt_round_trips_through_detokenize_without_gpu() {
+        let (st, tokenizer) = token_api_fixture();
+        let mut metadata = ModelMetadataSet::default();
+        metadata.models.insert(
+            "m".into(),
+            OpenRouterModelMetadata {
+                max_prompt_length: Some(1000),
+                max_output_length: Some(500),
+                ..Default::default()
+            },
+        );
+        *st.openrouter_metadata.write().unwrap() = Arc::new(metadata);
+        let app = token_api_test_router(st.clone());
+        let response = token_api_post(
+            app.clone(),
+            "/v1/tokenize",
+            json!({"model":"m", "prompt":"Hello, שלום!"}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-request-id"], "token-api-test");
+        assert!(response.headers().contains_key("x-ratelimit-limit"));
+        let body = token_api_json(response).await;
+        assert_eq!(
+            body["count"].as_u64().unwrap() as usize,
+            body["tokens"].as_array().unwrap().len()
+        );
+        // Default is the billed shape: the ids `/v1/completions` renders for this raw prompt
+        // (BOS included on this BOS-adding fixture), so `count` equals its prompt_tokens.
+        assert_eq!(
+            body["tokens"],
+            json!(tokenizer.encode("Hello, שלום!", true))
+        );
+        let completion: CompletionReq =
+            serde_json::from_value(json!({"model":"m", "prompt":"Hello, שלום!"})).unwrap();
+        let (tx, _rx) = worker::event_channel();
+        let mut request = build_request(&completion, tx, lanes::Lane::Interactive, None);
+        let billed = prepare_budget_prompt(&mut request, Some(&tokenizer)).unwrap();
+        assert_eq!(body["count"], billed);
+        assert_eq!(
+            body["max_model_len"],
+            model_entry_v1("m", st.caps.get("m"), st.metadata().models.get("m"))["context_length"]
+        );
+        assert_eq!(body["max_model_len"], 1500);
+        // Reversible form: no synthesized BOS, so detokenize returns the exact input.
+        let response = token_api_post(
+            app.clone(),
+            "/v1/tokenize",
+            json!({"model":"m", "prompt":"Hello, שלום!", "add_special_tokens": false}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let raw = token_api_json(response).await;
+        assert_eq!(
+            raw["tokens"],
+            json!(tokenizer.encode("Hello, שלום!", false))
+        );
+        assert_ne!(raw["tokens"], body["tokens"]);
+        let response = token_api_post(
+            app,
+            "/v1/detokenize",
+            json!({"model":"m", "tokens":raw["tokens"]}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().contains_key("x-ratelimit-limit"));
+        assert_eq!(token_api_json(response).await["prompt"], "Hello, שלום!");
+    }
+
+    #[tokio::test]
+    async fn tokenize_messages_count_equals_chat_prompt_accounting() {
+        let (st, tokenizer) = token_api_fixture();
+        // Uses the existing chat builder and actual budget-accounting waist, not a fake
+        // worker's hard-coded usage. This is CPU accounting parity, not live generation.
+        for tools in [
+            serde_json::Value::Null,
+            json!([{"type":"function", "function":{
+                "name":"weather", "description":"Weather", "parameters":{
+                    "type":"object", "properties":{"city":{"type":"string"}}
+                }
+            }}]),
+        ] {
+            let mut body = json!({"model":"m", "messages":[
+                {"role":"system", "content":"Be concise."},
+                {"role":"user", "content":"Weather in Paris?"}
+            ], "chat_template_kwargs":{"enable_thinking":false}});
+            if !tools.is_null() {
+                body["tools"] = tools;
+            }
+            let (tx, _rx) = worker::event_channel();
+            let mut plan = build_chat_request(
+                serde_json::from_value(body.clone()).unwrap(),
+                st.caps.get("m"),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .unwrap();
+            let billed = prepare_budget_prompt(&mut plan.request, Some(&tokenizer)).unwrap();
+            let response = token_api_post(
+                token_api_test_router(st.clone()),
+                "/v1/tokenize",
+                body.clone(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let result = token_api_json(response).await;
+            assert_eq!(result["count"], billed);
+            assert_eq!(
+                result["tokens"],
+                json!(plan.request.prepared_prompt.unwrap())
+            );
+            let mut without_suffix = body;
+            without_suffix["add_generation_prompt"] = json!(false);
+            let response = token_api_post(
+                token_api_test_router(st.clone()),
+                "/v1/tokenize",
+                without_suffix,
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_ne!(token_api_json(response).await["tokens"], result["tokens"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn detokenize_oov_uses_named_prompt_ids_error() {
+        let (st, tokenizer) = token_api_fixture();
+        let response = token_api_post(
+            token_api_test_router(st),
+            "/v1/detokenize",
+            json!({"model":"m", "tokens":[0, tokenizer.vocab_size()]}),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["x-request-id"], "token-api-test");
+        let body = token_api_json(response).await;
+        assert_eq!(body["error"]["param"], "prompt_ids");
+        assert_eq!(body["error"]["type"], "invalid_request_error");
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("prompt_ids[1]")
+        );
+    }
+
+    #[tokio::test]
+    async fn token_endpoints_unknown_model_matches_chat_error() {
+        let (st, _) = token_api_fixture();
+        let expected = token_api_json(model_not_found_response(&st.models, "missing")).await;
+        for (path, body) in [
+            ("/v1/tokenize", json!({"model":"missing", "prompt":"hi"})),
+            ("/v1/detokenize", json!({"model":"missing", "tokens":[0]})),
+        ] {
+            let response = token_api_post(token_api_test_router(st.clone()), path, body).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(response.headers()["x-request-id"], "token-api-test");
+            assert_eq!(token_api_json(response).await, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn token_endpoints_reject_ambiguous_or_invalid_messages() {
+        let (st, _) = token_api_fixture();
+        for body in [
+            json!({"model":"m"}),
+            json!({"model":"m", "prompt":"hi", "messages":[]}),
+            json!({"model":"m", "messages":[]}),
+            json!({"model":"m", "messages":[{"role":"bogus", "content":"hi"}]}),
+            json!({"model":"m", "prompt":"hi", "tools":[]}),
+            json!({"model":"m", "messages":[{"role":"user", "content":"hi"}], "add_special_tokens":false}),
+            json!({"model":"m", "messages":[{"role":"user", "content":[
+                {"type":"image_url", "image_url":{"url":"https://invalid/image.png"}}
+            ]}]}),
+        ] {
+            let response =
+                token_api_post(token_api_test_router(st.clone()), "/v1/tokenize", body).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(
+                token_api_json(response).await["error"]["type"],
+                "invalid_request_error"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn token_endpoints_preserve_extractor_413_and_request_id() {
+        let (st, _) = token_api_fixture();
+        // A small limit exercises the same mid-read extractor rejection without allocating
+        // 192 MiB. No Content-Length: the header-only early refusal cannot mask this arm.
+        let app = Router::new()
+            .route("/v1/tokenize", post(tokenize_admitted))
+            .route("/v1/detokenize", post(detokenize_admitted))
+            .with_state(st)
+            .layer(DefaultBodyLimit::max(8))
+            .layer(middleware::from_fn(shape_payload_too_large));
+        for (path, body) in [
+            ("/v1/tokenize", json!({"model":"m", "prompt":"too long"})),
+            ("/v1/detokenize", json!({"model":"m", "tokens":[0]})),
+        ] {
+            let response = token_api_post(app.clone(), path, body).await;
+            assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+            assert_eq!(response.headers()["x-request-id"], "token-api-test");
+            assert_eq!(
+                token_api_json(response).await["error"]["code"],
+                "request_too_large"
+            );
+        }
+    }
+
+    #[test]
+    fn http_tokenizers_share_the_workers_loaded_snapshot() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../research/dsv4-template-20260818/ref");
+        let snapshots = worker::tokenizers::TokenizerSnapshots::default();
+        let worker = snapshots
+            .load("m", path.to_str().unwrap(), || {
+                Tokenizer::from_hf_dir(&path)
+            })
+            .unwrap();
+        let http = snapshots.snapshot(&["m".into()]).unwrap();
+        assert!(Arc::ptr_eq(&worker, &http["m"]));
+        assert_eq!(
+            http["m"].encode("identity שלום", true),
+            worker.encode("identity שלום", true)
+        );
+    }
+
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }
@@ -22712,6 +23689,55 @@ request = "0"
             error,
             "OpenModels feed requires MEMRA_MODEL_METADATA for model \"qwen/qwen3.6-27b\""
         );
+    }
+
+    #[tokio::test]
+    async fn stop_token_ids_handlers_return_named_400s() {
+        let mut st = fake_worker_state();
+        let model = st.models[0].clone();
+        Arc::make_mut(&mut st.caps).insert(
+            model.clone(),
+            ModelCaps {
+                n_vocab: 8,
+                ..Default::default()
+            },
+        );
+        for ids in [vec![0; 17], vec![8], vec![u32::MAX]] {
+            for chat in [false, true] {
+                let body = json!({"model":model, "prompt":"hello",
+                    "messages":[{"role":"user", "content":"hello"}], "stop_token_ids":ids});
+                let response = if chat {
+                    chat_completions(
+                        State(st.clone()),
+                        Default::default(),
+                        None,
+                        Json(serde_json::from_value(body).unwrap()),
+                    )
+                    .await
+                } else {
+                    completions(
+                        State(st.clone()),
+                        Default::default(),
+                        None,
+                        Json(serde_json::from_value(body).unwrap()),
+                    )
+                    .await
+                };
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(body["error"]["param"], "stop_token_ids");
+                assert_eq!(body["error"]["type"], "invalid_request_error");
+                assert!(
+                    body["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("stop_token_ids")
+                );
+            }
+        }
     }
 
     #[tokio::test]

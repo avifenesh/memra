@@ -1,0 +1,104 @@
+[server] build: memra-0.138.0-7e852c710439 (id: source-tree, git: 4f635204e150)
+[server] starting; models config = [("g", "/data/models/gemma4/gemma-4-12b-it-qat-q4_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "g" <- /data/models/gemma4/gemma-4-12b-it-qat-q4_0.gguf
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 24111 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[worker]   loaded "g": 48 layers, eos=1, stop=[1, 106]
+[worker] g: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=true dsv4=false glm5=false ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[worker] g: decode wave cap 8; scheduler tick cap 8
+[worker] g: BATCHED DECODE (gemma4 dense arm, default-on; MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; monolithic prefill, no graph promotion, no prime batching (eager-only for every non-decode entry point)
+[prefix-cache] on: budget 1409MB (1409286144 B, derived: 2 x 704643072 B max entry for model "g" at MEMRA_CTX=4096, requested 1409286144 B; boot driver free 22867017728 B, post-reserve clamp 21256404992 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "g": plain 172032 B/token, spec 172032 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["g"]
+[server] listening on http://127.0.0.1:18092
+[meter] admit id=chatcmpl-3bd677498897640580f86d5db38f20df tenant=default lane=interactive model="g"
+[admission] request cost: model="g" ctx=97 path=plain = 172032 B/token x ctx + 10MB prefill-workspace + 0MB fixed = 26MB
+[admission] fixed residual high-water: model="g" 0MB (observed 7MB at ctx 41 path=plain)
+[fa-pool] grow #0 dev=0 o_len 0 -> 8192 ml_len 0 -> 32 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 8192 -> 16384 ml_len 32 -> 64 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 16384 -> 32768 ml_len 64 -> 128 (retired kept, zero=false)
+[meter] admit id=chatcmpl-524109f110c0fa08bfe40c8da1cc795e tenant=default lane=interactive model="g"
+[admission] request cost: model="g" ctx=97 path=plain = 172032 B/token x ctx + 10MB prefill-workspace + 0MB fixed = 26MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 25 prompt tokens; model g)
+[meter] admit id=chatcmpl-d955dab4f3b117b9424272db8906c14c tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model g)
+[meter] admit id=chatcmpl-c2e17101dd8292beaf268450d77be0b6 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model g)
+[meter] admit id=chatcmpl-ed33469902ba8642e34c352db7b95da0 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model g)
+[meter] admit id=chatcmpl-48cabe5f7b295245e4a43b6fe6b36964 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 25 prompt tokens; model g)
+[meter] admit id=chatcmpl-fe25fb1f1e870f6431664b56eb77e57c tenant=default lane=interactive model="g"
+[admission] request cost: model="g" ctx=977 path=plain = 172032 B/token x ctx + 354MB prefill-workspace + 0MB fixed = 523MB
+[prefix-cache] insert probation (seed): 905 tokens, 155.7MB (resident 155.7MB / 1409MB, model g, ns "include-usage-4673c332299d41e68abdeebaa6d32500")
+[fa-pool] grow #3 dev=0 o_len 32768 -> 233472 ml_len 128 -> 912 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 233472 -> 466944 ml_len 912 -> 1824 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 466944 -> 933888 ml_len 1824 -> 3648 (retired kept, zero=false)
+[meter] admit id=chatcmpl-10fe21fe3c242bf1a9c7b93a1606cb90 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 905 prompt tokens; model g)
+[prefix-cache] hit: 905 of 905 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 905 tokens, model g)
+[meter] admit id=chatcmpl-fbe157734a7dafab507a94877ac3e355 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 905 prompt tokens; model g)
+[prefix-cache] hit: 905 of 905 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 905 tokens, model g)
+[meter] admit id=chatcmpl-7cfadd6a1413c8bd1e01ce67800fa1c8 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 905 prompt tokens; model g)
+[prefix-cache] hit: 905 of 905 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 905 tokens, model g)
+[meter] admit id=chatcmpl-7217e99e08b0760324a1f4a59028abff tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 905 prompt tokens; model g)
+[prefix-cache] hit: 905 of 905 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 905 tokens, model g)
+[meter] admit id=chatcmpl-9b6e62cf59656208666282bf8d5e4d7b tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 905 prompt tokens; model g)
+[prefix-cache] hit: 905 of 905 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 905 tokens, model g)
+[meter] admit id=cmpl-fc2b3c3642ea75b3254d1abc63658223 tenant=default lane=interactive model="g"
+[admission] request cost: model="g" ctx=85 path=plain = 172032 B/token x ctx + 5MB prefill-workspace + 0MB fixed = 20MB
+[meter] admit id=cmpl-93dd898f241562c17882fe6916196cc3 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 13 prompt tokens; model g)
+[meter] admit id=cmpl-7980ac7fdb28d34e38b31026daf0f770 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 13 prompt tokens; model g)
+[meter] admit id=cmpl-af1c2661978d981f93b434890b6cdfee tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 13 prompt tokens; model g)
+[meter] admit id=cmpl-4c1011161f410b45ff18fae04fd8c9b5 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 13 prompt tokens; model g)
+[meter] admit id=cmpl-246a4442beb9b9ae840b8ad3974d7385 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 13 prompt tokens; model g)
+[meter] admit id=cmpl-ed1d8de74ce400dac414eaf9b8461615 tenant=default lane=interactive model="g"
+[admission] request cost: model="g" ctx=965 path=plain = 172032 B/token x ctx + 350MB prefill-workspace + 0MB fixed = 516MB
+[prefix-cache] insert probation (seed): 893 tokens, 153.6MB (resident 309.3MB / 1409MB, model g, ns "include-usage-7f6a2ae3374348e58515fdfcb8bd9ef6")
+[meter] admit id=cmpl-dfb37a6774e87c54a53ac94ed51853c9 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 893 prompt tokens; model g)
+[prefix-cache] hit: 893 of 893 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 893 tokens, model g)
+[meter] admit id=cmpl-502cdc0aafb1a382e45bc1566ff69218 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 893 prompt tokens; model g)
+[prefix-cache] hit: 893 of 893 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 893 tokens, model g)
+[meter] admit id=cmpl-cb9e6c21c902c6e2e10eb99cdfc7cb8c tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 893 prompt tokens; model g)
+[prefix-cache] hit: 893 of 893 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 893 tokens, model g)
+[meter] admit id=cmpl-d62da913bb90515412c89f4de719e943 tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 893 prompt tokens; model g)
+[prefix-cache] hit: 893 of 893 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 893 tokens, model g)
+[meter] admit id=cmpl-b34a5403c63923b76d7653933220312b tenant=default lane=interactive model="g"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 893 prompt tokens; model g)
+[prefix-cache] hit: 893 of 893 prompt tokens from cache (model g)
+[prefix-cache] source lease released after restore fence (entry 893 tokens, model g)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

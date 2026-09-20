@@ -79,6 +79,7 @@ pub mod cache {
 /// WP-C: HostExps -> `memra_tier::bank` bridge. Native compile probe only; no HostExps
 /// dispatch is changed. Unexported until the SLRU-backed residency + ready-view seam lands.
 mod banked_residency;
+pub use banked_residency::{ExpertBankBudget, expert_bank_cli, refusal_reason};
 pub mod decode;
 pub mod decode_batch;
 pub mod dflash;
@@ -104,6 +105,10 @@ pub mod kda;
 /// oracle for the MLA kernel family (`research/mla-bringup-20260801/DESIGN.md`). No CUDA deps.
 pub mod mla;
 pub mod mla_ffi;
+mod model_memory;
+#[cfg(test)]
+mod model_memory_fixture;
+mod model_memory_plan;
 pub mod moe_sel_dump;
 pub mod moesd;
 pub mod o2_band;
@@ -5840,8 +5845,8 @@ impl Engine {
         &self,
         k_rows: &CudaSlice<f32>,
         v_rows: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t0_dev: &CudaSlice<i32>,
         t: usize,
         kv_dim_k: usize,
@@ -5850,6 +5855,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let f = if g {
             self.func_g("append_quantize_kv_q8_0_q5_1_rows_dc")
         } else {
@@ -5887,8 +5895,8 @@ impl Engine {
         &self,
         k_row: &CudaSlice<f32>,
         v_row: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t0_dev: &mut CudaSlice<i32>,
         kv_dim_k: usize,
         kv_dim_v: usize,
@@ -5896,6 +5904,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let f = if g {
             self.func_g("append_quantize_kv_q8_0_q5_1_dc_inc")
         } else {
@@ -6487,6 +6498,27 @@ impl Engine {
         f(cache, self)
     }
 
+    /// Build the shared MoE residency cache with an exact uniform slot count. Gate-only
+    /// (`--experts-via-tier --expert-bank-gpu-bytes=N`): the installer has already refused an
+    /// impossible budget, and this refuses if any cache exists so the count can never replace
+    /// or resize a cache a forward has touched. Legacy `with_moe_cache` sizing is untouched.
+    pub(crate) fn build_moe_cache_exact(
+        &self,
+        max_block_bytes: usize,
+        slots: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut guard = self.moe_cache.lock().unwrap();
+        if guard.is_some() {
+            return Err("experts-via-tier GPU bank budget requires an unbuilt cache".into());
+        }
+        *guard = Some(crate::moe_cache::MoeSlotCache::with_exact_slots(
+            self,
+            max_block_bytes,
+            slots,
+        )?);
+        Ok(())
+    }
+
     /// Freeze the already-built MoE residency set. This never constructs a cache: callers use it
     /// only after a real prefill has populated the machine-specific CPU/GPU working set.
     pub fn freeze_moe_cache(&self) {
@@ -6670,11 +6702,13 @@ impl Engine {
     /// u8 twin of copy_into (D2D byte-range copy at an offset).
     pub fn copy_u8_into(
         &self,
-        dst: &mut CudaSlice<u8>,
+        dst: &mut impl memra_kv::KvWrite,
         off: usize,
         src: &CudaSlice<u8>,
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let dst = &mut dst.kv_view_mut();
+
         // try_slice_mut, not slice_mut: an out-of-bounds range here panics the GPU worker
         // thread and takes the whole server with it (2026-08-29 warm-turn-at-40k incident).
         // A bounds miss is a caller bug, but it must fail the request, not the fleet.
@@ -6694,12 +6728,14 @@ impl Engine {
     /// D2D byte-range copy with explicit source and destination offsets.
     pub fn copy_u8_range_into(
         &self,
-        dst: &mut CudaSlice<u8>,
+        dst: &mut impl memra_kv::KvWrite,
         dst_off: usize,
         src: &CudaSlice<u8>,
         src_off: usize,
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let dst = &mut dst.kv_view_mut();
+
         // try_slice_mut for the same reason as copy_u8_into: bounds misses fail the request,
         // never panic the worker.
         let cap = dst.len();
@@ -6791,10 +6827,12 @@ impl Engine {
     /// adaptive trim head: no realloc, so captured graphs keep their baked addresses.
     pub fn htod_u8_into(
         &self,
-        dst: &mut CudaSlice<u8>,
+        dst: &mut impl memra_kv::KvWrite,
         off: usize,
         src: &[u8],
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let dst = &mut dst.kv_view_mut();
+
         let mut view = dst.slice_mut(off..off + src.len());
         self.gpu.stream().memcpy_htod(src, &mut view)?;
         Ok(())
@@ -6830,8 +6868,8 @@ impl Engine {
         &self,
         k_row: &CudaSlice<f32>,
         v_row: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t: usize,
         kv_dim_k: usize,
         kv_dim_v: usize,
@@ -6839,6 +6877,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let f = if g {
             self.func_g("append_quantize_kv_q8_0_q5_1")
         } else {
@@ -6877,8 +6918,8 @@ impl Engine {
         &self,
         k_row: &CudaSlice<f32>,
         v_row: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t_dev: &CudaSlice<i32>,
         kv_dim_k: usize,
         kv_dim_v: usize,
@@ -6886,6 +6927,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let nblk = (kv_dim_k.max(kv_dim_v) / 32) as u32;
         let (kdk, kdv) = (kv_dim_k as i32, kv_dim_v as i32);
         let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
@@ -6959,8 +7003,8 @@ impl Engine {
         &self,
         k_rows: &CudaSlice<f32>,
         v_rows: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t0: usize,
         t: usize,
         kv_dim_k: usize,
@@ -6969,6 +7013,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         if std::env::var("MEMRA_PRIME_APPEND_LOOP").is_ok() {
             for i in 0..t {
                 let k_row = k_rows.slice(i * kv_dim_k..(i + 1) * kv_dim_k);
@@ -7047,8 +7094,8 @@ impl Engine {
         &self,
         k_row: &cudarc::driver::CudaView<f32>,
         v_row: &cudarc::driver::CudaView<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t: usize,
         kv_dim_k: usize,
         kv_dim_v: usize,
@@ -7056,6 +7103,9 @@ impl Engine {
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let stream = self.gpu.stream();
         ensure_tensor_stream_device(k_row, &stream, "append_kv_quantized_view.k_row")?;
         ensure_tensor_stream_device(v_row, &stream, "append_kv_quantized_view.v_row")?;
@@ -16678,13 +16728,16 @@ impl Engine {
         freq_scale: f32,
         ff: Option<&CudaSlice<f32>>,
         eps: f32,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t_dev: &CudaSlice<i32>,
         k_tok_bytes: usize,
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         // 0 = this family has no such norm; every kernel here reads a null
         // weight as "pass the row through" (an all-ones weight would not be).
         let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
@@ -16867,13 +16920,16 @@ impl Engine {
         freq_scale: f32,
         ff: Option<&CudaSlice<f32>>,
         eps: f32,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         t: usize,
         k_tok_bytes: usize,
         v_tok_bytes: usize,
         g: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         // 0 = this family has no such norm; every kernel here reads a null
         // weight as "pass the row through" (an all-ones weight would not be).
         let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
@@ -32101,8 +32157,8 @@ impl Engine {
         &self,
         k_row: &CudaSlice<f32>,
         v_row: &CudaSlice<f32>,
-        kc: &mut CudaSlice<u8>,
-        vc: &mut CudaSlice<u8>,
+        kc: &mut impl memra_kv::KvWrite,
+        vc: &mut impl memra_kv::KvWrite,
         len_dev: &CudaSlice<i32>,
         base_dev: Option<&CudaSlice<i32>>,
         kv_dim_k: usize,
@@ -32110,6 +32166,9 @@ impl Engine {
         k_tok_bytes: usize,
         v_tok_bytes: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kc = &mut kc.kv_view_mut();
+        let vc = &mut vc.kv_view_mut();
+
         let f = self.func("append_quantize_kv_q8_0_q5_1_dcw");
         let nblk = (kv_dim_k.max(kv_dim_v) / 32) as u32;
         let cfg = LaunchConfig {
@@ -35655,6 +35714,9 @@ mod target_dispatch_tests {
 /// The memra-kv device seam (Phase D): the cache's 7 ops delegate to the engine's
 /// inherent methods (inherent methods win name resolution, so no recursion).
 impl memra_kv::KvDev for Engine {
+    fn alloc_vmm_u8(&self, n: usize) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
+        memra_kv::KvPlane::vmm(self.stream(), n)
+    }
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         Engine::zeros(self, n)
     }

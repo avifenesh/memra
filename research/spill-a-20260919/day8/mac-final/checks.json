@@ -1,0 +1,127 @@
+[
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 4.219530374975875
+  },
+  {
+    "name": "native-fmt",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "crates/memra-engine/src/tier_transfer.rs",
+      "crates/memra-engine/src/bin/tier_transfer_gate.rs"
+    ],
+    "exit": 0,
+    "seconds": 0.06554600002709776
+  },
+  {
+    "name": "mac-check",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0,
+    "seconds": 0.2978859581053257
+  },
+  {
+    "name": "linux-check",
+    "command": [
+      "cargo",
+      "check",
+      "--target",
+      "x86_64-unknown-linux-gnu",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0,
+    "seconds": 0.17189612495712936
+  },
+  {
+    "name": "tests",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "seconds": 18.85784650000278
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 0.6350517499959096
+  },
+  {
+    "name": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 0.5788885829970241
+  },
+  {
+    "name": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "seconds": 4.579214834026061
+  },
+  {
+    "name": "python-tests",
+    "command": [
+      "python3",
+      "-B",
+      "research/spill-a-20260919/test_day8_tools.py"
+    ],
+    "exit": 0,
+    "seconds": 0.17679358401801437
+  },
+  {
+    "name": "receipt-replay",
+    "command": [
+      "python3",
+      "-B",
+      "research/spill-a-20260919/verify_day8.py"
+    ],
+    "exit": 0,
+    "seconds": 0.12749258300755173
+  }
+]

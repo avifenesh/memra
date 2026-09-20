@@ -9,7 +9,7 @@
 # --status --pidfile PATH replaces pgrep -f (which self-matches an SSH command string).
 set -euo pipefail
 exec python3 - "$@" <<'PY'
-"""Fresh non-serving 5090 bootstrap. Dry-run stubs external effects, not checks."""
+"""Fresh non-serving single-GPU bootstrap (RTX 5090 or one RTX PRO 6000 Blackwell). Dry-run stubs external effects, not checks."""
 import argparse
 import datetime
 from decimal import Decimal, InvalidOperation
@@ -31,6 +31,8 @@ p.add_argument('--out', type=Path, help='new receipt directory (required for dry
 p.add_argument('--repo', type=Path)
 p.add_argument('--resume', action='store_true', help='read prior receipt; revalidate in a new attempt')
 p.add_argument('--provider', choices=['auto', 'runpod', 'vast', 'other'], default='auto')
+p.add_argument('--rig', choices=['rtx5090', 'pro-single'], default='rtx5090',
+               help='rtx5090: one GeForce RTX 5090 (lock /tmp/memra-5090.lock); pro-single: one RTX PRO 6000 Blackwell (lock /tmp/memra-gpu.lock, per the lock table)')
 p.add_argument('--persistent-root', type=Path, help='operator-confirmed provider persistent volume')
 p.add_argument('--nvme-root', type=Path, help='candidate local NVMe mount; verified before use')
 p.add_argument('--allow-unproven-storage', action='store_true', help='allow only explicitly labeled development storage, never NVMe qualification')
@@ -42,6 +44,13 @@ p.add_argument('--expected-power', type=int, default=600)
 p.add_argument('--gap-seconds', type=int, default=60)
 p.add_argument('--jobs', type=int, default=4)
 a = p.parse_args()
+RIGS = {
+    'rtx5090': {'match': 'RTX 5090', 'min_memory_mib': 31000, 'lock': '/tmp/memra-5090.lock',
+                'stub': 'NVIDIA GeForce RTX 5090, 32607, 600.00, 600.00\n'},
+    'pro-single': {'match': 'RTX PRO 6000', 'min_memory_mib': 90000, 'lock': '/tmp/memra-gpu.lock',
+                   'stub': 'NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887, 600.00, 600.00\n'},
+}
+RIG = RIGS[a.rig]
 # A locked pidfile identifies this bootstrap invocation, not a process-name substring.
 # flock, rather than kill(pid, 0), also makes stale/recycled PIDs harmless. Never unlink
 # this inode while another invocation could have opened it. Status never creates files.
@@ -92,7 +101,7 @@ host = re.sub('[^A-Za-z0-9_.-]', '_', os.uname().nodename)
 report = {'schema_version': 1, 'kind': 'cpu-stub' if a.dry_run else 'rig-bootstrap',
           'status': 'incomplete', 'branch': branch, 'minimum_commit': minimum_commit, 'started_utc': utc,
           'expected_power_w': a.expected_power, 'gap_seconds': a.gap_seconds,
-          'lock': '/tmp/memra-5090.lock', 'qualification': False, 'steps': [],
+          'lock': RIG['lock'], 'rig': a.rig, 'qualification': False, 'steps': [],
           'provider': provider, 'provider_instance_id': instance,
           'hourly_cost': str(a.hourly_cost) if a.hourly_cost is not None else None,
           'private_receipt': True}
@@ -214,20 +223,20 @@ if True:
         report['distro'] = distro
         # In the FIRST minute, before installs/builds. NVML is inventory, not acceptance.
         power = run('power', ['nvidia-smi', '--query-gpu=name,memory.total,power.limit,power.max_limit',
-                             '--format=csv,noheader,nounits'], 'NVIDIA GeForce RTX 5090, 32607, 600.00, 600.00\n')
+                             '--format=csv,noheader,nounits'], RIG['stub'])
         rows = [line.split(',') for line in power.splitlines() if line.strip()]
-        check(len(rows) == 1 and len(rows[0]) == 4 and 'RTX 5090' in rows[0][0], 'exactly one RTX 5090 required')
+        check(len(rows) == 1 and len(rows[0]) == 4 and RIG['match'] in rows[0][0], f"exactly one {RIG['match']} required")
         try:
             memory, limit, maximum = map(lambda s: Decimal(s.strip()), rows[0][1:])
-            check(all(x.is_finite() for x in (memory,limit,maximum)) and memory >= 31000
+            check(all(x.is_finite() for x in (memory,limit,maximum)) and memory >= RIG['min_memory_mib']
                   and maximum >= a.expected_power,
-                  'power.max_limit must meet expected power; >=31,000 MiB required')
+                  f"power.max_limit must meet expected power; >={RIG['min_memory_mib']:,} MiB required")
         except InvalidOperation:
             raise RuntimeError('unparseable power/memory query; no acceptance')
         report['power_verbatim'] = power
         report['power_limit_restricted'] = limit < a.expected_power
         if a.set_power:
-            with open('/tmp/memra-5090.lock', 'a') as power_lock:
+            with open(RIG['lock'], 'a') as power_lock:
                 fcntl.flock(power_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 occupied = run('compute-before-power', ['nvidia-smi', '--query-compute-apps=pid,process_name,used_memory', '--format=csv'], 'pid, process_name, used_memory [MiB]\n')
                 check(len(occupied.strip().splitlines()) == 1 and occupied.startswith('pid,'),
@@ -325,7 +334,7 @@ if True:
         binary = scratch/'accept'
         run('cuda-compile', [nvcc, '-arch=sm_120a', str(source), '-o', str(binary)], timeout=180)
         # Actual lock held even in dry-run; all CUDA consumers serialized, including gap.
-        with open('/tmp/memra-5090.lock', 'a') as lock:
+        with open(RIG['lock'], 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             processes = run('compute-before', ['nvidia-smi', '--query-compute-apps=pid,process_name,used_memory', '--format=csv'], 'pid, process_name, used_memory [MiB]\n')
             check(len(processes.strip().splitlines()) == 1 and processes.startswith('pid,'),
@@ -408,7 +417,7 @@ if True:
                     for block in iter(lambda: stream.read(1024*1024), b''): h.update(block)
                 report['release_binaries'][name] = {'sha256':h.hexdigest()}
         wrapper = destination/'locked-run.sh'
-        wrapper.write_text('#!/usr/bin/env bash\nset -euo pipefail\nexec flock --close -n -x /tmp/memra-5090.lock "$@"\n')
+        wrapper.write_text('#!/usr/bin/env bash\nset -euo pipefail\nexec flock --close -n -x '+RIG['lock']+' "$@"\n')
         wrapper.chmod(0o755)
         report['status'] = 'dry-run-complete-not-qualified' if a.dry_run else 'bootstrap-complete-not-tier-qualified'
     except Exception as error:

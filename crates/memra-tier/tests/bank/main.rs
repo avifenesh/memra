@@ -1463,3 +1463,7 @@ fn expert_dispatch_slru_preserves_ids_bytes_hits_and_refuses_unknown() {
 }
 
 mod owner_proxy;
+
+mod day8;
+
+mod day10;

@@ -122,3 +122,161 @@ pub fn map_host_exps(
     }
     host_exps_catalog(&HostView(host), tensor, layer, projection, active, sources)
 }
+
+/// Qualification-only host budget, independent of native CUDA slot sizing.
+/// Refuse an impossible record instead of silently increasing the budget.
+pub fn host_bank_slots(bytes: u64, max_record: u64) -> std::result::Result<usize, &'static str> {
+    if max_record == 0 || bytes < max_record {
+        return Err("experts-via-tier host bank budget cannot hold one expert record");
+    }
+    if bytes > 256 * 1024 * 1024 {
+        return Err("experts-via-tier host bank budget exceeds qualification ceiling");
+    }
+    Ok((bytes / max_record).min(16) as usize)
+}
+
+/// Gate-only budgets for the `--experts-via-tier` door. Both come from the gate
+/// binary's argv (`--expert-bank-host-bytes=N`, `--expert-bank-gpu-bytes=N`), never
+/// from an environment variable. `gpu_bytes == None` leaves native slot sizing
+/// (`MEMRA_MOE_SLOTS` / auto) exactly as it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExpertBankBudget {
+    pub host_bytes: u64,
+    pub gpu_bytes: Option<u64>,
+}
+impl Default for ExpertBankBudget {
+    fn default() -> Self {
+        Self {
+            host_bytes: 256 * 1024 * 1024,
+            gpu_bytes: None,
+        }
+    }
+}
+
+/// The only installer error the gate binaries map to the refusal token contract
+/// (final stderr line `REFUSED: <reason>`, exit 2). Every other error stays a failure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpertBankRefusal(pub String);
+impl std::fmt::Display for ExpertBankRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+impl std::error::Error for ExpertBankRefusal {}
+
+/// The refusal reason if `err` is exactly a typed budget refusal, else `None`.
+pub fn refusal_reason<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<&'a str> {
+    err.downcast_ref::<ExpertBankRefusal>()
+        .map(|refusal| refusal.0.as_str())
+}
+
+/// Parse the door and its budgets from argv. `Ok(None)` when the door is absent;
+/// a budget flag without `--experts-via-tier`, a malformed or repeated value, or a
+/// bare flag is a usage error (a failure, not a refusal).
+pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
+    args: I,
+) -> std::result::Result<Option<ExpertBankBudget>, String> {
+    const DOOR: &str = "--experts-via-tier";
+    const HOST: &str = "--expert-bank-host-bytes";
+    const GPU: &str = "--expert-bank-gpu-bytes";
+    let mut door = false;
+    let mut host = None;
+    let mut gpu = None;
+    for arg in args {
+        if arg == DOOR {
+            door = true;
+            continue;
+        }
+        let (name, slot) = if arg.starts_with(HOST) {
+            (HOST, &mut host)
+        } else if arg.starts_with(GPU) {
+            (GPU, &mut gpu)
+        } else {
+            continue;
+        };
+        let value = arg
+            .strip_prefix(name)
+            .and_then(|rest| rest.strip_prefix('='))
+            .ok_or_else(|| format!("{name} expects {name}=<bytes>"))?;
+        let bytes = value
+            .parse::<u64>()
+            .map_err(|_| format!("{name} expects an unsigned byte count, got {value:?}"))?;
+        if slot.replace(bytes).is_some() {
+            return Err(format!("{name} given more than once"));
+        }
+    }
+    if !door {
+        if host.is_some() || gpu.is_some() {
+            return Err(format!("expert bank budgets require {DOOR}"));
+        }
+        return Ok(None);
+    }
+    let mut budget = ExpertBankBudget::default();
+    if let Some(bytes) = host {
+        budget.host_bytes = bytes;
+    }
+    budget.gpu_bytes = gpu;
+    Ok(Some(budget))
+}
+
+/// Typed host budget refusal naming the requested and minimum bytes.
+pub fn host_bank_budget(
+    bytes: u64,
+    max_record: u64,
+) -> std::result::Result<usize, ExpertBankRefusal> {
+    host_bank_slots(bytes, max_record).map_err(|reason| {
+        ExpertBankRefusal(format!(
+            "{reason} (requested {bytes}, minimum {max_record}, ceiling {})",
+            256u64 * 1024 * 1024
+        ))
+    })
+}
+
+/// Bytes one native GPU slot costs for a record of `max_record` bytes: the record
+/// plus the eight-byte tail pad `MoeSlotCache` allocates for aligned reads.
+pub fn gpu_slot_bytes(max_record: u64) -> Option<u64> {
+    max_record.checked_add(8)
+}
+
+/// Qualification-only GPU slot budget for the door. `hard_bytes` is the machine hard
+/// ceiling the native cache would apply (`MEMRA_MOE_HARD_VRAM_FRAC` of free VRAM
+/// minus two slots), measured by the installer before any allocation. Refuses below
+/// the eight-slot minimum and above the ceiling; never clamps, never saturates.
+pub fn gpu_bank_slots(
+    bytes: u64,
+    max_record: u64,
+    hard_bytes: u64,
+) -> std::result::Result<usize, &'static str> {
+    if max_record == 0 {
+        return Err("experts-via-tier GPU bank budget has no expert record");
+    }
+    let slot =
+        gpu_slot_bytes(max_record).ok_or("experts-via-tier GPU bank budget arithmetic overflow")?;
+    let minimum = slot
+        .checked_mul(8)
+        .ok_or("experts-via-tier GPU bank budget arithmetic overflow")?;
+    if bytes < minimum {
+        return Err("experts-via-tier GPU bank budget cannot hold the eight-slot minimum");
+    }
+    if bytes > hard_bytes {
+        return Err("experts-via-tier GPU bank budget exceeds the hard VRAM ceiling");
+    }
+    usize::try_from(bytes / slot)
+        .map_err(|_| "experts-via-tier GPU bank budget arithmetic overflow")
+}
+
+/// Typed GPU budget refusal naming the requested, minimum and ceiling bytes.
+pub fn gpu_bank_budget(
+    bytes: u64,
+    max_record: u64,
+    hard_bytes: u64,
+) -> std::result::Result<usize, ExpertBankRefusal> {
+    gpu_bank_slots(bytes, max_record, hard_bytes).map_err(|reason| {
+        let minimum = gpu_slot_bytes(max_record)
+            .and_then(|slot| slot.checked_mul(8))
+            .map_or_else(|| "overflow".to_owned(), |m| m.to_string());
+        ExpertBankRefusal(format!(
+            "{reason} (requested {bytes}, minimum {minimum}, ceiling {hard_bytes})"
+        ))
+    })
+}

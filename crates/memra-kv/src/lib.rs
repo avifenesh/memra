@@ -7,6 +7,8 @@
 //! fatbin router and every cache consumer). memra-engine re-exports this as `cache` so
 //! call sites are unchanged.
 
+pub mod plane;
+pub use plane::{KvAllocator, KvPlane, KvWrite};
 pub mod record;
 pub mod tiered;
 
@@ -419,6 +421,17 @@ pub trait KvDev {
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>>;
     fn uninit(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>>;
     fn alloc_u8(&self, n: usize) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>>;
+    /// Explicit backend capability; no pooled substitute when VMM was requested.
+    fn alloc_vmm_u8(&self, _n: usize) -> Result<KvPlane, Box<dyn std::error::Error>> {
+        Err("REFUSED: backend does not implement native VMM allocation".into())
+    }
+    fn alloc_kv_plane(
+        &self,
+        n: usize,
+        allocator: KvAllocator,
+    ) -> Result<KvPlane, Box<dyn std::error::Error>> {
+        allocator.allocate(|| self.alloc_u8(n).map(Into::into), || self.alloc_vmm_u8(n))
+    }
     fn htod_i32(&self, v: &[i32]) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>>;
     fn clone_dtod(
         &self,
@@ -455,8 +468,8 @@ use memra_gguf::model_plan::{ModelPlan, ResidualTopology, StatePlan};
 /// [token, kv_head, dim] element order so a 32-block never straddles a head (assert head_dim%32==0).
 /// Element-within-token index = kv_head*head_dim + d; block = idx/32; lane = idx%32.
 pub struct KvLayer {
-    pub k: CudaSlice<u8>,   // q8_0 packed, capacity max_ctx*k_tok_bytes
-    pub v: CudaSlice<u8>,   // q5_1 packed, capacity max_ctx*v_tok_bytes
+    pub k: KvPlane,         // q8_0 packed, capacity max_ctx*k_tok_bytes
+    pub v: KvPlane,         // q5_1 packed, capacity max_ctx*v_tok_bytes
     pub kv_dim_k: usize,    // head_dim_k * n_head_kv  (K elements per token)
     pub kv_dim_v: usize,    // head_dim_v * n_head_kv  (V elements per token)
     pub k_tok_bytes: usize, // (kv_dim_k/32)*34
@@ -2589,7 +2602,18 @@ impl Cache {
         cfg: &ModelConfig,
         max_ctx: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::new_inner(&|_| e, cfg, None, max_ctx)
+        Self::new_with_allocator(e, cfg, max_ctx, KvAllocator::Pooled)
+    }
+
+    /// Construct native K/V storage directly under an explicit allocator policy.
+    /// Gate-only VMM callers must qualify their execution surface independently.
+    pub fn new_with_allocator(
+        e: &impl KvDev,
+        cfg: &ModelConfig,
+        max_ctx: usize,
+        allocator: KvAllocator,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_inner(&|_| e, cfg, None, max_ctx, allocator)
     }
 
     pub fn new_planned(
@@ -2598,7 +2622,7 @@ impl Cache {
         plan: &memra_gguf::model_plan::ModelPlan,
         max_ctx: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::new_inner(&|_| e, cfg, Some(plan), max_ctx)
+        Self::new_inner(&|_| e, cfg, Some(plan), max_ctx, KvAllocator::Pooled)
     }
 
     /// M1-PP2 increment 2 (stage-owned KV): layers [0, split) allocate through `dev0`,
@@ -2617,6 +2641,7 @@ impl Cache {
             cfg,
             None,
             max_ctx,
+            KvAllocator::Pooled,
         )
     }
 
@@ -2643,7 +2668,7 @@ impl Cache {
             };
             devs[s.min(devs.len() - 1)]
         };
-        Self::new_inner(&pick, cfg, None, max_ctx)
+        Self::new_inner(&pick, cfg, None, max_ctx, KvAllocator::Pooled)
     }
 
     pub fn new_ppn_planned(
@@ -2665,7 +2690,7 @@ impl Cache {
             };
             devs[stage.min(devs.len() - 1)]
         };
-        Self::new_inner(&pick, cfg, Some(plan), max_ctx)
+        Self::new_inner(&pick, cfg, Some(plan), max_ctx, KvAllocator::Pooled)
     }
 
     /// Shared allocation walk: `pick(il)` supplies the device that OWNS layer il's
@@ -2675,6 +2700,7 @@ impl Cache {
         cfg: &ModelConfig,
         plan: Option<&memra_gguf::model_plan::ModelPlan>,
         max_ctx: usize,
+        allocator: KvAllocator,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let fallback_plan = if plan.is_none() {
             Some(ModelPlan::compile(cfg)?)
@@ -2749,8 +2775,14 @@ impl Cache {
                         // +8B tail pad: the v4 stage's aligned funnelshift window reads up to
                         // 4B past the final block (PR #3's finding, adopted pad-style — the
                         // expert-dot precedent; zero hot-loop branches, values discarded).
-                        k: e.alloc_u8(kv_plane_allocation_bytes(alloc_rows, k_tok_bytes))?,
-                        v: e.alloc_u8(kv_plane_allocation_bytes(alloc_rows, v_tok_bytes))?,
+                        k: e.alloc_kv_plane(
+                            kv_plane_allocation_bytes(alloc_rows, k_tok_bytes),
+                            allocator,
+                        )?,
+                        v: e.alloc_kv_plane(
+                            kv_plane_allocation_bytes(alloc_rows, v_tok_bytes),
+                            allocator,
+                        )?,
                         kv_dim_k,
                         kv_dim_v,
                         k_tok_bytes,
