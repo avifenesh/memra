@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""Collector command: normalize only the exact native host-capacity refusal to exit 2.
+"""Collector red arm: the native host-capacity refusal must arrive as the refusal token.
 
-Keeps the entire native stdout/stderr and its exit status. No GPU work may invoke
-this script outside tier-battery.py. An unrelated failure never becomes REFUSED.
+Since day ten the gate binaries print the final stderr line `REFUSED: <reason>` and
+exit 2 themselves for a typed expert bank budget refusal. This wrapper keeps the entire
+native stdout/stderr and exit status, passes exactly that native token through, and
+turns anything else (including the pre-day-ten `Error: "..."` exit 1 shape this script
+used to normalize) into a FAIL. No GPU work may invoke it outside tier-battery.py.
 """
 import subprocess
 import sys
 
 REASON = "experts-via-tier host bank budget cannot hold one expert record"
+TOKEN = "REFUSED: " + REASON
 
 
 def verdict(code, output):
     lines = output.splitlines()
-    if code == 1 and f'Error: "{REASON}"' in lines and not any("[expert-host-slru]" in line for line in lines):
-        return 2, "REFUSED: " + REASON
-    return 1, "FAIL: expected native host-capacity refusal was not observed"
+    native = bool(lines) and lines[-1].startswith(TOKEN)
+    if code == 2 and native and not any("[expert-host-slru]" in line for line in lines):
+        return 2, lines[-1]
+    return 1, "FAIL: native host-capacity refusal token was not observed"
 
 
 def main():

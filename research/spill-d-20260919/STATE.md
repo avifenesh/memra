@@ -1,0 +1,14 @@
+# Session D day 10 handoff
+- Lane `lane/spill-d-20260919`; integ5 merged/pushed `9f849978bac72cf2a4b608873a49341eafb7ab56`.
+- **No D job running on BOX3**; tmux G2/smoke sessions closed; no D lock held.
+- G2 finished exit0; raw+summary pushed `7bcc27ba1`: 200 samples, N10/arm (5AB+5BA), all >=497ms, 37–41C/600W.
+- Smoke finished exit0; pushed `ac5a8badc`: loopback PASS both host-bounce flag positions; not cross-card staging.
+- Native receipts `/root/spill-receipts/d-day10/` copied under `rented-pro6000-20260920/` here; G2/smoke 140+21 hashes match.
+- Own remote clone `/root/wt-d` remains clean for integration; never modify reference `/root/memra-spill`.
+- Profile/schema fix+tests `527373c3a`; tool lock/match/memory/stub/wrapper were correct.
+- Bootstrap status successful, 31 steps: 30 exit0 + allowed initial pkg-config absence; not 31 all-green.
+- Final local checks: `day10/checks-final/`, all14 exit0, 85 tests PASS; first Darwin killpg failure retained (cause unknown).
+- D archive `--validate`: cells2, failed0, refused0; global BOX3 still refuses an incomplete peer journal.
+- Next lead step: rerun `python3 tools/tier-battery.py --validate /root/spill-receipts` after all peer collectors close.
+- Full report/table: DAY10-VERIFICATION.md / G2-RESULTS.md. No further D GPU work required.
+- About 0.9 agent-hours this session; active lane awaits integration, not main/release/serving qualification.

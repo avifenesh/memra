@@ -1,0 +1,46 @@
+[server] build: memra-0.138.0-e81f1683f046 (id: source-tree, git: a22a00e0e8e0)
+[server] starting; models config = [("smoke", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "smoke" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "smoke": 33 layers, eos=248046, stop=[248046]
+[worker] smoke: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] smoke: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 349MB (348651520 B, derived: 2 x 174325760 B max entry for model "smoke" at MEMRA_CTX=8192, requested 348651520 B; boot driver free 18244501504 B, post-reserve clamp 16633888768 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "smoke": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["smoke"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=cmpl-6c72678b6a6ecc7e6ea338094ff34f90 tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-9f244d2cc365ba5bff739f3ef7906afb tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-09e334e254afed7972eb6adf53cd3c5b tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-92be370db8c431deaf0e928f1081d24a tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-28f7bdf7b2584c76f9479a73b8cf9a72 tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-92d4e6aa2bce7f5393cfaf398282ddbc tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=344 path=plain = 14848 B/token x ctx + 98MB prefill-workspace + 0MB fixed = 103MB
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=1 wave=6 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="smoke" 104MB (observed 108MB at ctx 288 path=plain)
+[admission] request cost: model="smoke" ctx=344 path=plain = 14848 B/token x ctx + 98MB prefill-workspace + 104MB fixed = 207MB
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=2 wave=6 placement=single-or-non-pp2
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=3 wave=6 placement=single-or-non-pp2
+[spec-k] model="smoke" tenant="meter-B" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=4 wave=6 placement=single-or-non-pp2
+[prefix-cache] insert probation (in-batch fanout): 256 tokens, 56.5MB (resident 56.5MB / 349MB, model smoke, ns "meter-A")
+[prefix-dedup] B=3 prefix=256 saved=512 hash=6f9cf1d9c04f1a45 in 95.0ms retained=true (model smoke, ns "meter-A")
+[prefix-cache] insert probation (seed): 272 tokens, 56.7MB (resident 113.2MB / 349MB, model smoke, ns "meter-B")
+[fa-pool] grow #0 dev=0 o_len 0 -> 143360 ml_len 0 -> 560 (retired kept, zero=false)
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model smoke)
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=5 wave=6 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 256 tokens, model smoke)
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model smoke)
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=6 wave=6 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 256 tokens, model smoke)
+[fa-pool] grow #1 dev=0 o_len 143360 -> 860160 ml_len 560 -> 3360 (retired kept, zero=false)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

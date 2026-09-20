@@ -1,0 +1,9 @@
+[q8rp] split-plane decode mirrors built: 191 tensors
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+prompt tokens: [55, 88, 13]
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH
+generated 32 tokens in 0.168s = 190.52 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.015s) [stop: MaxNew]
+tokens: [198, 760, 1118, 3065, 310, 635, 369, 310, 1791, 264, 491, 2313, 13, 353, 2688, 2019, 310, 958, 279, 1581, 46796, 35309, 9237, 4736, 7093, 3683, 13, 198, 40, 2688, 2019, 310]
+MoE cache: 90175 slots | cumulative hits=39360 misses=0 (hit-rate=100.0%) | Stage-1 baseline = 454 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=100.0% | 0.0 MB/decode-token (vs 454 MB/token Stage-1 => infx less PCIe)

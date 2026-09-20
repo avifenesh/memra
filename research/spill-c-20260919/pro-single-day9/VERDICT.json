@@ -1,0 +1,54 @@
+[
+  {
+    "case": "default-gen-off",
+    "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH"
+  },
+  {
+    "case": "default-spec-off",
+    "verdict": "=== SELF-CONSISTENCY PASS ==="
+  },
+  {
+    "case": "default-gen-on",
+    "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH",
+    "gpu_evictions": 0,
+    "host_evictions": 30704,
+    "physical_reads": 30720,
+    "rereads": 0,
+    "gpu_slots": 90705
+  },
+  {
+    "case": "default-spec-on-retry",
+    "verdict": "=== SELF-CONSISTENCY PASS ===",
+    "gpu_evictions": 0,
+    "host_evictions": 31472,
+    "physical_reads": 31488,
+    "rereads": 0,
+    "gpu_slots": 90643
+  },
+  {
+    "case": "pressure-gen-on",
+    "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH",
+    "gpu_evictions": 12091,
+    "host_evictions": 22061,
+    "physical_reads": 22077,
+    "rereads": 4389,
+    "gpu_slots": 9986
+  },
+  {
+    "case": "pressure-spec-on",
+    "verdict": "=== SELF-CONSISTENCY PASS ===",
+    "gpu_evictions": 63996,
+    "host_evictions": 73966,
+    "physical_reads": 73982,
+    "rereads": 53684,
+    "gpu_slots": 9986
+  },
+  {
+    "case": "pressure-gen-off",
+    "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH"
+  },
+  {
+    "case": "pressure-spec-off",
+    "verdict": "=== SELF-CONSISTENCY PASS ==="
+  }
+]
