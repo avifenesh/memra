@@ -1,5 +1,10 @@
 # Loader semantic rejection (#537)
 
+Native follow-up: [all seven planned regression phases passed](native-20260920/RESULTS.md)
+on RTX PRO 6000 Blackwell at `fd7ce385`, including the official FP8 PP-3 and GGUF PP-2
+arms. Exact source/binary/artifact identities, raw receipts and kernel coverage limits are
+recorded there. The initial local-only delivery evidence below remains historical.
+
 The canonical compiler now rejects declared window, RoPE, or text activation semantics that
 its typed program does not implement. Dense, hybrid and external MTP load selection require
 an accepting pack before reading model weights. Pack refusal cannot fall through to the

@@ -1,8 +1,9 @@
 # Issue 537 qualification runner — 2026-09-20
 
 The coordinating task provisions the non-serving host. This task does not rent another box.
-No GPU phase has run yet. Execute GPU commands only through the supplied `memra-gpu-run`
-wrapper after the coordinator assigns physical GPUs and the task's remote checkout.
+The completed run is recorded in [native-20260920/RESULTS.md](native-20260920/RESULTS.md).
+For a rerun, execute GPU commands only through the supplied `memra-gpu-run` wrapper after
+the coordinator assigns physical GPUs and the task's remote checkout.
 
 The current owner instruction requires per-card exclusive locks and supersedes the older
 blanket per-rig rule for this campaign. The runner requires `MEMRA_GPU_LEASE_FILE`, checks
@@ -49,6 +50,10 @@ and do not satisfy the RTX PRO 6000 target gate.
 Prerequisites: Linux, Python 3, Hugging Face `hf` CLI, Rust 1.97.1+, CUDA 13.1+ with the matching
 driver and `nvidia-smi`, normal repository build dependencies. Run from this task's clean,
 committed remote checkout. Receipt directories must be new and outside the checkout.
+
+The completed correctness run used XFS on Ceph RBD. No selected gate requires a physical
+NVMe check, so it was eligible for these correctness stages; it supplies no NVMe or
+performance qualification. The storage preference below is not a claim about that run.
 
 Download/build **outside** GPU leases. Durable artifacts remain under `/data`; stage identical
 bytes to local NVMe under `/scratch`. Each GPU model phase rechecks all selected file hashes.
