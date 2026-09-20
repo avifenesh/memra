@@ -1121,6 +1121,30 @@ class VerifyAllowlistTests(unittest.TestCase):
         self.assertEqual(rc, 0, output)
         self.assertIn("1 allowlist entries all pin live tracked files", output)
 
+    def test_pinned_binary_rule_survives_a_prefilter_miss(self) -> None:
+        # The full matcher decodes invalid UTF-8 with errors="ignore". A byte-level
+        # prefilter can therefore miss a match formed by that normalization.
+        self.commit("research/capture.bin", b"alpha \xffneedle\n")
+        self.write_allowlist(self.pin("research/capture.bin", ["alpha"]))
+        with mock.patch.object(boundary, "secret_candidate_files", return_value=set()):
+            rc, output = self.run_verify()
+        self.assertEqual(rc, 0, output)
+        self.assertIn("1 allowlist entries all pin live tracked files", output)
+
+    def test_pinned_binary_still_checks_ungranted_rules_after_prefilter_miss(self) -> None:
+        self.commit("research/capture.bin", b"alpha \xffneedle\nbeta \xffneedle\n")
+        self.write_allowlist(self.pin("research/capture.bin", ["alpha"]))
+        output = io.StringIO()
+        with (
+            mock.patch.object(boundary, "ROOT", self.root),
+            mock.patch.object(boundary, "ALLOWLIST_PATH", self.allowlist_path),
+            mock.patch.object(boundary, "secret_candidate_files", return_value=set()),
+            contextlib.redirect_stdout(output),
+        ):
+            rc = boundary.cmd_check(self.policy)
+        self.assertEqual(rc, 1, output.getvalue())
+        self.assertIn("beta", output.getvalue())
+
     def test_edited_file_makes_its_entry_stale_then_restoring_it_passes_again(self) -> None:
         """CORRUPT -> red, RESTORE -> green, in one arm.
 

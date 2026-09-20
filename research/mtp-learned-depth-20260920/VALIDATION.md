@@ -24,3 +24,9 @@ Publication also verifies all archive hashes, four safe-extraction tests, and ex
 runtime-blob reconstruction from the public base. The combined ten-test output is
 in `receipts/metadata/publication-tests.log`. The request-position diagnostics run
 the full audit first and reconcile their segment totals with the overall metrics.
+
+The full public-boundary unit suite passes 53 tests, including two new regressions
+for pinned binary data skipped by the fast prefilter. Both tests failed on the old
+implementation. Content and drift verification now use the full matcher for pinned
+paths; policy patterns and raw archive bytes are unchanged. Output is recorded in
+`receipts/metadata/boundary-regression-tests.log`.

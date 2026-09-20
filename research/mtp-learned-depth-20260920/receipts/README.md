@@ -35,3 +35,9 @@ with zero matches in any expanded member. The public-boundary exceptions pin onl
 those exact archive hashes and that single rule; changed bytes and other rules
 remain checked. Reproduce the evidence with `python3 verify_archive_exceptions.py`.
 The original archives were not recompressed or rewritten to avoid the check.
+
+The pinned-file coverage fix makes both the content check and drift check run the
+full matcher on explicitly pinned paths, even if the fast byte-level prefilter
+misses a match after UTF-8 normalization. It changes no policy pattern and grants
+no additional exemption; ungranted rules still fail. Two regression tests cover
+that consistency and rejection behavior.
