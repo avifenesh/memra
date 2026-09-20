@@ -38,6 +38,8 @@ commands = [
     ['python3', 'tools/tier-battery.py', '--validate', 'research/spill-d-20260919/day2-dry-run/telemetry/correctness-control-off.jsonl'],
     ['python3', '-c', "import json,subprocess; from pathlib import Path; actual=json.loads(subprocess.check_output(['python3','tools/tier-battery.py','--first-hour'])); assert actual==json.loads(Path('research/spill-d-20260919/FIRST-HOUR-PLAN.json').read_text()); print('FIRST-HOUR MATCH: AB/BA correctness only; no perf medians')"],
     ['git', 'diff', '--check'],
+    ['python3', 'tools/tier-battery.py', '--validate', 'research/spill-d-20260919/day8/native'],
+    ['python3', '-c', "import hashlib,json; from pathlib import Path; r=Path('research/spill-d-20260919/day8/native'); m=json.loads((r/'manifest.json').read_text()); assert all(hashlib.sha256((r/p).read_bytes()).hexdigest()==h for p,h in m['files'].items()); print('NATIVE ARCHIVE HASH MATCH:', len(m['files']), 'files; not qualification')"],
     ['bash', 'tools/check-flags.sh'],
     ['python3', '-B', 'crates/memra-tier/tests/contracts/fixture_reference.py', '--check'],
     ['python3', '-B', 'tools/tier-battery.py', '--validate-campaign', 'research/spill-d-20260919/day2-dry-run'],
