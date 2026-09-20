@@ -42,6 +42,7 @@ pub mod model_packs;
 pub mod model_plan;
 pub mod nemo;
 pub mod nvfp4_repack;
+pub mod op_registry;
 pub mod placement;
 pub mod safetensors;
 pub mod source;
