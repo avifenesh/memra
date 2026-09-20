@@ -90,6 +90,8 @@ struct HostPlane {
     ticket: TransferTicket,
     bundle: StateBundle,
     capacity: usize,
+    source_owners_before_release: usize,
+    source_owners_after_release: usize,
 }
 fn bundle(
     program: &ProgramIdentity,
@@ -188,7 +190,8 @@ fn demote(
         return Err("native D2H checksum mismatch".into());
     }
     t.retire_source(&ticket)?;
-    t.release_device(&keep)?; // True demotion; host destination remains charged and readable.
+    let (source_owners_before_release, source_owners_after_release) =
+        t.release_device_observed(&keep)?;
     t.release_producer(producer)?;
     e.stream().synchronize()?;
     Ok(HostPlane {
@@ -196,6 +199,8 @@ fn demote(
         ticket,
         bundle: b,
         capacity,
+        source_owners_before_release,
+        source_owners_after_release,
     })
 }
 fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result<CudaSlice<u8>> {
@@ -204,6 +209,7 @@ fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result
         ticket: d2h,
         bundle,
         capacity,
+        ..
     } = plane;
     if checksum(host.bytes()?) != bundle.checksums[0] {
         return Err("host residency checksum mismatch".into());
@@ -287,6 +293,7 @@ pub fn roundtrip(
     e.stream().synchronize()?;
     e.pool_trim_to_zero(); // Equal trim before/after isolates newly freed source allocations.
     let before = e.ctx().mem_get_info()?.0;
+    let pool_before = e.pool_reserved_used();
     let mut suspended: Vec<(usize, KvLayer, HostPlane, HostPlane)> = vec![];
     let mut allocated = 0usize;
     let mut logical = 0usize;
@@ -329,8 +336,45 @@ pub fn roundtrip(
         return Err("REFUSED: active gate requires nonempty native K/V state".into());
     }
     e.stream().synchronize()?;
-    let trimmed = e.pool_trim_to_zero();
+    let after_before_trim = e.ctx().mem_get_info()?.0;
+    let pool_demoted = e.pool_reserved_used();
+    let trimmed = checked_trim(e)?;
     let after = e.ctx().mem_get_info()?.0;
+    let pool_trimmed = e.pool_reserved_used();
+    let source_owners_before_release: usize = suspended
+        .iter()
+        .map(|(_, _, k, v)| k.source_owners_before_release + v.source_owners_before_release)
+        .sum();
+    let source_owners_after_release: usize = suspended
+        .iter()
+        .map(|(_, _, k, v)| k.source_owners_after_release + v.source_owners_after_release)
+        .sum();
+    let source_drops = suspended
+        .iter()
+        .flat_map(|(_, _, k, v)| [k, v])
+        .filter(|p| p.source_owners_before_release == 1 && p.source_owners_after_release == 0)
+        .count();
+    let diagnosis = if source_owners_after_release != 0 {
+        "RECLAIM-DIAG: source still owned by transfer backing Rc"
+    } else if after > after_before_trim {
+        "RECLAIM-DIAG: async-pool retention"
+    } else {
+        "RECLAIM-DIAG: freed but not observable"
+    };
+    fs::write(
+        out.join("reclaim-diagnosis.txt"),
+        format!(
+            "{diagnosis}\nsource_owners_before_release={source_owners_before_release}\nsource_owners_after_release={source_owners_after_release}\nsource_slice_drops={source_drops}\ndevice_registry_after_demote={}\nfree_before_trim_bytes={after_before_trim}\nfree_after_trim_bytes={after}\npool_before_reserved={}\npool_before_used={}\npool_demoted_reserved={}\npool_demoted_used={}\npool_trimmed_reserved={}\npool_trimmed_used={}\ntrim_api=cuDeviceGetDefaultMemPool+cuMemPoolTrimTo\ntrim_api_success=true\n",
+            transfers.borrow().device_registry_len(),
+            pool_before.0,
+            pool_before.1,
+            pool_demoted.0,
+            pool_demoted.1,
+            pool_trimmed.0,
+            pool_trimmed.1
+        ),
+    )?;
+    eprintln!("{diagnosis}");
     let used = transfers.borrow().used();
     fs::write(out.join("active-bundles.tsv"), manifest)?;
     fs::write(
@@ -372,4 +416,18 @@ pub fn roundtrip(
     )?;
     metrics.sync_all()?;
     Ok(reclaimed)
+}
+
+/// Unlike the engine's best-effort trim, a failed diagnostic API is an error.
+fn checked_trim(e: &Engine) -> super::Result<usize> {
+    use cudarc::driver::{result::device, sys};
+    e.ctx().bind_to_thread()?;
+    let dev = device::get(e.ctx().ordinal() as i32)?;
+    let before = e.pool_reserved_used().0;
+    let mut pool = std::ptr::null_mut();
+    // SAFETY: current context owns dev; pool is a live output pointer.
+    unsafe { sys::cuDeviceGetDefaultMemPool(&mut pool, dev).result()? };
+    // SAFETY: pool was successfully obtained above; trim only frees unused blocks.
+    unsafe { sys::cuMemPoolTrimTo(pool, 0).result()? };
+    Ok(before.saturating_sub(e.pool_reserved_used().0))
 }

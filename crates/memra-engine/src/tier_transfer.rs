@@ -290,6 +290,21 @@ impl CudaTransfers {
         self.allocations.remove(&lease.allocation_id());
         Ok(())
     }
+    /// Diagnostic release: observe the private backing Rc without retaining it.
+    /// A zero post-release count proves the RefCell<CudaSlice> destructor ran;
+    /// it does NOT prove the async pool returned physical memory to the driver.
+    pub fn release_device_observed(&mut self, lease: &DeviceLease) -> Result<(usize, usize)> {
+        let (before, weak) = {
+            let backing = self.owner.resolve::<Rc<RefCell<CudaSlice<u8>>>>(lease)?;
+            (Rc::strong_count(&backing), Rc::downgrade(&backing))
+        };
+        self.release_device(lease)?;
+        Ok((before, weak.strong_count()))
+    }
+    /// Registry occupancy, not physical residency.
+    pub fn device_registry_len(&self) -> usize {
+        self.allocations.len()
+    }
     /// Transfer native backing out without a copy. The caller assumes accounting
     /// after this returns; live leases/bindings fail Busy without losing ownership.
     pub fn take_device(&mut self, lease: &DeviceLease) -> Result<CudaSlice<u8>> {
