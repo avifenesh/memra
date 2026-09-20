@@ -1,4 +1,4 @@
-# Day-8 collector spellings — restricted-power development only
+# Day-8/9 collector spellings — restricted-power development only
 
 These are individual, inspected cells, not a batch that treats refusals as passes.
 All GPU work is under `tools/tier-battery.py`; legacy scripts require the reviewed
@@ -9,8 +9,8 @@ binary hashes, and retain raw logs. The available development power envelope is
 
 ## A — actual native transfer adapter
 
-Requires A's lane containing `tier-transfer-gate`; it is absent from D's current
-integration baseline. Build the native target before invoking it. No model argument.
+The day-9 integration registers `tier-transfer-gate` and imports A's native
+adapter. Build the native target before invoking it. No model argument.
 
 ```sh
 python3 tools/tier-battery.py --rig rtx5090 --timeout 300 \
@@ -25,24 +25,27 @@ python3 tools/tier-battery.py --validate "$EV/a-transfer-roundtrip/CELL.jsonl"
 
 ## B — active gate, with explicit refusal retained
 
-B's current CLI admits this spelling, but the active/native tier binding is still
-unimplemented: exit 2 plus final `REFUSED: <reason>` (or the older
-`kv-tier-gate: REFUSED: <reason>`) is a **refused** capture, not a successful active
-spill gate. Generic `Error:` plus exit 2 remains **failed**.
+B's day-8 native source `c9569169` implements the host-only active surface.
+The 8k receipt is **copy/restore bit-identical, no reclaim — not G1 PASS**;
+32k stays unrun until B's physical-reclaim gate passes. `--tiers host,nvme`
+is not the executed active program. Use the exact artifact and byte manifest
+from B's `DAY8.md`, and the native binary built from its pinned source.
 
 ```sh
 python3 tools/tier-battery.py --rig rtx5090 --timeout 1800 \
   --out "$EV/b-active-8192" --execute \
   target/release/kv-tier-gate --artifact "$QWEN" --case active \
-  --context 8192 --tiers host,nvme --same-program --out "$EV/b-active-state"
+  --context 8192 --tiers host --same-program --out "$EV/b-active-state"
 python3 tools/tier-battery.py --validate "$EV/b-active-8192/CELL.jsonl"
 ```
 
 The collector command returns nonzero for refused/failed children. Inspect that
 result before validating retained evidence; do not use a `set -e` chain that hides
-the refusal receipt. Never call the preceding refusal native-active qualification.
+the refusal receipt. After an actual 8k G1 PASS, the corresponding larger spelling
+is `--case active --context 32768 --tiers host --same-program` with new cell/state
+directories. It is an admission instruction, not evidence that 32k ran.
 
-## C — row tier and prospective device publication
+## C — row tier and device publication
 
 The existing `--rows-via-tier` cell is:
 
@@ -56,11 +59,9 @@ python3 tools/tier-battery.py --rig rtx5090 --timeout 1800 \
 python3 tools/tier-battery.py --validate "$EV/c-rows-cell/CELL.jsonl"
 ```
 
-**Blocked, do not execute as a positive cell yet:** C's inspected lane does not
-implement `--device-publish`; its current argument scanner can silently ignore it.
-After C implements and tests strict admission, the exact combined collector spelling
-is below. A green old binary with an ignored argument is not device-publish evidence.
-Use a fresh state directory and the same immutable goldens precondition as above.
+C's day-seven device-publication implementation and receipt are now in the
+integration. Use a fresh state directory and copy the same immutable goldens as
+above before the combined spelling. Keep the underscore binary name exactly.
 
 ```sh
 python3 tools/tier-battery.py --rig rtx5090 --timeout 1800 \
@@ -109,16 +110,92 @@ identity/failure retain the gate's 8192 MiB host-tier default. Compare those exa
 conditions rather than changing the diagnostic subject. These legacy whole-prefix
 surfaces do not prove generic active/prefix TierManager integration.
 
-## G2 — current N=1 probe versus full envelope
+## C — native expert pressure and host-record refusal
+
+Run with C's source `44f87f181bbbcc75a14d8d9362609f60186f293d` binaries and
+its pinned Qwen3.6 expert artifact (`$EXPERT_ARTIFACT`), not B's dense Qwen
+artifact. `$C_BIN` and `$C_TOOLS` are operator-owned immutable copies of that
+source's binaries and `research/spill-c-20260919/pressure-refusal.py`.
+The requested 8/4 GiB budgets apply to GPU SLRU, **not the host bank**;
+9986/4993 slots include eight-byte tail padding and round down. The host bank
+remains 256 MiB / at most 16 records. All eight cells use prompt ids 55,88,13,
+32 generated tokens, existing numerical programs, and resident experts disabled.
 
 ```sh
-python3 tools/tier-envelope.py --rig rtx5090 --probe target/release/h2d-probe \
-  --bytes 4096 --direction h2d --rounds 1 --correctness-only --out "$EV/g2-n1"
+for budget in 8g 4g; do
+  if [ "$budget" = 8g ]; then slots=9986; else slots=4993; fi
+  for arm in on off; do
+    extra=()
+    if [ "$arm" = on ]; then extra=(--experts-via-tier); fi
+    for mode in gen spec; do
+      python3 tools/tier-battery.py --rig rtx5090 --timeout 1800 \
+        --out "$EV/c-$budget-$mode-$arm" --execute \
+        env MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS="$slots" MEMRA_NGEN=32 \
+        "$C_BIN/run-$mode" "$EXPERT_ARTIFACT" 55 88 13 "${extra[@]}"
+      python3 tools/tier-battery.py --validate "$EV/c-$budget-$mode-$arm/CELL.jsonl"
+    done
+  done
+done
+python3 tools/tier-battery.py --rig rtx5090 --timeout 1800 \
+  --out "$EV/c-host-refusal" --execute \
+  python3 "$C_TOOLS/pressure-refusal.py" \
+  env MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=4993 MEMRA_NGEN=32 \
+  "$C_BIN/run-gen" "$EXPERT_ARTIFACT" 55 88 13 \
+  --experts-via-tier --expert-bank-host-bytes=1
+# Expected collector exit 2; inspect it, then validate separately:
+python3 tools/tier-battery.py --validate "$EV/c-host-refusal/CELL.jsonl"
+```
+
+The only expected terminal refusal is:
+`REFUSED: experts-via-tier host bank budget cannot hold one expert record`.
+The wrapper retains native output and native exit status; unrelated failures,
+build errors, timeouts and signals are not refusals. This is a host-record
+minimum refusal, not a GPU-minimum-budget gate (`MEMRA_MOE_SLOTS=0..7` clamps
+to eight slots in that source). See C's `DAY8.md` for all eight ON/OFF verdicts
+and separately counted GPU/host evictions, physical reads and re-reads.
+
+## G2 — calibrated N=1 rehearsal versus scored envelope
+
+D imports F's final `7644c41f` probe source unchanged. The integrated Cargo
+manifest explicitly names the binary **h2d-probe** (F's isolated auto-discovered
+build used **h2d_probe**); both use `h2d_probe.rs`. CLI:
+`[--dry-run] [--bytes BYTES] [--direction h2d|d2h|both] [--order ab|ba]`
+`[--repeats 1] [--copies 1..100000]`. Probe visits emit bare JSON; only the
+outer worker emits one line-start `RESULT ` token.
+
+```sh
+for bytes in 4096 16777216; do
+  for direction in h2d d2h; do
+    python3 tools/tier-envelope.py --rig rtx5090 --probe target/release/h2d-probe \
+      --bytes "$bytes" --direction "$direction" --rounds 1 --correctness-only \
+      --out "$EV/g2-$bytes-$direction"
+  done
+done
 ```
 
 The runner owns the collector invocation; do not nest it inside another collector.
-The current probe accepts `--repeats 1 --copies 1` only. N=1 AB/BA is plumbing and
-byte-identity evidence. **Full G2 is blocked on probe `--copies >1` support**, then
-same-window N>=5 in both orders with complete 250 ms telemetry. Calibration must
-select one fixed count and leave calibration samples out of scoring. Do not publish
-N=1 medians or claim the full 4 KiB–1 GiB bidirectional envelope from a tiny cell.
+It calibrates the faster arm toward 350 ms (both measured visits must be at least
+250 ms), then fixes one count for AB followed by BA. Calibration is discarded,
+copies do not increase N, and the four cells run only once as
+**executed-not-qualified** plumbing. No medians. Nested probes preserve the
+collector worker group and inherited lock FD. Both outer timeout and inner timeout
+kill that group; commands must not detach/daemonize. This is cooperative job
+containment, not a sandbox for hostile programs.
+
+A fully scored N>=5 same-window run remains a later lead call. The full 20-cell
+4 KiB–1 GiB envelope, sustained-duration, thermal and serving gates are not
+satisfied by this rehearsal. Peer day-8 archive integrity replay is reproducible:
+
+```sh
+python3 research/spill-d-20260919/validate-day8-archives.py --out "$EV/day8-replay"
+```
+
+It extracts immutable A `day7/`, B `day8-active-8192/`, C `day8/`, and F
+`h2d-copies/` archives to disposable scratch, runs the actual collector
+`--validate` over all CELL journals, retains raw output and source hashes,
+and removes the extraction. It does not modify peer receipts or re-execute GPU
+work. Expected summary:
+
+```text
+CAPTURE ARCHIVES MATCH: 14 cells; 12 executed-not-qualified; 1 failed command; 1 refused command; qualification=false
+```

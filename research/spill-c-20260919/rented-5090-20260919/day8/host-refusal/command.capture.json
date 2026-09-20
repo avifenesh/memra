@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "/root/spill-c-day8/pressure-refusal.py",
+    "env",
+    "MEMRA_MOE_RESIDENT=0",
+    "MEMRA_MOE_SLOTS=4993",
+    "MEMRA_NGEN=32",
+    "/root/spill-c-day8/bin/run-gen",
+    "/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+    "55",
+    "88",
+    "13",
+    "--experts-via-tier",
+    "--expert-bank-host-bytes=1"
+  ],
+  "exit_code": 2,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "refused",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "400.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 741082821385810,
+  "ended_monotonic_ns": 741169079966562,
+  "started_utc": "2026-09-20T08:21:47.463050+00:00",
+  "ended_utc": "2026-09-20T08:23:13.721634+00:00",
+  "elapsed_seconds": 86.258580752,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 218,
+    "sha256": "c4bc7db823c2abe99921a0642fe0e9f62678daf73b0f96f0197374b735e6a5b2"
+  },
+  "failure_quote": "REFUSED: experts-via-tier host bank budget cannot hold one expert record",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 35880,
+      "sha256": "392d325743880383df723a99e2c65b5ed789269f8b15379e168a1e4aac1d551e"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

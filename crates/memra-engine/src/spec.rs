@@ -2330,8 +2330,8 @@ impl MtpScratch {
         };
         Ok(MtpScratchPlane {
             kv: KvLayer {
-                k: e.alloc_u8(alloc_rows * k_tok_bytes)?,
-                v: e.alloc_u8(alloc_rows * v_tok_bytes)?,
+                k: e.alloc_u8(alloc_rows * k_tok_bytes)?.into(),
+                v: e.alloc_u8(alloc_rows * v_tok_bytes)?.into(),
                 kv_dim_k,
                 kv_dim_v,
                 k_tok_bytes,

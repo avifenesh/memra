@@ -12,7 +12,7 @@ import re
 import shlex
 import sys
 
-LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
+LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-single": "/tmp/memra-gpu.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
 ROUTES = {"local", "pcie-p2p", "host-bounce", "host", "nvme"}
 IDENTITY = ("runtime_commit", "binary_sha256", "artifact_sha256", "plan_sha256", "layout_sha256", "prompt_sha256", "numeric_class", "context_tokens", "requests", "rig", "kind")
 CASES = {
@@ -196,12 +196,18 @@ def paired_orders(n):
     return [(i, order) for i in range(n) for order in ("AB", "BA")]
 
 
-def tee_run(command, raw_path, timeout=30, echo=True, pass_fds=()):
-    """Drain merged stdout/stderr to a raw file BEFORE parsing, including on timeout."""
+def tee_run(command, raw_path, timeout=30, echo=True, pass_fds=(), shared_group=False):
+    """Drain raw output before parsing. Nested workers MUST use shared_group=True.
+
+    A shared-group timeout kills the worker itself as well as its children; its
+    owning outer collector reaps the worker and publishes the failure capture.
+    Commands must not daemonize/setsid: a process group is not a hostile sandbox.
+    Pass the inherited lock FD through every nested launch to retain ownership.
+    """
     with raw_path.open("xb") as log:
         try:
             p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 start_new_session=True, pass_fds=pass_fds)
+                                 start_new_session=not shared_group, pass_fds=pass_fds)
         except OSError as error:
             log.write((f"ERROR: launch failed: {error}\n").encode())
             log.flush()
@@ -219,7 +225,7 @@ def tee_run(command, raw_path, timeout=30, echo=True, pass_fds=()):
                 errors.append(error)
         def kill_group():
             try:
-                os.killpg(p.pid, signal.SIGKILL)
+                os.killpg(os.getpgrp() if shared_group else p.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
         thread = threading.Thread(target=pump, daemon=True)
@@ -240,9 +246,10 @@ def tee_run(command, raw_path, timeout=30, echo=True, pass_fds=()):
         if thread.is_alive():
             raise TimeoutError("raw log drain remained open; no result may be published")
         p.stdout.close()
-        if pass_fds:
-            # External-lock commands are scoped jobs, never daemon launchers.
-            # Kill only our command group, including descendants with closed stdout.
+        if not shared_group:
+            # Outermost commands are scoped jobs, never daemon launchers. Nested
+            # successful visits leave the owning worker group alive for its next visit.
+            # Reap descendants even when they closed stdout and no FD was passed.
             kill_group()
         if errors:
             raise errors[0]
@@ -893,7 +900,7 @@ def main():
     parser.add_argument("--hourly-cost", type=float, help="private optional operator rate")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--pairs-per-order", type=int, default=5)
-    parser.add_argument("--rig", choices=["rtx5090", "pro-pair", "pro-four"], default="pro-pair")
+    parser.add_argument("--rig", choices=["rtx5090", "pro-single", "pro-pair", "pro-four"], default="pro-pair")
     # argparse REMAINDER still treats a literal -- as its own option terminator.
     # Split before parsing so every child byte/argument (including --) survives.
     argv = sys.argv[1:]

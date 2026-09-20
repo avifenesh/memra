@@ -1,0 +1,36 @@
+Running as unit: spill-lead-battery2-1789922563.scope; invocation ID: cf452a1b846443c3bada9df01e7d4a83
+tree 1fbdda978e1f3671ad39da273c6e70674f2b0b78 started 2026-09-20T16:42:43Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+== fmt: cargo fmt --all -- --check
+   rc=0 (3s)
+== test-tier-kv: cargo test -p memra-tier -p memra-kv --offline --no-fail-fast
+   rc=0 (7s)
+   | 
+   | test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+   | 
+== clippy: cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+   rc=0 (8s)
+   |    Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-lead/crates/memra-server)
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.94s
+== check-flags: bash tools/check-flags.sh
+   rc=0 (1s)
+   | check-flags: runtime literal reads=864
+   | check-flags: no uncovered runtime names
+   | check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+   | publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (1s)
+   | docs-registry-census: ROUTER.md lines=41 (cap 60)
+   | docs-registry-census: check-flags --list answered with 864 runtime names (coverage enforced by check-flags.sh itself)
+   | docs-registry-census: flags-table-census: docs/FLAGS.md tables=58 rows=899, every row matches its header
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (16s)
+   | ..............................................................................                                   [100%]
+   | 78 passed, 32 subtests passed in 16.24s
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check
+   rc=0 (0s)
+finished 2026-09-20T16:43:19Z
