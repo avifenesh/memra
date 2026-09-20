@@ -229,6 +229,28 @@ fn baseline(args: &cli::Args) -> Result<()> {
             Cache::new_with_allocator(&e, &model.cfg, args.context, memra_kv::KvAllocator::Vmm)?
         }
     };
+    fs::write(
+        args.out.join("allocation-construction.txt"),
+        format!(
+            "allocator={:?}\nconstruction=direct\nempty_plane_swap=false\nposition={}\nvmm_planes={}\npooled_planes={}\n",
+            args.kv_allocator,
+            cache.pos,
+            cache
+                .kv
+                .iter()
+                .flatten()
+                .flat_map(|l| [&l.k, &l.v])
+                .filter(|p| p.is_vmm())
+                .count(),
+            cache
+                .kv
+                .iter()
+                .flatten()
+                .flat_map(|l| [&l.k, &l.v])
+                .filter(|p| !p.is_vmm())
+                .count(),
+        ),
+    )?;
     let mut last = None;
     for (i, &token) in prompt.iter().enumerate() {
         last = Some(model.decode_step_h(&e, token, &mut cache)?);

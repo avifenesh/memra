@@ -78,6 +78,18 @@ def collector(folder):
     require(identity["prompt_sha256"] == decoded_sha(r / "prompt.u32le"), "prompt hash")
     require(len(data(r / "tokens.u32le")) == 128 * 4, "continuation token count")
     require(len(data(r / "prompt.u32le")) == (int(identity["context"]) - 128) * 4, "prompt count")
+    case = command[command.index("--case") + 1]
+    done = fields(r / ("BASELINE.txt" if case == "baseline" else "ACTIVE.txt"))
+    require(done["committed"] == identity["context"], "unfinished context")
+    for key, name in (("prefix_state_manifest_sha256", "prefix-state.tsv"),
+                      ("final_state_manifest_sha256", "final-state.tsv"),
+                      ("tokens_sha256", "tokens.u32le"), ("logit_rows_sha256", "logits.tsv")):
+        require(done[key] == decoded_sha(r / name), f"completion hash: {key}")
+    rows = list(csv.DictReader((r / "logits.tsv").open(), delimiter="\t"))
+    context = int(identity["context"])
+    require([int(row["committed"]) for row in rows] == list(range(context - 128, context + 1)),
+            "missing decision/final logit rows")
+    require(rows[-1]["logits_f32le_sha256"] == decoded_sha(r / "final-logits.f32le"), "final logit hash")
     return identity
 
 
@@ -169,6 +181,12 @@ def main():
             day9.verify_plane_census(receipt, m)
         if label.startswith("diagnostic-"):
             check_probe(receipt, m, flags)
+        if label.startswith("injected-"):
+            construction = fields(receipt / "allocation-construction.txt")
+            require(construction["allocator"] == "Vmm" and construction["construction"] == "direct"
+                    and construction["empty_plane_swap"] == "false" and construction["position"] == "0"
+                    and int(construction["vmm_planes"]) >= 32 and construction["pooled_planes"] == "0",
+                    "allocator injection not engaged")
         result[label] = verdict(m, flags, context)
     if args.require_complete:
         require(set(result) == set(EXPECTED), f"pending cells: {set(EXPECTED) - set(result)}")
