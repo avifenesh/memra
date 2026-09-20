@@ -14,8 +14,10 @@ The F-only remote build uses that auto-discovered target; neither a manifest
 mutation nor an engine runtime default is needed. The final desired public
 spelling is `h2d-probe`.
 
-On Mac the package build is blocked by nvcc/CUDA, **not attempted as a CUDA
-qualification**. Compile this exact standalone source with `rustc --edition=2024`
+A native Mac package CUDA build is unavailable and is not CUDA qualification.
+The Linux-target `DOCS_RS=1` engine/bin typecheck passed with the explicit
+compile-only archive-hash sentinel; native Linux release build and the
+N=1 collector receipt are recorded in `H2D-RESULTS.md`. Compile this exact standalone source with `rustc --edition=2024`
 and execute `--dry-run` (no dependencies/CUDA on Mac); the output exercises
 all 40 sample shapes and the RESULT record with null GPU measurements.
 `rustc --test` exercises CLI refusal and complete-byte comparator red controls.

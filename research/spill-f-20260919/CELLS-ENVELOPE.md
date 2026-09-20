@@ -234,3 +234,19 @@ compile time; rerunning with the explicit compile-only
 stubs nor a cross-target check constitute native CUDA execution. Raw CPU logs
 live in `h2d-copies/cpu/`; native build and single-cell status are in
 `H2D-RESULTS.md`.
+
+
+### Owner N=1 execution exception and result (2026-09-20)
+
+For the single copies-plumbing cell only, concurrent CPU builds are allowed:
+require the canonical collector lock and a fresh GPU-idle preflight, record
+`concurrent_builds` in a capture-bound CELL note, and retain
+`executed-not-qualified`. Do not wait for a build-free box for N=1 plumbing.
+This exception does **not** change the scored G2 no-competing-build window.
+
+The actual matrix ran once: 32 identity-clean visits, exit 0, 25.306 seconds,
+400/600 W, N=1 per size/count/direction/arm/order. No medians. Both build
+snapshots observed `concurrent_builds: []`. One earlier collector launch
+failed before CUDA because the F-only sparse checkout omitted the committed
+worker; its raw failure is retained separately, not discarded. See
+`H2D-RESULTS.md` and `h2d-copies/native-n1-attempt2/CELL-NOTE.json`.
