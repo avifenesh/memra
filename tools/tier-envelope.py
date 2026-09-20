@@ -129,6 +129,25 @@ def visit(args, phase, round_id, order, copies):
     return visits
 
 
+def calibrate(args):
+    """Discarded bounded calibration; one fixed count, covering the FASTER arm."""
+    target_ns = 350_000_000 if args.correctness_only else 3_000_000_000
+    copies = 1
+    attempts = []
+    for attempt in range(5):
+        rows = visit(args, 'calibration', attempt, 'AB', copies)
+        fastest_ns = min(r['sample']['wall_ns'] for r in rows)
+        attempts.append({'copies': copies, 'minimum_wall_ns': fastest_ns})
+        record = {'copies': copies, 'target_ns': target_ns, 'minimum_visit_ns': 250_000_000,
+                  'discarded': True, 'attempts': attempts, 'qualification': False}
+        (args.out/'calibration.json').write_text(json.dumps(record, indent=2)+'\n')
+        if fastest_ns >= target_ns:
+            return copies
+        B.require(copies < 100000, 'calibration capped before required visit duration')
+        copies = min(100000, max(copies+1, math.ceil(copies*target_ns/fastest_ns)))
+    raise ValueError('calibration did not converge; no rehearsal/scored samples run')
+
+
 def worker(args):
     proof = subprocess.run([sys.executable, str(ROOT/'tools/tier-lock-proof.py'), '--fd', str(args.worker),
                             '--lock', B.LOCKS[args.rig]], pass_fds=(args.worker,), capture_output=True,
@@ -141,17 +160,16 @@ def worker(args):
                 'thermal_class': 'short-cell-allocation-warm', 'pinned_allocator': 'CUDA-cacheable-flags-zero',
                 'correctness_only': args.correctness_only}
     (args.out/'identity.json').write_text(json.dumps(identity, indent=2)+'\n')
-    # Discarded paired calibration fixes one count for every scored arm visit.
-    calibration = visit(args, 'calibration', 0, 'AB', 1)
-    slow_ns_per_copy = max(r['sample']['wall_ns'] for r in calibration)
-    copies = 1 if args.correctness_only else max(1, min(100000, math.ceil(3e9/slow_ns_per_copy)))
-    (args.out/'calibration.json').write_text(json.dumps({'copies': copies, 'slow_ns_per_copy': slow_ns_per_copy,
-                                                       'target_seconds': 3, 'discarded': True})+'\n')
+    # Inner copies never increase N. Even the N=1 rehearsal covers a sampler interval.
+    copies = calibrate(args)
     visits = []
     for round_id in range(args.rounds):
         for order in ('AB', 'BA'):
             preflight(args.out)  # A competing application invalidates/aborts the cell.
-            visits.extend(visit(args, 'correctness' if args.correctness_only else 'sample', round_id, order, copies))
+            pair = visit(args, 'correctness' if args.correctness_only else 'sample', round_id, order, copies)
+            B.require(all(r['sample']['wall_ns'] >= 250_000_000 for r in pair),
+                      'visit below 250 ms; retained but not an accepted rehearsal')
+            visits.extend(pair)
     # Leave room for a final sampler point covering the last visit; no GPU work here.
     time.sleep(.3)
     print('RESULT '+json.dumps({'kind': 'envelope-cell', 'visits': len(visits), 'rounds_per_order': args.rounds,
@@ -204,6 +222,8 @@ def main():
             rows = [json.loads(line) for line in (args.out/'envelope.jsonl').read_text().splitlines()]
             samples = [r for r in rows if r['phase'] != 'calibration']
             B.require(len(samples) == 4*args.rounds, 'incomplete paired orders')
+            B.require(all(r['sample']['wall_ns'] >= 250_000_000 for r in samples), 'visit below 250 ms')
+            summary['minimum_visit_ns'] = min(r['sample']['wall_ns'] for r in samples)
             cap = rows[0]['power_before']
             B.require(all(r['power_before'] == r['power_after'] == cap for r in rows), 'power cap changed across visits')
             summary['telemetry'] = telemetry_check(args.out/'collector/command.gpu.csv',

@@ -37,6 +37,26 @@ class EnvelopeTests(unittest.TestCase):
             self.assertTrue(launch.call_args.kwargs['shared_group'])
             self.assertEqual(launch.call_args.kwargs['pass_fds'], (42,))
 
+    def test_calibration_covers_fast_arm_and_does_not_increase_n(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = SimpleNamespace(out=Path(temp), correctness_only=True)
+            def samples(_args, phase, attempt, order, copies):
+                self.assertEqual((phase, order), ('calibration', 'AB'))
+                return [{'sample': {'wall_ns': 1_000_000*copies}},
+                        {'sample': {'wall_ns': 2_000_000*copies}}]
+            with patch.object(E, 'visit', side_effect=samples):
+                self.assertEqual(E.calibrate(args), 350)
+            receipt = json.loads((args.out/'calibration.json').read_text())
+            self.assertTrue(receipt['discarded'])
+            self.assertEqual(len(receipt['attempts']), 2)
+
+    def test_calibration_refuses_insufficient_copy_cap(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = SimpleNamespace(out=Path(temp), correctness_only=True)
+            with patch.object(E, 'visit', return_value=[{'sample': {'wall_ns': 1}}]):
+                with self.assertRaisesRegex(ValueError, 'capped'):
+                    E.calibrate(args)
+
     def test_registered_matrix_and_both_orders(self):
         self.assertEqual(E.SIZES, [4096, 16384, 65536, 262144, 1048576, 4194304,
                                   16777216, 67108864, 268435456, 1073741824])
