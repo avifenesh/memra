@@ -26856,8 +26856,8 @@ mod tests {
         Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
         emit_spec_token_events, interactive_prefill_budget, interactive_prime_batch_take,
         legacy_async_chain_width, prefill_tick_take, record_output_progress, record_output_tokens,
-        routed_moe_prefix_split, solo_widen_fresh, spec_visible_prefix, summarize_confidence,
-        utf8_delta,
+        routed_moe_prefix_split, solo_widen_fresh, spec_visible_prefix, stop_token_reason,
+        summarize_confidence, utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
@@ -26880,6 +26880,7 @@ mod tests {
     };
     use crate::lanes::{Lane, StepStats};
     use memra_engine::Engine;
+    use memra_engine::decode::StopReason;
     use memra_engine::hybrid::HybridModel;
     use memra_engine::sampler::{Sampler, SamplerConfig};
     use memra_tokenizer::Tokenizer;

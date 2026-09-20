@@ -23159,7 +23159,7 @@ request = "0"
     async fn stop_token_ids_handlers_return_named_400s() {
         let mut st = fake_worker_state();
         let model = st.models[0].clone();
-        st.caps.insert(
+        Arc::make_mut(&mut st.caps).insert(
             model.clone(),
             ModelCaps {
                 n_vocab: 8,
