@@ -2,21 +2,37 @@
 use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum KvAllocator {
+    Pooled,
+    Vmm,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct Args {
     pub artifact: PathBuf,
+    pub kv_allocator: KvAllocator,
+    pub reclaim_diagnostic: bool,
     pub case: String,
     pub context: usize,
     pub tiers: String,
     pub out: PathBuf,
 }
 
-pub const USAGE: &str = "kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program --out <new-directory>";
+pub const USAGE: &str = "kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic] --out <new-directory>";
 
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut iter = args.into_iter();
     let mut fields = std::collections::BTreeMap::new();
     let mut same = false;
+    let mut reclaim_diagnostic = false;
     while let Some(key) = iter.next() {
+        if key == "--reclaim-diagnostic" {
+            if reclaim_diagnostic {
+                return Err("duplicate --reclaim-diagnostic".into());
+            }
+            reclaim_diagnostic = true;
+            continue;
+        }
         if key == "--same-program" {
             if same {
                 return Err("duplicate --same-program".into());
@@ -24,7 +40,16 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             same = true;
             continue;
         }
-        if !["--artifact", "--case", "--context", "--tiers", "--out"].contains(&key.as_str()) {
+        if ![
+            "--artifact",
+            "--case",
+            "--context",
+            "--tiers",
+            "--out",
+            "--kv-allocator",
+        ]
+        .contains(&key.as_str())
+        {
             return Err(format!("unknown argument {key}; {USAGE}"));
         }
         let value = iter
@@ -40,6 +65,15 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     if !same {
         return Err("--same-program is mandatory; no alternate numerical program permitted".into());
     }
+    let kv_allocator = match fields
+        .remove("--kv-allocator")
+        .as_deref()
+        .unwrap_or("pooled")
+    {
+        "pooled" => KvAllocator::Pooled,
+        "vmm" => KvAllocator::Vmm,
+        _ => return Err("REFUSED: unknown KV allocator (expected pooled or vmm)".into()),
+    };
     let mut get = |key: &str| fields.remove(key).ok_or_else(|| format!("missing {key}"));
     let artifact = get("--artifact")?.into();
     let case = get("--case")?;
@@ -49,6 +83,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let context = match get("--context")?.as_str() {
         "8192" => 8192,
         "32768" => 32768,
+        "16384" if reclaim_diagnostic => 16384,
         _ => return Err("only fitting development contexts 8192 and 32768 are implemented".into()),
     };
     let tiers = get("--tiers")?;
@@ -56,8 +91,15 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         return Err("tiers must be host or host,nvme (no substitute storage route)".into());
     }
     let out = get("--out")?.into();
+    if reclaim_diagnostic
+        && (kv_allocator != KvAllocator::Vmm || case != "active" || tiers != "host")
+    {
+        return Err("REFUSED: reclaim diagnostic requires active VMM host mode".into());
+    }
     Ok(Args {
         artifact,
+        kv_allocator,
+        reclaim_diagnostic,
         case,
         context,
         tiers,
@@ -124,6 +166,31 @@ mod tests {
         let mut args = base();
         args.drain(0..2);
         assert!(parse(args).unwrap_err().contains("--artifact"));
+    }
+    #[test]
+    fn allocator_defaults_and_refusals() {
+        assert_eq!(parse(base()).unwrap().kv_allocator, KvAllocator::Pooled);
+        for (value, expected) in [("pooled", KvAllocator::Pooled), ("vmm", KvAllocator::Vmm)] {
+            let mut args = base();
+            args.extend(["--kv-allocator".into(), value.into()]);
+            assert_eq!(parse(args).unwrap().kv_allocator, expected);
+        }
+        let mut args = base();
+        args.extend(["--kv-allocator".into(), "fallback".into()]);
+        assert!(parse(args).unwrap_err().starts_with("REFUSED:"));
+    }
+    #[test]
+    fn residual_diagnostic_is_explicit_and_scoped() {
+        let mut args = base();
+        args[3] = "active".into();
+        args[5] = "16384".into();
+        args[7] = "host".into();
+        args.extend(["--kv-allocator".into(), "vmm".into()]);
+        assert!(parse(args.clone()).is_err());
+        args.push("--reclaim-diagnostic".into());
+        assert!(parse(args.clone()).unwrap().reclaim_diagnostic);
+        args[3] = "baseline".into();
+        assert!(parse(args).is_err());
     }
     #[test]
     fn unsupported_ladder_and_routes_refuse() {
