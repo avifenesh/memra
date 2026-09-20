@@ -1,0 +1,21 @@
+{
+  "receipt_replay": "PASS",
+  "rig": "rented RTX 5090 development",
+  "power_watts": [
+    400,
+    600
+  ],
+  "argmax_on_off": "MATCH",
+  "gen_and_spec_tapes": "32 tokens each, byte-identical within each ON/OFF pair",
+  "spec": "K=1..8 PASS, acceptance unchanged",
+  "rows": "16 native device uploads; bit-identical 6144 output/state values",
+  "source_commits": {
+    "baseline-source.txt": "e218704385647589c60aa17f3468d09e1b670056",
+    "expert-source.txt": "3d9e28b07bf56e47e43a88ca9ee563d427e37a18",
+    "spec-source.txt": "102901d1c209742c3b19b685edc9539e686a50a0",
+    "device-source.txt": "5022c173658444a1ddfed178062e560d7c04f40d",
+    "handoff-source.txt": "18b2f092fafaa892a30161ec7dfe49ce61703811",
+    "device-integrated-source.txt": "efd3fbebb7925a26002ed04c5d0389cabae2f10c"
+  },
+  "production_qualified": false
+}

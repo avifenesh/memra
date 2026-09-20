@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Replay exact pressure receipts; CPU checks never stand in for missing GPU cells."""
 import argparse
+import datetime
 import hashlib
 import importlib.util
 import json
@@ -24,7 +25,7 @@ def replay(case):
     root = RAW / case
     capture = json.loads((root / "command.capture.json").read_text())
     DAY7.hashes(root, capture)
-    require(not capture["timed_out"], "timed out: " + case)
+    require(not capture["timed_out"] and capture["parse_error"] is None, "timed out or malformed: " + case)
     require(capture["qualification"] is False and capture["status"] == ("refused" if case == "host-refusal" else "executed-not-qualified"), "collector cannot qualify")
     require(capture["gpu_telemetry"]["interval_ms"] == 250, "telemetry cadence")
     require(capture["gpu_power_limits"] == [{"device": "0", "power.limit": "400.00 W", "power.max_limit": "600.00 W"}], "power regime")
@@ -36,8 +37,10 @@ def replay(case):
         require(capture["exit_code"] == 2, "refusal must exit 2")
         quote = "experts-via-tier host bank budget cannot hold one expert record"
         require("REFUSED: " + quote in log and "native_exit_code=1" in log and not TRACE.findall(log), "missing pre-dispatch capacity refusal")
-        require("--expert-bank-host-bytes=1" in argv, "refusal budget changed")
-        return {"case": case, "verdict": quote, "exit_code": capture["exit_code"]}, log
+        expected = ["python3", "/root/spill-c-day8/pressure-refusal.py", "env", "MEMRA_MOE_RESIDENT=0", "MEMRA_MOE_SLOTS=4993", "MEMRA_NGEN=32", "/root/spill-c-day8/bin/run-gen", "/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "55", "88", "13", "--experts-via-tier", "--expert-bank-host-bytes=1"]
+        require(argv == expected, "refusal command/budget changed")
+        require(capture["failure_quote"] == "REFUSED: " + quote, "collector refusal quote changed")
+        return {"case": case, "verdict": "REFUSED: " + quote, "exit_code": capture["exit_code"]}, log
     require(capture["exit_code"] == 0, "cell failed: " + case)
     gb = int(case[0])
     slots = (gb * 1024**3) // (860160 + 8)
@@ -82,7 +85,8 @@ def replay(case):
 
 
 def cpu():
-    out = LANE / "raw/day8-cpu/final"
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    out = LANE / "raw/day8-cpu" / ("recheck-" + stamp)
     out.mkdir(parents=True, exist_ok=True)
     commands = {
         "fmt": ["cargo", "fmt", "--all", "--", "--check"],
@@ -106,7 +110,13 @@ def cpu():
             run = subprocess.run(argv, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=180)
         results.append({"name": name, "argv": argv, "exit": run.returncode, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         print(name, run.returncode, flush=True)
-    (out / "checks.json").write_text(json.dumps({"source": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(), "scope": "CPU only; engine Linux compile-only placeholder", "checks": results}, indent=2) + "\n")
+    files = list((ROOT / "crates/memra-tier/src/bank").glob("*.rs"))
+    files += list((ROOT / "crates/memra-tier/tests/bank").glob("*.rs"))
+    files += [ROOT / "crates/memra-engine/src" / f for f in ["moe_cache.rs", "banked_residency.rs", "banked_residency/native.rs"]]
+    files += [LANE / f for f in ["verify-day7.py", "verify-day8.py", "pressure-refusal.py", "test-day8.py"]]
+    tested_files = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(files)}
+    (out / "checks.json").write_text(json.dumps({"source": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(), "scope": "CPU only; engine Linux compile-only placeholder", "checks": results, "tested_files_sha256": tested_files}, indent=2) + "\n")
+    print("CPU receipt:", out.relative_to(ROOT), flush=True)
     require(all(r["exit"] == 0 for r in results), "CPU checks failed; inspect raw logs")
 
 
@@ -125,6 +135,20 @@ def main():
     if not args.case:
         source = (RAW / "source.txt").read_text().strip()
         require(source == "44f87f181bbbcc75a14d8d9362609f60186f293d", "unexpected runtime source")
+        before = (RAW / "binaries.sha256").read_text()
+        require(before == (RAW / "binaries-post.sha256").read_text(), "runtime binaries changed during cells")
+        binary_rows = {Path(line.split()[1]).name: line.split()[0] for line in before.splitlines()}
+        require(binary_rows == {"run-gen": "e3d86df83364d3339c75214cfbb55a6fb6cdc35524b89bd61f65f5911bd4c368", "run-spec": "59e17c94c9470518d49e6efae6a7d05c1ccf202b66db090e9eea57251ffb4c80"}, "runtime binary identity changed")
+        post = json.loads((RAW / "binary-postcheck.json").read_text())
+        require(post["runtime_source"] == source and post["runtime_worktree_clean"] is True, "runtime postcheck source/cleanliness mismatch")
+        require(set(post["completed_cells"]) == set(CASES) and post["binary_sha256"] == binary_rows, "runtime postcheck incomplete or binary mismatch")
+        checked = datetime.datetime.fromisoformat(post["checked_utc"])
+        for case in CASES:
+            capture = json.loads((RAW / case / "command.capture.json").read_text())
+            require(datetime.datetime.fromisoformat(capture["ended_utc"]) <= checked, "binary postcheck preceded a cell")
+        wrapper_hash = (RAW / "refusal-wrapper.sha256").read_text().split()[0]
+        require(wrapper_hash == hashlib.sha256((LANE / "pressure-refusal.py").read_bytes()).hexdigest(), "refusal wrapper identity changed")
+        require((RAW / "native-clippy.exit").read_text().strip() == "0", "native clippy failed")
         for gb in (4, 8):
             for gate in ("gen", "spec"):
                 off, on = (logs[f"{gb}g-{gate}-{arm}"] for arm in ("off", "on"))
