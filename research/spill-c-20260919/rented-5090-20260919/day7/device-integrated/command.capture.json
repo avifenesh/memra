@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "/root/spill-c-day7/final-bin/qwen4exp_gpu_gate",
+    "/root/spill-c-day7/device-integrated-verdict.tsv",
+    "--rows-via-tier",
+    "--device-publish"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "400.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 716629770868657,
+  "ended_monotonic_ns": 716635574902073,
+  "started_utc": "2026-09-20T01:34:14.412536+00:00",
+  "ended_utc": "2026-09-20T01:34:20.216570+00:00",
+  "elapsed_seconds": 5.804033416,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 8056,
+    "sha256": "99c0d5f1593eda53a44dcd94bed0b8d24a14b8f7cde748f7d0cad5ed2d0169ba"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 2590,
+      "sha256": "060077e9e7a73b374456d1f9bc6c7de81f07878c3cbe6a25927283374e93ec52"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}
