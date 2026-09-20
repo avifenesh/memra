@@ -11,10 +11,14 @@
 
 pub mod chat;
 pub mod detokenize;
+mod hf_input;
 pub mod json;
+pub mod normalizer;
 mod unicode;
 mod unicode_data;
 
+#[cfg(test)]
+mod normalizer_tests;
 #[cfg(test)]
 mod qwen2_tests;
 
@@ -63,6 +67,10 @@ const GLM4_PRETOKENIZE_REGEX: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\
 /// Every `tokenizer.ggml.pre` id memra implements an EXACT split for. This is the allowlist a
 /// load is checked against and the list quoted in the load error, so the two can never drift.
 pub const SUPPORTED_PRETOKENIZERS: &[&str] = &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"];
+
+/// Optional, versioned JSON input program for lossless HF normalization/added-token imports.
+/// This is a Memra extension, not an implicit GGUF or model-family convention.
+pub const GGUF_INPUT_PROGRAM_KEY: &str = "tokenizer.memra.input_program";
 
 /// Escape hatch for deliberate experimentation with a family whose pre-tokenizer is not ported
 /// yet. Set to `1` to downgrade the hard load error to a loud per-load WARN.
@@ -240,6 +248,8 @@ pub struct Tokenizer {
     bpe_ranks: HashMap<(String, String), i32>,
     /// special-token ids, sorted by descending piece length (llama's cache order).
     special_tokens: Vec<u32>,
+    normalization: normalizer::NormalizationProgram,
+    hf_input: Option<hf_input::HfInput>,
     eos_id: u32,
     /// EVERY end-of-generation id the checkpoint declares, `eos_id` first.
     ///
@@ -384,6 +394,70 @@ impl Tokenizer {
             return Err("missing tokenizer.ggml.merges array".into());
         }
 
+        let (normalization, hf_input) = match g.metadata.get(GGUF_INPUT_PROGRAM_KEY) {
+            None => (normalizer::NormalizationProgram::Identity, None),
+            Some(value) => {
+                if spm_style {
+                    return Err(format!("{GGUF_INPUT_PROGRAM_KEY} requires byte-level BPE"));
+                }
+                let text = value
+                    .as_str()
+                    .ok_or_else(|| format!("{GGUF_INPUT_PROGRAM_KEY} must be a JSON string"))?;
+                let program = json::parse(text)
+                    .map_err(|error| format!("{GGUF_INPUT_PROGRAM_KEY}: {error}"))?;
+                if program.get("version").and_then(json::Value::as_u64) != Some(1) {
+                    return Err(format!("unsupported {GGUF_INPUT_PROGRAM_KEY} version"));
+                }
+                let declaration = program.get("normalizer").ok_or_else(|| {
+                    format!("{GGUF_INPUT_PROGRAM_KEY} requires an explicit normalizer (or null)")
+                })?;
+                let normalization = normalizer::NormalizationProgram::parse(Some(declaration))
+                    .map_err(|error| format!("{GGUF_INPUT_PROGRAM_KEY}: {error}"))?;
+                let declarations = program
+                    .get("added_tokens")
+                    .and_then(json::Value::as_arr)
+                    .ok_or_else(|| format!("{GGUF_INPUT_PROGRAM_KEY} requires added_tokens"))?;
+                let tokens = declarations
+                    .iter()
+                    .map(hf_input::AddedToken::parse)
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut declared_ids = HashSet::new();
+                for token in &tokens {
+                    if !declared_ids.insert(token.id) {
+                        return Err(format!("duplicate imported added-token id {}", token.id));
+                    }
+                    let id = token.id as usize;
+                    if id_to_token.get(id) != Some(&token.content) {
+                        return Err(format!(
+                            "imported added-token id {} disagrees with GGUF vocabulary",
+                            token.id
+                        ));
+                    }
+                    let class_agrees = if token.special {
+                        matches!(attrs[id], TokAttr::Control | TokAttr::Unknown)
+                    } else {
+                        matches!(attrs[id], TokAttr::UserDefined)
+                    };
+                    if !class_agrees {
+                        return Err(format!(
+                            "imported added-token id {} disagrees with GGUF token_type",
+                            token.id
+                        ));
+                    }
+                }
+                for (id, attr) in attrs.iter().enumerate() {
+                    if attr.is_special()
+                        && !id_to_token[id].is_empty()
+                        && !declared_ids.contains(&(id as u32))
+                    {
+                        return Err(format!("import program omits GGUF added-token id {id}"));
+                    }
+                }
+                let input = hf_input::HfInput::new(tokens, &normalization)?;
+                (normalization, Some(input))
+            }
+        };
+
         // special-token cache: CONTROL|USER_DEFINED|UNKNOWN, sorted by descending text length.
         let mut special_tokens: Vec<u32> = (0..n as u32)
             .filter(|&id| attrs[id as usize].is_special())
@@ -427,6 +501,8 @@ impl Tokenizer {
             attrs,
             bpe_ranks,
             special_tokens,
+            normalization,
+            hf_input,
             eos_id,
             // GGUF declares ONE eos id (`tokenizer.ggml.eos_token_id`); there is no array
             // form to honour, so every GGUF family's stop set is byte-identical to before.
@@ -472,6 +548,7 @@ impl Tokenizer {
         let text = std::fs::read_to_string(&tj_path)
             .map_err(|e| format!("read {}: {e}", tj_path.display()))?;
         let tj = json::parse(&text).map_err(|e| format!("{}: {e}", tj_path.display()))?;
+
         let model = tj.get("model").ok_or("tokenizer.json: missing model")?;
         let vocab = model
             .get("vocab")
@@ -589,6 +666,8 @@ impl Tokenizer {
         let text = std::fs::read_to_string(&tj_path)
             .map_err(|e| format!("read {}: {e}", tj_path.display()))?;
         let tj = json::parse(&text).map_err(|e| format!("{}: {e}", tj_path.display()))?;
+        let normalization = normalizer::NormalizationProgram::parse(tj.get("normalizer"))
+            .map_err(|error| format!("tokenizer.json: {error}"))?;
 
         let model = tj.get("model").ok_or("tokenizer.json: missing model")?;
         if let Some(t) = model.get("type").and_then(|v| v.as_str())
@@ -864,12 +943,22 @@ impl Tokenizer {
         // refuses the load rather than guessing an effort ladder.
         let dsv4_encoding = dsv4_encoding_from_config(dir)?;
 
+        let hf_input = hf_input::HfInput::new(
+            added
+                .iter()
+                .map(hf_input::AddedToken::parse)
+                .collect::<Result<_, _>>()?,
+            &normalization,
+        )?;
+
         Ok(Tokenizer {
             id_to_token,
             token_to_id,
             attrs,
             bpe_ranks,
             special_tokens,
+            normalization,
+            hf_input: Some(hf_input),
             eos_id,
             eos_ids,
             bos_id,
@@ -884,6 +973,11 @@ impl Tokenizer {
 
     pub fn eos_id(&self) -> u32 {
         self.eos_id
+    }
+
+    /// The parsed input program; GGUF without an explicit import program is identity.
+    pub fn normalization_program(&self) -> &normalizer::NormalizationProgram {
+        &self.normalization
     }
     /// Every eos id the checkpoint declares, `eos_id` first. One entry for GGUF and for any
     /// checkpoint whose `generation_config.json` names a single id; the whole declared array
@@ -969,7 +1063,11 @@ impl Tokenizer {
         }
 
         // fragment buffer: alternate raw-text spans and resolved special-token ids.
-        for frag in self.st_partition(text, parse_special) {
+        let fragments = match &self.hf_input {
+            Some(input) => input.partition(text, &self.normalization, parse_special),
+            None => self.st_partition(text, parse_special),
+        };
+        for frag in fragments {
             match frag {
                 Fragment::Token(id) => output.push(id),
                 Fragment::Text(span) => self.bpe_tokenize(&span, &mut output),

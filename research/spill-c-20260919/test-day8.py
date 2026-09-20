@@ -18,11 +18,15 @@ def load(name, filename):
 
 
 class Day8(unittest.TestCase):
-    def test_refusal_classifier_does_not_relabel_other_failures(self):
+    def test_refusal_classifier_requires_the_native_token(self):
         refusal = load("refusal", "pressure-refusal.py")
-        output = f'Error: "{refusal.REASON}"\n'
-        self.assertEqual(refusal.verdict(1, output), (2, "REFUSED: " + refusal.REASON))
-        for code, raw in [(0, output), (2, output), (1, "CUDA error"), (1, output + "[expert-host-slru] data"), (-9, output)]:
+        token = refusal.TOKEN + " (requested 1, minimum 860160, ceiling 268435456)"
+        native = "loading\n" + token + "\n"
+        self.assertEqual(refusal.verdict(2, native), (2, token))
+        legacy = f'Error: "{refusal.REASON}"\n'
+        for code, raw in [(1, legacy), (2, legacy), (0, native), (1, native), (2, "CUDA error"),
+                          (2, "[expert-host-slru] data\n" + token + "\n"), (2, token + "\nloaded model\n"),
+                          (2, "REFUSED: experts-via-tier GPU bank budget cannot hold the eight-slot minimum\n"), (-9, native)]:
             with self.subTest(code=code, raw=raw):
                 self.assertEqual(refusal.verdict(code, raw)[0], 1)
 

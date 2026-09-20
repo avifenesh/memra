@@ -590,6 +590,12 @@ live-lease pressure as `prefix_cache_skips_pinned`; the first refusal is also a 
 
 ## OpenAI tools surface (serve-tools lane, 2026-08-02)
 
+`POST /v1/tokenize` and `/v1/detokenize` provide CPU-only prompt sizing and token inspection; the messages form shares chat's template/accounting path ([schemas](API-SURFACES.md#v1tokenize-and-v1detokenize-token-inspection)).
+
+Token inspection, prepaid prompt rendering, and inference share the worker's loaded
+tokenizer objects. These snapshots survive worker respawns; replacing tokenizer or
+template files takes effect only after a full server-process restart.
+
 **STANDARD-SURFACE CONTRACT (2026-08-17).** Every model this engine serves to
 customers speaks the same full surface, identically: the three wire formats
 (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`) and the tools surface
@@ -860,6 +866,8 @@ second public name for a model.
 
 ## OpenAI compatibility contract (serve-compat lane, 2026-08-03)
 
+- **Token-id stops:** chat/completions accept `stop_token_ids` (up to 16 vocabulary-validated u32 ids); the first raw match ends with `finish_reason: "stop"`, excluding the matching id and speculative tail from output and `usage.completion_tokens` (see [API surfaces](API-SURFACES.md#token-id-stops-on-chat-and-completions)).
+
 The five gap-scan listing-blockers (`research/gap-scan-20260802/REPORT.md`), fixed and
 gated by the official `openai` Python SDK against a live server
 (`research/serve-compat-20260802/`):
@@ -886,6 +894,11 @@ gated by the official `openai` Python SDK against a live server
   `MEMRA_COMPAT=openai` (`deploy/systemd/memra-server.service:92`), so a deployed server matches
   this section — but if you are testing a bare `memra-server` and your SDK reads a silent hang,
   this is why.
+- **Streaming usage:** on both OpenAI completion routes, `stream_options.include_usage:true`
+  sends null usage on content/finish chunks, then one empty-choices chunk carrying the
+  full non-stream usage (cached tokens and any spec fields included) before `[DONE]`.
+  Absent/false preserves legacy usage on the choices-bearing finish chunk; errors do not
+  synthesize a successful usage chunk.
 - **Reasoning separation:** on think-open prompts, `<think>` text routes to
   `message.reasoning` / `delta.reasoning` (+ `reasoning_details`, the OpenRouter
   dialect); `content` is post-think only. `include_reasoning:false` (or
@@ -1143,8 +1156,8 @@ at cap inside the worker.
   keeps the host-sampled path). `response_format` `json_object`/`json_schema` is REAL
   constrained decoding (see the section below). Semantic params we can't honor 400 with
   the param named (`logit_bias`, `logprobs`/`top_logprobs`, `n != 1`, `best_of != 1`,
-  unknown `response_format` types); cosmetic fields (`user`, `stream_options`) are
-  accepted and ignored. Streams exclude stop-sequence text exactly like non-stream
+  unknown `response_format` types); cosmetic fields (`user`) are accepted and ignored;
+  `stream_options.include_usage` selects the streaming usage shape described above. Streams exclude stop-sequence text exactly like non-stream
   responses (holdback buffer).
 
 ## Gateway listing surface
