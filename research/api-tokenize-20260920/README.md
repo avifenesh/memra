@@ -54,3 +54,34 @@ the returned ids (text must match), and `/v1/detokenize` on an OOV id (400, `par
 
 One model family, one card class. The five ignored server tests were not run. Not a
 workspace-wide clippy result and not a multi-GPU or performance qualification.
+
+## rev2: review findings on PR #570 (local RTX 5090 Laptop, CUDA 13.1): `cuda-local-5090/rev2/`
+
+Revuto's review of the rebased head raised four points; all are fixed in the follow-up commit.
+
+- The raw `prompt` form encoded with `add_special = false`, so on a BOS-adding model its `count`
+  was one below what `/v1/completions` bills. Now `add_special_tokens` (default `true`, prompt
+  form only, refused with `messages`) mirrors the completions encode; `false` is the reversible
+  form. The CPU test compares the default ids with the completions builder's billed count and
+  round-trips the `false` form through `/v1/detokenize`.
+- The handlers took no per-tenant request slot. Both now go through `acquire_request_slot`
+  (same `x-ratelimit-*` trio and named 429 as chat; detokenize validates ids before taking the
+  slot) and run tokenization and decoding under `spawn_blocking`.
+- The DSv4 directory route carried its own copy of the plain-versus-tools predicate, missing the
+  `reasoning` and effort-ladder terms, so its served prompt could differ from the counted one. It
+  now calls the shared `worker::plain_chat_render_path`.
+- A `debug_assert_eq!` that compared a memoized lookup with itself is gone.
+
+| Command | Result | Log |
+| --- | --- | --- |
+| `cargo test --release -p memra-server --lib` | 725 passed, 0 failed, 6 ignored | `rev2/build-test-clippy.log` |
+| `cargo clippy --release --all-targets -- -D warnings` | passed | `rev2/build-test-clippy.log` |
+| `cargo build --release -p memra-server` | passed | `rev2/build-test-clippy.log` |
+| live check rev2, gemma-4-12b-it-qat-q4_0, port 18090, rig lock held | `LIVE_CHECK_PASS` | `rev2/tok-live.log`, `rev2/tok-server.log` |
+
+Live rev2 adds: default raw `count` 5 equals `/v1/completions` `prompt_tokens` 5 for the same
+text; `add_special_tokens: false` gives 4 ids that detokenize to the exact input;
+`add_special_tokens` with `messages` is the named 400; every token-endpoint response carries the
+`x-ratelimit-*` headers. The first cargo run in the log failed to compile memra-engine against a
+stale shared-target artifact of memra-gguf (`CHUNKED_PRIME` missing); `cargo clean -p` on the
+three crates and a rerun produced the results above.
