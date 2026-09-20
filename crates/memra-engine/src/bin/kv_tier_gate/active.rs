@@ -307,16 +307,26 @@ pub struct Roundtrip {
 }
 
 /// Day 11 series receipt (`--reclaim-cycles N`): one row per cycle, the class from
-/// `reclaim_contract::classify_cycles`, and the per-cycle G1 lines folded with AND.
-/// Nothing here relaxes tightening (e): a nonzero residual in any cycle stays `false`.
+/// `reclaim_contract::classify_cycles`, and the series verdict from
+/// `reclaim_contract::series_verdict` (lead ruling 6, day 12). The per-cycle
+/// `g1_reclaim_qualified` column keeps tightening (e); only the series field and the printed
+/// label may lift it, and only for the classified one-time class on N >= 5 cycles with (a) to
+/// (c) in every cycle, drift 0 and a bit-identical restore in every cycle.
 pub fn write_cycles(
     out: &Path,
     rows: &[(Roundtrip, String)],
     prefix_hash: &str,
-) -> super::Result<&'static str> {
+    context: usize,
+) -> super::Result<super::reclaim_contract::SeriesVerdict> {
     let cycles: Vec<_> = rows.iter().map(|(r, _)| r.cycle).collect();
     let granularity = rows.iter().map(|(r, _)| r.granularity).max().unwrap_or(0);
-    let class = super::reclaim_contract::classify_cycles(&cycles, granularity);
+    let identical: Vec<bool> = rows
+        .iter()
+        .map(|(_, restored)| restored == prefix_hash)
+        .collect();
+    let verdict =
+        super::reclaim_contract::series_verdict(&cycles, granularity, &identical, context);
+    let class = verdict.class;
     let first = cycles.first().map_or(0, |c| c.free_before) as i128;
     let mut table = String::from(
         "cycle\tfree_before_bytes\tfree_after_demote_bytes\tfree_after_restore_bytes\tvmm_released_chunk_bytes\treclaimed_bytes\treacquired_bytes\tresidual_bytes\trestore_residual_bytes\tfree_before_drift_bytes\treclaim_observed\treclaim_exact_equal\tresidual_class\tg1_reclaim_qualified\trestored_prefix_state_manifest_sha256\n",
@@ -343,20 +353,18 @@ pub fn write_cycles(
     }
     fs::write(out.join("reclaim-cycles.tsv"), table)?;
     let residuals: Vec<String> = rows.iter().map(|(r, _)| r.residual.to_string()).collect();
-    let g1_reclaim_qualified = if granularity == 0 {
-        "not-applicable-pooled".to_string()
-    } else {
-        rows.iter().all(|(r, _)| r.reclaimed).to_string()
-    };
-    let identical = rows.iter().all(|(_, restored)| restored == prefix_hash);
+    let g1_reclaim_qualified = verdict.g1_reclaim_qualified;
+    let all_identical = identical.iter().all(|&same| same);
+    let series_label = verdict.label.as_deref().unwrap_or("not-printed");
     let summary = format!(
-        "cycles={}\nvmm_granularity_bytes={granularity}\nresidual_series_class={class}\nresidual_series_bytes={}\nresidual_first_cycle_bytes={}\nresidual_last_cycle_bytes={}\nfree_before_drift_last_bytes={}\nall_cycles_reclaim_observed={}\nall_cycles_restored_bit_identical={identical}\ng1_reclaim_qualified={g1_reclaim_qualified}\n",
+        "cycles={}\nvmm_granularity_bytes={granularity}\nresidual_series_class={class}\nresidual_series_bytes={}\nresidual_first_cycle_bytes={}\nresidual_last_cycle_bytes={}\nfree_before_drift_last_bytes={}\nall_cycles_reclaim_observed={}\nall_cycles_restored_bit_identical={all_identical}\ng1_reclaim_qualified={g1_reclaim_qualified}\nseries_min_cycles={}\nseries_label={series_label}\n",
         rows.len(),
         residuals.join(","),
         residuals.first().map_or("", String::as_str),
         residuals.last().map_or("", String::as_str),
         cycles.last().map_or(0, |c| c.free_before as i128 - first),
         rows.iter().all(|(r, _)| r.reclaim_observed),
+        super::reclaim_contract::SERIES_MIN_CYCLES,
     );
     fs::write(out.join("reclaim-cycles.txt"), summary)?;
     eprintln!(
@@ -365,7 +373,7 @@ pub fn write_cycles(
         residuals.first().map_or("", String::as_str),
         residuals.last().map_or("", String::as_str),
     );
-    Ok(class)
+    Ok(verdict)
 }
 
 /// Returns only after all cache slots have been restored, or aborts the gate.
@@ -642,8 +650,9 @@ pub fn roundtrip(
     } else {
         after > before && restored == before
     };
-    // A classification on this card alone is not the required two-card evidence.
-    // The earlier card has no classified nonzero residual; keep every such arm non-PASS.
+    // The per-cycle G1 line: criteria (a) to (d) plus tightening (e). A classified nonzero
+    // residual stays `false` here; the only lift is the series verdict in `write_cycles`
+    // (lead ruling 6, day 12), never a single roundtrip.
     let reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0;
     let g1_reclaim_qualified = if vmm_granularity == 0 {
         "not-applicable-pooled".to_string()
