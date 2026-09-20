@@ -1,6 +1,6 @@
 # Session D day 10 handoff
 - Lane: `lane/spill-d-20260919`; integ5 merged and pushed as `9f849978bac72cf2a4b608873a49341eafb7ab56`.
-- G2 launched on BOX3 at 15:51 UTC: tmux `spill-d-g2-day10`; may wait <=45min then hold whole-campaign collector lock.
+- G2 on BOX3: tmux `spill-d-g2-day10`; holds collector lock (15:58 UTC, scoring 16 MiB; calibration complete).
 - Own clone `/root/wt-d`; do not modify reference `/root/memra-spill`.
 - Native release `h2d-probe` + `pp-transport-smoke` build passed at merged source above (3m03s).
 - Build receipts: `/root/spill-receipts/d-day10/build`, copied to `rented-pro6000-20260920/build/` here.
@@ -11,4 +11,5 @@
 - Next: inspect exit/console, sync all receipts, hash/validate and summarize; never relaunch if tmux or collector is still active.
 - Coordinate quiet window through lead; bounded lock wait <=45min, no bypass; socket reuse only.
 - Then collector pp-transport-smoke, validate all D BOX3 receipts, full checks and DAY10-VERIFICATION.md.
-- No decision needed; G2 authorized. Not yet G2 evidence, not multi-rig or board qualification.
+- Full local checks pushed `fcb9fd161`: 83 Python tests + all checks PASS on retry; initial Darwin killpg PermissionError retained.
+- Replay summary tool pushed `08d1a7dc4`; no decision needed; not multi-rig/board qualification.
