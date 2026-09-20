@@ -11,7 +11,9 @@ use memra_gguf::config::ModelConfig;
 use memra_gguf::source::{DiskExtent, GgufSource, TensorSource};
 use memra_gguf::{GgmlType, GgufFile, dequant};
 use std::collections::HashMap;
-use std::path::Path;
+
+mod repack;
+use repack::ensure_repack_cache_dir;
 
 /// RESIDENCY CENSUS (lane/fp8-decode-v1, 2026-08-05) — per-qtype tally of the 2D matmul weights
 /// that actually went resident, keyed by `QT_*`. The FP8-ST decode arm's whole claim is about
@@ -86,37 +88,6 @@ pub fn residency_census_report() -> String {
     out
 }
 
-/// Refuse attacker-controlled filesystem objects in the model-local repack cache.
-///
-/// Repack artifacts are derived data, but they are opened by the serving process and therefore
-/// must not be allowed to follow a model-provided symlink into an arbitrary path. `create_dir_all`
-/// and ordinary `File::create` both follow links; use `symlink_metadata` for the directory and
-/// `O_NOFOLLOW` for the final file component on Unix. The non-Unix fallback still rejects existing
-/// symlinks and keeps the same behavior on platforms without that flag.
-fn ensure_repack_cache_dir(path: &Path) -> std::io::Result<()> {
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) => {
-            if meta.file_type().is_symlink() || !meta.is_dir() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("repack cache directory is not a real directory: {path:?}"),
-                ));
-            }
-            Ok(())
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            match std::fs::create_dir(path) {
-                Ok(()) => Ok(()),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                    ensure_repack_cache_dir(path)
-                }
-                Err(error) => Err(error),
-            }
-        }
-        Err(error) => Err(error),
-    }
-}
-
 /// A memcpy fanned out over the host's cores. One thread moves a few GB/s; the pinned copies of
 /// a 171 GB expert bank (one per layer, 4 GB each) are load-time wall on their own, and memcpy
 /// scales with threads until the memory system saturates. Chunks are at least 16 MiB so small
@@ -138,246 +109,6 @@ pub(crate) fn par_copy_bytes(dst: &mut [u8], src: &[u8]) {
             s.spawn(move || d.copy_from_slice(sc));
         }
     });
-}
-
-fn repack_cache_is_fresh(path: &Path, expected_len: usize) -> bool {
-    std::fs::symlink_metadata(path)
-        .is_ok_and(|meta| meta.file_type().is_file() && meta.len() == expected_len as u64)
-}
-
-#[cfg(unix)]
-fn open_repack_cache_dir(path: &Path) -> std::io::Result<std::fs::File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut options = std::fs::OpenOptions::new();
-    options
-        .read(true)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW);
-    options.open(path)
-}
-
-#[cfg(not(unix))]
-fn open_repack_cache_dir(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new().read(true).open(path)
-}
-
-#[cfg(unix)]
-fn open_repack_cache(path: &Path, write: bool) -> std::io::Result<std::fs::File> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::io::{AsRawFd, FromRawFd};
-
-    let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache has no parent",
-        )
-    })?;
-    let name = path.file_name().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache has no filename",
-        )
-    })?;
-    let name = CString::new(name.as_bytes()).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache filename has NUL",
-        )
-    })?;
-    let dir = open_repack_cache_dir(parent)?;
-    let flags = if write {
-        libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW
-    } else {
-        libc::O_RDONLY | libc::O_NOFOLLOW
-    };
-    let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags, 0o600) };
-    if fd < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    // SAFETY: openat returned a fresh, owned descriptor.
-    let file = unsafe { std::fs::File::from_raw_fd(fd) };
-    let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("repack cache is not a regular file: {path:?}"),
-        ));
-    }
-    if std::os::unix::fs::MetadataExt::nlink(&metadata) > 1 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("repack cache refuses a multiply-linked file: {path:?}"),
-        ));
-    }
-    Ok(file)
-}
-
-#[cfg(not(unix))]
-fn open_repack_cache(path: &Path, write: bool) -> std::io::Result<std::fs::File> {
-    let metadata = std::fs::symlink_metadata(path)?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("repack cache is not a regular file: {path:?}"),
-        ));
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.read(!write).write(write);
-    options.open(path)
-}
-
-/// Write one repack artifact through a descriptor for its real parent directory. The payload is
-/// first written to an O_EXCL temporary sibling, fsynced, and atomically renamed into place; a
-/// pre-existing symlink, non-regular file, or hard link is rejected before the rename. Thus a
-/// malformed model cannot truncate a service-owned inode, and a crash cannot leave a fresh-sized
-/// partial cache that a later load would mistake for valid data.
-fn write_repack_cache<F>(path: &Path, write: F) -> std::io::Result<()>
-where
-    F: FnOnce(&mut std::io::BufWriter<std::fs::File>) -> std::io::Result<()>,
-{
-    use std::io::Write;
-
-    let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache has no parent",
-        )
-    })?;
-    let name = path.file_name().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "repack cache has no filename",
-        )
-    })?;
-    let dir = open_repack_cache_dir(parent)?;
-
-    #[cfg(unix)]
-    {
-        use std::ffi::CString;
-        use std::os::unix::ffi::OsStrExt;
-        use std::os::unix::io::{AsRawFd, FromRawFd};
-        static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let name = CString::new(name.as_bytes()).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "repack cache filename has NUL",
-            )
-        })?;
-        let mut temp_name = None;
-        let mut temp_file = None;
-        for _ in 0..32 {
-            let suffix = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let candidate = CString::new(format!(
-                ".{}.tmp-{}-{suffix}",
-                name.to_string_lossy(),
-                std::process::id()
-            ))
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "temporary filename has NUL",
-                )
-            })?;
-            let fd = unsafe {
-                libc::openat(
-                    dir.as_raw_fd(),
-                    candidate.as_ptr(),
-                    libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW,
-                    0o600,
-                )
-            };
-            if fd >= 0 {
-                temp_name = Some(candidate);
-                // SAFETY: openat returned a fresh, owned descriptor.
-                temp_file = Some(unsafe { std::fs::File::from_raw_fd(fd) });
-                break;
-            }
-            let error = std::io::Error::last_os_error();
-            if error.kind() != std::io::ErrorKind::AlreadyExists {
-                return Err(error);
-            }
-        }
-        let temp_name = temp_name.ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "could not allocate a unique repack cache temporary",
-            )
-        })?;
-        let mut out = std::io::BufWriter::new(temp_file.expect("temporary file accompanies name"));
-        let result = write(&mut out).and_then(|()| {
-            out.flush()?;
-            out.get_ref().sync_all()?;
-            Ok(())
-        });
-        drop(out);
-        if let Err(error) = result {
-            unsafe {
-                libc::unlinkat(dir.as_raw_fd(), temp_name.as_ptr(), 0);
-            }
-            return Err(error);
-        }
-
-        // Never replace a caller-provided link or a hard-linked service inode. If a race swaps the
-        // final entry after this check, renameat only replaces that directory entry; it cannot
-        // write through the swapped inode, and the temporary remains private to this directory.
-        if let Ok(metadata) = std::fs::symlink_metadata(path)
-            && (metadata.file_type().is_symlink()
-                || !metadata.is_file()
-                || std::os::unix::fs::MetadataExt::nlink(&metadata) > 1)
-        {
-            unsafe {
-                libc::unlinkat(dir.as_raw_fd(), temp_name.as_ptr(), 0);
-            }
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("repack cache target is not a private regular file: {path:?}"),
-            ));
-        }
-        let status = unsafe {
-            libc::renameat(
-                dir.as_raw_fd(),
-                temp_name.as_ptr(),
-                dir.as_raw_fd(),
-                name.as_ptr(),
-            )
-        };
-        if status != 0 {
-            unsafe {
-                libc::unlinkat(dir.as_raw_fd(), temp_name.as_ptr(), 0);
-            }
-            return Err(std::io::Error::last_os_error());
-        }
-        dir.sync_all()
-    }
-
-    #[cfg(not(unix))]
-    {
-        let temp = parent.join(format!(
-            ".{}.tmp-{}",
-            name.to_string_lossy(),
-            std::process::id()
-        ));
-        let mut out = std::io::BufWriter::new(
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temp)?,
-        );
-        write(&mut out)?;
-        out.flush()?;
-        out.get_ref().sync_all()?;
-        drop(out);
-        if let Ok(metadata) = std::fs::symlink_metadata(path) {
-            if metadata.file_type().is_symlink() || !metadata.is_file() {
-                std::fs::remove_file(&temp).ok();
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("repack cache target is not a private regular file: {path:?}"),
-                ));
-            }
-        }
-        std::fs::rename(temp, path)
-    }
 }
 
 /// The calibrated prefill activation stamp a weight carries: its per-linear global dequant
@@ -1703,7 +1434,8 @@ pub enum HostBuf {
     Mmap {
         map: std::sync::Arc<memmap2::Mmap>,
         /// The same opened inode backing `map`. It must outlive the loader source so future explicit
-        /// positioned reads cannot accidentally reopen a replaced path.
+        /// positioned reads cannot accidentally reopen a replaced path. Strict native NVFP4
+        /// repacks retain a private, unlinked, read-only file here, never the named cache.
         file: std::sync::Arc<std::fs::File>,
         /// Absolute byte offset within both the whole-file mmap and `file`.
         off: usize,
@@ -2043,7 +1775,8 @@ impl HostExps {
     /// each routed projection as ONE stacked modelopt tensor `[E, out, in/2]` (not per-expert 2-D
     /// tensors — that class rides PATH B in `load_from_source`). Repack per expert into the GGUF
     /// 36B-block layout the staged qmatvec decodes, streaming into the same `.memra-repack`
-    /// disk-cache tier PATH B uses (peak RAM = one expert), and mmap the cache. Per-expert
+    /// disk-cache tier PATH B uses (peak RAM = one expert). Strict identity maps a private
+    /// canonical copy; legacy loads mmap the named cache. Per-expert
     /// `weight_scale_2` macros go to `macros` — the MoE forward folds them post-matmul; dropping
     /// them (~1e-5..1e-4 in the official artifact) produces garbage.
     fn load_nvfp4_stacked_native(
@@ -2077,28 +1810,11 @@ impl HostExps {
             None
         };
         let bytes = if let Some(cache) = cache_path.as_ref() {
-            let fresh = repack_cache_is_fresh(cache, total);
-            if !fresh {
-                write_repack_cache(cache, |out| {
-                    for expert in 0..n_expert {
-                        use std::io::Write;
-                        out.write_all(&memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
-                            &bank.codes[expert * code_stride..(expert + 1) * code_stride],
-                            &bank.scales[expert * scale_stride..(expert + 1) * scale_stride],
-                            out_f,
-                            in_f,
-                        ))?;
-                    }
-                    Ok(())
-                })?;
-            }
-            let file = std::sync::Arc::new(open_repack_cache(cache, false)?);
-            let map = unsafe { memmap2::Mmap::map(file.as_ref())? };
-            assert_eq!(map.len(), total, "repack cache {cache:?} size mismatch");
+            let repack::MappedRepack { file, map } = repack::load_stacked(cache, &bank)?;
             let _ = memra_gguf::source::apply_expert_mmap_advice(&map);
             memra_gguf::source::populate_expert_slab(&file, total, name);
             HostBuf::Mmap {
-                map: std::sync::Arc::new(map),
+                map,
                 file,
                 off: 0,
                 len: total,
@@ -2563,7 +2279,9 @@ impl HostExps {
                 // at layer ~24), repack each layer ONCE into an on-disk cache file next to the
                 // checkpoint and mmap it (HostBuf::Mmap, MAP_SHARED no-populate — the same tier-2
                 // mechanism the GGUF spill path uses). Reloads hit the cache (size-checked), pay
-                // zero repack. MEMRA_ST_REPACK_DISK=0 forces the old in-RAM gather.
+                // zero repack in legacy mode. Strict identity always regenerates into private
+                // disk backing and verifies/repairs the cache. MEMRA_ST_REPACK_DISK=0 forces
+                // the old source-derived in-RAM gather.
                 let disk = std::env::var("MEMRA_ST_REPACK_DISK")
                     .map(|v| v != "0")
                     .unwrap_or(true)
@@ -2592,34 +2310,9 @@ impl HostExps {
                 };
                 let bytes = if disk {
                     let cp = cache_path.as_ref().unwrap();
-                    let fresh = repack_cache_is_fresh(cp, total);
-                    if !fresh {
-                        // stream one expert at a time to disk — peak RAM = one expert (~8MB)
-                        write_repack_cache(cp, |out| {
-                            for ex in 0..n_expert {
-                                use std::io::Write;
-                                let name = format!("blk.{il}.ffn_{proj}_exps.{ex}.weight");
-                                let nv = src.find_nvfp4_native(&name).unwrap_or_else(|| {
-                                    panic!("expert {name} lost NVFP4-native mid-gather")
-                                });
-                                assert_eq!(
-                                    (nv.in_f, nv.out_f),
-                                    (in_f, out_f),
-                                    "expert {ex} dims ({},{}) != expert 0 ({in_f},{out_f})",
-                                    nv.in_f,
-                                    nv.out_f
-                                );
-                                out.write_all(&memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
-                                    nv.wbytes, &nv.wscale, out_f, in_f,
-                                ))?;
-                            }
-                            Ok(())
-                        })?;
-                    }
+                    let repack::MappedRepack { file, map } =
+                        repack::load_experts(cp, src, il, proj, n_expert, out_f, in_f)?;
                     read_macros(&mut macros);
-                    let file = std::sync::Arc::new(open_repack_cache(cp, false)?);
-                    let map = unsafe { memmap2::Mmap::map(file.as_ref())? };
-                    assert_eq!(map.len(), total, "repack cache {cp:?} size mismatch");
                     // Default random preserves the original policy; normal lets Linux readahead
                     // within each multi-megabyte expert on the spill-bound path.
                     let _ = memra_gguf::source::apply_expert_mmap_advice(&map);
@@ -2628,7 +2321,6 @@ impl HostExps {
                         total,
                         &format!("blk{il}-{proj}"),
                     );
-                    let map = std::sync::Arc::new(map);
                     // ST PINNED TIER (2026-07-07, the M3 1.5-tok/s lever): mmap-only backing makes
                     // every SLRU miss a page-cache (or NVMe) synchronous read into the H2D copy.
                     // Pin as many experts as the live budget allows (same MemBudget probe + 0.6
@@ -3227,50 +2919,12 @@ impl HostExps {
 mod tests {
     use super::{
         ExpertKeepalive, ExpertSource, HostBuf, HostExps, QT_BF16, QT_NVFP4, QT_Q2_K, QT_Q4_K,
-        ensure_repack_cache_dir, open_repack_cache, repack_cache_is_fresh, repack_nvfp4_split,
-        unpack_nvfp4_split, write_repack_cache,
+        repack_nvfp4_split, unpack_nvfp4_split,
     };
     use memra_gguf::nvfp4_repack::{repack_modelopt_to_gguf, repack_modelopt_to_split};
     use memra_gguf::source::{DiskExtent, Fp8StackedNative, TensorSource, TensorView};
     use memra_gguf::{GgmlType, config::ModelConfig};
     use std::borrow::Cow;
-
-    #[cfg(unix)]
-    #[test]
-    fn repack_cache_refuses_symlinked_directory_and_file() {
-        use std::os::unix::fs::symlink;
-
-        let root = std::env::temp_dir().join(format!("memra-repack-links-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        let target_dir = root.join("target-dir");
-        std::fs::create_dir(&target_dir).unwrap();
-        let cache_dir = root.join(".memra-repack");
-        symlink(&target_dir, &cache_dir).unwrap();
-        let error = ensure_repack_cache_dir(&cache_dir).unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-
-        std::fs::remove_file(&cache_dir).unwrap();
-        std::fs::create_dir(&cache_dir).unwrap();
-        let target = root.join("outside.bin");
-        std::fs::write(&target, b"keep").unwrap();
-        let cache_file = cache_dir.join("artifact.nvfp4");
-        symlink(&target, &cache_file).unwrap();
-        assert!(!repack_cache_is_fresh(&cache_file, 4));
-        let error = open_repack_cache(&cache_file, true).unwrap_err();
-        assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
-        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
-
-        let hardlink = cache_dir.join("hardlink.nvfp4");
-        std::fs::hard_link(&target, &hardlink).unwrap();
-        let error = write_repack_cache(&hardlink, |out| {
-            use std::io::Write;
-            out.write_all(b"replacement")
-        })
-        .unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
-        std::fs::remove_dir_all(root).ok();
-    }
 
     struct MixedExpertSource {
         bf16: Vec<u8>,

@@ -2242,7 +2242,7 @@ pub struct StepTpQkv {
 pub struct StepTpAttention {
     pub q_norm: Vec<CudaSlice<f32>>,
     pub k_norm: Vec<CudaSlice<f32>>,
-    pub decode_input: Option<std::sync::Mutex<crate::tp::ResidentReplicatedDeviceRows>>,
+    pub(crate) decode_input: Option<std::sync::Mutex<crate::tp::ResidentReplicatedDeviceRows>>,
     /// Per-rank attn_gate row shards (rank-local heads x hidden, f32) — the fused QKV+gate
     /// kernel's fourth weight. None when the layer has no separate head gate.
     pub gate_shards: Option<Vec<CudaSlice<f32>>>,
@@ -2796,7 +2796,7 @@ pub struct StepEpExps {
     pub nvfp4_device_routes: bool,
     /// Persistent one-token grouped projection/combine state for eager decode. Opt-in prefill
     /// uses the model-scoped executor instead of multiplying capacity workspaces per layer.
-    pub grouped_decode: Option<std::sync::Mutex<StepEpGroupedDecode>>,
+    pub(crate) grouped_decode: Option<std::sync::Mutex<StepEpGroupedDecode>>,
 }
 
 pub struct StepEpGroupedDecode {
@@ -3019,7 +3019,7 @@ pub struct Gemma4E4bLayer {
 pub struct Gemma4E4bModel {
     /// device copy of the per-layer token table, uploaded on first use (the 26B embd_gpu
     /// pattern — keeps the ~2.3GB off load-critical paths that never decode).
-    pub tok_tbl_gpu: std::sync::OnceLock<CudaSlice<u8>>,
+    pub(crate) tok_tbl_gpu: std::sync::OnceLock<CudaSlice<u8>>,
     pub tok_embd_bytes: Vec<u8>,
     pub tok_embd_qt: i32,
     pub tok_embd_row_bytes: usize,
@@ -3868,12 +3868,21 @@ impl Step35Aux {
     }
 }
 
+/// A loaded program whose mutable access revokes every issued execution snapshot.
+/// Read access keeps the existing field API; numerical edits require a fresh load
+/// before strict qualification can be installed again.
 pub struct HybridModel {
-    pub cfg: ModelConfig,
-    pub plan: memra_gguf::model_plan::ModelPlan,
+    program: crate::plan_backend::TrackedProgram<HybridProgram>,
     rewrite_admission: crate::plan_backend::RewriteAdmission,
     pub(crate) rewrite_identity: Option<crate::plan_backend::RewriteIdentity>,
     rewrite_load_state: Option<crate::plan_backend::RewriteLoadState>,
+    rewrite_generation: std::sync::Arc<crate::plan_backend::ProgramGeneration>,
+}
+
+/// Readable model fields, owned exclusively by `HybridModel`.
+pub struct HybridProgram {
+    pub cfg: ModelConfig,
+    pub plan: memra_gguf::model_plan::ModelPlan,
     pub embd: EmbedHost,
     pub output_norm: GpuTensor,
     pub output: GpuTensor,
@@ -3893,9 +3902,9 @@ pub struct HybridModel {
     pub frspec_src_sha16: Option<String>,
     /// Lazily-uploaded DEVICE copy of the raw embed table (spec/graph hot loops gather rows
     /// on-device instead of host-dequant + htod). ~0.5GB; uploaded once on first use.
-    pub embd_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u8>>,
+    pub(crate) embd_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u8>>,
     /// device copy of the drafter's d2t trim map (uploaded once; `MEMRA_GLM5_SPEC_DEV_IO`).
-    pub d2t_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u32>>,
+    pub(crate) d2t_gpu: std::sync::OnceLock<cudarc::driver::CudaSlice<u32>>,
     pub gemma4_aux: Option<GemmaAux>,
     /// Sliding-gated-MoE tuned-program auxiliaries, selected from canonical operations.
     pub step35_aux: Option<Step35Aux>,
@@ -3906,7 +3915,7 @@ pub struct HybridModel {
     /// pointers stop moving). Sized on first prime to the largest T seen. The map lock covers
     /// lookup/grow only; each device owns a separate slab lock so PP stages on distinct
     /// devices can drive their host-synchronized layer walks concurrently.
-    pub prime_slabs: std::sync::Mutex<
+    pub(crate) prime_slabs: std::sync::Mutex<
         std::collections::HashMap<
             usize,
             std::sync::Arc<std::sync::Mutex<crate::hybrid_forward::PrimeSlabs>>,
@@ -3963,74 +3972,173 @@ pub struct HybridModel {
     pub test_extra_devices: Vec<usize>,
 }
 
+impl std::ops::Deref for HybridModel {
+    type Target = HybridProgram;
+    fn deref(&self) -> &Self::Target {
+        &self.program
+    }
+}
+
+impl std::ops::DerefMut for HybridModel {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.program
+    }
+}
+
 impl HybridModel {
+    pub(crate) fn rewrite_mutations(&self) -> u64 {
+        self.rewrite_generation.mutations()
+    }
+
     pub fn install_rewrite_bundle(
         &mut self,
         bundle: &std::path::Path,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Reinstall is a boundary, even if validation fails or the bundle is identical.
+        self.rewrite_generation.revoke();
         let identity = self.rewrite_identity().cloned();
         crate::plan_backend::install_rewrite_admission(
             &mut self.rewrite_admission,
             bundle,
-            &self.plan,
+            &self.program.plan,
             identity.as_ref().map_err(Clone::clone),
         )
         .map_err(|error| format!("rewrite qualification: {error}"))?;
         Ok(())
     }
 
-    /// Trusted loader identity, valid only while the loaded program is unchanged.
-    /// Receipt producers must use this accessor rather than a bundle or artifact lock.
+    /// Trusted loader identity. This explicit boundary checks external process state;
+    /// cached model/plan digests are valid only without intervening mutable access.
     pub fn rewrite_identity(&self) -> Result<&crate::plan_backend::RewriteIdentity, String> {
         let identity =
             crate::plan_backend::checked_rewrite_identity(self.rewrite_identity.as_ref(), true)?;
-        self.rewrite_load_state
+        let result = self
+            .rewrite_load_state
             .as_ref()
             .ok_or("rewrite load state missing")?
-            .validate(self)
-            .map_err(|reason| format!("rewrite identity is stale: {reason}"))?;
+            .validate(self);
+        if let Err(reason) = result {
+            self.rewrite_generation.revoke();
+            return Err(format!("rewrite identity is stale: {reason}"));
+        }
         Ok(identity)
     }
 
-    pub fn rewrite_is_qualified(&self) -> bool {
-        match &self.rewrite_admission {
-            crate::plan_backend::RewriteAdmission::Qualified(qualifications) => self
-                .rewrite_identity()
-                .is_ok_and(|identity| qualifications.matches(&self.plan, identity)),
-            _ => false,
-        }
-    }
-
-    pub fn rewrite_allowed(&self, surface: memra_gguf::execution_manifest::RewriteSurface) -> bool {
-        crate::plan_backend::rewrite_admission_allows(
+    /// Begin/resume a request, after any process configuration or library changes.
+    /// The returned snapshot may span scheduler ticks. External process state must
+    /// stay fixed during the request; every new/resumed request validates it again.
+    pub fn rewrite_execution_snapshot(
+        &self,
+    ) -> Result<crate::plan_backend::RewriteExecutionSnapshot, String> {
+        crate::plan_backend::RewriteExecutionSnapshot::validated(
+            &self.rewrite_generation,
             &self.rewrite_admission,
-            self.rewrite_is_qualified(),
-            std::env::var_os("MEMRA_REWRITE_BUNDLE").is_some(),
-            surface,
+            self.rewrite_load_state
+                .as_ref()
+                .is_some_and(|state| state.pipeline),
+            || self.validate_rewrite_boundary(),
         )
     }
 
-    /// Enforce admission at direct output entry points, including retained sessions after
-    /// failed installation or a plan/environment change. Worker checks are not sufficient.
+    fn validate_rewrite_boundary(&self) -> Result<(), String> {
+        match &self.rewrite_admission {
+            crate::plan_backend::RewriteAdmission::LegacyUnbundled => {
+                if std::env::var_os("MEMRA_REWRITE_BUNDLE").is_some() {
+                    Err("strict rewrite policy requested after an unqualified load".into())
+                } else {
+                    Ok(())
+                }
+            }
+            crate::plan_backend::RewriteAdmission::StrictPending => {
+                Err("decode-eager rewrite is not qualified: no installed baseline for this runtime identity".into())
+            }
+            crate::plan_backend::RewriteAdmission::Qualified(_) => self.rewrite_identity().map(|_| ()),
+        }
+    }
+
+    pub fn rewrite_allowed_in(
+        &self,
+        snapshot: &crate::plan_backend::RewriteExecutionSnapshot,
+        surface: memra_gguf::execution_manifest::RewriteSurface,
+    ) -> bool {
+        snapshot.current(&self.rewrite_generation) && snapshot.allows(surface)
+    }
+
+    pub fn check_rewrite_execution(
+        &self,
+        snapshot: &crate::plan_backend::RewriteExecutionSnapshot,
+    ) -> Result<(), String> {
+        if snapshot.current(&self.rewrite_generation) {
+            Ok(())
+        } else {
+            Err("rewrite execution snapshot was revoked".into())
+        }
+    }
+
+    pub(crate) fn current_rewrite_execution_snapshot(
+        &self,
+    ) -> Result<crate::plan_backend::RewriteExecutionSnapshot, String> {
+        if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
+            return Ok(crate::plan_backend::RewriteExecutionSnapshot::from_active(
+                &self.rewrite_generation,
+                active,
+            ));
+        }
+        self.rewrite_execution_snapshot()
+    }
+
+    /// Enter an already validated request snapshot with an immutable model borrow.
+    /// Token checks are a generation comparison and fixed-size surface-mask lookup.
+    pub fn enter_rewrite_execution(
+        &self,
+        snapshot: &crate::plan_backend::RewriteExecutionSnapshot,
+    ) -> Result<crate::plan_backend::RewriteExecutionGuard<'_>, String> {
+        snapshot.enter(&self.rewrite_generation, self)
+    }
+
+    /// Protect a complete synchronous execution. Nested entry points share this scope.
+    pub fn protect_rewrite_execution(
+        &self,
+    ) -> Result<crate::plan_backend::RewriteExecutionGuard<'_>, String> {
+        if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
+            // A nested scope reuses the validated generation; no inventory or hashing.
+            return crate::plan_backend::RewriteExecutionSnapshot::from_active(
+                &self.rewrite_generation,
+                active,
+            )
+            .enter(&self.rewrite_generation, self);
+        }
+        self.enter_rewrite_execution(&self.rewrite_execution_snapshot()?)
+    }
+
+    pub fn rewrite_is_qualified(&self) -> bool {
+        if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
+            return active.qualified();
+        }
+        self.rewrite_admission.is_qualified() && self.rewrite_identity().is_ok()
+    }
+
+    pub fn rewrite_allowed(&self, surface: memra_gguf::execution_manifest::RewriteSurface) -> bool {
+        if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
+            return active.allows(surface);
+        }
+        self.rewrite_execution_snapshot()
+            .is_ok_and(|snapshot| snapshot.allows(surface))
+    }
+
+    /// Standalone direct calls validate a boundary. Within a protected execution the
+    /// surface and pipeline checks share one constant-time generation check.
     pub(crate) fn require_rewrite(
         &self,
         surface: memra_gguf::execution_manifest::RewriteSurface,
     ) -> Result<(), String> {
-        if !self.rewrite_allowed(surface) {
-            return Err(format!(
-                "{} rewrite is not qualified for the current loaded runtime identity",
-                surface.as_str()
-            ));
+        if self.rewrite_allowed(surface) {
+            return Ok(());
         }
-        if self.rewrite_admission.is_qualified()
-            && self.is_multi_device()
-            && !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)
-        {
-            return Err(
-                "pipeline rewrite is not qualified for the current loaded runtime identity".into(),
-            );
-        }
-        Ok(())
+        Err(format!(
+            "{} rewrite is not qualified for the current loaded runtime identity",
+            surface.as_str()
+        ))
     }
 
     /// Return the set of unique CUDA device ordinals touched by this model's resident
@@ -6422,9 +6530,8 @@ impl HybridModel {
                 }
             }
         }
+        let rewrite_generation = std::sync::Arc::default();
         let mut model = HybridModel {
-            cfg,
-            plan,
             rewrite_admission: if rewrite_bundle.is_some() {
                 crate::plan_backend::RewriteAdmission::StrictPending
             } else {
@@ -6432,27 +6539,35 @@ impl HybridModel {
             },
             rewrite_identity: None,
             rewrite_load_state: None,
-            embd,
-            output_norm,
-            output,
-            layers,
-            mtp,
-            mtp_extra,
-            dflash_trim,
-            frspec_src_sha16,
-            embd_gpu: std::sync::OnceLock::new(),
-            d2t_gpu: std::sync::OnceLock::new(),
-            gemma4_aux,
-            step35_aux,
-            prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),
-            dspark_vgraphs: std::sync::Mutex::new(None),
-            step_grouped_prefill: std::sync::Mutex::new(StepEpGroupedPrefill::default()),
-            step35_token_graph: std::sync::Mutex::new(None),
-            hyper,
-            hyper_head,
-            glm5_dflash,
-            draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
-            test_extra_devices: Vec::new(),
+            rewrite_generation: std::sync::Arc::clone(&rewrite_generation),
+            program: crate::plan_backend::TrackedProgram::new(
+                HybridProgram {
+                    cfg,
+                    plan,
+                    embd,
+                    output_norm,
+                    output,
+                    layers,
+                    mtp,
+                    mtp_extra,
+                    dflash_trim,
+                    frspec_src_sha16,
+                    embd_gpu: std::sync::OnceLock::new(),
+                    d2t_gpu: std::sync::OnceLock::new(),
+                    gemma4_aux,
+                    step35_aux,
+                    prime_slabs: std::sync::Mutex::new(std::collections::HashMap::new()),
+                    dspark_vgraphs: std::sync::Mutex::new(None),
+                    step_grouped_prefill: std::sync::Mutex::new(StepEpGroupedPrefill::default()),
+                    step35_token_graph: std::sync::Mutex::new(None),
+                    hyper,
+                    hyper_head,
+                    glm5_dflash,
+                    draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
+                    test_extra_devices: Vec::new(),
+                },
+                rewrite_generation,
+            ),
         };
         e.configure_moe_cache_layout(model.moe_cache_block_sizes());
         if force_embd_gpu {
@@ -6490,6 +6605,17 @@ impl HybridModel {
     /// The server calls this after each ladder landing so the biggest lazy
     /// transient surfaces as a catchable Err (shrink further / fall back) instead
     /// of a panic. No-op when the table is already resident.
+    pub fn resident_embed_table(
+        &self,
+        e: &Engine,
+    ) -> Result<&cudarc::driver::CudaSlice<u8>, Box<dyn std::error::Error>> {
+        self.ensure_embed_resident(e)?;
+        Ok(self
+            .embd_gpu
+            .get()
+            .expect("ensure_embed_resident initialized the table"))
+    }
+
     pub fn ensure_embed_resident(&self, e: &Engine) -> Result<(), Box<dyn std::error::Error>> {
         if self.embd_gpu.get().is_none() {
             let buf = e.upload_u8(&self.embd.raw)?;

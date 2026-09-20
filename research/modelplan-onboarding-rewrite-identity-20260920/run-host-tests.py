@@ -23,6 +23,8 @@ libc = "0.2"
     (project / 'src/lib.rs').write_text(f'''#![allow(dead_code)]
 #[path = "{ROOT / 'crates/memra-engine/src/plan_backend/runtime_identity.rs'}"]
 mod runtime_identity;
+#[path = "{ROOT / 'crates/memra-engine/src/plan_backend/execution_snapshot.rs'}"]
+mod execution_snapshot;
 ''')
     result = subprocess.run(['cargo', 'test', '--manifest-path', str(project / 'Cargo.toml')],
                             cwd=project, env={**os.environ, 'CARGO_TARGET_DIR': str(project / 'target')})

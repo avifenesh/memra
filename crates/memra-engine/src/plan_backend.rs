@@ -6,32 +6,29 @@ use crate::hybrid::{Ffn, HybridModel, Mixer};
 use crate::model::GpuTensor;
 use std::fmt::Write as _;
 
+mod execution_snapshot;
 mod runtime_identity;
+pub(crate) use execution_snapshot::{ProgramGeneration, TrackedProgram, active_execution};
+pub use execution_snapshot::{RewriteExecutionGuard, RewriteExecutionSnapshot};
 pub use runtime_identity::running_implementation_sha256;
 use runtime_identity::{LoadedLibraries, hash_parts, numeric_environment, numeric_program_sha256};
 pub(crate) use runtime_identity::{
     RewriteLoadState, checked_rewrite_identity, identity_requested, install_rewrite_admission,
-    refuse_external_rewrite_artifacts, rewrite_admission_allows, source_artifact_identity,
+    refuse_external_rewrite_artifacts, source_artifact_identity,
 };
 
 impl RewriteLoadState {
-    // Deliberately recomputed for strict admission while public model fields can mutate.
-    // This is O(model metadata) per check, including pipeline checks on token paths.
-    // Moving it to a request boundary requires an immutable model/program API first;
-    // strict-serving performance is pending a target-rig gate. Legacy is unaffected.
+    // Mutation is tracked at the exclusive-borrow boundary. Model and plan digests
+    // are captured once; process libraries/environment are checked at request boundaries.
     pub(crate) fn validate(&self, model: &HybridModel) -> Result<(), String> {
+        if self.mutation_generation != model.rewrite_mutations() {
+            return Err("loaded program was mutably accessed since identity capture; reload before qualification".into());
+        }
         self.libraries
             .as_ref()
             .ok_or("loaded-library identity missing")?
             .validate()?;
         let environment = numeric_environment(std::env::vars_os());
-        let actual = loaded_model_sha256(model);
-        if self.matches_snapshot(&model.plan, &actual, &environment) {
-            return Ok(());
-        }
-        if self.plan != model.plan {
-            return Err("compiled plan changed since load".into());
-        }
         if self.environment != environment {
             let keys: std::collections::BTreeSet<_> = self
                 .environment
@@ -43,10 +40,7 @@ impl RewriteLoadState {
                 "numerical environment changed since load: keys={keys:?}"
             ));
         }
-        Err(format!(
-            "loaded tensor program changed: expected={} actual={actual}",
-            self.model_sha256
-        ))
+        Ok(())
     }
 }
 
@@ -66,7 +60,8 @@ pub(crate) fn capture_rewrite_identity(
         );
     }
     let state = RewriteLoadState {
-        plan: model.plan.clone(),
+        mutation_generation: model.rewrite_mutations(),
+        pipeline: model.is_multi_device(),
         model_sha256: loaded_model_sha256(model),
         environment: numeric_environment(std::env::vars_os()),
         libraries: Some(LoadedLibraries::capture()?),

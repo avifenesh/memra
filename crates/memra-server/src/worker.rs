@@ -11978,6 +11978,7 @@ fn vision_spans(
 }
 
 struct Session {
+    rewrite_execution: memra_engine::plan_backend::RewriteExecutionSnapshot,
     prime_service: crate::prime_fairness::PrimeService,
     model: String,
     /// Request-owned speculative depth. Zero means this session is on the plain path.
@@ -16705,7 +16706,7 @@ pub fn run(
                             // P0 coldhol guard: routed-MoE carried batches stay serial until a
                             // realistic multi-chunk + serving-decode gate qualifies the class.
                             && carried_prime_batch_eligible(&loaded[&s.model].model.plan)
-                            && loaded[&s.model].model.rewrite_allowed(
+                            && loaded[&s.model].model.rewrite_allowed_in(&s.rewrite_execution,
                                 memra_gguf::execution_manifest::RewriteSurface::CarriedPrime,
                             );
                         if s.spec.is_none() && !s.prefill_done
@@ -16765,18 +16766,20 @@ pub fn run(
                         .map(|&(i, take)| active[i].prefill_queue.drain(..take).collect())
                         .collect();
                     let prompt_refs: Vec<&[u32]> = prompts.iter().map(|p| p.as_slice()).collect();
+                    let lm = &loaded[cand_model.as_ref().unwrap()];
+                    let rewrite_scope =
+                        enter_session_rewrites(&lm.model, &active, cand.iter().map(|&(i, _)| i));
                     let mut cache_refs: Vec<&mut memra_engine::cache::Cache> = active
                         .iter_mut()
                         .enumerate()
                         .filter(|(i, _)| cand.iter().any(|&(candidate, _)| candidate == *i))
                         .map(|(_, s)| s.cache.as_mut().unwrap())
                         .collect();
-                    let lm = &loaded[cand_model.as_ref().unwrap()];
                     let t_pb = Instant::now();
-                    match lm
-                        .model
-                        .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
-                    {
+                    match rewrite_scope.and_then(|_scope| {
+                        lm.model
+                            .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
+                    }) {
                         Ok(outs) => {
                             let toks: usize = prompts.iter().map(|p| p.len()).sum();
                             let partial = cand
@@ -17117,7 +17120,9 @@ pub fn run(
                         }
                     })
                     .collect();
-                let logits = {
+                let logits = (|| -> Result<_, Box<dyn std::error::Error>> {
+                    let _rewrite_scope =
+                        enter_session_rewrites(&lm.model, &active, idxs.iter().copied())?;
                     // split-borrow: pull the caches out via split_at_mut-style indexing
                     let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
                     // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
@@ -17155,7 +17160,7 @@ pub fn run(
                             true,
                         ),
                     }
-                };
+                })();
                 match logits {
                     Ok((rows, next_toks)) => {
                         for (k, &i) in idxs.iter().enumerate() {
@@ -17295,17 +17300,19 @@ pub fn run(
                         .map(|&i| active[i].prefill_queue.drain(..).collect())
                         .collect();
                     let prompt_refs: Vec<&[u32]> = prompts.iter().map(|p| p.as_slice()).collect();
+                    let lm = &loaded[dmodel.as_ref().unwrap()];
+                    let rewrite_scope =
+                        enter_session_rewrites(&lm.model, &active, dcand.iter().copied());
                     let mut cache_refs: Vec<&mut memra_engine::cache::Cache> = active
                         .iter_mut()
                         .enumerate()
                         .filter(|(i, _)| dcand.contains(i))
                         .map(|(_, s)| s.cache.as_mut().unwrap())
                         .collect();
-                    let lm = &loaded[dmodel.as_ref().unwrap()];
-                    match lm
-                        .model
-                        .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
-                    {
+                    match rewrite_scope.and_then(|_scope| {
+                        lm.model
+                            .prime_cache_batch(&engine, &prompt_refs, &mut cache_refs)
+                    }) {
                         Ok(outs) => {
                             let ncar = dcand.iter().filter(|&&i| !active[i].fed.is_empty()).count();
                             eprintln!(
@@ -19296,6 +19303,15 @@ fn admit(
 ) -> Result<Session, (EventSender, EngineError)> {
     let dspark_draft_ready = dspark_draft.is_some();
     let lm = &loaded[&req.model];
+    let rewrite_execution = match lm.model.rewrite_execution_snapshot() {
+        Ok(snapshot) => snapshot,
+        Err(error) => return Err((req.tx, EngineError::engine(error))),
+    };
+    let _rewrite_scope = match lm.model.enter_rewrite_execution(&rewrite_execution) {
+        Ok(scope) => scope,
+        Err(error) => return Err((req.tx, EngineError::engine(error))),
+    };
+
     let prompt = req
         .prepared_prompt
         .take()
@@ -22213,6 +22229,7 @@ fn admit(
     };
 
     let mut s = Session {
+        rewrite_execution,
         prime_service: crate::prime_fairness::PrimeService::default(),
         model: req.model,
         spec_k,
@@ -22817,6 +22834,7 @@ fn prefill_tick(
         trace.mark_prime_start();
     }
     let lm = &loaded[&s.model];
+    let _rewrite_scope = lm.model.enter_rewrite_execution(&s.rewrite_execution)?;
     // VISION (lane/vision): build the embedding overlay once (tower forward, GPU) and keep
     // the whole prefill on the PRIME program — pad tokens must never reach decode_step,
     // whose plain pad embedding would silently corrupt the image region. The budget floor
@@ -23226,6 +23244,12 @@ fn advance_sample_emit(
     s: &mut Session,
 ) -> (bool, Option<u32>) {
     let lm = &loaded[&s.model];
+    if let Err(error) = lm.model.check_rewrite_execution(&s.rewrite_execution) {
+        s.aborted = true;
+        let _ = s.tx.send(Event::Error(EngineError::engine(error)));
+        return (false, None);
+    }
+
     if s.generated.len() >= s.budget {
         finish(s, StopReason::MaxNew);
         return (false, None);
@@ -23307,6 +23331,12 @@ fn advance_token_emit(
     tok: u32,
 ) -> (bool, ()) {
     let lm = &loaded[&s.model];
+    if let Err(error) = lm.model.check_rewrite_execution(&s.rewrite_execution) {
+        s.aborted = true;
+        let _ = s.tx.send(Event::Error(EngineError::engine(error)));
+        return (false, ());
+    }
+
     if s.generated.len() >= s.budget {
         finish(s, StopReason::MaxNew);
         return (false, ());
@@ -23762,6 +23792,22 @@ fn decode_chunk_policy(lm: &LoadedModel, engine: &Engine) -> DecodeChunkPolicy {
     )
 }
 
+/// Check every request before a combined walk; an older revoked session cannot
+/// borrow a peer's newer qualification. The guard borrows only the model.
+fn enter_session_rewrites<'a>(
+    model: &'a HybridModel,
+    sessions: &[Session],
+    indices: impl IntoIterator<Item = usize>,
+) -> Result<memra_engine::plan_backend::RewriteExecutionGuard<'a>, Box<dyn std::error::Error>> {
+    let mut indices = indices.into_iter();
+    let first = indices.next().ok_or("empty rewrite execution batch")?;
+    model.check_rewrite_execution(&sessions[first].rewrite_execution)?;
+    for index in indices {
+        model.check_rewrite_execution(&sessions[index].rewrite_execution)?;
+    }
+    Ok(model.enter_rewrite_execution(&sessions[first].rewrite_execution)?)
+}
+
 fn group_chunks(
     active: &[Session],
     ready: &[(usize, u32)],
@@ -23798,6 +23844,8 @@ fn step_session_async_chain(
     loaded: &HashMap<String, LoadedModel>,
     s: &mut Session,
 ) -> Result<Option<bool>, Box<dyn std::error::Error>> {
+    let lm = &loaded[&s.model];
+    let _rewrite_scope = lm.model.enter_rewrite_execution(&s.rewrite_execution)?;
     let configured = serve_async_chain_k();
     if configured < 2
         || !s.prefill_done
@@ -23832,7 +23880,6 @@ fn step_session_async_chain(
         finish(s, StopReason::ContextFull);
         return Ok(Some(false));
     }
-    let lm = &loaded[&s.model];
     let Some(width) = legacy_async_chain_width(configured, room, cache_rows) else {
         s.last_logits = lm.model.decode_step(
             engine,
@@ -23943,6 +23990,7 @@ fn step_session(
         );
     }
     let lm = &loaded[&s.model];
+    let _rewrite_scope = lm.model.enter_rewrite_execution(&s.rewrite_execution)?;
 
     // ---- SPEC-BURST arm (2026-07-05): MTP sessions decode in generate_spec_session
     // bursts — turn 1 primes the prompt (suffix = the whole prefill queue), later ticks are
@@ -24630,6 +24678,7 @@ fn step_gemma_spec(
     s: &mut Session,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let lm = &loaded[&s.model];
+    let _rewrite_scope = lm.model.enter_rewrite_execution(&s.rewrite_execution)?;
     let d = gemma_drafts
         .get_mut(&s.model)
         .ok_or("gemma spec session with no attached drafter (admission gate failed)")?;
@@ -24808,6 +24857,7 @@ fn step_dspark_spec(
     s: &mut Session,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let lm = &loaded[&s.model];
+    let _rewrite_scope = lm.model.enter_rewrite_execution(&s.rewrite_execution)?;
     let d = dspark_drafts
         .get_mut(&s.model)
         .ok_or("dspark spec session with no attached drafter (admission gate failed)")?;
@@ -25141,6 +25191,7 @@ fn step_glm5_spec(
     s: &mut Session,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let lm = &loaded[&s.model];
+    let _rewrite_scope = lm.model.enter_rewrite_execution(&s.rewrite_execution)?;
     debug_assert!(s.spec.is_none(), "a session cannot be on both spec routes");
     debug_assert!(
         s.gspec.is_none() && s.dspark.is_none(),

@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,9 @@ REVISION = 'c1899de289a04d12100db370d81485cdf75e47ca'
 WEIGHT_SHA = 'f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b'
 WEIGHT_BYTES = 1503300328
 UUID = re.compile(r'GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}')
+_build_spec = importlib.util.spec_from_file_location('native_build_record', Path(__file__).with_name('native_build_record.py'))
+build_record = importlib.util.module_from_spec(_build_spec)
+_build_spec.loader.exec_module(build_record)
 
 
 def digest(path):
@@ -174,22 +178,31 @@ def run(args):
     if os.environ.get('DOCS_RS') is not None:
         raise RuntimeError('DOCS_RS placeholder builds are not native qualification')
     model, out, binaries = args.model.resolve(), args.out.resolve(), args.binary_dir.resolve()
+    if out == ROOT.resolve() or ROOT.resolve() in out.parents:
+        raise RuntimeError('qualification output must be outside the clean source checkout')
+    provenance, provenance_sha256 = build_record.verify_build_record(ROOT, args.build_record, binaries)
+
+    def verify_build():
+        build_record.verify_build_record(ROOT, args.build_record, binaries, provenance_sha256)
+
     source = verify_source(model)
+    if args.mtp_model and (not args.mtp_sha256 or digest(args.mtp_model) != args.mtp_sha256):
+        raise RuntimeError('MTP artifact requires its exact owner-supplied SHA-256')
     out.mkdir(parents=True, exist_ok=False)
     write_json(out / 'lease.json', lease)
     write_json(out / 'source.json', source)
-    tools = {name: binaries / name for name in ('memra', 'rewrite_identity_gate', 'run-gen', 'decode-batch-gate')}
-    for path in tools.values():
-        if not path.is_file() or not os.access(path, os.X_OK):
-            raise RuntimeError(f'prebuilt binary missing: {path}; build BEFORE locking GPUs')
-    write_json(out / 'binaries.json', {name: digest(path) for name, path in tools.items()})
-    (out / 'source-commit.txt').write_text(subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True))
+    tools = {name: binaries / name for name in build_record.BINARIES}
+    write_json(out / 'binaries.json', {name: row['sha256'] for name, row in provenance['binaries'].items()})
+    write_json(out / 'build-record.json', provenance)
+    write_json(out / 'build-record-binding.json', {'path': str(args.build_record.resolve()), 'sha256': provenance_sha256})
+    (out / 'source-commit.txt').write_text(provenance['source']['commit'] + '\n')
     base = {k: v for k, v in os.environ.items() if not k.startswith('MEMRA_')}
     base['MEMRA_GPU_LEASE_FILE'] = os.environ['MEMRA_GPU_LEASE_FILE']
     results = []
 
     def case(name, command, changes=None, refusal=None):
         verify_lease()
+        verify_build()
         start = time.monotonic()
         with (out / f'{name}.log').open('wb') as log:
             process = subprocess.Popen([str(x) for x in command], cwd=ROOT, env={**base, **(changes or {})}, stdout=log, stderr=subprocess.STDOUT)
@@ -209,10 +222,12 @@ def run(args):
                     process.wait()
                 raise
         verify_lease()  # A lost wrapper cannot turn an interrupted row into completed evidence.
+        elapsed = time.monotonic() - start
+        verify_build()  # Changed source/tool bytes cannot publish a passed row.
         text = (out / f'{name}.log').read_text(errors='replace')
         passed = case_passed(process.returncode, refusal, text)
         record = {'case': name, 'command': [str(x) for x in command], 'returncode': process.returncode,
-                  'expected_refusal': refusal, 'passed': passed, 'wall_seconds': time.monotonic() - start,
+                  'expected_refusal': refusal, 'passed': passed, 'wall_seconds': elapsed,
                   'log_sha256': digest(out / f'{name}.log')}
         results.append(record)
         write_json(out / 'cases.json', results)
@@ -221,11 +236,13 @@ def run(args):
             raise RuntimeError(f'{name} failed; see {out / (name + ".log")}')
         return text
 
+    verify_build()  # Recheck after artifact preflight, before the FIRST GPU command.
     with (out / 'compute-entry.csv').open('wb') as log:
         subprocess.run(['nvidia-smi', '--query-compute-apps=gpu_uuid,pid,process_name,used_memory', '--format=csv'], stdout=log, stderr=subprocess.STDOUT, check=True)
     for line in (out / 'compute-entry.csv').read_text().splitlines()[1:]:
         if line.split(',')[0].strip() in lease['requested_uuids']:
             raise RuntimeError('a compute process already occupies the locked GPU')
+    verify_build()
     telemetry_file = (out / 'all-card-telemetry-250ms.csv').open('wb')
     telemetry = subprocess.Popen(['nvidia-smi', '--query-gpu=timestamp,uuid,name,index,memory.total,memory.used,utilization.gpu,power.draw,clocks.sm,temperature.gpu', '--format=csv', '--loop-ms=250'], stdout=telemetry_file, stderr=subprocess.STDOUT)
     variant = out / 'wrong-weights'
@@ -266,8 +283,10 @@ def run(args):
         if args.mtp_model:
             if not args.mtp_sha256 or digest(args.mtp_model) != args.mtp_sha256:
                 raise RuntimeError('MTP artifact requires its exact owner-supplied SHA-256')
-            case('mtp-k1-through-k8', [binaries / 'run-spec', args.mtp_model, '1', '2', '3', '4'], {'MEMRA_NGEN': '32'})
+            case('mtp-k1-through-k8', [tools['run-spec'], args.mtp_model, '1', '2', '3', '4'], {'MEMRA_NGEN': '32'})
+        verify_build()
         write_json(out / 'result.json', {'status': 'passed', 'scope': 'single-card native identity admission and named regression cases only',
+            'build_record_sha256': provenance_sha256,
             'completed_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'mtp': 'ran' if args.mtp_model else 'pending exact artifact', 'multi_card': 'pending separate locked pair',
             'model_support_promotion': False, 'serving_binary_qualification': False})
@@ -287,12 +306,15 @@ def main():
     parser.add_argument('--model', type=Path)
     parser.add_argument('--out', type=Path)
     parser.add_argument('--binary-dir', type=Path, default=ROOT / 'target/release')
+    parser.add_argument('--build-record', type=Path, help='required owned build.json from native_build_record.py')
     parser.add_argument('--mtp-model', type=Path)
     parser.add_argument('--mtp-sha256')
     args = parser.parse_args()
     if args.prepare:
         prepare(args.prepare)
     elif args.model and args.out:
+        if not args.build_record:
+            parser.error('--build-record is required; run native_build_record.py before acquiring GPUs')
         run(args)
     else:
         parser.error('use --prepare DIR or --model DIR --out NEW_RECEIPT_DIR')

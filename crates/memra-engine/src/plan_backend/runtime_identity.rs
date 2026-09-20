@@ -99,21 +99,11 @@ pub(super) fn numeric_program_sha256(
 /// Captured after loader defaults and capacity-dependent mirror/placement decisions.
 /// This is private loader state, never deserialized from a qualification bundle.
 pub(crate) struct RewriteLoadState {
-    pub(super) plan: memra_gguf::model_plan::ModelPlan,
+    pub(super) mutation_generation: u64,
+    pub(crate) pipeline: bool,
     pub(super) model_sha256: String,
     pub(super) environment: BTreeMap<OsString, OsString>,
     pub(super) libraries: Option<LoadedLibraries>,
-}
-
-impl RewriteLoadState {
-    pub(crate) fn matches_snapshot(
-        &self,
-        plan: &memra_gguf::model_plan::ModelPlan,
-        model_sha256: &str,
-        environment: &BTreeMap<OsString, OsString>,
-    ) -> bool {
-        self.plan == *plan && self.model_sha256 == model_sha256 && self.environment == *environment
-    }
 }
 
 /// Content identity plus inode metadata of all file-backed executable mappings. The
@@ -291,6 +281,7 @@ pub(crate) fn checked_rewrite_identity(
     Ok(identity)
 }
 
+#[cfg(test)]
 pub(crate) fn rewrite_admission_allows(
     admission: &RewriteAdmission,
     identity_current: bool,
@@ -445,28 +436,6 @@ mod tests {
         let mut invalid = identity.clone();
         invalid.numeric_program_sha256.clear();
         assert!(checked_rewrite_identity(Some(&invalid), true).is_err());
-    }
-
-    #[test]
-    fn loaded_snapshot_rejects_plan_program_and_environment_mutation() {
-        let plan = plan();
-        let environment = vars(&[("MEMRA_FAST", "1")]);
-        let snapshot = RewriteLoadState {
-            plan: plan.clone(),
-            model_sha256: "loaded mirrors and placement".into(),
-            environment: environment.clone(),
-            libraries: None,
-        };
-        assert!(snapshot.matches_snapshot(&plan, &snapshot.model_sha256, &environment));
-        let mut attached = plan.clone();
-        attached.draft_source = memra_gguf::model_plan::DraftSourcePlan::ExternalArtifact;
-        assert!(!snapshot.matches_snapshot(&attached, &snapshot.model_sha256, &environment));
-        assert!(!snapshot.matches_snapshot(&plan, "different mirrors", &environment));
-        assert!(!snapshot.matches_snapshot(
-            &plan,
-            &snapshot.model_sha256,
-            &vars(&[("MEMRA_FAST", "0")])
-        ));
     }
 
     struct UnsupportedSource;
@@ -699,6 +668,12 @@ mod tests {
                 .chars()
                 .filter(|c| !c.is_whitespace() && *c != ',')
                 .collect::<String>();
+            let compact = compact
+                .strip_prefix("let_rewrite_execution=self.protect_rewrite_execution()?;")
+                .or_else(|| {
+                    compact.strip_prefix("let_rewrite_scope=self.protect_rewrite_execution()?;")
+                })
+                .unwrap_or(&compact);
             assert!(compact.starts_with(&format!("self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::{surface})?;")), "{name} must check {surface} before work");
         }
     }

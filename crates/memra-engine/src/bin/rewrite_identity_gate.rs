@@ -84,6 +84,7 @@ fn output(label: &str, prompt: usize, logits: &[f32], vocab: usize, bundle: &Pat
 }
 
 fn tokenwise(engine: &Engine, model: &HybridModel, prompt: &[u32]) -> Result<Vec<f32>> {
+    let _execution = model.protect_rewrite_execution()?;
     let mut cache = Cache::new(engine, &model.cfg, prompt.len() + 8)?;
     let mut logits = Vec::new();
     for &token in prompt {
@@ -309,6 +310,7 @@ fn reinstall_probe(
         model.decode_step(engine, token, &mut cache)?;
     }
     let before = cache_sha256(engine, &cache)?;
+    let prior_execution = model.rewrite_execution_snapshot()?;
     let probe = (|| -> Result<()> {
         match model.install_rewrite_bundle(&corrupt) {
             Ok(()) => return Err("REINSTALL_ACCEPTED_CORRUPT_IDENTITY".into()),
@@ -338,6 +340,10 @@ fn reinstall_probe(
                 println!("REVOKED_EAGER_REFUSAL_PASS: {error}");
             }
         }
+        require(
+            model.enter_rewrite_execution(&prior_execution).is_err(),
+            "FAILED_REINSTALL_RETAINED_SNAPSHOT",
+        )?;
         let after = cache_sha256(engine, &cache)?;
         require(
             before == after,
@@ -355,6 +361,17 @@ fn reinstall_probe(
     }
     qualified_eager_only(model)?;
     probe?;
+    require(
+        model.enter_rewrite_execution(&prior_execution).is_err(),
+        "VALID_REINSTALL_REVIVED_OLD_SNAPSHOT",
+    )?;
+    let renewed = model.rewrite_execution_snapshot()?;
+    let _scope = model.enter_rewrite_execution(&renewed)?;
+    require(
+        model.rewrite_allowed(RewriteSurface::DecodeEager),
+        "RENEWED_SNAPSHOT_REFUSED",
+    )?;
+    println!("REINSTALL_SNAPSHOT_REVOCATION_PASS");
     println!("VALID_REINSTALL_PASS");
     Ok(())
 }
@@ -570,6 +587,25 @@ fn run() -> Result<()> {
         bitwise(&candidates[..vocab], &restored, "restored-eager")?;
     }
     qualified_eager_only(&model)?;
+    let retained = model.rewrite_execution_snapshot()?;
+    // Even same-shape mutation through the public field API revokes the byte contract.
+    // Restoring metadata must not authorize replacement tensor bytes without a reload.
+    let epsilon = model.cfg.rms_eps;
+    model.cfg.rms_eps = epsilon * 2.0;
+    model.cfg.rms_eps = epsilon;
+    require(
+        model.enter_rewrite_execution(&retained).is_err(),
+        "MUTATION_RETAINED_SNAPSHOT",
+    )?;
+    require(
+        model.rewrite_identity().is_err(),
+        "MUTATION_RETAINED_IDENTITY",
+    )?;
+    require(
+        !model.rewrite_allowed(RewriteSurface::DecodeEager),
+        "MUTATION_RETAINED_ADMISSION",
+    )?;
+    println!("MODEL_MUTATION_REVOCATION_PASS");
     println!(
         "REWRITE_IDENTITY_GATE_PASS mode={mode} scope=native-program-admission-only support_promotion=false"
     );

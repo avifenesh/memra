@@ -21,6 +21,7 @@ use crate::hybrid::HybridModel;
 use cudarc::driver::{CudaGraph, CudaSlice};
 
 pub struct PrimeGraph {
+    rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     pub bucket: usize,
     graph: CudaGraph,
     /// CAPTURE-RETAIN keeper (draft-graph law): holds every allocation the closure made so
@@ -58,6 +59,7 @@ impl HybridModel {
         e: &Engine,
         bucket: usize,
     ) -> Result<PrimeGraph, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
         self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)?;
         self.refuse_hyper("prime_graph_new")?;
         use cudarc::driver::sys::{CUgraphInstantiate_flags, CUstreamCaptureMode};
@@ -123,6 +125,7 @@ impl HybridModel {
         let _ = CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED;
         let _ = CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH;
         Ok(PrimeGraph {
+            rewrite_execution: self.current_rewrite_execution_snapshot()?,
             bucket,
             graph,
             _keeper: keeper,
@@ -145,6 +148,7 @@ impl HybridModel {
         tokens: &[u32],
         session: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.enter_rewrite_execution(&pg.rewrite_execution)?;
         self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime)?;
         let t = tokens.len();
         assert!(

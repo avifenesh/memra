@@ -35,3 +35,38 @@ prompt. That diagnostic now has its own process and output directory. Driver-lin
 scratch warmup experiments were not necessary for the cached program and were removed
 from production; their measured controls remain in research. No library drift check was
 relaxed and no fresh-program dependency was added to cached-eager admission.
+
+Review follow-up (SEC-557-1): native stacked and per-expert NVFP4 disk caches are
+derived data, not trusted checkpoint bytes. With either identity flag configured,
+the loader regenerates the canonical layout from the opened source, verifies and
+repairs the named cache, and consumes a separate private, unlinked, read-only inode.
+Both the mmap and positioned-read backing retain that inode. Changing or truncating
+the named cache therefore cannot change live weights. This pays repacking I/O and
+private disk capacity at load while keeping RAM bounded to one expert. Legacy cache
+reuse is unchanged. Hashing only the named cache, or verifying it and then retaining
+its writable inode, was rejected because neither protects the loaded byte lifetime.
+
+Review follow-up (PERF-557-1): strict requests use a validated execution snapshot.
+The model and plan digests are captured once. The model owns its program through
+`TrackedProgram`; every mutable borrow revokes snapshots and invalidates the loaded
+identity, even for a same-shape change. A reload is required before that model can
+be qualified again. Both successful and failed bundle reinstalls revoke older
+snapshots. Lazy embedding mirrors and mutable graph/workspace caches are private to the engine.
+
+`rewrite_execution_snapshot` checks loaded-library and numerical-environment state
+at each new or resumed request. `enter_rewrite_execution` borrows the model immutably
+and activates that snapshot for a scheduler tick or synchronous operation. Nested
+eager, speculative, graph and pipeline admissions check only the generation and a
+fixed surface mask. The server preserves a snapshot per request, including restored
+KV requests, and checks every participant in a batch. Retained decode/prime graphs, native MTP and GLM sessions, and suspended primes carry
+their originating snapshot; supplying a different qualified model cannot authorize them. Standalone direct calls still validate a boundary;
+callers doing a token loop can hold `protect_rewrite_execution` across the loop.
+
+External process libraries and numerical environment must remain fixed while a
+request executes. An explicit identity/boundary check that detects drift revokes
+in-flight snapshots too; restoring the environment does not revive those snapshots.
+This replaces per-token process-map scans with an explicit protected boundary,
+rather than caching permissions over freely mutable model fields. CPU call-count,
+mutation, reinstall, model-binding and scope-lifetime regressions cover the control
+logic. The previous native receipts remain historical; the changed executable needs
+fresh native admission, affected exactness and controlled performance validation.

@@ -1,14 +1,52 @@
 # Rewrite qualification identity — #542
 
-Status: the single-card native identity-admission gate passed at
-`62113383d63a0bac510279b954080c592c156630`. Draft PR remains scoped to this fix;
-whole-model, serving, MTP/pipeline, and performance qualification are not promoted.
+Status: review corrections after `662774b4` change the runtime and require fresh native
+qualification. The historical single-card admission gate passed at
+`62113383d63a0bac510279b954080c592c156630`; that evidence does not qualify the changed
+binary. Whole-model, serving, MTP/pipeline, and performance qualification are not promoted.
 
 Base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/542-trusted-rewrite-identity`.
 Environment: macOS arm64, no CUDA toolkit or GPU. No serving machine was accessed.
 
-## Final native result
+## Review corrections (native rerun pending)
+
+SEC-557-1: both native NVFP4 disk loaders regenerate from the opened source and
+verify/repair the named cache in identity mode. Live bytes use a separate unlinked
+read-only backing. Nine CPU regressions pass, including cold, hit, same-size corruption,
+after-load mutation/truncation and opened-source replacement for both layouts and flags.
+Strict loads pay additional regeneration I/O and private disk capacity, with bounded RAM.
+
+PERF-557-1: private tracked model ownership revokes identity on mutable access. Every
+reinstall revokes retained snapshots. Request/session snapshots validate external state
+at new/resumed request boundaries; protected token checks use a generation and surface
+mask, including nested and pipeline calls. The 15-test host harness passes, including
+10,000 repeated protected admissions with one inventory callback and no program
+serialization. This is control-flow evidence, not a latency or throughput result.
+
+The native gate adds protected eager replay plus retained-snapshot reinstall and
+same-shape mutation refusals. These new native controls have not run yet. Existing
+native records below are historical and unchanged.
+
+TC557-01: qualification now requires a successful record emitted by the owned native
+builder, with a fresh build directory, clean source contents, toolchain/config inputs,
+Cargo completion events and actual executable hashes. Preflight and case boundaries
+reject stale source, stale binaries and missing/incomplete records. The builder is an
+auditable local provenance record, not a signature or hermetic toolchain attestation.
+Historical manually captured build evidence is preserved; it is not retroactively
+converted into an owned build record.
+
+Final CPU preparation: the 15 identity/snapshot tests, nine native-repack helper
+tests and 28 runner/build-provenance tests pass. `cargo test -p memra-gguf -p memra-cli`
+passes. The combined tree passes engine/server library, binary and test type checking
+with `DOCS_RS=1 MEMRA_MMQ_ARCHIVE_HASH=host-check-placeholder cargo clippy --target
+x86_64-unknown-linux-gnu -p memra-engine --lib --bins --tests -p memra-server -- -D warnings`.
+That command is compile-only on macOS, not native CUDA execution. Formatting, whitespace,
+flags census and generated-board checks pass. Independent follow-up review closed
+public interior-cache mutation and retained prime/MTP/GLM provenance gaps. Those retained
+GPU objects still need native stale-object/replay controls on the rebuilt binary.
+
+## Historical native result
 
 On one exclusively locked RTX PRO6000 Blackwell Server Edition (driver595.58.03,
 CUDA13.1, XFS/Ceph-RBD-backed scratch), attempt007 passed all11 operational cases with a

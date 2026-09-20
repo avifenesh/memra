@@ -827,6 +827,25 @@ These CPU tests do not qualify CUDA rewrites. Raw reproduction and verification 
 Runtime CPU admission regressions are in `memra-engine` under `plan_backend::runtime_identity`;
 `cargo test -p memra-engine --lib plan_backend::runtime_identity` runs them on a CUDA build host.
 They cover failed reinstall, stale program state, and eager-only graph/spec refusal.
+`python3 research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py`
+also runs the protected-snapshot module without linking CUDA: repeated admissions,
+mutation/reinstall revocation, model binding, external drift and scope lifetime.
+`python3 crates/memra-engine/src/model/repack/run-host-tests.py` exercises the actual
+stacked and per-expert NVFP4 disk helpers using tiny opened safetensors fixtures. Both
+identity flags cover cold/cache-hit, same-size corruption, after-load mutation/truncation,
+source-path replacement and filesystem-object refusal. These are CPU loader/control
+regressions; exact-binary native qualification remains required.
+
+The native runner requires an owned build record. From a clean checkout, run
+`python3 research/modelplan-onboarding-rewrite-identity-20260920/native_build_record.py
+--out BUILD_DIR --cuda-arch 120a --nvcc /absolute/path/to/nvcc` before taking a GPU lease.
+Use a new `BUILD_DIR` outside the checkout; it retains Cargo events, compiler/input
+identities and exact executable hashes. Pass `--build-record BUILD_DIR/build.json
+--binary-dir BUILD_DIR/target/release` to `qualify-native.py` under the assigned GPU
+wrapper. Qualification output also stays outside the checkout. The runner rejects
+missing/incomplete records, changed clean source, binaries and relevant build inputs
+before GPU access; `test_qualify_native.py` covers those refusals with CPU fixtures.
+
 
 ## Generic spill / tiered KV (memra-tier)
 
