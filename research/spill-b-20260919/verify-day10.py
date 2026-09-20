@@ -70,6 +70,13 @@ def collector(folder):
                 (p / "binary.sha256").read_text().split()[0] == identity["binary_sha256"] and
                 (p / "exit").read_text().strip() == "0" for p in builds), "no matching successful native build")
     command = cap["command"]
+    expected_case = "baseline" if folder.name.startswith("baseline-") else "active"
+    expected_allocator = "pooled" if folder.name.startswith(("baseline-", "pooled-")) else "vmm"
+    require(command[command.index("--case") + 1] == expected_case and
+            command[command.index("--kv-allocator") + 1] == expected_allocator,
+            "wrong case/allocator command")
+    require(("--reclaim-diagnostic" in command) == folder.name.startswith("diagnostic-"),
+            "wrong diagnostic engagement")
     require(command[command.index("--context") + 1] == identity["context"], "command context mismatch")
     require(command[command.index("--tiers") + 1] == "host" and "--same-program" in command,
             "wrong program/storage route")
@@ -182,6 +189,8 @@ def main():
             day9.verify_plane_census(receipt, m)
         if label.startswith("diagnostic-"):
             check_probe(receipt, m, flags)
+        elif m["vmm_granularity_bytes"] and m["residual_bytes"] != 0:
+            require(flags["residual_class"] == "unclassified", "nonzero class lacks a diagnostic")
         if label.startswith("injected-"):
             construction = fields(receipt / "allocation-construction.txt")
             require(construction["allocator"] == "Vmm" and construction["construction"] == "direct"
