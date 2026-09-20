@@ -151,6 +151,12 @@ def mutate_weight(source, destination):
             'original_sha256': WEIGHT_SHA, 'change': 'one payload low bit; shape/config unchanged'}
 
 
+def case_passed(returncode, refusal, text):
+    if refusal:
+        return returncode == 1 and 'REWRITE_IDENTITY_GATE_FAIL:' in text and refusal in text
+    return returncode == 0
+
+
 def output_hashes(text, stage):
     pattern = re.compile(rf'^OUTPUT stage={re.escape(stage)} prompt=(\d+).* sha256=([0-9a-f]{{64}})$', re.M)
     pairs = pattern.findall(text)
@@ -199,8 +205,9 @@ def run(args):
                     process.kill()
                     process.wait()
                 raise
+        verify_lease()  # A lost wrapper cannot turn an interrupted row into completed evidence.
         text = (out / f'{name}.log').read_text(errors='replace')
-        passed = process.returncode != 0 and refusal in text if refusal else process.returncode == 0
+        passed = case_passed(process.returncode, refusal, text)
         record = {'case': name, 'command': [str(x) for x in command], 'returncode': process.returncode,
                   'expected_refusal': refusal, 'passed': passed, 'wall_seconds': time.monotonic() - start,
                   'log_sha256': digest(out / f'{name}.log')}
@@ -233,14 +240,14 @@ def run(args):
         if expected != actual:
             raise RuntimeError('fresh-process eager output differs despite matching runtime identity')
         case('missing-bundle', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_REWRITE_BUNDLE': str(out / 'missing')}, 'read artifact.lock')
-        case('different-numerical-program', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_FAST': '0'}, 'numeric_program_sha256')
+        case('different-numerical-program', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_FAST': '0'}, 'does not bind numeric_program_sha256=')
         write_json(out / 'weight-mutation.json', mutate_weight(model, variant))
-        case('different-weights-same-geometry', [tools['rewrite_identity_gate'], 'check', variant, bundle], strict, 'artifact_sha256')
+        case('different-weights-same-geometry', [tools['rewrite_identity_gate'], 'check', variant, bundle], strict, 'does not bind artifact_sha256=')
         shutil.copy2(tools['rewrite_identity_gate'], changed_binary)
         with changed_binary.open('ab') as stream:
             stream.write(b'\nmemra-542-binary-identity-negative\n')
         write_json(out / 'binary-mutation.json', {'sha256': digest(changed_binary), 'original_sha256': digest(tools['rewrite_identity_gate']), 'change': 'appended inert bytes to ELF'})
-        case('different-executable-same-source', [changed_binary, 'check', model, bundle], strict, 'implementation_sha256')
+        case('different-executable-same-source', [changed_binary, 'check', model, bundle], strict, 'does not bind implementation_sha256=')
         case('legacy-argmax-regression', [tools['run-gen'], model, '1', '2', '3', '4'], {'MEMRA_NGEN': '32'})
         case('legacy-batch-regression', [tools['decode-batch-gate'], model, '--mode', 'config', '--batch', '2', '--steps', '16'])
         if args.mtp_model:

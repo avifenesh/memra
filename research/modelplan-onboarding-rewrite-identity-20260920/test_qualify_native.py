@@ -47,6 +47,15 @@ class LeaseTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.verify(lease=extra)
 
+    def test_interrupted_negative_control_cannot_pass(self):
+        text = 'REWRITE_IDENTITY_GATE_FAIL: MODEL_LOAD: does not bind numeric_program_sha256=abc'
+        refusal = 'does not bind numeric_program_sha256='
+        self.assertTrue(gate.case_passed(1, refusal, text))
+        for code in [-9, -15, 137, 143, 2, 0]:
+            with self.subTest(code=code):
+                self.assertFalse(gate.case_passed(code, refusal, text))
+        self.assertFalse(gate.case_passed(1, refusal, refusal))
+
     def test_output_hashes_require_every_prompt_exactly_once(self):
         lines = [f'OUTPUT stage=installed-eager prompt={i} values=1 sha256={str(i) * 64}' for i in range(3)]
         self.assertEqual(set(gate.output_hashes('\n'.join(lines), 'installed-eager')), {'0', '1', '2'})

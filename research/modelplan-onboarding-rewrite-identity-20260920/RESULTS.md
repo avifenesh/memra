@@ -82,3 +82,13 @@ each child runs, compares fresh-process output hashes, retains named negative-co
 and records 250 ms telemetry. GPU execution waits for the coordinator's supplied host/wrapper.
 Broader q9 MTP, paired pipeline, and full serving/performance rows remain pending their exact
 artifacts and separately assigned lock sets. No separate machine has been rented by this lane.
+
+## Interruption controls
+
+CPU preflight attempt001 and recovered staging evidence are retained under
+`native-maxq-20260920/`. The initial build was interrupted; no GPU result was produced.
+A local regression found that the runner accepted a signal-killed negative control when
+its partial log already contained the expected refusal. The runner now requires orderly
+exit1 plus the native gate failure marker and exact identity-refusal phrase, and revalidates
+the lease after child exit. `raw/negative-interruption-fail-before.log` reproduces the old
+false pass; `raw/negative-interruption-pass-after.log` records six passing CPU tests.
