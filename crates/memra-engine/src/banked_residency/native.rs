@@ -214,7 +214,14 @@ impl Engine {
         if let Some(head) = &model.mtp
             && let Ffn::Moe(moe) = &head.ffn
         {
-            add(u16::MAX, model.cfg.n_layer as usize, moe)?;
+            let checkpoint_layer = model
+                .plan
+                .mtp_blocks
+                .first()
+                .ok_or("loaded MTP head has no compiled plan block")?
+                .layer
+                .index;
+            add(u16::MAX, checkpoint_layer as usize, moe)?;
         }
         if ids.is_empty() || max_bytes == 0 || max_bytes > 16 * 1024 * 1024 {
             return Err("experts-via-tier empty or oversized bank".into());
