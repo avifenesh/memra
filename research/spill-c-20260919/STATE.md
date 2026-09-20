@@ -1,0 +1,15 @@
+# Session C day-nine handoff
+- Local lane: `lane/spill-c-20260919`; dedicated checkout `wt-spill-c`.
+- integ5 merged/pushed at `148e7f0e9`; runtime binaries built at that exact source.
+- Native build: `/root/wt-c/target/release/{run-gen,run-spec}`; no C tmux job running.
+- Raw native receipts: `/root/spill-receipts/c-day9/`; synced to `pro-single-day9/`.
+- Pushed default generation OFF/ON MATCH; spec OFF/ON K1–8 PASS through `c270d1f4a`.
+- Default ON GPU evictions=0; generation/spec physical reads=30720/31488.
+- `default-spec-on` first attempt refused canonical lock; retry passed and both logs kept.
+- `8g-gen-on` just refused lock; sync its console log before retrying in a NEW receipt dir.
+- Existing inherited code ALREADY wires MoeSlotCache through owner proxy; no duplicate implementation needed.
+- Current change adds ordinary-build Engine/cache/proxy/lease Send+Sync assertion; checks pending.
+- `BUDGET-REFUSAL.md` is proposal only; no MEMRA flag behavior changed.
+- Next: finish 8GiB ON/OFF gen/spec (9986 slots), sync+push each; then compile checks and final verifier/report.
+- Rebuild/check assertion at exact committed revision; native baseline binary hashes are retained separately.
+- Need no owner decision; GPU cells only through pro-single collector/canonical lock; no fresh SSH connection.
