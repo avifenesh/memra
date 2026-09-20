@@ -1,0 +1,12 @@
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 24111 MiB, mirror mass 20820 MiB, capacity threshold 29012 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+loaded gemma4 (48 layers)
+chunkinv: T=4882 chat=false chunks=["4096", "64"] steps=8
+[fa-pool] grow #0 dev=0 o_len 0 -> 65536 ml_len 0 -> 256 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 65536 -> 1253376 ml_len 256 -> 2448 (retired kept, zero=false)
+ref chunk=4096 argmax=236779 margin=1.146574
+  chunk | logits | first_div_pos | maxdiff   | argmax | stream_div
+     64 | EXACT |            -1 | 0.000e0 | - | identical
+chunkinv verdict: CHUNK-INVARIANT — prefill logits bit-identical at every chunk size
