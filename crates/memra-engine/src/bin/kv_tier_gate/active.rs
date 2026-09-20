@@ -300,6 +300,7 @@ pub fn roundtrip(
     cache: &mut Cache,
     program: ProgramIdentity,
     out: &Path,
+    diagnostic: bool,
 ) -> super::Result<bool> {
     let mut capacity = TierBudget::zero(1);
     capacity.device[0] = 2 << 30;
@@ -315,6 +316,18 @@ pub fn roundtrip(
     let transfers = Rc::new(RefCell::new(CudaTransfers::new(e.stream(), governor)?));
     e.stream().synchronize()?;
     e.pool_trim_to_zero(); // Equal trim before/after isolates newly freed source allocations.
+    let free_before_spare_reserve = e.ctx().mem_get_info()?.0;
+    let spare = if diagnostic {
+        let planes = cache.kv.iter().flatten().flat_map(|l| [&l.k, &l.v]);
+        let bytes: usize = planes.clone().map(|p| p.physical_bytes()).sum();
+        let granularity = planes
+            .filter_map(|p| p.granularity())
+            .next()
+            .ok_or("REFUSED: diagnostic needs VMM planes")?;
+        Some(SpareVa::reserve(bytes, granularity)?)
+    } else {
+        None
+    };
     let before = e.ctx().mem_get_info()?.0;
     let pool_before = e.pool_reserved_used();
     let mut suspended: Vec<(usize, KvLayer, HostPlane, HostPlane)> = vec![];
@@ -420,6 +433,23 @@ pub fn roundtrip(
         ),
     )?;
     eprintln!("{diagnosis}");
+    let mut residual_probe = None;
+    if let Some(spare) = spare {
+        let spare_bytes = spare.bytes;
+        spare.release()?;
+        let after_va_free = e.ctx().mem_get_info()?.0;
+        // SAFETY: Engine's CUDA context is bound to this owner thread; wait for all its work.
+        unsafe { cudarc::driver::sys::cuCtxSynchronize().result()? };
+        let after_ctx_sync = e.ctx().mem_get_info()?.0;
+        residual_probe = Some((after_va_free, after_ctx_sync));
+        fs::write(
+            out.join("residual-diagnostic.txt"),
+            format!(
+                "free_before_spare_reserve_bytes={free_before_spare_reserve}\nfree_after_spare_reserve_bytes={before}\nspare_reserved_unmapped_bytes={spare_bytes}\nfree_after_demote_bytes={after}\nfree_after_spare_va_free_bytes={after_va_free}\nfree_after_context_sync_bytes={after_ctx_sync}\nspare_va_free_success=true\ncontext_sync_success=true\n"
+            ),
+        )?;
+    }
+
     let used = transfers.borrow().used();
     fs::write(out.join("active-bundles.tsv"), manifest)?;
     fs::write(out.join("vmm-planes.tsv"), vmm_manifest)?;
@@ -455,26 +485,59 @@ pub fn roundtrip(
     e.stream().synchronize()?;
     e.pool_trim_to_zero();
     let restored = e.ctx().mem_get_info()?.0;
-    let reclaimed = if vmm_granularity != 0 {
-        vmm_released_bytes > 0
-            && after.checked_sub(before) == Some(vmm_released_bytes)
-            && after.checked_sub(restored) == Some(vmm_released_bytes)
+    let observation = super::reclaim_contract::observe(
+        before,
+        after,
+        restored,
+        vmm_released_bytes,
+        vmm_granularity,
+    );
+    let residual_class = if vmm_granularity == 0 {
+        "not-applicable-pooled"
+    } else if observation.residual == 0 {
+        "none"
+    } else if let Some((va_free, ctx_sync)) = residual_probe {
+        if va_free as i128 - after as i128 == observation.residual && ctx_sync == va_free {
+            "spare-VA-release-sensitive-driver-accounting"
+        } else if ctx_sync as i128 - va_free as i128 == observation.residual && va_free == after {
+            "deferred-driver-release-completed-by-context-sync"
+        } else {
+            "unclassified"
+        }
+    } else {
+        "unclassified"
+    };
+    let reclaim_observed = if vmm_granularity != 0 {
+        observation.bounded_no_leak
     } else {
         after > before && restored < after
     };
+    let reclaimed = reclaim_observed && residual_class != "unclassified";
+    if diagnostic {
+        let mut probe = fs::OpenOptions::new()
+            .append(true)
+            .open(out.join("residual-diagnostic.txt"))?;
+        writeln!(
+            probe,
+            "residual_bytes={}\nresidual_class={residual_class}\nfree_after_restore_bytes={restored}",
+            observation.residual
+        )?;
+    }
     let mut metrics = fs::OpenOptions::new()
         .append(true)
         .open(out.join("active-reclaim.txt"))?;
     writeln!(
         metrics,
-        "vmm_fixed_va_restored=true\nvmm_retained_edge_and_capacity_bytes={}\nvmm_granularity_bytes={vmm_granularity}\nvmm_released_chunk_bytes={vmm_released_bytes}\ndemote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaimed}",
+        "vmm_fixed_va_restored=true\nvmm_retained_edge_and_capacity_bytes={}\nvmm_granularity_bytes={vmm_granularity}\nvmm_released_chunk_bytes={vmm_released_bytes}\ndemote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaim_observed}\nreclaim_exact_equal={}\nresidual_bytes={}\nresidual_class={residual_class}\ng1_reclaim_qualified={reclaimed}",
         if vmm_granularity == 0 {
             0
         } else {
             physical - vmm_released_bytes
         },
         after as i128 - before as i128,
-        after as i128 - restored as i128
+        after as i128 - restored as i128,
+        observation.exact,
+        observation.residual
     )?;
     metrics.sync_all()?;
     Ok(reclaimed)
@@ -492,4 +555,44 @@ fn checked_trim(e: &Engine) -> super::Result<usize> {
     // SAFETY: pool was successfully obtained above; trim only frees unused blocks.
     unsafe { sys::cuMemPoolTrimTo(pool, 0).result()? };
     Ok(before.saturating_sub(e.pool_reserved_used().0))
+}
+
+/// A diagnostic-only VA reservation: never mapped and never exposed to kernels.
+struct SpareVa {
+    address: Option<u64>,
+    bytes: usize,
+}
+impl SpareVa {
+    fn reserve(bytes: usize, granularity: usize) -> super::Result<Self> {
+        let mut address = 0;
+        // SAFETY: bytes is the sum of queried-granularity-aligned plane capacities; output is live.
+        unsafe {
+            cudarc::driver::sys::cuMemAddressReserve(&mut address, bytes, granularity, 0, 0)
+                .result()?
+        };
+        Ok(Self {
+            address: Some(address),
+            bytes,
+        })
+    }
+    fn release(mut self) -> super::Result<()> {
+        // SAFETY: exclusively owned reservation was never mapped or handed to any consumer.
+        unsafe {
+            cudarc::driver::sys::cuMemAddressFree(self.address.unwrap(), self.bytes).result()?
+        };
+        self.address = None;
+        Ok(())
+    }
+}
+impl Drop for SpareVa {
+    fn drop(&mut self) {
+        if let Some(address) = self.address {
+            // SAFETY: cleanup of this owner's still-unmapped, unexposed reservation.
+            if let Err(e) =
+                unsafe { cudarc::driver::sys::cuMemAddressFree(address, self.bytes).result() }
+            {
+                eprintln!("spare VA cleanup failed: {e}");
+            }
+        }
+    }
 }

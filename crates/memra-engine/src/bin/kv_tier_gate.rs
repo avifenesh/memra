@@ -7,6 +7,8 @@ mod active;
 mod capture_contract;
 #[path = "kv_tier_gate/cli.rs"]
 mod cli;
+#[path = "kv_tier_gate/reclaim_contract.rs"]
+mod reclaim_contract;
 // Gate-local binding until the lead installs the library module fragment.
 #[allow(dead_code)]
 #[path = "../tier_transfer.rs"]
@@ -267,7 +269,8 @@ fn baseline(args: &cli::Args) -> Result<()> {
             position: digest("prompt-u32le", &prompt_bytes),
             tenant_salt: digest("tenant", b"gate-exclusive-request"),
         };
-        reclaim_observed = active::roundtrip(&e, &mut cache, program, &args.out)?;
+        reclaim_observed =
+            active::roundtrip(&e, &mut cache, program, &args.out, args.reclaim_diagnostic)?;
         let restored = capture(
             &e,
             &cache,
