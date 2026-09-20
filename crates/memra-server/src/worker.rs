@@ -5017,7 +5017,7 @@ fn gemma_sampled_spec_on() -> bool {
 ///
 /// Unset (the default) changes nothing: directory models build their tokenizer from the
 /// directory exactly as before.
-fn tokenizer_gguf_override(model: &str) -> Option<String> {
+pub(crate) fn tokenizer_gguf_override(model: &str) -> Option<String> {
     static MAP: std::sync::OnceLock<std::collections::HashMap<String, String>> =
         std::sync::OnceLock::new();
     MAP.get_or_init(|| {
@@ -5049,7 +5049,7 @@ fn tokenizer_gguf_override(model: &str) -> Option<String> {
 /// Build a tokenizer from `gguf_path` and prove it is the same vocabulary the checkpoint at
 /// `tok_dir` declares, id by id, before returning it. Returns the tokenizer and the number of
 /// ids compared, so the boot line can state the size of the claim rather than assert it.
-fn load_verified_tokenizer(
+pub(crate) fn load_verified_tokenizer(
     gguf_path: &str,
     tok_dir: &std::path::Path,
 ) -> Result<(Tokenizer, usize), String> {

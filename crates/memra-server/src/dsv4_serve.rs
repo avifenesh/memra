@@ -869,13 +869,17 @@ fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> 
     let prompt = if !req.prompt_ids.is_empty() {
         req.prompt_ids.clone()
     } else if !req.chat_turns.is_empty() {
-        let plain = req.tools_json.is_empty()
-            && req.think == chat::ThinkMode::Default
-            && req.reasoning_effort.is_none()
-            && req
-                .chat_turns
-                .iter()
-                .all(|t| t.role != "tool" && t.tool_calls.is_empty());
+        // ONE predicate for the plain-vs-tools render (memra CLAUDE.md, v0.109.1 lesson): the
+        // worker, the HTTP-side accounting and this route must agree, or `/v1/tokenize` and
+        // the prepaid reservation count a different prompt than the one served here. The
+        // local copy this replaces dropped the `reasoning` and effort-ladder terms.
+        let plain = crate::worker::plain_chat_render_path(
+            &req.tools_json,
+            &req.think,
+            req.reasoning_effort.as_deref(),
+            &req.chat_turns,
+            m.tok.has_qwen_effort_ladder(),
+        );
         let rendered = if plain {
             let messages: Vec<_> = req
                 .chat_turns
