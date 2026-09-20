@@ -41,8 +41,8 @@ not rewritten into refusals.
 
 ## Day-8 storage command and filesystem binding
 
-The collector resolves literal `storage-bench roundtrip|restore OBJECT BYTES
-buffered|uncached|direct` argv, optional literal environment prefixes, and the
+The collector resolves literal `storage-bench roundtrip|restore OBJECT_DIR [BYTES]
+[buffered|uncached|direct]` argv, optional literal environment prefixes, and the
 canonical `bash -c` single-command wrapper
 (`shlex.join(shlex.split(script)) == script`). Opaque/noncanonical shell storage
 commands are rejected before execution. The resolved command requires
@@ -52,8 +52,8 @@ compound commands are not a supported escape hatch.
 New storage captures carry `storage.object_binding` in the capture and **both**
 CELL rows: resolved root/object paths, stat device number, statfs filesystem id,
 and Linux mount id from `/proc/self/fdinfo`. `storage.object_argument` binds the
-original command's object argument. Before execution the object (or its existing
-parent for creation) must be beneath the resolved root and on the **same mount
+original command's object argument. Before execution the backend object directory (or its existing
+parent for creation) must be at or beneath the resolved root and on the **same mount
 and filesystem**; symlink escapes and different nested mounts refuse. The same
 binding is checked after execution. A changed mount/path aborts completion (a
 start-only journal cannot validate). This is filesystem identity evidence, not

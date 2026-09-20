@@ -23,6 +23,8 @@ class StorageBindingTests(unittest.TestCase):
             cmd = ['storage-bench', 'restore', str(Path(tmp)/'object'), '264', 'buffered']
             wrapped = ['bash', '-c', shlex.join(cmd)]
             self.assertEqual(B.storage_command(wrapped), cmd)
+            self.assertEqual(B.storage_command(cmd[:3]), cmd[:3])
+            self.assertEqual(B.storage_command(cmd[:4]), cmd[:4])
             proc = subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'),
                 '--out', str(out), '--execute', *wrapped], capture_output=True, text=True)
             self.assertEqual(proc.returncode, 2)
@@ -47,7 +49,8 @@ class StorageBindingTests(unittest.TestCase):
             obj.write_bytes(b'fixture')
             self.assertEqual(B.storage_binding(root, obj), binding)
             (root/'escape').symlink_to(other, target_is_directory=True)
-            for bad in (other/'object', root/'escape'/'object', root):
+            self.assertEqual(B.storage_binding(root, root)['object'], str(root.resolve()))
+            for bad in (other/'object', root/'escape'/'object'):
                 with self.subTest(path=bad), self.assertRaises(ValueError):
                     B.storage_binding(root, bad)
             with patch.object(B, 'filesystem_identity', side_effect=[

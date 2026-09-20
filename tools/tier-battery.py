@@ -425,8 +425,8 @@ def storage_command(command):
     if Path(argv[0]).name != "storage-bench":
         require(not any("storage-bench" in arg for arg in argv), "opaque storage command")
         return None
-    require(len(argv) == 5 and argv[1] in {"roundtrip", "restore"}
-            and argv[4] in {"buffered", "uncached", "direct"},
+    require(3 <= len(argv) <= 5 and argv[1] in {"roundtrip", "restore"}
+            and (len(argv) < 5 or argv[4] in {"buffered", "uncached", "direct"}),
             "storage root binding requires exact roundtrip/restore argv")
     return argv
 
@@ -451,7 +451,7 @@ def filesystem_identity(path):
 def storage_binding(root, object_path):
     root = root.resolve(strict=True)
     obj = object_path.resolve()
-    require(obj != root and obj.is_relative_to(root), "storage object must be beneath supplied root")
+    require(obj.is_relative_to(root), "storage object must be at or beneath supplied root")
     parent = obj.parent.resolve(strict=True)
     root_fs = filesystem_identity(root)
     object_fs = filesystem_identity(obj if obj.exists() else parent)
@@ -563,7 +563,7 @@ def validate_capture(record, root):
             require(command is not None and command[2] == storage["object_argument"],
                     "storage binding command mismatch")
             obj, parent = Path(binding["object"]), Path(storage["root"])
-            require(obj.is_absolute() and parent.is_absolute() and obj != parent
+            require(obj.is_absolute() and parent.is_absolute()
                     and obj.is_relative_to(parent) and binding["root"] == storage["root"],
                     "storage binding path mismatch")
             require(binding["root_filesystem"] == binding["object_filesystem"]
