@@ -1,0 +1,83 @@
+Diff in /Users/avifen/tiyuvta/wt-include-usage/crates/memra-server/src/lib.rs:9941:
+     stop_strings: Vec<String>,
+     guard: Option<InflightGuard>,
+ ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+[31m-    sse_response_with_receipt(rx, model, chat, parser, env, stop_strings, guard, None, false)
+(B[m[32m+    sse_response_with_receipt(
+(B[m[32m+        rx,
+(B[m[32m+        model,
+(B[m[32m+        chat,
+(B[m[32m+        parser,
+(B[m[32m+        env,
+(B[m[32m+        stop_strings,
+(B[m[32m+        guard,
+(B[m[32m+        None,
+(B[m[32m+        false,
+(B[m[32m+    )
+(B[m }
+ 
+ #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+Diff in /Users/avifen/tiyuvta/wt-include-usage/crates/memra-server/src/lib.rs:9957:
+     include_usage: bool,
+ ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+     sse_response_for_format(
+[31m-        rx, model,
+(B[m[31m-        SseFormat { chat, openai: chat || openai_compat(), include_usage },
+(B[m[31m-        parser, env, stop_strings, guard, receipt,
+(B[m[32m+        rx,
+(B[m[32m+        model,
+(B[m[32m+        SseFormat {
+(B[m[32m+            chat,
+(B[m[32m+            openai: chat || openai_compat(),
+(B[m[32m+            include_usage,
+(B[m[32m+        },
+(B[m[32m+        parser,
+(B[m[32m+        env,
+(B[m[32m+        stop_strings,
+(B[m[32m+        guard,
+(B[m[32m+        receipt,
+(B[m     )
+ }
+ 
+Diff in /Users/avifen/tiyuvta/wt-include-usage/crates/memra-server/src/lib.rs:9982:
+     guard: Option<InflightGuard>,
+     mut receipt: Option<Box<dyn metering::Receipt>>,
+ ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+[31m-    let SseFormat { chat, openai, include_usage } = format;
+(B[m[32m+    let SseFormat {
+(B[m[32m+        chat,
+(B[m[32m+        openai,
+(B[m[32m+        include_usage,
+(B[m[32m+    } = format;
+(B[m     // STOP-LEAK holdback (gap-scan F9), OpenAI shapes only: content deltas buffer until
+     // they can't start a stop string; matched stop text is excluded exactly like the
+     // non-stream shape. The memra-native stream stays byte-identical (no scrubber).
+Diff in /Users/avifen/tiyuvta/wt-include-usage/crates/memra-server/src/lib.rs:9989:
+[31m-    let mut scrub = (!stop_strings.is_empty() && openai)
+(B[m[31m-        .then(|| StopScrubber::new(stop_strings));
+(B[m[32m+    let mut scrub = (!stop_strings.is_empty() && openai).then(|| StopScrubber::new(stop_strings));
+(B[m     let chunk_env = env.clone();
+     let stamp_chunk = move |payload| {
+         let mut payload = chunk_env.stamp(payload);
+Diff in /Users/avifen/tiyuvta/wt-include-usage/crates/memra-server/src/lib.rs:15826:
+                 .collect();
+             let token_events = chunks
+                 .iter()
+[31m-                .filter(|chunk| !chunk["choices"].as_array().unwrap().is_empty() && chunk["choices"][0]["finish_reason"].is_null())
+(B[m[32m+                .filter(|chunk| {
+(B[m[32m+                    !chunk["choices"].as_array().unwrap().is_empty()
+(B[m[32m+                        && chunk["choices"][0]["finish_reason"].is_null()
+(B[m[32m+                })
+(B[m                 .count();
+             let terminal = chunks.last().unwrap();
+             assert_eq!(token_events, 1, "{stop_reason} SSE token count");
+Diff in /Users/avifen/tiyuvta/wt-include-usage/crates/memra-server/src/lib.rs:15833:
+             assert_eq!(terminal["usage"]["completion_tokens"], token_events);
+[31m-            assert_eq!(chunks[chunks.len() - 2]["choices"][0]["finish_reason"], expected_finish);
+(B[m[32m+            assert_eq!(
+(B[m[32m+                chunks[chunks.len() - 2]["choices"][0]["finish_reason"],
+(B[m[32m+                expected_finish
+(B[m[32m+            );
+(B[m         }
+     }
+ 
