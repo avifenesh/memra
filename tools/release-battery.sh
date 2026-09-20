@@ -36,6 +36,11 @@ for t in kernel-check run-spec argmax-margin-probe; do
 done
 [ -x "$HERE/argmax-margin-gate.sh" ] || { echo "release-battery: tools/argmax-margin-gate.sh missing" >&2; exit 1; }
 [ -r "$ROSTER" ] || { echo "release-battery: roster not readable: $ROSTER" >&2; exit 1; }
+command -v python3 >/dev/null || { echo "release-battery: python3 required for coverage validation" >&2; exit 1; }
+for file in release-coverage.py kernel-check-27b.cells kernel-check-step35.cells; do
+  [ -r "$HERE/$file" ] || { echo "release-battery: required coverage file missing: $HERE/$file" >&2; exit 1; }
+done
+KC_REQUIRED=(--require-manifest "$HERE/kernel-check-27b.cells" --require-manifest "$HERE/kernel-check-step35.cells")
 
 
 # ---- CARD ISOLATION (memra#264) ------------------------------------------------------
@@ -137,10 +142,13 @@ if [ -z "$KC_MODEL" ]; then
   note "kernel-check           REFUSED   no roster model present on this rig"
   FAILED=1
 else
-  if OUT=$("$BIN/kernel-check" "$KC_MODEL" 2>&1) && printf '%s' "$OUT" | grep -q "ALL GREEN"; then
-    note "kernel-check           PASS      $(printf '%s' "$OUT" | grep -o 'ALL GREEN.*') [$(basename "$KC_MODEL")]"
+  COVERAGE=""
+  if OUT=$(unset MEMRA_KC_FAST MEMRA_KC_ONLY; "$BIN/kernel-check" "$KC_MODEL" "${KC_REQUIRED[@]}" 2>&1) \
+      && COVERAGE=$(printf '%s\n' "$OUT" | python3 "$HERE/release-coverage.py" kernel "${KC_REQUIRED[@]}" 2>&1); then
+    note "kernel-check           PASS      $COVERAGE [$(basename "$KC_MODEL")]"
   else
-    note "kernel-check           FAIL      $(printf '%s' "$OUT" | tail -1)"
+    printf '%s\n' "$OUT"
+    note "kernel-check           FAIL      ${COVERAGE:-$(printf '%s' "$OUT" | tail -1)}"
     FAILED=1
   fi
 fi
@@ -197,10 +205,16 @@ while IFS=$'\t' read -r class id path _ || [ -n "${class:-}" ]; do
     FAILED=1
     continue
   fi
-  if OUT=$("$BIN/run-spec" "$path" 2>&1) && printf '%s' "$OUT" | grep -q "SELF-CONSISTENCY PASS"; then
-    note "$id  run-spec  PASS      K=1..8 self-consistency, identical to plain target"
+  # Match local-ci's greedy full-depth mode. Benchmark overrides must neither narrow
+  # the K sweep nor replace it with prompt-directory, plain-only, or sampled execution.
+  COVERAGE=""
+  if OUT=$(unset MEMRA_PROMPT_DIR MEMRA_SPEC_K MEMRA_GEN_ONLY
+      MEMRA_SPEC_TEMP=0 MEMRA_NGEN=32 "$BIN/run-spec" "$path" 2>&1) \
+      && COVERAGE=$(printf '%s\n' "$OUT" | python3 "$HERE/release-coverage.py" spec 2>&1); then
+    note "$id  run-spec  PASS      $COVERAGE"
   else
-    note "$id  run-spec  FAIL      $(printf '%s' "$OUT" | tail -1)"
+    printf '%s\n' "$OUT"
+    note "$id  run-spec  FAIL      ${COVERAGE:-$(printf '%s' "$OUT" | tail -1)}"
     FAILED=1
   fi
 done < "$ROSTER"
