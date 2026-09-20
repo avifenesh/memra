@@ -326,7 +326,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
     let status = if active && reclaim_observed {
         "ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS"
     } else if active {
-        "ACTIVE_COPY_RESTORE_CAPTURED; no reclaim; continuation comparison pending; not G1 PASS"
+        "ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation comparison pending; not G1 PASS"
     } else {
         "BASELINE_CAPTURED"
     };
