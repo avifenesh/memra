@@ -6,7 +6,7 @@ use cudarc::driver::CudaSlice;
 use memra_engine::Engine;
 use memra_kv::{Cache, KvLayer};
 use memra_tier::{bank::SharedBudget, contracts::*, tier::governor::Governor};
-use std::{cell::RefCell, fs, path::Path, rc::Rc, sync::Arc};
+use std::{cell::RefCell, fs, io::Write, path::Path, rc::Rc, sync::Arc};
 
 type Transfers = Rc<RefCell<CudaTransfers>>;
 const EPOCHS: Epochs = Epochs {
@@ -271,7 +271,7 @@ pub fn roundtrip(
     cache: &mut Cache,
     program: ProgramIdentity,
     out: &Path,
-) -> super::Result<()> {
+) -> super::Result<bool> {
     let mut capacity = TierBudget::zero(1);
     capacity.device[0] = 2 << 30;
     capacity.pinned = 2 << 30;
@@ -343,16 +343,33 @@ pub fn roundtrip(
             used.pinned
         ),
     )?;
-    if used.device[0] != 0 || used.pinned != logical as u64 || after <= before {
-        return Err("active device reclaim not demonstrated; see active-reclaim.txt".into());
+    if used.device[0] != 0 || used.pinned != logical as u64 {
+        return Err("active demotion accounting mismatch; see active-reclaim.txt".into());
     }
+    let demote_count = suspended.len() * 2;
+    let mut reload_count = 0;
     for (i, mut layer, k, v) in suspended {
         layer.k = restore(e, &transfers, k)?;
         layer.v = restore(e, &transfers, v)?;
+        reload_count += 2;
         cache.kv[i] = Some(layer);
     }
     if transfers.borrow().used() != TierBudget::zero(1) {
         return Err("active transfer budget not fully retired".into());
     }
-    Ok(())
+    e.stream().synchronize()?;
+    e.pool_trim_to_zero();
+    let restored = e.ctx().mem_get_info()?.0;
+    let reclaimed = after > before && restored < after;
+    let mut metrics = fs::OpenOptions::new()
+        .append(true)
+        .open(out.join("active-reclaim.txt"))?;
+    writeln!(
+        metrics,
+        "demote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaimed}",
+        after as i128 - before as i128,
+        after as i128 - restored as i128
+    )?;
+    metrics.sync_all()?;
+    Ok(reclaimed)
 }

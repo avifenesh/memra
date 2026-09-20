@@ -213,7 +213,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
     fs::write(
         args.out.join("identity.txt"),
         format!(
-            "artifact_sha256={artifact_hash}\nbinary_sha256={binary_hash}\nplan_debug_sha256={}\nprompt_sha256={}\nprogram=native-decode_step_h-tokenwise-trunk-no-mtp\nmode=raw-token-no-chat-template\ncontext={}\nprompt_tokens={}\ngenerate={GENERATE}\nrequested_tiers={}\nengaged_tier_bytes=0\nscope=baseline-only; no tier qualification or performance claim\n",
+            "artifact_sha256={artifact_hash}\nbinary_sha256={binary_hash}\nplan_debug_sha256={}\nprompt_sha256={}\nprogram=native-decode_step_h-tokenwise-trunk-no-mtp\nmode=raw-token-no-chat-template\ncontext={}\nprompt_tokens={}\ngenerate={GENERATE}\nrequested_tiers={}\nexecution_status=pending\nscope=identity-only; consult completion and active-reclaim receipts for engagement; no tier qualification or performance claim\n",
             hash(plan.as_bytes()),
             hash(&prompt_bytes),
             args.context,
@@ -239,6 +239,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
         &args.out,
         "prefix",
     )?;
+    let mut reclaim_observed = false;
     if args.case == "active" {
         use memra_tier::contracts::{ProgramIdentity, digest};
         let program = ProgramIdentity {
@@ -254,7 +255,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
             position: digest("prompt-u32le", &prompt_bytes),
             tenant_salt: digest("tenant", b"gate-exclusive-request"),
         };
-        active::roundtrip(&e, &mut cache, program, &args.out)?;
+        reclaim_observed = active::roundtrip(&e, &mut cache, program, &args.out)?;
         let restored = capture(
             &e,
             &cache,
@@ -307,40 +308,33 @@ fn baseline(args: &cli::Args) -> Result<()> {
     fs::write(args.out.join("output.txt"), tokenizer.decode(&ids))?;
     fs::write(args.out.join("final-logits.f32le"), f32_bytes(&logits))?;
     let active = args.case == "active";
+    let status = if active && reclaim_observed {
+        "ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS"
+    } else if active {
+        "ACTIVE_COPY_RESTORE_CAPTURED; no reclaim; continuation comparison pending; not G1 PASS"
+    } else {
+        "BASELINE_CAPTURED"
+    };
     fs::write(
         args.out
             .join(if active { "ACTIVE.txt" } else { "BASELINE.txt" }),
         format!(
             "{}\ncommitted={}\nprefix_state_manifest_sha256={prefix_hash}\nfinal_state_manifest_sha256={final_hash}\ntokens_sha256={}\nlogit_rows_sha256={}\nactive_engaged={active}\nprefix_engaged=false\n",
-            if active {
-                "ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS"
-            } else {
-                "BASELINE_CAPTURED"
-            },
+            status,
             cache.pos,
             hash(&tokens),
             file_hash(&args.out.join("logits.tsv"))?
         ),
     )?;
-    println!(
-        "{} committed={} generated={GENERATE}",
-        if active {
-            "ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS"
-        } else {
-            "BASELINE_CAPTURED; tiers NOT engaged"
-        },
-        cache.pos
-    );
+    println!("{} committed={} generated={GENERATE}", status, cache.pos);
     Ok(())
 }
 
 fn run() -> Result<()> {
     let args = cli::parse(std::env::args().skip(1))?;
     fs::create_dir(&args.out)?; // Immutable receipt namespace; never overwrite an earlier attempt.
-    let result = if args.case == "prefix"
-        || (args.case == "active" && (args.tiers != "host" || args.context != 8192))
-    {
-        Err("REFUSED: only active context=8192 tiers=host is bound; prefix and other active routes remain unsupported".into())
+    let result = if args.case == "prefix" || (args.case == "active" && args.tiers != "host") {
+        Err("REFUSED: only active tiers=host is bound; prefix and other active routes remain unsupported".into())
     } else {
         baseline(&args)
     };
