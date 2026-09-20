@@ -134,9 +134,9 @@ pub(super) fn prepare_rope_factors(
                 "expected {width} or {stored_width} finite positive factors"
             )));
         }
-    } else if config.rope_scaling_hint.as_deref() == Some("llama3") {
+    } else if width > 0 {
         return Err(invalid(
-            "llama3 requires rope_freqs.weight or normalized frequency factors".into(),
+            "compiled plan requires rope_freqs.weight or normalized frequency factors".into(),
         ));
     }
     step.rope_freq_factors = factors;

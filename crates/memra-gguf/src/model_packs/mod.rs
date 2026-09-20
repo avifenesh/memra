@@ -195,13 +195,24 @@ pub fn compile_for_load(config: &ModelConfig) -> Result<ModelPlan, PlanCompileEr
 }
 
 /// Source-backed preflight shared by the eager loaders, before model-weight allocation.
-/// Declared checkpoint RoPE factors must exist even when automatic placement (and its
-/// tensor census) is disabled. HF Step factors are already derived during normalization.
+/// Source RoPE factors must have a planned consumer, and required factors must exist even
+/// when automatic placement (and its census) is disabled. HF Step factors are already
+/// derived during normalization.
 pub fn compile_for_source(
     source: &dyn crate::source::TensorSource,
 ) -> Result<(ModelConfig, ModelPlan), Box<dyn std::error::Error>> {
     let mut config = source.try_config().map_err(std::io::Error::other)?;
     let plan = compile_for_load(&config)?;
+    if crate::tensor_contract::rope_factor_width(&plan).unwrap_or(0) == 0
+        && source.find("rope_freqs.weight").is_some()
+    {
+        return Err(PlanCompileError::UnsupportedSemantics {
+            field: "rope_freqs.weight",
+            value: "source declares checkpoint factors that the compiled plan does not consume"
+                .into(),
+        }
+        .into());
+    }
     step35::prepare_rope_factors(&mut config, &plan, source)?;
     Ok((config, plan))
 }

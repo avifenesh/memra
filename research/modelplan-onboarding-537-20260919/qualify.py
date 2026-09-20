@@ -284,7 +284,9 @@ def main():
          "qualification_scope": "native target" if target else "secondary-backend diagnostic only"})
     if args.phase == "focused":
         run(args.out, "step-rope-load", [binaries["focused"]["path"], "--ignored", "--test-threads=1",
-            "--nocapture"], env, [r"STEP_ROPE_LOAD_PASS", r"1 passed; 0 failed"])
+            "--nocapture"], env, [
+                r"STEP_ROPE_LOAD_PASS .*missing_factors_refused=true identity_fixture_max_delta=",
+                r"1 passed; 0 failed"])
     else:
         if not args.models:
             parser.error("model phases require --models")

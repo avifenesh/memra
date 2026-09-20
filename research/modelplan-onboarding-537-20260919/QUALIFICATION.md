@@ -99,8 +99,10 @@ if the coordinator assigns another free port.
 
 The focused test checks the actual uploaded factor buffer, bit-identical decode with the
 same factors supplied through config or tensor bytes, the full-head GGUF storage extent,
-and non-vacuity against an omitted-factor diagnostic mutation. Its uniform Q8_0 synthetic
-expert banks are not evidence for any checkpoint quantization format.
+and strict rejection of missing factors with the unchanged official GGUF header fixture.
+A separate synthetic identity-factor fixture establishes non-vacuity; it does not replace
+the pinned checkpoint's input or relax the missing-factor refusal. Its uniform Q8_0 expert
+banks are not evidence for any checkpoint quantization format.
 
 The runner stores raw stdout/stderr before reading verdicts, argv, exit status, source commit,
 binary and log hashes, artifact hashes, physical lease metadata, GPU state, and other-card

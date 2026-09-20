@@ -295,6 +295,54 @@ fn gguf_rope_declarations_reach_the_compiler() {
 }
 
 #[test]
+fn gguf_factor_tensors_cannot_be_ignored_by_checkpoint_free_plans() {
+    use crate::micro_gguf::{GgufWriter, MetaW};
+    use crate::source::{GgufSource, TensorSource};
+    for family in ["llama", "qwen3"] {
+        for has_factors in [false, true] {
+            let mut writer = GgufWriter::new();
+            writer.kv("general.architecture", MetaW::Str(family));
+            for (name, value) in [
+                ("block_count", 2),
+                ("embedding_length", 8),
+                ("attention.head_count", 2),
+                ("attention.head_count_kv", 1),
+                ("feed_forward_length", 16),
+                ("vocab_size", 32),
+            ] {
+                writer.kv(&format!("{family}.{name}"), MetaW::U32(value));
+            }
+            // Converted Llama3 GGUFs declare scaling through this tensor even when
+            // their headers have no rope.scaling.type metadata.
+            if has_factors {
+                writer.tensor_f32("rope_freqs.weight", &[2], &[2.0, 8.0]);
+            }
+            let path = std::env::temp_dir().join(format!(
+                "memra-537-unrepresented-factors-{family}-{has_factors}-{}.gguf",
+                std::process::id()
+            ));
+            writer.write(&path).unwrap();
+            let file = crate::GgufFile::open(&path).unwrap();
+            std::fs::remove_file(path).unwrap();
+            let source = GgufSource(&file);
+            let config = source.config();
+            assert!(config.rope_scaling_hint.is_none());
+            let plan = compile_for_load(&config).unwrap();
+            assert!(crate::tensor_contract::rope_factor_width(&plan).is_none());
+            let loaded = compile_for_source(&source);
+            if has_factors {
+                let Err(error) = loaded else {
+                    panic!("a source factor tensor must not be ignored");
+                };
+                assert!(error.to_string().contains("rope_freqs.weight"), "{error}");
+            } else {
+                loaded.unwrap();
+            }
+        }
+    }
+}
+
+#[test]
 fn gemma_per_attention_rope_declarations_are_not_erased() {
     let extra = r#""sliding_window":8,"layer_types":["sliding_attention","full_attention"],
         "hidden_activation":"gelu_pytorch_tanh","rope_parameters":{
@@ -496,7 +544,13 @@ fn step_gguf_checkpoint_factors_and_mtp_survive_pack_selection() {
         writer(&path).unwrap();
         let mut file = crate::GgufFile::open(&path).unwrap();
         std::fs::remove_file(&path).unwrap();
-        let implicit = compile_for_load(&ModelConfig::from_gguf(&file)).unwrap();
+        let implicit_config = ModelConfig::from_gguf(&file);
+        assert!(implicit_config.rope_scaling_hint.is_none());
+        let implicit = compile_for_load(&implicit_config).unwrap();
+        let Err(missing) = compile_for_source(&crate::source::GgufSource(&file)) else {
+            panic!("the actual Step header requires factors without a scaling-type key");
+        };
+        assert!(missing.to_string().contains("requires rope_freqs.weight"));
         file.metadata.insert(
             "step35.rope.scaling.type".into(),
             crate::MetaValue::String("llama3".into()),

@@ -16,12 +16,14 @@ use memra_gguf::tensor_contract::{
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+#[derive(Clone)]
 struct Tensor {
     bytes: Vec<u8>,
     shape: Vec<u64>,
     dtype: GgmlType,
 }
 
+#[derive(Clone)]
 struct Source {
     config: ModelConfig,
     tensors: BTreeMap<String, Tensor>,
@@ -162,7 +164,7 @@ fn logits(
 
 #[test]
 #[ignore = "requires one exclusively locked RTX PRO 6000 Blackwell GPU"]
-fn hf_factors_match_explicit_tensor_and_the_omitted_factor_mutation_diverges()
+fn hf_and_tensor_factors_match_missing_factors_fail_and_identity_fixture_diverges()
 -> Result<(), Box<dyn std::error::Error>> {
     let visible = std::env::var("CUDA_VISIBLE_DEVICES")?;
     assert!(!visible.is_empty() && visible.split(',').count() == 1);
@@ -217,21 +219,59 @@ fn hf_factors_match_explicit_tensor_and_the_omitted_factor_mutation_diverges()
             .collect::<Vec<_>>()
     );
 
-    // Diagnostic mutation recreates the old omission; it is never a supported model arm.
-    source.tensors.remove("rope_freqs.weight");
-    source.config.rope_scaling_hint = None;
-    let omitted = logits(&Engine::new(0)?, &source, None)?;
+    // Preserve every other tensor and all metadata when checking a missing auxiliary.
+    let mut missing = source.clone();
+    missing.tensors.remove("rope_freqs.weight");
+    let Err(error) = HybridModel::load_from_source_without_mtp(&Engine::new(0)?, &missing) else {
+        panic!("a declared checkpoint factor cannot be omitted");
+    };
+    assert!(error.to_string().contains("requires rope_freqs.weight"));
+
+    // This unchanged metadata-only fixture is pinned to the official GGUF header.
+    // Do not insert or clear scaling-type metadata to make the refusal reachable.
+    let path = std::env::temp_dir().join(format!(
+        "memra-step-unmodified-header-{}.gguf",
+        std::process::id()
+    ));
+    memra_gguf::micro_gguf::write_step35_meta_only(&path)?;
+    let file = memra_gguf::GgufFile::open(&path)?;
+    std::fs::remove_file(path)?;
+    let header_source = memra_gguf::source::GgufSource(&file);
+    assert!(header_source.config().rope_scaling_hint.is_none());
+    let Err(error) = HybridModel::load_from_source_without_mtp(&Engine::new(0)?, &header_source)
+    else {
+        panic!("the official header requires factors even without a scaling-type key");
+    };
+    assert!(error.to_string().contains("requires rope_freqs.weight"));
+
+    // Separate synthetic diagnostic: explicitly supplied identity factors recreate the
+    // old unscaled arithmetic. Canonical artifact bytes and their controls are untouched.
+    let identity_factors = vec![1.0f32; factors.len()];
+    let mut identity_fixture = source.clone();
+    identity_fixture.tensors.insert(
+        "rope_freqs.weight".into(),
+        Tensor {
+            bytes: identity_factors
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect(),
+            shape: vec![identity_factors.len() as u64],
+            dtype: GgmlType::F32,
+        },
+    );
+    let unscaled = logits(&Engine::new(0)?, &identity_fixture, Some(&identity_factors))?;
     let max_delta = hf
         .iter()
-        .zip(omitted)
+        .zip(unscaled)
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max);
     assert!(
         max_delta > 1e-6,
-        "factor omission was numerically vacuous: {max_delta}"
+        "identity-factor diagnostic was numerically vacuous: {max_delta}"
     );
     println!(
-        "STEP_ROPE_LOAD_PASS rows=48 hf_tensor_bit_identity=true omitted_max_delta={max_delta}"
+        "STEP_ROPE_LOAD_PASS rows=48 hf_tensor_bit_identity=true missing_factors_refused=true \
+         identity_fixture_max_delta={max_delta}"
     );
     Ok(())
 }

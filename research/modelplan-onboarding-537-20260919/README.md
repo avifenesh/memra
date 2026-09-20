@@ -11,9 +11,10 @@ an accepting pack before reading model weights. Pack refusal cannot fall through
 generic compiler.
 
 Normalization retains `hidden_act` / `hidden_activation`, scalar HF and GGUF RoPE types, and
-Gemma-style per-attention RoPE types. Source preflight requires a tensor or normalized factors
-when Llama3 scaling is declared, including when automatic placement is disabled. Step HF load
-now consumes its already-derived frequency factors instead of silently using no factors.
+Gemma-style per-attention RoPE types. Source preflight rejects factor tensors that the plan
+does not consume. Step requires its planned checkpoint factors even when a GGUF omits the
+scaling-type metadata and automatic placement is disabled. Step HF load consumes its
+already-derived frequency factors instead of silently using no factors.
 The Step pack validates auxiliary dtype, extent, byte length and finite positive values
 before allocation; the engine uploads the same validated buffer, without reading it again.
 Existing Step window/checkpoint factors, Gemma
