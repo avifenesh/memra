@@ -1,0 +1,5 @@
+label=control-skip-spawn count=10 args=--skip catalog_gc_process_exit_between_tombstone_and_unlink --skip review_gc_staged_transaction_process_exit_and_bounded_recovery --skip review_gc_live_cross_process_transaction_commits_byte_exact --skip telemetry_join_schema_cumulative_bytes_unknowns_and_bounded_intervals
+head=ce423a158d99bd3bdc21fafbda8c469724ba0123
+tmpdir=/tmp fstype=tmpfs kernel=7.0.0-31-generic
+rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+nproc=24
