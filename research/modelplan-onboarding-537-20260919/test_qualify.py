@@ -6,6 +6,7 @@ from unittest.mock import patch
 import tempfile
 import json
 import subprocess
+import shutil
 
 spec = importlib.util.spec_from_file_location("qualify", Path(__file__).with_name("qualify.py"))
 qualify = importlib.util.module_from_spec(spec)
@@ -89,15 +90,33 @@ class ArtifactSelection(unittest.TestCase):
 
 
 class BuildReceipts(unittest.TestCase):
-    def test_command_receipts_do_not_collide_with_the_build_manifest(self):
+    def exercise_build(self, compiler_source="env", mutate_compiler=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "repo"
             bins = root / "target/release"
             bins.mkdir(parents=True)
             for name in [*qualify.BINS, "memra-server", "focused-test"]:
                 (bins / name).write_bytes(b"compiled fixture")
+            pinned = Path(directory) / "cuda-13.1/bin/nvcc"
+            ambient = Path(directory) / "ambient/nvcc"
+            for path, version in [(pinned, "13.1"), (ambient, "13.2")]:
+                path.parent.mkdir(parents=True)
+                path.write_text(f"#!/bin/sh\necho 'Cuda compilation tools, release {version}'\n")
+                path.chmod(0o755)
             out = Path(directory) / "receipts"
+            selected = []
+            real_run = subprocess.run
             def fake_run(argv, **kwargs):
+                if argv[0] != "cargo":
+                    return real_run(argv, **kwargs)
+                env = kwargs["env"]
+                # A missing override lets an ambient compiler win, as build.rs did.
+                chosen = env.get("MEMRA_NVCC") or shutil.which("nvcc", path=env["PATH"])
+                selected.append(chosen)
+                self.assertEqual(chosen, str(pinned.resolve()))
+                self.assertNotIn("MEMRA_FAST", env)
+                if mutate_compiler and len(selected) == 1:
+                    pinned.write_text(pinned.read_text() + "# replaced during compilation\n")
                 if "--message-format=json" in argv:
                     message = {"target": {"name": "step_rope_load_gpu"},
                                "executable": str(bins / "focused-test")}
@@ -105,8 +124,15 @@ class BuildReceipts(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0)
             def fake_git(argv, **kwargs):
                 return "a" * 40 + "\n" if argv[1] == "rev-parse" else ""
+            argv = ["qualify.py", "build", "--out", str(out)]
+            env = {"MEMRA_NVCC": str(pinned), "MEMRA_FAST": "1",
+                   "PATH": str(ambient.parent)}
+            if compiler_source == "cli":
+                argv += ["--nvcc", str(pinned)]
+                env["MEMRA_NVCC"] = str(ambient)
             with patch.object(qualify, "ROOT", root), \
-                 patch.object(qualify.sys, "argv", ["qualify.py", "build", "--out", str(out)]), \
+                 patch.object(qualify.sys, "argv", argv), \
+                 patch.dict(qualify.os.environ, env), \
                  patch.object(qualify.signal, "signal"), \
                  patch.object(qualify.subprocess, "run", side_effect=fake_run), \
                  patch.object(qualify.subprocess, "check_output", side_effect=fake_git):
@@ -115,6 +141,34 @@ class BuildReceipts(unittest.TestCase):
             manifest = json.loads((out / "build.json").read_text())
             self.assertEqual(manifest["commit"], "a" * 40)
             self.assertIn("focused", manifest["binaries"])
+            self.assertEqual(len(selected), 3)
+            self.assertEqual(manifest["compiler"]["path"], str(pinned.resolve()))
+            self.assertEqual(manifest["compiler"]["sha256"], qualify.sha(pinned))
+            self.assertIn("release 13.1", manifest["compiler"]["version"])
+
+    def test_command_receipts_do_not_collide_with_the_build_manifest(self):
+        self.exercise_build()
+
+    def test_explicit_environment_compiler_pin_cannot_fall_back_to_ambient(self):
+        self.exercise_build()
+
+    def test_cli_compiler_pin_overrides_environment(self):
+        self.exercise_build("cli")
+
+    def test_compiler_replacement_during_build_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "compiler changed during build"):
+            self.exercise_build(mutate_compiler=True)
+
+    def test_qualification_build_refuses_an_unpinned_compiler(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(qualify.sys, "argv", ["qualify.py", "build", "--out", directory]), \
+             patch.dict(qualify.os.environ, {}, clear=True), \
+             patch.object(qualify.signal, "signal"), \
+             patch.object(qualify.subprocess, "check_output", side_effect=["a" * 40, ""]), \
+             patch.object(qualify, "run") as run:
+            with self.assertRaises(SystemExit):
+                qualify.main()
+            run.assert_not_called()
 
 
 if __name__ == "__main__":
