@@ -237,7 +237,7 @@ def main():
         command = ["cargo", "build", "--release", "-j", str(args.jobs), "-p", "memra-engine"]
         for name in BINS:
             command.extend(["--bin", name])
-        run(args.out, "build", command, env)
+        run(args.out, "build-engine", command, env)
         run(args.out, "build-server", ["cargo", "build", "--release", "-j", str(args.jobs),
             "-p", "memra-server", "--bin", "memra-server"], env)
         text = run(args.out, "build-focused", ["cargo", "test", "--release", "-j", str(args.jobs),

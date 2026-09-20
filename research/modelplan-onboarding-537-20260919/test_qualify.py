@@ -4,6 +4,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 import tempfile
+import json
+import subprocess
 
 spec = importlib.util.spec_from_file_location("qualify", Path(__file__).with_name("qualify.py"))
 qualify = importlib.util.module_from_spec(spec)
@@ -84,6 +86,35 @@ class ArtifactSelection(unittest.TestCase):
                 (directory / "manifest.json").write_text("{}")
                 with self.assertRaisesRegex(RuntimeError, "inventory differs"):
                     qualify.verify_artifact("step_fp8", models)
+
+
+class BuildReceipts(unittest.TestCase):
+    def test_command_receipts_do_not_collide_with_the_build_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            bins = root / "target/release"
+            bins.mkdir(parents=True)
+            for name in [*qualify.BINS, "memra-server", "focused-test"]:
+                (bins / name).write_bytes(b"compiled fixture")
+            out = Path(directory) / "receipts"
+            def fake_run(argv, **kwargs):
+                if "--message-format=json" in argv:
+                    message = {"target": {"name": "step_rope_load_gpu"},
+                               "executable": str(bins / "focused-test")}
+                    kwargs["stdout"].write((json.dumps(message) + "\n").encode())
+                return subprocess.CompletedProcess(argv, 0)
+            def fake_git(argv, **kwargs):
+                return "a" * 40 + "\n" if argv[1] == "rev-parse" else ""
+            with patch.object(qualify, "ROOT", root), \
+                 patch.object(qualify.sys, "argv", ["qualify.py", "build", "--out", str(out)]), \
+                 patch.object(qualify.signal, "signal"), \
+                 patch.object(qualify.subprocess, "run", side_effect=fake_run), \
+                 patch.object(qualify.subprocess, "check_output", side_effect=fake_git):
+                qualify.main()
+            self.assertEqual(json.loads((out / "build-engine.json").read_text())["exit_code"], 0)
+            manifest = json.loads((out / "build.json").read_text())
+            self.assertEqual(manifest["commit"], "a" * 40)
+            self.assertIn("focused", manifest["binaries"])
 
 
 if __name__ == "__main__":

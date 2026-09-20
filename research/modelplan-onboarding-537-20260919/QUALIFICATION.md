@@ -112,3 +112,9 @@ vector, rejecting short/intermediate extents and invalid values. All bytes are r
 the kernel consumes its declared prefix. The regression fails before this correction in
 [full-head-before.log](raw/full-head-before.log); the current CPU result is recorded separately
 from the original PR evidence in [qualification-prep-cpu.log](raw/qualification-prep-cpu.log).
+
+The first recovered native build compiled the engine, server and focused test, then exposed
+a harness filename collision: the engine-command receipt and final binary manifest both used
+`build.json`. The command receipt now uses `build-engine.json`, leaving `build.json` for the
+completed manifest. The GPU prerequisite refused the incomplete record. A CPU orchestration
+regression reproduces the collision and verifies both records coexist after the fix.

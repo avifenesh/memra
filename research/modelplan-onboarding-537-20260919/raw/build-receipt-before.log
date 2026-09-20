@@ -1,0 +1,28 @@
+RUN build: ['cargo', 'build', '--release', '-j', '4', '-p', 'memra-engine', '--bin', 'kernel-check', '--bin', 'run-gen', '--bin', 'run-spec', '--bin', 'argmax-margin-probe']
+RUN build-server: ['cargo', 'build', '--release', '-j', '4', '-p', 'memra-server', '--bin', 'memra-server']
+RUN build-focused: ['cargo', 'test', '--release', '-j', '4', '-p', 'memra-engine', '--test', 'step_rope_load_gpu', '--no-run', '--message-format=json']
+E
+======================================================================
+ERROR: test_command_receipts_do_not_collide_with_the_build_manifest (__main__.BuildReceipts.test_command_receipts_do_not_collide_with_the_build_manifest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/b6ce/memra/research/modelplan-onboarding-537-20260919/test_qualify.py", line 113, in test_command_receipts_do_not_collide_with_the_build_manifest
+    qualify.main()
+    ~~~~~~~~~~~~^^
+  File "/Users/avifen/.codex/worktrees/b6ce/memra/research/modelplan-onboarding-537-20260919/qualify.py", line 257, in main
+    save(args.out / "build.json", {"commit": commit, "cuda_arch": args.arch,
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         "binaries": {name: {"path": path, "sha256": sha(path)} for name, path in binaries.items()}})
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/b6ce/memra/research/modelplan-onboarding-537-20260919/qualify.py", line 34, in save
+    with path.open("x") as output:
+         ~~~~~~~~~^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileExistsError: [Errno 17] File exists: '/private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmpddyjctum/receipts/build.json'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.012s
+
+FAILED (errors=1)
