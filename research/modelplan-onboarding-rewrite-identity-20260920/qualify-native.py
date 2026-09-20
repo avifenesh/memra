@@ -251,6 +251,16 @@ def run(args):
             stream.write(b'\nmemra-542-binary-identity-negative\n')
         write_json(out / 'binary-mutation.json', {'sha256': digest(changed_binary), 'original_sha256': digest(tools['rewrite_identity_gate']), 'change': 'appended inert bytes to ELF'})
         case('different-executable-same-source', [changed_binary, 'check', model, bundle], strict, 'does not bind implementation_sha256=')
+        fresh = out / 'fresh-kv-control'
+        fresh.mkdir()
+        shutil.copy2(bundle / 'artifact.lock', fresh / 'artifact.lock')
+        fresh_text = case('fresh-kv-output-control-unqualified', [tools['rewrite_identity_gate'], 'fresh-control', model, fresh], {'MEMRA_ARTIFACT_LOCK': str(fresh / 'artifact.lock')})
+        if (fresh / 'rewrite-receipts.tsv').exists():
+            raise RuntimeError('unqualified fresh-KV control emitted a qualification receipt')
+        write_json(out / 'separate-program-outputs.json', {'cached': expected, 'fresh': output_hashes(fresh_text, 'fresh-kv-diagnostic'), 'same_program': False})
+        replayed = case('cached-replay-after-isolated-fresh-control', [tools['rewrite_identity_gate'], 'check', model, bundle], strict)
+        if output_hashes(replayed, 'check-eager') != expected:
+            raise RuntimeError('isolated fresh-KV diagnostic changed cached eager output')
         case('legacy-argmax-regression', [tools['run-gen'], model, '1', '2', '3', '4'], {'MEMRA_NGEN': '32'})
         case('legacy-batch-regression', [tools['decode-batch-gate'], model, '--mode', 'config', '--batch', '2', '--steps', '16'])
         if args.mtp_model:

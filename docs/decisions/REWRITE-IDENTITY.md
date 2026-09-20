@@ -28,3 +28,10 @@ programs, so `forward-fresh-kv` now has a distinct manifest/receipt and cannot b
 admission. The native gate uses independent verify-prefill and tokenwise executions of the
 same cached-KV class; tolerances are unchanged. Fresh-KV outputs remain diagnostic evidence
 and require their own parity receipt before strict admission. No shared attention math changed.
+
+Phase-boundary native diagnostics then showed that cached verify/eager identity stayed
+valid; the separate fresh-KV diagnostic alone loaded another compiler library at the long
+prompt. That diagnostic now has its own process and output directory. Driver-link and
+scratch warmup experiments were not necessary for the cached program and were removed
+from production; their measured controls remain in research. No library drift check was
+relaxed and no fresh-program dependency was added to cached-eager admission.

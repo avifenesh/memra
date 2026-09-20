@@ -3874,8 +3874,6 @@ pub struct HybridModel {
     rewrite_admission: crate::plan_backend::RewriteAdmission,
     pub(crate) rewrite_identity: Option<crate::plan_backend::RewriteIdentity>,
     rewrite_load_state: Option<crate::plan_backend::RewriteLoadState>,
-    /// Initialization-only JIT module, never launched; retained for strict identity lifetime.
-    rewrite_jit_module: Option<Arc<cudarc::driver::CudaModule>>,
     pub embd: EmbedHost,
     pub output_norm: GpuTensor,
     pub output: GpuTensor,
@@ -6434,7 +6432,6 @@ impl HybridModel {
             },
             rewrite_identity: None,
             rewrite_load_state: None,
-            rewrite_jit_module: None,
             embd,
             output_norm,
             output,
@@ -6470,7 +6467,6 @@ impl HybridModel {
         // head-mirror find). No-op with the door shut.
         crate::pp::sync_stages_after_load(e, n_trunk)?;
         if let Some(artifact_sha256) = artifact_sha256 {
-            model.rewrite_jit_module = Some(crate::plan_backend::initialize_rewrite_jit(e)?);
             let (identity, state) = crate::plan_backend::capture_rewrite_identity(
                 &model,
                 src,

@@ -1,6 +1,6 @@
 //! Scoped native program/admission evidence on real checkpoint bytes; no support promotion.
 //! Auto-discovered Cargo target and executable: `rewrite_identity_gate`.
-//! Usage: rewrite_identity_gate capture|check <model-path> <bundle-dir>
+//! Usage: rewrite_identity_gate capture|check|fresh-control <model-path> <bundle-dir>
 //! Inspect first: artifact.lock must already exist in the bundle, and the caller must set
 //! MEMRA_ARTIFACT_LOCK before either load. Capture requires MEMRA_REWRITE_BUNDLE unset;
 //! check requires it set to the bundle. Keep the executable and numeric environment identical.
@@ -363,12 +363,12 @@ fn run() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     require(
         args.len() == 3,
-        "USAGE: rewrite_identity_gate capture|check <model-path> <bundle-dir>",
+        "USAGE: rewrite_identity_gate capture|check|fresh-control <model-path> <bundle-dir>",
     )?;
     let mode = args[0].to_str().ok_or("MODE_NOT_UTF8")?;
     require(
-        matches!(mode, "capture" | "check"),
-        "MODE: expected capture or check",
+        matches!(mode, "capture" | "check" | "fresh-control"),
+        "MODE: expected capture, check or fresh-control",
     )?;
     let source = Path::new(&args[1]);
     let bundle = Path::new(&args[2]);
@@ -414,21 +414,31 @@ fn run() -> Result<()> {
         "SCOPE_REQUIRES_SINGLE_DEVICE: eager-only evidence cannot admit pipeline",
     )?;
     let identity = model.rewrite_identity()?.clone();
+    if mode == "fresh-control" {
+        println!(
+            "DIAGNOSTIC_SOURCE artifact_sha256={} implementation_sha256={} program=unqualified-fresh-kv",
+            identity.artifact_sha256, identity.implementation_sha256
+        );
+        for (i, prompt) in PROMPTS.into_iter().enumerate() {
+            require(
+                prompt.iter().all(|&token| token < model.cfg.n_vocab),
+                "PROMPT_TOKEN_OUT_OF_VOCABULARY",
+            )?;
+            output(
+                "fresh-kv-diagnostic",
+                i,
+                &model.forward_last(&engine, prompt)?,
+                model.cfg.n_vocab as usize,
+                bundle,
+            )?;
+        }
+        println!("FRESH_CONTROL_DONE qualification=false receipt_emitted=false");
+        return Ok(());
+    }
     println!(
         "LOADED artifact_sha256={} implementation_sha256={} numeric_program_sha256={}",
         identity.artifact_sha256, identity.implementation_sha256, identity.numeric_program_sha256
     );
-    if mode == "capture" {
-        let input = engine.htod(&vec![0.0f32; model.output.in_features() * 4])?;
-        let scratch = engine.matmul(&model.output, &input, 4)?;
-        engine.stream().synchronize()?;
-        drop(scratch);
-        drop(input);
-        println!(
-            "HEAD_SCRATCH_WARMUP identity_after={:?} model_weights_unchanged=true",
-            model.rewrite_identity()
-        );
-    }
     let pack = memra_gguf::model_packs::for_config(&model.cfg).ok_or("PACK_UNAVAILABLE")?;
     let tolerance = pack
         .checkpoint_parity
@@ -488,15 +498,9 @@ fn run() -> Result<()> {
         let mut candidates = Vec::new();
         for (i, prompt) in PROMPTS.into_iter().enumerate() {
             let reference = verify_prefill(&engine, &model, prompt)?;
-            println!(
-                "IDENTITY_AFTER_VERIFY prompt={i} value={:?}",
-                model.rewrite_identity()
-            );
+            model.rewrite_identity()?;
             let candidate = tokenwise(&engine, &model, prompt)?;
-            println!(
-                "IDENTITY_AFTER_TOKENWISE prompt={i} value={:?}",
-                model.rewrite_identity()
-            );
+            model.rewrite_identity()?;
             output(
                 "quantized-cache-verify-prefill",
                 i,
@@ -505,22 +509,6 @@ fn run() -> Result<()> {
                 bundle,
             )?;
             output("pre-install-tokenwise", i, &candidate, vocab, bundle)?;
-            let fresh_control = model.forward_last(&engine, prompt)?;
-            println!(
-                "IDENTITY_AFTER_FRESH prompt={i} value={:?}",
-                model.rewrite_identity()
-            );
-            output("fresh-kv-diagnostic", i, &fresh_control, vocab, bundle)?;
-            let class_control = rewrite.verify_logits(
-                &identity.implementation_sha256,
-                &fresh_control,
-                &candidate,
-                policy,
-            )?;
-            println!(
-                "FRESH_KV_CLASS_CONTROL prompt={i} same_class=false max_abs={} max_rel={} within_tolerance={} used_for_qualification=false",
-                class_control.max_abs, class_control.max_rel, class_control.passed
-            );
             let parity = rewrite.verify_logits(
                 &identity.implementation_sha256,
                 &reference,

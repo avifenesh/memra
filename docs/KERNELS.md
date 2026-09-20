@@ -1,15 +1,5 @@
 # Kernel inventory
 
-## Rewrite identity JIT initialization
-
-`memra_identity_jit_init` is an inline PTX `ret` entry in
-`crates/memra-engine/src/plan_backend.rs`. Strict qualification links and resolves it to
-initialize the actual NVIDIA JIT compiler libraries before their identities are frozen.
-It is never launched, has no operands, and changes no model arithmetic. Its module is
-owned by the model for the identity lifetime. Model kernels retain their existing compiled
-architecture; the initializer's PTX minimum is not an alternate execution backend.
-
-
 ## Qwen FA2 attention experiment, 2026-09-09
 
 Both entries carry the same numerical body: BF16 MMA, FP32 direct PV accumulation,
