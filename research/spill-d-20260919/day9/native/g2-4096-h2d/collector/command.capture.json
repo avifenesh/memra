@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "/usr/bin/python3",
+    "/root/wt-d/tools/tier-envelope.py",
+    "--worker",
+    "3",
+    "--rig",
+    "rtx5090",
+    "--probe",
+    "/root/wt-d/target/release/h2d-probe",
+    "--out",
+    "/root/wt-d/receipts/day9/g2-4096-h2d",
+    "--bytes",
+    "4096",
+    "--direction",
+    "h2d",
+    "--rounds",
+    "1",
+    "--correctness-only"
+  ],
+  "exit_code": 2,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "400.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 742581343651398,
+  "ended_monotonic_ns": 742590614343058,
+  "started_utc": "2026-09-20T08:46:45.985318+00:00",
+  "ended_utc": "2026-09-20T08:46:55.256010+00:00",
+  "elapsed_seconds": 9.27069166,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 86,
+    "sha256": "ad1b91d6e900af6d76fe9b61c55c19480dfa756c751476cf0b1a845a6080f5f7"
+  },
+  "failure_quote": "died, cause unknown \u2014 repro needed",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 4033,
+      "sha256": "705d018b19eb9a22e46b0af15f30dd47d0923a6550c8803727dfff3a8d1f311d"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 181,
+    "sha256": "e4d99b9b8075b7440d55b95da0cf13a4b84b2e56b87e454f07ee73dfc292b2d8"
+  }
+}
