@@ -26,7 +26,33 @@ only — no timing claims in this lane. Raw logs: `raw/`.
 | `concat-prime-probe tickinv --budgets 0,1024,256,64 --splits 64,256,512,1000` | same | **TICK-INVARIANT**: 5/20/77-call primes and off-grid resumes at 64/256/512/1000 all EXACT vs one call | `raw/12b/tickinv-pp6257.log` |
 | `tools/argmax-margin-gate.sh` (prefill vs decode argmax, board-2048, window 12) | same, NEW binary | flips=0 bad=0 PASS | `raw/12b/argmax-new/` |
 | same, OLD binary (P0 tip `c30b509b`, `gemma4_prime` path) | same | flips=0 bad=0 PASS — both programs decode-consistent on this prompt | `raw/12b/argmax-old/` |
+| `chunk-invariance-gate.sh` (same chunks) | gemma-4-31B QAT Q4_0 (dense), T=4882 | **CHUNK-INVARIANT** | `raw/31b/chunkinv-pp6257.log` |
+| `tickinv` (same budgets/splits) | gemma-4-31B | **TICK-INVARIANT**, 7/7 EXACT | `raw/31b/tickinv-pp6257.log` |
+| `argmax-margin-gate.sh` | gemma-4-31B, NEW binary | flips=1 bad=0 PASS (within the calibrated 31B budget; every flip margin-explained) | `raw/31b/argmax-new/` |
+| `chunk-invariance-gate.sh` (same chunks), FIRST pass — chunked walk allowed | gemma-4-26B-A4B QAT Q4_0 (parallel MoE), T=4882 | **CHUNK-DEPENDENT**: logits differ at EVERY chunk size, first divergence row 0, maxdiff 3.6–8.2 (O(1)); streams part at step 4–8 | `raw/26b-a4b/chunkinv-pp6257.log` |
+| `tickinv`, FIRST pass | gemma-4-26B-A4B | **TICK-DEPENDENT**: 0/7 EXACT, row 0, maxdiff 4.9–8.2 | `raw/26b-a4b/tickinv-pp6257.log` |
+| `argmax-margin-gate.sh` | gemma-4-26B-A4B, NEW binary | flips=1 bad=0 PASS | `raw/26b-a4b/argmax-new/` |
 | greedy A/B old vs new, 96 tokens, chat template, 3 prompts (60 / 60 / 4882 tokens) | same | p1, p2 (60 tokens, under the window): tokens and text IDENTICAL. p3 (4882 tokens, window live): identical for 10 generated tokens, then a near-tie flip ("technical description regarding the optimization of" vs "technical sentence regarding"); both continuations coherent and on-topic | `raw/12b/greedy/` |
+
+## Finding: the gemma MoE arm is not chunk-invariant (26B-A4B)
+
+Row 0 diverging is the signature that rules out a boundary-carry defect (row 0 sees no
+cross-chunk state); O(1) logit movement at every chunk size is an **m-dependent kernel class** in
+the parallel-MoE arm of `gemma4_layer_tail_core_pn` — the rows a chunk routes to each expert
+change with the chunk size, and the expert kernels' arithmetic changes with that row count. Same
+family as the Q35-MoE carried-prime exclusion (`SERVING.md` §isolation) and the reason
+`MEMRA_MOE_GROUPED` was withdrawn. The dense arm (12B, 31B) is bit-identical, so the attention
+view path and the shared tail are not the mover.
+
+Resolution in this lane (fail closed, no new door): the registry column `chunked_prime` is
+**no** for `GemmaParallelMoeResidual`; `prime_cache` primes such a plan in ONE range, refuses a
+continuation (`cache.pos != 0`) by name — the contract `gemma4_prime` had — and the worker keeps
+its whole-prompt take, so the 26B's bytes are exactly what they were before this lane. Second
+pass (`raw/v2/`, `raw/v3/`): 26B chunkinv PASS (one range), 26B multi-call tickinv → named
+refusal; 12B/31B chunkinv + tickinv still bit-identical. The
+row flips when a row-count-exact expert arm lands with its own chunkinv receipt (the "decode-exact
+shexp arm" class the hyper batch cap already names). Dense gemma's row is **yes** on the 12B/31B
+receipts above.
 
 ## Measured numeric classes (fixture, `2394110f`)
 
@@ -51,8 +77,6 @@ receipt plus the tuned view twins (naked prefill speed must not regress).
 
 ## Not done in this lane
 
-- Registry column `chunked_prime` + `eager_only_model`'s gemma term derived from it (needs the
-  26B-A4B parallel-MoE receipt first).
-- 31B and 26B-A4B model-scale rows (artifacts staged).
+- A row-count-exact gemma MoE expert arm (26B-A4B chunked prime) + its receipt.
 - Tuned view twins for hd256-windowed and hd512; TTFT A/B before the default flip.
 - Vision-overlay continuation (islands through the view path); E4B PLE prime (P3).

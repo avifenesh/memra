@@ -5789,7 +5789,29 @@ impl HybridModel {
             crate::pp::pp_wave_on()
                 .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
         }
-        let ranges = prime_chunk_ranges(t, self.layers.len(), self.gdn_prime_grid_on());
+        if self.uses_gemma_program() && !self.chunked_prime_supported() && cache.pos != 0 {
+            // Same contract the family had before this lane (`gemma4_prime` refused pos > 0):
+            // without the chunked-prime receipt a continuation would produce the m-dependent
+            // bytes the 26B chunkinv row measured, so it is refused by name rather than served.
+            return Err(format!(
+                "gemma plan without the chunked-prime receipt (see docs/EXECUTION-SURFACES.md \
+                 column chunked_prime): continuation prime at pos {} refused — prime the full \
+                 prompt in one call or decode tokenwise",
+                cache.pos
+            )
+            .into());
+        }
+        let ranges = if self.uses_gemma_program() && !self.chunked_prime_supported() {
+            // REGISTRY SAYS NO (memra#535 P1a): a gemma plan with an operation whose chunked
+            // prime is not receipted — today `GemmaParallelMoeResidual` (gemma-4-26B-A4B),
+            // MEASURED chunk-dependent: prefill logits move O(1) with the chunk size, first
+            // divergence at row 0, i.e. an m-dependent expert kernel class, not a boundary
+            // carry — primes in ONE range. Same bytes as before this lane for that family; the
+            // dense gemma plans take the chunked walk below. `docs/EXECUTION-SURFACES.md`.
+            vec![(0, t)]
+        } else {
+            prime_chunk_ranges(t, self.layers.len(), self.gdn_prime_grid_on())
+        };
         // CHUNK-ORDER INVARIANCE (lane/chunk-invariance, 2026-08-05; vLLM #38561 shape).
         // MEMRA_PRIME_CHUNK is documented as a memory-transient knob, but it also decides
         // the prefill's ARITHMETIC, so two rigs with different values produced different
@@ -7178,6 +7200,16 @@ impl HybridModel {
     /// engine that produced `x`, i.e. the last stage's under the split; output_norm/output
     /// were loaded through that engine by the sharded loader, hybrid.rs `e_head`).
     #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    /// Does every trunk operation of this plan carry the generic chunked-prime receipt
+    /// (`op_registry` column `chunked_prime`, manifest `CHUNKED_PRIME`)? The prime driver and
+    /// the worker's tick budget both key on this; consulted inside the gemma family today.
+    pub fn chunked_prime_supported(&self) -> bool {
+        crate::plan_backend::CHUNKED_PRIME
+            .trunk_capabilities(&self.plan)
+            .batch
+            .supported
+    }
+
     /// GEMMA LAYER STACK for one prime chunk (memra#535 P1a): the per-layer body of
     /// `gemma4_prime`, verbatim in ORDER — attn_norm, attention, post_attention_norm, then the
     /// shared `gemma4_layer_tail_add` (residual add fused with the ffn norms, GELU_PAR or

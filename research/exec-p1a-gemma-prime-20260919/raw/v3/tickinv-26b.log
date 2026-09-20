@@ -1,0 +1,11 @@
+[moe] resident-experts decision (dev0): experts 12.85GB + trunk 1.58GB vs free 32.46GB (expert budget 28.89GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane decode mirrors built: 210 trunk tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: model geometry not eligible); free 16311 MiB, mirror mass 0 MiB, capacity threshold 8192 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+loaded gemma4 (30 layers)
+tickinv: T=4882 chat=false budgets=[0, 1024] splits=[] steps=8 PRIME_MIN_T=16 (budget 0 = single monolithic call)
+[fa-pool] grow #0 dev=0 o_len 0 -> 131072 ml_len 0 -> 512 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 131072 -> 2506752 ml_len 512 -> 4896 (retired kept, zero=false)
+ref budget=0 calls=1 argmax=100
+ budget | calls | logits | first_div_row | maxdiff   | argmax | stream_div
+Error: "gemma plan without the chunked-prime receipt (see docs/EXECUTION-SURFACES.md column chunked_prime): continuation prime at pos 1024 refused — prime the full prompt in one call or decode tokenwise"
