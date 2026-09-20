@@ -118,7 +118,8 @@ def verdict(m, flags, context):
     if qualified:
         require(flags["residual_class"] == "none", "zero residual class")
         return f"{tag} G1 PASS"
-    return (f"{tag} physical reclaim/restore bit-identical, residual {residual} B, "
+    description = "physical reclaim/restore bit-identical" if bounded else "copy/restore bit-identical, reclaim criteria (a)-(c) failed"
+    return (f"{tag} {description}, residual {residual} B, "
             f"class {flags['residual_class']} — not G1 PASS")
 
 

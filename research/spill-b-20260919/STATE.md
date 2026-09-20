@@ -1,12 +1,12 @@
 # WP-B day 10 checkpoint
 - Branch: lane/spill-b-20260919; integ5 merge 8ef562b12f16fd3378f866939be347df3a6d3d96 pushed.
 - Native checkout: /root/wt-b; currently still at that merge (original gate, no injection).
-- Next running cell: tmux b-day10-vmm8; collector vmm-8192; /root/spill-receipts/b-day10/vmm-8192.
+- Running/waiting lock: tmux b-day10-vmm8; collector vmm-8192; /root/spill-receipts/b-day10/vmm-8192.
 - Runner: /root/b-day10-cell.sh (tracked copy run-day10-cell.sh); canonical pro-single collector; bounded lock retries.
 - Finished: native merge build and 8k/32k pooled baselines (600/600 W); hashes frozen in BOX3-BASELINES.json.
 - 8k receipts + build are preserved in pro-single-day10/ in this checkpoint; raw logits losslessly gzip archived.
-- Local WIP: native Cache allocator injection and actual-demoted-plane VA-release diagnostic; no defaults changed.
-- Mac kv+tier tests/check/cross-check/clippy/fmt/flags passed; tests.log saved. Native WIP build NOT run yet.
+- Local implementation: allocator injection + actual-demoted-plane VA probe; latest runtime b1bdd96a7, native-unbuilt.
+- Mac kv+tier 262 tests/check/cross-check/clippy/fmt/flags passed; engine Mac blocked by missing nvcc (log saved).
 - Next: collect/push original 8k VMM, then 32k VMM + 8k pooled controls BEFORE updating native source.
 - Then pull checkpoint into /root/wt-b, rebuild; run diagnostic 32k and injected 8k; preserve separate source/binary identity.
 - Add DAY10.md, BOX3 baseline hashes, verify-day10.py and raw manifest; push after every cell.
