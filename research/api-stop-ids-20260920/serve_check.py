@@ -44,6 +44,7 @@ def main():
     def server(mode):
         # Refuse a foreign responder before launch, and check our child at readiness.
         with socket.socket() as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(("127.0.0.1", 18091))
         env = dict(os.environ, MEMRA_COMPAT=mode, MEMRA_ADDR="127.0.0.1:18091",
                    MEMRA_CTX="4096", MEMRA_SERVE_SPEC="0", MEMRA_MODELS="g=" + args.model)
@@ -57,6 +58,10 @@ def main():
                     try:
                         with urllib.request.urlopen(base + "/readyz", timeout=2) as response:
                             if response.status == 200:
+                                owner = subprocess.run(
+                                    ["ss", "-ltnp", "sport = :18091"],
+                                    capture_output=True, text=True, check=True)
+                                assert f"pid={proc.pid}," in owner.stdout, "foreign readiness responder"
                                 break
                     except (urllib.error.URLError, TimeoutError):
                         pass
