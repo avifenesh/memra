@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "-c",
+    "set -eu; nvidia-smi --query-gpu=name,power.limit,power.max_limit --format=csv; nvidia-smi --query-compute-apps=pid,process_name --format=csv; test -z \"$(nvidia-smi --query-compute-apps=pid --format=csv,noheader)\"; exec target/release/qwen4exp_gpu_gate /root/spill-receipts/c-day5/gates/rows-via-tier.tsv --rows-via-tier"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "started_monotonic_ns": 703702283540158,
+  "ended_monotonic_ns": 703708062044294,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 8122,
+    "sha256": "344da252e176c2a3d1be9e41e9e58d033cdf92ec611ff9d35f19e3ea3ee2fede"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 2105,
+      "sha256": "813236f09a01f59582d79963fbd8898ffb0ccffdb86d468c9f50b5aeaee3a87d"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

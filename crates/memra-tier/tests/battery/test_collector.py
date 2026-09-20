@@ -89,7 +89,9 @@ class CollectorTests(unittest.TestCase):
     def test_raw_timeout_and_unknown_cause_preserved(self):
         with tempfile.TemporaryDirectory(prefix='tier-tee-') as tmp:
             log=Path(tmp)/'raw.log'
-            code,timeout=B.tee_run([sys.executable,'-c',"import time; print('before timeout',flush=True); time.sleep(10)"],log,timeout=.1,echo=False)
+            # Allow interpreter startup under concurrent CPU builds before testing
+            # the timeout/drain contract; 100 ms can expire before the first print.
+            code,timeout=B.tee_run([sys.executable,'-c',"import time; print('before timeout',flush=True); time.sleep(10)"],log,timeout=1,echo=False)
             self.assertTrue(timeout); self.assertNotEqual(code,0)
             self.assertIn('before timeout',log.read_text())
 

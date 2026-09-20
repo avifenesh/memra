@@ -652,3 +652,18 @@ fn revision_v11_zero_accept_preserves_owned_hosts() {
     gov.borrow_mut().release(&cb).unwrap();
     assert_eq!(gov.borrow().used(), TierBudget::zero(2));
 }
+
+#[test]
+fn revision_v12_transfer_framed_logical_bytes() {
+    let gov = shared();
+    let mut t = Transfers::new(gov.clone());
+    let (read, charge) = t.read();
+    let ticket = t.nvme_read(read).unwrap();
+    assert!(t.poll(&ticket).unwrap().items[0].segments[0].io_bytes > 4);
+    super::conformance::transfer_completion_bytes(&mut t, &ticket, &expected(1), false);
+    t.cancel(&ticket).unwrap();
+    t.finish(&ticket);
+    t.acknowledge(&ticket).unwrap();
+    gov.borrow_mut().release(&charge).unwrap();
+    assert_eq!(gov.borrow().used, TierBudget::zero(2));
+}
