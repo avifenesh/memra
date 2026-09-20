@@ -1,0 +1,55 @@
+{
+  "arch": "120a",
+  "binary": {
+    "path": "/home/memra-qual/scratch/memra-544/repo/target/qualify-544-replacement1/cargo-target/release/deps/memra_server-78a7f7e05e0c9770",
+    "sha256": "6e4c91d1256ae5ed081f0c789c067b414b096aa0bd3361c79510593cc765213f"
+  },
+  "command": [
+    "/home/memra-qual/scratch/memra-544/repo/target/qualify-544-replacement1/cargo-target/release/deps/memra_server-78a7f7e05e0c9770",
+    "--exact",
+    "worker::tests::native_glm_peer_admission_trim_preserves_lease",
+    "--ignored",
+    "--test-threads=1",
+    "--nocapture"
+  ],
+  "files": {
+    "devices.csv": "e23180840e98fb2450577ce60aa9978562fc33eb391ee80956e0308beddbb883",
+    "host-processes-before.csv": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "processes-after.csv": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "processes-before.csv": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "telemetry.csv": "f367f448aed540254bcbe5df1bd734f26a024c78566e7b4a2e3e483bb0ecb432",
+    "test-list.txt": "eee9e4ca87c3c875714cc0d64334700d648c0fb757dd315eb57df012460f55a1",
+    "test.log": "1b444f4ac899360280f48616ca4b5200ff09af60ae14997d48cb4120bb7757b6",
+    "topology.txt": "72f380a061fc7c4ba7d31a02873939def050554588bbcb5f5594428ee111f18b"
+  },
+  "finished_unix": 1789866457.351015,
+  "gpu_uuids": [
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a",
+    "GPU-554f7aeb-578c-187f-4f29-af06f2170507"
+  ],
+  "lease": {
+    "child_pid": 56763,
+    "lock_files": {
+      "GPU-554f7aeb-578c-187f-4f29-af06f2170507": "/tmp/memra-gpu-locks/GPU-554f7aeb-578c-187f-4f29-af06f2170507.lock",
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a": "/tmp/memra-gpu-locks/GPU-c2a89142-c177-b92a-1366-d58822694f0a.lock"
+    },
+    "lock_order": [
+      "GPU-554f7aeb-578c-187f-4f29-af06f2170507",
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a"
+    ],
+    "requested_uuids": [
+      "GPU-c2a89142-c177-b92a-1366-d58822694f0a",
+      "GPU-554f7aeb-578c-187f-4f29-af06f2170507"
+    ],
+    "wrapper_pid": 56758
+  },
+  "lock_files": {
+    "GPU-554f7aeb-578c-187f-4f29-af06f2170507": "/tmp/memra-gpu-locks/GPU-554f7aeb-578c-187f-4f29-af06f2170507.lock",
+    "GPU-c2a89142-c177-b92a-1366-d58822694f0a": "/tmp/memra-gpu-locks/GPU-c2a89142-c177-b92a-1366-d58822694f0a.lock"
+  },
+  "source_sha": "d413747d3b8a72c5af472300d1c65307133c1a37",
+  "stage": "worker",
+  "started_unix": 1789866455.916254,
+  "status": "passed",
+  "test": "worker::tests::native_glm_peer_admission_trim_preserves_lease"
+}

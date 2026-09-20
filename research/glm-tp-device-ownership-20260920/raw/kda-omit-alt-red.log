@@ -1,0 +1,17 @@
+
+running 1 test
+
+thread 'tests::kda_reserves_convolution_and_both_recurrent_planes' (18862627) panicked at target/model-memory-544/omit-alt-red.rs:160:9:
+assertion `left == right` failed
+  left: [2304, 32768, 0]
+ right: [2304, 32768, 32768]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::kda_reserves_convolution_and_both_recurrent_planes ... FAILED
+
+failures:
+
+failures:
+    tests::kda_reserves_convolution_and_both_recurrent_planes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+

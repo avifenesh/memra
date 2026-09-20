@@ -1,0 +1,45 @@
+{
+  "arch": "120a",
+  "binaries": {
+    "engine": {
+      "path": "/home/memra-qual/scratch/memra-544/repo/target/qualify-544-replacement1/cargo-target/release/deps/memra_engine-05ce0169e5599d69",
+      "sha256": "fd252922b71faf61768aa488846d93bda0a6f7364df720ce10c34a010b3b0987"
+    },
+    "server": {
+      "path": "/home/memra-qual/scratch/memra-544/repo/target/qualify-544-replacement1/cargo-target/release/deps/memra_server-78a7f7e05e0c9770",
+      "sha256": "6e4c91d1256ae5ed081f0c789c067b414b096aa0bd3361c79510593cc765213f"
+    }
+  },
+  "cargo_target_dir": "/home/memra-qual/scratch/memra-544/repo/target/qualify-544-replacement1/cargo-target",
+  "commands": [
+    [
+      "cargo",
+      "test",
+      "--release",
+      "--locked",
+      "--no-run",
+      "--lib",
+      "-p",
+      "memra-engine",
+      "--jobs",
+      "8",
+      "--message-format=json"
+    ],
+    [
+      "cargo",
+      "test",
+      "--release",
+      "--locked",
+      "--no-run",
+      "--lib",
+      "-p",
+      "memra-server",
+      "--jobs",
+      "8",
+      "--message-format=json"
+    ]
+  ],
+  "cuda_visible_devices": "",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "source_sha": "d413747d3b8a72c5af472300d1c65307133c1a37"
+}
