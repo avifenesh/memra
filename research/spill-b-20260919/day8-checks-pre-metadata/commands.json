@@ -1,0 +1,133 @@
+[
+  {
+    "check": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "head": "3f3330ea30208b6a3293c3de84202be96bbd1d5b",
+    "raw": "fmt.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "check": "check-mac",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-kv",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets"
+    ],
+    "exit": 0,
+    "head": "3f3330ea30208b6a3293c3de84202be96bbd1d5b",
+    "raw": "check-mac.log.gz",
+    "sha256": "30173354d134a7dadf8fa7062ca3486b652c52f7bf8ddd2e9901f8d3f6ce6ddf",
+    "uncompressed_sha256": "cc8553ed3a1c6e98f7d221b4c4e4ed53422c22c5b1f4e597d0dc4d1ddcb8235b"
+  },
+  {
+    "check": "check-linux",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-kv",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--target",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "exit": 0,
+    "head": "3f3330ea30208b6a3293c3de84202be96bbd1d5b",
+    "raw": "check-linux.log.gz",
+    "sha256": "73c0c42ed2a2970928c6859b1dba3a1a33ff648e43fee827d3318b846f7eef3e",
+    "uncompressed_sha256": "6d33a973372572dbf93f1d8cc47c437ad4e96843a9827a9f162a1e421e1be40e"
+  },
+  {
+    "check": "test",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-kv",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "head": "3f3330ea30208b6a3293c3de84202be96bbd1d5b",
+    "raw": "test.log.gz",
+    "sha256": "f9737ef3e2171ad8d8be1a509ac7f3acae45006885a5f23d8870a5d28e8f2797",
+    "uncompressed_sha256": "ba830e779588e340e1e37e22c6ee5374ff5545d54c149517ca66bac7a096086c"
+  },
+  {
+    "check": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-kv",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--all-targets",
+      "--no-deps",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "head": "3f3330ea30208b6a3293c3de84202be96bbd1d5b",
+    "raw": "clippy.log.gz",
+    "sha256": "01140da92a19d6668f0f5caac2e3dae639baafbd74e8aefa9e1aa5157cc39166",
+    "uncompressed_sha256": "1565663b54f1968bf59300677f09956337176be679879c43c2850404380dafa9"
+  },
+  {
+    "check": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "head": "3f3330ea30208b6a3293c3de84202be96bbd1d5b",
+    "raw": "diff.log.gz",
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "check": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "head": "3f3330ea30208b6a3293c3de84202be96bbd1d5b",
+    "raw": "flags.log.gz",
+    "sha256": "76188f1d03361812b7b3efde2e8c60c91be50ac36fee5df164ab0a3da3de27f2",
+    "uncompressed_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+  },
+  {
+    "check": "cli",
+    "command": [
+      "bash",
+      "-c",
+      "rustc --edition 2024 --test crates/memra-engine/src/bin/kv_tier_gate/cli.rs -o /tmp/spill-b-day8-owned/cli-tests && /tmp/spill-b-day8-owned/cli-tests"
+    ],
+    "exit": 0,
+    "head": "3f3330ea30208b6a3293c3de84202be96bbd1d5b",
+    "raw": "cli.log.gz",
+    "sha256": "ba1eb015a56f91cbd4894e3b624bc3b99a892e650fa2c008bbcdb72676c115fb",
+    "uncompressed_sha256": "12cc437a6f99591170c40f47155e2d7ef8dbf8451702455146a9afeca3ec5e7f"
+  }
+]

@@ -1,0 +1,165 @@
+{
+  "source": "ffbdefda192a3df76359bcb6bf0e321a13f11d05",
+  "scope": "CPU only; engine Linux compile-only placeholder",
+  "checks": [
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "mac-check",
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "sha256": "f4403412cb20dc7d8a0a94c08c9c8853e4bac9b3e8489158834f30512311ed97"
+    },
+    {
+      "name": "linux-check",
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "sha256": "fecede7c2157efe2f16c8c8b9dce94b0fb4dd384dca8207046c8bf7636eb0ffe"
+    },
+    {
+      "name": "tests",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "sha256": "713058c077db2635ffb5824944f0da003c39962a4c8a6726b6337a854e7bf63d"
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "0b53209db424367e80c52cd8cde8b75e37af110438a0efde777104a1463956de"
+    },
+    {
+      "name": "engine-linux-clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-engine",
+        "--offline",
+        "--lib",
+        "--bin",
+        "run-gen",
+        "--bin",
+        "run-spec",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "5604fc8f0c276397a55db4bd7008236712075c0ad37d3b3a0f1fe362b1b85a36"
+    },
+    {
+      "name": "diff",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "flags",
+      "argv": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    },
+    {
+      "name": "frozen",
+      "argv": [
+        "python3",
+        "research/spill-c-20260919/slru-trace.py",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "a856e996999863668ffc175ada1b533bd48512ac6a6b8e8af249116f3a3137dd"
+    },
+    {
+      "name": "verifier-red",
+      "argv": [
+        "python3",
+        "research/spill-c-20260919/test-day8.py"
+      ],
+      "exit": 0,
+      "sha256": "aaac7bbad48ee4f8fdb09cb095e6f8356183d9c93bb5ee51f999eb21876fbf7e"
+    }
+  ],
+  "tested_files_sha256": {
+    "crates/memra-engine/src/banked_residency/native.rs": "86a0d13b20c4d4cf1730fa8fcdbb13f1543f5412905cb66c999f24bbae16e8e5",
+    "crates/memra-engine/src/banked_residency.rs": "ff7850827b8dc4185cb8d278183cfa10e03d6e0fa58e6347ed60c00ea5317493",
+    "crates/memra-engine/src/moe_cache.rs": "bc2f78398552b3dd16eb324c25aad3b069e15e3a4f0da55607df688b2bfeb655",
+    "crates/memra-tier/src/bank/adapters.rs": "35e2aeb1b38d678f85a63e3b183c62ae3ca8d38b2a61afaf63df77ea8bd96788",
+    "crates/memra-tier/src/bank/device_rows.rs": "a127c89a6ebb784fb24ba6f8a0aa7b5c73702e1373f5addf33fdc33746f0ddc2",
+    "crates/memra-tier/src/bank/expert_dispatch.rs": "b01d623b4b9d70990cc05ba02f27b560f8b2b8ef5ebc8a43354562e09f64d305",
+    "crates/memra-tier/src/bank/mod.rs": "f0c81a7bd57a8831f478c6fabd6d54094a2c1fa28d02602f2cdb6b5844e93d04",
+    "crates/memra-tier/src/bank/owner_proxy.rs": "9893dffeda4e141f2275caf4d67e3601e36d94712c1fa571463e4320b2cbd040",
+    "crates/memra-tier/src/bank/prediction.rs": "e926122d41a3d02f7a5f15e2ce2a00e4e71e87f18047a0dbde97500c2593e04e",
+    "crates/memra-tier/src/bank/residency.rs": "596f739a1862e04bba038113163f1580326d7197ac934c8216f8d3067779d8ab",
+    "crates/memra-tier/src/bank/rows.rs": "ef86708f7626c6ca657a27c20a435729e8281dca082b2c8f82efa72711d64999",
+    "crates/memra-tier/src/bank/slru.rs": "05faf96edd81f4302b6a542e1c527b09faae6683557a7531d1660b4541d084fd",
+    "crates/memra-tier/src/bank/source.rs": "4f3317c496859cb5b62254d7730e89c443e3e69671254623816400f7e21251e7",
+    "crates/memra-tier/src/bank/transport.rs": "f4ca4985deb3792af5bf0933bdf4e40bd7b6fab01b579c4032702002d2f02e74",
+    "crates/memra-tier/src/bank/types.rs": "10b5911895d757893faae80d7e4b4a998310d94acbb3b4a5560b472c3571aff0",
+    "crates/memra-tier/tests/bank/day4.rs": "44a401cc628b429f255f44e1402863d66a03c3a3c2443617335c8c5ed895d693",
+    "crates/memra-tier/tests/bank/day8.rs": "566a13af328fabc3bdb85b1e367708c2dcd63baac31e7d2d5f829fe8abf729ec",
+    "crates/memra-tier/tests/bank/device_rows.rs": "b9dceae7ce92a9b2f9a92f74f5527eb28246c176a531f7ad09bb98a5f5e393f0",
+    "crates/memra-tier/tests/bank/host_bridge.rs": "1958e9a6c5a0cbd8719e0525f3ce9f4142ae91a35e1d111aa9921d2c33e6a8c5",
+    "crates/memra-tier/tests/bank/integration.rs": "9d82a44416fc0eec6a7ba7ec900216d9e356116dca73584e73b238eb85ed0704",
+    "crates/memra-tier/tests/bank/main.rs": "7b4b1b595ecf7c33dc3b217c7f00587e381cbb68aa88a24897f9e5afa8ae054a",
+    "crates/memra-tier/tests/bank/owner_proxy.rs": "6c8f85540093f6aff30164488eb1cfdcdce632e31a931836ad413621e612d18b",
+    "crates/memra-tier/tests/bank/ple_oracle.rs": "8e212391008e750cb35d9f3ff888eba0b09a9c11d20b4845de1a6a4206acda5f",
+    "crates/memra-tier/tests/bank/ple_rows_native.rs": "844f8cfff9a443f138252665108d48883bf3c70a5187e1064b648bab27b75bef",
+    "research/spill-c-20260919/pressure-refusal.py": "230fc7feb1239490ff13579ac96ef905a7bf810cec707634c87dd4e54135ba08",
+    "research/spill-c-20260919/test-day8.py": "a3bcb3062e302fcee1f38779cdc7b5c1c0e71f4f926732321ca89d061402bb00",
+    "research/spill-c-20260919/verify-day7.py": "4c64021378cb94aa9e8eb2d4f065915d470707a00bf97036069cc98f0b0484ef",
+    "research/spill-c-20260919/verify-day8.py": "bff487b40052c2c359c00496ca164ba9ffeabd19507729b0c0847c95b987151c"
+  }
+}

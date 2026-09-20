@@ -1,0 +1,126 @@
+{
+  "source": "d69f6303cd40ad33c64dabed55bb8911aad709de",
+  "scope": "CPU only; engine Linux compile-only placeholder",
+  "checks": [
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "mac-check",
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "sha256": "ed5454405d098074f0d6341ee415f41607ca497b206a6e072857db8cfbc27089"
+    },
+    {
+      "name": "linux-check",
+      "argv": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "sha256": "7c79b0a7f825e3afe222d769a2de8f7681f557e17ce6492d75fb1229fa54b74d"
+    },
+    {
+      "name": "tests",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "sha256": "3188b660c76accd84def2d86915a194ea92bd1c08cfa3dda58d12c550292855b"
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "380b1ccaad1f8c5cdde2b6955159057778fb692ba0da429139fdb4e5efaf17dc"
+    },
+    {
+      "name": "engine-linux-clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-engine",
+        "--offline",
+        "--lib",
+        "--bin",
+        "run-gen",
+        "--bin",
+        "run-spec",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "7b702a80bbcb6fb6671e25eefe913a2c6fcb8ddc1a6407544073b9854f7d70f4"
+    },
+    {
+      "name": "diff",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "flags",
+      "argv": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    },
+    {
+      "name": "frozen",
+      "argv": [
+        "python3",
+        "research/spill-c-20260919/slru-trace.py",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "a856e996999863668ffc175ada1b533bd48512ac6a6b8e8af249116f3a3137dd"
+    }
+  ]
+}

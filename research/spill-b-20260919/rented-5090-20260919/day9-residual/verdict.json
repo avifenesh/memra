@@ -1,0 +1,23 @@
+{
+  "verdict": "ACTIVE-32K physical reclaim/restore bit-identical, one-granule residual unclassified \u2014 not G1 PASS",
+  "residual_class": "unclassified",
+  "native_source": "55f82783f74a317c8698bbc3e641fe378c00ea60",
+  "classification_evidence": {
+    "32768": {
+      "residual_bytes": 2097152,
+      "spare_va_free_delta": 0,
+      "context_sync_delta": 0
+    },
+    "16384": {
+      "residual_bytes": 0,
+      "spare_va_free_delta": 0,
+      "context_sync_delta": 0
+    }
+  },
+  "g1_accounting_criteria_a_b_c": true,
+  "g1_residual_classification_d": false,
+  "g1_pass": false,
+  "comparison_scope": "32k continuation byte-identical to frozen baseline; 16k diagnostic prefix roundtrip only; no timing comparison",
+  "power_limit_watts": 600,
+  "power_max_watts": 600
+}
