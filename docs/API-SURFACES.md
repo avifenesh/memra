@@ -56,8 +56,8 @@ queue GPU work or bill generation usage.
   Text messages use chat completion's semantic builder and prompt-accounting renderer,
   including tools and model metadata defaults. `add_generation_prompt` defaults to
   `true`, matching chat's billed `prompt_tokens`; `false` omits the generation suffix.
-  Image/video messages are explicitly refused, not partially counted. Raw prompts use
-  the model's normal special-token policy. `max_model_len` is the context cap advertised
+  Image/video messages are explicitly refused, not partially counted. Raw prompts parse literal
+  special tokens but do not synthesize a BOS, allowing detokenize round-trips. `max_model_len` is the context cap advertised
   by `/v1/models` (null when unknown), not a separate guessed limit.
 - `/v1/detokenize`: `{"model":"id","tokens":[0,1,...]}` returns `{"prompt":"text"}`.
   Control tokens decode to their literal strings. OOV ids receive the same named

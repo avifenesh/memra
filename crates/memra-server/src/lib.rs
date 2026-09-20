@@ -9701,16 +9701,22 @@ fn tokenize_request(
                     "messages",
                 ));
             }
-            Ok(tokenizer.encode(&prompt, true))
+            // Raw inspection is reversible: do not synthesize a BOS that detokenize
+            // would return as extra text. The messages arm retains chat's BOS policy.
+            Ok(tokenizer.encode(&prompt, false))
         }
         (None, Some(messages)) => {
-            let chat: ChatCompletionReq = serde_json::from_value(json!({
-                "model": req.model,
-                "messages": messages,
-                "tools": req.tools,
-                "chat_template_kwargs": req.chat_template_kwargs,
-            }))
-            .map_err(|err| (err.to_string(), "messages"))?;
+            let mut body = json!({"model": req.model, "messages": messages});
+            // Omitted tools must stay omitted: ChatCompletionReq's default Vec accepts
+            // absence but not JSON null. Do not manufacture a field the caller did not send.
+            if let Some(tools) = req.tools {
+                body["tools"] = tools;
+            }
+            if let Some(kwargs) = req.chat_template_kwargs {
+                body["chat_template_kwargs"] = kwargs;
+            }
+            let chat: ChatCompletionReq =
+                serde_json::from_value(body).map_err(|err| (err.to_string(), "messages"))?;
             validate_chat_messages(&chat.messages).map_err(|err| (err.to_string(), "messages"))?;
             // Token inspection must not download, decode or execute multimodal inputs.
             // Refuse them explicitly rather than returning an incomplete billed count.
@@ -20380,10 +20386,13 @@ temperature = 0.6
                 }
             }}]),
         ] {
-            let body = json!({"model":"m", "messages":[
+            let mut body = json!({"model":"m", "messages":[
                 {"role":"system", "content":"Be concise."},
                 {"role":"user", "content":"Weather in Paris?"}
-            ], "tools":tools, "chat_template_kwargs":{"enable_thinking":false}});
+            ], "chat_template_kwargs":{"enable_thinking":false}});
+            if !tools.is_null() {
+                body["tools"] = tools;
+            }
             let (tx, _rx) = worker::event_channel();
             let mut plan = build_chat_request(
                 serde_json::from_value(body.clone()).unwrap(),
