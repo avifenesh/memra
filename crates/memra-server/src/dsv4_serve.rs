@@ -735,6 +735,7 @@ struct Emit<'a> {
     tx: &'a crate::worker::EventSender,
     eos: Vec<u32>,
     stop_strings: &'a [String],
+    stop_token_ids: &'a [u32],
     budget: usize,
     ids: Vec<u32>,
     text: String,
@@ -752,6 +753,7 @@ impl<'a> Emit<'a> {
         tx: &'a crate::worker::EventSender,
         eos: Vec<u32>,
         stop_strings: &'a [String],
+        stop_token_ids: &'a [u32],
         budget: usize,
     ) -> Self {
         Emit {
@@ -759,6 +761,7 @@ impl<'a> Emit<'a> {
             tx,
             eos,
             stop_strings,
+            stop_token_ids,
             budget,
             ids: Vec::new(),
             text: String::new(),
@@ -779,7 +782,9 @@ impl<'a> Emit<'a> {
             if self.stop_reason.is_some() || self.client_gone {
                 break;
             }
-            if self.eos.contains(&id) {
+            if crate::worker::stop_token_reason(id, self.stop_token_ids).is_some()
+                || self.eos.contains(&id)
+            {
                 self.stop_reason = Some("stop");
                 self.terminal = Some(id);
                 taken += 1;
@@ -1235,7 +1240,14 @@ fn serve_one(
     if !eos_set.contains(&m.eos) {
         eos_set.push(m.eos);
     }
-    let mut emit = Emit::new(&m.tok, &req.tx, eos_set, &req.stop_strings, budget);
+    let mut emit = Emit::new(
+        &m.tok,
+        &req.tx,
+        eos_set,
+        &req.stop_strings,
+        &req.stop_token_ids,
+        budget,
+    );
     let mut spec_usage: Option<SpecUsage> = None;
     let state_to_park: DecodeState;
     let mut dstate_to_park: Option<DsparkState> = None;
