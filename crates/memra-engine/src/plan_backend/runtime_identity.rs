@@ -233,8 +233,32 @@ impl LoadedLibraries {
         })
     }
 
-    pub(super) fn matches(&self) -> bool {
-        library_inventory().is_ok_and(|inventory| inventory == self.inventory)
+    pub(super) fn validate(&self) -> Result<(), String> {
+        let current = library_inventory()?;
+        if current != self.inventory {
+            let added: Vec<_> = current
+                .keys()
+                .filter(|path| !self.inventory.contains_key(*path))
+                .collect();
+            let removed: Vec<_> = self
+                .inventory
+                .keys()
+                .filter(|path| !current.contains_key(*path))
+                .collect();
+            let changed: Vec<_> = current
+                .iter()
+                .filter_map(|(path, stamp)| {
+                    self.inventory
+                        .get(path)
+                        .filter(|old| *old != stamp)
+                        .map(|_| path)
+                })
+                .collect();
+            return Err(format!(
+                "loaded executable mappings changed: added={added:?} removed={removed:?} modified={changed:?}"
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -569,10 +593,15 @@ mod tests {
     fn loaded_libraries_bind_actual_running_mappings() {
         let captured = LoadedLibraries::capture().unwrap();
         assert_eq!(captured.sha256.len(), 64);
-        assert!(captured.matches());
+        assert!(captured.validate().is_ok());
         let mut stale = captured;
         stale.inventory.values_mut().next().unwrap().inode += 1;
-        assert!(!stale.matches());
+        assert!(
+            stale
+                .validate()
+                .unwrap_err()
+                .contains("loaded executable mappings changed")
+        );
     }
 
     #[test]

@@ -19,15 +19,34 @@ impl RewriteLoadState {
     // This is O(model metadata) per check, including pipeline checks on token paths.
     // Moving it to a request boundary requires an immutable model/program API first;
     // strict-serving performance is pending a target-rig gate. Legacy is unaffected.
-    pub(crate) fn matches(&self, model: &HybridModel) -> bool {
+    pub(crate) fn validate(&self, model: &HybridModel) -> Result<(), String> {
         self.libraries
             .as_ref()
-            .is_some_and(LoadedLibraries::matches)
-            && self.matches_snapshot(
-                &model.plan,
-                &loaded_model_sha256(model),
-                &numeric_environment(std::env::vars_os()),
-            )
+            .ok_or("loaded-library identity missing")?
+            .validate()?;
+        let environment = numeric_environment(std::env::vars_os());
+        let actual = loaded_model_sha256(model);
+        if self.matches_snapshot(&model.plan, &actual, &environment) {
+            return Ok(());
+        }
+        if self.plan != model.plan {
+            return Err("compiled plan changed since load".into());
+        }
+        if self.environment != environment {
+            let keys: std::collections::BTreeSet<_> = self
+                .environment
+                .keys()
+                .chain(environment.keys())
+                .filter(|key| self.environment.get(*key) != environment.get(*key))
+                .collect();
+            return Err(format!(
+                "numerical environment changed since load: keys={keys:?}"
+            ));
+        }
+        Err(format!(
+            "loaded tensor program changed: expected={} actual={actual}",
+            self.model_sha256
+        ))
     }
 }
 

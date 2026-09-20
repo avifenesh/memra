@@ -3982,12 +3982,14 @@ impl HybridModel {
     /// Trusted loader identity, valid only while the loaded program is unchanged.
     /// Receipt producers must use this accessor rather than a bundle or artifact lock.
     pub fn rewrite_identity(&self) -> Result<&crate::plan_backend::RewriteIdentity, String> {
-        crate::plan_backend::checked_rewrite_identity(
-            self.rewrite_identity.as_ref(),
-            self.rewrite_load_state
-                .as_ref()
-                .is_some_and(|state| state.matches(self)),
-        )
+        let identity =
+            crate::plan_backend::checked_rewrite_identity(self.rewrite_identity.as_ref(), true)?;
+        self.rewrite_load_state
+            .as_ref()
+            .ok_or("rewrite load state missing")?
+            .validate(self)
+            .map_err(|reason| format!("rewrite identity is stale: {reason}"))?;
+        Ok(identity)
     }
 
     pub fn rewrite_is_qualified(&self) -> bool {

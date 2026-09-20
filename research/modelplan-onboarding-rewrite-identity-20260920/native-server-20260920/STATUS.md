@@ -20,3 +20,15 @@ under eager-only qualification. The native gate now uses independent verify-pref
 tokenwise paths of the cached-KV class, retains full output planes, and tests fresh-KV refusal.
 A new build and fresh GPU receipt are required before claiming that correction qualified.
 Storage is XFS on Ceph RBD; this is not an NVMe/spill performance qualification.
+
+## Attempt002: matched class, stale identity refusal
+
+At4cf43136, all three quantized-cache verify-prefill/tokenwise comparisons passed unchanged
+tolerances (max_abs1.907e-6,0,0). The fresh-KV diagnostic outputs reproduced the original
+prompt0 hashes and cross-class difference. Full output planes are retained in the bundle.
+Receipt binding then refused a stale runtime identity before any qualification installation.
+The wrapper ended normally with exit1 and no lingering compute.
+
+The next patch preserves the validation predicates and reports the specific stale component:
+loaded executable mappings, plan, environment keys (without values), or tensor-program hashes.
+This is diagnostic preparation for the next frozen native attempt; admission remains closed.

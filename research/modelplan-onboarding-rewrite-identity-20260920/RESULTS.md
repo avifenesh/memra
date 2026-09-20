@@ -115,3 +115,9 @@ execution. The cached-KV gate compares independent verify-prefill and tokenwise 
 CPU compiler/CLI suites pass289+12 tests, runtime host suite passes11, and documentation-only
 engine/server cross-target clippy/type checks pass. These are preparation for a fresh native
 attempt, not a promotion of model or serving support.
+
+Native attempt002 confirms the corrected numeric-class comparison on all3 prompts, but
+receipt binding fails closed on stale identity. Complete vectors and logs are preserved.
+Diagnostic validation now identifies the stale component without disclosing environment
+values or relaxing any identity comparison. Host tests and Linux cross-target test typechecks
+pass; next native run will localize the failure.
