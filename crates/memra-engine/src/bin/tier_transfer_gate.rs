@@ -1,11 +1,9 @@
 //! Real CUDA conformance + byte roundtrip gate. Run ONLY through tier-battery.
 use cudarc::driver::{CudaContext, CudaStream, DevicePtr};
 use memra_engine::tier_transfer::{CudaPinnedLease, CudaTransfers};
+use memra_tier::conformance as v1;
 use memra_tier::{bank::SharedBudget, contracts::*, tier::governor::Governor};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
-#[allow(dead_code)]
-#[path = "../../../memra-tier/tests/contracts/conformance.rs"]
-mod v1;
 
 fn epochs() -> Epochs {
     Epochs {

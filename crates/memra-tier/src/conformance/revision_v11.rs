@@ -1,6 +1,6 @@
 //! Test-only hooks expose fixture controls, never alternative runtime contracts.
 //! Hooks drive/observe backend state; all expected outcomes live in these schedules.
-use memra_tier::contracts::*;
+use crate::contracts::*;
 
 pub fn stale_epochs(e: Epochs) -> [Epochs; 3] {
     [

@@ -1,6 +1,8 @@
-//! Reusable schedules: WP test targets may path-import this exact file and supply
-//! real backend fixtures. Do not duplicate expected outcomes in each lane.
-use memra_tier::contracts::*;
+//! Reusable conformance schedules. The CPU `contracts` test target and the
+//! native qualification gates (`tier-transfer-gate`) run these exact functions against their own
+//! backend fixtures. Do not duplicate expected outcomes in each lane. Nothing here qualifies a
+//! production backend by itself.
+use crate::contracts::*;
 
 pub fn object_cancel<S: ObjectStore>(store: &mut S, key: ObjectKey) {
     let mut txn = store.begin(key.clone(), 1, Durability::Ephemeral).unwrap();
@@ -103,22 +105,13 @@ pub fn peer_cancel<P: PeerBackend>(peer: &mut P, copies: Vec<ContiguousCopy>, co
 }
 
 // v1.1 adds schedules only. Runtime traits and wire v1 are unchanged.
-#[allow(dead_code)]
-#[path = "revision_v11.rs"]
 mod revision_v11;
-#[allow(unused_imports)]
 pub use revision_v11::*;
 
 // v1.2 remains test-only; persisted wire and runtime trait semantics are unchanged.
-#[allow(dead_code)]
-#[path = "revision_v12.rs"]
 mod revision_v12;
-#[allow(unused_imports)]
 pub use revision_v12::*;
 
 // v1.3 adds optional source retirement and concrete-owner hand-back schedules.
-#[allow(dead_code)]
-#[path = "revision_v13.rs"]
 mod revision_v13;
-#[allow(unused_imports)]
 pub use revision_v13::*;

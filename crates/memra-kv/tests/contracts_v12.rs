@@ -1,9 +1,7 @@
 //! Shared v1.2 schedule bound to B's actual two CPU materializers; no GPU proof.
 use memra_kv::tiered::materializer::*;
+use memra_tier::conformance as schedule;
 use memra_tier::contracts::*;
-#[allow(dead_code)]
-#[path = "../../memra-tier/tests/contracts/revision_v12.rs"]
-mod schedule;
 #[allow(dead_code)]
 #[path = "../../memra-tier/tests/contracts/support.rs"]
 mod support;

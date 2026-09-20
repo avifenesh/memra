@@ -1,5 +1,5 @@
 //! v1.3 additive schedules. Native bindings must observe real events, not set flags.
-use memra_tier::contracts::*;
+use crate::contracts::*;
 
 #[derive(Clone, Copy)]
 pub enum SourceStep {

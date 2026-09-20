@@ -51,3 +51,12 @@ the pin moves.
 ## Gates
 No G0–G7 gate advanced by this integration. Next: B's active verdict (G1 needs observed device reclaim), C's
 pressure/eviction cells, D's G2 once F's `--copies` lands, NVMe M1 still blocked on a provable rig.
+
+## CI round 1 on PR #563 (`068279c8`) — two natives-only failures, fixed in the follow-up commit
+
+| job | failure | fix |
+|---|---|---|
+| clippy | `items_after_test_module` — B's HostPrefix v2 patch appended `reserve_tier_image` below `mod tests` in `crates/memra-server/src/admit_memory.rs` | moved the item above the test module (mechanical; B-owned file, lead-applied) |
+| publish-dryrun | `tier-transfer-gate` path-included `memra-tier/tests/contracts/conformance.rs`; the packaged memra-engine tarball has no sibling crate's `tests/` | promoted the schedules to **`memra_tier::conformance`**, an unconditional public module: the contract crate ships the suite every backend must run (a feature + self dev-dependency variant was tried first and refused by `workspace-publish-census.sh`, which orders only `[dependencies]`; a public module needs neither). Every path include of `conformance.rs` / `revision_v1{1,2,3}.rs` (tier bank/peer/storage/contracts tests, kv lib tests + `contracts_v12`, the native gate) now uses the library module. Same code, same schedules; no test lost (253/253). |
+
+Test-only cross-crate `#[path]` includes remain (`storage_bench.rs`, `banked_residency.rs`, `ple_rows_tier.rs`, `support.rs`) — they live in test targets, which `cargo publish` verify does not build.

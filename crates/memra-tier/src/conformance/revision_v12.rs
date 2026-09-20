@@ -1,5 +1,5 @@
 //! Additive CPU schedules. Hooks observe/control fixtures, never CUDA event truth.
-use memra_tier::contracts::*;
+use crate::contracts::*;
 
 /// Exercise the completion contract at each consumer's boundary. Mutations are
 /// local snapshots: this does NOT prove a backend handles physical short I/O.
