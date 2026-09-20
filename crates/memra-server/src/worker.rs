@@ -23244,11 +23244,14 @@ fn advance_sample_emit(
     s: &mut Session,
 ) -> (bool, Option<u32>) {
     let lm = &loaded[&s.model];
-    if let Err(error) = lm.model.check_rewrite_execution(&s.rewrite_execution) {
-        s.aborted = true;
-        let _ = s.tx.send(Event::Error(EngineError::engine(error)));
-        return (false, None);
-    }
+    let _rewrite_scope = match lm.model.enter_rewrite_execution(&s.rewrite_execution) {
+        Ok(scope) => scope,
+        Err(error) => {
+            s.aborted = true;
+            let _ = s.tx.send(Event::Error(EngineError::engine(error)));
+            return (false, None);
+        }
+    };
 
     if s.generated.len() >= s.budget {
         finish(s, StopReason::MaxNew);
@@ -23331,11 +23334,14 @@ fn advance_token_emit(
     tok: u32,
 ) -> (bool, ()) {
     let lm = &loaded[&s.model];
-    if let Err(error) = lm.model.check_rewrite_execution(&s.rewrite_execution) {
-        s.aborted = true;
-        let _ = s.tx.send(Event::Error(EngineError::engine(error)));
-        return (false, ());
-    }
+    let _rewrite_scope = match lm.model.enter_rewrite_execution(&s.rewrite_execution) {
+        Ok(scope) => scope,
+        Err(error) => {
+            s.aborted = true;
+            let _ = s.tx.send(Event::Error(EngineError::engine(error)));
+            return (false, ());
+        }
+    };
 
     if s.generated.len() >= s.budget {
         finish(s, StopReason::MaxNew);

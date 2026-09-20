@@ -4087,28 +4087,31 @@ impl HybridModel {
         self.rewrite_execution_snapshot()
     }
 
-    /// Enter an already validated request snapshot with an immutable model borrow.
-    /// Token checks are a generation comparison and fixed-size surface-mask lookup.
+    /// Re-enter retained state with an immutable model borrow. Outermost calls check
+    /// current external state before activating the original model/generation. Nested
+    /// token calls share that validation and use only generation/surface-mask checks.
     pub fn enter_rewrite_execution(
         &self,
         snapshot: &crate::plan_backend::RewriteExecutionSnapshot,
     ) -> Result<crate::plan_backend::RewriteExecutionGuard<'_>, String> {
-        snapshot.enter(&self.rewrite_generation, self)
+        snapshot.enter(&self.rewrite_generation, self, || {
+            self.validate_rewrite_boundary()
+        })
     }
 
     /// Protect a complete synchronous execution. Nested entry points share this scope.
     pub fn protect_rewrite_execution(
         &self,
     ) -> Result<crate::plan_backend::RewriteExecutionGuard<'_>, String> {
-        if let Some(active) = crate::plan_backend::active_execution(&self.rewrite_generation) {
-            // A nested scope reuses the validated generation; no inventory or hashing.
-            return crate::plan_backend::RewriteExecutionSnapshot::from_active(
-                &self.rewrite_generation,
-                active,
-            )
-            .enter(&self.rewrite_generation, self);
-        }
-        self.enter_rewrite_execution(&self.rewrite_execution_snapshot()?)
+        crate::plan_backend::RewriteExecutionSnapshot::protect(
+            &self.rewrite_generation,
+            &self.rewrite_admission,
+            self.rewrite_load_state
+                .as_ref()
+                .is_some_and(|state| state.pipeline),
+            self,
+            || self.validate_rewrite_boundary(),
+        )
     }
 
     pub fn rewrite_is_qualified(&self) -> bool {

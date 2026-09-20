@@ -9,6 +9,40 @@ Base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/542-trusted-rewrite-identity`.
 Environment: macOS arm64, no CUDA toolkit or GPU. No serving machine was accessed.
 
+## Retained re-entry correction (native rerun pending)
+
+SEC-557-2 / PERF-557-2 is fixed in the shared activation primitive: every outermost
+`enter_rewrite_execution` validates current libraries/environment before activating
+retained permissions. Nested same-generation calls reuse validation. Cached emitters
+hold this guard; original model/generation bindings are never replaced.
+
+The exact frozen reviewer environment test failed as reported. The same environment
+and injected file-inventory assertions fail against the frozen activation body and
+pass against the corrected body; `later-drift-20260920/sealed/comparison.json` records
+the source and raw log hashes and the minimal old-signature adapter. There are 18
+identity/snapshot host tests. The continuous 10,000-token CPU control validates once;
+a standalone re-entry after scope exit validates again. No whole-token latency claim
+is inferred from that nested-call result.
+
+Previous-head CI failed because isolated repack children exported filtered libtest
+summaries into the outer unfiltered skip census. Child output is now captured, with
+an explicit one-test/non-vacuity assertion and complete stdout/stderr on failure.
+The unchanged census passes both host suites with zero skips and zero filtered tests.
+Its original failure log is retained alongside the correction.
+
+A separate native `library-drift` mode is implemented and scheduled by the runner,
+with a real never-executed executable mapping and cache-immutability assertions.
+It has not run on native hardware. Qualified graph/prime/worker cases and safe native
+later-environment mutation remain explicit planned cases in `NATIVE-REFUSAL-PLAN.md`.
+All earlier native evidence remains historical.
+
+This correction passes engine/server library, binary and test cross-target clippy.
+The zero-budget skip census reports 18 identity/snapshot and nine repack host tests,
+with zero failed, skipped or filtered tests. Runner validation passed 27 controls
+in its full run; its case-count assertion caught the newly scheduled twelfth case.
+After updating that expectation and asserting the library-drift case is present,
+the remaining control passes on a focused rerun. This does not execute native cases.
+
 ## Review corrections (native rerun pending)
 
 SEC-557-1: both native NVFP4 disk loaders regenerate from the opened source and
@@ -36,7 +70,7 @@ auditable local provenance record, not a signature or hermetic toolchain attesta
 Historical manually captured build evidence is preserved; it is not retroactively
 converted into an owned build record.
 
-Final CPU preparation: the 15 identity/snapshot tests, nine native-repack helper
+Previous candidate CPU preparation: the 15 identity/snapshot tests, nine native-repack helper
 tests and 28 runner/build-provenance tests pass. `cargo test -p memra-gguf -p memra-cli`
 passes. The combined tree passes engine/server library, binary and test type checking
 with `DOCS_RS=1 MEMRA_MMQ_ARCHIVE_HASH=host-check-placeholder cargo clippy --target

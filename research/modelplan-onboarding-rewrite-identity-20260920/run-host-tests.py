@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +27,6 @@ mod runtime_identity;
 #[path = "{ROOT / 'crates/memra-engine/src/plan_backend/execution_snapshot.rs'}"]
 mod execution_snapshot;
 ''')
-    result = subprocess.run(['cargo', 'test', '--manifest-path', str(project / 'Cargo.toml')],
+    result = subprocess.run(['cargo', 'test', '--manifest-path', str(project / 'Cargo.toml'), *sys.argv[1:]],
                             cwd=project, env={**os.environ, 'CARGO_TARGET_DIR': str(project / 'target')})
 raise SystemExit(result.returncode)

@@ -259,6 +259,7 @@ def run(args):
         write_json(out / 'fresh-process-output-parity.json', {'expected': expected, 'actual': actual, 'passed': expected == actual})
         if expected != actual:
             raise RuntimeError('fresh-process eager output differs despite matching runtime identity')
+        case('retained-library-drift', [tools['rewrite_identity_gate'], 'library-drift', model, bundle], strict)
         case('missing-bundle', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_REWRITE_BUNDLE': str(out / 'missing')}, 'read artifact.lock')
         case('different-numerical-program', [tools['rewrite_identity_gate'], 'check', model, bundle], {**strict, 'MEMRA_FAST': '0'}, 'does not bind numeric_program_sha256=')
         write_json(out / 'weight-mutation.json', mutate_weight(model, variant))

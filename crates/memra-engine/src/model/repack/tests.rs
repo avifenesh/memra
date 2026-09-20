@@ -228,7 +228,18 @@ fn subprocess(flag: Option<&str>, test: impl FnOnce()) {
     if let Some(flag) = flag {
         command.env(flag, ""); // presence, not validity/Unicode or a nonempty path, selects strict
     }
-    assert!(command.status().unwrap().success());
+    let output = command.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // This child intentionally selects one test. Validate its non-vacuous result
+    // here; forwarding its filter count would corrupt the outer unfiltered census.
+    assert!(
+        output.status.success()
+            && stdout
+                .lines()
+                .any(|line| line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;")),
+        "isolated repack test {name} failed or ran no test:\n{stdout}\n{stderr}"
+    );
 }
 
 fn lifecycle(stacked: bool) {

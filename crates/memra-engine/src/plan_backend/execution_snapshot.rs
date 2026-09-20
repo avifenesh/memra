@@ -73,8 +73,9 @@ const SURFACES: [RewriteSurface; 8] = [
 
 /// A request/session's validated program. Creation checks process libraries and
 /// numerical environment. Mutation and every bundle reinstall revoke old snapshots.
-/// External process state must remain fixed during execution; validate a new snapshot
-/// when beginning or resuming a request, including a request restored from cached KV.
+/// Retention preserves origin, not permission to skip later external-state checks.
+/// Every outermost entry validates the boundary before activating this snapshot;
+/// nested entries share the existing protected scope.
 #[derive(Clone)]
 pub struct RewriteExecutionSnapshot {
     generation: Arc<ProgramGeneration>,
@@ -85,6 +86,20 @@ pub struct RewriteExecutionSnapshot {
 }
 
 impl RewriteExecutionSnapshot {
+    pub(crate) fn protect<'a, T>(
+        generation: &Arc<ProgramGeneration>,
+        admission: &RewriteAdmission,
+        pipeline: bool,
+        program: &'a T,
+        validate_boundary: impl FnOnce() -> Result<(), String>,
+    ) -> Result<RewriteExecutionGuard<'a>, String> {
+        let snapshot = match active_execution(generation) {
+            Some(active) => Self::from_active(generation, active),
+            None => Self::new(generation, admission, pipeline),
+        };
+        snapshot.enter(generation, program, validate_boundary)
+    }
+
     pub(crate) fn validated(
         generation: &Arc<ProgramGeneration>,
         admission: &RewriteAdmission,
@@ -151,9 +166,26 @@ impl RewriteExecutionSnapshot {
         &self,
         generation: &Arc<ProgramGeneration>,
         _program: &'a T,
+        validate_boundary: impl FnOnce() -> Result<(), String>,
     ) -> Result<RewriteExecutionGuard<'a>, String> {
         if !self.current(generation) {
             return Err("rewrite execution snapshot was revoked; validate the current program at a request boundary".into());
+        }
+        // A retained origin cannot establish its own authority. Only an existing,
+        // current scope permits us to reuse validation. In particular, dropping the
+        // previous guard and resuming a graph or worker tick always checks again.
+        if active_execution(generation).is_none_or(|active| active.epoch != self.epoch) {
+            if let Err(error) = validate_boundary() {
+                generation.revoke();
+                return Err(error);
+            }
+            // Validation may itself revoke the program. Never rebase the retained
+            // origin onto the new epoch, even if the callback otherwise succeeded.
+            if !self.current(generation) {
+                return Err(
+                    "rewrite execution snapshot was revoked during boundary validation".into(),
+                );
+            }
         }
         let entry = ActiveExecution {
             key: Arc::as_ptr(generation) as usize,
@@ -269,32 +301,41 @@ mod tests {
         let generation = Arc::default();
         let program = TrackedProgram::new(Program, Arc::clone(&generation));
         let inventories = Cell::new(0);
-        let snapshot = RewriteExecutionSnapshot::validated(
-            &generation,
-            &RewriteAdmission::LegacyUnbundled,
-            false,
-            || {
-                inventories.set(inventories.get() + 1);
-                Ok(())
-            },
-        )
-        .unwrap();
-        for _ in 0..10_000 {
-            let _scope = snapshot.enter(&generation, &program).unwrap();
-            let active = active_execution(&generation).unwrap();
-            for surface in SURFACES {
-                assert!(active.allows(surface));
+        let snapshot =
+            RewriteExecutionSnapshot::new(&generation, &RewriteAdmission::LegacyUnbundled, false);
+        let validate = || {
+            inventories.set(inventories.get() + 1);
+            Ok(())
+        };
+        {
+            let _outer = RewriteExecutionSnapshot::protect(
+                &generation,
+                &RewriteAdmission::LegacyUnbundled,
+                false,
+                &program,
+                validate,
+            )
+            .unwrap();
+            for _ in 0..10_000 {
+                let _scope = snapshot.enter(&generation, &program, validate).unwrap();
+                let active = active_execution(&generation).unwrap();
+                for surface in SURFACES {
+                    assert!(active.allows(surface));
+                }
+                let nested = RewriteExecutionSnapshot::from_active(&generation, active);
+                let _nested = nested.enter(&generation, &program, validate).unwrap();
+                assert!(
+                    active_execution(&generation)
+                        .unwrap()
+                        .allows(RewriteSurface::DecodeEager)
+                );
             }
-            let nested = RewriteExecutionSnapshot::from_active(&generation, active);
-            let _nested = nested.enter(&generation, &program).unwrap();
-            assert!(
-                active_execution(&generation)
-                    .unwrap()
-                    .allows(RewriteSurface::DecodeEager)
-            );
+            assert_eq!(inventories.get(), 1);
         }
-        assert_eq!(inventories.get(), 1);
         assert!(active_execution(&generation).is_none());
+        // A later standalone resume is a new boundary, even with the same origin.
+        let _resume = snapshot.enter(&generation, &program, validate).unwrap();
+        assert_eq!(inventories.get(), 2);
     }
 
     #[test]
@@ -303,19 +344,19 @@ mod tests {
         let mut program = TrackedProgram::new(vec![1u8, 2], Arc::clone(&generation));
         let old =
             RewriteExecutionSnapshot::new(&generation, &RewriteAdmission::LegacyUnbundled, false);
-        assert!(old.enter(&generation, &program).is_ok());
+        assert!(old.enter(&generation, &program, || Ok(())).is_ok());
         program[0] = 9;
         assert_eq!(generation.mutations(), 1);
-        assert!(old.enter(&generation, &program).is_err());
+        assert!(old.enter(&generation, &program, || Ok(())).is_err());
         let newer =
             RewriteExecutionSnapshot::new(&generation, &RewriteAdmission::LegacyUnbundled, false);
         generation.revoke(); // Both successful and failed reinstall enter here first.
-        assert!(newer.enter(&generation, &program).is_err());
+        assert!(newer.enter(&generation, &program, || Ok(())).is_err());
         assert_eq!(generation.mutations(), 1);
         let latest =
             RewriteExecutionSnapshot::new(&generation, &RewriteAdmission::LegacyUnbundled, false);
-        assert!(latest.enter(&generation, &program).is_ok());
-        assert!(old.enter(&generation, &program).is_err());
+        assert!(latest.enter(&generation, &program, || Ok(())).is_ok());
+        assert!(old.enter(&generation, &program, || Ok(())).is_err());
     }
 
     #[test]
@@ -324,7 +365,7 @@ mod tests {
         let program = ();
         let old =
             RewriteExecutionSnapshot::new(&generation, &RewriteAdmission::LegacyUnbundled, false);
-        let _scope = old.enter(&generation, &program).unwrap();
+        let _scope = old.enter(&generation, &program, || Ok(())).unwrap();
         let error = RewriteExecutionSnapshot::validated(
             &generation,
             &RewriteAdmission::LegacyUnbundled,
@@ -344,13 +385,13 @@ mod tests {
             || Ok(()),
         )
         .unwrap();
-        assert!(restored.enter(&generation, &program).is_ok());
+        assert!(restored.enter(&generation, &program, || Ok(())).is_ok());
         assert!(
             !active_execution(&generation)
                 .unwrap()
                 .allows(RewriteSurface::DecodeEager)
         );
-        assert!(old.enter(&generation, &program).is_err());
+        assert!(old.enter(&generation, &program, || Ok(())).is_err());
     }
 
     #[test]
@@ -359,7 +400,7 @@ mod tests {
         let other = Arc::default();
         let mut snapshot =
             RewriteExecutionSnapshot::new(&generation, &RewriteAdmission::LegacyUnbundled, true);
-        assert!(snapshot.enter(&other, &()).is_err());
+        assert!(snapshot.enter(&other, &(), || Ok(())).is_err());
         snapshot.qualified = true;
         snapshot.mask = surface_bit(RewriteSurface::DecodeEager);
         assert!(!snapshot.allows(RewriteSurface::DecodeEager));
@@ -373,11 +414,15 @@ mod tests {
         let generation = Arc::default();
         let snapshot =
             RewriteExecutionSnapshot::new(&generation, &RewriteAdmission::LegacyUnbundled, false);
-        let first = snapshot.enter(&generation, &()).unwrap();
-        let second = snapshot.enter(&generation, &()).unwrap();
+        let first = snapshot.enter(&generation, &(), || Ok(())).unwrap();
+        let second = snapshot.enter(&generation, &(), || Ok(())).unwrap();
         drop(first);
         assert!(active_execution(&generation).is_some());
         drop(second);
         assert!(active_execution(&generation).is_none());
     }
 }
+
+#[cfg(test)]
+#[path = "execution_snapshot/reentry_tests.rs"]
+mod reentry_tests;

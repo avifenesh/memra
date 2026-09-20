@@ -1,9 +1,10 @@
 //! Scoped native program/admission evidence on real checkpoint bytes; no support promotion.
 //! Auto-discovered Cargo target and executable: `rewrite_identity_gate`.
-//! Usage: rewrite_identity_gate capture|check|fresh-control <model-path> <bundle-dir>
+//! Usage: rewrite_identity_gate capture|check|fresh-control|library-drift <model-path> <bundle-dir>
 //! Inspect first: artifact.lock must already exist in the bundle, and the caller must set
 //! MEMRA_ARTIFACT_LOCK before either load. Capture requires MEMRA_REWRITE_BUNDLE unset;
-//! check requires it set to the bundle. Keep the executable and numeric environment identical.
+//! check/library-drift require it set to the bundle. Keep the executable and numeric environment
+//! identical. Linux library-drift is a separate retained-snapshot refusal probe; it emits no receipt.
 
 use memra_engine::Engine;
 use memra_engine::cache::Cache;
@@ -270,6 +271,190 @@ fn cache_sha256(engine: &Engine, cache: &Cache) -> Result<String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
+// Compile the mmap probe on Unix hosts, but run it only on Linux, where strict loaded-library
+// identity observes /proc/self/maps. Keeping it separate avoids changing capture/check evidence.
+#[cfg(unix)]
+mod library_drift {
+    use super::*;
+    use std::fs::{DirBuilder, File, OpenOptions};
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    use std::path::PathBuf;
+
+    struct PrivateFile {
+        directory: PathBuf,
+        path: PathBuf,
+    }
+
+    impl PrivateFile {
+        fn new(bundle: &Path) -> Result<Self> {
+            let directory = std::fs::canonicalize(bundle)?
+                .join(format!("native-refusal-map-{}", std::process::id()));
+            DirBuilder::new().mode(0o700).create(&directory)?;
+            let file = Self {
+                path: directory.join("never-executed.bin"),
+                directory,
+            };
+            // Keep the name present until after unmapping: a deleted mapping would test a
+            // different refusal. Reject names that Linux maps escapes or cannot represent.
+            let path = file.path.to_str().ok_or("LIBRARY_DRIFT_PATH_NOT_UTF8")?;
+            require(
+                !path.contains(['\\', '\n', '\r']),
+                "LIBRARY_DRIFT_PATH_NOT_VERIFIABLE",
+            )?;
+            let mut writer = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&file.path)?;
+            writer.write_all(&[0_u8; 4096])?;
+            writer.sync_all()?;
+            // The only writer is closed before the read/execute mapping is created.
+            drop(writer);
+            Ok(file)
+        }
+
+        fn maps(&self) -> Result<Vec<String>> {
+            let suffix = format!(" {}", self.path.display());
+            Ok(std::fs::read_to_string("/proc/self/maps")?
+                .lines()
+                .filter(|line| line.ends_with(&suffix))
+                .map(str::to_owned)
+                .collect())
+        }
+    }
+
+    impl Drop for PrivateFile {
+        fn drop(&mut self) {
+            // The Mmap is declared after this owner, so even early errors unmap before unlink.
+            for result in [
+                std::fs::remove_file(&self.path),
+                std::fs::remove_dir(&self.directory),
+            ] {
+                if let Err(error) = result
+                    && error.kind() != std::io::ErrorKind::NotFound
+                {
+                    eprintln!("LIBRARY_DRIFT_CLEANUP_FAILED: {error}");
+                }
+            }
+        }
+    }
+
+    pub(super) fn run(engine: &Engine, model: &HybridModel, bundle: &Path) -> Result<()> {
+        qualified_eager_only(model)?;
+        let saved = model.rewrite_execution_snapshot()?;
+        let mut cache = Cache::new(engine, &model.cfg, PROMPTS[0].len() + 8)?;
+        {
+            let _first_scope = model.enter_rewrite_execution(&saved)?;
+            for &token in PROMPTS[0] {
+                model.decode_step(engine, token, &mut cache)?;
+            }
+            let _nested_scope = model.enter_rewrite_execution(&saved)?;
+            require(
+                model.rewrite_allowed(RewriteSurface::DecodeEager),
+                "RETAINED_NESTED_EAGER_REFUSED",
+            )?;
+        }
+        require(cache.pos == PROMPTS[0].len(), "RETAINED_CACHE_POSITION")?;
+        let before = cache_sha256(engine, &cache)?;
+        {
+            // Positive control: the same origin can resume after its first scope has ended.
+            let _resumed_scope = model.enter_rewrite_execution(&saved)?;
+            require(
+                model.rewrite_allowed(RewriteSurface::DecodeEager),
+                "RETAINED_NO_DRIFT_EAGER_REFUSED",
+            )?;
+        }
+        println!("RETAINED_NO_DRIFT_REENTRY_PASS nested_eager=true");
+
+        let file = PrivateFile::new(bundle)?;
+        let reader = File::open(&file.path)?;
+        // SAFETY: this new, mode-0600 file in a mode-0700 directory has no remaining writer;
+        // its owner outlives this mapping and never changes its bytes. map_exec supplies
+        // PROT_READ | PROT_EXEC. No mapped bytes are ever called, executed, or modified.
+        let mapping = unsafe { memmap2::MmapOptions::new().map_exec(&reader)? };
+        let maps = file.maps()?;
+        require(
+            maps.len() == 1
+                && maps[0]
+                    .split_whitespace()
+                    .nth(1)
+                    .is_some_and(|permissions| {
+                        permissions.contains('x') && !permissions.contains('w')
+                    }),
+            format!("LIBRARY_DRIFT_MAPPING_NOT_EXECUTABLE_READ_ONLY: {maps:?}"),
+        )?;
+        println!(
+            "LIBRARY_DRIFT_MAPPING file={} bytes={} sha256={} maps={maps:?}",
+            file.path.display(),
+            mapping.len(),
+            sha256(&[0_u8; 4096]),
+        );
+
+        // This MUST be the first identity/admission operation after the mapping changes.
+        // No explicit validator, fresh snapshot, reinstall or model mutation may revoke the
+        // saved origin on behalf of enter_rewrite_execution. The continuation witnesses that
+        // refusal happens before token work, even if decode_step itself would later refuse.
+        let mut token_calls = 0;
+        let attempt = (|| -> Result<()> {
+            let _scope = model.enter_rewrite_execution(&saved)?;
+            token_calls += 1;
+            model.decode_step(engine, 5, &mut cache)?;
+            Ok(())
+        })();
+        let error = match attempt {
+            Ok(()) => return Err("RETAINED_LIBRARY_DRIFT_ADMITTED_TOKEN".into()),
+            Err(error) => error.to_string(),
+        };
+        require(
+            token_calls == 0,
+            "RETAINED_LIBRARY_DRIFT_REACHED_TOKEN_WORK",
+        )?;
+        require(
+            error.contains("loaded executable mappings changed")
+                && error.contains(file.path.to_str().ok_or("LIBRARY_DRIFT_PATH_NOT_UTF8")?),
+            format!("RETAINED_LIBRARY_DRIFT_WRONG_REASON: {error}"),
+        )?;
+        require(
+            model.check_rewrite_execution(&saved).is_err(),
+            "RETAINED_LIBRARY_DRIFT_DID_NOT_REVOKE_ORIGIN",
+        )?;
+        let after = cache_sha256(engine, &cache)?;
+        require(
+            before == after,
+            format!("RETAINED_LIBRARY_DRIFT_MUTATED_CACHE before={before} after={after}"),
+        )?;
+        println!("RETAINED_LIBRARY_DRIFT_REFUSAL_PASS token_calls={token_calls} reason={error}");
+        println!("RETAINED_LIBRARY_DRIFT_CACHE_PASS before_sha256={before} after_sha256={after}");
+
+        drop(mapping);
+        require(file.maps()?.is_empty(), "LIBRARY_DRIFT_UNMAP_FAILED")?;
+        println!("RETAINED_LIBRARY_DRIFT_UNMAP_PASS");
+        // Do not refresh the origin or reinstall its bundle after removing the drift.
+        match model.enter_rewrite_execution(&saved) {
+            Ok(_) => return Err("RETAINED_LIBRARY_DRIFT_UNMAP_REVIVED_ORIGIN".into()),
+            Err(error) => require(
+                error.contains("snapshot was revoked"),
+                format!("RETAINED_LIBRARY_DRIFT_UNMAP_WRONG_REASON: {error}"),
+            )?,
+        }
+        // The external identity is back to its baseline; the original snapshot stays revoked.
+        model.rewrite_identity()?;
+        require(
+            model.check_rewrite_execution(&saved).is_err(),
+            "RETAINED_LIBRARY_DRIFT_IDENTITY_CHECK_REVIVED_ORIGIN",
+        )?;
+        require(
+            cache_sha256(engine, &cache)? == before,
+            "RETAINED_LIBRARY_DRIFT_UNMAP_MUTATED_CACHE",
+        )?;
+        println!("RETAINED_LIBRARY_DRIFT_REVOCATION_PASS restored_external_identity=true");
+        println!(
+            "NATIVE_REFUSAL_GATE_PASS mode=library-drift scope=retained-eager-snapshot receipt_emitted=false support_promotion=false"
+        );
+        Ok(())
+    }
+}
+
 fn reinstall_probe(
     engine: &Engine,
     model: &mut HybridModel,
@@ -380,19 +565,26 @@ fn run() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     require(
         args.len() == 3,
-        "USAGE: rewrite_identity_gate capture|check|fresh-control <model-path> <bundle-dir>",
+        "USAGE: rewrite_identity_gate capture|check|fresh-control|library-drift <model-path> <bundle-dir>",
     )?;
     let mode = args[0].to_str().ok_or("MODE_NOT_UTF8")?;
     require(
-        matches!(mode, "capture" | "check" | "fresh-control"),
-        "MODE: expected capture, check or fresh-control",
+        matches!(
+            mode,
+            "capture" | "check" | "fresh-control" | "library-drift"
+        ),
+        "MODE: expected capture, check, fresh-control or library-drift",
+    )?;
+    require(
+        mode != "library-drift" || cfg!(target_os = "linux"),
+        "LIBRARY_DRIFT_REQUIRES_LINUX",
     )?;
     let source = Path::new(&args[1]);
     let bundle = Path::new(&args[2]);
     let configured_bundle = std::env::var_os("MEMRA_REWRITE_BUNDLE");
     require(
-        (mode == "check") == configured_bundle.is_some(),
-        "BUNDLE_ENV: capture requires MEMRA_REWRITE_BUNDLE unset; check requires it set",
+        matches!(mode, "check" | "library-drift") == configured_bundle.is_some(),
+        "BUNDLE_ENV: capture/fresh-control require MEMRA_REWRITE_BUNDLE unset; check/library-drift require it set",
     )?;
     let lock_path = std::env::var_os("MEMRA_ARTIFACT_LOCK")
         .ok_or("ARTIFACT_LOCK_REQUIRED: set MEMRA_ARTIFACT_LOCK before load")?;
@@ -456,6 +648,19 @@ fn run() -> Result<()> {
         "LOADED artifact_sha256={} implementation_sha256={} numeric_program_sha256={}",
         identity.artifact_sha256, identity.implementation_sha256, identity.numeric_program_sha256
     );
+    #[cfg(unix)]
+    if mode == "library-drift" {
+        require(
+            std::fs::canonicalize(configured_bundle.as_ref().ok_or("BUNDLE_ENV_MISSING")?)?
+                == std::fs::canonicalize(bundle)?,
+            "LIBRARY_DRIFT_BUNDLE_PATH_MISMATCH",
+        )?;
+        require(
+            PROMPTS[0].iter().all(|&token| token < model.cfg.n_vocab),
+            "PROMPT_TOKEN_OUT_OF_VOCABULARY",
+        )?;
+        return library_drift::run(&engine, &model, bundle);
+    }
     let pack = memra_gguf::model_packs::for_config(&model.cfg).ok_or("PACK_UNAVAILABLE")?;
     let tolerance = pack
         .checkpoint_parity

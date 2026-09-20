@@ -465,7 +465,13 @@ if control.get('change_tool'):
 
     def test_unchanged_build_can_publish_mocked_cases_bound_to_record(self):
         self.build()
-        self.assertEqual(len(self.simulated_qualification()), 11)
+        launched = self.simulated_qualification()
+        self.assertEqual(len(launched), 12)
+        self.assertEqual(sum(command[1] == 'library-drift' for command in launched), 1)
+        cases = json.loads((self.args.out / 'cases.json').read_text())
+        mapping_case = next(case for case in cases if case['case'] == 'retained-library-drift')
+        self.assertTrue(mapping_case['passed'])
+        self.assertEqual(mapping_case['returncode'], 0)
         result = json.loads((self.args.out / 'result.json').read_text())
         self.assertEqual(result['status'], 'passed')
         self.assertEqual(result['build_record_sha256'], self.builder.digest(self.receipt))

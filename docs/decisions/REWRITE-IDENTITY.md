@@ -53,20 +53,37 @@ identity, even for a same-shape change. A reload is required before that model c
 be qualified again. Both successful and failed bundle reinstalls revoke older
 snapshots. Lazy embedding mirrors and mutable graph/workspace caches are private to the engine.
 
-`rewrite_execution_snapshot` checks loaded-library and numerical-environment state
-at each new or resumed request. `enter_rewrite_execution` borrows the model immutably
-and activates that snapshot for a scheduler tick or synchronous operation. Nested
-eager, speculative, graph and pipeline admissions check only the generation and a
-fixed surface mask. The server preserves a snapshot per request, including restored
-KV requests, and checks every participant in a batch. Retained decode/prime graphs, native MTP and GLM sessions, and suspended primes carry
-their originating snapshot; supplying a different qualified model cannot authorize them. Standalone direct calls still validate a boundary;
-callers doing a token loop can hold `protect_rewrite_execution` across the loop.
+`rewrite_execution_snapshot` retains the originating identity. Activating it through
+`enter_rewrite_execution` always validates loaded libraries and numerical environment
+at an outermost entry, before installing its permission mask. The validator is a
+required argument to the private activation primitive. Only a current enclosing scope
+for the same model/generation permits nested calls to reuse validation. The original
+epoch is checked again after validation and is never refreshed to make a retained
+object pass. This covers standalone graph step/profile methods, prime replay and
+worker tick/resume. Cached-token emitters hold the same guard before sending output.
+The server checks every batch participant's origin; a peer cannot lend its newer
+qualification to a revoked request.
 
-External process libraries and numerical environment must remain fixed while a
-request executes. An explicit identity/boundary check that detects drift revokes
-in-flight snapshots too; restoring the environment does not revive those snapshots.
-This replaces per-token process-map scans with an explicit protected boundary,
-rather than caching permissions over freely mutable model fields. CPU call-count,
-mutation, reinstall, model-binding and scope-lifetime regressions cover the control
-logic. The previous native receipts remain historical; the changed executable needs
-fresh native admission, affected exactness and controlled performance validation.
+SEC-557-2 / PERF-557-2 exposed the previous ordering error: entering an old snapshot
+activated its mask before checking changed external state. The exact reviewer
+`MEMRA_FAST` reproduction fails at frozen `cbafa2eb`. The common environment and
+library-inventory regressions also fail against that frozen activation body and pass
+against the corrected primitive. The library CPU case injects real file metadata into
+the production comparator; it is not a Linux executable-mapping or CUDA test. Logs,
+source hashes and the signature-only adapter used for the frozen comparison are in
+`research/modelplan-onboarding-rewrite-identity-20260920/later-drift-20260920/`.
+
+Nested eager, speculative, graph and pipeline admissions check only the generation
+and fixed surface mask, without rescanning libraries or serializing model/plan data.
+The 10,000-call test holds one continuous outer scope and observes one inventory
+validation; after that scope ends, re-entry requires another. Outermost standalone
+calls and worker ticks pay external validation. This is not a claim that a whole
+serving token step has constant cost or measured throughput improvement. Drift at a
+boundary revokes every older snapshot; restoring external state does not revive it.
+
+The native runner includes a separate `library-drift` probe using a real read/execute
+mapping (never executed) and a populated eager cache. It must refuse retained re-entry
+before token work and preserve cache hashes. Qualified graph/prime/worker and safe
+native environment-drift cases remain planned in `NATIVE-REFUSAL-PLAN.md`. Previous
+native receipts remain historical; the changed executable needs fresh native admission,
+affected exactness and controlled performance validation.

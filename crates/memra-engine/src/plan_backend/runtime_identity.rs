@@ -148,7 +148,7 @@ fn mapped_library(line: &str) -> Result<Option<(u64, u64, u64, &str)>, String> {
     )))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn library_stamp(metadata: &std::fs::Metadata) -> LibraryStamp {
     use std::os::unix::fs::MetadataExt;
     LibraryStamp {
@@ -224,7 +224,10 @@ impl LoadedLibraries {
     }
 
     pub(super) fn validate(&self) -> Result<(), String> {
-        let current = library_inventory()?;
+        self.validate_inventory(library_inventory()?)
+    }
+
+    fn validate_inventory(&self, current: BTreeMap<String, LibraryStamp>) -> Result<(), String> {
         if current != self.inventory {
             let added: Vec<_> = current
                 .keys()
@@ -250,6 +253,24 @@ impl LoadedLibraries {
         }
         Ok(())
     }
+}
+
+/// Portable injected inventory for re-entry tests. It uses the production file stamps
+/// and comparison; the Linux /proc reader and real executable mappings have separate gates.
+#[cfg(all(test, unix))]
+pub(super) fn file_inventory_for_reentry_test(
+    path: &std::path::Path,
+) -> impl Fn() -> Result<(), String> + use<> {
+    let path = path.to_path_buf();
+    let read = move || -> Result<BTreeMap<String, LibraryStamp>, String> {
+        let stamp = library_stamp(&std::fs::metadata(&path).map_err(|error| error.to_string())?);
+        Ok(BTreeMap::from([(path.display().to_string(), stamp)]))
+    };
+    let expected = LoadedLibraries {
+        sha256: String::new(),
+        inventory: read().unwrap(),
+    };
+    move || expected.validate_inventory(read()?)
 }
 
 /// Untrusted source implementations must explicitly support identity of their opened bytes.

@@ -830,6 +830,16 @@ They cover failed reinstall, stale program state, and eager-only graph/spec refu
 `python3 research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py`
 also runs the protected-snapshot module without linking CUDA: repeated admissions,
 mutation/reinstall revocation, model binding, external drift and scope lifetime.
+`run-later-drift-regression.py --out NEW_DIRECTORY` runs the environment and library
+re-entry assertions against the frozen pre-fix activation body (expected failures)
+and current activation (expected passes), with recorded source/log hashes. The old
+body receives only an ignored callback argument to adapt its signature; its missing
+validation remains unchanged. Library drift uses the production file-stamp comparator
+with an injected inventory. The direct frozen reviewer reproduction is also retained.
+The unfiltered host suites run through `tools/skip-census.py` with zero skip budget;
+isolated children must each prove one passing test and do not export their filtered
+harness summaries into the parent census.
+
 `python3 crates/memra-engine/src/model/repack/run-host-tests.py` exercises the actual
 stacked and per-expert NVFP4 disk helpers using tiny opened safetensors fixtures. Both
 identity flags cover cold/cache-hit, same-size corruption, after-load mutation/truncation,
@@ -845,6 +855,9 @@ identities and exact executable hashes. Pass `--build-record BUILD_DIR/build.jso
 wrapper. Qualification output also stays outside the checkout. The runner rejects
 missing/incomplete records, changed clean source, binaries and relevant build inputs
 before GPU access; `test_qualify_native.py` covers those refusals with CPU fixtures.
+The runner also schedules `rewrite_identity_gate library-drift` after positive replay.
+That separate process checks real mapping drift, unchanged cache bytes and permanent
+origin revocation. See `NATIVE-REFUSAL-PLAN.md` for the remaining native method cases.
 
 
 ## Generic spill / tiered KV (memra-tier)

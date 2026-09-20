@@ -1,0 +1,42 @@
+{
+  "adapted_snapshot_sha256": "e801494ce5f2000024abd3797563c2aba7bc0fc406d6754c2f2ee467bbeb546c",
+  "adapter": "ignored validator argument only; old entry body unchanged; old in-file tests omitted",
+  "cases": [
+    {
+      "arm": "before",
+      "case": "retained_qualified_scope_must_refuse_later_environment_drift",
+      "expected_returncode": 101,
+      "log_sha256": "1a8d424fd5d3c63a4812878bef762917e2848bbd6d3676fca6ba43851344caf3",
+      "returncode": 101
+    },
+    {
+      "arm": "before",
+      "case": "retained_qualified_scope_must_refuse_later_library_inventory_drift",
+      "expected_returncode": 101,
+      "log_sha256": "d19d8d2cfa7b085d0d25caf577562edf5114ae77bf30aa50dcb6a3a84db89138",
+      "returncode": 101
+    },
+    {
+      "arm": "after",
+      "case": "retained_qualified_scope_must_refuse_later_environment_drift",
+      "expected_returncode": 0,
+      "log_sha256": "f5fd5b58c17ff3144c5c62644fb441ea823474600fbcb63abb52fdb651f81783",
+      "returncode": 0
+    },
+    {
+      "arm": "after",
+      "case": "retained_qualified_scope_must_refuse_later_library_inventory_drift",
+      "expected_returncode": 0,
+      "log_sha256": "204fae0f017102e32a8c051ba254c393e28b50872b517f1e44c688a39c93e8aa",
+      "returncode": 0
+    }
+  ],
+  "current_files": {
+    "crates/memra-engine/src/plan_backend/execution_snapshot.rs": "1d311fe7520dd830816d263e3a54b70c324ab0f53ae177179b3cee2e690d7624",
+    "crates/memra-engine/src/plan_backend/execution_snapshot/reentry_tests.rs": "e23fd8448f19352d4659a8bb2d0ca8d801a099cee605c08b28c8f5cdf2ebc1bf",
+    "crates/memra-engine/src/plan_backend/runtime_identity.rs": "396842b7b5d5611c4429142872d10ecc9e891362ca72de08ca3ccb9866b2f5c9"
+  },
+  "frozen_snapshot_ref": "cbafa2ebba8823e75b65d9f976649b64a2af12a6",
+  "frozen_snapshot_sha256": "cba1f3eee1c101f9414d9f1620a360d58eaa2330c23e68b2fcee32981f7d96f0",
+  "limits": "CPU synthetic qualification; portable file-inventory injection, not Linux mappings or CUDA"
+}

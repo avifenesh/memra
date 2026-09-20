@@ -7,6 +7,7 @@ Uses the selected Rust toolchain (MSRV 1.97); RUSTUP_TOOLCHAIN can select an ins
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[5]
@@ -29,7 +30,7 @@ libc = "0.2"
 mod repack;
 ''')
     result = subprocess.run(
-        ["cargo", "test", "--offline", "--manifest-path", str(project / "Cargo.toml")],
+        ["cargo", "test", "--offline", "--manifest-path", str(project / "Cargo.toml"), *sys.argv[1:]],
         cwd=project,
         env={**os.environ, "CARGO_TARGET_DIR": str(project / "target")},
     )
