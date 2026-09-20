@@ -488,7 +488,15 @@ fn run() -> Result<()> {
         let mut candidates = Vec::new();
         for (i, prompt) in PROMPTS.into_iter().enumerate() {
             let reference = verify_prefill(&engine, &model, prompt)?;
+            println!(
+                "IDENTITY_AFTER_VERIFY prompt={i} value={:?}",
+                model.rewrite_identity()
+            );
             let candidate = tokenwise(&engine, &model, prompt)?;
+            println!(
+                "IDENTITY_AFTER_TOKENWISE prompt={i} value={:?}",
+                model.rewrite_identity()
+            );
             output(
                 "quantized-cache-verify-prefill",
                 i,
@@ -498,6 +506,10 @@ fn run() -> Result<()> {
             )?;
             output("pre-install-tokenwise", i, &candidate, vocab, bundle)?;
             let fresh_control = model.forward_last(&engine, prompt)?;
+            println!(
+                "IDENTITY_AFTER_FRESH prompt={i} value={:?}",
+                model.rewrite_identity()
+            );
             output("fresh-kv-diagnostic", i, &fresh_control, vocab, bundle)?;
             let class_control = rewrite.verify_logits(
                 &identity.implementation_sha256,
