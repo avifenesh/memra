@@ -1,15 +1,12 @@
-# Session C day-nine handoff — complete assigned cells
-- Active local lane `lane/spill-c-20260919`, checkout `wt-spill-c`; no main changes.
-- NOTHING RUNNING for C: tmux `c-day9-pressure` exited; pressure-status state is complete.
-- Native receipts `/root/spill-receipts/c-day9/`, copied into `pro-single-day9/` and pushed.
-- Complete pressure set + binary postcheck pushed at `f157269e1`; verify-day9.py replays PASS.
-- Default ON/OFF and 8GiB ON/OFF generation MATCH; all spec K1–8 PASS; same-card tapes identical.
-- 8GiB banked GPU evictions gen/spec=12091/63996; host evictions=22061/73966.
-- Physical reads gen/spec=22077/73982; bounded collector wait succeeded on second attempt.
-- Frozen native binaries at `/root/wt-c/target/release/` are from source 148e7f0e9; hashes retained.
-- Engine Send+Sync, cache Send, pread Receiver !Sync; native clippy passes at 748903f73.
-- Mac ten checks PASS (196 tier tests), six verifier tests; source hashes and raw logs committed.
-- Existing inherited owner-proxy wiring is complete/default-OFF; no duplicate wiring added.
-- Budget refusal proposal is in BUDGET-REFUSAL.md; legacy flag behavior unchanged.
-- NEXT: lead independently replay verify-day9.py and review/integrate lane; no GPU rerun pending.
-- Local lane/remote build retained as active integration handoff; no release/PP runtime claim.
+# Session C day-ten handoff
+- Lane `lane/spill-c-20260919`, checkout `wt-spill-c`; no commits on main or the lead branch.
+- UNPUSHED: `git push` refused by perf-ci gate at a413937f2 (lead's engine files in the integ5 merge); no skip, no --no-verify; the lead pushes.
+- RUNNING: remote tmux `c-day10-repeat`, driver `run-day10-repeat.py`, receipts `/root/spill-receipts/c-day10/`, read `repeat-status.json`.
+- One N=1 8 GiB spec-on repeat through the pro-single collector; 60 s waits, 60 min cap from 16:28Z; lane B holds the lock; refusals kept, never overridden.
+- Finished locally: ff to origin (066afe918); merge of lane/spill-integ5-20260920 (a413937f2); verify-day9.py PASS + 6 red arms; MOE-SLOT-CACHE-DOOR.md (5cf9579a1); BUDGET-REFUSAL.md options (aa8e8516f); DAY9.md day-ten close.
+- Day-nine verdicts: gen MATCH x4, spec SELF-CONSISTENCY PASS x4; 8 GiB banked GPU evictions 12091/63996, re-reads 4389/53684; same-card tapes identical.
+- Frozen native binaries `/root/wt-c/target/release/run-{gen,spec}` are source 148e7f0e9; hashes re-checked 16:27Z; never rebuilt.
+- `/root/wt-c` at 748903f7; only dirty items are the two untracked lane driver scripts (tracked here).
+- NEXT: when repeat-status is `complete`, rsync c-day10 into `pro-single-day10/`, run `verify-day10.py`, append the verdict to DAY9.md, commit `data:`.
+- If the 60 min cap is hit: bank the refusal logs, label the cell skipped, do not re-trigger without the lead.
+- DECISIONS NEEDED (lead): budget refusal option A/B/C (BUDGET-REFUSAL.md); PP owner placement for the door; door decide-by 2026-10-04.

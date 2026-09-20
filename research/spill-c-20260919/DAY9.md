@@ -39,6 +39,8 @@ Frozen runtime source is recorded in `pro-single-day9/build/source.commit`
 (`148e7f0e9`, integ5 merge), alongside build exit/log, binary hashes and artifact
 hash. Subsequent assertion-only compilation does not overwrite those binaries.
 All cells use prompt `[55,88,13]`, `MEMRA_NGEN=32`, `MEMRA_MOE_RESIDENT=0`.
+Every cell is **N=1**: one execution per arm, `executed-not-qualified`
+development evidence on the target card class. No median appears in this report.
 The fresh same-card controls are the only comparison tapes.
 
 | Cell | Verbatim gate outcome | GPU evictions | Host evictions | Physical reads |
@@ -56,6 +58,15 @@ Generation quote: `prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1
 Default banks hold the working set: zero GPU evictions is expected, not pressure
 qualification. 8 GiB is 9,986 GPU slots including eight-byte tail padding per
 860,160-byte record; host bank remains 16 records, not 8 GiB.
+
+**Bank budget per cell.** Host bank: 16 records of 860,160 bytes (13.1 MiB) under
+the 256 MiB default `--expert-bank-host-bytes` ceiling in every banked cell. GPU
+slot cache: default cells auto-size to 0.85 of free VRAM under the 0.80 hard
+ceiling, 90,705 slots (72.7 GiB) in gen and 90,643 slots (72.6 GiB) in spec; the
+8 GiB cells force `MEMRA_MOE_SLOTS=9986`, 8,589,637,648 bytes (8.00 GiB)
+allocated (`allocated_bytes == slots * 860168` is verifier-checked). Native OFF
+cells build the same slot cache without the bank and print no `[expert-gpu-slru]`
+line, so their eviction count is not instrumented.
 
 ## Final seal and handoff
 
@@ -95,3 +106,37 @@ Prior cumulative hours are unavailable, so total consumption against the origina
 eight-day lane budget is not invented. The primary local lane and its remote
 build remain active integration handoffs, not abandoned scratch. Raw receipts
 are fully copied and committed; no temporary GPU process or campaign remains.
+
+## Day-ten close (2026-09-20, from 16:10Z)
+
+- Resync before acting: origin carried two commits from a parallel session
+  (`f157269e1` complete pressure receipts, `066afe918` seal); fast-forwarded first.
+- Merged the lead's local `lane/spill-integ5-20260920` (`5b3d0b08e`, integ5
+  replayed onto main `f79b3e57`) as `a413937f2`, no conflicts. It brings the
+  lead's `model_memory*`, `hybrid.rs`, `lib.rs`, `pp.rs` engine changes and no new
+  `MEMRA_*` read.
+- Independent local replay on the merged tree: `verify-day9.py` **PASS** (eight
+  cells, verdicts identical to `pro-single-day9/VERDICT.json`), `test-day9.py`
+  six red arms OK. An rsync dry-run of the remote `c-day9` tree against
+  `pro-single-day9/` itemizes only mtime and permission flags: byte content is
+  identical. The five refused attempts left 53-byte `REFUSED` console logs (kept)
+  and empty directories, which git cannot represent.
+- Push gate on the merged tree: `cargo fmt --all -- --check` clean;
+  `cargo test -p memra-tier -p memra-kv --offline` 261 pass;
+  `DOCS_RS=1 cargo clippy -p memra-engine --offline --all-targets -- -D warnings`
+  clean. `git push origin HEAD` was **refused by the perf-ci pre-push gate at
+  `a413937f2`** (engine files touched after the last perf-ci battery: the lead's
+  files above). No `MEMRA_SKIP_PERF_CI`, no `--no-verify`; the lead pushes the
+  branch from the shared `.git`.
+- `MOE-SLOT-CACHE-DOOR.md`: what is landed, what is pending before the door can
+  sit behind the tiered materializer, decide-by 2026-10-04. No code step was
+  implemented: every candidate needs an `Engine` to test, awaits the budget
+  decision, or is a transport.
+- `BUDGET-REFUSAL.md`: three options (keep clamp plus door budget; lift clamp;
+  typed plan-time refusal) with fail-closed behavior and test shape each, marked
+  lead decision needed. No default changed.
+- Repeatability cell: `run-day10-repeat.py` in remote tmux `c-day10-repeat`,
+  receipts `/root/spill-receipts/c-day10/`, one N=1 8 GiB `spec-on` through the
+  collector, 60 s waits, 60 min cap from 16:28Z. Lane B held the canonical lock
+  at launch; every refusal is preserved. Outcome is appended below when the
+  driver exits.
