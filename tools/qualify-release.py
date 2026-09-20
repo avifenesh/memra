@@ -6,6 +6,7 @@ Seal runs after that wrapper exits, so its final cleanup status is part of the p
 """
 from __future__ import annotations
 import argparse
+import atexit
 import csv
 import io
 import json
@@ -17,8 +18,16 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
+
+# Never execute stale project bytecode from an ignored __pycache__ directory.
+_PRIVATE_PY_CACHE = tempfile.TemporaryDirectory(prefix="memra-native-proof-python-")
+atexit.register(_PRIVATE_PY_CACHE.cleanup)
+sys.pycache_prefix = _PRIVATE_PY_CACHE.name
+sys.dont_write_bytecode = True
 
 import release_qualification as q
+import release_inputs
 
 
 def write(path, value):
@@ -32,14 +41,43 @@ def reference(root, path):
 def clean_source(repo):
     q.require(not q.git(repo, "status", "--porcelain", "--untracked-files=normal").strip(),
               "native qualification requires clean committed source")
+    release_inputs.verify_checkout(repo)
     return q.source_snapshot(repo)
 
 
 def environment():
     # Every ambient Memra switch is removed. This runner qualifies the ordinary release
     # battery, not an inherited benchmark/alternate draft program. No secret values banked.
+    q.require(not os.environ.get("LD_PRELOAD"), "LD_PRELOAD is unsupported for native qualification")
     return {k: v for k, v in os.environ.items() if not k.startswith("MEMRA_") and k not in
             ("DOCS_RS", "CARGO_TARGET_DIR", "CARGO_BUILD_TARGET", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")}
+
+
+def build_environment(out, nvcc, rustc):
+    env = environment()
+    for key in list(env):
+        if key.startswith(("CARGO_", "RUST", "CC_", "CXX_")) or key in (
+                "CC", "CXX", "AR", "LD", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS", "CUDACXX"):
+            del env[key]
+    env.update(CUDA_VISIBLE_DEVICES="", MEMRA_CUDA_ARCH="120a", MEMRA_NVCC=str(nvcc),
+               CUDA_HOME=str(nvcc.parent.parent), CUDA_PATH=str(nvcc.parent.parent),
+               CARGO_HOME=str(out / "cargo-home"), CARGO_TARGET_DIR=str(out / "target"),
+               RUSTUP_TOOLCHAIN="1.97.1", RUSTC=str(rustc),
+               PYTHONPYCACHEPREFIX=str(out / "python-cache"), PYTHONDONTWRITEBYTECODE="1")
+    return env
+
+
+def prepare_cargo_home(out):
+    home = out / "cargo-home"
+    home.mkdir()
+    original = Path(os.environ.get("CARGO_HOME", str(Path.home() / ".cargo"))).resolve()
+    # Reuse only downloadable archive/index caches. Never inherit config,
+    # credentials, compiler wrappers or mutable extracted registry source trees.
+    for name in ("registry/cache", "registry/index"):
+        source = original / name
+        if source.is_dir():
+            shutil.copytree(source, home / name)
+    return home
 
 
 def numeric_environment(env):
@@ -61,33 +99,54 @@ def platform_identity():
             "machine": platform.machine(), "glibc": platform.libc_ver()[1]}
 
 
+def prepare_build_source(repo, expected, out):
+    build_source = out / "source"
+    # Cargo only sees a fresh Git-defined checkout, never ignored files or index hints
+    # from the caller's working directory. Hooks are disabled only for this owned clone.
+    subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "clone", "--shared", "--no-checkout",
+                    str(repo), str(build_source)], check=True)
+    subprocess.run(["git", "-C", str(build_source), "-c", "core.hooksPath=/dev/null",
+                    "checkout", "--detach", expected["commit"]], check=True)
+    q.require(clean_source(build_source) == expected, "owned source checkout differs from requested Git input")
+    return build_source
+
+
 def build(args):
     source = clean_source(args.repo)
     q.require(source["commit"] == args.expected_head, "build checkout differs from requested source")
+    q.require(not args.out.is_relative_to(args.repo), "build output/source staging must be outside the input checkout")
     args.out.mkdir(parents=True, exist_ok=False)
-    env = environment()
-    env.update(CUDA_VISIBLE_DEVICES="", MEMRA_CUDA_ARCH="120a", MEMRA_NVCC=str(args.nvcc.resolve()),
-               CARGO_TARGET_DIR=str(args.out / "target"), RUSTUP_TOOLCHAIN="1.97.1")
-    command = ["cargo", "build", "--release", "--locked", "--jobs", str(args.jobs),
+    build_source = prepare_build_source(args.repo, source, args.out)
+    prepare_cargo_home(args.out)
+    rustc = Path(subprocess.check_output(["rustup", "which", "--toolchain", "1.97.1", "rustc"], text=True).strip())
+    cargo = Path(subprocess.check_output(["rustup", "which", "--toolchain", "1.97.1", "cargo"], text=True).strip())
+    env = build_environment(args.out, args.nvcc.resolve(), rustc)
+    command = [str(cargo), "build", "--release", "--locked", "--jobs", str(args.jobs),
                "-p", "memra-engine", "--bin", "kernel-check", "--bin", "run-gen", "--bin", "run-spec",
                "--bin", "argmax-margin-probe", "-p", "memra-server", "--bin", "memra-server",
                "-p", "memra-tokenizer", "--bin", "tok-parity"]
     write(args.out / "source.json", source)
-    result = {"schema": "memra-native-build-v1", "source": reference(args.out, "source.json"),
-              "source_before": source["inputs_sha256"], "command": command, "docs_rs": False,
-              "cuda_arch": "120a", "cuda_visible_devices": "", "platform": platform_identity(),
+    result = {"schema": "memra-native-build-v2", "source": reference(args.out, "source.json"),
+              "source_before": source["inputs_sha256"], "command": command,
+              "docs_rs": "DOCS_RS" in env, "cuda_arch": env["MEMRA_CUDA_ARCH"],
+              "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"], "platform": platform_identity(),
+              "recipe": {"policy": "controlled-cargo-v1", "cargo_home": "fresh-config-free",
+                         "checkout": "actual-git-blobs-modes-v1", "build_source": "owned-git-checkout",
+                         "cargo_config": "tracked-jobs-only",
+                         "compilers": {"cargo": q.file_identity(cargo), "rustc": q.file_identity(rustc),
+                                       "nvcc": q.file_identity(args.nvcc.resolve())}},
               "numeric_environment": numeric_environment(env),
-              "rustc": subprocess.check_output(["rustc", "-Vv"], env=env, text=True),
+              "rustc": subprocess.check_output([str(rustc), "-Vv"], env=env, text=True),
               "nvcc": subprocess.check_output([env["MEMRA_NVCC"], "--version"], env=env, text=True)}
     write(args.out / "build.pending.json", result)
     with (args.out / "build.log").open("w") as log:
-        result["exit_code"] = subprocess.run(command, cwd=args.repo, env=env, stdout=log,
+        result["exit_code"] = subprocess.run(command, cwd=build_source, env=env, stdout=log,
                                              stderr=subprocess.STDOUT).returncode
     result["log"] = reference(args.out, "build.log")
     write(args.out / "build.pending.json", result)
     q.require(result["exit_code"] == 0, "native build failed; build.pending.json and log retained")
-    after = clean_source(args.repo)
-    q.require(after == source, "source changed during native build")
+    after = clean_source(build_source)
+    q.require(after == source, "owned source changed during native build")
     result["source_after"] = after["inputs_sha256"]
     result["binaries"] = {name: binary_id(args.out / "target/release" / name) for name in q.BINARIES}
     write(args.out / "build.json", result)
@@ -149,11 +208,17 @@ def observe_hardware(ids):
 
 
 def model_inventory(repo, oracle_dir):
+    repo, oracle_dir = repo.resolve(), oracle_dir.resolve()
     roster = q.read_roster((repo / "tools/release-roster.tsv").read_bytes())
     q.require(oracle_dir.is_dir(), "kernel oracle directory is missing")
     files = {Path(row["path"]) for row in roster} | set(oracle_dir.glob("*.gguf"))
     q.require(any(oracle_dir.glob("*.gguf")), "kernel oracle inventory is empty")
-    return {str(path): q.file_identity(path) for path in sorted(files)}
+    result = {}
+    for path in sorted(files):
+        actual = path if path.is_absolute() else repo / path
+        release_inputs.single_file_gguf(actual)
+        result[str(path)] = q.file_identity(actual)
+    return result
 
 
 def capture(args):
@@ -161,6 +226,9 @@ def capture(args):
     source = clean_source(args.repo)
     q.require(source["commit"] == args.expected_head, "capture checkout differs from requested source")
     built = q.json_bytes((args.build / "build.json").read_bytes())
+    q.require(built.get("schema") == "memra-native-build-v2"
+              and built.get("recipe", {}).get("policy") == "controlled-cargo-v1",
+              "capture requires a controlled v2 build; older provenance is unqualified")
     q.require(q.json_bytes((args.build / "source.json").read_bytes()) == source, "build is for different source")
     q.require(built["exit_code"] == 0 and built["source_before"] == source["inputs_sha256"]
               and built["source_after"] == source["inputs_sha256"], "invalid native build")
@@ -180,7 +248,10 @@ def capture(args):
     binaries = lambda: {name: binary_id(staged / name) for name in q.BINARIES}
     env = environment()
     env["MEMRA_KC_MODELS_DIR"] = str(args.oracles.resolve())
+    env["PYTHONPYCACHEPREFIX"] = str(args.out / "python-cache")
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     ids = lease["requested_uuids"]
+    models_before = model_inventory(args.repo, args.oracles)
     activity = subprocess.check_output(["nvidia-smi", "--query-compute-apps=gpu_uuid,pid",
                                         "--format=csv,noheader,nounits"], text=True)
     occupied = [row for row in csv.reader(io.StringIO(activity), skipinitialspace=True)
@@ -195,7 +266,7 @@ def capture(args):
         shutil.copy2(args.repo / path, args.out / name)
         manifests[path] = reference(args.out, name)
     run = {"schema": "memra-native-release-run-v1", "source_before": source["inputs_sha256"],
-           "binaries_before": binaries(), "models_before": model_inventory(args.repo, args.oracles),
+           "binaries_before": binaries(), "models_before": models_before,
            "numeric_environment": numeric_environment(env), "hardware": hardware,
            "oracle_directory": str(args.oracles.resolve()),
            "lease_owner": {k: lease[k] for k in ("wrapper_pid", "child_pid", "requested_uuids")},
@@ -306,6 +377,8 @@ def main():
     parser.add_argument("--append", action="store_true", help="bank an additional qualified build profile")
     args = parser.parse_args()
     args.repo, args.out = args.repo.resolve(), args.out.resolve()
+    if args.oracles is not None:
+        args.oracles = args.oracles.resolve()
     try:
         q.require(args.jobs > 0, "jobs must be positive")
         for mode, required in {"build": ("nvcc", "expected_head"), "capture": ("build", "oracles", "expected_head"),

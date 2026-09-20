@@ -242,10 +242,18 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
     run = evidence.obj(record["run"])
     lease = evidence.obj(record["lease"])
     proof = verify_source(source, repo, head)
-    require(build["schema"] == "memra-native-build-v1" and build["exit_code"] == 0
+    require(build["schema"] == "memra-native-build-v2" and build["exit_code"] == 0
             and build["source"] == record["source"] and build["cuda_arch"] == "120a"
             and build["docs_rs"] is False and build["cuda_visible_devices"] == ""
             and build["rustc"] and build["nvcc"] and build["command"], "invalid native build provenance")
+    recipe = build["recipe"]
+    require(recipe["policy"] == "controlled-cargo-v1" and recipe["cargo_home"] == "fresh-config-free"
+            and recipe["checkout"] == "actual-git-blobs-modes-v1"
+            and recipe["build_source"] == "owned-git-checkout"
+            and recipe["cargo_config"] == "tracked-jobs-only", "uncontrolled native build recipe")
+    require(set(recipe["compilers"]) == {"cargo", "rustc", "nvcc"}, "missing compiler identities")
+    for name, identity in recipe["compilers"].items():
+        validate_identity(identity, name)
     require(build["source_before"] == build["source_after"] == source["inputs_sha256"],
             "build source changed during compilation")
     require(build["platform"]["machine"] == "x86_64" and build["platform"]["profile"]

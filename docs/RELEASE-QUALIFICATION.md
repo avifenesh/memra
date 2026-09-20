@@ -59,11 +59,43 @@ from origin before checking its snapshot. Source inventory
 and raw evidence remain usable on a clean checkout without requiring local model files,
 CUDA or the original absolute build directory. Their absence does not create new evidence.
 
+## Actual build inputs
+
+Native production compares actual tracked file bytes, executable modes and symlink targets
+against the expected Git objects before and after build/capture. `git status` is only an
+additional diagnostic: assume-unchanged and skip-worktree cannot hide a different compiler
+input. File timestamps only detect concurrent changes while hashing; they never grant
+freshness or qualification. Ignored/untracked files under crate, tool and Cargo source
+roots refuse. Project Python caches are not consumed: the producer and its children use
+fresh cache locations.
+
+The controlled v2 build uses a fresh, detached Git-defined source checkout outside the
+caller checkout and its own config-free Cargo home. The actual staged source is checked
+before and after compilation, so ignored caller files are never compiler inputs. It may
+reuse downloaded archive and index caches, but never inherited configuration, credentials
+or extracted source trees.
+Compiler-wrapper/target/rustflag environment controls are removed, cargo/rustc are resolved
+from the pinned toolchain and their executable hashes are recorded along with nvcc. Ancestor
+Cargo configuration is refused; the only admitted project Cargo configuration is the tracked
+`[build] jobs` setting. Environment forcing, alternate targets and wrapper config refuse
+rather than overwrite the recorded native/stub/architecture claims.
+
+The generic capture contract explicitly supports **single-file GGUF inputs**. It parses
+`split.count` and refuses multi-file models before any GPU operation, even if an entry shard
+was renamed. A complete loaded-shard closure is required before split qualification can be
+added. This is a qualification-tool limit, not a statement about engine format support.
+The separate Step gate retains its full artifact and topology checks.
+Oracle directories normalize once (absolute, relative or symlinked directory), while
+named file aliases remain under that directory for the kernel resolver and verifier.
+Capture never renames or substitutes a model: the coordinator supplies the actual named
+weight oracles, whose complete file bytes are hashed before and after the run.
+
 ## Produce a record
 
 Use a clean, isolated checkout of the final committed candidate. Do not include credentials
 in command arguments or receipt paths. Numeric launch values are recorded as SHA-256 values,
-not raw environment dumps. Build is GPU-free and creates a fresh target tree:
+not raw environment dumps. Build is GPU-free and creates a fresh target/source tree; `$BUILD` must be outside the
+input checkout:
 
 ```sh
 python3 tools/qualify-release.py build --expected-head "$COMMIT" --out "$BUILD" \

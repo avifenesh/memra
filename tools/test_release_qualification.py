@@ -56,12 +56,16 @@ class Fixture:
             self.binaries[name] = {**q.file_identity(p), "format": "ELF-x86_64"}
         self.put("source.json", self.source)
         (self.out / "build.log").write_text("CPU MOCK build observation; not a native build\n")
-        self.build = {"schema": "memra-native-build-v1", "exit_code": 0,
+        self.build = {"schema": "memra-native-build-v2", "exit_code": 0,
                       "source": self.ref("source.json"), "source_before": self.source["inputs_sha256"],
                       "source_after": self.source["inputs_sha256"], "cuda_arch": "120a", "docs_rs": False,
                       "cuda_visible_devices": "", "rustc": "CPU mock", "nvcc": "CPU mock",
                       "platform": {"profile": "ubuntu-24.04", "machine": "x86_64", "glibc": "2.39"},
                       "command": ["cargo", "build", "--release", "--locked"], "log": self.ref("build.log"),
+                      "recipe": {"policy": "controlled-cargo-v1", "cargo_home": "fresh-config-free",
+                                 "checkout": "actual-git-blobs-modes-v1", "build_source": "owned-git-checkout",
+                                 "cargo_config": "tracked-jobs-only",
+                                 "compilers": {name: {"bytes": 32, "sha256": "c" * 64} for name in ("cargo", "rustc", "nvcc")}},
                       "binaries": self.binaries}
         self.put("build.json", self.build)
         (self.out / "topology.txt").write_text("CPU MOCK topology; GPU0 PIX CPU\n")
