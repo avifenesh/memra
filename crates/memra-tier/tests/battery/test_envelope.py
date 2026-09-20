@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[4]
 SPEC = importlib.util.spec_from_file_location('envelope', ROOT/'tools/tier-envelope.py')
@@ -24,6 +26,17 @@ def sample():
 
 
 class EnvelopeTests(unittest.TestCase):
+    def test_visit_preserves_collector_group_and_lock_fd(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = SimpleNamespace(out=Path(temp), probe=Path('/probe'), bytes=4096,
+                                   direction='h2d', worker=42)
+            with patch.object(E, 'power', return_value={}), \
+                 patch.object(E.B, 'tee_run', side_effect=RuntimeError('launch sentinel')) as launch:
+                with self.assertRaisesRegex(RuntimeError, 'launch sentinel'):
+                    E.visit(args, 'test', 0, 'AB', 1)
+            self.assertTrue(launch.call_args.kwargs['shared_group'])
+            self.assertEqual(launch.call_args.kwargs['pass_fds'], (42,))
+
     def test_registered_matrix_and_both_orders(self):
         self.assertEqual(E.SIZES, [4096, 16384, 65536, 262144, 1048576, 4194304,
                                   16777216, 67108864, 268435456, 1073741824])

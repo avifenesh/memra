@@ -95,7 +95,8 @@ def visit(args, phase, round_id, order, copies):
     command = [str(args.probe), '--bytes', str(args.bytes), '--direction', args.direction,
                '--order', order.lower(), '--repeats', '1', '--copies', str(copies)]
     # Only called by a proof-checked worker under the collector's whole-window lock.
-    code, expired = B.tee_run(command, raw, timeout=240, echo=False)
+    code, expired = B.tee_run(command, raw, timeout=240, echo=False,
+                             pass_fds=(args.worker,), shared_group=True)
     after = power()
     pair = {'schema_version': 1, 'kind': 'envelope-pair', 'phase': phase,
             'round': round_id, 'order': order, 'exit_code': code, 'timed_out': expired,
