@@ -1,8 +1,20 @@
 # GPU bank budget refusal: options for the lead
 
-Status: **lead decision needed.** No default, flag parse, or `docs/FLAGS.md` row
-changes in this lane. `MEMRA_MOE_SLOTS` (`docs/FLAGS.md` row "force an exact SLRU
-slot count") keeps its documented behavior until the lead picks an option.
+Status: **decided, option A** (lead ruling 2, day ten,
+`research/spill-lead-20260919/INTEGRATION-DAY10.md`), implemented at `79353d53d`
+and qualified as N=1 development evidence in `DAY10.md`. `MEMRA_MOE_SLOTS`
+(`docs/FLAGS.md` row "force an exact SLRU slot count") keeps its documented
+behavior. Deviations from the option A text below, each recorded in `DAY10.md`:
+the pure function is `gpu_bank_slots(bytes, max_record, hard_bytes)` (the hard
+ceiling is measured from free VRAM at install time, so it is a parameter); the
+exact count reaches the cache through a separate constructor
+(`MoeSlotCache::with_exact_slots`) rather than a `forced_exact` argument on
+`new`, which keeps `new` byte-identical; a `MEMRA_MOE_SLOTS` value alongside the
+GPU budget is refused as a conflict rather than silently ignored; and, per the
+lead addendum, the host budget refusal is the same typed `ExpertBankRefusal`,
+so both budgets emit the native `REFUSED:` token with exit 2 from the gate
+binaries and `pressure-refusal.py` became a red arm. The comparison and options
+below are kept as the decision record.
 
 ## The seam as it is
 
