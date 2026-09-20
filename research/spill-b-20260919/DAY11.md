@@ -183,5 +183,5 @@ code; it is reported to the lead as an intermittent, rig-sensitive test, not rel
   power constancy, co-tenancy, build/source/binary identity, direct construction, continuation
   surfaces, every cycle's chunk census, probe accounting, arithmetic and flags, the series table and
   class against the pure rule, and refused cells verbatim. It does not run CUDA.
-- This session used approximately **2.5 agent-hours** of the 8-hour day-11 budget, including builds,
+- This session used approximately **1.8 agent-hours** of the 8-hour day-11 budget, including builds,
   prefill waits and lock hygiene.
