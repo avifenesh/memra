@@ -413,10 +413,26 @@ fn destination_drop_retention(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
         .unwrap();
     let graph = t.pin_destination_graph(&ticket).unwrap();
     t.synchronize(&ticket).unwrap();
-    let destination = t.take_destination(&ticket, 0, epochs()).unwrap();
+    let Destination::Host(host) = t.take_destination(&ticket, 0, epochs()).unwrap() else {
+        panic!("D2H destination is not host")
+    };
+    let device = t.retain_device(&keep).unwrap();
+    let before = t.used();
+    let rejected = t
+        .d2h(CopyOp {
+            host,
+            device,
+            bytes: 4096,
+            epochs: epochs(),
+            producer_fence: Some(producer),
+        })
+        .unwrap_err();
+    assert_eq!(rejected.error, Error::Busy);
+    assert_eq!(rejected.op.host.bytes().unwrap(), vec![0; 4096]);
+    assert_eq!(t.used(), before);
     let consumer = t.record_consumer(&ticket).unwrap();
     stream.synchronize().unwrap();
-    drop(destination);
+    drop(rejected);
     t.retire_source(&ticket).unwrap();
     t.release_device(&keep).unwrap();
     assert_eq!(t.used().pinned, 4096);
