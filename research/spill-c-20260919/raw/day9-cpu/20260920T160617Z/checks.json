@@ -1,0 +1,141 @@
+{
+  "source": "3eb6ae183e55c1631dbcd650b3ac977639927f9f",
+  "checks": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "mac-check",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets"
+      ],
+      "exit": 0,
+      "sha256": "f4403412cb20dc7d8a0a94c08c9c8853e4bac9b3e8489158834f30512311ed97"
+    },
+    {
+      "name": "linux-check",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "sha256": "4cf86278c1e6d659943a46a3d7e3da429ac15be90f0f17742e24ef85228e7d3e"
+    },
+    {
+      "name": "tests",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "sha256": "6a87ff833c6e00771bced352f648a19f10537e91167a9490f3a3b2983c3a5a12"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "a41051563a4cb5fc1b1bcdd9aa0ba28ca80f7736d629d90cc138218756e8e3a9"
+    },
+    {
+      "name": "engine-linux-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-engine",
+        "--offline",
+        "--lib",
+        "--bin",
+        "run-gen",
+        "--bin",
+        "run-spec",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "sha256": "2b34696728dc82b03cbf6311d7e3a6a41658bbde097834c3010a78bc82842c1a"
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "flags",
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    },
+    {
+      "name": "frozen",
+      "command": [
+        "python3",
+        "/Users/avifen/tiyuvta/wt-spill-c/research/spill-c-20260919/slru-trace.py",
+        "--check"
+      ],
+      "exit": 0,
+      "sha256": "a856e996999863668ffc175ada1b533bd48512ac6a6b8e8af249116f3a3137dd"
+    },
+    {
+      "name": "verifier-reds",
+      "command": [
+        "python3",
+        "/Users/avifen/tiyuvta/wt-spill-c/research/spill-c-20260919/test-day9.py"
+      ],
+      "exit": 0,
+      "sha256": "3884f83255b63480b178b50a1cdd1576f7134f9a64ac130ceed6487a1c8b4e36"
+    }
+  ],
+  "tested_files": {
+    "crates/memra-engine/src/moe_cache.rs": "abb236b624267645812cb4acefa02cefeb0f6fed5a01004dbe2c78f131bae4c1",
+    "research/spill-c-20260919/fixtures/slru-synthetic.json": "20e98c96c52b501aaa7028aba516205494d79c28506519b1b8971ebb0fdd6267",
+    "research/spill-c-20260919/verify-day9.py": "3acf0eeac9bd85b5b9ce9a5f9794160c1a849cd369b11d3bb751d9dd4b218137",
+    "research/spill-c-20260919/test-day9.py": "9062eef6fb052b6d6e610bf11b47f00ca09b8c579f0fbbeb04fc28195163ba96"
+  },
+  "engine_scope": "Linux compile only, DOCS_RS placeholders"
+}

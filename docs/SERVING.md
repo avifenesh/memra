@@ -590,6 +590,12 @@ live-lease pressure as `prefix_cache_skips_pinned`; the first refusal is also a 
 
 ## OpenAI tools surface (serve-tools lane, 2026-08-02)
 
+`POST /v1/tokenize` and `/v1/detokenize` provide CPU-only prompt sizing and token inspection; the messages form shares chat's template/accounting path ([schemas](API-SURFACES.md#v1tokenize-and-v1detokenize-token-inspection)).
+
+Token inspection, prepaid prompt rendering, and inference share the worker's loaded
+tokenizer objects. These snapshots survive worker respawns; replacing tokenizer or
+template files takes effect only after a full server-process restart.
+
 **STANDARD-SURFACE CONTRACT (2026-08-17).** Every model this engine serves to
 customers speaks the same full surface, identically: the three wire formats
 (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`) and the tools surface
@@ -860,6 +866,8 @@ second public name for a model.
 
 ## OpenAI compatibility contract (serve-compat lane, 2026-08-03)
 
+- **Token-id stops:** chat/completions accept `stop_token_ids` (up to 16 vocabulary-validated u32 ids); the first raw match ends with `finish_reason: "stop"`, excluding the matching id and speculative tail from output and `usage.completion_tokens` (see [API surfaces](API-SURFACES.md#token-id-stops-on-chat-and-completions)).
+
 The five gap-scan listing-blockers (`research/gap-scan-20260802/REPORT.md`), fixed and
 gated by the official `openai` Python SDK against a live server
 (`research/serve-compat-20260802/`):
@@ -886,6 +894,11 @@ gated by the official `openai` Python SDK against a live server
   `MEMRA_COMPAT=openai` (`deploy/systemd/memra-server.service:92`), so a deployed server matches
   this section — but if you are testing a bare `memra-server` and your SDK reads a silent hang,
   this is why.
+- **Streaming usage:** on both OpenAI completion routes, `stream_options.include_usage:true`
+  sends null usage on content/finish chunks, then one empty-choices chunk carrying the
+  full non-stream usage (cached tokens and any spec fields included) before `[DONE]`.
+  Absent/false preserves legacy usage on the choices-bearing finish chunk; errors do not
+  synthesize a successful usage chunk.
 - **Reasoning separation:** on think-open prompts, `<think>` text routes to
   `message.reasoning` / `delta.reasoning` (+ `reasoning_details`, the OpenRouter
   dialect); `content` is post-think only. `include_reasoning:false` (or
@@ -1143,8 +1156,8 @@ at cap inside the worker.
   keeps the host-sampled path). `response_format` `json_object`/`json_schema` is REAL
   constrained decoding (see the section below). Semantic params we can't honor 400 with
   the param named (`logit_bias`, `logprobs`/`top_logprobs`, `n != 1`, `best_of != 1`,
-  unknown `response_format` types); cosmetic fields (`user`, `stream_options`) are
-  accepted and ignored. Streams exclude stop-sequence text exactly like non-stream
+  unknown `response_format` types); cosmetic fields (`user`) are accepted and ignored;
+  `stream_options.include_usage` selects the streaming usage shape described above. Streams exclude stop-sequence text exactly like non-stream
   responses (holdback buffer).
 
 ## Gateway listing surface
@@ -1841,6 +1854,20 @@ receipts: `prefix_host_entries/bytes/demotions/promotions/demote_ms/promote_ms/
 rejected_allocs` in `/metrics` (the `*_ms` fields are cumulative copy wall-time, the
 tick-stall receipt), plus per-copy `[prefix-host]` log lines. See the
 [flag catalog](FLAGS.md) rows for arms, receipts pointers, and the pending pod battery.
+
+**Device memory ownership:** physical admission, driver headroom recovery, OOM teardown
+and the runtime trim handle use the model's primary, PP, Step TP and GLM TP owners.
+Admission reserves lazy rank state, prompt-shaped GLM peer prefill workspace and each
+device's transient workspace floor;
+materialized state is already reflected in that device's live occupancy. Trim fences every
+owning stream before releasing each physical device's default-pool cache once. Its response
+retains the pool entry counts and adds `devices`: `device`, `reclaimed_bytes`,
+`still_owned_bytes` (live default-pool allocations), `pool_reserved_bytes`,
+`pool_cached_bytes`, `driver_free_bytes`, and `synchronization_errors`. Active sessions,
+model allocations and pinned prefix source leases remain owned. A failed fence is reported,
+and driver/query limitations are not evidence of successful hardware qualification.
+The implementation and outstanding native gates are recorded in
+[the device-ownership validation record](../research/glm-tp-device-ownership-20260920/VALIDATION.md).
 
 **Tenant lifecycle purge (lane/kv-tenancy-compaction-20260831, tiering spec §0.5):** key
 revocation or tenant deletion must not leave that tenant's prompt bytes parked in pinned

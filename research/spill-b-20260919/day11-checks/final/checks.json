@@ -1,0 +1,106 @@
+{
+  "source": "1566d4f81a5f58d39c96a78ba987c34cfc66ccf3",
+  "cpu_quota": "systemd-run --user --scope -q -p CPUQuota=1200% -p MemoryMax=28G",
+  "checks": [
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "check-00.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--all-targets",
+        "--offline"
+      ],
+      "exit": 0,
+      "log": "check-01.log",
+      "sha256": "e6645a2ac9e3dbc94bc0a5d8224a4d6c7a7f60186d4db43be94534a603d05d18"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "log": "check-02.log",
+      "sha256": "3e32dda1423c3c0b315f9e4c5fe5ac567fed8c111ca32adbe4ae9fa6031c67d1"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-engine",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "log": "check-03.log",
+      "sha256": "d9f40764ecdc130cb59f655614733381b9acb12d87e2a531c2d3c8ae500ea941"
+    },
+    {
+      "command": [
+        "python3",
+        "research/spill-b-20260919/test-day11.py"
+      ],
+      "exit": 0,
+      "log": "check-04.log",
+      "sha256": "75ff54e727b57e4bd7b88956ed0c92c4b9a416e6f0976707e8fb54aa385ac0bd"
+    },
+    {
+      "command": [
+        "python3",
+        "research/spill-b-20260919/verify-day11.py",
+        "--require-complete"
+      ],
+      "exit": 0,
+      "log": "check-05.log",
+      "sha256": "130b4f34161655712c78a84c80fcf629ed5849d17b7de4b5e4da3748b44467de"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "check-06.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "log": "check-07.log",
+      "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    }
+  ]
+}

@@ -125,11 +125,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "usage: run-gen <model.gguf|hf_dir|hf:owner/repo[:file]> [tok ids...] | --prompt \"text\"",
     );
     let path = memra_gguf::hf::resolve_arg(&path)?;
+    // --experts-via-tier [--expert-bank-host-bytes=N] [--expert-bank-gpu-bytes=N]: the gate
+    // door and its typed budgets, parsed once here and handed to the installer (no env read).
+    let expert_bank = memra_engine::banked_residency::expert_bank_cli(std::env::args())?;
     let e = Engine::new(0)?;
     // DIRECTORY path = safetensors HF checkpoint (MiniMax-M3 first-load path) OR a memra repack
     // dir (Hy3 Q4_K transcode: manifest.json + tensors/ + experts/). GGUF stays the dense norm.
     if std::path::Path::new(&path).is_dir() {
-        if std::env::args().any(|a| a == "--experts-via-tier") {
+        if expert_bank.is_some() {
             return Err("experts-via-tier requires the approved GGUF artifact".into());
         }
         let dir = std::path::Path::new(&path);
@@ -1019,10 +1022,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let g = GgufFile::open(&path)?;
     let model = HybridModel::load_without_mtp(&e, &g)?;
-    let _expert_bank_owner = if std::env::args().any(|a| a == "--experts-via-tier") {
-        Some(e.install_expert_bank_gate(&model, &g)?)
-    } else {
-        None
+    let _expert_bank_owner = match expert_bank {
+        Some(budget) => Some(match e.install_expert_bank_gate(&model, &g, budget) {
+            Ok(gate) => gate,
+            Err(err) => {
+                // Refusal token contract: only the typed budget or catalog refusal is REFUSED / exit 2;
+                // any other installer error stays a failure (`Error:` / exit 1).
+                if let Some(reason) = memra_engine::banked_residency::refusal_reason(err.as_ref()) {
+                    eprintln!("REFUSED: {reason}");
+                    std::process::exit(2);
+                }
+                return Err(err);
+            }
+        }),
+        None => None,
     };
     println!(
         "loaded {} ({} trunk layers; optional MTP skipped)",

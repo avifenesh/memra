@@ -1,0 +1,11 @@
+# WP-B day 12 checkpoint: ruling 6 landed, both cards printed the classified label
+- Branch lane/spill-b-20260919 on top of the pushed day-11 tip d1844b3c0: c7dd20cc5 (gate: series_verdict, write_cycles, status line, tests), 152c736cf (TESTING.md, decision record, verify-day12.py, test-day12.py, run-day12-checks.py), then the day-12 data commit (see git log).
+- Gate source for every cell: c7dd20cc5. Native checkout /root/wt-b at c7dd20cc5 (git bundle), clean; no B tmux on either rig; /root/spill-receipts/b-day12 mirrored to pro-single-day12/.
+- 32k series, both cards, verbatim: ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles). Residual 2097152 B every cycle, drift 0, restore bit-identical every cycle, series g1_reclaim_qualified=true, per-cycle line false.
+- PRO continuation matches the frozen target-card bundle; the laptop card has no frozen bundle (tokens match the rented bundle, logits/state differ), continuation identity in-process only.
+- 8k series control not rerun (ruling 7: mapped-VA probe refuses to re-reserve small planes; open item in the decision record; no probe or CLI change).
+- Replay: python3 research/spill-b-20260919/verify-day12.py --require-complete; battery: run-day12-checks.py -> day12-checks/final/ (8/8 exit 0, 280 tests).
+- Local release kv+tier tests: 2 storage day4 Err flakes (lane A code, day4.rs:143 and :471), reported, not touched; PRO 280/280.
+- Nothing relaxed beyond ruling 6; (a) to (d) unchanged; (e) in force for every other shape.
+- Push refused by tools/hooks/pre-push perf-ci freshness: "engine files touched after the last perf-ci battery" (base d1844b3c0; crates/memra-engine/src/bin/kv_tier_gate.rs, kv_tier_gate/active.rs, kv_tier_gate/reclaim_contract.rs). No override used. Unpushed tip = the data commit at the top of git log; the lead pushes it with the logged override.
+- Decide-by 2026-10-04 for the --kv-allocator vmm door unchanged.

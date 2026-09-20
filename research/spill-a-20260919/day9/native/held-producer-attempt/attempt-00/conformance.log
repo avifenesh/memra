@@ -1,0 +1,8 @@
+PASS v1 transfer_cancel native CUDA
+PASS v1.1 transfer_complete_cancel native CUDA
+PASS v1.1 transfer_lifetime native events + injected observation loss + graph retention
+PASS v1.1 transfer_zero_accept Unsupported NVMe preserves owned input
+PASS v1.1 acceptance exhaustive native mixed batch; rejected sibling blocks publication
+PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence
+PASS additive source retirement Busy while source consumer bound; host destination survives source release
+PASS v1.3 transfer_source_retirement native CUDA

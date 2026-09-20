@@ -1,0 +1,54 @@
+{
+  "finished_utc": "2026-09-20T21:34:40.123278+00:00",
+  "source": "6defcd6046c88304a2fb3ba17490b8c8630d8d36",
+  "command": [
+    "/root/wt-c/target-cli/release/memra",
+    "model",
+    "inspect",
+    "/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+    "--against",
+    "qwen35moe",
+    "--out",
+    "/root/spill-receipts/c-day11/inspect"
+  ],
+  "exit": 0,
+  "memra_sha256": "c9aaf6536c05a408a7d4bc0a61a5a2b75070985a10adad00e8456c64921c7ab4",
+  "files": {
+    "artifact.lock": {
+      "bytes": 839,
+      "sha256": "bd1eb8d248e5741c5f11f9753a63c4a2c1df290834902d12f6f5a69b6d16991d"
+    },
+    "execution-rewrites.tsv": {
+      "bytes": 2386,
+      "sha256": "90d9ae53cad27bbfe7d117b302260363e6994f3c0fa82ca8dd72c19b37b4da20"
+    },
+    "gates.txt": {
+      "bytes": 139,
+      "sha256": "a1b07754ee8f220c283a0d154f7bdeb144839713963ec7d41177c57266805387"
+    },
+    "model-plan.txt": {
+      "bytes": 64068,
+      "sha256": "57235c490634c71524a31abbc1b09aa900d9b5fc91f0c474c857d13764f3885d"
+    },
+    "placement-checkpoint-2.tsv": {
+      "bytes": 470,
+      "sha256": "dd74cbe9c3516e420845a9f9426899b00a3956af40d711fd7c517c7af7d16b4a"
+    },
+    "placement-checkpoint-3.tsv": {
+      "bytes": 510,
+      "sha256": "548b08ffc1b6b619266ed6c090539d6fa32a49721e01db5ba4919c2a74d40cd0"
+    },
+    "placement-checkpoint-4.tsv": {
+      "bytes": 550,
+      "sha256": "ce341422d5df72f43a8943237a2ac7dcf3789dff020f369c22365a65bef5515a"
+    },
+    "tensor-census.tsv": {
+      "bytes": 89743,
+      "sha256": "778e90b98a2ba1bc1cf72ebf259d84cf5f725939798fdb326d7d0a6d6488f874"
+    },
+    "tokenizer-contract.tsv": {
+      "bytes": 234,
+      "sha256": "76dd5a274e557024e13452aa3d13c23c6c801c984a534738237d1701482e358b"
+    }
+  }
+}

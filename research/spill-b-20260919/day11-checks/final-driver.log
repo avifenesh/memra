@@ -1,0 +1,8 @@
+0 cargo fmt --all -- --check
+0 cargo check -p memra-kv -p memra-tier --all-targets --offline
+0 cargo test -p memra-kv -p memra-tier --offline --no-fail-fast
+0 cargo clippy -p memra-engine -p memra-tier -p memra-kv --offline --all-targets -- -D warnings
+0 python3 research/spill-b-20260919/test-day11.py
+0 python3 research/spill-b-20260919/verify-day11.py --require-complete
+0 git diff --check
+0 bash tools/check-flags.sh

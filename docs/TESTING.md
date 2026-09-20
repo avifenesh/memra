@@ -822,11 +822,29 @@ explicit gate rollback and refusal, and verify a new thread's environment policy
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
 
+
+### Model-owned device admission and reclaim (#544)
+
+`tools/qualify-model-device-memory.py` runs the named native ownership/memory stages
+under an external exact per-card lease: one physical card for same-device owner coverage,
+two for GLM peer state/reclaim and worker admission/pinned-source refill. Each stage
+requires a source/binary-bound build receipt and preserves raw output, telemetry and
+lease completion. See [protocol](../research/glm-tp-device-ownership-20260920/QUALIFICATION.md)
+and [native results](../research/glm-tp-device-ownership-20260920/NATIVE-RESULTS.md).
+The 2026-09-20 PRO 6000 run passed all three synthetic stages. GPU KDA/lazy-index-key
+allocation coverage, full-checkpoint serving and performance remain pending; these are
+not model-support or full release-battery receipts.
+
 ## Generic spill / tiered KV (memra-tier)
 
-The shared contract is `crates/memra-tier/src/contracts.rs`; the conformance source
-is `crates/memra-tier/tests/contracts/conformance.rs` (including revision schedules).
-These are **CPU execution gates, not hardware qualification**. Run the whole pair:
+The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are
+the public module `memra_tier::conformance` (`crates/memra-tier/src/conformance/mod.rs`,
+re-exporting `revision_v11.rs`, `revision_v12.rs` and `revision_v13.rs`); the CPU bindings
+that drive them live in `crates/memra-tier/tests/contracts/` (`transfer.rs`, `services.rs`,
+`v12_bindings.rs`, `v13_bindings.rs`). The crate ships the suite as a public module on
+purpose: native gates import the same functions instead of forking expected outcomes, and
+the publish census refuses internal dev-deps. These are **CPU execution gates, not hardware
+qualification**. Run the whole pair:
 
 ```sh
 cargo test -p memra-tier -p memra-kv --offline --no-fail-fast
@@ -835,39 +853,335 @@ cargo check -p memra-tier -p memra-kv --offline --all-targets --target x86_64-un
 cargo clippy -p memra-tier -p memra-kv --offline --all-targets --no-deps -- -D warnings
 cargo fmt --all -- --check
 python3 crates/memra-tier/tests/contracts/fixture_reference.py --check
+python3 -m pytest -q crates/memra-tier/tests/battery/
 bash tools/check-flags.sh
 bash tools/docs-registry-census.sh
 git diff --check
 ```
 
 The tier suite covers contracts, storage, banks/rows, directed peer capacity and
-placement; KV covers the hierarchy, materializers and single-governor scheduling.
+placement; KV covers the hierarchy, materializers and single-governor scheduling; the
+pytest line is the collector's own suite (`tools/tier-battery.py`, `tier-envelope.py`).
 Conformance schedules drive explicit completion/cancellation/retirement, original
 item indices, namespace and epoch refusal, opaque bytes, accounting and borrowed
 release. v1.2 adds owner/fence identities, logical-vs-framed completion bytes,
-source installation and two distinct record materializations; see the
-[interface decision](decisions/GENERIC-SPILL-INTERFACE-V1.md) and
-[freeze ledger](../research/spill-lead-20260919/FREEZE.md).
+source installation and two distinct record materializations. v1.3 adds two additive
+ownership schedules, `device_hand_back` (`take_device` returns the original allocation,
+never a copy) and `transfer_source_retirement` (`retire_source`, default body
+`Err(Error::Unsupported)`), with `WIRE_VERSION` unchanged at 1; see the
+[interface decision](decisions/GENERIC-SPILL-INTERFACE-V1.md), the
+[freeze ledger](../research/spill-lead-20260919/FREEZE.md) and the
+[v1.3 freeze](../research/spill-lead-20260919/FREEZE-V1.3.md).
 Linux cross-target check is compilation only, not Linux syscall execution.
 
-For rented-development collection, start from
-[the first-hour runbook](../research/spill-d-20260919/RIG-DAY1.md) and
-`tools/tier-rig-bootstrap.sh --help`. Bootstrap requires an explicit isolated
-`BRANCH=lane/spill-...`, checks the CUDA target, and records source and binary
-identities. `--dry-run` stubs external effects and is not a rig acceptance result.
-Launch native cells through the collector (absolute executable, new output dir):
+### Native conformance: `tier-transfer-gate` (v1 through canonical v1.3)
 
-```sh
-python3 tools/tier-battery.py --rig rtx5090 --timeout 1200 --out <new-dir> --execute <absolute-bin> <args>
+`tier-transfer-gate` (`crates/memra-engine/src/bin/tier_transfer_gate.rs`) runs the shared
+schedules from `memra_tier::conformance` against the native `CudaTransfers` backend and prints
+one verdict line per schedule, only after the schedule function returns. It calls the frozen
+canonical v1.3 functions directly (`v1::transfer_source_retirement(...)`,
+`v1::device_hand_back(&mut fixture)`); the additive day-7 cases stay as extra lines and are not
+the canonical evidence:
+
+```text
+PASS v1 transfer_cancel native CUDA
+PASS v1.1 transfer_complete_cancel native CUDA
+PASS v1.1 transfer_lifetime native events + injected observation loss + graph retention
+PASS v1.1 transfer_zero_accept Unsupported NVMe preserves owned input
+PASS v1.1 acceptance exhaustive native mixed batch; rejected sibling blocks publication
+PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence
+PASS additive source retirement Busy while source consumer bound; host destination survives source release
+PASS native governor zero after controlled drain
+PASS v1.3 transfer_source_retirement native CUDA
+PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement
+PASS v1.3 device_hand_back native CUDA
 ```
 
-The collector owns `/tmp/memra-5090.lock`; PRO-pair/four-card cells instead use
-`--rig pro-pair` / `--rig pro-four` and `/tmp/memra-gpu.lock`. Do not double-wrap
-its lock or run scored campaigns concurrently on a shared fabric. Keep raw output,
-source/artifact/plan/binary hashes and 250 ms telemetry; sync each completed or
-failed cell before the next one. Bootstrap and collector success are
-**executed-not-qualified**, not model/serving passes. Failed/refused cells remain
-failed; absent counters stay unknown. Unproven storage is not NVMe evidence.
+plus one `PASS native D2H-H2D roundtrip bytes=… byte_exact=true source_freed_host_live=true` line per
+size (4 KiB to 256 MiB). All lines were recorded on one RTX PRO 6000 Blackwell through the collector
+(`research/spill-a-20260919/day9/RESULTS.md`, native source `1adf2be3d`, disposition
+`executed-not-qualified`), so v1, v1.1, v1.2 **and canonical v1.3** pass natively. What the binding
+took (`research/spill-a-20260919/V13-BINDING.md`): per-side retention (`pin_source_graph` /
+`pin_destination_graph` replace the ticket-wide `pin_graph`), a destination lease that keeps its
+governor charge past `acknowledge`, and a taken pinned destination that shares the physical
+allocation with the ticket until acknowledgement. The frozen schedules were not changed. Native
+PASS here is development correctness on one card class; it does not discharge the serving-shape
+cells the freeze lists as required.
+
+### `kv-tier-gate`: fitting-context KV tiering under one numeric program
+
+`crates/memra-engine/src/bin/kv_tier_gate.rs`; the argument contract is `kv_tier_gate/cli.rs`
+(pure, testable without CUDA):
+
+```text
+kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|32768 --tiers host|host,nvme --same-program [--kv-allocator pooled|vmm] [--reclaim-diagnostic [--reclaim-cycles N]] --out <new-directory>
+```
+
+- `--same-program` is mandatory. Without it the parser rejects the invocation
+  (`--same-program is mandatory; no alternate numerical program permitted`, exit 2 with the
+  `kv-tier-gate: ` prefix, which the collector classifies as a *failed* cell, not a
+  refusal). The receipt header records
+  `program=native-decode_step_h-tokenwise-trunk-no-mtp`, raw tokens, no chat template.
+- Bound cases: `baseline`, and `active` with `--tiers host`. `prefix`, and `active` on any
+  other route, refuse before touching the device:
+  `REFUSED: only active tiers=host is bound; prefix and other active routes remain unsupported`.
+  Contexts are 8192 and 32768; 16384 is accepted only under `--reclaim-diagnostic`.
+- Naked baseline: any `MEMRA_*` variable other than `MEMRA_NVCC`, `MEMRA_CUDA_ARCH` and
+  `MEMRA_GPU_LOCK` refuses (`REFUSED: runtime override <name> must be unset for this naked
+  eager baseline`); the gate inspects names only, values never enter a receipt.
+- `--kv-allocator pooled|vmm` (default `pooled`) is a gate-only door with
+  **decide-by: 2026-10-04** ([decision record](decisions/KV-PHYSICAL-RECLAIM.md)). The gate
+  constructs the cache directly with VMM-backed planes
+  (`Cache::new_with_allocator(&e, &model.cfg, args.context, memra_kv::KvAllocator::Vmm)`) and
+  records `construction=direct` / `empty_plane_swap=false` in `allocation-construction.txt`; the
+  kernels and addresses are unchanged. Containment is a call-site policy, not a structural
+  property: `memra-kv` exposes `Cache::new_with_allocator` and `KvAllocator` publicly and
+  `impl KvDev for Engine` implements `alloc_vmm_u8`, so any caller *could* construct VMM planes;
+  today only this gate does, and the decide-by decides whether that surface is promoted or
+  deleted. Any other value refuses:
+  `REFUSED: unknown KV allocator (expected pooled or vmm)`. It is a CLI door, so it has no
+  `docs/FLAGS.md` row; the decide-by lives in the decision record.
+- `--reclaim-diagnostic` requires `--case active --tiers host --kv-allocator vmm`
+  (`REFUSED: reclaim diagnostic requires active VMM host mode`). After demote it frees a
+  never-mapped spare VA reservation, re-reads free VRAM, calls `cuCtxSynchronize` and
+  re-reads again, and also runs a mapped-VA probe over every demoted plane
+  (`KvPlane::probe_demoted_va_release`: unmap the retained chunks, `cuMemAddressFree`,
+  re-reserve the same base, remap), writing `mapped-va-probe.tsv` and appending
+  `mapped_va_release_delta_bytes`, `mapped_unmap_delta_bytes`, `mapped_va_roundtrip_equal`,
+  `free_after_mapped_va_probe_bytes`, `residual_bytes`, `residual_class` and
+  `free_after_restore_bytes` to `residual-diagnostic.txt`.
+- `--reclaim-cycles N` (N >= 2, ASCII digits only) repeats the SAME demote/restore roundtrip N
+  times in one process on one cache under `--reclaim-diagnostic`, so a residual is classified by
+  its series instead of inferred from one roundtrip (lead ruling, day 11). Every cycle writes the
+  full roundtrip receipt set under `cycle-<k>/` (`active-reclaim.txt`, `residual-diagnostic.txt`,
+  `mapped-va-probe.tsv`, `vmm-planes.tsv`, `active-bundles.tsv`, `reclaim-diagnosis.txt`,
+  `restored-prefix-state.tsv`) and must restore the suspended state bit-identically before the
+  next cycle starts (`active restored state is not bit-identical to suspended state (cycle k of
+  N)` aborts the gate). The receipt root gains `reclaim-cycles.tsv` (one row per cycle: free
+  VRAM before demote, after demote, after restore; `reclaimed_bytes`, `reacquired_bytes`,
+  `residual_bytes`, `restore_residual_bytes`, `free_before_drift_bytes`, the per-cycle flags and
+  the restored-prefix manifest hash) and `reclaim-cycles.txt` with `residual_series_class`
+  (`kv_tier_gate/reclaim_contract.rs`, `classify_cycles`): `none` (zero residual every cycle),
+  `one-time-driver-mapping-metadata` (exactly one granule after cycle 1 and identical through
+  cycle N, criteria (a) to (c) holding every cycle, no drift of the process free baseline),
+  `growing-residual` (the residual, or the bytes still unreturned against the first cycle's
+  baseline, grows across cycles), otherwise `unclassified`. The per-cycle G1 line is unchanged
+  (`reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0`, tightening
+  (e)). The series `g1_reclaim_qualified` follows lead ruling 6 (day 12,
+  `reclaim_contract::series_verdict`): `true` with a nonzero residual only when all of these hold:
+  the run is a `--reclaim-cycles N` series with N >= 5 (`series_min_cycles=5`), the class is
+  `one-time-driver-mapping-metadata`, criteria (a) to (c) hold in every cycle, the restored prefix
+  is bit-identical in every cycle, and the free baseline drifts by 0. Then, and only then, the gate
+  prints `ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, N cycles)` as its
+  status line (the `K` tag follows the committed context) and writes it as `series_label`;
+  otherwise `series_label=not-printed`. A series whose every cycle is exact (class `none`) is
+  `true` with no new label. A single roundtrip with a nonzero residual, a series shorter than 5,
+  any other class, a drifting baseline, a differing restore, and any pooled run stay `false` /
+  `not-applicable-pooled` with their existing status lines. Criteria (a) to (d) are unchanged and
+  (e) stays in force for every other shape. The console prints `reclaim-cycle k/N: ...` per cycle
+  and one `RECLAIM-CYCLES: class=... cycles=N granule=... residual_first=... residual_last=...
+  g1_reclaim_qualified=...` line before the status line.
+  Refusals (exit 2, `REFUSED:` last line): without `--reclaim-diagnostic`
+  (`REFUSED: --reclaim-cycles requires --reclaim-diagnostic`), a pooled allocator
+  (`REFUSED: --reclaim-cycles requires --kv-allocator vmm; a pooled cache releases no chunk`),
+  a duplicate (`REFUSED: duplicate --reclaim-cycles`), and N < 2, a missing value or junk
+  (`REFUSED: --reclaim-cycles requires an integer count >= 2`; the value is never echoed). No
+  new `MEMRA_*` read. CPU replay: `crates/memra-tier/tests/reclaim/` includes the gate's pure
+  modules by path and replays the committed day-10 target-card receipts as series (`day11.rs`) and
+  the committed day-11 series bytes of both card classes under ruling 6 (`day12.rs`); the lane's
+  offline replays are `research/spill-b-20260919/verify-day11.py` (day-11 rule) and
+  `verify-day12.py` (ruling 6: the label must have been printed by the gate as the final status
+  line, exactly once, and the receipt fields must follow the pure verdict).
+- Receipts: `BASELINE.txt` (first line `BASELINE_CAPTURED`) or `ACTIVE.txt` (first line
+  `ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS` or
+  `ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation
+  comparison pending; not G1 PASS`), plus `active-reclaim.txt` carrying `reclaim_observed`,
+  `reclaim_exact_equal`, `residual_bytes`, `residual_class` (`none`, `unclassified`,
+  `va-reservation-page-table`, `spare-VA-release-sensitive-driver-accounting`,
+  `deferred-driver-release-completed-by-context-sync`, or `not-applicable-pooled`) and
+  `g1_reclaim_qualified` (`true`, `false`, or `not-applicable-pooled`: a pooled run can never
+  publish the G1 label, `kv_tier_gate/active.rs`). The pure criterion is
+  `kv_tier_gate/reclaim_contract.rs`; on top of criteria (a) to (d) the gate applies the day-10
+  tightening (e): `g1_reclaim_qualified=true` requires `residual_bytes=0`
+  (`active.rs`: `reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0`),
+  so a *classified* nonzero residual is recorded but does not qualify in any single roundtrip. The
+  binary prints a G1 label in exactly one shape, the ruling-6 series label above; for every other
+  shape the lane's offline replay (`research/spill-b-20260919/verify-day10.py`, which enforces
+  the same zero-residual rule) compares the receipt with the frozen baseline bundle and assigns
+  `ACTIVE-8K G1 PASS` only when (a) to (e) hold.
+- Refusal token contract (lead ruling): a refusal is a final console line
+  `REFUSED: <reason>`, exit 2. `cli::diagnostic` leaves `REFUSED:` lines unwrapped and
+  prefixes every other error with `kv-tier-gate: `; the collector matches
+  `^(?:kv-tier-gate: )?REFUSED: .+` on the last line. Any other exit-2 diagnostic, including
+  a generic `Error:` line, is a *failed* cell. The receipt directory gets `REFUSED.txt` with
+  the diagnostic for every error; classification comes from the console token, not the file.
+
+Status on 2026-09-20: `ACTIVE-8K G1 PASS` on the rented RTX 5090
+(`research/spill-b-20260919/DAY9.md`) and twice on one RTX PRO 6000 Blackwell (`DAY10.md`:
+empty-plane swap, then direct construction with 34 VMM planes). 32k on both cards:
+bit-identical, one granule (2,097,152 B) of residual unclassified (the mapped-VA probe
+returned 0 B, so VA-reservation release is not the mechanism), not G1 PASS. B's verifier prints that
+label with a dash; the wording here follows the writing rule.
+
+Status on 2026-09-21 (`research/spill-b-20260919/DAY12.md`, gate source `c7dd20cc5`): the 32k
+five-cycle series rerun printed, on one RTX PRO 6000 Blackwell and on the local RTX 5090 Laptop
+GPU, verbatim `ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles)`
+(residual 2,097,152 B in every cycle, drift 0, restored prefix bit-identical in every cycle; the
+PRO continuation matches its frozen bundle, the laptop card has no frozen bundle and its
+continuation identity is in-process only). The 8k series control is not rerun: the mapped-VA
+probe refuses to re-reserve the original address for the small 8k planes on both cards (lead
+ruling 7, open item in the decision record); the 8k evidence stays the single-roundtrip
+`ACTIVE-8K G1 PASS` with residual 0. Gate-only door, decide-by 2026-10-04 unchanged.
+
+### Experts-via-tier gate (`run-gen` / `run-spec --experts-via-tier`)
+
+`--experts-via-tier` on `run-gen` or `run-spec` (GGUF path only) calls
+`Engine::install_expert_bank_gate` (`crates/memra-engine/src/banked_residency/native.rs`)
+after load and before the first forward. It hashes the already-open artifact inode against
+the approved SHA-256, derives its expert catalog from the compiled model plan and the model
+pack's GGUF tensor contract bound against the artifact's tensor census
+(`memra_gguf::expert_banks::expert_bank_catalog`: semantic ids, accepted names, required
+shapes and quant layouts; the installer spells no checkpoint name and keeps no architecture
+allowlist), checks every retained expert record byte-for-byte against the loaded `HostExps`,
+builds a bounded host expert bank over the file, and installs it into the MoE slot cache
+(`cache.install_banked`), so slot misses are served through the bank while the native SLRU
+slot addresses, expert kernels and routing stay unchanged. It is an explicit default-OFF
+qualification door, not a runtime flag; no `MEMRA_*` read is added.
+Two failure classes leave the door. A budget the bank cannot hold, or an expert catalog the
+plan and contract cannot bind for the artifact, is a typed `ExpertBankRefusal`
+(`crates/memra-engine/src/banked_residency.rs`): the binary prints `REFUSED: <reason>` as its
+final stderr line and exits 2, and `tools/tier-battery.py` records the cell as `refused`.
+Every other error stays the binary's failure (`Error: "<reason>"`, exit 1). Both are returned
+before any bank demand:
+
+- Failures: `experts-via-tier requires the approved GGUF artifact` (`run-gen`) and
+  `experts-via-tier requires approved GGUF` (`run-spec`) for directory sources;
+  `experts-via-tier artifact SHA256 mismatch`;
+  `experts-via-tier requires one immutable GGUF, cache, and at most one MTP head`;
+  `experts-via-tier refuses resident or parallel expert bypasses; use the cache baseline`
+  (resident slabs, Step EP/TP and GLM EP/TP splits); and the budget flags' usage errors
+  (`expert_bank_cli`: a bare flag, a repeat, a malformed value, a budget without
+  `--experts-via-tier`, or a key that merely starts with a flag name: keys match exactly, so
+  `--expert-bank-host-bytes-x=1` is `unknown expert bank flag ...` and `--experts-via-tier=1`
+  is `--experts-via-tier takes no value`, never the flag they resemble and never ignored).
+  The helpers live at `memra_engine::banked_residency::{expert_bank_cli, refusal_reason,
+  ExpertBankBudget}` (a `#[doc(hidden)]` gate module, nothing re-exported at the crate root).
+- Catalog refusals: `REFUSED: experts-via-tier expert catalog refused: <detail>`, where the
+  detail is `the compiled plan has no MoE expert projections`; the tensor contract's own
+  verdict for a bank tensor that is missing, duplicated (`DuplicateCensusName`), ambiguous,
+  shape-incompatible (`ShapeMismatch`) or layout-incompatible; `tensor contract has no entry
+  for <id>` or `tensor contract has <n> entries for <id>`; `artifact carries expert scale
+  planes the consumer does not declare: <names>` (a `blk.N.ffn_*_exps.scale` or
+  `.input_scale` row in the census) or `loaded bank <name> carries scale planes (macro or
+  block scales) the native installer does not consume`; and a plan/model disagreement
+  (`loaded model has N layers, compiled plan has M`, `plan layer N routes experts but the
+  loaded layer is dense`, `loaded MTP head routes experts but the compiled plan has no MTP
+  expert bank`). Scale admission is not landed: a scale-bearing artifact is refused, never
+  banked payload-only. Unit cells: `crates/memra-gguf/src/expert_banks.rs` (plan-derived
+  names equal the former literal `blk.N.ffn_{gate,up,down}_exps.weight` spelling on a
+  qwen3_5_moe plan with an MTP block, plus one test per refusal).
+- `--expert-bank-host-bytes=N` (default 256 MiB) sets the host bank budget. `host_bank_budget`
+  refuses `experts-via-tier host bank budget cannot hold one expert record` below one record
+  and `experts-via-tier host bank budget exceeds qualification ceiling` above 256 MiB, each
+  suffixed `(requested N, minimum M, ceiling C)`, and caps the bank at 16 records.
+- `--expert-bank-gpu-bytes=N` fixes the GPU slot count before any allocation
+  (`MoeSlotCache::with_exact_slots`, never clamps). `gpu_bank_budget` refuses
+  `experts-via-tier GPU bank budget cannot hold the eight-slot minimum` below eight slots and
+  `experts-via-tier GPU bank budget exceeds the hard VRAM ceiling` above the machine ceiling
+  (`hard_slot_bytes`: the `MEMRA_MOE_HARD_VRAM_FRAC` share of free VRAM minus two slots,
+  measured by the installer), with the same `(requested, minimum, ceiling)` suffix. One slot
+  is the record plus `banked_residency::SLOT_TAIL_PAD_BYTES` (8), the one constant the native
+  slot sizing in `moe_cache.rs` and the budget arithmetic share. Setting
+  `MEMRA_MOE_SLOTS` alongside a GPU budget is a refusal
+  (`experts-via-tier GPU bank budget conflicts with MEMRA_MOE_SLOTS`), never a silent
+  precedence. Without a GPU budget the native slot sizing (`MEMRA_MOE_SLOTS` or auto) is
+  untouched. The installer takes both budgets as a typed `ExpertBankBudget`; it reads no
+  argv and no environment for them.
+
+Verdicts are the standard gates: `run-gen` argmax `MATCH` and `run-spec`
+`=== SELF-CONSISTENCY PASS ===` over K=1..8. The gate prints
+`[experts-via-tier] catalog blocks=<n> banked=<n> projections=<n> catalog_sha256=<hex>
+records=<n> records_sha256=<hex>` once the catalog is bound (`catalog_sha256` is SHA-256 over
+`ExpertBankCatalog::identity()`, one line per projection; `records_sha256` chains the
+per-record checksums in catalog order; `banked` is below `blocks` when the gate loads without
+the MTP head), then
+`[experts-via-tier] installed artifact_sha256=<hex> host_slots=<n> max_expert_bytes=<n>` at
+install, and on drop `[expert-gpu-slru] slots=<n> allocated_bytes=<n> evictions=<n>` then
+`[experts-via-tier] physical_reads=<n> owner_close=<result>`. Under the collector, lane C's
+`research/spill-c-20260919/pressure-refusal.py` normalizes exactly the host-record
+rejection to `REFUSED: experts-via-tier host bank budget cannot hold one expert record`,
+exit 2 (collector status `refused`); any other failure stays `failed`. Evidence:
+`research/spill-c-20260919/DAY8.md` (rented RTX 5090, 8 GiB and 4 GiB banks, ON and OFF
+controls, every cell `MATCH` / `SELF-CONSISTENCY PASS` with eviction engaged) and `DAY9.md`
+(one RTX PRO 6000 Blackwell: default and 8 GiB banks, ON and OFF, same verdicts). All cells are
+N=1 and `executed-not-qualified`; no support state or default moves on them.
+
+### `h2d-probe --copies`
+
+`crates/memra-engine/src/bin/h2d_probe.rs` is copy plumbing: `--bytes` one of the ten
+registered sizes (4 KiB to 1 GiB), `--direction h2d|d2h|both`, `--order ab|ba`,
+`--repeats 1` only, and `--copies 1..100000` (default 1). One visit issues `copies`
+back-to-back copies on the owner stream and sums the per-operation event intervals
+(`event_timing` `sum-per-operation-owner-stream`, `completed_bytes = bytes * copies`);
+`n` stays 1 and `evidence_class` stays `n1-plumbing-not-qualified`. The `RESULT` record
+carries `n_per_size_direction_arm:1`, `comparator_red_rejected:true`, `qualified:false`.
+GPU invocation must be wrapped by the collector (300 s maximum, header comment); `--dry-run`
+exercises the schema without CUDA. Receipt: `research/spill-f-20260919/H2D-RESULTS.md`
+(one native N=1 matrix, 32 visits, `executed-not-qualified`, no medians). A scored copy
+envelope is `tools/tier-envelope.py` (default N=5 AB and N=5 BA; `--correctness-only`
+permits N=1, never scoring).
+
+### Collector: `tools/tier-battery.py`
+
+Launch every native cell through the collector (absolute executable, new output dir):
+
+```sh
+python3 tools/tier-battery.py --rig rtx5090|pro-single|pro-pair|pro-four --timeout <seconds> --out <new-dir> --execute <absolute-bin> <args>
+```
+
+- Locks (`LOCKS` table): `rtx5090` takes `/tmp/memra-5090.lock`; `pro-single` (one RTX PRO
+  6000 Blackwell), `pro-pair` and `pro-four` take `/tmp/memra-gpu.lock`. Exactly those two
+  names exist. The lock is `flock(LOCK_EX | LOCK_NB)`: contention refuses at once
+  (`REFUSED: [Errno 11] Resource temporarily unavailable`, exit 2) instead of waiting, so a
+  lane retries on a bounded cadence and keeps every refused attempt. The default `--rig` is
+  `pro-pair`; always state the rig. `tools/tier-rig-bootstrap.sh --rig rtx5090|pro-single`
+  records the same lock per rig, and `--dry-run` there is not a rig acceptance result.
+- `--external-lock`: legacy shell gates run under the collector's inherited lock, never
+  wrapped twice. The collector passes its lock FD to the child, replacing exactly one
+  `@COLLECTOR_LOCK_FD@` argument, and writes `lock.json` with the device/inode proof; it is
+  not combinable with `--resume`. Children share the worker group, so a timeout kills the
+  whole tree (`tests/battery/test_timeout_tree.py`, `test_external_lock.py`).
+- Vocabulary: every capture records `qualification: false`. `status` is
+  `executed-not-qualified` (exit 0, exactly one `RESULT` record parsed), `failed` (nonzero
+  exit, timeout, or parse error; `failure_quote` is the first line matching
+  `error|out of memory|CUDA_ERROR|fatal|panic`, otherwise `died, cause unknown` with a repro
+  request), or `refused` (exit 2 and a last line matching `^(?:kv-tier-gate: )?REFUSED: .+`).
+  Failed and refused cells exit the collector nonzero. `executed-not-qualified` is
+  development evidence: it never promotes a model, a default or a support state.
+- Telemetry: `nvidia-smi ... -lms 250` for the whole cell; validators require
+  `telemetry_interval_ms == 250` and reject a CPU fixture that invents GPU telemetry.
+  Observed power limit/max pairs and compute-app snapshots before and after are retained.
+- `--validate <path>`: a directory of `CELL.jsonl` journals prints
+  `{"kind": "capture-integrity", "cells": N, "failed_commands": .., "refused_commands": ..,
+  "qualification": false, ...}`; a live or torn journal refuses
+  `REFUSED: interrupted/invalid CELL journal; not a completed capture`; a single
+  `.capture.json` prints `CAPTURE INTEGRITY MATCH; command status=<status>; NOT qualification`;
+  runs or telemetry JSONL print `BYTE-RECEIPTS MATCH ...` or `TELEMETRY MATCH ...`.
+  Integrity is never qualification.
+- Medians: the collector computes none for native cells (`--first-hour` plan:
+  `performance_medians_allowed: false`; `--dry-run` medians are synthetic,
+  `dry-run-not-qualification`). A scored envelope needs at least five AB and five BA pairs
+  (`paired_orders`, `tools/tier-envelope.py`), one lock for the whole campaign, and every
+  published median states its N and thermal regime (lane D's G2 table carries `N/arm` and
+  `Regime` columns, `research/spill-d-20260919/G2-RESULTS.md` on `lane/spill-d-20260919`).
+  Timing is never compared across boxes.
+
+Keep raw output, source/artifact/plan/binary hashes and the 250 ms telemetry; sync each
+completed or failed cell before the next one. Do not run scored campaigns concurrently on a
+shared fabric. Unproven storage is not NVMe evidence: the collector's `overlay-unproven`
+class stays on every cell whose block ancestry is not proven in-guest.
+
+### Boundaries
 
 CPU fake fences prove owner/issuer/generation checks and schedule ordering, not
 CUDA waits, physical pinning, graph addresses, P2P routes or last-use completion.
@@ -875,5 +1189,5 @@ Native materializer/consumer binding, full-state/logit/token identity, scheduler
 crossings, Linux direct-I/O, local-NVMe ancestry and target-rig batteries remain
 separate gates. No CPU result promotes model support or a runtime default. The
 io_uring proposal is deferred pending a measured positioned-read baseline; it is
-not an implemented comparator. This conformance/doc revision adds **no `.cu` or
-FFI changes**, so it requires no kernel-inventory amendment.
+not an implemented comparator. The spill program's changes through #563 and #568 add
+**no `.cu` or FFI changes**, so they require no kernel-inventory amendment.

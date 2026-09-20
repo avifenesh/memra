@@ -1646,6 +1646,11 @@ pub type Pp2Rt = PpNRt;
 static RTN: OnceLock<Result<PpNRt, String>> = OnceLock::new();
 
 impl PpNRt {
+    /// Observe loaded stage owners without constructing a runtime during admission or cleanup.
+    pub(crate) fn initialized() -> Option<&'static Self> {
+        RTN.get().and_then(|runtime| runtime.as_ref().ok())
+    }
+
     /// The process-wide transport runtime, built on first use against the primary engine.
     /// The stage count + device map freeze at first build (one config per process — gates
     /// run one placement per invocation). Build errors are sticky and loud.

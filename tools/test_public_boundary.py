@@ -369,6 +369,47 @@ class AllowlistTests(unittest.TestCase):
     # sort below the identifiers whose whole harm is making a future secret leak worse.
     CREDENTIAL_AT_CEILING = frozenset(CREDENTIAL_FIXTURES) - {"api_key_prefix"}
 
+    def test_commit_scan_uses_the_checkout_scans_raw_byte_prefilter(self) -> None:
+        """Commit/ref mode and the checkout scan must judge the same candidate set.
+
+        The checkout scan asks `git grep --text -P` over raw bytes first; commit mode decoded
+        with errors="ignore" and scanned everything, so bytes glued across an undecodable byte
+        spelled a needle that exists in no byte view. 2026-09-20: two gzipped trace logs were
+        refused by the pre-push hook and then called stale pins by `check`/`verify-allowlist`.
+        """
+        import gzip
+
+        policy = boundary.Policy(
+            secret_patterns={"alpha": boundary.re.compile("alpha needle")},
+            secret_sources={"alpha": "alpha needle"},
+            secret_union=boundary.re.compile("(?P<rule_0>alpha needle)"),
+            secret_groups={"rule_0": "alpha"},
+            private_paths={},
+            bypass_paths=[],
+        )
+        glued = b"alpha \xffneedle\n"
+        # The text scan alone would report it (ignore-decoding glues the needle together) ...
+        self.assertEqual(
+            [h[0] for h in boundary.scan_secret_bytes(glued, policy.secret_union, policy.secret_groups)],
+            ["alpha"],
+        )
+        # ... but the raw bytes never contained it, so neither scan reports it.
+        self.assertFalse(boundary.raw_bytes_prefilter(glued, policy.secret_sources))
+        self.assertIsNone(boundary.evaluate_content(policy, "research/lane/NOTES.md", glued))
+        text = b"# trace log\n[expert-host-slru] key=34:1:7 bytes=450560 slot=0 hit=false\n"
+        self.assertIsNone(
+            boundary.evaluate_content(policy, "research/lane/trace.log.gz", gzip.compress(text * 64))
+        )
+        # A real needle, even inside a binary-looking blob, is still a finding (CommitBlobTests).
+        violation = boundary.evaluate_content(policy, "research/lane/capture.bin", b"\0alpha needle\n")
+        assert violation is not None
+        self.assertEqual(violation.rules, ("alpha",))
+        # Every shipped rule compiles as a bytes pattern, so the prefilter never has to fail open.
+        shipped = boundary.load_policy(boundary.POLICY_PATH)
+        for name, source in shipped.secret_sources.items():
+            with self.subTest(rule=name):
+                boundary.re.compile(source.encode("utf-8"))
+
     def test_credential_material_rules_fire_end_to_end(self) -> None:
         policy = boundary.load_policy(boundary.POLICY_PATH)
         for name, parts in self.CREDENTIAL_FIXTURES.items():

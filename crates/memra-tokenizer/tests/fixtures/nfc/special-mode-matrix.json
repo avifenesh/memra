@@ -1,0 +1,3022 @@
+{
+  "schema": "memra-independent-special-recognition-v1",
+  "HF_to_native_mapping": "HF encode_special_tokens = !native parse_special; add_special_tokens is a separate post-processing switch.",
+  "scope": "These Qwen2 fixtures do not insert BOS/EOS automatically; add_special_tokens true/false therefore keep identical input-recognition IDs. This does not claim all postprocessors behave that way.",
+  "variants": [
+    {
+      "name": "literal-special-modes",
+      "tokenizer_json": "variants/literal-special-modes/tokenizer.json",
+      "cases": [
+        {
+          "raw": "<|endoftext|>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  519
+                ],
+                "tokens": [
+                  "<|endoftext|>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    13
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<|endoftext|>",
+                "decode_skip_special": ""
+              },
+              "true": {
+                "ids": [
+                  519
+                ],
+                "tokens": [
+                  "<|endoftext|>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    13
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<|endoftext|>",
+                "decode_skip_special": ""
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  60,
+                  124,
+                  101,
+                  110,
+                  100,
+                  111,
+                  102,
+                  116,
+                  101,
+                  120,
+                  116,
+                  124,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "|",
+                  "e",
+                  "n",
+                  "d",
+                  "o",
+                  "f",
+                  "t",
+                  "e",
+                  "x",
+                  "t",
+                  "|",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    6,
+                    7
+                  ],
+                  [
+                    7,
+                    8
+                  ],
+                  [
+                    8,
+                    9
+                  ],
+                  [
+                    9,
+                    10
+                  ],
+                  [
+                    10,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ],
+                  [
+                    12,
+                    13
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<|endoftext|>",
+                "decode_skip_special": "<|endoftext|>"
+              },
+              "true": {
+                "ids": [
+                  60,
+                  124,
+                  101,
+                  110,
+                  100,
+                  111,
+                  102,
+                  116,
+                  101,
+                  120,
+                  116,
+                  124,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "|",
+                  "e",
+                  "n",
+                  "d",
+                  "o",
+                  "f",
+                  "t",
+                  "e",
+                  "x",
+                  "t",
+                  "|",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    6,
+                    7
+                  ],
+                  [
+                    7,
+                    8
+                  ],
+                  [
+                    8,
+                    9
+                  ],
+                  [
+                    9,
+                    10
+                  ],
+                  [
+                    10,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ],
+                  [
+                    12,
+                    13
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<|endoftext|>",
+                "decode_skip_special": "<|endoftext|>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "<é>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  520
+                ],
+                "tokens": [
+                  "<é>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    4
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<é>",
+                "decode_skip_special": ""
+              },
+              "true": {
+                "ids": [
+                  520
+                ],
+                "tokens": [
+                  "<é>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    4
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<é>",
+                "decode_skip_special": ""
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  60,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    3,
+                    4
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é>",
+                "decode_skip_special": "<é>"
+              },
+              "true": {
+                "ids": [
+                  60,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    3,
+                    4
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é>",
+                "decode_skip_special": "<é>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "<é>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  60,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é>",
+                "decode_skip_special": "<é>"
+              },
+              "true": {
+                "ids": [
+                  60,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é>",
+                "decode_skip_special": "<é>"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  60,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é>",
+                "decode_skip_special": "<é>"
+              },
+              "true": {
+                "ids": [
+                  60,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é>",
+                "decode_skip_special": "<é>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "<N:é>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  521
+                ],
+                "tokens": [
+                  "<N:é>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<N:é>",
+                "decode_skip_special": ""
+              },
+              "true": {
+                "ids": [
+                  521
+                ],
+                "tokens": [
+                  "<N:é>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<N:é>",
+                "decode_skip_special": ""
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  60,
+                  78,
+                  58,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "N",
+                  ":",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    5,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<N:é>",
+                "decode_skip_special": "<N:é>"
+              },
+              "true": {
+                "ids": [
+                  60,
+                  78,
+                  58,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "N",
+                  ":",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    5,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<N:é>",
+                "decode_skip_special": "<N:é>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "<N:é>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  521
+                ],
+                "tokens": [
+                  "<N:é>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    5
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<N:é>",
+                "decode_skip_special": ""
+              },
+              "true": {
+                "ids": [
+                  521
+                ],
+                "tokens": [
+                  "<N:é>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    5
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<N:é>",
+                "decode_skip_special": ""
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  60,
+                  78,
+                  58,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "N",
+                  ":",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    5
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<N:é>",
+                "decode_skip_special": "<N:é>"
+              },
+              "true": {
+                "ids": [
+                  60,
+                  78,
+                  58,
+                  195,
+                  169,
+                  62
+                ],
+                "tokens": [
+                  "<",
+                  "N",
+                  ":",
+                  "Ã",
+                  "©",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    5
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<N:é>",
+                "decode_skip_special": "<N:é>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "x<|endoftext|>y",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  120,
+                  519,
+                  121
+                ],
+                "tokens": [
+                  "x",
+                  "<|endoftext|>",
+                  "y"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    14
+                  ],
+                  [
+                    14,
+                    15
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "x<|endoftext|>y",
+                "decode_skip_special": "xy"
+              },
+              "true": {
+                "ids": [
+                  120,
+                  519,
+                  121
+                ],
+                "tokens": [
+                  "x",
+                  "<|endoftext|>",
+                  "y"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    14
+                  ],
+                  [
+                    14,
+                    15
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "x<|endoftext|>y",
+                "decode_skip_special": "xy"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  120,
+                  60,
+                  124,
+                  101,
+                  110,
+                  100,
+                  111,
+                  102,
+                  116,
+                  101,
+                  120,
+                  116,
+                  124,
+                  62,
+                  121
+                ],
+                "tokens": [
+                  "x",
+                  "<",
+                  "|",
+                  "e",
+                  "n",
+                  "d",
+                  "o",
+                  "f",
+                  "t",
+                  "e",
+                  "x",
+                  "t",
+                  "|",
+                  ">",
+                  "y"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    6,
+                    7
+                  ],
+                  [
+                    7,
+                    8
+                  ],
+                  [
+                    8,
+                    9
+                  ],
+                  [
+                    9,
+                    10
+                  ],
+                  [
+                    10,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ],
+                  [
+                    12,
+                    13
+                  ],
+                  [
+                    13,
+                    14
+                  ],
+                  [
+                    14,
+                    15
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "x<|endoftext|>y",
+                "decode_skip_special": "x<|endoftext|>y"
+              },
+              "true": {
+                "ids": [
+                  120,
+                  60,
+                  124,
+                  101,
+                  110,
+                  100,
+                  111,
+                  102,
+                  116,
+                  101,
+                  120,
+                  116,
+                  124,
+                  62,
+                  121
+                ],
+                "tokens": [
+                  "x",
+                  "<",
+                  "|",
+                  "e",
+                  "n",
+                  "d",
+                  "o",
+                  "f",
+                  "t",
+                  "e",
+                  "x",
+                  "t",
+                  "|",
+                  ">",
+                  "y"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    6,
+                    7
+                  ],
+                  [
+                    7,
+                    8
+                  ],
+                  [
+                    8,
+                    9
+                  ],
+                  [
+                    9,
+                    10
+                  ],
+                  [
+                    10,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ],
+                  [
+                    12,
+                    13
+                  ],
+                  [
+                    13,
+                    14
+                  ],
+                  [
+                    14,
+                    15
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "x<|endoftext|>y",
+                "decode_skip_special": "x<|endoftext|>y"
+              }
+            }
+          }
+        },
+        {
+          "raw": "<é><x>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  520,
+                  522
+                ],
+                "tokens": [
+                  "<é>",
+                  "<x>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    4
+                  ],
+                  [
+                    4,
+                    7
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é><x>",
+                "decode_skip_special": "<x>"
+              },
+              "true": {
+                "ids": [
+                  520,
+                  522
+                ],
+                "tokens": [
+                  "<é>",
+                  "<x>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    4
+                  ],
+                  [
+                    4,
+                    7
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é><x>",
+                "decode_skip_special": "<x>"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  60,
+                  195,
+                  169,
+                  62,
+                  522
+                ],
+                "tokens": [
+                  "<",
+                  "Ã",
+                  "©",
+                  ">",
+                  "<x>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    7
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é><x>",
+                "decode_skip_special": "<é><x>"
+              },
+              "true": {
+                "ids": [
+                  60,
+                  195,
+                  169,
+                  62,
+                  522
+                ],
+                "tokens": [
+                  "<",
+                  "Ã",
+                  "©",
+                  ">",
+                  "<x>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    7
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<é><x>",
+                "decode_skip_special": "<é><x>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "é<x>é",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  195,
+                  169,
+                  522,
+                  195,
+                  169
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>",
+                  "Ã",
+                  "©"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    5,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>é",
+                "decode_skip_special": "é<x>é"
+              },
+              "true": {
+                "ids": [
+                  195,
+                  169,
+                  522,
+                  195,
+                  169
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>",
+                  "Ã",
+                  "©"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    5,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>é",
+                "decode_skip_special": "é<x>é"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  195,
+                  169,
+                  522,
+                  195,
+                  169
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>",
+                  "Ã",
+                  "©"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    5,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>é",
+                "decode_skip_special": "é<x>é"
+              },
+              "true": {
+                "ids": [
+                  195,
+                  169,
+                  522,
+                  195,
+                  169
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>",
+                  "Ã",
+                  "©"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    5,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>é",
+                "decode_skip_special": "é<x>é"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "special-mark-and-ordinary",
+      "tokenizer_json": "variants/special-mark-and-ordinary/tokenizer.json",
+      "cases": [
+        {
+          "raw": "é",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  101,
+                  520
+                ],
+                "tokens": [
+                  "e",
+                  "́"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é",
+                "decode_skip_special": "e"
+              },
+              "true": {
+                "ids": [
+                  101,
+                  520
+                ],
+                "tokens": [
+                  "e",
+                  "́"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é",
+                "decode_skip_special": "e"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  195,
+                  169
+                ],
+                "tokens": [
+                  "Ã",
+                  "©"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é",
+                "decode_skip_special": "é"
+              },
+              "true": {
+                "ids": [
+                  195,
+                  169
+                ],
+                "tokens": [
+                  "Ã",
+                  "©"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é",
+                "decode_skip_special": "é"
+              }
+            }
+          }
+        },
+        {
+          "raw": "é<x>é",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  101,
+                  520,
+                  521,
+                  101,
+                  520
+                ],
+                "tokens": [
+                  "e",
+                  "́",
+                  "<x>",
+                  "e",
+                  "́"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    6,
+                    7
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>é",
+                "decode_skip_special": "e<x>e"
+              },
+              "true": {
+                "ids": [
+                  101,
+                  520,
+                  521,
+                  101,
+                  520
+                ],
+                "tokens": [
+                  "e",
+                  "́",
+                  "<x>",
+                  "e",
+                  "́"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    6,
+                    7
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>é",
+                "decode_skip_special": "e<x>e"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  195,
+                  169,
+                  521,
+                  195,
+                  169
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>",
+                  "Ã",
+                  "©"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    5,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>é",
+                "decode_skip_special": "é<x>é"
+              },
+              "true": {
+                "ids": [
+                  195,
+                  169,
+                  521,
+                  195,
+                  169
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>",
+                  "Ã",
+                  "©"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    5
+                  ],
+                  [
+                    5,
+                    6
+                  ],
+                  [
+                    5,
+                    6
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>é",
+                "decode_skip_special": "é<x>é"
+              }
+            }
+          }
+        },
+        {
+          "raw": "é<x>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  195,
+                  169,
+                  521
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    4
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>",
+                "decode_skip_special": "é<x>"
+              },
+              "true": {
+                "ids": [
+                  195,
+                  169,
+                  521
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    4
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>",
+                "decode_skip_special": "é<x>"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  195,
+                  169,
+                  521
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    4
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>",
+                "decode_skip_special": "é<x>"
+              },
+              "true": {
+                "ids": [
+                  195,
+                  169,
+                  521
+                ],
+                "tokens": [
+                  "Ã",
+                  "©",
+                  "<x>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    4
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<x>",
+                "decode_skip_special": "é<x>"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "pinned-real-specials",
+      "tokenizer_json": "pinned/tokenizer.json",
+      "cases": [
+        {
+          "raw": "<|endoftext|>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  151643
+                ],
+                "tokens": [
+                  "<|endoftext|>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    13
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<|endoftext|>",
+                "decode_skip_special": ""
+              },
+              "true": {
+                "ids": [
+                  151643
+                ],
+                "tokens": [
+                  "<|endoftext|>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    13
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0
+                ],
+                "decode_keep_special": "<|endoftext|>",
+                "decode_skip_special": ""
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  27,
+                  91,
+                  8691,
+                  723,
+                  427,
+                  91,
+                  29
+                ],
+                "tokens": [
+                  "<",
+                  "|",
+                  "endo",
+                  "ft",
+                  "ext",
+                  "|",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    6
+                  ],
+                  [
+                    6,
+                    8
+                  ],
+                  [
+                    8,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ],
+                  [
+                    12,
+                    13
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<|endoftext|>",
+                "decode_skip_special": "<|endoftext|>"
+              },
+              "true": {
+                "ids": [
+                  27,
+                  91,
+                  8691,
+                  723,
+                  427,
+                  91,
+                  29
+                ],
+                "tokens": [
+                  "<",
+                  "|",
+                  "endo",
+                  "ft",
+                  "ext",
+                  "|",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    6
+                  ],
+                  [
+                    6,
+                    8
+                  ],
+                  [
+                    8,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ],
+                  [
+                    12,
+                    13
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<|endoftext|>",
+                "decode_skip_special": "<|endoftext|>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "<|im_start|>user\né<|im_end|>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  151644,
+                  872,
+                  198,
+                  963,
+                  151645
+                ],
+                "tokens": [
+                  "<|im_start|>",
+                  "user",
+                  "Ċ",
+                  "Ã©",
+                  "<|im_end|>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    12
+                  ],
+                  [
+                    12,
+                    16
+                  ],
+                  [
+                    16,
+                    17
+                  ],
+                  [
+                    17,
+                    18
+                  ],
+                  [
+                    19,
+                    29
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<|im_start|>user\né<|im_end|>",
+                "decode_skip_special": "user\né"
+              },
+              "true": {
+                "ids": [
+                  151644,
+                  872,
+                  198,
+                  963,
+                  151645
+                ],
+                "tokens": [
+                  "<|im_start|>",
+                  "user",
+                  "Ċ",
+                  "Ã©",
+                  "<|im_end|>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    12
+                  ],
+                  [
+                    12,
+                    16
+                  ],
+                  [
+                    16,
+                    17
+                  ],
+                  [
+                    17,
+                    18
+                  ],
+                  [
+                    19,
+                    29
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<|im_start|>user\né<|im_end|>",
+                "decode_skip_special": "user\né"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  27,
+                  91,
+                  318,
+                  4906,
+                  91,
+                  29,
+                  872,
+                  198,
+                  963,
+                  27,
+                  91,
+                  318,
+                  6213,
+                  91,
+                  29
+                ],
+                "tokens": [
+                  "<",
+                  "|",
+                  "im",
+                  "_start",
+                  "|",
+                  ">",
+                  "user",
+                  "Ċ",
+                  "Ã©",
+                  "<",
+                  "|",
+                  "im",
+                  "_end",
+                  "|",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    4
+                  ],
+                  [
+                    4,
+                    10
+                  ],
+                  [
+                    10,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ],
+                  [
+                    12,
+                    16
+                  ],
+                  [
+                    16,
+                    17
+                  ],
+                  [
+                    17,
+                    18
+                  ],
+                  [
+                    19,
+                    20
+                  ],
+                  [
+                    20,
+                    21
+                  ],
+                  [
+                    21,
+                    23
+                  ],
+                  [
+                    23,
+                    27
+                  ],
+                  [
+                    27,
+                    28
+                  ],
+                  [
+                    28,
+                    29
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<|im_start|>user\né<|im_end|>",
+                "decode_skip_special": "<|im_start|>user\né<|im_end|>"
+              },
+              "true": {
+                "ids": [
+                  27,
+                  91,
+                  318,
+                  4906,
+                  91,
+                  29,
+                  872,
+                  198,
+                  963,
+                  27,
+                  91,
+                  318,
+                  6213,
+                  91,
+                  29
+                ],
+                "tokens": [
+                  "<",
+                  "|",
+                  "im",
+                  "_start",
+                  "|",
+                  ">",
+                  "user",
+                  "Ċ",
+                  "Ã©",
+                  "<",
+                  "|",
+                  "im",
+                  "_end",
+                  "|",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    4
+                  ],
+                  [
+                    4,
+                    10
+                  ],
+                  [
+                    10,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ],
+                  [
+                    12,
+                    16
+                  ],
+                  [
+                    16,
+                    17
+                  ],
+                  [
+                    17,
+                    18
+                  ],
+                  [
+                    19,
+                    20
+                  ],
+                  [
+                    20,
+                    21
+                  ],
+                  [
+                    21,
+                    23
+                  ],
+                  [
+                    23,
+                    27
+                  ],
+                  [
+                    27,
+                    28
+                  ],
+                  [
+                    28,
+                    29
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "<|im_start|>user\né<|im_end|>",
+                "decode_skip_special": "<|im_start|>user\né<|im_end|>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "é<|im_start|>é<|im_end|>",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  963,
+                  151644,
+                  963,
+                  151645
+                ],
+                "tokens": [
+                  "Ã©",
+                  "<|im_start|>",
+                  "Ã©",
+                  "<|im_end|>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    14
+                  ],
+                  [
+                    14,
+                    15
+                  ],
+                  [
+                    16,
+                    26
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<|im_start|>é<|im_end|>",
+                "decode_skip_special": "éé"
+              },
+              "true": {
+                "ids": [
+                  963,
+                  151644,
+                  963,
+                  151645
+                ],
+                "tokens": [
+                  "Ã©",
+                  "<|im_start|>",
+                  "Ã©",
+                  "<|im_end|>"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    14
+                  ],
+                  [
+                    14,
+                    15
+                  ],
+                  [
+                    16,
+                    26
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<|im_start|>é<|im_end|>",
+                "decode_skip_special": "éé"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  963,
+                  27,
+                  91,
+                  318,
+                  4906,
+                  91,
+                  29,
+                  963,
+                  27,
+                  91,
+                  318,
+                  6213,
+                  91,
+                  29
+                ],
+                "tokens": [
+                  "Ã©",
+                  "<",
+                  "|",
+                  "im",
+                  "_start",
+                  "|",
+                  ">",
+                  "Ã©",
+                  "<",
+                  "|",
+                  "im",
+                  "_end",
+                  "|",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    6
+                  ],
+                  [
+                    6,
+                    12
+                  ],
+                  [
+                    12,
+                    13
+                  ],
+                  [
+                    13,
+                    14
+                  ],
+                  [
+                    14,
+                    15
+                  ],
+                  [
+                    16,
+                    17
+                  ],
+                  [
+                    17,
+                    18
+                  ],
+                  [
+                    18,
+                    20
+                  ],
+                  [
+                    20,
+                    24
+                  ],
+                  [
+                    24,
+                    25
+                  ],
+                  [
+                    25,
+                    26
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<|im_start|>é<|im_end|>",
+                "decode_skip_special": "é<|im_start|>é<|im_end|>"
+              },
+              "true": {
+                "ids": [
+                  963,
+                  27,
+                  91,
+                  318,
+                  4906,
+                  91,
+                  29,
+                  963,
+                  27,
+                  91,
+                  318,
+                  6213,
+                  91,
+                  29
+                ],
+                "tokens": [
+                  "Ã©",
+                  "<",
+                  "|",
+                  "im",
+                  "_start",
+                  "|",
+                  ">",
+                  "Ã©",
+                  "<",
+                  "|",
+                  "im",
+                  "_end",
+                  "|",
+                  ">"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    4
+                  ],
+                  [
+                    4,
+                    6
+                  ],
+                  [
+                    6,
+                    12
+                  ],
+                  [
+                    12,
+                    13
+                  ],
+                  [
+                    13,
+                    14
+                  ],
+                  [
+                    14,
+                    15
+                  ],
+                  [
+                    16,
+                    17
+                  ],
+                  [
+                    17,
+                    18
+                  ],
+                  [
+                    18,
+                    20
+                  ],
+                  [
+                    20,
+                    24
+                  ],
+                  [
+                    24,
+                    25
+                  ],
+                  [
+                    25,
+                    26
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "é<|im_start|>é<|im_end|>",
+                "decode_skip_special": "é<|im_start|>é<|im_end|>"
+              }
+            }
+          }
+        },
+        {
+          "raw": "x<|im_end|>y",
+          "expected_by_parse_special": {
+            "true": {
+              "false": {
+                "ids": [
+                  87,
+                  151645,
+                  88
+                ],
+                "tokens": [
+                  "x",
+                  "<|im_end|>",
+                  "y"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "x<|im_end|>y",
+                "decode_skip_special": "xy"
+              },
+              "true": {
+                "ids": [
+                  87,
+                  151645,
+                  88
+                ],
+                "tokens": [
+                  "x",
+                  "<|im_end|>",
+                  "y"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "x<|im_end|>y",
+                "decode_skip_special": "xy"
+              }
+            },
+            "false": {
+              "false": {
+                "ids": [
+                  87,
+                  27,
+                  91,
+                  318,
+                  6213,
+                  91,
+                  29,
+                  88
+                ],
+                "tokens": [
+                  "x",
+                  "<",
+                  "|",
+                  "im",
+                  "_end",
+                  "|",
+                  ">",
+                  "y"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    5
+                  ],
+                  [
+                    5,
+                    9
+                  ],
+                  [
+                    9,
+                    10
+                  ],
+                  [
+                    10,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "x<|im_end|>y",
+                "decode_skip_special": "x<|im_end|>y"
+              },
+              "true": {
+                "ids": [
+                  87,
+                  27,
+                  91,
+                  318,
+                  6213,
+                  91,
+                  29,
+                  88
+                ],
+                "tokens": [
+                  "x",
+                  "<",
+                  "|",
+                  "im",
+                  "_end",
+                  "|",
+                  ">",
+                  "y"
+                ],
+                "offsets": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    2,
+                    3
+                  ],
+                  [
+                    3,
+                    5
+                  ],
+                  [
+                    5,
+                    9
+                  ],
+                  [
+                    9,
+                    10
+                  ],
+                  [
+                    10,
+                    11
+                  ],
+                  [
+                    11,
+                    12
+                  ]
+                ],
+                "special_tokens_mask": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "decode_keep_special": "x<|im_end|>y",
+                "decode_skip_special": "x<|im_end|>y"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "source": "418abc43197e5dbe5d3583c47d8fdef8685a735d",
+  "checks": [
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "check-00.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--all-targets",
+        "--offline"
+      ],
+      "exit": 0,
+      "log": "check-01.log",
+      "sha256": "0b07184dab50b90b36009ed926061ea19761c2318e05e6369abb7fb3308808c1"
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--all-targets",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "log": "check-02.log",
+      "sha256": "c92508a29848820f033cd2ea015c85dde0953c88b07cc967ce34b7c08f610549"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "log": "check-03.log",
+      "sha256": "78995612e085f3ce2a811d0c5547a850b1e46070a30f368370302240fc5ba72a"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-kv",
+        "-p",
+        "memra-tier",
+        "--all-targets",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "log": "check-04.log",
+      "sha256": "2b34696728dc82b03cbf6311d7e3a6a41658bbde097834c3010a78bc82842c1a"
+    },
+    {
+      "command": [
+        "python3",
+        "research/spill-b-20260919/test-day10.py"
+      ],
+      "exit": 0,
+      "log": "check-05.log",
+      "sha256": "e6ec182765cd965f2837d8eeaef5a64af48a104f245cd1a0b7281559194c57c1"
+    },
+    {
+      "command": [
+        "python3",
+        "research/spill-b-20260919/verify-day10.py"
+      ],
+      "exit": 0,
+      "log": "check-06.log",
+      "sha256": "702f70bd4201c81dbce19c4c0b50b24dee7f45d18cd160e3d82fe1e4262e5a0a"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "check-07.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "log": "check-08.log",
+      "sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    }
+  ]
+}
