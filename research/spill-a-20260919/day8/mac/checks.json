@@ -1,0 +1,107 @@
+[
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 4.075416375068016
+  },
+  {
+    "name": "native-fmt",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "crates/memra-engine/src/tier_transfer.rs",
+      "crates/memra-engine/src/bin/tier_transfer_gate.rs"
+    ],
+    "exit": 0,
+    "seconds": 0.06840383296366781
+  },
+  {
+    "name": "mac-check",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0,
+    "seconds": 2.331279833917506
+  },
+  {
+    "name": "linux-check",
+    "command": [
+      "cargo",
+      "check",
+      "--target",
+      "x86_64-unknown-linux-gnu",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0,
+    "seconds": 2.3436463329708204
+  },
+  {
+    "name": "tests",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "seconds": 53.08081920805853
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 3.8199628749862313
+  },
+  {
+    "name": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 0.17569829197600484
+  },
+  {
+    "name": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "seconds": 3.7546939169988036
+  }
+]

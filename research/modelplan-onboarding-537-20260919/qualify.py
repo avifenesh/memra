@@ -208,6 +208,7 @@ def main():
     parser.add_argument("--build-record", type=Path)
     parser.add_argument("--arch", choices=["120a", "100a", "90a"], default="120a")
     parser.add_argument("--jobs", type=int, default=4)
+    parser.add_argument("--nvcc", type=Path, help="explicit compiler for build (or MEMRA_NVCC)")
     parser.add_argument("--port", type=int, default=15379)
     args = parser.parse_args()
     args.out = args.out.resolve()
@@ -233,7 +234,18 @@ def main():
              "models_root": str(args.models), "verified_unix": time.time()})
         return
     if args.phase == "build":
+        selected_nvcc = args.nvcc if args.nvcc is not None else os.environ.get("MEMRA_NVCC")
+        if not selected_nvcc:
+            parser.error("build requires --nvcc or MEMRA_NVCC; ambient compiler selection is not qualification")
+        nvcc = Path(selected_nvcc).resolve(strict=True)
+        if not nvcc.is_file() or not os.access(nvcc, os.X_OK):
+            parser.error("selected nvcc must be an executable file")
+        # Runtime controls remain filtered, but the selected build tool must survive.
+        env["MEMRA_NVCC"] = str(nvcc)
         env["MEMRA_CUDA_ARCH"] = args.arch
+        env["CUDA_VISIBLE_DEVICES"] = ""
+        compiler = {"path": str(nvcc), "sha256": sha(nvcc),
+                    "version": run(args.out, "nvcc-version", [str(nvcc), "--version"], env).strip()}
         command = ["cargo", "build", "--release", "-j", str(args.jobs), "-p", "memra-engine"]
         for name in BINS:
             command.extend(["--bin", name])
@@ -254,7 +266,10 @@ def main():
         binaries = {name: str(ROOT / "target/release" / name) for name in BINS}
         binaries["memra-server"] = str(ROOT / "target/release/memra-server")
         binaries["focused"] = executable
+        if sha(nvcc) != compiler["sha256"]:
+            raise RuntimeError("selected compiler changed during build")
         save(args.out / "build.json", {"commit": commit, "cuda_arch": args.arch,
+             "compiler": compiler,
              "binaries": {name: {"path": path, "sha256": sha(path)} for name, path in binaries.items()}})
         return
     if not args.build_record:

@@ -63,7 +63,8 @@ python3 research/modelplan-onboarding-537-20260919/qualify.py fetch \
   --models /data/q537-models --out /data/q537-receipts/fetch
 rsync -a /data/q537-models/ /scratch/q537-models/
 python3 research/modelplan-onboarding-537-20260919/qualify.py build \
-  --arch 120a --jobs 4 --out /scratch/q537-receipts/build
+  --arch 120a --nvcc /usr/local/cuda-13.1/bin/nvcc \
+  --jobs 4 --out /scratch/q537-receipts/build
 ```
 
 Set `Q537_GPU0`, `Q537_GPU1`, `Q537_GPU2` to the coordinator-assigned full physical UUIDs.
@@ -125,3 +126,10 @@ a harness filename collision: the engine-command receipt and final binary manife
 `build.json`. The command receipt now uses `build-engine.json`, leaving `build.json` for the
 completed manifest. The GPU prerequisite refused the incomplete record. A CPU orchestration
 regression reproduces the collision and verifies both records coexist after the fix.
+
+## Compiler identity
+
+Qualification builds require an explicit `--nvcc` path or `MEMRA_NVCC`; the CLI argument wins.
+The resolved executable path, SHA256 and version output are recorded in `build.json`, and its
+hash is checked again after compilation. Runtime `MEMRA_*` controls remain cleared. A missing
+compiler pin is a refusal, rather than permission to select another installed toolkit.

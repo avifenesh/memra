@@ -1,0 +1,33 @@
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/tiyuvta/wt-spill-b/crates/memra-tokenizer)
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-b/crates/memra-engine)
+    Checking memra-runtime v0.138.0 (/Users/avifen/tiyuvta/wt-spill-b/crates/memra-runtime)
+    Checking memra-reference v0.138.0 (/Users/avifen/tiyuvta/wt-spill-b/crates/memra-reference)
+warning: memra-engine@0.138.0: no runnable nvcc found via MEMRA_NVCC / CUDA_HOME / PATH / /usr/local/cuda*; falling back to /usr/local/cuda-13.1/bin/nvcc — set MEMRA_NVCC=<path/to/nvcc>
+warning: memra-engine@0.138.0: no GPU visible; defaulting MEMRA_CUDA_ARCH=120a (compile-only)
+error: failed to run custom build command for `memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-b/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `/Users/avifen/tiyuvta/wt-spill-b/target/debug/build/memra-engine-2c88d4fa09ea9f64/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-env-changed=MEMRA_NVCC
+  cargo:rerun-if-env-changed=CUDA_HOME
+  cargo:rerun-if-env-changed=CUDA_PATH
+  cargo:rerun-if-env-changed=CUDA_ROOT
+  cargo:warning=no runnable nvcc found via MEMRA_NVCC / CUDA_HOME / PATH / /usr/local/cuda*; falling back to /usr/local/cuda-13.1/bin/nvcc — set MEMRA_NVCC=<path/to/nvcc>
+  cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH
+  cargo:rerun-if-env-changed=MEMRA_CUTLASS
+  cargo:rustc-check-cfg=cfg(memra_portable_cuda)
+  cargo:rustc-check-cfg=cfg(memra_hopper_mma)
+  cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)
+  cargo:rustc-check-cfg=cfg(memra_cutlass)
+  cargo:warning=no GPU visible; defaulting MEMRA_CUDA_ARCH=120a (compile-only)
+  cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a
+  cargo:rerun-if-changed=cu/kernels.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+
+  --- stderr
+
+  thread 'main' (23978318) panicked at crates/memra-engine/build.rs:316:62:
+  spawn nvcc: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
