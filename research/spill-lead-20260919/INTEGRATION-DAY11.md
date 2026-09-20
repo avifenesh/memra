@@ -50,7 +50,38 @@ duplicate, no diagnostic, pooled, baseline case, second route), unit-tested.
    quota, decide race versus rig, fix or label; no engine change without a receipt. Dispatched after C day 11
    finishes (two-agent cap).
 
+## Lane C day 11 (`f5c5f592e`, pushed by the lead with the logged override plus a boundary pin)
+Installer catalog from the model plan: new `crates/memra-gguf/src/expert_banks.rs` (`expert_bank_catalog(plan, contract,
+census)` selects the three bank requirements per MoE block by semantic id `LayerTensor::MoeExpert{Gate,Up,Down}Bank`,
+trunk by position and MTP by depth, binds through `TensorContract::bind`; no tensor name spelled in the installer, no
+architecture allowlist, no new env read). `native.rs` takes the contract from the model pack and the census from
+`census_from_gguf`, refuses with `REFUSED: experts-via-tier expert catalog refused: <detail>` exit 2 (no MoE
+projections, missing or ambiguous contract entry, contract `Missing`/`DuplicateCensusName`/`ShapeMismatch`, undeclared
+or unconsumed scale planes, non-GGUF dialect, plan/model layer disagreement), prints
+`[experts-via-tier] catalog blocks= banked= projections= catalog_sha256= records= records_sha256=`. Nits landed:
+`expert_bank_cli` splits at `=` and matches keys exactly (look-alikes are usage errors), `SLOT_TAIL_PAD_BYTES` shared by
+`gpu_slot_bytes` and `moe_cache::hard_slot_bytes` (10 literals, all 8, `slru-synthetic.json` re-pinned with identical
+rows), `#[doc(hidden)] pub mod banked_residency` with no crate-root re-exports. Parity: `catalog_sha256`
+`2204b15974f6c5e7794d6f4912af1ec6961f52bf53f6f82325f94c123bdefde8` (41 blocks, 123 projections) in all three cells and
+recomputed by `verify-day11.py` from memra's own `tensor-census.tsv` with the day-10 literal spelling; `installed
+artifact_sha256=df27a780...7adf host_slots=16 max_expert_bytes=860160` byte-identical to day 10. Cells (BOX3, 600 W,
+N=1, `executed-not-qualified`, `pro-single-day11/`):
+```text
+(a) run-gen default:            prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH   [expert-gpu-slru] slots=90705 allocated_bytes=78021538440 evictions=0
+(b) run-spec gpu-bytes=6881344: === SELF-CONSISTENCY PASS ===   [expert-gpu-slru] slots=8 allocated_bytes=6881344 evictions=674569
+(c) run-spec gpu-bytes=6021176: REFUSED: experts-via-tier GPU bank budget cannot hold the eight-slot minimum (requested 6021176, minimum 6881344, ceiling 77968398729)   exit 2, collector refused
+--validate: cells: 3, failed_commands: 0, refused_commands: 1, qualification: false
+```
+Push note: the pre-push public-boundary gate flagged the two gzipped 52 MB SLRU trace logs of cell (b)
+(`provider_name_aws`, "first hit line 1810" of the compressed byte stream); the decompressed text has zero
+hits for that provider-name pattern (the rule text is not quoted here because the gate fires on it), so the lead pinned both `(path, sha256)` in `tools/public-boundary-allowlist.jsonl`
+with that reason (`f5c5f592e`). Door doc item 3: first half landed, scale admission still pending.
+
+## Lane A day 10 dispatched (ruling 8)
+Local storage `Err(Busy)` flake: reproduce 5x under the CPU quota, classify race versus test timing versus rig, fix only
+what the evidence supports, no GPU.
+
 ## Lanes
 - B day 11 sealed and pushed (`d1844b3c0`); B day 12 dispatched (ruling 6).
-- C day 11 running (installer catalog from the model plan, lead nits, run-spec budget cells on BOX3).
-- A, D sealed. E docs folded into #576. F idle.
+- C day 11 sealed and pushed (`f5c5f592e`); merged into integ8.
+- A day 10 running (ruling 8). D sealed. E docs folded into #576. F idle.

@@ -1,16 +1,16 @@
-tree 8d04fc98d7389bc03a43c1d6052fdb50fb08483f started 2026-09-20T21:47:09Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+tree ca9d67c1a620e7842addcec4c788be2c418bf58b started 2026-09-20T21:58:17Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
 == fmt: cargo fmt --all -- --check
-   rc=0 (2s)
-== test-tier-kv: cargo test -p memra-tier -p memra-kv --offline --no-fail-fast
-   rc=0 (13s)
+   rc=0 (3s)
+== test-tier-kv: cargo test -p memra-tier -p memra-kv -p memra-gguf --offline --no-fail-fast
+   rc=0 (15s)
    | 
-   | test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+   | test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
    | 
 == clippy: cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
-   rc=0 (31s)
-   |     Checking hyper-util v0.1.20
-   |     Checking axum v0.7.9
-   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 30.23s
+   rc=0 (28s)
+   |     Checking memra-runtime v0.138.0 (/home/avifenesh/projects/wt-spill-integ8/crates/memra-runtime)
+   |     Checking memra-reference v0.138.0 (/home/avifenesh/projects/wt-spill-integ8/crates/memra-reference)
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 28.05s
 == check-flags: bash tools/check-flags.sh
    rc=0 (1s)
    | check-flags: runtime literal reads=864
@@ -28,10 +28,10 @@ tree 8d04fc98d7389bc03a43c1d6052fdb50fb08483f started 2026-09-20T21:47:09Z host 
    rc=0 (17s)
    | .................................................. [ 58%]
    | ...................................                            [100%]
-   | 85 passed, 32 subtests passed in 16.35s
+   | 85 passed, 32 subtests passed in 16.38s
 == perf-board: python3 tools/update-perf-board.py --check
    rc=0 (0s)
    | perf board is up to date
 == diff-check: git diff --check
    rc=0 (0s)
-finished 2026-09-20T21:48:13Z
+finished 2026-09-20T21:59:21Z
