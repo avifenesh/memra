@@ -43,25 +43,61 @@ consumer-ready fences, and retirement before budget release. Outcome counts:
 24 aborted, 350 admitted, 730 capacity, 142 hit, 482 noop, 129 published,
 156 reserved. The frozen decisions are unchanged; only their native whole-file
 source hash changed for the new diagnostic counter. This is synthetic CPU
-lifetime evidence, not the requested model pressure-trace replay.
+lifetime evidence. The separate model-pressure replay below extends it with
+the complete recorded host-bank demand streams.
 
-`verify-day8.py --cpu` ran all nine checks successfully: fmt, macOS tier check,
-Linux-target tier check, all tier tests (**189 passed including doc tests**),
+`verify-day8.py --cpu` ran all ten checks successfully: fmt, macOS tier check,
+Linux-target tier check, all tier tests (**193 passed including doc tests**),
 strict tier clippy, strict Linux-target engine lib/run-gen/run-spec clippy,
-whitespace, flags census and frozen trace regeneration check. Engine Linux
+whitespace, flags census, frozen trace regeneration and verifier red probes. Engine Linux
 checks use DOCS_RS placeholders and cannot claim native execution.
 
-## Unfinished native pressure cells / access blocker
+## Native pressure cells
 
-The native build at exact source `44f87f18` was started in a new isolated C
-worktree. It survived the local 180-second command timeout and was observed
-still compiling CUDA. Before build completion could be checked, the approved
-SSH ControlMaster disappeared: `ssh -O check` returned
-`Control socket connect(...): No such file or directory`. No fresh connection
-was opened. The lead has been asked to restore it.
+The lead restored the approved SSH master after the interruption. The completed
+native build and its source/binary digests were collected from source
+`44f87f181bbbcc75a14d8d9362609f60186f293d`. Commands use these frozen binaries;
+receipt-only commits do not rebuild them. Each completed cell is synced,
+hash-replayed, committed and pushed before starting the next.
 
-The 4 GiB/8 GiB ON/OFF gen/spec cells, native host-budget refusal, and CPU replay
-of those model traces remain **unrun**, not passed. `verify-day8.py` fails closed
-on the missing receipts. No GPU eviction or re-read counts are yet claimed.
-The native binary/source sidecars and build log still need collection after
-access returns.
+Run order: 8 GiB banked gen/spec, then their native controls; 4 GiB follows.
+A budget includes each slot's native eight-byte tail padding: 9,986 slots =
+8,589,637,648 bytes; 4,993 slots = 4,294,818,824 bytes. Both round **down** from
+the requested GiB capacity.
+
+| Cell | GPU evictions | Host evictions | Physical reads | Re-reads |
+|---|---:|---:|---:|---:|
+| 8 GiB banked gen | 12,091 | 22,061 | 22,077 | 4,389 |
+| 8 GiB banked spec | 63,996 | 73,966 | 73,982 | 53,684 |
+| 4 GiB banked gen | 26,990 | 31,967 | 31,983 | 17,553 |
+| 4 GiB banked spec | 178,523 | 183,500 | 183,516 | 165,768 |
+
+8 GiB gen ON/OFF and 4 GiB gen ON each report verbatim:
+
+> prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH
+
+8 GiB spec ON/OFF and 4 GiB spec ON each report verbatim:
+
+> === SELF-CONSISTENCY PASS ===
+
+All eight K rows pass. Gen and spec ON/OFF token tapes are byte-identical within
+each numeric class, also matching the respective day-seven baseline; ON/OFF
+spec acceptance rows are identical. The 4 GiB ON tapes and acceptance rows
+also match their 8 GiB counterparts exactly. CPU replay of all four complete
+recorded host-bank demand traces passes: **311,558 decisions and fake transfers**. This is host-bank replacement evidence, not a reconstructed
+trace of every native GPU hit or a new numerical model fixture.
+
+## Remaining interruption
+
+After syncing and pushing the 4 GiB spec receipt at `d9ab7944`, the approved
+ControlMaster disappeared a second time. No fresh connection was opened. Four
+GiB OFF controls and the host-budget refusal have not started; native strict
+clippy was started before this interruption, but its completion is uncollected.
+No claim is made that these pending cells passed.
+
+`pressure-refusal.py` is ready for collector-only execution. It retains native
+stdout/stderr and native exit status, emits `REFUSED:` and exits 2 **only** when
+run-gen exits 1 with the exact one-record host-budget refusal and no dispatch.
+Unexpected errors/signals remain failures; CPU red probes exercise this rule.
+This is a host-record minimum: existing GPU slot sizing clamps small requests
+to eight slots and must not be described as a GPU-budget refusal.

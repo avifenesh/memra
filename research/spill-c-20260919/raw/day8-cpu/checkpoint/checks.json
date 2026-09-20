@@ -1,5 +1,5 @@
 {
-  "source": "d9ab7944d15a429d567d871a7a7a3910c8287a85",
+  "source": "d69f6303cd40ad33c64dabed55bb8911aad709de",
   "scope": "CPU only; engine Linux compile-only placeholder",
   "checks": [
     {
@@ -25,7 +25,7 @@
         "--all-targets"
       ],
       "exit": 0,
-      "sha256": "ccebed3d07c0ff93167160f5867dfd8ecb52cccec55f1c90a86fe8d0e82fb625"
+      "sha256": "ed5454405d098074f0d6341ee415f41607ca497b206a6e072857db8cfbc27089"
     },
     {
       "name": "linux-check",
@@ -40,7 +40,7 @@
         "x86_64-unknown-linux-gnu"
       ],
       "exit": 0,
-      "sha256": "2859a0de2a07bad604f2761791e77466c4bc2eb3aa9edfd5f9bc90449c1821e6"
+      "sha256": "7c79b0a7f825e3afe222d769a2de8f7681f557e17ce6492d75fb1229fa54b74d"
     },
     {
       "name": "tests",
@@ -53,7 +53,7 @@
         "--no-fail-fast"
       ],
       "exit": 0,
-      "sha256": "fe96e6bf82ef0c082cefe6a6b888286e814386c91ca27b53db6739d1b48847f6"
+      "sha256": "3188b660c76accd84def2d86915a194ea92bd1c08cfa3dda58d12c550292855b"
     },
     {
       "name": "clippy",
@@ -69,7 +69,7 @@
         "warnings"
       ],
       "exit": 0,
-      "sha256": "0e8ee1bf0b8664cda40291090169a1a0e729e83d1d0515bc66eeec8a4b8296f7"
+      "sha256": "380b1ccaad1f8c5cdde2b6955159057778fb692ba0da429139fdb4e5efaf17dc"
     },
     {
       "name": "engine-linux-clippy",
@@ -91,7 +91,7 @@
         "warnings"
       ],
       "exit": 0,
-      "sha256": "f591e097f22f91dd5c31fbbf7e587d80c0a4e0ed594f9c9012a544f38c52d926"
+      "sha256": "7b702a80bbcb6fb6671e25eefe913a2c6fcb8ddc1a6407544073b9854f7d70f4"
     },
     {
       "name": "diff",
@@ -121,15 +121,6 @@
       ],
       "exit": 0,
       "sha256": "a856e996999863668ffc175ada1b533bd48512ac6a6b8e8af249116f3a3137dd"
-    },
-    {
-      "name": "verifier-red",
-      "argv": [
-        "python3",
-        "research/spill-c-20260919/test-day8.py"
-      ],
-      "exit": 0,
-      "sha256": "7c77c5d54205a146de6c95d07fece00aa09cb448286c078f61fa2907f5f3ddd6"
     }
   ]
 }

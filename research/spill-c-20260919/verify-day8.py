@@ -25,7 +25,7 @@ def replay(case):
     capture = json.loads((root / "command.capture.json").read_text())
     DAY7.hashes(root, capture)
     require(not capture["timed_out"], "timed out: " + case)
-    require(capture["qualification"] is False, "collector cannot qualify")
+    require(capture["qualification"] is False and capture["status"] == ("refused" if case == "host-refusal" else "executed-not-qualified"), "collector cannot qualify")
     require(capture["gpu_telemetry"]["interval_ms"] == 250, "telemetry cadence")
     require(capture["gpu_power_limits"] == [{"device": "0", "power.limit": "400.00 W", "power.max_limit": "600.00 W"}], "power regime")
     require(json.loads((root / "lock.json").read_text()) == {"rig": "rtx5090", "lock": "/tmp/memra-5090.lock", "acquired": True}, "canonical collector lock")
@@ -33,15 +33,20 @@ def replay(case):
     require("MEMRA_NGEN=32" in argv and "MEMRA_MOE_RESIDENT=0" in argv, "different request configuration")
     log = (root / "command.log").read_text()
     if case == "host-refusal":
-        require(capture["exit_code"] != 0, "refusal unexpectedly passed")
+        require(capture["exit_code"] == 2, "refusal must exit 2")
         quote = "experts-via-tier host bank budget cannot hold one expert record"
-        require(quote in log and not TRACE.findall(log), "missing pre-dispatch capacity refusal")
+        require("REFUSED: " + quote in log and "native_exit_code=1" in log and not TRACE.findall(log), "missing pre-dispatch capacity refusal")
         require("--expert-bank-host-bytes=1" in argv, "refusal budget changed")
         return {"case": case, "verdict": quote, "exit_code": capture["exit_code"]}, log
     require(capture["exit_code"] == 0, "cell failed: " + case)
     gb = int(case[0])
     slots = (gb * 1024**3) // (860160 + 8)
     require(f"MEMRA_MOE_SLOTS={slots}" in argv, "different GPU slot budget")
+    gate = "gen" if "-gen-" in case else "spec"
+    expected_argv = ["env", "MEMRA_MOE_RESIDENT=0", f"MEMRA_MOE_SLOTS={slots}", "MEMRA_NGEN=32", f"/root/spill-c-day8/bin/run-{gate}", "/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "55", "88", "13"]
+    if case.endswith("-on"):
+        expected_argv.append("--experts-via-tier")
+    require(argv == expected_argv, "runtime/artifact/prompt/arm command identity changed")
     tape = DAY7.tokens(log)
     if "-gen-" in case:
         verdict = "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH"
@@ -56,7 +61,7 @@ def replay(case):
     if case.endswith("-on"):
         require("--experts-via-tier" in argv, "bank installer absent")
         matches = TRACE.findall(log)
-        require(matches, "host trace absent")
+        require(matches and len(matches) == log.count("[expert-host-slru]"), "host trace absent/malformed")
         seen = set()
         rereads = evictions = misses = 0
         for key, _, _, hit, victim in matches:
@@ -89,6 +94,7 @@ def cpu():
         "diff": ["git", "diff", "--check"],
         "flags": ["bash", "tools/check-flags.sh"],
         "frozen": ["python3", "research/spill-c-20260919/slru-trace.py", "--check"],
+        "verifier-red": ["python3", "research/spill-c-20260919/test-day8.py"],
     }
     results = []
     for name, argv in commands.items():
