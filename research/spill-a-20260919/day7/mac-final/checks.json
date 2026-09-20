@@ -1,0 +1,123 @@
+[
+  {
+    "name": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 4.217468874994665
+  },
+  {
+    "name": "native-fmt",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "crates/memra-engine/src/tier_transfer.rs",
+      "crates/memra-engine/src/bin/tier_transfer_gate.rs"
+    ],
+    "exit": 0,
+    "seconds": 0.08101525000529364
+  },
+  {
+    "name": "mac-check",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0,
+    "seconds": 0.2892014579847455
+  },
+  {
+    "name": "linux-check",
+    "command": [
+      "cargo",
+      "check",
+      "--target",
+      "x86_64-unknown-linux-gnu",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline"
+    ],
+    "exit": 0,
+    "seconds": 0.1828502919524908
+  },
+  {
+    "name": "tests",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "memra-tier",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "exit": 0,
+    "seconds": 5.165834166982677
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "memra-tier",
+      "-p",
+      "memra-kv",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 0.27427549997810274
+  },
+  {
+    "name": "native-typecheck-clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--manifest-path",
+      "target/spill-a-native-typecheck/Cargo.toml",
+      "--offline",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 0.2048369999974966
+  },
+  {
+    "name": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 0.07466883299639449
+  },
+  {
+    "name": "flags",
+    "command": [
+      "bash",
+      "tools/check-flags.sh"
+    ],
+    "exit": 0,
+    "seconds": 3.767710458021611
+  }
+]
