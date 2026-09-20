@@ -18,12 +18,21 @@ DAY7 = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(DAY7)
 require = DAY7.require
 CASES = ['default-gen-off', 'default-spec-off', 'default-gen-on',
-         'default-spec-on-retry', '8g-gen-on-final', '8g-spec-on-final',
-         '8g-gen-off-final', '8g-spec-off-final']
+         'default-spec-on-retry', 'pressure-gen-on', 'pressure-spec-on',
+         'pressure-gen-off', 'pressure-spec-off']
 
 
 def replay(case):
-    path = RAW / case
+    if case.startswith('pressure-'):
+        status = json.loads((RAW / 'pressure-status.json').read_text())
+        require(status['state'] == 'complete', 'pressure set incomplete')
+        mapping = {row['case']: row['directory'] for row in status['completed']}
+        require(set(mapping) == set(CASES[4:]), 'incomplete pressure mapping')
+        directory = Path(mapping[case])
+        require(directory.name == str(directory), 'escaping pressure receipt')
+        path = RAW / directory
+    else:
+        path = RAW / case
     capture = json.loads((path / 'command.capture.json').read_text())
     DAY7.hashes(path, capture)
     require(capture['exit_code'] == 0 and not capture['timed_out'] and
@@ -38,7 +47,7 @@ def replay(case):
     gate = 'spec' if 'spec' in case else 'gen'
     banked = '-on' in case
     argv = ['env', 'MEMRA_MOE_RESIDENT=0', 'MEMRA_NGEN=32']
-    if case.startswith('8g-'):
+    if case.startswith('pressure-'):
         argv.append('MEMRA_MOE_SLOTS=9986')
     argv += [f'/root/wt-c/target/release/run-{gate}',
              '/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf', '55', '88', '13']
@@ -71,7 +80,7 @@ def replay(case):
         require(physical and int(physical[1]) == misses, 'reads/drain')
         gpu = re.search(r'\[expert-gpu-slru\] slots=(\d+) allocated_bytes=(\d+) evictions=(\d+)', log)
         require(gpu and int(gpu[2]) == int(gpu[1]) * 860168, 'GPU extents')
-        if case.startswith('8g-'):
+        if case.startswith('pressure-'):
             require(int(gpu[1]) == 9986 and int(gpu[3]) > 0 and rereads > 0, 'pressure absent')
         result.update(gpu_evictions=int(gpu[3]), host_evictions=evictions,
                       physical_reads=misses, rereads=rereads, gpu_slots=int(gpu[1]))

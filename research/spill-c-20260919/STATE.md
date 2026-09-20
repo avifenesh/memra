@@ -1,15 +1,15 @@
 # Session C day-nine handoff
-- Local lane: `lane/spill-c-20260919`; dedicated checkout `wt-spill-c`.
-- integ5 merged/pushed at `148e7f0e9`; runtime binaries built at that exact source.
-- Native build: `/root/wt-c/target/release/{run-gen,run-spec}`; no C tmux job running.
-- Raw native receipts: `/root/spill-receipts/c-day9/`; synced to `pro-single-day9/`.
-- Pushed default generation OFF/ON MATCH; spec OFF/ON K1–8 PASS through `c270d1f4a`.
-- Default ON GPU evictions=0; generation/spec physical reads=30720/31488.
-- `default-spec-on` first attempt refused canonical lock; retry passed and both logs kept.
-- `8g-gen-on` just refused lock; sync its console log before retrying in a NEW receipt dir.
-- Existing inherited code ALREADY wires MoeSlotCache through owner proxy; no duplicate implementation needed.
-- Current change adds ordinary-build Engine/cache/proxy/lease Send+Sync assertion; checks pending.
-- `BUDGET-REFUSAL.md` is proposal only; no MEMRA flag behavior changed.
-- Next: finish 8GiB ON/OFF gen/spec (9986 slots), sync+push each; then compile checks and final verifier/report.
-- Rebuild/check assertion at exact committed revision; native baseline binary hashes are retained separately.
-- Need no owner decision; GPU cells only through pro-single collector/canonical lock; no fresh SSH connection.
+- Active local lane `lane/spill-c-20260919`, checkout `wt-spill-c`; no main changes.
+- RUNNING: remote tmux `c-day9-pressure`, script `research/spill-c-20260919/run-day9-pressure.py`.
+- Receipts `/root/spill-receipts/c-day9/`; read `pressure-status.json` / `pressure-driver.log`.
+- Script waits 60s on exact lock refusal, up to 60 min; four gen/spec ON/OFF 8GiB cells, then exits.
+- Uses own `/root/wt-c`; collector pro-single with canonical lock; no C bare GPU process.
+- Finished/pushed: integ5 merge 148e7f0e9, four default gen/spec ON/OFF cells through c270d1f4a.
+- First 8GiB gen ON passed, 12091 GPU evictions, pushed 13db273ef; new script repeats the full set.
+- Baseline binaries remain from 148e7f0e9, hashes/build in pro-single-day9/build; never overwrite.
+- Engine Send+Sync/cache Send assertion and corrected frozen source hash pushed 748903f73.
+- Mac eight checks PASS; native strict release engine clippy PASS at 748903f73; see DAY9.md.
+- Existing inherited owner-proxy wiring is complete, default-OFF; no duplicate implementation added.
+- NEXT: sync whole receipt dir, run verify-day9.py, commit/push full pressure set once complete.
+- If 60-min refusal: bank all logs, report pending; do not chase gaps or override lock.
+- Then add final report/binary postcheck/verifier red tests; budget proposal needs lead's future decision.
