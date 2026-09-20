@@ -1,0 +1,14 @@
+    Checking memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c/crates/memra-tier)
+error: using `clone` on type `TransferTicket` which implements the `Copy` trait
+   --> crates/memra-tier/src/bank/owner_proxy.rs:154:25
+    |
+154 |                 ticket: demand.ticket.clone(),
+    |                         ^^^^^^^^^^^^^^^^^^^^^ help: try removing the `clone` call: `demand.ticket`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#clone_on_copy
+    = note: `-D clippy::clone-on-copy` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::clone_on_copy)]`
+
+error: could not compile `memra-tier` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `memra-tier` (lib test) due to 1 previous error

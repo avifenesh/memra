@@ -1463,3 +1463,5 @@ fn expert_dispatch_slru_preserves_ids_bytes_hits_and_refuses_unknown() {
     g.borrow_mut().release(&metadata).unwrap();
     assert_eq!(g.borrow().used, TierBudget::zero(2));
 }
+
+mod owner_proxy;
