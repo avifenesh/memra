@@ -7195,11 +7195,6 @@ impl HybridModel {
         Ok(x)
     }
 
-    /// The prime chunk's tail — h_seed + output_norm + one-row lm head + cache.pos advance —
-    /// shared verbatim by the unsplit walk and the last stage of the ppN walk (`e` = the
-    /// engine that produced `x`, i.e. the last stage's under the split; output_norm/output
-    /// were loaded through that engine by the sharded loader, hybrid.rs `e_head`).
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     /// Does every trunk operation of this plan carry the generic chunked-prime receipt
     /// (`op_registry` column `chunked_prime`, manifest `CHUNKED_PRIME`)? The prime driver and
     /// the worker's tick budget both key on this; consulted inside the gemma family today.
@@ -7256,6 +7251,11 @@ impl HybridModel {
         Ok(x)
     }
 
+    /// The prime chunk's tail — h_seed + output_norm + one-row lm head + cache.pos advance —
+    /// shared verbatim by the unsplit walk and the last stage of the ppN walk (`e` = the
+    /// engine that produced `x`, i.e. the last stage's under the split; output_norm/output
+    /// were loaded through that engine by the sharded loader, hybrid.rs `e_head`).
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn prime_chunk_epilogue(
         &self,
         e: &Engine,
