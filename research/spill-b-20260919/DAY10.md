@@ -21,7 +21,8 @@ Program: tokenwise `decode_step_h`, trunk-only, no MTP or alternate prefill.
   refused lock contention without executing). Native build exit 0.
 - 32k baseline: captured; native exit 0, all baseline hashes frozen separately.
 - Original VMM 8k: **ACTIVE-8K G1 PASS**. All seven frozen surfaces and restored prefix match; exact physical release/reacquisition, no residual.
-- Original VMM 32k and pooled 8k control: **pending**.
+- Original VMM 32k: **ACTIVE-32K physical reclaim/restore bit-identical, residual 2097152 B, class unclassified — not G1 PASS**.
+- Original pooled 8k control: **pending**.
 - Mapped-VA residual diagnostic 32k and directly injected VMM 8k: **pending**.
 
 `BOX3-BASELINES.json` freezes the seven decoded continuation-surface hashes and

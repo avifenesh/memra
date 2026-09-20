@@ -1,14 +1,14 @@
 # WP-B day 10 checkpoint
 - Branch: lane/spill-b-20260919; integ5 merge 8ef562b12f16fd3378f866939be347df3a6d3d96 pushed.
 - Native checkout: /root/wt-b; currently still at that merge (original gate, no injection).
-- Next running cell: tmux b-day10-vmm32; collector vmm-32768; /root/spill-receipts/b-day10/vmm-32768.
+- Next running cell: tmux b-day10-pooled8; collector pooled-8192; /root/spill-receipts/b-day10/pooled-8192.
 - Runner: /root/b-day10-cell.sh (tracked copy run-day10-cell.sh); canonical pro-single collector; bounded lock retries.
 - Finished: original native build, 8k/32k baselines and ACTIVE-8K G1 PASS (600/600 W); receipts pushed.
 - 8k receipts + build are preserved in pro-single-day10/ in this checkpoint; raw logits losslessly gzip archived.
 - Local implementation: allocator injection + actual-demoted-plane VA probe; latest runtime ef0fc91d2, native-unbuilt.
 - Mac kv+tier 262 tests/check/cross-check/clippy/fmt/flags passed; engine Mac blocked by missing nvcc (log saved).
-- Next: collect/push original 32k VMM, then 8k pooled control BEFORE updating native source.
+- Next: collect/push original 8k pooled control BEFORE updating native source; 32k VMM has 1-granule unclassified residual.
 - Then pull checkpoint into /root/wt-b, rebuild; run diagnostic 32k and injected 8k; preserve separate source/binary identity.
 - Add DAY10.md, BOX3 baseline hashes, verify-day10.py and raw manifest; push after every cell.
 - Decision: prior 5090 probe freed never-mapped VA only; new nonzero PRO metadata class cannot satisfy BOTH-card evidence.
-- All remaining G1 verdicts and residual class pending; no serving/performance qualification or cross-card timing claim.
+- 32k VMM: bit-identical, 2097152 B residual, unclassified, not G1 PASS; diagnostic and injected rerun pending.
