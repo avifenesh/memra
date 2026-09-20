@@ -1,0 +1,15 @@
+RECLAIM-DIAG: freed but not observable
+source_owners_before_release=32
+source_owners_after_release=0
+source_slice_drops=32
+device_registry_after_demote=0
+free_before_trim_bytes=86184165376
+free_after_trim_bytes=86184165376
+pool_before_reserved=15200157696
+pool_before_used=15191180692
+pool_demoted_reserved=15200157696
+pool_demoted_used=14947910836
+pool_trimmed_reserved=15200157696
+pool_trimmed_used=14947910836
+trim_api=cuDeviceGetDefaultMemPool+cuMemPoolTrimTo
+trim_api_success=true
