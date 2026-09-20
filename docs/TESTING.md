@@ -1007,8 +1007,12 @@ before any bank demand:
   `experts-via-tier requires one immutable GGUF, cache, and at most one MTP head`;
   `experts-via-tier refuses resident or parallel expert bypasses; use the cache baseline`
   (resident slabs, Step EP/TP and GLM EP/TP splits); and the budget flags' usage errors
-  (`expert_bank_cli`: a bare flag, a repeat, a malformed value, or a budget without
-  `--experts-via-tier`).
+  (`expert_bank_cli`: a bare flag, a repeat, a malformed value, a budget without
+  `--experts-via-tier`, or a key that merely starts with a flag name: keys match exactly, so
+  `--expert-bank-host-bytes-x=1` is `unknown expert bank flag ...` and `--experts-via-tier=1`
+  is `--experts-via-tier takes no value`, never the flag they resemble and never ignored).
+  The helpers live at `memra_engine::banked_residency::{expert_bank_cli, refusal_reason,
+  ExpertBankBudget}` (a `#[doc(hidden)]` gate module, nothing re-exported at the crate root).
 - Catalog refusals: `REFUSED: experts-via-tier expert catalog refused: <detail>`, where the
   detail is `the compiled plan has no MoE expert projections`; the tensor contract's own
   verdict for a bank tensor that is missing, duplicated (`DuplicateCensusName`), ambiguous,
@@ -1032,7 +1036,9 @@ before any bank demand:
   `experts-via-tier GPU bank budget cannot hold the eight-slot minimum` below eight slots and
   `experts-via-tier GPU bank budget exceeds the hard VRAM ceiling` above the machine ceiling
   (`hard_slot_bytes`: the `MEMRA_MOE_HARD_VRAM_FRAC` share of free VRAM minus two slots,
-  measured by the installer), with the same `(requested, minimum, ceiling)` suffix. Setting
+  measured by the installer), with the same `(requested, minimum, ceiling)` suffix. One slot
+  is the record plus `banked_residency::SLOT_TAIL_PAD_BYTES` (8), the one constant the native
+  slot sizing in `moe_cache.rs` and the budget arithmetic share. Setting
   `MEMRA_MOE_SLOTS` alongside a GPU budget is a refusal
   (`experts-via-tier GPU bank budget conflicts with MEMRA_MOE_SLOTS`), never a silent
   precedence. Without a GPU budget the native slot sizing (`MEMRA_MOE_SLOTS` or auto) is

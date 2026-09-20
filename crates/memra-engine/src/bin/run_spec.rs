@@ -118,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = memra_gguf::hf::resolve_arg(&path)?;
     // --experts-via-tier [--expert-bank-host-bytes=N] [--expert-bank-gpu-bytes=N]: the gate
     // door and its typed budgets, parsed once here and handed to the installer (no env read).
-    let expert_bank = memra_engine::expert_bank_cli(std::env::args())?;
+    let expert_bank = memra_engine::banked_residency::expert_bank_cli(std::env::args())?;
     let primary = primary_device(std::env::var("MEMRA_PP_DEVICES").ok().as_deref())?;
     let e = Engine::new(primary)?;
     // DIRECTORY path = safetensors HF checkpoint or manifest-backed memra repack/overlay; file = GGUF.
@@ -157,9 +157,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(match e.install_expert_bank_gate(&model, g, budget) {
                 Ok(gate) => gate,
                 Err(err) => {
-                    // Refusal token contract: only the typed budget refusal is REFUSED / exit 2;
+                    // Refusal token contract: only the typed budget or catalog refusal is REFUSED / exit 2;
                     // any other installer error stays a failure (`Error:` / exit 1).
-                    if let Some(reason) = memra_engine::refusal_reason(err.as_ref()) {
+                    if let Some(reason) =
+                        memra_engine::banked_residency::refusal_reason(err.as_ref())
+                    {
                         eprintln!("REFUSED: {reason}");
                         std::process::exit(2);
                     }
