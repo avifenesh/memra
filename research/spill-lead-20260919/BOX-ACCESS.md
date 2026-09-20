@@ -34,3 +34,21 @@ reused). Check first: `ssh -O check -o ControlPath=$HOME/.ssh/cm/box2 root@<prox
 `scp`/`rsync`: `-o ControlPath=$HOME/.ssh/cm/box2`. If the socket is gone, report it to the lead
 (who re-establishes it with `ControlMaster=auto ControlPersist=yes`) rather than looping retries.
 A direct-IP path also exists in LANE-LOCAL.md as a fallback.
+
+## Proxy vs direct path (2026-09-20)
+
+The provider's ssh proxy has refused connections while the instance stayed `running`; the direct
+port (both in `LANE-LOCAL.md`) kept working. The lead re-establishes the master over whichever path
+answers. Because the `ControlPath` is a fixed socket (no `%h`), lanes change nothing: `ssh -O check`
+then `ssh -o ControlPath=$HOME/.ssh/cm/box2 -o ControlMaster=no root@<either-host> <cmd>` multiplexes
+over the live master regardless of the hostname given.
+
+## Rig change 2026-09-20: BOX3 replaces BOX2
+
+The bid-market 5090 (BOX2) was host-stopped four times in one day; the owner moved the lane to a
+fixed-price spot **RTX PRO 6000 Blackwell** (BOX3) — the memra target card class, 96 GB, 600 W cap, a
+real block-device root (no overlayfs; NVMe ancestry still provider-claimed, hidden by virtio). Rig profile
+`pro-single` in `tools/tier-battery.py` / `tools/tier-rig-bootstrap.sh`; lock `/tmp/memra-gpu.lock` per the
+lock table. Socket `~/.ssh/cm/box3`; same rules (`ssh -O check` first, never a fresh connection; the lead's
+keeper re-establishes within ~30 s). Host, id, price live in `LANE-LOCAL.md` only. BOX2 receipts stay valid as
+5090 evidence; **no timing is compared across the two boxes**, and every cell records its own power envelope.

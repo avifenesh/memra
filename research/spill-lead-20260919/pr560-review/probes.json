@@ -1,0 +1,40 @@
+{
+  "checked_source": "d3d054a8e2a177c10e5e923614945eba96c1d069",
+  "utc": "2026-09-19T23:06:50.723394+00:00",
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--offline",
+        "-p",
+        "memra-engine",
+        "--bin",
+        "kv_tier_gate"
+      ],
+      "exit": 101,
+      "raw": "probe-0.log",
+      "sha256": "e3f6e49624c576568e44dda70262b40b97a65c179f0bc0f8cfae13987ffdef8b"
+    },
+    {
+      "command": [
+        "gh",
+        "api",
+        "repos/avifenesh/memra/pulls/560/comments"
+      ],
+      "exit": 0,
+      "raw": "probe-1.log",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "command": [
+        "gh",
+        "api",
+        "repos/avifenesh/memra/pulls/560/reviews"
+      ],
+      "exit": 0,
+      "raw": "probe-2.log",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+   Compiling crc32fast v1.5.0
+   Compiling autocfg v1.5.1
+    Checking simd-adler32 v0.3.10
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+    Checking adler2 v2.0.1
+    Checking weezl v0.1.12
+    Checking byteorder-lite v0.1.0
+    Checking pxfm v0.1.30
+    Checking miniz_oxide v0.8.9
+    Checking fdeflate v0.3.7
+    Checking color_quant v1.1.0
+    Checking quick-error v2.0.1
+   Compiling num-traits v0.2.19
+    Checking zune-core v0.5.3
+    Checking bitflags v2.13.1
+    Checking image-webp v0.2.4
+    Checking gif v0.14.2
+    Checking zune-jpeg v0.5.15
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/tiyuvta/wt-spill-d/crates/memra-tokenizer)
+    Checking flate2 v1.1.9
+    Checking bytemuck v1.25.2
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-d/crates/memra-engine)
+    Checking png v0.18.1
+    Checking memra-runtime v0.138.0 (/Users/avifen/tiyuvta/wt-spill-d/crates/memra-runtime)
+    Checking memra-reference v0.138.0 (/Users/avifen/tiyuvta/wt-spill-d/crates/memra-reference)
+    Checking memra-sampling v0.138.0 (/Users/avifen/tiyuvta/wt-spill-d/crates/memra-sampling)
+    Checking memra-validate v0.138.0 (/Users/avifen/tiyuvta/wt-spill-d/crates/memra-validate)
+    Checking base64 v0.22.1
+    Checking moxcms v0.8.1
+warning: memra-engine@0.138.0: no runnable nvcc found via MEMRA_NVCC / CUDA_HOME / PATH / /usr/local/cuda*; falling back to /usr/local/cuda-13.1/bin/nvcc — set MEMRA_NVCC=<path/to/nvcc>
+warning: memra-engine@0.138.0: no GPU visible; defaulting MEMRA_CUDA_ARCH=120a (compile-only)
+error: failed to run custom build command for `memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-d/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `/Users/avifen/tiyuvta/wt-spill-d/target/debug/build/memra-engine-2c88d4fa09ea9f64/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-env-changed=MEMRA_NVCC
+  cargo:rerun-if-env-changed=CUDA_HOME
+  cargo:rerun-if-env-changed=CUDA_PATH
+  cargo:rerun-if-env-changed=CUDA_ROOT
+  cargo:warning=no runnable nvcc found via MEMRA_NVCC / CUDA_HOME / PATH / /usr/local/cuda*; falling back to /usr/local/cuda-13.1/bin/nvcc — set MEMRA_NVCC=<path/to/nvcc>
+  cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH
+  cargo:rerun-if-env-changed=MEMRA_CUTLASS
+  cargo:rustc-check-cfg=cfg(memra_portable_cuda)
+  cargo:rustc-check-cfg=cfg(memra_hopper_mma)
+  cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)
+  cargo:rustc-check-cfg=cfg(memra_cutlass)
+  cargo:warning=no GPU visible; defaulting MEMRA_CUDA_ARCH=120a (compile-only)
+  cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a
+  cargo:rerun-if-changed=cu/kernels.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+
+  --- stderr
+
+  thread 'main' (19511178) panicked at crates/memra-engine/build.rs:314:62:
+  spawn nvcc: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...

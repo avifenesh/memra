@@ -230,6 +230,8 @@ fn main() {
         println!("cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)");
         println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
         println!("cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a");
+        // `MMQ_ARCHIVE_HASH` is `env!`-bound in lib.rs; the docs-only build has no archive.
+        println!("cargo:rustc-env=MEMRA_MMQ_ARCHIVE_HASH=docs-rs-stub");
         return;
     }
 

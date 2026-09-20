@@ -1,0 +1,23 @@
+{
+  "verdict": "died, cause: host stop",
+  "classification": "interrupted-failed-capture",
+  "qualification": false,
+  "exit_code": null,
+  "cause_authority": "Lead reported host stop and container restart; not inferred from missing exit status alone.",
+  "lead_quote": "container restarted; tmux sessions gone",
+  "observed_last_progress": "baseline prompt committed=768",
+  "observed_console_tail": [
+    "baseline prompt committed=512",
+    "baseline prompt committed=768",
+    "[fa-pool] grow #5 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)"
+  ],
+  "collector_exit_record_present": false,
+  "collector_completed_capture_present": false,
+  "cell_events": [
+    "start"
+  ],
+  "next_attempt": "day9-vmm-32768-retry",
+  "power_before_restart_watts": 400,
+  "power_after_restart_watts": 600,
+  "comparison_scope": "correctness only; no timing comparison"
+}

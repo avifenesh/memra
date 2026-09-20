@@ -1,0 +1,18 @@
+{
+  "source_commit": "a8ce78f2b1fd280f45975e64cad53179a8e9859a",
+  "probes": [
+    {
+      "input": "kv-tier-gate: REFUSED: active requires a native CUDA materializer + scheduler binding with nonzero demote/reload engagement; CPU fixtures and HostPrefix patch do not provide that binding\n",
+      "exit": 2,
+      "classified": null,
+      "rechecked": "kv-tier-gate: REFUSED: active requires a native CUDA materializer + scheduler binding with nonzero demote/reload engagement; CPU fixtures and HostPrefix patch do not provide that binding"
+    },
+    {
+      "input": "Error: CUDA_ERROR_OUT_OF_MEMORY\n",
+      "exit": 2,
+      "classified": "Error: CUDA_ERROR_OUT_OF_MEMORY",
+      "rechecked": null
+    }
+  ],
+  "timeout_wrong_exit_nonterminal": "refuse classification"
+}

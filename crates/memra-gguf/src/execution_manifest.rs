@@ -3,8 +3,14 @@
 //! These tables describe implemented kernel programs, not model families. A new model can use a
 //! program when every operation in its compiled `ModelPlan` is present. Missing operations fail
 //! closed and remain visible as capability blockers.
+//!
+//! Per-operation support is DERIVED from [`crate::op_registry`] (memra#535, P0): each manifest's
+//! `support` reads one column of that registry instead of carrying its own allowlist. The seven
+//! allowlists this file used to hold are kept verbatim under `tests::legacy_tables` as the frozen
+//! oracle that proves the derivation changed nothing.
 
 use crate::model_plan::{ModelPlan, OperationKind, OperationSupport, PlanCapabilities};
+use crate::op_registry;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -511,26 +517,27 @@ fn stable_argmax(values: &[f32]) -> usize {
 
 fn carried_prime_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();
-    support.batch = matches!(
-        operation,
-        OperationKind::Embedding
-            | OperationKind::RmsNorm
-            | OperationKind::FullAttention
-            | OperationKind::GatedDeltaNet
-            | OperationKind::FusedAttentionGate
-            | OperationKind::DenseMlp
-            | OperationKind::SiluActivation
-            | OperationKind::SerialResidual
-            | OperationKind::KvState
-            | OperationKind::RecurrentState
-            | OperationKind::LogitsMask
-            | OperationKind::OutputProjection
-    );
+    support.batch = op_registry::surfaces(operation).carried_prime;
     support
 }
 
 pub const CARRIED_PRIME: KernelManifest =
     KernelManifest::new("carried-prime-batch", carried_prime_support);
+
+fn chunked_prime_support(operation: OperationKind) -> OperationSupport {
+    let mut support = OperationSupport::none();
+    support.batch = op_registry::surfaces(operation).chunked_prime;
+    support
+}
+
+/// The generic chunked / continuation prime program (`prime_cache` → `prime_chunk_ranges`,
+/// `cache.pos > 0` resumes) with a chunk-invariance receipt per operation — see the
+/// `chunked_prime` column in `op_registry`. A plan whose trunk is fully covered may be primed in
+/// any split (inside a call or across `prefill_tick` calls) and produce the same bytes; a plan
+/// that is not is primed monolithically by the driver. Consulted inside the gemma family today
+/// (memra#535 P1a); the serial trunk keeps its existing chunking until every op carries a receipt.
+pub const CHUNKED_PRIME: KernelManifest =
+    KernelManifest::new("prime-chunked-continuation", chunked_prime_support);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeBatchProgram {
@@ -580,25 +587,7 @@ pub fn gdn_dspark_compatible(plan: &ModelPlan) -> bool {
 
 fn decode_graph_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();
-    support.cuda_graph = matches!(
-        operation,
-        OperationKind::Embedding
-            | OperationKind::RmsNorm
-            | OperationKind::FullAttention
-            | OperationKind::GatedDeltaNet
-            | OperationKind::FusedAttentionGate
-            | OperationKind::DenseMlp
-            | OperationKind::MoeMlp
-            | OperationKind::SharedMlp
-            | OperationKind::SoftmaxRouter
-            | OperationKind::SigmoidRouter
-            | OperationKind::SiluActivation
-            | OperationKind::SerialResidual
-            | OperationKind::KvState
-            | OperationKind::RecurrentState
-            | OperationKind::LogitsMask
-            | OperationKind::OutputProjection
-    );
+    support.cuda_graph = op_registry::surfaces(operation).decode_graph;
     support
 }
 
@@ -639,37 +628,7 @@ pub const DECODE_GRAPH: KernelManifest =
 /// one that has one is not a receipt.
 fn pipeline_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();
-    support.pipeline = matches!(
-        operation,
-        OperationKind::Embedding
-            | OperationKind::RmsNorm
-            | OperationKind::FullAttention
-            | OperationKind::SlidingWindowAttention
-            | OperationKind::SeparateAttentionGate
-            | OperationKind::DenseMlp
-            | OperationKind::MoeMlp
-            | OperationKind::SharedMlp
-            | OperationKind::SigmoidRouter
-            | OperationKind::SiluActivation
-            | OperationKind::SwiGluClampedActivation
-            | OperationKind::SerialResidual
-            | OperationKind::KvState
-            | OperationKind::SlidingKvState
-            | OperationKind::Mtp
-            | OperationKind::MtpFusion
-            | OperationKind::MtpHead
-            | OperationKind::LogitsMask
-            | OperationKind::OutputProjection
-            | OperationKind::PipelineBoundary
-            // ---- glm5_next trunk class (see the doc comment above for the covering ladders) ----
-            | OperationKind::KimiDeltaNet
-            | OperationKind::RecurrentState
-            | OperationKind::LatentMlaAttention
-            | OperationKind::SparseIndex
-            | OperationKind::LatentKvState
-            | OperationKind::HyperConnections
-            | OperationKind::SwiGluPreClampedActivation
-    );
+    support.pipeline = op_registry::surfaces(operation).pipeline;
     support
 }
 
@@ -678,33 +637,7 @@ pub const PIPELINE: KernelManifest =
 
 fn decode_batch_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();
-    support.batch = matches!(
-        operation,
-        OperationKind::Embedding
-            | OperationKind::RmsNorm
-            | OperationKind::FullAttention
-            | OperationKind::SlidingWindowAttention
-            | OperationKind::GatedDeltaNet
-            | OperationKind::FusedAttentionGate
-            | OperationKind::SeparateAttentionGate
-            | OperationKind::DenseMlp
-            | OperationKind::MoeMlp
-            | OperationKind::SharedMlp
-            | OperationKind::SoftmaxRouter
-            | OperationKind::SigmoidRouter
-            | OperationKind::SiluActivation
-            | OperationKind::GeluTanhActivation
-            | OperationKind::SwiGluClampedActivation
-            | OperationKind::SerialResidual
-            | OperationKind::GemmaResidual
-            | OperationKind::GemmaParallelMoeResidual
-            | OperationKind::KvState
-            | OperationKind::SlidingKvState
-            | OperationKind::RecurrentState
-            | OperationKind::LogitsSoftcap
-            | OperationKind::LogitsMask
-            | OperationKind::OutputProjection
-    );
+    support.batch = op_registry::surfaces(operation).decode_batch;
     support
 }
 
@@ -712,55 +645,17 @@ pub const DECODE_BATCH: KernelManifest = KernelManifest::new("decode-batch", dec
 
 fn native_eager_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();
-    support.batch = matches!(
-        operation,
-        OperationKind::Embedding
-            | OperationKind::RmsNorm
-            | OperationKind::FullAttention
-            | OperationKind::DenseMlp
-            | OperationKind::SiluActivation
-            | OperationKind::SerialResidual
-            | OperationKind::KvState
-            | OperationKind::LogitsSoftcap
-            | OperationKind::LogitsMask
-            | OperationKind::OutputProjection
-    );
+    support.batch = op_registry::surfaces(operation).decode_eager;
     support
 }
 
 pub const NATIVE_EAGER: KernelManifest = KernelManifest::new("native-eager", native_eager_support);
 
 fn mtp_spec_support(operation: OperationKind) -> OperationSupport {
+    let row = op_registry::surfaces(operation);
     let mut support = OperationSupport::none();
-    let common = matches!(
-        operation,
-        OperationKind::Embedding
-            | OperationKind::RmsNorm
-            | OperationKind::FullAttention
-            | OperationKind::SlidingWindowAttention
-            | OperationKind::GatedDeltaNet
-            | OperationKind::FusedAttentionGate
-            | OperationKind::SeparateAttentionGate
-            | OperationKind::DenseMlp
-            | OperationKind::MoeMlp
-            | OperationKind::SharedMlp
-            | OperationKind::SoftmaxRouter
-            | OperationKind::SigmoidRouter
-            | OperationKind::SiluActivation
-            | OperationKind::SwiGluClampedActivation
-            | OperationKind::SerialResidual
-            | OperationKind::KvState
-            | OperationKind::SlidingKvState
-            | OperationKind::RecurrentState
-            | OperationKind::LogitsMask
-            | OperationKind::OutputProjection
-    );
-    support.spec_draft = common
-        || matches!(
-            operation,
-            OperationKind::Mtp | OperationKind::MtpFusion | OperationKind::MtpHead
-        );
-    support.spec_verify = common;
+    support.spec_draft = row.mtp_spec_draft;
+    support.spec_verify = row.mtp_spec_verify;
     support
 }
 
@@ -787,36 +682,10 @@ pub const MTP_SPEC: KernelManifest = KernelManifest::new("mtp-spec", mtp_spec_su
 ///   * `DenseMlp` on the DRAFT side — `mtp_head_forward_mla_cached` refuses Dense-FFN MTP
 ///     blocks by name; the trunk's dense L0 is in the gated walk (`hyper_ffn_branch_batch`).
 fn glm5_spec_support(operation: OperationKind) -> OperationSupport {
+    let row = op_registry::surfaces(operation);
     let mut support = OperationSupport::none();
-    let common = matches!(
-        operation,
-        OperationKind::Embedding
-            | OperationKind::RmsNorm
-            | OperationKind::LatentMlaAttention
-            | OperationKind::SparseIndex
-            | OperationKind::SharedSparseIndex
-            | OperationKind::KimiDeltaNet
-            | OperationKind::RecurrentState
-            | OperationKind::LatentKvState
-            | OperationKind::MoeMlp
-            | OperationKind::SigmoidRouter
-            | OperationKind::SharedMlp
-            | OperationKind::SwiGluPreClampedActivation
-            | OperationKind::OutputProjection
-    );
-    support.spec_verify = common
-        || matches!(
-            operation,
-            OperationKind::HyperConnections | OperationKind::DenseMlp
-        );
-    support.spec_draft = common
-        || matches!(
-            operation,
-            OperationKind::Mtp
-                | OperationKind::MtpFusion
-                | OperationKind::MtpHead
-                | OperationKind::SerialResidual
-        );
+    support.spec_draft = row.glm5_spec_draft;
+    support.spec_verify = row.glm5_spec_verify;
     support
 }
 
@@ -1184,5 +1053,262 @@ mod glm5_spec_class_matrix {
             .compile_tiny_plan()
             .unwrap();
         assert!(!GLM5_SPEC.capabilities(&dense).speculative.supported);
+    }
+
+    /// The seven allowlists exactly as they stood before the registry (memra#535 P0, tree
+    /// 61be8b0d). Frozen on purpose: the registry must reproduce them for every operation.
+    /// Do not edit these when the registry changes — that is the point of them.
+    mod legacy_tables {
+        use crate::model_plan::{OperationKind, OperationSupport};
+
+        pub fn carried_prime_support(operation: OperationKind) -> OperationSupport {
+            let mut support = OperationSupport::none();
+            support.batch = matches!(
+                operation,
+                OperationKind::Embedding
+                    | OperationKind::RmsNorm
+                    | OperationKind::FullAttention
+                    | OperationKind::GatedDeltaNet
+                    | OperationKind::FusedAttentionGate
+                    | OperationKind::DenseMlp
+                    | OperationKind::SiluActivation
+                    | OperationKind::SerialResidual
+                    | OperationKind::KvState
+                    | OperationKind::RecurrentState
+                    | OperationKind::LogitsMask
+                    | OperationKind::OutputProjection
+            );
+            support
+        }
+
+        pub fn decode_graph_support(operation: OperationKind) -> OperationSupport {
+            let mut support = OperationSupport::none();
+            support.cuda_graph = matches!(
+                operation,
+                OperationKind::Embedding
+                    | OperationKind::RmsNorm
+                    | OperationKind::FullAttention
+                    | OperationKind::GatedDeltaNet
+                    | OperationKind::FusedAttentionGate
+                    | OperationKind::DenseMlp
+                    | OperationKind::MoeMlp
+                    | OperationKind::SharedMlp
+                    | OperationKind::SoftmaxRouter
+                    | OperationKind::SigmoidRouter
+                    | OperationKind::SiluActivation
+                    | OperationKind::SerialResidual
+                    | OperationKind::KvState
+                    | OperationKind::RecurrentState
+                    | OperationKind::LogitsMask
+                    | OperationKind::OutputProjection
+            );
+            support
+        }
+
+        pub fn pipeline_support(operation: OperationKind) -> OperationSupport {
+            let mut support = OperationSupport::none();
+            support.pipeline = matches!(
+                operation,
+                OperationKind::Embedding
+                    | OperationKind::RmsNorm
+                    | OperationKind::FullAttention
+                    | OperationKind::SlidingWindowAttention
+                    | OperationKind::SeparateAttentionGate
+                    | OperationKind::DenseMlp
+                    | OperationKind::MoeMlp
+                    | OperationKind::SharedMlp
+                    | OperationKind::SigmoidRouter
+                    | OperationKind::SiluActivation
+                    | OperationKind::SwiGluClampedActivation
+                    | OperationKind::SerialResidual
+                    | OperationKind::KvState
+                    | OperationKind::SlidingKvState
+                    | OperationKind::Mtp
+                    | OperationKind::MtpFusion
+                    | OperationKind::MtpHead
+                    | OperationKind::LogitsMask
+                    | OperationKind::OutputProjection
+                    | OperationKind::PipelineBoundary
+                    // ---- glm5_next trunk class (see the doc comment above for the covering ladders) ----
+                    | OperationKind::KimiDeltaNet
+                    | OperationKind::RecurrentState
+                    | OperationKind::LatentMlaAttention
+                    | OperationKind::SparseIndex
+                    | OperationKind::LatentKvState
+                    | OperationKind::HyperConnections
+                    | OperationKind::SwiGluPreClampedActivation
+            );
+            support
+        }
+
+        pub fn decode_batch_support(operation: OperationKind) -> OperationSupport {
+            let mut support = OperationSupport::none();
+            support.batch = matches!(
+                operation,
+                OperationKind::Embedding
+                    | OperationKind::RmsNorm
+                    | OperationKind::FullAttention
+                    | OperationKind::SlidingWindowAttention
+                    | OperationKind::GatedDeltaNet
+                    | OperationKind::FusedAttentionGate
+                    | OperationKind::SeparateAttentionGate
+                    | OperationKind::DenseMlp
+                    | OperationKind::MoeMlp
+                    | OperationKind::SharedMlp
+                    | OperationKind::SoftmaxRouter
+                    | OperationKind::SigmoidRouter
+                    | OperationKind::SiluActivation
+                    | OperationKind::GeluTanhActivation
+                    | OperationKind::SwiGluClampedActivation
+                    | OperationKind::SerialResidual
+                    | OperationKind::GemmaResidual
+                    | OperationKind::GemmaParallelMoeResidual
+                    | OperationKind::KvState
+                    | OperationKind::SlidingKvState
+                    | OperationKind::RecurrentState
+                    | OperationKind::LogitsSoftcap
+                    | OperationKind::LogitsMask
+                    | OperationKind::OutputProjection
+            );
+            support
+        }
+
+        pub fn native_eager_support(operation: OperationKind) -> OperationSupport {
+            let mut support = OperationSupport::none();
+            support.batch = matches!(
+                operation,
+                OperationKind::Embedding
+                    | OperationKind::RmsNorm
+                    | OperationKind::FullAttention
+                    | OperationKind::DenseMlp
+                    | OperationKind::SiluActivation
+                    | OperationKind::SerialResidual
+                    | OperationKind::KvState
+                    | OperationKind::LogitsSoftcap
+                    | OperationKind::LogitsMask
+                    | OperationKind::OutputProjection
+            );
+            support
+        }
+
+        pub fn mtp_spec_support(operation: OperationKind) -> OperationSupport {
+            let mut support = OperationSupport::none();
+            let common = matches!(
+                operation,
+                OperationKind::Embedding
+                    | OperationKind::RmsNorm
+                    | OperationKind::FullAttention
+                    | OperationKind::SlidingWindowAttention
+                    | OperationKind::GatedDeltaNet
+                    | OperationKind::FusedAttentionGate
+                    | OperationKind::SeparateAttentionGate
+                    | OperationKind::DenseMlp
+                    | OperationKind::MoeMlp
+                    | OperationKind::SharedMlp
+                    | OperationKind::SoftmaxRouter
+                    | OperationKind::SigmoidRouter
+                    | OperationKind::SiluActivation
+                    | OperationKind::SwiGluClampedActivation
+                    | OperationKind::SerialResidual
+                    | OperationKind::KvState
+                    | OperationKind::SlidingKvState
+                    | OperationKind::RecurrentState
+                    | OperationKind::LogitsMask
+                    | OperationKind::OutputProjection
+            );
+            support.spec_draft = common
+                || matches!(
+                    operation,
+                    OperationKind::Mtp | OperationKind::MtpFusion | OperationKind::MtpHead
+                );
+            support.spec_verify = common;
+            support
+        }
+
+        pub fn glm5_spec_support(operation: OperationKind) -> OperationSupport {
+            let mut support = OperationSupport::none();
+            let common = matches!(
+                operation,
+                OperationKind::Embedding
+                    | OperationKind::RmsNorm
+                    | OperationKind::LatentMlaAttention
+                    | OperationKind::SparseIndex
+                    | OperationKind::SharedSparseIndex
+                    | OperationKind::KimiDeltaNet
+                    | OperationKind::RecurrentState
+                    | OperationKind::LatentKvState
+                    | OperationKind::MoeMlp
+                    | OperationKind::SigmoidRouter
+                    | OperationKind::SharedMlp
+                    | OperationKind::SwiGluPreClampedActivation
+                    | OperationKind::OutputProjection
+            );
+            support.spec_verify = common
+                || matches!(
+                    operation,
+                    OperationKind::HyperConnections | OperationKind::DenseMlp
+                );
+            support.spec_draft = common
+                || matches!(
+                    operation,
+                    OperationKind::Mtp
+                        | OperationKind::MtpFusion
+                        | OperationKind::MtpHead
+                        | OperationKind::SerialResidual
+                );
+            support
+        }
+    }
+
+    #[test]
+    fn registry_reproduces_every_legacy_manifest_table() {
+        use crate::op_registry::ALL_OPERATIONS;
+        type Support = fn(OperationKind) -> OperationSupport;
+        let pairs: [(&str, Support, Support); 7] = [
+            (
+                "carried-prime",
+                legacy_tables::carried_prime_support,
+                carried_prime_support,
+            ),
+            (
+                "native-eager",
+                legacy_tables::native_eager_support,
+                native_eager_support,
+            ),
+            (
+                "decode-batch",
+                legacy_tables::decode_batch_support,
+                decode_batch_support,
+            ),
+            (
+                "decode-graph",
+                legacy_tables::decode_graph_support,
+                decode_graph_support,
+            ),
+            (
+                "mtp-spec",
+                legacy_tables::mtp_spec_support,
+                mtp_spec_support,
+            ),
+            (
+                "glm5-spec",
+                legacy_tables::glm5_spec_support,
+                glm5_spec_support,
+            ),
+            (
+                "pipeline",
+                legacy_tables::pipeline_support,
+                pipeline_support,
+            ),
+        ];
+        for (name, legacy, derived) in pairs {
+            for &operation in ALL_OPERATIONS {
+                assert_eq!(
+                    legacy(operation),
+                    derived(operation),
+                    "{name}: registry row for {operation:?} differs from the frozen table"
+                );
+            }
+        }
     }
 }

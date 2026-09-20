@@ -48,11 +48,9 @@ mod model {
     }
 }
 mod ple_oracle;
+use memra_tier::conformance;
 use memra_tier::{bank::*, contracts::*};
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
-#[allow(dead_code)]
-#[path = "../contracts/conformance.rs"]
-mod conformance;
 #[allow(dead_code)]
 #[path = "../contracts/support.rs"]
 mod support;

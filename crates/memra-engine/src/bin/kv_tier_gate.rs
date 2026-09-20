@@ -1,10 +1,15 @@
-//! Native eager baseline capture, NOT active/prefix tier qualification.
+//! Native eager baseline and active-reclaim capture; prefix remains unsupported.
 //! Run GPU cases ONLY through tools/tier-battery.py (canonical rig lock + telemetry).
-//! No tier restore is simulated: active/prefix refuse before model or CUDA initialization.
+//! Active uses the same tokenwise program and real native transfer ownership.
+#[path = "kv_tier_gate/active.rs"]
+mod active;
 #[path = "kv_tier_gate/capture_contract.rs"]
 mod capture_contract;
 #[path = "kv_tier_gate/cli.rs"]
 mod cli;
+#[path = "kv_tier_gate/reclaim_contract.rs"]
+mod reclaim_contract;
+use memra_engine::tier_transfer;
 
 use memra_engine::{Engine, forward::argmax, hybrid::HybridModel};
 use memra_gguf::{GgufFile, model_plan::ModelPlan};
@@ -210,7 +215,7 @@ fn baseline(args: &cli::Args) -> Result<()> {
     fs::write(
         args.out.join("identity.txt"),
         format!(
-            "artifact_sha256={artifact_hash}\nbinary_sha256={binary_hash}\nplan_debug_sha256={}\nprompt_sha256={}\nprogram=native-decode_step_h-tokenwise-trunk-no-mtp\nmode=raw-token-no-chat-template\ncontext={}\nprompt_tokens={}\ngenerate={GENERATE}\nrequested_tiers={}\nengaged_tier_bytes=0\nscope=baseline-only; no tier qualification or performance claim\n",
+            "artifact_sha256={artifact_hash}\nbinary_sha256={binary_hash}\nplan_debug_sha256={}\nprompt_sha256={}\nprogram=native-decode_step_h-tokenwise-trunk-no-mtp\nmode=raw-token-no-chat-template\ncontext={}\nprompt_tokens={}\ngenerate={GENERATE}\nrequested_tiers={}\nexecution_status=pending\nscope=identity-only; consult completion and active-reclaim receipts for engagement; no tier qualification or performance claim\n",
             hash(plan.as_bytes()),
             hash(&prompt_bytes),
             args.context,
@@ -219,6 +224,15 @@ fn baseline(args: &cli::Args) -> Result<()> {
         ),
     )?;
     let mut cache = memra_engine::pp::new_cache(&e, &model.cfg, args.context)?;
+    if args.kv_allocator == cli::KvAllocator::Vmm {
+        // Empty cache only: no source state/numerical execution to migrate.
+        for layer in cache.kv.iter_mut().flatten() {
+            layer.k = memra_kv::KvPlane::vmm(e.stream(), layer.k.len())?;
+            layer.v = memra_kv::KvPlane::vmm(e.stream(), layer.v.len())?;
+        }
+        e.stream().synchronize()?;
+        e.pool_trim_to_zero();
+    }
     let mut last = None;
     for (i, &token) in prompt.iter().enumerate() {
         last = Some(model.decode_step_h(&e, token, &mut cache)?);
@@ -236,6 +250,37 @@ fn baseline(args: &cli::Args) -> Result<()> {
         &args.out,
         "prefix",
     )?;
+    let mut reclaim_observed = false;
+    if args.case == "active" {
+        use memra_tier::contracts::{ProgramIdentity, digest};
+        let program = ProgramIdentity {
+            version: 1,
+            artifact: digest("artifact-sha256", artifact_hash.as_bytes()),
+            serialized_plan: digest("plan-debug", plan.as_bytes()),
+            numeric: digest("numeric", b"native-decode_step_h-tokenwise-trunk-no-mtp"),
+            stream: digest("stream", b"single-owner-eager"),
+            tokenizer: digest("artifact-tokenizer", artifact_hash.as_bytes()),
+            template: digest("template", b"raw-token-no-chat-template"),
+            adapter: digest("adapter", b"none"),
+            modality: digest("modality", b"text"),
+            position: digest("prompt-u32le", &prompt_bytes),
+            tenant_salt: digest("tenant", b"gate-exclusive-request"),
+        };
+        reclaim_observed =
+            active::roundtrip(&e, &mut cache, program, &args.out, args.reclaim_diagnostic)?;
+        let restored = capture(
+            &e,
+            &cache,
+            &model.plan,
+            &logits,
+            &e.dtoh(&hidden)?,
+            &args.out,
+            "restored-prefix",
+        )?;
+        if restored != prefix_hash {
+            return Err("active restored state is not bit-identical to suspended state".into());
+        }
+    }
     let mut rows = File::create(args.out.join("logits.tsv"))?;
     writeln!(rows, "committed\tlogits_f32le_sha256")?;
     let mut tokens = Vec::with_capacity(GENERATE);
@@ -274,27 +319,34 @@ fn baseline(args: &cli::Args) -> Result<()> {
         .collect();
     fs::write(args.out.join("output.txt"), tokenizer.decode(&ids))?;
     fs::write(args.out.join("final-logits.f32le"), f32_bytes(&logits))?;
+    let active = args.case == "active";
+    let status = if active && reclaim_observed {
+        "ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS"
+    } else if active {
+        "ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation comparison pending; not G1 PASS"
+    } else {
+        "BASELINE_CAPTURED"
+    };
     fs::write(
-        args.out.join("BASELINE.txt"),
+        args.out
+            .join(if active { "ACTIVE.txt" } else { "BASELINE.txt" }),
         format!(
-            "BASELINE_CAPTURED\ncommitted={}\nprefix_state_manifest_sha256={prefix_hash}\nfinal_state_manifest_sha256={final_hash}\ntokens_sha256={}\nlogit_rows_sha256={}\nactive_engaged=false\nprefix_engaged=false\n",
+            "{}\ncommitted={}\nprefix_state_manifest_sha256={prefix_hash}\nfinal_state_manifest_sha256={final_hash}\ntokens_sha256={}\nlogit_rows_sha256={}\nactive_engaged={active}\nprefix_engaged=false\n",
+            status,
             cache.pos,
             hash(&tokens),
             file_hash(&args.out.join("logits.tsv"))?
         ),
     )?;
-    println!(
-        "BASELINE_CAPTURED committed={} generated={GENERATE}; tiers NOT engaged",
-        cache.pos
-    );
+    println!("{} committed={} generated={GENERATE}", status, cache.pos);
     Ok(())
 }
 
 fn run() -> Result<()> {
     let args = cli::parse(std::env::args().skip(1))?;
     fs::create_dir(&args.out)?; // Immutable receipt namespace; never overwrite an earlier attempt.
-    let result = if args.case != "baseline" {
-        Err(format!("REFUSED: {} requires a native CUDA materializer + scheduler binding with nonzero demote/reload engagement; CPU fixtures and HostPrefix patch do not provide that binding", args.case).into())
+    let result = if args.case == "prefix" || (args.case == "active" && args.tiers != "host") {
+        Err("REFUSED: only active tiers=host is bound; prefix and other active routes remain unsupported".into())
     } else {
         baseline(&args)
     };
@@ -305,7 +357,7 @@ fn run() -> Result<()> {
 }
 fn main() {
     if let Err(error) = run() {
-        eprintln!("kv-tier-gate: {error}");
+        eprintln!("{}", cli::diagnostic(&error.to_string()));
         std::process::exit(2);
     }
 }
