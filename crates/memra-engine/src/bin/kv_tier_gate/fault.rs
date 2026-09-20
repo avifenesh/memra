@@ -45,7 +45,7 @@ impl Pending {
 enum Slot {
     /// `cancel-demote`: the source plane came back through `take_plane` and sits in the layer.
     Resident,
-    Demoted(HostPlane),
+    Demoted(Box<HostPlane>),
     /// `missing-host`: the untaken D2H ticket was retired and acknowledged; only its id remains.
     Removed(TransferTicket),
 }
@@ -157,7 +157,9 @@ pub fn run(
             if role == Role::Value {
                 v_plane = Some(active::demote(e, &transfers, backing, b)?);
             } else if p.faulted.is_some() {
-                k_slot = Some(Slot::Demoted(active::demote(e, &transfers, backing, b)?));
+                k_slot = Some(Slot::Demoted(Box::new(active::demote(
+                    e, &transfers, backing, b,
+                )?)));
             } else {
                 p.faulted = Some((i, role, valid));
                 k_slot = Some(match arm {
@@ -171,10 +173,10 @@ pub fn run(
                     Arm::CorruptHost => {
                         let mut plane = active::demote(e, &transfers, backing, b)?;
                         corrupt(e, &transfers, &mut plane, &mut p)?;
-                        Slot::Demoted(plane)
+                        Slot::Demoted(Box::new(plane))
                     }
                     Arm::CancelRestore | Arm::DeviceShort | Arm::RequireResident => {
-                        Slot::Demoted(active::demote(e, &transfers, backing, b)?)
+                        Slot::Demoted(Box::new(active::demote(e, &transfers, backing, b)?))
                     }
                     Arm::HostBudgetShort => return Err("host-budget-short refused above".into()),
                 });
@@ -223,12 +225,12 @@ pub fn run(
         match k {
             Slot::Resident => {}
             Slot::Demoted(plane) if faulted && arm == Arm::CancelRestore => {
-                cancel_restore(e, &transfers, plane, &mut p)?;
+                cancel_restore(e, &transfers, *plane, &mut p)?;
                 whole = false;
             }
             Slot::Demoted(plane) if faulted && arm == Arm::CorruptHost => {
                 let registry = transfers.borrow().device_registry_len();
-                let restored = active::restore(e, &transfers, plane);
+                let restored = active::restore(e, &transfers, *plane);
                 let observed = match &restored {
                     Ok(_) => "Ok(plane)".to_owned(),
                     Err(error) => error.to_string(),
@@ -242,7 +244,7 @@ pub fn run(
                 );
                 whole = false;
             }
-            Slot::Demoted(plane) => layer.k = active::restore(e, &transfers, plane)?,
+            Slot::Demoted(plane) => layer.k = active::restore(e, &transfers, *plane)?,
             Slot::Removed(ticket) => {
                 let retake = transfers.borrow_mut().take_destination(&ticket, 0, EPOCHS);
                 p.check(
