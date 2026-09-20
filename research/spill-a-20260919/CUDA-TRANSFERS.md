@@ -1,5 +1,11 @@
 # Native CUDA transfer substrate — days 6–7
 
+**Historical design, superseded in part by [V13-BINDING.md](V13-BINDING.md).**
+Day 9 separates source/destination graph retention and allows charged pinned
+residency beyond acknowledgement; the old whole-ticket host-lifetime restrictions
+below are retained as the original design record, not the current API contract.
+Executed evidence is in [day9/RESULTS.md](day9/RESULTS.md).
+
 Status: implementation under qualification; no serving/default/performance promotion.
 
 ## Integration fragments (lead-owned files; apply only in native scratch)

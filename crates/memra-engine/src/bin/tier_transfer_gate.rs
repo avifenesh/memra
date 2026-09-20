@@ -1,9 +1,16 @@
 //! Real CUDA conformance + byte roundtrip gate. Run ONLY through tier-battery.
-use cudarc::driver::{CudaContext, CudaStream, DevicePtr};
-use memra_engine::tier_transfer::{CudaPinnedLease, CudaTransfers};
+use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr, sys};
+use memra_engine::tier_transfer::{CudaPinnedLease, CudaTransfers, GraphPin};
 use memra_tier::conformance as v1;
 use memra_tier::{bank::SharedBudget, contracts::*, tier::governor::Governor};
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 fn epochs() -> Epochs {
     Epochs {
@@ -243,17 +250,298 @@ fn conformance() {
     assert_eq!(host.bytes().unwrap(), bytes);
     let consumer = t.record_consumer(&down).unwrap();
     stream.synchronize().unwrap();
-    assert_eq!(t.retire(&down, Some(consumer)), Err(Error::Busy));
-    drop(host);
     t.retire(&down, Some(consumer)).unwrap();
     t.acknowledge(&down).unwrap();
+    assert_eq!(host.bytes().unwrap(), bytes);
+    assert_eq!(gov.borrow().used().pinned, bytes.len() as u64);
+    drop(host);
     t.release_producer(producer).unwrap();
     println!(
         "PASS additive source retirement Busy while source consumer bound; host destination survives source release"
     );
+    canonical_source_retirement(&mut t, &stream);
+    canonical_hand_back(&mut t, &stream);
+    destination_drop_retention(&mut t, &stream);
     assert_eq!(gov.borrow().used(), TierBudget::zero(1));
     println!("PASS native governor zero after controlled drain");
 }
+// A native stream callback holds production pending without launching a
+// spin kernel or synthesizing completion. It never calls a CUDA API. RAII opens
+// the latch even if a fixture assertion unwinds.
+struct ProducerHold(Arc<AtomicBool>);
+impl ProducerHold {
+    fn new(stream: &Arc<CudaStream>) -> Self {
+        stream.synchronize().unwrap();
+        let latch = Arc::new(AtomicBool::new(false));
+        let raw = Box::into_raw(Box::new(latch.clone()));
+        let result =
+            unsafe { sys::cuLaunchHostFunc(stream.cu_stream(), Some(held_producer), raw.cast()) };
+        if result != sys::CUresult::CUDA_SUCCESS {
+            drop(unsafe { Box::from_raw(raw) });
+            panic!("cannot hold native producer: {result:?}");
+        }
+        Self(latch)
+    }
+    fn release(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+impl Drop for ProducerHold {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+unsafe extern "C" fn held_producer(raw: *mut std::ffi::c_void) {
+    let latch = unsafe { Box::from_raw(raw.cast::<Arc<AtomicBool>>()) };
+    while !latch.load(Ordering::Acquire) {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+// All lifetime advances use native CUDA events or real lease/graph retention.
+// Observation loss is explicitly injected; recovery queries the recorded event.
+fn canonical_source_retirement(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
+    let bytes = vec![11u8; 4096];
+    // The source is also a published destination of an earlier transfer. Its
+    // live native consumer binding must block source retirement independently.
+    let (op, keep) = h2d(t, &bytes);
+    let up = t.h2d(op).unwrap();
+    t.synchronize(&up).unwrap();
+    t.with_destination(&up, 0, epochs(), |device, stream| {
+        assert_eq!(stream.clone_dtoh(device).unwrap(), bytes);
+        Ok(())
+    })
+    .unwrap();
+    let host = t.alloc_host(bytes.len(), request()).unwrap();
+    let device = t.retain_device(&keep).unwrap();
+    let hold = ProducerHold::new(stream);
+    let producer = t.record_producer(epochs().src_gen).unwrap();
+    let down = t
+        .d2h(CopyOp {
+            host,
+            device,
+            bytes: bytes.len() as u64,
+            epochs: epochs(),
+            producer_fence: Some(producer),
+        })
+        .unwrap();
+    assert!(!t.poll(&down).unwrap().producer_done);
+    let mut source_graph = Some(t.pin_source_graph(&down).unwrap());
+    let mut destination_graph = Some(t.pin_destination_graph(&down).unwrap());
+    let destination = RefCell::new(None::<CudaPinnedLease>);
+    let consumer = RefCell::new(None);
+    v1::transfer_source_retirement(
+        t,
+        down,
+        |t, ticket, step| {
+            match step {
+                v1::SourceStep::Unknown => t.quarantine_observation(ticket).unwrap(),
+                v1::SourceStep::Producer => {
+                    hold.release();
+                    stream.synchronize().unwrap();
+                }
+                v1::SourceStep::Recover => {
+                    t.synchronize(ticket).unwrap();
+                    let Destination::Host(mut host) =
+                        t.take_destination(ticket, 0, epochs()).unwrap()
+                    else {
+                        panic!("D2H destination is not host")
+                    };
+                    assert_eq!(host.write(&bytes), Err(Error::Busy));
+                    *destination.borrow_mut() = Some(host);
+                }
+                v1::SourceStep::SourceConsumer => {
+                    let f = t.record_consumer(&up).unwrap();
+                    t.record_source_consumer(ticket).unwrap();
+                    stream.synchronize().unwrap();
+                    t.retire(&up, Some(f)).unwrap();
+                    t.acknowledge(&up).unwrap();
+                }
+                v1::SourceStep::SourceGraph => {
+                    drop(source_graph.take());
+                }
+                v1::SourceStep::DestinationConsumer => {
+                    // A CPU read of the pinned destination is complete before the
+                    // owner records the consumer completion event.
+                    assert_eq!(
+                        destination.borrow().as_ref().unwrap().bytes().unwrap(),
+                        bytes
+                    );
+                    let f = t.record_consumer(ticket).unwrap();
+                    stream.synchronize().unwrap();
+                    *consumer.borrow_mut() = Some(f);
+                    assert_eq!(t.retire(ticket, Some(f)), Err(Error::Busy));
+                }
+                v1::SourceStep::DestinationGraph => {
+                    drop(destination_graph.take());
+                    t.retire(ticket, *consumer.borrow()).unwrap();
+                }
+            }
+        },
+        |t| t.release_device(&keep),
+        |t| {
+            assert!(t.used().pinned >= bytes.len() as u64);
+            if let Some(host) = destination.borrow().as_ref() {
+                assert_eq!(host.bytes().unwrap(), bytes);
+            }
+        },
+    );
+    assert_eq!(t.used().device[0], 0);
+    assert_eq!(t.used().inflight, 0);
+    assert_eq!(t.used().pinned, bytes.len() as u64);
+    let mut host = destination.into_inner().unwrap();
+    host.write(&bytes).unwrap(); // exclusive again after acknowledgement
+    drop(host);
+    t.release_producer(producer).unwrap();
+    assert_eq!(t.used(), TierBudget::zero(1));
+    println!("PASS v1.3 transfer_source_retirement native CUDA");
+}
+
+fn destination_drop_retention(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
+    let device = t.alloc_device(4096, epochs().src_gen, request()).unwrap();
+    let keep = t.retain_device(&device).unwrap();
+    let host = t.alloc_host(4096, request()).unwrap();
+    let producer = t.record_producer(epochs().src_gen).unwrap();
+    let ticket = t
+        .d2h(CopyOp {
+            host,
+            device,
+            bytes: 4096,
+            epochs: epochs(),
+            producer_fence: Some(producer),
+        })
+        .unwrap();
+    let graph = t.pin_destination_graph(&ticket).unwrap();
+    t.synchronize(&ticket).unwrap();
+    let Destination::Host(host) = t.take_destination(&ticket, 0, epochs()).unwrap() else {
+        panic!("D2H destination is not host")
+    };
+    let device = t.retain_device(&keep).unwrap();
+    let before = t.used();
+    let rejected = t
+        .d2h(CopyOp {
+            host,
+            device,
+            bytes: 4096,
+            epochs: epochs(),
+            producer_fence: Some(producer),
+        })
+        .unwrap_err();
+    assert_eq!(rejected.error, Error::Busy);
+    assert_eq!(rejected.op.host.bytes().unwrap(), vec![0; 4096]);
+    assert_eq!(t.used(), before);
+    let consumer = t.record_consumer(&ticket).unwrap();
+    stream.synchronize().unwrap();
+    drop(rejected);
+    t.retire_source(&ticket).unwrap();
+    t.release_device(&keep).unwrap();
+    assert_eq!(t.used().pinned, 4096);
+    assert_eq!(t.retire(&ticket, Some(consumer)), Err(Error::Busy));
+    drop(graph);
+    t.retire(&ticket, Some(consumer)).unwrap();
+    assert_eq!(t.used().pinned, 4096);
+    t.acknowledge(&ticket).unwrap();
+    t.release_producer(producer).unwrap();
+    assert_eq!(t.used(), TierBudget::zero(1));
+    println!(
+        "PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement"
+    );
+}
+
+struct HandBack<'a> {
+    foreign: CudaTransfers,
+    t: &'a mut CudaTransfers,
+    stream: &'a Arc<CudaStream>,
+    ticket: TransferTicket,
+    lease: DeviceLease,
+    graph: Option<GraphPin>,
+    consumer: Option<FenceId>,
+    hold: ProducerHold,
+    pointer: u64,
+    bytes: Vec<u8>,
+}
+impl v1::DeviceHandBackFixture for HandBack<'_> {
+    type Backing = CudaSlice<u8>;
+    fn take(&mut self) -> Result<Self::Backing> {
+        self.t.take_device(&self.lease)
+    }
+    fn advance(&mut self, step: v1::HandBackStep) {
+        match step {
+            v1::HandBackStep::Unknown => self.t.quarantine_observation(&self.ticket).unwrap(),
+            v1::HandBackStep::Producer => {
+                self.hold.release();
+                self.stream.synchronize().unwrap();
+            }
+            v1::HandBackStep::Recover => {
+                self.t.synchronize(&self.ticket).unwrap();
+                self.pointer = self
+                    .t
+                    .with_destination(&self.ticket, 0, epochs(), |device, stream| {
+                        assert_eq!(stream.clone_dtoh(device).unwrap(), self.bytes);
+                        let (ptr, _guard) = device.device_ptr(stream);
+                        Ok(ptr)
+                    })
+                    .unwrap();
+            }
+            v1::HandBackStep::Consumer => {
+                self.consumer = Some(self.t.record_consumer(&self.ticket).unwrap());
+                self.stream.synchronize().unwrap();
+                assert_eq!(self.t.retire(&self.ticket, self.consumer), Err(Error::Busy));
+            }
+            v1::HandBackStep::Graph => {
+                drop(self.graph.take());
+                self.t.retire(&self.ticket, self.consumer).unwrap();
+                self.t.acknowledge(&self.ticket).unwrap();
+            }
+        }
+    }
+    fn assert_registered_and_charged(&mut self) {
+        assert_eq!(self.t.device_registry_len(), 1);
+        assert_eq!(self.t.used().device[0], self.bytes.len() as u64);
+    }
+    fn assert_returned_once(&mut self, backing: Self::Backing) {
+        let (ptr, guard) = backing.device_ptr(self.stream);
+        assert_eq!(ptr, self.pointer);
+        drop(guard);
+        assert_eq!(self.stream.clone_dtoh(&backing).unwrap(), self.bytes);
+        assert_eq!(self.t.device_registry_len(), 0);
+        assert_eq!(self.t.used(), TierBudget::zero(1));
+        drop(backing);
+    }
+    fn reject_foreign(&mut self) {
+        assert!(matches!(
+            self.foreign.take_device(&self.lease),
+            Err(Error::ForeignLease | Error::WrongOwner)
+        ));
+        assert_eq!(self.foreign.used(), TierBudget::zero(1));
+    }
+}
+fn canonical_hand_back(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
+    // Context/new_stream setup may synchronize the primary context. Construct
+    // the foreign owner BEFORE holding work pending on the tested stream.
+    let (foreign, _, _) = setup();
+    let bytes = vec![29u8; 4096];
+    let (op, lease) = h2d(t, &bytes);
+    let hold = ProducerHold::new(stream);
+    let ticket = t.h2d(op).unwrap();
+    assert!(!t.poll(&ticket).unwrap().producer_done);
+    let graph = Some(t.pin_destination_graph(&ticket).unwrap());
+    let mut fixture = HandBack {
+        foreign,
+        t,
+        stream,
+        ticket,
+        lease,
+        graph,
+        consumer: None,
+        hold,
+        pointer: 0,
+        bytes,
+    };
+    v1::device_hand_back(&mut fixture);
+    println!("PASS v1.3 device_hand_back native CUDA");
+}
+
 fn roundtrip() {
     let (mut t, stream, gov) = setup();
     for n in [4096usize, 65536, 1048576, 16777216, 67108864, 268435456] {
@@ -318,6 +606,12 @@ fn roundtrip() {
         };
         assert!(matches!(t.take_device(&destination), Err(Error::Busy)));
         t.retire_source(&up).unwrap();
+        // The earlier D2H ticket still owns the host until acknowledgement.
+        assert_eq!(gov.borrow().used().pinned, n as u64);
+        let down_done = t.record_consumer(&down).unwrap();
+        stream.synchronize().unwrap();
+        t.retire(&down, Some(down_done)).unwrap();
+        t.acknowledge(&down).unwrap();
         assert_eq!(gov.borrow().used().pinned, 0);
         assert!(!t.retired(&up).unwrap());
         assert!(matches!(t.take_device(&destination), Err(Error::Busy)));
@@ -347,10 +641,6 @@ fn roundtrip() {
         assert_eq!(got, want, "real destination bytes differ at size {n}");
         assert_eq!(actual, bytes);
         drop(operand);
-        let down_done = t.record_consumer(&down).unwrap();
-        stream.synchronize().unwrap();
-        t.retire(&down, Some(down_done)).unwrap();
-        t.acknowledge(&down).unwrap();
 
         t.release_producer(producer).unwrap();
         assert_eq!(gov.borrow().used(), TierBudget::zero(1));

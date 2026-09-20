@@ -1,0 +1,20 @@
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+4659b41a93a6bf4ed012e8d1ac540fcba85dc777043f440ce08ca967f7a87b25  /Users/avifen/.codex/worktrees/6a29/memra/crates/memra-engine/src/model_memory_plan.rs
+9367cec98e66ccb0d7ff12086f72476e79bff047e373224619a9ebedf4ec33d4  /Users/avifen/.codex/worktrees/6a29/memra/crates/memra-server/src/worker/device_memory.rs
+9b8af26f6a4542c796748e8c4059c6ee38168088afe90756bc08365eb2af1606  /var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmp.rWeCkT3w9C/tests
+
+running 11 tests
+test model_memory_plan::tests::growing_allocations_reserve_the_replacement_while_old_bytes_are_live ... ok
+test model_memory_plan::tests::kda_reserves_convolution_and_both_recurrent_planes ... ok
+test device_memory::tests::failed_peer_fence_is_reported_without_suppressing_other_owners ... ok
+test device_memory::tests::all_streams_fenced_before_any_shared_pool_trim ... ok
+test device_memory::tests::peer_only_reclaim_and_refill_preserves_live_owners ... ok
+test model_memory_plan::tests::mla_peer_score_workspace_scales_with_prompt_depth_and_call_rows ... ok
+test model_memory_plan::tests::malformed_geometry_and_overflow_fail_closed ... ok
+test model_memory_plan::tests::mla_ring_and_flat_layouts_include_lazy_keys_and_length_scalar ... ok
+test model_memory_plan::tests::partial_layers_and_same_device_ranks_sum_without_charging_live_bytes ... ok
+test model_memory_plan::tests::peer_workspace_is_not_capped_by_small_primary_session_cost ... ok
+test model_memory_plan::tests::shared_owners_collapse_but_same_ordinal_engines_survive ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -735,6 +735,7 @@ struct Emit<'a> {
     tx: &'a crate::worker::EventSender,
     eos: Vec<u32>,
     stop_strings: &'a [String],
+    stop_token_ids: &'a [u32],
     budget: usize,
     ids: Vec<u32>,
     text: String,
@@ -752,6 +753,7 @@ impl<'a> Emit<'a> {
         tx: &'a crate::worker::EventSender,
         eos: Vec<u32>,
         stop_strings: &'a [String],
+        stop_token_ids: &'a [u32],
         budget: usize,
     ) -> Self {
         Emit {
@@ -759,6 +761,7 @@ impl<'a> Emit<'a> {
             tx,
             eos,
             stop_strings,
+            stop_token_ids,
             budget,
             ids: Vec::new(),
             text: String::new(),
@@ -779,7 +782,9 @@ impl<'a> Emit<'a> {
             if self.stop_reason.is_some() || self.client_gone {
                 break;
             }
-            if self.eos.contains(&id) {
+            if crate::worker::stop_token_reason(id, self.stop_token_ids).is_some()
+                || self.eos.contains(&id)
+            {
                 self.stop_reason = Some("stop");
                 self.terminal = Some(id);
                 taken += 1;
@@ -864,13 +869,17 @@ fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> 
     let prompt = if !req.prompt_ids.is_empty() {
         req.prompt_ids.clone()
     } else if !req.chat_turns.is_empty() {
-        let plain = req.tools_json.is_empty()
-            && req.think == chat::ThinkMode::Default
-            && req.reasoning_effort.is_none()
-            && req
-                .chat_turns
-                .iter()
-                .all(|t| t.role != "tool" && t.tool_calls.is_empty());
+        // ONE predicate for the plain-vs-tools render (memra CLAUDE.md, v0.109.1 lesson): the
+        // worker, the HTTP-side accounting and this route must agree, or `/v1/tokenize` and
+        // the prepaid reservation count a different prompt than the one served here. The
+        // local copy this replaces dropped the `reasoning` and effort-ladder terms.
+        let plain = crate::worker::plain_chat_render_path(
+            &req.tools_json,
+            &req.think,
+            req.reasoning_effort.as_deref(),
+            &req.chat_turns,
+            m.tok.has_qwen_effort_ladder(),
+        );
         let rendered = if plain {
             let messages: Vec<_> = req
                 .chat_turns
@@ -1235,7 +1244,14 @@ fn serve_one(
     if !eos_set.contains(&m.eos) {
         eos_set.push(m.eos);
     }
-    let mut emit = Emit::new(&m.tok, &req.tx, eos_set, &req.stop_strings, budget);
+    let mut emit = Emit::new(
+        &m.tok,
+        &req.tx,
+        eos_set,
+        &req.stop_strings,
+        &req.stop_token_ids,
+        budget,
+    );
     let mut spec_usage: Option<SpecUsage> = None;
     let state_to_park: DecodeState;
     let mut dstate_to_park: Option<DsparkState> = None;
