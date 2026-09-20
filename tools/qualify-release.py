@@ -54,11 +54,13 @@ def environment():
 
 
 def build_environment(out, nvcc, rustc):
-    env = environment()
-    for key in list(env):
-        if key.startswith(("CARGO_", "RUST", "CC_", "CXX_")) or key in (
-                "CC", "CXX", "AR", "LD", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS", "CUDACXX"):
-            del env[key]
+    # Admit basic process/network settings only. CUDA/GCC/Clang option injection,
+    # compiler wrappers and include/library search overrides must not reach Cargo.
+    admitted = {"PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "TMP", "TEMP",
+                "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+                "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+                "SSL_CERT_FILE", "SSL_CERT_DIR"}
+    env = {key: value for key, value in environment().items() if key in admitted}
     env.update(CUDA_VISIBLE_DEVICES="", MEMRA_CUDA_ARCH="120a", MEMRA_NVCC=str(nvcc),
                CUDA_HOME=str(nvcc.parent.parent), CUDA_PATH=str(nvcc.parent.parent),
                CARGO_HOME=str(out / "cargo-home"), CARGO_TARGET_DIR=str(out / "target"),
@@ -130,8 +132,8 @@ def build(args):
               "source_before": source["inputs_sha256"], "command": command,
               "docs_rs": "DOCS_RS" in env, "cuda_arch": env["MEMRA_CUDA_ARCH"],
               "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"], "platform": platform_identity(),
-              "recipe": {"policy": "controlled-cargo-v1", "cargo_home": "fresh-config-free",
-                         "checkout": "actual-git-blobs-modes-v1", "build_source": "owned-git-checkout",
+              "recipe": {"policy": "controlled-cargo-v2", "cargo_home": "fresh-config-free",
+                         "checkout": "resolved-git-blobs-modes-v2", "build_source": "owned-git-checkout",
                          "cargo_config": "tracked-jobs-only",
                          "compilers": {"cargo": q.file_identity(cargo), "rustc": q.file_identity(rustc),
                                        "nvcc": q.file_identity(args.nvcc.resolve())}},
@@ -227,7 +229,7 @@ def capture(args):
     q.require(source["commit"] == args.expected_head, "capture checkout differs from requested source")
     built = q.json_bytes((args.build / "build.json").read_bytes())
     q.require(built.get("schema") == "memra-native-build-v2"
-              and built.get("recipe", {}).get("policy") == "controlled-cargo-v1",
+              and built.get("recipe", {}).get("policy") == "controlled-cargo-v2",
               "capture requires a controlled v2 build; older provenance is unqualified")
     q.require(q.json_bytes((args.build / "source.json").read_bytes()) == source, "build is for different source")
     q.require(built["exit_code"] == 0 and built["source_before"] == source["inputs_sha256"]

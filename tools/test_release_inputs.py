@@ -64,7 +64,7 @@ class ReleaseInputTests(unittest.TestCase):
         self.f.commit("tracked link")
         self.f.git("update-index", "--assume-unchanged", "source-link")
         link.unlink(); link.symlink_to("tools/release-roster.tsv")
-        with self.assertRaisesRegex(q.GateError, "actual tracked input differs"):
+        with self.assertRaisesRegex(q.GateError, "actual (tracked input|symlink closure) differs"):
             capture.clean_source(self.f.repo)
 
     def test_ignored_build_inputs_and_forced_cargo_environment_refuse(self):
@@ -127,6 +127,70 @@ class ReleaseInputTests(unittest.TestCase):
         self.assertNotEqual(original.read_bytes(), (staged / original.relative_to(self.f.repo)).read_bytes())
         self.assertEqual(capture.clean_source(staged), expected)
 
+    def test_transitive_file_and_directory_links_must_end_in_tracked_inputs(self):
+        source_dir = self.f.repo / "crates/memra-engine/src"
+        outside = self.root / "unrecorded"; outside.mkdir()
+        (outside / "payload.txt").write_text("external compiler input\n")
+        for directory in (False, True):
+            with self.subTest(directory=directory):
+                bridge = self.f.repo / "research/bridge"
+                bridge.symlink_to(outside if directory else outside / "payload.txt")
+                alias = source_dir / "payload"
+                alias.symlink_to("../../../research/bridge")
+                self.f.commit("tracked links to external compiler input")
+                for check in (lambda: capture.clean_source(self.f.repo),
+                              lambda: q.source_snapshot(self.f.repo)):
+                    with self.assertRaisesRegex(q.GateError, "symlink escapes tracked closure"):
+                        check()
+                alias.unlink(); bridge.unlink(); self.f.commit("remove rejected links")
+        # Direct research include paths are held to the same closure; no namespace exemption.
+        bridge.symlink_to(outside / "payload.txt")
+        self.f.commit("direct research input")
+        with self.assertRaisesRegex(q.GateError, "symlink escapes tracked closure"):
+            capture.clean_source(self.f.repo)
+
+    def test_internal_link_closure_is_valid_and_records_terminal_changes(self):
+        source_dir = self.f.repo / "crates/memra-engine/src"
+        payload = self.f.repo / "research/payload"; payload.mkdir()
+        terminal = payload / "value.txt"; terminal.write_text("tracked input\n")
+        (self.f.repo / "research/bridge").symlink_to("payload")
+        (source_dir / "payload").symlink_to("../../../research/bridge")
+        self.f.commit("internal directory link chain")
+        before = capture.clean_source(self.f.repo)
+        out = self.root / "owned-links"; out.mkdir()
+        staged = capture.prepare_build_source(self.f.repo, before, out)
+        self.assertEqual((staged / "crates/memra-engine/src/payload/value.txt").read_text(), "tracked input\n")
+        terminal.write_text("changed tracked input\n"); self.f.commit("terminal content change")
+        after = capture.clean_source(self.f.repo)
+        self.assertNotEqual(before["inputs_sha256"], after["inputs_sha256"])
+
+    def test_symlink_cycles_and_untracked_terminals_refuse(self):
+        a, b = self.f.repo / "research/a", self.f.repo / "research/b"
+        a.symlink_to("b"); b.symlink_to("a")
+        self.f.commit("symlink cycle")
+        with self.assertRaisesRegex(q.GateError, "symlink cycle"):
+            capture.clean_source(self.f.repo)
+        a.unlink(); a.symlink_to("untracked")
+        self.f.commit("missing terminal")
+        with self.assertRaisesRegex(q.GateError, "symlink target is not tracked"):
+            capture.clean_source(self.f.repo)
+
+    def test_compiler_injection_and_search_environment_is_not_inherited(self):
+        injected = {"NVCC_PREPEND_FLAGS": "--use_fast_math",
+                    "NVCC_APPEND_FLAGS": "--pre-include=/outside/foreign.cuh",
+                    "NVCC_CCBIN": "/outside/compiler", "CPATH": "/outside/headers",
+                    "C_INCLUDE_PATH": "/outside/c", "CPLUS_INCLUDE_PATH": "/outside/cxx",
+                    "OBJC_INCLUDE_PATH": "/outside/objc", "LIBRARY_PATH": "/outside/libraries",
+                    "LD_LIBRARY_PATH": "/outside/loader", "GCC_EXEC_PREFIX": "/outside/gcc/",
+                    "COMPILER_PATH": "/outside/bin", "CCC_OVERRIDE_OPTIONS": "^-include /outside/header",
+                    "UNRECOGNIZED_COMPILER_OVERRIDE": "must not be admitted"}
+        with patch.dict(os.environ, {"PATH": "/usr/bin", "HOME": str(self.root), **injected}, clear=True):
+            env = capture.build_environment(self.root / "owned", Path("/cuda/bin/nvcc"), Path("/rust/bin/rustc"))
+        self.assertFalse(set(injected) & set(env))
+        self.assertEqual(env["HOME"], str(self.root))
+        self.assertEqual(env["PATH"], "/usr/bin")
+        self.assertEqual(env["MEMRA_CUDA_ARCH"], "120a")
+
     def test_owned_cargo_home_copies_no_config_credentials_or_extracted_source(self):
         old, out = self.root / "old-cargo", self.root / "build"
         old.mkdir(); out.mkdir()
@@ -145,6 +209,7 @@ class ReleaseInputTests(unittest.TestCase):
         original = copy.deepcopy(self.f.build)
         mutations = (
             lambda build: build.update(schema="memra-native-build-v1"),
+            lambda build: build["recipe"].update(policy="controlled-cargo-v1"),
             lambda build: build["recipe"].update(cargo_home="ambient"),
             lambda build: build["recipe"].update(build_source="caller-checkout"),
             lambda build: build["recipe"]["compilers"].pop("nvcc"),

@@ -23,7 +23,9 @@ and refuses rather than bypassing the gate. `step-pro` remains an additional Ste
 and topology gate; its older partial source manifest cannot substitute for this record.
 That additional checker now requires hashes for every changed crate/build/tool input,
 including KV, tier, tokenizer and server. A deleted input requires a `null` tombstone and
-actual absence; adding a hash for another file cannot conceal the deletion.
+absence from the immutable candidate Git tree as well as the checkout. An uncommitted
+local deletion cannot cover a file still present in the candidate; a non-Git checkout
+cannot prove a deletion. Adding a hash for another file cannot conceal the deletion.
 
 Both real tag workflows validate the committed record before building/publishing. Manual
 crates.io recovery also validates it; a package dry run remains explicitly a build check.
@@ -68,6 +70,9 @@ input. File timestamps only detect concurrent changes while hashing; they never 
 freshness or qualification. Ignored/untracked files under crate, tool and Cargo source
 roots refuse. Project Python caches are not consumed: the producer and its children use
 fresh cache locations.
+File and directory symlinks resolve transitively within the tracked Git closure, including
+links through research directories. External, missing or cyclic terminals refuse; a research
+link cannot introduce an unrecorded compiler input. Valid historical links remain intact.
 
 The controlled v2 build uses a fresh, detached Git-defined source checkout outside the
 caller checkout and its own config-free Cargo home. The actual staged source is checked
@@ -79,6 +84,10 @@ from the pinned toolchain and their executable hashes are recorded along with nv
 Cargo configuration is refused; the only admitted project Cargo configuration is the tracked
 `[build] jobs` setting. Environment forcing, alternate targets and wrapper config refuse
 rather than overwrite the recorded native/stub/architecture claims.
+The `controlled-cargo-v2` recipe admits only basic process/network environment settings,
+then adds the pinned build settings. Ambient nvcc prepend/append flags, host-compiler
+selection, and compiler include/library search overrides are excluded. Earlier controlled
+recipe versions cannot be relabelled as passing this boundary.
 
 The generic capture contract explicitly supports **single-file GGUF inputs**. It parses
 `split.count` and refuses multi-file models before any GPU operation, even if an entry shard

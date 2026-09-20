@@ -62,8 +62,8 @@ class Fixture:
                       "cuda_visible_devices": "", "rustc": "CPU mock", "nvcc": "CPU mock",
                       "platform": {"profile": "ubuntu-24.04", "machine": "x86_64", "glibc": "2.39"},
                       "command": ["cargo", "build", "--release", "--locked"], "log": self.ref("build.log"),
-                      "recipe": {"policy": "controlled-cargo-v1", "cargo_home": "fresh-config-free",
-                                 "checkout": "actual-git-blobs-modes-v1", "build_source": "owned-git-checkout",
+                      "recipe": {"policy": "controlled-cargo-v2", "cargo_home": "fresh-config-free",
+                                 "checkout": "resolved-git-blobs-modes-v2", "build_source": "owned-git-checkout",
                                  "cargo_config": "tracked-jobs-only",
                                  "compilers": {name: {"bytes": 32, "sha256": "c" * 64} for name in ("cargo", "rustc", "nvcc")}},
                       "binaries": self.binaries}

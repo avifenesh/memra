@@ -37,13 +37,18 @@ def actual_blob(path, mode):
 
 def verify_checkout(repo, head="HEAD"):
     repo = repo.resolve()
+    head = q.commit(repo, head)
     expected = q.tree_files(repo, head)
+    links = q.source_symlink_targets(repo, head, expected)
     for name, entry in expected.items():
         path = repo / name
-        # Historical research symlinks are hashed as links; compiler/gate input
-        # symlinks must resolve within the tracked checkout (source_snapshot checks it).
-        if entry["mode"] != "120000":
-            q.require(path.resolve().is_relative_to(repo), f"tracked input escaped checkout: {name}")
+        try:
+            resolved = path.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise q.GateError(f"tracked input cannot resolve: {name}") from error
+        q.require(resolved.is_relative_to(repo), f"tracked input escaped checkout: {name}")
+        if name in links:
+            q.require(resolved == repo / links[name], f"actual symlink closure differs from Git: {name}")
         q.require(actual_blob(path, entry["mode"]) == entry["blob"],
                   f"actual tracked input differs from Git source: {name}")
     # Ignored build inputs must not disappear behind .gitignore. Cargo output is

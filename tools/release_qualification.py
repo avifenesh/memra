@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import hashlib
 import importlib.util
 import json
 import os
-import posixpath
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -86,16 +86,46 @@ def tree_files(repo, ref):
     return files
 
 
+def source_symlink_targets(repo, head, files):
+    """Resolve file and directory links using only the immutable Git tree."""
+    links = {path: git(repo, "show", f"{head}:{path}").decode()
+             for path, item in files.items() if item["mode"] == "120000"}
+    directories = {""}
+    for path in files:
+        directories.update(str(parent) for parent in PurePosixPath(path).parents if str(parent) != ".")
+    resolved = {}
+    for path in links:
+        pending, parts, followed = deque(path.split("/")), [], 0
+        while pending:
+            component = pending.popleft()
+            if component in ("", "."):
+                continue
+            if component == "..":
+                require(parts, f"source symlink escapes tracked closure: {path}")
+                parts.pop()
+                continue
+            prefix = "/".join([*parts, component])
+            if prefix in links:
+                target = links[prefix]
+                followed += 1
+                require(followed <= 40, f"source symlink cycle or excessive chain: {path}")
+                require(target and not target.startswith("/"),
+                        f"source symlink escapes tracked closure: {path}")
+                pending.extendleft(reversed(target.split("/")))
+            else:
+                require(prefix in files or prefix in directories,
+                        f"source symlink target is not tracked: {path}")
+                require(not pending or prefix in directories,
+                        f"source symlink traverses a non-directory: {path}")
+                parts.append(component)
+        resolved[path] = "/".join(parts)
+    return resolved
+
+
 def source_snapshot(repo, ref="HEAD"):
     head = commit(repo, ref)
     files = tree_files(repo, head)
-    for path, item in files.items():
-        if item["mode"] == "120000" and not path.startswith("research/"):
-            target = git(repo, "show", f"{head}:{path}").decode()
-            joined = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
-            require(not target.startswith("/") and not joined.startswith("../")
-                    and (joined in files or any(p.startswith(joined + "/") for p in files)),
-                    f"runtime/build symlink target is not tracked: {path}")
+    source_symlink_targets(repo, head, files)
     # All tracked inputs are conservative dependencies, including research data consumed by
     # include_str!/build scripts. Only this reserved evidence namespace is metadata-only.
     inputs = {p: v for p, v in files.items() if not p.startswith(PUBLICATION) and p != "research/INDEX.md"}
@@ -247,8 +277,8 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
             and build["docs_rs"] is False and build["cuda_visible_devices"] == ""
             and build["rustc"] and build["nvcc"] and build["command"], "invalid native build provenance")
     recipe = build["recipe"]
-    require(recipe["policy"] == "controlled-cargo-v1" and recipe["cargo_home"] == "fresh-config-free"
-            and recipe["checkout"] == "actual-git-blobs-modes-v1"
+    require(recipe["policy"] == "controlled-cargo-v2" and recipe["cargo_home"] == "fresh-config-free"
+            and recipe["checkout"] == "resolved-git-blobs-modes-v2"
             and recipe["build_source"] == "owned-git-checkout"
             and recipe["cargo_config"] == "tracked-jobs-only", "uncontrolled native build recipe")
     require(set(recipe["compilers"]) == {"cargo", "rustc", "nvcc"}, "missing compiler identities")
