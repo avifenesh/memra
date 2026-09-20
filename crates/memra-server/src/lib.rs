@@ -9746,19 +9746,19 @@ fn tokenize_request(
     }
 }
 
-fn token_api_tokenizer<'a>(st: &'a AppState, model: &str) -> Result<&'a Tokenizer, Response> {
+fn token_api_tokenizer<'a>(st: &'a AppState, model: &str) -> Result<&'a Tokenizer, Box<Response>> {
     st.budget_tokenizers
         .as_ref()
         .and_then(|tokenizers| tokenizers.get(model))
         .map(Arc::as_ref)
         .ok_or_else(|| {
-            error_response_coded(
+            Box::new(error_response_coded(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "HTTP tokenizer is unavailable",
                 "server_error",
                 Some("model"),
                 Some("tokenizer_unavailable"),
-            )
+            ))
         })
 }
 
@@ -9790,7 +9790,7 @@ async fn tokenize_admitted(
     };
     let tokenizer = match token_api_tokenizer(&st, &req.model) {
         Ok(tokenizer) => tokenizer,
-        Err(response) => return with_request_id(&id, response),
+        Err(response) => return with_request_id(&id, *response),
     };
     let metadata = st.metadata();
     let model_metadata = metadata.models.get(&req.model);
@@ -9834,7 +9834,7 @@ async fn detokenize_admitted(
     };
     let tokenizer = match token_api_tokenizer(&st, &model) {
         Ok(tokenizer) => tokenizer,
-        Err(response) => return with_request_id(&id, response),
+        Err(response) => return with_request_id(&id, *response),
     };
     // Same named 400 as raw prompt_ids. The tokenizer bounds ids even when caps are unknown.
     let caps = ModelCaps {
