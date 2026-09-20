@@ -433,6 +433,7 @@ fn destination_drop_retention(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
 }
 
 struct HandBack<'a> {
+    foreign: CudaTransfers,
     t: &'a mut CudaTransfers,
     stream: &'a Arc<CudaStream>,
     ticket: TransferTicket,
@@ -492,15 +493,17 @@ impl v1::DeviceHandBackFixture for HandBack<'_> {
         drop(backing);
     }
     fn reject_foreign(&mut self) {
-        let (mut foreign, _, _) = setup();
         assert!(matches!(
-            foreign.take_device(&self.lease),
+            self.foreign.take_device(&self.lease),
             Err(Error::ForeignLease | Error::WrongOwner)
         ));
-        assert_eq!(foreign.used(), TierBudget::zero(1));
+        assert_eq!(self.foreign.used(), TierBudget::zero(1));
     }
 }
 fn canonical_hand_back(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
+    // Context/new_stream setup may synchronize the primary context. Construct
+    // the foreign owner BEFORE holding work pending on the tested stream.
+    let (foreign, _, _) = setup();
     let bytes = vec![29u8; 4096];
     let (op, lease) = h2d(t, &bytes);
     let hold = ProducerHold::new(stream);
@@ -508,6 +511,7 @@ fn canonical_hand_back(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
     assert!(!t.poll(&ticket).unwrap().producer_done);
     let graph = Some(t.pin_destination_graph(&ticket).unwrap());
     let mut fixture = HandBack {
+        foreign,
         t,
         stream,
         ticket,
