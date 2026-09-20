@@ -1,0 +1,80 @@
+{
+  "source_sha": "fc5df430686f31ad34b8ec9b4e772a8f76b53f08",
+  "source_tree": "c0920a39d0533d3a18b9ebaf77e568766152f2b4",
+  "repo": "/home/memra-five/scratch/queue/issue-540",
+  "out": "/home/memra-five/scratch/builds/issue-540-fc5df430-01",
+  "command": [
+    "cargo",
+    "build",
+    "--release",
+    "--locked",
+    "--jobs",
+    "8",
+    "-p",
+    "memra-engine",
+    "--bin",
+    "kernel-check",
+    "--bin",
+    "run-gen",
+    "--bin",
+    "run-spec",
+    "--bin",
+    "argmax-margin-probe",
+    "-p",
+    "memra-server",
+    "--bin",
+    "memra-server",
+    "-p",
+    "memra-tokenizer",
+    "--bin",
+    "tok-parity"
+  ],
+  "started_unix": 1789892556.4722345,
+  "cuda_visible_devices": "",
+  "cuda_arch": "120a",
+  "docs_rs": false,
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Tue_Dec_16_07:23:41_PM_PST_2025\nCuda compilation tools, release 13.1, V13.1.115\nBuild cuda_13.1.r13.1/compiler.37061995_0\n",
+  "exit_code": 0,
+  "finished_unix": 1789892748.9751046,
+  "binaries": {
+    "kernel-check": {
+      "path": "/home/memra-five/scratch/builds/issue-540-fc5df430-01/target/release/kernel-check",
+      "sha256": "eef61605641e5b4f62693d5400802dd4837927f9a8094cee496751432c68f16e",
+      "bytes": 43754488,
+      "staged_path": "/home/memra-five/scratch/queue/issue-540/target/release/kernel-check"
+    },
+    "run-gen": {
+      "path": "/home/memra-five/scratch/builds/issue-540-fc5df430-01/target/release/run-gen",
+      "sha256": "24e4d0a8a460c61dc0f7faa0846e6a28db2467ee900b21e56365acfe8ec750aa",
+      "bytes": 51667760,
+      "staged_path": "/home/memra-five/scratch/queue/issue-540/target/release/run-gen"
+    },
+    "run-spec": {
+      "path": "/home/memra-five/scratch/builds/issue-540-fc5df430-01/target/release/run-spec",
+      "sha256": "45a0c3e55209aadaee6295dc4252f70215c4ae41fe5a459430d1eb7c0d596106",
+      "bytes": 51722584,
+      "staged_path": "/home/memra-five/scratch/queue/issue-540/target/release/run-spec"
+    },
+    "argmax-margin-probe": {
+      "path": "/home/memra-five/scratch/builds/issue-540-fc5df430-01/target/release/argmax-margin-probe",
+      "sha256": "96705714e983ea60fae259f2f28a9dd4745d63cb5690011e1ec5882657e0fba3",
+      "bytes": 48994064,
+      "staged_path": "/home/memra-five/scratch/queue/issue-540/target/release/argmax-margin-probe"
+    },
+    "memra-server": {
+      "path": "/home/memra-five/scratch/builds/issue-540-fc5df430-01/target/release/memra-server",
+      "sha256": "f7a5cb5bb3672cbab7638cc462a4050397163cc1471e49ea60ec8915fbee0b99",
+      "bytes": 67386608,
+      "staged_path": "/home/memra-five/scratch/queue/issue-540/target/release/memra-server"
+    },
+    "tok-parity": {
+      "path": "/home/memra-five/scratch/builds/issue-540-fc5df430-01/target/release/tok-parity",
+      "sha256": "ba2c24f3e9477ea437039f23bcd698140fdc839d1d668f1fed22337b56448191",
+      "bytes": 894952,
+      "staged_path": "/home/memra-five/scratch/queue/issue-540/target/release/tok-parity"
+    }
+  },
+  "builder_sha256": "1513fec35cf9c00b17c7c276fef7229c062a6d34661a46af76c80f39ea5000fc",
+  "log_sha256": "9ae9c386a112ed842a31e98e8756eec84b0b3dcc5abfd92897d254b543c1b36a"
+}
