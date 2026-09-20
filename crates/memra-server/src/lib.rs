@@ -20276,7 +20276,22 @@ temperature = 0.6
             .get_or_init(|| {
                 let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("../../research/dsv4-template-20260818/ref");
-                Arc::new(Tokenizer::from_hf_dir(&path).expect("existing CPU tokenizer fixture"))
+                // Reuse the banked vocabulary with a ChatML tools template and BOS enabled.
+                // This exercises tools rendering AND raw round-trips on a BOS-adding model.
+                let fixture = std::env::temp_dir()
+                    .join(format!("memra-token-api-fixture-{}", std::process::id()));
+                std::fs::create_dir(&fixture).unwrap();
+                std::fs::copy(path.join("tokenizer.json"), fixture.join("tokenizer.json")).unwrap();
+                let mut config: serde_json::Value = serde_json::from_slice(
+                    &std::fs::read(path.join("tokenizer_config.json")).unwrap(),
+                )
+                .unwrap();
+                config["chat_template"] = json!("<|im_start|> <tools> enable_thinking");
+                config["add_bos_token"] = json!(true);
+                std::fs::write(fixture.join("tokenizer_config.json"), config.to_string()).unwrap();
+                let tokenizer = Tokenizer::from_hf_dir(&fixture);
+                std::fs::remove_dir_all(&fixture).unwrap();
+                Arc::new(tokenizer.expect("CPU token API fixture"))
             })
             .clone();
         let mut st = fake_worker_state();
