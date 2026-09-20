@@ -19,7 +19,7 @@ Program: tokenwise `decode_step_h`, trunk-only, no MTP or alternate prefill.
 
 - 8k baseline: captured and pushed; successful collector attempt 1 (attempt 0
   refused lock contention without executing). Native build exit 0.
-- 32k baseline: running at the last checkpoint; not yet a result.
+- 32k baseline: captured; native exit 0, all baseline hashes frozen separately.
 - Original VMM 8k, VMM 32k and pooled 8k control: **pending**.
 - Mapped-VA residual diagnostic 32k and directly injected VMM 8k: **pending**.
 
@@ -65,7 +65,7 @@ The existing gate-only `--kv-allocator vmm` door remains default-OFF;
 
 - Mac `cargo fmt --all -- --check`: PASS.
 - Mac and Linux-target `cargo check -p memra-kv -p memra-tier --all-targets --offline`: PASS.
-- Mac `cargo test -p memra-kv -p memra-tier --offline --no-fail-fast`: PASS.
+- Mac `cargo test -p memra-kv -p memra-tier --offline --no-fail-fast`: **262 passed**.
 - Scoped all-target clippy with `-D warnings`: PASS.
 - Four Python verdict tests including 12 arithmetic/engagement mutation arms: PASS.
 - Archived 8k target baseline replay: PASS (integrity only, not G1).
