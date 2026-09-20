@@ -1,0 +1,9 @@
+canonical lock busy: attempt 0; retry in 60s
+canonical lock busy: attempt 1; retry in 60s
+Traceback (most recent call last):
+  File "/root/wt-a/research/spill-a-20260919/day9_cells.py", line 90, in <module>
+    worker(args) if args.worker is not None else collect(args)
+                                                 ^^^^^^^^^^^^^
+  File "/root/wt-a/research/spill-a-20260919/day9_cells.py", line 78, in collect
+    raise RuntimeError('collector failed or bounded lock wait exhausted')
+RuntimeError: collector failed or bounded lock wait exhausted
