@@ -17,6 +17,9 @@ SPEC.loader.exec_module(E)
 os.environ['TZ'] = 'UTC'
 time.tzset()
 manifest = json.loads((EV/'export-manifest.json').read_text())
+tracked = set(subprocess.check_output(['git', 'ls-files'], cwd=ROOT, text=True).splitlines())
+assert all(str((EV/path).relative_to(ROOT)) in tracked for path in manifest['export_sha256']), \
+    'native evidence missing from git index (including ignored build directories)'
 assert all(E.B.digest(EV/path) == sha for path, sha in manifest['export_sha256'].items())
 assert (EV/'build/exit').read_text().strip() == '0'
 binary_hash = (EV/'build/binary.sha256').read_text().split()[0]
