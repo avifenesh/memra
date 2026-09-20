@@ -24,6 +24,28 @@ surfaces** over a causal LM, with their own schemas, caps and worker semantics, 
 They share the accounting described below: one admitted worker request per input, billed
 as prompt tokens.
 
+## OpenAI chat/completions streaming usage
+
+On `/v1/chat/completions` and OpenAI-mode `/v1/completions`,
+`stream_options.include_usage: true` sends `usage: null` on content and finish chunks,
+then one `choices: []` chunk with the full non-stream usage object (including cached
+prompt tokens and any speculative acceptance fields) before `[DONE]`. Absent/false
+preserves the legacy stream byte shape: usage appears on the choices-bearing finish
+chunk, not on content chunks. Failed streams keep their error + `[DONE]` ending,
+without fabricating a successful terminal usage chunk.
+## Token-id stops on chat and completions
+`POST /v1/chat/completions` and `POST /v1/completions` accept optional
+`stop_token_ids: [u32]` (default `[]`, at most 16 entries). A longer list or an id
+outside the loaded model's vocabulary returns HTTP 400 `invalid_request_error`
+with `param: "stop_token_ids"`. Vocabulary validation follows `prompt_ids` when
+model vocabulary metadata is unknown.
+Matching uses the raw sampled/accepted id **before detokenization**. The first
+matching id ends generation with `finish_reason: "stop"`; that id and any later
+ids in its speculative burst are neither emitted nor included in
+`usage.completion_tokens`. Explicit token stops take precedence over EOS (ordinary
+EOS accounting is unchanged when not explicitly listed). This applies to streaming
+and non-streaming responses. String `stop` remains independently supported.
+
 ## `/v1/messages`: Anthropic Messages API
 
 `POST /v1/messages` (query strings such as `?beta=true` are accepted). Streaming and

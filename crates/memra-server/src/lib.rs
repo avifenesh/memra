@@ -188,6 +188,7 @@ const BODY_READ_RATE_BYTES_PER_SEC: u64 = 2 * 1024 * 1024;
 const BODY_READ_TIMEOUT_MAX: std::time::Duration = std::time::Duration::from_secs(180);
 const BODY_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const BODY_ADMISSION_RETRY_AFTER_S: u64 = 1;
+const MAX_STOP_TOKEN_IDS: usize = 16;
 const MAX_STOP_SEQUENCES: usize = 16;
 const MAX_STOP_SEQUENCE_BYTES: usize = 1_024;
 const MAX_STOP_SEQUENCES_BYTES: usize = 4 * 1_024;
@@ -3003,6 +3004,15 @@ fn acquire_request_slot(
     }
 }
 
+/// OpenAI streaming options; omitted/null options preserve the legacy finish-chunk usage.
+/// `include_usage` is `Option<bool>` so an explicit `null` (clients that serialize unset
+/// optionals) parses as the legacy shape instead of a 400; only `true` opts in.
+#[derive(Default, Deserialize)]
+struct StreamOptions {
+    #[serde(default)]
+    include_usage: Option<bool>,
+}
+
 /// POST /v1/completions request body.
 #[derive(Deserialize)]
 struct CompletionReq {
@@ -3055,6 +3065,10 @@ struct CompletionReq {
     seed: Option<u64>,
     #[serde(default)]
     stop: StopSequences,
+    /// Raw token-id stops (at most 16). The matched id is not emitted or counted in
+    /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
+    #[serde(default)]
+    stop_token_ids: Vec<u32>,
     /// Unsupported-but-semantic fields (gap-scan F4): captured so they 400 loudly instead
     /// of being silently swallowed by serde (policy: clean 400s, not silent downgrades).
     #[serde(default)]
@@ -3071,6 +3085,8 @@ struct CompletionReq {
     /// stream tokens via SSE; else return one JSON when done.
     #[serde(default)]
     stream: bool,
+    #[serde(default)]
+    stream_options: Option<StreamOptions>,
     /// optional hard context cap.
     #[serde(default)]
     max_ctx: Option<usize>,
@@ -3238,8 +3254,14 @@ struct ChatCompletionReq {
     seed: Option<u64>,
     #[serde(default)]
     stop: StopSequences,
+    /// Raw token-id stops (at most 16). The matched id is not emitted or counted in
+    /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
+    #[serde(default)]
+    stop_token_ids: Vec<u32>,
     #[serde(default)]
     stream: bool,
+    #[serde(default)]
+    stream_options: Option<StreamOptions>,
     #[serde(default)]
     max_ctx: Option<usize>,
     /// OpenAI `response_format` (constrained decoding, lane/constrained 2026-08-03):
@@ -4752,8 +4774,10 @@ fn fresh_seed() -> u64 {
 
 /// Honesty gate (gap-scan F4): semantic params we cannot honor are explicit 400s with the
 /// offending param named — never silent downgrades (a client sending response_format:
-/// json_object would get unvalidated free text and no error). Cosmetic fields (`user`,
-/// `stream_options`) stay accept-and-ignore.
+/// json_object would get unvalidated free text and no error). Cosmetic fields (`user`)
+/// stay accept-and-ignore. `stream_options.include_usage: true` selects null usage on
+/// content/finish chunks plus one empty-choices usage chunk before DONE; absent/false
+/// preserves the legacy usage object on the choices-bearing finish chunk.
 fn reject_unsupported(fields: &[(&str, bool, &str)]) -> Result<(), (String, String)> {
     for (param, present, why) in fields {
         if *present {
@@ -7759,6 +7783,7 @@ fn build_request_with_trace(
         params,
         sampler_cfg,
         stop_strings: req.stop.clone().into_vec(),
+        stop_token_ids: req.stop_token_ids.clone(),
         trace_id: req.trace_id.clone(),
         // Stamped with the envelope id by the handler before submission (the builder
         // does not see the envelope).
@@ -7932,6 +7957,7 @@ fn build_chat_request_with_trace(
     sampling_defaults: &ModelSamplingDefaults,
 ) -> Result<ChatPlan, String> {
     req.stop.validate()?;
+    validate_stop_token_ids(&req.stop_token_ids, caps)?;
     // The client's own expression is snapshotted here; the omitted fields resolve to a
     // vendor arm only once the thinking mode is final (see `sampler_cfg` below).
     let client_sampling: ClientSampling = (&req).into();
@@ -8234,6 +8260,7 @@ fn build_chat_request_with_trace(
                 eos: Vec::new(),
             },
             sampler_cfg,
+            stop_token_ids: req.stop_token_ids,
             stop_strings: {
                 // gemma4 tooluse: the model emits `<|tool_call>call:…<tool_call|>` and would
                 // then run past its handoff into a hallucinated `<|tool_response>`; stop when
@@ -9150,9 +9177,91 @@ fn validate_prompt_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), Stri
     Ok(())
 }
 
+/// Reuse the prompt-id vocabulary gate, preserving its diagnostic shape with the right field.
+fn validate_stop_token_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), String> {
+    if ids.len() > MAX_STOP_TOKEN_IDS {
+        return Err(format!(
+            "stop_token_ids accepts at most {MAX_STOP_TOKEN_IDS} ids"
+        ));
+    }
+    validate_prompt_ids(ids, caps).map_err(|msg| msg.replacen("prompt_ids", "stop_token_ids", 1))
+}
+
 #[cfg(test)]
 mod prompt_ids_tests {
     use super::*;
+
+    #[test]
+    fn stop_token_ids_parse_validate_and_reach_both_request_builders() {
+        let caps = ModelCaps {
+            n_vocab: 8,
+            chat_ok: true,
+            ..Default::default()
+        };
+        for ids in [vec![], vec![0, 3, 7], vec![7; MAX_STOP_TOKEN_IDS]] {
+            let body = json!({"model":"test", "prompt":"hello",
+                "messages":[{"role":"user", "content":"hello"}], "stop_token_ids":ids});
+            let req: CompletionReq = serde_json::from_value(body.clone()).unwrap();
+            assert!(validate_stop_token_ids(&req.stop_token_ids, Some(&caps)).is_ok());
+            let (tx, _rx) = worker::event_channel();
+            assert_eq!(
+                build_request(&req, tx, lanes::Lane::Interactive, None).stop_token_ids,
+                ids
+            );
+            let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
+            let (tx, _rx) = worker::event_channel();
+            assert_eq!(
+                build_chat_request(req, Some(&caps), tx, lanes::Lane::Interactive, None)
+                    .unwrap()
+                    .request
+                    .stop_token_ids,
+                ids
+            );
+        }
+        let body = json!({"model":"test", "messages":[]});
+        assert!(
+            serde_json::from_value::<CompletionReq>(body.clone())
+                .unwrap()
+                .stop_token_ids
+                .is_empty()
+        );
+        assert!(
+            serde_json::from_value::<ChatCompletionReq>(body)
+                .unwrap()
+                .stop_token_ids
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn stop_token_ids_cap_oov_and_unsigned_shape() {
+        let caps = ModelCaps {
+            n_vocab: 8,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_stop_token_ids(&[0; 17], Some(&caps)).unwrap_err(),
+            "stop_token_ids accepts at most 16 ids"
+        );
+        assert_eq!(
+            validate_stop_token_ids(&[1, 8, 2], Some(&caps)).unwrap_err(),
+            validate_prompt_ids(&[1, 8, 2], Some(&caps))
+                .unwrap_err()
+                .replace("prompt_ids", "stop_token_ids")
+        );
+        assert!(validate_stop_token_ids(&[u32::MAX], Some(&caps)).is_err());
+        assert!(validate_stop_token_ids(&[u32::MAX], None).is_ok());
+        for invalid in [
+            json!([-1]),
+            json!([4294967296u64]),
+            json!([1.5]),
+            json!("7"),
+        ] {
+            let body = json!({"model":"test", "messages":[], "stop_token_ids":invalid});
+            assert!(serde_json::from_value::<CompletionReq>(body.clone()).is_err());
+            assert!(serde_json::from_value::<ChatCompletionReq>(body).is_err());
+        }
+    }
 
     #[test]
     fn prompt_ids_are_bounded_by_the_model_vocab_at_intake() {
@@ -9274,6 +9383,9 @@ async fn completions_with_admission(
     if let Err(msg) = validate_prompt_ids(&req.prompt_ids, st.caps.get(&req.model)) {
         return with_request_id(&env.id, bad_request(&msg, Some("prompt_ids")));
     }
+    if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
+        return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
+    }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.
     let deadline = match parse_timeout_ms(req.timeout_ms.as_ref(), req.stream) {
@@ -9287,6 +9399,11 @@ async fn completions_with_admission(
     let (tx, rx) = worker::event_channel();
     let model = req.model.clone();
     let stream = req.stream;
+    let include_usage = req
+        .stream_options
+        .as_ref()
+        .and_then(|o| o.include_usage)
+        .unwrap_or(false);
     let affinity = match affinity_key(&req.session_id, &req.user, &headers) {
         Ok(affinity) => affinity,
         Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
@@ -9474,6 +9591,7 @@ async fn completions_with_admission(
             stop_strings,
             Some(guard),
             receipt,
+            include_usage,
         )
         .into_response()
     } else {
@@ -9536,6 +9654,9 @@ async fn chat_completions_with_admission(
         None => {
             return with_request_id(&env.id, model_not_found_response(&st.models, &req.model));
         }
+    }
+    if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
+        return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
     }
     let ttft = trace.and_then(|Extension(trace)| trace.0);
     if let Some(trace) = ttft.as_ref() {
@@ -9604,6 +9725,11 @@ async fn chat_completions_with_admission(
     };
     let model = req.model.clone();
     let stream = req.stream;
+    let include_usage = req
+        .stream_options
+        .as_ref()
+        .and_then(|o| o.include_usage)
+        .unwrap_or(false);
     // Snapshot the capture payload BEFORE the plan build consumes the request. Only
     // marked tenants pay for the copy; everyone else gets a lock-read and a None.
     let capture_prompt = st
@@ -9886,6 +10012,7 @@ async fn chat_completions_with_admission(
             stop_strings,
             Some(guard),
             receipt,
+            include_usage,
         )
         .into_response()
     } else {
@@ -9927,25 +10054,83 @@ fn sse_response(
     stop_strings: Vec<String>,
     guard: Option<InflightGuard>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
-    sse_response_with_receipt(rx, model, chat, parser, env, stop_strings, guard, None)
+    sse_response_with_receipt(
+        rx,
+        model,
+        chat,
+        parser,
+        env,
+        stop_strings,
+        guard,
+        None,
+        false,
+    )
 }
 
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn sse_response_with_receipt(
-    mut rx: worker::EventReceiver,
+    rx: worker::EventReceiver,
     model: String,
     chat: bool,
+    parser: Option<ToolStreamParser>,
+    env: Envelope,
+    stop_strings: Vec<String>,
+    guard: Option<InflightGuard>,
+    receipt: Option<Box<dyn metering::Receipt>>,
+    include_usage: bool,
+) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    sse_response_for_format(
+        rx,
+        model,
+        SseFormat {
+            chat,
+            openai: chat || openai_compat(),
+            include_usage,
+        },
+        parser,
+        env,
+        stop_strings,
+        guard,
+        receipt,
+    )
+}
+
+/// Pin the wire format once per stream; explicit here so CPU tests can exercise both
+/// OpenAI dialects without mutating the process-global compatibility setting.
+struct SseFormat {
+    chat: bool,
+    openai: bool,
+    include_usage: bool,
+}
+
+#[allow(clippy::too_many_arguments)] // allow: mirrors the SSE rendering contract
+fn sse_response_for_format(
+    mut rx: worker::EventReceiver,
+    model: String,
+    format: SseFormat,
     mut parser: Option<ToolStreamParser>,
     env: Envelope,
     stop_strings: Vec<String>,
     guard: Option<InflightGuard>,
     mut receipt: Option<Box<dyn metering::Receipt>>,
 ) -> Sse<impl futures_core::Stream<Item = Result<SseEvent, std::convert::Infallible>>> {
+    let SseFormat {
+        chat,
+        openai,
+        include_usage,
+    } = format;
     // STOP-LEAK holdback (gap-scan F9), OpenAI shapes only: content deltas buffer until
     // they can't start a stop string; matched stop text is excluded exactly like the
     // non-stream shape. The memra-native stream stays byte-identical (no scrubber).
-    let mut scrub = (!stop_strings.is_empty() && (chat || openai_compat()))
-        .then(|| StopScrubber::new(stop_strings));
+    let mut scrub = (!stop_strings.is_empty() && openai).then(|| StopScrubber::new(stop_strings));
+    let chunk_env = env.clone();
+    let stamp_chunk = move |payload| {
+        let mut payload = chunk_env.stamp(payload);
+        if include_usage {
+            payload["usage"] = serde_json::Value::Null;
+        }
+        payload
+    };
     let stream = async_stream::stream! {
         // in-flight slot rides the stream: freed when the stream completes or the
         // client disconnects (drop) — the rate-limit gauge + drain barrier source.
@@ -9961,7 +10146,7 @@ fn sse_response_with_receipt(
                     role_sent = true;
                     delta["role"] = json!("assistant");
                 }
-                env.stamp(json!({ "object": "chat.completion.chunk", "model": model,
+                stamp_chunk(json!({ "object": "chat.completion.chunk", "model": model,
                                   "choices": [{ "index": 0, "delta": delta,
                                                 "finish_reason": $finish }] }))
                     .to_string()
@@ -10024,7 +10209,7 @@ fn sse_response_with_receipt(
                         // bookkeeping failure as a billable client abandon.
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         let payload = request_ledger_error_body().to_string();
-                        if chat || openai_compat() {
+                        if openai {
                             yield Ok(SseEvent::default().data(payload));
                             yield Ok(SseEvent::default().data("[DONE]"));
                         } else {
@@ -10051,7 +10236,7 @@ fn sse_response_with_receipt(
                     } else {
                         deadline_exceeded_error(ms, true).to_string()
                     };
-                    if chat || openai_compat() {
+                    if openai {
                         yield Ok(SseEvent::default().data(payload));
                         yield Ok(SseEvent::default().data("[DONE]"));
                     } else {
@@ -10070,7 +10255,7 @@ fn sse_response_with_receipt(
                         );
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         let payload = request_ledger_error_body().to_string();
-                        if chat || openai_compat() {
+                        if openai {
                             yield Ok(SseEvent::default().data(payload));
                             yield Ok(SseEvent::default().data("[DONE]"));
                         } else {
@@ -10101,8 +10286,8 @@ fn sse_response_with_receipt(
                     }
                     let payload = if chat {
                         chat_chunk!(json!({ "content": text }), serde_json::Value::Null)
-                    } else if openai_compat() {
-                        env.stamp(json!({ "object": "text_completion", "model": model,
+                    } else if openai {
+                        stamp_chunk(json!({ "object": "text_completion", "model": model,
                                 "choices": [{ "index": 0, "text": text, "finish_reason": null }] }))
                             .to_string()
                     } else {
@@ -10132,7 +10317,7 @@ fn sse_response_with_receipt(
                                 chat_chunk!(json!({ "content": tail }),
                                             serde_json::Value::Null)
                             } else {
-                                env.stamp(json!({ "object": "text_completion",
+                                stamp_chunk(json!({ "object": "text_completion",
                                     "model": model,
                                     "choices": [{ "index": 0, "text": tail,
                                                   "finish_reason": null }] })).to_string()
@@ -10159,7 +10344,7 @@ fn sse_response_with_receipt(
                         // the append itself already latched) so Drop cannot bill it.
                         let _ = receipt.reject(500, "request_ledger_unavailable");
                         let payload = request_ledger_error_body().to_string();
-                        if chat || openai_compat() {
+                        if openai {
                             yield Ok(SseEvent::default().data(payload));
                             yield Ok(SseEvent::default().data("[DONE]"));
                         } else {
@@ -10168,10 +10353,10 @@ fn sse_response_with_receipt(
                         terminal = true;
                         break;
                     }
-                    if chat || openai_compat() {
+                    if openai {
                         let usage = usage_json(n_prompt, n_tokens, n_cached, elapsed_s, spec);
                         let fin = if chat {
-                            let mut v = env.stamp(json!({
+                            let mut v = stamp_chunk(json!({
                                 "object": "chat.completion.chunk", "model": model,
                                 "choices": [{ "index": 0, "delta": {},
                                               "finish_reason": finish }],
@@ -10182,12 +10367,20 @@ fn sse_response_with_receipt(
                             }
                             v
                         } else {
-                            env.stamp(json!({ "object": "text_completion", "model": model,
+                            stamp_chunk(json!({ "object": "text_completion", "model": model,
                                 "choices": [{ "index": 0, "text": "",
                                               "finish_reason": finish }],
                                 "usage": usage }))
                         }.to_string();
                         yield Ok(SseEvent::default().data(fin));
+                        if include_usage {
+                            let usage = env.stamp(json!({
+                                "object": if chat { "chat.completion.chunk" } else { "text_completion" },
+                                "model": model, "choices": [],
+                                "usage": usage,
+                            }));
+                            yield Ok(SseEvent::default().data(usage.to_string()));
+                        }
                         yield Ok(SseEvent::default().data("[DONE]"));
                     } else {
                         let payload = json!({
@@ -10228,7 +10421,7 @@ fn sse_response_with_receipt(
                     } else {
                         engine_error_body(&err).to_string()
                     };
-                    if chat || openai_compat() {
+                    if openai {
                         // OpenAI clients only parse `data:` lines — a named `event: error`
                         // reads as a silent hang. Error object as the final data chunk.
                         yield Ok(SseEvent::default().data(payload));
@@ -10264,7 +10457,7 @@ fn sse_response_with_receipt(
                 );
             }
             let payload = engine_error_body(&e).to_string();
-            if chat || openai_compat() {
+            if openai {
                 yield Ok(SseEvent::default().data(payload));
                 yield Ok(SseEvent::default().data("[DONE]"));
             } else {
@@ -15662,6 +15855,247 @@ default_reasoning_effort = "always"
         }
     }
 
+    fn usage_stream_fixture(n_tokens: usize, spec: bool) -> worker::EventReceiver {
+        let (tx, rx) = worker::event_channel();
+        for id in 0..n_tokens {
+            tx.send(Event::Token {
+                id: id as u32,
+                text: "hello".into(),
+            })
+            .unwrap();
+        }
+        tx.send(Event::Done {
+            stop_reason: "Eos".into(),
+            n_tokens,
+            n_prompt: 42,
+            n_cached: 30,
+            elapsed_s: 0.5,
+            spec: spec.then_some(worker::SpecUsage {
+                rounds: 10,
+                drafted: 30,
+                accepted: 21,
+            }),
+        })
+        .unwrap();
+        drop(tx);
+        rx
+    }
+
+    #[tokio::test]
+    async fn include_usage_matches_blocking_usage_and_receipt_for_both_dialects() {
+        for chat in [true, false] {
+            for n_tokens in [0, 2] {
+                for spec in [false, true] {
+                    // Both non-stream OpenAI dialects use usage_json with the same Done
+                    // fields. Use the chat collector here without changing global compat.
+                    let twin = blocking_response(
+                        usage_stream_fixture(n_tokens, spec),
+                        "m".into(),
+                        true,
+                        Vec::new(),
+                        None,
+                        Envelope::new(true),
+                    )
+                    .await;
+                    let bytes = axum::body::to_bytes(twin.into_body(), usize::MAX)
+                        .await
+                        .unwrap();
+                    let twin: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+                    let receipt = MockReceipt {
+                        events: events.clone(),
+                        wants_capture: false,
+                        prompt: 0,
+                        cached: 0,
+                        completion: 0,
+                        finalized: false,
+                    };
+                    let env = Envelope::new(chat);
+                    let lines = sse_data_lines(
+                        sse_response_for_format(
+                            usage_stream_fixture(n_tokens, spec),
+                            "m".into(),
+                            SseFormat {
+                                chat,
+                                openai: true,
+                                include_usage: true,
+                            },
+                            None,
+                            env.clone(),
+                            Vec::new(),
+                            None,
+                            Some(Box::new(receipt)),
+                        )
+                        .into_response(),
+                    )
+                    .await;
+                    assert_eq!(lines.last().map(String::as_str), Some("[DONE]"));
+                    assert_eq!(lines.len(), n_tokens + 3);
+                    let chunks: Vec<serde_json::Value> = lines[..lines.len() - 1]
+                        .iter()
+                        .map(|line| serde_json::from_str(line).unwrap())
+                        .collect();
+                    for chunk in &chunks[..chunks.len() - 1] {
+                        assert_eq!(chunk.get("usage"), Some(&serde_json::Value::Null));
+                        assert_eq!(chunk["choices"].as_array().unwrap().len(), 1);
+                    }
+                    assert_eq!(
+                        chunks[chunks.len() - 2]["choices"][0]["finish_reason"],
+                        "stop"
+                    );
+                    let terminal = chunks.last().unwrap();
+                    assert_eq!(terminal["choices"], json!([]));
+                    assert_eq!(terminal["usage"], twin["usage"]);
+                    assert_eq!(terminal["id"], env.id);
+                    assert_eq!(
+                        terminal["object"],
+                        if chat {
+                            "chat.completion.chunk"
+                        } else {
+                            "text_completion"
+                        }
+                    );
+                    assert!(events.lock().unwrap().contains(&MeterEvent::Complete {
+                        prompt: 42,
+                        cached: 30,
+                        completion: n_tokens as u64,
+                    }));
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn absent_or_false_include_usage_preserves_legacy_stream_bytes() {
+        for chat in [true, false] {
+            for options in [
+                None,
+                Some(json!({"include_usage": false})),
+                Some(json!({"include_usage": null})),
+                Some(json!({})),
+            ] {
+                let mut request = json!({"model": "m", "prompt": "hi",
+                    "messages": [{"role": "user", "content": "hi"}], "stream": true});
+                if let Some(options) = options {
+                    request["stream_options"] = options;
+                }
+                let options = if chat {
+                    serde_json::from_value::<ChatCompletionReq>(request)
+                        .unwrap()
+                        .stream_options
+                } else {
+                    serde_json::from_value::<CompletionReq>(request)
+                        .unwrap()
+                        .stream_options
+                };
+                let include_usage = options
+                    .as_ref()
+                    .and_then(|o| o.include_usage)
+                    .unwrap_or(false);
+                let env = Envelope::new(chat);
+                let lines = sse_data_lines(
+                    sse_response_for_format(
+                        usage_stream_fixture(1, true),
+                        "m".into(),
+                        SseFormat {
+                            chat,
+                            openai: true,
+                            include_usage,
+                        },
+                        None,
+                        env.clone(),
+                        Vec::new(),
+                        None,
+                        None,
+                    )
+                    .into_response(),
+                )
+                .await;
+                let content = if chat {
+                    json!({"object": "chat.completion.chunk", "model": "m",
+                        "choices": [{"index": 0, "delta": {"content": "hello", "role": "assistant"}, "finish_reason": null}]})
+                } else {
+                    json!({"object": "text_completion", "model": "m",
+                        "choices": [{"index": 0, "text": "hello", "finish_reason": null}]})
+                };
+                let usage = usage_json(
+                    42,
+                    1,
+                    30,
+                    0.5,
+                    Some(worker::SpecUsage {
+                        rounds: 10,
+                        drafted: 30,
+                        accepted: 21,
+                    }),
+                );
+                let finish = if chat {
+                    json!({"object": "chat.completion.chunk", "model": "m",
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": usage})
+                } else {
+                    json!({"object": "text_completion", "model": "m",
+                        "choices": [{"index": 0, "text": "", "finish_reason": "stop"}], "usage": usage})
+                };
+                assert_eq!(
+                    lines,
+                    vec![
+                        env.stamp(content).to_string(),
+                        env.stamp(finish).to_string(),
+                        "[DONE]".into()
+                    ]
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn include_usage_does_not_fabricate_usage_on_failed_streams() {
+        for chat in [true, false] {
+            for terminal in [
+                None,
+                Some(Event::Error(worker::EngineError::overloaded("fixture"))),
+                Some(Event::DeadlineExceeded { ms: 10 }),
+            ] {
+                let (tx, rx) = worker::event_channel();
+                tx.send(Event::Token {
+                    id: 1,
+                    text: "hello".into(),
+                })
+                .unwrap();
+                if let Some(terminal) = terminal {
+                    tx.send(terminal).unwrap();
+                }
+                drop(tx);
+                let lines = sse_data_lines(
+                    sse_response_for_format(
+                        rx,
+                        "m".into(),
+                        SseFormat {
+                            chat,
+                            openai: true,
+                            include_usage: true,
+                        },
+                        None,
+                        Envelope::new(chat),
+                        Vec::new(),
+                        None,
+                        None,
+                    )
+                    .into_response(),
+                )
+                .await;
+                assert_eq!(lines.len(), 3);
+                assert_eq!(lines.last().map(String::as_str), Some("[DONE]"));
+                let content: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+                let error: serde_json::Value = serde_json::from_str(&lines[1]).unwrap();
+                assert_eq!(content.get("usage"), Some(&serde_json::Value::Null));
+                assert!(error.get("error").is_some());
+                assert!(error.get("usage").is_none());
+                assert!(error.get("choices").is_none());
+            }
+        }
+    }
+
     #[tokio::test]
     async fn stream_chunks_carry_envelope_and_first_delta_role() {
         let (tx, rx) = worker::event_channel();
@@ -16713,6 +17147,7 @@ default_reasoning_effort = "always"
             Vec::new(),
             None,
             Some(receipt),
+            false,
         )
         .into_response();
         let lines = sse_data_lines(resp).await;
@@ -16768,6 +17203,7 @@ default_reasoning_effort = "always"
             Vec::new(),
             None,
             receipt,
+            false,
         )
         .into_response();
         let mut body = Box::pin(response.into_body().into_data_stream());
@@ -16851,6 +17287,7 @@ default_reasoning_effort = "always"
             Vec::new(),
             None,
             receipt,
+            false,
         )
         .into_response();
         let lines = sse_data_lines(response).await;
@@ -19436,7 +19873,11 @@ temperature = 0.6
             "user": "u-1", "stream_options": {"include_usage": true}
         }))
         .unwrap();
-        // the no-op forms + cosmetic fields: all fine (accept-and-ignore class).
+        // No-op semantic forms and cosmetic user are accepted; usage is an active option.
+        assert_eq!(
+            req.stream_options.as_ref().unwrap().include_usage,
+            Some(true)
+        );
         assert_eq!(req.response_format.as_ref().unwrap()["type"], "text");
         assert_eq!(req.logprobs.as_ref().unwrap().as_bool(), Some(false));
         assert_eq!(req.n, Some(1));
@@ -22712,6 +23153,55 @@ request = "0"
             error,
             "OpenModels feed requires MEMRA_MODEL_METADATA for model \"qwen/qwen3.6-27b\""
         );
+    }
+
+    #[tokio::test]
+    async fn stop_token_ids_handlers_return_named_400s() {
+        let mut st = fake_worker_state();
+        let model = st.models[0].clone();
+        Arc::make_mut(&mut st.caps).insert(
+            model.clone(),
+            ModelCaps {
+                n_vocab: 8,
+                ..Default::default()
+            },
+        );
+        for ids in [vec![0; 17], vec![8], vec![u32::MAX]] {
+            for chat in [false, true] {
+                let body = json!({"model":model, "prompt":"hello",
+                    "messages":[{"role":"user", "content":"hello"}], "stop_token_ids":ids});
+                let response = if chat {
+                    chat_completions(
+                        State(st.clone()),
+                        Default::default(),
+                        None,
+                        Json(serde_json::from_value(body).unwrap()),
+                    )
+                    .await
+                } else {
+                    completions(
+                        State(st.clone()),
+                        Default::default(),
+                        None,
+                        Json(serde_json::from_value(body).unwrap()),
+                    )
+                    .await
+                };
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+                let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(body["error"]["param"], "stop_token_ids");
+                assert_eq!(body["error"]["type"], "invalid_request_error");
+                assert!(
+                    body["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("stop_token_ids")
+                );
+            }
+        }
     }
 
     #[tokio::test]
