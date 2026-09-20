@@ -59,6 +59,7 @@ pub fn parse(text: &str) -> Result<Value, String> {
     let mut p = Parser {
         b: text.as_bytes(),
         i: 0,
+        depth: 0,
     };
     p.ws();
     let v = p.value()?;
@@ -72,6 +73,7 @@ pub fn parse(text: &str) -> Result<Value, String> {
 struct Parser<'a> {
     b: &'a [u8],
     i: usize,
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -100,6 +102,18 @@ impl<'a> Parser<'a> {
     }
 
     fn value(&mut self) -> Result<Value, String> {
+        // Bound the parser itself, before a declared normalizer can be inspected.
+        // Supported 32-level Sequence programs fit within this container limit.
+        if self.depth >= 128 {
+            return Err("json: nesting exceeds 128 levels".into());
+        }
+        self.depth += 1;
+        let result = self.value_inner();
+        self.depth -= 1;
+        result
+    }
+
+    fn value_inner(&mut self) -> Result<Value, String> {
         match self.peek()? {
             b'{' => self.object(),
             b'[' => self.array(),
@@ -282,6 +296,22 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn excessive_nesting_refuses_before_recursing_further() {
+        let supported = format!("{}0{}", "[".repeat(127), "]".repeat(127));
+        assert!(parse(&supported).is_ok());
+        let excessive = format!("{}0{}", "[".repeat(128), "]".repeat(128));
+        assert_eq!(
+            parse(&excessive).unwrap_err(),
+            "json: nesting exceeds 128 levels"
+        );
+        let objects = format!("{}0{}", "{\"x\":".repeat(128), "}".repeat(128));
+        assert_eq!(
+            parse(&objects).unwrap_err(),
+            "json: nesting exceeds 128 levels"
+        );
+    }
 
     #[test]
     fn scalars_and_nesting() {

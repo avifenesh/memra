@@ -12,6 +12,9 @@ edition = "2024"
 
 [dependencies]
 memra-gguf = { workspace = true }
+aho-corasick = "=1.1.4"
+regex-syntax = "=0.8.11"
+unicode-normalization-alignments = "=0.1.12"
 
 [[bin]]
 name = "tok-check"
