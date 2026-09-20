@@ -1,0 +1,15 @@
+# WP-A day 8 resumable state
+- Lane: `lane/spill-a-20260919`; working tree `/Users/avifen/tiyuvta/wt-spill-a`.
+- Integration merged/pushed: `e4f7e633b27fc2caf85d553d6e0659449af1b3b2`.
+- Native source/build revision: that merge; isolated checkout `/root/wt-a`.
+- Finished/pushed: `358df5666` conformance, `6c8e9acf8` six exact roundtrips 4 KiB–256 MiB + native build.
+- Current A remote process: none; no tmux session; GPU cells finished.
+- Remote receipts: `/root/spill-receipts/a-day8/`; local copy: `day8/native/`.
+- Card: RTX PRO 6000 Blackwell; observed cap/max 600/600 W; development-only.
+- Mac fmt/check/Linux-target check/tier tests/clippy/diff/flags passed; raw logs in `day8/mac/`.
+- First conformance attempt refused canonical lock contention; retry passed existing v1/v1.1/v1.2 + additive cases.
+- Blocker: gate does NOT bind frozen canonical v1.3 schedules; graph retention is ticket-wide, not independent source/destination. Do not call all-v1.3 PASS.
+- Next: eight storage-bench direct roundtrip/restore cells (264,4097,1048576,4194568 bytes), collector pro-single, sync/commit/push EACH.
+- Then implement/run N=1 synchronous pread/O_DIRECT 1/16 MiB cold/warm plumbing; write IO-BASELINE.md and day8/RESULTS.md.
+- Storage label: block-device ext4 (virtio; NVMe ancestry provider-claimed, not proven).
+- Access only via lead socket `~/.ssh/cm/box3`; check master first; never fresh SSH; lock `/tmp/memra-gpu.lock`.
