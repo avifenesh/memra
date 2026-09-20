@@ -71,6 +71,7 @@ class QualificationControls(unittest.TestCase):
                 gate.lock_mapping(gpus, specs, {7}, "")
         self.assertEqual(gate.STAGES["same-device"][2], 1)
         self.assertEqual(gate.STAGES["pair"][2], 2)
+        self.assertEqual(gate.STAGES["indexed-kda"][2], 2)
         self.assertEqual(gate.STAGES["worker"][2], 2)
 
     def test_lease_binds_uuid_order_canonical_files_and_live_ancestor(self):

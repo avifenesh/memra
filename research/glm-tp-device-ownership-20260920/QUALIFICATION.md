@@ -100,3 +100,14 @@ stages are synthetic native ownership/allocator tests. The measured fixture has
 `partial_key_bytes=0`, so it does not prove GPU lazy-index-key or KDA allocation coverage. Full checkpoint serving pressure,
 source-lease replay token identity and affected kernel/run-gen/run-spec exactness remain
 separate required rows in [VALIDATION.md](VALIDATION.md), never inferred from these passes.
+
+
+## Indexed-MLA/KDA validation extension
+
+The additional `indexed-kda` stage uses exactly two physical GPUs and a new four-layer
+GLM5-next fixture. It requires positive cold and partial KDA/index-key obligations,
+materializes them through the real allocation paths, and requires zero remaining debt
+once warm. See [extension plan and CPU results](validation-extension-20260920/PLAN.md).
+It has not yet produced a native receipt; the historical three-stage result is unchanged.
+Use a fresh source/build receipt and the same two-card wrapper form with
+`--stage indexed-kda`.

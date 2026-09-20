@@ -18,6 +18,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 STAGES = {
+    "indexed-kda": ("engine", "model_memory::native_tests::glm_indexed_mla_kda_state_materialization", 2),
     "same-device": ("engine", "model_memory::native_tests::glm_same_ordinal_owners_are_not_lost", 1),
     "pair": ("engine", "model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill", 2),
     "worker": ("server", "worker::tests::native_glm_peer_admission_trim_preserves_lease", 2),

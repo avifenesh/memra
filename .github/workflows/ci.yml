@@ -189,6 +189,9 @@ jobs:
           MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
+      - name: Indexed MLA and KDA memory fixture contracts (CPU-only)
+        run: tools/test-model-memory-fixture.sh
+
       # memra-lanes is CUDA-free and was outside every unit suite, so the lane admission
       # policy and the streaming-audio scheduler had NO caller in CI: the audio red arms
       # (a batch-1 per-lane drive shedding at c4, a short probe that cannot see it) would

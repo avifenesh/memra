@@ -105,6 +105,8 @@ pub mod kda;
 pub mod mla;
 pub mod mla_ffi;
 mod model_memory;
+#[cfg(test)]
+mod model_memory_fixture;
 mod model_memory_plan;
 pub mod moe_sel_dump;
 pub mod moesd;

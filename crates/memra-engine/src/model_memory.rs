@@ -573,4 +573,228 @@ mod native_tests {
             owner.stream().synchronize().unwrap();
         }
     }
+    /// Two KDA and two genuinely indexed MLA layers: cold, partial and warm state
+    /// obligations must agree with the allocations owned by the real cache. No weights
+    /// are downloaded and no model/support/performance claim is made by this gate.
+    #[test]
+    #[ignore = "requires a native CUDA pair under the coordinator's exact two-card leases"]
+    fn glm_indexed_mla_kda_state_materialization() {
+        use crate::hybrid_forward::IndexerPlanes;
+        use crate::model_memory_fixture::{CAPACITY, FixtureSource, KDA_LAYERS, MLA_LAYERS};
+        use std::mem::size_of;
+
+        let source = FixtureSource::new();
+        let (tensors, bytes, digest) = source.identity();
+        eprintln!(
+            "[model-memory-544-indexed] fixture=glm5-next-memory-tp2-v1 tensors={tensors} bytes={bytes} sha256={digest} capacity={CAPACITY}"
+        );
+        let primary = Engine::new(0).expect("native device 0 required; never skip");
+        let mut model = HybridModel::load_from_source(&primary, &source).unwrap();
+        assert_eq!(model.plan, source.plan);
+        let rt = Arc::new(Glm5TpRt::new(&[0, 1]).expect("native device 1 required; never skip"));
+        model.layers = std::mem::take(&mut model.layers)
+            .into_iter()
+            .map(|mut layer| {
+                layer.mixer = match layer.mixer {
+                    Mixer::Kda(kda) => {
+                        Mixer::Kda(crate::glm5_tp::shard_kda_layer(&primary, &rt, kda).unwrap())
+                    }
+                    Mixer::Mla(mla) => {
+                        assert!(
+                            mla.index.is_some(),
+                            "fixture must load a real k-pool indexer"
+                        );
+                        Mixer::Mla(crate::glm5_tp::shard_mla_layer(&primary, &rt, mla).unwrap())
+                    }
+                    _ => panic!("unexpected fixture mixer"),
+                };
+                layer
+            })
+            .collect();
+        for il in KDA_LAYERS {
+            let Mixer::Kda(kda) = &model.layers[il].mixer else {
+                panic!("missing KDA")
+            };
+            assert_eq!(kda.heads(), 1, "outer layer must be a real TP2 shard");
+            assert_eq!(kda.tp.as_ref().unwrap().peers.len(), 1);
+        }
+        let peer = &rt.peers[0];
+        let mut cache = Cache::new_planned(&primary, &model.cfg, &model.plan, CAPACITY).unwrap();
+        for il in MLA_LAYERS {
+            let plane = cache.latent[il].as_ref().unwrap();
+            assert!(plane.index_rows.is_some());
+            assert!(plane.index_width > 0);
+            assert!(
+                plane.index_ring_rows.is_some(),
+                "fixture must exercise a physical tail ring"
+            );
+        }
+        let owners = model.owned_engines(&primary);
+        assert_eq!(owners.len(), 2);
+        let fence = || {
+            for owner in &owners {
+                owner.stream().synchronize().unwrap();
+            }
+        };
+        // Measure cache-owned allocations independently of the admission formula.
+        let allocated = |cache: &Cache| -> [usize; 2] {
+            let mut bytes = [0; 2];
+            for ranks in cache.glm5_tp_recur.iter().flatten() {
+                assert_eq!(ranks.len(), 2);
+                for (rank, plane) in ranks.iter().enumerate() {
+                    bytes[rank] += (plane.conv_state.len()
+                        + plane.ssm_state.len()
+                        + plane.ssm_state_alt.len())
+                        * size_of::<f32>();
+                }
+            }
+            for peers in cache.glm5_tp_latent_peer.iter().flatten() {
+                assert_eq!(peers.len(), 1);
+                let plane = &peers[0];
+                bytes[1] += (plane.rows.len()
+                    + plane.index_rows.as_ref().map_or(0, |rows| rows.len())
+                    + plane.index_pool_keys.as_ref().map_or(0, |keys| keys.len()))
+                    * size_of::<f32>()
+                    + plane.len_d.len() * size_of::<i32>();
+            }
+            bytes
+        };
+        let remaining = |cache: Option<&Cache>| -> [usize; 2] {
+            let charges = model.unmaterialized_state_bytes(cache, CAPACITY).unwrap();
+            assert_eq!(charges.iter().map(|c| c.device).collect::<Vec<_>>(), [0, 1]);
+            [charges[0].bytes, charges[1].bytes]
+        };
+        fence();
+        let cold = remaining(None);
+        assert_eq!(cold, remaining(Some(&cache)));
+        assert_eq!(allocated(&cache), [0, 0]);
+        assert!(
+            cold[0] > 0 && cold[1] > cold[0],
+            "KDA ranks AND indexed peer state must be nonzero"
+        );
+        let check = |cache: &Cache, label: &str| -> [usize; 2] {
+            fence();
+            let live = allocated(cache);
+            let pending = remaining(Some(cache));
+            for rank in 0..2 {
+                assert_eq!(
+                    live[rank] + pending[rank],
+                    cold[rank],
+                    "{label}: rank {rank} new real allocations must exactly discharge its prediction"
+                );
+            }
+            eprintln!(
+                "[model-memory-544-indexed] phase={label} cold={cold:?} allocated={live:?} remaining={pending:?}"
+            );
+            pending
+        };
+        let allocate_kda = |cache: &mut Cache, il: usize| {
+            let Mixer::Kda(kda) = &model.layers[il].mixer else {
+                panic!("missing KDA")
+            };
+            crate::glm5_tp::ensure_kda_tp_state(&primary, &rt, kda, cache, il).unwrap();
+        };
+        let key_bytes = |il: usize| {
+            let Mixer::Mla(mla) = &model.layers[il].mixer else {
+                panic!("missing MLA")
+            };
+            let index = mla.tp.as_ref().unwrap().peers[0]
+                .index
+                .as_ref()
+                .expect("real peer indexer");
+            (CAPACITY / index.geom.pool * index.geom.head_dim).max(1) * size_of::<f32>()
+        };
+        let keys = [key_bytes(MLA_LAYERS[0]), key_bytes(MLA_LAYERS[1])];
+        assert!(
+            keys.iter().all(|&bytes| bytes > 0),
+            "zero key bytes cannot qualify indexed MLA"
+        );
+
+        allocate_kda(&mut cache, KDA_LAYERS[0]);
+        for il in MLA_LAYERS {
+            crate::glm5_tp::ensure_mla_peer_latent(
+                &rt,
+                cache.latent[il].as_ref().unwrap(),
+                &mut cache.glm5_tp_latent_peer[il],
+            )
+            .unwrap();
+        }
+        let partial_ranks = check(&cache, "partial-ranks-and-keys");
+        assert!(partial_ranks[0] > 0 && partial_ranks[0] < cold[0]);
+        assert_eq!(
+            partial_ranks[1],
+            partial_ranks[0] + keys.iter().sum::<usize>()
+        );
+
+        // Use the real indexer append/build path, not a test-side keys=zeros assignment.
+        let build_keys = |cache: &mut Cache, il: usize, slot: usize| {
+            let Mixer::Mla(mla) = &model.layers[il].mixer else {
+                panic!("missing MLA")
+            };
+            let shard = &mla.tp.as_ref().unwrap().peers[0];
+            let indexer = shard.index.as_ref().unwrap();
+            let t = indexer.geom.pool;
+            let h = peer
+                .htod(
+                    &(0..t * model.cfg.n_embd as usize)
+                        .map(|i| (i % 17) as f32 * 0.01 - 0.08)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap();
+            let q = peer.zeros(t * shard.wq_a.out_features()).unwrap();
+            let plane = &mut cache.glm5_tp_latent_peer[il].as_mut().unwrap()[0];
+            let (indices, width) = HybridModel::mla_kpool_indices(
+                peer,
+                indexer,
+                &h,
+                &q,
+                IndexerPlanes {
+                    state: plane.index_rows.as_mut().unwrap(),
+                    pool_keys: &mut plane.index_pool_keys,
+                    ready: &mut plane.index_pools_ready,
+                    state_ring_rows: plane.index_ring_rows.unwrap_or(0),
+                    capacity_tokens: CAPACITY,
+                },
+                t,
+                slot,
+            )
+            .unwrap();
+            assert!(width > 0 && indices.len() == t * width);
+            assert_eq!(plane.index_pools_ready, (slot + t) / indexer.geom.pool);
+            let keys = plane
+                .index_pool_keys
+                .as_ref()
+                .expect("native indexer must allocate keys");
+            assert_eq!(keys.len() * size_of::<f32>(), key_bytes(il));
+            assert!(
+                peer.dtoh_view(&keys.slice(..indexer.geom.head_dim))
+                    .unwrap()
+                    .iter()
+                    .all(|v| v.is_finite())
+            );
+        };
+        build_keys(&mut cache, MLA_LAYERS[0], 0);
+        let partial_keys = check(&cache, "partial-keys");
+        assert_eq!(partial_keys[0], partial_ranks[0]);
+        assert_eq!(partial_keys[1], partial_keys[0] + keys[1]);
+        assert!(partial_keys[1] > partial_keys[0]);
+
+        allocate_kda(&mut cache, KDA_LAYERS[1]);
+        assert_eq!(check(&cache, "keys-only"), [0, keys[1]]);
+        build_keys(&mut cache, MLA_LAYERS[1], 0);
+        assert_eq!(check(&cache, "warm"), [0, 0]);
+        for il in MLA_LAYERS {
+            let Mixer::Mla(mla) = &model.layers[il].mixer else {
+                unreachable!()
+            };
+            build_keys(&mut cache, il, mla.index.as_ref().unwrap().geom.pool);
+        }
+        assert_eq!(check(&cache, "warm-append"), [0, 0]);
+        eprintln!(
+            "[model-memory-544-indexed] PASS kda_layers=2 indexed_mla_layers=2 ranks=2 cold_primary={} cold_peer={} partial_primary={} partial_peer={} partial_key_bytes={} warm_primary=0 warm_peer=0",
+            cold[0], cold[1], partial_ranks[0], partial_ranks[1], keys[1]
+        );
+        drop(cache);
+        fence();
+    }
 }
