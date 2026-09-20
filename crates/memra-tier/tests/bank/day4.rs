@@ -15,6 +15,9 @@ fn slru_matches_recorded_native_semantics_synthetic_trace() {
         .collect();
     let mut p = SlruPolicy::new(&[(32, 3), (64, 2), (128, 1)]).unwrap();
     let mut outcomes = BTreeMap::new();
+    let mut transfers = BTreeMap::new();
+    let mut transferred = 0;
+    assert_eq!(trace["rows"].as_array().unwrap().len(), 2_013);
     for (index, row) in trace["rows"].as_array().unwrap().iter().enumerate() {
         let id = &ids[row["key"].as_u64().unwrap() as usize];
         let op = row["op"].as_str().unwrap();
@@ -70,6 +73,22 @@ fn slru_matches_recorded_native_semantics_synthetic_trace() {
         } else {
             "noop"
         };
+        let key = row["key"].as_u64().unwrap() as u8;
+        match result {
+            "admitted" | "reserved" => {
+                let upload =
+                    device_rows::FrozenUpload::new(key, row["size"].as_u64().unwrap() as usize);
+                transferred += 1;
+                if result == "admitted" {
+                    upload.finish(true);
+                } else {
+                    assert!(transfers.insert(key, upload).is_none());
+                }
+            }
+            "published" => transfers.remove(&key).unwrap().finish(true),
+            "aborted" => transfers.remove(&key).unwrap().finish(false),
+            _ => {}
+        }
         *outcomes.entry(result).or_insert(0) += 1;
         assert_eq!(result, row["result"].as_str().unwrap(), "step {index}");
         assert_eq!(
@@ -99,7 +118,13 @@ fn slru_matches_recorded_native_semantics_synthetic_trace() {
     ] {
         assert!(outcomes[arm] > 0, "missing {arm}");
     }
-    println!("synthetic native SLRU decisions: {outcomes:?}");
+    for (_, upload) in transfers {
+        upload.finish(false);
+    }
+    assert!(transferred > 0);
+    println!(
+        "banked_residency frozen SLRU: 2013 decisions, {transferred} fake transfers; {outcomes:?}"
+    );
 }
 
 #[test]
