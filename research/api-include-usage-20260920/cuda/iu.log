@@ -1,0 +1,47 @@
+TEST_EXIT=0
+test tests::command_send_failure_obeys_the_retry_contract ... ok
+test tests::draining_rejects_new_requests_with_503_and_retry_after ... ok
+test tests::deep_schema_fails_while_normal_decode_keeps_stepping ... ok
+test tests::completion_admission_supports_metered_blocked_and_paid_transitions ... ok
+test tests::handlers_sync_worker_truth_usage_and_cost_before_terminal_response ... ok
+test tests::health_is_green_only_while_the_worker_is_alive ... ok
+test tests::liveness_failure_obeys_the_retry_contract ... ok
+test tests::multi_item_capture_requests_open_one_receipt_per_item_under_child_ids ... ok
+test tests::readiness_failure_obeys_the_retry_contract ... ok
+test tests::readyz_peer_probe_integrity_is_present_and_advisory ... ok
+test tests::responses_carry_rate_limit_headers_and_slot_frees ... ok
+test tests::same_effort_value_resolves_identically_on_every_surface ... ok
+test tests::same_omitted_request_resolves_identically_on_all_four_surfaces ... ok
+test tests::streaming_client_disconnect_records_partial_usage_and_cost ... ok
+test tests::unknown_model_refuses_model_not_found_before_admission ... ok
+test tests::committed_prefill_sends_a_real_keepalive_before_any_generated_token ... ok
+test tests::valid_response_format_preflight_preserves_generation ... ok
+
+test result: ok. 714 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 5.07s
+
+CLIPPY_EXIT=0
+    Checking rayon v1.12.0
+    Checking image v0.25.10
+    Checking memra-runtime v0.138.0 (/root/lane/wt-include-usage/crates/memra-runtime)
+    Checking referencing v0.29.1
+    Checking tower v0.5.3
+    Checking toktrie v1.7.6
+    Checking serde_path_to_error v0.1.20
+   Compiling memra-server v0.138.0 (/root/lane/wt-include-usage/crates/memra-server)
+    Checking matchit v0.7.3
+    Checking memra-validate v0.138.0 (/root/lane/wt-include-usage/crates/memra-validate)
+    Checking memra-sampling v0.138.0 (/root/lane/wt-include-usage/crates/memra-sampling)
+    Checking base64 v0.22.1
+    Checking axum v0.7.9
+    Checking async-stream v0.3.6
+    Checking toml v0.8.23
+    Checking memra-lanes v0.138.0 (/root/lane/wt-include-usage/crates/memra-lanes)
+    Checking llguidance v1.7.6
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 4m 50s
+BUILD_EXIT=0
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/root/lane/wt-include-usage/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 21.59s

@@ -872,6 +872,17 @@ coordinator's reviewed final build and per-card lease. The separate `--phase bat
 executes the authoritative generic release battery with verified owned executables.
 See the research `NATIVE-REFUSAL-PLAN.md` for commands, state witnesses and limits.
 
+### Model-owned device admission and reclaim (#544)
+
+`tools/qualify-model-device-memory.py` runs the named native ownership/memory stages
+under an external exact per-card lease: one physical card for same-device owner coverage,
+two for GLM peer state/reclaim and worker admission/pinned-source refill. Each stage
+requires a source/binary-bound build receipt and preserves raw output, telemetry and
+lease completion. See [protocol](../research/glm-tp-device-ownership-20260920/QUALIFICATION.md)
+and [native results](../research/glm-tp-device-ownership-20260920/NATIVE-RESULTS.md).
+The 2026-09-20 PRO 6000 run passed all three synthetic stages. GPU KDA/lazy-index-key
+allocation coverage, full-checkpoint serving and performance remain pending; these are
+not model-support or full release-battery receipts.
 
 ## Generic spill / tiered KV (memra-tier)
 
