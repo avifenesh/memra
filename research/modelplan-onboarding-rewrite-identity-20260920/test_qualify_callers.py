@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -146,6 +147,7 @@ class FinalizationTests(unittest.TestCase):
                 record['binaries'][name] = {'sha256': runner.build.digest(path)}
             finalizing = False
             verified_after_cleanup = False
+            signals_sent = 0
             telemetry = Mock()
             waits = 0
             def wait(**kwargs):
@@ -159,14 +161,18 @@ class FinalizationTests(unittest.TestCase):
             if fault == 'terminate':
                 telemetry.terminate.side_effect = OSError('deliberate terminate failure')
             def verify(*_args):
-                nonlocal verified_after_cleanup
+                nonlocal verified_after_cleanup, signals_sent
                 if finalizing:
                     verified_after_cleanup = True
+                    if fault == 'sig_verify':
+                        signals_sent += 1
+                        os.kill(os.getpid(), signal.SIGTERM)
                     if fault == 'verify':
                         raise RuntimeError('deliberate final source/binary/lease failure')
                 return record, 'a' * 64
             original_write = runner.write
             def write(path, value):
+                nonlocal signals_sent
                 if path.name == 'files-sha256.json' and fault == 'manifest':
                     raise OSError('deliberate manifest failure')
                 if path.name == 'result.json.pending' and value.get('status') == 'passed':
@@ -175,6 +181,16 @@ class FinalizationTests(unittest.TestCase):
                     if fault == 'publish':
                         raise OSError('deliberate atomic publication failure')
                 original_write(path, value)
+                if fault == 'sig_pending' and path.name == 'result.json.pending' and value.get('status') == 'passed':
+                    signals_sent += 1
+                    os.kill(os.getpid(), signal.SIGTERM)
+            original_replace = Path.replace
+            def replace(path, target):
+                nonlocal signals_sent
+                if fault == 'sig_replace' and path.name == 'result.json.pending' and json.loads(path.read_text())['status'] == 'passed':
+                    signals_sent += 1
+                    os.kill(os.getpid(), signal.SIGTERM)
+                return original_replace(path, target)
             def fake(command, environment, target, timeout):
                 target.mkdir(parents=True)
                 if 'inspect' in command:
@@ -200,12 +216,15 @@ class FinalizationTests(unittest.TestCase):
                     patch.object(runner.subprocess, 'check_output', return_value='gpu_uuid,pid\n'), \
                     patch.object(runner.subprocess, 'Popen', return_value=telemetry), \
                     patch.object(runner, 'write', side_effect=write), \
+                    patch.object(Path, 'replace', replace), \
                     patch.dict(os.environ, {'MEMRA_GPU_LEASE_FILE': 'CPU fixture'}), patch('builtins.print'):
                 try:
                     runner.run(args)
                 except BaseException as error:
                     failure = error
             result = json.loads((out / 'result.json').read_text())
+            if fault and fault.startswith('sig_'):
+                print(json.dumps({'signal_control': phase, 'fault': fault, 'signals_sent': signals_sent, 'status': result['status'], 'had_error': failure is not None}))
             self.assertTrue(list((out / 'cases').rglob('stdout.log')))
             if fault:
                 self.assertIsNotNone(failure, 'finalization failure was ignored')

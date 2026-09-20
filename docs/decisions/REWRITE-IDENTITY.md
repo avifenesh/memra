@@ -111,3 +111,14 @@ Seven baseline CPU fault controls preserve the twelve-case schedule and expected
 refusal semantics, including variant cleanup, and complement the twelve caller
 controls. Existing source/build trees remain frozen; this is a gate-code change,
 not permission to relabel their executables or qualification records.
+
+
+Late cancellation is part of the same TC557-CALLERS-01 rule. Cancellation handling
+now remains active through final verification and atomic publication in both runners.
+Each final verifier checks cancellation after the identity work returns. Preparing or
+replacing a passed result temporarily uses an immediate cancellation handler, preserving
+the outer signal state rather than clearing it. A cancellation at publication leaves
+failed/incomplete, including rollback of an interrupted replacement. The outer signal
+scope is restored only after the final status decision and publication. Real SIGTERM
+controls cover final verification, pending-result writing and the replacement boundary
+for baseline, callers and battery in isolated CPU processes; all nine scenarios refuse.

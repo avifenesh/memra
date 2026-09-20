@@ -9,6 +9,19 @@ Base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/542-trusted-rewrite-identity`.
 Environment: macOS arm64, no CUDA toolkit or GPU. No serving machine was accessed.
 
+## Late-cancellation finalization correction
+
+The865finalizer still cleared a SIGTERM deferred during final verification before
+publishing passed. Both runners now keep cancellation tracking through verification
+and publication, check after verification returns, and use immediate cancellation
+while preparing/replacing PASS. The final status remains failed/incomplete for
+cancellation before commitment. Real SIGTERM CPU controls cover three points across
+baseline, callers and battery; all nine scenarios pass after the fix and the final-
+verification scenario reproduces stalePASS at frozen865. Evidence is under
+`cleanup-receipt-20260920/cancellation/`. No remote/native build or GPU action was
+performed for this correction; paused provider storage and prior build records remain
+unchanged.
+
 ## Consolidated native-runner finalization correction
 
 TC557-CALLERS-01 also covers the baseline `qualify-native.py` pattern. Both runners

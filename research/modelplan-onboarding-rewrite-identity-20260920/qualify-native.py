@@ -312,6 +312,7 @@ def run(args):
             controller.check_deadline(float('inf'))
             verify_lease()
             verify_build()
+            controller.check_deadline(float('inf'))
         def remove_variant():
             try:
                 variant.lstat()
@@ -321,17 +322,19 @@ def run(args):
         errors, manifest_sha = finalization.finalize_evidence(
             out, telemetry, telemetry_file, final_verify, writer=write_json, digest=digest,
             cleanups=(lambda: changed_binary.unlink(missing_ok=True), remove_variant))
-    summary.update({'evidence_manifest_sha256': manifest_sha, 'cases': len(results),
-                    'mtp': 'ran' if args.mtp_model else 'pending exact artifact'})
-    if failure is not None or errors:
-        summary.update({'status': 'failed', 'error': str(failure) if failure else None,
-                        'finalization_errors': errors})
-        finalization.publish_result(out, summary, writer=write_json)
-        if failure is not None:
-            raise failure
-        raise RuntimeError('; '.join(errors))
-    summary.update({'status': 'passed', 'completed_utc': datetime.datetime.now(datetime.timezone.utc).isoformat()})
-    finalization.publish_result(out, summary, writer=write_json)
+        summary.update({'evidence_manifest_sha256': manifest_sha, 'cases': len(results),
+                        'mtp': 'ran' if args.mtp_model else 'pending exact artifact'})
+        if failure is not None or errors:
+            summary.update({'status': 'failed', 'error': str(failure) if failure else None,
+                            'finalization_errors': errors})
+            finalization.publish_result(out, summary, writer=write_json,
+                                        check_cancelled=lambda: controller.check_deadline(float('inf')))
+            if failure is not None:
+                raise failure
+            raise RuntimeError('; '.join(errors))
+        summary.update({'status': 'passed', 'completed_utc': datetime.datetime.now(datetime.timezone.utc).isoformat()})
+        finalization.publish_result(out, summary, writer=write_json,
+                                        check_cancelled=lambda: controller.check_deadline(float('inf')))
 
 
 def main():

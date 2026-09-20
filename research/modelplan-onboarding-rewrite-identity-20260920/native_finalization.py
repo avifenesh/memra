@@ -1,10 +1,53 @@
 """Shared final-result commit for native qualification runners; no GPU operations."""
 
-def publish_result(out, result, *, writer):
-    # An interrupted/failed final write leaves the earlier incomplete receipt intact.
+import contextlib
+import signal
+
+
+class PublicationCancelled(RuntimeError):
+    pass
+
+
+@contextlib.contextmanager
+def publication_guard(check):
+    """Do not defer a cancellation through preparation/atomic publication of PASS."""
+    signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    previous = {sig: signal.getsignal(sig) for sig in signals}
+    def interrupted(signum, frame):
+        handler = previous[signum]
+        try:
+            if callable(handler):
+                handler(signum, frame)  # Preserve the outer controller's cancellation state.
+        finally:
+            raise PublicationCancelled(f'result publication cancelled by signal {signum}')
+    try:
+        for sig in signals:
+            signal.signal(sig, interrupted)
+        check()
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def publish_result(out, result, *, writer, check_cancelled=lambda: None):
     pending = out / 'result.json.pending'
-    writer(pending, result)
-    pending.replace(out / 'result.json')
+    if result['status'] != 'passed':
+        writer(pending, result)
+        pending.replace(out / 'result.json')
+        return
+    try:
+        with publication_guard(check_cancelled):
+            writer(pending, result)
+            check_cancelled()  # Includes cancellation received while writing the pending file.
+            pending.replace(out / 'result.json')
+    except PublicationCancelled as error:
+        # If a signal interrupted the atomic operation after replacement, do not
+        # leave a stale PASS as the final observable result of the cancelled run.
+        failed = {**result, 'status': 'failed', 'publication_error': str(error)}
+        writer(pending, failed)
+        pending.replace(out / 'result.json')
+        raise
 
 
 def finalize_evidence(out, telemetry, telemetry_log, verify, *, writer, digest, cleanups=()):

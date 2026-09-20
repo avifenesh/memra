@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import tempfile
@@ -29,6 +30,7 @@ class NativeFinalizationTests(unittest.TestCase):
             finished = False
             waits = 0
             checked_final = False
+            signals_sent = 0
             telemetry = Mock()
             def wait(**kwargs):
                 nonlocal finished, waits
@@ -40,9 +42,12 @@ class NativeFinalizationTests(unittest.TestCase):
             if fault == 'terminate':
                 telemetry.terminate.side_effect = OSError('deliberate telemetry error')
             def verify(*_args):
-                nonlocal checked_final
+                nonlocal checked_final, signals_sent
                 if finished:
                     checked_final = True
+                    if fault == 'sig_verify':
+                        signals_sent += 1
+                        os.kill(os.getpid(), signal.SIGTERM)
                     if fault == 'verify': raise RuntimeError('deliberate final identity failure')
                 return record, 'b' * 64
             def source_mutation(_model, variant):
@@ -55,6 +60,7 @@ class NativeFinalizationTests(unittest.TestCase):
                 return original_rmtree(path, *args, **kwargs)
             original_write = runner.write_json
             def write(path, value):
+                nonlocal signals_sent
                 if fault == 'manifest' and path.name == 'files-sha256.json':
                     raise OSError('deliberate manifest failure')
                 if path.name == 'result.json.pending' and value.get('status') == 'passed':
@@ -63,6 +69,16 @@ class NativeFinalizationTests(unittest.TestCase):
                     self.assertFalse((out / 'changed-executable').exists())
                     if fault == 'publish': raise OSError('deliberate publication failure')
                 original_write(path, value)
+                if fault == 'sig_pending' and path.name == 'result.json.pending' and value.get('status') == 'passed':
+                    signals_sent += 1
+                    os.kill(os.getpid(), signal.SIGTERM)
+            original_replace = Path.replace
+            def replace(path, target):
+                nonlocal signals_sent
+                if fault == 'sig_replace' and path.name == 'result.json.pending' and json.loads(path.read_text())['status'] == 'passed':
+                    signals_sent += 1
+                    os.kill(os.getpid(), signal.SIGTERM)
+                return original_replace(path, target)
             def run(command, *args, **kwargs):
                 self.assertEqual(command[0], 'nvidia-smi')
                 kwargs['stdout'].write(b'gpu_uuid,pid\n')
@@ -95,10 +111,13 @@ class NativeFinalizationTests(unittest.TestCase):
                     patch.object(runner.subprocess, 'Popen', side_effect=popen), \
                     patch.object(runner.shutil, 'rmtree', side_effect=remove), \
                     patch.object(runner, 'write_json', side_effect=write), \
+                    patch.object(Path, 'replace', replace), \
                     patch.dict(os.environ, {'MEMRA_GPU_LEASE_FILE': 'CPU fixture'}), patch('builtins.print'):
                 try: runner.run(args)
                 except BaseException as error: failure = error
             result = json.loads((out / 'result.json').read_text())
+            if fault and fault.startswith('sig_'):
+                print(json.dumps({'signal_control': 'baseline', 'fault': fault, 'signals_sent': signals_sent, 'status': result['status'], 'had_error': failure is not None}))
             self.assertEqual(len(json.loads((out / 'cases.json').read_text())), 12)
             self.assertTrue((out / 'different-numerical-program.log').exists())
             if fault:

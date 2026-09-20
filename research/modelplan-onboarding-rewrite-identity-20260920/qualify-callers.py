@@ -44,13 +44,15 @@ finalization = module('native_finalization', 'native_finalization.py')
 
 
 def publish_result(out, result):
-    finalization.publish_result(out, result, writer=write)
+    finalization.publish_result(out, result, writer=write,
+                                check_cancelled=lambda: controller.check_deadline(float('inf')))
 
 
 def finalize_evidence(out, telemetry, telemetry_log, verify):
     def checked():
         controller.check_deadline(float('inf'))
         verify()
+        controller.check_deadline(float('inf'))
     return finalization.finalize_evidence(out, telemetry, telemetry_log, checked,
                                          writer=write, digest=build.digest)
 
@@ -225,16 +227,16 @@ def run(args):
         except BaseException as error:
             failure = error
         errors, manifest_sha = finalize_evidence(out, telemetry, telemetry_log, verify)
-    summary.update({'cases': len(cases), 'evidence_manifest_sha256': manifest_sha})
-    if failure is not None or errors:
-        summary.update({'status': 'failed', 'error': str(failure) if failure else None,
-                        'finalization_errors': errors})
-        publish_result(out, summary)
-        if failure is not None:
-            raise failure
-        raise RuntimeError('; '.join(errors))
-    summary['status'] = 'passed'
-    publish_result(out, summary)  # Last operation: teardown, evidence and checks already succeeded.
+        summary.update({'cases': len(cases), 'evidence_manifest_sha256': manifest_sha})
+        if failure is not None or errors:
+            summary.update({'status': 'failed', 'error': str(failure) if failure else None,
+                            'finalization_errors': errors})
+            publish_result(out, summary)
+            if failure is not None:
+                raise failure
+            raise RuntimeError('; '.join(errors))
+        summary['status'] = 'passed'
+        publish_result(out, summary)  # Last operation: teardown, evidence and checks already succeeded.
 
 
 if __name__ == '__main__':
