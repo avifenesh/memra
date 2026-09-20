@@ -1,0 +1,80 @@
+{
+  "receipt_replay": "PASS",
+  "scope": "rented RTX 5090 development correctness only",
+  "production_qualified": false,
+  "cells": [
+    {
+      "case": "4g-gen-off",
+      "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH",
+      "tokens": 32
+    },
+    {
+      "case": "4g-gen-on",
+      "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH",
+      "tokens": 32,
+      "gpu_slots": 4993,
+      "gpu_allocated_bytes": 4294818824,
+      "gpu_evictions": 26990,
+      "host_demands": 31983,
+      "host_evictions": 31967,
+      "physical_reads": 31983,
+      "rereads": 17553
+    },
+    {
+      "case": "4g-spec-off",
+      "verdict": "=== SELF-CONSISTENCY PASS ===",
+      "tokens": 32
+    },
+    {
+      "case": "4g-spec-on",
+      "verdict": "=== SELF-CONSISTENCY PASS ===",
+      "tokens": 32,
+      "gpu_slots": 4993,
+      "gpu_allocated_bytes": 4294818824,
+      "gpu_evictions": 178523,
+      "host_demands": 183516,
+      "host_evictions": 183500,
+      "physical_reads": 183516,
+      "rereads": 165768
+    },
+    {
+      "case": "8g-gen-off",
+      "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH",
+      "tokens": 32
+    },
+    {
+      "case": "8g-gen-on",
+      "verdict": "prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH",
+      "tokens": 32,
+      "gpu_slots": 9986,
+      "gpu_allocated_bytes": 8589637648,
+      "gpu_evictions": 12091,
+      "host_demands": 22077,
+      "host_evictions": 22061,
+      "physical_reads": 22077,
+      "rereads": 4389
+    },
+    {
+      "case": "8g-spec-off",
+      "verdict": "=== SELF-CONSISTENCY PASS ===",
+      "tokens": 32
+    },
+    {
+      "case": "8g-spec-on",
+      "verdict": "=== SELF-CONSISTENCY PASS ===",
+      "tokens": 32,
+      "gpu_slots": 9986,
+      "gpu_allocated_bytes": 8589637648,
+      "gpu_evictions": 63996,
+      "host_demands": 73982,
+      "host_evictions": 73966,
+      "physical_reads": 73982,
+      "rereads": 53684
+    },
+    {
+      "case": "host-refusal",
+      "verdict": "REFUSED: experts-via-tier host bank budget cannot hold one expert record",
+      "exit_code": 2
+    }
+  ]
+}
