@@ -21784,6 +21784,20 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// Diagnostic door (memra#577): `MEMRA_LOCKSTEP_SPLIT_GROUPS=1` runs every lockstep
+    /// resident-expert group one row at a time (`m_e = 1` per call) instead of one gathered
+    /// `m_e`-row call. Bit-identity with the M=1 run under this door places the mixed-peer
+    /// divergence in the grouped expert GEMM; a persisting divergence rules it out.
+    fn lockstep_split_groups() -> bool {
+        std::env::var("MEMRA_LOCKSTEP_SPLIT_GROUPS").as_deref() == Ok("1")
+    }
+
+    /// Diagnostic door (memra#577): `MEMRA_LOCKSTEP_CPU_ROWS=0` keeps every CPU expert on the
+    /// one-row companion call (no multi-row ABI for experts shared by two or more streams).
+    fn lockstep_cpu_rows_on() -> bool {
+        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() != Ok("0")
+    }
+
     /// Lane-3 M2: cross-stream MoE for lockstep decode. Routes all m stream rows in one
     /// batch, executes fully-HBM-resident experts through the grouped gather/GEMM/scatter
     /// machinery at m_e>1 (weight reads amortized across streams), and assigns any expert
@@ -21809,6 +21823,7 @@ impl HybridModel {
         // step35 per-layer SwiGLU clamp; None on every other arch / unclamped layer.
         let lim_exp = cfg.clamp_exp_at(il as u32);
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
+        Self::trace_moe_input(e, il, mrows, n_embd, zbatch)?;
 
         // Router: lockstep's cuBLAS matmul reduced all stream rows at once, so its `m =
         // stream_count` made one session's expert selection depend on how many peers shared the
@@ -21881,7 +21896,7 @@ impl HybridModel {
         // order per row differs from the sequential single-call chunk — part of the
         // documented lockstep numeric class.
         let host_rows = e.dtoh(zbatch)?;
-        let rows_ok = crate::cpu_experts::rows_supported();
+        let rows_ok = crate::cpu_experts::rows_supported() && Self::lockstep_cpu_rows_on();
         enum CpuPart {
             Single { row: usize },
             Rows { rows: Vec<usize> },
@@ -21941,19 +21956,39 @@ impl HybridModel {
                 .cmp(&groups[&a].rows.len())
                 .then(a.cmp(&b))
         });
+        // One work item per gathered group; under the split door, one per (row, slot) so every
+        // expert call is `m_e = 1` (memra#577 discriminator). Order and slot placement unchanged.
+        let split_groups = Self::lockstep_split_groups();
+        let mut work: Vec<(usize, Vec<i32>, Vec<i32>, Vec<f32>)> = Vec::new();
         for &ex in &order {
             let group = &groups[&ex];
-            let m_e = group.rows.len();
+            if split_groups {
+                for ((&row, &slot), &weight) in
+                    group.rows.iter().zip(&group.slots).zip(&group.weights)
+                {
+                    work.push((ex, vec![row], vec![slot], vec![weight]));
+                }
+            } else {
+                work.push((
+                    ex,
+                    group.rows.clone(),
+                    group.slots.clone(),
+                    group.weights.clone(),
+                ));
+            }
+        }
+        for (ex, rows, slots, weights) in work {
+            let m_e = rows.len();
             let gl = m.gate_exps.expert_layout(ex);
             let ul = m.up_exps.expert_layout(ex);
             let dl = m.down_exps.expert_layout(ex);
-            let row_idx_d = e.htod_i32(&group.rows)?;
-            let slot_idx_d = e.htod_i32(&group.slots)?;
+            let row_idx_d = e.htod_i32(&rows)?;
+            let slot_idx_d = e.htod_i32(&slots)?;
             let dmac = m.down_exps.macro_scale(ex);
             let weight_d = if dmac == 1.0 {
-                e.htod(&group.weights)?
+                e.htod(&weights)?
             } else {
-                let scaled: Vec<f32> = group.weights.iter().map(|&w| w * dmac).collect();
+                let scaled: Vec<f32> = weights.iter().map(|&w| w * dmac).collect();
                 e.htod(&scaled)?
             };
             let mut gathered = e.zeros(m_e * n_embd)?;
