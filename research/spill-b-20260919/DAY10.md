@@ -1,83 +1,163 @@
-# WP-B day 10 — target-class active KV (in progress)
+# WP-B day 10 — target-class active KV
 
 Repository: **avifenesh/memra**, branch `lane/spill-b-20260919`.
-Original native gate source: **8ef562b12f16fd3378f866939be347df3a6d3d96**
-(integ5 merge, including fixed-VA observation and pooled G1-label review fixes).
-Allocator-injection and mapped-VA diagnostic implementation is checkpointed in
-**418abc431** and later commits; **native compilation/qualification pending**.
-This is an open lane, not merged, released, deployed or serving-qualified.
+All seven requested native cells completed and their raw receipts were pushed.
+**Not merged, released, deployed, serving-qualified, or a default promotion.**
 
-## Target baseline and pending cells
+## Source and binary identity
+
+| Surface | Native source commit | Binary SHA-256 |
+| --- | --- | --- |
+| Frozen baselines + original controls | `8ef562b12f16fd3378f866939be347df3a6d3d96` | `ad3f7aad046c46f5c4b996325557bd8cefdd7fd856984fabc5fedabc6908a0f1` |
+| Isolated mapped-VA diagnostic | `61eb02acb75b3e8f2fc54c11e4ad32f43ce78457` | `9144cca9d2134811f5cdad7a1293c82664802c1a58cf75a3fc2c6244e60336fd` |
+| Direct native construction | `c619b008ed9f359c51bca7e0d8d1e8a74edbc17a` | `e171aef5f71181c588b869c37bb0e85c50c2a237d974295436e9fa3ef24a7002` |
+
+The initial merge includes integ5 `db16dc538f6920c9492c48c429c35e59b3d607e7`,
+including the observed fixed-VA and `not-applicable-pooled` review fixes.
+The diagnostic deliberately retains the original empty-plane allocation/swap
+regime; direct allocation is enabled only in the subsequent measured binary.
+This separates residual diagnosis from allocator-construction changes.
+
+## Frozen target-card baselines
 
 Hardware: **one RTX PRO 6000 Blackwell, 96 GB**, **600/600 W**.
-Every GPU cell is a single-run development correctness probe under
-`tools/tier-battery.py --rig pro-single`, `/tmp/memra-gpu.lock`, 250 ms telemetry.
-This is the target card class, not a two-card serving qualification.
-No timing comparisons across cards, throughput claims or default promotion.
+Every GPU cell is an **N=1 development correctness probe**, not a timing campaign,
+under `tools/tier-battery.py --rig pro-single`, `/tmp/memra-gpu.lock`, with
+250 ms telemetry. Initial lock contention was retried boundedly; every refused
+attempt is retained. No cross-card timing or serving/performance claim.
+
 Checkpoint: Qwen3.8-27B native NVFP4/Q5K GGUF; native q8_0/q5_1 KV unchanged.
 Program: tokenwise `decode_step_h`, trunk-only, no MTP or alternate prefill.
+The two contexts use context minus 128 prompt tokens and 128 continuation tokens.
 
-- 8k baseline: captured and pushed; successful collector attempt 1 (attempt 0
-  refused lock contention without executing). Native build exit 0.
-- 32k baseline: captured; native exit 0, all baseline hashes frozen separately.
-- Original VMM 8k: **ACTIVE-8K G1 PASS**. All seven frozen surfaces and restored prefix match; exact physical release/reacquisition, no residual.
-- Original VMM 32k: **ACTIVE-32K physical reclaim/restore bit-identical, residual 2097152 B, class unclassified — not G1 PASS**.
-- Original pooled 8k: **ACTIVE-8K pooled control: not-applicable-pooled**; no fixed-VA or G1 claim.
-- Mapped-VA residual diagnostic 32k and directly injected VMM 8k: **pending**.
+| Baseline completion file | SHA-256 |
+| --- | --- |
+| `pro-single-day10/baseline-8192/receipt/BASELINE.txt` | `224a9152f73b174698e24d234d97b47f253918c1657a8a1ff78554f67369d4d6` |
+| `pro-single-day10/baseline-32768/receipt/BASELINE.txt` | `f11a8938316fe8063b2e12b9bf558581f0627086a70b52525b8e4319447af559` |
 
-`BOX3-BASELINES.json` freezes the seven decoded continuation-surface hashes and
-artifact/binary/plan/prompt/source identity for each completed baseline. These are
-new target-card bundles, never interchangeable with the earlier RTX 5090 bundles.
-`day10-raw-manifest.json` seals raw archive membership and bytes. Final logits are
-losslessly gzip archived; replay hashes decoded bytes. `verify-day10.py` checks
-collector journals, source/build/binary identity, all continuation surfaces,
-physical-chunk arithmetic, deltas, power, and classification. It **does not run
-CUDA**. `--require-complete` fails while any requested cell is missing.
+`BOX3-BASELINES.json` freezes all seven decoded continuation-surface hashes plus
+artifact/binary/plan/prompt/source identity. Its SHA-256 is
+`72db65b6a52784b14a54e3c76f8bfdd1aa58f02b8e7a159e2e27696cbc831990`.
+These are **new target-card bundles, never interchangeable with RTX 5090 bundles**.
 
-## Residual classification boundary
+## G1 verdicts (verbatim)
 
-The diagnostic acts on **actual demoted planes**: retained edge/capacity chunks are
+```text
+ACTIVE-8K G1 PASS
+ACTIVE-32K physical reclaim/restore bit-identical, residual 2097152 B, class unclassified — not G1 PASS
+ACTIVE-8K pooled control: not-applicable-pooled
+```
+
+Both the original and directly constructed VMM 8k cells receive the first verdict.
+The original and isolated diagnostic 32k cells receive the second.
+Every active cell matches all seven frozen continuation surfaces and the restored
+prefix exactly: prompt, serialized plan, prefix/final state, 128 generated ids,
+129 decision/final logit rows and final logits. All 32 active planes round-trip;
+no source remains charged after demotion, and pinned charges equal logical bytes.
+
+| Driver observation (bytes) | Original 8k VMM | Original 32k VMM | Direct-construction 8k VMM |
+| --- | ---: | ---: | ---: |
+| Queried granule | 2,097,152 | 2,097,152 | 2,097,152 |
+| Rounded physical capacity | 301,989,888 | 1,040,187,392 | 301,989,888 |
+| Released whole chunks | 201,326,592 | 905,969,664 | 201,326,592 |
+| Retained edge/capacity chunks | 100,663,296 | 134,217,728 | 100,663,296 |
+| Logical D2H / pinned bytes | 239,468,544 | 969,277,440 | 239,468,544 |
+| Free before demote | 85,863,301,120 | 84,743,421,952 | 86,098,182,144 |
+| Free after demote | 86,064,627,712 | 85,647,294,464 | 86,299,508,736 |
+| Free after restore | 85,863,301,120 | 84,743,421,952 | 86,098,182,144 |
+| Observed reclaim / reacquisition | 201,326,592 / 201,326,592 | 903,872,512 / 903,872,512 | 201,326,592 / 201,326,592 |
+| Residual | 0 | **2,097,152** | 0 |
+
+The pooled control has zero observed reclaim/reacquisition and zero trim release;
+its G1 and fixed-VA fields are both **`not-applicable-pooled`**. Its unchanged
+free-VRAM observation is 86,184,165,376 B. No process-footprint optimization or
+performance attribution is inferred from different allocation-regime snapshots.
+
+## Residual diagnostic: VA free did not return the granule
+
+The probe acts on **actual demoted planes**: retained edge/capacity chunks are
 unmapped **without releasing their physical handles**, then their VA reservation
 is freed, re-reserved at the original address and the same retained handles remapped.
-It reads driver-free bytes before unmap, after unmap, after VA free and after remap,
-per plane. This separates physical capacity from mapping/reservation metadata.
-Failure leaves the gate suspended; no token executes against that state. Cleanup
-tracks whether the reservation remains owned. No new unsafe scope outside the
-existing `KvPlane` owner is introduced.
+It reads `cuMemGetInfo` before unmap, after unmap, after VA free and after remap,
+per plane. This isolates mapping/reservation metadata from physical-capacity release.
 
-A `va-reservation-page-table` class requires the measured residual to return
-**only** on VA free (not unmap), with exact remap accounting. The prior RTX 5090
-probe freed a **never-mapped spare** reservation, so it is not the corresponding
-mapped-range evidence. Until both cards have the required evidence, a nonzero
-residual remains **not G1 PASS**, even if this card classifies it. No class or G1
-verdict is inferred from the implementation or CPU tests.
+All 32 per-plane rows in `mapped-va-probe.tsv` show:
+
+```text
+mapped_va_release_delta_bytes=0
+mapped_unmap_delta_bytes=0
+mapped_va_roundtrip_equal=true
+residual_bytes=2097152
+residual_class=unclassified
+```
+
+Free VRAM remains **85,647,294,464 B** through spare-VA release, context sync,
+actual mapped-range unmap/VA free/remap. Full restoration returns exactly to
+**84,743,421,952 B**. The one-granule residual reproduces on this target card, just
+as on the earlier RTX 5090; it is **not classified by this probe**.
+
+A `va-reservation-page-table` class would require the residual to return only on
+VA free (not unmap), with exact remap accounting. That did **not** happen. The
+prior RTX 5090 probe freed only never-mapped spare VA, not the mapped-range probe.
+Neither card supplies the required nonzero-residual classification; 32k stays
+**not G1 PASS**. No relaxed equality, inferred page-table explanation, or further
+unrequested diagnostic is used to promote it.
 
 ## Direct allocation refinement
 
 `Cache::new_with_allocator(..., KvAllocator::Vmm)` selects native K/V allocation
-at construction, through `KvDev::alloc_kv_plane` / `Engine::alloc_vmm_u8`.
-There is no pooled empty-plane bootstrap or swap. A backend without VMM support
-refuses explicitly instead of substituting pooled storage. All old constructors,
-including planned and PP constructors, retain pooled allocation. Recurrent and
-latent state allocation, formats, kernels and numerical execution are unchanged.
-The existing gate-only `--kv-allocator vmm` door remains default-OFF;
-**decide-by: 2026-10-04**. No new environment flag or serving registration.
+at construction through `KvDev::alloc_kv_plane` / `Engine::alloc_vmm_u8`.
+The final native 8k receipt observes **34 VMM / 0 pooled K/V planes at position 0**,
+`construction=direct`, `empty_plane_swap=false`. Of those, 32 nonempty active planes
+are demoted/restored. There is no pooled empty-plane bootstrap or swap in the final
+source. The native build, clippy and 8k frozen-baseline/G1 rerun pass.
+
+A backend without VMM support refuses explicitly; it never substitutes pooled
+storage. All existing constructors, including planned and PP constructors, retain
+pooled allocation. Recurrent/latent state allocation, formats, kernels and the
+numerical program are unchanged. The gate-only `--kv-allocator vmm` door remains
+default-OFF; **decide-by: 2026-10-04**. No new environment flag or serving registration.
+New unsafe calls stay inside the existing `KvPlane` owner. A diagnostic failure
+leaves the operand suspended and tracks reservation ownership for safe cleanup;
+no token executes against it. No owning VMM `CudaSlice` escapes.
 
 ## Checks actually run
 
-- Mac `cargo fmt --all -- --check`: PASS.
-- Mac and Linux-target `cargo check -p memra-kv -p memra-tier --all-targets --offline`: PASS.
-- Mac `cargo test -p memra-kv -p memra-tier --offline --no-fail-fast`: **262 passed**.
-- Scoped all-target clippy with `-D warnings`: PASS.
-- Four Python verdict tests including 12 arithmetic/engagement mutation arms: PASS.
-- Archived 8k target baseline replay: PASS (integrity only, not G1).
-- `git diff --check` and `bash tools/check-flags.sh`: PASS.
-- Additional Mac **engine** check: BLOCKED, exit 101, `spawn nvcc: ... No such file or directory`;
-  preserved in `day10-checks/engine-mac-check.log`. This does not replace a native build.
-- Native original gate build: PASS, raw build and binary/source identity archived.
-- Native refined implementation build and GPU cells: NOT RUN yet.
+| Check | Result |
+| --- | --- |
+| Mac `cargo fmt --all -- --check` | PASS |
+| Mac and Linux-target scoped all-target check, offline | PASS; cross-check is compilation only |
+| Mac `cargo test -p memra-kv -p memra-tier --offline --no-fail-fast` | **262 passed** |
+| Scoped all-target clippy, `-D warnings` | PASS |
+| Four Python verdict tests, including 12 arithmetic/engagement mutation arms | PASS |
+| `git diff --check`; `bash tools/check-flags.sh` | PASS |
+| All three native release gate builds | PASS |
+| Native engine/gate release clippy, `-D warnings`, diagnostic and final source | PASS |
+| Native kv/tier release tests, diagnostic source (same final KV code) | **262 passed** |
+| Seven completed collector cells + final strict offline replay | PASS archive/identity/exactness checks; **32k remains non-PASS for G1** |
+| Additional Mac engine check | BLOCKED, exit 101: `spawn nvcc: ... No such file or directory` |
+| Full GPU exactness/serving/PRO-pair battery; direct-allocation 32k | NOT RUN |
 
-CPU logs and commands are in `day10-checks/`; native receipts in `pro-single-day10/`.
-Migration-safe running-cell details and exact next action live in `STATE.md`.
-Time accounting will be updated at close; the lane has a 10-agent-day budget,
-with this session bounded to approximately 3.5 agent-hours.
+The Mac engine failure is retained in `day10-checks/engine-mac-check.log`;
+native CUDA builds provide the target compilation evidence, not a fabricated Mac pass.
+CPU commands/logs are under `day10-checks/`; native raw receipts under
+`pro-single-day10/`. `day10-raw-manifest.json` seals membership and bytes.
+Final logits are losslessly gzip archived; replay hashes decoded bytes.
+`verify-day10.py --require-complete` checks journals, build/source/binary identity,
+command/allocator engagement, power/telemetry, continuation, chunk arithmetic,
+strict deltas and diagnostic classification. It **does not run CUDA**.
+
+## Publication, boundaries and time
+
+Baseline, control, diagnostic and injection receipts were committed and pushed after
+each cell with hooks enabled. All raw failures here are pre-execution lock refusals;
+no native GPU cell failed. No main/other-lane checkout or artifact was modified.
+Only B's isolated checkout and receipts were used. The temporary remote runner is
+removed after the final cell; the B lane stays open for lead integration and pending
+qualification rather than being represented as a completed serving implementation.
+
+This session used approximately **1.3 agent-hours**, including build/collector/lock
+waits, below the approximately 3.5-hour session cap. The lane budget is **10 agent-days**;
+prior sessions' cumulative usage is not reconstructed here. Remaining blockers are
+32k residual classification and unrun serving/prefix/graph/spec/PP/PRO-pair surfaces,
+not access to an owner-controlled rig.

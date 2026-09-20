@@ -200,6 +200,18 @@ def main():
         result[label] = verdict(m, flags, context)
     if args.require_complete:
         require(set(result) == set(EXPECTED), f"pending cells: {set(EXPECTED) - set(result)}")
+        exported = json.loads((HERE / "day10-remote-export-manifest.json").read_text())
+        for name, expected in exported.items():
+            require(decoded_sha(RAW / name) == expected, f"remote-export byte mismatch: {name}")
+        for name in ("diagnostic-build", "injection-build"):
+            require((RAW / name / "clippy.exit").read_text().strip() == "0", "native clippy failed")
+        require((RAW / "diagnostic-build/tests.exit").read_text().strip() == "0", "native tests failed")
+        checks_dir = HERE / "day10-checks/final"
+        checks = json.loads((checks_dir / "checks.json").read_text())["checks"]
+        require(len(checks) == 8, "incomplete final CPU checks")
+        for check in checks:
+            require(check["exit"] == 0 and sha(checks_dir / check["log"]) == check["sha256"],
+                    "failed or mutated final CPU check")
     manifest = {str(p.relative_to(RAW)): sha(p) for p in sorted(RAW.rglob("*")) if p.is_file()}
     mp = HERE / "day10-raw-manifest.json"
     if args.seal:
