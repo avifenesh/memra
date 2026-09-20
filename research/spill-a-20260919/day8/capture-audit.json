@@ -1,0 +1,81 @@
+[
+  {
+    "capture": "conformance-retry1/command.capture.json",
+    "raw_descriptors": "match",
+    "compute_snapshots": "empty",
+    "gpu_power_limits": [
+      {
+        "device": "0",
+        "power.limit": "600.00 W",
+        "power.max_limit": "600.00 W"
+      }
+    ],
+    "note": "600/600 W"
+  },
+  {
+    "capture": "roundtrip/command.capture.json",
+    "raw_descriptors": "match",
+    "compute_snapshots": "empty",
+    "gpu_power_limits": [
+      {
+        "device": "0",
+        "power.limit": "600.00 W",
+        "power.max_limit": "600.00 W"
+      }
+    ],
+    "note": "600/600 W"
+  },
+  {
+    "capture": "storage/direct-restore-264/command.capture.json",
+    "raw_descriptors": "match",
+    "compute_snapshots": "empty",
+    "gpu_power_limits": [],
+    "note": "No per-cell power sample; superseded by combined batch"
+  },
+  {
+    "capture": "storage/direct-restore-4097/command.capture.json",
+    "raw_descriptors": "match",
+    "compute_snapshots": "empty",
+    "gpu_power_limits": [],
+    "note": "No per-cell power sample; superseded by combined batch"
+  },
+  {
+    "capture": "storage/direct-roundtrip-264-retry2/command.capture.json",
+    "raw_descriptors": "match",
+    "compute_snapshots": "empty",
+    "gpu_power_limits": [
+      {
+        "device": "0",
+        "power.limit": "600.00 W",
+        "power.max_limit": "600.00 W"
+      }
+    ],
+    "note": "600/600 W"
+  },
+  {
+    "capture": "storage/direct-roundtrip-4097/command.capture.json",
+    "raw_descriptors": "match",
+    "compute_snapshots": "empty",
+    "gpu_power_limits": [
+      {
+        "device": "0",
+        "power.limit": "600.00 W",
+        "power.max_limit": "600.00 W"
+      }
+    ],
+    "note": "600/600 W"
+  },
+  {
+    "capture": "storage-batch/attempt-04/command.capture.json",
+    "raw_descriptors": "match",
+    "compute_snapshots": "empty",
+    "gpu_power_limits": [
+      {
+        "device": "0",
+        "power.limit": "600.00 W",
+        "power.max_limit": "600.00 W"
+      }
+    ],
+    "note": "600/600 W"
+  }
+]

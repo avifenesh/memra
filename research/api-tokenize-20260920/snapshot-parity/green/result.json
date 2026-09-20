@@ -1,0 +1,22 @@
+{
+  "mode": "production-snapshot-green",
+  "command": [
+    "cargo",
+    "test",
+    "--offline",
+    "--manifest-path",
+    "/Users/avifen/.codex/worktrees/pr557-tokenizer-snapshot/memra/target/snapshot-src-pv961tft/Cargo.toml",
+    "--lib",
+    "--",
+    "--nocapture"
+  ],
+  "test_returncode": 0,
+  "expected_outcome_observed": true,
+  "source_sha256": {
+    "crates/memra-server/src/worker/tokenizers.rs": "877fa4a8fc74fc2f3ebd1fd520d876d63ab0d2e8514fd6f68b73b817cf10150c",
+    "crates/memra-server/src/worker/tokenizers/tests.rs": "d199610e2b53f36bccdb857e1779e2c293181b3e21f293f2bb6b8170c1aa4ae8",
+    "crates/memra-server/src/worker/tokenizers/fixture.rs": "42b7e428553e4b3bc9b702edc28041382e3d38625b37fb937d6c462b7b8c8616"
+  },
+  "log_sha256": "4030ca439109a7f97f080a92e259ab9619e71cd13209801b28114e7679837087",
+  "scope": "CPU tokenizer semantics and snapshot sharing only; no CUDA boot or model qualification"
+}

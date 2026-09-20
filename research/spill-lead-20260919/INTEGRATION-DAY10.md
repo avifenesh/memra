@@ -1,32 +1,49 @@
-# Integration — day 10 (`lane/spill-integ5-20260920`, replay onto current `main`)
+# Integration — days 9–10 on the target card (`lane/spill-integ6-20260920`)
 
-Lead: successor of @agent-c07799 (session moved from the operator Mac to the Linux rig 2026-09-20 ~16:00Z).
+Lead: @agent-c07799 (old session, under the owner's "if something can merge, merge it"; the new-rig session was
+told via HANDOVER-20260920 §LIVE COORDINATION). Base: `origin/main` `dbf88d46` (#568 merged). Lane tips merged:
+A `b3dc864c`, B `7d213551`, C `90c7e68e`, D `a3aff2ae`, E `483f7d3d`. All merges clean.
 
-## Replay
-`origin/main` moved `fdb78136` → `f79b3e57` (#555 GLM TP device ownership, #558 Qwen2 tokenizer, INDEX rows).
-`git merge --no-ff origin/main` into integ5 at `5f386c72` → `4f36a0e7`; no conflicts (`git merge-tree`
-clean; the only file both sides touched was `crates/memra-engine/src/lib.rs`, auto-merged). INDEX.md rows
-are the union.
+## What this integrates (rented RTX PRO 6000 Blackwell — the target card class — 600/600 W, collector-locked,
+## `executed-not-qualified`)
+- **A day 8–9**: native conformance ALL PASS on the target card; six exact roundtrips 4 KiB–256 MiB; eight O_DIRECT
+  storage cells byte-exact on a real block device (label: `block-device ext4 (virtio; NVMe ancestry provider-claimed,
+  not proven)`); pread baseline N=1 (io_uring screening targets in `IO-BASELINE.md`, io_uring still deferred); and the
+  **canonical v1.3 schedules bound natively**: `PASS v1.3 device_hand_back native CUDA`,
+  `PASS v1.3 transfer_source_retirement native CUDA` — per-side retention graphs + destination charge past
+  acknowledgement; frozen schedules unchanged (`V13-BINDING.md`).
+- **B day 10**: BOX3 frozen baselines 8k/32k (`BOX3-BASELINES.json`); **`ACTIVE-8K G1 PASS` twice** on the target
+  card (empty-plane swap, and native direct construction with 34 VMM planes); pooled control
+  `not-applicable-pooled`; **32k**: bit-identical, one 2 MiB residual on this card too, mapped-VA release measured
+  at 0 B → class stays `unclassified`, **not G1 PASS**. Allocator injection (`Cache` constructs VMM planes) landed
+  behind the same door.
+- **C day 9/10**: target-card baselines + banked experts (default and 8 GiB, gen + spec, ON/OFF) all `MATCH` /
+  `SELF-CONSISTENCY PASS`; eviction counts identical to the 5090 run (deterministic SLRU trace); the existing
+  `MoeSlotCache` owner-thread door audited (`Engine: Send + Sync` assertion); `BUDGET-REFUSAL.md` with three options
+  for the lead decision on `MEMRA_MOE_SLOTS` (clamps to 8, cannot express refusal).
+- **D day 10**: `pro-single` profile reviewed (schema enum fixed, 7 tests); **G2 scored** N=10/arm (5 AB + 5 BA),
+  5 sizes × 2 directions, 200 visits ≥497 ms, 250 ms telemetry, 37–41 °C — pinned wins from 64 KiB up (1 MiB
+  32.7 vs 17.5 GiB/s; 256 MiB ≈53 vs ≈37), 4 KiB within noise; `pp-transport-smoke PASS` (single-card loopback
+  only); D archive `--validate` clean; bootstrap receipt: 30 exit-0 steps + one allowed prerequisite exit (not
+  "all green").
+- **E**: docs/ROUTER + INDEX alignment for v1.3.
 
-## CPU battery on the replayed tree (`4f36a0e7`, Linux rig, `--offline`, CPUQuota 1200%)
-Raw logs: `integration-day10/cpu-battery/*.log`, summary `SUMMARY.txt`.
-`cargo fmt --check` OK · `cargo test -p memra-tier -p memra-kv`: 261 passed / 0 failed (63 kv + 2 + 2 + 58 bank
-+ 55 contracts + 18 peer + 6 placement + 53 storage + 4 doctests) · clippy `-D warnings` (engine, server, tier,
-kv, gguf; all-targets, `x86_64-unknown-linux-gnu`, `DOCS_RS=1`) clean · `check-flags.sh`: 864 runtime names, no
-uncovered · publish census 12/12 · docs-registry census OK · collector Python suite 78 passed (32 subtests) ·
-perf board up to date · `git diff --check` clean.
+## Battery (this tree, Mac, offline)
+262 tier/kv tests · clippy `-D warnings` (engine, server, tier, kv, gguf all-targets, Linux target, `DOCS_RS=1`)
+clean · fmt · flags census · publish census 12/12 · docs registry census · perf board current · collector Python
+suite 85 passed · `git diff --check` clean.
 
-## Review state on #568
-CI jobs all green on `5f386c72`. Both `revuto` inline findings (fixed VA field, pooled G1 label) are fixed at
-`a799cf5d` / `eb010c87` and verified against the tip (`active.rs`: `not-applicable-pooled` on both fields;
-`reclaimed = vmm_granularity != 0 && bounded_no_leak && residual_class != "unclassified"`). `revuto` then hit its
-2-round cap ("Revuto did not run a review on this pull request"); Bugbot capped for the day. Per the owner
-ruling of 2026-09-16 the author's self-review COMMENT is the review; merged with `gh pr merge 568 --merge`.
+## Gates
+G1: 8k PASS on both card classes; 32k held by the unclassified one-granule residual (same on both cards; not VA
+reservation). Suggested next probe: repeat demote/restore cycles in one process — a non-growing residual is
+one-time driver metadata (non-leak). G2: first scored envelope exists (development evidence, one card class).
+G0, G3–G7 unchanged.
 
-## BOX3 state at resync (16:10Z)
-One tmux `b-day10-vmm32` (B's original-source 32k VMM cell, collector attempt 3 after three lock refusals)
-holds `/tmp/memra-gpu.lock`. B's 8k VMM on the target card: `g1_reclaim_qualified=true residual_bytes=0
-residual_class=none vmm_granularity_bytes=2097152` (B pushed `4c295f225`). C's four 8 GiB pressure cells:
-`pressure-status.json` `state: complete`. D's smoke exit 0; D's `--validate` over all BOX3 receipts still
-`REFUSED: interrupted/invalid CELL journal; not a completed capture` (a peer cell was live). A: storage cells
-264/4097/1048576 captured; 4194568 and the pread baseline pending.
+## Review round on PR #573 (`55895c18`)
+CI: every job pass. Automated review: six inline findings, all documentation drift against the merged tree, all
+valid, fixed in the follow-up commit: `docs/TESTING.md` tier-transfer-gate section (canonical v1.3 is now bound
+and passing; eleven-line verdict block; per-side pins), `--kv-allocator vmm` mechanism (direct construction;
+containment is a call-site policy since `Cache::new_with_allocator` / `KvDev::alloc_vmm_u8` are public), the
+mapped-VA probe receipt surface, the three probe-derived residual classes, the day-10 **zero-residual tightening
+(e)** and the `verify-day10.py` pointer; `docs/decisions/KV-PHYSICAL-RECLAIM.md` scope (direct construction
+landed; the surface the decide-by promotes or deletes) and criterion (e) recorded as an explicit tightening.

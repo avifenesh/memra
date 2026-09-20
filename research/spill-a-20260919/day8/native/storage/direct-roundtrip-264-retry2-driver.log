@@ -1,0 +1,171 @@
+{"version":1,"fixture":"opaque-affine-mod251-v1-roundtrip-development-linux-io-not-spill-speed","backend_requested":"direct","backend_actual":"linux-o-direct-read-write","status":"byte-exact","valid_bytes":264,"padded_bytes":4096,"io_bytes":81920,"physical_bytes":null,"queue_ns":null,"io_ns":null,"h2d_ns":null,"d2h_ns":null,"p2p_ns":null,"total_ns":16401579,"inflight":1,"pinned_bytes":0,"pageable_bytes":null,"fallbacks":0,"payload_checksum":[67,187,247,110,211,70,209,240,35,97,56,163,100,26,245,103,206,193,140,42,230,57,194,169,31,127,74,114,36,232,179,245]}
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "target/release/storage-bench",
+    "roundtrip",
+    "/root/wt-a/day8-storage/direct-264",
+    "264",
+    "direct"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 4081060404077,
+  "ended_monotonic_ns": 4081390154816,
+  "started_utc": "2026-09-20T15:59:56.054262+00:00",
+  "ended_utc": "2026-09-20T15:59:56.384012+00:00",
+  "elapsed_seconds": 0.329750739,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": {
+    "class": "overlay-unproven",
+    "nvme_proven": false,
+    "label": "overlay/unproven \u2014 not NVMe, not spill speed",
+    "allow_unproven_storage": true,
+    "root": "/root/wt-a/day8-storage",
+    "commands": [
+      {
+        "command": [
+          "findmnt",
+          "-J",
+          "-T",
+          "/root/wt-a/day8-storage"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-findmnt.log",
+          "bytes": 198,
+          "sha256": "5513713aaee55c174b8e54558e9b406fe5c8f33dd521e9680a79b3e363e9cc17"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-J",
+          "-o",
+          "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-lsblk.log",
+          "bytes": 1441,
+          "sha256": "86a6e90bda8fcd07d071871279eb424512aa8130bcf42c8449ca5d2cea5d8095"
+        }
+      },
+      {
+        "command": [
+          "findmnt",
+          "-n",
+          "-o",
+          "SOURCE",
+          "-T",
+          "/root/wt-a/day8-storage"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-source.log",
+          "bytes": 10,
+          "sha256": "eaf0859c2cc38afde4721bdc014f1a3b798aa89de5133e8733a01c3ed354db90"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-s",
+          "-r",
+          "-n",
+          "-o",
+          "KNAME",
+          "/dev/vda1"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-ancestry.log",
+          "bytes": 9,
+          "sha256": "d07ab3efdc2334a58a73050de8022c36f189aaccdb839c977eed07b526ac2f36"
+        }
+      }
+    ],
+    "qualification": false,
+    "object_binding": {
+      "root": "/root/wt-a/day8-storage",
+      "object": "/root/wt-a/day8-storage/direct-264",
+      "root_filesystem": {
+        "device": 64769,
+        "filesystem_id": 4661413203927464213,
+        "mount_id": 31
+      },
+      "object_filesystem": {
+        "device": 64769,
+        "filesystem_id": 4661413203927464213,
+        "mount_id": 31
+      },
+      "method": "stat-device+statfs-id+linux-mount-id"
+    },
+    "object_argument": "/root/wt-a/day8-storage/direct-264"
+  },
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 565,
+    "sha256": "1aef20cb6bb5bbb1e3f04c9e1462ee416bc966c5a4b21a6df973c781c4979e5c"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 342,
+      "sha256": "578a1d0fd911763748b999e981203cadc28a5812e9811af41a003ce1ee47c9af"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}
