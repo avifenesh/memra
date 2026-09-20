@@ -1,0 +1,38 @@
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4f16] prefill program = INT8 MMQ (no f16 mirrors) (reason: capacity-keyed auto REFUSED (UNPINNED)); free 13583 MiB, mirror mass 56070 MiB, capacity threshold 64262 MiB (mass + 8192 headroom) — SELECTS PREFILL ARITHMETIC
+[q4rp] split-plane IN-PLACE swap: 420 dense trunk tensors
+argmax-margin-probe: T=2103 window=12 sm_count=170 model=/data/models/gemma4/gemma-4-31B_q4_0-it.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+[fa-pool] grow #0 dev=0 o_len 0 -> 8192 ml_len 0 -> 32 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 8192 -> 16384 ml_len 32 -> 64 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 16384 -> 32768 ml_len 64 -> 128 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 32768 -> 65536 ml_len 128 -> 256 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 65536 -> 131072 ml_len 256 -> 512 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 131072 -> 262144 ml_len 512 -> 1024 (retired kept, zero=false)
+[fa-pool] grow #6 dev=0 o_len 262144 -> 524288 ml_len 1024 -> 2048 (retired kept, zero=false)
+[fa-pool] grow #7 dev=0 o_len 524288 -> 1048576 ml_len 2048 -> 4096 (retired kept, zero=false)
+[fa-pool] grow #8 dev=0 o_len 1048576 -> 2097152 ml_len 4096 -> 8192 (retired kept, zero=false)
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+2091     5532          2.990758896e0    5532         2.755882263e0    2.216243744e-1   yes
+2092     236929        4.652109146e0    236929       4.670663834e0    2.029418945e-2   yes
+2093     107           4.619140625e-1   107          3.675708771e-1   5.439376831e-2   yes
+2094     236773        4.552268982e-2   236773       4.604091644e-1   4.368419647e-1   yes
+2095     1852          1.252906799e0    1852         1.244668961e0    2.182388306e-2   yes
+2096     715           5.082998276e0    715          4.892358780e0    2.053794861e-1   yes
+2097     236768        1.447658539e0    236768       1.262670517e0    1.869049072e-1   yes
+2098     107           1.602262497e0    107          1.777545929e0    4.496994019e-1   yes
+2099     496           2.630853653e0    496          2.674646378e0    1.271667480e-1   yes
+2100     100           1.658594131e0    100          1.608400345e0    8.729362488e-2   yes
+2101     34246         2.228393555e-1   715          4.591407776e-1   5.038661957e-1   NO <-- FLIP
+2102     715           2.101442337e0    715          2.332881927e0    5.236930847e-1   yes
+
+margin distribution (decode config, 12 positions): min 0.3676  p10 0.4591  p50 1.7775  p90 4.6707  max 4.8924
+margin distribution (prefill config): min 0.0455  p50 1.6586  max 5.0830
+DECISION POSITION (the gate's): prefill_top1=715 decode_top1=715 margin_p=2.1014 margin_d=2.3329 config_delta_at_ids=0.5237
+  -> the decision margin is BELOW 7/12 sampled positions' margins (rank 8 of 12)
+  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: 0.5237 > 2.1014 = false
+agreement across sampled positions: 11/12 (1 flip(s))
+flip@2101: margin 0.2228 vs config spread 0.5039 -> margin-EXPLAINED (near-tie coin)
+flip budget: 1 flip(s) vs budget 3 (calibration row: gemma4-31B (3/12-window))
+VERDICT-INPUT: NEAR-TIE class — every flip sits at a margin the config spread covers, within the model's calibrated budget (documented cross-config drift, not a numeric defect)
