@@ -1,14 +1,12 @@
-# WP-B day 10 — checkpoint closed; lane open for lead integration
-- Branch: lane/spill-b-20260919; see git HEAD/origin for final receipt/report commit.
-- Native checkout /root/wt-b remains clean at c619b008ed9f359c51bca7e0d8d1e8a74edbc17a (final runtime).
-- No B tmux/GPU/build job running; /root/b-day10-cell.sh removed; tracked runner remains run-day10-cell.sh.
-- All 7 requested cells finished and pushed; /root/spill-receipts/b-day10 preserved and mirrored in pro-single-day10/.
-- New 8k/32k PRO baselines frozen separately in BOX3-BASELINES.json; 600/600 W on every cell.
-- Original and direct-construction VMM 8k: ACTIVE-8K G1 PASS; 201326592 B exact reclaim/reacquisition.
-- VMM 32k + isolated diagnostic: bit-identical; 2097152 B residual, unclassified, not G1 PASS.
-- Actual demoted-plane unmap and VA-free deltas both 0; original VA/accounting restored exactly.
-- Pooled 8k: g1_reclaim_qualified=not-applicable-pooled; no fixed-VA claim.
-- Direct allocation implemented: 34 VMM/0 pooled planes at position 0, no swap; native build/clippy and 8k PASS.
-- Mac + native scoped tests: 262 each; Mac/cross-check/fmt/clippy/flags PASS; Mac engine nvcc missing (native builds PASS).
-- Replay: python3 research/spill-b-20260919/verify-day10.py --require-complete; DAY10.md has sources/hashes/verdicts.
-- Lead decision/next lane: unresolved 32k residual and unrun serving/prefix/graph/spec/PP/PRO-pair gates; no defaults changed.
+# WP-B day 11 checkpoint: series classification done on both cards, push blocked by the perf-ci gate
+- Branch lane/spill-b-20260919; local tip = merge of origin/main 34d6bce35 (1fcef31da) + 1566d4f81 (--reclaim-cycles) + day-11 data commit (see git log).
+- Push refused by tools/hooks/pre-push perf-ci freshness (engine files from the main merge); no override used. Lead pushes the tip SHA with the logged override.
+- Native checkout /root/wt-b at 1566d4f81 (synced by git bundle), clean; no B tmux running; /root/spill-receipts/b-day11 mirrored to pro-single-day11/.
+- --reclaim-cycles N landed: cli.rs, reclaim_contract.rs (classify_cycles), active.rs (Roundtrip, write_cycles), kv_tier_gate.rs; tests in crates/memra-tier/tests/reclaim/; docs/TESTING.md.
+- 32k PRO: 5 cycles, residual 2097152 B each, drift 0, class one-time-driver-mapping-metadata, g1_reclaim_qualified=false, not G1 PASS.
+- 32k 5090 laptop: identical shape and class; tokens match the rented 5090 bundle, logits/state differ; no frozen bundle for this card; not G1 PASS.
+- 8k control REFUSED on both cards inside the mapped-VA probe: "REFUSED: diagnostic could not re-reserve original VMM address" (PRO twice, laptop once). No 8k series exists.
+- Verdicts verbatim in DAY11.md; replay: python3 research/spill-b-20260919/verify-day11.py --require-complete; battery: run-day11-checks.py -> day11-checks/final/.
+- Storage day4 Err(Busy) flakes (lane A code) reproduce on the local rig only; reported, not touched.
+- Lead decisions pending: lift (e) for the one-time class or not; an 8k series control without the mapped-VA probe; nothing relaxed here.
+- Decide-by 2026-10-04 for the --kv-allocator vmm door unchanged.

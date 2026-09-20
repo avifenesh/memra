@@ -100,6 +100,39 @@ def classify_cycles(cycles, granule):
 
 # ---- receipt replay ----
 
+def refused(folder, rig):
+    """A cell the gate refused (exit 2, `REFUSED:` last line) before any token ran against a
+    suspended cache. Recorded verbatim; it is a non-result for that control, never a verdict."""
+    spec = RIGS[rig]
+    attempts = sorted(p for p in folder.glob("collector-*") if p.is_dir())
+    require(len(attempts) == 1, "refused cell with more than one executed attempt")
+    c = attempts[0]
+    require(json.loads((c / "lock.json").read_text()) ==
+            {"rig": rig, "lock": spec["lock"], "acquired": True}, "wrong rig/lock")
+    cap = json.loads((c / "command.capture.json").read_text())
+    require(cap["status"] == "refused" and cap["exit_code"] == 2 and not cap["timed_out"], "not a refusal")
+    quote = cap["failure_quote"]
+    log = (c / "command.log").read_text().splitlines()
+    require(quote.startswith("REFUSED: ") and log[-1] == quote, "refusal quote is not the last console line")
+    require((folder / "receipt/REFUSED.txt").read_text().strip() == quote, "REFUSED.txt differs from console")
+    require(not (folder / "receipt/ACTIVE.txt").exists() and not (folder / "receipt/reclaim-cycles.txt").exists()
+            and not any(line.startswith("reclaim-cycle ") for line in log), "refused cell produced a cycle")
+    for phase in ("before", "after"):
+        require(len((c / f"command.{phase}.log").read_text().splitlines()) == 1, "co-tenant snapshot")
+    limits = cap["gpu_power_limits"]
+    envelope = {k: limits[0][k] for k in ("power.limit", "power.max_limit")}
+    if spec["power"] is not None:
+        require(envelope == spec["power"], "power envelope")
+    identity = fields(folder / "receipt/identity.txt")
+    require(identity["binary_sha256"] == (folder / "binary.sha256").read_text().split()[0], "binary hash")
+    context = int(identity["context"])
+    return {"card": spec["card"], "power_envelope": envelope,
+            "source": (folder / "source.commit").read_text().strip(), "binary_sha256": identity["binary_sha256"],
+            "artifact_sha256": identity["artifact_sha256"], "status": "refused", "console": quote,
+            "prompt_committed_before_refusal": max((int(l.split("=")[1]) for l in log if l.startswith("baseline prompt committed=")), default=0),
+            "verdict": f"ACTIVE-{context // 1024}K reclaim-cycles control not executed: {quote}"}
+
+
 def collector(folder, rig):
     """Journal, lock, telemetry, power envelope, co-tenancy, command shape. Returns (identity, envelope)."""
     spec = RIGS[rig]
@@ -312,9 +345,12 @@ def main():
         if not raw.exists():
             continue
         manifest.update({f"{spec['raw']}/{p.relative_to(raw)}": sha(p) for p in sorted(raw.rglob("*")) if p.is_file()})
-        for label in CELLS:
-            folder = raw / label
+        for folder in sorted(p for p in raw.iterdir() if p.is_dir() and p.name.startswith("cycles-")):
+            label = folder.name
             if not (folder / "collector.exit").exists():
+                continue
+            if (folder / "collector.exit").read_text().strip() == "2":
+                result[f"{rig}/{label}"] = refused(folder, rig)
                 continue
             identity, envelope, console = collector(folder, rig)
             context = int(identity["context"])
@@ -331,7 +367,7 @@ def main():
                 "verdict": verdict(context, rows, klass, qualified, baseline_status)}
     if args.require_complete:
         expected = {f"{rig}/{label}" for rig in RIGS for label in CELLS}
-        require(set(result) == expected, f"pending cells: {sorted(expected - set(result))}")
+        require(expected <= set(result), f"pending cells: {sorted(expected - set(result))}")
         for rig, spec in RIGS.items():
             build = HERE / spec["raw"] / "build"
             for name in ("exit", "clippy.exit"):
