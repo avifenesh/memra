@@ -284,19 +284,63 @@ fn baseline(args: &cli::Args) -> Result<()> {
             position: digest("prompt-u32le", &prompt_bytes),
             tenant_salt: digest("tenant", b"gate-exclusive-request"),
         };
-        reclaim_observed =
-            active::roundtrip(&e, &mut cache, program, &args.out, args.reclaim_diagnostic)?;
-        let restored = capture(
-            &e,
-            &cache,
-            &model.plan,
-            &logits,
-            &e.dtoh(&hidden)?,
-            &args.out,
-            "restored-prefix",
-        )?;
-        if restored != prefix_hash {
-            return Err("active restored state is not bit-identical to suspended state".into());
+        // One process, one cache, one numeric program: `--reclaim-cycles N` repeats the SAME
+        // demote/restore roundtrip N times so a residual is classified by its series (constant
+        // one granule, growing, or none). Each cycle writes a full receipt under `cycle-<k>/` and
+        // must restore the suspended state bit-identically before the next cycle starts.
+        let cycles = args.reclaim_cycles.unwrap_or(1);
+        let mut series = Vec::with_capacity(cycles);
+        reclaim_observed = true;
+        for cycle in 1..=cycles {
+            let out = if args.reclaim_cycles.is_some() {
+                let dir = args.out.join(format!("cycle-{cycle}"));
+                fs::create_dir(&dir)?;
+                dir
+            } else {
+                args.out.clone()
+            };
+            let roundtrip = active::roundtrip(
+                &e,
+                &mut cache,
+                program.clone(),
+                &out,
+                args.reclaim_diagnostic,
+            )?;
+            let restored = capture(
+                &e,
+                &cache,
+                &model.plan,
+                &logits,
+                &e.dtoh(&hidden)?,
+                &out,
+                "restored-prefix",
+            )?;
+            if restored != prefix_hash {
+                return Err(format!(
+                    "active restored state is not bit-identical to suspended state (cycle {cycle} of {cycles})"
+                )
+                .into());
+            }
+            reclaim_observed &= roundtrip.reclaimed;
+            eprintln!(
+                "reclaim-cycle {cycle}/{cycles}: free_before={} free_after_demote={} free_after_restore={} released={} residual={} class={}",
+                roundtrip.cycle.free_before,
+                roundtrip.cycle.free_after_demote,
+                roundtrip.cycle.free_after_restore,
+                roundtrip.cycle.released,
+                roundtrip.residual,
+                roundtrip.residual_class,
+            );
+            series.push((roundtrip, restored));
+        }
+        if args.reclaim_cycles.is_some() {
+            fs::copy(
+                args.out
+                    .join(format!("cycle-{cycles}"))
+                    .join("restored-prefix-state.tsv"),
+                args.out.join("restored-prefix-state.tsv"),
+            )?;
+            active::write_cycles(&args.out, &series, &prefix_hash)?;
         }
     }
     let mut rows = File::create(args.out.join("logits.tsv"))?;

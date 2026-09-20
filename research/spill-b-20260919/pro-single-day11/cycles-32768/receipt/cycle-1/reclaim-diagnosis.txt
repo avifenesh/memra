@@ -1,0 +1,15 @@
+RECLAIM-DIAG: VMM fixed-VA chunk release
+source_owners_before_release=32
+source_owners_after_release=32
+source_slice_drops=0
+device_registry_after_demote=0
+free_before_trim_bytes=86217719808
+free_after_trim_bytes=86217719808
+pool_before_reserved=14965276672
+pool_before_used=14942217348
+pool_demoted_reserved=14965276672
+pool_demoted_used=14942217380
+pool_trimmed_reserved=14965276672
+pool_trimmed_used=14942217380
+trim_api=cuDeviceGetDefaultMemPool+cuMemPoolTrimTo
+trim_api_success=true

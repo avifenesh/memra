@@ -1,0 +1,42 @@
+Running as unit: run-p2070587-i2106023.scope; invocation ID: cdf9d171d5fd45e5bd058ae87277358f
+FMT_OK
+test real_filesystem_reopen_and_conflict_do_not_clobber ... ok
+test telemetry::telemetry_join_schema_cumulative_bytes_unknowns_and_bounded_intervals ... ok
+test publication_is_last_and_streams_object_larger_than_pool ... ok
+test header_valid_vs_padded_and_full_integrity ... ok
+test day2::bench_real_roundtrip_reopen_restore_uncached_and_red_modes ... ok
+test day4::sharded_catalog_200gb_metadata_only_constant_touch_cost ... ok
+
+failures:
+
+---- day4::review_catalog_recovers_pending_with_and_without_published_root stdout ----
+
+thread 'day4::review_catalog_recovers_pending_with_and_without_published_root' (2072763) panicked at crates/memra-tier/tests/storage/day4.rs:309:79:
+called `Result::unwrap()` on an `Err` value: Busy
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    day4::review_catalog_recovers_pending_with_and_without_published_root
+
+test result: FAILED. 52 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+error: test failed, to rerun pass `-p memra-tier --test storage`
+   Doc-tests memra_kv
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_tier
+
+running 4 tests
+test crates/memra-tier/src/contracts.rs - contracts::UniformLease (line 1770) - compile fail ... ok
+test crates/memra-tier/src/contracts.rs - contracts::ContiguousCopy (line 1342) - compile fail ... ok
+test crates/memra-tier/src/bank/adapters.rs - bank::adapters::with_uniform_experts (line 150) - compile fail ... ok
+test crates/memra-tier/src/contracts.rs - contracts::ChargedLease (line 868) - compile fail ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: 1 target failed:
+    `-p memra-tier --test storage`
