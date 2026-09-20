@@ -31,8 +31,8 @@ python3 research/modelplan-onboarding-rewrite-identity-20260920/native_build_rec
   --out BUILD_DIR --cuda-arch 120a --nvcc /absolute/path/to/nvcc
 ```
 
-Schema v2 binds eight production tools, including `argmax-margin-probe` and
-`concat-prime-probe`, plus exact server-lib, native-repack and Gemma-prime test
+Schema v2 binds nine production tools, including `argmax-margin-probe`,
+`concat-prime-probe` and `tier-transfer-gate`, plus exact server-lib, native-repack and Gemma-prime test
 executables. Test builds use a separate target directory and cannot overwrite the
 production tools. Compiler inputs, commands, Cargo completion/events and executable
 bytes are checked before native execution. Missing or changed test executables
@@ -73,13 +73,38 @@ visible assigned card; the generic battery uses the designated non-serving rig.
    It creates only absent, verified links at `target/release`, removes only its own
    links, and refuses an existing unrelated executable. Use a fresh checkout when
    that directory is already occupied. No missing-own-model or coverage override.
+4. Run the transfer correctness phase on one assigned card, using the same wrapper
+   and a newly built executable from the final reviewed integration:
+
+   ```sh
+   python3 research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py \
+     --phase transfer --build-record BUILD_DIR/build.json --out NEW_TRANSFER_EVIDENCE
+   ```
+
+   This runs the exact owned `tier-transfer-gate conformance` and
+   `tier-transfer-gate roundtrip` commands, without a model or release roster.
+   Conformance requires all eleven native assertions exactly once, including
+   source-consumer retirement and dropped-destination graph retention from the
+   reviewed transfer lifetime changes. Roundtrip requires exactly one N=1 row at
+   each of 4 KiB, 64 KiB, 1 MiB, 16 MiB, 64 MiB and 256 MiB, equal expected/actual
+   SHA256, byte exactness, a freed source with live host destination, no-copy
+   hand-back, and a drained governor. Missing, duplicate, malformed or incomplete
+   rows and nonzero exits fail closed. Earlier eight-tool build records refuse;
+   the runner cannot reuse an old executable or relabel its evidence.
+
+   The per-card wrapper supplies the authoritative physical-card lease. The
+   existing runner owns process supervision, raw stdout/stderr, 250 ms telemetry,
+   cleanup, final provenance/lease checks and atomic result publication. This
+   direct two-command phase checks the native gate assertions; an executed-only
+   collector result is not a qualification pass. It makes no claim about the
+   broader tier battery, VMM, model quality, serving parity or transfer performance.
 
 Every case revalidates the lease while running and source/executable provenance
 before/after. Environment cases run the controller in the same supervisor so lease
 loss can stop its owned child, including a child suspended by SIGSTOP. Outputs,
 protocol, exit status, artifact/source/build hashes, and 250 ms telemetry are kept.
-The caller and battery phases have separate results; passing one does not pass the
-other or qualify a different serving executable.
+The caller, transfer and battery phases have separate results; passing one does
+not pass another or qualify a different serving executable.
 
 ## Actual production callers exercised
 

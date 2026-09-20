@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """CPU controls for native caller-runner refusal and owned-child cleanup."""
 import importlib.util
+import hashlib
 import json
 import os
 import signal
@@ -15,6 +16,132 @@ from unittest.mock import Mock, patch
 spec = importlib.util.spec_from_file_location('qualify_callers', Path(os.environ.get('REWRITE_RUNNER_UNDER_TEST', Path(__file__).with_name('qualify-callers.py'))))
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
+
+
+def transfer_fixture(mode):
+    """Independent transcript fixture for the reviewed native gate; never GPU evidence."""
+    if mode == 'conformance':
+        return '''PASS v1 transfer_cancel native CUDA
+PASS v1.1 transfer_complete_cancel native CUDA
+PASS v1.1 transfer_lifetime native events + injected observation loss + graph retention
+PASS v1.1 transfer_zero_accept Unsupported NVMe preserves owned input
+PASS v1.1 acceptance exhaustive native mixed batch; rejected sibling blocks publication
+PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence
+PASS additive source retirement Busy while source consumer bound; host destination survives source release
+PASS v1.3 transfer_source_retirement native CUDA
+PASS v1.3 device_hand_back native CUDA
+PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement
+PASS native governor zero after controlled drain
+'''
+    lines = []
+    for size in (4096, 65536, 1048576, 16777216, 67108864, 268435456):
+        digest = hashlib.sha256(str(size).encode()).hexdigest()
+        lines.append(f'PASS native D2H-H2D roundtrip bytes={size} N=1 expected_sha256={digest} '
+                     f'actual_sha256={digest} byte_exact=true source_freed_host_live=true '
+                     'handback_no_copy=true governor_zero=true')
+    return '\n'.join(lines) + '\n'
+
+
+class TransferRunnerTests(unittest.TestCase):
+    def exercise(self, mode=None, text=None, code=0):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            root, out, owned = base / 'repo', base / 'evidence', base / 'owned'
+            root.mkdir()
+            commands = []
+            def fake(command, environment, target, timeout):
+                commands.append(command)
+                self.assertEqual(command[0], str(owned / 'target/release/tier-transfer-gate'))
+                self.assertEqual(environment['MEMRA_GPU_LEASE_FILE'], 'CPU fixture')
+                self.assertNotIn('MEMRA_REWRITE_BUNDLE', environment)
+                target.mkdir(parents=True)
+                output = text if command[1] == mode and text is not None else transfer_fixture(command[1])
+                (target / 'stdout.log').write_text(output)
+                (target / 'stderr.log').write_text('CPU scheduling fixture\n')
+                return code if command[1] == mode else 0
+            # No model or roster exists, and no roster argument is provided.
+            args = SimpleNamespace(phase='transfer', model=None, out=out,
+                                   build_record=owned / 'build.json', timeout_seconds=5)
+            error = None
+            with patch.object(runner, 'ROOT', root), \
+                    patch.object(runner.build, 'verify_build_record', return_value=({}, 'a' * 64)), \
+                    patch.object(runner.admission, 'verify_source') as source, \
+                    patch.object(runner.admission, 'verify_lease', return_value={'requested_uuids': ['owned']}), \
+                    patch.object(runner, 'plain', side_effect=fake), \
+                    patch.object(runner.controller, 'run_controlled') as controlled, \
+                    patch.object(runner.subprocess, 'check_output', return_value='gpu_uuid,pid\n'), \
+                    patch.object(runner.subprocess, 'Popen') as telemetry, \
+                    patch.dict(os.environ, {'MEMRA_GPU_LEASE_FILE': 'CPU fixture'}), patch('builtins.print'):
+                try:
+                    runner.run(args)
+                except RuntimeError as caught:
+                    error = caught
+                source.assert_not_called()
+                controlled.assert_not_called()
+                self.assertIn('--loop-ms=250', telemetry.call_args.args[0])
+                telemetry.return_value.terminate.assert_called_once()
+                telemetry.return_value.wait.assert_called_once()
+            result = json.loads((out / 'result.json').read_text())
+            cases = json.loads((out / 'cases.json').read_text())
+            self.assertFalse(result['model_support_promotion'])
+            self.assertFalse(result['serving_binary_qualification'])
+            manifest = json.loads((out / 'files-sha256.json').read_text())
+            for case in cases:
+                for stream in ('stdout', 'stderr'):
+                    path = f'cases/{case["case"]}/{stream}.log'
+                    self.assertEqual(manifest[path], runner.build.digest(out / path))
+                    self.assertEqual(case[f'{stream}_sha256'], manifest[path])
+            if mode is None:
+                self.assertIsNone(error)
+                self.assertEqual(result['status'], 'passed')
+                self.assertEqual([command[1] for command in commands], ['conformance', 'roundtrip'])
+                self.assertEqual(len(cases[0]['validated_output']['markers']), 11)
+                self.assertEqual(len(cases[1]['validated_output']['roundtrips']), 6)
+            else:
+                self.assertIsNotNone(error, 'invalid transcript/exit accepted')
+                self.assertEqual(result['status'], 'failed')
+                self.assertFalse(cases[-1]['passed'])
+                self.assertEqual(commands[-1][1], mode)
+                if code == 0:
+                    self.assertIn('validation_error', cases[-1])
+
+    def test_complete_schedule_needs_no_model_or_roster(self):
+        self.exercise()
+
+    def test_every_conformance_assertion_is_mandatory_and_unique(self):
+        lines = transfer_fixture('conformance').splitlines()
+        for index in range(len(lines)):
+            for bad in (lines[:index] + lines[index + 1:], lines + [lines[index]]):
+                with self.subTest(index=index, count=len(bad)):
+                    self.exercise('conformance', '\n'.join(bad))
+        for bad in ('', '\n'.join(lines).replace('Busy', 'NotBusy'),
+                    '\n'.join(lines + ['PASS incomplete assertion'])):
+            with self.subTest(text=bad): self.exercise('conformance', bad)
+
+    def test_every_roundtrip_size_and_matching_hash_is_mandatory(self):
+        lines = transfer_fixture('roundtrip').splitlines()
+        for index in range(len(lines)):
+            for bad in (lines[:index] + lines[index + 1:], lines + [lines[index]],
+                        lines[:index] + [lines[index].replace('actual_sha256=', 'actual_sha256=f')] + lines[index + 1:]):
+                with self.subTest(index=index, text=bad): self.exercise('roundtrip', '\n'.join(bad))
+        digest = hashlib.sha256(b'4096').hexdigest()
+        text = '\n'.join(lines)
+        for bad in ('', text.replace(f'actual_sha256={digest}', 'actual_sha256=' + '0' * 64),
+                    text.replace('bytes=4096 ', 'bytes=4097 '), text.replace('N=1 ', 'N=2 '),
+                    text + '\nPASS unrecognized result', text.replace('PASS ', ' PASS ', 1)):
+            with self.subTest(text=bad): self.exercise('roundtrip', bad)
+
+    def test_roundtrip_lifecycle_flags_cannot_be_missing_or_false(self):
+        text = transfer_fixture('roundtrip')
+        for flag in ('byte_exact', 'source_freed_host_live', 'handback_no_copy', 'governor_zero'):
+            for bad in (text.replace(f'{flag}=true', f'{flag}=false', 1),
+                        text.replace(f'{flag}=true', '', 1)):
+                with self.subTest(flag=flag, text=bad): self.exercise('roundtrip', bad)
+
+    def test_complete_output_cannot_override_failed_or_cancelled_exit(self):
+        for mode in ('conformance', 'roundtrip'):
+            for code in (1, 2, -signal.SIGTERM, -signal.SIGKILL):
+                with self.subTest(mode=mode, code=code): self.exercise(mode, code=code)
 
 
 class CallerRunnerTests(unittest.TestCase):
@@ -141,7 +268,7 @@ class FinalizationTests(unittest.TestCase):
             record = {'binaries': {}, 'tests': {
                 key: {'artifact': {'path': f'test-target/release/deps/{key}'}}
                 for key in ('worker', 'repack', 'gemma-prime')}}
-            for name in ('kernel-check', 'run-spec', 'argmax-margin-probe'):
+            for name in ('kernel-check', 'run-spec', 'argmax-margin-probe', 'tier-transfer-gate'):
                 path = binary / name
                 path.write_bytes(b'CPU executable fixture')
                 record['binaries'][name] = {'sha256': runner.build.digest(path)}
@@ -198,6 +325,8 @@ class FinalizationTests(unittest.TestCase):
                     (bundle / 'artifact.lock').write_text('CPU fixture')
                 text = ('RETAINED_CAPTURE_PASS\nRETAINED_CALLER_PASS\nNATIVE_WORKER_BOUNDARY_PASS\n'
                         'test result: ok. 1 passed; 0 failed; 0 ignored;\n=== RELEASE BATTERY PASS ===\n')
+                if phase == 'transfer':
+                    text = transfer_fixture(command[1])
                 (target / 'stdout.log').write_text(text)
                 (target / 'stderr.log').write_text('raw stderr witness\n')
                 return 0
@@ -240,27 +369,27 @@ class FinalizationTests(unittest.TestCase):
                 self.assertNotIn('result.json', json.loads((out / 'files-sha256.json').read_text()))
 
     def test_cleanup_timeout_never_leaves_passed_result(self):
-        for phase in ('callers', 'battery'):
+        for phase in ('callers', 'transfer', 'battery'):
             with self.subTest(phase=phase): self.exercise(phase, 'timeout')
 
     def test_cleanup_error_never_leaves_passed_result(self):
-        for phase in ('callers', 'battery'):
+        for phase in ('callers', 'transfer', 'battery'):
             with self.subTest(phase=phase): self.exercise(phase, 'terminate')
 
     def test_manifest_failure_never_leaves_passed_result(self):
-        for phase in ('callers', 'battery'):
+        for phase in ('callers', 'transfer', 'battery'):
             with self.subTest(phase=phase): self.exercise(phase, 'manifest')
 
     def test_final_invariant_failure_never_leaves_passed_result(self):
-        for phase in ('callers', 'battery'):
+        for phase in ('callers', 'transfer', 'battery'):
             with self.subTest(phase=phase): self.exercise(phase, 'verify')
 
     def test_atomic_publication_failure_keeps_incomplete_result(self):
-        for phase in ('callers', 'battery'):
+        for phase in ('callers', 'transfer', 'battery'):
             with self.subTest(phase=phase): self.exercise(phase, 'publish')
 
     def test_success_is_sealed_after_cleanup_and_final_verification(self):
-        for phase in ('callers', 'battery'):
+        for phase in ('callers', 'transfer', 'battery'):
             with self.subTest(phase=phase): self.exercise(phase, None)
 
 

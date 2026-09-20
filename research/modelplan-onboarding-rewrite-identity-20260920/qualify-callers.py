@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Execute bounded native caller or generic-battery cases from an owned build.
+"""Execute bounded native caller, transfer or generic-battery cases from an owned build.
 
 Requires the central GPU wrapper, a clean final checkout, and native build.json.
 All output lives in a new directory outside the checkout. This runner does not rent,
 merge, manufacture qualification, or turn a test-executable receipt into a server receipt.
 """
 import argparse
+from collections import Counter
 import importlib.util
 import json
 import math
@@ -34,6 +35,45 @@ GRAPH_CASES = ('step', 'prof-apply', 'prof-launch', 'prof-read', 'prime-run')
 WORKER_CASES = ('advance_sample_emit', 'advance_token_emit', 'step_session',
                 'step_session_prefill', 'prefill_tick', 'step_session_async_chain')
 TEST_NAME = 'worker::rewrite_native_tests::native_worker_boundary'
+TRANSFER_CONFORMANCE = (
+    'PASS v1 transfer_cancel native CUDA',
+    'PASS v1.1 transfer_complete_cancel native CUDA',
+    'PASS v1.1 transfer_lifetime native events + injected observation loss + graph retention',
+    'PASS v1.1 transfer_zero_accept Unsupported NVMe preserves owned input',
+    'PASS v1.1 acceptance exhaustive native mixed batch; rejected sibling blocks publication',
+    'PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence',
+    'PASS additive source retirement Busy while source consumer bound; host destination survives source release',
+    'PASS v1.3 transfer_source_retirement native CUDA',
+    'PASS v1.3 device_hand_back native CUDA',
+    'PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement',
+    'PASS native governor zero after controlled drain',
+)
+TRANSFER_SIZES = (4096, 65536, 1048576, 16777216, 67108864, 268435456)
+
+
+def transfer_conformance(text):
+    lines = [line for line in text.splitlines() if line.strip().startswith('PASS')]
+    if Counter(lines) != Counter(TRANSFER_CONFORMANCE):
+        raise ValueError('transfer conformance requires every exact PASS marker once, with no extras')
+    return {'markers': lines}
+
+
+def transfer_roundtrip(text):
+    rows = []
+    for line in text.splitlines():
+        if not line.strip().startswith('PASS'):
+            continue
+        match = re.fullmatch(
+            r'PASS native D2H-H2D roundtrip bytes=([1-9][0-9]*) N=1 '
+            r'expected_sha256=([0-9a-f]{64}) actual_sha256=([0-9a-f]{64}) '
+            r'byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true', line)
+        if match is None or match[2] != match[3]:
+            raise ValueError('transfer roundtrip requires exact rows, equal SHA256 and all lifecycle assertions')
+        rows.append({'bytes': int(match[1]), 'expected_sha256': match[2], 'actual_sha256': match[3]})
+    if Counter(row['bytes'] for row in rows) != Counter(TRANSFER_SIZES):
+        raise ValueError('transfer roundtrip requires each of the six byte sizes exactly once')
+    return {'roundtrips': rows, 'N': 1, 'byte_exact': True, 'source_freed_host_live': True,
+            'handback_no_copy': True, 'governor_zero': True}
 
 
 def write(path, value):
@@ -97,8 +137,12 @@ def run(args):
         raise RuntimeError('native evidence must be outside the clean checkout')
     binaries = record_path.parent / 'target/release'
     record, record_sha = build.verify_build_record(ROOT, record_path, binaries)
-    source = (admission.verify_source(model) if args.phase == 'callers' else
-              {'roster': str(args.roster.resolve()), 'roster_sha256': build.digest(args.roster)})
+    if args.phase == 'callers':
+        source = admission.verify_source(model)
+    elif args.phase == 'transfer':
+        source = {'kind': 'native-transfer-fixture', 'model_required': False}
+    else:
+        source = {'roster': str(args.roster.resolve()), 'roster_sha256': build.digest(args.roster)}
     out.mkdir(parents=True, exist_ok=False)
     write(out / 'lease.json', lease)
     write(out / 'source.json', source)
@@ -115,7 +159,7 @@ def run(args):
         admission.verify_lease()
         build.verify_build_record(ROOT, record_path, binaries, record_sha)
 
-    def case(name, command, changes=None, marker=None, environment_drift=False, unit=False):
+    def case(name, command, changes=None, marker=None, environment_drift=False, unit=False, validate=None):
         verify()
         directory = out / 'cases' / name
         environment = {**base, **(changes or {})}
@@ -130,13 +174,19 @@ def run(args):
         verify()
         stdout = (directory / 'stdout.log').read_text(errors='replace')
         stderr = (directory / 'stderr.log').read_text(errors='replace')
-        text = stdout + stderr
+        text = stdout + '\n' + stderr
         passed = code == 0 and (marker is None or marker in text) and (not unit or test_success(text))
         entry = {'case': name, 'kind': 'cpu-inspect' if name.startswith('inspect-') else 'native',
                  'command': command, 'returncode': code, 'passed': passed,
                  'required_marker': marker, 'one_native_test_required': unit,
                  'stdout_sha256': build.digest(directory / 'stdout.log'),
                  'stderr_sha256': build.digest(directory / 'stderr.log')}
+        if validate is not None:
+            try:
+                entry['validated_output'] = validate(text)
+            except ValueError as error:
+                passed = False
+                entry.update(passed=False, validation_error=str(error))
         cases.append(entry)
         write(out / 'cases.json', cases)
         print(json.dumps(entry), flush=True)
@@ -197,6 +247,9 @@ def run(args):
                     case(name, [repack, name, '--exact', '--ignored', '--nocapture', '--test-threads=1'],
                          {'MEMRA_ARTIFACT_LOCK': '', 'MEMRA_ST_REPACK_DISK': '1', 'MEMRA_ST_PINNED': '0',
                           'REWRITE_REPACK_OUT': str(out / f'repack-{layout}')}, unit=True)
+            elif args.phase == 'transfer':
+                for mode, validator in (('conformance', transfer_conformance), ('roundtrip', transfer_roundtrip)):
+                    case(f'transfer-{mode}', [binaries / 'tier-transfer-gate', mode], validate=validator)
             else:
                 # The authoritative battery resolves ROOT/target/release. Only create missing
                 # links; never replace an existing executable. Verify each consumed path.
@@ -244,7 +297,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=Path)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--build-record', type=Path, required=True)
-    parser.add_argument('--phase', choices=('callers', 'battery'), default='callers')
+    parser.add_argument('--phase', choices=('callers', 'transfer', 'battery'), default='callers')
     parser.add_argument('--roster', type=Path, default=ROOT / 'tools/release-roster.tsv')
     parser.add_argument('--timeout-seconds', type=float, default=600)
     run(parser.parse_args())

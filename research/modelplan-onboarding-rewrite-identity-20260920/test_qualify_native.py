@@ -300,6 +300,25 @@ if control.get('change_tool'):
         self.build()
         self.before_gpu(mutate=lambda: (self.binary_dir / 'memra').write_bytes(b'replaced'))
 
+    def test_transfer_gate_requires_fresh_owned_executable_before_gpu(self):
+        record = self.build()
+        self.assertIn('tier-transfer-gate', record['binaries'])
+        path = self.binary_dir / 'tier-transfer-gate'
+        original = path.read_bytes()
+        path.chmod(0o644)
+        self.before_gpu()
+        path.chmod(0o755)
+        path.write_bytes(original + b'stale')
+        self.before_gpu()
+        path.unlink()
+        self.before_gpu()
+
+    def test_legacy_manifest_without_transfer_gate_refuses_before_gpu(self):
+        record = self.build()
+        del record['binaries']['tier-transfer-gate']
+        self.receipt.write_text(json.dumps(record))
+        self.before_gpu()
+
     def test_source_changed_after_initial_preflight_refuses_before_first_gpu(self):
         self.build()
         self.before_gpu(mutate=lambda: (self.root / 'Cargo.lock').write_text('changed\n'))

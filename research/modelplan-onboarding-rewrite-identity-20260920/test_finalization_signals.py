@@ -46,15 +46,15 @@ class RealCancellationTests(unittest.TestCase):
             self.assertIn(records[0]['status'], ('failed', 'incomplete'))
 
     def test_sigterm_during_final_verify(self):
-        for kind in ('baseline', 'callers', 'battery'):
+        for kind in ('baseline', 'callers', 'transfer', 'battery'):
             with self.subTest(kind=kind): self.check_case(kind, 'sig_verify')
 
     def test_sigterm_during_pending_result_write(self):
-        for kind in ('baseline', 'callers', 'battery'):
+        for kind in ('baseline', 'callers', 'transfer', 'battery'):
             with self.subTest(kind=kind): self.check_case(kind, 'sig_pending')
 
     def test_sigterm_before_atomic_replace(self):
-        for kind in ('baseline', 'callers', 'battery'):
+        for kind in ('baseline', 'callers', 'transfer', 'battery'):
             with self.subTest(kind=kind): self.check_case(kind, 'sig_replace')
 
 
