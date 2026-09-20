@@ -5,10 +5,10 @@
 - Runner: /root/b-day10-cell.sh (tracked copy run-day10-cell.sh); canonical pro-single collector; bounded lock retries.
 - Finished: original native build, 8k/32k baselines and ACTIVE-8K G1 PASS (600/600 W); receipts pushed.
 - 8k receipts + build are preserved in pro-single-day10/ in this checkpoint; raw logits losslessly gzip archived.
-- Local implementation: allocator injection + actual-demoted-plane VA probe; latest runtime ef0fc91d2, native-unbuilt.
+- Diagnostic isolation: gate temporarily keeps original empty-plane swap; native Cache injection API implemented but not engaged.
 - Mac kv+tier 262 tests/check/cross-check/clippy/fmt/flags passed; engine Mac blocked by missing nvcc (log saved).
 - Next: collect/push original 8k pooled control BEFORE updating native source; 32k VMM has 1-granule unclassified residual.
-- Then pull checkpoint into /root/wt-b, rebuild; run diagnostic 32k and injected 8k; preserve separate source/binary identity.
+- Then pull/build/run diagnostic 32k; restore gate file from ef0fc91d2, commit/push/build, then injected 8k.
 - Add DAY10.md, BOX3 baseline hashes, verify-day10.py and raw manifest; push after every cell.
 - Decision: prior 5090 probe freed never-mapped VA only; new nonzero PRO metadata class cannot satisfy BOTH-card evidence.
 - 32k VMM: bit-identical, 2097152 B residual, unclassified, not G1 PASS; diagnostic and injected rerun pending.
