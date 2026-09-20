@@ -898,10 +898,6 @@ impl MoeSlotCache {
         self.admit_native(id, host_bytes, e)
     }
 
-    #[allow(
-        dead_code,
-        reason = "typed qualification door; native model-scale gate pending"
-    )]
     pub(crate) fn install_banked(
         &mut self,
         bank: memra_tier::bank::ExpertBankProxy,
