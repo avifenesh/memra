@@ -5,6 +5,14 @@
 //! MEMRA_ARTIFACT_LOCK before either load. Capture requires MEMRA_REWRITE_BUNDLE unset;
 //! check/library-drift require it set to the bundle. Keep the executable and numeric environment
 //! identical. Linux library-drift is a separate retained-snapshot refusal probe; it emits no receipt.
+//!
+//! Separate native caller bundle (same executable, fixed Qwen/Qwen3-0.6B source pin):
+//! `retained-capture <model-path> <bundle-dir>`; then one fresh process per
+//! `retained-{step,prof-apply,prof-launch,prof-read,prime-run}-{library,environment}`.
+//! All retained modes require MEMRA_FAST=0 at exec and MEMRA_ARTIFACT_LOCK. Capture
+//! requires MEMRA_REWRITE_BUNDLE unset; each refusal case requires that new bundle set.
+//! Environment cases require the external native_env_controller.py rendezvous protocol.
+//! Raw evidence lives in retained-capture/ and retained-<case>-<pid>/ under that bundle.
 
 use memra_engine::Engine;
 use memra_engine::cache::Cache;
@@ -18,6 +26,9 @@ use memra_gguf::source::SafetensorsSource;
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::Path;
+
+#[path = "rewrite_identity_gate/retained.rs"]
+mod retained;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -280,13 +291,13 @@ mod library_drift {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     use std::path::PathBuf;
 
-    struct PrivateFile {
+    pub(super) struct PrivateFile {
         directory: PathBuf,
-        path: PathBuf,
+        pub(super) path: PathBuf,
     }
 
     impl PrivateFile {
-        fn new(bundle: &Path) -> Result<Self> {
+        pub(super) fn new(bundle: &Path) -> Result<Self> {
             let directory = std::fs::canonicalize(bundle)?
                 .join(format!("native-refusal-map-{}", std::process::id()));
             DirBuilder::new().mode(0o700).create(&directory)?;
@@ -313,7 +324,7 @@ mod library_drift {
             Ok(file)
         }
 
-        fn maps(&self) -> Result<Vec<String>> {
+        pub(super) fn maps(&self) -> Result<Vec<String>> {
             let suffix = format!(" {}", self.path.display());
             Ok(std::fs::read_to_string("/proc/self/maps")?
                 .lines()
@@ -565,9 +576,14 @@ fn run() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     require(
         args.len() == 3,
-        "USAGE: rewrite_identity_gate capture|check|fresh-control|library-drift <model-path> <bundle-dir>",
+        "USAGE: rewrite_identity_gate <capture|check|fresh-control|library-drift|retained-capture|retained-{step,prof-apply,prof-launch,prof-read,prime-run}-{library,environment}> <model-path> <bundle-dir>",
     )?;
     let mode = args[0].to_str().ok_or("MODE_NOT_UTF8")?;
+    // Separate namespace, observations and receipts. Historical eager modes below
+    // deliberately retain their existing semantics and their eager-only admission.
+    if mode.starts_with("retained-") {
+        return retained::run(mode, Path::new(&args[1]), Path::new(&args[2]));
+    }
     require(
         matches!(
             mode,

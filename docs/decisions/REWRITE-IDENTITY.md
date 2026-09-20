@@ -83,7 +83,10 @@ boundary revokes every older snapshot; restoring external state does not revive 
 
 The native runner includes a separate `library-drift` probe using a real read/execute
 mapping (never executed) and a populated eager cache. It must refuse retained re-entry
-before token work and preserve cache hashes. Qualified graph/prime/worker and safe
-native environment-drift cases remain planned in `NATIVE-REFUSAL-PLAN.md`. Previous
+before token work and preserve cache hashes. Qualified graph/prime/worker probes and real environment-drift control are now
+implemented but unrun. The latter suspends the owned Linux process's complete thread
+group before a verified one-byte debugger write, with explicit CUDA context drains;
+it uses no concurrent in-process environment setter. `NATIVE-REFUSAL-PLAN.md` names
+the conditions and mandatory CPU/Linux/native gates. Previous
 native receipts remain historical; the changed executable needs fresh native admission,
 affected exactness and controlled performance validation.

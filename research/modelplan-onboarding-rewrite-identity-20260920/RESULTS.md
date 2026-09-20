@@ -9,6 +9,36 @@ Base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/542-trusted-rewrite-identity`.
 Environment: macOS arm64, no CUDA toolkit or GPU. No serving machine was accessed.
 
+## Final-program integration and native caller preparation
+
+The current lane integrates main `cf4f317e` (including Gemma prime/view and generic
+CudaTransfers) and approved tokenizer dependency `80f0109e`. The integration-only
+head is `27798b184`; `integration-20260920/source-diff.json` quantifies 57 changed
+source/build-input paths relative to reviewed d901. This is not binary equivalence.
+INDEX conflicts retained current spill, tokenizer and #542 records. The temporary
+worker-probe stash was reapplied and removed.
+
+Native caller probes are now executable: genuine retained-surface capture followed
+by ten graph/profile/prime cases, twelve actual worker cases, and two native NVFP4
+cache/transfer/arithmetic fixtures. Environment drift uses a Linux owned-child
+stop-the-world controller; CUDA contexts are drained before either environment
+stop. The fixed byte is changed only after the parent verifies the stopped thread
+group. The controller's real Linux CPU cases are wired to CI before native use.
+
+Owned build schema v2 includes the extra generic-battery tools and exact native
+server/repack/Gemma test executables, isolated from production output files.
+`qualify-callers.py` verifies those records and leases, runs each fault case in a
+fresh process, checks non-vacuous test results, and provides a separate authoritative
+generic-battery phase. No native execution has occurred on this new code. The final
+integration/test delta must be reviewed before taking a GPU lease; all older native
+records below stay historical. See `NATIVE-REFUSAL-PLAN.md` for exact commands and limits.
+
+CPU preparation so far: merged compiler library 293 passed / 2 existing ignored;
+all 72 tokenizer tests pass; memra-tier/memra-kv suites pass; release coverage
+fixtures 11 pass and argmax-margin controls nine pass. Controller portable controls
+22 pass with five actual Linux cases unrun on macOS; caller-runner controls six pass.
+These counts are not native qualification.
+
 ## Retained re-entry correction (native rerun pending)
 
 SEC-557-2 / PERF-557-2 is fixed in the shared activation primitive: every outermost

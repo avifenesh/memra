@@ -1,81 +1,132 @@
-# Retained native refusal plan: SEC-557-2 / PERF-557-2
+# Native caller qualification: integrated #542 candidate
 
-Status: the `rewrite_identity_gate library-drift` case is implemented but has not
-been executed natively. This plan records additional coverage, not a qualification
-result. Historical source621 evidence and existing result records are unchanged. No historical receipt transfers to the changed executable.
+Status: executable probes are implemented; **all new CUDA cases remain UNRUN**.
+The frozen `d9010b45` production correction passed independent security/performance
+review. This integration/test delta requires another review before GPU execution.
+Source621 native records remain historical and binary-bound.
 
-## Implemented, awaiting a native run
+## Integrated inputs
 
-Run the separate mode with a real single-device `HybridModel` and an eager-only
-bundle freshly qualified for the exact rebuilt executable, artifact lock, plan and
-numerical environment. The ordinary loader must install the bundle. This mode
-neither creates a receipt nor reinstalls, repairs or broadens qualification.
+`integration-20260920/source-diff.json` records the integration-only tree before
+these new probes. It includes main `cf4f317e68b9cedea4f4e195caee83a598db421e` and the
+approved tokenizer dependency `80f0109e1051bceb1a69e531088987a407840cf3`. Relative
+to d901 there are 57 changed source/build-input paths, including Gemma prime/view
+code, operation-registry manifests, CudaTransfers/banked ownership, worker paths
+and the Qwen2 tokenizer. This is a changed program, not receipt/head bookkeeping.
 
-The coordinator must use the ordinary owned native build/provenance and per-card
-lease checks, including source/binary verification before and after the case.
-Compile-only `DOCS_RS` artifacts are not usable native executables. Use a new
-external evidence namespace; retain stdout/stderr, exit status, source/binary/build
-record hashes and the prerequisite bundle. `qualify-native.py` schedules this separate-process case after the positive fresh-process
-eager replay, with the same owned-build and lease validation as other native cases.
+Six overlap paths were reconciled: `run_spec.rs`, `hybrid_forward.rs`, GGUF
+`execution_manifest.rs`, `lib.rs`, `source.rs`, and server `worker.rs`. The GGUF
+source delta is only Linux gating of `AsRawFd`; opened-source hashing is preserved.
+The bank installer compares each retained expert with `host.expert_bytes()` before
+attaching its approved GGUF source. INDEX conflicts retained the current spill
+records, #542's pending status and the tokenizer record.
 
-After fresh capture/check with that same executable, the additional invocation is:
+## Build before acquiring GPUs
+
+From a clean final integration checkout, run the owned builder into a new external
+directory:
 
 ```sh
-MEMRA_ARTIFACT_LOCK="$FRESH_BUNDLE/artifact.lock" \
-MEMRA_REWRITE_BUNDLE="$FRESH_BUNDLE" \
-"$NATIVE_GATE" library-drift "$MODEL_SOURCE" "$FRESH_BUNDLE"
+python3 research/modelplan-onboarding-rewrite-identity-20260920/native_build_record.py \
+  --out BUILD_DIR --cuda-arch 120a --nvcc /absolute/path/to/nvcc
 ```
 
-Preserve all other numerical environment values from the fresh capture. Linux
-and an executable-mapping-capable bundle filesystem are required; inability to
-establish the mapping is a failure, never a passed or skipped refusal case.
+Schema v2 binds eight production tools, including `argmax-margin-probe` and
+`concat-prime-probe`, plus exact server-lib, native-repack and Gemma-prime test
+executables. Test builds use a separate target directory and cannot overwrite the
+production tools. Compiler inputs, commands, Cargo completion/events and executable
+bytes are checked before native execution. Missing or changed test executables
+refuse just like stale production tools. DOCS_RS builds are compile-only.
 
-| Gate / output marker | Required observation |
+## Run only after the final delta is reviewed
+
+Use the coordinator's per-physical-card wrapper, its selected UUID set, a fresh
+lease receipt per attempt, and new external evidence directories. No independent
+resource rental or lock-name substitution. Caller probes require exactly one
+visible assigned card; the generic battery uses the designated non-serving rig.
+
+1. Run the existing `qualify-native.py` with the final build record and pinned
+   Qwen3-0.6B artifact. Its 12 scheduled commands include the common retained-eager
+   executable-mapping refusal case and historical admission controls on the new
+   binary. It does not inherit source621 qualification.
+2. Run the bounded caller suite:
+
+   ```sh
+   python3 research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py \
+     --phase callers --model MODEL_SOURCE --build-record BUILD_DIR/build.json \
+     --out NEW_CALLER_EVIDENCE
+   ```
+
+   This schedules one CPU inspection, one authentic retained-surface capture, and
+   24 independent native cases. No eager receipt is copied into graph/prime or
+   worker qualification. Only the artifact lock is shared across fresh worker
+   bundles; each worker test executable measures its own eager receipt.
+3. Run the required generic battery with the same owned tools:
+
+   ```sh
+   python3 research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py \
+     --phase battery --build-record BUILD_DIR/build.json --out NEW_BATTERY_EVIDENCE \
+     --roster tools/release-roster.tsv
+   ```
+
+   The runner invokes the authoritative release battery and exact coverage checks.
+   It creates only absent, verified links at `target/release`, removes only its own
+   links, and refuses an existing unrelated executable. Use a fresh checkout when
+   that directory is already occupied. No missing-own-model or coverage override.
+
+Every case revalidates the lease while running and source/executable provenance
+before/after. Environment cases run the controller in the same supervisor so lease
+loss can stop its owned child, including a child suspended by SIGSTOP. Outputs,
+protocol, exit status, artifact/source/build hashes, and 250 ms telemetry are kept.
+The caller and battery phases have separate results; passing one does not pass the
+other or qualify a different serving executable.
+
+## Actual production callers exercised
+
+| Cases | Positive and refusal witnesses |
 | --- | --- |
-| `RETAINED_NO_DRIFT_REENTRY_PASS` | Decode the fixed short prompt in a real eager scope, admit a nested scope, end both, then successfully re-enter the **same** saved origin with unchanged external state. |
-| `RETAINED_LIBRARY_DRIFT_REFUSAL_PASS` | After the scopes end, map a new private named file with `PROT_READ \| PROT_EXEC`, never execute it, and confirm its read/execute mapping in `/proc/self/maps`. The first subsequent identity/admission operation is `model.enter_rewrite_execution(&saved)`. It must report changed executable mappings naming this file, with zero calls to the token continuation. No explicit validation, new snapshot, reinstall or model mutation may trigger refusal first. |
-| `RETAINED_LIBRARY_DRIFT_CACHE_PASS` | Hash the populated real cache's supported KV, recurrent, latent, counter and last-logit state before and after refusal; require equal hashes. Unsupported opaque/distributed cache state fails closed through the existing cache probe. Require the original snapshot's generation to be revoked. |
-| `RETAINED_LIBRARY_DRIFT_UNMAP_PASS` | Drop the mapping and confirm the file is absent from `/proc/self/maps` before unlinking it. The private file contains 4096 zero bytes; its name, length, SHA-256 and maps row are logged. Cleanup also runs on ordinary early-error returns. |
-| `RETAINED_LIBRARY_DRIFT_REVOCATION_PASS` | With the mapping removed, direct re-entry of the old snapshot must still refuse as revoked. Verify the model's external identity again matches baseline without replacing the snapshot or reinstalling a bundle, and confirm both revocation and the unchanged cache hash. |
+| GraphSession `step`, `prof_apply`, `prof_launch`, `prof_read` × library/environment | Authentic eager/graph observations in this executable; live graph creation, independent eager token comparison, ended guards, then actual named caller first after drift. Cache, resident token/position and split-argument staging must not change. `prof_apply` uses a 256-token prompt and a larger captured bucket, and requires a real observed parameter update during its positive control; a no-op cannot pass. |
+| `prime_graph_run` × library/environment | Authentic CarriedPrime comparison with independent quantized-cache/ordinary-prime observations, real retained PrimeGraph and fresh destination cache; snapshot graph IO, scratch and destination state. Refuse before replay/copy/output and keep old origin revoked after restoration. |
+| Worker `advance_sample_emit`, `advance_token_emit`, `step_session`, prefill form of `step_session`, `prefill_tick`, `step_session_async_chain` × library/environment | The actual private production functions run in the server lib-test executable, with a real pinned model, actual Session/LoadedModel and fresh in-executable eager qualification. Require a non-vacuous unchanged control, then no successful event/token or cache/logit/generated/fed-state mutation after drift. Error/abort metadata may change. This is not qualification of `memra-server`. |
+| Native stacked and per-expert NVFP4 cache fixtures | Public HostExps loaders, cold/hit/poisoned cache, retained named writer/truncation, dropped source, actual stage_expert H2D/D2H, qmatvec_view and macro-scale output checks. Exact raw bytes/outputs and manifests are recorded. These tiny fixture transfer/arithmetic gates do not promote whole-model support. |
 
-Only success through all these assertions emits `NATIVE_REFUSAL_GATE_PASS`, scoped
-to `retained-eager-snapshot`, with `receipt_emitted=false` and no support promotion.
-This exercises the common native retained-snapshot boundary. It does not execute a
-qualified graph, prime graph or worker request and supplies no throughput claim or
-native inventory call-count measurement.
+Each refused object is called again after restoring external state; it must still
+refuse using its original origin. No fresh snapshot, validator or reinstall may
+trigger refusal on the caller's behalf immediately before the tested invocation.
+A genuinely changed identity, vacuous test, missing update witness, interrupted
+process or absent native prerequisite fails the case.
 
-## Still pending: qualified native methods
+## Real environment drift without concurrent set_var
 
-Each method needs its own authentic surface qualification on the rebuilt binary,
-and a fresh case so revocation in an earlier method cannot make a later one pass.
-An eager receipt must never be copied into a graph/prime receipt or used to build
-synthetic qualification. Preserve the originating snapshot; never refresh it to
-make the retained object pass.
+`native_env_controller.py` launches the direct cooperative probe with MEMRA_FAST=0.
+The Rust helper reports the address of that exact libc.getenv value and releases
+all borrowed environment references and stdout locks. Callers first drain the CUDA
+context, then the helper requests SIGSTOP. The parent waits for a completed group
+stop and checks every task. Only then does it check the known byte plus NUL,
+write 0→1 through `/proc/OWNED_CHILD/mem`, verify it, and resume. The second stop
+restores 1→0 at the same address. No environment arrays/strings are reallocated,
+no other process is targeted and no memory/environment scan is performed.
 
-| Native case | Required future gate |
-| --- | --- |
-| `GraphSession::step` | Create a genuinely `DecodeGraph`-qualified session, finish its original scope, add executable-mapping drift, then call `step` standalone. Refuse before graph update/replay or any cache, resident token or position change. |
-| `GraphSession::prof_apply` | Independently create/qualify a retained session and finish its scope; inject drift, then call `prof_apply` first. Refuse before graph parameter updates. Cache hashes alone do not observe graph parameter mutation; add an actual update witness. |
-| `GraphSession::prof_launch` | Independently retain a qualified session across ended scopes; inject drift, then call `prof_launch` first. Refuse before launch and host/device counter or cache changes. |
-| `GraphSession::prof_read` | Independently retain a qualified session across ended scopes; inject drift, then call `prof_read` first. Refuse before reading or returning its resident token. |
-| `HybridModel::prime_graph_run` | Create a genuinely `CarriedPrime`-qualified `PrimeGraph`, end its creation/use scope, retain it, and provide a fresh cache. Inject drift and call `prime_graph_run` first. Refuse before embedding, input/counter uploads, replay, scratch/output changes or copying into the fresh cache. |
-| Native worker tick/resume | Coordinator-owned: retain admitted request state across completed tick scopes, inject drift and resume. Refuse before cache/token work or successful output emission. The main lane owns worker implementation and CPU emitter regressions; this native case is not implemented here. |
+This is a Linux debugger experiment, not a portable language-level environment
+mutation API. It assumes a cooperative pinned child, no environment mutators,
+other debugger/SIGCONT sender, fork/exec after handshake or outside shared-VM
+process. SIGSTOP alone does not stop submitted GPU work: context drains are explicit
+in both probe families. The controller has bounded pipes/deadlines, exact ordered
+handshakes, source/lease supervision, and kill/reap cleanup. Kernel hangs, SIGKILL of
+the supervisor and escaped descendants require the external job/cgroup supervisor.
 
-For each future native method, include an unchanged-state positive control and
-post-unmap refusal of the original object. Observe method-specific mutable state
-as well as cache bytes and output. Any necessary observation hooks are additional
-work, not implied by the common-boundary probe above.
+The CPU controller suite has 22 portable cases and five actual Linux process tests.
+CI runs it with `--require-linux`; access denial is a failure, never a skipped pass.
+If the host cannot permit parent-to-child proc memory access, use a dedicated Linux
+VM/CI environment that can first pass these CPU controls. Dependency injection or a
+fresh process with changed startup variables does not replace retained-object drift.
 
-## Still pending: native later-environment drift
+## Remaining acceptance
 
-No sound controlled same-process environment mutation mechanism is available in
-this harness after CUDA initialization. Late `std::env::set_var`/`remove_var` can
-race with live driver or library threads, and a mutex around the test does not
-protect those readers. This native case is deliberately unimplemented. Fresh
-processes with different environment values test load-time receipt mismatch, not
-re-entry of an already retained model/snapshot, and cannot close this gap.
-
-Main owns the isolated CPU environment-drift and nested-boundary call-count
-regressions. Native environment coverage requires a separately reviewed sound
-control mechanism before adding cases for the retained boundary and each
-qualified graph/prime/worker method. Nothing in this plan marks those cases passed.
+Native mathematical parity, CUDA state witnesses, Linux controller execution and
+all 24 native cases are pending until run on the final reviewed build. Preserve
+failures and stop on a real math/identity mismatch; do not widen tolerances, fake
+receipts or refresh an old origin. Upstream CPU compiler/tokenizer/tier suites,
+engine/server tests, formatting, the required generic battery and affected Gemma
+checks remain the integration gates. No latency benchmark is needed merely to
+restate the already tested nested-call count; no throughput/default claim is made.

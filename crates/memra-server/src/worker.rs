@@ -18,6 +18,9 @@
 mod host_glm;
 mod host_memory;
 
+#[cfg(test)]
+mod rewrite_native_tests;
+
 use std::collections::{HashMap, VecDeque};
 use std::io::Write as _;
 use std::sync::Arc;
@@ -26856,7 +26859,7 @@ mod tests {
         assert!(async_chain_devsample(None).is_none());
     }
 
-    fn bare_request() -> Request {
+    pub(super) fn bare_request() -> Request {
         let (tx, _rx) = event_channel();
         Request {
             model: "m".into(),

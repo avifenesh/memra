@@ -49,6 +49,36 @@ pub struct GraphSession {
 }
 
 impl GraphSession {
+    /// Read-only gate diagnostic: the live driver-owned split-argument staging that
+    /// fa_apply edits before updating the executable graph. No launch or admission check.
+    /// This is not an exec-update counter or a query of the executable's private state.
+    pub fn diagnostic_split_arguments(
+        &self,
+    ) -> Result<Vec<(String, i32)>, Box<dyn std::error::Error>> {
+        let mut values = Vec::new();
+        for node in crate::graph_update::kernel_nodes(&self.graph)? {
+            let index = match node.name.as_str() {
+                "fa_decode_vec_q_v4_dc"
+                | "fa_decode_vec_q_v4_deep_dc"
+                | "fa_decode_vec_q_v3_dc"
+                | "fa_decode_vec_q_v2_dc"
+                | "fa_decode_vec_q_dc"
+                | "fa_decode_vec_q_dpl16_dc" => 11,
+                "fa_decode_f32" => 12,
+                "fa_decode_combine_f32" => 6,
+                "fa_decode_combine_q8_1" => 7,
+                _ => continue,
+            };
+            // SAFETY: these are the same symbol-specific i32 argument slots read by
+            // fa_plan and written by fa_apply. The owning graph is borrowed and live.
+            let value = unsafe { crate::graph_update::read_i32_arg(&node.params, index) };
+            values.push((node.name, value));
+        }
+        // CUDA does not promise a stable enumeration order. Retain duplicates (layers).
+        values.sort();
+        Ok(values)
+    }
+
     /// One graph-replay decode step. Returns the next token (already fed back into the
     /// resident token_d — the following step consumes it). Errors past bucket_max
     /// (the caller sized max_new at capture). Transparently recaptures when the eager

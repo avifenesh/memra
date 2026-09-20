@@ -134,6 +134,12 @@ jobs:
         run: tools/test_release_guard.sh
       - name: Release-battery coverage fixtures (CPU only)
         run: python3 tools/test_release_battery_coverage.py
+      - name: Native environment controller CPU protocol and Linux stop-world tests
+        run: python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_native_env_controller.py --require-linux -v
+      - name: Native build provenance and caller scheduling CPU controls
+        run: |
+          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_native.py
+          python3 -B research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py
 
       # Changelog teeth (2026-09-02): the tag walk, the skip list, the explicit FROM, and the
       # history-root baseline that keeps the first tag on the rebuilt history from dropping the

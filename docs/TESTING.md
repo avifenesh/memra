@@ -864,7 +864,13 @@ missing/incomplete records, changed clean source, binaries and relevant build in
 before GPU access; `test_qualify_native.py` covers those refusals with CPU fixtures.
 The runner also schedules `rewrite_identity_gate library-drift` after positive replay.
 That separate process checks real mapping drift, unchanged cache bytes and permanent
-origin revocation. See `NATIVE-REFUSAL-PLAN.md` for the remaining native method cases.
+origin revocation. `qualify-callers.py` now runs the actual graph/profile/prime and
+worker callers plus native NVFP4 cache fixtures. Build schema v2 seals their exact
+test executables separately from production tools. The environment controller's
+Linux CPU suite runs in CI with `--require-linux`; native cases still require the
+coordinator's reviewed final build and per-card lease. The separate `--phase battery`
+executes the authoritative generic release battery with verified owned executables.
+See the research `NATIVE-REFUSAL-PLAN.md` for commands, state witnesses and limits.
 
 
 ## Generic spill / tiered KV (memra-tier)

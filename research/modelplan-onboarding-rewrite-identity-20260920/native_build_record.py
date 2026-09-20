@@ -7,7 +7,8 @@ Run on the build host from a clean integrated checkout, before acquiring GPUs:
 
 The NEW output directory must be outside the checkout. It owns target/, cargo logs and
 build.json; there is intentionally no command to bless existing target/release files.
-Use build.json and target/release with qualify-native.py. The recipe uses default Cargo
+Use build.json and target/release with qualify-native.py. Native worker/repack/Gemma
+test executables are built in a separate test-target and sealed in the same record. The recipe uses default Cargo
 features, --locked, release, a fresh target and a small explicit environment. Ambient
 RUSTFLAGS, compiler wrappers and MEMRA tuning flags are not inherited. Cargo config,
 compiler identities and effective environment are recorded and checked for changes.
@@ -26,9 +27,17 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 PRODUCER = 'research/modelplan-onboarding-rewrite-identity-20260920/native_build_record.py'
 RUNNER = 'research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py'
-SCHEMA = 'memra-native-owned-build-v1'
-BINARIES = ('memra', 'rewrite_identity_gate', 'run-gen', 'decode-batch-gate', 'run-spec', 'kernel-check')
-SOURCE_PATHS = ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo', 'crates', PRODUCER, RUNNER)
+SCHEMA = 'memra-native-owned-build-v2'
+BINARIES = ('memra', 'rewrite_identity_gate', 'run-gen', 'decode-batch-gate', 'run-spec', 'kernel-check', 'argmax-margin-probe', 'concat-prime-probe')
+CALLER_RUNNER = 'research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py'
+ENV_CONTROLLER = 'research/modelplan-onboarding-rewrite-identity-20260920/native_env_controller.py'
+SOURCE_PATHS = ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo', 'crates', PRODUCER, RUNNER,
+                CALLER_RUNNER, ENV_CONTROLLER)
+TEST_TARGETS = {
+    'worker': ('memra-server', '--lib', None, 'memra_server'),
+    'repack': ('memra-engine', '--test', 'native_repack_gpu', 'native_repack_gpu'),
+    'gemma-prime': ('memra-engine', '--test', 'gemma4_chunked_prime_gpu', 'gemma4_chunked_prime_gpu'),
+}
 NATIVE_TOOLS = ('cc', 'c++', 'gcc', 'g++', 'ar', 'ld')
 INHERITED_ENV = ('PATH', 'HOME', 'CARGO_HOME', 'RUSTUP_HOME', 'RUSTUP_TOOLCHAIN', 'TMPDIR')
 
@@ -191,6 +200,60 @@ def cargo_artifacts(path, binary_dir):
     return artifacts
 
 
+def test_command(inputs, out, key):
+    package, selector, name, _ = TEST_TARGETS[key]
+    command = [inputs['tools']['cargo']['path'], 'test', '--locked', '--release', '--no-run',
+               '--message-format=json', '--target-dir', str(out / 'test-target'), '-p', package, selector]
+    return command + ([name] if name else [])
+
+
+def test_artifact(path, out, key):
+    artifacts, finished = [], []
+    expected_name = TEST_TARGETS[key][3]
+    root = (out / 'test-target/release/deps').resolve()
+    for line in path.read_text().splitlines():
+        event = json.loads(line)
+        if event.get('reason') == 'build-finished':
+            finished.append(event.get('success') is True)
+        if (event.get('reason') != 'compiler-artifact' or not event.get('executable')
+                or event.get('target', {}).get('name') != expected_name
+                or event.get('profile', {}).get('test') is not True):
+            continue
+        executable = Path(event['executable'])
+        if event.get('fresh') is not False or executable.parent.resolve() != root or executable.is_symlink():
+            raise RuntimeError(f'not a fresh owned native test executable: {key}')
+        artifacts.append({'path': str(executable.relative_to(out)), **file_identity(executable, executable=True)})
+    if finished != [True] or len(artifacts) != 1:
+        raise RuntimeError(f'incomplete/unsuccessful native test build: {key}')
+    return artifacts[0]
+
+
+def build_tests(root, out, inputs):
+    records = {}
+    for key in TEST_TARGETS:
+        command = test_command(inputs, out, key)
+        events, stderr = out / f'{key}-events.jsonl', out / f'{key}-stderr.log'
+        with events.open('xb') as stdout, stderr.open('xb') as errors:
+            result = subprocess.run(command, cwd=root, env=inputs['environment'], stdout=stdout,
+                                    stderr=errors, check=False)
+        if result.returncode != 0:
+            raise RuntimeError(f'native test build {key} failed ({result.returncode}); see {stderr}')
+        records[key] = {'command': command, 'artifact': test_artifact(events, out, key),
+                        'logs': {file.name: file_identity(file) for file in (events, stderr)}}
+    return records
+
+
+def verify_test_builds(out, inputs, records):
+    if set(records) != set(TEST_TARGETS):
+        raise RuntimeError('incomplete native test build records')
+    for key, record in records.items():
+        events, stderr = out / f'{key}-events.jsonl', out / f'{key}-stderr.log'
+        if (record['command'] != test_command(inputs, out, key)
+                or record['artifact'] != test_artifact(events, out, key)
+                or record['logs'] != {file.name: file_identity(file) for file in (events, stderr)}):
+            raise RuntimeError(f'native test executable/log/command changed since build: {key}')
+
+
 def utc_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -211,12 +274,16 @@ def build(root, out, nvcc, arch):
     if process.returncode != 0:
         raise RuntimeError(f'owned native build failed ({process.returncode}); see {out / "cargo-stderr.log"}')
     binaries = cargo_artifacts(out / 'cargo-events.jsonl', out / 'target/release')
+    tests = build_tests(root, out, inputs)
+    # Test builds use a separate target and may not replace qualified production tools.
+    if binaries != cargo_artifacts(out / 'cargo-events.jsonl', out / 'target/release'):
+        raise RuntimeError('test compilation changed production executables')
     if source_identity(root) != source or build_inputs(root, env) != inputs:
         raise RuntimeError('source/build inputs changed during owned build; no success record emitted')
     record = {'schema': SCHEMA, 'producer': file_identity(root / PRODUCER), 'status': 'success',
               'started_utc': started, 'completed_utc': utc_now(), 'returncode': process.returncode,
               'source': source, 'inputs': inputs, 'inputs_sha256': content_hash(inputs),
-              'command': command, 'binaries': binaries,
+              'command': command, 'binaries': binaries, 'tests': tests,
               'logs': {name: file_identity(out / name) for name in ('cargo-events.jsonl', 'cargo-stderr.log')}}
     # A killed/failed/incomplete build leaves logs, never a success-shaped build.json.
     temporary = out / 'build.json.tmp'
@@ -264,6 +331,7 @@ def verify_build_record(root, path, binary_dir, expected_sha256=None):
             raise RuntimeError('owned build logs changed or incomplete')
         if set(record['binaries']) != set(BINARIES) or record['binaries'] != cargo_artifacts(path.parent / 'cargo-events.jsonl', binary_dir):
             raise RuntimeError('stale-binary build record: executable content mismatch')
+        verify_test_builds(path.parent, inputs, record['tests'])
         return record, record_sha256
     except (OSError, KeyError, TypeError, ValueError, subprocess.CalledProcessError) as error:
         raise RuntimeError(f'missing/incomplete native build record or inputs: {error}') from error

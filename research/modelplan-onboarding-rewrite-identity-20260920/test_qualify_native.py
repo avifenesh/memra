@@ -133,20 +133,25 @@ if '--version' in sys.argv or '-Vv' in sys.argv:
     print(name + ' CPU fixture 1'); sys.exit(0)
 control_path = here / 'control.json'
 control = json.loads(control_path.read_text()) if control_path.exists() else {}
-(here / 'invocation.json').write_text(json.dumps({'args': sys.argv, 'env': dict(os.environ)}))
+if sys.argv[1] == 'build':
+    (here / 'invocation.json').write_text(json.dumps({'args': sys.argv, 'env': dict(os.environ)}))
 if control.get('failure'):
     print('deliberate build failure', file=sys.stderr); sys.exit(7)
 target = pathlib.Path(sys.argv[sys.argv.index('--target-dir') + 1]) / 'release'
-target.mkdir(parents=True)
-for i, arg in enumerate(sys.argv):
-    if arg != '--bin': continue
-    name = sys.argv[i + 1]
-    if name == control.get('omit'): continue
-    path = target / name
+target.mkdir(parents=True, exist_ok=True)
+if sys.argv[1] == 'test':
+    name = sys.argv[sys.argv.index('--test') + 1] if '--test' in sys.argv else 'memra_server'
+    targets = [(name, target / 'deps' / (name + '-fixture'), True)]
+else:
+    targets = [(sys.argv[i + 1], target / sys.argv[i + 1], False)
+               for i, arg in enumerate(sys.argv) if arg == '--bin']
+for name, path, test in targets:
+    if name == control.get('omit') or (test and name == control.get('omit_test')): continue
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('#!/bin/sh\\nexit 0\\n# ' + name + '\\n')
     path.chmod(0o755)
     print(json.dumps({'reason':'compiler-artifact', 'target':{'name':name},
-                      'executable':str(path), 'fresh':control.get('fresh', False)}))
+                      'profile':{'test':test}, 'executable':str(path), 'fresh':control.get('fresh', False)}))
 if not control.get('no_finish'):
     print(json.dumps({'reason':'build-finished','success':True}))
 if control.get('change_source'):
@@ -482,6 +487,23 @@ if control.get('change_tool'):
             self.simulated_qualification(change_after_launch=True)
         self.assertFalse((self.args.out / 'cases.json').exists())
         self.assertFalse((self.args.out / 'result.json').exists())
+
+    def test_missing_native_test_executable_refuses_before_gpu(self):
+        record = self.build()
+        executable = self.out / record['tests']['worker']['artifact']['path']
+        executable.unlink()
+        self.before_gpu()
+
+    def test_changed_native_test_executable_refuses_before_gpu(self):
+        record = self.build()
+        executable = self.out / record['tests']['repack']['artifact']['path']
+        executable.write_bytes(b'changed native test executable')
+        self.before_gpu()
+
+    def test_incomplete_native_test_build_emits_no_success_record(self):
+        with self.assertRaisesRegex(RuntimeError, 'incomplete/unsuccessful native test build'):
+            self.build(omit_test='memra_server')
+        self.assertFalse(self.receipt.exists())
 
     def test_source_changed_after_last_case_cannot_publish_passed_result(self):
         self.build()

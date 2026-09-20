@@ -45,6 +45,24 @@ pub struct PrimeGraph {
 }
 
 impl PrimeGraph {
+    /// Read-only gate diagnostic of stable graph IO, including the embedding input,
+    /// true length, logits and seed. Scratch KV/state is available through scratch().
+    /// Copies bytes only; does not launch, update parameters or validate admission.
+    pub fn diagnostic_io_bytes(&self, e: &Engine) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut bytes = Vec::new();
+        for buffer in [&self.x_in, &self.logits_out, &self.h_seed_out] {
+            let values = e.dtoh(buffer)?;
+            bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
+            for value in values {
+                bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+            }
+        }
+        for value in e.dtoh_i32(&self.len_d)? {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        Ok(bytes)
+    }
+
     /// Gate/debug accessor: the graph's bound scratch cache (read-only).
     pub fn scratch(&self) -> &Cache {
         &self.scratch
