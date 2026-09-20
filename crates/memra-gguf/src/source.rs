@@ -17,7 +17,9 @@ use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
-#[cfg(unix)]
+// `as_raw_fd` is only used on the `/proc/self/fd` (Linux) branch below; gating the import the
+// same way keeps `clippy -D warnings` clean on macOS development boxes.
+#[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};

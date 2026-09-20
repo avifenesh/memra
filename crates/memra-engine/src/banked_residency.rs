@@ -1,16 +1,12 @@
-//! WP-C HostExps bridge, intentionally not exported until lead-owned engine
-//! dependency/module wiring and native byte/dispatch gates are available.
-//! No existing dispatch is changed by this module.
+//! WP-C exact HostExps metadata bridge. The explicit qualification installer in
+//! banked_residency/native.rs uses this mapping before installing the owner-thread
+//! proxy; normal loader and dispatch defaults do not install that door.
 use crate::model::HostExps;
 use memra_tier::{bank::*, contracts::*};
 use std::collections::BTreeMap;
 
-// Native builds compile-check this bridge against HostExps before dispatch wiring.
-// The bank integration test calls map_host_exps with an API-shaped host fixture.
-#[allow(
-    dead_code,
-    reason = "native compile probe; HostExps dispatch is not wired"
-)]
+// Native qualification binds real HostExps. The CPU bank integration test also
+// checks map_host_exps with an API-shaped fixture, not a CUDA loader substitute.
 struct HostView<'a>(&'a HostExps);
 impl HostExpsView for HostView<'_> {
     fn is_uniform_layout(&self) -> bool {
@@ -39,10 +35,6 @@ impl HostExpsView for HostView<'_> {
 /// Sources name immutable tensors and their checksum-bound payload/scale extents.
 /// The loader supplies original router masks. Never infer active IDs from a dense
 /// repacked vector or omit an existing macro/block-scale plane.
-#[allow(
-    dead_code,
-    reason = "native compile probe; exercised by the bank test target"
-)]
 pub fn map_host_exps(
     host: &HostExps,
     tensor: TensorId,

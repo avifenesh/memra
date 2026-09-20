@@ -20,7 +20,11 @@
 //! THE FIXTURE CARRIES BOTH GEMMA ATTENTION CLASSES: one sliding-window layer (hd 256, local
 //! rope, window SHORTER than the prompt so the mask is live) and one global layer (hd 512,
 //! rope_freqs-scaled rope) — gemma4's own alternation at the head dims the kernels are stamped
-//! for. Post-attention / post-MLP norms, layer scale and GELU_PAR ride `gemma4_layer_tail_add`,
+//! for. Two query heads, one KV head: the fused q/k/v norm+rope producer (`rms_norm_qkv_w4b`,
+//! the bf16-operand emit the FA twins consume) requires `nh*t + 2*nkv*t >= 64` rows, which every
+//! real gemma satisfies at t >= PRIME_MIN_T (nh + 2*nkv >= 4) but a 1-head fixture does not at
+//! t = 16 — and a chunk that changed PRODUCER would fail the split arms for a reason no model can
+//! reach. Post-attention / post-MLP norms, layer scale and GELU_PAR ride `gemma4_layer_tail_add`,
 //! shared with decode, so a chunk-boundary defect would show as a prime-vs-decode split (arm 3).
 //!
 //! Lands RED on arms 2 and 3 (today `prime_cache` routes gemma to `gemma4_prime`, which returns
@@ -51,7 +55,7 @@ const WINDOW: usize = 64;
 fn mini_config_json(window: usize) -> String {
     format!(
         r#"{{"model_type":"gemma4","text_config":{{"model_type":"gemma4_text",
-        "num_hidden_layers":2,"hidden_size":64,"num_attention_heads":1,
+        "num_hidden_layers":2,"hidden_size":64,"num_attention_heads":2,
         "num_key_value_heads":1,"num_global_key_value_heads":1,"head_dim":256,
         "global_head_dim":512,"intermediate_size":64,"vocab_size":{VOCAB},
         "max_position_embeddings":{MAX_CTX},"rms_norm_eps":0.000001,
@@ -328,12 +332,16 @@ const TRUTH_TOL: f32 = 1e-1;
 
 /// CHUNK/CALL-SPLIT BAND on THIS fixture. The fixture's weights are F32, so every projection
 /// rides cuBLAS f32 GEMM, whose algorithm selection depends on m (the rows in the call) — the
-/// same non-m-invariance `glm5_chunked_prime_gpu.rs` isolated on the mHC trunk. Measured here:
-/// 1.073e-6 absolute on O(1) logits at every split. Byte identity across splits is the law for
-/// the SHIPPED weight classes (MMQ is row-invariant) and is asserted at model scale by
-/// `tools/chunk-invariance-gate.sh` on the Q4_0 artifacts; this fixture holds the split to a
-/// band five orders below the serial trunk's real chunkinv defect (1.813e0 at the boundary).
-const SPLIT_TOL: f32 = 2e-5;
+/// same non-m-invariance `glm5_chunked_prime_gpu.rs` isolated on the mHC trunk. With the FA
+/// twins the f32 q/k/v operands are then rounded to bf16, and a last-ulp f32 difference that
+/// lands on a bf16 rounding boundary becomes a bf16-ulp (2^-8) difference in that operand, so
+/// the split residue on this fixture is bf16-class: measured 3.250e-3 worst (hidden stack,
+/// T=200, chunk 16), 0..2.2e-7 on the last-row logits (T=200 multi-call: bitwise). On MMQ weights the projections are
+/// row-invariant and the same splits are BIT-IDENTICAL — 12B, 31B and 26B-A4B chunkinv and
+/// tickinv, `research/exec-p1a-gemma-prime-20260919/` — which is the law and the model-scale
+/// bar; this fixture holds the split to a band three orders below the serial trunk's real
+/// chunkinv defect (1.813e0 at the boundary), so a boundary-carry defect still reads as one.
+const SPLIT_TOL: f32 = 1e-2;
 
 fn relative(got: &[f32], want: &[f32]) -> f32 {
     assert_eq!(got.len(), want.len(), "compared slices differ in length");

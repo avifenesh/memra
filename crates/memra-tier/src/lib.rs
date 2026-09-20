@@ -7,6 +7,9 @@
 pub mod bank;
 pub mod contracts;
 
+/// Conformance schedules every backend runs: the CPU contract tests (fake backends) and the
+/// native qualification gates (`tier-transfer-gate`) execute these exact functions.
+pub mod conformance;
 pub mod io;
 pub mod object_store;
 pub mod peer;

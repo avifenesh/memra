@@ -26,8 +26,8 @@ identity = {'source': head, 'patch_sha256': hashlib.sha256(patch.read_bytes()).h
 commands = [
     ('server-build', ['cargo', 'build', '--release', '-p', 'memra-server', '-j', '16']),
     ('server-test-compile', ['cargo', 'test', '--release', '-p', 'memra-server', '--no-run', '-j', '16']),
-    ('gate-build', ['cargo', 'build', '--release', '-p', 'memra-engine', '--bin', 'kv_tier_gate', '-j', '16']),
-    ('gate-cli-tests', ['cargo', 'test', '--release', '-p', 'memra-engine', '--bin', 'kv_tier_gate', '-j', '16']),
+    ('gate-build', ['cargo', 'build', '--release', '-p', 'memra-engine', '--bin', 'kv-tier-gate', '-j', '16']),
+    ('gate-cli-tests', ['cargo', 'test', '--release', '-p', 'memra-engine', '--bin', 'kv-tier-gate', '-j', '16']),
 ]
 for case in ['prefix_cache_', 'host_cache_', 'host_purge_', 'host_image_', 'host_handoff_', 'prefix_restore_plane_preflight']:
     commands.append((case, ['cargo', 'test', '--release', '-p', 'memra-server', '--lib', '-j', '16', case, '--', '--test-threads=1']))

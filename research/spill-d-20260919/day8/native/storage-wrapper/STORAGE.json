@@ -1,0 +1,91 @@
+{
+  "class": "overlay-unproven",
+  "nvme_proven": false,
+  "label": "overlay/unproven \u2014 not NVMe, not spill speed",
+  "allow_unproven_storage": true,
+  "root": "/root/wt-d/receipts/day8/storage-scratch",
+  "commands": [
+    {
+      "command": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/root/wt-d/receipts/day8/storage-scratch"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-findmnt.log",
+        "bytes": 1471,
+        "sha256": "7118a1b2076d5b3b0dd4e9e8b0d3a014b0e74194ef9435ca9d5b4e6326291d43"
+      }
+    },
+    {
+      "command": [
+        "lsblk",
+        "-J",
+        "-o",
+        "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-lsblk.log",
+        "bytes": 5697,
+        "sha256": "13d87d7a1b538d28e2098f8f3bf68f168a2fad87be5255d8de9cfe49485d8562"
+      }
+    },
+    {
+      "command": [
+        "findmnt",
+        "-n",
+        "-o",
+        "SOURCE",
+        "-T",
+        "/root/wt-d/receipts/day8/storage-scratch"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-source.log",
+        "bytes": 8,
+        "sha256": "5971fc5991ae2b514c4e25cbfaa154aa191b4230c4201e33c00da182209f53fd"
+      }
+    },
+    {
+      "command": [
+        "lsblk",
+        "-s",
+        "-r",
+        "-n",
+        "-o",
+        "KNAME",
+        "overlay"
+      ],
+      "exit_code": 32,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-ancestry.log",
+        "bytes": 35,
+        "sha256": "0a69c933da565ce22256d678c7e5c0dcb12fe85dce1857690a1beb6a1499d5fd"
+      }
+    }
+  ],
+  "qualification": false,
+  "object_binding": {
+    "root": "/root/wt-d/receipts/day8/storage-scratch",
+    "object": "/root/wt-d/receipts/day8/storage-scratch/object",
+    "root_filesystem": {
+      "device": 47,
+      "filesystem_id": 2304,
+      "mount_id": 829
+    },
+    "object_filesystem": {
+      "device": 47,
+      "filesystem_id": 2304,
+      "mount_id": 829
+    },
+    "method": "stat-device+statfs-id+linux-mount-id"
+  },
+  "object_argument": "/root/wt-d/receipts/day8/storage-scratch/object"
+}

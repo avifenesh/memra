@@ -125,6 +125,8 @@ pub mod spec;
 /// caller-tagged emit lines so banked receipts keep their grep shape. No CUDA deps
 /// beyond the stream drains at phase boundaries.
 pub mod spec_phase;
+/// Owner-stream CUDA `TransferEngine` (memra-tier v1.3) used by the tier qualification gates.
+pub mod tier_transfer;
 pub mod tp;
 pub mod tp_ar;
 pub mod tp_expert_split;
@@ -29423,6 +29425,103 @@ impl Engine {
         Ok(())
     }
 
+    /// GEMMA VIEW TWIN (memra#535 P1a speed fix): attention for a prime chunk over the
+    /// quantized KV planes, at FA speed. Pass 1 dequants the byte view `[0, t_kv)` ONCE into the
+    /// shared bf16 workspace (`fa_prefill_view_ws`'s pass 1 — `fa_dequant_kv_ws_bf16`, module
+    /// selected by the planes' format: `fp8_planes` = gemma's e4m3 globals/windowed layers via
+    /// the kf8vf8 fatbin). Pass 2 runs the bf16 FA kernels gemma's fresh prime already uses —
+    /// `fa_prefill_w_pre` (hd 256, windowed; `window == t_kv` when no window is live) or
+    /// `fa_prefill_hd512_pre` (the globals) — with the causal offset `t_kv - t`, so chunk 0 and
+    /// every later chunk attend the same dequantized values through the same reduction. The
+    /// naive `sdpa_naive[_w]_quantized_view_fmt` twins remain the `MEMRA_NOFA` diagnostic arm;
+    /// measured without this twin the 12B primed a 4882-token prompt in 11.78 s against 0.52 s
+    /// on the fresh path (research/exec-p1a-gemma-prime-20260919/).
+    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
+    pub fn gemma_prefill_view_bf16(
+        &self,
+        qb: &CudaSlice<u8>,
+        k: &cudarc::driver::CudaView<u8>,
+        v: &cudarc::driver::CudaView<u8>,
+        o: &mut CudaSlice<f32>,
+        head_dim: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        t: usize,
+        t_kv: usize,
+        scale: f32,
+        window: usize,
+        k_tok_bytes: usize,
+        v_tok_bytes: usize,
+        fp8_planes: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let kv_dim_k = n_head_kv * head_dim;
+        let kv_dim_v = n_head_kv * head_dim;
+        let k_ws_bytes = t_kv * kv_dim_k * 2; // bf16
+        let v_ws_bytes = t_kv * kv_dim_v * 2;
+        // Lock held across both launches: enqueue-only, all compute serializes on gpu.stream.
+        let mut guard = self.prime_deqw_ws.lock().unwrap();
+        let need_grow = match guard.as_ref() {
+            Some((kw, vw)) => kw.len() < k_ws_bytes || vw.len() < v_ws_bytes,
+            None => true,
+        };
+        if need_grow {
+            let grow = |cur: usize, need: usize| if cur >= need { cur } else { need };
+            let (ck, cv) = guard
+                .as_ref()
+                .map(|(a, b)| (a.len(), b.len()))
+                .unwrap_or((0, 0));
+            *guard = Some((
+                self.alloc_u8(grow(ck, k_ws_bytes))?,
+                self.alloc_u8(grow(cv, v_ws_bytes))?,
+            ));
+        }
+        let (kw, vw) = guard.as_mut().unwrap();
+        {
+            let f = if fp8_planes {
+                self.func_g("fa_dequant_kv_ws_bf16")
+            } else {
+                self.func("fa_dequant_kv_ws_bf16")
+            };
+            let total = (t_kv * (kv_dim_k + kv_dim_v)) as u64;
+            let nblk = total.div_ceil(256).min(65535 * 16) as u32;
+            let cfg = LaunchConfig {
+                grid_dim: (nblk.max(1), 1, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let (kdk, kdv, tkvi) = (kv_dim_k as i32, kv_dim_v as i32, t_kv as i32);
+            let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(k)
+                .arg(v)
+                .arg(&mut *kw)
+                .arg(&mut *vw)
+                .arg(&kdk)
+                .arg(&kdv)
+                .arg(&tkvi)
+                .arg(&ktb)
+                .arg(&vtb);
+            unsafe {
+                b.launch(cfg)?;
+            }
+        }
+        // Pass 2: the workspace holds bf16 K and bf16 V (v_f16 = false: the wrappers re-encode V
+        // to f16 themselves where a stamp reads f16).
+        let kw: &CudaSlice<u8> = kw;
+        let vw: &CudaSlice<u8> = vw;
+        if head_dim == 512 {
+            self.fa_prefill_hd512_pre(
+                qb, kw, vw, o, head_dim, n_head, n_head_kv, t, t_kv, scale, true, false,
+            )
+        } else {
+            let win = if window > 0 { window } else { t_kv };
+            self.fa_prefill_w_pre(
+                qb, kw, vw, o, head_dim, n_head, n_head_kv, t, t_kv, scale, true, win, false,
+            )
+        }
+    }
+
     /// ARC B (2026-07-05): dequant-once chunk-prime FA. Same contract as `fa_prefill_view`, but
     /// instead of every (q-block, head) CTA re-dequanting the whole quantized KV stream inline
     /// (T/64 x n_head redundant at chunk prime — 30.5% of the 32k prime wall), dequant the full
@@ -29433,7 +29532,8 @@ impl Engine {
     /// The workspace allocation is REUSED across layers/chunks (grown to the largest shape);
     /// contents are rewritten per call. MEMRA_PRIME_DEQW=0 falls back to fa_prefill_view (callers gate).
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
+    #[allow(clippy::manual_div_ceil)]
+    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn fa_prefill_view_ws(
         &self,
         q: &CudaSlice<f32>,
