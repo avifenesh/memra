@@ -1,0 +1,71 @@
+{
+  "source_commit": "e0bfca3154fb4e1aaa906b8689ad9c6caa6becc6",
+  "qualification": "Linux CPU controls only, no native build or GPU execution",
+  "platform": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+  "source_files": {
+    "native_build_record.py": "a9d285619840387942c575b7c00fa09aabb22a45ac9b449e37cb49bf4557eb9f",
+    "native_env_controller.py": "f454cfe3b9e53c831b1d6ca2a675ee170a0e6610568f30d69daac887e1aa0bfa",
+    "native_finalization.py": "c4a8eca23bd4ba3b94de81e60fb419785881b9fe9e8a60aa5961a1c9fc2cf9c0",
+    "qualify-callers.py": "eecb9d91df27c57c8c9bd9974760ff7fd9a67b015994ab7426679f34e6f632ac",
+    "qualify-native.py": "1c8ddbd8d2848e1092d82a4a4d65bff177d5cb4da4325f4dc24ca7c3cb3f6e97",
+    "test_finalization_signals.py": "cf4e0452c74d5c00457b53e8854f79d35974c0ea5c2f2871248ade196a8ce5e1",
+    "test_native_env_controller.py": "cb7c7764672657717a78fa7f24efab7a7825e0ae7e71f1fdcbb70145993d2ab4",
+    "test_native_finalization.py": "c1eec0c48b64f6d5dd5f256a64a97c893904ddfc540ae6e90abd9cc37264795c",
+    "test_qualify_callers.py": "8e6d73f47746f8115872eab9925eea75753dbfd88d77f4f84c75470e6f10d924"
+  },
+  "tests": [
+    {
+      "name": "test_native_env_controller",
+      "command": [
+        "python3",
+        "-B",
+        "/home/memra-five/owners/issue-542/controller-e0bfca315/research/modelplan-onboarding-rewrite-identity-20260920/test_native_env_controller.py",
+        "--require-linux",
+        "-v"
+      ],
+      "start": "2026-09-20T16:34:16.152620+00:00",
+      "end": "2026-09-20T16:34:18.700641+00:00",
+      "exit_code": 0,
+      "sha256": "2ec3803fd2d8ba4a0ed515e1ff1a79cbb7179e756ce1a0390161b13780917d8b"
+    },
+    {
+      "name": "test_native_finalization",
+      "command": [
+        "python3",
+        "-B",
+        "/home/memra-five/owners/issue-542/controller-e0bfca315/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py",
+        "-v"
+      ],
+      "start": "2026-09-20T16:34:18.700895+00:00",
+      "end": "2026-09-20T16:34:18.829894+00:00",
+      "exit_code": 0,
+      "sha256": "54f22013e8dbd93ea1ed477a465900faf1694fbb3b9c1cc526d15ae6652cdf62"
+    },
+    {
+      "name": "test_qualify_callers",
+      "command": [
+        "python3",
+        "-B",
+        "/home/memra-five/owners/issue-542/controller-e0bfca315/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py",
+        "-v"
+      ],
+      "start": "2026-09-20T16:34:18.830089+00:00",
+      "end": "2026-09-20T16:34:19.272727+00:00",
+      "exit_code": 0,
+      "sha256": "924081b4a5ab2a4a04b9e508daf90e7db7e8ba7cb88b298303229a765de994c9"
+    },
+    {
+      "name": "test_finalization_signals",
+      "command": [
+        "python3",
+        "-B",
+        "/home/memra-five/owners/issue-542/controller-e0bfca315/research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py",
+        "-v"
+      ],
+      "start": "2026-09-20T16:34:19.272930+00:00",
+      "end": "2026-09-20T16:34:19.972566+00:00",
+      "exit_code": 0,
+      "sha256": "0d447767ec70215c338e09b9c5673c3522e995767c96396099fcc7ef24bd69f8"
+    }
+  ]
+}

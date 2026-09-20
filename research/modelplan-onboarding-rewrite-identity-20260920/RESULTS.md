@@ -7,7 +7,38 @@ binary. Whole-model, serving, MTP/pipeline, and performance qualification are no
 
 Base: `b3487a03b0ee3f833c1157e7b7d68f2cb35a3843`.
 Branch: `codex/542-trusted-rewrite-identity`.
-Environment: macOS arm64, no CUDA toolkit or GPU. No serving machine was accessed.
+Initial environment: macOS arm64, no CUDA toolkit or GPU. Later Linux CPU and
+native runs are identified separately below.
+
+## Current-main integration and Linux controller checks
+
+Candidate `e0bfca3154fb4e1aaa906b8689ad9c6caa6becc6` integrates main
+`8a1559b48f38cd67977d3631e735e61ccdc5fcdc`, including device-memory ownership
+and streaming usage behavior. Both additive documentation conflicts retain both
+lanes; Rust merged without manual resolution. The normal fast-forward push passed
+all hooks and GitHub reported MERGEABLE. Fresh CI and bounded integration review
+were still running when this record was captured.
+
+The independent `4fa70f447` finalization review passed and closed
+TC557-CALLERS-01. Its runner/controller/finalizer source is unchanged in this
+integration. The new Linux CPU run passes all 27 controller tests, including actual
+owned-child environment mutation and restoration, timeout, failure and SIGTERM
+cleanup. Seven finalization tests, twelve caller tests and all nine real-SIGTERM
+scenarios also pass on Linux. Source and transferred log hashes were checked.
+
+Local checks pass: compiler 293 (two existing diagnostic tests ignored), CLI 12,
+runtime identity/snapshot 18, native repack helpers nine, provenance 31, upstream
+memory arithmetic 11 and memory fixture ten. Engine/server library, binary and
+test cross-target clippy passes with documentation placeholders; this checks Rust
+types only. Portable controller tests pass 22 with five Linux-only cases skipped;
+the separate Linux run above closes those five. The upstream memory-runner suite
+passes eight portable tests with its Linux-only test skipped locally.
+
+Raw commands, outputs and hashes are retained in `main-resume-20260920/`.
+`flags.log` records an initial wrong-shell invocation; the corrected Bash
+invocation and the actual push hook both pass. No new CUDA execution or native
+build is claimed by these CPU records. Old source/build/receipt identities remain
+unchanged; final integrated native qualification is still required.
 
 ## Late-cancellation finalization correction
 
