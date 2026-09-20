@@ -21,6 +21,9 @@ skip ledger. This does not grant qualification, even if model files happen to ex
 Development mode refuses main/master and every tag. `MEMRA_SKIP_PERF_CI=1` is retired
 and refuses rather than bypassing the gate. `step-pro` remains an additional Step model
 and topology gate; its older partial source manifest cannot substitute for this record.
+That additional checker now requires hashes for every changed crate/build/tool input,
+including KV, tier, tokenizer and server. A deleted input requires a `null` tombstone and
+actual absence; adding a hash for another file cannot conceal the deletion.
 
 Both real tag workflows validate the committed record before building/publishing. Manual
 crates.io recovery also validates it; a package dry run remains explicitly a build check.

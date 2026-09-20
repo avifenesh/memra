@@ -119,8 +119,16 @@ def validate_receipt(
     if not isinstance(source_files, dict) or not source_files:
         raise GateError("source_files must be a non-empty object")
     for raw_path, expected in source_files.items():
-        if not isinstance(raw_path, str) or not isinstance(expected, str):
-            raise GateError("source_files keys and values must be strings")
+        if not isinstance(raw_path, str) or (expected is not None and not isinstance(expected, str)):
+            raise GateError("source_files keys must be strings; values must be SHA-256 or deletion tombstones")
+        relative = Path(raw_path)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise GateError(f"source path must stay inside the repository: {raw_path}")
+        if expected is None:
+            absent = repo_root / relative
+            if absent.exists() or absent.is_symlink():
+                raise GateError(f"deleted source is still present: {raw_path}")
+            continue
         if not SHA256_RE.fullmatch(expected):
             raise GateError(f"invalid source SHA-256 for {raw_path}")
         actual = sha256_file(_safe_repo_path(repo_root, raw_path))
@@ -132,7 +140,7 @@ def validate_receipt(
     uncovered = sorted(set(changed_files) - set(source_files))
     if uncovered:
         raise GateError(
-            "receipt does not bind changed engine files: " + ", ".join(uncovered)
+            "receipt does not bind changed runtime/build inputs: " + ", ".join(uncovered)
         )
 
     evidence = receipt.get("evidence")
@@ -185,17 +193,19 @@ def validate_receipt(
 
 def changed_engine_files(repo_root: Path, base: str) -> list[str]:
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}..HEAD"],
+        ["git", "diff", "--name-only", "--no-renames", f"{base}..HEAD"],
         cwd=repo_root,
         check=True,
         capture_output=True,
         text=True,
     )
+    # Historical function name retained for callers. Every crate input (including
+    # Cargo/build files), tool and workspace configuration can change Step execution.
+    # The generic qualification record additionally binds the whole tracked inventory.
     changed: list[str] = []
     for path in result.stdout.splitlines():
-        if path.startswith("crates/memra-engine/cu/") or (
-            path.startswith("crates/memra-engine/src/")
-            and path.endswith(".rs")
+        if path.startswith(("crates/", "tools/", ".cargo/", ".github/")) or (
+            "/" not in path and not path.endswith(".md")
         ):
             changed.append(path)
     return sorted(set(changed))
@@ -218,7 +228,7 @@ def main() -> int:
         changed_files.extend(changed_engine_files(repo_root, args.base))
     changed_files = sorted(set(changed_files))
     if not changed_files:
-        print("hardware-gate: no changed engine files were supplied", file=sys.stderr)
+        print("hardware-gate: no changed runtime/build inputs were supplied", file=sys.stderr)
         return 2
 
     try:

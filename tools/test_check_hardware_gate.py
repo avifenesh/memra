@@ -5,8 +5,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from tools.check_hardware_gate import GateError, sha256_file, validate_receipt
+from tools.check_hardware_gate import GateError, changed_engine_files, sha256_file, validate_receipt
 
 
 class HardwareGateTest(unittest.TestCase):
@@ -93,6 +95,28 @@ class HardwareGateTest(unittest.TestCase):
                 self.repo,
                 changed_files=[self.changed_file, "crates/memra-engine/src/other.rs"],
             )
+
+    def test_runtime_dependency_selector_includes_workspace_and_build_inputs(self) -> None:
+        paths = ["crates/memra-engine/Cargo.toml", "crates/memra-engine/build.rs",
+                 "crates/memra-kv/src/lib.rs", "crates/memra-tier/src/transfers.rs",
+                 "crates/memra-tokenizer/src/lib.rs", "crates/memra-server/src/worker.rs",
+                 "crates/memra-gguf/src/source.rs", "Cargo.lock", ".cargo/config.toml",
+                 "rust-toolchain.toml", "tools/release-battery.sh"]
+        with patch("tools.check_hardware_gate.subprocess.run",
+                   return_value=SimpleNamespace(stdout="\n".join(paths + ["docs/README.md"]))):
+            self.assertEqual(changed_engine_files(self.repo, "base"), sorted(paths))
+        for path in paths:
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(GateError, "does not bind"):
+                    validate_receipt(self.receipt_path, self.repo, changed_files=[path])
+
+    def test_removed_input_needs_an_explicit_absence_tombstone(self) -> None:
+        self.write_receipt(source_files={self.changed_file: None})
+        self.source.unlink()
+        self.validate()
+        self.source.write_text("replacement\n")
+        with self.assertRaisesRegex(GateError, "deleted source is still present"):
+            self.validate()
 
     def test_corrupt_evidence_is_rejected(self) -> None:
         Path(self.evidence[0]["directory"], "payload.log").write_text(
