@@ -32,6 +32,7 @@ fn sharded_catalog_200gb_metadata_only_constant_touch_cost() {
     let mut store = CatalogStore::open(paths, large_governor()).unwrap();
     let count = 200_000u64; // 209,715,200,000 logical bytes; NO payload files.
     let chunk = reference(&payload(MAX_CHUNK));
+    let install_start = std::time::Instant::now();
     let head = store
         .install_index(
             key(),
@@ -40,7 +41,9 @@ fn sharded_catalog_200gb_metadata_only_constant_touch_cost() {
             &request(300_000_000_000),
         )
         .unwrap();
+    let install_ns = install_start.elapsed().as_nanos();
     let baseline = store.counters();
+    let touch_start = std::time::Instant::now();
     let found = store.lookup(&key()).unwrap().unwrap();
     assert_eq!(found, head);
     assert_eq!(found.extents(), count);
@@ -50,6 +53,7 @@ fn sharded_catalog_200gb_metadata_only_constant_touch_cost() {
         assert_eq!(lease.reference(), &chunk);
         store.release_extent(&lease).unwrap();
     }
+    let touch_ns = touch_start.elapsed().as_nanos();
     let after = store.counters();
     assert_eq!(after.root_reads - baseline.root_reads, 5);
     assert_eq!(after.index_rows - baseline.index_rows, 4);
@@ -66,6 +70,14 @@ fn sharded_catalog_200gb_metadata_only_constant_touch_cost() {
     assert_eq!(file_bytes, count * 112 + 8192);
     // No huge payload allocation, no payload reads, and <=23 MB actual index.
     assert!(file_bytes < 23_000_000);
+    println!(
+        "CATALOG_METADATA {{\"logical_bytes\":{},\"metadata_bytes\":{},\"touched_metadata_bytes\":{},\"payload_reads\":0,\"install_ns\":{},\"touch_ns\":{},\"qualification\":false}}",
+        count * MAX_CHUNK as u64,
+        file_bytes,
+        after.metadata_bytes - baseline.metadata_bytes,
+        install_ns,
+        touch_ns
+    );
 }
 #[test]
 fn sharded_catalog_lazy_payload_corruption_missing_sibling_and_index_binding() {

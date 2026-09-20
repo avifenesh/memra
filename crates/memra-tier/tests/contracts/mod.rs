@@ -6,3 +6,5 @@ mod services;
 mod support;
 mod transfer;
 mod wire;
+
+mod v12_bindings;

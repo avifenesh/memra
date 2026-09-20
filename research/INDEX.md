@@ -502,3 +502,9 @@ glm5-kda-verify-20260909 | SUPERSEDED MECHANISM: one t-row register-state scan a
 - `glm5-dflash-compose-20260909` | "Historical PP1 p32k KDA+MLA 81.359039 versus plain 80.651195 tok/s; corrected PMIN K6 77.503363 and auto 80.574876. Recommend plain K=0; all three runtime doors removed 2026-09-09." | [RESULTS](glm5-dflash-compose-20260909/RESULTS.md)
 
 glm-tp-device-ownership-20260920 | 3/3 synthetic native ownership and memory seam stages passed; full-checkpoint and performance qualification remain pending. | glm-tp-device-ownership-20260920/NATIVE-RESULTS.md
+
+spill-a-20260919 | This is a pushed lane milestone, not main integration, release, deployment, GPU qualification, live verification, or permission to begin model work. | spill-a-20260919/day4/RESULTS.md
+spill-b-20260919 | WP-B day 4 — CPU milestone pushed; native patch unapplied | spill-b-20260919/DAY4.md
+spill-c-20260919 | Verdict: mapping complete for handoff; implementation/GPU ownership NO-GO. | spill-c-20260919/READYVIEW-OWNERSHIP.md
+spill-d-20260919 | Lane committed and pushed; not merged to main, deployed, or GPU/live-qualified. | spill-d-20260919/DAY4-VERIFICATION.md
+spill-lead-20260919 | This is a CPU/cross-compile review-fix milestone, not a main merge, release, deployment, GPU qualification, or live-serving verification. | spill-lead-20260919/PR519-REVIEW-FIXES.md

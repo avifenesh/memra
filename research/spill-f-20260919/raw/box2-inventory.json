@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "utc": "2026-09-19T19:01:02.261100+00:00",
+  "rig": "BOX2",
+  "evidence_class": "read-only-inventory-not-performance",
+  "mounts": [
+    {
+      "argv": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/",
+        "-o",
+        "TARGET,SOURCE,FSTYPE,MAJ:MIN"
+      ],
+      "exit_code": 0,
+      "stdout": "{\n   \"filesystems\": [\n      {\n         \"target\": \"/\",\n         \"source\": \"overlay\",\n         \"fstype\": \"overlay\",\n         \"maj:min\": \"0:55\"\n      }\n   ]\n}\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/root",
+        "-o",
+        "TARGET,SOURCE,FSTYPE,MAJ:MIN"
+      ],
+      "exit_code": 0,
+      "stdout": "{\n   \"filesystems\": [\n      {\n         \"target\": \"/\",\n         \"source\": \"overlay\",\n         \"fstype\": \"overlay\",\n         \"maj:min\": \"0:55\"\n      }\n   ]\n}\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/scratch",
+        "-o",
+        "TARGET,SOURCE,FSTYPE,MAJ:MIN"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/workspace",
+        "-o",
+        "TARGET,SOURCE,FSTYPE,MAJ:MIN"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/dev/shm",
+        "-o",
+        "TARGET,SOURCE,FSTYPE,MAJ:MIN"
+      ],
+      "exit_code": 0,
+      "stdout": "{\n   \"filesystems\": [\n      {\n         \"target\": \"/dev/shm\",\n         \"source\": \"shm\",\n         \"fstype\": \"tmpfs\",\n         \"maj:min\": \"0:82\"\n      }\n   ]\n}\n",
+      "stderr": ""
+    }
+  ],
+  "lsblk": {
+    "argv": [
+      "lsblk",
+      "-J",
+      "-o",
+      "NAME,MAJ:MIN,TYPE,SIZE,ROTA,TRAN,FSTYPE,MOUNTPOINTS"
+    ],
+    "exit_code": 0,
+    "stdout": "{\n  \"blockdevices\": [\n    {\n      \"name\": \"nvme1n1\",\n      \"maj:min\": \"259:0\",\n      \"type\": \"disk\",\n      \"size\": \"7.3T\",\n      \"rota\": false,\n      \"tran\": \"nvme\",\n      \"fstype\": null,\n      \"mountpoints\": [\n        null\n      ],\n      \"children\": [\n        {\n          \"name\": \"md0\",\n          \"maj:min\": \"9:0\",\n          \"type\": \"raid0\",\n          \"size\": \"14.6T\",\n          \"rota\": false,\n          \"tran\": null,\n          \"fstype\": null,\n          \"mountpoints\": [\n            \"/etc/resolv.conf\",\n            \"/etc/hosts\",\n            \"/etc/hostname\"\n          ]\n        }\n      ]\n    },\n    {\n      \"name\": \"nvme0n1\",\n      \"maj:min\": \"259:1\",\n      \"type\": \"disk\",\n      \"size\": \"931.5G\",\n      \"rota\": false,\n      \"tran\": \"nvme\",\n      \"fstype\": null,\n      \"mountpoints\": [\n        null\n      ],\n      \"children\": [\n        {\n          \"name\": \"nvme0n1p1\",\n          \"maj:min\": \"259:2\",\n          \"type\": \"part\",\n          \"size\": \"1G\",\n          \"rota\": false,\n          \"tran\": \"nvme\",\n          \"fstype\": null,\n          \"mountpoints\": [\n            null\n          ]\n        },\n        {\n          \"name\": \"nvme0n1p2\",\n          \"maj:min\": \"259:3\",\n          \"type\": \"part\",\n          \"size\": \"930.5G\",\n          \"rota\": false,\n          \"tran\": \"nvme\",\n          \"fstype\": null,\n          \"mountpoints\": [\n            \"/usr/lib/xorg/modules/extensions/libglxserver_nvidia.so.595.80\",\n            \"/usr/lib/xorg/modules/drivers/nvidia_drv.so\",\n            \"/usr/share/glvnd/egl_vendor.d/10_nvidia.json\",\n            \"/usr/share/egl/egl_external_platform.d/15_nvidia_gbm.json\",\n            \"/usr/share/egl/egl_external_platform.d/10_nvidia_wayland.json\",\n            \"/usr/lib/x86_64-linux-gnu/vdpau/libvdpau_nvidia.so.595.80\",\n            \"/usr/lib/firmware/nvidia/595.80/gsp_tu10x.bin\",\n            \"/usr/lib/firmware/nvidia/595.80/gsp_ga10x.bin\",\n            \"/usr/share/nvidia/nvoptix.bin\",\n            \"/usr/lib/x86_64-linux-gnu/libnvoptix.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-wayland-client.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-vksc-core.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-tls.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-tileiras.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-sandboxutils.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-rtcore.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-present.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-pkcs11.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-pkcs11-openssl3.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-opticalflow.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-opencl.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-nvvm.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-ngx.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-gtk3.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-gtk2.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-glvkspirv.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-glsi.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-glcore.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-fbc.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-encode.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-eglcore.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-egl-wayland.so.1.1.20\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-egl-gbm.so.1.1.3\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-cfg.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvidia-allocator.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libnvcuvid.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libcudadebugger.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libcuda.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libGLX_nvidia.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libGLESv2_nvidia.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libGLESv1_CM_nvidia.so.595.80\",\n            \"/usr/lib/x86_64-linux-gnu/libEGL_nvidia.so.595.80\",\n            \"/etc/vulkan/implicit_layer.d/nvidia_layers.json\",\n            \"/etc/vulkan/icd.d/nvidia_icd.json\",\n            \"/usr/bin/nvidia-smi\",\n            \"/usr/bin/nvidia-persistenced\",\n            \"/usr/bin/nvidia-debugdump\",\n            \"/usr/bin/nvidia-cuda-mps-server\",\n            \"/usr/bin/nvidia-cuda-mps-control\"\n          ]\n        }\n      ]\n    },\n    {\n      \"name\": \"nvme2n1\",\n      \"maj:min\": \"259:4\",\n      \"type\": \"disk\",\n      \"size\": \"7.3T\",\n      \"rota\": false,\n      \"tran\": \"nvme\",\n      \"fstype\": null,\n      \"mountpoints\": [\n        null\n      ],\n      \"children\": [\n        {\n          \"name\": \"md0\",\n          \"maj:min\": \"9:0\",\n          \"type\": \"raid0\",\n          \"size\": \"14.6T\",\n          \"rota\": false,\n          \"tran\": null,\n          \"fstype\": null,\n          \"mountpoints\": [\n            \"/etc/resolv.conf\",\n            \"/etc/hosts\",\n            \"/etc/hostname\"\n          ]\n        }\n      ]\n    }\n  ]\n}\n",
+    "stderr": "",
+    "excluded_loop_count": 6
+  },
+  "df": {
+    "argv": [
+      "df",
+      "-T",
+      "-B1",
+      "/",
+      "/root",
+      "/dev/shm"
+    ],
+    "exit_code": 0,
+    "stdout": "Filesystem     Type       1B-blocks        Used    Available Use% Mounted on\noverlay        overlay 214748364800 23319945216 191428419584  11% /\noverlay        overlay 214748364800 23319945216 191428419584  11% /\nshm            tmpfs    33285996544           0  33285996544   0% /dev/shm\n",
+    "stderr": ""
+  },
+  "statfs": {
+    "argv": [
+      "stat",
+      "-f",
+      "-c",
+      "%T %s %b %f %a",
+      "/root"
+    ],
+    "exit_code": 0,
+    "stdout": "overlayfs 4096 52428800 46735454 46735454\n",
+    "stderr": ""
+  },
+  "proc_mount_classes": [
+    "cgroup2",
+    "devpts",
+    "ext4",
+    "mqueue",
+    "overlay",
+    "proc",
+    "sysfs",
+    "tmpfs",
+    "xfs"
+  ],
+  "sys_block": [
+    {
+      "name": "md0",
+      "dev": "9:0",
+      "size": "31255576576",
+      "queue/rotational": "0",
+      "queue/logical_block_size": "512",
+      "device_node_visible": false
+    },
+    {
+      "name": "nvme0n1",
+      "dev": "259:1",
+      "size": "1953525168",
+      "queue/rotational": "0",
+      "queue/logical_block_size": "512",
+      "device_node_visible": false
+    },
+    {
+      "name": "nvme1n1",
+      "dev": "259:0",
+      "size": "15628053168",
+      "queue/rotational": "0",
+      "queue/logical_block_size": "512",
+      "device_node_visible": false
+    },
+    {
+      "name": "nvme2n1",
+      "dev": "259:4",
+      "size": "15628053168",
+      "queue/rotational": "0",
+      "queue/logical_block_size": "512",
+      "device_node_visible": false
+    }
+  ],
+  "disk_usage": {
+    "artifacts": {
+      "paths_count": 1,
+      "allocated_bytes_sum": 15705923584,
+      "statuses": [
+        "ok"
+      ],
+      "complete": true
+    },
+    "base_target": {
+      "paths_count": 1,
+      "allocated_bytes_sum": 1412366336,
+      "statuses": [
+        "ok"
+      ],
+      "complete": true
+    },
+    "receipts": {
+      "paths_count": 1,
+      "allocated_bytes_sum": 1482752,
+      "statuses": [
+        "ok"
+      ],
+      "complete": true
+    },
+    "lane_targets": {
+      "paths_count": 1,
+      "allocated_bytes_sum": 1549606912,
+      "statuses": [
+        "ok"
+      ],
+      "complete": true
+    },
+    "cargo_registry": {
+      "paths_count": 1,
+      "allocated_bytes_sum": 108900352,
+      "statuses": [
+        "ok"
+      ],
+      "complete": true
+    },
+    "cargo_git": {
+      "paths_count": 0,
+      "allocated_bytes_sum": 0,
+      "statuses": [],
+      "complete": true
+    }
+  },
+  "gpu": {
+    "argv": [
+      "nvidia-smi",
+      "--query-gpu=name,driver_version,memory.total,memory.used,power.limit,power.max_limit,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max",
+      "--format=csv"
+    ],
+    "exit_code": 0,
+    "stdout": "name, driver_version, memory.total [MiB], memory.used [MiB], power.limit [W], power.max_limit [W], pcie.link.gen.current, pcie.link.gen.max, pcie.link.width.current, pcie.link.width.max\nNVIDIA GeForce RTX 5090, 595.80, 32607 MiB, 2 MiB, 400.00 W, 600.00 W, 1, 5, 16, 16\n",
+    "stderr": ""
+  },
+  "compute_apps": {
+    "argv": [
+      "nvidia-smi",
+      "--query-compute-apps=pid,process_name,used_gpu_memory",
+      "--format=csv"
+    ],
+    "exit_code": 0,
+    "stdout": "pid, process_name, used_gpu_memory [MiB]\n",
+    "stderr": ""
+  },
+  "memory": {
+    "argv": [
+      "free",
+      "-b"
+    ],
+    "exit_code": 0,
+    "stdout": "               total        used        free      shared  buff/cache   available\nMem:     540660109312 121545420800 85991653376   536350720 337564192768 419114688512\nSwap:     8589930496  8589881344       49152\n",
+    "stderr": ""
+  }
+}

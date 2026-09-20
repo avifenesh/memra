@@ -1,0 +1,13 @@
+    Finished `release` profile [optimized] target(s) in 0.07s
+     Running tests/storage/mod.rs (target/release/deps/storage-b0906edcd52df6a9)
+
+running 6 tests
+test day4::review_gc_verification_failure_does_not_revoke_visibility ... ok
+test day4::review_gc_cancel_removes_staging_and_corrupt_staging_is_noop ... ok
+test day4::review_gc_preserves_uncommitted_transaction_chunks ... ok
+test day4::review_gc_live_cross_process_transaction_commits_byte_exact ... ok
+test day4::review_gc_staged_transaction_process_exit_and_bounded_recovery ... ok
+test day4::review_catalog_recovers_pending_with_and_without_published_root ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.02s
+

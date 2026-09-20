@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Send this script over an operator-owned SSH identity; never embed credentials.
 # BRANCH=lane/spill-integ-... bash tier-rig-bootstrap.sh [--dry-run --out DIR]
+# Operator notes: prefer the provider SSH proxy; direct-IP access may be flaky.
+# Vast account key association alone may not inject the key into a container. If needed,
+# operator: vastai attach ssh <instance-id> "<public-key with a NEW comment>".
+# An unchanged comment may return "already associated" without injection. No private keys,
+# hosts, instance ids or credentials belong in this script or published receipts.
+# --status --pidfile PATH replaces pgrep -f (which self-matches an SSH command string).
 set -euo pipefail
 exec python3 - "$@" <<'PY'
 """Fresh non-serving 5090 bootstrap. Dry-run stubs external effects, not checks."""
@@ -27,18 +33,44 @@ p.add_argument('--resume', action='store_true', help='read prior receipt; revali
 p.add_argument('--provider', choices=['auto', 'runpod', 'vast', 'other'], default='auto')
 p.add_argument('--persistent-root', type=Path, help='operator-confirmed provider persistent volume')
 p.add_argument('--nvme-root', type=Path, help='candidate local NVMe mount; verified before use')
+p.add_argument('--allow-unproven-storage', action='store_true', help='allow only explicitly labeled development storage, never NVMe qualification')
+p.add_argument('--pidfile', type=Path, help='bootstrap process metadata/inode; NOT a GPU campaign lock')
+p.add_argument('--status', '--already-running', action='store_true', help='read-only pidfile check: exit 0 active, 1 inactive, 2 error; requires --pidfile')
 p.add_argument('--set-power', action='store_true', help='request expected limit; refusal is diagnostic')
 p.add_argument('--hourly-cost', type=Decimal, help='optional private operator rate; never publish raw')
 p.add_argument('--expected-power', type=int, default=600)
 p.add_argument('--gap-seconds', type=int, default=60)
 p.add_argument('--jobs', type=int, default=4)
 a = p.parse_args()
+# A locked pidfile identifies this bootstrap invocation, not a process-name substring.
+# flock, rather than kill(pid, 0), also makes stale/recycled PIDs harmless. Never unlink
+# this inode while another invocation could have opened it. Status never creates files.
+if a.status:
+    if a.pidfile is None:
+        p.error('--status requires --pidfile')
+    try:
+        with a.pidfile.open('r') as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                metadata = json.load(handle)
+                print(json.dumps({'status': 'running', 'pid': metadata['pid']}))
+                sys.exit(0)
+            print(json.dumps({'status': 'not-running'}))
+            sys.exit(1)
+    except FileNotFoundError:
+        print(json.dumps({'status': 'not-running'}))
+        sys.exit(1)
+    except (OSError, ValueError, KeyError) as error:
+        p.error('cannot read bootstrap status: ' + str(error))
+if a.allow_unproven_storage and a.nvme_root is None:
+    p.error('--allow-unproven-storage requires --nvme-root identifying the actual storage path')
 minimum_commit = '020d20479cd686835c0fb7743040947d0fc2723b'
 branch = os.environ.get('BRANCH', '')
 if not re.fullmatch(r'lane/spill-[A-Za-z0-9._/-]+', branch) or '..' in branch or branch.endswith('/'):
     p.error('BRANCH must explicitly name a lane/spill-* remote branch; main/default forbidden')
-if a.gap_seconds < 60 or a.expected_power < 600 or a.jobs < 1:
-    p.error('gap >=60 seconds, power >=600 W and jobs >=1 required')
+if a.gap_seconds < 60 or a.expected_power < 600 or not 1 <= a.jobs <= 16:
+    p.error('gap >=60 seconds, power >=600 W and jobs 1..16 required')
 if a.dry_run and a.out is None:
     p.error('--dry-run requires --out (never writes a live checkout)')
 provider = a.provider
@@ -105,6 +137,19 @@ if a.resume:
     destination = destination/'attempts'/utc
 if destination.exists():
     p.error('--out already exists; use --resume to preserve evidence in a new attempt')
+pidfile = a.pidfile.resolve() if a.pidfile else (
+    a.out.resolve().parent/'spill-bootstrap.pid' if a.dry_run else persistent/'spill-bootstrap.pid')
+pidfile.parent.mkdir(parents=True, exist_ok=True)
+# Process lifetime owns this fd; a crash releases the lock without stale-PID cleanup.
+pid_handle = pidfile.open('a+')
+try:
+    fcntl.flock(pid_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    p.error('bootstrap already running; use --status --pidfile at the same path')
+pid_handle.seek(0); pid_handle.truncate()
+json.dump({'pid': os.getpid(), 'started_utc': utc, 'receipt': str(destination)}, pid_handle)
+pid_handle.flush(); os.fsync(pid_handle.fileno())
+report['pidfile'] = str(pidfile)
 destination.mkdir(parents=True, exist_ok=False)
 scratch = destination
 if True:
@@ -150,7 +195,7 @@ if True:
                                 'estimated_cost': str(a.hourly_cost * Decimal(time.monotonic_ns()-start) / Decimal(3600000000000)) if a.hourly_cost is not None else None,
                                 'stubbed': a.dry_run, 'raw_log': path.name,
                                 'failure_quote': next((line for line in text.splitlines() if re.search(
-                                    r'ERROR|error:|fatal|panic|out of memory|CUDA_ERROR', line)),
+                                    r'error|fatal|panic|out of memory|not a block device|CUDA_ERROR', line, re.IGNORECASE)),
                                     'died, cause unknown — repro needed') if code != 0 else None,
                                 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
         report.pop('active_step', None)
@@ -214,14 +259,26 @@ if True:
         report['paths'] = {'persistent_root': str(persistent), 'repo': str(repo),
                            'build': str(repo/'target'), 'scratch': None, 'nvme': None,
                            'persistence': 'operator/provider contract, not proven by mount name'}
+        report['storage'] = {'class': 'not-selected', 'nvme_proven': False,
+                             'label': 'storage not selected; no storage claim',
+                             'allow_unproven_storage': a.allow_unproven_storage}
+        run('storage-findmnt', ['findmnt', '-J', '-T', str(a.nvme_root or persistent)],
+            '{"filesystems": [{"source": "overlay", "fstype": "overlay"}]}\n', allowed=True)
         if a.nvme_root:
             mount = a.nvme_root.resolve()
-            device = run('nvme-mount', ['findmnt', '-n', '-o', 'SOURCE', '-T', str(mount)], '/dev/nvme0n1\n').strip()
-            ancestry = run('nvme-ancestry', ['lsblk', '-s', '-r', '-n', '-o', 'KNAME', device], 'nvme0n1\n')
-            check(any(re.fullmatch(r'nvme[0-9]+n[0-9]+(?:p[0-9]+)?', line.strip()) for line in ancestry.splitlines()),
-                  'local NVMe ancestry not proven; no overlay/network fallback')
-            check(a.dry_run or mount.is_dir(), 'NVMe mount absent')
-            report['paths'].update(scratch=str(mount), nvme=str(mount))
+            device = run('nvme-mount', ['findmnt', '-n', '-o', 'SOURCE', '-T', str(mount)], '/dev/nvme0n1\n', allowed=True).strip()
+            ancestry = run('nvme-ancestry', ['lsblk', '-s', '-r', '-n', '-o', 'KNAME', device], 'nvme0n1\n', allowed=True)
+            proven = device.startswith('/dev/') and any(re.fullmatch(
+                r'nvme[0-9]+n[0-9]+(?:p[0-9]+)?', line.strip()) for line in ancestry.splitlines())
+            report['storage'].update(
+                **{'class': 'nvme-ancestry' if proven else 'overlay-unproven',
+                   'nvme_proven': proven and not a.dry_run,
+                   'label': ('NVMe ancestry only; not measured spill speed' if proven else
+                             'overlay/unproven — not NVMe, not spill speed')})
+            check(proven or a.allow_unproven_storage,
+                  'local NVMe ancestry not proven; use --allow-unproven-storage for labeled development only')
+            check(a.dry_run or mount.is_dir(), 'storage path absent')
+            report['paths'].update(scratch=str(mount), nvme=str(mount) if proven else None)
         checkpoint('paths-selected')
         # Follow engine build.rs: explicit override first, then existing CUDA root;
         # otherwise newest runnable release among PATH and /usr/local/cuda*.
@@ -313,9 +370,6 @@ if True:
         report['source_commit'] = tip
         run('minimum-source', ['git', 'merge-base', '--is-ancestor', minimum_commit, tip],
             cwd=None if a.dry_run else repo)
-        if destination is None:
-            destination = repo/'research/spill-d-20260919/raw'/f'{host}-{utc}'
-            destination.mkdir(parents=True, exist_ok=False)
         # Keep the exact standalone acceptance executable/source to re-run D1 local checks.
         if a.dry_run: binary.write_bytes(b'CPU STUB NOT EXECUTABLE\n')
         # Source and binary already reside in the durable receipt directory.

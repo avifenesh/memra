@@ -1,0 +1,11 @@
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index c7a14b0c..52e3bc49 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -35621,3 +35621,6 @@ mod fused_rope_width_tests {
+         assert!(Engine::full_width_rope_only("rms_norm_qkv_rope", 256, 128).is_err());
+     }
+ }
++
++mod ple_rows_tier;
++mod banked_residency;

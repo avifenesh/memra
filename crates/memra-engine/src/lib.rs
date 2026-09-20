@@ -76,6 +76,9 @@ pub mod vision_step;
 pub mod cache {
     pub use memra_kv::*;
 }
+/// WP-C: HostExps -> `memra_tier::bank` bridge. Native compile probe only; no HostExps
+/// dispatch is changed. Unexported until the SLRU-backed residency + ready-view seam lands.
+mod banked_residency;
 pub mod decode;
 pub mod decode_batch;
 pub mod dflash;
@@ -108,6 +111,10 @@ pub mod moesd;
 pub mod o2_band;
 pub mod parallel;
 pub mod plan_backend;
+/// WP-C (spill program): PLE rows served through `memra_tier::bank::RowService` behind a
+/// typed per-model door (default OFF); proven bit-identical on the tiny fixture via the
+/// `qwen4exp_gpu_gate --rows-via-tier` arm. Not wired into any default dispatch.
+mod ple_rows_tier;
 pub mod pp;
 pub mod progress;
 /// qwen4_exp (Qwen3.8-Flash-Next) GPU eager forward — onboarding phase 7, correctness arm

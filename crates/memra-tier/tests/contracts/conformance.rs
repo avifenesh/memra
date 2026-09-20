@@ -108,3 +108,10 @@ pub fn peer_cancel<P: PeerBackend>(peer: &mut P, copies: Vec<ContiguousCopy>, co
 mod revision_v11;
 #[allow(unused_imports)]
 pub use revision_v11::*;
+
+// v1.2 remains test-only; persisted wire and runtime trait semantics are unchanged.
+#[allow(dead_code)]
+#[path = "revision_v12.rs"]
+mod revision_v12;
+#[allow(unused_imports)]
+pub use revision_v12::*;
