@@ -1,5 +1,5 @@
 //! Real CUDA conformance + byte roundtrip gate. Run ONLY through tier-battery.
-use cudarc::driver::{CudaContext, CudaStream};
+use cudarc::driver::{CudaContext, CudaStream, DevicePtr};
 use memra_engine::tier_transfer::{CudaPinnedLease, CudaTransfers};
 use memra_tier::{bank::SharedBudget, contracts::*, tier::governor::Governor};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
@@ -104,7 +104,10 @@ fn conformance() {
         &mut t,
         ticket,
         |t, ticket, step| match step {
-            v1::LifetimeStep::Unknown => t.quarantine_observation(ticket).unwrap(),
+            v1::LifetimeStep::Unknown => {
+                t.quarantine_observation(ticket).unwrap();
+                assert_eq!(t.retire_source(ticket), Err(Error::Quarantined));
+            }
             v1::LifetimeStep::Producer => stream.synchronize().unwrap(),
             v1::LifetimeStep::Recover => t.synchronize(ticket).unwrap(),
             v1::LifetimeStep::Consumer => {
@@ -306,6 +309,12 @@ fn roundtrip() {
             .unwrap();
         t.synchronize(&up).unwrap();
         v1::transfer_completion_bytes(&mut t, &up, &expected(&bytes), true);
+        let allocation_ptr = t
+            .with_destination(&up, 0, epochs(), |device, stream| {
+                let (ptr, _guard) = device.device_ptr(stream);
+                Ok(ptr)
+            })
+            .unwrap();
         let Destination::Device(destination) = t.take_destination(&up, 0, epochs()).unwrap() else {
             panic!("H2D destination is not device")
         };
@@ -322,6 +331,13 @@ fn roundtrip() {
         drop(keep);
         let operand = t.take_device(&destination).unwrap();
         assert_eq!(operand.len(), n);
+        {
+            let (ptr, _guard) = operand.device_ptr(&stream);
+            assert_eq!(
+                ptr, allocation_ptr,
+                "hand-back changed the native allocation"
+            );
+        }
         assert_eq!(gov.borrow().used().device[0], 0);
         assert!(matches!(
             t.take_device(&destination),
