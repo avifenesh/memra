@@ -25,6 +25,9 @@ impl PinnedLease for Host {
 }
 struct Entry {
     _ops: Vec<TransferOp<Host>>,
+    source_retired: bool,
+    source_consumer: bool,
+    source_graph: bool,
     c: Completion,
     expected: Vec<Vec<SegmentExpectation>>,
     cancelled: bool,
@@ -140,6 +143,9 @@ impl Transfers {
             t,
             Entry {
                 _ops: owned,
+                source_retired: false,
+                source_consumer: true,
+                source_graph: true,
                 c,
                 expected: expected(n),
                 cancelled: false,
@@ -164,6 +170,8 @@ impl Transfers {
         e.dma = true;
         e.consumer = true;
         e.graph = true;
+        e.source_consumer = true;
+        e.source_graph = true;
         e.unknown = false;
     }
 }
@@ -284,6 +292,26 @@ impl TransferEngine for Transfers {
             self.owner.retain(e.target.as_ref().unwrap())?,
         ))
     }
+    fn retire_source(&mut self, t: &TransferTicket) -> Result<()> {
+        let e = self.entry(t)?;
+        if e.source_retired {
+            return Ok(());
+        }
+        if e.unknown {
+            return Err(Error::Quarantined);
+        }
+        if !e.disk || !e.dma || !e.source_consumer || !e.source_graph {
+            return Err(Error::Busy);
+        }
+        // This fake's additive binding is H2D only. Its retained target is the
+        // independently charged destination; do not drop D2H/Read destinations.
+        if !e._ops.iter().all(|op| matches!(op, TransferOp::H2d(_))) {
+            return Err(Error::Unsupported);
+        }
+        e._ops.clear();
+        e.source_retired = true;
+        Ok(())
+    }
     fn retire(&mut self, t: &TransferTicket, done: Option<FenceId>) -> Result<()> {
         let e = self.entry(t)?;
         if let Some(f) = done
@@ -292,14 +320,27 @@ impl TransferEngine for Transfers {
             return Err(Error::WrongOwner);
         }
         // Registering a last-use event is NOT observing completion.
-        if !e.disk || !e.dma || !e.consumer || !e.graph || e.unknown {
+        if !e.disk
+            || !e.dma
+            || !e.consumer
+            || !e.graph
+            || !e.source_consumer
+            || !e.source_graph
+            || e.unknown
+        {
             return Err(Error::Busy);
         }
         Ok(())
     }
     fn retired(&mut self, t: &TransferTicket) -> Result<bool> {
         let e = self.entry(t)?;
-        Ok(e.disk && e.dma && e.consumer && e.graph && !e.unknown)
+        Ok(e.disk
+            && e.dma
+            && e.consumer
+            && e.graph
+            && e.source_consumer
+            && e.source_graph
+            && !e.unknown)
     }
     fn acknowledge(&mut self, t: &TransferTicket) -> Result<()> {
         if !self.retired(t)? {
@@ -511,7 +552,14 @@ fn reusable_transfer_schedule() {
 impl Drop for Transfers {
     fn drop(&mut self) {
         for (_, entry) in self.entries.drain() {
-            if entry.unknown || !entry.disk || !entry.dma || !entry.consumer || !entry.graph {
+            if entry.unknown
+                || !entry.disk
+                || !entry.dma
+                || !entry.consumer
+                || !entry.graph
+                || !entry.source_consumer
+                || !entry.source_graph
+            {
                 // Deliberate test quarantine; the process owns recovery, not the caller.
                 std::mem::forget(entry);
             }
@@ -665,5 +713,61 @@ fn revision_v12_transfer_framed_logical_bytes() {
     t.finish(&ticket);
     t.acknowledge(&ticket).unwrap();
     gov.borrow_mut().release(&charge).unwrap();
+    assert_eq!(gov.borrow().used, TierBudget::zero(2));
+}
+
+#[test]
+fn revision_v13_source_retirement_preserves_taken_destination() {
+    let gov = shared();
+    let mut t = Transfers::new(gov.clone());
+    let (read, hc) = t.read();
+    let mut req = request(0, Priority::MandatoryActive);
+    req.bytes.device[0] = 4;
+    let dc = gov.borrow_mut().reserve(&req).unwrap();
+    let device = t.owner.register(31, 4, Box::new(bytes(4)), &dc).unwrap();
+    let ticket = t
+        .h2d(CopyOp {
+            host: read.destination,
+            device,
+            bytes: 4,
+            epochs: epochs(),
+            producer_fence: None,
+        })
+        .unwrap();
+    t.entry(&ticket).unwrap().source_consumer = false;
+    t.entry(&ticket).unwrap().source_graph = false;
+    // Existing synchronous publication fixture; separate disk/dma flags model
+    // pending lifetime observations. This is CPU ownership evidence, not CUDA.
+    let Destination::Device(taken) = t.take_destination(&ticket, 0, epochs()).unwrap() else {
+        panic!()
+    };
+    super::conformance::transfer_source_retirement(
+        &mut t,
+        ticket,
+        |t, k, step| {
+            use super::conformance::SourceStep::*;
+            let e = t.entry(k).unwrap();
+            match step {
+                Unknown => e.unknown = true,
+                Producer => {
+                    e.disk = true;
+                    e.dma = true;
+                }
+                Recover => e.unknown = false,
+                SourceConsumer => e.source_consumer = true,
+                SourceGraph => e.source_graph = true,
+                DestinationConsumer => e.consumer = true,
+                DestinationGraph => e.graph = true,
+            }
+        },
+        |t| t.gov.borrow_mut().release(&hc),
+        |t| {
+            assert_eq!(t.gov.borrow().used.device[0], 4);
+            assert_eq!(t.gov.borrow_mut().release(&dc), Err(Error::Busy));
+            assert_eq!(*t.owner.resolve::<Vec<u8>>(&taken).unwrap(), bytes(4));
+        },
+    );
+    t.owner.release(&taken).unwrap();
+    gov.borrow_mut().release(&dc).unwrap();
     assert_eq!(gov.borrow().used, TierBudget::zero(2));
 }

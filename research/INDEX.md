@@ -503,11 +503,11 @@ glm5-kda-verify-20260909 | SUPERSEDED MECHANISM: one t-row register-state scan a
 
 glm-tp-device-ownership-20260920 | 3/3 synthetic native ownership and memory seam stages passed; full-checkpoint and performance qualification remain pending. | glm-tp-device-ownership-20260920/NATIVE-RESULTS.md
 
-spill-a-20260919 | This is a pushed lane milestone, not main integration, release, deployment, GPU qualification, live verification, or permission to begin model work. | spill-a-20260919/day4/RESULTS.md
-spill-b-20260919 | WP-B day 4 — CPU milestone pushed; native patch unapplied | spill-b-20260919/DAY4.md
-spill-c-20260919 | Verdict: mapping complete for handoff; implementation/GPU ownership NO-GO. | spill-c-20260919/READYVIEW-OWNERSHIP.md
-spill-d-20260919 | Lane committed and pushed; not merged to main, deployed, or GPU/live-qualified. | spill-d-20260919/DAY4-VERIFICATION.md
-spill-lead-20260919 | This is a CPU/cross-compile review-fix milestone, not a main merge, release, deployment, GPU qualification, or live-serving verification. | spill-lead-20260919/PR519-REVIEW-FIXES.md
+spill-a-20260919 | O_DIRECT read/write was accepted on this overlay filesystem. All eight roundtrip/restore cells returned byte-exact data with zero fallbacks. No EINVAL was observed. This does not prove physical NVMe ancestry or spill throughput. | spill-a-20260919/day5/RESULTS.md
+spill-b-20260919 | REFUSED: active requires a native CUDA materializer + scheduler binding with nonzero demote/reload engagement; CPU fixtures and HostPrefix patch do not provide that binding | spill-b-20260919/DAY6.md
+spill-c-20260919 | qwen4exp-gpu-gate PASS [rows-via-tier: BIT-IDENTICAL PLE outputs + convolution state; encodings=2 cases=16 values=6144 tier_calls=16 forced_read_chunks=144 budget_drained=true] | spill-c-20260919/rented-5090-20260919/day5/RESULTS.md
+spill-d-20260919 | Multi-card transport, model-scale mixed tiering and full serving/performance gates remain outside this CPU/read-only milestone; do not promote their state. | spill-d-20260919/DAY6-VERIFICATION.md
+spill-lead-20260919 | **8192 and 32768** same-program captures PASS (8064+128 / 32640+128 tokens; full prefix/final state + logit + token hashes) | spill-lead-20260919/INTEGRATION-DAY6.md
 
 qwen2-tokenizer-20260920 | Literal Qwen2 split/BPE parity passes in HF and GGUF loaders. Full raw-input parity for a tokenizer declaring NFC remains blocked by the separately tracked normalization omission. | qwen2-tokenizer-20260920/RESULTS.md
 

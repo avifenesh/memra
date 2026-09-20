@@ -1,0 +1,145 @@
+{
+  "source_commit": "ed24330eb553877a127c876f6c1a10f3d980fb51",
+  "scope": "macOS CPU execution; Linux target compile-only; no nvcc/GPU/native/serving/production qualification",
+  "unchanged_frozen_files": [
+    "crates/memra-tier/tests/contracts/revision_v11.rs",
+    "crates/memra-tier/tests/contracts/revision_v12.rs",
+    "crates/memra-tier/tests/contracts/fixtures.json"
+  ],
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:38:35.663055+00:00",
+      "elapsed_seconds": 5.299531625001691,
+      "raw": "check-0.log.gz",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:38:40.960661+00:00",
+      "elapsed_seconds": 25.79617425001925,
+      "raw": "check-1.log.gz",
+      "uncompressed_sha256": "c6949f7ef71e5d6422c10148bec28e336714b676fb80dc267bdb3b9992fbfe72"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--all-targets",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:39:06.747381+00:00",
+      "elapsed_seconds": 0.2967104160343297,
+      "raw": "check-2.log.gz",
+      "uncompressed_sha256": "4f27ac380b22e1d975eee20ce727fa8cbc09061177f6253af0777fd4de7b7506"
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "memra-tier",
+        "-p",
+        "memra-kv",
+        "--offline",
+        "--all-targets",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:39:07.044172+00:00",
+      "elapsed_seconds": 2.421577833010815,
+      "raw": "check-3.log.gz",
+      "uncompressed_sha256": "7f8ddb087985c8e4d08f447df08cd50a0187f83097db1bcb53b6c57e1526e70f"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:39:09.465586+00:00",
+      "elapsed_seconds": 0.32666745799360797,
+      "raw": "check-4.log.gz",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "tools/check-flags.sh"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:39:09.792364+00:00",
+      "elapsed_seconds": 4.889725249959156,
+      "raw": "check-5.log.gz",
+      "uncompressed_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f"
+    },
+    {
+      "command": [
+        "bash",
+        "tools/docs-registry-census.sh"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:39:14.681720+00:00",
+      "elapsed_seconds": 2.7026147909928113,
+      "raw": "check-6.log.gz",
+      "uncompressed_sha256": "2c0f0db8a42852955445769133b87341e8d8a80d1d24653880fa04b27aaa8f04"
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "research/spill-lead-20260919/test_native_conformance_schema.py"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:39:17.384222+00:00",
+      "elapsed_seconds": 0.1516835839720443,
+      "raw": "check-7.log.gz",
+      "uncompressed_sha256": "2d014bb427120fb1a5014d7499096989061fd0fdf40acb471c2e2667de60e71e"
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "crates/memra-tier/tests/battery",
+        "-p",
+        "test_*.py"
+      ],
+      "exit": 0,
+      "started_utc": "2026-09-20T00:39:17.535985+00:00",
+      "elapsed_seconds": 29.11301845801063,
+      "raw": "check-8.log.gz",
+      "uncompressed_sha256": "5723c5a7fd230fbd9192a28dbc24af0f383c1e3d2548ed2b807c9065e3aeac14"
+    }
+  ]
+}

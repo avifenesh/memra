@@ -1,0 +1,77 @@
+    Checking memra-gguf v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-gguf)
+    Checking memra-tier v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-engine)
+    Checking memra-validate v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-validate)
+    Checking memra-sampling v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-sampling)
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-tokenizer)
+    Checking memra-runtime v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-runtime)
+    Checking memra-kv v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-kv)
+    Checking memra-reference v0.138.0 (/Users/avifen/tiyuvta/wt-spill-c-device/crates/memra-reference)
+error[E0422]: cannot find struct, variant or union type `BudgetRequest` in this scope
+  --> crates/memra-engine/src/ple_rows_tier/device.rs:20:23
+   |
+20 |         let request = BudgetRequest {
+   |                       ^^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `Epochs` in this scope
+  --> crates/memra-engine/src/ple_rows_tier/device.rs:28:22
+   |
+28 |         let epochs = Epochs {
+   |                      ^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `CopyOp` in this scope
+  --> crates/memra-engine/src/ple_rows_tier/device.rs:34:18
+   |
+34 |         let op = CopyOp {
+   |                  ^^^^^^ not found in this scope
+
+error[E0433]: cannot find type `Error` in this scope
+  --> crates/memra-engine/src/ple_rows_tier/device.rs:48:55
+   |
+48 |                 stream.clone_dtoh(device).map_err(|_| Error::Corrupt)
+   |                                                       ^^^^^ use of undeclared type `Error`
+   |
+note: type alias `crate::pinned_host::Error` exists but is inaccessible
+  --> crates/memra-engine/src/pinned_host.rs:6:1
+   |
+ 6 | type Error = Box<dyn std::error::Error>;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not accessible
+help: consider importing one of these items
+   |
+ 5 + use std::error::Error;
+   |
+ 5 + use std::fmt::Error;
+   |
+ 5 + use std::io::Error;
+   |
+ 5 + use core::error::Error;
+   |
+   = and 1 other candidate
+
+error[E0433]: cannot find type `TierBudget` in this scope
+  --> crates/memra-engine/src/ple_rows_tier/device.rs:21:20
+   |
+21 |             bytes: TierBudget::zero(1),
+   |                    ^^^^^^^^^^ use of undeclared type `TierBudget`
+
+error[E0433]: cannot find type `Priority` in this scope
+  --> crates/memra-engine/src/ple_rows_tier/device.rs:22:23
+   |
+22 |             priority: Priority::Demand,
+   |                       ^^^^^^^^ use of undeclared type `Priority`
+
+error[E0425]: cannot find function, tuple struct or tuple variant `Deadline` in this scope
+  --> crates/memra-engine/src/ple_rows_tier/device.rs:23:23
+   |
+23 |             deadline: Deadline(u64::MAX),
+   |                       ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `digest` in this scope
+  --> crates/memra-engine/src/ple_rows_tier/device.rs:24:21
+   |
+24 |             tenant: digest("ple-native-device-gate-v1", &[]),
+   |                     ^^^^^^ not found in this scope
+
+Some errors have detailed explanations: E0422, E0425, E0433.
+For more information about an error, try `rustc --explain E0422`.
+error: could not compile `memra-engine` (lib) due to 8 previous errors

@@ -146,6 +146,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (None, Some(source)) => HybridModel::load_from_source(&e, source.as_ref())?,
         _ => unreachable!(),
     };
+    let _expert_bank_owner = if std::env::args().any(|a| a == "--experts-via-tier") {
+        Some(
+            e.install_expert_bank_gate(
+                &model,
+                g.as_ref()
+                    .ok_or("experts-via-tier requires approved GGUF")?,
+            )?,
+        )
+    } else {
+        None
+    };
     println!(
         "loaded {} ({} layers, nextn={})",
         g.as_ref().and_then(|g| g.arch()).unwrap_or(

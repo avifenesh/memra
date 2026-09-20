@@ -93,3 +93,33 @@ receipt plus the tuned view twins (naked prefill speed must not regress).
 - `moe_ffn_lockstep`'s cuBLAS router (lockstep decode, CLI-only) → `router_gemv` (#562).
 - Tuned view twins for hd256-windowed and hd512; TTFT A/B before the default flip.
 - Vision-overlay continuation (islands through the view path); E4B PLE prime (P3).
+
+## Speed: the naive view kernels were a 22.7× prefill regression; the FA twins restore parity
+
+Server A/B on the rented 5090 (`/root/lane/ttft-ab.sh`: `MEMRA_COMPAT=openai`, `MEMRA_CTX=8192`,
+spec off, prefix cache off, unique `cache_salt` per request, `max_tokens=1`, c=1; interleaved
+old/new/new/old × 2, N=3 per arm; wall per request as the TTFT proxy), gemma-4-12B QAT Q4_0,
+4882-token prompt:
+
+| arm | wall / request |
+|---|---|
+| pre-P1a `c30b509b` (`gemma4_prime`: bf16 FA over this batch's K/V) | 0.502–0.527 s (24 runs, two sessions) |
+| P1a as merged `746bba2b` (naive `sdpa_naive[_w]_quantized_view_fmt`) | **11.77–11.79 s** (12 runs) — `raw/ttft/naive-12b.log` |
+| P1a + FA view twins (this follow-up) | **0.518–0.527 s** (12 runs) — `raw/ttft/twins-12b.log`; 31B: 1.265–1.274 s new vs 1.260–1.274 s old — `raw/ttft/twins-31b.log` |
+
+The naive kernels dequant the whole `[0, t_kv)` view per layer per chunk and run a single-thread
+softmax per (head, query): O(t·t_kv) scalar work — correct, and 22.7× too slow to be a default
+(flags doctrine: naked = full speed). The fix composes kernels that already exist:
+`gemma_prefill_view_bf16` = `fa_prefill_view_ws`'s pass 1 (dequant the byte view ONCE into the
+shared bf16 workspace, kf8vf8 module for e4m3 planes) + the bf16 FA kernels gemma's fresh path
+already uses (`fa_prefill_w_pre` hd256 windowed with `window = t_kv` when no window is live;
+`fa_prefill_hd512_pre` for the globals), with the causal offset `t_kv - t`. The query is the
+emitted bf16 `qb` (the fused producer engages for every real gemma at t ≥ 16; the fixture grew
+a second query head so its t=16 chunks reach the same producer). Cost vs the old fresh path:
+about +3% (the dequant pass). The naive twins remain the `MEMRA_NOFA` diagnostic arm.
+
+Exactness with the twins, model scale (`raw/twins/`): 12B, 31B, 26B-A4B chunkinv
+**CHUNK-INVARIANT** (4096/1024/513/256/64 EXACT) and tickinv **TICK-INVARIANT** (multi-call +
+off-grid resumes EXACT); argmax-margin per model in `raw/twins/argmax-*`. Fixture gate 4/4 with
+the split band recalibrated to the bf16-operand class this F32 fixture now shows (worst 3.25e-3;
+MMQ weights are exact — see the gate header).

@@ -1,7 +1,5 @@
+use memra_tier::conformance;
 use memra_tier::peer::topology::*;
-#[allow(dead_code)]
-#[path = "../contracts/conformance.rs"]
-mod conformance;
 mod fake;
 #[allow(dead_code)]
 #[path = "../contracts/support.rs"]

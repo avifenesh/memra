@@ -1,0 +1,17 @@
+{
+  "source_commit": "06e9ea7ea57cb48b1b0713b94d53bed5d397c2e1",
+  "manifest_sha256": "08b06fc3338149937bd2ce45ee37ab036ddc616f666af6be3718ed0bd6c81bed",
+  "commands": [
+    [
+      "gate-build",
+      "kv-tier-gate"
+    ],
+    [
+      "gate-cli-tests",
+      "kv-tier-gate"
+    ]
+  ],
+  "registered_target": "kv-tier-gate",
+  "underscore_target_absent": true,
+  "scope": "metadata and standalone CLI CPU tests; no engine CUDA build"
+}

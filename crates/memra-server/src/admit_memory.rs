@@ -353,6 +353,18 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
     )
 }
 
+// An advisory MemoryVerdict is not a lease. The worker injects the SAME governor
+// used by banks/storage and keeps the resulting guard next to the actual payload.
+pub(crate) fn reserve_tier_image(
+    governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
+    program: &memra_engine::cache::record::ProgramIdentity,
+    request: &memra_engine::cache::tiered::BudgetRequest,
+) -> memra_engine::cache::tiered::Result<memra_engine::cache::tiered::hostprefix::ResidentCharge> {
+    memra_engine::cache::tiered::hostprefix::ResidentCharge::reserve_for_program(
+        governor, program, request,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
