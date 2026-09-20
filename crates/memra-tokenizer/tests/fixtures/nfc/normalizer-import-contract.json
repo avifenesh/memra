@@ -1,0 +1,277 @@
+{
+  "schema": "memra-nfc-only-import-contract-v1",
+  "note": "HF acceptance of another normalizer is diagnostic, not a request to implement it. Missing/null identity and direct NFC are required. Optional empty/NFC-only Sequence wrappers must be supported exactly or refused explicitly; never drop unknown programs.",
+  "cases": [
+    {
+      "name": "missing",
+      "normalizer_declaration": "missing",
+      "native_acceptance_expectation": "accept_identity",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "null",
+      "normalizer_declaration": null,
+      "native_acceptance_expectation": "accept_identity",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "nfc",
+      "normalizer_declaration": {
+        "type": "NFC"
+      },
+      "native_acceptance_expectation": "accept_nfc",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "nfd",
+      "normalizer_declaration": {
+        "type": "NFD"
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "nfkc",
+      "normalizer_declaration": {
+        "type": "NFKC"
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "A fi 1",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "nfkd",
+      "normalizer_declaration": {
+        "type": "NFKD"
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "A fi 1",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "lowercase",
+      "normalizer_declaration": {
+        "type": "Lowercase"
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " é ",
+        "Ａ ﬁ ①": "ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "strip",
+      "normalizer_declaration": {
+        "type": "Strip",
+        "strip_left": true,
+        "strip_right": true
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": "É",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "strip-accents",
+      "normalizer_declaration": {
+        "type": "StripAccents"
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " E ",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "ש"
+      }
+    },
+    {
+      "name": "bert",
+      "normalizer_declaration": {
+        "type": "BertNormalizer",
+        "clean_text": true,
+        "handle_chinese_chars": true,
+        "strip_accents": null,
+        "lowercase": true
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " e ",
+        "Ａ ﬁ ①": "ａ ﬁ ①",
+        "שָׁ": "ש"
+      }
+    },
+    {
+      "name": "prepend",
+      "normalizer_declaration": {
+        "type": "Prepend",
+        "prepend": "X"
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": "X É ",
+        "Ａ ﬁ ①": "XＡ ﬁ ①",
+        "שָׁ": "Xשָׁ"
+      }
+    },
+    {
+      "name": "replace",
+      "normalizer_declaration": {
+        "type": "Replace",
+        "pattern": {
+          "String": "é"
+        },
+        "content": "E"
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "mixed-sequence",
+      "normalizer_declaration": {
+        "type": "Sequence",
+        "normalizers": [
+          {
+            "type": "NFC"
+          },
+          {
+            "type": "Lowercase"
+          }
+        ]
+      },
+      "native_acceptance_expectation": "explicit_refusal_required_outside_NFC_scope",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " é ",
+        "Ａ ﬁ ①": "ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "sequence-nfc",
+      "normalizer_declaration": {
+        "type": "Sequence",
+        "normalizers": [
+          {
+            "type": "NFC"
+          }
+        ]
+      },
+      "native_acceptance_expectation": "contract_choice_support_exactly_or_refuse_explicitly",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "sequence-empty",
+      "normalizer_declaration": {
+        "type": "Sequence",
+        "normalizers": []
+      },
+      "native_acceptance_expectation": "contract_choice_support_identity_or_refuse_explicitly",
+      "hf_accepts": true,
+      "hf_normalized_examples": {
+        " É ": " É ",
+        "Ａ ﬁ ①": "Ａ ﬁ ①",
+        "שָׁ": "שָׁ"
+      }
+    },
+    {
+      "name": "unknown",
+      "normalizer_declaration": {
+        "type": "UnknownNormalizer554"
+      },
+      "native_acceptance_expectation": "refuse_malformed_or_unknown",
+      "hf_accepts": false,
+      "hf_error": "data did not match any variant of untagged enum NormalizerUntagged at line 1 column 255"
+    },
+    {
+      "name": "empty-object",
+      "normalizer_declaration": {},
+      "native_acceptance_expectation": "refuse_malformed_or_unknown",
+      "hf_accepts": false,
+      "hf_error": "data did not match any variant of untagged enum NormalizerUntagged at line 1 column 225"
+    },
+    {
+      "name": "string",
+      "normalizer_declaration": "NFC",
+      "native_acceptance_expectation": "refuse_malformed_or_unknown",
+      "hf_accepts": false,
+      "hf_error": "data did not match any variant of untagged enum NormalizerUntagged at line 1 column 228"
+    },
+    {
+      "name": "array",
+      "normalizer_declaration": [],
+      "native_acceptance_expectation": "refuse_malformed_or_unknown",
+      "hf_accepts": false,
+      "hf_error": "data did not match any variant of untagged enum NormalizerUntagged at line 1 column 225"
+    },
+    {
+      "name": "boolean",
+      "normalizer_declaration": true,
+      "native_acceptance_expectation": "refuse_malformed_or_unknown",
+      "hf_accepts": false,
+      "hf_error": "data did not match any variant of untagged enum NormalizerUntagged at line 1 column 227"
+    },
+    {
+      "name": "missing-sequence-list",
+      "normalizer_declaration": {
+        "type": "Sequence"
+      },
+      "native_acceptance_expectation": "refuse_malformed_or_unknown",
+      "hf_accepts": false,
+      "hf_error": "missing field `normalizers` at line 1 column 243"
+    },
+    {
+      "name": "null-type",
+      "normalizer_declaration": {
+        "type": null
+      },
+      "native_acceptance_expectation": "refuse_malformed_or_unknown",
+      "hf_accepts": false,
+      "hf_error": "data did not match any variant of untagged enum NormalizerUntagged at line 1 column 237"
+    }
+  ]
+}

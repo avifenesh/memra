@@ -1,0 +1,2217 @@
+{
+  "oracle": "Hugging Face tokenizers 0.22.2",
+  "variants": [
+    {
+      "name": "space-both-nfc0-normalized0",
+      "normalizer": null,
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": " ",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": true,
+          "normalized": false,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": " ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "     ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pair-both-nfc0-normalized0",
+      "normalizer": null,
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "  ",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": true,
+          "normalized": false,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "    ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "      ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "consumed-tab-nfc0-normalized0",
+      "normalizer": null,
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "<X>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": true,
+          "normalized": false,
+          "special": false
+        },
+        {
+          "id": 521,
+          "content": "\t",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": false,
+          "normalized": false,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": "<X>",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "<X>\t",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "space-rstrip-nfc0-normalized0",
+      "normalizer": null,
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": " ",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": true,
+          "normalized": false,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": " ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520,
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "     ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "space-both-nfc0-normalized1",
+      "normalizer": null,
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": " ",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": true,
+          "normalized": true,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": " ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "     ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pair-both-nfc0-normalized1",
+      "normalizer": null,
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "  ",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": true,
+          "normalized": true,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "    ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "      ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "consumed-tab-nfc0-normalized1",
+      "normalizer": null,
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "<X>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": true,
+          "normalized": true,
+          "special": false
+        },
+        {
+          "id": 521,
+          "content": "\t",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": false,
+          "normalized": true,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": "<X>",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "<X>\t",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "space-rstrip-nfc0-normalized1",
+      "normalizer": null,
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": " ",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": true,
+          "normalized": true,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": " ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520,
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "     ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "space-both-nfc1-normalized0",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": " ",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": true,
+          "normalized": false,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": " ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "     ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pair-both-nfc1-normalized0",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "  ",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": true,
+          "normalized": false,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "    ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "      ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "consumed-tab-nfc1-normalized0",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "<X>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": true,
+          "normalized": false,
+          "special": false
+        },
+        {
+          "id": 521,
+          "content": "\t",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": false,
+          "normalized": false,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": "<X>",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "<X>\t",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "space-rstrip-nfc1-normalized0",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": " ",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": true,
+          "normalized": false,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": " ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520,
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "     ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "space-both-nfc1-normalized1",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": " ",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": true,
+          "normalized": true,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": " ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "     ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pair-both-nfc1-normalized1",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "  ",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": true,
+          "normalized": true,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "    ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "      ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "consumed-tab-nfc1-normalized1",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "<X>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": true,
+          "normalized": true,
+          "special": false
+        },
+        {
+          "id": 521,
+          "content": "\t",
+          "single_word": false,
+          "lstrip": true,
+          "rstrip": false,
+          "normalized": true,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": "<X>",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "<X>\t",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "space-rstrip-nfc1-normalized1",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": " ",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": true,
+          "normalized": true,
+          "special": false
+        }
+      ],
+      "cases": [
+        {
+          "text": " ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "  ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520,
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "     ",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520,
+                520,
+                520,
+                520,
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "normalized-collision-order-0",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 520,
+          "content": "é",
+          "special": false,
+          "normalized": true,
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false
+        },
+        {
+          "id": 233,
+          "content": "é",
+          "special": false,
+          "normalized": true,
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false
+        }
+      ],
+      "vocab_additions": {
+        "é": 520
+      },
+      "cases": [
+        {
+          "text": "é",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        },
+        {
+          "text": "é",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                520
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                520
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "normalized-collision-order-1",
+      "normalizer": {
+        "type": "NFC"
+      },
+      "added_tokens": [
+        {
+          "id": 519,
+          "content": "<|endoftext|>",
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false,
+          "normalized": false,
+          "special": true
+        },
+        {
+          "id": 233,
+          "content": "é",
+          "special": false,
+          "normalized": true,
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false
+        },
+        {
+          "id": 520,
+          "content": "é",
+          "special": false,
+          "normalized": true,
+          "single_word": false,
+          "lstrip": false,
+          "rstrip": false
+        }
+      ],
+      "vocab_additions": {
+        "é": 520
+      },
+      "cases": [
+        {
+          "text": "é",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                233
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                233
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                233
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                233
+              ]
+            }
+          ]
+        },
+        {
+          "text": "é",
+          "expected": [
+            {
+              "parse_special": false,
+              "add_special": false,
+              "ids": [
+                233
+              ]
+            },
+            {
+              "parse_special": false,
+              "add_special": true,
+              "ids": [
+                233
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": false,
+              "ids": [
+                233
+              ]
+            },
+            {
+              "parse_special": true,
+              "add_special": true,
+              "ids": [
+                233
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
