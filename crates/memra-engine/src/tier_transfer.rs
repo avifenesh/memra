@@ -1,6 +1,7 @@
 //! Native owner-stream H2D/D2H implementation of the frozen tier contract.
 //! No worker may submit CUDA work. Unknown completion retains backing and quota.
 use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, PinnedHostSlice, result, sys};
+use memra_kv::KvPlane;
 use memra_tier::{bank::SharedBudget, contracts::*};
 use std::{
     cell::{Ref, RefCell},
@@ -232,7 +233,7 @@ impl CudaTransfers {
         }
         let charge = self.device_charge(bytes, request)?;
         match cuda(self.stream.alloc_zeros::<u8>(bytes)) {
-            Ok(backing) => self.register_charged(backing, generation, charge),
+            Ok(backing) => self.register_charged(backing.into(), generation, charge),
             Err(e) => {
                 self.governor.borrow_mut().release(&charge)?;
                 Err(e)
@@ -249,20 +250,21 @@ impl CudaTransfers {
     /// buffer already accounted elsewhere; callers must transfer its admission first.
     pub fn register_device(
         &mut self,
-        backing: CudaSlice<u8>,
+        backing: impl Into<KvPlane>,
         generation: u64,
         request: BudgetRequest,
     ) -> Result<DeviceLease> {
         self.check_thread()?;
+        let backing = backing.into();
         if !Arc::ptr_eq(backing.stream(), &self.stream) || backing.is_empty() {
             return Err(Error::WrongOwner);
         }
-        let charge = self.device_charge(backing.len(), request)?;
+        let charge = self.device_charge(backing.physical_bytes(), request)?;
         self.register_charged(backing, generation, charge)
     }
     fn register_charged(
         &mut self,
-        backing: CudaSlice<u8>,
+        backing: KvPlane,
         generation: u64,
         charge: ChargedLease,
     ) -> Result<DeviceLease> {
@@ -295,7 +297,7 @@ impl CudaTransfers {
     /// it does NOT prove the async pool returned physical memory to the driver.
     pub fn release_device_observed(&mut self, lease: &DeviceLease) -> Result<(usize, usize)> {
         let (before, weak) = {
-            let backing = self.owner.resolve::<Rc<RefCell<CudaSlice<u8>>>>(lease)?;
+            let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(lease)?;
             (Rc::strong_count(&backing), Rc::downgrade(&backing))
         };
         self.release_device(lease)?;
@@ -308,12 +310,23 @@ impl CudaTransfers {
     /// Transfer native backing out without a copy. The caller assumes accounting
     /// after this returns; live leases/bindings fail Busy without losing ownership.
     pub fn take_device(&mut self, lease: &DeviceLease) -> Result<CudaSlice<u8>> {
+        if self
+            .owner
+            .resolve::<Rc<RefCell<KvPlane>>>(lease)?
+            .borrow()
+            .is_vmm()
+        {
+            return Err(Error::Unsupported);
+        }
+        self.take_plane(lease)?
+            .into_pooled()
+            .map_err(|_| Error::Unsupported)
+    }
+    /// Transfer the complete typed owner, never a raw VMM CudaSlice.
+    pub fn take_plane(&mut self, lease: &DeviceLease) -> Result<KvPlane> {
         self.check_thread()?;
         cuda(self.stream.synchronize())?;
-        let backing = self
-            .owner
-            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(lease)?
-            .clone();
+        let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(lease)?.clone();
         self.owner.release(lease)?;
         let charge = self
             .allocations
@@ -381,7 +394,7 @@ impl CudaTransfers {
     }
     /// Resolve only a sealed view issued by this backend, while its exact ticket
     /// is still live. Consumers must launch on owner_stream(), then record_consumer.
-    pub fn resolve_ready(&self, ready: &ReadyView<'_>) -> Result<Ref<'_, RefCell<CudaSlice<u8>>>> {
+    pub fn resolve_ready(&self, ready: &ReadyView<'_>) -> Result<Ref<'_, RefCell<KvPlane>>> {
         self.check_thread()?;
         let e = self
             .entries
@@ -391,7 +404,7 @@ impl CudaTransfers {
             return Err(Error::NotReady);
         }
         self.owner
-            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(ready.destination())
+            .resolve::<Rc<RefCell<KvPlane>>>(ready.destination())
             .map(|r| Ref::map(r, |b| b.as_ref()))
     }
     /// Launch/read the exact ready destination without escaping its lease. The
@@ -421,9 +434,9 @@ impl CudaTransfers {
             current,
         )?;
         e.published = true;
-        let backing = self.owner.resolve::<Rc<RefCell<CudaSlice<u8>>>>(
-            i.device.as_ref().ok_or(Error::AlreadyReleased)?,
-        )?;
+        let backing = self
+            .owner
+            .resolve::<Rc<RefCell<KvPlane>>>(i.device.as_ref().ok_or(Error::AlreadyReleased)?)?;
         use_device(&backing.borrow(), &self.stream)
     }
     pub fn owner_stream(&self) -> &Arc<CudaStream> {
@@ -517,9 +530,7 @@ impl CudaTransfers {
         if o.bytes != o.host.valid_bytes() {
             return Err(Error::InvalidLayout);
         }
-        let backing = self
-            .owner
-            .resolve::<Rc<RefCell<CudaSlice<u8>>>>(&o.device)?;
+        let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(&o.device)?;
         if !Arc::ptr_eq(backing.borrow().stream(), &self.stream)
             || !Arc::ptr_eq(
                 o.host
@@ -784,7 +795,7 @@ impl TransferEngine for CudaTransfers {
                             item.device.as_ref().ok_or(Error::AlreadyReleased)?,
                         )?;
                     }
-                    let backing = self.owner.resolve::<Rc<RefCell<CudaSlice<u8>>>>(
+                    let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(
                         item.device.as_ref().ok_or(Error::AlreadyReleased)?,
                     )?;
                     let host = item

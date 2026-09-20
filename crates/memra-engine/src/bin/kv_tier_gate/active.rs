@@ -2,9 +2,8 @@
 //! Recurrent state and counters stay resident; every full-history K/V allocation is
 //! removed from the cache before restore. No token can execute during that interval.
 use super::tier_transfer::{CudaPinnedLease, CudaTransfers};
-use cudarc::driver::CudaSlice;
 use memra_engine::Engine;
-use memra_kv::{Cache, KvLayer};
+use memra_kv::{Cache, KvLayer, KvPlane};
 use memra_tier::{bank::SharedBudget, contracts::*, tier::governor::Governor};
 use std::{cell::RefCell, fs, io::Write, path::Path, rc::Rc, sync::Arc};
 
@@ -92,6 +91,9 @@ struct HostPlane {
     capacity: usize,
     source_owners_before_release: usize,
     source_owners_after_release: usize,
+    vmm: Option<KvPlane>,
+    released_bytes: usize,
+    granularity: usize,
 }
 fn bundle(
     program: &ProgramIdentity,
@@ -160,13 +162,9 @@ fn bundle(
     Ok(b)
 }
 
-fn demote(
-    e: &Engine,
-    t: &Transfers,
-    backing: CudaSlice<u8>,
-    b: StateBundle,
-) -> super::Result<HostPlane> {
+fn demote(e: &Engine, t: &Transfers, backing: KvPlane, b: StateBundle) -> super::Result<HostPlane> {
     let capacity = backing.len();
+    let is_vmm = backing.is_vmm();
     let bytes = b.layout.storage_bytes()? as usize;
     let mut t = t.borrow_mut();
     let device = t.register_device(backing, EPOCHS.src_gen, request())?;
@@ -190,8 +188,21 @@ fn demote(
         return Err("native D2H checksum mismatch".into());
     }
     t.retire_source(&ticket)?;
-    let (source_owners_before_release, source_owners_after_release) =
-        t.release_device_observed(&keep)?;
+    let (
+        source_owners_before_release,
+        source_owners_after_release,
+        vmm,
+        released_bytes,
+        granularity,
+    ) = if is_vmm {
+        let mut plane = t.take_plane(&keep)?;
+        let granularity = plane.granularity().ok_or("missing VMM granularity")?;
+        let released = plane.demote_prefix(bytes)?;
+        (1, 1, Some(plane), released, granularity)
+    } else {
+        let (before, after) = t.release_device_observed(&keep)?;
+        (before, after, None, 0, 0)
+    };
     t.release_producer(producer)?;
     e.stream().synchronize()?;
     Ok(HostPlane {
@@ -201,14 +212,19 @@ fn demote(
         capacity,
         source_owners_before_release,
         source_owners_after_release,
+        vmm,
+        released_bytes,
+        granularity,
     })
 }
-fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result<CudaSlice<u8>> {
+fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result<KvPlane> {
     let HostPlane {
         host,
         ticket: d2h,
         bundle,
         capacity,
+        vmm,
+        released_bytes,
         ..
     } = plane;
     if checksum(host.bytes()?) != bundle.checksums[0] {
@@ -217,7 +233,14 @@ fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result
     let bytes = host.valid_bytes();
     let (ticket, keep) = {
         let mut t = transfers.borrow_mut();
-        let device = t.alloc_device(capacity, EPOCHS.dst_gen, request())?;
+        let device = if let Some(mut plane) = vmm {
+            if plane.remap_prefix()? != released_bytes {
+                return Err("VMM remap byte mismatch".into());
+            }
+            t.register_device(plane, EPOCHS.dst_gen, request())?
+        } else {
+            t.alloc_device(capacity, EPOCHS.dst_gen, request())?
+        };
         let keep = t.retain_device(&device)?;
         let ticket = t
             .h2d(CopyOp {
@@ -267,7 +290,7 @@ fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result
     e.stream().synchronize()?;
     t.retire(&d2h, Some(consumer))?;
     t.acknowledge(&d2h)?;
-    Ok(t.take_device(&keep)?) // No D2D; original native operand type/accounting returns to Cache.
+    Ok(t.take_plane(&keep)?) // No D2D; original native operand type/accounting returns to Cache.
 }
 
 /// Returns only after all cache slots have been restored, or aborts the gate.
@@ -297,6 +320,9 @@ pub fn roundtrip(
     let mut suspended: Vec<(usize, KvLayer, HostPlane, HostPlane)> = vec![];
     let mut allocated = 0usize;
     let mut logical = 0usize;
+    let mut physical = 0usize;
+    let mut vmm_manifest =
+        String::from("layer\trole\tvirtual_address\tvalid_bytes\tphysical_bytes\tgranularity\n");
     let mut manifest = String::from("layer\trole\tvalid_bytes\tbundle_sha256\n");
     for i in 0..cache.kv.len() {
         if cache.kv[i].as_ref().is_none_or(|kv| kv.len == 0) {
@@ -324,8 +350,16 @@ pub fn roundtrip(
                 .checked_add(buffer.len())
                 .ok_or("allocation sum overflow")?;
             logical = logical.checked_add(valid).ok_or("logical sum overflow")?;
+            physical += buffer.physical_bytes();
+            if let Some(address) = buffer.virtual_address() {
+                vmm_manifest.push_str(&format!(
+                    "{i}\t{role:?}\t{address}\t{valid}\t{}\t{}\n",
+                    buffer.physical_bytes(),
+                    buffer.granularity().unwrap()
+                ));
+            }
             // Placeholder belongs to a detached KvLayer only; no reader can see it.
-            let backing = std::mem::replace(buffer, e.alloc_u8(1)?);
+            let backing = std::mem::replace(buffer, e.alloc_u8(1)?.into());
             planes.push(demote(e, &transfers, backing, b)?);
         }
         let v = planes.pop().ok_or("missing V")?;
@@ -354,7 +388,18 @@ pub fn roundtrip(
         .flat_map(|(_, _, k, v)| [k, v])
         .filter(|p| p.source_owners_before_release == 1 && p.source_owners_after_release == 0)
         .count();
-    let diagnosis = if source_owners_after_release != 0 {
+    let vmm_released_bytes: usize = suspended
+        .iter()
+        .map(|(_, _, k, v)| k.released_bytes + v.released_bytes)
+        .sum();
+    let vmm_granularity = suspended
+        .iter()
+        .map(|(_, _, k, _)| k.granularity)
+        .max()
+        .unwrap_or(0);
+    let diagnosis = if vmm_granularity != 0 {
+        "RECLAIM-DIAG: VMM fixed-VA chunk release"
+    } else if source_owners_after_release != 0 {
         "RECLAIM-DIAG: source still owned by transfer backing Rc"
     } else if after > after_before_trim {
         "RECLAIM-DIAG: async-pool retention"
@@ -377,10 +422,11 @@ pub fn roundtrip(
     eprintln!("{diagnosis}");
     let used = transfers.borrow().used();
     fs::write(out.join("active-bundles.tsv"), manifest)?;
+    fs::write(out.join("vmm-planes.tsv"), vmm_manifest)?;
     fs::write(
         out.join("active-reclaim.txt"),
         format!(
-            "committed={}\nlayers={}\nsource_allocation_bytes={allocated}\nlogical_d2h_bytes={logical}\ndevice_charged_after_demote={}\npinned_charged_after_demote={}\nfree_before_bytes={before}\nfree_after_demote_bytes={after}\npool_trim_released_bytes={trimmed}\n",
+            "committed={}\nlayers={}\nsource_allocation_bytes={allocated}\nsource_physical_bytes={physical}\nlogical_d2h_bytes={logical}\ndevice_charged_after_demote={}\npinned_charged_after_demote={}\nfree_before_bytes={before}\nfree_after_demote_bytes={after}\npool_trim_released_bytes={trimmed}\n",
             cache.pos,
             suspended.len(),
             used.device[0],
@@ -393,8 +439,13 @@ pub fn roundtrip(
     let demote_count = suspended.len() * 2;
     let mut reload_count = 0;
     for (i, mut layer, k, v) in suspended {
+        let k_address = k.vmm.as_ref().and_then(KvPlane::virtual_address);
+        let v_address = v.vmm.as_ref().and_then(KvPlane::virtual_address);
         layer.k = restore(e, &transfers, k)?;
         layer.v = restore(e, &transfers, v)?;
+        if layer.k.virtual_address() != k_address || layer.v.virtual_address() != v_address {
+            return Err("VMM fixed virtual address changed during restore".into());
+        }
         reload_count += 2;
         cache.kv[i] = Some(layer);
     }
@@ -404,13 +455,24 @@ pub fn roundtrip(
     e.stream().synchronize()?;
     e.pool_trim_to_zero();
     let restored = e.ctx().mem_get_info()?.0;
-    let reclaimed = after > before && restored < after;
+    let reclaimed = if vmm_granularity != 0 {
+        vmm_released_bytes > 0
+            && after.checked_sub(before) == Some(vmm_released_bytes)
+            && after.checked_sub(restored) == Some(vmm_released_bytes)
+    } else {
+        after > before && restored < after
+    };
     let mut metrics = fs::OpenOptions::new()
         .append(true)
         .open(out.join("active-reclaim.txt"))?;
     writeln!(
         metrics,
-        "demote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaimed}",
+        "vmm_fixed_va_restored=true\nvmm_retained_edge_and_capacity_bytes={}\nvmm_granularity_bytes={vmm_granularity}\nvmm_released_chunk_bytes={vmm_released_bytes}\ndemote_count={demote_count}\nreload_count={reload_count}\nfree_after_restore_bytes={restored}\nreclaimed_bytes={}\nreacquired_bytes={}\nreclaim_observed={reclaimed}",
+        if vmm_granularity == 0 {
+            0
+        } else {
+            physical - vmm_released_bytes
+        },
         after as i128 - before as i128,
         after as i128 - restored as i128
     )?;
