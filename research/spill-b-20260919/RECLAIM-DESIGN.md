@@ -115,3 +115,57 @@ Verdict: **ACTIVE-8K G1 PASS**. Raw receipt: `rented-5090-20260919/day9-vmm-8192
 Per-plane physical capacity, valid bytes, granularity and VA are in `vmm-planes.tsv`.
 Rounded capacity is 301,989,888 B, including 100,663,296 B of retained edge/unused
 capacity chunks. No total-footprint or performance improvement is inferred.
+
+## Residual
+
+The first completed 32k VMM cell (source `f3a3247a`) restored all baseline bytes and
+its original free-VRAM level. It released 905,969,664 B in whole VMM chunks;
+observed demote and restore deltas were both 903,872,512 B. The 2,097,152 B residual
+is one queried allocation granule (0.2315%). Pool reserved did not change. The raw
+strict-equality `reclaim_observed=false` is retained, never rewritten as a PASS.
+
+Before the residual diagnostic or any new label, the lead defined G1's accounting
+criterion for **all** runs:
+
+1. Observed driver-free rise is at least released chunk bytes minus one queried granule.
+2. Driver-free after restore equals driver-free before demote exactly (no leak).
+3. Demote and restore deltas are identical.
+4. A nonzero residual must have a diagnostic classification; a tolerance alone is not PASS.
+
+The gate now records `reclaim_exact_equal`, signed `residual_bytes`,
+`residual_class`, and `reclaim_observed` for (1)-(3). A separate
+`g1_reclaim_qualified` additionally requires classification. It cannot report a
+qualified reclaim merely because the residual fits within the tolerance.
+
+One collector invocation holds the canonical GPU lock across 32k then 16k
+correctness diagnostics, with a 1700-second timeout and the post-restart
+600 W / 600 W envelope. No timing comparison with 400 W captures is admissible.
+At each size the gate reserves an unmapped spare VA range equal to total VMM
+physical capacity, records free bytes before/after that reservation, demotes native
+state, frees the spare VA and re-reads driver free bytes, then calls
+`cuCtxSynchronize` and re-reads again. It restores native state and checks the
+original VA. The 16k case is diagnostic-only, not a new serving context gate.
+
+Classification is causal where an operation returns the exact residual:
+`spare-VA-release-sensitive-driver-accounting` or
+`deferred-driver-release-completed-by-context-sync`. If neither returns the
+residual, record `unclassified`; a size pattern alone must not manufacture a
+page-table or pinned-mapping explanation. The 16k observation records whether the
+residual is zero, constant or scales, independently of the causal classification.
+The same source keeps raw equality alongside the explicitly bounded criterion.
+
+**Residual class (verbatim): `unclassified`.**
+The completed 32k/16k diagnostic uses source `55f82783`. At 32k the residual
+reproduces as 2,097,152 B; spare VA release returns **0 B** and full-context
+synchronization returns **0 B**. At 16k the residual is **0 B** (release and
+reacquisition 436,207,616 B); both probes again return **0 B**. At both sizes
+restored driver-free equals before exactly. The 32k continuation matches the frozen
+baseline; 16k's prefix roundtrip is internally byte-identical (diagnostic, not a
+new qualification row). These observations do **not** classify page-table or
+pinned-mapping overhead; the residual is not constant across 16k and 32k.
+
+Final 32k verdict:
+`ACTIVE-32K physical reclaim/restore bit-identical, one-granule residual unclassified — not G1 PASS`.
+The 8k exact-reclaim PASS remains valid. No door is deleted merely because the
+larger scope remains incomplete: the VMM path has positive 8k evidence, stays
+gate-only/default-OFF with its decide-by date, and makes no footprint/serving claim.

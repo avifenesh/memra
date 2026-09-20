@@ -277,7 +277,11 @@ def main():
         suffix = "-retry" if context == 32768 else ""
         print(verify_vmm(RAW / f"day9-vmm-{context}{suffix}", context, manifest["vmm_source"]))
     if "residual_source" in manifest:
-        print(verify_residual(manifest))
+        verdict = verify_residual(manifest)
+        sealed = json.loads((RAW / "day9-residual/verdict.json").read_text())
+        require(sealed["verdict"] == verdict and sealed["residual_class"] == "unclassified"
+                and sealed["g1_pass"] is False, "sealed final verdict changed")
+        print(verdict)
     native = RAW / "day9-vmm-build"
     require((native / "source.commit").read_text().strip() == manifest["vmm_source"], "native check source mismatch")
     for check in ("build", "clippy", "tests-retry"):
