@@ -311,7 +311,7 @@ async fn shape_payload_too_large(req: AxumRequest, next: Next) -> Response {
     if resp.status() != StatusCode::PAYLOAD_TOO_LARGE {
         return resp;
     }
-    error_response_coded(
+    let mut shaped = error_response_coded(
         StatusCode::PAYLOAD_TOO_LARGE,
         &format!(
             "request body exceeds the {} MiB limit",
@@ -320,7 +320,11 @@ async fn shape_payload_too_large(req: AxumRequest, next: Next) -> Response {
         "invalid_request_error",
         None,
         Some("request_too_large"),
-    )
+    );
+    if let Some(id) = resp.headers().get("x-request-id") {
+        shaped.headers_mut().insert("x-request-id", id.clone());
+    }
+    shaped
 }
 
 /// The one place the body-size policy is applied (tested directly in `body_limit_tests`;
@@ -9763,7 +9767,16 @@ async fn tokenize_admitted(
     }
     let AdmittedJson(mut req, _admission) = match body {
         Ok(body) => body,
-        Err(err) => return with_request_id(&id, bad_request(&err.body_text(), None)),
+        Err(err) => {
+            // Preserve extractor 413s so the common body-limit layer can shape them;
+            // malformed JSON remains the endpoint's OpenAI-shaped named 400.
+            let response = if err.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                err.into_response()
+            } else {
+                bad_request(&err.body_text(), None)
+            };
+            return with_request_id(&id, response);
+        }
     };
     req.model = match canonical_model_id(&st.models, &req.model) {
         Some(model) => model,
@@ -9798,7 +9811,16 @@ async fn detokenize_admitted(
     }
     let AdmittedJson(req, _admission) = match body {
         Ok(body) => body,
-        Err(err) => return with_request_id(&id, bad_request(&err.body_text(), None)),
+        Err(err) => {
+            // Preserve extractor 413s so the common body-limit layer can shape them;
+            // malformed JSON remains the endpoint's OpenAI-shaped named 400.
+            let response = if err.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                err.into_response()
+            } else {
+                bad_request(&err.body_text(), None)
+            };
+            return with_request_id(&id, response);
+        }
     };
     let model = match canonical_model_id(&st.models, &req.model) {
         Some(model) => model,
@@ -20454,6 +20476,31 @@ temperature = 0.6
             assert_eq!(
                 token_api_json(response).await["error"]["type"],
                 "invalid_request_error"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn token_endpoints_preserve_extractor_413_and_request_id() {
+        let (st, _) = token_api_fixture();
+        // A small limit exercises the same mid-read extractor rejection without allocating
+        // 192 MiB. No Content-Length: the header-only early refusal cannot mask this arm.
+        let app = Router::new()
+            .route("/v1/tokenize", post(tokenize_admitted))
+            .route("/v1/detokenize", post(detokenize_admitted))
+            .with_state(st)
+            .layer(DefaultBodyLimit::max(8))
+            .layer(middleware::from_fn(shape_payload_too_large));
+        for (path, body) in [
+            ("/v1/tokenize", json!({"model":"m", "prompt":"too long"})),
+            ("/v1/detokenize", json!({"model":"m", "tokens":[0]})),
+        ] {
+            let response = token_api_post(app.clone(), path, body).await;
+            assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+            assert_eq!(response.headers()["x-request-id"], "token-api-test");
+            assert_eq!(
+                token_api_json(response).await["error"]["code"],
+                "request_too_large"
             );
         }
     }
