@@ -1,0 +1,100 @@
+{
+  "result": "PASS",
+  "prefix_tokens": 2,
+  "stop_id": 107,
+  "baseline_tokens": 34,
+  "baseline_stop_reason": "Eos",
+  "binary_sha256": "1d6e75537f366d5f4c664fb3634337eb02cae346cc2d37a7746f849e84db633e",
+  "requests": [
+    {
+      "name": "native-baseline",
+      "request": {
+        "model": "g",
+        "prompt": "<|turn>user\nCount from one to ten, separated by commas.<turn|>\n<|turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64
+      },
+      "response_sha256": "f45d46bf235acc645e299baaa09a01e8c3af38531f1acce79087024c3d1b44f9"
+    },
+    {
+      "name": "native-prefix",
+      "request": {
+        "model": "g",
+        "prompt": "<|turn>user\nCount from one to ten, separated by commas.<turn|>\n<|turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 2
+      },
+      "response_sha256": "9ee5b591cc118e1680fae9a915ba6693b8be75149fc21ba24a5b75fb6464958e"
+    },
+    {
+      "name": "openai-baseline",
+      "request": {
+        "model": "g",
+        "prompt": "<|turn>user\nCount from one to ten, separated by commas.<turn|>\n<|turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64
+      },
+      "response_sha256": "49de4b31c5ddd3eb684da8348bea15ecb7472a7dba195229d9f8c23a8f9a0a8a"
+    },
+    {
+      "name": "openai-stop",
+      "request": {
+        "model": "g",
+        "prompt": "<|turn>user\nCount from one to ten, separated by commas.<turn|>\n<|turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64,
+        "stop_token_ids": [
+          107
+        ]
+      },
+      "response_sha256": "34e6c94edf43af7ed7d09d7ee2789317d59fa26609fe0b51a38b3de84ea968ac"
+    },
+    {
+      "name": "openai-first-stop",
+      "request": {
+        "model": "g",
+        "prompt": "<|turn>user\nCount from one to ten, separated by commas.<turn|>\n<|turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64,
+        "stop_token_ids": [
+          100
+        ]
+      },
+      "response_sha256": "f12d2e9db016229bf44dcdfdf3999f63a8571dc6a207333935a720c25311a614"
+    },
+    {
+      "name": "openai-stream-stop",
+      "request": {
+        "model": "g",
+        "prompt": "<|turn>user\nCount from one to ten, separated by commas.<turn|>\n<|turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64,
+        "stop_token_ids": [
+          107
+        ],
+        "stream": true
+      },
+      "response_sha256": "4f6324ba900ac81e3d902fc4915e9309fb6cf9df14157542163a8db8fe7e9970"
+    },
+    {
+      "name": "openai-explicit-eos",
+      "request": {
+        "model": "g",
+        "prompt": "<|turn>user\nCount from one to ten, separated by commas.<turn|>\n<|turn>model\n",
+        "temperature": 0,
+        "seed": 42,
+        "max_tokens": 64,
+        "stop_token_ids": [
+          106
+        ]
+      },
+      "response_sha256": "65d6f6cc35a8e68a341ac3cd59634bb10fd37a6c0e318f8c9013424adfb7fac3"
+    }
+  ]
+}
