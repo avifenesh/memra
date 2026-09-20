@@ -651,8 +651,8 @@ mod tests {
             (decode, "gemma4_e4b_graph_exec_loop", "DecodeGraph"),
             (decode, "graph_session_from_cache_masked", "DecodeGraph"),
             (decode, "generate", "DecodeEager"),
-            (forward, "forward", "DecodeEager"),
-            (forward, "forward_last", "DecodeEager"),
+            (forward, "forward", "ForwardFreshKv"),
+            (forward, "forward_last", "ForwardFreshKv"),
             (forward, "prime_cache_overlaid", "DecodeEager"),
             (forward, "gemma4_generate_graph", "DecodeGraph"),
             (

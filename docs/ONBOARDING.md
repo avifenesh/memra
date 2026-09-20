@@ -49,6 +49,8 @@ qualification claim. Importing evidence with `model verify rewrite` validates it
 bundle bindings while keeping `RewriteParity=pending` and labeling the evidence imported.
 Installation performs the independent runtime comparison. Receipts produced by
 a standalone gate executable therefore cannot qualify a different `memra-server` executable.
+The quantized-cache `decode-eager` and monolithic `forward-fresh-kv` programs have separate
+receipts. A shared plan and loaded artifact do not make their KV numerical classes equivalent.
 CPU identity tests prove the admission boundary, not model or GPU parity.
 
 ## 0. Freeze the lane and artifact

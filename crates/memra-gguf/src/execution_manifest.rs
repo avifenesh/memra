@@ -41,6 +41,9 @@ impl KernelManifest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RewriteSurface {
     CarriedPrime,
+    /// Monolithic forward/forward_last uses fresh KV (F32 in the generic attention
+    /// executor), a distinct program from quantized-cache eager/verify execution.
+    ForwardFreshKv,
     DecodeEager,
     DecodeBatch,
     DecodeGraph,
@@ -215,6 +218,7 @@ impl RewriteSurface {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::CarriedPrime => "carried-prime",
+            Self::ForwardFreshKv => "forward-fresh-kv",
             Self::DecodeEager => "decode-eager",
             Self::DecodeBatch => "decode-batch",
             Self::DecodeGraph => "decode-graph",
@@ -626,6 +630,13 @@ pub fn execution_rewrites(plan: &ModelPlan) -> Vec<ExecutionRewrite> {
     spec_operations.extend(plan.trunk_operations());
     let selections = [
         (
+            "forward-fresh-kv.v1",
+            RewriteSurface::ForwardFreshKv,
+            NATIVE_FRESH_KV,
+            trunk.clone(),
+            NATIVE_FRESH_KV.trunk_capabilities(plan).batch,
+        ),
+        (
             "carried-prime.v1",
             RewriteSurface::CarriedPrime,
             CARRIED_PRIME,
@@ -954,6 +965,10 @@ fn native_eager_support(operation: OperationKind) -> OperationSupport {
 }
 
 pub const NATIVE_EAGER: KernelManifest = KernelManifest::new("native-eager", native_eager_support);
+/// Operation coverage is shared, but receipt identity is not: fresh KV and cached KV
+/// are different numerical programs even for the same artifact, plan and executable.
+pub const NATIVE_FRESH_KV: KernelManifest =
+    KernelManifest::new("native-fresh-kv-forward", native_eager_support);
 
 fn mtp_spec_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();
@@ -1465,6 +1480,27 @@ mod tests {
         assert!(admission.is_qualified());
         assert!(admission.allows(surface));
         assert!(!admission.allows(RewriteSurface::DecodeGraph));
+        assert!(!admission.allows(RewriteSurface::ForwardFreshKv));
+    }
+
+    #[test]
+    fn cached_eager_receipt_cannot_authorize_fresh_kv_forward() {
+        let fixture = QualificationFixture::new();
+        let qualified = fixture.load(&test_identity()).unwrap();
+        let fresh = execution_rewrites(&fixture.plan)
+            .into_iter()
+            .find(|rewrite| rewrite.surface == RewriteSurface::ForwardFreshKv)
+            .unwrap();
+        assert!(fresh.eligible());
+        assert_ne!(fresh.id, fixture.rewrite.id);
+        assert_ne!(fresh.implementation, fixture.rewrite.implementation);
+        assert!(qualified.allows(RewriteSurface::DecodeEager));
+        assert!(!qualified.allows(RewriteSurface::ForwardFreshKv));
+        let receipt = fixture
+            .rewrite
+            .verify_tokens(&test_identity().implementation_sha256, &[1, 2], &[1, 2])
+            .unwrap();
+        assert!(receipt.validate_for(&fresh).is_err());
     }
 
     #[test]

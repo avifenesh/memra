@@ -103,3 +103,15 @@ same hashes without that API. Seven CPU controls pass; fail-before/pass-after lo
 and CUDA compilation/execution waits for coordinator acceptance. The replacement storage
 is XFS on Ceph RBD, not proven physical local NVMe; this lane's admission checks remain
 eligible, with no NVMe or spill-performance claim.
+
+## Native numerical-class discovery
+
+`native-server-20260920/` contains the first real single-card attempt and standing control.
+The initial forward_last/tokenwise comparison failed atmax_abs3.1681318. The standing
+quantized-cache verify-prefill control passed at1.907e-6. Fresh-F32 KV and cached KV are
+different programs, so the gate was corrected without changing mathematics or tolerances:
+`forward-fresh-kv` has a distinct manifest/receipt, and eager-only admission refuses fresh-KV
+execution. The cached-KV gate compares independent verify-prefill and tokenwise executions.
+CPU compiler/CLI suites pass289+12 tests, runtime host suite passes11, and documentation-only
+engine/server cross-target clippy/type checks pass. These are preparation for a fresh native
+attempt, not a promotion of model or serving support.

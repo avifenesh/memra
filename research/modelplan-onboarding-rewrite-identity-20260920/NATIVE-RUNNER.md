@@ -74,8 +74,11 @@ cannot satisfy the negative controls.
 
 ## Cases and limits
 
-The same native gate executable measures eager logits on real checkpoint weights, writes its
-scoped v2 receipt, and installs it on the loaded model. It exercises eager-only graph refusal,
+The same native gate executable compares independent quantized-cache verify-prefill and
+tokenwise eager logits on real checkpoint weights, writes its scoped v2 receipt, and installs
+it on the loaded model. Fresh-KV forward outputs are separate diagnostic controls, not this
+receipt's reference; strict fresh-KV calls must refuse the eager-only bundle. Full F32 output
+planes and hashes are retained for every prompt. It exercises eager-only graph refusal,
 failed reinstall revocation, and actual eager output after correct admission. Fresh-process
 cases cover a matching bundle, missing bundle, changed weight payload with unchanged shape,
 changed executable bytes, and changed numerical settings. Bundle file/index hashes stay

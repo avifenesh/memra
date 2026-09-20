@@ -1,0 +1,8 @@
+SCOPE native-program-admission-only support_promotion=false performance=not-measured mode=capture artifact_lock_sha256=c61e18ccbdb415005623740df474dab982ea18446395cce935a7efa46a394ba6
+[q8rp] split-plane decode mirrors built: 196 tensors
+LOADED artifact_sha256=0883c0d75d2b9911278e09f4933a6adfc5e2c7e9a62da1cccfa0b37f40650e96 implementation_sha256=2df3caa1ce7423c70de090f61199bfbc622b8fe4fc6b90bdf11ee29cc47717b6 numeric_program_sha256=950f6b92902d1a72fc01a12c930f1c959dcdb866d84919971bb8b4dd9d8dafc5
+POLICY family=qwen3 atol=0.005 rtol=0.005 require_argmax=true
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+OUTPUT stage=forward-last prompt=0 tokens=[1, 2, 3, 4] values=151936 argmax=3 sha256=9d8d6643a72357a3d13c73cf7bcbc3cdfc770ac65acb58386a67abb3e60c119a
+OUTPUT stage=pre-install-tokenwise prompt=0 tokens=[1, 2, 3, 4] values=151936 argmax=3 sha256=a1a60e5a6d7587b2338fcbce3a980ed27efa56a8606d62d7b08226237fd363ad
+REWRITE_IDENTITY_GATE_FAIL: PROMPT_PARITY_FAILED prompt=0 max_abs=3.1681318 max_rel=16323.148 reference_argmax=3 candidate_argmax=3 first=Some(0)

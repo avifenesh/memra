@@ -5164,7 +5164,7 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::ForwardFreshKv)?;
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, false);
         }
@@ -5265,7 +5265,7 @@ impl HybridModel {
         e: &Engine,
         tokens: &[u32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::ForwardFreshKv)?;
         if self.hyper.is_some() {
             return self.forward_hyper(e, tokens, true);
         }

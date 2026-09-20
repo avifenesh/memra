@@ -15,6 +15,7 @@ use memra_engine::plan_backend::{
 use memra_gguf::GgufFile;
 use memra_gguf::source::SafetensorsSource;
 use sha2::{Digest, Sha256};
+use std::io::Write;
 use std::path::Path;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -48,7 +49,7 @@ fn logits_sha256(values: &[f32]) -> String {
     format!("{:x}", hash.finalize())
 }
 
-fn output(label: &str, prompt: usize, logits: &[f32], vocab: usize) -> Result<()> {
+fn output(label: &str, prompt: usize, logits: &[f32], vocab: usize, bundle: &Path) -> Result<()> {
     require(
         logits.len() == vocab && !logits.is_empty() && logits.iter().all(|x| x.is_finite()),
         format!(
@@ -56,11 +57,27 @@ fn output(label: &str, prompt: usize, logits: &[f32], vocab: usize) -> Result<()
             logits.len()
         ),
     )?;
+    let directory = bundle.join("outputs");
+    std::fs::create_dir_all(&directory)?;
+    let path = directory.join(format!(
+        "{label}-{}-prompt-{prompt}.f32",
+        std::process::id()
+    ));
+    let bytes: Vec<u8> = logits
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?
+        .write_all(&bytes)?;
     println!(
-        "OUTPUT stage={label} prompt={prompt} tokens={:?} values={} argmax={} sha256={}",
+        "OUTPUT stage={label} prompt={prompt} tokens={:?} values={} argmax={} file={} sha256={}",
         PROMPTS[prompt],
         logits.len(),
         memra_engine::forward::argmax(logits),
+        path.display(),
         logits_sha256(logits)
     );
     Ok(())
@@ -74,6 +91,43 @@ fn tokenwise(engine: &Engine, model: &HybridModel, prompt: &[u32]) -> Result<Vec
     }
     require(cache.pos == prompt.len(), "TOKENWISE_CACHE_POSITION")?;
     Ok(logits)
+}
+
+// Independent native reference: teacher-forced verify rows attend over the same
+// quantized-cache class as tokenwise eager decode. forward_last's fresh F32 KV is a
+// different program and must never be borrowed as this receipt's reference.
+fn verify_prefill(engine: &Engine, model: &HybridModel, prompt: &[u32]) -> Result<Vec<f32>> {
+    let mut cache = Cache::new(engine, &model.cfg, prompt.len() + 8)?;
+    let logits = model.decode_step_t(engine, prompt, 0, &mut cache)?;
+    let vocab = model.cfg.n_vocab as usize;
+    require(logits.len() == prompt.len() * vocab, "VERIFY_PREFILL_SHAPE")?;
+    require(cache.pos == prompt.len(), "VERIFY_PREFILL_CACHE_POSITION")?;
+    Ok(logits[logits.len() - vocab..].to_vec())
+}
+
+fn fresh_kv_refusal(engine: &Engine, model: &HybridModel) -> Result<()> {
+    for (name, result) in [
+        ("forward", model.forward(engine, PROMPTS[0])),
+        ("forward_last", model.forward_last(engine, PROMPTS[0])),
+    ] {
+        match result {
+            Ok(_) => {
+                return Err(
+                    format!("FRESH_KV_REFUSAL_FAILED: eager receipt admitted {name}").into(),
+                );
+            }
+            Err(error) => require(
+                error
+                    .to_string()
+                    .contains("forward-fresh-kv rewrite is not qualified"),
+                format!("FRESH_KV_REFUSAL_WRONG_REASON {name}: {error}"),
+            )?,
+        }
+    }
+    println!(
+        "FRESH_KV_REFUSAL_PASS: quantized-cache eager receipt cannot authorize forward/forward_last"
+    );
+    Ok(())
 }
 
 fn qualified_eager_only(model: &HybridModel) -> Result<()> {
@@ -407,12 +461,14 @@ fn run() -> Result<()> {
         )?;
         qualified_eager_only(&model)?;
         graph_refusal(&engine, &model)?;
+        fresh_kv_refusal(&engine, &model)?;
         for (i, prompt) in PROMPTS.into_iter().enumerate() {
             output(
                 "check-eager",
                 i,
                 &tokenwise(&engine, &model, prompt)?,
                 vocab,
+                bundle,
             )?;
         }
     } else {
@@ -420,10 +476,28 @@ fn run() -> Result<()> {
         let mut references = Vec::new();
         let mut candidates = Vec::new();
         for (i, prompt) in PROMPTS.into_iter().enumerate() {
-            let reference = model.forward_last(&engine, prompt)?;
+            let reference = verify_prefill(&engine, &model, prompt)?;
             let candidate = tokenwise(&engine, &model, prompt)?;
-            output("forward-last", i, &reference, vocab)?;
-            output("pre-install-tokenwise", i, &candidate, vocab)?;
+            output(
+                "quantized-cache-verify-prefill",
+                i,
+                &reference,
+                vocab,
+                bundle,
+            )?;
+            output("pre-install-tokenwise", i, &candidate, vocab, bundle)?;
+            let fresh_control = model.forward_last(&engine, prompt)?;
+            output("fresh-kv-diagnostic", i, &fresh_control, vocab, bundle)?;
+            let class_control = rewrite.verify_logits(
+                &identity.implementation_sha256,
+                &fresh_control,
+                &candidate,
+                policy,
+            )?;
+            println!(
+                "FRESH_KV_CLASS_CONTROL prompt={i} same_class=false max_abs={} max_rel={} within_tolerance={} used_for_qualification=false",
+                class_control.max_abs, class_control.max_rel, class_control.passed
+            );
             let parity = rewrite.verify_logits(
                 &identity.implementation_sha256,
                 &reference,
@@ -468,9 +542,10 @@ fn run() -> Result<()> {
         model.install_rewrite_bundle(bundle)?;
         qualified_eager_only(&model)?;
         graph_refusal(&engine, &model)?;
+        fresh_kv_refusal(&engine, &model)?;
         for (i, prompt) in PROMPTS.into_iter().enumerate() {
             let actual = tokenwise(&engine, &model, prompt)?;
-            output("installed-eager", i, &actual, vocab)?;
+            output("installed-eager", i, &actual, vocab, bundle)?;
             bitwise(
                 &candidates[i * vocab..(i + 1) * vocab],
                 &actual,
@@ -480,7 +555,7 @@ fn run() -> Result<()> {
         println!("INSTALLED_EAGER_BITWISE_PASS");
         reinstall_probe(&engine, &mut model, bundle, &rewrite, &receipt)?;
         let restored = tokenwise(&engine, &model, PROMPTS[0])?;
-        output("restored-eager", 0, &restored, vocab)?;
+        output("restored-eager", 0, &restored, vocab, bundle)?;
         bitwise(&candidates[..vocab], &restored, "restored-eager")?;
     }
     qualified_eager_only(&model)?;
