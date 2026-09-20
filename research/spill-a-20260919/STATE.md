@@ -3,7 +3,7 @@
 - Integration merged/pushed: `e4f7e633b27fc2caf85d553d6e0659449af1b3b2`.
 - Native source/build revision: that merge; isolated checkout `/root/wt-a`.
 - Finished/pushed: `358df5666` conformance, `6c8e9acf8` six exact roundtrips 4 KiB–256 MiB + native build.
-- Remote batch launch planned: tmux `spill-a-day8`, `day8_storage_cells.py`; transfer GPU cells finished.
+- RUNNING: tmux `spill-a-day8`, `day8_storage_cells.py`; attempt-00 lock refusal, bounded 60s retries active.
 - Remote receipts: `/root/spill-receipts/a-day8/`; local copy: `day8/native/`.
 - Card: RTX PRO 6000 Blackwell; observed cap/max 600/600 W; development-only.
 - Mac fmt/check/Linux-target check/tier tests/clippy/diff/flags passed; raw logs in `day8/mac/`.
