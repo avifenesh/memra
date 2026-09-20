@@ -508,7 +508,6 @@ spill-b-20260919 | REFUSED: active requires a native CUDA materializer + schedul
 spill-c-20260919 | qwen4exp-gpu-gate PASS [rows-via-tier: BIT-IDENTICAL PLE outputs + convolution state; encodings=2 cases=16 values=6144 tier_calls=16 forced_read_chunks=144 budget_drained=true] | spill-c-20260919/rented-5090-20260919/day5/RESULTS.md
 spill-d-20260919 | Multi-card transport, model-scale mixed tiering and full serving/performance gates remain outside this CPU/read-only milestone; do not promote their state. | spill-d-20260919/DAY6-VERIFICATION.md
 spill-lead-20260919 | **8192 and 32768** same-program captures PASS (8064+128 / 32640+128 tokens; full prefix/final state + logit + token hashes) | spill-lead-20260919/INTEGRATION-DAY6.md
-
 qwen2-tokenizer-20260920 | Literal Qwen2 split/BPE parity passes in HF and GGUF loaders. Full raw-input parity for a tokenizer declaring NFC remains blocked by the separately tracked normalization omission. | qwen2-tokenizer-20260920/RESULTS.md
 
 release-coverage-546-20260920 | Native release battery PASS at a0a27c3f: 103 kernel cells executed, all 10 required, 7 named skips; Ornith and Qwen3.8 calibrated argmax and exact K=1..8 pass. | release-coverage-546-20260920/RESULTS.md
