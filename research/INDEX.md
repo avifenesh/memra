@@ -509,4 +509,6 @@ spill-c-20260919 | Verdict: mapping complete for handoff; implementation/GPU own
 spill-d-20260919 | Lane committed and pushed; not merged to main, deployed, or GPU/live-qualified. | spill-d-20260919/DAY4-VERIFICATION.md
 spill-lead-20260919 | This is a CPU/cross-compile review-fix milestone, not a main merge, release, deployment, GPU qualification, or live-serving verification. | spill-lead-20260919/PR519-REVIEW-FIXES.md
 
+qwen2-tokenizer-20260920 | Literal Qwen2 split/BPE parity passes in HF and GGUF loaders. Full raw-input parity for a tokenizer declaring NFC remains blocked by the separately tracked normalization omission. | qwen2-tokenizer-20260920/RESULTS.md
+
 release-coverage-546-20260920 | Native release battery PASS at a0a27c3f: 103 kernel cells executed, all 10 required, 7 named skips; Ornith and Qwen3.8 calibrated argmax and exact K=1..8 pass. | release-coverage-546-20260920/RESULTS.md
