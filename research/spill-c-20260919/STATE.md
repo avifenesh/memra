@@ -1,12 +1,11 @@
-# Session C day-ten handoff
-- Lane `lane/spill-c-20260919`, checkout `wt-spill-c`; no commits on main or the lead branch; origin tip 066afe918 is an ancestor (merged, no-op).
-- NOTHING RUNNING for C: tmux `c-day10-repeat` exited; `repeat-status.json` state complete; no C GPU process.
-- UNPUSHED: `git push` refused by perf-ci gate at a413937f2 and again on every later commit (lead's engine files in the integ5 merge); no skip, no --no-verify; the lead pushes.
-- Finished: ff to 066afe918; merge of lane/spill-integ5-20260920 (a413937f2); verify-day9.py PASS + 6 red arms; MOE-SLOT-CACHE-DOOR.md (5cf9579a1); BUDGET-REFUSAL.md options (aa8e8516f); DAY9.md finished (c3a2168d2); day-ten repeat cell banked.
-- Day-nine verdicts: gen MATCH x4, spec SELF-CONSISTENCY PASS x4; 8 GiB banked GPU evictions 12091/63996, re-reads 4389/53684; same-card tapes identical.
-- Day-ten N=1 8 GiB spec-on repeat: SELF-CONSISTENCY PASS on attempt 6 (five lock refusals kept); 63996/73966/73982/53684, identical to day nine; verify-day10.py PASS; receipts `pro-single-day10/`, remote `/root/spill-receipts/c-day10/`.
-- Push gate on the merged tree: fmt clean, tier+kv 261 tests pass, DOCS_RS engine clippy clean.
-- Frozen native binaries `/root/wt-c/target/release/run-{gen,spec}` are source 148e7f0e9; hashes re-checked 16:37:44Z; never rebuilt.
-- `/root/wt-c` at 748903f7; only dirty items are the two untracked lane driver scripts (tracked here).
-- NEXT (lead): push the lane, replay verify-day9.py and verify-day10.py, integrate onto integ6; no GPU rerun pending for C.
-- DECISIONS NEEDED (lead): budget refusal option A/B/C (BUDGET-REFUSAL.md); PP owner placement for the door; door decide-by 2026-10-04.
+# Session C day-ten handoff (budget step)
+- Lane `lane/spill-c-20260919`, checkout `wt-spill-c`; no commits on main or the lead branch; origin tip 90c7e68e9 is an ancestor.
+- NOTHING RUNNING for C: tmux `c-day10-budget` exited (driver.exit 0); no C GPU process; `/root/wt-c` at 1de17d41f, clean.
+- UNPUSHED: `git push` refused by perf-ci gate at 79353d53d and on every later commit (this lane's six engine files); no skip, no --no-verify; the lead pushes. The tree reached the target card as a git bundle.
+- Code (79353d53d): lead ruling 2 option A. `install_expert_bank_gate(model, gguf, budget: ExpertBankBudget)`; run-gen/run-spec parse `--experts-via-tier [--expert-bank-host-bytes=N] [--expert-bank-gpu-bytes=N]` via `expert_bank_cli`; `gpu_bank_slots(bytes, max_record, hard_bytes)` next to `host_bank_slots`; `MoeSlotCache::with_exact_slots` / `Engine::build_moe_cache_exact`; `MEMRA_MOE_SLOTS` clamp untouched, conflict with the GPU budget refused; both budget refusals typed (`ExpertBankRefusal`) and mapped by both binaries to final stderr `REFUSED: <reason>` exit 2 (lead addendum); `TracedDispatch::demand` unwraps replaced. No new `MEMRA_*` read; decide-by 2026-10-04 in `MOE-SLOT-CACHE-DOOR.md`.
+- Tests: `crates/memra-tier/tests/bank/day10.rs` (3 tests); tier+kv 264 pass; fmt, DOCS_RS engine clippy, flags census, diff --check clean; `slru-synthetic.json` re-pinned (rows identical); `pressure-refusal.py` is a native-token red arm, `test-day8.py` updated.
+- Target-card cells (`pro-single-day10-budget/`, remote `c-day10/budget/`, day-ten build `target-day10` at 79353d53d, frozen 148e7f0e9 binaries untouched), N=1 executed-not-qualified, 600 W: a 7-slot GPU budget `refused` (`REFUSED: ... eight-slot minimum (requested 6021176, minimum 6881344, ceiling 78022085820)`); exact 8 slots `MATCH`, tape equal to the day-nine control, GPU evictions 103,651 / host 103,502 / reads 103,518 / re-reads 91,440; one-byte host budget `refused` natively through the wrapper.
+- `verify-day10-budget.py` PASS (`VERDICT.json`); `test-day10-budget.py` 6 OK; `verify-day9.py` / `verify-day10.py` untouched and still the frozen-binary evidence.
+- Docs: `DAY10.md`, `MOE-SLOT-CACHE-DOOR.md` (budgets row, pending item 2 landed, decide-by line, deletion list), `BUDGET-REFUSAL.md` (decided, deviations listed).
+- NEXT (lead): push the lane, replay `verify-day10-budget.py` and `test-day10-budget.py`, integrate onto integ6. No GPU rerun pending for C.
+- OPEN: `run-spec` has the same parse and refusal mapping but no budget cell; mixed layouts and a cache built before install are refused, not sized (door doc item 2); the ceiling number in a refusal is card- and tenant-dependent.
