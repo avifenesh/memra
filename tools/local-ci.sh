@@ -768,8 +768,19 @@ run_cell() {
     local id="$1" model="$2" mode="$3" prompt="$4" ngen="$5" k="$6" draft="$7" ranks="$8"
     local mp="$MODELS/$model"
     [ -f "$mp" ] || { echo "  $id: SKIP (no model)"; return 0; }
+    # A spec cell needs its drafter (and its ranks file when the manifest names one) as much
+    # as its model; a missing drafter used to surface as "FAIL (no reading)" with the
+    # gemma-gate stderr discarded, which reads as a regression and blocks the row append
+    # (2026-09-20: 26b-spec-d1736 on a rig without the 26B MTP drafter). Explicit SKIP, same
+    # vocabulary as the model check; the rig still owes the cell once the file is staged.
+    if [ "$mode" = "spec" ]; then
+        [ -f "$MODELS/$draft" ] || { echo "  $id: SKIP (no draft at $MODELS/$draft)"; return 0; }
+        if [ -n "$ranks" ] && [ "$ranks" != "null" ] && [ ! -f "$ranks" ]; then
+            echo "  $id: SKIP (no ranks file at $ranks)"; return 0
+        fi
+    fi
     local pfile; pfile=$(jq -r ".prompts[\"$prompt\"]" $MANIFEST)
-    local best_toks="0" accept="" tokround="" cell_try
+    local best_toks="0" accept="" tokround="" cell_try last_out=""
     for cell_try in 1 2; do
     best_toks="0"; accept=""; tokround=""
     for _rep in 1 2; do
@@ -797,6 +808,7 @@ run_cell() {
             accept=$(echo "$out" | grep -oE "accept-rate=[0-9.]+" | grep -oE "[0-9.]+" | tail -1 || true)
             tokround=$(echo "$out" | grep -oE "tok/round=[0-9.]+" | grep -oE "[0-9.]+" | tail -1 || true)
         fi
+        last_out="$out"
         awk -v a="$toks" -v b="$best_toks" 'BEGIN{exit !(a>b)}' && best_toks="$toks"
     done
     if window_free_now; then break; fi
@@ -832,7 +844,12 @@ run_cell() {
         WINDOW_CLEAN=false
     fi
     done
-    [ "$best_toks" = "0" ] && { echo "  $id: FAIL (no reading)"; FAILS=$((FAILS+1)); return 0; }
+    if [ "$best_toks" = "0" ]; then
+        # Quote the cause, never infer it: the last rep's final lines travel with the verdict.
+        echo "  $id: FAIL (no reading); last output:"
+        printf '%s\n' "$last_out" | tail -6 | sed 's/^/      | /'
+        FAILS=$((FAILS+1)); return 0
+    fi
 
     # Rolling-median verdict from prior rows of this cell.
     #
