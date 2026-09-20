@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[4]
 SPEC = importlib.util.spec_from_file_location('envelope', ROOT/'tools/tier-envelope.py')
@@ -24,6 +26,45 @@ def sample():
 
 
 class EnvelopeTests(unittest.TestCase):
+    def test_visit_preserves_collector_group_and_lock_fd(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = SimpleNamespace(out=Path(temp), probe=Path('/probe'), bytes=4096,
+                                   direction='h2d', worker=42)
+            with patch.object(E, 'power', return_value={}), \
+                 patch.object(E.B, 'tee_run', side_effect=RuntimeError('launch sentinel')) as launch:
+                with self.assertRaisesRegex(RuntimeError, 'launch sentinel'):
+                    E.visit(args, 'test', 0, 'AB', 1)
+            self.assertTrue(launch.call_args.kwargs['shared_group'])
+            self.assertEqual(launch.call_args.kwargs['pass_fds'], (42,))
+
+    def test_calibration_covers_fast_arm_and_does_not_increase_n(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = SimpleNamespace(out=Path(temp), correctness_only=True)
+            def samples(_args, phase, attempt, order, copies):
+                self.assertEqual((phase, order), ('calibration', 'AB'))
+                return [{'sample': {'wall_ns': 1_000_000*copies}},
+                        {'sample': {'wall_ns': 2_000_000*copies}}]
+            with patch.object(E, 'visit', side_effect=samples):
+                self.assertEqual(E.calibrate(args), 438)
+            receipt = json.loads((args.out/'calibration.json').read_text())
+            self.assertTrue(receipt['discarded'])
+            self.assertEqual(len(receipt['attempts']), 2)
+
+    def test_calibration_converges_with_fixed_launch_overhead(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = SimpleNamespace(out=Path(temp), correctness_only=True)
+            def samples(_args, phase, attempt, order, copies):
+                return [{'sample': {'wall_ns': 20_000_000 + copies*1_000_000}}]
+            with patch.object(E, 'visit', side_effect=samples):
+                self.assertGreaterEqual(E.calibrate(args), 330)
+
+    def test_calibration_refuses_insufficient_copy_cap(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = SimpleNamespace(out=Path(temp), correctness_only=True)
+            with patch.object(E, 'visit', return_value=[{'sample': {'wall_ns': 1}}]):
+                with self.assertRaisesRegex(ValueError, 'capped'):
+                    E.calibrate(args)
+
     def test_registered_matrix_and_both_orders(self):
         self.assertEqual(E.SIZES, [4096, 16384, 65536, 262144, 1048576, 4194304,
                                   16777216, 67108864, 268435456, 1073741824])

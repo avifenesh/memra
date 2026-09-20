@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/Users/avifen/tiyuvta/wt-spill-d/research/spill-d-20260919/verify-day9-native.py", line 21, in <module>
+    assert all(str((EV/path).relative_to(ROOT)) in tracked for path in manifest['export_sha256']), \
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: native evidence missing from git index (including ignored build directories)

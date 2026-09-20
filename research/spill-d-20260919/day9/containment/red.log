@@ -1,0 +1,18 @@
+.F.
+======================================================================
+FAIL: test_outer_timeout_kills_grandchild_and_releases_lock (__main__.TimeoutTreeTests.test_outer_timeout_kills_grandchild_and_releases_lock)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/tiyuvta/wt-spill-d/crates/memra-tier/tests/battery/test_timeout_tree.py", line 72, in test_outer_timeout_kills_grandchild_and_releases_lock
+    self.run_tree()
+    ~~~~~~~~~~~~~^^
+  File "/Users/avifen/tiyuvta/wt-spill-d/crates/memra-tier/tests/battery/test_timeout_tree.py", line 56, in run_tree
+    self.assertEqual(marker.exists(), detached, stdout)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True != False : (-9, True)
+
+
+----------------------------------------------------------------------
+Ran 3 tests in 6.141s
+
+FAILED (failures=1)
