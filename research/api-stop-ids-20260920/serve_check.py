@@ -26,7 +26,10 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     base = "http://127.0.0.1:18091"
-    prompt = "<bos><start_of_turn>user\nCount from one to ten, separated by commas.<end_of_turn>\n<start_of_turn>model\n"
+    # gemma-4 turn markers are `<|turn>` / `<turn|>` (ids 105/106 in the GGUF); the gemma-3
+    # names are plain text to this vocabulary. No literal `<bos>`: the completions route adds
+    # the model's BOS itself, and a second one derails the model.
+    prompt = "<|turn>user\nCount from one to ten, separated by commas.<turn|>\n<|turn>model\n"
     records = []
 
     def request(name, body, stream=False):
