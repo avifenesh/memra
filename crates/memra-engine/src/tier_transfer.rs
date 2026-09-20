@@ -302,8 +302,26 @@ impl CudaTransfers {
     pub fn retain_device(&self, lease: &DeviceLease) -> Result<DeviceLease> {
         self.owner.retain(lease)
     }
+    /// Refuse live ticket ownership without waiting on the CUDA stream. A
+    /// synchronous wait here would consume the producer-pending refusal state
+    /// (and deadlock callers whose producer needs an explicit owner advance).
+    fn require_unbound(&self, lease: &DeviceLease) -> Result<()> {
+        self.owner.resolve::<Rc<RefCell<KvPlane>>>(lease)?;
+        if self.entries.values().any(|e| {
+            !e.retired
+                && e.items.iter().flatten().any(|i| {
+                    i.device
+                        .as_ref()
+                        .is_some_and(|d| d.allocation_id() == lease.allocation_id())
+                })
+        }) {
+            return Err(Error::Busy);
+        }
+        Ok(())
+    }
     pub fn release_device(&mut self, lease: &DeviceLease) -> Result<()> {
         self.check_thread()?;
+        self.require_unbound(lease)?;
         cuda(self.stream.synchronize())?;
         self.owner.release(lease)?;
         let charge = self
@@ -347,6 +365,7 @@ impl CudaTransfers {
     /// Transfer the complete typed owner, never a raw VMM CudaSlice.
     pub fn take_plane(&mut self, lease: &DeviceLease) -> Result<KvPlane> {
         self.check_thread()?;
+        self.require_unbound(lease)?;
         cuda(self.stream.synchronize())?;
         let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(lease)?.clone();
         self.owner.release(lease)?;

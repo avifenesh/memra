@@ -1,9 +1,16 @@
 //! Real CUDA conformance + byte roundtrip gate. Run ONLY through tier-battery.
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr};
+use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr, sys};
 use memra_engine::tier_transfer::{CudaPinnedLease, CudaTransfers, GraphPin};
 use memra_tier::conformance as v1;
 use memra_tier::{bank::SharedBudget, contracts::*, tier::governor::Governor};
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 fn epochs() -> Epochs {
     Epochs {
@@ -258,6 +265,39 @@ fn conformance() {
     assert_eq!(gov.borrow().used(), TierBudget::zero(1));
     println!("PASS native governor zero after controlled drain");
 }
+// A native stream callback holds production pending without launching a
+// spin kernel or synthesizing completion. It never calls a CUDA API. RAII opens
+// the latch even if a fixture assertion unwinds.
+struct ProducerHold(Arc<AtomicBool>);
+impl ProducerHold {
+    fn new(stream: &Arc<CudaStream>) -> Self {
+        stream.synchronize().unwrap();
+        let latch = Arc::new(AtomicBool::new(false));
+        let raw = Box::into_raw(Box::new(latch.clone()));
+        let result =
+            unsafe { sys::cuLaunchHostFunc(stream.cu_stream(), Some(held_producer), raw.cast()) };
+        if result != sys::CUresult::CUDA_SUCCESS {
+            drop(unsafe { Box::from_raw(raw) });
+            panic!("cannot hold native producer: {result:?}");
+        }
+        Self(latch)
+    }
+    fn release(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+impl Drop for ProducerHold {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+unsafe extern "C" fn held_producer(raw: *mut std::ffi::c_void) {
+    let latch = unsafe { Box::from_raw(raw.cast::<Arc<AtomicBool>>()) };
+    while !latch.load(Ordering::Acquire) {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
 // All lifetime advances use native CUDA events or real lease/graph retention.
 // Observation loss is explicitly injected; recovery queries the recorded event.
 fn canonical_source_retirement(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
@@ -272,9 +312,10 @@ fn canonical_source_retirement(t: &mut CudaTransfers, stream: &Arc<CudaStream>) 
         Ok(())
     })
     .unwrap();
-    let producer = t.record_producer(epochs().src_gen).unwrap();
     let host = t.alloc_host(bytes.len(), request()).unwrap();
     let device = t.retain_device(&keep).unwrap();
+    let hold = ProducerHold::new(stream);
+    let producer = t.record_producer(epochs().src_gen).unwrap();
     let down = t
         .d2h(CopyOp {
             host,
@@ -284,6 +325,7 @@ fn canonical_source_retirement(t: &mut CudaTransfers, stream: &Arc<CudaStream>) 
             producer_fence: Some(producer),
         })
         .unwrap();
+    assert!(!t.poll(&down).unwrap().producer_done);
     let mut source_graph = Some(t.pin_source_graph(&down).unwrap());
     let mut destination_graph = Some(t.pin_destination_graph(&down).unwrap());
     let destination = RefCell::new(None::<CudaPinnedLease>);
@@ -294,7 +336,10 @@ fn canonical_source_retirement(t: &mut CudaTransfers, stream: &Arc<CudaStream>) 
         |t, ticket, step| {
             match step {
                 v1::SourceStep::Unknown => t.quarantine_observation(ticket).unwrap(),
-                v1::SourceStep::Producer => stream.synchronize().unwrap(),
+                v1::SourceStep::Producer => {
+                    hold.release();
+                    stream.synchronize().unwrap();
+                }
                 v1::SourceStep::Recover => {
                     t.synchronize(ticket).unwrap();
                     let Destination::Host(mut host) =
@@ -356,13 +401,14 @@ fn destination_drop_retention(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
     let device = t.alloc_device(4096, epochs().src_gen, request()).unwrap();
     let keep = t.retain_device(&device).unwrap();
     let host = t.alloc_host(4096, request()).unwrap();
+    let producer = t.record_producer(epochs().src_gen).unwrap();
     let ticket = t
         .d2h(CopyOp {
             host,
             device,
             bytes: 4096,
             epochs: epochs(),
-            producer_fence: None,
+            producer_fence: Some(producer),
         })
         .unwrap();
     let graph = t.pin_destination_graph(&ticket).unwrap();
@@ -379,6 +425,7 @@ fn destination_drop_retention(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
     t.retire(&ticket, Some(consumer)).unwrap();
     assert_eq!(t.used().pinned, 4096);
     t.acknowledge(&ticket).unwrap();
+    t.release_producer(producer).unwrap();
     assert_eq!(t.used(), TierBudget::zero(1));
     println!(
         "PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement"
@@ -392,6 +439,7 @@ struct HandBack<'a> {
     lease: DeviceLease,
     graph: Option<GraphPin>,
     consumer: Option<FenceId>,
+    hold: ProducerHold,
     pointer: u64,
     bytes: Vec<u8>,
 }
@@ -403,7 +451,10 @@ impl v1::DeviceHandBackFixture for HandBack<'_> {
     fn advance(&mut self, step: v1::HandBackStep) {
         match step {
             v1::HandBackStep::Unknown => self.t.quarantine_observation(&self.ticket).unwrap(),
-            v1::HandBackStep::Producer => self.stream.synchronize().unwrap(),
+            v1::HandBackStep::Producer => {
+                self.hold.release();
+                self.stream.synchronize().unwrap();
+            }
             v1::HandBackStep::Recover => {
                 self.t.synchronize(&self.ticket).unwrap();
                 self.pointer = self
@@ -452,7 +503,9 @@ impl v1::DeviceHandBackFixture for HandBack<'_> {
 fn canonical_hand_back(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
     let bytes = vec![29u8; 4096];
     let (op, lease) = h2d(t, &bytes);
+    let hold = ProducerHold::new(stream);
     let ticket = t.h2d(op).unwrap();
+    assert!(!t.poll(&ticket).unwrap().producer_done);
     let graph = Some(t.pin_destination_graph(&ticket).unwrap());
     let mut fixture = HandBack {
         t,
@@ -461,6 +514,7 @@ fn canonical_hand_back(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
         lease,
         graph,
         consumer: None,
+        hold,
         pointer: 0,
         bytes,
     };
