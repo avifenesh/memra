@@ -1,0 +1,354 @@
+Review the following real Memra source for a study of speculative decoding. Explain its data flow, state ownership, round boundaries and correctness invariants. Identify what must be held constant when comparing depth policies. Ground the analysis in the supplied code.
+
+File: crates/memra-engine/src/round_stream.rs
+```rust
+//! ROUND-STREAM: the model-generic device machinery for pre-issued M-round speculative
+//! bursts with zero per-round host readbacks (extracted from the qwen spec loop 2026-07-12
+//! so the gemma/next-model loops reuse it instead of re-growing their own).
+//!
+//! The pieces that live here are pure device-buffer plumbing — every model-specific thing
+//! (the draft-chain graph, the verify trunk, commit semantics) stays in the caller:
+//!   - `StreamBufs`: the per-burst device buffers (verify tokens, break, pending, ring,
+//!     accept counters, device position) sized from (k, m_rounds).
+//!   - `kv_len_ptr_table`: the per-layer `kvl.len_d` pointer table the device rollback
+//!     kernel walks (pointers are stable for the cache's lifetime — cache.rs note).
+//!   - `drain_ring`: the one host sync per M rounds — reads the ring and appends tokens.
+//!
+//! The kernels these feed (`spec_accept_greedy_dc`, `spec_ring_commit`,
+//! `spec_rollback_stream`, `spec_seed_gather`, `spec_assemble_verify`) are already
+//! model-generic in lib.rs; this module is the buffer/lifecycle half.
+
+use crate::Engine;
+use crate::cache::Cache;
+use cudarc::driver::CudaSlice;
+use std::ops::Range;
+
+pub struct StreamBufs {
+    /// assembled verify tokens [k+1]
+    pub vtok_d: CudaSlice<u32>,
+    /// p-min break markers [2]
+    pub brk_d: CudaSlice<u32>,
+    /// pending (bonus-fold) token [1]
+    pub pend_d: CudaSlice<u32>,
+    /// last verify prediction [1]
+    pub last_pred_d: CudaSlice<u32>,
+    /// device position counter (rope/append base)
+    pub pos_ctr: CudaSlice<i32>,
+    /// round-start position (rollback anchor)
+    pub pos_start_d: CudaSlice<i32>,
+    /// committed-token ring [m*(k+1)+1] (slot 0 = count)
+    pub ring_d: CudaSlice<u32>,
+    /// device accept counters [2]
+    pub acc_d: CudaSlice<u32>,
+    pub m_rounds: usize,
+    pub k: usize,
+}
+
+impl StreamBufs {
+    pub fn new(e: &Engine, k: usize, m_rounds: usize) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(StreamBufs {
+            vtok_d: e.alloc_u32_zeroed(k + 1)?,
+            brk_d: e.alloc_u32_zeroed(2)?,
+            pend_d: e.alloc_u32_zeroed(1)?,
+            last_pred_d: e.alloc_u32_zeroed(1)?,
+            pos_ctr: e.htod_i32(&[0])?,
+            pos_start_d: e.htod_i32(&[0])?,
+            ring_d: e.alloc_u32_zeroed(m_rounds * (k + 1) + 1)?,
+            acc_d: e.alloc_u32_zeroed(2)?,
+            m_rounds,
+            k,
+        })
+    }
+
+    /// Drain the ring after a burst (THE one host sync per M rounds): returns the committed
+    /// tokens in order and resets nothing — the caller zeroes the ring count for the next
+    /// burst via `e.set_u32_one(&mut ring_d, 0)`.
+    pub fn drain_ring(&self, e: &Engine) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+        let h = e.dtoh_u32(&self.ring_d)?;
+        let cnt = (h[0] as usize).min(self.ring_d.len() - 1);
+        Ok(h[1..1 + cnt].to_vec())
+    }
+}
+
+/// Per-layer `kvl.len_d` device-pointer table (+ the position counter appended when
+/// `pos_ctr` is given) for `spec_rollback_stream`. Pointers are stable for the cache's
+/// lifetime; 0 marks layers without KV (linear-attention / KV-shared).
+pub fn kv_len_ptr_table(
+    e: &Engine,
+    cache: &Cache,
+    pos_ctr: Option<&CudaSlice<i32>>,
+) -> Result<CudaSlice<u64>, Box<dyn std::error::Error>> {
+    kv_len_ptr_table_range(e, cache, 0..cache.kv.len(), pos_ctr)
+}
+
+/// Stage-local twin of [`kv_len_ptr_table`]. Only pointers owned by `layers` enter the table,
+/// so a reconcile kernel launched through a PP stage's engine never dereferences another
+/// device's `len_d`. The returned table is dense over the requested range; callers pass
+/// `layers.len()` to the matching kernel.
+pub fn kv_len_ptr_table_range(
+    e: &Engine,
+    cache: &Cache,
+    layers: Range<usize>,
+    pos_ctr: Option<&CudaSlice<i32>>,
+) -> Result<CudaSlice<u64>, Box<dyn std::error::Error>> {
+    use cudarc::driver::DevicePtr;
+    assert!(layers.start <= layers.end && layers.end <= cache.kv.len());
+    let mut ptrs: Vec<u64> = cache
+        .kv
+        .get(layers)
+        .expect("validated KV layer range")
+        .iter()
+        .map(|kv| match kv.as_ref() {
+            Some(kvl) => {
+                let __s_g = e.stream();
+                let (p, _g) = kvl.len_d.device_ptr(&__s_g);
+                p
+            }
+            None => 0u64,
+        })
+        .collect();
+    if let Some(pc) = pos_ctr {
+        let __s_g = e.stream();
+        let (p, _g) = pc.device_ptr(&__s_g);
+        ptrs.push(p);
+    }
+    e.htod_u64(&ptrs)
+}
+
+```
+
+File: crates/memra-engine/src/learned_depth.rs
+```rust
+//! Experimental, session-owned depth selection from measured committed tokens / time.
+//!
+//! This is a new Memra policy, not a reproduction of the unavailable H/C/D prototype.
+//! Each depth is held for a block of complete rounds. All depths are measured before
+//! exploitation; periodic round-robin probes allow recovery after a workload change.
+//! Timing and token commitment stay with the caller. No model, sampler, or CUDA state
+//! is owned here, and no environment variable enables this policy in the server.
+
+use std::time::Duration;
+
+#[derive(Clone, Debug)]
+pub struct DepthStats {
+    pub depth: usize,
+    pub rounds: u64,
+    pub tokens: u64,
+    pub elapsed: Duration,
+    pub blocks: u64,
+    pub ewma_tokens_per_second: Option<f64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LearnedDepth {
+    stats: Vec<DepthStats>,
+    current: usize,
+    rounds_per_block: u64,
+    exploit_blocks: u64,
+    blocks_since_probe: u64,
+    next_probe: usize,
+    block_rounds: u64,
+    block_tokens: u64,
+    block_time: Duration,
+    switches: u64,
+}
+
+impl LearnedDepth {
+    pub fn new(
+        depths: Vec<usize>,
+        initial: usize,
+        rounds_per_block: u64,
+        exploit_blocks: u64,
+    ) -> Result<Self, &'static str> {
+        if depths.is_empty() || depths.contains(&0) || depths.windows(2).any(|w| w[0] >= w[1]) {
+            return Err("depths must be positive, unique, and ascending");
+        }
+        let current = depths
+            .iter()
+            .position(|&d| d == initial)
+            .ok_or("initial depth must be in the candidate set")?;
+        if rounds_per_block == 0 || exploit_blocks == 0 {
+            return Err("block size and exploitation interval must be positive");
+        }
+        Ok(Self {
+            stats: depths
+                .into_iter()
+                .map(|depth| DepthStats {
+                    depth,
+                    rounds: 0,
+                    tokens: 0,
+                    elapsed: Duration::ZERO,
+                    blocks: 0,
+                    ewma_tokens_per_second: None,
+                })
+                .collect(),
+            current,
+            rounds_per_block,
+            exploit_blocks,
+            blocks_since_probe: 0,
+            next_probe: 0,
+            block_rounds: 0,
+            block_tokens: 0,
+            block_time: Duration::ZERO,
+            switches: 0,
+        })
+    }
+
+    pub fn depth(&self) -> usize {
+        self.stats[self.current].depth
+    }
+
+    pub fn stats(&self) -> &[DepthStats] {
+        &self.stats
+    }
+
+    pub fn switches(&self) -> u64 {
+        self.switches
+    }
+
+    /// Record one successful, untruncated round at the selected depth. Failed or
+    /// terminally truncated rounds are not observations. Their cost still belongs
+    /// in the caller's end-to-end benchmark denominator.
+    pub fn observe(
+        &mut self,
+        depth: usize,
+        committed: usize,
+        elapsed: Duration,
+    ) -> Result<(), &'static str> {
+        if depth != self.depth() {
+            return Err("observation depth differs from the selected depth");
+        }
+        if committed == 0 || committed > depth || elapsed.is_zero() {
+            return Err("observation needs 1..=depth committed tokens and positive time");
+        }
+        let stat = &mut self.stats[self.current];
+        stat.rounds += 1;
+        stat.tokens += committed as u64;
+        stat.elapsed += elapsed;
+        self.block_rounds += 1;
+        self.block_tokens += committed as u64;
+        self.block_time += elapsed;
+        if self.block_rounds < self.rounds_per_block {
+            return Ok(());
+        }
+        // Pool tokens and elapsed time before division; averaging round rates
+        // overweights short rounds and is the wrong optimization objective.
+        let rate = self.block_tokens as f64 / self.block_time.as_secs_f64();
+        stat.ewma_tokens_per_second = Some(match stat.ewma_tokens_per_second {
+            Some(old) => 0.5 * old + 0.5 * rate,
+            None => rate,
+        });
+        stat.blocks += 1;
+        self.block_rounds = 0;
+        self.block_tokens = 0;
+        self.block_time = Duration::ZERO;
+
+        let next = if let Some(unseen) = self.stats.iter().position(|s| s.blocks == 0) {
+            unseen
+        } else if self.blocks_since_probe >= self.exploit_blocks {
+            let probe = self.next_probe;
+            self.next_probe = (self.next_probe + 1) % self.stats.len();
+            self.blocks_since_probe = 0;
+            probe
+        } else {
+            self.blocks_since_probe += 1;
+            let mut best = self.current;
+            for (index, candidate) in self.stats.iter().enumerate() {
+                if candidate.ewma_tokens_per_second.unwrap()
+                    > self.stats[best].ewma_tokens_per_second.unwrap() * 1.01
+                {
+                    best = index;
+                }
+            }
+            best
+        };
+        self.switches += u64::from(next != self.current);
+        self.current = next;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refuses_bad_configuration_and_observations_without_mutation() {
+        for depths in [vec![], vec![0, 2], vec![3, 3], vec![4, 3]] {
+            assert!(LearnedDepth::new(depths, 3, 2, 8).is_err());
+        }
+        assert!(LearnedDepth::new(vec![3, 4], 8, 2, 8).is_err());
+        assert!(LearnedDepth::new(vec![3, 4], 3, 0, 8).is_err());
+        let mut policy = LearnedDepth::new(vec![3, 4], 3, 2, 8).unwrap();
+        for (depth, tokens, time) in [
+            (4, 2, Duration::from_millis(1)),
+            (3, 0, Duration::from_millis(1)),
+            (3, 4, Duration::from_millis(1)),
+            (3, 2, Duration::ZERO),
+        ] {
+            assert!(policy.observe(depth, tokens, time).is_err());
+        }
+        assert_eq!(policy.stats()[0].rounds, 0);
+        assert_eq!(policy.depth(), 3);
+    }
+
+    #[test]
+    fn ranks_throughput_instead_of_acceptance_or_mean_round_rates() {
+        let mut policy = LearnedDepth::new(vec![3, 8], 3, 2, 8).unwrap();
+        policy.observe(3, 1, Duration::from_millis(1)).unwrap();
+        policy.observe(3, 1, Duration::from_millis(99)).unwrap();
+        assert_eq!(policy.stats()[0].ewma_tokens_per_second, Some(20.0));
+        assert_eq!(policy.depth(), 8);
+        // The deeper round commits more tokens, but at only 10 tok/s.
+        policy.observe(8, 8, Duration::from_millis(800)).unwrap();
+        policy.observe(8, 8, Duration::from_millis(800)).unwrap();
+        assert_eq!(policy.depth(), 3);
+    }
+
+    #[test]
+    fn explores_every_depth_and_tracks_a_changed_workload_in_both_directions() {
+        let mut policy = LearnedDepth::new(vec![3, 4, 6, 8], 8, 2, 3).unwrap();
+        for best in [8, 3, 6] {
+            let mut selections = [0u64; 9];
+            for _ in 0..2000 {
+                let d = policy.depth();
+                selections[d] += 1;
+                let millis = if d == best { 10 } else { 100 };
+                policy.observe(d, 2, Duration::from_millis(millis)).unwrap();
+            }
+            assert!(selections[best] > 1000, "did not adapt to depth {best}");
+        }
+        assert!(policy.stats().iter().all(|s| s.blocks > 1));
+        assert!(policy.switches() > 10);
+    }
+
+    #[test]
+    fn independent_sessions_and_partial_blocks_do_not_share_learning() {
+        let mut a = LearnedDepth::new(vec![3, 8], 8, 3, 8).unwrap();
+        let b = a.clone();
+        a.observe(8, 2, Duration::from_millis(10)).unwrap();
+        a.observe(8, 2, Duration::from_millis(10)).unwrap();
+        assert_eq!(a.depth(), 8);
+        assert_eq!(a.stats()[1].blocks, 0);
+        a.observe(8, 2, Duration::from_millis(10)).unwrap();
+        assert_eq!(a.depth(), 3);
+        assert_eq!(b.depth(), 8);
+        assert_eq!(b.stats()[1].rounds, 0);
+    }
+}
+
+```
+---TURN---
+Trace one partially accepted draft round through the supplied code. Explain the committed prefix, rejected suffix, bonus token, and cache state that the next round requires.
+---TURN---
+Design an experiment comparing fixed depth with learned depth while keeping the full vocabulary head unchanged. Explain the controls, sources of timing overhead and useful diagnostic counters.
+---TURN---
+Explain how greedy correctness gates and sampled performance measurements should differ. Give concrete checks for missing output, early EOS, length limits and invalid cache reuse.
+---TURN---
+Analyze the cost of shallow and deep MTP drafting. Separate per-step draft work, verification work, synchronization and useful tokens; show which measurements decide the tradeoff.
+---TURN---
+Describe a policy that adapts to a workload change halfway through a conversation. Discuss exploration cost, stale observations, the time scale of updates and an appropriate fixed-depth control.
+---TURN---
+Propose tests for state isolation between independent conversations and for reasoning being replayed separately from answer content. Explain which failures each test should expose.
+---TURN---
+Write a research review of the proposed measurement design. Summarize its strongest controls, remaining confounders and concrete follow-up experiments without assuming any speedup.

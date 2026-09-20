@@ -1,0 +1,283 @@
+{
+  "family": "gemma",
+  "planned_sets": 8,
+  "observed_sets": 8,
+  "complete_planned_matrix": true,
+  "audited_runs": 32,
+  "audited_turns": 512,
+  "initial_prompt_tokens": 4037,
+  "hardware": "name, uuid, driver_version, power.limit [W], power.max_limit [W]\nNVIDIA GeForce RTX 5090, GPU-2fd7b0a3-1626-4637-836a-e758ed899751, 595.71.05, 575.00 W, 575.00 W\n",
+  "binary_sha256": "cf80a950a38a7cf528231b203704eedeb3f8bb3c378a0343521407d9b032237a",
+  "workload_sha256": "37f02420635cee6379f54e5d56b7f4e59390d73319a12a522c9e2f23cbb728c2",
+  "pooled_e2e_tok_s": {
+    "fixed": 175.3251241584075,
+    "native": 188.07993380112757,
+    "measured": 187.5568733078687,
+    "learned": 188.88875584530342
+  },
+  "comparisons": {
+    "fixed": {
+      "pooled_change_percent": 7.736273823848028,
+      "median_pair_percent": 7.9132265758041775,
+      "wins": 8,
+      "pairs": [
+        {
+          "seed": 20261300,
+          "control_tok_s": 175.259234192,
+          "learned_tok_s": 189.73463883,
+          "change_percent": 8.259424791359017
+        },
+        {
+          "seed": 20261301,
+          "control_tok_s": 175.271412064,
+          "learned_tok_s": 189.131418479,
+          "change_percent": 7.907739346527909
+        },
+        {
+          "seed": 20261302,
+          "control_tok_s": 173.778345724,
+          "learned_tok_s": 187.852217151,
+          "change_percent": 8.098748649243404
+        },
+        {
+          "seed": 20261303,
+          "control_tok_s": 175.388295073,
+          "learned_tok_s": 187.971838124,
+          "change_percent": 7.174676648611289
+        },
+        {
+          "seed": 20261304,
+          "control_tok_s": 177.10205095,
+          "learned_tok_s": 192.382340807,
+          "change_percent": 8.627957595654244
+        },
+        {
+          "seed": 20261305,
+          "control_tok_s": 174.752631488,
+          "learned_tok_s": 186.57124445,
+          "change_percent": 6.763052928797575
+        },
+        {
+          "seed": 20261306,
+          "control_tok_s": 175.660418813,
+          "learned_tok_s": 188.251422692,
+          "change_percent": 7.167809324423735
+        },
+        {
+          "seed": 20261307,
+          "control_tok_s": 175.404988536,
+          "learned_tok_s": 189.294807578,
+          "change_percent": 7.918713805080446
+        }
+      ]
+    },
+    "native": {
+      "pooled_change_percent": 0.43004164656452737,
+      "median_pair_percent": 0.35741528814070556,
+      "wins": 6,
+      "pairs": [
+        {
+          "seed": 20261300,
+          "control_tok_s": 189.253154237,
+          "learned_tok_s": 189.73463883,
+          "change_percent": 0.2544129818819574
+        },
+        {
+          "seed": 20261301,
+          "control_tok_s": 188.049014173,
+          "learned_tok_s": 189.131418479,
+          "change_percent": 0.5755969052856802
+        },
+        {
+          "seed": 20261302,
+          "control_tok_s": 187.236305206,
+          "learned_tok_s": 187.852217151,
+          "change_percent": 0.3289489954004132
+        },
+        {
+          "seed": 20261303,
+          "control_tok_s": 188.813077508,
+          "learned_tok_s": 187.971838124,
+          "change_percent": -0.44554084658906534
+        },
+        {
+          "seed": 20261304,
+          "control_tok_s": 187.330219055,
+          "learned_tok_s": 192.382340807,
+          "change_percent": 2.696906979282776
+        },
+        {
+          "seed": 20261305,
+          "control_tok_s": 188.102813078,
+          "learned_tok_s": 186.57124445,
+          "change_percent": -0.8142188853735632
+        },
+        {
+          "seed": 20261306,
+          "control_tok_s": 187.527787501,
+          "learned_tok_s": 188.251422692,
+          "change_percent": 0.3858815808809979
+        },
+        {
+          "seed": 20261307,
+          "control_tok_s": 188.337374401,
+          "learned_tok_s": 189.294807578,
+          "change_percent": 0.5083606905135429
+        }
+      ]
+    },
+    "measured": {
+      "pooled_change_percent": 0.7101219560471606,
+      "median_pair_percent": 0.39931232645724624,
+      "wins": 6,
+      "pairs": [
+        {
+          "seed": 20261300,
+          "control_tok_s": 188.124161692,
+          "learned_tok_s": 189.73463883,
+          "change_percent": 0.8560713964199218
+        },
+        {
+          "seed": 20261301,
+          "control_tok_s": 187.525767928,
+          "learned_tok_s": 189.131418479,
+          "change_percent": 0.8562292898416368
+        },
+        {
+          "seed": 20261302,
+          "control_tok_s": 187.446328727,
+          "learned_tok_s": 187.852217151,
+          "change_percent": 0.21653580881337842
+        },
+        {
+          "seed": 20261303,
+          "control_tok_s": 188.610821442,
+          "learned_tok_s": 187.971838124,
+          "change_percent": -0.33878401732984065
+        },
+        {
+          "seed": 20261304,
+          "control_tok_s": 186.150736157,
+          "learned_tok_s": 192.382340807,
+          "change_percent": 3.34761214414121
+        },
+        {
+          "seed": 20261305,
+          "control_tok_s": 186.579494796,
+          "learned_tok_s": 186.57124445,
+          "change_percent": -0.0044218932037654035
+        },
+        {
+          "seed": 20261306,
+          "control_tok_s": 187.310914112,
+          "learned_tok_s": 188.251422692,
+          "change_percent": 0.502110933822908
+        },
+        {
+          "seed": 20261307,
+          "control_tok_s": 188.735181871,
+          "learned_tok_s": 189.294807578,
+          "change_percent": 0.2965137190915845
+        }
+      ]
+    }
+  },
+  "rounds": {
+    "fixed": {
+      "rounds": 42231,
+      "depth_histogram": {
+        "5": 42231
+      },
+      "mean_depth": 5.0,
+      "round_seconds": 633.534654744,
+      "mean_round_ms": 15.001649374724728,
+      "emitted_in_rounds": 129819,
+      "emitted_per_round": 3.0740214534346806,
+      "round_tokens_per_second": 204.9122317585887
+    },
+    "native": null,
+    "measured": {
+      "rounds": 53670,
+      "depth_histogram": {
+        "1": 13326,
+        "2": 17939,
+        "3": 12773,
+        "4": 6477,
+        "5": 3155
+      },
+      "mean_depth": 2.4074156884665547,
+      "round_seconds": 585.040825362,
+      "mean_round_ms": 10.900704776634992,
+      "emitted_in_rounds": 129714,
+      "emitted_per_round": 2.416880939072107,
+      "round_tokens_per_second": 221.71786032152224
+    },
+    "learned": {
+      "rounds": 50453,
+      "depth_histogram": {
+        "1": 2145,
+        "2": 18695,
+        "3": 16368,
+        "4": 9782,
+        "5": 3463
+      },
+      "mean_depth": 2.8755871801478605,
+      "round_seconds": 579.239251909,
+      "mean_round_ms": 11.480769268606426,
+      "emitted_in_rounds": 129570,
+      "emitted_per_round": 2.5681327175787367,
+      "round_tokens_per_second": 223.68995121269126
+    }
+  },
+  "learned_phases": {
+    "initial_exploration": {
+      "rounds": 1280,
+      "depth_histogram": {
+        "1": 256,
+        "2": 256,
+        "3": 256,
+        "4": 256,
+        "5": 256
+      },
+      "mean_depth": 3.0,
+      "round_seconds": 14.029614495,
+      "mean_round_ms": 10.96063632421875,
+      "emitted_in_rounds": 3396,
+      "emitted_per_round": 2.653125,
+      "round_tokens_per_second": 242.05939523215673
+    },
+    "periodic_probe": {
+      "rounds": 5319,
+      "depth_histogram": {
+        "1": 1169,
+        "2": 1075,
+        "3": 1027,
+        "4": 1024,
+        "5": 1024
+      },
+      "mean_depth": 2.935890204925738,
+      "round_seconds": 62.700415238,
+      "mean_round_ms": 11.788008128971612,
+      "emitted_in_rounds": 13419,
+      "emitted_per_round": 2.5228426395939088,
+      "round_tokens_per_second": 214.01772139887404
+    },
+    "exploitation": {
+      "rounds": 43854,
+      "depth_histogram": {
+        "1": 720,
+        "2": 17364,
+        "3": 15085,
+        "4": 8502,
+        "5": 2183
+      },
+      "mean_depth": 2.8646417658594427,
+      "round_seconds": 502.509222176,
+      "mean_round_ms": 11.458686144388198,
+      "emitted_in_rounds": 112755,
+      "emitted_per_round": 2.5711451634970586,
+      "round_tokens_per_second": 224.3839416752205
+    }
+  },
+  "phase_note": "Scheduling phases replayed and checked from eligible rounds. Phase rates are descriptive, not counterfactual no-probe speedups."
+}

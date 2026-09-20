@@ -760,9 +760,12 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
     )
 
 
-def evaluate(policy: Policy) -> List[Violation]:
+def evaluate(policy: Policy, pinned_paths: Iterable[str] = ()) -> List[Violation]:
     violations: List[Violation] = []
-    secret_candidates = secret_candidate_files(policy.secret_sources)
+    # A byte-level prefilter can miss strings formed when the full matcher drops
+    # invalid UTF-8 (notably in compressed evidence). Pins must be rechecked with
+    # the full matcher, for every rule, just as commit/ref scans check their blobs.
+    secret_candidates = secret_candidate_files(policy.secret_sources) | set(pinned_paths)
     for rel in tracked_files():
         full = ROOT / rel
         # Do not ask is_file() to follow a symlink. Python 3.12 raises PermissionError when an
@@ -914,7 +917,7 @@ def cmd_check(
             f"of {stats.get('candidates', 0)} prefiltered."
         )
     elif commits is None:
-        violations = evaluate(policy)
+        violations = evaluate(policy, (path for path, _digest in allowlist))
     else:
         violations = evaluate_commits(policy, commits)
     unmatched: List[Violation] = []
@@ -1116,7 +1119,7 @@ def cmd_seed(policy: Policy, force: bool) -> int:
 def cmd_verify(policy: Policy, prune: bool) -> int:
     allowlist = load_allowlist(ALLOWLIST_PATH)
     enforce_expiry_metadata(allowlist, policy)
-    live_violations = evaluate(policy)
+    live_violations = evaluate(policy, (path for path, _digest in allowlist))
     drifted = stale_entries(allowlist, live_violations)
     if not drifted:
         print(

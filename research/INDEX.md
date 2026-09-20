@@ -518,6 +518,7 @@ qwen2-tokenizer-20260920 | Literal Qwen2 split/BPE parity passes in HF and GGUF 
 
 release-coverage-546-20260920 | Native release battery PASS at a0a27c3f: 103 kernel cells executed, all 10 required, 7 named skips; Ornith and Qwen3.8 calibrated argmax and exact K=1..8 pass. | release-coverage-546-20260920/RESULTS.md
 
+mtp-learned-depth-20260920 | The learner lost to fixed K=3 on Qwen; Gemma improved over fixed K=5, with little extra benefit over native adaptation. | mtp-learned-depth-20260920/RESULTS.md
 api-include-usage-20260920 | PASS: opt-in and legacy SSE shapes, terminal failure CPU tests, and live cold/cached accounting parity on both OpenAI routes. | api-include-usage-20260920/README.md
 serving-musthaves-20260919 | "A serving engine is fit for real inference when ... every request gets the same bytes it would have gotten alone, first token in bounded time regardless of what its neighbours are prefilling, an honest bill ... never a silent 200 with nothing in it" — 40-row must-have audit of memra-server at 61be8b0d against the 2026 baseline and the program's own incident record; top gaps: prefill fairness default-OFF, health fault-injection, fleet-fatal panic policy, no serving-shape cell in the release battery. | serving-musthaves-20260919/MUSTHAVES.md
 api-stop-ids-20260920 | `stop_token_ids` serving gate PASS on gemma-4-12b: greedy prefix identical, `finish_reason: stop`, `completion_tokens == k`, stream parity, explicit EOS = baseline minus one; 716 server tests, clippy clean on the local 5090 | api-stop-ids-20260920/README.md

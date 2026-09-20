@@ -1,0 +1,25 @@
+START qwen-mtp-short-v1
+start seed=20261200 arm=native
+completed seed=20261200 arm=native tokens=2048
+start seed=20261200 arm=measured
+completed seed=20261200 arm=measured tokens=2048
+start seed=20261200 arm=fixed
+completed seed=20261200 arm=fixed tokens=2048
+start seed=20261200 arm=learned
+completed seed=20261200 arm=learned tokens=2048
+Traceback (most recent call last):
+  File "/root/memra-mtp-depth/research/mtp-learned-depth-20260920/run_study.py", line 212, in <module>
+    main()
+  File "/root/memra-mtp-depth/research/mtp-learned-depth-20260920/run_study.py", line 205, in main
+    audit_control_ids(a.out, seed, ['measured', 'fixed', 'learned'] if a.gate else ['measured'], turns=16 if a.family == 'gemma' else 8)
+  File "/root/memra-mtp-depth/research/mtp-learned-depth-20260920/run_study.py", line 55, in audit_control_ids
+    raise ValueError(f'{kind} identity failure: seed={seed}, turn={turn}, arm={arm}')
+ValueError: output identity failure: seed=20261200, turn=3, arm=fixed
+Traceback (most recent call last):
+  File "/root/run-mtp-campaign.py", line 96, in <module>
+    run(family, kind)
+  File "/root/run-mtp-campaign.py", line 82, in run
+    subprocess.run(cmd, check=True)
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['python3', '/root/memra-mtp-depth/research/mtp-learned-depth-20260920/run_study.py', '--family', 'qwen', '--binary', '/root/target-learned-d/release/mtp-depth-study', '--target', '/data/models/qwen-depth-20260920/target.gguf', '--artifact-manifest', '/data/models/qwen-depth-20260920/mtp-depth-artifacts.json', '--source-commit', '61176440918f9b45e4da9cb40d6a3244e82472b5', '--out', '/root/mtp-depth-records/qwen-mtp-short-v1', '--wait-lock', '--lock', '/tmp/memra-5090.lock', '--seed', '20261200', '--workload', '/root/memra-mtp-depth/research/mtp-learned-depth-20260920/workload-short.txt', '--max-new', '256', '--ctx', '16384', '--gate']' returned non-zero exit status 1.
