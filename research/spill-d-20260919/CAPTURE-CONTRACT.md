@@ -16,7 +16,7 @@ archived capture version 1 remains readable.
 | Each entry | `power.limit: string|null` | Raw CSV `power.limit [W]` value; e.g. `400.00 W`. Preserve `N/A`; null only when the column is unavailable. |
 | Each entry | `power.max_limit: string|null` | Raw CSV `power.max_limit [W]` value; e.g. `600.00 W`. Same unknown handling. |
 | Capture, both CELL rows in external-lock mode | `lock_proof: {path, bytes, sha256}` | Hash-bound collector `lock.json`; canonical inode metadata plus inherited-FD protocol. |
-| Capture/completed CELL | `status: executed-not-qualified|failed|refused` | Refused requires exit 2, no timeout and a last-line `REFUSED:` or `Error:` diagnostic; exact `failure_quote` must match. No status means qualified. |
+| Capture/completed CELL | `status: executed-not-qualified|failed|refused` | Refused requires exit 2, no timeout and a last-line `REFUSED: <reason>` or `kv-tier-gate: REFUSED: <reason>` diagnostic; exact `failure_quote` must match. Neither status means qualified. |
 
 The sampler queries `power.draw,power.limit,power.max_limit` every 250 ms. These
 limit fields are strings intentionally: they retain NVML's units and unknowns,
@@ -27,3 +27,37 @@ Consumers needing a numeric cap must explicitly parse watts and reject unknown
 or changing values for a fixed-envelope performance claim. A 400/600 W sample is
 restricted-power development evidence, never a full-power baseline. Empty or
 unavailable telemetry cannot establish a power envelope.
+
+## Day-8 explicit refusal token contract
+
+A refusal is exit **2**, not timed out, with a final diagnostic line matching
+`^(?:kv-tier-gate: )?REFUSED: .+`. The line is retained verbatim as `failure_quote`.
+Both B's original prefixed spelling and the new line-start `REFUSED:` spelling are
+accepted. A generic `Error:` with exit 2 is **failed**, not refused. A token embedded
+later in a line, an empty reason, a trailing non-diagnostic line, a different exit
+status, or a timeout is never a refusal. This changes classification, not acceptance:
+neither failed nor refused is a positive gate. Archived generic-error captures are
+not rewritten into refusals.
+
+## Day-8 storage command and filesystem binding
+
+The collector resolves literal `storage-bench roundtrip|restore OBJECT_DIR [BYTES]
+[buffered|uncached|direct]` argv, optional literal environment prefixes, and the
+canonical `bash -c` single-command wrapper
+(`shlex.join(shlex.split(script)) == script`). Opaque/noncanonical shell storage
+commands are rejected before execution. The resolved command requires
+`--storage-root` even when wrapped. Shell expansion, substitutions, redirects and
+compound commands are not a supported escape hatch.
+
+New storage captures carry `storage.object_binding` in the capture and **both**
+CELL rows: resolved root/object paths, stat device number, statfs filesystem id,
+and Linux mount id from `/proc/self/fdinfo`. `storage.object_argument` binds the
+original command's object argument. Before execution the backend object directory (or its existing
+parent for creation) must be at or beneath the resolved root and on the **same mount
+and filesystem**; symlink escapes and different nested mounts refuse. The same
+binding is checked after execution. A changed mount/path aborts completion (a
+start-only journal cannot validate). This is filesystem identity evidence, not
+NVMe proof. Existing findmnt/lsblk ancestry, raw hashes and explicit unproven
+opt-in still apply. Offline validation checks the recorded identity and command
+join without querying the reader's filesystem. Legacy captures lacking this
+additive binding remain legacy integrity evidence, never new filesystem proof.

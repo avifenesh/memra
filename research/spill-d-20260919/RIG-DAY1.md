@@ -1,4 +1,10 @@
-# Rented RTX 5090 runbook — D day 6
+# Rented RTX 5090 runbook — D day 8
+
+**Current adapter/legacy collector commands:** [DAY8-CELLS.md](DAY8-CELLS.md).
+That addendum supersedes the day-6 unapplied-fragment statement below: D's legacy
+scripts now include external-lock support. It adds A native transfer, B active
+refusal, C row-tier/prospective device-publish, and the G2 N=1/full-envelope split.
+The earlier receipt history and its failures are retained unchanged.
 
 **Runbook, not a rig receipt.** Minimum source: **`020d2047`**
 (`020d20479cd686835c0fb7743040947d0fc2723b`) plus this day-4 bootstrap/collector.

@@ -48,11 +48,9 @@ mod model {
     }
 }
 mod ple_oracle;
+use memra_tier::conformance;
 use memra_tier::{bank::*, contracts::*};
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
-#[allow(dead_code)]
-#[path = "../contracts/conformance.rs"]
-mod conformance;
 #[allow(dead_code)]
 #[path = "../contracts/support.rs"]
 mod support;
@@ -1407,3 +1405,63 @@ fn revision_v11_corrupt_sibling_and_row_namespace() {
 mod day4;
 
 mod ple_rows_native;
+
+mod device_rows;
+
+#[test]
+fn expert_dispatch_slru_preserves_ids_bytes_hits_and_refuses_unknown() {
+    let g = gov();
+    let mut entries = vec![];
+    let mut ids = BTreeMap::new();
+    for n in [9, 47] {
+        let mut l = layout(n as u64, 4, 16);
+        l.segments.truncate(1);
+        l.requirements.truncate(1);
+        let id = bank_id(n, &l);
+        entries.push((id.clone(), Some(record(l))));
+        ids.insert((2, 0, n as u16), id);
+    }
+    let bank = BankService::new(
+        Catalog::new(LayoutClass::Uniform, entries).unwrap(),
+        g.clone(),
+        Heat::default(),
+        Reader::default(),
+        CoalescingPolicy {
+            granularity: 1,
+            slot_bytes: 32,
+        },
+        limits(32),
+    )
+    .unwrap();
+    let mut req = request(bank.slru_metadata_bytes(2).unwrap(), Priority::Demand);
+    let metadata = g.borrow_mut().reserve(&req).unwrap();
+    let bank = bank
+        .with_slru(SlruPolicy::new(&[(16, 2)]).unwrap(), &metadata)
+        .unwrap();
+    req.bytes = TierBudget::zero(2);
+    let mut dispatch = SlruExpertDispatch::new(bank, ids.clone(), req, epochs()).unwrap();
+    assert_eq!(dispatch.validate((2, 0, 21), 16), Err(Error::NotFound));
+    assert_eq!(dispatch.validate((2, 0, 9), 15), Err(Error::InvalidLayout));
+    for n in [9, 47, 9, 47] {
+        let demand = dispatch.demand((2, 0, n), 16).unwrap();
+        assert_eq!(demand.lease.id(), &ids[&(2, 0, n)]);
+        assert_eq!(
+            &*demand.lease.resource::<Vec<u8>>().unwrap(),
+            &expected(demand.lease.layout())
+        );
+        dispatch.finish(demand).unwrap();
+    }
+    assert_eq!(dispatch.bank().reader().calls.len(), 2);
+    let mut bank = dispatch.into_bank();
+    for id in ids.values() {
+        bank.evict_cached(id).unwrap();
+    }
+    bank.collect_evicted().unwrap();
+    drop(bank);
+    g.borrow_mut().release(&metadata).unwrap();
+    assert_eq!(g.borrow().used, TierBudget::zero(2));
+}
+
+mod owner_proxy;
+
+mod day8;
