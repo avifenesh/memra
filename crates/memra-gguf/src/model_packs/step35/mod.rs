@@ -1,11 +1,15 @@
 use super::*;
 use crate::model_plan::{AttentionPlan, DraftSourcePlan, RopeFactors, SamplingDefaultsPlan};
+pub(crate) mod tensors;
 
 pub static PACK: ModelPack = ModelPack {
     family: "step35",
     aliases: &["step35", "step37", "step-3.7-flash"],
     config_layout: ConfigLayout::Flat,
-    tokenizer_sources: &[TokenizerSource::GgufMetadata],
+    tokenizer_sources: &[
+        TokenizerSource::GgufMetadata,
+        TokenizerSource::TokenizerJson,
+    ],
     template: TemplateContract::ArtifactRequired,
     support: None,
     gates: &[
