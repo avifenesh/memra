@@ -1,4 +1,4 @@
-# Integration — day 10 (`lane/spill-integ5-20260920`, replay onto current `main`)
+# Integration: day 10 (`lane/spill-integ5-20260920`, replay onto current `main`)
 
 Lead: successor of @agent-c07799 (session moved from the operator Mac to the Linux rig 2026-09-20 ~16:00Z).
 
@@ -49,7 +49,7 @@ changes are not on that path (KV writer seam, gate binaries, expert bank qualifi
 ## Second replay: `origin/main` moved again (`f79b3e57` → `8a1559b48`: #567 include_usage, #520 must-haves)
 `git merge --no-ff origin/main` → `1fbdda97`; `git diff 5b3d0b08 1fbdda97 -- crates/memra-engine crates/memra-kv
 crates/memra-tier` is EMPTY (main added one memra-server file), so the 5090 battery above stands for the engine
-crates. CPU battery rerun on `1fbdda97`: `integration-day10/cpu-battery-remerge/` — fmt, 261 tier/kv tests, clippy
+crates. CPU battery rerun on `1fbdda97`: `integration-day10/cpu-battery-remerge/`, fmt, 261 tier/kv tests, clippy
 (engine, server, tier, kv, gguf) clean, flags census 864, publish census 12/12, docs-registry census, 78 collector
 tests, perf board, `git diff --check`: all `rc=0`.
 
@@ -85,7 +85,7 @@ session deferred the same call on #565 to the owner; the difference here is that
 - E `4d89a243`, F `7644c41f` unchanged.
 
 ## Lead rulings, day 10
-1. **A — canonical v1.3 native bindings (scope, no schedule edits).** Implement in `CudaTransfers`: (a) per-side
+1. **A, canonical v1.3 native bindings (scope, no schedule edits).** Implement in `CudaTransfers`: (a) per-side
    graph pins (source pin, destination pin) replacing the ticket-wide `pin_graph`; `retire_source` refuses only
    while a SOURCE pin or source consumer is live; (b) destination lifetime bound to acknowledgement plus explicit
    destination-consumer retirement, not to the whole-ticket host lease; (c) call the frozen
@@ -94,12 +94,12 @@ session deferred the same call on #565 to the owner; the difference here is that
    through the collector. Until all-v1.3 PASS the label stays HELD. io_uring stays DEFERRED: the N=1 pread rows
    (O_DIRECT 16 MiB cold 3,335 MiB/s vs buffered cold 2,065 MiB/s, virtio block device) are development plumbing,
    not an admission.
-2. **C — bank budget refusal: option A.** Keep the `MEMRA_MOE_SLOTS` clamp; add `--expert-bank-gpu-bytes=N` to the
+2. **C, bank budget refusal: option A.** Keep the `MEMRA_MOE_SLOTS` clamp; add `--expert-bank-gpu-bytes=N` to the
    gate installer as a PARAMETER of `install_expert_bank_gate` (the same commit moves `--expert-bank-host-bytes`
    from `std::env::args()` scanning to a parameter, self-review nit 4); refuse below 8 slots or above the hard
    ceiling before load finishes with a `REFUSED:` line, exit 2. No FLAGS row (CLI door), decide-by 2026-10-04 with
    the MoeSlotCache door. Option C (typed `CacheBudget`) is the right shape only if the door wins its decide-by.
-3. **B — 32k residual.** The verdict stays `not G1 PASS` until the mapped-VA diagnostic classifies the one granule
+3. **B, 32k residual.** The verdict stays `not G1 PASS` until the mapped-VA diagnostic classifies the one granule
    on the PRO card; the 5090 spare-VA probe is not corresponding evidence (B's own finding). No relaxation.
 4. **Concurrency.** Never more than two background agents on this rig (global rule, OOM 2026-09-18); with A and B
    live on the Mac, this rig runs at most two of C/D/E/F and never a letter the Mac holds. Check
