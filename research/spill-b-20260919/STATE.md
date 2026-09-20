@@ -1,13 +1,13 @@
 # WP-B day 10 checkpoint
 - Branch: lane/spill-b-20260919; integ5 merge 8ef562b12f16fd3378f866939be347df3a6d3d96 pushed.
 - Native checkout: /root/wt-b; currently still at that merge (original gate, no injection).
-- Next running cell: tmux b-day10-pooled8; collector pooled-8192; /root/spill-receipts/b-day10/pooled-8192.
+- Next: native diagnostic-build in tmux b-day10-diagnostic-build; receipts /root/spill-receipts/b-day10/diagnostic-build.
 - Runner: /root/b-day10-cell.sh (tracked copy run-day10-cell.sh); canonical pro-single collector; bounded lock retries.
 - Finished: original native build, 8k/32k baselines and ACTIVE-8K G1 PASS (600/600 W); receipts pushed.
 - 8k receipts + build are preserved in pro-single-day10/ in this checkpoint; raw logits losslessly gzip archived.
 - Diagnostic isolation: gate temporarily keeps original empty-plane swap; native Cache injection API implemented but not engaged.
 - Mac kv+tier 262 tests/check/cross-check/clippy/fmt/flags passed; engine Mac blocked by missing nvcc (log saved).
-- Next: collect/push original 8k pooled control BEFORE updating native source; 32k VMM has 1-granule unclassified residual.
+- Original cells all pushed: baselines, VMM8 PASS, VMM32 unclassified 1-granule non-PASS, pooled8 not-applicable-pooled.
 - Then pull/build/run diagnostic 32k; restore gate file from ef0fc91d2, commit/push/build, then injected 8k.
 - Add DAY10.md, BOX3 baseline hashes, verify-day10.py and raw manifest; push after every cell.
 - Decision: prior 5090 probe freed never-mapped VA only; new nonzero PRO metadata class cannot satisfy BOTH-card evidence.
