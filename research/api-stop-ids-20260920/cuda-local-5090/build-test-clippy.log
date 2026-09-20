@@ -1,0 +1,80 @@
+== start 2026-09-20T14:33:46Z HEAD=74abaf40a
+== cargo test --release -p memra-server --lib
+test worker::tests::spec_path_accounts_tokens_and_timing_per_emitted_token ... ok
+test worker::tests::spec_reserve_keeps_the_full_transient_floor ... ok
+test worker::tests::spec_restore_conversion_rules_are_pinned ... ok
+test worker::tests::spec_restore_load_guard_defaults_on ... ok
+test worker::tests::spec_restore_sampled_door_defaults_on ... ok
+test worker::tests::spec_telemetry_window_aggregates_and_evicts_by_age ... ok
+test worker::tests::stable_boundary_arm_is_deepest_wins_and_floor_checked ... ok
+test worker::tests::step35_without_drafter_warns_and_names_the_attach_spelling ... ok
+test worker::tests::step_oom_fault_consume_counts_down_and_latches_off ... ok
+test worker::tests::park_compact_probe_and_park_site_wiring_is_real ... ok
+test worker::tests::step_oom_fault_msg_is_a_quoted_cuda_oom_naming_the_door ... ok
+test worker::tests::pause_demote_wiring_arms_fires_waits_and_publishes ... ok
+test worker::tests::step_oom_parkable_refuses_once_anything_streamed ... ok
+test worker::tests::step_oom_fault_door_injects_only_at_the_step_dispatch ... ok
+test worker::tests::step_tp8_admission_charges_every_rank_and_outstanding_lazy_sidecars ... ok
+test worker::tests::stop_token_ids_fence_all_spec_round_partitions_before_decode_or_counting ... ok
+test worker::tests::stable_boundary_and_host_probe_wiring ... ok
+test worker::tests::stop_token_ids_select_the_visible_prefix_and_stop_reason ... ok
+test worker::tests::streaming_utf8_waits_for_a_complete_multibyte_sequence ... ok
+test worker::tests::streaming_utf8_consumes_truly_invalid_bytes_once ... ok
+test worker::tests::prompt_source_limit_rejects_before_tokenizer_input_is_built ... ok
+test worker::tests::the_dead_prime_kill_switch_cannot_boot_a_serving_step37 ... ok
+test worker::tests::spec_max_prompt_cap_is_wired_after_the_route_predicate ... ok
+test worker::tests::the_open_output_arm_charges_the_envelope_off_the_door_and_the_output_on_it ... ok
+test worker::tests::the_penalised_receipt_fires_only_when_the_penalty_flipped_the_route ... ok
+test worker::tests::tail_publication_is_gated_on_the_restore_flag ... ok
+test worker::tests::the_removed_bank_v2_doors_cannot_boot_a_server ... ok
+test worker::tests::the_memory_admission_door_is_wired_at_the_admission_seam ... ok
+test worker::tests::the_restored_bank_doors_are_not_caught_by_the_legacy_guard ... ok
+test worker::tests::step_oom_park_guard_reads_the_streamed_marker_every_flush_advances ... ok
+test worker::tests::the_route_reason_agrees_with_the_route ... ok
+test worker::tests::step_oom_teardown_reclaims_before_trim ... ok
+test worker::tests::the_shape_guard_flips_the_route_and_re_enables_the_prefix_probe ... ok
+test worker::tests::tp_prefix_gates_cover_every_arm ... ok
+test worker::tests::worker_device_defaults_to_cuda_visible_zero_and_follows_the_pp_head_stage ... ok
+test worker::tests::worker_device_rejects_an_invalid_pp_device ... ok
+test worker::tests::zero_length_nextn_layer_is_absent_not_corrupt ... ok
+test worker::tests::the_restore_guard_admits_only_carrying_entries_and_only_under_the_flag ... ok
+test worker::vision_special_guard_tests::exact_render_budget_admits ... ok
+test worker::vision_special_guard_tests::extra_placeholder_beside_a_real_run_refuses ... ok
+test worker::vision_special_guard_tests::text_literal_becomes_special_id_and_guard_refuses ... ok
+test worker::vision_special_guard_tests::text_only_special_ids_refuse_by_name ... ok
+test worker::tests::spec_penalty_and_warm_doors_are_wired_in_comment_stripped_source ... ok
+test worker::tests::the_reuse_pool_probe_yields_to_a_paid_prefix_restore ... ok
+test worker::tests::the_purge_drain_invokes_both_tiers_and_the_handle_sends_the_command ... ok
+test worker::tests::suffix_prime_carveout_wiring_is_live_in_comment_stripped_source ... ok
+test worker::vision_placement_admissibility_tests::run_decides_placement_over_all_four_towers_and_derives_both_statics ... ok
+test worker::vision_placement_admissibility_tests::the_door_is_resolved_once_on_the_boot_path_and_threaded_into_the_shared_decision ... ok
+test tests::committed_prefill_sends_a_real_keepalive_before_any_generated_token ... ok
+test worker::tests::admit_predict_enforce_refuses_explicit_tp_ep_boot ... ok
+test worker::tests::admit_predict_enforce_refuses_automatic_ep_boot ... ok
+test worker::tests::admit_predict_enforce_refuses_pp_boot ... ok
+test worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress ... ok
+test worker::tests::prefix_cache_eviction_large_pool_flush_smoke ... ok
+test worker::tests::admit_predict_enforce_boot_single_gpu ... ok
+test tests::streaming_prefill_config_is_wired_in_a_fresh_process ... ok
+test worker::tests::admit_predict_enforce_refuses_env_unset_after_load_boot ... ok
+
+test result: ok. 716 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 5.55s
+
+test rc=0
+== cargo clippy --release --all-targets -- -D warnings
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-build/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 7.20s
+clippy rc=0
+== cargo build --release -p memra-server
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-build/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 13.76s
+build rc=0
+total 65864
+drwxrwxr-x 2 avifenesh avifenesh     4096 Sep 20 17:34 .
+drwxrwxr-x 4 avifenesh avifenesh     4096 Sep 20 17:34 ..
+-rwxrwxr-x 1 avifenesh avifenesh 67470824 Sep 20 17:34 memra-server
+== DONE 2026-09-20T14:34:31Z

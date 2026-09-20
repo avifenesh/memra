@@ -590,6 +590,8 @@ live-lease pressure as `prefix_cache_skips_pinned`; the first refusal is also a 
 
 ## OpenAI tools surface (serve-tools lane, 2026-08-02)
 
+`POST /v1/tokenize` and `/v1/detokenize` provide CPU-only prompt sizing and token inspection; the messages form shares chat's template/accounting path ([schemas](API-SURFACES.md#v1tokenize-and-v1detokenize-token-inspection)).
+
 **STANDARD-SURFACE CONTRACT (2026-08-17).** Every model this engine serves to
 customers speaks the same full surface, identically: the three wire formats
 (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`) and the tools surface
@@ -859,6 +861,8 @@ key off this id and must agree on one spelling. Rules:
 second public name for a model.
 
 ## OpenAI compatibility contract (serve-compat lane, 2026-08-03)
+
+- **Token-id stops:** chat/completions accept `stop_token_ids` (up to 16 vocabulary-validated u32 ids); the first raw match ends with `finish_reason: "stop"`, excluding the matching id and speculative tail from output and `usage.completion_tokens` (see [API surfaces](API-SURFACES.md#token-id-stops-on-chat-and-completions)).
 
 The five gap-scan listing-blockers (`research/gap-scan-20260802/REPORT.md`), fixed and
 gated by the official `openai` Python SDK against a live server

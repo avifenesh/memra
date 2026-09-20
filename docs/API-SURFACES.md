@@ -33,6 +33,46 @@ prompt tokens and any speculative acceptance fields) before `[DONE]`. Absent/fal
 preserves the legacy stream byte shape: usage appears on the choices-bearing finish
 chunk, not on content chunks. Failed streams keep their error + `[DONE]` ending,
 without fabricating a successful terminal usage chunk.
+## Token-id stops on chat and completions
+`POST /v1/chat/completions` and `POST /v1/completions` accept optional
+`stop_token_ids: [u32]` (default `[]`, at most 16 entries). A longer list or an id
+outside the loaded model's vocabulary returns HTTP 400 `invalid_request_error`
+with `param: "stop_token_ids"`. Vocabulary validation follows `prompt_ids` when
+model vocabulary metadata is unknown.
+Matching uses the raw sampled/accepted id **before detokenization**. The first
+matching id ends generation with `finish_reason: "stop"`; that id and any later
+ids in its speculative burst are neither emitted nor included in
+`usage.completion_tokens`. Explicit token stops take precedence over EOS (ordinary
+EOS accounting is unchanged when not explicitly listed). This applies to streaming
+and non-streaming responses. String `stop` remains independently supported.
+## `/v1/tokenize` and `/v1/detokenize`: token inspection
+Both are CPU-only `POST` endpoints using the same bearer authentication, 192 MiB
+body ceiling and bounded body-admission pools as chat completions, and they take the
+same per-tenant request slot (the `x-ratelimit-*` trio, a named 429 at the key's
+concurrency cap). Rendering runs off the async workers. They do not queue GPU work or
+bill generation usage.
+- `/v1/tokenize`: `{"model":"id","prompt":"text"}` or
+  `{"model":"id","messages":[...],"tools":[...],"chat_template_kwargs":{...},"add_generation_prompt":true}`.
+  Returns `{"tokens":[...],"count":N,"max_model_len":...}`. Send exactly one of
+  `prompt` and `messages`; the other chat fields are optional and require `messages`.
+  Text messages use chat completion's semantic builder and prompt-accounting renderer,
+  including tools and model metadata defaults. `add_generation_prompt` defaults to
+  `true`, matching chat's billed `prompt_tokens`; `false` omits the generation suffix.
+  Image/video messages are explicitly refused, not partially counted. Raw prompts parse literal
+  special tokens; `add_special_tokens` (default `true`, prompt form only) adds the model's BOS
+  exactly as `/v1/completions` does, so the default `count` is that route's billed
+  `prompt_tokens`, and `false` gives the reversible ids that `/v1/detokenize` returns as the
+  exact input. `max_model_len` is the context cap advertised
+  by `/v1/models` (null when unknown), not a separate guessed limit.
+- `/v1/detokenize`: `{"model":"id","tokens":[0,1,...]}` returns `{"prompt":"text"}`.
+  Control tokens decode to their literal strings. OOV ids receive the same named
+  HTTP 400 (`param: "prompt_ids"`) as raw-id completions.
+Unknown models use chat's HTTP 400 `model_not_found` error (`param: "model"`).
+Errors are OpenAI-shaped; handler responses carry `x-request-id` and echo a supplied
+request id. Token inspection uses the worker's verified tokenizer source, including
+GGUF tokenizer overrides for HF-directory models, even without prepaid enforcement. The
+DSv4 directory route renders through the same plain-versus-tools predicate as the worker and
+this endpoint, so the prompt it serves is the prompt counted here.
 
 ## `/v1/messages`: Anthropic Messages API
 

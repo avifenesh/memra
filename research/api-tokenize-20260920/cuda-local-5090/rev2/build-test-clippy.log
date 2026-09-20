@@ -1,0 +1,14 @@
+== restart after cargo clean -p memra-gguf -p memra-engine -p memra-server
+== start 2026-09-20T16:43:09Z HEAD=9012e3f2c+fixes
+== cargo test --release -p memra-server --lib
+test result: ok. 725 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 5.68s
+test rc=0
+== cargo clippy --release --all-targets -- -D warnings
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+clippy rc=0
+== cargo build --release -p memra-server
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-api-tokenize/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 13.60s
+build rc=0
+== DONE 2026-09-20T16:48:50Z
