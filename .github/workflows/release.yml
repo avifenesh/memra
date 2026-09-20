@@ -79,6 +79,9 @@ jobs:
       - name: Install CUDA 13.1 (nvcc + headers)
         run: tools/install-cuda-ci.sh
 
+      - name: Install compiler input isolation
+        run: sudo apt-get update -qq && sudo apt-get install -y bubblewrap
+
       # Release binaries build on the repo-root rust-toolchain.toml pin, named explicitly
       # here so the exact toolchain is pre-installed. Floating stable meant the same tag's
       # rebuild depended on whatever stable the runner had that day — which is what the
@@ -91,7 +94,11 @@ jobs:
           key: ${{ matrix.os }}-sm${{ matrix.cuda_arch }}
 
       - name: Build
-        run: cargo build --release --locked --bins
+        run: |
+          python3 tools/qualify-release.py build --expected-head "$(git rev-parse HEAD)" \
+            --out "$RUNNER_TEMP/qualified-build" --nvcc /usr/local/cuda-13.1/bin/nvcc --bwrap /usr/bin/bwrap
+          mkdir -p target/release
+          cp "$RUNNER_TEMP/qualified-build/target/release/"{kernel-check,run-gen,run-spec,argmax-margin-probe,memra-server,tok-parity} target/release/
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: ${{ matrix.cuda_arch }}

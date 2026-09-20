@@ -273,6 +273,45 @@ def validate_lease(lease, run):
             "hardware observation and lease differ")
 
 
+def validate_build(build, source, source_reference, evidence):
+    import release_input_view as view
+    require(build["schema"] == "memra-native-build-v3" and build["exit_code"] == 0
+            and build["source"] == source_reference and evidence.obj(source_reference) == source
+            and build["cuda_arch"] == "120a"
+            and build["docs_rs"] is False and build["cuda_visible_devices"] == ""
+            and build["rustc"] and build["nvcc"] and build["command"], "invalid native build provenance")
+    recipe = build["recipe"]
+    require(recipe["policy"] == "controlled-cargo-v3" and recipe["cargo_home"] == "fresh-config-free"
+            and recipe["checkout"] == view.POLICY
+            and recipe["build_source"] == "fingerprinted-input-view"
+            and recipe["cargo_config"] == "tracked-jobs-only", "uncontrolled native build recipe")
+    require(recipe["sandbox"]["policy"] == view.SANDBOX_POLICY
+            and recipe["sandbox"]["version"].startswith("bubblewrap "), "compiler filesystem isolation missing")
+    validate_identity(recipe["sandbox"]["executable"], "compiler sandbox")
+    require(build["input_view_before"] == build["input_view_after"] == view.identity(source),
+            "compiler input view changed or does not match the source")
+    require(isinstance(build["compiler_environment"], dict)
+            and all(isinstance(v, str) and SHA.fullmatch(v) for v in build["compiler_environment"].values()),
+            "invalid compiler environment identities")
+    for name, value in {"CUDA_VISIBLE_DEVICES": "", "MEMRA_CUDA_ARCH": "120a", "CARGO_HOME": "/cargo",
+                        "CARGO_TARGET_DIR": "/target", "RUSTC": "/toolchain/bin/rustc"}.items():
+        require(build["compiler_environment"].get(name) == digest(value.encode()),
+                f"uncontrolled compiler environment: {name}")
+    require(set(recipe["compilers"]) == {"cargo", "rustc", "nvcc"}, "missing compiler identities")
+    for name, identity in recipe["compilers"].items():
+        validate_identity(identity, name)
+    require(build["source_before"] == build["source_after"] == source["inputs_sha256"],
+            "build source changed during compilation")
+    require(build["platform"]["machine"] == "x86_64" and build["platform"]["profile"]
+            and build["platform"]["glibc"], "native build platform missing")
+    evidence.bound(build["log"])
+    evidence.bound(build["fetch_log"])
+    require(set(build["binaries"]) == set(BINARIES), "native binary inventory incomplete")
+    for name, value in build["binaries"].items():
+        validate_identity(value, name)
+        require(value.get("format") == "ELF-x86_64", f"non-native binary: {name}")
+
+
 def validate_record(record, evidence, repo, head, binaries=None, models=None, hardware=None):
     require(isinstance(record, dict), "record must be a JSON object")
     require(record.get("schema") == "memra-release-qualification-v1" and record.get("status") == "qualified",
@@ -287,27 +326,7 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
     run = evidence.obj(record["run"])
     lease = evidence.obj(record["lease"])
     proof = verify_source(source, repo, head)
-    require(build["schema"] == "memra-native-build-v2" and build["exit_code"] == 0
-            and build["source"] == record["source"] and build["cuda_arch"] == "120a"
-            and build["docs_rs"] is False and build["cuda_visible_devices"] == ""
-            and build["rustc"] and build["nvcc"] and build["command"], "invalid native build provenance")
-    recipe = build["recipe"]
-    require(recipe["policy"] == "controlled-cargo-v2" and recipe["cargo_home"] == "fresh-config-free"
-            and recipe["checkout"] == "resolved-git-blobs-modes-v2"
-            and recipe["build_source"] == "owned-git-checkout"
-            and recipe["cargo_config"] == "tracked-jobs-only", "uncontrolled native build recipe")
-    require(set(recipe["compilers"]) == {"cargo", "rustc", "nvcc"}, "missing compiler identities")
-    for name, identity in recipe["compilers"].items():
-        validate_identity(identity, name)
-    require(build["source_before"] == build["source_after"] == source["inputs_sha256"],
-            "build source changed during compilation")
-    require(build["platform"]["machine"] == "x86_64" and build["platform"]["profile"]
-            and build["platform"]["glibc"], "native build platform missing")
-    evidence.bound(build["log"])
-    require(set(build["binaries"]) == set(BINARIES), "native binary inventory incomplete")
-    for name, value in build["binaries"].items():
-        validate_identity(value, name)
-        require(value.get("format") == "ELF-x86_64", f"non-native binary: {name}")
+    validate_build(build, source, record["source"], evidence)
     require(run["schema"] == "memra-native-release-run-v1" and run["exit_code"] == 0,
             "battery did not exit successfully")
     require(run["source_before"] == run["source_after"] == source["inputs_sha256"],

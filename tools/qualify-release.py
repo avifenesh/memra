@@ -28,6 +28,7 @@ sys.dont_write_bytecode = True
 
 import release_qualification as q
 import release_inputs
+import release_input_view
 
 
 def write(path, value):
@@ -102,18 +103,21 @@ def platform_identity():
 
 
 def prepare_build_source(repo, expected, out):
-    build_source = out / "source"
-    # Cargo only sees a fresh Git-defined checkout, never ignored files or index hints
-    # from the caller's working directory. Hooks are disabled only for this owned clone.
+    provenance = out / "provenance"
+    # Keep the full immutable checkout outside the compiler-visible input view.
     subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "clone", "--shared", "--no-checkout",
-                    str(repo), str(build_source)], check=True)
-    subprocess.run(["git", "-C", str(build_source), "-c", "core.hooksPath=/dev/null",
+                    str(repo), str(provenance)], check=True)
+    subprocess.run(["git", "-C", str(provenance), "-c", "core.hooksPath=/dev/null",
                     "checkout", "--detach", expected["commit"]], check=True)
-    q.require(clean_source(build_source) == expected, "owned source checkout differs from requested Git input")
-    return build_source
+    q.require(clean_source(provenance) == expected, "owned provenance differs from requested Git input")
+    return release_input_view.materialize(provenance, expected, out / "source")
 
 
 def build(args):
+    q.require(sys.platform == "linux", "controlled native builds require Linux input isolation")
+    bwrap = args.bwrap or shutil.which("bwrap")
+    q.require(bwrap, "controlled native builds require bubblewrap; no unisolated fallback")
+    bwrap = Path(bwrap).resolve()
     source = clean_source(args.repo)
     q.require(source["commit"] == args.expected_head, "build checkout differs from requested source")
     q.require(not args.out.is_relative_to(args.repo), "build output/source staging must be outside the input checkout")
@@ -123,21 +127,40 @@ def build(args):
     rustc = Path(subprocess.check_output(["rustup", "which", "--toolchain", "1.97.1", "rustc"], text=True).strip())
     cargo = Path(subprocess.check_output(["rustup", "which", "--toolchain", "1.97.1", "cargo"], text=True).strip())
     env = build_environment(args.out, args.nvcc.resolve(), rustc)
-    command = [str(cargo), "build", "--release", "--locked", "--jobs", str(args.jobs),
+    q.require(cargo.parent.parent == rustc.parent.parent, "cargo/rustc toolchain roots differ")
+    # Fetching dependencies never executes workspace build scripts. Compilation is
+    # offline inside the isolated view, so it cannot fetch excluded provenance.
+    with (args.out / "fetch.log").open("w") as log:
+        fetch = subprocess.run([str(cargo), "fetch", "--locked", "--target", "x86_64-unknown-linux-gnu"],
+                               cwd=build_source, env=env, stdout=log, stderr=subprocess.STDOUT)
+    q.require(fetch.returncode == 0, "dependency fetch failed; fetch.log retained")
+    hidden = [args.repo, args.out / "provenance"]
+    for option in ("--git-dir", "--git-common-dir"):
+        path = Path(q.git(args.repo, "rev-parse", option).decode().strip())
+        hidden.append(path if path.is_absolute() else args.repo / path)
+    prefix, compiler_env = release_input_view.sandbox(build_source, args.out, rustc.parent.parent,
+        args.nvcc.resolve().parent.parent, env, bwrap, hidden)
+    command = prefix + ["/toolchain/bin/cargo", "build", "--offline", "--release", "--locked", "--jobs", str(args.jobs),
                "-p", "memra-engine", "--bin", "kernel-check", "--bin", "run-gen", "--bin", "run-spec",
                "--bin", "argmax-margin-probe", "-p", "memra-server", "--bin", "memra-server",
                "-p", "memra-tokenizer", "--bin", "tok-parity"]
     write(args.out / "source.json", source)
-    result = {"schema": "memra-native-build-v2", "source": reference(args.out, "source.json"),
+    result = {"schema": "memra-native-build-v3", "source": reference(args.out, "source.json"),
               "source_before": source["inputs_sha256"], "command": command,
               "docs_rs": "DOCS_RS" in env, "cuda_arch": env["MEMRA_CUDA_ARCH"],
               "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"], "platform": platform_identity(),
-              "recipe": {"policy": "controlled-cargo-v2", "cargo_home": "fresh-config-free",
-                         "checkout": "resolved-git-blobs-modes-v2", "build_source": "owned-git-checkout",
+              "recipe": {"policy": "controlled-cargo-v3", "cargo_home": "fresh-config-free",
+                         "checkout": release_input_view.POLICY, "build_source": "fingerprinted-input-view",
                          "cargo_config": "tracked-jobs-only",
+                         "sandbox": {"policy": release_input_view.SANDBOX_POLICY,
+                                     "executable": q.file_identity(bwrap),
+                                     "version": subprocess.check_output([str(bwrap), "--version"], env=env, text=True).strip()},
                          "compilers": {"cargo": q.file_identity(cargo), "rustc": q.file_identity(rustc),
                                        "nvcc": q.file_identity(args.nvcc.resolve())}},
-              "numeric_environment": numeric_environment(env),
+              "input_view_before": release_input_view.verify(build_source, source),
+              "compiler_environment": {k: q.digest(v.encode()) for k, v in sorted(compiler_env.items())},
+              "fetch_log": reference(args.out, "fetch.log"),
+              "numeric_environment": numeric_environment(compiler_env),
               "rustc": subprocess.check_output([str(rustc), "-Vv"], env=env, text=True),
               "nvcc": subprocess.check_output([env["MEMRA_NVCC"], "--version"], env=env, text=True)}
     write(args.out / "build.pending.json", result)
@@ -147,8 +170,9 @@ def build(args):
     result["log"] = reference(args.out, "build.log")
     write(args.out / "build.pending.json", result)
     q.require(result["exit_code"] == 0, "native build failed; build.pending.json and log retained")
-    after = clean_source(build_source)
-    q.require(after == source, "owned source changed during native build")
+    result["input_view_after"] = release_input_view.verify(build_source, source)
+    after = clean_source(args.out / "provenance")
+    q.require(after == source, "owned provenance changed during native build")
     result["source_after"] = after["inputs_sha256"]
     result["binaries"] = {name: binary_id(args.out / "target/release" / name) for name in q.BINARIES}
     write(args.out / "build.json", result)
@@ -228,18 +252,13 @@ def capture(args):
     source = clean_source(args.repo)
     q.require(source["commit"] == args.expected_head, "capture checkout differs from requested source")
     built = q.json_bytes((args.build / "build.json").read_bytes())
-    q.require(built.get("schema") == "memra-native-build-v2"
-              and built.get("recipe", {}).get("policy") == "controlled-cargo-v2",
-              "capture requires a controlled v2 build; older provenance is unqualified")
+    q.require(built.get("schema") == "memra-native-build-v3"
+              and built.get("recipe", {}).get("policy") == "controlled-cargo-v3",
+              "capture requires an isolated v3 build; older provenance is unqualified")
     q.require(q.json_bytes((args.build / "source.json").read_bytes()) == source, "build is for different source")
-    q.require(built["exit_code"] == 0 and built["source_before"] == source["inputs_sha256"]
-              and built["source_after"] == source["inputs_sha256"], "invalid native build")
-    q.require(built["docs_rs"] is False and built["cuda_visible_devices"] == "" and built["cuda_arch"] == "120a",
-              "build is a stub or different CUDA architecture")
-    q.Evidence(args.build).bound(built["source"])
-    q.Evidence(args.build).bound(built["log"])
+    q.validate_build(built, source, built["source"], q.Evidence(args.build))
     args.out.mkdir(parents=True, exist_ok=False)
-    for name in ("build.json", "source.json", "build.log"):
+    for name in ("build.json", "source.json", "build.log", "fetch.log"):
         shutil.copy2(args.build / name, args.out / name)
     staged = args.repo / "target/release"
     staged.mkdir(parents=True, exist_ok=True)
@@ -372,6 +391,7 @@ def main():
     parser.add_argument("--build", type=Path)
     parser.add_argument("--expected-head")
     parser.add_argument("--nvcc", type=Path)
+    parser.add_argument("--bwrap", type=Path, help="Linux bubblewrap executable; default: bwrap on PATH")
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--oracles", type=Path)
     parser.add_argument("--lease", type=Path)

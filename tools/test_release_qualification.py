@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 
 import release_qualification as q
+import release_input_view as view
 
 ROOT = Path(__file__).resolve().parents[1]
 UUID = "GPU-00000000-0000-0000-0000-000000000001"
@@ -56,15 +57,23 @@ class Fixture:
             self.binaries[name] = {**q.file_identity(p), "format": "ELF-x86_64"}
         self.put("source.json", self.source)
         (self.out / "build.log").write_text("CPU MOCK build observation; not a native build\n")
-        self.build = {"schema": "memra-native-build-v2", "exit_code": 0,
+        (self.out / "fetch.log").write_text("CPU MOCK dependency fetch; no compiler execution\n")
+        self.build = {"schema": "memra-native-build-v3", "exit_code": 0,
                       "source": self.ref("source.json"), "source_before": self.source["inputs_sha256"],
                       "source_after": self.source["inputs_sha256"], "cuda_arch": "120a", "docs_rs": False,
                       "cuda_visible_devices": "", "rustc": "CPU mock", "nvcc": "CPU mock",
                       "platform": {"profile": "ubuntu-24.04", "machine": "x86_64", "glibc": "2.39"},
                       "command": ["cargo", "build", "--release", "--locked"], "log": self.ref("build.log"),
-                      "recipe": {"policy": "controlled-cargo-v2", "cargo_home": "fresh-config-free",
-                                 "checkout": "resolved-git-blobs-modes-v2", "build_source": "owned-git-checkout",
+                      "fetch_log": self.ref("fetch.log"),
+                      "input_view_before": view.identity(self.source), "input_view_after": view.identity(self.source),
+                      "compiler_environment": {k: q.digest(v.encode()) for k, v in {
+                          "CUDA_VISIBLE_DEVICES": "", "MEMRA_CUDA_ARCH": "120a", "CARGO_HOME": "/cargo",
+                          "CARGO_TARGET_DIR": "/target", "RUSTC": "/toolchain/bin/rustc"}.items()},
+                      "recipe": {"policy": "controlled-cargo-v3", "cargo_home": "fresh-config-free",
+                                 "checkout": view.POLICY, "build_source": "fingerprinted-input-view",
                                  "cargo_config": "tracked-jobs-only",
+                                 "sandbox": {"policy": view.SANDBOX_POLICY, "version": "bubblewrap CPU mock",
+                                             "executable": {"bytes": 32, "sha256": "e" * 64}},
                                  "compilers": {name: {"bytes": 32, "sha256": "c" * 64} for name in ("cargo", "rustc", "nvcc")}},
                       "binaries": self.binaries}
         self.put("build.json", self.build)
@@ -364,6 +373,8 @@ class QualificationTests(unittest.TestCase):
         publish = (ROOT / ".github/workflows/publish.yml").read_text()
         self.assertLess(release.index("release_qualification.py verify"), release.index("  build:"))
         self.assertLess(release.index("--binaries target/release"), release.index("name: Package binaries"))
+        self.assertIn("tools/qualify-release.py build", release)
+        self.assertNotIn("run: cargo build --release --locked --bins", release)
         self.assertLess(publish.index("release_qualification.py verify"), publish.index("name: Publish to crates.io"))
         self.assertIn("inputs.publish == true", publish[:publish.index("release_qualification.py verify")])
 

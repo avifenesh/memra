@@ -80,9 +80,25 @@ that expose those metadata subtrees also refuse. Unreferenced metadata-only addi
 index appends remain eligible for publication equivalence; they cannot change linked compiler
 inputs under an unchanged source identity.
 
-The controlled v2 build uses a fresh, detached Git-defined source checkout outside the
-caller checkout and its own config-free Cargo home. The actual staged source is checked
-before and after compilation, so ignored caller files are never compiler inputs. It may
+The controlled v3 build retains a detached full Git checkout as provenance, then materializes
+a separate compiler view from exactly the fingerprinted files. Publication payloads and
+`research/INDEX.md` are absent from that view. It carries only a verified Git HEAD/config
+descriptor with empty object/ref directories, so build metadata can name the pinned commit
+without exposing repository objects or an alternate path to excluded data. Source bytes,
+executable modes, the complete view inventory and that identity descriptor are checked before
+and after compilation. Metadata additions are not new binary qualification: publication
+retains the tested commit/view and its qualified executable hashes.
+
+Linux bubblewrap runs compilation and build scripts in a read-only `/source` view with a
+private root, `/proc`, `/dev` and `/tmp`. The full provenance/caller checkouts and host home
+directories are not available there; no GPU device or network is exposed. System libraries,
+the pinned toolchain and CUDA toolkit are read-only inputs. The private Cargo cache and target
+directories are writable. Dependencies are fetched with `--locked` before compilation, which
+uses `--offline`; dependency fetching does not execute workspace build scripts. This enforces
+the declared filesystem boundary, rather than assuming a direct include or script never reads
+publication data. It is not a claim to have audited every host library or arbitrary compiler.
+
+The build has its own config-free Cargo home. It may
 reuse downloaded archive and index caches, but never inherited configuration, credentials
 or extracted source trees.
 Compiler-wrapper/target/rustflag environment controls are removed, cargo/rustc are resolved
@@ -90,10 +106,11 @@ from the pinned toolchain and their executable hashes are recorded along with nv
 Cargo configuration is refused; the only admitted project Cargo configuration is the tracked
 `[build] jobs` setting. Environment forcing, alternate targets and wrapper config refuse
 rather than overwrite the recorded native/stub/architecture claims.
-The `controlled-cargo-v2` recipe admits only basic process/network environment settings,
-then adds the pinned build settings. Ambient nvcc prepend/append flags, host-compiler
-selection, and compiler include/library search overrides are excluded. Earlier controlled
-recipe versions cannot be relabelled as passing this boundary.
+The `controlled-cargo-v3` recipe admits basic process/network settings for dependency fetch,
+then sets the compiler namespace's fixed paths and build settings. Ambient nvcc prepend/append
+flags, host-compiler selection, compiler include/library search overrides and network credentials
+are excluded from compilation. The record binds the sandbox executable, compiler environment,
+and verified input-view identities. Earlier recipes cannot be relabelled as passing this boundary.
 
 The generic capture contract explicitly supports **single-file GGUF inputs**. It parses
 `split.count` and refuses multi-file models before any GPU operation, even if an entry shard
@@ -114,8 +131,12 @@ input checkout:
 
 ```sh
 python3 tools/qualify-release.py build --expected-head "$COMMIT" --out "$BUILD" \
-  --nvcc /usr/local/cuda-13.1/bin/nvcc --jobs 8
+  --nvcc /usr/local/cuda-13.1/bin/nvcc --bwrap /path/to/bwrap --jobs 8
 ```
+
+Use the distribution's bubblewrap package (an owner-local package extraction is supported).
+Missing or unavailable Linux namespace support refuses the build; there is no unisolated
+fallback. The release workflow uses this same controlled builder before its ELF identity check.
 
 The coordinator supplies the existing non-serving rig and physical-card wrapper. Capture
 requires the live wrapper/child ancestry, canonical exclusive per-UUID FLOCK and exact

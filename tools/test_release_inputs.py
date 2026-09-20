@@ -121,11 +121,12 @@ class ReleaseInputTests(unittest.TestCase):
         out = self.root / "owned-build"; out.mkdir()
         staged = capture.prepare_build_source(self.f.repo, expected, out)
         self.assertFalse((staged / "hidden.bin").exists())
-        self.assertEqual(capture.clean_source(staged), expected)
+        self.assertEqual(capture.release_input_view.verify(staged, expected), capture.release_input_view.identity(expected))
+        self.assertEqual(capture.clean_source(out / "provenance"), expected)
         original = self.f.repo / "crates/memra-engine/src/lib.rs"
         original.write_text("// caller changed after staging\n")
         self.assertNotEqual(original.read_bytes(), (staged / original.relative_to(self.f.repo)).read_bytes())
-        self.assertEqual(capture.clean_source(staged), expected)
+        self.assertEqual(capture.release_input_view.verify(staged, expected), capture.release_input_view.identity(expected))
 
     def test_transitive_file_and_directory_links_must_end_in_tracked_inputs(self):
         source_dir = self.f.repo / "crates/memra-engine/src"
@@ -259,10 +260,14 @@ class ReleaseInputTests(unittest.TestCase):
         original = copy.deepcopy(self.f.build)
         mutations = (
             lambda build: build.update(schema="memra-native-build-v1"),
+            lambda build: build.update(schema="memra-native-build-v2"),
             lambda build: build["recipe"].update(policy="controlled-cargo-v1"),
+            lambda build: build["recipe"].update(policy="controlled-cargo-v2"),
             lambda build: build["recipe"].update(cargo_home="ambient"),
             lambda build: build["recipe"].update(build_source="caller-checkout"),
             lambda build: build["recipe"]["compilers"].pop("nvcc"),
+            lambda build: build["recipe"]["sandbox"].update(policy="unisolated"),
+            lambda build: build.update(input_view_after="f" * 64),
         )
         for mutate in mutations:
             self.f.build = copy.deepcopy(original)
