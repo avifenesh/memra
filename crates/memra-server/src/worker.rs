@@ -1592,6 +1592,7 @@ pub struct Request {
     pub params: GenParams,
     pub sampler_cfg: SamplerConfig,
     pub stop_strings: Vec<String>,
+    pub stop_token_ids: Vec<u32>,
     pub trace_id: Option<String>,
     /// The HTTP envelope's request id (`x-request-id`, the metering receipt identity).
     /// Carried to the worker so the `[admit-predict]` shadow receipt (D2 gap G5) joins
@@ -12515,6 +12516,7 @@ struct Session {
     oom_teardown: bool,
     params: GenParams,
     stop_strings: Vec<String>,
+    stop_token_ids: Vec<u32>,
     trace_id: Option<String>,
     /// The admitting request's envelope id, carried for the step-OOM park rebuild
     /// (`park_requeue`) so a replayed request keeps its receipt identity.
@@ -19613,6 +19615,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         params: p.params.clone(),
         sampler_cfg: p.sampler_cfg.clone(),
         stop_strings: s.stop_strings.clone(),
+        stop_token_ids: s.stop_token_ids.clone(),
         trace_id: s.trace_id.clone(),
         request_id: s.request_id.clone(),
         // A park replay is the SAME arrival: its shadow verdict (if any) was already
@@ -22680,6 +22683,7 @@ fn admit(
         oom_teardown: false,
         params,
         stop_strings: req.stop_strings,
+        stop_token_ids: req.stop_token_ids,
         trace_id: req.trace_id,
         request_id: req.request_id,
         admit_predict_logged: req.admit_predict_logged,
@@ -22863,13 +22867,30 @@ fn send_token_event(s: &mut Session, id: u32, text: String) -> bool {
 /// Number of tokens from an engine-committed speculative burst that belong to this request.
 /// Session-mode engine output may cross the scheduler's burst target to keep cache rows and
 /// `SpecSession::committed` identical. That surplus is still public on a non-final burst; only
-/// the request's remaining budget (or the first EOS) clamps event/generated/usage surfaces.
-fn spec_visible_len(tokens: &[u32], request_room: usize, eos_ids: &[u32]) -> usize {
+/// the request budget, first EOS (inclusive), or explicit stop id (exclusive) clamps
+/// event/generated/usage surfaces.
+fn spec_visible_prefix(
+    tokens: &[u32],
+    request_room: usize,
+    eos_ids: &[u32],
+    stop_ids: &[u32],
+) -> (usize, Option<StopReason>) {
     let capped = tokens.len().min(request_room);
-    tokens[..capped]
-        .iter()
-        .position(|id| eos_ids.contains(id))
-        .map_or(capped, |i| i + 1)
+    for (i, &id) in tokens[..capped].iter().enumerate() {
+        if let Some(reason) = stop_token_reason(id, stop_ids) {
+            return (i, Some(reason));
+        }
+        if eos_ids.contains(&id) {
+            return (i + 1, Some(StopReason::Eos));
+        }
+    }
+    (capped, None)
+}
+
+/// Explicit stops win over EOS: unlike an ordinary EOS, this raw id is never public.
+/// Shared by plain/graph decode, speculative accounting/emission, and the V4 driver.
+pub(crate) fn stop_token_reason(id: u32, stop_ids: &[u32]) -> Option<StopReason> {
+    stop_ids.contains(&id).then_some(StopReason::Callback)
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -22887,6 +22908,7 @@ fn emit_spec_token_events<D, S>(
     decoded: &mut Vec<u8>,
     cursor: &mut usize,
     eos_ids: &[u32],
+    stop_ids: &[u32],
     eos_seen: &mut bool,
     mut decode: D,
     mut send: S,
@@ -22901,6 +22923,10 @@ where
     };
     for &id in tokens {
         if *remaining == 0 || *eos_seen {
+            break;
+        }
+        if stop_token_reason(id, stop_ids).is_some() {
+            *eos_seen = true; // terminal latch also fences later round-cadence callbacks
             break;
         }
         *remaining -= 1;
@@ -23674,6 +23700,10 @@ fn advance_sample_emit(
         }
         (None, None) => s.sampler.sample(&s.last_logits),
     };
+    if let Some(reason) = stop_token_reason(next, &s.stop_token_ids) {
+        finish(s, reason);
+        return (false, None);
+    }
     s.sampler.accept(next);
     s.generated.push(next);
     if let Some(trace) = s.ttft.as_ref() {
@@ -23742,6 +23772,10 @@ fn advance_token_emit(
 
     if s.generated.len() >= s.budget {
         finish(s, StopReason::MaxNew);
+        return (false, ());
+    }
+    if let Some(reason) = stop_token_reason(tok, &s.stop_token_ids) {
+        finish(s, reason);
         return (false, ());
     }
     s.sampler.accept(tok);
@@ -24560,6 +24594,7 @@ fn step_session(
         let mut token_events = 0usize;
         let flush_tx = s.tx.clone();
         let eos_ids = s.params.eos.clone();
+        let stop_ids = s.stop_token_ids.clone();
         let mut flush_cb = |slice: &[u32]| -> bool {
             // Continue-verdict polled at EVERY round boundary (even empty/post-EOS flushes).
             let keep =
@@ -24582,6 +24617,7 @@ fn step_session(
                 &mut decoded_visible,
                 &mut cursor,
                 &eos_ids,
+                &stop_ids,
                 &mut eos_seen,
                 |id| tok_ref.decode_bytes_special(&[id], true),
                 |event| flush_tx.send(event).is_ok(),
@@ -24655,7 +24691,7 @@ fn step_session(
             s.fed.push(tok);
             s.sampler.accept(tok);
         }
-        let public_len = spec_visible_len(&burst, request_room, &eos_ids);
+        let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
         let public_burst = &burst[..public_len];
         if per_burst_emit {
             let emitted = emit_spec_token_events(
@@ -24664,6 +24700,7 @@ fn step_session(
                 &mut decoded_visible,
                 &mut cursor,
                 &eos_ids,
+                &stop_ids,
                 &mut eos_seen,
                 |id| tok_ref.decode_bytes_special(&[id], true),
                 |event| s.tx.send(event).is_ok(),
@@ -24678,7 +24715,6 @@ fn step_session(
                 "one token event per public spec token"
             );
         }
-        let mut stop: Option<StopReason> = None;
         for &tok in public_burst {
             s.sampler.accept(tok);
             s.generated.push(tok);
@@ -24883,6 +24919,10 @@ fn step_session(
         }
         (None, None) => sample_glm5_tp_plain(engine, s)?,
     };
+    if let Some(reason) = stop_token_reason(next, &s.stop_token_ids) {
+        finish(s, reason);
+        return Ok(false);
+    }
     s.sampler.accept(next);
     s.generated.push(next);
     if let Some(trace) = s.ttft.as_ref() {
@@ -25071,7 +25111,7 @@ fn write_confidence_trace(
 /// `gemma_spec_session_burst` (MEMRA_SPEC_BURST cap, default 32) and emits the burst's
 /// public tokens through the same `emit_spec_token_events` machinery as the qwen arm —
 /// one Event::Token per public id, EOS text never streamed, budget clamp via
-/// `spec_visible_len` (engine overshoot stays in GemmaSpecSession.committed, never in the
+/// `spec_visible_prefix` (engine overshoot stays in GemmaSpecSession.committed, never in the
 /// worker's public vectors). Between bursts the scheduler round-robins batch chunks —
 /// that interleave IS the coexistence contract the mixed cell measures.
 fn step_gemma_spec(
@@ -25186,7 +25226,8 @@ fn step_gemma_spec(
     // public clamp + emission (per-burst cadence v1; the qwen round-cadence on_commit is a
     // later increment) — same helper, same one-event-per-public-id receipt.
     let eos_ids = s.params.eos.clone();
-    let public_len = spec_visible_len(&burst, request_room, &eos_ids);
+    let stop_ids = s.stop_token_ids.clone();
+    let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let public_burst = &burst[..public_len];
     let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
     let mut cursor = s.emitted_bytes;
@@ -25199,11 +25240,11 @@ fn step_gemma_spec(
         &mut decoded_visible,
         &mut cursor,
         &eos_ids,
+        &stop_ids,
         &mut eos_seen,
         |id| tok_ref.decode_bytes_special(&[id], true),
         |event| s.tx.send(event).is_ok(),
     );
-    let mut stop: Option<StopReason> = None;
     for &tok in public_burst {
         s.sampler.accept(tok);
         s.generated.push(tok);
@@ -25250,7 +25291,7 @@ fn step_gemma_spec(
 /// `dspark_spec_session_new` (TTFT prime marks around it); every tick runs ONE
 /// `dspark_spec_session_burst` (MEMRA_SPEC_BURST cap, default 32) and emits the burst's
 /// public tokens through the same `emit_spec_token_events` machinery — one Event::Token
-/// per public id, EOS text never streamed, budget clamp via `spec_visible_len` (engine
+/// per public id, EOS text never streamed, budget clamp via `spec_visible_prefix` (engine
 /// overshoot stays committed in the session cache, never in the worker's public vectors).
 /// Between bursts the scheduler round-robins batch chunks — the coexistence contract.
 fn step_dspark_spec(
@@ -25421,6 +25462,7 @@ fn step_dspark_spec(
     // vector on both arms, only event timing moves; the post-burst bookkeeping below is shared.
     let eager_first_token = spec_first_token_eager_on();
     let eos_ids = s.params.eos.clone();
+    let stop_ids = s.stop_token_ids.clone();
     let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
     let mut cursor = s.emitted_bytes;
     let mut emit_remaining = request_room;
@@ -25445,6 +25487,7 @@ fn step_dspark_spec(
             &mut decoded_visible,
             &mut cursor,
             &eos_ids,
+            &stop_ids,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| flush_tx.send(event).is_ok(),
@@ -25502,7 +25545,7 @@ fn step_dspark_spec(
     {
         trace.mark_first_decode();
     }
-    let public_len = spec_visible_len(&burst, request_room, &eos_ids);
+    let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let public_burst = &burst[..public_len];
     let emitted = if eager_first_token {
         // Every public id already went out at round cadence; the shared stopping rule
@@ -25518,12 +25561,12 @@ fn step_dspark_spec(
             &mut decoded_visible,
             &mut cursor,
             &eos_ids,
+            &stop_ids,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| s.tx.send(event).is_ok(),
         )
     };
-    let mut stop: Option<StopReason> = None;
     for &tok in public_burst {
         s.sampler.accept(tok);
         s.generated.push(tok);
@@ -25571,7 +25614,7 @@ fn step_dspark_spec(
 /// `glm5_spec_session_new` (TTFT prime marks around it); every tick runs ONE
 /// `glm5_spec_session_burst` (MEMRA_SPEC_BURST cap, default 32) and emits the burst's
 /// public tokens through the same `emit_spec_token_events` machinery — one Event::Token
-/// per public id, EOS text never streamed, budget clamp via `spec_visible_len` (engine
+/// per public id, EOS text never streamed, budget clamp via `spec_visible_prefix` (engine
 /// overshoot stays committed in the session cache, never in the worker's public vectors).
 /// Between bursts the scheduler round-robins batch chunks — the coexistence contract.
 #[derive(Debug, PartialEq, Eq)]
@@ -25696,6 +25739,7 @@ fn step_glm5_spec(
     // shared by both arms and unchanged.
     let eager_first_token = spec_first_token_eager_on();
     let eos_ids = s.params.eos.clone();
+    let stop_ids = s.stop_token_ids.clone();
     let tok_ref = &lm.tok;
     let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
     let mut cursor = s.emitted_bytes;
@@ -25721,6 +25765,7 @@ fn step_glm5_spec(
             &mut decoded_visible,
             &mut cursor,
             &eos_ids,
+            &stop_ids,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| flush_tx.send(event).is_ok(),
@@ -25782,7 +25827,7 @@ fn step_glm5_spec(
     {
         trace.mark_first_decode();
     }
-    let public_len = spec_visible_len(&burst, request_room, &eos_ids);
+    let (public_len, mut stop) = spec_visible_prefix(&burst, request_room, &eos_ids, &stop_ids);
     let public_burst = &burst[..public_len];
     let emitted = if eager_first_token {
         // Every public id already went out at round cadence; the shared stopping rule
@@ -25798,6 +25843,7 @@ fn step_glm5_spec(
             &mut decoded_visible,
             &mut cursor,
             &eos_ids,
+            &stop_ids,
             &mut eos_seen,
             |id| tok_ref.decode_bytes_special(&[id], true),
             |event| s.tx.send(event).is_ok(),
@@ -25869,7 +25915,6 @@ fn step_glm5_spec(
     // DEPTH LOG (lane/spec-route-depth-20260902): fresh per-round rows after every burst,
     // the summary once the log fills (or at finish below).
     glm5_prof_rounds_flush(s, false);
-    let mut stop: Option<StopReason> = None;
     for &tok in public_burst {
         s.sampler.accept(tok);
         s.generated.push(tok);
@@ -26883,8 +26928,8 @@ mod tests {
         Event, async_chain_devsample, cached_hit_needs_first_token, carried_prime_batch_eligible,
         emit_spec_token_events, interactive_prefill_budget, interactive_prime_batch_take,
         legacy_async_chain_width, prefill_tick_take, record_output_progress, record_output_tokens,
-        routed_moe_prefix_split, solo_widen_fresh, spec_visible_len, summarize_confidence,
-        utf8_delta,
+        routed_moe_prefix_split, solo_widen_fresh, spec_visible_prefix, stop_token_reason,
+        summarize_confidence, utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
@@ -26907,6 +26952,7 @@ mod tests {
     };
     use crate::lanes::{Lane, StepStats};
     use memra_engine::Engine;
+    use memra_engine::decode::StopReason;
     use memra_engine::hybrid::HybridModel;
     use memra_engine::sampler::{Sampler, SamplerConfig};
     use memra_tokenizer::Tokenizer;
@@ -26993,6 +27039,7 @@ mod tests {
             params: memra_engine::decode::GenParams::default(),
             sampler_cfg: SamplerConfig::default(),
             stop_strings: Vec::new(),
+            stop_token_ids: Vec::new(),
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),
@@ -27375,6 +27422,7 @@ mod tests {
             params: memra_engine::decode::GenParams::default(),
             sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
             stop_strings: Vec::new(),
+            stop_token_ids: Vec::new(),
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),
@@ -28614,13 +28662,89 @@ mod tests {
     }
 
     #[test]
+    fn stop_token_ids_select_the_visible_prefix_and_stop_reason() {
+        let tokens = [1, 2, 3, 4];
+        for (stops, room, eos, len, reason) in [
+            (vec![1], 4, vec![], 0, Some(StopReason::Callback)),
+            (vec![3], 4, vec![], 2, Some(StopReason::Callback)),
+            (vec![4, 2], 4, vec![], 1, Some(StopReason::Callback)),
+            (vec![3], 4, vec![3], 2, Some(StopReason::Callback)),
+            (vec![4], 4, vec![2], 2, Some(StopReason::Eos)),
+            (vec![3], 2, vec![], 2, None),
+            (vec![1], 0, vec![], 0, None),
+            (vec![], 4, vec![], 4, None),
+            (vec![9], 4, vec![], 4, None),
+        ] {
+            let (visible, actual_reason) = spec_visible_prefix(&tokens, room, &eos, &stops);
+            assert_eq!(
+                (&tokens[..visible], actual_reason),
+                (&tokens[..len], reason)
+            );
+            if let Some(reason) = actual_reason {
+                assert_eq!(crate::stop_reason_to_finish(&format!("{reason:?}")), "stop");
+            }
+        }
+        assert_eq!(stop_token_reason(3, &[3]), Some(StopReason::Callback));
+        assert_eq!(stop_token_reason(2, &[3]), None);
+    }
+
+    #[test]
+    fn stop_token_ids_fence_all_spec_round_partitions_before_decode_or_counting() {
+        // A stop can be the first id, in the middle of a round, or exactly at a round edge.
+        // Every partition must publish the same prefix and suppress all later callbacks.
+        let tokens = [1, 2, 3, 4, 5];
+        for stop_id in tokens {
+            for split in 0..=tokens.len() {
+                let mut remaining = 16;
+                let mut decoded = Vec::new();
+                let mut cursor = 0;
+                let mut terminal = false;
+                let mut ids = Vec::new();
+                let mut sent = 0;
+                for slice in [&tokens[..split], &tokens[split..], &[6, 7][..]] {
+                    let result = emit_spec_token_events(
+                        slice,
+                        &mut remaining,
+                        &mut decoded,
+                        &mut cursor,
+                        &[5],
+                        &[stop_id],
+                        &mut terminal,
+                        |id| {
+                            assert!(id < stop_id);
+                            ascii_decode(id)
+                        },
+                        |event| {
+                            if let Event::Token { id, .. } = event {
+                                ids.push(id);
+                            }
+                            true
+                        },
+                    );
+                    assert!(result.send_ok);
+                    sent += result.sent;
+                }
+                let prefix = (stop_id - 1) as usize;
+                assert_eq!(ids, tokens[..prefix]);
+                assert_eq!(sent, prefix);
+                assert_eq!(remaining, 16 - prefix);
+                assert!(terminal);
+                assert_eq!(
+                    spec_visible_prefix(&tokens, 16, &[5], &[stop_id]),
+                    (prefix, Some(StopReason::Callback))
+                );
+            }
+        }
+    }
+
+    #[test]
     fn spec_emission_keeps_intermediate_scheduler_surplus_public() {
         let requested_max = 64usize;
         let prior_generated: [u32; 0] = [];
         let burst_target = 32usize;
         let burst: Vec<u32> = (0..=burst_target as u32).collect();
         let request_room = requested_max - prior_generated.len();
-        let public_len = spec_visible_len(&burst, request_room, &[]);
+        let public_len = spec_visible_prefix(&burst, request_room, &[], &[]).0;
         let mut decoded = Vec::new();
         let mut cursor = 0usize;
         let mut remaining = request_room;
@@ -28631,6 +28755,7 @@ mod tests {
             &mut remaining,
             &mut decoded,
             &mut cursor,
+            &[],
             &[],
             &mut eos_seen,
             ascii_decode,
@@ -28668,7 +28793,7 @@ mod tests {
         let mut cursor = decoded.len();
         let burst = [0, 1, 2, 3, 4]; // engine-committed cache truth, including surplus
         let request_room = requested_max - prior_generated.len();
-        let public_len = spec_visible_len(&burst, request_room, &[]);
+        let public_len = spec_visible_prefix(&burst, request_room, &[], &[]).0;
         let mut remaining = request_room;
         let mut eos_seen = false;
         let mut events = Vec::new();
@@ -28677,6 +28802,7 @@ mod tests {
             &mut remaining,
             &mut decoded,
             &mut cursor,
+            &[],
             &[],
             &mut eos_seen,
             ascii_decode,
@@ -28715,6 +28841,7 @@ mod tests {
             &mut decoded,
             &mut cursor,
             &[9],
+            &[],
             &mut eos_seen,
             ascii_decode,
             |event| {
@@ -28729,7 +28856,10 @@ mod tests {
             events,
             vec![(0, "a".into()), (1, "b".into()), (9, "".into())]
         );
-        assert_eq!(result.sent, spec_visible_len(&burst, burst.len(), &[9]));
+        assert_eq!(
+            result.sent,
+            spec_visible_prefix(&burst, burst.len(), &[9], &[]).0
+        );
         assert!(result.send_ok);
         assert!(eos_seen);
     }
@@ -35049,6 +35179,7 @@ mod tests {
             params: memra_engine::decode::GenParams::default(),
             sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
             stop_strings: Vec::new(),
+            stop_token_ids: Vec::new(),
             trace_id: None,
             max_prompt_tokens: None,
             cache_ns: String::new(),
