@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shlex
 import sys
 
 LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
@@ -299,6 +300,8 @@ class SubprocessRunner:
                     telemetry["reason"] = str(error)
             try:
                 code, expired = tee_run(command, raw_path, timeout, echo, pass_fds=pass_fds)
+                if storage and "object_binding" in storage:
+                    verify_storage_binding(storage)
                 if smi and (code != 0 or expired):
                     snapshot("failure")
             finally:
@@ -368,7 +371,7 @@ class SubprocessRunner:
 def explicit_refusal(text, code, expired):
     """Only a terminal explicit diagnostic plus exit 2 is a refusal, never a guess."""
     lines = text.splitlines()
-    if code == 2 and not expired and lines and lines[-1].startswith(("REFUSED:", "Error:")):
+    if code == 2 and not expired and lines and re.match(r"^(?:kv-tier-gate: )?REFUSED: .+", lines[-1]):
         return lines[-1]
     return None
 
@@ -393,10 +396,81 @@ def descriptor(root, path):
 UNPROVEN_STORAGE = "overlay/unproven — not NVMe, not spill speed"
 
 
-def capture_storage(path, root, allow_unproven=False):
+def storage_command(command):
+    """Resolve only literal argv and the canonical one-command bash wrapper.
+
+    Never interpret arbitrary shell code. A storage-bench mention in an opaque
+    shell wrapper fails closed instead of bypassing the storage-root guard.
+    """
+    argv = list(command)
+    if Path(argv[0]).name == "env":
+        argv = argv[1:]
+        while argv and ("=" in argv[0] or argv[0] == "--" or argv[0] == "-u"):
+            if argv[0] == "-u":
+                require(len(argv) >= 3, "invalid env wrapper")
+                argv = argv[2:]
+            else:
+                argv = argv[1:]
+    require(argv, "empty command")
+    if Path(argv[0]).name in {"bash", "sh"}:
+        mentions_storage = any("storage-bench" in arg for arg in argv[1:])
+        if not mentions_storage:
+            return None
+        require(len(argv) == 3 and argv[1] == "-c", "opaque storage shell wrapper")
+        inner = shlex.split(argv[2])
+        require(inner and shlex.join(inner) == argv[2], "noncanonical storage shell wrapper")
+        # shlex.join quotes all shell metacharacters: the round-trip above means
+        # substitutions, pipelines, redirects and env expansion cannot execute.
+        argv = inner
+    if Path(argv[0]).name != "storage-bench":
+        require(not any("storage-bench" in arg for arg in argv), "opaque storage command")
+        return None
+    require(len(argv) == 5 and argv[1] in {"roundtrip", "restore"}
+            and argv[4] in {"buffered", "uncached", "direct"},
+            "storage root binding requires exact roundtrip/restore argv")
+    return argv
+
+
+def filesystem_identity(path):
+    """stat(2) device plus statfs filesystem id; mount id where Linux supplies it."""
+    path = path.resolve(strict=True)
+    st = path.stat()
+    identity = {"device": st.st_dev, "filesystem_id": os.statvfs(path).f_fsid}
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        info = Path(f"/proc/self/fdinfo/{fd}")
+        if info.exists():
+            match = re.search(r"^mnt_id:\s*(\d+)$", info.read_text(), re.MULTILINE)
+            require(match is not None, "missing filesystem mount id")
+            identity["mount_id"] = int(match[1])
+    finally:
+        os.close(fd)
+    return identity
+
+
+def storage_binding(root, object_path):
+    root = root.resolve(strict=True)
+    obj = object_path.resolve()
+    require(obj != root and obj.is_relative_to(root), "storage object must be beneath supplied root")
+    parent = obj.parent.resolve(strict=True)
+    root_fs = filesystem_identity(root)
+    object_fs = filesystem_identity(obj if obj.exists() else parent)
+    require(root_fs == object_fs, "storage root and object filesystem differ")
+    return {"root": str(root), "object": str(obj), "root_filesystem": root_fs,
+            "object_filesystem": object_fs, "method": "stat-device+statfs-id+linux-mount-id"}
+
+
+def verify_storage_binding(storage):
+    binding = storage["object_binding"]
+    actual = storage_binding(Path(storage["root"]), Path(binding["object"]))
+    require(actual == binding, "storage object filesystem changed during execution")
+
+
+def capture_storage(path, root, allow_unproven=False, object_path=None):
     """Read-only ancestry, retaining failed commands verbatim; no hidden fallback."""
     require(path.is_dir(), "storage root must exist")
     path = path.resolve()
+    binding = storage_binding(path, object_path) if object_path is not None else None
     commands = [
         ("storage-findmnt", ["findmnt", "-J", "-T", str(path)]),
         ("storage-lsblk", ["lsblk", "-J", "-o", "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"]),
@@ -419,6 +493,9 @@ def capture_storage(path, root, allow_unproven=False):
               "label": "NVMe ancestry only; not measured spill speed" if proven else UNPROVEN_STORAGE,
               "allow_unproven_storage": allow_unproven, "root": str(path),
               "commands": captures, "qualification": False}
+    if binding is not None:
+        record["object_binding"] = binding
+        record["object_argument"] = str(object_path)
     (root / "STORAGE.json").write_text(json.dumps(record, indent=2) + "\n")
     require(proven or allow_unproven, "NVMe ancestry unproven; retained STORAGE.json; --allow-unproven-storage is development only")
     return record
@@ -480,6 +557,19 @@ def validate_capture(record, root):
         if not storage["nvme_proven"]:
             require(storage["allow_unproven_storage"] is True and storage["label"] == UNPROVEN_STORAGE,
                     "unproven storage lacks explicit opt-in/label")
+        if "object_binding" in storage:
+            binding = storage["object_binding"]
+            command = storage_command(record["command"])
+            require(command is not None and command[2] == storage["object_argument"],
+                    "storage binding command mismatch")
+            obj, parent = Path(binding["object"]), Path(storage["root"])
+            require(obj.is_absolute() and parent.is_absolute() and obj != parent
+                    and obj.is_relative_to(parent) and binding["root"] == storage["root"],
+                    "storage binding path mismatch")
+            require(binding["root_filesystem"] == binding["object_filesystem"]
+                    and {"device", "filesystem_id"} <= binding["root_filesystem"].keys()
+                    and all(type(v) is int for v in binding["root_filesystem"].values()),
+                    "storage binding filesystem mismatch")
         for capture in storage["commands"]:
             evidence(root, capture["raw_log"], allow_empty=True)
     return record
@@ -824,10 +914,12 @@ def main():
             args.out = args.out / "attempts" / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         require(not args.allow_unproven_storage or args.storage_root is not None,
                 "--allow-unproven-storage requires --storage-root")
-        require(not any(Path(arg).name == "storage-bench" for arg in args.execute) or args.storage_root is not None,
+        storage_argv = storage_command(args.execute)
+        require(storage_argv is None or args.storage_root is not None,
                 "storage-bench requires --storage-root; overlay needs --allow-unproven-storage")
         args.out.mkdir(parents=True, exist_ok=False)
-        storage = capture_storage(args.storage_root, args.out, args.allow_unproven_storage) if args.storage_root else None
+        storage = capture_storage(args.storage_root, args.out, args.allow_unproven_storage,
+                                  Path(storage_argv[2]) if storage_argv else None) if args.storage_root else None
         token = "@COLLECTOR_LOCK_FD@"
         require(not args.external_lock or args.execute.count(token) == 1,
                 "--external-lock requires exactly one @COLLECTOR_LOCK_FD@ argument")
