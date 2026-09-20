@@ -1,0 +1,62 @@
+{
+  "rig": "one RTX PRO 6000 Blackwell 96 GB",
+  "power_w": [
+    600,
+    600
+  ],
+  "warning": "Separate frozen bundles; never mix with RTX 5090 baselines.",
+  "baselines": {
+    "8192": {
+      "identity": {
+        "artifact_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+        "binary_sha256": "ad3f7aad046c46f5c4b996325557bd8cefdd7fd856984fabc5fedabc6908a0f1",
+        "plan_debug_sha256": "8fc1154223424f168e69fdf10f4befec7a9af75544e385bb773759954ff427e5",
+        "prompt_sha256": "079672d3960a7bd57cc472c9254cb9a0b58ea3aec1e9908ca805a0066c70677f",
+        "program": "native-decode_step_h-tokenwise-trunk-no-mtp",
+        "mode": "raw-token-no-chat-template",
+        "context": "8192",
+        "prompt_tokens": "8064",
+        "generate": "128",
+        "requested_tiers": "host",
+        "execution_status": "pending",
+        "scope": "identity-only; consult completion and active-reclaim receipts for engagement; no tier qualification or performance claim"
+      },
+      "source": "8ef562b12f16fd3378f866939be347df3a6d3d96",
+      "surfaces_sha256": {
+        "prefix-state.tsv": "ce48492d782d34cb4562cd11ca6d8b610f43efd50137f36da50f93f08b49dace",
+        "final-state.tsv": "ec49a40a42f7336a53f2d606cfc2167a31a5d4e0edcd15f3c5032dad8d412af4",
+        "tokens.u32le": "c7f6b2cd4fb42a2008d96832dea5260212f64a7f8397d55c9ae7b3c2af13f6ea",
+        "logits.tsv": "7ec02bb7052e2083ec120d7491d87d6b2b83af41528c2f82a7efb9166bd135b0",
+        "final-logits.f32le": "6df198aea3b5c62ef75e87429bbbb68b95570c1d58418443e94016ed88f0cb17",
+        "prompt.u32le": "079672d3960a7bd57cc472c9254cb9a0b58ea3aec1e9908ca805a0066c70677f",
+        "plan.debug": "8fc1154223424f168e69fdf10f4befec7a9af75544e385bb773759954ff427e5"
+      }
+    },
+    "32768": {
+      "identity": {
+        "artifact_sha256": "1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a",
+        "binary_sha256": "ad3f7aad046c46f5c4b996325557bd8cefdd7fd856984fabc5fedabc6908a0f1",
+        "plan_debug_sha256": "8fc1154223424f168e69fdf10f4befec7a9af75544e385bb773759954ff427e5",
+        "prompt_sha256": "d0ee6a662d29980127ca0e3eadacc6a1c7e2fdd6ca7851fe7dabe9612f14e97f",
+        "program": "native-decode_step_h-tokenwise-trunk-no-mtp",
+        "mode": "raw-token-no-chat-template",
+        "context": "32768",
+        "prompt_tokens": "32640",
+        "generate": "128",
+        "requested_tiers": "host",
+        "execution_status": "pending",
+        "scope": "identity-only; consult completion and active-reclaim receipts for engagement; no tier qualification or performance claim"
+      },
+      "source": "8ef562b12f16fd3378f866939be347df3a6d3d96",
+      "surfaces_sha256": {
+        "prefix-state.tsv": "17db124714451a991b6c370c5d5f4141aacc425412cf4daa342fb93352ebf7af",
+        "final-state.tsv": "20d0c641a2ef034a53b09d05b5b5fe463dd84833cfffb820d0a3b9fe892708a4",
+        "tokens.u32le": "8e26c1230e4e18bd66ef29867fd58685eb3b1692a3b0887d8bed37703f790c46",
+        "logits.tsv": "b2f757994ba0b7a82c398d2c23132c8b858e723f482acd66d530ac5ca4361cf9",
+        "final-logits.f32le": "a096eef116f8c3e962d1d622ebd28527dce7edd8eafb4fd365b28df61da84d58",
+        "prompt.u32le": "d0ee6a662d29980127ca0e3eadacc6a1c7e2fdd6ca7851fe7dabe9612f14e97f",
+        "plan.debug": "8fc1154223424f168e69fdf10f4befec7a9af75544e385bb773759954ff427e5"
+      }
+    }
+  }
+}
