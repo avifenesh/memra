@@ -1,14 +1,14 @@
 # WP-B day 10 checkpoint
 - Branch: lane/spill-b-20260919; integ5 merge 8ef562b12f16fd3378f866939be347df3a6d3d96 pushed.
-- Native checkout: /root/wt-b at 61eb02acb (diagnostic isolated from direct allocation engagement).
+- Native checkout: /root/wt-b at c619b008e (direct allocation re-engaged; diagnostic captured separately).
 - Finished diagnostic: mapped unmap/VA-free delta both 0; 32k residual 2097152 B stays unclassified/non-PASS.
 - Runner: /root/b-day10-cell.sh (tracked copy run-day10-cell.sh); canonical pro-single collector; bounded lock retries.
 - Finished: original native build, 8k/32k baselines and ACTIVE-8K G1 PASS (600/600 W); receipts pushed.
 - 8k receipts + build are preserved in pro-single-day10/ in this checkpoint; raw logits losslessly gzip archived.
-- Local gate re-engages direct allocator; remote diagnostic retains old empty-plane swap until its cell ends.
+- Running native build/clippy: tmux b-day10-injection-build; /root/spill-receipts/b-day10/injection-build.
 - Mac kv+tier 262 tests/check/cross-check/clippy/fmt/flags passed; engine Mac blocked by missing nvcc (log saved).
 - Original cells all pushed: baselines, VMM8 PASS, VMM32 unclassified 1-granule non-PASS, pooled8 not-applicable-pooled.
-- Next: pull latest into /root/wt-b, build injection-build, run injected-8192; native diagnostic clippy/tests PASS.
+- Next: confirm injection-build exit 0; run injected-8192 via /root/b-day10-cell.sh; sync/push and final replay.
 - Add DAY10.md, BOX3 baseline hashes, verify-day10.py and raw manifest; push after every cell.
 - Decision: prior 5090 probe freed never-mapped VA only; new nonzero PRO metadata class cannot satisfy BOTH-card evidence.
 - 32k VMM: bit-identical, 2097152 B residual, unclassified, not G1 PASS; diagnostic and injected rerun pending.
