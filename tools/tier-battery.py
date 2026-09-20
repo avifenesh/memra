@@ -12,7 +12,7 @@ import re
 import shlex
 import sys
 
-LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
+LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-single": "/tmp/memra-gpu.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
 ROUTES = {"local", "pcie-p2p", "host-bounce", "host", "nvme"}
 IDENTITY = ("runtime_commit", "binary_sha256", "artifact_sha256", "plan_sha256", "layout_sha256", "prompt_sha256", "numeric_class", "context_tokens", "requests", "rig", "kind")
 CASES = {
@@ -900,7 +900,7 @@ def main():
     parser.add_argument("--hourly-cost", type=float, help="private optional operator rate")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--pairs-per-order", type=int, default=5)
-    parser.add_argument("--rig", choices=["rtx5090", "pro-pair", "pro-four"], default="pro-pair")
+    parser.add_argument("--rig", choices=["rtx5090", "pro-single", "pro-pair", "pro-four"], default="pro-pair")
     # argparse REMAINDER still treats a literal -- as its own option terminator.
     # Split before parsing so every child byte/argument (including --) survives.
     argv = sys.argv[1:]

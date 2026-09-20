@@ -122,3 +122,15 @@ pub fn map_host_exps(
     }
     host_exps_catalog(&HostView(host), tensor, layer, projection, active, sources)
 }
+
+/// Qualification-only host budget, independent of native CUDA slot sizing.
+/// Refuse an impossible record instead of silently increasing the budget.
+pub fn host_bank_slots(bytes: u64, max_record: u64) -> std::result::Result<usize, &'static str> {
+    if max_record == 0 || bytes < max_record {
+        return Err("experts-via-tier host bank budget cannot hold one expert record");
+    }
+    if bytes > 256 * 1024 * 1024 {
+        return Err("experts-via-tier host bank budget exceeds qualification ceiling");
+    }
+    Ok((bytes / max_record).min(16) as usize)
+}
