@@ -223,16 +223,12 @@ fn baseline(args: &cli::Args) -> Result<()> {
             args.tiers
         ),
     )?;
-    let mut cache = memra_engine::pp::new_cache(&e, &model.cfg, args.context)?;
-    if args.kv_allocator == cli::KvAllocator::Vmm {
-        // Empty cache only: no source state/numerical execution to migrate.
-        for layer in cache.kv.iter_mut().flatten() {
-            layer.k = memra_kv::KvPlane::vmm(e.stream(), layer.k.len())?;
-            layer.v = memra_kv::KvPlane::vmm(e.stream(), layer.v.len())?;
+    let mut cache = match args.kv_allocator {
+        cli::KvAllocator::Pooled => memra_engine::pp::new_cache(&e, &model.cfg, args.context)?,
+        cli::KvAllocator::Vmm => {
+            Cache::new_with_allocator(&e, &model.cfg, args.context, memra_kv::KvAllocator::Vmm)?
         }
-        e.stream().synchronize()?;
-        e.pool_trim_to_zero();
-    }
+    };
     let mut last = None;
     for (i, &token) in prompt.iter().enumerate() {
         last = Some(model.decode_step_h(&e, token, &mut cache)?);

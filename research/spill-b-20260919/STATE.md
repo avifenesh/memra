@@ -1,0 +1,14 @@
+# WP-B day 10 checkpoint
+- Branch: lane/spill-b-20260919; integ5 merge 8ef562b12f16fd3378f866939be347df3a6d3d96 pushed.
+- Native checkout: /root/wt-b; currently still at that merge (original gate, no injection).
+- Running: tmux b-day10-baseline32; collector baseline-32768; /root/spill-receipts/b-day10/baseline-32768.
+- Runner: /root/b-day10-cell.sh (tracked copy run-day10-cell.sh); canonical pro-single collector; bounded lock retries.
+- Finished: native merge build, 8k pooled baseline (successful-attempt=1; 600/600 W).
+- 8k receipts + build are preserved in pro-single-day10/ in this checkpoint; raw logits losslessly gzip archived.
+- Local WIP: native Cache allocator injection and actual-demoted-plane VA-release diagnostic; no defaults changed.
+- Mac kv+tier tests/check/cross-check/clippy/fmt/flags passed; tests.log saved. Native WIP build NOT run yet.
+- Next: retrieve/verify/push 32k baseline; run original 8k/32k VMM + 8k pooled controls BEFORE updating native source.
+- Then pull checkpoint into /root/wt-b, rebuild; run diagnostic 32k and injected 8k; preserve separate source/binary identity.
+- Add DAY10.md, BOX3 baseline hashes, verify-day10.py and raw manifest; push after every cell.
+- Decision: prior 5090 probe freed never-mapped VA only; new nonzero PRO metadata class cannot satisfy BOTH-card evidence.
+- All remaining G1 verdicts and residual class pending; no serving/performance qualification or cross-card timing claim.
