@@ -240,6 +240,38 @@ else
     printf '%s\n' "$docs_census_out" | sed 's/^docs-registry-census: /    /'
 fi
 
+# ---- workflow-file census (2026-09-21) ----
+# Same WHEN-lesson again, for the workflow files themselves. On 2026-09-21 two merged PRs
+# (#592, #590) each added a ci.yml job named portable-suites; each PR's CI was green on its
+# own merge ref, main took both, and GitHub refused the file: the push run had ZERO jobs
+# ("This run likely failed because of a workflow file issue") and every push and PR after
+# it was red at the workflow level. No step in ci.yml can catch that, because ci.yml is the
+# file that does not parse; the push is the last place it can be caught, and a lane that
+# merges main inherits the duplicate silently (PyYAML's safe_load keeps the last key).
+# tools/check-workflow-keys.py loads every .github/workflows/*.yml with a loader that raises
+# on a duplicate mapping key at any depth. Sub-second, unconditional, no skip switch: a tree
+# whose workflow GitHub cannot parse has no emergency in which pushing it is right. Scoped to
+# the memra workspace like the censuses above (the throwaway repos of test_flags_guard.sh
+# carry no workflows). Teeth: tools/test_workflow_keys.sh (ci.yml gates job).
+if ! grep -q '^\[workspace\.package\]' Cargo.toml 2>/dev/null; then
+    echo "pre-push: workflow-file census N/A: no [workspace.package] in Cargo.toml (not the memra workspace)"
+elif [ ! -x tools/check-workflow-keys.py ]; then
+    echo "pre-push: REFUSED: tools/check-workflow-keys.py is missing or not executable." >&2
+    echo "    This repo IS the memra workspace, so a workflow gate that cannot answer" >&2
+    echo "    is a gate someone removed. Fails closed." >&2
+    exit 1
+elif ! wf_census_out=$(tools/check-workflow-keys.py 2>&1); then
+    printf '%s\n' "$wf_census_out" >&2
+    echo "" >&2
+    echo "pre-push: REFUSED: a workflow file has a duplicate mapping key (above)." >&2
+    echo "    GitHub refuses the whole file and runs zero jobs; a merge of main that brought" >&2
+    echo "    a second job with the same name is the usual cause. Remove one, keep the other." >&2
+    exit 1
+else
+    echo "pre-push: workflow-file census OK"
+    printf '%s\n' "$wf_census_out" | sed -n 's/^check-workflow-keys: OK: /    /p'
+fi
+
 # ---- target-aware hardware gate (2026-08-15) ----
 # Generic kernel/default changes retain the local perf-ci freshness gate. Step-specific
 # multi-card changes may instead use a hash-bound RTX PRO 6000 receipt:

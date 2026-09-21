@@ -89,3 +89,83 @@ PyYAML's `safe_load` keeps the LAST definition silently, so the day-13 battery's
 passed on this tree; that check is not a duplicate-key check. #590's own CI was green at
 `5bf84be1a` because its merge ref predates #592 (05:24Z); the combination existed only on main.
 Today's teeth gain a duplicate-job-key arm (section 2).
+
+## 2. The fold: one executor, one job, one call per battery
+
+Coordinator heads-up mid-day: the lead lands a minimal hotfix on main that removes #590's
+duplicate job block; this lane's fold continues on top and merges main again once it lands.
+The fold, per file:
+
+- `.github/workflows/ci.yml`: #590's `portable-suites` job (the `bash tools/ci-portable.sh` step
+  and the bare `python3 -m unittest discover -s tools -p test_gpu_ci.py -v` step) is gone. The
+  `gates` job (the CPU-only fixtures, not gated on the change class) gains the workflow-key
+  census plus its teeth (section 3). #590's ten GPU-adapter controls move to the end of the
+  surviving `portable-suites` job through `tools/unittest-floor.sh tools test_gpu_ci.py 9` (the
+  bare discovery was green over zero tests; the floor sits one below the ten measured), with the
+  exact step text and position of the lead's hotfix PR #600, so the merge once #600 lands is one
+  identical addition, not two copies (first draft of this day had the step in `gates`; moved
+  before the first push of the fold). The rest of the `portable-suites` job from #592 is
+  unchanged: `needs: changes`, `cargo fetch --locked`, the wrapper, its teeth, the collector
+  suite with both lock paths held under floor 80, the floor tool's teeth.
+  `check-workflow-keys.py` on the tree lists ten jobs in ci.yml, one of them `portable-suites`.
+- `.github/workflows/gpu-ci.yml`: untouched. It runs no CPU suite (section 1b), so there is no
+  step to point at the executor; the dispatch, its candidate and prerequisite checks, the
+  manifest preflight, the capsule digest, the lease-wrapped capture and the check run are as
+  #590 landed them.
+- `tools/portable-suites.sh`: the one executor. `--locked` folded in from #590's command
+  (`--offline --locked --no-fail-fast`: a lockfile that would need to change is a refusal, not
+  an offline re-resolution). Census, budget, floor, banked log and last line unchanged.
+- `tools/ci-portable.sh`: no longer an executor. Twelve lines of comment and
+  `exec "$(dirname -- "$0")/portable-suites.sh" "$@"`, so anything still holding #590's name
+  (its PR body, its docs, a branch cut from it) lands in the wrapper. Nothing tracked calls it.
+- `tools/local-ci.sh`: #590's second call (line 141, `bash tools/ci-portable.sh`, a release
+  build of the three crates before the memra-engine suite) removed; the day-13 call keeps its
+  place after the gguf census and gains `RUST_TEST_THREADS=8` next to `CARGO_BUILD_JOBS=8`
+  (#590's test-thread cap, folded). The three crates build and run once per local-ci.
+- `tools/test_portable_suites.sh` arm 3 (wiring) gains four assertions, comment lines stripped:
+  exactly one `  portable-suites:` job in ci.yml; no live `cargo test` line in ci.yml or
+  local-ci.sh names memra-tier, memra-kv or memra-cli (the suites run through the wrapper
+  only); `tools/ci-portable.sh`, if present, names `portable-suites.sh` and contains no
+  `cargo`; neither ci.yml nor local-ci.sh calls `ci-portable.sh`. 22 arms now.
+- `tools/test_gpu_ci.py` gains `test_ci_runs_these_controls_once_under_a_floor`: exactly one
+  live ci.yml line runs `tools/unittest-floor.sh tools test_gpu_ci.py <floor>`, and no live line
+  runs the file bare. 11 controls now.
+- `docs/CI.md` first section rewritten around the one entry point (the wrapper's command,
+  census, floor, banked log, teeth; the local caller's two caps; the forward; the `gates` steps).
+  `docs/TESTING.md` "Standing execution": the command line shows `--locked`, and a new "One
+  entry point (day 14)" paragraph records the fold and points here. `docs/ROUTER.md` route
+  unchanged (`docs/CI.md` still owns the hosted CI map and the GPU dispatch).
+
+## 3. Workflow-key census (the coordinator's ask): a loader that raises
+
+`tools/check-workflow-keys.py` loads every `.github/workflows/*.yml` with a `SafeLoader` whose
+`construct_mapping` raises on the first duplicate key at any depth (jobs, steps, `with:`,
+`env:`, `inputs:`), refuses a file without a `jobs:` mapping, and refuses an empty workflow
+directory (zero files is not green). Exit 0 prints each file's job names; exit 1 names the
+file, the key, its line and column and the line of the first occurrence. Run against main's
+own `ci.yml` at `34ed99dfc` (`day14/guard-on-main-34ed99dfc.log`, verbatim):
+
+```
+check-workflow-keys: FAIL: /tmp/spill-d-day14/main-34ed99dfc/ci.yml: duplicate mapping key 'portable-suites' at line 401 column 3 (first at line 206)
+check-workflow-keys: FAIL: 1 of 1 workflow files refused
+rc=1
+safe_load jobs: ['changes', 'gates', 'boundary', 'build', 'clippy', 'server-tests', 'portable-suites', 'engine-tests', 'arch-coverage', 'publish-dryrun']
+rc=0
+```
+
+Two wiring sites, because the failure is self-blinding. A step inside ci.yml can never catch a
+duplicate key in ci.yml (GitHub refuses the file before any job starts); it protects the other
+four workflow files. The place that can catch ci.yml is the push: `tools/hooks/pre-push` gains
+a "workflow-file census" arm after the docs-registry census, unconditional and with no skip
+switch (the same reasoning as the releasability censuses: a tree whose workflow GitHub cannot
+parse has no emergency in which pushing it is right), scoped to the memra workspace like the
+arms above it, failing closed when the script is missing. This lane's own push of `dc106da6c`
+this morning carried the inherited duplicate and the hook let it through; with this arm it
+refuses. The third fence is not code: a PR run on a merge ref that predates a base move is
+what let #590 land green, and only the branch-protection setting that requires a current
+branch closes that (an owner decision, noted for the lead, not changed here).
+
+Teeth, `tools/test_workflow_keys.sh` (nine arms): the control (`yaml.safe_load` accepts the
+duplicate-job file, exit 0), a duplicate job key reds and the refusal names the key and its
+line, a duplicate nested key (two `run:` in one step) reds, a clean file greens and the green
+names its jobs, an empty directory reds, the tree's own workflows green.

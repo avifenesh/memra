@@ -134,6 +134,19 @@ class GpuCiTests(unittest.TestCase):
         self.assertEqual(binary.read_bytes(), b"x")
         self.assertEqual(binary.stat().st_mode & 0o777, 0o755)
 
+    def test_ci_runs_these_controls_once_under_a_floor(self):
+        """Wiring (day 14 of lane/spill-d): ci.yml runs this file through tools/unittest-floor.sh,
+        in exactly one live step. #590 ran it bare in a second portable-suites job; a bare
+        `unittest discover` is green over zero tests, and a duplicate job key made GitHub refuse
+        the whole file. Comment lines are stripped so prose cannot satisfy this."""
+        ci = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+        live = [line for line in ci.read_text().splitlines() if not line.lstrip().startswith("#")]
+        floored = [line for line in live if "tools/unittest-floor.sh tools test_gpu_ci.py" in line]
+        self.assertEqual(len(floored), 1, live)
+        self.assertRegex(floored[0], r"test_gpu_ci\.py [1-9][0-9]*\s*$")
+        bare = [line for line in live if "test_gpu_ci.py" in line and "unittest-floor.sh" not in line]
+        self.assertEqual(bare, [])
+
     def test_candidate_mismatch_and_missing_native_contract_refuse(self):
         with self.assertRaises(ci.Refused):
             ci.candidate(self.root, "main")

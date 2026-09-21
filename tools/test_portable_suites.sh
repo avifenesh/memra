@@ -20,7 +20,11 @@
 #      naming the test, before cargo runs. 2a exists because the census was src-only until
 #      2026-09-21 and a tests/** skip could be born undeclared (memra #545 review).
 #   3. wiring: .github/workflows/ci.yml runs the wrapper AND this fixture; tools/local-ci.sh
-#      runs the wrapper (a gate outside every battery rots silently, H100 lane law 3)
+#      runs the wrapper (a gate outside every battery rots silently, H100 lane law 3); ONE
+#      executor: ci.yml has exactly one portable-suites job (main at 34ed99dfc, 2026-09-21,
+#      had two, from #592 and #590, and GitHub refused the file), no live line of ci.yml or
+#      local-ci.sh runs `cargo test` on the three crates outside the wrapper, and
+#      tools/ci-portable.sh (#590's name) only forwards here and runs no cargo of its own
 #
 # Target dir: the copy builds into target/portable-suites-teeth, NEVER the tree's own target.
 # Learned on the first run (2026-09-21): cargo's metadata hash for a workspace member excludes
@@ -204,6 +208,36 @@ if grep -q 'tools/portable-suites.sh' "$here/tools/local-ci.sh"; then
     ok "arm3 tools/local-ci.sh runs tools/portable-suites.sh"
 else
     bad "arm3 tools/local-ci.sh does not run tools/portable-suites.sh"
+fi
+# One executor (day 14). Comment lines stripped so prose cannot satisfy or trip these.
+ci_live=$(grep -vE '^\s*#' "$ci")
+local_live=$(grep -vE '^\s*#' "$here/tools/local-ci.sh")
+jobs=$(printf '%s\n' "$ci_live" | grep -c '^  portable-suites:' || true)
+if [[ $jobs -eq 1 ]]; then
+    ok "arm3 ci.yml has exactly one portable-suites job"
+else
+    bad "arm3 ci.yml has $jobs portable-suites jobs (a duplicate key makes GitHub refuse the whole file)"
+fi
+if printf '%s\n%s\n' "$ci_live" "$local_live" | grep -E 'cargo test' | grep -qE 'memra-(tier|kv|cli)'; then
+    bad "arm3 a live line of ci.yml or tools/local-ci.sh runs cargo test on the three crates outside the wrapper"
+else
+    ok "arm3 no live cargo test on memra-tier/-kv/-cli outside the wrapper (one executor)"
+fi
+forward=$here/tools/ci-portable.sh
+if [[ -f "$forward" ]]; then
+    if grep -vE '^\s*#' "$forward" | grep -q 'portable-suites.sh' && ! grep -vE '^\s*#' "$forward" | grep -q 'cargo'; then
+        ok "arm3 tools/ci-portable.sh forwards to the wrapper and runs no cargo of its own"
+    else
+        bad "arm3 tools/ci-portable.sh is a second executor (must forward to portable-suites.sh and run no cargo)"
+    fi
+    if printf '%s\n%s\n' "$ci_live" "$local_live" | grep -q 'ci-portable.sh'; then
+        bad "arm3 ci.yml or tools/local-ci.sh calls tools/ci-portable.sh instead of the wrapper"
+    else
+        ok "arm3 neither ci.yml nor tools/local-ci.sh calls tools/ci-portable.sh"
+    fi
+else
+    ok "arm3 tools/ci-portable.sh is absent (no second name)"
+    ok "arm3 neither ci.yml nor tools/local-ci.sh calls tools/ci-portable.sh"
 fi
 
 echo "test_portable_suites: $pass ok, $fail FAIL"
