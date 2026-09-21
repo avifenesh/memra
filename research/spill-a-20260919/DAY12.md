@@ -36,12 +36,15 @@ when there is no eligible space."
   This is the host tier's only lease: device pins never reach the host LRU (they are absent from
   the evictable LRU by construction, `host_demote_prefix_entry`'s doc), and a promote holds the
   identity lease for the length of its synchronous H2D.
-- The hook `host_demote_prefix_ref`: `if tenant_cap_would_evaporate(...) && let Err(refusal) =
-  reclaim_tenant_share(...)` prints today's line unchanged plus `; {refusal}` and returns
-  `Evaporated`, counting `tenant_rejects` as before. On `Ok` the D2H proceeds and `insert`'s
-  authoritative gate (unchanged) passes because the predicate is now false; `reserve_image`
-  (the fixed-arena path) sees the same predicate. Every pressure-driven demote site reaches this
-  one hook (the SLRU sink, the pause sweep, the admission flush `evict_all_demoting`).
+- The hook `host_demote_prefix_ref`, as first shipped at `405466cf7`: `if
+  tenant_cap_would_evaporate(...) && let Err(refusal) = reclaim_tenant_share(...)` printed
+  today's line unchanged plus `; {refusal}` and returned `Evaporated`, counting
+  `tenant_rejects` as before; on `Ok` the D2H proceeded. SUPERSEDED by the integ15 review
+  (section "Integ15 review fixes" below, commit `8b29b2aa3`): the pre-copy check is now the pure
+  `tenant_share_reclaim_plan` and the evictions run after `bind_tier_image`, right before
+  `insert`; `reserve_image` (the fixed-arena path) runs the reclaim itself for the demote hook
+  only. Every pressure-driven demote site reaches this one hook (the SLRU sink, the pause sweep,
+  the admission flush `evict_all_demoting`).
 - Per-eviction line: `[prefix-host] evict (tenant share): N tokens, X MB of tenant "t:..."'s
   own entries for its Y MB demotion (row now R MB / C MB share = P% of B MB, model ..., ns
   "t:...")`. Counter `tenant_reclaims` (a subset of `evictions`), published as
@@ -60,7 +63,7 @@ stated), no new `MEMRA_*` read, no `.cu`, no engine file, no `unsafe`.
 | `host_cache_tenant_share_reclaim_evicts_the_tenants_own_oldest_entries_only` | Budget 100, share 50. Below the cap the reclaim is `Ok(default)`. At the cap acme's oldest entry goes (its newer one stays, across acme's two salts); beta's entry and row (`t:beta` 20) untouched; the retried `insert` lands with acme exactly at 50; a 50-byte demotion takes the two oldest in LRU order; `evictions == tenant_reclaims == 3`, `tenant_rejects == 0`. |
 | `host_cache_tenant_share_reclaim_spares_the_twin_and_refuses_an_image_above_the_share` | Re-demoting the 30-byte key at 31 bytes evicts the older 20-byte entry, never the twin. A 51-byte image refuses `ImageExceedsShare {51, 50}` with nothing evicted, into acme's row and into an empty row (`need 1, eligible 0`); `tenant_pct = 100` disarms the reclaim with the cap. |
 | `host_cache_tenant_share_reclaim_skips_leased_entries_and_refuses_when_only_leased_remain` | A real `IdentitySlot` bound through `bind_identity` (a one-segment logits bundle, pure functions, no device planes) and its `IdentityLease` held: unbound `leased() == false`, bound and unleased `false`, leased `true`. The leased oldest entry is skipped and the newer unleased one evicted; with 30 needed and 20 unleased the refusal is `NoEligibleSpace {need 30, eligible 20, 1 leased holding 30}` and nothing is evicted; after `drop(lease)` the same demotion fits by evicting exactly that entry. |
-| `tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics` | Source text: the hook calls `reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)` before the evaporation line and both sit before `host_entry_from_device(`; the counter reaches the publish and the render. |
+| `tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics` | Source text. At `405466cf7`: the hook called `reclaim_tenant_share(...)` before the evaporation line and both sat before `host_entry_from_device(`. SUPERSEDED at `8b29b2aa3` (integ15 review): the plan sits before the evaporation line and the copy, no `reclaim_tenant_share(` before the copy, the reclaim inside the `Ok` arm after bind and before insert, four `waste_pending_reclaim(` sites; both counters reach the publish and the render. |
 | `memra-kv` `unbound_slot_is_never_leased` | The trivial half of `IdentitySlot::leased`. |
 
 First compile of the cells failed twice on the same cause, verbatim: `error[E0433]: cannot find
@@ -214,9 +217,9 @@ was moved to `2798e0b2e` and the cell rerun as `arena-r2`.
 | gate | exit | verbatim tail |
 |---|---|---|
 | `cargo fmt --all -- --check` | 0 | (no output) |
-| `cargo test -p memra-server --offline` | 0 | 3 suites, `passed` sums to 748, `failed` to 0 |
+| `cargo test -p memra-server --offline` | 0 | 3 suites, `passed` sums to 748, `failed` to 0 (day-12 tree); 749 on the review tree `8b29b2aa3` (the new plan/waste cell) |
 | `cargo test -p memra-kv --offline` | 0 | 3 suites, `passed` sums to 73, `failed` to 0 |
-| `cargo clippy -p memra-server --offline --all-targets -- -D warnings` | 0 | ``Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 22s`` |
+| `cargo clippy -p memra-server --offline --all-targets -- -D warnings` | 0 | ``Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 22s``; review tree ``in 7.78s`` |
 | `cargo clippy -p memra-kv --offline --all-targets -- -D warnings` | 0 | ``Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.34s`` |
 | `bash tools/check-flags.sh` (final tree) | 0 | `check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)` |
 | `bash tools/docs-registry-census.sh` (final tree) | 0 | `docs-registry-census: flags-table-census: docs/FLAGS.md tables=58 rows=903, every row matches its header` |
@@ -224,8 +227,9 @@ was moved to `2798e0b2e` and the cell rerun as `arena-r2`.
 | `git diff --cached --check` (the staged receipts; my addition) | 0 after one fix | first run exit 2: `research/spill-a-20260919/day12/gates/test-server.log:777: new blank line at EOF.` and the same in `test-kv.log`, cargo's trailing blank line in my own local logs; the one blank line was removed from each (no measurement touched), rerun 0 |
 | `bash -n` on the gate and the nine cell scripts; `python3 -m py_compile` on the harness and the verifier | 0 | (no output) |
 
-The Rust gates ran on the code tree at `405466cf7` (the later commits change no Rust file; the
-`memra-server` and `memra-kv` sources are byte-identical at the tip). No `MEMRA_*` read was
+The Rust gates ran on the code tree at `405466cf7` and again on the review tree at `8b29b2aa3`
+(fmt 0, `memra-server` 749 passed, `memra-kv` 73 passed, clippy server and kv 0; logs
+`day12/gates/`, the review run overwrote the day-12 logs with the same names). No `MEMRA_*` read was
 added in Rust; the gate's `MEMRA_TENANTGATE_*` knobs and `MEMRA_METRICS_TOKEN` are shell-side
 (the census scans `crates/*/src`; `MEMRA_METRICS_TOKEN` is an existing server read with its row).
 
@@ -255,6 +259,73 @@ Two attempts of `git push origin lane/spill-a-20260919` at `a0ff733ba`, both log
 This is a range correction, not a bypass: the gate evaluated the lane's real fork point and
 found no engine file. The lead's day-11 push of `432816926` was the last time the lane's remote
 tip moved, which is why the upstream-based range indicted main's own files.
+
+## Integ15 review fixes (PR #597, revuto findings, lead decision)
+
+Finding 1, docs contradicted the shipped behaviour. `docs/FLAGS.md` `MEMRA_KV_HOST_TENANT_PCT`
+row rewritten (reclaim the tenant's own LRU first, then the bounded refusal; the Arc D
+within-share displacement follow-up landed as memra#384; receipts now `prefix_host_tenant_reclaims`,
+`prefix_host_tenant_reclaims_wasted`, `prefix_host_tenant_rejects`, the `evict (tenant share)` line
+and the evaporation line with its suffix). `docs/SERVING.md` share-cap paragraph rewritten the same
+way with its receipts, and the `/metrics` table gained the `prefix_host_tenant_reclaims` row (a
+subset of evictions; reclaims moving while rejects stay flat means the cap is being served, not
+refused) and the `prefix_host_tenant_reclaims_wasted` row (nonzero is a regression to read).
+
+Finding 2, the reclaim's evictions were committed before the image was built, so five later
+failure paths (`tier_charge` Err, the two `checked_*` bails, `host_roundtrip_digest` under
+`MEMRA_KV_HOST_VERIFY`, `host_entry_from_device` Err, `bind_tier_image` Err or `insert` false)
+could abandon the demotion after the row had paid `need` bytes, with `tenant_reclaims` counting it
+as a success. Lead decision applied: the hook now runs `tenant_share_reclaim_plan` (pure, the
+eligibility half; refuses before the copy exactly as before) and defers `reclaim_tenant_share` to
+the `Ok(mut e)` arm after `bind_tier_image`, right before `insert`, so the only refusal left after
+an eviction is `insert`'s own. The evicted count parks in `reclaim_pending`; a successful `insert`
+consumes it; `waste_pending_reclaim` at every later exit (bind refused, reclaim refused, insert
+refused, copy failed) books it into `tenant_reclaims_wasted` (published as
+`prefix_host_tenant_reclaims_wasted`) with one `[prefix-host] tenant share reclaim WASTED: N own
+entries evicted for a demotion that did not insert (...)` line. The fixed-arena path
+(`MEMRA_GLM5_TP_KV_HOST=1`) reserves the planes' backing before the copy inside `reserve_image`,
+so the reclaim cannot wait for the image there: `reserve_image(.., reclaim: true)` runs it from
+the demote hook only (a handoff import passes `false` and keeps the old refusal), and a copy that
+then fails is booked wasted by the hook's `Err` arm. Unit cells:
+`host_cache_tenant_share_plan_is_pure_and_a_reclaim_is_consumed_by_insert_or_booked_wasted`
+(the plan at the cap leaves the row whole and counts nothing, which is the state a failing copy,
+digest or charge leaves behind; below the cap the plan is the default; a refused plan evicts
+nothing; the happy path reclaims exactly once and the insert consumes it; a reclaim followed by a
+refused insert books exactly one wasted entry; a waste call with nothing pending is a silent
+zero), and the rewired source test (plan before the evaporation line before the copy; no
+`reclaim_tenant_share(` before the copy; `tier_charge(` and `host_roundtrip_digest(` before the
+copy; the reclaim inside the `Ok` arm after bind and before insert; four `waste_pending_reclaim(`
+sites; both counters published and rendered). The three day-12 reclaim cells are unchanged and
+still pass (same method contract).
+
+Target card rerun (`pro-single-day12/tenant-fix-r4/`, fix arm only, N=1, executed-not-qualified,
+600 W): the base binary is `origin/main` `be07f2d36` and did not change, so the attempt-3 base
+receipts (`tenant-base-r3/`) stand and only the fix arm was rerun. `build-fix2.sh` at `8b29b2aa3`
+(the review commit): `cargo build --release -p memra-server --offline -j 16` exit 0 in 15.74s,
+binary sha256 `d47caec8d445d5fa96c512bd61dba463d609d9ecc2600777dbb184c840076ef4`, tree clean.
+`GATE: kv-host-tenant-reclaim (fix arm) PASS` (28 `ok`, two new: `fix: /metrics has no wasted
+reclaim (every reclaim's demotion inserted)` and `fix: no WASTED line`). The four reclaims and
+their demotes, verbatim (the eviction now happens after the copy and bind, right before the
+insert, and still prints immediately before the demote line):
+
+```text
+[prefix-host] evict (tenant share): 89 tokens, 160.7MB of tenant "t:acme"'s own entries for its 160.8MB demotion (row now 160.6MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote: 93 tokens, 160.8MB in 41.8ms (host resident 482.0MB / 1074MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-host] evict (tenant share): 86 tokens, 160.6MB of tenant "t:acme"'s own entries for its 160.8MB demotion (row now 160.8MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote: 93 tokens, 160.8MB in 6.2ms (host resident 482.2MB / 1074MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-host] evict (tenant share): 93 tokens, 160.8MB of tenant "t:acme"'s own entries for its 160.9MB demotion (row now 160.8MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote: 95 tokens, 160.9MB in 7.3ms (host resident 482.3MB / 1074MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-host] evict (tenant share): 93 tokens, 160.8MB of tenant "t:acme"'s own entries for its 161.3MB demotion (row now 160.9MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote: 108 tokens, 161.3MB in 41.4ms (host resident 643.7MB / 1074MB, model gate, ns "t:acme\u{1f}s1")
+```
+
+`/metrics`: `prefix_host_tenant_reclaims 4`, `prefix_host_tenant_reclaims_wasted 0`,
+`prefix_host_tenant_rejects 0`, `entries 4`, `demotions 8`, `promotions 2`; zero `WASTED` lines;
+beta r7 `cached_tokens 83`, acme r8 `cached_tokens 95`; every text byte-identical to the base arm
+(the verifier's cross-arm law holds against `tenant-base-r3`): `verify-day12.py` `DAY12 PASS`
+with `fix (fix2): source 8b29b2aa3… binary sha256 d47caec8…` (`day12/verify-day12.log`),
+`tier-battery.py --validate` exit 0 on `tenant-fix-r4` (`day12/collector-validate-r4.log`).
+The attempt-3 fix cell (`tenant-fix-r3/`, the pre-review build) stays as the record.
 
 ## Scope
 
