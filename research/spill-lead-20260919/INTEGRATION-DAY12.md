@@ -186,7 +186,59 @@ refusal versus the day-11 `cancel-restore` sequence still on main); D's day 12 i
 #552 criterion 2 is now met natively on the target card (fault arms with cancellation, corrupt and missing state,
 exhaustion, required state), still executed-not-qualified.
 
+## Lane C day 13 (`31ba74550`, pushed by the lead; ruling 15 Option A landed)
+Door `MEMRA_KV_HOST_CONTRACTS` (default OFF, FLAGS row, decide-by 2026-10-05, `research/spill-c-20260919/HOSTPREFIX-DOOR.md`):
+the server constructs `HostTierContext` at model load with a `ProgramIdentity` per loaded model (artifact = streaming
+sha256 of the GGUF; serialized plan = the plan's debug form, the kv_tier_gate convention; numeric class
+`server-prefix-entry-v5-kv-q8_0-<K>B-q5_1-<V>B` from `PREFIX_ENTRY_LAYOUT_VERSION` and `kv_blk_bytes()`; stream = the
+single worker owner thread; tokenizer = the artifact; template = the GGUF chat template text or the ChatML fallback;
+adapter none; modality text; position prefix-from-token-zero; `tenant_salt` per pool key through the one
+`memra_kv::tiered::hostprefix::tenant_salt` helper, ruling 13), injects a server-owned governor
+(`shared_governor`, 2x host and 2x device prefix budgets, rationale in C's DAY13.md). The door parses `1`/`0` only
+(junk refuses at boot), refuses at boot with the startup pinned arena (`MEMRA_GLM5_TP_KV_HOST=1`), with a vision tower,
+or with a directory checkpoint; with no host tier (`MEMRA_KV_HOST_MB=0`) it constructs nothing and prints one line.
+OFF/ON on the target card (600 W, binary `9ed02495...`, N=1, `verify-day13.py` PASS, `pro-single-day13/`): serve-smoke
+plain + cache-metering 33 verdict lines byte-equal, `serve-smoke: 0 failed` both; identity gate with
+`MEMRA_SERVE_SPEC=0` `ALL GREEN` both, demote bytes equal, one promote = one `verify ok`, texts identical; failure gate
+with `MEMRA_SERVE_SPEC=0` the same pre-existing `1 FAILURE(S)` on both (tenant cap pre-empts `skip demote`); B's reclaim
+gate line and digest identical OFF/ON (red on that tree, B's fix was not merged there yet). Under the default spec
+env ON refuses draft-bearing boundary entries by name (identity gate `5 FAILURE(S)`, failure gate `6`): the door's
+surface is plain-only today, byte identity holds. `tenant_salt("")` derives (the empty namespace is every no-keyring
+server's default; refusing would break the equal-count gate), tested and documented instead of the lead's "empty
+refuses" wording. Gate input on this artifact needs `MEMRA_HOSTGATE_CACHE_MB=256` (attempt at 128 kept). Local
+battery on the lane: fmt, 739 + 67 + 2 tests, clippy, flags 867 names, diff-check, docs-registry, boundary 0 new.
+
+## Lead rulings, day 12 (continued)
+16. **The host-contracts door stays plain-only until its surface grows.** ON is asserted under `MEMRA_SERVE_SPEC=0`;
+    under the default spec env the refusal-by-name of draft-bearing entries is the correct fail-closed answer, not a
+    bug. Growing `bind_tier_image` to draft planes is the next C slice (before Option B), with the identity and
+    failure gates equal OFF/ON under the default env as its exit criterion.
+17. **`tenant_salt("")` derives.** C's reading stands: the empty namespace is the default single-tenant namespace,
+    one derivation, distinct from any keyed namespace; the lead's "empty refuses" wording is withdrawn.
+
+## Receipt hygiene finding (lead, integ10 and integ11)
+The root `.gitignore` rule `build/` silently dropped two lanes' native build receipts (`pro-single-day12/build/`,
+`pro-single-day13/build/`); both verifiers (`verify-day12.py`, `verify-day13.py`) bind cells to that receipt and
+refused on the merged tree while passing in the lane worktrees (day 11's had been force-added). Both receipts are
+now tracked, and `.gitignore` gains `!research/**/build/` so a lane's build receipt is never build output. Lanes: no
+`git add -f`; the rule now says what the repo means.
+
+## integ11 (`lane/spill-integ11-20260921`): C day 13
+Batteries (`integration-day12/integ11-cpu-battery/`): fmt; tier+kv+gguf 619 tests; memra-server 740 tests; clippy
+`-D warnings`; check-flags; publish census; docs registry census; collector pytest 85; `verify-day13.py` `DAY13
+REPLAY: PASS` (after the build receipt was tracked); perf board; diff-check: all rc=0. Local 5090 `tools/serve-smoke.sh`
+with the door unset (`integ11-serve-smoke-5090/`): `serve-smoke: 0 failed`. Full `tools/local-ci.sh --perf`
+(`integ11-local-ci-perf/`): correctness GREEN, serve-smoke 0 failed, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 3
+pair-only skips; then the perf stage hit a contended window: another session's Python process (1390 MiB) joined the
+card mid-cell, the battery waited its 600 s, latched the co-resident as persistent and recorded both cells with
+`window_clean=false`: `26b-plain-short: 189.60 tok/s [FAIL] (-9.15% vs median 208.70)`, `qwen9b-plain-short: 125.73
+tok/s [FAIL] (-9.47% vs median 138.88)`, `perf stage: 2 fail`, rc=1. Read per the battery's own tripwire text: a
+uniform drop across cells with correctness green in a contended window is machine state, not the diff; the cells run
+`run-gen`, which no file in this PR touches (server door, `memra-kv` helper, tier bank identity). Rows appended
+(`window_clean:false`), so the freshness gate is satisfied honestly; a clean-window rerun of the two cells is owed when
+the card is free and is noted, not claimed. The co-resident was not touched (another session's lane).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
-- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 running (Option A, ruling 15). E, F idle.
+- A day 11 sealed and pushed (`432816926`); merged into integ10. D day 12 sealed and pushed (`b3324c262`); merged into integ10. C day 12 sealed and pushed (`7efedd13d`); C day 13 sealed and pushed (`31ba74550`); merged into integ11. B day 14 running (#523 items 1 and 3). E, F idle.
