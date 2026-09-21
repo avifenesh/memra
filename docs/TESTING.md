@@ -1097,6 +1097,19 @@ before any bank demand:
   precedence. Without a GPU budget the native slot sizing (`MEMRA_MOE_SLOTS` or auto) is
   untouched. The installer takes both budgets as a typed `ExpertBankBudget`; it reads no
   argv and no environment for them.
+- The lease token that crosses the owner-thread seam carries the identity the registry holds
+  for its lease (`ExpertLeaseToken::{record, artifact, epochs}` in
+  `crates/memra-tier/src/bank/owner_proxy.rs`): the `(layer, proj, expert)` key derived from
+  the leased `BankId` through the one mapping `bank::dispatch_id`, the record's artifact
+  digest, and the staging ticket's epochs. `demand` refuses a bank that leases another record
+  than the one demanded (`ProgramMismatch`, or `InvalidLayout` for a record with no dispatch
+  id), retiring that lease through the bank before refusing; `with_bytes` / `finish` refuse a
+  token whose identity does not match the pending lease (`ForeignLease`); `admit_banked`
+  asserts `token.record() == (layer, proj, expert)` before the H2D. Unit cells:
+  `owner_proxy.rs` tests (identity carried, lying bank refused and retired, record without a
+  dispatch id refused, three forged tokens foreign, `dispatch_id` boundaries including the
+  `u16::MAX` MTP key) and `crates/memra-tier/tests/bank/owner_proxy.rs`
+  (`token_identity_names_the_fixture_lease`). The H2D program is unchanged.
 
 Verdicts are the standard gates: `run-gen` argmax `MATCH` and `run-spec`
 `=== SELF-CONSISTENCY PASS ===` over K=1..8. The gate prints
