@@ -12,9 +12,12 @@ ROOT = Path(__file__).resolve().parents[4]
 spec = importlib.util.spec_from_file_location('battery', ROOT/'tools/tier-battery.py')
 B = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(B)
+import private_lock
 
 
-class NativeRunnerTests(unittest.TestCase):
+class NativeRunnerTests(private_lock.PrivateLockMixin, unittest.TestCase):
+    BATTERY = B
+
     def stub_smi(self, root, fail=False):
         path = root/'nvidia-smi'
         path.write_text('#!'+sys.executable+'\n'+(
@@ -79,7 +82,7 @@ class NativeRunnerTests(unittest.TestCase):
             root = Path(tmp)
             out = root/'capture'
             proc = subprocess.run(
-                [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090',
+                [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090', private_lock.FLAG,
                  '--timeout', '5', '--out', str(out), '--execute', sys.executable,
                  '-c', "import sys; print('ERROR: deliberate native refusal'); sys.exit(9)"],
                 env={**os.environ, 'PATH': str(root/'no-tools')}, capture_output=True, timeout=10)
@@ -109,13 +112,15 @@ class NativeRunnerTests(unittest.TestCase):
             self.assertEqual((root/'run.log').read_text(),'RESULT not-json\n')
 
 
-class BootstrapTests(unittest.TestCase):
+class BootstrapTests(private_lock.PrivateLockMixin, unittest.TestCase):
+    BATTERY = B
+
     def run_script(self, root, script=None, branch='lane/spill-integ-test'):
         source = ROOT/'tools/tier-rig-bootstrap.sh'
         if script is not None:
             source = root/'bootstrap.sh'; source.write_text(script)
         out = root/'out'
-        proc = subprocess.run(['bash',str(source),'--dry-run','--out',str(out)],
+        proc = subprocess.run(['bash',str(source),'--dry-run',private_lock.FLAG,'--out',str(out)],
                               env={**os.environ,'BRANCH':branch},cwd=ROOT,
                               capture_output=True,text=True,timeout=30)
         return proc, out

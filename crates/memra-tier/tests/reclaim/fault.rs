@@ -225,14 +225,14 @@ const DAY11_GREEN: [Arm; 5] = [
 
 #[test]
 fn committed_day11_receipts_replay_their_pass_lines() {
+    // The receipts are tracked. Their absence is a failure, never a silent pass (#545: a test
+    // that skips for a missing artifact must say so, and these have no reason to skip).
     let replayed = replay_green("pro-single-day11", &DAY11_GREEN);
-    if receipt("pro-single-day11", Arm::CancelDemote).exists() {
-        assert_eq!(
-            replayed,
-            DAY11_GREEN.len(),
-            "committed day-11 receipts are incomplete"
-        );
-    }
+    assert_eq!(
+        replayed,
+        DAY11_GREEN.len(),
+        "committed day-11 receipts are incomplete"
+    );
 }
 
 /// Day 12: every arm through the seams. Once the day-12 cells are committed all seven receipts
@@ -240,35 +240,33 @@ fn committed_day11_receipts_replay_their_pass_lines() {
 #[test]
 fn committed_day12_receipts_replay_their_pass_lines() {
     let replayed = replay_green("pro-single-day12", &Arm::ALL);
-    if receipt("pro-single-day12", Arm::CancelDemote).exists() {
-        assert_eq!(
-            replayed,
-            Arm::ALL.len(),
-            "committed day-12 receipts are incomplete"
-        );
-        for arm in [Arm::CancelRestore, Arm::RequireResident] {
-            let checks = rows(&receipt("pro-single-day12", arm), arm).unwrap();
-            // The seam rows were recorded and held, not merely required.
-            for name in [
-                "recover-source",
-                "recovered-source-checksum",
-                "retire-holds-source",
-            ] {
-                assert!(
-                    arm != Arm::CancelRestore || checks.iter().any(|c| c.name == name && c.ok()),
-                    "{arm:?}: {name}"
-                );
-            }
-            for name in [
-                "continuation-gate-on-suspended-cache",
-                "continuation-gate-after-partial-resume",
-                "continuation-gate-after-resume",
-            ] {
-                assert!(
-                    arm != Arm::RequireResident || checks.iter().any(|c| c.name == name && c.ok()),
-                    "{arm:?}: {name}"
-                );
-            }
+    assert_eq!(
+        replayed,
+        Arm::ALL.len(),
+        "committed day-12 receipts are incomplete"
+    );
+    for arm in [Arm::CancelRestore, Arm::RequireResident] {
+        let checks = rows(&receipt("pro-single-day12", arm), arm).unwrap();
+        // The seam rows were recorded and held, not merely required.
+        for name in [
+            "recover-source",
+            "recovered-source-checksum",
+            "retire-holds-source",
+        ] {
+            assert!(
+                arm != Arm::CancelRestore || checks.iter().any(|c| c.name == name && c.ok()),
+                "{arm:?}: {name}"
+            );
+        }
+        for name in [
+            "continuation-gate-on-suspended-cache",
+            "continuation-gate-after-partial-resume",
+            "continuation-gate-after-resume",
+        ] {
+            assert!(
+                arm != Arm::RequireResident || checks.iter().any(|c| c.name == name && c.ok()),
+                "{arm:?}: {name}"
+            );
         }
     }
 }

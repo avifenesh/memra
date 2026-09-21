@@ -6,6 +6,32 @@ use crate::contracts::*;
 use std::collections::BTreeMap;
 
 pub type ExpertDispatchId = (u16, u8, u16);
+/// The one mapping between a native cache key and the semantic record id: `(layer, proj,
+/// expert)` with `proj` 0/1/2 for Gate/Up/Down. The native cache keys its MTP block at
+/// `layer = u16::MAX`, which is the largest layer this key can name. A record that is not a
+/// routed expert, or whose layer or original id does not fit the native key, has no
+/// dispatch id.
+pub fn dispatch_id(record: &RecordId) -> Result<ExpertDispatchId> {
+    let RecordId::Expert {
+        layer,
+        original_id,
+        projection,
+    } = record
+    else {
+        return Err(Error::InvalidLayout);
+    };
+    let proj = match projection {
+        Projection::Gate => 0u8,
+        Projection::Up => 1,
+        Projection::Down => 2,
+        Projection::Other(_) => return Err(Error::InvalidLayout),
+    };
+    Ok((
+        u16::try_from(*layer).map_err(|_| Error::InvalidLayout)?,
+        proj,
+        u16::try_from(*original_id).map_err(|_| Error::InvalidLayout)?,
+    ))
+}
 /// A host ticket remains open across native H2D. Only a physically observed
 /// transfer completion may call finish; unknown completion retains this object.
 #[derive(Debug)]
@@ -38,20 +64,8 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
             return Err(Error::InvalidLayout);
         }
         request.validate()?;
-        for (&(layer, proj, expert), id) in &ids {
-            let projection = match proj {
-                0 => Projection::Gate,
-                1 => Projection::Up,
-                2 => Projection::Down,
-                _ => return Err(Error::InvalidLayout),
-            };
-            if id.record
-                != (RecordId::Expert {
-                    layer: u32::from(layer),
-                    projection,
-                    original_id: u32::from(expert),
-                })
-            {
+        for (&local, id) in &ids {
+            if dispatch_id(&id.record)? != local {
                 return Err(Error::InvalidLayout);
             }
             let layout = bank.layout(id)?;

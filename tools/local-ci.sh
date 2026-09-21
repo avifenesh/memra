@@ -137,6 +137,8 @@ cpu_chain() {
     if ! cargo test --release -p memra-server -j8; then
         echo "local-ci: memra-server unit suite FAILED"; return 1
     fi
+    # Match the standing hosted check, including tier integration tests and doctests.
+    CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8 bash tools/ci-portable.sh || return 1
     # ENGINE LIB SUITE (memra#18, ci-diet lane 2026-09-02). vision::tests and every other
     # memra-engine lib test ran NOWHERE: ci.yml ran `cargo test -p memra-engine cpu_experts
     # --lib`, a NAME FILTER. The CPU-safe part of the suite runs here (358 tests, measured with
@@ -164,6 +166,19 @@ cpu_chain() {
     else
         echo "local-ci: gguf skip census SKIPPED (MEMRA_CI_GGUF=0)" >&2
     fi
+    # TIER, KV AND ONBOARDING-CLI SUITES (memra #545, lane/spill-d day 13, 2026-09-21). Until
+    # this line no standing gate EXECUTED them: build and clippy compiled them, and the 325
+    # tests (memra-tier's six integration suites and compile-fail doctests, memra-kv, the
+    # memra-cli onboarding receipts) ran only when a lane ran them by hand. One wrapper,
+    # tools/portable-suites.sh, the same text ci.yml's portable-suites job runs, through the
+    # skip census at budget 0; its teeth (tools/test_portable_suites.sh) run in CI. CPU
+    # execution, never GPU qualification. CARGO_BUILD_JOBS is cargo's own knob, set to the rig
+    # cap like the -j8 above. No skip door: the suites are CPU-only and about 25 s warm (the
+    # first run after a clean pays a debug build of gguf/reference/tokenizer/tier/kv/cli).
+    echo "== local-ci: tier, KV and onboarding-CLI suites (tools/portable-suites.sh) =="
+    if ! CARGO_BUILD_JOBS=8 tools/portable-suites.sh; then
+        echo "local-ci: tier/KV/CLI suites FAILED (tools/portable-suites.sh)"; return 1
+    fi
 }
 # OVERLAP (ci-diet lane 2026-09-02). The three steps above are CPU-bound and touch no GPU;
 # every gate below the lock is GPU-bound and leaves most cores idle. Serial, the correctness
@@ -181,7 +196,7 @@ CPU_PID=""
 trap 'if [ -n "${CPU_PID:-}" ] && kill -0 "$CPU_PID" 2>/dev/null; then pkill -TERM -P "$CPU_PID" 2>/dev/null || true; kill "$CPU_PID" 2>/dev/null || true; echo "local-ci: CPU chain killed on exit; its log is kept at $CPU_LOG" >&2; fi' EXIT
 if [ "$MODE" = "--correctness" ] && [ "${MEMRA_CI_OVERLAP:-1}" = "1" ]; then
     CPU_LOG=$(mktemp "${TMPDIR:-/tmp}/local-ci-cpu-chain.XXXXXX")
-    echo "local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite) running alongside the GPU gates; log $CPU_LOG"
+    echo "local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite, gguf census, tier/KV/CLI suites) running alongside the GPU gates; log $CPU_LOG"
     cpu_chain > "$CPU_LOG" 2>&1 &
     CPU_PID=$!
 else

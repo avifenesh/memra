@@ -120,3 +120,14 @@ fn dropping_owner_invalidates_proxy_without_auto_finishing_open_dma() {
     assert_eq!(proxy.finish(&token), Err(Error::NotFound));
     assert_eq!(&*calls.borrow(), &["stage/publish"]);
 }
+#[test]
+fn token_identity_names_the_fixture_lease() {
+    let (mut owner, _) = owner(false);
+    let proxy = owner.proxy();
+    let token = proxy.demand((2, 0, 9), 16).unwrap();
+    assert_eq!(token.record(), (2, 0, 9));
+    assert_eq!(token.artifact(), tensor().artifact);
+    assert_eq!(token.epochs(), epochs());
+    proxy.finish(&token).unwrap();
+    owner.close().unwrap();
+}

@@ -2067,6 +2067,14 @@ pub struct Metrics {
     /// lane/kv-tenancy-compaction-20260831): a nonzero rate here with a low overall
     /// pool occupancy is the whale-tenant signature the cap exists to bound.
     pub prefix_host_tenant_rejects: u64,
+    /// Host entries evicted from a tenant's OWN row to admit that tenant's demotion at its
+    /// share cap (memra#384, lane/spill-a-20260919 day 12). A moving count with
+    /// `prefix_host_tenant_rejects` flat is the cap doing turnover instead of evaporation.
+    pub prefix_host_tenant_reclaims: u64,
+    /// The subset of `prefix_host_tenant_reclaims` whose demotion then failed to insert (the
+    /// reclaim runs once the image is built and ready, so only `insert`'s own refusals, or a
+    /// fixed-arena copy failure, can reach here). Nonzero is a regression to read.
+    pub prefix_host_tenant_reclaims_wasted: u64,
     /// Agent-pause demotion (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
     /// spec Arc E): entries the pause sweep demoted to host (subset of
     /// prefix_host_demotions), and armed candidates that expired without demoting because
@@ -4206,6 +4214,94 @@ fn prefix_cache_protected_bytes(budget: usize, protected_pct: usize) -> usize {
         .saturating_add((budget % 100).saturating_mul(protected_pct) / 100)
 }
 
+/// The typed refusal for an entry larger than the whole prefix-cache budget (memra#523 item
+/// 1: a refused publication prints, in bytes, or it is a silent cold turn). One formatter for
+/// the insert path and the snapshot preflight, so a log reader has one line to grep.
+fn prefix_insert_refused_oversize(bytes: usize, budget: usize, why: &str, key: &PoolKey) -> String {
+    format!(
+        "[prefix-cache] insert refused: entry {bytes} exceeds budget {budget} ({why}, model {}{})",
+        key.0,
+        ns_suffix(&key.1)
+    )
+}
+
+/// The typed refusal for an entry that fits the budget but not beside the bytes currently
+/// leased by in-flight sessions (only leases are untouchable under the newest-turn-fits rule;
+/// every unleased byte, protected or not, is reclaimable for it).
+fn prefix_insert_refused_leased(
+    bytes: usize,
+    leased: usize,
+    budget: usize,
+    why: &str,
+    key: &PoolKey,
+) -> String {
+    format!(
+        "[prefix-cache] insert refused: entry {bytes} cannot fit beside {leased} leased bytes \
+         (budget {budget}, {why}, model {}{})",
+        key.0,
+        ns_suffix(&key.1)
+    )
+}
+
+/// The shape of a refused publication, for the stderr throttle: an identical shape repeating on
+/// a saturated cache is counted (`prefix_cache_skips_budget` / `prefix_cache_skips_pinned`) but
+/// not re-printed on every request. `leased` is `None` for the oversize refusal and the leased
+/// byte count for the leased refusal; the path that refused (`why`) is deliberately not part of
+/// the shape, so the same numbers refusing on the insert path and on the preflight are one shape.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PrefixRefusalShape {
+    leased: Option<usize>,
+    bytes: usize,
+    budget: usize,
+    key: PoolKey,
+}
+
+/// Every `PREFIX_REFUSAL_REANNOUNCE_EVERY`-th identical refusal is printed again, with the count
+/// of the repeats that were not.
+const PREFIX_REFUSAL_REANNOUNCE_EVERY: u64 = 64;
+
+/// The refusal-line throttle (memra#523 item 1, review on the newest-turn-fits fix): never a
+/// silent cold turn, never unbounded stderr either. The first refusal prints; identical repeats
+/// (same `PrefixRefusalShape`) are suppressed and counted; a changed shape prints at once and
+/// carries the previous shape's suppressed count; every N-th identical repeat prints with its
+/// count. Counting in the `/metrics` skip fields is the caller's and is never throttled.
+#[derive(Default)]
+struct PrefixRefusalAnnouncer {
+    last: Option<PrefixRefusalShape>,
+    /// Identical repeats not printed since the last printed line.
+    suppressed: u64,
+}
+
+impl PrefixRefusalAnnouncer {
+    /// The line to print for this refusal, or `None` when it is an identical repeat that is
+    /// counted but not printed.
+    fn announce(&mut self, shape: PrefixRefusalShape, line: String) -> Option<String> {
+        if self.last.as_ref() == Some(&shape) {
+            self.suppressed += 1;
+            if !self
+                .suppressed
+                .is_multiple_of(PREFIX_REFUSAL_REANNOUNCE_EVERY)
+            {
+                return None;
+            }
+            let repeats = std::mem::take(&mut self.suppressed);
+            return Some(format!(
+                "{line} (identical refusal repeated {repeats} times since the previous line; {} not printed)",
+                repeats - 1
+            ));
+        }
+        let previous = std::mem::take(&mut self.suppressed);
+        self.last = Some(shape);
+        if previous == 0 {
+            Some(line)
+        } else {
+            Some(format!(
+                "{line} (previous shape: {previous} identical refusals not printed)"
+            ))
+        }
+    }
+}
+
 /// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
 /// cache, in binary MiB. Default 0 = OFF BY DESIGN: the tier is unmeasured on serving
 /// hardware until its pod battery lands (tick-stall, identity, stress, 8-turn cache twin),
@@ -4219,6 +4315,406 @@ fn prefix_cache_protected_bytes(budget: usize, protected_pct: usize) -> usize {
 // Unqualified GLM host images remain opt-in; device-prefix support is independent.
 fn glm5_tp_kv_host_on() -> bool {
     std::env::var("MEMRA_GLM5_TP_KV_HOST").as_deref() == Ok("1")
+}
+
+/// HOST TIER CONTRACTS DOOR (MEMRA_KV_HOST_CONTRACTS, lane/spill-c-20260919 day 13, lead
+/// ruling 15 Option A; door doc `research/spill-c-20260919/HOSTPREFIX-DOOR.md`). Read once at
+/// boot. OFF = `HostPrefixCache::tier` stays `None` and `host_tier_context` is never called.
+fn kv_host_contracts_door() -> Result<bool, String> {
+    match std::env::var("MEMRA_KV_HOST_CONTRACTS") {
+        Ok(raw) => parse_kv_host_contracts(Some(&raw)),
+        Err(std::env::VarError::NotPresent) => parse_kv_host_contracts(None),
+        Err(std::env::VarError::NotUnicode(_)) => parse_kv_host_contracts(Some("<non-utf8>")),
+    }
+}
+
+/// Pure parse half of [`kv_host_contracts_door`]. Strict on purpose: unset or `0` is OFF, `1` is
+/// ON, and every other value REFUSES THE BOOT. A door whose OFF arm must be byte-identical
+/// by construction cannot fall back to OFF on a typo (`on`, `true`, a bare `=`, `11`): that is
+/// the silent OFF ruling 15 forbids, and it would file an OFF run under the ON arm.
+fn parse_kv_host_contracts(raw: Option<&str>) -> Result<bool, String> {
+    match raw {
+        None | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(other) => Err(format!(
+            "MEMRA_KV_HOST_CONTRACTS={other:?} refused: the host tier contracts door takes \
+             exactly `1` (on) or `0` (off, the default); it does not fall back to off"
+        )),
+    }
+}
+
+/// The startup pinned arena (MEMRA_GLM5_TP_KV_HOST=1) is charged by its own owner and its
+/// backing-lease handoff to the tier governor is out of scope for this slice (lead ruling
+/// 15); `tier_charge` refuses every demote with `tier fixed-arena lease handoff pending`
+/// while the arena exists, so the door refuses at boot instead of booting a tier that cannot
+/// demote and looks OFF.
+fn host_tier_arena_refusal(arena_door_on: bool) -> Result<(), String> {
+    if arena_door_on {
+        return Err(
+            "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: the startup pinned arena \
+                    (MEMRA_GLM5_TP_KV_HOST=1) is charged by its own owner and its lease \
+                    handoff to the tier governor is out of scope for this slice; the tier \
+                    would refuse every demote with `tier fixed-arena lease handoff pending`. \
+                    Unset one of the two"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+/// Streaming SHA-256 of one artifact file as lowercase hex (the door's artifact identity).
+/// Streams because the served GGUFs are tens of GB; never reads the file into memory.
+fn sha256_file_hex(path: &str) -> Result<String, String> {
+    let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 8 << 20];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut buf).map_err(|e| format!("{path}: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// The numeric class every host-tier image of this server is captured under: the in-process
+/// prefix-entry layout version and the trunk KV block encodings (`memra_kv::kv_blk_bytes`,
+/// q8_0 K rows of 34 B and q5_1 V rows of 24 B per 32 elements). One class, because the
+/// prefix cache is shared by the prime, batched-decode and spec paths and the serving gates
+/// hold those bit-identical (one numeric program per request).
+fn host_tier_numeric_class() -> String {
+    let (k, v) = memra_engine::cache::kv_blk_bytes();
+    format!("server-prefix-entry-v{PREFIX_ENTRY_LAYOUT_VERSION}-kv-q8_0-{k}B-q5_1-{v}B")
+}
+
+/// The program identity of one loaded GGUF model with a ZERO tenant salt; the pool namespace
+/// stamps the salt in `HostTierContext::program`. Every field is a framed contract digest
+/// over what the server holds for the model at load:
+///   artifact        streaming sha256 of the GGUF file (`sha256_file_hex`)
+///   serialized_plan the compiled `ModelPlan` in its `Debug` form (the same convention as
+///                   `kv_tier_gate`, `plan-debug`)
+///   numeric         `host_tier_numeric_class`
+///   stream          the single worker owner thread that runs every copy and kernel
+///   tokenizer       the artifact (a GGUF tokenizer is parsed from the artifact itself)
+///   template        the GGUF chat template text, or the ChatML fallback when it has none
+///   adapter         none (the server serves no adapter)
+///   modality        text (a loaded vision tower refuses the door, `host_tier_context`)
+///   position        immutable prefixes start at token zero (`IdentitySlot::bind` enforces it)
+fn host_tier_program_base(
+    artifact_sha256_hex: &str,
+    plan_debug: &str,
+    chat_template: Option<&str>,
+) -> memra_engine::cache::record::ProgramIdentity {
+    use memra_engine::cache::record::{ProgramIdentity, WIRE_VERSION, digest};
+    ProgramIdentity {
+        version: WIRE_VERSION,
+        artifact: digest("artifact-sha256", artifact_sha256_hex.as_bytes()),
+        serialized_plan: digest("plan-debug", plan_debug.as_bytes()),
+        numeric: digest("numeric", host_tier_numeric_class().as_bytes()),
+        stream: digest("stream", b"server-worker-single-owner-thread"),
+        tokenizer: digest("artifact-tokenizer", artifact_sha256_hex.as_bytes()),
+        template: match chat_template {
+            Some(template) => digest("template-jinja", template.as_bytes()),
+            None => digest("template", b"chatml-fallback"),
+        },
+        adapter: digest("adapter", b"none"),
+        modality: digest("modality", b"text"),
+        position: digest("position", b"prefix-from-token-zero"),
+        tenant_salt: [0; 32],
+    }
+}
+
+/// The numeric class of a DRAFT-BEARING image (day 14, lead ruling 16): the plain class plus
+/// the MTP draft-scratch rows' block encodings, which are the trunk's own (`memra_kv::KvLayer`:
+/// q8_0 K rows, q5_1 V rows; `mtp_scratch_layout` sizes them from `kv_blk_bytes()` with the
+/// draft head's `n_head_kv`). Distinct from the plain class by construction, so a spec-published
+/// entry and a plain-published entry of one prompt never share `numeric`.
+fn host_tier_draft_numeric_class() -> String {
+    let (k, v) = memra_engine::cache::kv_blk_bytes();
+    format!(
+        "{}+mtp-draft-kv-q8_0-{k}B-q5_1-{v}B",
+        host_tier_numeric_class()
+    )
+}
+
+/// Where a loaded model's MTP draft head came from (`HOSTPREFIX-DOOR.md`, "Draft planes"):
+/// embedded in the trunk GGUF (`nextn_predict_layers > 0`, no external attach), or an external
+/// GGUF (the per-model `+draft` attach or `MEMRA_MTP_DRAFT`) named by its own streaming sha256.
+/// A model without an MTP head has no draft program; a draft-bearing entry for it is refused by
+/// name rather than bound to the plain program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HostTierDraftSource {
+    Embedded,
+    External { sha256_hex: String },
+}
+impl HostTierDraftSource {
+    fn describe(&self) -> String {
+        match self {
+            Self::Embedded => "embedded".to_string(),
+            Self::External { sha256_hex } => format!("external:{sha256_hex}"),
+        }
+    }
+}
+
+/// Which program identity one host image binds to under the door. Pure, so the demote refusal,
+/// `bind_tier_image`, the insert lease and the promote lease name one class for one entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostTierEntryClass {
+    Plain,
+    MtpDraft,
+}
+
+/// Classify an entry by the planes it carries, refusing BY NAME every plane outside the
+/// contract-routed surface: GLM state (TP shards, latent planes) and the DFlash draft tail (no
+/// drafter artifact identity is derivable from a GGUF digest in this slice). The refusal text
+/// is what the caller prints under `(contracts door)`; nothing is skipped silently. The tail
+/// refusal outranks a draft plane on purpose: two spec programs never coexist on one model (the
+/// boot guard refuses the combination) and this function does not guess which one won.
+fn host_tier_entry_class(
+    glm: bool,
+    mtp_draft: bool,
+    dflash_tail: bool,
+) -> Result<HostTierEntryClass, &'static str> {
+    if glm {
+        return Err("entry carries TP or latent (GLM) planes outside the contract-routed surface");
+    }
+    if dflash_tail {
+        return Err(
+            "entry carries a DFlash draft tail outside the contract-routed surface (no drafter \
+             artifact identity in this slice)",
+        );
+    }
+    Ok(if mtp_draft {
+        HostTierEntryClass::MtpDraft
+    } else {
+        HostTierEntryClass::Plain
+    })
+}
+
+/// Length-framed pair for a contract digest: never hash an ambiguous concatenation.
+fn host_tier_framed_pair(a: &str, b: &str) -> Vec<u8> {
+    let mut bytes = (a.len() as u64).to_le_bytes().to_vec();
+    bytes.extend(a.as_bytes());
+    bytes.extend((b.len() as u64).to_le_bytes());
+    bytes.extend(b.as_bytes());
+    bytes
+}
+
+/// The draft-bearing program of one model (day 14, lead ruling 16): the plain base with the MTP
+/// draft head folded into `artifact` (the trunk digest framed with the draft source, so an
+/// external draft file's own sha256 enters), `serialized_plan` (the plan text framed with the
+/// draft source under the draft domain; a `+draft` attach already carries the external draft's
+/// `mtp_blocks` in the plan, a `MEMRA_MTP_DRAFT` head does not, which is why the artifact field
+/// names the file) and `numeric` (`host_tier_draft_numeric_class`). Every other field is the
+/// plain field: same stream, tokenizer, template, adapter, modality, position, zero tenant salt.
+fn host_tier_draft_program(
+    plain: &memra_engine::cache::record::ProgramIdentity,
+    artifact_sha256_hex: &str,
+    plan_debug: &str,
+    source: &HostTierDraftSource,
+) -> memra_engine::cache::record::ProgramIdentity {
+    use memra_engine::cache::record::digest;
+    let mut program = plain.clone();
+    program.artifact = digest(
+        "artifact-sha256+mtp-draft",
+        &host_tier_framed_pair(artifact_sha256_hex, &source.describe()),
+    );
+    program.serialized_plan = digest(
+        "plan-debug+mtp-draft",
+        &host_tier_framed_pair(plan_debug, &source.describe()),
+    );
+    program.numeric = digest("numeric", host_tier_draft_numeric_class().as_bytes());
+    program
+}
+
+/// The `Role::Transaction` shape blob of one host image (`host-prefix-shape-v2`): presence,
+/// length and order of every plane, so two images with equal payload bytes but a different
+/// plane structure never bind to one layout. v2 (day 14) frames the MTP draft plane's presence
+/// and geometry UNCONDITIONALLY (one byte, then `len`, `k_tok_bytes`, `v_tok_bytes` as u64 when
+/// present), so a plain blob and a draft-bearing blob are never prefixes of each other.
+fn host_tier_shape_metadata(
+    pos: usize,
+    conv: &[Option<usize>],
+    ssm: &[Option<usize>],
+    kv: &[Option<(usize, usize, usize)>],
+    draft: Option<(usize, usize, usize)>,
+) -> Vec<u8> {
+    let mut metadata = vec![];
+    metadata.extend((pos as u64).to_le_bytes());
+    for planes in [conv, ssm] {
+        metadata.extend((planes.len() as u64).to_le_bytes());
+        for plane in planes {
+            metadata.push(u8::from(plane.is_some()));
+            metadata.extend((plane.unwrap_or(0) as u64).to_le_bytes());
+        }
+    }
+    metadata.extend((kv.len() as u64).to_le_bytes());
+    for plane in kv {
+        metadata.push(u8::from(plane.is_some()));
+        if let Some((len, k_tok_bytes, v_tok_bytes)) = plane {
+            for n in [len, k_tok_bytes, v_tok_bytes] {
+                metadata.extend((*n as u64).to_le_bytes());
+            }
+        }
+    }
+    metadata.push(u8::from(draft.is_some()));
+    if let Some((len, k_tok_bytes, v_tok_bytes)) = draft {
+        for n in [len, k_tok_bytes, v_tok_bytes] {
+            metadata.extend((n as u64).to_le_bytes());
+        }
+    }
+    metadata
+}
+
+/// The server's governor (lead ruling 15: injected, one instance, never prefix-only). Sized
+/// as a LEDGER for this slice: twice the host budget on `pinned` and `pageable`, twice the
+/// device prefix budget on `device[ordinal]`. Why twice: the host LRU keeps resident images
+/// at or under the budget and `insert` refuses any single image above it, while the charge
+/// is taken BEFORE the LRU makes room, so a charge of at most one budget on top of at most
+/// one budget of residents must never be what refuses a demote the OFF arm would have made
+/// (equal `[prefix-host] demote:` counts across arms are ruling 15's admissibility gate).
+/// The same holds for promoted entries against the device prefix budget. The ledger records
+/// tenant, priority and bytes; the LRU decides. Option B may tighten it once eviction-to-fit
+/// runs before the charge.
+fn host_tier_governor(
+    device: usize,
+    host_budget: usize,
+    device_budget: usize,
+) -> Result<memra_engine::cache::tiered::hostprefix::SharedGovernor, String> {
+    use memra_engine::cache::tiered::TierBudget;
+    let dimensions = device
+        .checked_add(1)
+        .ok_or("host tier governor: device ordinal overflow")?;
+    let twice = |bytes: usize| {
+        u64::try_from(bytes)
+            .ok()
+            .and_then(|b| b.checked_mul(2))
+            .ok_or("host tier governor: capacity overflow")
+    };
+    let mut capacity = TierBudget::zero(dimensions);
+    capacity.pinned = twice(host_budget)?;
+    capacity.pageable = twice(host_budget)?;
+    capacity.device[device] = twice(device_budget)?;
+    let epoch = Instant::now();
+    memra_engine::cache::tiered::hostprefix::shared_governor(
+        capacity,
+        TierBudget::zero(dimensions),
+        0,
+        0,
+        Arc::new(move || u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX)),
+    )
+    .map_err(|e| format!("host tier governor: {e:?}"))
+}
+
+/// Build the door's context after every model has loaded and `model_generations` is set.
+/// Typed refusals, never a silent OFF: the arena (see `host_tier_arena_refusal`), a loaded
+/// vision tower (image-conditioned prefix entries have no modality identity in this slice),
+/// a checkpoint-directory model (this slice's artifact digest is the GGUF file digest).
+fn host_tier_context(
+    engine: &Engine,
+    hpx: &HostPrefixCache,
+    loaded: &HashMap<String, LoadedModel>,
+    models: &[(String, String, Option<String>)],
+    vision_tower_loaded: bool,
+) -> Result<HostTierContext, String> {
+    host_tier_arena_refusal(hpx.arena.is_some())?;
+    if vision_tower_loaded {
+        return Err(
+            "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: a vision tower is loaded and \
+                    image-conditioned prefix entries have no modality identity in this slice \
+                    (text only); unset the door or the tower"
+                .into(),
+        );
+    }
+    let device = engine.ctx().ordinal();
+    let mut programs = HashMap::new();
+    // MEMRA_MTP_DRAFT replaces every loaded MTP head with the one in this file (hybrid.rs); a
+    // per-model `+draft` attach replaces it again for that model. Same precedence here.
+    let external_mtp_draft = std::env::var("MEMRA_MTP_DRAFT")
+        .ok()
+        .filter(|path| !path.is_empty());
+    for (name, path, per_model_draft) in models {
+        let lm = loaded
+            .get(name)
+            .ok_or_else(|| format!("MEMRA_KV_HOST_CONTRACTS=1: model {name} is not loaded"))?;
+        if lm.from_dir {
+            return Err(format!(
+                "MEMRA_KV_HOST_CONTRACTS=1 refused at boot: model {name} loads from a \
+                 checkpoint directory ({path}); this slice derives the artifact identity from \
+                 a GGUF file digest only"
+            ));
+        }
+        let generation =
+            hpx.model_generations.get(name).cloned().ok_or_else(|| {
+                format!("MEMRA_KV_HOST_CONTRACTS=1: model {name} has no generation")
+            })?;
+        let t0 = Instant::now();
+        let artifact = sha256_file_hex(path)?;
+        let plan = format!("{:?}", lm.model.plan);
+        let plan_sha256 = {
+            let mut h = Sha256::new();
+            h.update(plan.as_bytes());
+            format!("{:x}", h.finalize())
+        };
+        let base = host_tier_program_base(&artifact, &plan, lm.tok.chat_template());
+        eprintln!(
+            "[prefix-host] contracts door: model {name} program identity artifact_sha256={artifact} \
+             plan_debug_sha256={plan_sha256} numeric={} template={} device={device} \
+             ({:.0}ms to hash {path})",
+            host_tier_numeric_class(),
+            if lm.tok.chat_template().is_some() {
+                "gguf-jinja"
+            } else {
+                "chatml-fallback"
+            },
+            t0.elapsed().as_secs_f64() * 1e3,
+        );
+        // Draft program (day 14, lead ruling 16): one per model WITH an MTP head, naming the
+        // head's source. A model without one gets none, and its draft-bearing entries (none can
+        // exist) would be refused by name rather than bound to the plain program.
+        let t1 = Instant::now();
+        let draft_source = match (lm.model.mtp.is_some(), per_model_draft, &external_mtp_draft) {
+            (false, _, _) => None,
+            (true, Some(dpath), _) | (true, None, Some(dpath)) => {
+                Some(HostTierDraftSource::External {
+                    sha256_hex: sha256_file_hex(dpath)?,
+                })
+            }
+            (true, None, None) => Some(HostTierDraftSource::Embedded),
+        };
+        let draft = draft_source
+            .as_ref()
+            .map(|source| host_tier_draft_program(&base, &artifact, &plan, source));
+        match &draft_source {
+            Some(source) => eprintln!(
+                "[prefix-host] contracts door: model {name} draft program identity \
+                 source={} numeric={} ({:.0}ms)",
+                source.describe(),
+                host_tier_draft_numeric_class(),
+                t1.elapsed().as_secs_f64() * 1e3,
+            ),
+            None => eprintln!(
+                "[prefix-host] contracts door: model {name} has no MTP head: no draft program, \
+                 draft-bearing entries are refused by name"
+            ),
+        }
+        programs.insert(
+            name.clone(),
+            HostTierPrograms {
+                plain: base,
+                draft,
+                generation,
+            },
+        );
+    }
+    let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes())?;
+    Ok(HostTierContext {
+        governor,
+        programs,
+        device: u32::try_from(device)
+            .map_err(|_| "MEMRA_KV_HOST_CONTRACTS=1: device ordinal does not fit u32")?,
+    })
 }
 
 fn kv_host_budget_bytes() -> usize {
@@ -4611,14 +5107,27 @@ impl KvFlex {
         let t0 = Instant::now();
         let (n, freed) = px.evict_to_bytes(self.floor);
         if n == 0 {
-            // Above-floor residency that is entirely pinned (in-flight fanout leases)
-            // cannot shed; loud, because the zero-tax gate would otherwise read a silent
-            // no-op as a pass.
-            eprintln!(
-                "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
-                 leases; nothing evictable",
-                (px.total_bytes - self.floor) as f64 / 1e6,
-            );
+            let unleased = px.evictable_bytes();
+            if unleased == 0 {
+                // Above-floor residency that is entirely pinned (in-flight fanout leases)
+                // cannot shed; loud, because the zero-tax gate would otherwise read a silent
+                // no-op as a pass. This is the ONLY shape that may print "nothing evictable":
+                // `evict_to_bytes` takes probation first and then protected oldest first, so
+                // any unleased byte, protected or not, would have been a victim.
+                eprintln!(
+                    "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
+                     leases; nothing evictable",
+                    (px.total_bytes - self.floor) as f64 / 1e6,
+                );
+            } else {
+                // Unreachable by construction; loud if the victim function and the LRU
+                // indexes ever disagree.
+                eprintln!(
+                    "[kv-flex] shed ({why}): no entry evicted while {:.1}MB unleased bytes sit \
+                     above the floor; the victim function and the LRU indexes disagree",
+                    unleased as f64 / 1e6,
+                );
+            }
             return 0;
         }
         let ms = t0.elapsed().as_secs_f64() * 1e3;
@@ -6404,9 +6913,14 @@ struct PrefixCache {
     entries: HashMap<PoolKey, Vec<PrefixEntry>>,
     /// Byte-budgeted SLRU indexes. New entries enter probation; a real reuse promotes to
     /// protected. Capacity pressure consumes probation LRU first, so one-hit scan traffic
-    /// cannot displace a protected entry while probation has an evictable victim. Protected
-    /// overflow demotes its own LRU until it fits its byte target. The targets are global across
-    /// namespaces because VRAM is global; visibility remains scoped by `entries` above.
+    /// cannot displace a protected entry while probation has an evictable victim other than the
+    /// newcomer. Under the newest-turn-fits rule (memra#523 item 1, `room_victim_with`) every
+    /// UNLEASED byte is reclaimable for a publication that fits the budget: once probation is
+    /// exhausted the protected LRU goes oldest first, with no floor at `protected_target_bytes`.
+    /// The protected target bounds demotion (`rebalance_protected`) and pinned admission only.
+    /// Protected overflow demotes its own LRU until it fits its byte target. The targets are
+    /// global across namespaces because VRAM is global; visibility remains scoped by `entries`
+    /// above.
     ///
     /// Each BTreeMap preserves the Q3 O(log E) victim lookup and deterministic `(last_use,id)`
     /// tie break. Emergency flush compares both heads to retain global oldest-first removal.
@@ -6428,6 +6942,9 @@ struct PrefixCache {
     evictions: u64,
     skips_budget: u64,
     skips_pinned: u64,
+    /// stderr throttle for the two typed refusal lines; the skip counters above count every
+    /// refusal regardless.
+    refusals: PrefixRefusalAnnouncer,
     hit_tokens: u64,
     /// LCP histogram (lane/cache-metering): one sample per probe — the served entry's
     /// token length on a hit, `best_lcp` on a miss (both already computed; no new scan).
@@ -6520,6 +7037,41 @@ impl PrefixCache {
     /// Record one probe outcome into the LCP histogram (hit: entry length; miss: best_lcp).
     fn record_lcp(&mut self, n: usize) {
         self.lcp_hist[Self::lcp_bucket(n)] += 1;
+    }
+
+    /// The oversize refusal: counted every time, printed through the throttle.
+    fn refuse_oversize(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
+        self.record_budget_skip(false);
+        let shape = PrefixRefusalShape {
+            leased: None,
+            bytes,
+            budget,
+            key: key.clone(),
+        };
+        if let Some(line) = self.refusals.announce(
+            shape,
+            prefix_insert_refused_oversize(bytes, budget, why, key),
+        ) {
+            eprintln!("{line}");
+        }
+    }
+
+    /// The leased refusal: counted every time, printed through the throttle.
+    fn refuse_leased(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
+        let leased = self.pinned_bytes();
+        self.record_budget_skip(true);
+        let shape = PrefixRefusalShape {
+            leased: Some(leased),
+            bytes,
+            budget,
+            key: key.clone(),
+        };
+        if let Some(line) = self.refusals.announce(
+            shape,
+            prefix_insert_refused_leased(bytes, leased, budget, why, key),
+        ) {
+            eprintln!("{line}");
+        }
     }
 
     fn record_budget_skip(&mut self, pinned: bool) {
@@ -6985,10 +7537,6 @@ impl PrefixCache {
         Some(dead)
     }
 
-    fn capacity_victim(&self) -> Option<(PoolKey, usize)> {
-        self.capacity_victim_with(prefix_cache_slru_enabled())
-    }
-
     /// Victim selection, with the policy passed in so both arms are unit-testable
     /// (`prefix_cache_slru_enabled` is a process-wide `OnceLock` over the environment).
     fn capacity_victim_with(&self, slru: bool) -> Option<(PoolKey, usize)> {
@@ -7005,6 +7553,36 @@ impl PrefixCache {
         // SLRU: a protected entry becomes eligible only when protected exceeds its byte target:
         // rebalance_protected demotes that segment's LRU into this probation index first.
         self.probation_lru.values().next().cloned()
+    }
+
+    /// NEWEST-TURN-FITS (memra#523 item 1): the victim that makes room for an incoming or
+    /// just-inserted entry. Under SLRU the probation LRU goes first, exactly as
+    /// `capacity_victim_with` chooses it; when probation is exhausted, or when its only
+    /// remaining member is the entry being inserted (`keep`), the protected LRU goes next,
+    /// oldest first. An insert therefore never selects itself. Before this rule a growing
+    /// conversation whose every turn exceeded the free share beside a promoted cohort ran
+    /// `cold=1 restored=0` on every turn (`insert probation` then `evict (Probation LRU)` of
+    /// the same entry, or the snapshot preflight refusing) while the cohort sat protected.
+    /// Under plain LRU the global oldest is the victim as before: the newest entry is the
+    /// global newest and is never chosen while another unleased entry remains. For entries
+    /// that fit without touching protected bytes the chosen victims are unchanged.
+    fn room_victim_with(&self, slru: bool, keep: Option<u64>) -> Option<(PoolKey, usize)> {
+        let victim = self.capacity_victim_with(slru);
+        if !slru {
+            return victim;
+        }
+        let is_keep = |(key, i): &(PoolKey, usize)| {
+            keep.is_some_and(|id| {
+                self.entries
+                    .get(key)
+                    .and_then(|pool| pool.get(*i))
+                    .is_some_and(|entry| entry.id == id)
+            })
+        };
+        match victim {
+            Some(v) if !is_keep(&v) => Some(v),
+            _ => self.protected_lru.values().next().cloned(),
+        }
     }
 
     fn oldest_evictable(&self) -> Option<(PoolKey, usize)> {
@@ -7176,12 +7754,15 @@ impl PrefixCache {
             };
         }
         if e.bytes > budget {
-            self.record_budget_skip(false);
-            eprintln!(
-                "[prefix-cache] skip {why} insert: entry {:.1}MB > budget {:.0}MB",
-                e.bytes as f64 / 1e6,
-                budget as f64 / 1e6
-            );
+            self.refuse_oversize(e.bytes, budget, why, key);
+            return None;
+        }
+        // NEWEST-TURN-FITS preflight (memra#523 item 1): an unpinned entry that fits the
+        // budget either fits beside the leased bytes (every unleased byte is reclaimable for
+        // it, see `room_victim_with`) or is refused HERE, in bytes, without evicting anyone.
+        // Before this check such an entry evicted every unleased neighbour and then itself.
+        if initial_pins == 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
+            self.refuse_leased(e.bytes, budget, why, key);
             return None;
         }
         if initial_pins > 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
@@ -7250,7 +7831,9 @@ impl PrefixCache {
             self.rebalance_protected();
         }
         while self.total_bytes > budget {
-            let Some((k, i)) = self.capacity_victim_with(slru) else {
+            // Never the entry just inserted: probation LRU first, then protected LRU oldest
+            // first. The preflights above guarantee a victim exists while over budget.
+            let Some((k, i)) = self.room_victim_with(slru, Some(inserted_id)) else {
                 break;
             };
             let Some(dead) = self.remove_at(&k, i) else {
@@ -7282,16 +7865,23 @@ impl PrefixCache {
     }
 
     /// Reserve publication room before allocating its device snapshot. Leases and the
-    /// selected eviction policy remain authoritative. Refuse without evicting anything
-    /// when the eligible entries cannot make room; publication must never fail a request.
+    /// selected eviction policy remain authoritative for the ORDER of victims; under the
+    /// newest-turn-fits rule (memra#523 item 1) every unleased byte is reclaimable, probation
+    /// LRU first and then protected LRU oldest first, so the only refusals are an entry larger
+    /// than the whole budget or one that cannot fit beside the current leases. Both refuse
+    /// without evicting anything and print their typed `[prefix-cache] insert refused:` line
+    /// in bytes; publication must never fail a request, and it must never go cold silently.
     fn prepare_snapshot(
         &mut self,
+        key: &PoolKey,
         bytes: usize,
         budget: usize,
         slru: bool,
         mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
     ) -> bool {
+        const WHY: &str = "snapshot preflight";
         if bytes > budget {
+            self.refuse_oversize(bytes, budget, WHY, key);
             return false;
         }
         let target = budget - bytes;
@@ -7299,17 +7889,13 @@ impl PrefixCache {
         if needed == 0 {
             return true;
         }
-        let reclaimable: usize = self
-            .probation_lru
-            .values()
-            .chain(self.protected_lru.values().filter(|_| !slru))
-            .map(|(key, i)| self.entries[key][*i].bytes)
-            .sum();
+        let reclaimable = usize::try_from(self.evictable_bytes()).unwrap_or(usize::MAX);
         if needed > reclaimable {
+            self.refuse_leased(bytes, budget, WHY, key);
             return false;
         }
         while self.total_bytes > target {
-            let Some((key, i)) = self.capacity_victim_with(slru) else {
+            let Some((key, i)) = self.room_victim_with(slru, None) else {
                 return false;
             };
             let Some(dead) = self.remove_at(&key, i) else {
@@ -7317,7 +7903,8 @@ impl PrefixCache {
             };
             self.evictions += 1;
             eprintln!(
-                "[prefix-cache] evict (snapshot preflight): {} tokens, {:.1}MB (model {}{})",
+                "[prefix-cache] evict (snapshot preflight, {:?} LRU): {} tokens, {:.1}MB (model {}{})",
+                dead.segment,
                 dead.toks.len(),
                 dead.bytes as f64 / 1e6,
                 key.0,
@@ -7336,18 +7923,28 @@ impl PrefixCache {
         true
     }
 
-    /// KV-FLEX SHED (lane/kv-flex-20260831): evict entries in capacity order (probation
-    /// LRU first, protected LRU past its share: the SAME victim function the insert-time
-    /// budget loop uses, so flex adds no second eviction policy) until residency is back
-    /// at `target`. Evicted bytes EVAPORATE (deliberately no demote sink, the `evict_all`
-    /// law: an admission-tick shed must not stall behind gigabytes of D2H). Pinned entries
-    /// are untouchable and the loop stops when no victim remains. Returns
-    /// (entries evicted, bytes freed).
+    /// KV-FLEX SHED (lane/kv-flex-20260831) and the step-OOM reclaim (memra#145): evict
+    /// entries in the insert loop's order, `room_victim_with(slru, None)`: probation LRU
+    /// first, then protected LRU oldest first, leases untouchable (under `lru`, the global
+    /// oldest). The SAME victim function the insert-time budget loop and the snapshot
+    /// preflight use, so pressure relief adds no second eviction policy and can reach every
+    /// byte `evictable_bytes()` promises the memory-admission door. Until memra#523 item 1's
+    /// review this loop selected with the raw SLRU capacity victim (probation LRU only), so
+    /// on a protected-heavy cache it stopped as soon as probation was empty and freed far
+    /// less than its logged target. Evicted bytes EVAPORATE (deliberately no demote sink,
+    /// the `evict_all` law: an admission-tick shed must not stall behind gigabytes of D2H).
+    /// The loop stops when no unleased victim remains. Returns (entries evicted, bytes
+    /// freed).
     fn evict_to_bytes(&mut self, target: usize) -> (usize, usize) {
+        self.evict_to_bytes_with(target, prefix_cache_slru_enabled())
+    }
+
+    /// [`Self::evict_to_bytes`] with the policy passed in, so both arms are unit-testable.
+    fn evict_to_bytes_with(&mut self, target: usize, slru: bool) -> (usize, usize) {
         let mut n = 0usize;
         let mut freed = 0usize;
         while self.total_bytes > target {
-            let Some((key, i)) = self.capacity_victim() else {
+            let Some((key, i)) = self.room_victim_with(slru, None) else {
                 break;
             };
             let Some(dead) = self.remove_at(&key, i) else {
@@ -7552,6 +8149,95 @@ struct HostPrefixEntry {
     _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
 }
 
+impl HostPrefixEntry {
+    /// A live identity lease (`IdentitySlot::lease`, held by a promote in flight or any future
+    /// asynchronous reader) marks the entry LEASED: the tenant-share reclaim never evicts it.
+    /// Unbound legacy entries and entries whose leases all dropped are unleased.
+    fn leased(&self) -> bool {
+        self._tier_identity.leased()
+    }
+}
+
+/// What the tenant-share reclaim (memra#384) evicted from the demoting tenant's own row.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct TenantShareReclaim {
+    evicted: usize,
+    freed: usize,
+}
+
+/// The pure eligibility half of the reclaim: this tenant's row, the shortfall, what its unleased
+/// entries could give up, what was leased and skipped. `need == 0` means the cap does not bind.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct TenantSharePlan {
+    row: String,
+    need: usize,
+    eligible: usize,
+    leased_skipped: usize,
+    leased_bytes: usize,
+}
+impl TenantSharePlan {
+    fn refuse(&self, why: TenantShareRefusalWhy) -> TenantShareRefusal {
+        TenantShareRefusal {
+            why,
+            need: self.need,
+            eligible: self.eligible,
+            leased_skipped: self.leased_skipped,
+            leased_bytes: self.leased_bytes,
+        }
+    }
+}
+
+/// Why the tenant-share reclaim refused; every arm evicted NOTHING except `RetryStillShort`,
+/// which reports what it did evict (the single-owner invariant makes it unreachable, so a hit
+/// there is a bug report, not a policy).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TenantShareRefusalWhy {
+    ImageExceedsShare { image: usize, share: usize },
+    NoEligibleSpace,
+    RetryStillShort { evicted: usize, freed: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TenantShareRefusal {
+    why: TenantShareRefusalWhy,
+    /// Bytes the row had to give up for the demotion to fit its share.
+    need: usize,
+    /// Bytes this row could have given up: its unleased entries other than the exact twin.
+    eligible: usize,
+    leased_skipped: usize,
+    leased_bytes: usize,
+}
+impl std::fmt::Display for TenantShareRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mb = |b: usize| b as f64 / 1e6;
+        match self.why {
+            TenantShareRefusalWhy::ImageExceedsShare { image, share } => write!(
+                f,
+                "reclaim refused: the image alone exceeds the share ({:.1}MB > {:.0}MB); nothing \
+                 evicted",
+                mb(image),
+                mb(share)
+            ),
+            TenantShareRefusalWhy::NoEligibleSpace => write!(
+                f,
+                "reclaim refused: needed {:.1}MB from this tenant's own unleased entries, \
+                 {:.1}MB eligible ({} leased entries holding {:.1}MB skipped); nothing evicted",
+                mb(self.need),
+                mb(self.eligible),
+                self.leased_skipped,
+                mb(self.leased_bytes)
+            ),
+            TenantShareRefusalWhy::RetryStillShort { evicted, freed } => write!(
+                f,
+                "reclaim retry still short after evicting {evicted} own entries ({:.1}MB) of \
+                 {:.1}MB needed",
+                mb(freed),
+                mb(self.need)
+            ),
+        }
+    }
+}
+
 /// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU on purpose:
 /// demotions arrive already SLRU-ordered from the device tier, so a second segmentation here
 /// would re-derive the same ordering at extra bookkeeping cost. Keyed exactly like the device
@@ -7599,6 +8285,18 @@ struct HostPrefixCache {
     tenant_pct: usize,
     tenant_bytes: HashMap<String, usize>,
     tenant_rejects: u64,
+    /// TENANT-SHARE RECLAIM (memra#384): entries evicted from a tenant's OWN row so that
+    /// tenant's demotion fits its share (a subset of `evictions`; `telemetry_stamp` already
+    /// moves with `evictions`). Never another tenant's entry, never a leased one.
+    tenant_reclaims: u64,
+    /// The subset of `tenant_reclaims` whose demotion then never inserted (integ15 review of
+    /// PR #597): the reclaim runs once the image is built and ready, so only `insert`'s own
+    /// refusals, or a fixed-arena copy failure, can reach here. Nonzero is a regression to read.
+    tenant_reclaims_wasted: u64,
+    /// Entries a reclaim evicted for a demotion that has not inserted yet: consumed to zero by
+    /// the next successful `insert`, or moved into `tenant_reclaims_wasted` by
+    /// `waste_pending_reclaim` at every demote exit after the reclaim.
+    reclaim_pending: usize,
     /// AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
     /// spec Arc E). `pause_demotes` counts entries the pause sweep moved into this tier
     /// (a subset of `demotions`: park-boundary publishes plus resident device entries);
@@ -7656,12 +8354,23 @@ impl HostPrefixCache {
         toks: &[u32],
         bytes: usize,
         sizes: &[usize],
+        reclaim: bool,
     ) -> Result<HostPlaneLeases, String> {
         let Some(arena) = self.arena.clone() else {
             return Ok(HostPlaneLeases(None));
         };
-        if bytes > self.budget || self.tenant_cap_would_evaporate(key, toks, bytes) {
+        if bytes > self.budget || (!reclaim && self.tenant_cap_would_evaporate(key, toks, bytes)) {
             return Err("pinned arena admission refused: image exceeds host/tenant budget".into());
+        }
+        if reclaim && self.tenant_cap_would_evaporate(key, toks, bytes) {
+            // Fixed arena (memra#384): the planes' backing is reserved BEFORE the D2H copy, so
+            // the tenant-share reclaim cannot wait for the image here; it runs now, and a copy
+            // that then fails leaves its evictions booked as wasted by the demote hook. Only the
+            // demote hook passes `reclaim`; a handoff import keeps the refusal above.
+            self.reclaim_tenant_share(key, toks, bytes)
+                .map_err(|refusal| {
+                    format!("pinned arena admission refused at the tenant share cap: {refusal}")
+                })?;
         }
         // Credit and recycle the exact twin before reserving its replacement.
         if let Some(i) = self.key_index(key, toks) {
@@ -7733,6 +8442,173 @@ impl HostPrefixCache {
             .map_or(0, |i| self.entries[key][i].bytes);
         let resident = self.tenant_bytes.get(row).copied().unwrap_or(0);
         resident.saturating_sub(twin) + bytes > self.tenant_budget()
+    }
+
+    /// TENANT-SHARE RECLAIM (memra#384, lane/spill-a-20260919 day 12), the eligibility half,
+    /// PURE. At the share cap a demotion used to EVAPORATE even while the pool had free space,
+    /// because the cap is per-row arithmetic and nothing of the row's own was ever evicted for
+    /// it (the gates-3 run: three refusals at 152.7 GB resident of a 154.6 GB share, zero
+    /// allocation rejections). The plan names what THIS tenant's own unleased entries could give
+    /// up: this row only (`auth::meter_key`), never the exact-key twin (`tenant_cap_would_evaporate`
+    /// credits it and `insert` replaces it), never a leased entry (`HostPrefixEntry::leased`).
+    /// `Ok` with `need == 0` below the cap; `Err` with nothing evicted when the image alone
+    /// exceeds the share (no eviction can help, into a full row or an empty one) or the row's
+    /// unleased bytes cannot cover the shortfall. The demote hook runs this BEFORE the D2H copy
+    /// so an infeasible demotion skips the PCIe trip, and it mutates nothing. On the pageable
+    /// tier the evictions then wait for the built image, so a copy, digest or charge failure
+    /// costs the row nothing; on the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) `reserve_image`
+    /// evicts at reservation, before the copy, and a copy failure there is booked as
+    /// `tenant_reclaims_wasted` (integ15 review of PR #597, both rounds).
+    fn tenant_share_reclaim_plan(
+        &self,
+        key: &PoolKey,
+        toks: &[u32],
+        bytes: usize,
+    ) -> Result<TenantSharePlan, TenantShareRefusal> {
+        if !self.tenant_cap_would_evaporate(key, toks, bytes) {
+            return Ok(TenantSharePlan::default());
+        }
+        let cap = self.tenant_budget();
+        let row = crate::auth::meter_key(&key.1).to_string();
+        let twin = self
+            .key_index(key, toks)
+            .map_or(0, |i| self.entries[key][i].bytes);
+        let resident = self.tenant_bytes.get(&row).copied().unwrap_or(0);
+        // The shortfall: what the row must give up before `resident - twin + bytes <= cap`.
+        let need = (resident.saturating_sub(twin) + bytes).saturating_sub(cap);
+        let (mut eligible, mut leased_skipped, mut leased_bytes) = (0usize, 0usize, 0usize);
+        for (k, i) in self.lru.values() {
+            if crate::auth::meter_key(&k.1) != row {
+                continue;
+            }
+            let e = &self.entries[k][*i];
+            if k == key && e.toks[..] == *toks {
+                continue;
+            }
+            if e.leased() {
+                leased_skipped += 1;
+                leased_bytes += e.bytes;
+            } else {
+                eligible += e.bytes;
+            }
+        }
+        let plan = TenantSharePlan {
+            row,
+            need,
+            eligible,
+            leased_skipped,
+            leased_bytes,
+        };
+        if bytes > cap {
+            return Err(plan.refuse(TenantShareRefusalWhy::ImageExceedsShare {
+                image: bytes,
+                share: cap,
+            }));
+        }
+        if eligible < need {
+            return Err(plan.refuse(TenantShareRefusalWhy::NoEligibleSpace));
+        }
+        Ok(plan)
+    }
+
+    /// The eviction half: the plan above, then this tenant's own unleased entries oldest first
+    /// (re-resolved after every removal because `remove_at` swap-removes) until the predicate is
+    /// false, which is the one retry; `Ok` means it passed. The accounting flows through
+    /// `remove_at` like every other removal; the evicted count is also parked in
+    /// `reclaim_pending` until `insert` consumes it or `waste_pending_reclaim` books it. The
+    /// demote hook calls this only once the image is built and bound, right before `insert`, so
+    /// the only refusal left after an eviction is `insert`'s own; the fixed-arena path calls it
+    /// from `reserve_image` because the planes' backing is reserved before the copy there.
+    fn reclaim_tenant_share(
+        &mut self,
+        key: &PoolKey,
+        toks: &[u32],
+        bytes: usize,
+    ) -> Result<TenantShareReclaim, TenantShareRefusal> {
+        let plan = self.tenant_share_reclaim_plan(key, toks, bytes)?;
+        let mut reclaim = TenantShareReclaim::default();
+        if plan.need == 0 {
+            return Ok(reclaim);
+        }
+        let cap = self.tenant_budget();
+        while self.tenant_cap_would_evaporate(key, toks, bytes) {
+            let Some((victim_key, victim_i)) = self.oldest_reclaimable(&plan.row, key, toks) else {
+                break;
+            };
+            let Some(dead) = self.remove_at(&victim_key, victim_i) else {
+                break;
+            };
+            self.evictions += 1;
+            self.tenant_reclaims += 1;
+            reclaim.evicted += 1;
+            reclaim.freed += dead.bytes;
+            eprintln!(
+                "[prefix-host] evict (tenant share): {} tokens, {:.1}MB of tenant {:?}'s own \
+                 entries for its {:.1}MB demotion (row now {:.1}MB / {:.0}MB share = {}% of \
+                 {:.0}MB, model {}{})",
+                dead.toks.len(),
+                dead.bytes as f64 / 1e6,
+                plan.row,
+                bytes as f64 / 1e6,
+                self.tenant_bytes.get(&plan.row).copied().unwrap_or(0) as f64 / 1e6,
+                cap as f64 / 1e6,
+                self.tenant_pct,
+                self.budget as f64 / 1e6,
+                victim_key.0,
+                ns_suffix(&victim_key.1)
+            );
+            drop(dead);
+            self.log_arena("tenant share eviction");
+        }
+        self.reclaim_pending += reclaim.evicted;
+        // The one retry: the predicate must now be false. It cannot still hold after the plan on
+        // this single-threaded owner, but the answer fails closed.
+        if self.tenant_cap_would_evaporate(key, toks, bytes) {
+            return Err(plan.refuse(TenantShareRefusalWhy::RetryStillShort {
+                evicted: reclaim.evicted,
+                freed: reclaim.freed,
+            }));
+        }
+        Ok(reclaim)
+    }
+
+    /// Book every reclaim eviction whose demotion did not insert as wasted (integ15 review of
+    /// PR #597): called at each demote exit after a reclaim could have run. Returns the count
+    /// and prints one line when it is nonzero; a zero is silent (the common case, nothing
+    /// pending).
+    fn waste_pending_reclaim(&mut self, key: &PoolKey, toks: usize, why: &str) -> usize {
+        let n = self.reclaim_pending;
+        self.reclaim_pending = 0;
+        if n > 0 {
+            self.tenant_reclaims_wasted += n as u64;
+            eprintln!(
+                "[prefix-host] tenant share reclaim WASTED: {n} own entries evicted for a demotion \
+                 that did not insert ({why}; {toks} tokens, model {}{})",
+                key.0,
+                ns_suffix(&key.1)
+            );
+        }
+        n
+    }
+
+    /// Oldest entry in `row` that the tenant-share reclaim may evict: not the exact-key
+    /// twin of the incoming demotion, not leased. LRU order is the `lru` map's own.
+    fn oldest_reclaimable(
+        &self,
+        row: &str,
+        key: &PoolKey,
+        toks: &[u32],
+    ) -> Option<(PoolKey, usize)> {
+        self.lru.values().find_map(|(k, i)| {
+            if crate::auth::meter_key(&k.1) != row {
+                return None;
+            }
+            let e = &self.entries[k][*i];
+            if (k == key && e.toks[..] == *toks) || e.leased() {
+                return None;
+            }
+            Some((k.clone(), *i))
+        })
     }
 
     /// The tier takes work only when it has a budget and has not latched off.
@@ -7831,16 +8707,6 @@ impl HostPrefixCache {
     /// entry is the last-evicted device state: it may carry draft planes an older twin
     /// lacks, so it wins), then LRU-evict back under the host byte budget.
     fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry) -> bool {
-        if let Some(tier) = &self.tier {
-            let Some((program, generation)) = tier.programs.get(key) else {
-                return false;
-            };
-            if e._tier_charge.as_ref().and_then(|c| c.program()) != Some(program)
-                || e._tier_identity.lease(program, generation).is_err()
-            {
-                return false;
-            }
-        }
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
                 "[prefix-host] REFUSED demote insert: entry identity/version mismatch \
@@ -7861,6 +8727,49 @@ impl HostPrefixCache {
                 self.budget as f64 / 1e6,
             );
             return false;
+        }
+        // Contracts door: after the whole-budget refusal so an over-budget image prints the
+        // same `skip demote` line in both arms; before residency so nothing unbound lands.
+        if let Some(tier) = &self.tier {
+            let class = match host_tier_entry_class(
+                e.glm.is_some(),
+                e.draft.is_some(),
+                e.dspark_draft.is_some(),
+            ) {
+                Ok(class) => class,
+                Err(why) => {
+                    eprintln!(
+                        "[prefix-host] REFUSED demote insert (contracts door): {why} ({} tokens, \
+                         model {}{})",
+                        e.toks.len(),
+                        key.0,
+                        ns_suffix(&key.1)
+                    );
+                    return false;
+                }
+            };
+            let (program, generation) = match tier.program(key, class) {
+                Ok(program) => program,
+                Err(why) => {
+                    eprintln!(
+                        "[prefix-host] REFUSED demote insert (contracts door): {why} (model {})",
+                        key.0
+                    );
+                    return false;
+                }
+            };
+            if e._tier_charge.as_ref().and_then(|c| c.program()) != Some(&program)
+                || e._tier_identity.lease(&program, generation).is_err()
+            {
+                eprintln!(
+                    "[prefix-host] REFUSED demote insert (contracts door): image identity or \
+                     residency charge does not name this pool's program ({} tokens, model {}{})",
+                    e.toks.len(),
+                    key.0,
+                    ns_suffix(&key.1)
+                );
+                return false;
+            }
         }
         // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT): a demotion that would push
         // this tenant's resident bytes past its share EVAPORATES (the entry drops,
@@ -7900,6 +8809,8 @@ impl HostPrefixCache {
             pool.len() - 1
         };
         self.lru.insert(lru_key, (key.clone(), idx));
+        // A tenant-share reclaim that made room for this insert has now paid off (memra#384).
+        self.reclaim_pending = 0;
         while self.total_bytes > self.budget {
             let Some((victim_key, victim_i)) = self.lru.values().next().cloned() else {
                 break;
@@ -7964,15 +8875,57 @@ impl HostPrefixCache {
 
 // Explicit owner injection only: None is the unchanged legacy path. The bootstrap must
 // supply artifact/plan/numeric/tenant provenance; it must never infer it from token IDs.
+// Constructed by `host_tier_context` behind MEMRA_KV_HOST_CONTRACTS=1 (lane/spill-c-20260919
+// day 13, lead ruling 15 Option A); with the door OFF nothing constructs it.
 struct HostTierContext {
     governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
-    programs: HashMap<PoolKey, (memra_engine::cache::record::ProgramIdentity, Arc<()>)>,
+    /// Per loaded model NAME: the model's program identities with a ZERO tenant salt (never
+    /// handed out as-is, see `program`) and the generation `HostPrefixCache::model_generations`
+    /// holds for that name. Pool namespaces arrive per request and cannot be enumerated at
+    /// boot, so the identity is completed per pool key rather than stored per pool key.
+    programs: HashMap<String, HostTierPrograms>,
     device: u32,
+}
+/// One loaded model's programs under the door: the plain program (day 13) and, for a model with
+/// an MTP head, the draft-bearing program (day 14, `host_tier_draft_program`).
+struct HostTierPrograms {
+    plain: memra_engine::cache::record::ProgramIdentity,
+    draft: Option<memra_engine::cache::record::ProgramIdentity>,
+    generation: Arc<()>,
+}
+impl HostTierContext {
+    /// The program identity of one pool key and entry class: the model's base identity for that
+    /// class with `tenant_salt` derived by the ONE memra-kv helper (lead ruling 13) from the pool
+    /// namespace, the same string `auth::meter_key(&key.1)` reads for the share-cap row.
+    /// Deterministic, so the charge taken at demote and the lease checked at insert or promote
+    /// name one program. Typed refusals: an unknown model, or a draft-bearing entry on a model
+    /// that has no MTP head (never bound to the plain program).
+    fn program(
+        &self,
+        key: &PoolKey,
+        class: HostTierEntryClass,
+    ) -> Result<(memra_engine::cache::record::ProgramIdentity, &Arc<()>), &'static str> {
+        let programs = self
+            .programs
+            .get(&key.0)
+            .ok_or("tier program identity missing")?;
+        let base = match class {
+            HostTierEntryClass::Plain => &programs.plain,
+            HostTierEntryClass::MtpDraft => programs.draft.as_ref().ok_or(
+                "tier draft program identity missing: the model has no MTP head, so a \
+                 draft-bearing entry cannot name its program",
+            )?,
+        };
+        let mut program = base.clone();
+        program.tenant_salt = memra_engine::cache::tiered::hostprefix::tenant_salt(&key.1);
+        Ok((program, &programs.generation))
+    }
 }
 impl HostPrefixCache {
     fn tier_charge(
         &self,
         key: &PoolKey,
+        class: HostTierEntryClass,
         bytes: u64,
         pageable: u64,
         device: bool,
@@ -7986,10 +8939,7 @@ impl HostPrefixCache {
         if self.arena.is_some() {
             return Err("tier fixed-arena lease handoff pending".into());
         }
-        let (program, _) = tier
-            .programs
-            .get(key)
-            .ok_or("tier program identity missing")?;
+        let (program, _) = tier.program(key, class)?;
         let dimensions = tier
             .governor
             .lock()
@@ -8017,7 +8967,7 @@ impl HostPrefixCache {
         } else {
             request.bytes.pinned = bytes;
         }
-        crate::admit_memory::reserve_tier_image(tier.governor.clone(), program, &request)
+        crate::admit_memory::reserve_tier_image(tier.governor.clone(), &program, &request)
             .map(Some)
             .map_err(|e| format!("tier admission refused: {e:?}"))
     }
@@ -8027,10 +8977,16 @@ impl HostPrefixCache {
         let Some(tier) = &self.tier else {
             return Ok(());
         };
-        let (program, generation) = tier
-            .programs
-            .get(&entry.pool_key)
-            .ok_or("tier program identity missing")?;
+        // Surface (day 14, lead ruling 16): plain KV plus recurrent continuation, and MTP
+        // draft-bearing entries, each bound to its own program. GLM state and the DFlash tail
+        // refuse by name (`host_tier_entry_class`); nothing outside the surface is skipped.
+        let class = host_tier_entry_class(
+            entry.glm.is_some(),
+            entry.draft.is_some(),
+            entry.dspark_draft.is_some(),
+        )
+        .map_err(|why| format!("tier image {why}"))?;
+        let (program, generation) = tier.program(&entry.pool_key, class)?;
         if entry
             .model_generation
             .as_ref()
@@ -8038,12 +8994,9 @@ impl HostPrefixCache {
         {
             return Err("tier model generation mismatch".into());
         }
-        // Narrow first slice: native plain KV + recurrent continuation. Other surfaces
-        // remain legacy-only when tier=None; enabled unsupported routes fail closed.
-        if entry.glm.is_some()
-            || entry.draft.is_some()
-            || entry.dspark_draft.is_some()
-            || entry.pos != entry.toks.len()
+        // Enabled unsupported routes fail closed; other surfaces remain legacy-only when
+        // tier=None.
+        if entry.pos != entry.toks.len()
             || entry.toks.is_empty()
             || entry.last_logits.is_empty()
             || entry.kv.len() != entry.conv.len()
@@ -8095,35 +9048,51 @@ impl HostPrefixCache {
             checksums.push(checksum(bytes));
             Ok(())
         };
+        // Every plane's geometry is the trunk rule: q8_0 K rows (34 B per 32), q5_1 V rows
+        // (24 B per 32), exactly `pos` rows. The MTP draft plane shares the encodings
+        // (`memra_kv::KvLayer`, `mtp_scratch_layout`) and differs only in row width.
+        let geometry = |p: &HostPlane, what: &str| -> std::result::Result<(), String> {
+            if !p.k_tok_bytes.is_multiple_of(34)
+                || !p.v_tok_bytes.is_multiple_of(24)
+                || p.k_tok_bytes == 0
+                || p.v_tok_bytes == 0
+                || p.len != entry.pos
+            {
+                return Err(format!("tier {what} geometry mismatch"));
+            }
+            Ok(())
+        };
+        for p in entry.kv.iter().flatten() {
+            geometry(p, "native KV")?;
+        }
+        if let Some(p) = &entry.draft {
+            geometry(p, "MTP draft plane")?;
+        }
         // Capture presence/length/order metadata as well as every payload. No raw pointers,
         // padding, codec, alternate attention program or old handoff identity is imported.
-        let mut metadata = vec![];
-        metadata.extend((entry.pos as u64).to_le_bytes());
-        for planes in [&entry.conv, &entry.ssm] {
-            metadata.extend((planes.len() as u64).to_le_bytes());
-            for plane in planes {
-                metadata.push(u8::from(plane.is_some()));
-                metadata.extend((plane.as_ref().map_or(0, |p| p.len()) as u64).to_le_bytes());
-            }
-        }
-        metadata.extend((entry.kv.len() as u64).to_le_bytes());
-        for plane in &entry.kv {
-            metadata.push(u8::from(plane.is_some()));
-            if let Some(p) = plane {
-                if !p.k_tok_bytes.is_multiple_of(34)
-                    || !p.v_tok_bytes.is_multiple_of(24)
-                    || p.k_tok_bytes == 0
-                    || p.v_tok_bytes == 0
-                    || p.len != entry.pos
-                {
-                    return Err("tier native KV geometry mismatch".into());
-                }
-                for n in [p.len, p.k_tok_bytes, p.v_tok_bytes] {
-                    metadata.extend((n as u64).to_le_bytes());
-                }
-                add(Role::Key, p.k_tok_bytes as u64, b"q8_0", p.k.as_slice())?;
-                add(Role::Value, p.v_tok_bytes as u64, b"q5_1", p.v.as_slice())?;
-            }
+        let plane_geometry = |p: &HostPlane| (p.len, p.k_tok_bytes, p.v_tok_bytes);
+        let metadata = host_tier_shape_metadata(
+            entry.pos,
+            &entry
+                .conv
+                .iter()
+                .map(|p| p.as_ref().map(|p| p.len()))
+                .collect::<Vec<_>>(),
+            &entry
+                .ssm
+                .iter()
+                .map(|p| p.as_ref().map(|p| p.len()))
+                .collect::<Vec<_>>(),
+            &entry
+                .kv
+                .iter()
+                .map(|p| p.as_ref().map(plane_geometry))
+                .collect::<Vec<_>>(),
+            entry.draft.as_ref().map(plane_geometry),
+        );
+        for p in entry.kv.iter().flatten() {
+            add(Role::Key, p.k_tok_bytes as u64, b"q8_0", p.k.as_slice())?;
+            add(Role::Value, p.v_tok_bytes as u64, b"q5_1", p.v.as_slice())?;
         }
         for p in entry.conv.iter().chain(&entry.ssm).flatten() {
             add(Role::Recurrent, 4, b"f32-native", f32s_as_bytes(p))?;
@@ -8135,8 +9104,24 @@ impl HostPrefixCache {
             f32s_as_bytes(&entry.last_logits),
         )?;
         add(Role::Hidden, 4, b"f32-native", f32s_as_bytes(&entry.last_h))?;
-        add(Role::Transaction, 1, b"host-prefix-shape-v1", &metadata)?;
-        let id = KvBlockId::new(program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
+        // The MTP draft plane: its own K and V segments under `Role::Draft`, checksummed like
+        // the trunk planes (the verify digest is blind to it; these checksums are its receipt).
+        if let Some(p) = &entry.draft {
+            add(
+                Role::Draft,
+                p.k_tok_bytes as u64,
+                b"mtp-draft-q8_0",
+                p.k.as_slice(),
+            )?;
+            add(
+                Role::Draft,
+                p.v_tok_bytes as u64,
+                b"mtp-draft-q5_1",
+                p.v.as_slice(),
+            )?;
+        }
+        add(Role::Transaction, 1, b"host-prefix-shape-v2", &metadata)?;
+        let id = KvBlockId::new(&program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
             .map_err(|e| format!("{e:?}"))?;
         let bundle = StateBundle {
             version: WIRE_VERSION,
@@ -8149,10 +9134,10 @@ impl HostPrefixCache {
             checksums,
         };
         let metadata_charge =
-            self.tier_charge(&entry.pool_key, 0, metadata.capacity() as u64, false)?;
+            self.tier_charge(&entry.pool_key, class, 0, metadata.capacity() as u64, false)?;
         entry
             ._tier_identity
-            .bind(bundle, &entry.toks, program, &layout, generation.clone())
+            .bind(bundle, &entry.toks, &program, &layout, generation.clone())
             .map_err(|e| format!("tier image identity refused: {e:?}"))?;
         entry._tier_metadata_charge = metadata_charge;
         entry._tier_metadata = metadata;
@@ -8250,6 +9235,10 @@ fn host_entry_from_device(
                 .cloned()
                 .ok_or("GLM host image has no loaded model generation")?,
         )
+    } else if host.tier.is_some() {
+        // Contracts door: `bind_tier_image` refuses an image that does not name the loaded
+        // model instance it was captured under, so every image carries its generation.
+        host.model_generations.get(&dead.pool_key.0).cloned()
     } else {
         None
     };
@@ -8290,7 +9279,7 @@ fn host_entry_from_device(
     }
     sizes.extend([dead.last_logits.len() * 4, dead.last_h.len() * 4]);
     let bytes = host_image_bytes(dead.bytes, &dead.toks, &dead.last_logits)?;
-    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, bytes, &sizes)?;
+    let mut planes = host.reserve_image(&dead.pool_key, &dead.toks, bytes, &sizes, true)?;
     let glm = if is_glm {
         Some(host_glm::HostGlmState::down(engine, dead, &mut planes)?)
     } else {
@@ -8547,12 +9536,27 @@ fn host_demote_prefix_ref(
     // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT), checked BEFORE the D2H copy: a
     // demotion that would evaporate at insert must skip the PCIe trip entirely, not
     // pay gigabytes of synchronous copy for an entry the pool then refuses.
-    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes) {
+    //
+    // TENANT-SHARE RECLAIM (memra#384): at the cap, this tenant's OWN unleased LRU host
+    // entries make room and the predicate is retried once. The PLAN runs here, before the copy,
+    // and mutates nothing: an infeasible demotion (image above the share, or the row's unleased
+    // bytes short of the shortfall) skips the PCIe trip with today's line plus what the plan
+    // found, and nothing is evicted for it. On the pageable tier the evictions themselves run in
+    // the `Ok(mut e)` arm below, once the image is built and bound, right before `insert`: the
+    // charge, the digest and the copy can all still fail after this point, and none of them costs
+    // the row its warm entries. On the fixed arena (`MEMRA_GLM5_TP_KV_HOST=1`) the planes'
+    // backing is reserved before the copy, so `reserve_image` evicts at reservation and a copy
+    // that then fails is booked wasted in the `Err` arm (integ15 review of PR #597, both rounds).
+    // The cap, the lease protections and the D2H payload bytes are unchanged; no other tenant's
+    // row is touched.
+    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
+        && let Err(refusal) = host.tenant_share_reclaim_plan(&dead.pool_key, &dead.toks, host_bytes)
+    {
         host.tenant_rejects += 1;
         eprintln!(
             "[prefix-host] demote evaporated at the tenant share cap before the D2H \
              copy: {} tokens, {:.1}MB ({}% of {:.0}MB, MEMRA_KV_HOST_TENANT_PCT; \
-             model {}{})",
+             model {}{}); {refusal}",
             dead.toks.len(),
             host_bytes as f64 / 1e6,
             host.tenant_pct,
@@ -8563,30 +9567,57 @@ fn host_demote_prefix_ref(
         return HostDemoteOutcome::Evaporated;
     }
     let tier_charge = if host.tier.is_some() {
-        if dead.tp.is_some()
-            || dead.latent.iter().any(Option::is_some)
-            || dead.draft.is_some()
-            || dead.dspark_draft.is_some()
-        {
-            return HostDemoteOutcome::Failed;
-        }
-        let pinned = dead.kv.iter().flatten().try_fold(0usize, |n, p| {
-            p.k_tok_bytes
-                .checked_add(p.v_tok_bytes)
-                .and_then(|row| p.len.checked_mul(row))
-                .and_then(|bytes| n.checked_add(bytes))
-        });
-        let Some(pinned) = pinned else {
-            return HostDemoteOutcome::Failed;
-        };
-        let Some(pageable) = host_bytes.checked_sub(pinned) else {
-            return HostDemoteOutcome::Failed;
-        };
-        match host.tier_charge(&dead.pool_key, pinned as u64, pageable as u64, false) {
-            Ok(charge) => charge,
-            Err(err) => {
-                eprintln!("[prefix-host] {err}");
+        // Surface (day 14, lead ruling 16): plain and MTP draft-bearing entries bind; GLM state
+        // and the DFlash tail refuse by name, each its own line.
+        let class = match host_tier_entry_class(
+            dead.tp.is_some() || dead.latent.iter().any(Option::is_some),
+            dead.draft.is_some(),
+            dead.dspark_draft.is_some(),
+        ) {
+            Ok(class) => class,
+            Err(why) => {
+                eprintln!(
+                    "[prefix-host] demote refused (contracts door): {why} ({} tokens, model {}{})",
+                    dead.toks.len(),
+                    dead.pool_key.0,
+                    ns_suffix(&dead.pool_key.1)
+                );
                 return HostDemoteOutcome::Failed;
+            }
+        };
+        if host_bytes > host.budget {
+            // An image above the whole budget is never resident: `insert` refuses it by name
+            // (`skip demote: entry > host budget`) after the copy, exactly as the OFF arm does,
+            // so the ledger takes no charge and the OFF line stays the line (a `Capacity`
+            // refusal here would replace it, which is the gate-line change ruling 15 forbids).
+            None
+        } else {
+            // Pinned: every `HostPlane` the image will hold, the trunk KV planes and the MTP
+            // draft plane alike (`host_plane_from_device` pins both); the f32 planes, tokens
+            // and logits are the pageable remainder.
+            let pinned = dead
+                .kv
+                .iter()
+                .flatten()
+                .chain(&dead.draft)
+                .try_fold(0usize, |n, p| {
+                    p.k_tok_bytes
+                        .checked_add(p.v_tok_bytes)
+                        .and_then(|row| p.len.checked_mul(row))
+                        .and_then(|bytes| n.checked_add(bytes))
+                });
+            let Some(pinned) = pinned else {
+                return HostDemoteOutcome::Failed;
+            };
+            let Some(pageable) = host_bytes.checked_sub(pinned) else {
+                return HostDemoteOutcome::Failed;
+            };
+            match host.tier_charge(&dead.pool_key, class, pinned as u64, pageable as u64, false) {
+                Ok(charge) => charge,
+                Err(err) => {
+                    eprintln!("[prefix-host] {err}");
+                    return HostDemoteOutcome::Failed;
+                }
             }
         }
     } else {
@@ -8609,7 +9640,28 @@ fn host_demote_prefix_ref(
             // Native D2H has completed and owns a distinct immutable image before bind.
             e._tier_charge = tier_charge;
             if let Err(err) = host.bind_tier_image(&mut e) {
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "bind refused");
                 eprintln!("[prefix-host] demote failed ({err}); nothing published");
+                return HostDemoteOutcome::Failed;
+            }
+            // TENANT-SHARE RECLAIM (memra#384), the evictions: the image exists and is bound, so
+            // the only refusal left after an eviction is `insert`'s own (booked as wasted below).
+            // The plan passed before the copy and nothing since mutates the row on this
+            // single-owner worker, so a refusal here is unreachable; it fails closed and says so.
+            if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, host_bytes)
+                && let Err(refusal) =
+                    host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)
+            {
+                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "reclaim refused");
+                host.tenant_rejects += 1;
+                eprintln!(
+                    "[prefix-host] demote failed after the D2H copy: the tenant share reclaim \
+                     that was feasible before the copy refused ({refusal}); nothing published \
+                     ({} tokens, model {}{})",
+                    dead.toks.len(),
+                    dead.pool_key.0,
+                    ns_suffix(&dead.pool_key.1)
+                );
                 return HostDemoteOutcome::Failed;
             }
             let toks = e.toks.len();
@@ -8631,11 +9683,14 @@ fn host_demote_prefix_ref(
                 HostDemoteOutcome::Demoted
             } else {
                 // insert's own refusals (identity/version mismatch, entry > whole budget)
-                // already logged their reason.
+                // already logged their reason; a reclaim that paid for them is booked wasted.
+                host.waste_pending_reclaim(&dead.pool_key, toks, "insert refused");
                 HostDemoteOutcome::Failed
             }
         }
         Err(err) => {
+            // The fixed-arena path reclaims inside `reserve_image`, before a copy that can fail.
+            host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "copy failed");
             eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
             HostDemoteOutcome::Failed
         }
@@ -8984,15 +10039,53 @@ fn host_promote_prefix_hit(
         return None;
     }
 
-    let tier_identity = if let Some(tier) = &host.tier {
-        let (program, generation) = tier.programs.get(pool_key)?;
+    // Under the door the candidate's class (plain or MTP draft-bearing) names its program; the
+    // same class the demote charged and the insert leased, computed from the same fields.
+    let tier_class = if host.tier.is_some() {
+        match host_tier_entry_class(
+            candidate.glm.is_some(),
+            candidate.draft.is_some(),
+            candidate.dspark_draft.is_some(),
+        ) {
+            Ok(class) => Some(class),
+            Err(why) => {
+                eprintln!(
+                    "[prefix-host] promote refused (contracts door): {why}; serving without \
+                     the host entry"
+                );
+                return None;
+            }
+        }
+    } else {
+        None
+    };
+    let tier_identity = if let (Some(tier), Some(class)) = (&host.tier, tier_class) {
+        let (program, generation) = match tier.program(pool_key, class) {
+            Ok(program) => program,
+            Err(why) => {
+                eprintln!(
+                    "[prefix-host] promote refused (contracts door): {why}; serving without \
+                     the host entry"
+                );
+                return None;
+            }
+        };
         // Old imports are unbound and cannot masquerade as generic-tier hits.
-        Some(candidate._tier_identity.lease(program, generation).ok()?)
+        match candidate._tier_identity.lease(&program, generation) {
+            Ok(lease) => Some((lease, program, generation.clone())),
+            Err(err) => {
+                eprintln!(
+                    "[prefix-host] promote refused (contracts door): image identity lease \
+                     refused ({err:?}); serving without the host entry"
+                );
+                return None;
+            }
+        }
     } else {
         None
     };
     // Synchronous borrow retains the actual host payload; no async submission is added.
-    let tier_charge = if host.tier.is_some() {
+    let tier_charge = if let Some(class) = tier_class {
         let hidden = candidate.last_h.len().checked_mul(4)?;
         let device_bytes = candidate.device_bytes.checked_sub(hidden)?;
         let pageable = candidate
@@ -9001,7 +10094,7 @@ fn host_promote_prefix_hit(
             .checked_add(candidate.last_logits.len())?
             .checked_mul(4)?
             .checked_add(hidden)?;
-        match host.tier_charge(pool_key, device_bytes as u64, pageable as u64, true) {
+        match host.tier_charge(pool_key, class, device_bytes as u64, pageable as u64, true) {
             Ok(charge) => charge,
             Err(err) => {
                 eprintln!("[prefix-host] promote refused ({err})");
@@ -9047,9 +10140,14 @@ fn host_promote_prefix_hit(
             }
         }
     }
-    if let (Some(identity), Some(tier)) = (&tier_identity, &host.tier) {
-        let (program, generation) = tier.programs.get(pool_key)?;
-        identity.require(program, generation).ok()?;
+    if let Some((identity, program, generation)) = &tier_identity
+        && let Err(err) = identity.require(program, generation)
+    {
+        eprintln!(
+            "[prefix-host] promote refused (contracts door): image identity lease no \
+             longer holds after the H2D ({err:?}); serving without the host entry"
+        );
+        return None;
     }
     // Keep destination residency charged until this PrefixEntry is actually destroyed;
     // the retained host twin keeps its independent source charge.
@@ -10020,8 +11118,13 @@ fn host_entry_from_owned(
     }
     sizes.extend([e.last_logits.len() * 4, e.last_h.len() * 4]);
     let bytes = host_image_bytes(e.bytes, &e.toks, &e.last_logits)?;
-    let mut planes =
-        host.reserve_image(&(e.model.clone(), e.ns.clone()), &e.toks, bytes, &sizes)?;
+    let mut planes = host.reserve_image(
+        &(e.model.clone(), e.ns.clone()),
+        &e.toks,
+        bytes,
+        &sizes,
+        false,
+    )?;
     let mut kv = Vec::with_capacity(e.kv.len());
     for p in e.kv {
         kv.push(match p {
@@ -11600,17 +12703,14 @@ fn prefix_insert_from_session(
     }
     let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
     if !px.prepare_snapshot(
+        &pool_key,
         prefix_snapshot_bytes(cache),
         prefix_cache_budget_bytes(),
         prefix_cache_slru_enabled(),
         Some(&mut demote),
     ) {
-        static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            eprintln!(
-                "[prefix-cache] snapshot skipped: cannot fit beside leased/protected entries; request continues"
-            );
-        }
+        // The preflight printed its typed `[prefix-cache] insert refused:` line in bytes
+        // (memra#523 item 1: never a silent cold turn); the request continues unpublished.
         return;
     }
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
@@ -14183,6 +15283,21 @@ pub fn run(
     // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
     // kv_host_budget_bytes). Feeds the device cache only: the restore path is untouched.
     let mut hpx = HostPrefixCache::new(kv_host_budget_bytes());
+    // HOST TIER CONTRACTS DOOR (MEMRA_KV_HOST_CONTRACTS, lane/spill-c-20260919 day 13, lead
+    // ruling 15 Option A). Parsed here, before the arena reserve, so a refused combination
+    // never pins the arena first. OFF: `hpx.tier` stays None and no statement below changes.
+    // ON: the context is built once `model_generations` exists, below.
+    let kv_host_contracts = match kv_host_contracts_door() {
+        Ok(on) => on,
+        Err(err) => {
+            let _ = ready_tx.send(Err(err));
+            return;
+        }
+    };
+    if kv_host_contracts && let Err(err) = host_tier_arena_refusal(glm5_tp_kv_host_on()) {
+        let _ = ready_tx.send(Err(err));
+        return;
+    }
     if glm5_tp_kv_host_on() {
         let reserve = (|| -> Result<(), String> {
             // Parse afresh and fail rather than silently clamp, shrink or disarm.
@@ -14217,6 +15332,36 @@ pub fn run(
     // A worker reload creates a new map/cache/context. Tokens bind images to
     // these exact loaded instances, even if names and device ordinals repeat.
     hpx.model_generations = loaded.keys().map(|k| (k.clone(), Arc::new(()))).collect();
+    if kv_host_contracts && hpx.budget == 0 {
+        // No host tier exists on this boot (MEMRA_KV_HOST_MB=0 or clamped to zero), so there
+        // is nothing to route: the door constructs nothing and says so under its own tag.
+        // Not `[prefix-host]`: with the tier off that tag stays silent, which the identity
+        // gate's OFF twin boot asserts.
+        eprintln!(
+            "[kv-host-contracts] MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot \
+             (MEMRA_KV_HOST_MB=0): nothing to route, no program identity built"
+        );
+    }
+    if kv_host_contracts && hpx.budget > 0 {
+        let vision_loaded = vision_tower.is_some() || gemma_tower.is_some() || glm5_tower.is_some();
+        match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded) {
+            Ok(tier) => {
+                eprintln!(
+                    "[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): {} model \
+                     program identities, tenant salt per pool namespace, server governor \
+                     ledger pinned/pageable {:.0}MB device {:.0}MB; host tier armed",
+                    tier.programs.len(),
+                    2.0 * hpx.budget as f64 / 1e6,
+                    2.0 * prefix_cache_budget_bytes() as f64 / 1e6,
+                );
+                hpx.tier = Some(tier);
+            }
+            Err(err) => {
+                let _ = ready_tx.send(Err(err));
+                return;
+            }
+        }
+    }
 
     if hpx.budget > 0 {
         if prefix_cache_budget_bytes() > 0 && serve_batching() {
@@ -18503,6 +19648,8 @@ pub fn run(
             m.prefix_host_purged_entries = hpx.purged_entries;
             m.prefix_host_purged_bytes = hpx.purged_bytes;
             m.prefix_host_tenant_rejects = hpx.tenant_rejects;
+            m.prefix_host_tenant_reclaims = hpx.tenant_reclaims;
+            m.prefix_host_tenant_reclaims_wasted = hpx.tenant_reclaims_wasted;
             m.prefix_host_pause_demotes = hpx.pause_demotes;
             m.prefix_host_pause_cancels = hpx.pause_cancels;
             m.prefix_host_handoff_exports = hpx.handoff_exports;
@@ -26990,9 +28137,11 @@ mod tests {
     };
     use super::{
         DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
-        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PartialPrefixDecision, PoolKey,
-        PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup, PrefixSegment,
-        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
+        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PREFIX_REFUSAL_REANNOUNCE_EVERY,
+        PartialPrefixDecision, PoolKey, PrefixCache, PrefixEntry, PrefixFanoutCandidate,
+        PrefixFanoutGroup, PrefixRefusalAnnouncer, PrefixRefusalShape, PrefixSegment,
+        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups,
+        prefix_insert_refused_leased, prefix_insert_refused_oversize, retire_prefix_pin,
         stable_boundary_arm, validate_prefix_plane_shape,
     };
     use super::{
@@ -32644,6 +33793,134 @@ mod tests {
         assert!(px.unpin(&pin));
     }
 
+    /// memra#523 item 1, review: pressure relief uses the insert loop's victim function. On a
+    /// protected-heavy cache (three promoted entries, one probation) `evict_to_bytes` reaches
+    /// its byte target by taking the probation LRU first and then the protected LRU oldest
+    /// first; the raw SLRU capacity victim names nothing once probation is empty, which is
+    /// where the old shed stopped short of its target.
+    #[test]
+    fn evict_to_bytes_takes_protected_oldest_first_once_probation_is_empty() {
+        const BUDGET: usize = 100;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        assert_eq!((px.protected_bytes, px.probation_bytes), (30, 10));
+        assert_eq!(px.evictable_bytes(), 40);
+
+        assert_eq!(
+            px.evict_to_bytes_with(35, true),
+            (1, 10),
+            "probation LRU first"
+        );
+        assert_eq!(px_survivors(&px), vec![0, 1, 2]);
+        assert!(
+            px.capacity_victim_with(true).is_none(),
+            "probation is empty: the raw SLRU capacity victim names nothing"
+        );
+        assert_eq!(
+            px.evict_to_bytes_with(25, true),
+            (1, 10),
+            "then the protected LRU, oldest first"
+        );
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert_eq!(px.evict_to_bytes_with(5, true), (2, 20));
+        assert!(px_survivors(&px).is_empty());
+        assert_eq!((px.total_bytes, px.evictions), (0, 4));
+        assert_eq!(px.evictable_bytes(), 0);
+
+        // The `lru` rollback arm is unchanged: the global oldest, promoted or not.
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        assert_eq!(px.evict_to_bytes_with(25, false), (2, 20));
+        assert_eq!(px_survivors(&px), vec![2, 3]);
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: a leased entry is never a pressure-relief victim, whatever the
+    /// target; when only leased bytes remain the loop reports zero and `evictable_bytes()` is
+    /// zero, the one shape the kv-flex "nothing evictable" line may describe.
+    #[test]
+    fn evict_to_bytes_never_takes_a_leased_entry_even_below_target() {
+        const BUDGET: usize = 100;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", BUDGET);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        px.insert_with_budget(&k, entry_b(&k, 3, 10), "seed", BUDGET);
+        let i1 = px.entries[&k].iter().position(|e| e.toks[0] == 1).unwrap();
+        let pin = px.pin(&k, i1).expect("a protected entry takes a lease");
+        assert_eq!(px.evictable_bytes(), 30);
+
+        assert_eq!(
+            px.evict_to_bytes_with(0, true),
+            (3, 30),
+            "every unleased entry goes, the leased one stays"
+        );
+        assert_eq!(px_survivors(&px), vec![1]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(px.evictable_bytes(), 0);
+        assert_eq!(
+            px.evict_to_bytes_with(0, true),
+            (0, 0),
+            "nothing unleased: a no-op that reports zero"
+        );
+        assert!(px.unpin(&pin));
+        assert_eq!(px.evictable_bytes(), 10);
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: the kv-flex shed reaches its floor through unleased
+    /// PROTECTED bytes (it counts as a shed, no warning path) and takes the "nothing
+    /// evictable" path only when every byte above the floor is leased.
+    #[test]
+    fn kv_flex_shed_reaches_the_floor_through_protected_entries_and_warns_only_when_all_is_leased()
+    {
+        let k = key("");
+        let mut px = PrefixCache::default();
+        for ident in 0..3u32 {
+            px.insert_with_budget(&k, entry_b(&k, ident, 10), "seed", 100);
+            assert!(reuse_ident(&mut px, ident));
+        }
+        assert_eq!((px.protected_bytes, px.probation_bytes), (30, 0));
+
+        let mut flex = armed_flex(15);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            2,
+            "unleased protected bytes above the floor shed, oldest first"
+        );
+        assert_eq!(px_survivors(&px), vec![2]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(
+            flex.sheds, 1,
+            "a real shed is counted; the warning path never counts"
+        );
+
+        let i2 = px.entries[&k].iter().position(|e| e.toks[0] == 2).unwrap();
+        let pin = px.pin(&k, i2).expect("the survivor takes a lease");
+        let mut flex = armed_flex(5);
+        assert_eq!(px.evictable_bytes(), 0);
+        assert_eq!(
+            flex.shed(&mut px, false, "test"),
+            0,
+            "everything above the floor is leased: the warning path"
+        );
+        assert_eq!(flex.sheds, 0);
+        assert_eq!(px.total_bytes, 10);
+        assert!(px.unpin(&pin));
+        assert_prefix_cache_accounting(&px);
+    }
+
     /// The grant policy, pure: free minus guard while armed, zero under hold, zero
     /// disarmed, saturating: a grant can never underflow into a giant budget.
     #[test]
@@ -34301,6 +35578,427 @@ mod tests {
         assert!(super::host_image_bytes(usize::MAX, &[1], &[]).is_err());
     }
 
+    // ---- HOST TIER CONTRACTS DOOR (MEMRA_KV_HOST_CONTRACTS, lane/spill-c-20260919 day 13) ----
+    // CPU halves: the strict door parse, the arena refusal, the identity builder as a pure
+    // function of its sources, the per-pool-key tenant salt, the governor ledger sizing and
+    // the ON-path identity gate at insert. The D2H/H2D route under the door is target-card
+    // territory (research/spill-c-20260919/DAY13.md).
+
+    #[test]
+    fn kv_host_contracts_door_parse_is_strict_and_never_falls_back_to_off() {
+        assert_eq!(super::parse_kv_host_contracts(None), Ok(false));
+        assert_eq!(super::parse_kv_host_contracts(Some("0")), Ok(false));
+        assert_eq!(super::parse_kv_host_contracts(Some("1")), Ok(true));
+        // A bare `MEMRA_KV_HOST_CONTRACTS=` is not OFF: it is a refusal that names the variable.
+        let bare = super::parse_kv_host_contracts(Some("")).unwrap_err();
+        assert!(bare.contains("MEMRA_KV_HOST_CONTRACTS"), "{bare}");
+        assert!(bare.contains("does not fall back to off"), "{bare}");
+        // Junk, every spelling a hand might produce for "on" or "off".
+        for junk in [
+            "on", "off", "true", "false", "yes", "ON", " 1", "1 ", "01", "2",
+        ] {
+            assert!(
+                super::parse_kv_host_contracts(Some(junk)).is_err(),
+                "{junk:?} must refuse"
+            );
+        }
+        // A process environment binds one value per name, so a duplicate can only appear
+        // inside the value; a doubled door is junk, not a louder ON.
+        for dup in ["11", "1,1", "1;1", "1 1", "1=1"] {
+            assert!(
+                super::parse_kv_host_contracts(Some(dup)).is_err(),
+                "{dup:?} must refuse"
+            );
+        }
+        assert!(super::parse_kv_host_contracts(Some("<non-utf8>")).is_err());
+    }
+
+    #[test]
+    fn host_tier_arena_refusal_names_the_arena_and_passes_without_it() {
+        assert_eq!(super::host_tier_arena_refusal(false), Ok(()));
+        let err = super::host_tier_arena_refusal(true).unwrap_err();
+        assert!(
+            err.contains("MEMRA_KV_HOST_CONTRACTS=1 refused at boot"),
+            "{err}"
+        );
+        assert!(err.contains("MEMRA_GLM5_TP_KV_HOST=1"), "{err}");
+        assert!(
+            err.contains("tier fixed-arena lease handoff pending"),
+            "{err}"
+        );
+        // The context builder applies the same refusal when the arena is already reserved:
+        // the boot checks the env first so the arena is never pinned for a refused boot.
+        let mut h = HostPrefixCache::new(1 << 20);
+        h.model_generations.insert("m".into(), Arc::new(()));
+        assert!(h.arena.is_none());
+    }
+
+    #[test]
+    fn host_tier_program_base_is_a_pure_function_of_its_sources() {
+        let a = super::host_tier_program_base("aa", "plan-1", Some("{{ jinja }}"));
+        assert_eq!(
+            a,
+            super::host_tier_program_base("aa", "plan-1", Some("{{ jinja }}"))
+        );
+        assert_eq!(a.tenant_salt, [0; 32], "the base never carries a tenant");
+        assert_eq!(a.version, memra_engine::cache::record::WIRE_VERSION);
+        // The artifact digest feeds artifact AND tokenizer (a GGUF tokenizer is the artifact's).
+        let b = super::host_tier_program_base("bb", "plan-1", Some("{{ jinja }}"));
+        assert_ne!(a.artifact, b.artifact);
+        assert_ne!(a.tokenizer, b.tokenizer);
+        assert_eq!(a.serialized_plan, b.serialized_plan);
+        assert_eq!(a.template, b.template);
+        // The plan changes exactly the plan digest.
+        let c = super::host_tier_program_base("aa", "plan-2", Some("{{ jinja }}"));
+        assert_ne!(a.serialized_plan, c.serialized_plan);
+        assert_eq!(a.artifact, c.artifact);
+        // A GGUF without a template names the ChatML fallback, distinct from an empty template.
+        let d = super::host_tier_program_base("aa", "plan-1", None);
+        let e = super::host_tier_program_base("aa", "plan-1", Some(""));
+        assert_ne!(d.template, a.template);
+        assert_ne!(d.template, e.template);
+        // Numeric, stream, adapter, modality, position are server constants.
+        assert_eq!(a.numeric, d.numeric);
+        assert_eq!(a.stream, d.stream);
+        assert_eq!(a.adapter, d.adapter);
+        assert_eq!(a.modality, d.modality);
+        assert_eq!(a.position, d.position);
+        assert!(
+            super::host_tier_numeric_class().contains(&format!("v{}", PREFIX_ENTRY_LAYOUT_VERSION))
+        );
+    }
+
+    fn contracts_context(
+        model: &str,
+        generation: Arc<()>,
+        host_budget: usize,
+    ) -> super::HostTierContext {
+        let base = super::host_tier_program_base("artifact", "plan", None);
+        let draft = super::host_tier_draft_program(
+            &base,
+            "artifact",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        super::HostTierContext {
+            governor: super::host_tier_governor(0, host_budget, 1 << 30).unwrap(),
+            programs: HashMap::from([(
+                model.to_string(),
+                super::HostTierPrograms {
+                    plain: base,
+                    draft: Some(draft),
+                    generation,
+                },
+            )]),
+            device: 0,
+        }
+    }
+
+    #[test]
+    fn host_tier_context_program_stamps_the_pool_namespace_salt_once() {
+        let generation = Arc::new(());
+        let tier = contracts_context("m", generation.clone(), 1 << 20);
+        let plain = super::HostTierEntryClass::Plain;
+        let (a1, g1) = tier
+            .program(&("m".into(), "t:acme\u{1f}salt".into()), plain)
+            .unwrap();
+        let (a2, _) = tier
+            .program(&("m".into(), "t:acme\u{1f}salt".into()), plain)
+            .unwrap();
+        let (b, _) = tier
+            .program(&("m".into(), "t:blue\u{1f}salt".into()), plain)
+            .unwrap();
+        let (default_ns, _) = tier.program(&("m".into(), String::new()), plain).unwrap();
+        assert_eq!(
+            a1, a2,
+            "deterministic: the demote charge and the insert lease agree"
+        );
+        assert!(Arc::ptr_eq(g1, &generation));
+        // The salt is the one memra-kv derivation of the exact namespace string the share-cap
+        // row reads (`auth::meter_key(&key.1)` takes the same `key.1`).
+        assert_eq!(
+            a1.tenant_salt,
+            memra_engine::cache::tiered::hostprefix::tenant_salt("t:acme\u{1f}salt")
+        );
+        assert_ne!(a1.tenant_salt, b.tenant_salt);
+        assert_ne!(a1.tenant_salt, default_ns.tenant_salt);
+        assert_ne!(a1.tenant_salt, [0; 32]);
+        // Everything but the salt is the model's base identity.
+        let mut b_unsalted = b.clone();
+        b_unsalted.tenant_salt = a1.tenant_salt;
+        assert_eq!(a1, b_unsalted);
+        // An unknown model has no identity: the callers refuse rather than invent one.
+        assert_eq!(
+            tier.program(&("other".into(), String::new()), plain)
+                .unwrap_err(),
+            "tier program identity missing"
+        );
+    }
+
+    // ---- DRAFT-BEARING ENTRIES UNDER THE DOOR (lane/spill-c-20260919 day 14, lead ruling 16) ----
+    // CPU halves: the entry class as a pure function of the planes, the draft program as a pure
+    // function of its sources (distinct from the plain program in exactly artifact, plan and
+    // numeric), class selection with the tenant salt stamped once, and the v2 shape blob. The
+    // draft plane's D2H/H2D under the door is target-card territory (DAY14.md: the identity and
+    // failure gates under the default spec environment, OFF then ON).
+
+    #[test]
+    fn host_tier_entry_class_admits_plain_and_mtp_draft_and_refuses_glm_and_dflash_by_name() {
+        use super::HostTierEntryClass::{MtpDraft, Plain};
+        assert_eq!(super::host_tier_entry_class(false, false, false), Ok(Plain));
+        assert_eq!(
+            super::host_tier_entry_class(false, true, false),
+            Ok(MtpDraft)
+        );
+        let glm = super::host_tier_entry_class(true, false, false).unwrap_err();
+        assert!(glm.contains("TP or latent (GLM) planes"), "{glm}");
+        let tail = super::host_tier_entry_class(false, false, true).unwrap_err();
+        assert!(tail.contains("DFlash draft tail"), "{tail}");
+        assert!(
+            tail.contains("no drafter artifact identity"),
+            "the refusal names what is missing: {tail}"
+        );
+        // A tail beside a draft plane cannot exist (the boot guard refuses two spec programs on
+        // one model); the class function refuses rather than guessing which one won.
+        assert_eq!(super::host_tier_entry_class(false, true, true), Err(tail));
+        assert_eq!(super::host_tier_entry_class(true, true, true), Err(glm));
+    }
+
+    #[test]
+    fn host_tier_draft_program_differs_from_plain_in_exactly_artifact_plan_and_numeric() {
+        use memra_engine::cache::record::Wire;
+        let plain = super::host_tier_program_base("aa", "plan", Some("{{ t }}"));
+        let embedded = super::host_tier_draft_program(
+            &plain,
+            "aa",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        let external = |hex: &str| {
+            super::host_tier_draft_program(
+                &plain,
+                "aa",
+                "plan",
+                &super::HostTierDraftSource::External {
+                    sha256_hex: hex.to_string(),
+                },
+            )
+        };
+        for draft in [&embedded, &external("bb"), &external("cc")] {
+            assert_ne!(draft.artifact, plain.artifact);
+            assert_ne!(draft.serialized_plan, plain.serialized_plan);
+            assert_ne!(draft.numeric, plain.numeric);
+            assert_eq!(draft.stream, plain.stream);
+            assert_eq!(draft.tokenizer, plain.tokenizer);
+            assert_eq!(draft.template, plain.template);
+            assert_eq!(draft.adapter, plain.adapter);
+            assert_eq!(draft.modality, plain.modality);
+            assert_eq!(draft.position, plain.position);
+            assert_eq!(draft.tenant_salt, [0; 32]);
+            assert!(draft.validate().is_ok());
+            // The namespace every KvBlockId hangs off differs, so a spec entry and a plain entry
+            // of one prompt can never share a block id.
+            assert_ne!(draft.namespace().unwrap(), plain.namespace().unwrap());
+        }
+        // The draft source is part of the artifact: embedded, and each external file, differ.
+        assert_ne!(embedded.artifact, external("bb").artifact);
+        assert_ne!(external("bb").artifact, external("cc").artifact);
+        assert_eq!(
+            embedded,
+            super::host_tier_draft_program(
+                &plain,
+                "aa",
+                "plan",
+                &super::HostTierDraftSource::Embedded
+            ),
+            "pure function of its sources"
+        );
+        // A different trunk moves the draft program too: the plane is a function of both.
+        let other = super::host_tier_program_base("dd", "plan", Some("{{ t }}"));
+        assert_ne!(
+            super::host_tier_draft_program(
+                &other,
+                "dd",
+                "plan",
+                &super::HostTierDraftSource::Embedded
+            )
+            .artifact,
+            embedded.artifact
+        );
+        assert_eq!(
+            super::host_tier_draft_numeric_class(),
+            format!(
+                "{}+mtp-draft-kv-q8_0-34B-q5_1-24B",
+                super::host_tier_numeric_class()
+            )
+        );
+        assert_eq!(super::HostTierDraftSource::Embedded.describe(), "embedded");
+        assert_eq!(
+            super::HostTierDraftSource::External {
+                sha256_hex: "bb".into()
+            }
+            .describe(),
+            "external:bb"
+        );
+        // Framing: the pair is length-prefixed, so moving a byte across the boundary changes it.
+        assert_ne!(
+            super::host_tier_framed_pair("ab", "c"),
+            super::host_tier_framed_pair("a", "bc")
+        );
+    }
+
+    #[test]
+    fn host_tier_context_program_selects_the_class_and_refuses_a_draft_entry_without_a_head() {
+        use super::HostTierEntryClass::{MtpDraft, Plain};
+        let generation = Arc::new(());
+        let mut tier = contracts_context("m", generation.clone(), 1 << 20);
+        let key = ("m".to_string(), "t:acme\u{1f}salt".to_string());
+        let (plain, _) = tier.program(&key, Plain).unwrap();
+        let (draft, g) = tier.program(&key, MtpDraft).unwrap();
+        assert!(Arc::ptr_eq(g, &generation));
+        assert_ne!(
+            plain, draft,
+            "a spec entry and a plain entry of one prompt never share an identity"
+        );
+        assert_eq!(
+            plain.tenant_salt, draft.tenant_salt,
+            "one pool key stamps one tenant salt on both classes"
+        );
+        assert_eq!(
+            draft,
+            tier.program(&key, MtpDraft).unwrap().0,
+            "deterministic: the demote charge and the insert or promote lease agree"
+        );
+        // No MTP head: no draft program, and a draft-bearing entry is refused by name, never
+        // bound to the plain program.
+        tier.programs.get_mut("m").unwrap().draft = None;
+        assert!(tier.program(&key, Plain).is_ok());
+        let why = tier.program(&key, MtpDraft).unwrap_err();
+        assert!(why.contains("no MTP head"), "{why}");
+        assert_eq!(
+            tier.program(&("ghost".to_string(), key.1.clone()), MtpDraft)
+                .unwrap_err(),
+            "tier program identity missing"
+        );
+    }
+
+    #[test]
+    fn host_tier_shape_metadata_v2_frames_the_draft_plane_presence_unconditionally() {
+        let kv = [Some((89usize, 34usize * 8, 24usize * 8)), None];
+        let conv = [Some(4usize), None];
+        let ssm = [None, Some(6usize)];
+        let plain = super::host_tier_shape_metadata(89, &conv, &ssm, &kv, None);
+        let draft = super::host_tier_shape_metadata(89, &conv, &ssm, &kv, Some((89, 68, 48)));
+        assert_ne!(plain, draft);
+        // Plain ends in the absent-draft byte; the draft blob carries presence plus geometry.
+        assert_eq!(plain[plain.len() - 1], 0);
+        assert_eq!(draft.len(), plain.len() + 3 * 8);
+        assert_eq!(&draft[..plain.len() - 1], &plain[..plain.len() - 1]);
+        assert_eq!(draft[plain.len() - 1], 1);
+        assert_eq!(
+            &draft[plain.len()..],
+            [
+                89u64.to_le_bytes(),
+                68u64.to_le_bytes(),
+                48u64.to_le_bytes()
+            ]
+            .concat()
+        );
+        // The trunk part is what v1 wrote: pos, then conv and ssm (count, presence, len), then
+        // kv (count, presence, geometry).
+        let mut v1 = vec![];
+        v1.extend(89u64.to_le_bytes());
+        for planes in [&conv[..], &ssm[..]] {
+            v1.extend((planes.len() as u64).to_le_bytes());
+            for p in planes {
+                v1.push(u8::from(p.is_some()));
+                v1.extend((p.unwrap_or(0) as u64).to_le_bytes());
+            }
+        }
+        v1.extend(2u64.to_le_bytes());
+        v1.push(1);
+        for n in [89u64, 272, 192] {
+            v1.extend(n.to_le_bytes());
+        }
+        v1.push(0);
+        assert_eq!(&plain[..plain.len() - 1], &v1[..]);
+    }
+
+    #[test]
+    fn host_tier_governor_ledger_admits_what_the_lru_would_and_binds_at_twice_the_budget() {
+        use memra_engine::cache::tiered::*;
+        let budget = 1000usize;
+        let governor = super::host_tier_governor(1, budget, 500).unwrap();
+        let request = |pinned: u64, device: u64| {
+            let mut bytes = TierBudget::zero(2);
+            bytes.pinned = pinned;
+            bytes.pageable = pinned;
+            bytes.device[1] = device;
+            BudgetRequest {
+                bytes,
+                priority: Priority::Backup,
+                deadline: Deadline(u64::MAX),
+                tenant: hostprefix::tenant_salt(""),
+            }
+        };
+        // Residents at the whole budget plus one incoming image at the whole budget: admitted.
+        let resident = governor
+            .lock()
+            .unwrap()
+            .reserve(&request(budget as u64, 500))
+            .unwrap();
+        let incoming = governor
+            .lock()
+            .unwrap()
+            .reserve(&request(budget as u64, 500))
+            .unwrap();
+        // A third whole-budget charge is what the LRU could never have made room for.
+        assert_eq!(
+            governor.lock().unwrap().reserve(&request(1, 0)).err(),
+            Some(Error::Capacity)
+        );
+        governor.lock().unwrap().release(&resident).unwrap();
+        governor.lock().unwrap().release(&incoming).unwrap();
+        assert_eq!(governor.lock().unwrap().used().pinned, 0);
+        // The device dimension is indexed by the worker's ordinal, sized for it exactly.
+        assert_eq!(governor.lock().unwrap().used().device.len(), 2);
+        assert!(super::host_tier_governor(usize::MAX, 1, 1).is_err());
+    }
+
+    #[test]
+    fn host_cache_with_contracts_door_refuses_an_unbound_image_and_admits_it_with_the_door_off() {
+        let key = key("t:acme\u{1f}salt");
+        let generation = Arc::new(());
+        // Door OFF: the legacy insert admits the image (the byte-identical arm).
+        let mut off = HostPrefixCache::new(1 << 20);
+        off.model_generations
+            .insert(key.0.clone(), generation.clone());
+        assert!(off.insert(
+            &key,
+            host_entry(&key, toks(super::PREFIX_CACHE_MIN_TOKENS), 64)
+        ));
+        assert_eq!(off.entries[&key].len(), 1);
+        // Door ON: the same unbound image (no identity lease, no residency charge) is refused
+        // before it becomes resident; the pool and its accounting are untouched.
+        let mut on = HostPrefixCache::new(1 << 20);
+        on.model_generations
+            .insert(key.0.clone(), generation.clone());
+        on.tier = Some(contracts_context(&key.0, generation, 1 << 20));
+        assert!(!on.insert(
+            &key,
+            host_entry(&key, toks(super::PREFIX_CACHE_MIN_TOKENS), 64)
+        ));
+        assert!(on.entries.is_empty());
+        assert_eq!(on.total_bytes, 0);
+        assert!(on.tenant_bytes.is_empty());
+        // A pool whose model the door never loaded is refused the same way.
+        let foreign = ("ghost".to_string(), key.1.clone());
+        assert!(!on.insert(
+            &foreign,
+            host_entry(&foreign, toks(super::PREFIX_CACHE_MIN_TOKENS), 64)
+        ));
+    }
+
     #[test]
     fn host_cache_stale_generation_refused_before_promotion() {
         let key = key("tenant-generation");
@@ -34725,6 +36423,421 @@ mod tests {
         let _ = h.purge_tenant("acme");
         assert!(!h.tenant_bytes.contains_key("t:acme"));
         assert!(h.insert(&a, host_entry(&a, t(5000), 50)));
+    }
+
+    // ---- TENANT-SHARE RECLAIM (memra#384, lane/spill-a-20260919 day 12) ----
+    // The demote hook's pre-copy arm: at the share cap, the demoting tenant's OWN unleased
+    // LRU entries make room and the admission is retried once; the cap, the lease protection
+    // and the other tenants' rows are untouched, and a row with no eligible space keeps the
+    // bounded refusal with nothing evicted. The D2H halves are the target-card gate
+    // (tools/kv-host-tenant-reclaim-gate.sh).
+
+    fn tenant_toks(base: u32) -> Vec<u32> {
+        (base..base + super::PREFIX_CACHE_MIN_TOKENS as u32).collect()
+    }
+
+    /// Same-tenant turnover succeeds where it evaporated before, oldest first, across the
+    /// tenant's salts; the other tenant's row and entries are exactly as they were.
+    #[test]
+    fn host_cache_tenant_share_reclaim_evicts_the_tenants_own_oldest_entries_only() {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        let a2 = key(&crate::auth::scope_namespace("acme", "s2")); // same row, another salt
+        let b = key(&crate::auth::scope_namespace("beta", "s1"));
+        assert!(h.insert(&b, host_entry(&b, t(1000), 20))); // beta, the oldest entry overall
+        assert!(h.insert(&a, host_entry(&a, t(1000), 20))); // acme's oldest
+        assert!(h.insert(&a2, host_entry(&a2, t(2000), 30))); // acme at its 50-byte share
+        // Below the cap the reclaim is a no-op answer, not an eviction.
+        let c = key(&crate::auth::scope_namespace("gamma", "s1"));
+        assert_eq!(
+            h.reclaim_tenant_share(&c, &t(1000), 10),
+            Ok(super::TenantShareReclaim::default())
+        );
+        // At the cap: the 20-byte demotion evaporated before (the existing test above); now
+        // acme's OLDEST entry goes, its newer one stays, and beta is not consulted.
+        assert!(h.tenant_cap_would_evaporate(&a, &t(3000), 20));
+        let r = h.reclaim_tenant_share(&a, &t(3000), 20).unwrap();
+        assert_eq!((r.evicted, r.freed), (1, 20));
+        assert!(h.key_index(&a, &t(1000)).is_none(), "acme's oldest evicted");
+        assert!(
+            h.key_index(&a2, &t(2000)).is_some(),
+            "acme's newer entry kept"
+        );
+        assert!(h.key_index(&b, &t(1000)).is_some(), "beta untouched");
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(30));
+        assert_eq!(h.tenant_bytes.get("t:beta").copied(), Some(20));
+        assert_eq!(
+            (h.evictions, h.tenant_reclaims, h.tenant_rejects),
+            (1, 1, 0)
+        );
+        // The retried admission lands and the row sits exactly at its share.
+        assert!(!h.tenant_cap_would_evaporate(&a, &t(3000), 20));
+        assert!(h.insert(&a, host_entry(&a, t(3000), 20)));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        assert_eq!((h.n_entries(), h.total_bytes), (3, 70));
+        // A shortfall that needs two entries takes the two oldest in LRU order (t2000 was
+        // inserted before t3000), across the tenant's salts; beta still untouched.
+        let r = h.reclaim_tenant_share(&a, &t(4000), 50).unwrap();
+        assert_eq!((r.evicted, r.freed), (2, 50));
+        assert!(!h.tenant_bytes.contains_key("t:acme"));
+        assert_eq!(h.tenant_bytes.get("t:beta").copied(), Some(20));
+        assert!(h.insert(&a, host_entry(&a, t(4000), 50)));
+        assert_eq!((h.n_entries(), h.total_bytes), (2, 70));
+        assert_eq!(
+            (h.evictions, h.tenant_reclaims, h.tenant_rejects),
+            (3, 3, 0)
+        );
+    }
+
+    /// The exact-key twin is never a victim (the predicate credits it, `insert` replaces
+    /// it); an image above the share refuses with nothing evicted, into a full row and into
+    /// an empty one; `tenant_pct = 100` disarms the reclaim with the cap.
+    #[test]
+    fn host_cache_tenant_share_reclaim_spares_the_twin_and_refuses_an_image_above_the_share() {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        assert!(h.insert(&a, host_entry(&a, t(1000), 20)));
+        assert!(h.insert(&a, host_entry(&a, t(2000), 30)));
+        // Re-demoting the 30-byte key at 31 bytes needs 1 byte: the twin is spared and the
+        // older 20-byte entry goes instead.
+        let r = h.reclaim_tenant_share(&a, &t(2000), 31).unwrap();
+        assert_eq!((r.evicted, r.freed), (1, 20));
+        assert!(
+            h.key_index(&a, &t(2000)).is_some(),
+            "the twin is never a victim"
+        );
+        assert!(h.key_index(&a, &t(1000)).is_none());
+        assert!(h.insert(&a, host_entry(&a, t(2000), 31)));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(31));
+        // The image alone exceeds the share: refused by name, nothing evicted.
+        let err = h.reclaim_tenant_share(&a, &t(5000), 51).unwrap_err();
+        assert_eq!(
+            err.why,
+            super::TenantShareRefusalWhy::ImageExceedsShare {
+                image: 51,
+                share: 50
+            }
+        );
+        assert_eq!(err.eligible, 31);
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(31));
+        assert_eq!((h.evictions, h.tenant_reclaims), (1, 1));
+        // Into an empty row too: the cap is per-row arithmetic, not pool pressure.
+        let c = key(&crate::auth::scope_namespace("gamma", "s1"));
+        let err = h.reclaim_tenant_share(&c, &t(1000), 51).unwrap_err();
+        assert_eq!((err.need, err.eligible), (1, 0));
+        assert!(err.to_string().contains("nothing evicted"), "{err}");
+        // 100 = cap off by contract: nothing evaporates, so nothing is reclaimed.
+        h.tenant_pct = 100;
+        assert_eq!(
+            h.reclaim_tenant_share(&a, &t(6000), 90),
+            Ok(super::TenantShareReclaim::default())
+        );
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(31));
+    }
+
+    /// Bind an identity slot to a one-segment bundle (a 4-byte logits row, pure functions
+    /// only, no device planes) so a test can hold a real `IdentityLease` on a resident entry.
+    /// The shape rules are `bind_tier_image`'s: immutable prefix, start 0, high water = tokens.
+    fn bind_identity(
+        slot: &mut memra_engine::cache::tiered::hostprefix::IdentitySlot,
+        toks: &[u32],
+        program: &memra_engine::cache::record::ProgramIdentity,
+        generation: Arc<()>,
+    ) {
+        use memra_engine::cache::tiered::*;
+        let payload = 1.0f32.to_le_bytes();
+        let layout = RecordLayout {
+            version: WIRE_VERSION,
+            segments: vec![ByteSegment {
+                version: WIRE_VERSION,
+                group: 0,
+                page: 0,
+                owner: 0,
+                role: Role::Logits,
+                tensor: None,
+                offset: 0,
+                valid_bytes: 4,
+                storage_bytes: 4,
+                alignment: 1,
+                encoding: EncodingId {
+                    version: WIRE_VERSION,
+                    program: digest("native-kv-encoding", b"f32-native"),
+                    row_bytes: 4,
+                },
+            }],
+            requirements: vec![GroupRequirement {
+                version: WIRE_VERSION,
+                group: 0,
+                owner: 0,
+                role: Role::Logits,
+                page_count: 1,
+                pages: PageRequirement::AllPages,
+            }],
+        };
+        let id = KvBlockId::new(program, [0; 32], toks, 0, 0, 0, 0).unwrap();
+        let bundle = StateBundle {
+            version: WIRE_VERSION,
+            id,
+            program: program.clone(),
+            layout: layout.clone(),
+            kind: StateKind::ImmutablePrefix,
+            committed_high_water: toks.len() as u64,
+            owner_aliases: vec![],
+            checksums: vec![checksum(&payload)],
+        };
+        slot.bind(bundle, toks, program, &layout, generation)
+            .expect("a well-formed one-segment bundle binds");
+    }
+
+    /// A leased entry is skipped even when it is the oldest; a row whose only remaining
+    /// bytes are leased keeps the bounded refusal with nothing evicted; once the lease drops
+    /// the same demotion fits. Also the positive half of `IdentitySlot::leased`.
+    #[test]
+    fn host_cache_tenant_share_reclaim_skips_leased_entries_and_refuses_when_only_leased_remain() {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let generation = Arc::new(());
+        let tier = contracts_context("m", generation.clone(), 1 << 20);
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        let (program, _) = tier.program(&a, super::HostTierEntryClass::Plain).unwrap();
+        // Door OFF pool (`tier` None): insert admits a bound entry like any other, and the
+        // lease is the only thing that distinguishes it from its neighbours.
+        let mut bound = host_entry(&a, t(1000), 30);
+        assert!(!bound.leased(), "unbound: never leased");
+        bind_identity(
+            &mut bound._tier_identity,
+            &t(1000),
+            &program,
+            generation.clone(),
+        );
+        assert!(!bound.leased(), "bound but unleased");
+        let lease = bound._tier_identity.lease(&program, &generation).unwrap();
+        assert!(
+            bound.leased(),
+            "a live IdentityLease marks the entry leased"
+        );
+        assert!(h.insert(&a, bound)); // acme 30: the OLDEST, and leased
+        assert!(h.insert(&a, host_entry(&a, t(2000), 20))); // acme 50, newer, unleased
+        // Needs 20: the oldest is leased and skipped, the newer unleased entry goes.
+        let r = h.reclaim_tenant_share(&a, &t(3000), 20).unwrap();
+        assert_eq!((r.evicted, r.freed), (1, 20));
+        assert!(
+            h.key_index(&a, &t(1000)).is_some(),
+            "the leased entry is never evicted"
+        );
+        assert!(h.key_index(&a, &t(2000)).is_none());
+        assert!(h.insert(&a, host_entry(&a, t(3000), 20)));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        // Needs 30 but only 20 unleased bytes exist: refused, nothing evicted, the leased
+        // bytes named in the refusal.
+        let err = h.reclaim_tenant_share(&a, &t(4000), 30).unwrap_err();
+        assert_eq!(err.why, super::TenantShareRefusalWhy::NoEligibleSpace);
+        assert_eq!(
+            (err.need, err.eligible, err.leased_skipped, err.leased_bytes),
+            (30, 20, 1, 30)
+        );
+        assert!(
+            h.key_index(&a, &t(3000)).is_some(),
+            "nothing evicted on refusal"
+        );
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        assert_eq!((h.evictions, h.tenant_reclaims), (1, 1));
+        assert_eq!(
+            err.to_string(),
+            "reclaim refused: needed 0.0MB from this tenant's own unleased entries, 0.0MB \
+             eligible (1 leased entries holding 0.0MB skipped); nothing evicted"
+        );
+        // The lease drops: the entry is unleased again and the same demotion fits by
+        // evicting exactly it (oldest, 30 bytes = the shortfall).
+        drop(lease);
+        assert!(!h.entries[&a].iter().any(|e| e.leased()));
+        let r = h.reclaim_tenant_share(&a, &t(4000), 30).unwrap();
+        assert_eq!((r.evicted, r.freed), (1, 30));
+        assert!(h.key_index(&a, &t(1000)).is_none());
+        assert!(h.key_index(&a, &t(3000)).is_some());
+        assert!(h.insert(&a, host_entry(&a, t(4000), 30)));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+    }
+
+    /// integ15 review of PR #597: the plan is pure (a copy, digest or charge failure after it
+    /// leaves the row untouched and counts no reclaim); the happy path reclaims exactly once and
+    /// the insert consumes it; a reclaim whose insert then refuses is booked wasted, once.
+    #[test]
+    fn host_cache_tenant_share_plan_is_pure_and_a_reclaim_is_consumed_by_insert_or_booked_wasted() {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        assert!(h.insert(&a, host_entry(&a, t(1000), 20)));
+        assert!(h.insert(&a, host_entry(&a, t(2000), 30))); // at the 50-byte share
+        // The plan at the cap: feasible, and NOTHING moved (this is the state a failing copy,
+        // digest or charge leaves behind: the row is whole, no reclaim counted).
+        let plan = h.tenant_share_reclaim_plan(&a, &t(3000), 20).unwrap();
+        assert_eq!(
+            (plan.row.as_str(), plan.need, plan.eligible),
+            ("t:acme", 20, 50)
+        );
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        assert!(h.key_index(&a, &t(1000)).is_some() && h.key_index(&a, &t(2000)).is_some());
+        assert_eq!(
+            (
+                h.tenant_reclaims,
+                h.tenant_reclaims_wasted,
+                h.reclaim_pending
+            ),
+            (0, 0, 0)
+        );
+        // Below the cap the plan is the default (need 0) and equally pure.
+        let c = key(&crate::auth::scope_namespace("gamma", "s1"));
+        assert_eq!(
+            h.tenant_share_reclaim_plan(&c, &t(1000), 10),
+            Ok(super::TenantSharePlan::default())
+        );
+        // A refused plan evicts nothing either.
+        assert!(h.tenant_share_reclaim_plan(&a, &t(3000), 51).is_err());
+        assert_eq!((h.n_entries(), h.reclaim_pending), (2, 0));
+        // Happy path: the reclaim evicts exactly once and parks it; the insert consumes it.
+        let r = h.reclaim_tenant_share(&a, &t(3000), 20).unwrap();
+        assert_eq!((r.evicted, h.reclaim_pending, h.tenant_reclaims), (1, 1, 1));
+        assert!(h.insert(&a, host_entry(&a, t(3000), 20)));
+        assert_eq!((h.reclaim_pending, h.tenant_reclaims_wasted), (0, 0));
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        // Wasted path: the reclaim evicts, then the insert refuses (a layout-version mismatch is
+        // `insert`'s own refusal) and the demote hook books the pending eviction wasted, once.
+        let r = h.reclaim_tenant_share(&a, &t(4000), 20).unwrap();
+        assert_eq!((r.evicted, h.reclaim_pending, h.tenant_reclaims), (1, 1, 2));
+        let mut stale = host_entry(&a, t(4000), 20);
+        stale.layout_version = PREFIX_ENTRY_LAYOUT_VERSION.wrapping_add(1);
+        assert!(!h.insert(&a, stale));
+        assert_eq!(h.waste_pending_reclaim(&a, 64, "test"), 1);
+        assert_eq!((h.reclaim_pending, h.tenant_reclaims_wasted), (0, 1));
+        // With nothing pending the waste call is a silent zero.
+        assert_eq!(h.waste_pending_reclaim(&a, 64, "test"), 0);
+        assert_eq!(h.tenant_reclaims_wasted, 1);
+    }
+
+    /// Second round of the integ15 review: the two tiers differ in WHEN they evict. Pageable
+    /// tier (no arena): `reserve_image` is a no-op even with `reclaim` set, so nothing is
+    /// evicted at reservation and the row is whole until the image is built. Fixed arena: the
+    /// eviction happens inside `reserve_image` before the copy, and a copy that then fails is
+    /// booked wasted through the same `reclaim_pending` ledger as an insert refusal; the ledger
+    /// half is pinned here, the arena eviction itself needs a CUDA context (`PinnedHostArena::
+    /// reserve`) and is receipt-only (`research/spill-a-20260919/DAY12.md`).
+    #[test]
+    fn host_cache_tenant_share_reservation_evicts_nothing_without_an_arena_and_books_a_copy_failure_wasted()
+     {
+        let mut h = HostPrefixCache::new(100);
+        h.tenant_pct = 50;
+        let t = tenant_toks;
+        let a = key(&crate::auth::scope_namespace("acme", "s1"));
+        assert!(h.insert(&a, host_entry(&a, t(1000), 20)));
+        assert!(h.insert(&a, host_entry(&a, t(2000), 30))); // at the 50-byte share
+        // Pageable tier: the reservation is a no-op lease even at the cap with `reclaim` set;
+        // the row is untouched and nothing is pending.
+        assert!(h.arena.is_none());
+        let leases = h
+            .reserve_image(&a, &t(3000), 20, &[8, 8], true)
+            .expect("no arena: the reservation is the OFF path");
+        assert!(leases.0.is_none(), "the OFF path hands out no arena planes");
+        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
+        assert_eq!(
+            (h.n_entries(), h.tenant_reclaims, h.reclaim_pending),
+            (2, 0, 0)
+        );
+        // The import path (`reclaim` false) is the same no-op without an arena.
+        assert!(h.reserve_image(&a, &t(3000), 20, &[8, 8], false).is_ok());
+        assert_eq!((h.n_entries(), h.reclaim_pending), (2, 0));
+        // Fixed-arena booking shape: a reclaim at reservation, then a copy that fails before any
+        // insert; the hook's `Err` arm books the pending eviction wasted, exactly once.
+        let r = h.reclaim_tenant_share(&a, &t(3000), 20).unwrap();
+        assert_eq!((r.evicted, h.reclaim_pending, h.tenant_reclaims), (1, 1, 1));
+        assert_eq!(h.waste_pending_reclaim(&a, 64, "copy failed"), 1);
+        assert_eq!((h.reclaim_pending, h.tenant_reclaims_wasted), (0, 1));
+        assert_eq!(
+            h.tenant_bytes.get("t:acme").copied(),
+            Some(30),
+            "the row paid; the counter says so"
+        );
+    }
+
+    /// The hook consults the PLAN before the copy and the RECLAIM only once the image is built,
+    /// right before `insert`; every later exit books a pending reclaim wasted; both counters
+    /// reach the published snapshot and the HTTP render.
+    #[test]
+    fn tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics() {
+        let strip = |src: &str| -> String {
+            src.lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let worker = strip(include_str!("worker.rs"));
+        let hook = worker
+            .find("fn host_demote_prefix_ref(")
+            .expect("the demote hook exists");
+        let body_end = hook + worker[hook..].find("\n}\n").expect("the hook ends");
+        let body = &worker[hook..body_end];
+        let at = |needle: &str| {
+            body.find(needle)
+                .unwrap_or_else(|| panic!("{needle} in the hook"))
+        };
+        let plan = at("host.tenant_share_reclaim_plan(&dead.pool_key, &dead.toks, host_bytes)");
+        let evaporation = at("demote evaporated at the tenant share cap before the D2H");
+        let copy = at("host_entry_from_device(engine, host, dead, verify_digest)");
+        let ok_arm = at("Ok(mut e) => {");
+        let bind = at("host.bind_tier_image(&mut e)");
+        let reclaim = at("host.reclaim_tenant_share(&dead.pool_key, &dead.toks, host_bytes)");
+        let insert = at("host.insert(&dead.pool_key, e)");
+        assert!(
+            plan < evaporation && evaporation < copy,
+            "the PLAN gates the pre-copy refusal"
+        );
+        assert!(
+            !body[..copy].contains("host.reclaim_tenant_share("),
+            "the hook itself evicts nothing before the D2H copy (the fixed arena's reservation \
+             inside reserve_image is the one exception, booked wasted on a copy failure)"
+        );
+        assert!(
+            body[..copy].contains("tier_charge(")
+                && body[..copy].contains("host_roundtrip_digest("),
+            "the charge and the digest run before the copy, so before any eviction"
+        );
+        assert!(
+            copy < ok_arm && ok_arm < bind && bind < reclaim && reclaim < insert,
+            "the reclaim runs inside the Ok arm, after bind and right before insert"
+        );
+        assert_eq!(
+            body.matches("host.waste_pending_reclaim(").count(),
+            4,
+            "bind refused, reclaim refused, insert refused and copy failed each book the waste"
+        );
+        let insert_false = body[insert..].find("} else {").expect("insert's false arm") + insert;
+        assert!(
+            body[insert_false..]
+                .contains("host.waste_pending_reclaim(&dead.pool_key, toks, \"insert refused\")")
+        );
+        let publish = worker
+            .find("m.prefix_host_tenant_rejects = hpx.tenant_rejects")
+            .expect("the host-tier metrics publish exists");
+        assert!(
+            worker[publish..publish + 400]
+                .contains("m.prefix_host_tenant_reclaims = hpx.tenant_reclaims")
+        );
+        assert!(
+            worker[publish..publish + 400]
+                .contains("m.prefix_host_tenant_reclaims_wasted = hpx.tenant_reclaims_wasted")
+        );
+        let lib = strip(include_str!("lib.rs"));
+        let render = lib
+            .find("body[\"prefix_host_tenant_rejects\"]")
+            .expect("the host-tier /metrics render exists");
+        assert!(lib[render..render + 600].contains("prefix_host_tenant_reclaims\""));
+        assert!(lib[render..render + 600].contains("prefix_host_tenant_reclaims_wasted"));
     }
 
     /// PARK COMPACTION eligibility (MEMRA_KV_PARK_COMPACT, tiering spec Arc C1): the
@@ -35742,9 +37855,11 @@ mod tests {
     fn prefix_cache_lru_policy_evicts_the_global_oldest_not_only_probation() {
         // The MEMRA_PREFIX_CACHE_POLICY=lru rollback must be able to reach a PROMOTED entry.
         // Shape: two entries earn a hit (so both are protected under a 100% protected share, which
-        // is what the lru policy forces), then a fresh entry arrives. Under SLRU the only
-        // candidate is the probation LRU — here the newcomer itself — so the promoted pair is
-        // immortal and the newcomer is its own victim. Under plain LRU the global oldest goes.
+        // is what the lru policy forces), then a fresh entry arrives. Under SLRU
+        // `capacity_victim_with` alone names the probation LRU, here the newcomer itself; the
+        // insert loop's newest-turn-fits rule (`room_victim_with`, memra#523 item 1) then takes
+        // the protected LRU instead, so the newcomer is never its own victim on either policy.
+        // Under plain LRU the global oldest goes.
         const BUDGET: usize = 10;
         let mut px = PrefixCache::default();
         px.insert_with_budget(&key(""), entry_b(&key(""), 0, 4), "test", BUDGET);
@@ -35763,12 +37878,21 @@ mod tests {
             .unwrap();
         assert_eq!(newest.segment, PrefixSegment::Probation);
 
-        // SLRU arm: the newcomer in probation is the victim.
+        // SLRU arm: the raw capacity victim is the probation LRU, the newcomer itself...
         let (_, slru_victim) = px.capacity_victim_with(true).expect("slru victim");
         assert_eq!(
             px.entries[&key("")][slru_victim].toks[0],
             2,
             "SLRU must evict the probation LRU"
+        );
+        // ...and the insert loop's room victim redirects to the protected LRU (memra#523).
+        let (_, room_victim) = px
+            .room_victim_with(true, Some(newest.id))
+            .expect("room victim");
+        assert_eq!(
+            px.entries[&key("")][room_victim].toks[0],
+            oldest.toks[0],
+            "newest-turn-fits must take the oldest protected entry, never the newcomer"
         );
 
         // LRU arm: the globally oldest entry is the victim, even though it is promoted.
@@ -35783,6 +37907,446 @@ mod tests {
             2,
             "policy=lru must not make every newcomer its own victim"
         );
+    }
+
+    /// memra#523 item 1, the incident shape in bytes: an 8192 MiB budget, 80 % protected, six
+    /// promoted 30k-token conversations (about 6.1 GB) beside one tenant growing 105k -> 168k
+    /// tokens by 300 per turn (entries 2.7 -> 4.3 GB, the incident's own sizes). The plain
+    /// path's restore lease ends after the restore fence, before publication
+    /// (docs/SERVING.md "Plain prefix-hit leases end ..."), so the previous turn's entry is
+    /// unleased when the new turn inserts. Every turn must insert, the victims must be the
+    /// cohort's protected entries first (oldest first) and then the tenant's own older turns,
+    /// and the inserted entry must never be its own victim.
+    #[test]
+    fn prefix_cache_slru_newest_turn_fits_beside_a_protected_cohort() {
+        const MIB: usize = 1 << 20;
+        const BUDGET: usize = 8192 * MIB;
+        const COHORT_ENTRY: usize = 1016 * MIB; // six of these: 6.1 GB
+        fn turn_bytes(tokens: usize) -> usize {
+            // 2.7 GB at 105k tokens, 4.3 GB at 168k: 25,397 B per token above 105k.
+            2_700_000_000 + (tokens - 105_000) * 25_397
+        }
+        let cohort = key("cohort");
+        let grow = key("grow");
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<(u32, PrefixSegment)> = Vec::new();
+        for ident in 0..6u32 {
+            let mut sink = |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment));
+            px.insert_with_budget_pins_and_policy(
+                &cohort,
+                entry_b(&cohort, ident, COHORT_ENTRY),
+                "seed",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+            // The cohort's reuse: a restore lease promotes, its release returns to protected.
+            let i = px.entries[&cohort]
+                .iter()
+                .position(|e| e.toks[0] == ident)
+                .unwrap();
+            next_instant();
+            let pin = px.pin(&cohort, i).unwrap();
+            assert!(px.unpin(&pin));
+        }
+        assert_eq!(px.protected_bytes, 6 * COHORT_ENTRY);
+        assert_eq!(px.probation_bytes, 0);
+        assert!(
+            px.protected_bytes <= px.protected_target_bytes,
+            "no demotion before the growth"
+        );
+        assert!(victims.is_empty());
+
+        let mut prev: Option<u32> = None;
+        let mut tokens = 105_000usize;
+        let mut turn = 0u32;
+        while tokens <= 168_000 {
+            let ident = 100 + turn;
+            if let Some(prev_ident) = prev {
+                // The hit on the previous turn: leased for the restore, released at the fence.
+                let i = px.entries[&grow]
+                    .iter()
+                    .position(|e| e.toks[0] == prev_ident)
+                    .unwrap_or_else(|| panic!("turn {turn}: the previous turn must be resident"));
+                next_instant();
+                let pin = px
+                    .pin(&grow, i)
+                    .expect("previous turn leased for the restore");
+                assert!(px.unpin(&pin));
+            }
+            let before = victims.len();
+            let mut sink = |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment));
+            next_instant();
+            let inserted = px.insert_with_budget_pins_and_policy(
+                &grow,
+                entry_b(&grow, ident, turn_bytes(tokens)),
+                "seed",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+            assert!(
+                inserted.is_some(),
+                "turn {turn} ({tokens} tokens): the newest turn must be resident"
+            );
+            assert!(px_survivors(&px).contains(&ident));
+            assert!(px.total_bytes <= BUDGET);
+            assert!(
+                victims[before..].iter().all(|(v, _)| *v != ident),
+                "turn {turn}: an insert must never be its own victim"
+            );
+            if turn == 0 {
+                // Turn 1 in the incident: probation held only the newcomer, so the old code
+                // evicted it; the rule takes the OLDEST PROTECTED cohort member instead.
+                assert_eq!(victims, vec![(0, PrefixSegment::Protected)]);
+            }
+            assert_prefix_cache_accounting(&px);
+            prev = Some(ident);
+            tokens += 300;
+            turn += 1;
+        }
+        assert_eq!(turn, 211);
+        // The cohort went first, oldest first (directly from protected or after a demotion
+        // the tenant's own promotion forced), then the tenant's older turns, oldest first.
+        let order: Vec<u32> = victims.iter().map(|(v, _)| *v).collect();
+        assert_eq!(&order[..6], &[0, 1, 2, 3, 4, 5]);
+        assert!(order[6..].windows(2).all(|w| w[0] < w[1]));
+        assert!(!px.entries.contains_key(&cohort));
+        assert!(
+            victims
+                .iter()
+                .any(|(v, s)| *v >= 100 && *s == PrefixSegment::Protected),
+            "once three turns stop fitting, the redirect reaches the tenant's own protected turns"
+        );
+        // 4.3 GB + 4.29 GB exceed the budget: the final turn evicted its predecessor and stands alone.
+        assert_eq!(px_survivors(&px), vec![100 + 210]);
+        assert_eq!(px.skips_budget + px.skips_pinned, 0, "no turn was refused");
+    }
+
+    /// memra#523 item 1: an entry larger than the whole budget is refused with the typed line,
+    /// in bytes, on both publication paths, evicting nothing and counting in the budget skips.
+    #[test]
+    fn prefix_cache_oversized_insert_refuses_with_the_typed_line_and_evicts_nothing() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 0));
+        px.insert_with_budget(&k, entry_b(&k, 1, 3), "test", BUDGET);
+
+        let mut victims: Vec<u32> = Vec::new();
+        let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+        let inserted = px.insert_with_budget_pins_and_policy(
+            &k,
+            entry_b(&k, 2, BUDGET + 1),
+            "test",
+            BUDGET,
+            80,
+            0,
+            Some(&mut sink),
+            true,
+        );
+        assert!(inserted.is_none());
+        assert!(!px.prepare_snapshot(&k, BUDGET + 1, BUDGET, true, Some(&mut sink)));
+        assert!(victims.is_empty(), "an oversized entry evicts nothing");
+        assert_eq!(px_survivors(&px), vec![0, 1]);
+        assert_eq!(px.evictions, 0);
+        assert_eq!(px.skips_budget, 2);
+        assert_eq!(
+            prefix_insert_refused_oversize(BUDGET + 1, BUDGET, "seed", &key("t")),
+            "[prefix-cache] insert refused: entry 11 exceeds budget 10 (seed, model m, ns \"t\")"
+        );
+        assert_eq!(
+            prefix_insert_refused_leased(6, 5, 10, "snapshot preflight", &key("")),
+            "[prefix-cache] insert refused: entry 6 cannot fit beside 5 leased bytes \
+             (budget 10, snapshot preflight, model m)"
+        );
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, review: the refusal lines are throttled, the counters are not. First
+    /// refusal printed; identical repeats suppressed and counted; a changed shape prints again
+    /// and carries the previous shape's count; the N-th identical repeat prints with its count.
+    #[test]
+    fn prefix_refusal_announcer_prints_first_changed_and_every_nth_identical_refusal() {
+        let n = PREFIX_REFUSAL_REANNOUNCE_EVERY;
+        let mut a = PrefixRefusalAnnouncer::default();
+        let oversize = |bytes: usize| PrefixRefusalShape {
+            leased: None,
+            bytes,
+            budget: 10,
+            key: key(""),
+        };
+        let line = || {
+            "[prefix-cache] insert refused: entry 11 exceeds budget 10 (seed, model m)".to_string()
+        };
+        // First refusal: printed verbatim.
+        assert_eq!(a.announce(oversize(11), line()), Some(line()));
+        assert_eq!(a.suppressed, 0);
+        // Identical repeats: suppressed and counted, up to the N-th, which prints with the count.
+        for i in 1..n {
+            assert_eq!(
+                a.announce(oversize(11), line()),
+                None,
+                "repeat {i} must be suppressed"
+            );
+            assert_eq!(a.suppressed, i);
+        }
+        assert_eq!(
+            a.announce(oversize(11), line()),
+            Some(format!(
+                "{} (identical refusal repeated {n} times since the previous line; {} not printed)",
+                line(),
+                n - 1
+            ))
+        );
+        assert_eq!(a.suppressed, 0, "the N-th repeat resets the count");
+        // The same path or the other path with the same numbers is the same shape: suppressed.
+        assert_eq!(
+            a.announce(oversize(11), "different why, same shape".to_string()),
+            None
+        );
+        assert_eq!(a.suppressed, 1);
+        // A changed shape (bytes) prints at once and carries the previous shape's count.
+        let changed =
+            "[prefix-cache] insert refused: entry 12 exceeds budget 10 (seed, model m)".to_string();
+        assert_eq!(
+            a.announce(oversize(12), changed.clone()),
+            Some(format!(
+                "{changed} (previous shape: 1 identical refusals not printed)"
+            ))
+        );
+        assert_eq!(a.suppressed, 0);
+        // A changed key (model or salt) is a new shape too, with nothing suppressed before it.
+        let other_key = PrefixRefusalShape {
+            leased: None,
+            bytes: 12,
+            budget: 10,
+            key: key("t"),
+        };
+        assert_eq!(
+            a.announce(other_key, "other tenant".to_string()),
+            Some("other tenant".to_string())
+        );
+        // A leased refusal with the same bytes and budget is a different shape from the
+        // oversize one, and a different leased byte count is a different shape again.
+        let leased = |leased: usize| PrefixRefusalShape {
+            leased: Some(leased),
+            bytes: 12,
+            budget: 10,
+            key: key("t"),
+        };
+        assert_eq!(
+            a.announce(leased(5), "leased 5".to_string()),
+            Some("leased 5".to_string())
+        );
+        assert_eq!(a.announce(leased(5), "leased 5".to_string()), None);
+        assert_eq!(
+            a.announce(leased(6), "leased 6".to_string()),
+            Some("leased 6 (previous shape: 1 identical refusals not printed)".to_string())
+        );
+    }
+
+    /// memra#523 item 1, review: through the cache itself, a saturated shape refusing on every
+    /// request counts every refusal in the skip counters while the announcer suppresses the
+    /// identical lines; the pinned and budget counters stay separate.
+    #[test]
+    fn prefix_cache_repeated_refusals_count_every_time_and_print_once() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", BUDGET);
+        let mut victims: Vec<u32> = Vec::new();
+        for ident in 1..=5u32 {
+            let mut sink = |dead: PrefixEntry| victims.push(dead.toks[0]);
+            let inserted = px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, ident, BUDGET + 1),
+                "test",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+            assert!(inserted.is_none());
+            assert!(!px.prepare_snapshot(&k, BUDGET + 1, BUDGET, true, Some(&mut sink)));
+        }
+        assert!(victims.is_empty());
+        assert_eq!(px.skips_budget, 10, "every refusal counts");
+        assert_eq!(px.skips_pinned, 0);
+        assert_eq!(
+            px.refusals.suppressed, 9,
+            "one line printed, nine identical refusals suppressed and counted"
+        );
+        assert_eq!(
+            px.refusals.last,
+            Some(PrefixRefusalShape {
+                leased: None,
+                bytes: BUDGET + 1,
+                budget: BUDGET,
+                key: k.clone()
+            })
+        );
+        // A leased refusal is a new shape: it prints (carrying the count) and resets.
+        let i0 = px.entries[&k].iter().position(|e| e.toks[0] == 0).unwrap();
+        let pin = px.pin(&k, i0).unwrap();
+        assert!(!px.prepare_snapshot(&k, 7, BUDGET, true, None));
+        assert_eq!(px.skips_pinned, 1);
+        assert_eq!(px.refusals.suppressed, 0);
+        assert_eq!(
+            px.refusals.last,
+            Some(PrefixRefusalShape {
+                leased: Some(4),
+                bytes: 7,
+                budget: BUDGET,
+                key: k.clone()
+            })
+        );
+        assert!(px.unpin(&pin));
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, the no-change half: for entries that fit without touching protected
+    /// bytes the SLRU victims are the same entries in the same order as before the rule
+    /// (probation LRU, oldest first; demoted protected overflow ahead of younger probation).
+    /// The room victim equals the raw capacity victim whenever probation holds an entry other
+    /// than the one being inserted.
+    #[test]
+    fn prefix_cache_slru_fitting_inserts_keep_the_same_victims_in_the_same_order() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<(u32, PrefixSegment)> = Vec::new();
+        px.insert_with_budget(&k, entry_b(&k, 0, 5), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 0));
+        px.insert_with_budget(&k, entry_b(&k, 1, 3), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 1));
+        assert_eq!(px.protected_bytes, 8);
+        for ident in 2..22u32 {
+            let mut sink = |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment));
+            if ident > 2 {
+                // The older scan entry sits in probation: raw and room victims agree.
+                let raw = px.capacity_victim_with(true);
+                assert_eq!(px.room_victim_with(true, Some(u64::MAX)), raw);
+                assert_eq!(px.room_victim_with(true, None), raw);
+            }
+            px.insert_with_budget_pins_and_policy(
+                &k,
+                entry_b(&k, ident, 2),
+                "scan",
+                BUDGET,
+                80,
+                0,
+                Some(&mut sink),
+                true,
+            );
+        }
+        // Scan k evicts scan k-1 from probation; the promoted pair is untouched.
+        let expect: Vec<(u32, PrefixSegment)> =
+            (2..21u32).map(|v| (v, PrefixSegment::Probation)).collect();
+        assert_eq!(victims, expect);
+        assert_eq!(px_survivors(&px), vec![0, 1, 21]);
+        assert_eq!((px.protected_bytes, px.probation_bytes), (8, 2));
+
+        // The demotion shape (prefix_cache_slru_demotes_by_protected_bytes_not_entry_count):
+        // protected overflow is demoted and is the victim ahead of the younger newcomer.
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<(u32, PrefixSegment)> = Vec::new();
+        px.insert_with_budget(&k, entry_b(&k, 0, 6), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 0));
+        px.insert_with_budget(&k, entry_b(&k, 1, 4), "test", BUDGET);
+        assert!(reuse_ident(&mut px, 1));
+        let mut sink = |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment));
+        px.insert_with_budget_pins_and_policy(
+            &k,
+            entry_b(&k, 2, 5),
+            "test",
+            BUDGET,
+            80,
+            0,
+            Some(&mut sink),
+            true,
+        );
+        assert_eq!(victims, vec![(0, PrefixSegment::Probation)]);
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert_eq!(
+            (px.probation_bytes, px.protected_bytes, px.total_bytes),
+            (5, 4, 9)
+        );
+        assert_prefix_cache_accounting(&px);
+    }
+
+    /// memra#523 item 1, the leased boundary: a publication whose predecessor is still leased
+    /// across the insert (the spec-session shape; the plain path releases at the restore
+    /// fence) fits while `entry + leased <= budget`, evicting unleased protected entries, and
+    /// is refused with the typed leased line otherwise, evicting nothing.
+    #[test]
+    fn prefix_cache_newest_turn_beside_a_leased_predecessor_fits_or_refuses_loudly() {
+        const BUDGET: usize = 10;
+        let k = key("");
+        let mut px = PrefixCache::default();
+        let mut victims: Vec<(u32, PrefixSegment)> = Vec::new();
+        // 3 + 5 protected bytes stay inside the 8-byte share: no demotion, so the redirect
+        // (not `rebalance_protected`) is what reaches turn 1 below.
+        px.insert_with_budget(&k, entry_b(&k, 1, 3), "turn-1", BUDGET);
+        let i1 = px.entries[&k].iter().position(|e| e.toks[0] == 1).unwrap();
+        next_instant();
+        let pin1 = px.pin(&k, i1).unwrap(); // turn 2 restores from turn 1 and holds the lease
+        px.insert_with_budget(&k, entry_b(&k, 2, 5), "turn-2", BUDGET);
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert!(px.unpin(&pin1));
+        let i2 = px.entries[&k].iter().position(|e| e.toks[0] == 2).unwrap();
+        next_instant();
+        let pin2 = px.pin(&k, i2).unwrap(); // turn 3 restores from turn 2 and holds the lease
+
+        // 6 > 10 - 5 leased: refused up front, nothing evicted (the old code evicted turn 1
+        // and then the newcomer itself).
+        let refused = px.insert_with_budget_pins_and_policy(
+            &k,
+            entry_b(&k, 3, 6),
+            "turn-3",
+            BUDGET,
+            80,
+            0,
+            Some(&mut |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment))),
+            true,
+        );
+        assert!(refused.is_none());
+        assert!(!px.prepare_snapshot(
+            &k,
+            6,
+            BUDGET,
+            true,
+            Some(&mut |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment)))
+        ));
+        assert!(victims.is_empty());
+        assert_eq!(px_survivors(&px), vec![1, 2]);
+        assert_eq!(px.skips_pinned, 2);
+        assert_eq!(px.evictions, 0);
+
+        // 5 <= 10 - 5 leased: fits by evicting the unleased protected turn 1, never itself.
+        let fits = px.insert_with_budget_pins_and_policy(
+            &k,
+            entry_b(&k, 3, 5),
+            "turn-3",
+            BUDGET,
+            80,
+            0,
+            Some(&mut |dead: PrefixEntry| victims.push((dead.toks[0], dead.segment))),
+            true,
+        );
+        assert!(fits.is_some());
+        assert_eq!(victims, vec![(1, PrefixSegment::Protected)]);
+        assert_eq!(px_survivors(&px), vec![2, 3]);
+        assert_eq!(px.total_bytes, 10);
+        assert_eq!(px.evictions, 1);
+        assert!(px.unpin(&pin2));
+        assert_prefix_cache_accounting(&px);
     }
 
     #[test]
@@ -36063,7 +38627,7 @@ mod tests {
             px.entries[&k][0].pins, 1,
             "the other session keeps its lease"
         );
-        assert!(!px.prepare_snapshot(size, budget, false, None));
+        assert!(!px.prepare_snapshot(&k, size, budget, false, None));
         assert_eq!(px_survivors(&px), vec![0]);
         assert_eq!(
             px.evictions, 0,
@@ -36073,7 +38637,7 @@ mod tests {
         let mut other_session_pin = Some(pin.clone());
         retire_prefix_pin(&mut px, &mut other_session_pin);
         assert_eq!(px.capacity_victim_with(false), Some((k.clone(), 0)));
-        assert!(px.prepare_snapshot(size, budget, false, None));
+        assert!(px.prepare_snapshot(&k, size, budget, false, None));
         assert_eq!(px.total_bytes, 0, "source drops before snapshot allocation");
         assert!(px.id_index(&pin).is_none());
         px.insert_with_budget(&k, entry_b(&k, 1, size), "deeper", budget);
