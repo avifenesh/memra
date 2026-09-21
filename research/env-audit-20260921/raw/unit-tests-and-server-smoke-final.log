@@ -1,0 +1,30 @@
+== build 20:42:51
+    Finished `release` profile [optimized] target(s) in 2m 48s
+BUILD_DONE
+== tests
+test env_audit::tests::a_retired_door_refuses_with_its_ledger ... ok
+test env_audit::tests::registry_is_populated_sorted_and_disjoint ... ok
+test env_audit::tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+test env_audit::tests::every_legal_name_passes ... ok
+test env_audit::tests::retired_names_are_not_read_at_runtime ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 543 filtered out; finished in 0.03s
+TEST_DONE
+legal 1029 retired 145 owned_families: MEMRA_ADMIT_ MEMRA_B200_ MEMRA_BF16_ MEMRA_BUILD_ MEMRA_CPU_ MEMRA_DEBUG_ MEMRA_DFLASH_ MEMRA_DSPARK_ MEMRA_DSV4_ MEMRA_E4B_ MEMRA_ECON_ MEMRA_F16G_ MEMRA_FA512_ MEMRA_FAW_ MEMRA_FA_ MEMRA_FORCE_ MEMRA_FP8_ MEMRA_GATE_ MEMRA_GDN_ MEMRA_GEMMA_ MEMRA_GEN_ MEMRA_GLM5_ MEMRA_GPU_ MEMRA_GRAPH_ MEMRA_HC_ MEMRA_HYPER_ MEMRA_KC_ MEMRA_KDA_ MEMRA_KV_ MEMRA_LOCKSTEP_ MEMRA_MAX_ MEMRA_MLA_ MEMRA_MMQ_ MEMRA_MOE_ MEMRA_MSCALE_ MEMRA_MTP_ MEMRA_NO_ MEMRA_NVFP4_ MEMRA_PARALLEL_ MEMRA_PDL_ MEMRA_PENALTY_ MEMRA_PP_ MEMRA_PREFILL_ MEMRA_PREFIX_ MEMRA_PRIME_ MEMRA_PROMPT_ MEMRA_Q4E_ MEMRA_Q80_ MEMRA_Q8_ MEMRA_REPLAY_ MEMRA_ROUTER_ MEMRA_SERVE_ MEMRA_SHEXP_ MEMRA_SIG_ MEMRA_SPEC_ MEMRA_SPILL_ MEMRA_STEP35_ MEMRA_STEP_ MEMRA_ST_ MEMRA_TCOL_ MEMRA_TK_ MEMRA_TP2_ MEMRA_TP_ MEMRA_VERIFY_ MEMRA_VISION_ ]; 
+== MEMRA_PRIME_QW8
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_PRIME_QW8: retired. See docs/FLAGS.md 'Removed experiments in this lane'. The value parses into nothing now; unset it, and if th
+== MEMRA_SEL_DOWN8
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_SEL_DOWN8: retired. See docs/FLAGS.md 'row marked REMOVED 2026-08-29'. The value parses into nothing now; unset it, and if the a
+== MEMRA_DSV4_MOE_PROGRAM
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_DSV4_MOE_PROGRAM: retired. See docs/FLAGS.md 'Removed doors, 2026-09-11 (the matrix expert program is the default; split-K goes 
+== MEMRA_PREFIX_CACHE_POLICY
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_PREFIX_CACHE_POLICY: retired. See docs/FLAGS.md 'Removed doors, 2026-09-21 (the prefix-cache policy door: decided on the inciden
+== MEMRA_PRIME_NOPE
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_PRIME_NOPE: unknown MEMRA_PRIME_* name (30 documented names in that family, none is this one). Neither a documented name nor a r
+== MEMRA_PREFIX_NOPE
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_PREFIX_NOPE: unknown MEMRA_PREFIX_* name (5 documented names in that family, none is this one). Neither a documented name nor a 
+== MEMRA_CI_LOCK_HELD
+[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_CI_LOCK_HELD. Left alone: launchers and gate scripts own names outside the engine's famili
+== MEMRA_ZZ_ORPHAN
+[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_ZZ_ORPHAN. Left alone: launchers and gate scripts own names outside the engine's families.
+SMOKE5_DONE
+== battery 20:45:57

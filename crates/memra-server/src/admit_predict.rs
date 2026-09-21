@@ -527,6 +527,70 @@ pub(crate) fn kv_hat_ring(
         .saturating_add(fixed_bytes)
 }
 
+/// memra#476: the predictive charge for one request, read from the SAME physical admission
+/// cost the VRAM gate just built (`AdmissionCostModel::estimate` plus the draft-state line,
+/// after any retained-prefix adjustment; the eager arm keeps its draft-state line, conservative,
+/// matching the real book), with only its context term re-keyed
+/// from the request's cap to the predicted context `prompt + predicted + CTX_HAT_SLACK`.
+///
+/// Before this the predictive book charged `ctx(P + L + 8) + activation` and the physical
+/// gate `ctx(C) + W(P) + A + D`: the prefill workspace `W` and the per-session draft state
+/// `D` were booked by one book and not the other, so an ENFORCED predictive budget did not
+/// bound the workspace-inclusive footprint (`research/spill-b-20260919/DAY24.md` section 1).
+/// The four terms are named so each is charged exactly once: persistent context (predicted),
+/// the fixed residual, the prefill workspace (at the rows the prime will walk, restore-adjusted
+/// where a plan was taken), and the draft state. The shared transient reserve is NOT here: the
+/// budget subtracts it once (`DerivedShadowBudget::budget_bytes`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RequestCharge {
+    /// `context_cache_bytes(..., prompt + predicted + CTX_HAT_SLACK)`.
+    pub context_hat_bytes: u64,
+    /// `AdmissionCostModel::activation_bytes`, the learned fixed residual high-water.
+    pub activation_bytes: u64,
+    /// `AdmissionCostModel::prefill_workspace_bytes` at the rows the physical cost charged.
+    pub prefill_workspace_bytes: u64,
+    /// The per-session draft-graph high-water or DFlash plane the physical cost charged.
+    pub draft_state_bytes: u64,
+}
+
+impl RequestCharge {
+    /// Derive the charge from the physical cost: `cost = ctx(C) + A + W + D` by construction
+    /// of the admission block, so `W = cost - ctx(C) - A - D` is the workspace the cost
+    /// actually carries (cold `W(P)`, or `W(P - R)` after a retained-prefix plan), and
+    /// `D` is whatever draft-state line the cost carries (today the eager arm keeps it, so the
+    /// book over-charges conservatively like the real book; revuto on #619). Saturating:
+    /// a cost below its own components (impossible by construction, guarded here) books the
+    /// remaining terms at zero rather than wrapping.
+    pub(crate) fn from_physical_cost(
+        cost_bytes: u64,
+        context_cap_bytes: u64,
+        activation_bytes: u64,
+        draft_state_bytes: u64,
+        context_hat_bytes: u64,
+    ) -> Self {
+        let beyond_context = cost_bytes.saturating_sub(context_cap_bytes);
+        let draft_state_bytes = draft_state_bytes.min(beyond_context);
+        let activation_bytes = activation_bytes.min(beyond_context - draft_state_bytes);
+        let prefill_workspace_bytes = beyond_context - draft_state_bytes - activation_bytes;
+        Self {
+            context_hat_bytes,
+            activation_bytes,
+            prefill_workspace_bytes,
+            draft_state_bytes,
+        }
+    }
+
+    /// The book entry: every term once. Equals `cost - ctx(C) + ctx(P + L + 8)`, so the
+    /// physical and predictive books differ by exactly the context bracket the predictor
+    /// exists to re-key, and by nothing else.
+    pub(crate) fn total(&self) -> u64 {
+        self.context_hat_bytes
+            .saturating_add(self.activation_bytes)
+            .saturating_add(self.prefill_workspace_bytes)
+            .saturating_add(self.draft_state_bytes)
+    }
+}
+
 /// The flat-geometry specialization of [`kv_hat_ring`] (ring_bytes_per_token = 0, ring_rows = 0).
 /// Bit-identical to legacy kv_hat.
 #[allow(dead_code)]
@@ -935,6 +999,90 @@ mod tests {
             kv_hat_ring(200, 100, total_bpt, ring_bpt, ring_rows, fixed),
             (total_bpt - ring_bpt) * 308 + ring_bpt * ring_rows + fixed
         );
+    }
+
+    #[test]
+    fn request_charge_books_every_physical_term_once() {
+        // memra#476: cost = ctx(C) + A + W + D; the charge re-keys only the context term.
+        let (bpt, ring_bpt, ring_rows) = (1_000u64, 0u64, 0u64);
+        let (prompt, predicted, cap) = (6_000u64, 96u64, 6_200u64); // P + L + 8 = 6_104 < cap: a positive bracket
+        let ctx_cap = context_cache_bytes(bpt, ring_bpt, ring_rows, cap);
+        let ctx_hat =
+            context_cache_bytes(bpt, ring_bpt, ring_rows, prompt + predicted + CTX_HAT_SLACK);
+        let (a, w, d) = (155 << 20, 412 << 20, 96 << 20);
+        let cost = ctx_cap + a + w + d;
+        let charge = RequestCharge::from_physical_cost(cost, ctx_cap, a, d, ctx_hat);
+        assert_eq!(
+            charge.prefill_workspace_bytes, w,
+            "W is the remainder the cost carries"
+        );
+        assert_eq!(charge.activation_bytes, a);
+        assert_eq!(charge.draft_state_bytes, d);
+        assert_eq!(charge.total(), ctx_hat + a + w + d);
+        // The two books differ by the context bracket and by nothing else.
+        assert_eq!(cost - charge.total(), ctx_cap - ctx_hat);
+        // Pre-#476 arithmetic (the omission): W and D absent from the predictive book.
+        assert_eq!(
+            kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a),
+            ctx_hat + a
+        );
+        assert_eq!(
+            charge.total() - kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a),
+            w + d
+        );
+    }
+
+    #[test]
+    fn request_charge_follows_the_cost_it_is_given() {
+        // A retained-prefix plan replaces W(P) with W(P - R). A charge built with D = 0 models
+        // a cost with no draft state; today's worker books the eager arm WITH its draft state
+        // (the real book does too, conservative; revuto on #619), so the D = 0 arm here is
+        // the arithmetic, not the worker's current call. The
+        // charge reads whatever the physical cost carries at the booking seam.
+        let ctx_cap = 6_096_000u64;
+        let ctx_hat = 6_104_000u64; // P + L + 8 may exceed C by the slack: still exact.
+        let (a, w_cold, w_suffix, d) = (100u64, 900u64, 300u64, 50u64);
+        let restored =
+            RequestCharge::from_physical_cost(ctx_cap + a + w_suffix + d, ctx_cap, a, d, ctx_hat);
+        assert_eq!(restored.prefill_workspace_bytes, w_suffix);
+        assert_eq!(restored.total(), ctx_hat + a + w_suffix + d);
+        let eager = RequestCharge::from_physical_cost(ctx_cap + a + w_cold, ctx_cap, a, 0, ctx_hat);
+        assert_eq!(eager.draft_state_bytes, 0);
+        assert_eq!(eager.prefill_workspace_bytes, w_cold);
+        assert_eq!(eager.total(), ctx_hat + a + w_cold);
+    }
+
+    #[test]
+    fn request_charge_without_workspace_or_draft_is_the_legacy_kv_hat() {
+        // Non-hyper models with no published shape (or MEMRA_ADMIT_PREFILL_WORKSPACE=0) on the
+        // plain path: W = D = 0 and the charge is bit-identical to kv_hat_ring.
+        let (bpt, ring_bpt, ring_rows) = (83_520u64, 600u64, 4_096u64);
+        let (prompt, predicted, cap, a) = (30_000u64, 1_200u64, 40_000u64, 10_000_000u64);
+        let ctx_cap = context_cache_bytes(bpt, ring_bpt, ring_rows, cap);
+        let ctx_hat =
+            context_cache_bytes(bpt, ring_bpt, ring_rows, prompt + predicted + CTX_HAT_SLACK);
+        let charge = RequestCharge::from_physical_cost(ctx_cap + a, ctx_cap, a, 0, ctx_hat);
+        assert_eq!(
+            charge.total(),
+            kv_hat_ring(prompt, predicted, bpt, ring_bpt, ring_rows, a)
+        );
+    }
+
+    #[test]
+    fn request_charge_saturates_instead_of_wrapping() {
+        // cost below its own components cannot happen by construction; guarded anyway.
+        let charge = RequestCharge::from_physical_cost(10, 100, 5, 5, 7);
+        assert_eq!(
+            (
+                charge.prefill_workspace_bytes,
+                charge.activation_bytes,
+                charge.draft_state_bytes
+            ),
+            (0, 0, 0)
+        );
+        assert_eq!(charge.total(), 7);
+        let big = RequestCharge::from_physical_cost(u64::MAX, 0, u64::MAX, 0, u64::MAX);
+        assert_eq!(big.total(), u64::MAX);
     }
 
     #[test]
