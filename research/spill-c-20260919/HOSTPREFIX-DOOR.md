@@ -1,12 +1,16 @@
 # HostPrefix contracts door: `MEMRA_KV_HOST_CONTRACTS` (lead ruling 15, Option A)
 
 Status: landed on `lane/spill-c-20260919` day 13 (`ff46abc75`, `e7e23dcf4`, `b81881dad`), default OFF, env door
-with a `docs/FLAGS.md` row; surface grown to MTP draft-bearing entries on day 14 (lead ruling 16, `DAY14.md`). Decide-by: **2026-10-05** (14 days after landing, 2026-09-21). Every cell behind it is
-`executed-not-qualified` development evidence on one card class; nothing here is a support
-state. Rulings applied: 13 (one `tenant_salt` owner in `memra-kv`), 14 (no borrowed-source
-seam, no v1.4; not exercised by A, which moves no bytes through `TransferEngine`), 15 (Option
-A first, OFF byte-identical by construction, ON leaves the gate lines unchanged, the startup
-arena is out of scope). Census that motivated it: `HOSTPREFIX-CONTRACT-CENSUS.md` Part E.
+with a `docs/FLAGS.md` row; surface grown to MTP draft-bearing entries on day 14 (lead ruling 16, `DAY14.md`);
+Option B landed on day 15 (`5f8d327e2`, `DAY15.md`): under the door the pageable-tier D2H of every KV plane
+goes through the native `TransferEngine`, the sequence in the "Option B" section below. Option C (the
+promote H2D) is next and waits for B's receipts. Decide-by: **2026-10-05** (14 days after landing,
+2026-09-21). Every cell behind it is `executed-not-qualified` development evidence on one card class;
+nothing here is a support state. Rulings applied: 13 (one `tenant_salt` owner in `memra-kv`), 14
+(planes leave `PrefixEntry` as owned `KvPlane`s, no borrowed-source seam in `CudaTransfers`, no v1.4:
+exercised by Option B), 15 (Option A first, OFF byte-identical by construction, ON leaves the gate lines
+unchanged, the startup arena is out of scope; B after A's receipts, C after B's). Census that motivated
+it: `HOSTPREFIX-CONTRACT-CENSUS.md` Part E.
 
 ## What the door does
 
@@ -15,8 +19,10 @@ struct at 8102) once at boot, after every model has loaded and `model_generation
 stores it in `HostPrefixCache::tier`. That field existed since lane B's day-two sidecar with no
 constructor in the crate (census, Part B headline), so the sidecar route (`tier_charge` 8127,
 `bind_tier_image` 8176, the insert identity check 7975, the promote leases 9139) was compiled
-and unit-tested but never executed. With the door ON it executes; the D2H and H2D programs are
-the pre-door `dtoh_u8_into_pinned` / `htod_u8_into` calls, untouched.
+and unit-tested but never executed. With the door ON it executes. Days 13 and 14 left the D2H and
+H2D programs as the pre-door `dtoh_u8_into_pinned` / `htod_u8_into` calls; since day 15 (Option B)
+the D2H of every KV plane on the pageable tier is the transfer engine's `memcpy_dtoh` behind a
+producer fence on the owner stream, one batch per demote, and the H2D stays `htod_u8_into`.
 
 | Surface | Where | What it does |
 |---|---|---|
