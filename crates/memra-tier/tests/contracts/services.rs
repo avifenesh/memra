@@ -1074,6 +1074,12 @@ fn revision_v13_unmodified_backend_defaults_to_unsupported() {
         epochs: epochs(),
     };
     assert_eq!(engine.retire_source(&ticket), Err(Error::Unsupported));
+    // Day-11 rule 1 keeps the same shape: the production CPU transport has no H2D route, so it
+    // keeps the trait default and refuses recovery without touching a charge.
+    assert!(matches!(
+        engine.recover_source(&ticket, 0),
+        Err(Error::Unsupported)
+    ));
     drop(engine);
     gov.borrow_mut().release(&charge).unwrap();
     assert_eq!(gov.borrow().used, TierBudget::zero(2));
