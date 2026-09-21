@@ -179,3 +179,161 @@ Predictions, written before the cells ran (fix build `build-fix/`):
 | F2 gate table (`fix-gate/`) | 9296: one-call `14ab5f8b365dbd71`, every split 16..208 `ok`; 9297: `e641952cac19e526`, 17 and 49 `ok`; 9311: `b61719f294866b05`, 31 and 63 `ok`; 9312: `736a88d7c7448dcb`, 32, 64, 96 `ok`; `MEMRA_PRIME_CHUNK=32`: one-call `14ab5f8b365dbd71` (was `35bd15f063bfd5ba`), splits `ok`; `MEMRA_PRIME_CHUNK=16`: a new one-call digest (every chunk now dp4a; off the 32 grid, so not comparable to the default), both splits `ok`; `MEMRA_NO_BATCHED=1`: identical to the default (the tier is already out of the prime walk); `A4 CONTINUATION GATE: PASS` on every arm |
 | F3 `kernel-check` (`fix-kc/`), both manifests | `ALL GREEN (N cells, K skipped)`, K within local-ci's budget of 11 on this rig (no kernel changed) |
 | F4 the #379 hit gate (`fix-hitgate/`), 9B trunk, fix `memra-server` | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (as day 19's corrected run on the pre-fix tree) |
+
+### 1.5 Resumed: what the dead run finished, and the fix cells (a) to (f) verbatim
+
+**Resumed.** The agent process that ran the fix cells died mid-run (API outage; two later restarts died before
+doing anything). Read back from the receipts before acting: the fix commit `89c693be0` landed at 17:12:29Z with
+cells S and W and the fix build (`build-fix/`, 17:09:51Z to 17:10:41Z, exit 0). The dead run then ran F1 as
+`fix-walk` and hit the canonical lock busy four times (`fix-walk-retries.log`: 17:13:01, 17:14:56, 17:16:52,
+17:18:46, each a 90 s sleep; attempts 0..3 have `.exit` 2 and no `cell/`, the collector refused with
+`[Errno 11] Resource temporarily unavailable`; the holder was not this lane's and was not inspected), then
+`fix-walk-retry4` (17:20:16Z, exit 0), `fix-gate` (17:20:51Z, exit 0), `fix-kc` (17:28:48Z, exit 0) and
+`fix-hitgate` (17:32:21Z to 17:32:49Z, exit 0). It had NOT written this section, had not committed the receipts or
+`PRIME-MIN-T-DECISION.md`, had not run the twin gate, the base-versus-fix cold-prime check, or anything on the
+target card. On resume (19:02Z): no process of the dead run alive (checked by cwd), the 5090 lock free, the card
+alone; `origin/main 5804cac6a` (#612, integ23) merged as `051bbfee3` (no file under `crates/` moved, so the
+`build-fix` binaries are the merged tree's engine byte for byte); the receipts and the decision note committed as
+they were (`de4fb332b`, `wip:`), pushed in the announced development mode (`UNQUALIFIED DEVELOPMENT` at
+`de4fb332b`, logged in `.git/memra-gate-skips.log`; no qualification claimed).
+
+Every cell below ran on the `build-fix` binaries (SHA-256 `f7daf4a6...` continuation gate, `b3be1e62...` width
+walk, `5a125d00...` kernel-check, `9d0eb4ff...` memra-server), the served `Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`
+(`1facf36c...`), prompt `docs/SERVING.md`, under the collector on the local RTX 5090 Laptop GPU
+(`executed-not-qualified`), `nvidia-smi --query-compute-apps` empty before and after each.
+
+**(a) The 16-row versus 17-row per-operation identity at the named site, fixed tree (`fix-walk-retry4/`, F1).**
+Summary lines, verbatim:
+
+```text
+WIDTH WALK scope=prime width 16 vs 17: 0 of 497 tensors differ; tensor names: {}; sites: []
+WIDTH WALK scope=prime width 48 vs 17: 0 of 497 tensors differ; tensor names: {}; sites: []
+WIDTH WALK scope=bare width 16 vs 17: 96 of 497 tensors differ; tensor names: {"ssm_alpha", "ssm_beta"}; sites: ["00/ssm_beta", "00/ssm_alpha", "01/ssm_beta", ..., "62/ssm_beta", "62/ssm_alpha"]
+WIDTH WALK scope=bare width 48 vs 17: 0 of 497 tensors differ; tensor names: {}; sites: []
+```
+
+The named site, first GDN layer, both scopes:
+
+```text
+scope=prime layer 00 ssm_beta  qtype=NVFP4   in_f=5120   out_f=48     width  16 vs 17: rows_differ=0/16 maxabs=0.000e0 ref_sha=e40f0aeaaec76762 sha=e40f0aeaaec76762 same
+scope=prime layer 00 ssm_alpha qtype=NVFP4   in_f=5120   out_f=48     width  16 vs 17: rows_differ=0/16 maxabs=0.000e0 ref_sha=27a9e796e65eee50 sha=27a9e796e65eee50 same
+scope=bare  layer 00 ssm_beta  qtype=NVFP4   in_f=5120   out_f=48     width  16 vs 17: rows_differ=16/16 maxabs=1.490e-7 ref_sha=e40f0aeaaec76762 sha=0a984de6e2ed5fd0 DIFFERS
+scope=bare  layer 00 ssm_alpha qtype=NVFP4   in_f=5120   out_f=48     width  16 vs 17: rows_differ=16/16 maxabs=4.768e-7 ref_sha=27a9e796e65eee50 sha=c9c9a51efce71c75 DIFFERS
+```
+
+Under the prime's scope the 16-row output equals the 17-row output's leading rows at every one of the 497 tensors
+(the `ref_sha` is the same at both scopes: the 17-row program did not move); the bare (decode/verify) class is
+exactly the day-22 cell W result. F1's prediction held in every clause.
+
+**(b) The #427 table on the fixed tree (`fix-gate/`, F2), all seven arms, verbatim (the `[prime-row]` receipts are
+in `fix-gate/cell/arm-*.log`):**
+
+```text
+== arm F-9296 total=9296 tails=16 48 80 112 144 176 208 env:
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+  9216 + 80: logits_sha=14ab5f8b365dbd71 ok
+  9184 + 112: logits_sha=14ab5f8b365dbd71 ok
+  9152 + 144: logits_sha=14ab5f8b365dbd71 ok
+  9120 + 176: logits_sha=14ab5f8b365dbd71 ok
+  9088 + 208: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9297 total=9297 tails=17 49 env:
+one call over 9297 tokens: logits_sha=e641952cac19e526
+  9280 + 17: logits_sha=e641952cac19e526 ok
+  9248 + 49: logits_sha=e641952cac19e526 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9311 total=9311 tails=31 63 env:
+one call over 9311 tokens: logits_sha=b61719f294866b05
+  9280 + 31: logits_sha=b61719f294866b05 ok
+  9248 + 63: logits_sha=b61719f294866b05 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9312 total=9312 tails=32 64 96 env:
+one call over 9312 tokens: logits_sha=736a88d7c7448dcb
+  9280 + 32: logits_sha=736a88d7c7448dcb ok
+  9248 + 64: logits_sha=736a88d7c7448dcb ok
+  9216 + 96: logits_sha=736a88d7c7448dcb ok
+A4 CONTINUATION GATE: PASS
+== arm F-9296-chunk32 total=9296 tails=16 48 env: MEMRA_PRIME_CHUNK=32
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9296-chunk16 total=9296 tails=16 48 env: MEMRA_PRIME_CHUNK=16
+one call over 9296 tokens: logits_sha=bafe0e0a09a3d0a4
+  9280 + 16: logits_sha=bafe0e0a09a3d0a4 ok
+  9248 + 48: logits_sha=bafe0e0a09a3d0a4 ok
+A4 CONTINUATION GATE: PASS
+== arm F-9296-nobatched total=9296 tails=16 48 env: MEMRA_NO_BATCHED=1
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=14ab5f8b365dbd71 ok
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+```
+
+Every prediction of the F2 row held: the one-call digests of 9296, 9297, 9311 and 9312 are day 21's, the 16-row
+split reads `ok` at the one-call digest with the gate now counting it, the chunk-32 one-call digest moved from
+`35bd15f063bfd5ba` to the default schedule's `14ab5f8b365dbd71` (the cold prime is chunk-invariant at width 16), the
+chunk-16 arm is a new one-call digest (`bafe0e0a09a3d0a4`, every chunk 16 rows on the dp4a program, off the 32 grid
+so not comparable to the default) with both splits `ok`, and `MEMRA_NO_BATCHED=1` is identical to the default. On
+"both artifacts": day 21 ran ONE artifact (the served mint) on both cards; the calibrated A4 artifact of #427's
+table is on neither this rig nor the target box, so the table stands on the served mint, both cards (section 2 for
+the target card).
+
+**(c) `kernel-check` on the fixed tree (`fix-kc/`, F3), both manifests
+(`--require-manifest tools/kernel-check-27b.cells --require-manifest tools/kernel-check-step35.cells`):**
+`ALL GREEN (109 cells, 10 skipped)`, exit 0. The 10 skips are the rig's absent models
+(`Qwen3.6-35B-A3B-UD-IQ4_XS.gguf` x7 cells, `gemma-4-12b-it-qat-q4_0.gguf`, `Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf`)
+and `sigrouter-served-replay` (no capture set), within local-ci's budget of 11.
+
+**(d) The #379 hit gate (`fix-hitgate/`, F4), `tools/spec-on-cache-hit-gate.sh qwen` on the fix `memra-server`
+(`9d0eb4ff...`), 9B trunk `Qwen3.5-9B-NVFP4-MTP-GGUF.gguf`, 17:32:21Z to 17:32:49Z:**
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, exit 0. Recorded, not hidden: the external drafter local-ci attaches
+(`draft-9b-owntrim-nvfp4head-q4blk.gguf`) is absent on this rig, so the gate ran as local-ci's WARNING branch
+(`fix-hitgate/drafter.txt`), the same shape as day 19's run on the pre-fix tree. The gate takes the canonical lock
+itself (`MEMRA_GPU_LOCK=/tmp/memra-5090.lock`), so it did not go through the collector.
+
+**(e) The twin gate (`fix-twin/`, `tools/prefix-newest-turn-fits-gate.py` on the fix `memra-server`, default 8-turn
+shape, LRU default, collector-locked, 19:06Z, exit 0), verbatim:**
+
+```text
+PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS
+```
+
+Byte for byte day 21's line on the pre-fix tree (the same bytes, the same eviction counts; V5 is the restored render
+equal to the cache-off render on every turn).
+
+**(f) Cold-prime bit-identity, base tree versus fixed tree (`build-base/`, `base-gate/`; runner
+`run-day22-base.sh`).** The base binary is the merged tree with exactly the fix's three source hunks reverted
+(`git diff 89c693be0 99c939f6a` on `lib.rs`, `hybrid_forward.rs`, `qwen_a4_continuation_gate.rs`, applied and
+recorded in `build-base/reverted-hunks.txt`: 3 files, 11 insertions, 51 deletions; nothing else), built 19:11:07Z to
+19:11:41Z, SHA-256 `61184681...`; the tree was restored (`git checkout -- crates/`, clean) and the `build-fix`
+binaries put back with their SHA-256 re-read equal. Same artifact, same prompt, same rig, three arms, verbatim:
+
+```text
+== arm B-9296 total=9296 tails=16 48 env:
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=35bd15f063bfd5ba DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+== arm B-9296-chunk32 total=9296 tails=16 48 env: MEMRA_PRIME_CHUNK=32
+one call over 9296 tokens: logits_sha=35bd15f063bfd5ba
+  9280 + 16: logits_sha=35bd15f063bfd5ba ok
+  9248 + 48: logits_sha=35bd15f063bfd5ba ok
+== arm B-9297 total=9297 tails=17 env:
+one call over 9297 tokens: logits_sha=e641952cac19e526
+  9280 + 17: logits_sha=e641952cac19e526 ok
+```
+
+Read against `fix-gate/`:
+
+| schedule | base one-call | fix one-call | reading |
+| --- | --- | --- | --- |
+| 9296, default chunk (2 x 4096 + 1104; no 16-row chunk) | `14ab5f8b365dbd71` | `14ab5f8b365dbd71` | identical: the fix moved nothing here |
+| 9296, `MEMRA_PRIME_CHUNK=32` (290 x 32 + a 16-row chunk) | `35bd15f063bfd5ba` | `14ab5f8b365dbd71` | differs by design; the new value IS the wide-chunk digest |
+| 9297, default chunk (17-row remainder) | `e641952cac19e526` | `e641952cac19e526` | identical |
+| 9296 restored as 9280 + 16 | `35bd15f063bfd5ba` | `14ab5f8b365dbd71` | the restored 16-row suffix now digests as the one-call prime |
+
+So the fix moved exactly the 16-row chunk program and only that: a schedule without a 16-row chunk is bit-identical
+to the base, and the one with a 16-row chunk now equals the wide program. (a) to (f) all hold; the fix stands on the
+lane as `fix:` (commit `89c693be0`), still `executed-not-qualified` everywhere, the target-card table in section 2.
