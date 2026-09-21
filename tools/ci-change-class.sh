@@ -23,9 +23,11 @@
 #   research/**        lane receipts and tune data, EXCEPT a research file that a crate pulls in
 #                      with include_str!/include_bytes! (a compile input; the set is derived at
 #                      classify time from the head tree, so a new include is covered the commit it
-#                      lands). 2026-09-21: four such includes exist (memra-kv tests, memra-server,
-#                      memra-tokenizer); the 2026-09-02 "zero research/ literals" note was stale
-#                      (lane D day 13). Tools that read research/ at run time (check-flags,
+#                      lands; multi-line forms included). 2026-09-21: six included paths exist
+#                      (memra-kv and memra-engine test fixtures, memra-engine ep_map, memra-server
+#                      and memra-tokenizer chat templates); the 2026-09-02 "zero research/
+#                      literals" note was stale (lane D day 13, revuto on #611). Tools that read
+#                      research/ at run time (check-flags,
 #                      update-perf-board, local-ci) are text gates or local batteries, not
 #                      compile jobs.
 #   agent-knowledge/** corpus text
@@ -42,6 +44,32 @@ head=${4:-}
 repo=${5:-.}
 
 emit() { printf 'code=%s\nreason=%s\n' "$1" "$2"; exit 0; }
+
+# include_census <rev>: every research/ path a crate pulls in with include_str!/include_bytes!
+# at <rev>, repo-relative, one per line. Multi-line forms count (the macro name and the literal
+# on different lines: grep -z reads each file as one record; revuto on #611 found three such
+# sites). A row that cannot be resolved prints "?" so the caller fails closed.
+include_census() {
+  local rev=$1 f lit
+  git grep -l -E 'include_(str|bytes)!' "$rev" -- crates 2>/dev/null | sed -E 's/^[^:]*://' \
+  | while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      git show "$rev:$f" 2>/dev/null \
+      | grep -Pzo 'include_(str|bytes)!\(\s*"[^"]*research/[^"]+"\s*\)' | tr '\0' '\n' \
+      | grep -oE '"[^"]+"' | tr -d '"' \
+      | while IFS= read -r lit; do
+          [ -n "$lit" ] || { echo "?"; continue; }
+          realpath -m --relative-to=. "$(dirname "$f")/$lit" 2>/dev/null || echo "?"
+        done
+    done | sort -u
+}
+
+# `ci-change-class.sh census <rev> [repo_dir]` prints the census and exits 0 (teeth and humans).
+if [ "${1:-}" = census ]; then
+  cd "${3:-.}" 2>/dev/null || { echo "?"; exit 0; }
+  include_census "${2:-HEAD}"
+  exit 0
+fi
 
 [ -n "$event" ] && [ -n "$head" ] || emit true "missing-args"
 cd "$repo" 2>/dev/null || emit true "repo-dir-unreadable"
@@ -74,12 +102,7 @@ esac
 
 # research/ files a crate includes at compile time, as repo-relative paths, read from the head
 # tree. Any failure to derive the set is a doubt and classifies as code.
-included=$(git grep -n -oE 'include_(str|bytes)!\("[^"]*research/[^"]+"\)' "$head" -- crates 2>/dev/null \
-  | sed -E 's/^[^:]*:([^:]+):[0-9]+:include_(str|bytes)!\("([^"]+)"\)$/\1 \3/' \
-  | while read -r src lit; do
-      [ -n "$src" ] && [ -n "$lit" ] || { echo "?"; continue; }
-      realpath -m --relative-to=. "$(dirname "$src")/$lit" 2>/dev/null || echo "?"
-    done) || emit true "include-census-failed"
+included=$(include_census "$head") || emit true "include-census-failed"
 case "$included" in *"?"*) emit true "include-census-unresolved" ;; esac
 
 while IFS= read -r f; do
