@@ -1,0 +1,19 @@
+ok   two orders: [1, 2]
+ok   warm-up: one per arm: ['write-combined', 'cached']
+ok   N >= 5 pairs per order: N=5
+ok   byte_exact in every roundtrip (warm-ups included): 22/22
+ok   driver flags carry the arm's write-combined bit in every roundtrip: [('cached', 2), ('write-combined', 6)]
+ok   one buffer size: {167772160}
+ok   rule 3: cached bind hash below write-combined at every pair: 10/10
+FAIL rule 4: cached D2H not above write-combined at every pair: 5/10
+FAIL rule 5: medians in both orders (bind below, D2H not above)
+per pair: bind 10/10 cached<wc; engine 10/10 cached<wc; d2h 5/10 cached<=wc, 5/10 cached<wc; h2d 6/10 cached<=wc
+cached arm on this card: INCONCLUSIVE (pre-registered rule); strict D2H reading: INCONCLUSIVE
+ok   binary rule line present
+ok   replay agrees with the binary's verdict: inconclusive
+ok   exactly one RESULT line: 1
+ok   RESULT medians agree with the replay (bind, cached, pooled)
+ok   RESULT sample count: 20 vs 20
+ok   collector status executed-not-qualified, exit 0: executed-not-qualified exit 0
+telemetry: 240 samples at 250 ms; temperature 55 to 57 C; power draw 28 to 29 W (limit [N/A]); SM clock 1590 to 1627 MHz
+WC AB REPLAY: FAIL (15 checks, 2 failed)
