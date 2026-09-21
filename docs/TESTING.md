@@ -872,6 +872,27 @@ never a copy) and `transfer_source_retirement` (`retire_source`, default body
 [interface decision](decisions/GENERIC-SPILL-INTERFACE-V1.md), the
 [freeze ledger](../research/spill-lead-20260919/FREEZE.md) and the
 [v1.3 freeze](../research/spill-lead-20260919/FREEZE-V1.3.md).
+Day 11 (lead ruling 9, `conformance/recovery.rs`, unversioned, beside the frozen schedules,
+which stay byte-identical) turned lane D's two fault-arm findings into contract rules with red
+arms. Rule 1, cancelled restore: a restore (H2D) that is cancelled before its consumer event
+completes must either hand the untouched host source back to the caller as a typed lease
+(recoverable) or refuse the cancel with a typed error while the source is still intact;
+consuming the source and then cancelling is forbidden by the rule. Seam:
+`TransferEngine::recover_source` (default `Err(Unsupported)`); a cancelled H2D holds its source
+for the caller (`retire`/`retire_source` answer `Busy` until recovered), `cancel` answers
+`AlreadyReleased` once a source left the ticket. Schedules `transfer_cancel_recovers_source`
+and `transfer_cancel_refused_after_source_consumed`; CPU bindings in `transfer.rs`
+(`day11_*`, with the `legacy` red arm that drains a cancelled restore); native bindings in
+`tier-transfer-gate` (below). Rule 2, required-resident continuation: a continuation (decode or
+prime) over a cache with any suspended layer must be refused at `Cache::ensure_usable` with a
+typed error naming the suspended layers, unless the caller restores first. Seam:
+`memra_kv::Cache::suspend_layer` / `resume_layer` move a layer through the typed
+`SuspendedLayers` register; `ensure_usable` returns `ContinuationRefused { path, layers }`
+while it is non-empty; `decode_step_h` is unchanged and never sees a suspended layer. Schedule
+`required_resident_continuation` over the `ContinuationGateFixture` trait; CPU bindings in
+`resident_bindings.rs` (register passes, the taint-only gate is the red arm) and on the real
+`Cache` in `memra-kv` (`continuation_gate_tests`). Write-up:
+`research/spill-a-20260919/DAY11.md`.
 Linux cross-target check is compilation only, not Linux syscall execution.
 
 ### Native conformance: `tier-transfer-gate` (v1 through canonical v1.3)
@@ -896,6 +917,13 @@ PASS v1.3 transfer_source_retirement native CUDA
 PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement
 PASS v1.3 device_hand_back native CUDA
 ```
+
+Day 11 added two lines whose bindings exist but have not run natively yet (no GPU cell that
+day; lane B held the card): `PASS rule cancelled-restore-recovers-source native CUDA` and
+`PASS rule cancel-refused-after-source-consumed native CUDA`. The v1 `transfer_cancel`, v1.1
+`transfer_complete_cancel`, `transfer_lifetime` and acceptance bindings now recover the
+cancelled H2D source before retiring (the schedules themselves are unchanged); until the gate
+is rerun on a card, the recorded day-9 lines stand as the last native evidence.
 
 plus one `PASS native D2H-H2D roundtrip bytes=… byte_exact=true source_freed_host_live=true` line per
 size (4 KiB to 256 MiB). All lines were recorded on one RTX PRO 6000 Blackwell through the collector
@@ -1016,12 +1044,12 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   | Arm | Injection point (contract call) | Required checks (expected answer) | Outcome |
   | --- | --- | --- | --- |
   | `cancel-demote` | D2H submitted and observed complete (`synchronize`), then `TransferEngine::cancel` before `take_destination` | `cancel` `Ok(PublicationRevoked)`; `take-after-cancel` `Err(Cancelled)`; `retire` and `acknowledge` `Ok(())`; `pinned-after-cancel` `0`; `source-returned` (`take_plane` gives the untouched source, `len=<capacity> vmm=false`); `budget-zero`; `restored-identical` | PASS, intact-resident, continuation runs |
-  | `cancel-restore` | H2D submitted and observed complete, then `cancel` before `ready_view` | `cancel` `Ok(PublicationRevoked)`; `ready-view-after-cancel`, `with-destination-after-cancel`, `take-after-cancel` all `Err(Cancelled)`; `retire`, `acknowledge` `Ok(())`; `retake-demoted-copy` (`take_destination` on the D2H ticket) `Err(AlreadyReleased)`; `budget-zero` | typed refusal: the H2D source handle is consumed at submission and released by `retire`; the D2H twin is take-once; no contract seam recovers the copy, so no restore and no token |
+  | `cancel-restore` | H2D submitted and observed complete, then `cancel` before `ready_view` | `cancel` `Ok(PublicationRevoked)`; `ready-view-after-cancel`, `with-destination-after-cancel`, `take-after-cancel` all `Err(Cancelled)`; `retire`, `acknowledge` `Ok(())`; `retake-demoted-copy` (`take_destination` on the D2H ticket) `Err(AlreadyReleased)`; `budget-zero` | typed refusal on day 11: the H2D source handle is consumed at submission and released by `retire`; the D2H twin is take-once; no contract seam recovers the copy, so no restore and no token. Seam since lane A day 11 (rule 1): `retire` answers `Busy`, `recover_source(ticket, 0)` returns the intact source, then `retire`/`acknowledge` and a second `restore`; lane D reruns for the PASS line |
   | `corrupt-host` | after `demote`: `CudaPinnedLease::write` under the live D2H ticket, then the legal drain (`record_consumer`, `retire`, `acknowledge`), then `write` again; `restore` on the flipped copy | `write-under-live-ticket` `Err(Busy)`; `write-sole-owner` `Ok(())`; `restore-integrity` `Corrupt` (`StateBundle::verify`, before any device call); `device-registry-unchanged`; `budget-zero` | PASS, no publish, no token |
   | `missing-host` | D2H completed and never taken; `retire(None)` and `acknowledge` remove the engine-owned copy; `take_destination` at restore | `completion-checksum` (`poll` checksum equals the bundle's); `remove` `retire=Ok(()) acknowledge=Ok(())`; `pinned-released` (the plane's bytes); `retake-removed-copy` `Err(UnknownTicket)`; `budget-zero` | PASS, no publish, no token |
   | `host-budget-short` | governor pinned capacity set to the whole demoted bytes minus one; `admit_whole_state` before any layer is taken | `whole-state-admission` `Err(Capacity)`; `layers-resident` unchanged; `pinned-charged` `0`; `budget-zero`; `restored-identical` | PASS, nothing copied, continuation runs |
   | `device-short` | after demote, a competing tenant reserves the governor's device dimension down to one byte less than the restore needs; `alloc_device` (restore's first call) | `restore-admission` `Err(Capacity)`; `device-registry-unchanged`; `host-copy-intact` (`StateBundle::verify` `Ok(())`); competitor released; `budget-zero`; `restored-identical` | PASS, continuation runs. The governor has no post-construction capacity seam; the seam used is its own admission with a second tenant |
-  | `require-resident` | demote all, ask `Cache::ensure_usable` (the engine's only continuation gate) while suspended, restore all | `budget-zero`; `restored-identical`; observation `continuation_gate_on_suspended_cache` | typed refusal: no continuation-time required-resident contract exists (the taint flag is one-way and pipeline-scoped; `decode_step_h` unwraps a suspended layer; `tiered::policy::RestoreDecision::RequireState` is a load-versus-recompute rule) |
+  | `require-resident` | demote all, ask `Cache::ensure_usable` (the engine's only continuation gate) while suspended, restore all | `budget-zero`; `restored-identical`; observation `continuation_gate_on_suspended_cache` | typed refusal on day 11: no continuation-time required-resident contract exists (the taint flag is one-way and pipeline-scoped; `decode_step_h` unwraps a suspended layer; `tiered::policy::RestoreDecision::RequireState` is a load-versus-recompute rule). Seam since lane A day 11 (rule 2): detach through `Cache::suspend_layer`, reattach through `Cache::resume_layer`; `ensure_usable` on the suspended cache answers `ContinuationRefused` naming every suspended layer and `Ok(())` after the restore; lane D reruns for the PASS line |
 
   CPU replay: `crates/memra-tier/tests/reclaim/fault.rs` (door, red arms per arm, committed
   target-card receipts); the lane's offline replay is `research/spill-d-20260919/verify-day11.py`
