@@ -673,6 +673,12 @@ integ22 restores the row verbatim from `c53d0b9f7` (appended after `spill-a-2026
 the two INDEX files shows it was the only line lost. Ruling 24: a union resolve is followed by a set-difference
 check of every conflicted file against both parents, and the marker grep covers `|||||||` too.
 
+Push mode. The first plain push was refused `UNQUALIFIED: source inputs changed: crates/memra-engine/src/bin/
+cpu_native_check.rs, ...` although `git diff origin/main HEAD -- crates` is empty and no commit in the range touches
+`crates/`: the #589 hook compares the pushed tree's engine source with the committed qualification pointer, not
+with the push range, and main's engine tree has moved past the last receipt (#604, #607). Pushed in the announced
+development mode; the receipt is the release lane's to renew, nothing here claims qualification.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
