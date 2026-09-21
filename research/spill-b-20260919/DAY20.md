@@ -124,3 +124,146 @@ their returns, stated whichever way it points; win, better on the primary at eve
 orders, a tie at any pair is not "better", otherwise INCONCLUSIVE. No timing is compared with the target card
 or any other box. `WINNER=lru` confirms the decision on the second card class; anything else is reported to
 the lead as a disagreement, plainly, and the decision text is not touched.
+
+## Result 1: the dry run at the default pool (`ab-smoke-default`): the precondition holds, the confound is present
+
+Binary `bd1423b0016e1a544b9029cfe81d4cabbf8e446cad1d6e64f7e369c196c727e4` built from `a843686ce` in the
+detached worktree (`build-tip/`, `dirty.txt` empty, exit 0 in 2 min 50 s with the rig's sccache), artifact
+`Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, NVIDIA GeForce RTX 5090 Laptop GPU (24,463 MiB, driver 595.84, `power.limit`
+`[N/A]`, `power.max_limit` 175 W), through `tools/tier-battery.py --rig rtx5090` with the canonical
+`/tmp/memra-5090.lock` inherited by the harness (proof in `lock.json` and `cell/LOCK.json`, same device and
+inode), the lock free on the first attempt, the continuation pool at its default. One pair per order, four runs
+plus the cache-off boot, 28 requests each, 386 s wall, 1,538 telemetry samples at 250 ms (54 to 88 C over the
+cell, peak draw 182.6 W, peak `memory.used` 23,065 MiB of 24,463; the first and last samples read 15 MiB, so the
+card was alone), collector `executed-not-qualified`, exit 0. Verbatim:
+
+```text
+PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912 grow=160 return_every=3 pairs_per_order=1 runs=4 requests_per_run=28 digests_identical=28/28 computed_tokens slru_median=31776 lru_median=29600 (N=2 each) pairs_slru_better=0/2 pairs_lru_better=2/2 ties=0/2 return_cached slru_median=0 lru_median=1696 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=67.0..74.0 power_limit_w=None -> SMOKE
+```
+
+| pair | order | slru computed | lru computed | slru - lru | better | slru return cached | lru return cached | slru loop cold | lru loop cold | slru ttft loop p50/p95 ms | lru ttft loop p50/p95 ms | slru temp C | lru temp C |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| AB-0 | AB | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 186.301/281.798 | 184.494/185.217 | 74.0->69.0 | 69.0->67.0 |
+| BA-0 | BA | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 195.675/285.217 | 183.919/185.197 | 68.0->72.0 | 67.0->68.0 |
+
+- **The digest precondition holds: 28/28 in every run, both arms, against the cache-off boot** (day 16 on this
+  card: 26/28, one restored-suffix request per arm lineage). The shape gates held from this card's own `insert`
+  lines (fit 29,583 B/token + 157,070,000 B from the MB-rounded lines; cohort 792,920,064 B = 73.8 %, turn 1
+  44.7 %, turn 12 49.5 %, every gate true). Every published entry equals its prompt (the seed lands at the
+  on-grid prompt end), every restored length equals the previous prompt and is a multiple of 32
+  (`verify-day20.py`: 62 hit lines). The primary, the secondary and all 28 `cached_tokens` per run equal
+  `day20-predict.py`'s table (56/56 rows per arm).
+- **The confound is present, exactly as on day 16.** `[admit-oom] reclaim-on-defer` ran 11 times per run in
+  every run, evicting 12 prefix entries per run before the loop-turn prefills (the policy's own evict lines fell
+  to 9 under slru and 7 under lru against the predicted 21 and 19), plus 5 reclaim events in the cache-off boot
+  (parked sessions only, no cache to take from) and 3 `[admit-trim]` lines per run; `plain-affinity: declined`
+  on 19 rows per boot. The non-cache headroom read 3,233 to 8,307 MB over a run. The pre-registered model
+  (`effective free < cost + 1,611 MB`) predicted every one of those events.
+
+## Result 2: the same smoke with `MEMRA_REUSE_POOL=0` (`ab-smoke-pool0`): the confound is gone, nothing else moved
+
+Same binary, artifact, card, collector and lock (free on the first attempt), the pool off. Four runs plus the
+cache-off boot, 386 s wall, 1,537 samples (65 to 89 C, peak draw 194.0 W, peak `memory.used` 20,441 MiB, first
+and last samples 15 MiB), collector `executed-not-qualified`, exit 0. Verbatim:
+
+```text
+PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912 grow=160 return_every=3 pairs_per_order=1 runs=4 requests_per_run=28 digests_identical=28/28 computed_tokens slru_median=31776 lru_median=29600 (N=2 each) pairs_slru_better=0/2 pairs_lru_better=2/2 ties=0/2 return_cached slru_median=0 lru_median=1696 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=67.0..75.0 power_limit_w=None -> SMOKE
+```
+
+| pair | order | slru computed | lru computed | slru - lru | better | slru return cached | lru return cached | slru loop cold | lru loop cold | slru ttft loop p50/p95 ms | lru ttft loop p50/p95 ms | slru temp C | lru temp C |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| AB-0 | AB | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 183.931/280.552 | 182.229/183.787 | 75.0->70.0 | 70.0->68.0 |
+| BA-0 | BA | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 182.033/280.11 | 181.427/182.597 | 67.0->68.0 | 68.0->67.0 |
+
+Zero `[admit-oom]` lines and zero `[admit-trim]` lines in every boot, the cache-off boot included; no
+`parked` line at all. The policy made every eviction itself: 21 per slru run and 19 per lru run, the predicted
+counts, with the same victims in the same order as the target card's day-15 rows. Digests 28/28, every
+`cached_tokens` row equal to the default smoke's and to the prediction, the same primary and secondary: the
+pool moved VRAM residency of whole sessions and nothing else. Non-cache headroom 7,533 to 8,655 MB over a run,
+the predicted ~900 MB clear of the admission test at every loop turn. This is the configuration the scored
+cell ran in.
+
+## Result 3: the 20-run cell with `MEMRA_REUSE_POOL=0` (`ab-full-retry1`): `WINNER=lru`, the decision holds on both card classes
+
+Same binary, artifact, card and collector. The first attempt at 15:06:53 UTC was REFUSED by the collector
+(`REFUSED: [Errno 11] Resource temporarily unavailable`: the canonical lock was still busy three seconds after
+the pool-0 smoke's exit file appeared); the driver waited 90 s as designed and attempt 1 held the lock for the
+whole cell (`ab-full-retries.log`, the refused stub `ab-full/`, the cell `ab-full-retry1/`). `AB-0, BA-0, ...,
+AB-4, BA-4`, 20 runs plus the cache-off boot, 28 requests each, 1,248 s wall, 4,966 telemetry samples at 250 ms
+(56 to 88 C over the cell, 66 to 74 C at run boundaries, peak draw 181.3 W, peak `memory.used` 20,441 MiB of
+24,463; the first sample read 15 MiB, so the card was alone at the start, and it read 15 MiB again after the
+collector exited), collector `executed-not-qualified`, exit 0, `tools/tier-battery.py --validate` on
+`CELL.jsonl` and on the capture: `CAPTURE INTEGRITY MATCH; command status=executed-not-qualified; NOT
+qualification`. Verbatim:
+
+```text
+PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912 grow=160 return_every=3 pairs_per_order=5 runs=20 requests_per_run=28 digests_identical=28/28 computed_tokens slru_median=31776 lru_median=29600 (N=10 each) pairs_slru_better=0/10 pairs_lru_better=10/10 ties=0/10 return_cached slru_median=0 lru_median=1696 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=66.0..74.0 power_limit_w=None -> WINNER=lru
+```
+
+Per pair (computed tokens, lower is better; every pair adjacent, same binary, same ids; N=10 runs per arm):
+
+| pair | order | slru computed | lru computed | slru - lru | better | slru return cached | lru return cached | slru loop cold | lru loop cold | slru ttft loop p50/p95 ms | lru ttft loop p50/p95 ms | slru temp C | lru temp C |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| AB-0 | AB | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 183.914/282.005 | 182.415/184.167 | 74.0->69.0 | 69.0->67.0 |
+| BA-0 | BA | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 182.302/279.243 | 181.518/182.828 | 66.0->67.0 | 67.0->66.0 |
+| AB-1 | AB | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 182.454/279.04 | 182.043/195.605 | 67.0->67.0 | 67.0->66.0 |
+| BA-1 | BA | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 188.681/280.04 | 182.009/182.592 | 66.0->67.0 | 66.0->66.0 |
+| AB-2 | AB | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 182.856/280.382 | 181.439/182.606 | 67.0->67.0 | 67.0->66.0 |
+| BA-2 | BA | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 183.335/279.825 | 182.116/183.925 | 66.0->67.0 | 66.0->66.0 |
+| AB-3 | AB | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 185.837/279.805 | 181.848/183.975 | 67.0->67.0 | 67.0->66.0 |
+| BA-3 | BA | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 182.605/279.607 | 181.708/183.311 | 69.0->67.0 | 66.0->69.0 |
+| AB-4 | AB | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 182.301/280.342 | 181.584/182.571 | 67.0->67.0 | 67.0->66.0 |
+| BA-4 | BA | 31776 | 29600 | 2176 | lru | 0 | 1696 | 0 | 0 | 182.649/285.708 | 181.95/185.141 | 66.0->67.0 | 66.0->66.0 |
+
+- **Precondition:** every completion digest identical across the 20 runs and the cache-off boot on all 28
+  requests (`digests_identical=28/28`; `verify-day20.py` also checks identity across runs of the same arm,
+  28/28). The day-16 failure of this precondition on this card is gone on the binary that carries the capture
+  fix; the shape's prompts are on the grid, so the fix's `AtPromptEnd` arm is the one exercised here (the
+  off-grid `AtBoundary` arm is the twin and restore gates' business, green on both cards on day 19).
+- **Primary:** lru better at every one of the ten pairs in both orders, by 2,176 computed tokens per run
+  (slru 31,776, lru 29,600, no variance across the ten runs of either arm). **Secondary:** return cached slru 0,
+  lru 1,696 (the last tenant's final served from cache under lru, cold under slru). Loop cold turns after
+  turn 1: 0 in both arms. Refusals 0. Policy evictions 21 per slru run and 19 per lru run, every one the
+  policy's own.
+- **Mechanisms:** the same three the target card showed on day 15, read from `REQUESTS.md`: the loop served
+  identically by both arms except after a cohort return, where slru evicts the loop's newest (probation) entry
+  and the next turn computes 320 instead of 160 (rows 12, 16, 20), and after the loop, where slru protects the
+  dead last loop entry over the fresh cohort-4 entry so cohort-4's final is cold (1,856 computed) while lru
+  serves it from cache (`hit 1696`, 160 computed). Every one of the 28 `cached_tokens` rows in all 20 runs
+  equals `day20-predict.py`'s table (280/280 per arm).
+- **Confound:** zero `[admit-oom]` lines and zero `[admit-trim]` lines in all 21 boots; no parked session; the
+  admission reclaim ladder did not fire. The cell is clean by the brief's definition.
+- **Agreement with the target card:** `WINNER=lru`, 10/10 pairs, 28/28 digests, the same three mechanisms, the
+  same per-request residency story row for row (scaled). The decision in `docs/decisions/PREFIX-CACHE-POLICY.md`
+  holds on both card classes. No timing is compared with the target card; the TTFT columns are this card's own
+  record of its own runs (the slru p95 carries the one extra 160-token prefill per return).
+
+## Checks actually run
+
+| Check | Result |
+| --- | --- |
+| Native release build, detached worktree at `a843686ce` (= `9466b8912` + the three capture picks), own target dir, CPU quota (`build-tip/`) | exit 0 in 2 min 50 s, `dirty.txt` empty, SHA-256 `bd1423b0...` |
+| `ab-smoke-default` (pairs 1, pool default) through the collector, inherited canonical lock | `-> SMOKE`, exit 0, digests 28/28 in 4/4 runs, reclaim 11 events / 12 entries per run (the day-16 confound, present) |
+| `ab-smoke-pool0` (pairs 1, `MEMRA_REUSE_POOL=0`) | `-> SMOKE`, exit 0, digests 28/28, 0 reclaim events in 5 boots, rows equal to the default smoke's |
+| `ab-full-retry1` (pairs 5, `MEMRA_REUSE_POOL=0`) | `-> WINNER=lru`, exit 0, 10/10 pairs, digests 28/28 across 20 runs, 0 reclaim events in 21 boots |
+| `verify-day20.py` on each of the three cells (offline replay) | `DAY20 REPLAY OK` three times; prediction matched 56/56, 56/56 and 280/280 rows per arm |
+| `tools/tier-battery.py --validate` on `CELL.jsonl` and `command.capture.json` of each cell | exit 0; `CAPTURE INTEGRITY MATCH; command status=executed-not-qualified; NOT qualification` |
+| `cargo fmt --all -- --check`, `bash tools/docs-registry-census.sh`, `git diff --check` (lane tree, CPU quota) | PASS, PASS, clean (`rtx5090-day20/fmt-check.log`; the census output in the commit log line) |
+| Full GPU exactness battery | NOT RUN: no code change on the lane (docs and receipts only) |
+
+## Boundaries and record
+
+- Every GPU command on this card went through `tools/tier-battery.py --rig rtx5090` with the canonical
+  `/tmp/memra-5090.lock` (inherited FD, proof in `lock.json` and `cell/LOCK.json` of every cell); one attempt
+  refused on a busy lock, one 90 s wait, no holder signalled; no third lock name; no bare GPU run; no
+  `--no-verify`; no skip variable; no other lane's worktree touched, `main` untouched; nothing of V4.1; no
+  external dependency; no captured, restored or served byte changed (the digest precondition is the proof);
+  the harness and the SLRU arm were used from the detached worktree only and never returned to the lane; the
+  harness was not modified; no gate and no rule relaxed. Build and cells under `systemd-run --user --scope -p
+  CPUQuota=1200% -p MemoryMax=28G`.
+- The one deviation from day 16's configuration is stated in the pre-registration: `MEMRA_REUSE_POOL=0` on the
+  server the harness boots for the scored cell, with the default-pool smoke beside it as the control that the
+  pool moved no byte and no row.
+- The detached worktree and its target dir were removed when the day closed; the binary's SHA-256 and source
+  refs are in `build-tip/`.
+- No timing is compared with the target card.

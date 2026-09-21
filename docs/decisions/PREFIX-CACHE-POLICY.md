@@ -5,7 +5,7 @@ default with the `MEMRA_PREFIX_CACHE_POLICY` and `MEMRA_PREFIX_CACHE_PROTECTED_P
 (memra#523 item 2, lane `research/spill-b-20260919/DAY15.md`). The local RTX 5090 run of the same
 replay is a follow-up: the primary metric below is a function of bytes and policy, not of the card,
 so the verdict is not a timing default, but the owner's rule that one rig's result sets at most one
-rig's default is stated here and the 5090 cell is owed.
+rig's default is stated here; the 5090 cell confirmed it on day 20 (below).
 
 ## Question
 
@@ -102,30 +102,41 @@ no self-eviction instead of a protected eviction.
 ## Follow-ups
 
 - The same replay on the local RTX 5090 (compatibility, not a re-decision: the byte arithmetic does
-  not depend on the card).
+  not depend on the card): done, day 20, `WINNER=lru` at 10/10 pairs (below).
 - Live telemetry of `prefix_cache_hits` / `cached_tokens` on production shapes with small entries,
   where the `slrucache-20260813` result would show if it mattered; a new receipt on a real shape is
   what would bring segmentation back.
 
-## Confirmation on the second card class (2026-09-21, day 16)
+## Confirmation on the second card class (2026-09-21, day 20; the day-16 no-verdict smoke superseded)
 
-The follow-up cell on the local RTX 5090 Laptop GPU (24,463 MiB) did not confirm the verdict, and it did not
-contradict it either: it failed the precondition. The same harness and two-arm binary from `9466b891`, the
-shape scaled to the 1024 MiB budget that card allows with the byte shares preserved (cohort 73.9 %, loop
-entries 45.0 to 49.6 %, 150 ids per turn), one pair per order as the smoke before the 20-run cell, verbatim:
-`PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=793870336 turns=12 start_tokens=11000
-grow=150 return_every=3 pairs_per_order=1 runs=4 requests_per_run=28 digests_identical=26/28 computed_tokens
-slru_median=31700 lru_median=29550 (N=2 each) pairs_slru_better=0/2 pairs_lru_better=2/2 ties=0/2 return_cached
-slru_median=0 lru_median=1700 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=69.0..75.0
-power_limit_w=None -> DIGEST-FAIL` (N=2 runs per arm, one lock hold, 54 to 88 C over the cell, no power limit
-reported by nvidia-smi on that laptop part). The byte arithmetic reproduced the target card's mechanism to the
-token in all four runs (lru better by 2,150 at both pairs, the post-return turns and the last tenant's final
-exactly as above), but one restored-suffix request per arm lineage produced different bytes from the cache-off
-boot (deterministic across runs), and the admission reclaim ladder evicted 12 prefix entries per run under VRAM
-pressure in both arms, which the target card never did. By the pre-registered rule a digest mismatch is a FAIL
-of the day, so the 5090 produced no verdict and the 20-run cell was not run. The decision above stands on the
-target card's receipts; the 5090 finding (restored versus cold identity on that card) is its own follow-up.
-Record: `research/spill-b-20260919/DAY16.md`, receipts `rtx5090-day16/`, replay `verify-day16.py`.
+The decision holds on both card classes. The follow-up cell on the local RTX 5090 Laptop GPU (24,463 MiB) first
+stopped on its precondition on day 16 (`digests_identical=26/28 -> DIGEST-FAIL`, one restored-suffix request per
+arm lineage; the cause, the off-grid restored-suffix prime, is classified below and was fixed at both capture
+sites on days 18 and 19, memra#602). Redone on day 20 on the same harness and two-arm binary from `9466b891` with
+the three capture commits cherry-picked on top (`269178070`, `49d79b946`, `fa5d7a014`; every crate file merged by
+git), the shape moved onto the 32-token GDN prime grid with the target's byte shares preserved (cohort
+1,248/1,344/1,440/1,536 ids, 73.8 % of the budget; loop 10,912 + 160 ids per turn, entries 44.7 to 49.5 %;
+budget 1024 MiB, ctx 16384; the harness's own seed assertions require on-grid prompts under the capture law, and
+the token counts were always derived from the shares), `AB-0, BA-0, ..., AB-4, BA-4`, 20 runs, one lock hold,
+250 ms telemetry, the cache-off boot for the cold digests, verbatim:
+`PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912
+grow=160 return_every=3 pairs_per_order=5 runs=20 requests_per_run=28 digests_identical=28/28 computed_tokens
+slru_median=31776 lru_median=29600 (N=10 each) pairs_slru_better=0/10 pairs_lru_better=10/10 ties=0/10
+return_cached slru_median=0 lru_median=1696 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0
+temp_c=66.0..74.0 power_limit_w=None -> WINNER=lru` (N=10 runs per arm, 56 to 88 C over the cell, no power
+limit reported by nvidia-smi on that laptop part). lru was better at every one of the ten pairs in both orders,
+by 2,176 computed tokens per run (3 x 160 on the post-return turns plus the 1,696-token final hit): the same
+three mechanisms as above, the same per-request residency story row for row; every digest identical across the
+20 runs and the cache-off boot; every `cached_tokens` row equal to the offline prediction (280/280 per arm).
+The day-16 confound (the admission reclaim ladder evicting 12 prefix entries per run under VRAM pressure) is
+absent: zero `[admit-oom]` lines in all 21 boots. The scored cell ran with `MEMRA_REUSE_POOL=0`: the whole-session
+continuation pool is inert on a `prompt_ids` replay (every day-16 row read `plain-affinity: declined`, a turn
+extends the previous prompt and never the parked session's committed sequence) and its parked sessions were the
+VRAM the ladder took from the prefix cache on that 24 GB card; sizing the shape alone cannot remove it there
+(the arithmetic is in DAY20.md). A smoke at the default pool on the same binary read 28/28 digests and the same
+rows with the ladder firing 11 times per run, so the pool moved residency, not bytes. No timing is compared with
+the target card. Record: `research/spill-b-20260919/DAY20.md`, receipts `rtx5090-day20/`, replay
+`verify-day20.py`; the day-16 smoke stays in `DAY16.md` and `rtx5090-day16/`.
 
 ## The digest precondition, classified (2026-09-21, day 17)
 
