@@ -4788,6 +4788,7 @@ fn host_tier_context(
             .map_err(|_| "MEMRA_KV_HOST_CONTRACTS=1: device ordinal does not fit u32")?,
         transfers: Some(std::cell::RefCell::new(transfers)),
         inflight,
+        fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
     })
 }
 
@@ -9020,6 +9021,9 @@ struct HostTierContext {
     /// The ledger's in-flight bound: one batch per demote, K and V per KV plane plus the draft
     /// pair, over the loaded models (`2 x max layers + 2`).
     inflight: u64,
+    /// The one-shot contract fault (`HostContractFault`), taken by the first demote that runs the
+    /// route; `None` in production without `MEMRA_KV_HOST_FAULT=contract-*`.
+    fault: std::cell::Cell<Option<HostContractFault>>,
     /// Per loaded model NAME: the model's program identities with a ZERO tenant salt (never
     /// handed out as-is, see `program`) and the generation `HostPrefixCache::model_generations`
     /// holds for that name. Pool namespaces arrive per request and cannot be enumerated at
@@ -9457,6 +9461,33 @@ enum HostContractFailure {
     /// contract keeps the source inside the engine, so the device entry has lost planes and
     /// the caller must drop it; the tier latches off.
     SourceQuarantined(String),
+    /// Every plane came back (the entry is whole, nothing published) but the ticket did not
+    /// retire or acknowledge, or its producer fence did not release: its in-flight charge and
+    /// destinations are leaked and the ledger's in-flight dimension is exactly one batch, so
+    /// the next demote would refuse `Capacity` forever. The caller latches the tier off with one
+    /// typed line (review finding 2 on PR #599).
+    TicketLeaked(String),
+}
+
+/// One-shot injected fault for the contract route: `MEMRA_KV_HOST_FAULT=contract-presubmit` or
+/// `contract-postpublish`, armed once at boot into `HostTierContext::fault` (the GPU unit tests
+/// set the cell directly). Each names the unwind path it exercises: a refusal before any op was
+/// submitted (every registered plane must come back, typed `Refused`, tier on), and a refusal
+/// after every destination was taken (the published ticket must retire against its consumer
+/// fence and be acknowledged, nothing leaked, tier on). Gate: `tools/kv-host-contract-fault-gate.sh`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostContractFault {
+    PreSubmit,
+    PostPublish,
+}
+impl HostContractFault {
+    fn from_door(fault: &str) -> Option<Self> {
+        match fault {
+            "contract-presubmit" => Some(Self::PreSubmit),
+            "contract-postpublish" => Some(Self::PostPublish),
+            _ => None,
+        }
+    }
 }
 
 /// Which slot of the entry a contract-routed plane came from and goes back to.
@@ -9493,8 +9524,9 @@ fn host_kv_planes_through_contract(
     dead: &mut PrefixEntry,
     class: HostTierEntryClass,
 ) -> Result<(Vec<Option<HostPlane>>, Option<HostPlane>), HostContractFailure> {
-    use HostContractFailure::{Alloc, Refused, SourceQuarantined};
+    use HostContractFailure::{Alloc, Refused, SourceQuarantined, TicketLeaked};
     use memra_engine::cache::tiered::*;
+    let fault = tier.fault.take();
     let Some(transfers) = &tier.transfers else {
         return Err(Refused(
             "tier D2H transfer engine missing (the door context was built without a CUDA owner)"
@@ -9635,6 +9667,10 @@ fn host_kv_planes_through_contract(
             v_tok_bytes,
         }) = plane
         else {
+            // Before submission the originals only hold the registry's Rc count above what
+            // `take_plane` accepts (the registry plus one retained twin), so they go first and
+            // the unwind returns every plane (review finding 1 on PR #599).
+            originals.clear();
             return Err(host_contract_abort(
                 &mut t,
                 dead,
@@ -9653,6 +9689,7 @@ fn host_kv_planes_through_contract(
             Err(e) => {
                 // The plane handed in is gone (the registry drops a refused backing): the
                 // entry is not whole whatever the unwind of the others does.
+                originals.clear();
                 let _ = host_contract_planes_back(&mut t, dead, registered);
                 return Err(SourceQuarantined(format!(
                     "tier D2H register_device refused after the admission probe ({e:?}); the K \
@@ -9664,6 +9701,7 @@ fn host_kv_planes_through_contract(
         let v = match t.register_device(v, generation, request()) {
             Ok(lease) => lease,
             Err(e) => {
+                originals.clear();
                 let _ = t.take_plane(&k);
                 let _ = host_contract_planes_back(&mut t, dead, registered);
                 return Err(SourceQuarantined(format!(
@@ -9674,6 +9712,7 @@ fn host_kv_planes_through_contract(
             }
         };
         let (Ok(keep_k), Ok(keep_v)) = (t.retain_device(&k), t.retain_device(&v)) else {
+            originals.clear();
             let _ = t.take_plane(&k);
             let _ = t.take_plane(&v);
             let _ = host_contract_planes_back(&mut t, dead, registered);
@@ -9694,16 +9733,29 @@ fn host_kv_planes_through_contract(
         });
     }
     // 5. The producer fence, then ONE batch and one ticket.
-    let producer = match t.record_producer(HOST_TIER_TRANSFER_EPOCHS.src_gen) {
+    let recorded = if fault == Some(HostContractFault::PreSubmit) {
+        Err(Error::Quarantined)
+    } else {
+        t.record_producer(HOST_TIER_TRANSFER_EPOCHS.src_gen)
+    };
+    let producer = match recorded {
         Ok(fence) => fence,
         Err(e) => {
+            let why = if fault == Some(HostContractFault::PreSubmit) {
+                "injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)".to_string()
+            } else {
+                format!("{e:?}")
+            };
+            // Nothing was submitted: the originals are the only extra holders of the registry
+            // Rc, and `take_plane` refuses `Busy` while they live (review finding 1 on PR #599).
+            drop(originals);
             return Err(host_contract_abort(
                 &mut t,
                 dead,
                 registered,
                 None,
                 None,
-                &format!("tier D2H producer fence refused: {e:?}"),
+                &format!("tier D2H producer fence refused: {why}"),
             ));
         }
     };
@@ -9830,14 +9882,24 @@ fn host_kv_planes_through_contract(
             }]
         })
         .collect();
-    if let Err(e) = completion.require(&ticket, &expected, false) {
+    let required = if fault == Some(HostContractFault::PostPublish) {
+        Err(Error::Corrupt)
+    } else {
+        completion.require(&ticket, &expected, false)
+    };
+    if let Err(e) = required {
+        let why = if fault == Some(HostContractFault::PostPublish) {
+            "injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)".to_string()
+        } else {
+            format!("{e:?}")
+        };
         return Err(host_contract_abort(
             &mut t,
             dead,
             registered,
             Some(ticket),
             Some(producer),
-            &format!("tier D2H receipt refused: {e:?}"),
+            &format!("tier D2H receipt refused: {why}"),
         ));
     }
     // 8. The consumer fence is recorded before the planes come back (their `take_plane` syncs
@@ -9865,13 +9927,20 @@ fn host_kv_planes_through_contract(
     if let Err(why) = host_contract_planes_back(&mut t, dead, registered) {
         return Err(SourceQuarantined(format!("tier D2H {why}")));
     }
+    // The consumer fence was recorded before the planes came back and every `take_plane`
+    // drained the owner stream; one more drain here is the explicit observation `retire` needs
+    // (a `NOT_READY` consumer event is `Busy`, and a discarded `Busy` would leak the ticket).
     let settled = t
-        .release_producer(producer)
+        .owner_stream()
+        .synchronize()
+        .map_err(|_| Error::Quarantined)
+        .and_then(|_| t.release_producer(producer))
         .and_then(|_| t.retire(&ticket, Some(consumer)))
         .and_then(|_| t.acknowledge(&ticket));
     if let Err(e) = settled {
-        return Err(Refused(format!(
-            "tier D2H ticket did not retire ({e:?}); the entry is whole, nothing published"
+        return Err(TicketLeaked(format!(
+            "tier D2H ticket did not retire ({e:?}); the entry is whole and nothing is \
+             published, but the ticket's in-flight charge and destinations are leaked"
         )));
     }
     // 9. The host planes, each carrying the receipt of its own bytes, and the receipt line.
@@ -10002,19 +10071,48 @@ fn host_contract_abort(
         ));
     }
     let back = host_contract_planes_back(t, dead, registered);
-    let _ = t.owner_stream().synchronize();
+    // Every fence below must be OBSERVED complete before it is released or retired against, and
+    // no result is discarded: a `Busy` swallowed here leaks the ticket (its in-flight charge is
+    // the whole dimension) or the producer fence (review finding 2 on PR #599).
+    let mut leaks: Vec<String> = Vec::new();
     if let Some(fence) = producer {
-        let _ = t.release_producer(fence);
+        if let Err(e) = t.owner_stream().synchronize() {
+            leaks.push(format!("owner stream drain before release_producer: {e}"));
+        }
+        if let Err(e) = t.release_producer(fence) {
+            leaks.push(format!("release_producer: {e:?}"));
+        }
     }
     if let Some(ticket) = &ticket {
-        let consumer = t.record_consumer(ticket).ok();
-        let _ = t
+        // A published ticket (a destination was taken) retires only against a consumer fence;
+        // an unpublished one refuses `NotReady` here and retires against `None`.
+        let consumer = match t.record_consumer(ticket) {
+            Ok(fence) => Some(fence),
+            Err(memra_engine::cache::tiered::Error::NotReady) => None,
+            Err(e) => {
+                leaks.push(format!("record_consumer: {e:?}"));
+                None
+            }
+        };
+        if let Err(e) = t.owner_stream().synchronize() {
+            leaks.push(format!("owner stream drain before retire: {e}"));
+        }
+        if let Err(e) = t
             .retire(ticket, consumer)
-            .and_then(|_| t.acknowledge(ticket));
+            .and_then(|_| t.acknowledge(ticket))
+        {
+            leaks.push(format!("retire/acknowledge: {e:?}"));
+        }
     }
-    match back {
-        Ok(()) => HostContractFailure::Refused(why.to_string()),
-        Err(e) => HostContractFailure::SourceQuarantined(format!("{why}; {e}")),
+    match (back, leaks.is_empty()) {
+        (Err(e), _) => HostContractFailure::SourceQuarantined(format!("{why}; {e}")),
+        (Ok(()), true) => HostContractFailure::Refused(why.to_string()),
+        (Ok(()), false) => HostContractFailure::TicketLeaked(format!(
+            "{why}; the D2H unwind left the transfer engine holding state ({}); the entry is \
+             whole and nothing is published, but the ticket's in-flight charge or its producer \
+             fence is leaked",
+            leaks.join(", ")
+        )),
     }
 }
 
@@ -10109,6 +10207,12 @@ fn host_entry_from_device(
                     return Err(why.into());
                 }
                 Err(HostContractFailure::Refused(why)) => return Err(why.into()),
+                Err(HostContractFailure::TicketLeaked(why)) => {
+                    // The entry is whole, so this is a plain failure to the caller; the ledger
+                    // is not, so the tier latches off with the one typed line.
+                    host.disable(&why);
+                    return Err(why.into());
+                }
                 Err(HostContractFailure::SourceQuarantined(why)) => {
                     host.disable(&why);
                     return Err(HostImageFailure::SourceQuarantined(why));
@@ -36588,7 +36692,252 @@ mod tests {
             device: 0,
             transfers: None,
             inflight: 4,
+            fault: std::cell::Cell::new(None),
         }
+    }
+
+    /// GPU-only helper: a real `CudaTransfers` on the engine's owner stream over the server's
+    /// ledger, the in-flight dimension sized to EXACTLY one batch of `planes` K/V pairs, so a
+    /// leaked ticket would refuse the next demote with `Capacity`.
+    fn gpu_contracts_context(
+        engine: &Engine,
+        model: &str,
+        generation: Arc<()>,
+        planes: usize,
+    ) -> super::HostTierContext {
+        use memra_engine::cache::tiered::*;
+        let base = super::host_tier_program_base("artifact", "plan", None);
+        let draft = super::host_tier_draft_program(
+            &base,
+            "artifact",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        let device = engine.ctx().ordinal();
+        let inflight = 2 * planes as u64;
+        let governor = super::host_tier_governor(device, 1 << 30, 1 << 30, inflight).unwrap();
+        let ledger: std::rc::Rc<std::cell::RefCell<dyn BudgetGovernor>> = std::rc::Rc::new(
+            std::cell::RefCell::new(super::HostTierLedger(governor.clone())),
+        );
+        let transfers =
+            memra_engine::tier_transfer::CudaTransfers::new(engine.stream(), ledger).unwrap();
+        super::HostTierContext {
+            governor,
+            programs: HashMap::from([(
+                model.to_string(),
+                super::HostTierPrograms {
+                    plain: base,
+                    draft: Some(draft),
+                    generation,
+                },
+            )]),
+            device: device as u32,
+            transfers: Some(std::cell::RefCell::new(transfers)),
+            inflight,
+            fault: std::cell::Cell::new(None),
+        }
+    }
+
+    /// GPU-only: one plane of `len` rows on the engine's owner stream with known bytes.
+    fn gpu_plane(
+        engine: &Engine,
+        len: usize,
+        k_tok: usize,
+        v_tok: usize,
+        seed: u8,
+    ) -> (super::PrefixPlane, (Vec<u8>, Vec<u8>)) {
+        let kbytes: Vec<u8> = (0..len * k_tok)
+            .map(|i| seed.wrapping_add(i as u8))
+            .collect();
+        let vbytes: Vec<u8> = (0..len * v_tok)
+            .map(|i| seed.wrapping_mul(3).wrapping_add(i as u8))
+            .collect();
+        let stream = engine.stream();
+        let plane = super::PrefixPlane {
+            k: stream.clone_htod(&kbytes).unwrap(),
+            v: stream.clone_htod(&vbytes).unwrap(),
+            len,
+            k_tok_bytes: k_tok,
+            v_tok_bytes: v_tok,
+        };
+        (plane, (kbytes, vbytes))
+    }
+
+    /// GPU-only: an 8-token entry with two trunk planes around a recurrent slot plus a draft
+    /// plane (three planes, six ops), and the bytes each plane must still hold afterwards.
+    #[allow(clippy::type_complexity)]
+    fn gpu_entry(engine: &Engine) -> (super::PrefixEntry, Vec<(Vec<u8>, Vec<u8>)>) {
+        let (p0, b0) = gpu_plane(engine, 8, 34, 24, 1);
+        let (p2, b2) = gpu_plane(engine, 8, 34, 24, 7);
+        let (pd, bd) = gpu_plane(engine, 8, 34, 24, 13);
+        let entry = super::PrefixEntry {
+            _tier_charge: None,
+            layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
+            pool_key: ("m".into(), String::new()),
+            toks: (0..8).collect(),
+            kv: vec![Some(p0), None, Some(p2)],
+            conv: vec![None, None, None],
+            ssm: vec![None, None, None],
+            latent: vec![None, None, None],
+            tp: None,
+            pos: 8,
+            last_logits: vec![0.5],
+            draft: Some(pd),
+            dspark_draft: None,
+            last_h: vec![],
+            bytes: 3 * 8 * (34 + 24),
+            last_use: std::time::Instant::now(),
+            id: 0,
+            segment: super::PrefixSegment::Probation,
+            pins: 0,
+        };
+        (entry, vec![b0, b2, bd])
+    }
+
+    /// GPU-only: every plane is back in its slot and holds exactly the bytes it was built with.
+    fn gpu_entry_whole(
+        engine: &Engine,
+        e: &super::PrefixEntry,
+        want: &[(Vec<u8>, Vec<u8>)],
+    ) -> bool {
+        let stream = engine.stream();
+        let planes: Vec<&super::PrefixPlane> =
+            e.kv.iter().flatten().chain(e.draft.iter()).collect();
+        planes.len() == want.len()
+            && planes.iter().zip(want).all(|(p, (k, v))| {
+                stream.clone_dtoh(&p.k).unwrap() == *k && stream.clone_dtoh(&p.v).unwrap() == *v
+            })
+    }
+
+    fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
+        let used = host.tier.as_ref().unwrap().governor.lock().unwrap().used();
+        (used.pinned, used.inflight, used.device.iter().sum())
+    }
+
+    /// Review finding 1 on PR #599: a refusal BEFORE any op is submitted must return every
+    /// registered plane to its slot (the originals must not hold the registry Rc above what
+    /// `take_plane` accepts), be a typed `Failed` (never `SourceQuarantined`), leave the tier on
+    /// and the ledger at zero, and the next demote through the same engine must complete.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        host.tier
+            .as_ref()
+            .unwrap()
+            .fault
+            .set(Some(super::HostContractFault::PreSubmit));
+        let why = match super::host_entry_from_device(&engine, &mut host, &mut entry, None) {
+            Err(super::HostImageFailure::Failed(why)) => why,
+            Err(super::HostImageFailure::SourceQuarantined(why)) => {
+                panic!("a pre-submit refusal escalated to quarantine: {why}")
+            }
+            Ok(_) => panic!("the injected refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier D2H producer fence refused: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-presubmit)"
+            ),
+            "{why}"
+        );
+        assert!(
+            !host.disabled,
+            "the tier must stay on after a recoverable refusal"
+        );
+        assert_eq!(host.rejected_allocs, 0);
+        assert!(
+            gpu_entry_whole(&engine, &entry, &want),
+            "every plane back in its slot with its bytes"
+        );
+        assert_eq!(
+            gpu_used(&host),
+            (0, 0, 0),
+            "nothing charged after the unwind"
+        );
+        // The next demote on the same engine and ledger completes: nothing wedged, nothing leaked.
+        let image = super::host_entry_from_device(&engine, &mut host, &mut entry, None)
+            .expect("a clean demote after the refusal");
+        assert!(
+            image
+                .kv
+                .iter()
+                .flatten()
+                .chain(image.draft.iter())
+                .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
+            "every plane crossed through the contract"
+        );
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert_eq!(
+            gpu_used(&host),
+            (3 * 8 * 58, 0, 0),
+            "six leases hold the pinned charge"
+        );
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// Review finding 2 on PR #599: a refusal AFTER every destination was taken must retire the
+    /// published ticket against an observed consumer fence and acknowledge it (its in-flight
+    /// charge is the whole dimension), release the producer fence, return every plane, stay a
+    /// typed `Failed` with the tier on, and the next demote must complete (a leaked ticket would
+    /// refuse it with `Capacity`).
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        host.tier
+            .as_ref()
+            .unwrap()
+            .fault
+            .set(Some(super::HostContractFault::PostPublish));
+        let why = match super::host_entry_from_device(&engine, &mut host, &mut entry, None) {
+            Err(super::HostImageFailure::Failed(why)) => why,
+            Err(super::HostImageFailure::SourceQuarantined(why)) => {
+                panic!("a post-publish refusal escalated to quarantine: {why}")
+            }
+            Ok(_) => panic!("the injected refusal did not fire"),
+        };
+        assert!(
+            why.contains(
+                "tier D2H receipt refused: injected failure \
+                 (MEMRA_KV_HOST_FAULT=contract-postpublish)"
+            ),
+            "{why}"
+        );
+        assert!(
+            !why.contains("leaked"),
+            "the ticket retired: no TicketLeaked wording in {why}"
+        );
+        assert!(
+            !host.disabled,
+            "the tier must stay on: the ticket retired and was acknowledged"
+        );
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert_eq!(
+            gpu_used(&host),
+            (0, 0, 0),
+            "in-flight released by retire, destinations freed by acknowledge, planes taken back"
+        );
+        // In-flight capacity is exactly one batch: a leaked ticket refuses this with Capacity.
+        let image = super::host_entry_from_device(&engine, &mut host, &mut entry, None)
+            .expect("a clean demote after the aborted ticket");
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        drop(image);
+        assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
     #[test]
@@ -36709,6 +37058,52 @@ mod tests {
                 .matches("host_plane_from_device(engine, host, p, &mut planes)")
                 .count(),
             2
+        );
+        // Review findings on PR #599: every pre-submit unwind drops the originals first (their
+        // extra Rc on the registry makes `take_plane` refuse `Busy`), and the abort observes each
+        // fence before retiring against it and never discards a retire, acknowledge or
+        // release_producer result.
+        assert!(
+            body.contains("drop(originals);"),
+            "the record_producer arm drops the originals"
+        );
+        assert!(
+            body.matches("originals.clear();").count() >= 4,
+            "every in-loop pre-submit arm clears the originals before the unwind"
+        );
+        assert!(
+            at("drop(originals);") < at("host_contract_abort(") || {
+                let first_abort = at("host_contract_abort(");
+                body[..first_abort].contains("originals.clear();")
+            },
+            "originals leave before the first pre-submit abort"
+        );
+        let abort = worker.find("fn host_contract_abort(").unwrap();
+        let abort_body = &worker[abort..abort + worker[abort..].find("\n}\n").unwrap()];
+        let a = |needle: &str| {
+            abort_body
+                .find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing from the abort"))
+        };
+        // The drain that matters is the one AFTER the consumer fence (the producer block drains
+        // once before it releases its own fence).
+        let consumer_at = a("record_consumer(");
+        let drain_after_consumer = consumer_at
+            + abort_body[consumer_at..]
+                .find("owner_stream().synchronize()")
+                .expect("the abort drains the owner stream after recording the consumer fence");
+        assert!(drain_after_consumer < a(".retire(ticket, consumer)"));
+        assert!(
+            !abort_body.contains("let _ = t"),
+            "no transfer-engine result is discarded in the abort"
+        );
+        assert!(abort_body.contains("TicketLeaked"));
+        assert!(
+            entry_body.contains("HostContractFailure::TicketLeaked(why)")
+                && entry_body[entry_body
+                    .find("HostContractFailure::TicketLeaked(why)")
+                    .unwrap()..]
+                    .contains("host.disable(&why)")
         );
         // The residency charge at demote takes pinned ZERO under the door: the leases carry it.
         let hook = worker.find("fn host_demote_prefix_ref(").unwrap();
