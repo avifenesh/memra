@@ -1,15 +1,16 @@
-"""Check expanded research archives against the repository's current boundary policy."""
+"""Reproduce the frozen expanded-archive boundary review."""
 import argparse
 import hashlib
 import importlib.util
 import json
 import sys
 import tarfile
-from datetime import datetime, timezone
+import tempfile
 from pathlib import Path
 
 LANE = Path(__file__).resolve().parent
 ROOT = LANE.parents[1]
+RUNTIME_ARCHIVE_SHA256 = "93a7d4131d0fbe9e503a8152f560d55e4a83fcce152d73032bc773188837b002"
 
 ARCHIVE_COUNTS = {
     "research/mtp-calibrated-depth-20260920/receipts/gemma-records.tar.gz": 4343,
@@ -30,6 +31,40 @@ RECORD_RULE_PINS = {
         "reason": "Generated hypothetical instance-type example; no deployment or account identity.",
     },
 }
+
+
+def load_reviewed_boundary():
+    snapshot = json.loads((LANE / "boundary-source-rules.json").read_text())
+    archive_path = LANE / "receipts/runtime-source.tar.gz"
+    digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    if digest != RUNTIME_ARCHIVE_SHA256 or digest != snapshot["runtime_archive_sha256"]:
+        raise ValueError("Unrecognized runtime archive; no archived code was loaded")
+    with tarfile.open(archive_path) as archive:
+        scanner = archive.extractfile("tools/check-public-boundary.py").read()
+        policy_bytes = archive.extractfile("tools/public-boundary-policy.toml").read()
+    if (hashlib.sha256(scanner).hexdigest() != snapshot["scanner_sha256"]
+            or hashlib.sha256(policy_bytes).hexdigest() != snapshot["policy_sha256"]):
+        raise ValueError("Archived boundary scanner or policy differs from the reviewed snapshot")
+    # The source archive is hash-checked before its reviewed scanner is loaded.
+    with tempfile.TemporaryDirectory(prefix="mtp-boundary-policy-") as directory:
+        tools = Path(directory) / "tools"
+        tools.mkdir()
+        scanner_path = tools / "check-public-boundary.py"
+        policy_path = tools / "public-boundary-policy.toml"
+        scanner_path.write_bytes(scanner)
+        policy_path.write_bytes(policy_bytes)
+        spec = importlib.util.spec_from_file_location("archive_boundary_policy", scanner_path)
+        boundary = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = boundary
+        spec.loader.exec_module(boundary)
+        policy = boundary.load_policy(policy_path)
+    source_rules = {
+        (row["file"], row["sha256"]): frozenset(row["rules"])
+        for row in snapshot["source_rule_pins"]
+    }
+    if len(source_rules) != len(snapshot["source_rule_pins"]):
+        raise ValueError("Duplicate archived source-rule decision")
+    return boundary, policy, source_rules, snapshot["policy_sha256"]
 
 
 def archive_metadata():
@@ -82,12 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Compare with the committed receipt without rewriting it")
     args = parser.parse_args()
-    spec = importlib.util.spec_from_file_location("archive_boundary_policy", ROOT / "tools/check-public-boundary.py")
-    boundary = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = boundary
-    spec.loader.exec_module(boundary)
-    policy = boundary.load_policy(ROOT / "tools/public-boundary-policy.toml")
-    allowlist = boundary.load_allowlist(ROOT / "tools/public-boundary-allowlist.jsonl")
+    boundary, policy, source_rules, policy_sha256 = load_reviewed_boundary()
     declared, runtime = archive_metadata()
     archived_runtime = None
     reports = []
@@ -128,10 +158,7 @@ def main():
                         bypassed += 1
                     violation = boundary.evaluate_content(policy, member.name, content)
                     if violation:
-                        covered = boundary.exempt_rules(allowlist, violation) or frozenset()
-                        entry = allowlist.get((violation.path, violation.sha256))
-                        if entry and boundary.entry_expired(entry, datetime.now(timezone.utc).date().isoformat()):
-                            covered = frozenset()
+                        covered = source_rules.get((violation.path, violation.sha256), frozenset())
                         missing = [rule for rule in boundary.violation_rules(violation) if rule not in covered]
                         item = {"file": member.name, "sha256": violation.sha256,
                                 "rules": list(boundary.violation_rules(violation))}
@@ -164,7 +191,7 @@ def main():
     if runtime != archived_runtime:
         raise ValueError("Runtime source declaration differs from the sealed common receipt")
     result = {
-        "policy_sha256": hashlib.sha256((ROOT / "tools/public-boundary-policy.toml").read_bytes()).hexdigest(),
+        "policy_sha256": policy_sha256,
         "archives": reports,
     }
     output = LANE / "receipts/boundary-verification.json"

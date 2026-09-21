@@ -1,6 +1,7 @@
 import hashlib
 import json
 import tempfile
+import tarfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -9,6 +10,24 @@ import verify_archives
 
 
 class BoundaryEvidenceTests(unittest.TestCase):
+    def test_archived_review_does_not_depend_on_live_policy_or_source_pins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tools").mkdir()
+            (root / "tools/public-boundary-policy.toml").write_text("invalid live policy")
+            (root / "tools/public-boundary-allowlist.jsonl").write_text("")
+            auth = root / "crates/memra-server/src/auth.rs"
+            auth.parent.mkdir(parents=True)
+            auth.write_text("unrelated newer source")
+            with patch.object(verify_archives, "ROOT", root):
+                boundary, policy, pins, policy_sha = verify_archives.load_reviewed_boundary()
+            self.assertEqual(policy_sha, "ef9eebfc074f4b9db708682ec0ac99b3533fe6f4c4433490c3e1cb7fd7f8bd32")
+            with tarfile.open(verify_archives.LANE / "receipts/runtime-source.tar.gz") as archive:
+                data = archive.extractfile("crates/memra-server/src/auth.rs").read()
+            finding = boundary.evaluate_content(policy, "crates/memra-server/src/auth.rs", data)
+            self.assertIsNotNone(finding)
+            self.assertTrue(set(boundary.violation_rules(finding)) <= pins[(finding.path, finding.sha256)])
+
     def test_check_preserves_exact_committed_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "receipt.json"

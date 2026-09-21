@@ -25,7 +25,7 @@ jobs:
       - name: Receipt reader and protocol regressions
         run: |
           tools/unittest-floor.sh research/mtp-calibrated-depth-20260920 'test_*.py' 6
-          tools/unittest-floor.sh research/mtp-continuing-session-20260921 'test_*.py' 14
+          tools/unittest-floor.sh research/mtp-continuing-session-20260921 'test_*.py' 17
 
       - name: Expanded archive boundary review
         run: python3 research/mtp-continuing-session-20260921/verify_archives.py --check

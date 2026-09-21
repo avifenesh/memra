@@ -8,12 +8,19 @@ import re
 import statistics
 from collections import Counter
 from pathlib import Path
+import audit_reuse as reuse_auditor
 from audit_reuse import audit_reuse
 
 IDENTITY_FIELDS = (
     'binary_sha256', 'source_commit', 'runner_sha256', 'audit_reuse_sha256',
     'artifacts', 'gpu', 'settings', 'max_new', 'ctx', 'mode', 'cache_policy',
 )
+
+
+def verify_reuse_auditor(identity):
+    actual = hashlib.sha256(Path(reuse_auditor.__file__).read_bytes()).hexdigest()
+    if actual != identity['audit_reuse_sha256']:
+        raise ValueError('Cache auditor source differs from the recorded identity')
 
 
 def table(path):
@@ -117,6 +124,7 @@ def audit_selection(receipts, family):
             expected.reverse()
         assert [r['arm'] for r in records] == [f'k{k}' for k in expected]
         identity = json.loads((folder / 'identity.json').read_text())
+        verify_reuse_auditor(identity)
         current_identity = {key: identity[key] for key in IDENTITY_FIELDS}
         if sealed_identity is None:
             sealed_identity = current_identity
