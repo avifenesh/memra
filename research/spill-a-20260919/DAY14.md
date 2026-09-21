@@ -254,3 +254,21 @@ door (the lead's or C's call); the split of the ticket lifecycle inside C's 130 
 the RTX 5090 class's arm (it moves only on a cell that meets the rule or a lead ruling on the D2H
 clause). The door's decide-by review (2026-10-05) reads the door's cost again with the target card
 on cached destinations.
+
+## Push
+
+`MEMRA_RELEASE_QUALIFICATION_MODE=development git push origin lane/spill-a-20260919` at `5a89bd0ac`
+(`day14/push-attempt1.log`; no `--no-verify`, no other skip variable). The hook ran the perf board,
+flags census (`runtime literal reads=865`), releasability censuses, docs-registry census,
+workflow-file census and public-boundary scan (`0 matches`) green, then announced, verbatim:
+`UNQUALIFIED DEVELOPMENT: refs/heads/lane/spill-a-20260919 at
+5a89bd0ac697d571085de533beba0e4a8edfe085; no GPU qualification claimed` and `pre-push: skip recorded
+in .git/memra-gate-skips.log`. The mode claims no qualification: this lane changes two engine files
+(`tier_transfer.rs`, `tier_transfer_gate.rs`) plus a visibility line in `parallel.rs`, and the
+qualification battery (`tools/local-ci.sh --perf`) is the integ tree's, as on day 13. Remote tip
+`c2f13f6cc` to `5a89bd0ac`. The commit that adds this section is pushed after it.
+The push of this record commit alone, without the mode variable, was refused (`day14/push-attempt2.log`,
+verbatim head of the line: `UNQUALIFIED: UNQUALIFIED: source inputs changed: crates/memra-engine/src/bin/tier_transfer_gate.rs,
+crates/memra-engine/src/parallel.rs, ...`): the hook compares the tree's source inputs against the
+last qualification record, not the pushed range, so a docs-only commit on this lane still needs the
+announced mode. Rerun once with `MEMRA_RELEASE_QUALIFICATION_MODE=development` (`push-attempt3.log`).

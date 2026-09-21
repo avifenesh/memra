@@ -1,0 +1,13 @@
+perf board is up to date
+pre-push: flags census OK — runtime literal reads=865
+pre-push: releasability censuses OK — publish list, stub ABI, arch matrix
+pre-push: docs-registry census OK
+    KERNELS.md file references=122, all resolve
+    MODELS.md support-state tokens=5, all in the three-state vocabulary
+    ROUTER.md lines=47 (cap 60)
+    check-flags --list answered with 865 runtime names (coverage enforced by check-flags.sh itself)
+    flags-table-census: docs/FLAGS.md tables=58 rows=905, every row matches its header
+pre-push: workflow-file census OK
+    5 workflow files, no duplicate mapping keys (stdlib walker)
+UNQUALIFIED: UNQUALIFIED: source inputs changed: crates/memra-engine/src/bin/tier_transfer_gate.rs, crates/memra-engine/src/parallel.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/tier_transfer.rs, crates/memra-server/src/lib.rs, crates/memra-server/src/worker.rs, docs/SERVING.md, docs/TESTING.md, docs/decisions/PREFIX-CACHE-POLICY.md, docs/decisions/README.md, research/spill-a-20260919/STATE.md, research/spill-b-20260919/STATE.md, research/spill-lead-20260919/INTEGRATION-DAY12.md, research/tune-data/perf-ci.jsonl, tools/kv-host-tenant-reclaim-gate.sh, tools/prefix-evict-reclaim-gate.py, tools/prefix-newest-turn-fits-gate.py, tools/spec-on-cache-hit-gate.sh, docs/decisions/PINNED-DESTINATIONS.md, tools/prefix-restore-identity-gate.py
+error: failed to push some refs to 'github.com:avifenesh/memra.git'
