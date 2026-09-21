@@ -193,8 +193,15 @@ Not observable from the server and stated as such: the transfer engine's `produc
 accessor, so its emptiness after an abort is evidenced by the clean second demote (a new producer fence
 is recorded and released) rather than read directly.
 
-Local battery on `aefb89d89` (`day15-local-merge/`): see the table at the end of this section once the
-5090 lock, held by lane B's probe during the first attempts, freed for the engine crate's test binary.
+Local battery on `aefb89d89` (`day15-local-merge/`, `systemd-run --user --scope -p CPUQuota=1200% -p
+MemoryMax=28G`, the test arm under `flock -n /tmp/memra-5090.lock` with a bounded wait: six 90 s waits
+while lane B's probe held the lock, then it ran): `cargo fmt --all -- --check` clean; `cargo test -p
+memra-server -p memra-kv -p memra-engine --offline` memra-server 756 passed, 0 failed, 8 ignored (the six
+GPU cells plus the two new ones), memra-kv 71 passed, memra-engine 515 passed, 24 ignored, 1560 `ok`;
+`cargo clippy` on the three crates `-D warnings` clean; `tools/check-flags.sh` every runtime name
+resolves; `tools/docs-registry-census.sh` clean (58 tables, 901 rows after lane B's two removed door
+rows); `git diff --check` clean. The earlier review-commit battery (`day15-local-review/`) has an empty
+test log: `flock -n` refused while the probe held the lock, so its test arm never ran; kept as the record.
 
 ## What remains
 
