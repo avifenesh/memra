@@ -905,6 +905,12 @@ The serve-path mode-switch exactness harness and its verdicts:
 
 ### Cooperative prime state (default-OFF diagnostic)
 
+`python3 tools/test_prime_fairness.py` compiles the actual generic walker and
+scheduler modules without CUDA. Its continuous-arrival and non-runnable-peer
+controls cover the scheduling policy, not GPU latency or full server compilation.
+See [PREFILL-FAIRNESS.md](PREFILL-FAIRNESS.md) for the current route matrix, SLO
+interval semantics, refusals and source-bound native qualification plan.
+
 `run-spec <model.gguf> --prime-walker-check`, with `MEMRA_PROMPT_FILE` naming a
 multi-chunk real prompt, first compares the MTP walker against ordinary unyielded
 `prime_cache` segments. A separate cache advances between chunks. Require

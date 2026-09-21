@@ -20716,6 +20716,46 @@ pub fn evaluate_decoupled_admission(
     (verdict, outcome)
 }
 
+/// Only runnable decode state buys a recovery interval. In particular a closed
+/// stream or a session still allocating/priming its carrier cannot defer a peer.
+fn ready_prime_decode_peer(s: &Session) -> bool {
+    let output_ready = if s.dspark_on {
+        s.dspark.as_ref().is_some_and(|session| !session.finished())
+    } else if s.glm5_on {
+        s.glm5.as_ref().is_some_and(|session| !session.finished())
+    } else if s.gspec_k > 0 {
+        s.gspec.is_some()
+    } else if let Some(spec) = s.spec.as_ref() {
+        spec.next_pred.is_some() || spec.pending_tok.is_some()
+    } else {
+        s.cache.is_some() && (s.device_next.is_some() || !s.last_logits.is_empty())
+    };
+    crate::prime_fairness::DecodeReadiness {
+        primed: s.prefill_done && !s.prime_service.pending,
+        queued_rows: s.prefill_queue.len(),
+        remaining_budget: s.budget.saturating_sub(s.generated.len()),
+        channel_open: !s.tx.is_closed(),
+        output_ready,
+    }
+    .can_advance()
+}
+
+fn defer_saved_prime(
+    policy: &crate::prime_fairness::PrimePolicy,
+    active: &[Session],
+    finished: &[usize],
+    owner: usize,
+) -> bool {
+    if !memra_engine::prime_walker::prime_yield_enabled() || !active[owner].prime_service.pending {
+        return false;
+    }
+    let ready_peer = active
+        .iter()
+        .enumerate()
+        .any(|(i, s)| i != owner && !finished.contains(&i) && ready_prime_decode_peer(s));
+    policy.defer_for_peer(&active[owner].prime_service, ready_peer, Instant::now())
+}
+
 /// The worker entry point. Runs on its OWN std::thread. Builds the Engine + loads every model on
 /// THIS thread (CUDA-context affinity), then runs the scheduler loop until the command channel
 /// closes. `models` = (name, gguf_path) pairs. Sends `ready_tx` once load completes (or the error).
@@ -20732,6 +20772,24 @@ pub fn run(
     health: crate::health::SharedHealth,
     tokenizer_snapshots: &tokenizers::TokenizerSnapshots,
 ) {
+    let policy = crate::lanes::LanePolicy::from_env();
+    let mut prime_policy = if memra_engine::prime_walker::prime_yield_enabled() {
+        if !serve_batching() {
+            let _ = ready_tx.send(Err(
+                "cooperative prefill requires MEMRA_SERVE_BATCH=1; the legacy scheduler has no saved plain-prime adapter".into(),
+            ));
+            return;
+        }
+        match crate::prime_fairness::PrimePolicy::from_slo_ms(policy.slo_p99_ms) {
+            Ok(policy) => policy,
+            Err(why) => {
+                let _ = ready_tx.send(Err(why.into()));
+                return;
+            }
+        }
+    } else {
+        crate::prime_fairness::PrimePolicy::default()
+    };
     // ---- one-time init on the worker thread: Engine + all models resident ----
     //
     // CPU AFFINITY FIRST, BEFORE `Engine::new` (lane/glm5-host-audit, 2026-09-01). This is the
@@ -22002,13 +22060,11 @@ pub fn run(
         &mut admission_costs,
         &health,
     );
-    let mut prime_policy = crate::prime_fairness::PrimePolicy::default();
 
     // ---- serving counters + engine-truth step stats (30s percentile window) ----
     // Lane machinery (x-lane QoS gate, lane/dl-metering port): policy from env; step_stats
     // is the INTERACTIVE SLO sensor (records only ticks that advanced an interactive
     // session — on naked traffic every session is interactive, so /metrics is unchanged).
-    let policy = crate::lanes::LanePolicy::from_env();
     let prefill_tick_explicit = std::env::var_os("MEMRA_PREFILL_TICK").is_some();
     let pb_hold_ms: u64 = std::env::var("MEMRA_PRIME_BATCH_HOLD_MS")
         .ok()
@@ -24702,6 +24758,9 @@ pub fn run(
                 if finished.contains(&i) {
                     continue;
                 }
+                if defer_saved_prime(&prime_policy, &active, &finished, i) {
+                    continue;
+                }
                 // Re-read after each prime step: a peer later in this same tick already
                 // owes bounded service when an earlier route has just yielded.
                 active[i].prime_service.peer_quantum =
@@ -24947,7 +25006,25 @@ pub fn run(
             // A refill grace covers the channel handoff after a peer retires; the first-token
             // fence then lets an admitted hit decode before any unrelated cold prefill. Cold-only
             // ticks and all later hit tokens retain the established prefill/decode ordering.
-            let defer_interactive_prefill = refill_grace || cached_hit_waiting_for_ttft;
+            let prefer_first_token = refill_grace || cached_hit_waiting_for_ttft;
+            let defer_interactive_prefill = if memra_engine::prime_walker::prime_yield_enabled() {
+                let has_prefill = active.iter().enumerate().any(|(i, s)| {
+                    !finished.contains(&i)
+                        && s.lane == crate::lanes::Lane::Interactive
+                        && !s.prefill_done
+                        && s.spec.is_none()
+                        && s.gspec_k == 0
+                        && !s.dspark_on
+                        && !s.glm5_on
+                });
+                prime_policy.defer_prefill_for_first_token(
+                    prefer_first_token,
+                    has_prefill,
+                    Instant::now(),
+                )
+            } else {
+                prefer_first_token
+            };
             let dedup_advanced = if defer_interactive_prefill {
                 Default::default()
             } else {
@@ -25259,6 +25336,9 @@ pub fn run(
                 }
                 if held && cand.first().is_some_and(|&(candidate, _)| candidate == i) {
                     continue; // batch-formation hold
+                }
+                if defer_saved_prime(&prime_policy, &active, &finished, i) {
+                    continue;
                 }
                 let s = &mut active[i];
                 if s.spec.is_some() || s.gspec_k > 0 || s.dspark_on || s.glm5_on || s.prefill_done {
@@ -25770,6 +25850,9 @@ pub fn run(
                     break;
                 }
                 if finished.contains(&i) {
+                    continue;
+                }
+                if defer_saved_prime(&prime_policy, &active, &finished, i) {
                     continue;
                 }
                 let s = &mut active[i];
@@ -31498,6 +31581,12 @@ fn prefill_tick(
     step_tower: Option<&StepTowerPlacement>,
     overlay_publish: memra_engine::vision::OverlayPublish,
 ) -> Result<usize, Box<dyn std::error::Error>> {
+    if s.vision.is_some() || s.capture.is_some() {
+        crate::prime_fairness::PrimeRoute::Unsupported(
+            "vision/capture request shape is outside the cooperative text-prefill policy",
+        )
+        .require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
+    }
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_prime_start();
     }
@@ -31622,6 +31711,16 @@ fn prefill_tick(
             && !(eager_mono && carried && !suffix_prime)
             && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T))
     {
+        let cooperative_route = if hyper_trunk && s.vision.is_none() && s.capture.is_none() {
+            crate::prime_fairness::PrimeRoute::SavedWalker
+        } else if !eager_mono {
+            crate::prime_fairness::PrimeRoute::TickBounded
+        } else {
+            crate::prime_fairness::PrimeRoute::Unsupported(
+                "selected plain prime consumes the whole prompt without a saved walker",
+            )
+        };
+        cooperative_route.require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
         let take = s.glm5_plain_prime.as_ref().map_or_else(
             || prefill_tick_take(q, budget, eager_mono, bound_rem),
             |state| state.tokens_len(),
@@ -32715,6 +32814,12 @@ fn step_session(
         // return a cache-authoritative surplus token past this target; expose it when the request
         // still has room so worker generated/sampler/fed state stays aligned with SpecSession.
         let burst_target = s.prime_service.decode_target(request_room.min(burst_t));
+        if !s.prefill_queue.is_empty() && !lm.model.mtp_prime_walk_supported() {
+            crate::prime_fairness::PrimeRoute::Unsupported(
+                "selected MTP plan/topology has no saved prime walker",
+            )
+            .require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
+        }
         let cooperative_prime = memra_engine::prime_walker::prime_yield_enabled()
             && lm.model.mtp_prime_walk_supported();
         let suffix: Vec<u32> = if cooperative_prime {
@@ -33385,6 +33490,12 @@ fn step_gemma_spec(
     // cache in s.cache and the already-restored prefix in s.fed; only the queued suffix
     // feeds here. Cold sessions keep the whole-prompt prime, byte-unchanged.
     if s.gspec.is_none() {
+        if !s.prefill_queue.is_empty() {
+            crate::prime_fairness::PrimeRoute::Unsupported(
+                "Gemma speculative prime has no saved worker adapter",
+            )
+            .require_cooperative(memra_engine::prime_walker::prime_yield_enabled())?;
+        }
         let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
         if queued.is_empty() {
             finish(s, StopReason::MaxNew);

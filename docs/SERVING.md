@@ -312,7 +312,13 @@ concurrency slot while cold prefill remains, the scheduler also uses the short
 `MEMRA_PRIME_BATCH_HOLD_MS` window as a refill grace. That lets a not-yet-admitted replacement
 cross the HTTP/channel boundary before the worker can enter the next cold prime call. The fence
 ends after the hit's first token, and cold-only traffic retains dense continuation batching.
-Frozen box1 N=5 validates that boundary: Q27 mixed-c4 hit TTFT is p50 18.497 / p95 19.820 ms
+With `MEMRA_PRIME_YIELD=1`, this preference yields an ordinary prefill phase after
+at most the configured `MEMRA_SLO_P99_MS` interval of preference, so an endless
+stream of cached arrivals cannot keep an admitted prime waiting indefinitely.
+Saved primes also share service using their measured chunk cost. These local
+scheduling intervals are not latency guarantees; see
+[PREFILL-FAIRNESS.md](PREFILL-FAIRNESS.md) for route scope and required measurements.
+Historical box1 N=5 measured the earlier cache-hit preference: Q27 mixed-c4 hit TTFT is p50 18.497 / p95 19.820 ms
 against the sold 18.573/21.565 ms envelope, and the clean-throughput knee remains c=16. The
 strict cross-run reducer still flags c4 output 144.245 versus 144.462 tok/s (`-0.150%`); both
 targets are SELLABLE, but that comparison remains explicit rather than being rounded away.
