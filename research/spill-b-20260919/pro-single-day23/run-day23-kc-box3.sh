@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Day 23: also run on the MERGED tree (origin/main 653c997f4, #614 small_m_tier_max); the binary SHA-256 named in the paragraph below is the day-22 one, each cell's binary.sha256 is authoritative.
 # Day 23 task 1 on the target card (run from /root/wt-b on the box): `kernel-check` on the fixed tree (lane tip
 # aeb4d0771; no `crates/` file differs from the day-22 fix build, binary SHA-256 d61a41b5...) through the collector
 # with the canonical lock (--rig pro-single, /tmp/memra-gpu.lock). Two cells, pass/fail, not timed:
