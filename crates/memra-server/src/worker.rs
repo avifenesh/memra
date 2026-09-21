@@ -5056,8 +5056,8 @@ impl KvFlex {
                 // Above-floor residency that is entirely pinned (in-flight fanout leases)
                 // cannot shed; loud, because the zero-tax gate would otherwise read a silent
                 // no-op as a pass. This is the ONLY shape that may print "nothing evictable":
-                // `evict_to_bytes` takes probation first and then protected oldest first, so
-                // any unleased byte, protected or not, would have been a victim.
+                // `evict_to_bytes` takes the oldest unleased entry first, so any unleased byte
+                // would have been a victim.
                 eprintln!(
                     "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
                      leases; nothing evictable",
@@ -21624,7 +21624,7 @@ fn admit(
     // done its job: on the served-hit route the hit path above holds its OWN pin by now
     // (net one lease, released at session retire, exactly like a native device hit); on
     // every other route (probe skipped, restore failed, alloc-pressure flush) the promoted
-    // entry becomes ordinary evictable probation. An evict_all inside the probe cannot have
+    // entry becomes ordinary evictable. An evict_all inside the probe cannot have
     // removed it: pinned entries are absent from the evictable index.
     if let Some(pin) = host_promote_pin.take()
         && !px.unpin(&pin)

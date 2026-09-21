@@ -911,7 +911,7 @@ prefix-newest-turn-fits-gate.py [--external-lock FD] --model <gguf> --bin <memra
   prompts twice each so the whole-entry hit makes them a reused, recently touched set. The growing
   tenant (`cache_salt=grow`) then replays an 8-turn conversation whose turn k+1 is turn k's
   `prompt_ids` plus 300 new ids. The pressure arithmetic is read from the server's own
-  `insert probation` lines (a bytes(tokens) fit for the artifact) and the gate REFUSES unless the
+  `insert` lines (a bytes(tokens) fit for the artifact) and the gate REFUSES unless the
   cohort is at most 80 % of the budget, cohort plus turn-1 entry exceed the budget, and every
   turn's entry fits the budget: the incident's shape scaled to a small budget.
 - Assertions, bytes from the server's `[prefix-cache]` lines and `/metrics`: V1 every turn k >= 2
