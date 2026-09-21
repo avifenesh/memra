@@ -273,7 +273,7 @@ second sitting (`run-landed2.sh`, bounded 90 s retries, never killing a holder) 
 
 | Check | Result |
 | --- | --- |
-| `cargo fmt --all -- --check` (landing tree) | PASS after one `cargo fmt` pass over the edited tests (`local-checks/fmt.log`) |
+| `cargo fmt --all -- --check` (landing tree) | PASS after one `cargo fmt` pass over the edited tests (the rustfmt diff itself is not kept: its lines carry trailing whitespace that `git diff --check` refuses) |
 | `cargo test -p memra-server --offline --no-fail-fast` (dev, local, `CPUQuota=1200% MemoryMax=28G`; `local-checks/test-server.log`) | 748 passed, 0 failed, 6 ignored (five tests fewer than day 14: the SLRU-only tests deleted with the arm); the adapted prefix-cache, kv-flex and host_glm tests included |
 | `cargo clippy -p memra-server --offline --all-targets -- -D warnings` (dev, local, CPU quota; `local-checks/clippy-server.log`) | PASS |
 | `bash tools/check-flags.sh` | PASS (no uncovered runtime `MEMRA_*` name; two names fewer: 865) |
@@ -308,4 +308,3 @@ telemetry, `cell/` with `plan.json`, `shape.json`, `cold/`, `runs/<nn>-<pair>-<a
 - The harness's one wrong assumption is recorded, not hidden: the offline model unpinned the hit entry at
   retire; the server releases the restore lease at the restore fence, before publication. The predicted
   8,700 became the measured 9,600, and the verdict rule did not depend on either number.
-
