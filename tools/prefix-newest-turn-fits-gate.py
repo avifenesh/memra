@@ -37,16 +37,19 @@ Assertions (bytes from the server's `[prefix-cache]` lines and `/metrics`):
                   `snapshot skipped`); every turn k >= 2 has exactly one `[prefix-cache] hit:`
                   line of at least turn k-1's tokens AND publishes its own entry; no turn of the
                   growing tenant is refused or skipped.
-  V3 effective:   for every turn whose window carries an `evict` line, the bytes the cache grew
-                  by (`prefix_cache_bytes` after minus before) equal the effective free
-                  (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) the turn consumed MINUS the
-                  same turn's cache-off footprint from the calibration boot, within a slack: an
-                  eviction that did not return its bytes to effective free would show the turn
-                  consuming the whole inserted entry. This is #523 item 4's honesty (the day-13
-                  gate's V3) under the capacity-eviction shape. The first day-14 round asserted
-                  the identity without the footprint term and failed on the fix by exactly the
-                  base's cache-free consumption on every turn (1,111,666,004 B on turn 1); the
-                  footprint is now measured, reported per turn, and subtracted, never assumed.
+  V3 effective:   after EVERY turn, the calibration boot's effective free
+                  (`cuda_driver_free_bytes + cuda_pool_cached_bytes`) equals the measured boot's
+                  effective free plus the cache's resident bytes (`prefix_cache_bytes`), within a
+                  slack: the cache's only cost to effective free is what it holds, so every
+                  evicted byte came back. An eviction that did not return its bytes would leave
+                  the measured boot short by the evicted entry. This is #523 item 4's honesty (the
+                  day-13 gate's V3) under the capacity-eviction shape, stated on states, not on
+                  per-turn deltas: round 1 of day 14 asserted `consumed == grew` and failed on the
+                  fix by exactly the base's cache-free consumption (1,111,666,004 B on turn 1);
+                  round 2 subtracted the calibration turn's consumed bytes and failed only on turn
+                  1 by 149,094,400 B, the amount by which the cache-off cohort phase (six cold
+                  sends) had already grown the retained footprint that the cache-on cohort (three
+                  cold, three restored) had not. The per-turn deltas stay in the table as report.
   Identity is recorded per turn (sha256 of each completion text) for the runner to compare
   across binaries, and against the calibration boot's cold completion of the same prompt; it is
   not a verdict inside one cell (restored-vs-cold identity has its own gates).
@@ -463,6 +466,7 @@ def main() -> None:
     cal = calibrate_footprint(args, cohort_tokens, prompts)
     (args.out / "calibration.json").write_text(json.dumps(cal, indent=2) + "\n")
     footprint = {t["turn"]: t["effective_free_consumed"] for t in cal["turns"]}
+    cal_eff_after = {t["turn"]: effective_free(t["metrics_after"]) for t in cal["turns"]}
     cold_sha = {t["turn"]: t["text_sha256"] for t in cal["turns"]}
 
     srv = Server(args.bin, args.model, args.port, args.out / "measured" / "server.log", args.budget_mib)
@@ -570,7 +574,9 @@ def main() -> None:
                 "prefix_bytes_grew": grew,
                 "inserted_bytes_from_line": int(sum(i["mb"] for i in window["inserts"]) * 1e6),
                 "evicted_bytes_from_lines": int(sum(e["mb"] for e in window["evicts"]) * 1e6),
-                "v3_credit_error_bytes": (consumed - footprint[k] - grew) if window["evicts"] else None,
+                "delta_error_bytes": (consumed - footprint[k] - grew) if window["evicts"] else None,
+                "calibration_effective_free_after": cal_eff_after[k],
+                "v3_state_error_bytes": cal_eff_after[k] - (eff_after + after["prefix_cache_bytes"]),
                 "cold_text_sha256": cold_sha[k],
                 "text_identical_to_cold": r["text_sha256"] == cold_sha[k],
             }
@@ -601,7 +607,7 @@ def main() -> None:
             hit_ok = len(w["hits"]) == 1 and w["hits"][0]["hit"] >= (t["prev_prompt_tokens"] or 0)
             v2_rows.append(clean and hit_ok and publishes(t))
     v2 = all(v2_rows)
-    v3_rows = [abs(t["v3_credit_error_bytes"]) <= V3_SLACK for t in turns if t["v3_credit_error_bytes"] is not None]
+    v3_rows = [abs(t["v3_state_error_bytes"]) <= V3_SLACK for t in turns]
     v3 = bool(v3_rows) and all(v3_rows)
     protected_evictions = sum(1 for t in turns for e in t["window"]["evicts"] if e["segment"] == "Protected")
     total_evictions = sum(len(t["window"]["evicts"]) for t in turns)
@@ -616,22 +622,24 @@ def main() -> None:
         f"V1={'ok' if v1 else 'FAIL'} V2={'ok' if v2 else 'FAIL'} V3={'ok' if v3 else 'FAIL'} V4={'ok' if v4 else 'FAIL'} "
         f"-> {'PASS' if ok else 'FAIL'}"
     )
-    table = ["| turn | prompt_tokens | cached_tokens | prev prompt_tokens | server receipt | hit line | insert | evict (segment) | refused/skipped | effective free consumed | footprint (cache-off boot) | prefix bytes grew | V3 error | elapsed s | text sha256[:16] | == cold |",
-             "| ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |"]
+    table = ["| turn | prompt_tokens | cached_tokens | prev prompt_tokens | server receipt | hit line | insert | evict (segment) | refused/skipped | effective free after | resident prefix bytes | cache-off effective free after | V3 error (state) | consumed | footprint (cache-off) | grew | delta error | elapsed s | text sha256[:16] | == cold |",
+             "| ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"]
     for t in turns:
         w = t["window"]
         hits = ", ".join("{hit} of {prompt}".format(**h) for h in w["hits"]) or "none"
         inserts = ", ".join("{tokens} tok {mb}MB ({why})".format(**i) for i in w["inserts"]) or "none"
         evicts = ", ".join("{tokens} tok {mb}MB ({segment})".format(**e) for e in w["evicts"]) or "none"
         prev = t["prev_prompt_tokens"] if t["prev_prompt_tokens"] is not None else "-"
-        v3err = t["v3_credit_error_bytes"] if t["v3_credit_error_bytes"] is not None else "-"
+        derr = t["delta_error_bytes"] if t["delta_error_bytes"] is not None else "-"
         route = ", ".join(
             ("cold={cold} restored={restored}" if r["kind"] == "route" else "cached={cached} lcp={lcp}").format(**r) for r in w["route"]
         ) or "none"
         table.append(
             f"| {t['turn']} | {t['prompt_tokens']} | {t['cached_tokens']} | {prev} | {route} | {hits} | {inserts} | {evicts} | "
-            f"{len(w['refused']) + len(w['skipped'])} | {t['effective_free_consumed']} | {t['footprint_calibration_bytes']} | "
-            f"{t['prefix_bytes_grew']} | {v3err} | {t['elapsed_s']} | {t['text_sha256'][:16]} | {'yes' if t['text_identical_to_cold'] else 'NO'} |"
+            f"{len(w['refused']) + len(w['skipped'])} | {t['effective_free_after']} | {t['metrics_after']['prefix_cache_bytes']} | "
+            f"{t['calibration_effective_free_after']} | {t['v3_state_error_bytes']} | {t['effective_free_consumed']} | "
+            f"{t['footprint_calibration_bytes']} | {t['prefix_bytes_grew']} | {derr} | {t['elapsed_s']} | {t['text_sha256'][:16]} | "
+            f"{'yes' if t['text_identical_to_cold'] else 'NO'} |"
         )
     summary = {
         "verdict": verdict,
@@ -648,6 +656,7 @@ def main() -> None:
         "refused_or_skipped_lines": refused_lines,
         "assertions": {"V1_cached": v1, "V2_lines": v2, "V3_effective_free": v3, "V4_protected_evicted": v4},
         "v3_slack_bytes": V3_SLACK,
+        "v3_form": "state: calibration effective free after turn k == measured effective free after turn k + resident prefix bytes",
     }
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     (args.out / "TURNS.md").write_text("\n".join(table) + "\n")
