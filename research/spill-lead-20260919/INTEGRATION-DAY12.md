@@ -798,6 +798,43 @@ census, workflow-key census, public-boundary `check` (0 new), the bench tool's `
 both arena cells (`ARENA AB REPLAY: PASS`, rule clauses restating the verdict), C's `wc-pair.py` on A's pair cell
 (`WC PAIR REPLAY: PASS (12 checks)`), em-dash scan: 12 steps rc=0.
 
+## integ25 (`lane/spill-integ25-20260921`): B day 22 (and day 23 when it lands), the memra#427 fix
+Lane tip merged: B `99af46bf2` (clean, on main `d6401ff70`). Engine source changes: `crates/memra-engine/src/lib.rs`
+(a `prefill_rows` AtomicBool on `Engine`, `prefill_rows_scope()` RAII on the existing `ExactScope` guard,
+`batched_tier_admits() = verify_exact_on() || !prefill_rows_on()` added as a conjunct to the batched weight-resident
+MMVQ tier's admission `(2..=16).contains(&m) && fast && ...` in both `matmul` and `matmul_pre`),
+`hybrid_forward.rs` (the scope armed at the top of `HybridModel::prime_layers`), the continuation gate no longer
+exempting a 16-row tail, and a new diagnostic binary `qwen-a4-width-walk` (per-operation digests of a 16-row versus a
+17-row chunk under the prime's own program). No new `MEMRA_*` read, no kernel, no third program: a prime chunk of
+exactly `PRIME_MIN_T` rows now takes the `grid.y = m` dp4a program every wider chunk takes; decode and verify keep the
+tier (the exact-16 batched-decode tier and the K = 15 verify ride it by the decode-parity law; `verify_exact` keeps
+precedence). Pushed in the announced development mode; nothing here claims qualification.
+
+**B day 22, the kernel named and the fix gated on the local 5090** (verbatim, `rtx5090-day22/`): (a) width walk
+`WIDTH WALK scope=prime width 16 vs 17: 0 of 497 tensors differ`, `scope=prime width 48 vs 17: 0 of 497`, and the
+bare control `scope=bare width 16 vs 17: 96 of 497 tensors differ; tensor names: {"ssm_alpha", "ssm_beta"}`; the
+named site `scope=prime layer 00 ssm_beta qtype=NVFP4 in_f=5120 out_f=48 width 16 vs 17: rows_differ=0/16
+maxabs=0.000e0 ref_sha=e40f0aeaaec76762 sha=e40f0aeaaec76762 same` (bare `sha=0a984de6e2ed5fd0 DIFFERS`): the b16
+batched-MMVQ tier at m = 16 on the `out_f < 128` GDN projections. (b) continuation gate, seven arms, every split `ok`,
+`A4 CONTINUATION GATE: PASS` each: 9296 one call `14ab5f8b365dbd71`, `9280 + 16: logits_sha=14ab5f8b365dbd71 ok`,
+48..208 ok; `MEMRA_PRIME_CHUNK=32` one call `14ab5f8b365dbd71` (was `35bd15f063bfd5ba`); `MEMRA_NO_BATCHED=1`
+identical to default. (c) `kernel-check` both manifests `ALL GREEN (109 cells, 10 skipped)`. (d)
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (drafter absent on this rig, WARNING branch as day 19). (e) twin gate
+`PREFIX-NEWEST-TURN-FITS: ... V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS`. (f) base tree (the three source hunks
+reverted) versus fix: default 9296 `14ab5f8b365dbd71` on both, 9297 `e641952cac19e526` on both; `MEMRA_PRIME_CHUNK=32`
+base `35bd15f063bfd5ba` versus fix `14ab5f8b365dbd71` (the wide-chunk digest); base `9280 + 16: 35bd15f063bfd5ba
+DIFFERS`. The fix moved only the 16-row chunk program. Stated by B: day 21 used one artifact (the served mint); the
+calibrated A4 artifact of #427's table is on neither rig. Target card (`pro-single-day22/`): the continuation gate's
+seven arms digest-identical to the local table; `kernel-check` 362 cells OK, 0 FAIL, 15 SKIP but
+`MISSING REQUIRED CELL DUAL-BATCHED-AUX` (the 27b manifest's one cell needs the 9B artifact, absent on the box), so
+the target-card kernel-check line is owed. Also owed before main and assigned to B day 23: `run-spec` K=1..8 with the
+MTP drafter on the target card, `run-gen` argmax on 16-token and 16-mod-4096 prompts on both cards, the
+`docs/TESTING.md` sentence, and the scope gap (`prime_layers_gemma` and `step35_prime_cache_batch` do not take the
+scope: stated or armed). memra#445 map posted by B (section 1 closed by #588; section 2 open behind #151, gemma prefix
+snapshot refused by the SWA flat-history layout; section 3 open on the gemma side, needs a pre-registered c=1/4/8
+ladder on the target card). Lead ruling 25: the fix does not reach main until every owed gate above is green and
+verbatim in this record; a red one keeps the lane as `wip:` and the integ waits.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
