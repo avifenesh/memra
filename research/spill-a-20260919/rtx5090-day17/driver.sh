@@ -13,9 +13,12 @@ run() { # name, then the command (env assignments allowed as leading words via e
     local name=$1; shift
     local try rc
     for try in $(seq 1 15); do
+        # A gate that takes `--out NEW_DIR` (the twin gate) refuses an existing directory; a retry
+        # starts clean (attempt 2's twin cells were refused 14 times on THAT rule, not the lock).
+        rm -rf "$EV/$name"
         "$@" > "$EV/$name.log" 2>&1
         rc=$?
-        if [[ $rc -eq 2 ]] && grep -q 'REFUSED: canonical GPU lock busy\|REFUSED' "$EV/$name.log"; then
+        if [[ $rc -eq 2 ]] && grep -q 'REFUSED: canonical GPU lock busy\|REFUSED: .*lock' "$EV/$name.log"; then
             echo "$(date -u +%FT%TZ) $name lock busy, retry $try/15 in 120 s"; sleep 120; continue
         fi
         break

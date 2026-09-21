@@ -233,8 +233,15 @@ on a busy lock (my driver, my processes), so twin and unit cells have no attempt
 | `kv-host-spill-failure-gate.sh` | `KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)` (`FAIL: pool-full refusal is LOUD and named`; `ok: the promote caught it: VERIFY FAILED, loud and named`; 13 ok) | the same line, 13 ok |
 | `kv-host-contract-fault-gate.sh` (ON by construction) | n/a | `KV-HOST-CONTRACT-FAULT GATE: 5 FAILURE(S)`, 57 ok: presubmit, postpublish, promote-presubmit, promote-postpublish, promote-readyview every clause `ok`; the five FAILs are the `promote-reject` cell alone, whose expected line is fixed as `tier H2D batch partially refused: 1 of 34 items` (the 27B's plane count) while the 9B's route prints `.. 1 of 18 items ..`, so its follow-on clauses (the next demote receipt, the next promote receipt, the publish) cannot anchor. A gate model-shape assumption on this card class, left as is (no gate changed after a result); the cell is decided on the target card below |
 | `spec-on-cache-hit-gate.sh qwen` | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) | `ALL GREEN (qwen)` (61 ok) |
-| `prefix-newest-turn-fits-gate.py` | PENDING-LOCAL-TWIN-OFF | PENDING-LOCAL-TWIN-ON |
-| GPU unit cells `option_b_*`, `option_c_*` (copy-stream engine) | PENDING-LOCAL-UNIT | |
+| `prefix-newest-turn-fits-gate.py`, the 9B artifact | `REFUSED: cohort promotion did not happen for 2800 tokens: second send cached=2800 of 2800, published 2784` (exit 2, `twin-9b-shape-refused/`) | the identical refusal: the gate's default cohort shape is the 27B's (lane B's local runs use the 27B artifact, `run-day23-twin.sh`), not a door result |
+| `prefix-newest-turn-fits-gate.py`, the 27B artifact (lane B's local shape) | LOCAL-TWIN27-OFF | LOCAL-TWIN27-ON |
+| GPU unit cells `option_b_*` (2), `option_c_*` (6) on the copy-stream engine (`cargo test -p memra-server --lib -- --ignored --test-threads=1`, under `flock` on the canonical lock) | `test result: ok. 8 passed; 0 failed` (`gpu-unit-cells.log`) | |
+
+Driver correction, stated: attempt 2's first twin cell logged 15 "lock busy" retries and `rc=2`; the gate's line was
+`REFUSED: --out must be a new directory: .../twin-off` (the first try created the directory before its lock check
+and my driver's retry keyed on the word REFUSED without removing it): a driver bug of mine, not a held lock
+(`attempt2-twin-outdir-refusal/`). The driver now removes the cell's out directory before every try and keys on
+the lock's own refusal text. The lock WAS free when the corrected tail ran.
 
 **Target card, BOX3** (one RTX PRO 6000 Blackwell Server Edition at its 600 W limit; `pro-single-day17/box/`;
 binary built on the box from `fc46e230d`, `ceaf238f…`; the Qwen3.8-27B NVFP4-Q5K MTP artifact;
@@ -250,6 +257,7 @@ verbatim per arm:
 | failure gate | `KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)` (`FAIL: pool-full refusal is LOUD and named`, 13 ok) | the same line, 13 ok |
 | contract fault gate | n/a | `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 62 ok; one typed refusal each: `demote failed (tier D2H producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)); nothing demoted`, `demote failed (tier D2H receipt refused: injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted`, `promote refused (contracts door): tier H2D batch partially refused: 1 of 34 items (injected failure (MEMRA_KV_HOST_FAULT=contract-promote-reject))`, `.. tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)`, `.. tier H2D producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-presubmit)`, `.. tier H2D publication refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-postpublish)` |
 | hit gate | `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` (61 ok) | `ALL GREEN (qwen)` (61 ok) |
+| GPU unit cells `option_b_*` (2), `option_c_*` (6) on the copy-stream engine (`unit-cell/`, one collector hold, tree `fc46e230d`) | `test result: ok. 8 passed; 0 failed; 0 ignored` (`unit/cargo-test.log`) | |
 | twin gate | `PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS` | the identical line, `-> PASS` |
 
 Reading: the identity gate and the fault gate are green on the target card class with the door ON and the demote
