@@ -28,8 +28,15 @@ calibration boot), `docs/TESTING.md` section, `verify-day14.py`; receipts spot-c
    prints at once, every 64th repeat prints with the count) while `prefix_cache_skips_*` count every refusal; two
    tests. No GPU rerun: a log throttle and docs change no victim selection, and no refusal line printed in any card cell.
 
+6. **Revuto round two, fixed on the lane (`b8aedccfa`).** Pressure relief (`evict_to_bytes`: the kv-flex shed and the
+   step-OOM reclaim) had kept the old probation-only victim function while the insert loop moved to
+   `room_victim_with`; it now selects with the same policy (probation LRU first, then protected oldest first, leases
+   untouchable), the doc comment states it, the dead no-arg `capacity_victim` is gone, and the shed warns "nothing
+   evictable" only when `evictable_bytes()` is zero. Three tests; 753 server tests; no GPU rerun needed (victim order
+   for pressure relief, no bytes change; neither path ran in a card cell).
+
 ## Verification this review relied on
-integ14 CPU batteries (`integration-day12/integ14-cpu-battery/` before the review fixes, `integ14-cpu-battery-2/` after): fmt, portable suites, memra-server suite, clippy,
+integ14 CPU batteries (`integration-day12/integ14-cpu-battery/` before the review fixes, `integ14-cpu-battery-2/` and `-3/` after): fmt, portable suites, memra-server suite, clippy,
 censuses, collector pytest, `verify-day14.py` (B), perf board, diff-check; local 5090 serve-smoke on this tree
 (`integ14-serve-smoke-5090/`). B's target-card twin gate, serve-smoke and cache-meter on the fix. This rig cannot run
 the model gates.
