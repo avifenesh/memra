@@ -679,6 +679,17 @@ cpu_native_check.rs, ...` although `git diff origin/main HEAD -- crates` is empt
 with the push range, and main's engine tree has moved past the last receipt (#604, #607). Pushed in the announced
 development mode; the receipt is the release lane's to renew, nothing here claims qualification.
 
+## Lead slices between integs (2026-09-21, after integ22)
+- #608 (build.rs `DOCS_RS` declaration sat past the docs early return): fixed in #610, merged `a51e29abb`, issue closed.
+- D's day-13 note (the docs-only classifier calls `research/**` documentation while crates include research files
+  at compile time): `tools/ci-change-class.sh` now derives the included set from the head tree
+  (`include_str!`/`include_bytes!` literals under `crates/`, resolved to repo paths) and classifies a change to one of
+  them as `compile-input:<path>`; any failure to derive the set is code. Revuto round 1 on #611: the first census was
+  line-based and missed the multi-line `include_str!(` form (ep_map, the ornith template); the census now reads each
+  file as one record (`grep -z`) and exposes `ci-change-class.sh census <rev>`. Real tree today: six included paths
+  (recompute-load and two C fixtures, the ep-placement example map, the qwen38 and ornith15 chat templates); teeth arm
+  18 asserts them on this repository. Teeth arms 15 and 16 in `tools/test_ci_change_class.sh`.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
