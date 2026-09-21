@@ -14,12 +14,22 @@ import unittest
 ROOT = Path(__file__).resolve().parents[4]
 spec = importlib.util.spec_from_file_location('external_battery', ROOT/'tools/tier-battery.py')
 B = importlib.util.module_from_spec(spec); spec.loader.exec_module(B)
+import private_lock
 PROOF = ROOT/'tools/tier-lock-proof.py'
 
 
-class ExternalLockTests(unittest.TestCase):
-    def check_proof(self, fd, inherited=(), path='/tmp/memra-5090.lock'):
-        return subprocess.run([sys.executable, str(PROOF), '--fd', str(fd), '--lock', path],
+class ExternalLockTests(private_lock.PrivateLockMixin, unittest.TestCase):
+    BATTERY = B
+
+    def setUp(self):
+        super().setUp()
+        # The tracked proof accepts exactly the two canonical paths and no environment switch
+        # (its docstring); this suite drives a fixture copy that accepts the private paths.
+        self.assertIn("LOCKS = ('/tmp/memra-5090.lock', '/tmp/memra-gpu.lock')", PROOF.read_text())
+        self.proof = self.proof_copy()
+
+    def check_proof(self, fd, inherited=(), path=None):
+        return subprocess.run([sys.executable, str(self.proof), '--fd', str(fd), '--lock', path or B.LOCKS['rtx5090']],
                               pass_fds=inherited, text=True, capture_output=True, timeout=5)
 
     def test_owning_fd_only_not_same_inode_foreign_closed_missing_or_unlocked(self):
@@ -41,7 +51,7 @@ class ExternalLockTests(unittest.TestCase):
             result = self.check_proof(unlocked.fileno(), (unlocked.fileno(),))
             self.assertEqual(result.returncode, 2)
             self.assertIn('not locked', result.stderr)
-        missing = subprocess.run([sys.executable, str(PROOF), '--lock', B.LOCKS['rtx5090']],
+        missing = subprocess.run([sys.executable, str(self.proof), '--lock', B.LOCKS['rtx5090']],
                                  capture_output=True, timeout=5)
         self.assertEqual(missing.returncode, 2)
 
@@ -64,14 +74,14 @@ class ExternalLockTests(unittest.TestCase):
 
     def collect(self, root, child, timeout=5):
         return subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'),
-            '--rig', 'rtx5090', '--timeout', str(timeout), '--out', str(root/'cell'),
+            '--rig', 'rtx5090', private_lock.FLAG, '--timeout', str(timeout), '--out', str(root/'cell'),
             '--external-lock', '--execute', *child], capture_output=True, text=True,
             env={**os.environ, 'PATH': str(root/'no-tools')}, timeout=timeout+10)
 
     def test_collector_inheritance_integrity_and_foreign_launch_exclusion(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            child = [sys.executable, str(PROOF), '--fd', '@COLLECTOR_LOCK_FD@',
+            child = [sys.executable, str(self.proof), '--fd', '@COLLECTOR_LOCK_FD@',
                      '--lock', B.LOCKS['rtx5090']]
             with B.campaign_lock('rtx5090'):
                 result = self.collect(root, child)
@@ -91,6 +101,9 @@ class ExternalLockTests(unittest.TestCase):
             names = ['kv-host-spill-identity-gate.sh', 'kv-host-spill-failure-gate.sh']
             for name in [*names, 'tier-lock-proof.py', 'port-guard.sh']:
                 shutil.copy(ROOT/'tools'/name, tools/name)
+            # The fixture copies take the canonical NAMES under this test's private directory
+            # (ruling 12); the tracked gates and proof keep their literals, asserted below.
+            (tools/'tier-lock-proof.py').write_text(self.substitute((tools/'tier-lock-proof.py').read_text()))
             patch = ROOT/'research/spill-d-20260919/LEGACY-EXTERNAL-LOCK.diff'
             # The authorized fragment is now applied in-tree. Reverse/reapply in
             # the disposable tree to keep its historical assertion-preservation teeth.
@@ -105,12 +118,16 @@ class ExternalLockTests(unittest.TestCase):
                 self.assertEqual(source[source.index(marker):], original[original.index(marker):])
                 self.assertNotIn('pkill', source)
                 self.assertNotIn('flock -w', source)
+                self.assertIn('/tmp/memra-5090.lock|/tmp/memra-gpu.lock) ;;', source)
+                self.assertIn('GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}', source)
                 subprocess.run(['bash', '-n', str(script)], check=True, capture_output=True)
                 if shutil.which('shellcheck'):
                     checked = subprocess.run(['shellcheck', '-x', str(script)], cwd=tools, text=True, capture_output=True)
                     self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
-                # Exercise exact patched prologue; no server or model command runs.
-                script.write_text(source[:source.index('SERVER_PID=""')]+'echo "LOCK PROOF ACCEPTED"\n')
+                # Exercise exact patched prologue; no server or model command runs. The prologue
+                # copy takes the private path (same name, this test's directory).
+                private = self.substitute(source)
+                script.write_text(private[:private.index('SERVER_PID=""')]+'echo "LOCK PROOF ACCEPTED"\n')
                 internal = root/(str(i)+'-internal')
                 result = subprocess.run(['bash', str(script), 'unused-model', 'unused-binary', str(internal)],
                                         capture_output=True, text=True, timeout=5)
@@ -120,7 +137,7 @@ class ExternalLockTests(unittest.TestCase):
                 cellroot = root/(str(i)+'-capture'); cellroot.mkdir()
                 # bash is absolute because the collector test PATH hides nvidia-smi,
                 # while the script needs ordinary CPU utilities for proof checking.
-                command = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090',
+                command = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090', private_lock.FLAG,
                     '--out', str(cellroot/'cell'), '--external-lock', '--execute',
                     shutil.which('bash'), str(script), '--external-lock', '@COLLECTOR_LOCK_FD@',
                     'unused-model', 'unused-binary', str(external)]

@@ -48,6 +48,10 @@ fn nvcc_version(p: &std::path::Path) -> Option<(u32, u32)> {
 /// release are always echoed via `cargo:warning`, so every build log records which nvcc
 /// produced its fatbins.
 fn resolve_nvcc() -> String {
+    // DOCS_RS flips the whole build between the CUDA build and the docs stub (below); without
+    // this line a `DOCS_RS=1` check pass leaves stub artifacts that the next real build links
+    // against (2026-09-21: `undefined symbol: memra_dsv4_c4_recent_write` in a server test run).
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
     println!("cargo:rerun-if-env-changed=MEMRA_NVCC");
     println!("cargo:rerun-if-env-changed=CUDA_HOME");
     println!("cargo:rerun-if-env-changed=CUDA_PATH");

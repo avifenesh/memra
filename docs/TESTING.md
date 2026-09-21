@@ -86,6 +86,12 @@ or nonempty receipt namespace before launching the synthetic NVFP4/FP8/kernel-ch
 | 1 | ~1–2 min | tier 0 + golden-token argmax probe on ONE model per affected kernel class (+ one single-K spec probe when the diff touches the spec pipeline) | before every dev-loop commit |
 | 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
 
+The battery's last correctness stage runs every memra-engine `#[ignore]` GPU test serially
+(`--test-threads=1`): the tests flip process-global gate doors and share one device, so
+parallel threads race each other (measured flake, `research/local-ci-one-card-20260921`).
+Pair-only tests announce `SKIP-PAIR` on a rig with fewer than two CUDA devices and run
+unchanged on the pair box.
+
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
 parsing; a red quotes the failing K and `FIRST DIVERGENCE` index.
@@ -835,6 +841,46 @@ The 2026-09-20 PRO 6000 run passed all three synthetic stages. GPU KDA/lazy-inde
 allocation coverage, full-checkpoint serving and performance remain pending; these are
 not model-support or full release-battery receipts.
 
+### Prefix eviction must credit admission and the driver (`tools/prefix-evict-reclaim-gate.py`)
+
+memra#346, #445 and #523 item 4: the admission path evicts unleased prefix-cache entries when a
+request does not fit (`[admit-oom] reclaim-on-defer`) and re-reads headroom in the same tick.
+The planes drop as stream-ordered `cuMemFreeAsync` into the caching pool, so before the fix the
+tick credited nothing (`effective free 69204MB -> 69204MB` on a 43.5 GB eviction) and a busy box
+kept every later prefill deferred behind an entry that was already gone. The fix
+(`settle_reclaimed_prefix_bytes`, worker.rs) fences the model-owned streams and trims each device
+pool to `used + cached_before` before the re-read, printing one `[admit-oom] reclaim settle` line
+per device in bytes.
+
+```text
+prefix-evict-reclaim-gate.py [--external-lock FD] --model <gguf> --bin <memra-server> --out <new-dir>
+```
+
+- Serving shape, one card, the real `memra-server`, two boots per cell: a calibration boot
+  measures effective free after P1, E1 (the long prompt's entry bytes), E0 (the busy peer's
+  own seed) and the two long prompts' admission costs; the measured boot starts a ballast
+  process (one plain `cuMemAlloc` through `libcuda`, held for the boot) sized so that P2 is
+  short by less than E1 + E0 beside the busy peer and fits after a true credit, then sends P2
+  while the peer is still decoding so the idle-box `admission-drain` arm cannot mask the tick.
+  No admission door is touched: with `MEMRA_SERVE_SPEC=0` the reserve is the static 1536 MiB
+  floor (the boot line is asserted), so `required(P2) = cost(P2) + 1536 MiB` is known from the
+  calibration. The ballast models the small card #445 was filed on.
+- Assertions, all in bytes from the server's own lines and `/metrics`: V1 the reclaim-on-defer
+  line credits at least E1; V2 P2 is admitted in that tick (no `VRAM defer` after the reclaim
+  line, no `reject averted`, HTTP 200); V3 the settle line moves driver free and
+  `trim_released_bytes` by at least E1 minus one 2 MiB granule with no `pool_retained_bytes`;
+  V4 the greedy texts of the two boots hash identical (pressure changes admission, never tokens).
+  The runner compares V4's digest across binaries (base vs fix) as the numeric-program receipt.
+- Verdict line: `PREFIX-EVICT-RECLAIM: entry_bytes=... reclaim_credit_bytes=... -> PASS|FAIL`;
+  exit 0 PASS, 1 FAIL, 2 `REFUSED: ...` (lock, port, busy-peer window, card too small). Red on
+  `main` at `ea08bc7f8` and green on the fix, same card, same artifact, same prompts:
+  [`research/spill-b-20260919/DAY13.md`](../research/spill-b-20260919/DAY13.md).
+- Canonical rig lock only, held for the whole cell; under the collector,
+  `tools/tier-battery.py --rig pro-single --external-lock --execute python3
+  tools/prefix-evict-reclaim-gate.py --external-lock @COLLECTOR_LOCK_FD@ ...` (lead ruling 5).
+  CPU arm: `worker::tests::reclaim_settle_returns_only_the_reclaims_gain` pins the keep
+  arithmetic.
+
 ## Generic spill / tiered KV (memra-tier)
 
 The shared contract is `crates/memra-tier/src/contracts.rs`. The conformance schedules are
@@ -847,7 +893,8 @@ the publish census refuses internal dev-deps. These are **CPU execution gates, n
 qualification**. Run the whole pair:
 
 ```sh
-cargo test -p memra-tier -p memra-kv --offline --no-fail-fast
+tools/portable-suites.sh          # cargo test -p memra-tier -p memra-kv -p memra-cli --offline --no-fail-fast, through the skip census
+tools/test_portable_suites.sh     # its teeth: planted tier/KV/CLI failures and an undeclared SKIP must red the wrapper
 cargo check -p memra-tier -p memra-kv --offline --all-targets
 cargo check -p memra-tier -p memra-kv --offline --all-targets --target x86_64-unknown-linux-gnu
 cargo clippy -p memra-tier -p memra-kv --offline --all-targets --no-deps -- -D warnings
@@ -862,6 +909,29 @@ git diff --check
 The tier suite covers contracts, storage, banks/rows, directed peer capacity and
 placement; KV covers the hierarchy, materializers and single-governor scheduling; the
 pytest line is the collector's own suite (`tools/tier-battery.py`, `tier-envelope.py`).
+
+**Standing execution (memra #545, 2026-09-21).** Until that day no hosted or local gate ran
+these suites: `ci.yml` compiled them (build, clippy) and executed other crates; `local-ci.sh`
+ran server, engine and gguf. `tools/portable-suites.sh` is now the one wrapper both run
+(`ci.yml` job `portable-suites`, `local-ci.sh`'s CPU chain): the three crates, no `--lib`
+(memra-tier's six integration suites and its four compile-fail doctests are most of the tests),
+`--no-fail-fast` (every binary runs, so a red names every failing suite), `--offline` against
+the committed lockfile, through `tools/skip-census.py` (`verify` over the three crates, then
+`run` at budget 0 and floor 300; 325 passed across 14 binaries on 2026-09-21, 22 s warm; 334
+after that day's main merges). The static census scans `crates/<crate>/src` AND
+`crates/<crate>/tests` (PR #592 review: it was src-only, so a skip born in an integration test
+was never forced to be declared; the extension found memra-tokenizer's four `llama_parity`
+skips, now declared in `tools/skip-census.tsv`). The raw cargo output is banked at
+`target/portable-suites.log`. Its teeth are `tools/test_portable_suites.sh`, run by the same CI
+job: a copy of the tree with a planted failing retirement/ownership test in `tests/contracts`,
+a planted KV test and a planted onboarding-receipt test must red the wrapper with all three
+targets named (arm 1); a planted `#[test]` that prints `SKIP` and returns, as a new file under
+`crates/memra-cli/tests/` (arm 2a) and inside `src/` (arm 2b), must red the static census before
+cargo runs; the wiring is asserted (arm 3). The copy builds into `target/portable-suites-teeth`, never the
+tree's own target dir: cargo's metadata hash for a workspace member excludes its path and
+`cp -a` keeps mtimes, so a shared target dir let the copy's planted `memra_cli` test binary be
+reused by the next real run (found on the fixture's first run; the fix is the separate dir).
+A green here is CPU execution of these suites, never GPU qualification.
 Conformance schedules drive explicit completion/cancellation/retirement, original
 item indices, namespace and epoch refusal, opaque bytes, accounting and borrowed
 release. v1.2 adds owner/fence identities, logical-vs-framed completion bytes,
@@ -918,12 +988,17 @@ PASS additive dropped destination retains backing and charge until graph retirem
 PASS v1.3 device_hand_back native CUDA
 ```
 
-Day 11 added two lines whose bindings exist but have not run natively yet (no GPU cell that
-day; lane B held the card): `PASS rule cancelled-restore-recovers-source native CUDA` and
-`PASS rule cancel-refused-after-source-consumed native CUDA`. The v1 `transfer_cancel`, v1.1
+Day 11 added two lines, `PASS rule cancelled-restore-recovers-source native CUDA` and
+`PASS rule cancel-refused-after-source-consumed native CUDA`, whose bindings could not run
+natively that day (lane B held the card). The v1 `transfer_cancel`, v1.1
 `transfer_complete_cancel`, `transfer_lifetime` and acceptance bindings now recover the
-cancelled H2D source before retiring (the schedules themselves are unchanged); until the gate
-is rerun on a card, the recorded day-9 lines stand as the last native evidence.
+cancelled H2D source before retiring (the schedules themselves are unchanged). Lane D ran the
+gate natively on day 12 (one RTX PRO 6000 Blackwell, collector-locked, N=1, gate source
+`55f242e98`): the `conformance` cell printed both lines verbatim among its 13 `PASS` lines and
+ended on `PASS native governor zero after controlled drain`; the `roundtrip` cell printed every
+size line with `byte_exact=true`. Receipts
+`research/spill-d-20260919/pro-single-day12/transfer-gate/{conformance,roundtrip}/`, replayed by
+`research/spill-d-20260919/verify-day12.py`; write-up `research/spill-d-20260919/DAY12.md`.
 
 plus one `PASS native D2H-H2D roundtrip bytes=… byte_exact=true source_freed_host_live=true` line per
 size (4 KiB to 256 MiB). All lines were recorded on one RTX PRO 6000 Blackwell through the collector
@@ -1030,8 +1105,19 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   records the contract's answers as `check / expected / observed` rows (`fault-checks.tsv`,
   summary `FAULT-ARM.txt`); `fault_contract::verdict` prints `FAULT-ARM PASS <arm>` only when
   every required check was recorded and held, a differing answer or a missing check is a failed
-  cell (`fault arm <arm> did not prove its contract; missing=[..] failed=[..]`), and the two arms
-  whose expectation has no seam in the frozen contracts end in a typed refusal, never PASS. A
+  cell (`fault arm <arm> did not prove its contract; missing=[..] failed=[..]`), and there is no
+  third outcome: on day 11 the two arms whose expectation had no seam in the contracts ended in
+  a typed refusal; since day 12 they drive lane A's rule seams (`TransferEngine::recover_source`,
+  `Cache::suspend_layer` / `resume_layer`), and a backend without a seam fails the seam rows, a
+  failed cell, never a refusal and never PASS. Every arm detaches a layer only through
+  `Cache::suspend_layer` and reattaches it through `Cache::resume_layer` (rule 2), so
+  `ensure_usable` is the continuation gate for the whole demoted interval; the holed arms keep
+  the day-11 taint row (`holed-cache-refuses-continuation`). The rule-1 rows are one generic
+  sequence over `TransferEngine` (`fault_contract::cancel_restore_revoke` / `_recover` /
+  `_retire`) recorded by the native arm and by the CPU binding
+  `crates/memra-tier/tests/contracts/fault_arm_bindings.rs` against lane A's fake transport,
+  whose `legacy = true` is the red arm (the transport before the rule drains the cancelled
+  restore, the seam rows fail, the verdict names them). A
   passing arm whose cache is whole and bit-identical (`restored-identical`) runs the same
   tokenwise continuation and writes `ACTIVE.txt` with the PASS line as its first line; an arm
   whose cache is incomplete prints `FAULT-ARM PASS <arm> committed=<n> generated=0` and writes no
@@ -1044,17 +1130,22 @@ kv-tier-gate --artifact <gguf> --case baseline|active|prefix --context 8192|3276
   | Arm | Injection point (contract call) | Required checks (expected answer) | Outcome |
   | --- | --- | --- | --- |
   | `cancel-demote` | D2H submitted and observed complete (`synchronize`), then `TransferEngine::cancel` before `take_destination` | `cancel` `Ok(PublicationRevoked)`; `take-after-cancel` `Err(Cancelled)`; `retire` and `acknowledge` `Ok(())`; `pinned-after-cancel` `0`; `source-returned` (`take_plane` gives the untouched source, `len=<capacity> vmm=false`); `budget-zero`; `restored-identical` | PASS, intact-resident, continuation runs |
-  | `cancel-restore` | H2D submitted and observed complete, then `cancel` before `ready_view` | `cancel` `Ok(PublicationRevoked)`; `ready-view-after-cancel`, `with-destination-after-cancel`, `take-after-cancel` all `Err(Cancelled)`; `retire`, `acknowledge` `Ok(())`; `retake-demoted-copy` (`take_destination` on the D2H ticket) `Err(AlreadyReleased)`; `budget-zero` | typed refusal on day 11: the H2D source handle is consumed at submission and released by `retire`; the D2H twin is take-once; no contract seam recovers the copy, so no restore and no token. Seam since lane A day 11 (rule 1): `retire` answers `Busy`, `recover_source(ticket, 0)` returns the intact source, then `retire`/`acknowledge` and a second `restore`; lane D reruns for the PASS line |
+  | `cancel-restore` | H2D submitted and observed complete, then `cancel` before `ready_view`; rule 1 (lane A, day 11) from there | `cancel` `Ok(PublicationRevoked)`; `ready-view-after-cancel`, `with-destination-after-cancel`, `take-after-cancel` all `Err(Cancelled)`; `retire-holds-source` and `retire-source-holds` `Err(Busy)` (the engine never drains a cancelled restore); `recover-source` `Ok(host)`; `recovered-source-checksum` (equals the bundle's sealed checksum) and `recovered-source-intact` (`StateBundle::verify` `Ok(())`); `recover-source-once` and `cancel-after-recovery` `Err(AlreadyReleased)`; `retire`, `acknowledge` `Ok(())`; `pinned-held-by-recovered-lease` (the pinned charge stays with the lease); `retake-demoted-copy` (`take_destination` on the D2H ticket) `Err(AlreadyReleased)`; `budget-zero`; `restored-identical` | PASS, the recovered copy goes through the roundtrip's own `restore`, cache whole and bit-identical, continuation runs. Day 11 (no seam) ended in the typed refusal `REFUSED: cancel-restore revoked publication, but the transfer contract has no seam to recover the H2D source after cancellation; no tokens, budget drained`; that receipt is kept and is a failed cell under the day-12 rule |
   | `corrupt-host` | after `demote`: `CudaPinnedLease::write` under the live D2H ticket, then the legal drain (`record_consumer`, `retire`, `acknowledge`), then `write` again; `restore` on the flipped copy | `write-under-live-ticket` `Err(Busy)`; `write-sole-owner` `Ok(())`; `restore-integrity` `Corrupt` (`StateBundle::verify`, before any device call); `device-registry-unchanged`; `budget-zero` | PASS, no publish, no token |
   | `missing-host` | D2H completed and never taken; `retire(None)` and `acknowledge` remove the engine-owned copy; `take_destination` at restore | `completion-checksum` (`poll` checksum equals the bundle's); `remove` `retire=Ok(()) acknowledge=Ok(())`; `pinned-released` (the plane's bytes); `retake-removed-copy` `Err(UnknownTicket)`; `budget-zero` | PASS, no publish, no token |
   | `host-budget-short` | governor pinned capacity set to the whole demoted bytes minus one; `admit_whole_state` before any layer is taken | `whole-state-admission` `Err(Capacity)`; `layers-resident` unchanged; `pinned-charged` `0`; `budget-zero`; `restored-identical` | PASS, nothing copied, continuation runs |
   | `device-short` | after demote, a competing tenant reserves the governor's device dimension down to one byte less than the restore needs; `alloc_device` (restore's first call) | `restore-admission` `Err(Capacity)`; `device-registry-unchanged`; `host-copy-intact` (`StateBundle::verify` `Ok(())`); competitor released; `budget-zero`; `restored-identical` | PASS, continuation runs. The governor has no post-construction capacity seam; the seam used is its own admission with a second tenant |
-  | `require-resident` | demote all, ask `Cache::ensure_usable` (the engine's only continuation gate) while suspended, restore all | `budget-zero`; `restored-identical`; observation `continuation_gate_on_suspended_cache` | typed refusal on day 11: no continuation-time required-resident contract exists (the taint flag is one-way and pipeline-scoped; `decode_step_h` unwraps a suspended layer; `tiered::policy::RestoreDecision::RequireState` is a load-versus-recompute rule). Seam since lane A day 11 (rule 2): detach through `Cache::suspend_layer`, reattach through `Cache::resume_layer`; `ensure_usable` on the suspended cache answers `ContinuationRefused` naming every suspended layer and `Ok(())` after the restore; lane D reruns for the PASS line |
+  | `require-resident` | every plane leaves through `Cache::suspend_layer`; `Cache::ensure_usable("kv-tier-gate continuation")` asked while suspended, again, after the first `resume_layer`, and after the last; rule 2 (lane A, day 11) | `suspended-register` (the register names exactly the taken layers, ascending); `continuation-gate-on-suspended-cache` and `continuation-gate-asked-twice` `Err(ContinuationRefused { path: "kv-tier-gate continuation", layers: [<every suspended layer>] })`; `continuation-gate-after-partial-resume` names what is left; `register-empty-after-resume` `true`; `continuation-gate-after-resume` `Ok(())`; `budget-zero`; `restored-identical` | PASS, continuation runs. Day 11 (no seam; `ensure_usable` answered `Ok(())` on the fully suspended cache) ended in the typed refusal `REFUSED: require-resident has no contract today: Cache::ensure_usable accepts a suspended cache, decode_step_h unwraps a suspended layer, and tier RestoreDecision::RequireState is a load-versus-recompute rule`; that receipt is kept and is a failed cell under the day-12 rule |
 
-  CPU replay: `crates/memra-tier/tests/reclaim/fault.rs` (door, red arms per arm, committed
-  target-card receipts); the lane's offline replay is `research/spill-d-20260919/verify-day11.py`
-  and its cells are `research/spill-d-20260919/pro-single-day11/<arm>/` (N=1, one RTX PRO 6000
-  Blackwell, `executed-not-qualified` or `refused`, never qualification).
+  CPU replay: `crates/memra-tier/tests/reclaim/fault.rs` (door, red arm per arm, the committed
+  target-card receipts of both days: the five unchanged arms replay from their day-11 cells, every
+  arm from its day-12 cell, and the two day-11 refusal receipts are pinned as failed cells under the
+  day-12 rule) and `crates/memra-tier/tests/contracts/fault_arm_bindings.rs` (the rule-1 rows on
+  the CPU fake, seam and legacy). The lane's offline replays are
+  `research/spill-d-20260919/verify-day11.py` (day-11 vocabulary, frozen: two typed refusals) over
+  `pro-single-day11/<arm>/` and `verify-day12.py` (seven PASS arms plus the two
+  `tier-transfer-gate` cases) over `pro-single-day12/` (N=1, one RTX PRO 6000 Blackwell,
+  `executed-not-qualified`, never qualification).
 - Receipts: `BASELINE.txt` (first line `BASELINE_CAPTURED`) or `ACTIVE.txt` (first line
   `ACTIVE_RECLAIM_CAPTURED; continuation comparison pending; not G1 PASS` or
   `ACTIVE_COPY_RESTORE_CAPTURED; reclaim qualification incomplete; see metrics; continuation
@@ -1160,6 +1251,19 @@ before any bank demand:
   precedence. Without a GPU budget the native slot sizing (`MEMRA_MOE_SLOTS` or auto) is
   untouched. The installer takes both budgets as a typed `ExpertBankBudget`; it reads no
   argv and no environment for them.
+- The lease token that crosses the owner-thread seam carries the identity the registry holds
+  for its lease (`ExpertLeaseToken::{record, artifact, epochs}` in
+  `crates/memra-tier/src/bank/owner_proxy.rs`): the `(layer, proj, expert)` key derived from
+  the leased `BankId` through the one mapping `bank::dispatch_id`, the record's artifact
+  digest, and the staging ticket's epochs. `demand` refuses a bank that leases another record
+  than the one demanded (`ProgramMismatch`, or `InvalidLayout` for a record with no dispatch
+  id), retiring that lease through the bank before refusing; `with_bytes` / `finish` refuse a
+  token whose identity does not match the pending lease (`ForeignLease`); `admit_banked`
+  asserts `token.record() == (layer, proj, expert)` before the H2D. Unit cells:
+  `owner_proxy.rs` tests (identity carried, lying bank refused and retired, record without a
+  dispatch id refused, three forged tokens foreign, `dispatch_id` boundaries including the
+  `u16::MAX` MTP key) and `crates/memra-tier/tests/bank/owner_proxy.rs`
+  (`token_identity_names_the_fixture_lease`). The H2D program is unchanged.
 
 Verdicts are the standard gates: `run-gen` argmax `MATCH` and `run-spec`
 `=== SELF-CONSISTENCY PASS ===` over K=1..8. The gate prints
@@ -1178,6 +1282,55 @@ exit 2 (collector status `refused`); any other failure stays `failed`. Evidence:
 controls, every cell `MATCH` / `SELF-CONSISTENCY PASS` with eviction engaged) and `DAY9.md`
 (one RTX PRO 6000 Blackwell: default and 8 GiB banks, ON and OFF, same verdicts). All cells are
 N=1 and `executed-not-qualified`; no support state or default moves on them.
+
+### Host tier contracts door (`memra-server`, `MEMRA_KV_HOST_CONTRACTS`)
+
+`MEMRA_KV_HOST_CONTRACTS=1` (default OFF; `docs/FLAGS.md` row, decide-by 2026-10-05; design
+`research/spill-c-20260919/HOSTPREFIX-DOOR.md`) constructs `HostTierContext` at model load, so
+the host tier's already-compiled sidecar route (`tier_charge`, `bind_tier_image`, the insert and
+promote identity leases, lane B's `HOSTPREFIX-EXTENSION.md`) executes: one `ProgramIdentity` per
+loaded GGUF model, the tenant salt stamped per pool key by `memra_kv::tiered::hostprefix::
+tenant_salt` over the same namespace string `auth::meter_key` reads, the server's governor as a
+ledger. No copy program changes. OFF is byte-identical by construction (the constructor is
+never called). The door refuses the boot, typed and loud, for a junk value, the startup arena
+(`MEMRA_GLM5_TP_KV_HOST=1`), a checkpoint-directory model or a loaded vision tower.
+
+- CPU tests (`cargo test -p memra-server -p memra-kv --offline`): `crates/memra-kv/src/tiered/
+  hostprefix.rs` `tenant_salt_is_one_derivation_of_the_namespace_string`,
+  `empty_namespace_is_the_default_single_tenant_namespace_not_a_refusal`,
+  `shared_governor_is_the_injected_trait_object_and_charges_through_it`;
+  `crates/memra-server/src/worker.rs` `kv_host_contracts_door_parse_is_strict_and_never_falls_
+  back_to_off` (bare `=`, junk, doubled values, non-UTF-8 all refuse; only `1`/`0`/unset parse),
+  `host_tier_arena_refusal_names_the_arena_and_passes_without_it`,
+  `host_tier_program_base_is_a_pure_function_of_its_sources`,
+  `host_tier_context_program_stamps_the_pool_namespace_salt_once`,
+  `host_tier_governor_ledger_admits_what_the_lru_would_and_binds_at_twice_the_budget`,
+  `host_cache_with_contracts_door_refuses_an_unbound_image_and_admits_it_with_the_door_off`.
+- Target-card gates, door OFF then ON on the same binary and prompts, through the canonical
+  collector: `tools/serve-smoke.sh` (plain and cache-metering arms), `tools/kv-host-spill-
+  identity-gate.sh`, `tools/kv-host-spill-failure-gate.sh`, and lane B's `tools/prefix-evict-
+  reclaim-gate.py`. Admissibility (lead ruling 15): every verdict line equal across arms,
+  `MEMRA_KV_HOST_VERIFY=1` `verify ok` on every ON promote, equal `[prefix-host] demote:` byte
+  counts. Evidence: `research/spill-c-20260919/DAY13.md` and `pro-single-day13/` (one RTX PRO
+  6000 Blackwell at 600 W, N=1, `executed-not-qualified`; no support state or default moves).
+- ON-arm surface (day 14, lead ruling 16): lane B's first slice (plain KV plus recurrent
+  continuation) AND MTP draft-bearing entries (spec-published boundary captures), each bound to
+  its own program: the draft plane is its own `Role::Draft` K and V segments with checksums, and a
+  model with an MTP head carries a second `ProgramIdentity` (`host_tier_draft_program`) whose
+  artifact, plan and numeric fold in the draft head's source and the draft rows' encodings, so a
+  spec entry and a plain entry of one prompt never share an identity. GLM state (TP, latent) and
+  the DFlash draft tail are refused by name at demote (`[prefix-host] demote refused (contracts
+  door): entry carries ...`), handoff imports at insert. CPU tests (`worker.rs`):
+  `host_tier_entry_class_admits_plain_and_mtp_draft_and_refuses_glm_and_dflash_by_name`,
+  `host_tier_draft_program_differs_from_plain_in_exactly_artifact_plan_and_numeric`,
+  `host_tier_context_program_selects_the_class_and_refuses_a_draft_entry_without_a_head`,
+  `host_tier_shape_metadata_v2_frames_the_draft_plane_presence_unconditionally`. Exit criterion
+  on the target card: `tools/kv-host-spill-identity-gate.sh` and
+  `tools/kv-host-spill-failure-gate.sh` under the gates' DEFAULT spec environment (every insert
+  a draft-bearing spec-boundary capture), door OFF then ON on one binary and prompts: every verdict
+  line equal, `verify ok` on every ON promote, equal `[prefix-host] demote:` byte counts, no
+  refusal line in the ON arm; the `MEMRA_SERVE_SPEC=0` pairs and serve-smoke unchanged from day 13.
+  Evidence: `research/spill-c-20260919/DAY14.md`, `pro-single-day14/`, replay `verify-day14.py`.
 
 ### `h2d-probe --copies`
 
@@ -1209,6 +1362,35 @@ python3 tools/tier-battery.py --rig rtx5090|pro-single|pro-pair|pro-four --timeo
   lane retries on a bounded cadence and keeps every refused attempt. The default `--rig` is
   `pro-pair`; always state the rig. `tools/tier-rig-bootstrap.sh --rig rtx5090|pro-single`
   records the same lock per rig, and `--dry-run` there is not a rig acceptance result.
+- Private lock path under test (lead ruling 12, 2026-09-21): the collector's own suite
+  (`crates/memra-tier/tests/battery/`) never takes a real rig lock, so a serving job on the rig
+  cannot redden a CPU suite (the integ10 battery's first attempt lost 20 tests to a serve-smoke
+  holding `/tmp/memra-5090.lock`; with both paths held, 24 of 85 tests failed before this
+  change and 0 of 86 after: `research/spill-d-20260919/day13/`). The seam is
+  `MEMRA_TIER_BATTERY_LOCK_DIR=<dir>`, honoured by `tools/tier-battery.py` (`lock_table`) and
+  `tools/tier-rig-bootstrap.sh`: the two canonical NAMES re-rooted under the directory
+  (`<dir>/memra-5090.lock`, `<dir>/memra-gpu.lock`); the rig->name table, the refusal on
+  contention and the receipt shape are unchanged, and a receipt written under the seam records
+  the private path, so it refuses to validate against the canonical table in a process without
+  the seam (`test_collector.py`, `test_private_lock_seam_receipts_never_validate_against_the_canonical_table`).
+  Every lock-taking test class mixes in `tests/battery/private_lock.py` (`PrivateLockMixin`:
+  a fresh directory per test, exported to children and patched into the loaded module's
+  `LOCKS`); tests that validate COMMITTED receipts run under `canonical_locks()`. Tools that pin
+  the two names by literal (`tools/tier-lock-proof.py`, the two legacy `kv-host-spill-*-gate.sh`)
+  have no seam: `test_external_lock.py` drives fixture copies with the literal substituted and
+  asserts the tracked literals. It is a test seam only: unset in every production launcher, and
+  the ci.yml `portable-suites` job runs the whole suite with both real paths held.
+  The seam alone moves nothing (PR #592 review): a collector `--execute` or `--dry-run` and any
+  lock-holding bootstrap run refuse under it, before creating a directory or opening a lock,
+  unless the process also passes `--private-lock-dir-for-tests` (`REFUSED: MEMRA_TIER_BATTERY_LOCK_DIR
+  is set but --private-lock-dir-for-tests was not passed`, exit 2; the flag without the seam
+  refuses too; `--plan`, `--validate` and the bootstrap's `--status` take no lock and run). A
+  process under the seam prints `PRIVATE lock directory (test seam); the rig lock is NOT held`
+  on stderr; `lock.json` and the dry-run manifest carry `"seam": "<dir>"` (`lock_seam` in
+  `BOOTSTRAP.json`), and `--validate` refuses a capture whose seam is not the validating
+  process's own (`lock.json seam=... is not this process's MEMRA_TIER_BATTERY_LOCK_DIR=...`).
+  Every launch site in the suite passes the flag (`private_lock.FLAG`); red arms in
+  `test_day10.py` and `test_collector.py`.
 - `--external-lock`: legacy shell gates run under the collector's inherited lock, never
   wrapped twice. The collector passes its lock FD to the child, replacing exactly one
   `@COLLECTOR_LOCK_FD@` argument, and writes `lock.json` with the device/inode proof; it is

@@ -21792,6 +21792,19 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// `MEMRA_LOCKSTEP_CPU_ROWS=1` opts the lockstep CPU experts into the companion's
+    /// multi-row ABI (one call per expert shared by two or more streams). Default OFF
+    /// (memra#577): the M=1 run sums a row's CPU experts inside ONE companion job, and the
+    /// multi-row arm re-splits that sum across per-expert tickets, so from three streams up
+    /// a row's bytes depended on which experts its peers shared (M=4 mixed: every logit
+    /// differs from the first lockstep step; with this arm off and the shared expert per row,
+    /// bit-identical over 33 steps). The arm is the M3 amortization receipt
+    /// (research/moe/draft-head-and-concurrency-lanes.md, +4.8% at m=4); it comes back by
+    /// default only with an exactness proof against the M=1 sum order.
+    fn lockstep_cpu_rows_on() -> bool {
+        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() == Ok("1")
+    }
+
     /// Lane-3 M2: cross-stream MoE for lockstep decode. Routes all m stream rows in one
     /// batch, executes fully-HBM-resident experts through the grouped gather/GEMM/scatter
     /// machinery at m_e>1 (weight reads amortized across streams), and assigns any expert
@@ -21817,6 +21830,7 @@ impl HybridModel {
         // step35 per-layer SwiGLU clamp; None on every other arch / unclamped layer.
         let lim_exp = cfg.clamp_exp_at(il as u32);
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
+        Self::trace_moe_input(e, il, mrows, n_embd, zbatch)?;
 
         // Router: lockstep's cuBLAS matmul reduced all stream rows at once, so its `m =
         // stream_count` made one session's expert selection depend on how many peers shared the
@@ -21889,7 +21903,7 @@ impl HybridModel {
         // order per row differs from the sequential single-call chunk — part of the
         // documented lockstep numeric class.
         let host_rows = e.dtoh(zbatch)?;
-        let rows_ok = crate::cpu_experts::rows_supported();
+        let rows_ok = crate::cpu_experts::rows_supported() && Self::lockstep_cpu_rows_on();
         enum CpuPart {
             Single { row: usize },
             Rows { rows: Vec<usize> },
@@ -21949,19 +21963,22 @@ impl HybridModel {
                 .cmp(&groups[&a].rows.len())
                 .then(a.cmp(&b))
         });
+        // The gathered `m_e`-row expert call is per-row exact: forcing every group to
+        // `m_e = 1` changed no bit of the M=4 mixed run (memra#577 probe, 2026-09-21).
         for &ex in &order {
             let group = &groups[&ex];
-            let m_e = group.rows.len();
+            let (rows, slots, weights) = (&group.rows, &group.slots, &group.weights);
+            let m_e = rows.len();
             let gl = m.gate_exps.expert_layout(ex);
             let ul = m.up_exps.expert_layout(ex);
             let dl = m.down_exps.expert_layout(ex);
-            let row_idx_d = e.htod_i32(&group.rows)?;
-            let slot_idx_d = e.htod_i32(&group.slots)?;
+            let row_idx_d = e.htod_i32(rows)?;
+            let slot_idx_d = e.htod_i32(slots)?;
             let dmac = m.down_exps.macro_scale(ex);
             let weight_d = if dmac == 1.0 {
-                e.htod(&group.weights)?
+                e.htod(weights)?
             } else {
-                let scaled: Vec<f32> = group.weights.iter().map(|&w| w * dmac).collect();
+                let scaled: Vec<f32> = weights.iter().map(|&w| w * dmac).collect();
                 e.htod(&scaled)?
             };
             let mut gathered = e.zeros(m_e * n_embd)?;
@@ -22073,21 +22090,38 @@ impl HybridModel {
             (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
         {
             let n_ff_sh = gate_shexp.out_features();
-            let sg_gate = e.matmul(gate_shexp, zbatch, mrows)?;
-            let sg_up = e.matmul(up_shexp, zbatch, mrows)?;
-            let mut sa = e.zeros(mrows * n_ff_sh)?;
-            Self::ffn_act_lim(
-                e,
-                cfg,
-                &sg_gate,
-                &sg_up,
-                1.0,
-                1.0,
-                lim_shexp,
-                &mut sa,
-                mrows * n_ff_sh,
-            )?;
-            let sh = e.matmul(down_shexp, &sa, mrows)?;
+            // Shared expert per ROW, `m = 1` each (memra#577). One `mrows`-wide matmul over
+            // the stream batch changes the reduction program with the row count (M=2 stays
+            // bit-identical to M=1, M=3 and M=4 do not, same prompt or mixed), so a
+            // stream's bytes depended on how many peers shared the step. `m = 1` per row is
+            // the single-sequence decode chain's own call, exact by construction; lockstep
+            // rows are few (`1..=16`), so the extra launches are not a cost that matters.
+            let mut sh = e.zeros(mrows * n_embd)?;
+            for row in 0..mrows {
+                let mut zrow = e.uninit(n_embd)?;
+                e.copy_view_into(
+                    &mut zrow,
+                    0,
+                    &zbatch.slice(row * n_embd..(row + 1) * n_embd),
+                    n_embd,
+                )?;
+                let sg_gate = e.matmul(gate_shexp, &zrow, 1)?;
+                let sg_up = e.matmul(up_shexp, &zrow, 1)?;
+                let mut sa_row = e.zeros(n_ff_sh)?;
+                Self::ffn_act_lim(
+                    e,
+                    cfg,
+                    &sg_gate,
+                    &sg_up,
+                    1.0,
+                    1.0,
+                    lim_shexp,
+                    &mut sa_row,
+                    n_ff_sh,
+                )?;
+                let sh_row = e.matmul(down_shexp, &sa_row, 1)?;
+                e.copy_into(&mut sh, row * n_embd, &sh_row, n_embd)?;
+            }
             // lockstep rows ARE decode tokens: fused sigmoid-dot per row so batched serving
             // decode matches the single-sequence decode chain bit-for-bit.
             match &m.gate_inp_shexp {

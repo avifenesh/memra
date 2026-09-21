@@ -26,6 +26,20 @@
 #                                        skip. Twelve is therefore the count of model-backed
 #                                        assertions CI is blind to, stated rather than hidden.
 #                                        If it grows, CI reds and someone looks.
+#   tools/portable-suites.sh    budget 0 for memra-tier, memra-kv and memra-cli (ci.yml job
+#                                        portable-suites and tools/local-ci.sh, memra #545): none
+#                                        of the three crates has an artifact-gated test, and the
+#                                        wrapper's `verify` over them keeps it that way; a new one
+#                                        must be declared here and budgeted there, out loud.
+#
+# The static census scans crates/<crate>/src AND crates/<crate>/tests (integration-test binaries;
+# libtest prints their paths relative to the binary, so `tests/parity.rs` and `tests/x/mod.rs`
+# tests carry no prefix and `tests/x/y.rs` prints `y::`). Extended 2026-09-21 (memra #545 review):
+# the src-only scan let a skip born under tests/** go undeclared. The four memra-tokenizer rows
+# below are what the extension found: `tests/llama_parity.rs` skips without a GGUF model
+# (MEMRA_TEST_MODEL) or a llama-tokenize binary (MEMRA_LLAMA_TOKENIZE). ci.yml runs that crate
+# `--lib`, so these never execute there; they are declared so the census is complete in both
+# directions and so the run that does execute them (a rig with the artifacts) counts them.
 memra-gguf	config::minimax_tests::parse_minimax_m3_vl	crates/memra-gguf/src/config.rs:2570	SKIP parse_minimax_m3_vl: no model at {MINIMAX_DIR}
 memra-gguf	config::minimax_tests::minimax_name_mapping_against_index	crates/memra-gguf/src/config.rs:2609	SKIP minimax_name_mapping_against_index: no model at {MINIMAX_DIR}
 memra-gguf	dequant::tests::iq3s_vs_ggml_oracle	crates/memra-gguf/src/dequant.rs:711	SKIP: /tmp/iq3s_raw.bin missing
@@ -40,3 +54,7 @@ memra-gguf	source::m3_probe::minimax_m3_lm_head_q8	crates/memra-gguf/src/source.
 memra-gguf	source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity	crates/memra-gguf/src/source.rs:2133	SKIP: ckpt/twin absent
 memra-gguf	model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1084	SKIP qwen4exp census gate: no fixture at {path}
 memra-gguf	model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1264	SKIP qwen4exp nvfp4 census gate: no fixture at {path}
+memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs:81	SKIP: model not found at {model} (set MEMRA_TEST_MODEL)
+memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs:85	SKIP: llama-tokenize not found at {bin} (set MEMRA_LLAMA_TOKENIZE)
+memra-tokenizer	round_trip	crates/memra-tokenizer/tests/llama_parity.rs:129	SKIP: model not found at {model}
+memra-tokenizer	golden_pairs	crates/memra-tokenizer/tests/llama_parity.rs:149	SKIP: model not found at {model}

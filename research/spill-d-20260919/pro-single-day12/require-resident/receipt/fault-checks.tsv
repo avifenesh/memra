@@ -1,0 +1,9 @@
+check	expected	observed	ok
+suspended-register	[3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63]	[3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63]	true
+continuation-gate-on-suspended-cache	Err(ContinuationRefused { path: "kv-tier-gate continuation", layers: [3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63] })	Err(ContinuationRefused { path: "kv-tier-gate continuation", layers: [3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63] })	true
+continuation-gate-asked-twice	Err(ContinuationRefused { path: "kv-tier-gate continuation", layers: [3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63] })	Err(ContinuationRefused { path: "kv-tier-gate continuation", layers: [3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63] })	true
+continuation-gate-after-partial-resume	Err(ContinuationRefused { path: "kv-tier-gate continuation", layers: [7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63] })	Err(ContinuationRefused { path: "kv-tier-gate continuation", layers: [7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47, 51, 55, 59, 63] })	true
+register-empty-after-resume	true	true	true
+continuation-gate-after-resume	Ok(())	Ok(())	true
+budget-zero	true	true	true
+restored-identical	true	true	true

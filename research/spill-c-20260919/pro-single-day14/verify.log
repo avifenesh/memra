@@ -1,0 +1,87 @@
+== binary and card
+  source 62f48ecec86c20df7286037bf0413e8665be9e9f
+  binary sha256 7ffa58cb55daaaffba9afe220f59199faa7153bb1d836363a9416b662ab4d184
+  card NVIDIA RTX PRO 6000 Blackwell Server Edition, 600.00 W, 600.00 W, 580.178.04
+  ok: card at its 600 W limit
+  ok: build exit 0
+  ok: ten cells captured  hostgate-failure-off-default, hostgate-failure-off-plain, hostgate-failure-on-default, hostgate-failure-on-plain, hostgate-identity-off-default, hostgate-identity-off-plain, hostgate-identity-on-default, hostgate-identity-on-plain, smoke-off, smoke-on
+  ok: hostgate-failure-off-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-off-default: ran the day-14 binary
+  ok: hostgate-failure-off-plain: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-off-plain: ran the day-14 binary
+  ok: hostgate-failure-on-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-on-default: ran the day-14 binary
+  ok: hostgate-failure-on-plain: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-on-plain: ran the day-14 binary
+  ok: hostgate-identity-off-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-off-default: ran the day-14 binary
+  ok: hostgate-identity-off-plain: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-off-plain: ran the day-14 binary
+  ok: hostgate-identity-on-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-on-default: ran the day-14 binary
+  ok: hostgate-identity-on-plain: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-on-plain: ran the day-14 binary
+  ok: smoke-off: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: smoke-off: ran the day-14 binary
+  ok: smoke-on: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: smoke-on: ran the day-14 binary
+== serve-smoke (plain + cache-metering arms), door OFF vs ON
+  ok: verdict lines identical  33 lines
+  ok: both arms `serve-smoke: 0 failed`
+  ok: both arms carry the cache-metering PASS line
+  ok: OFF server log has no [prefix-host] or door line
+  ok: ON server log: no host tier, one door line under its own tag, no [prefix-host] line
+== kv-host-spill-identity-gate, DEFAULT spec environment (the ruling-16 exit criterion: draft-bearing entries), door OFF vs ON
+  ok: [default] verdict lines identical  13 lines
+  ok: [default] both arms ALL GREEN
+  ok: [default] [prefix-host] demote: byte counts equal  demote: 89 tokens, 160.7MB (host resident 160.7MB / 8590MB, model gate) | demote: 86 tokens, 160.6MB (host resident 321.3MB / 8590MB, model gate) | demote: 102 tokens, 161.1MB (host resident 482.5MB / 8590MB, model gate) | demote: 102 tokens, 161.1MB (host resident 482.5MB / 8590MB, model gate)
+  ok: [default] ON: verify ok on every promote, every other verify ok is the named device-side skip  promotes=1 verify_ok=2 skips=1
+  ok: [default] promote, verify and skip counts equal across arms
+  ok: [default] prefix-cache and prefix-host event sequence identical across arms (timings stripped)  23 events
+  ok: [default] ON: door announced with the plain program identity
+  ok: [default] ON: door announced the draft program identity (embedded MTP head)
+  ok: [default] ON: door ON line
+  ok: [default] ON: no refusal line of any kind
+  ok: [default] OFF twin boots print no [prefix-host] line in either arm
+  ok: [default] off: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102 r1_prompt=89
+  ok: [default] on: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102 r1_prompt=89
+  ok: [default] r1 and r3 texts identical across door arms
+  ok: [default] ON: the demoted entries were spec-boundary (draft-bearing) inserts  on=4
+  ok: [default] both arms: zero plain-published inserts (the surface exercised is the draft-bearing one)
+== kv-host-spill-identity-gate, MEMRA_SERVE_SPEC=0 (the day-13 plain surface, regression), door OFF vs ON
+  ok: [plain] verdict lines identical  13 lines
+  ok: [plain] both arms ALL GREEN
+  ok: [plain] [prefix-host] demote: byte counts equal  demote: 89 tokens, 160.5MB (host resident 160.5MB / 8590MB, model gate) | demote: 86 tokens, 160.4MB (host resident 321.0MB / 8590MB, model gate)
+  ok: [plain] ON: verify ok on every promote, every other verify ok is the named device-side skip  promotes=1 verify_ok=1 skips=0
+  ok: [plain] promote, verify and skip counts equal across arms
+  ok: [plain] prefix-cache and prefix-host event sequence identical across arms (timings stripped)  15 events
+  ok: [plain] ON: door announced with the plain program identity
+  ok: [plain] ON: door announced the draft program identity (embedded MTP head)
+  ok: [plain] ON: door ON line
+  ok: [plain] ON: no refusal line of any kind
+  ok: [plain] OFF twin boots print no [prefix-host] line in either arm
+  ok: [plain] off: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102 r1_prompt=89
+  ok: [plain] on: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102 r1_prompt=89
+  ok: [plain] r1 and r3 texts identical across door arms
+== kv-host-spill-failure-gate, DEFAULT spec environment (ruling-16 exit criterion), door OFF vs ON
+  ok: [default] verdict lines identical  15 lines
+  ok: [default] both arms: exactly one FAIL, the pre-existing pool-full LOUD-and-named assertion
+  ok: [default] poolfull cell: tier event lines identical (timings stripped)  2 lines
+  ok: [default] digest cell: tier event lines identical (timings stripped)  5 lines
+  ok: [default] alloc cell: tier event lines identical (timings stripped)  2 lines
+  ok: [default] digest cell: the flipped byte is caught in both arms
+  ok: [default] alloc cell: the tier latches off in both arms
+  ok: [default] pool-full: the tenant share cap evaporates before the D2H in both arms (pre-existing, not a door effect)
+  ok: [default] ON: no refusal line in any cell
+== kv-host-spill-failure-gate, MEMRA_SERVE_SPEC=0 (day-13 regression), door OFF vs ON
+  ok: [plain] verdict lines identical  15 lines
+  ok: [plain] both arms: exactly one FAIL, the pre-existing pool-full LOUD-and-named assertion
+  ok: [plain] poolfull cell: tier event lines identical (timings stripped)  2 lines
+  ok: [plain] digest cell: tier event lines identical (timings stripped)  5 lines
+  ok: [plain] alloc cell: tier event lines identical (timings stripped)  2 lines
+  ok: [plain] digest cell: the flipped byte is caught in both arms
+  ok: [plain] alloc cell: the tier latches off in both arms
+  ok: [plain] pool-full: the tenant share cap evaporates before the D2H in both arms (pre-existing, not a door effect)
+  ok: [plain] ON: no refusal line in any cell
+
+DAY14 REPLAY: PASS

@@ -164,6 +164,19 @@ cpu_chain() {
     else
         echo "local-ci: gguf skip census SKIPPED (MEMRA_CI_GGUF=0)" >&2
     fi
+    # TIER, KV AND ONBOARDING-CLI SUITES (memra #545, lane/spill-d day 13, 2026-09-21). Until
+    # this line no standing gate EXECUTED them: build and clippy compiled them, and the 325
+    # tests (memra-tier's six integration suites and compile-fail doctests, memra-kv, the
+    # memra-cli onboarding receipts) ran only when a lane ran them by hand. One wrapper,
+    # tools/portable-suites.sh, the same text ci.yml's portable-suites job runs, through the
+    # skip census at budget 0; its teeth (tools/test_portable_suites.sh) run in CI. CPU
+    # execution, never GPU qualification. CARGO_BUILD_JOBS is cargo's own knob, set to the rig
+    # cap like the -j8 above. No skip door: the suites are CPU-only and about 25 s warm (the
+    # first run after a clean pays a debug build of gguf/reference/tokenizer/tier/kv/cli).
+    echo "== local-ci: tier, KV and onboarding-CLI suites (tools/portable-suites.sh) =="
+    if ! CARGO_BUILD_JOBS=8 tools/portable-suites.sh; then
+        echo "local-ci: tier/KV/CLI suites FAILED (tools/portable-suites.sh)"; return 1
+    fi
 }
 # OVERLAP (ci-diet lane 2026-09-02). The three steps above are CPU-bound and touch no GPU;
 # every gate below the lock is GPU-bound and leaves most cores idle. Serial, the correctness
@@ -181,7 +194,7 @@ CPU_PID=""
 trap 'if [ -n "${CPU_PID:-}" ] && kill -0 "$CPU_PID" 2>/dev/null; then pkill -TERM -P "$CPU_PID" 2>/dev/null || true; kill "$CPU_PID" 2>/dev/null || true; echo "local-ci: CPU chain killed on exit; its log is kept at $CPU_LOG" >&2; fi' EXIT
 if [ "$MODE" = "--correctness" ] && [ "${MEMRA_CI_OVERLAP:-1}" = "1" ]; then
     CPU_LOG=$(mktemp "${TMPDIR:-/tmp}/local-ci-cpu-chain.XXXXXX")
-    echo "local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite) running alongside the GPU gates; log $CPU_LOG"
+    echo "local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite, gguf census, tier/KV/CLI suites) running alongside the GPU gates; log $CPU_LOG"
     cpu_chain > "$CPU_LOG" 2>&1 &
     CPU_PID=$!
 else
@@ -736,8 +749,16 @@ echo "== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) =="
 LIB_LOG=$(mktemp -t memra-lib-gpu.XXXXXX)
 # `set -e` would exit on the failing pipeline before the accounting and the FAILED line below
 # (revuto finding on #583); the exit code is read from PIPESTATUS with errexit paused.
+# Serial on purpose (--test-threads=1): these tests set process-global gate doors
+# (`set_moe_f16g_*_for_gate`; `GateRestore`'s Drop clears all five) and share one device and
+# its stream-capture state, so the default parallel harness let one test's teardown land inside
+# another's chain. Measured 2026-09-21 on the local 5090 with the pair-only tests skipped:
+# parallel 6 green of 7 with a different victim each time (`cuda_half2_chain_identity`,
+# `cuda_capture_runs_once_and_restores_scope_after_failure`, `cuda_recent_c4_preserves_hits_
+# misses_wrap_and_rollback`), serial 7 of 7 green, 4.2 s instead of 1.1 s
+# (research/local-ci-one-card-20260921).
 set +e
-cargo test --release -p memra-engine --lib -j8 -- --ignored --show-output 2>&1 | tee "$LIB_LOG"
+cargo test --release -p memra-engine --lib -j8 -- --ignored --test-threads=1 --show-output 2>&1 | tee "$LIB_LOG"
 LIB_RC=${PIPESTATUS[0]}
 set -e
 PAIR_SKIPS=$(grep -c '^SKIP-PAIR ' "$LIB_LOG" || true)

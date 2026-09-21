@@ -95,6 +95,84 @@ pub(super) struct HostPlane {
     released_bytes: usize,
     granularity: usize,
 }
+/// A demoted plane whose host copy is out with the caller. Rule 1 (lane A, day 11): the
+/// `cancel-restore` arm submits the H2D itself, cancels it before publication and takes the
+/// untouched source back through `TransferEngine::recover_source`; `reattach` makes it the same
+/// demoted plane again so the roundtrip's own `restore` runs over it. Every field but the source
+/// is carried unchanged; nothing is copied.
+pub(super) struct DetachedPlane {
+    ticket: TransferTicket,
+    bundle: StateBundle,
+    capacity: usize,
+    source_owners_before_release: usize,
+    source_owners_after_release: usize,
+    vmm: Option<KvPlane>,
+    released_bytes: usize,
+    granularity: usize,
+}
+impl HostPlane {
+    pub(super) fn detach_source(self) -> (CudaPinnedLease, DetachedPlane) {
+        let HostPlane {
+            host,
+            ticket,
+            bundle,
+            capacity,
+            source_owners_before_release,
+            source_owners_after_release,
+            vmm,
+            released_bytes,
+            granularity,
+        } = self;
+        (
+            host,
+            DetachedPlane {
+                ticket,
+                bundle,
+                capacity,
+                source_owners_before_release,
+                source_owners_after_release,
+                vmm,
+                released_bytes,
+                granularity,
+            },
+        )
+    }
+}
+impl DetachedPlane {
+    /// The D2H ticket that produced the copy (its destination twin is take-once).
+    pub(super) fn ticket(&self) -> &TransferTicket {
+        &self.ticket
+    }
+    pub(super) fn bundle(&self) -> &StateBundle {
+        &self.bundle
+    }
+    pub(super) fn capacity(&self) -> usize {
+        self.capacity
+    }
+    pub(super) fn reattach(self, host: CudaPinnedLease) -> HostPlane {
+        let DetachedPlane {
+            ticket,
+            bundle,
+            capacity,
+            source_owners_before_release,
+            source_owners_after_release,
+            vmm,
+            released_bytes,
+            granularity,
+        } = self;
+        HostPlane {
+            host,
+            ticket,
+            bundle,
+            capacity,
+            source_owners_before_release,
+            source_owners_after_release,
+            vmm,
+            released_bytes,
+            granularity,
+        }
+    }
+}
 pub(super) fn bundle(
     program: &ProgramIdentity,
     group: u32,
