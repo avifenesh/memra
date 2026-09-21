@@ -154,13 +154,14 @@ check("card at its 600 W limit", "600.00 W, 600.00 W" in card)
 check("build exit 0", (ROOT / "build" / "exit").read_text().strip() == "0")
 cells = sorted({re.sub(r"-retry\d+$", "", p.name) for p in ROOT.iterdir() if (p / "CELL.jsonl").exists()})
 print("  cells:", ", ".join(cells))
-check("seventeen cells captured", len(cells) == 17, str(len(cells)))
+check("nineteen cells captured (fourteen gates, gputests, faultgate and its matcher-fix rerun, the refused wc-pair sitting and wc-pair2)", len(cells) == 19, str(len(cells)))
 retried = [d.name for d in ROOT.glob("*-retry*") if d.is_dir() and (d / "CELL.jsonl").exists()]
 print("  captured on a retry (rig lock busy on the earlier attempts):", ", ".join(retried) or "none")
 for cell in cells:
     status, code, power = cell_status(cell)
     check(f"{cell}: collector captured the cell at 600 W", status in ("executed-not-qualified", "failed") and power[0]["power.limit"] == "600.00 W", f"status={status} exit={code}")
-    check(f"{cell}: ran the day-16 binary", binary in text(cdir(cell) / "command.log"))
+    # gputests runs the test binary, not memra-server: it prints the source SHA it was built from instead.
+    check(f"{cell}: ran the day-16 binary", (source in text(cdir(cell) / "command.log")) if cell == "gputests" else binary in text(cdir(cell) / "command.log"))
     check(f"{cell}: collector --validate exit 0", (ROOT / "validate.log").exists() and f"validate {cdir(cell).name} rc=0" in text(ROOT / "validate.log"))
 
 
@@ -202,7 +203,9 @@ def identity_pair(spec, label):
 
 off_log, on_log = identity_pair("default", "DEFAULT spec environment (draft-bearing entries over Option B's D2H)")
 if on_log is not None:
-    check("[default] both arms: the demoted entries were spec-boundary (draft-bearing) inserts", count(on_log, r"insert probation \(spec-boundary\)") >= 1 and count(off_log, r"insert probation \(spec-boundary\)") >= 1)
+    # main renamed the insert line between day 15 and day 16 (`insert probation (spec-boundary)` became
+    # `insert (spec-boundary)`); both spellings name the same publisher.
+    check("[default] both arms: the demoted entries were spec-boundary (draft-bearing) inserts", count(on_log, r"insert( probation)? \(spec-boundary\)") >= 1 and count(off_log, r"insert( probation)? \(spec-boundary\)") >= 1)
 identity_pair("plain", "MEMRA_SERVE_SPEC=0 (the day-13 plain surface, regression)")
 
 
@@ -276,7 +279,14 @@ def b_pair(gate, verdict_re):
         check(f"{gate} cells present", False)
         return
     off, on = verdicts(off_cell), verdicts(on_cell)
-    check(f"{gate}: verdict lines identical", off == on, f"{len(off)} lines")
+    # `busy_overlap_s` is a wall-clock measurement of the gate's own overlap window (21.659 s OFF, 21.661 s
+    # ON on day 16; equal to the millisecond on day 15 by chance); these boots have no host tier, so the
+    # door cannot reach it. Compared with the timing stripped, and bounded separately.
+    strip_busy = lambda v: [re.sub(r"busy_overlap_s=[\d.]+", "busy_overlap_s=<t>", l) for l in v]
+    check(f"{gate}: verdict lines identical (busy_overlap_s timing stripped)", strip_busy(off) == strip_busy(on), f"{len(off)} lines")
+    busy = [float(m.group(1)) for v in (off, on) for l in v for m in [re.search(r"busy_overlap_s=([\d.]+)", l)] if m]
+    if busy:
+        check(f"{gate}: busy_overlap_s agrees across arms within 50 ms", len(busy) == 2 and abs(busy[0] - busy[1]) < 0.05, f"{busy}")
     v = [l for l in on if re.search(verdict_re, l)]
     check(f"{gate}: verdict line present", len(v) >= 1, v[-1].strip() if v else "none")
     logs = lambda cell: sorted((ROOT / cell / "ev").rglob("*.log"))
@@ -302,11 +312,21 @@ else:
     check("gputests cell present", False)
 
 print("== kv-host-contract-fault-gate (door ON; demote and promote faults, one-shot each)")
+# The first sitting (`faultgate`, tree 25891baa9) ran the four cells with the gate's own matcher reading the
+# FIRST receipt in the log instead of one after the refusal: 2 FAILURE(S) on that matcher alone, every unwind
+# assertion ok. Kept as the record; the verdict is the rerun (`faultgate-fix`, tree 75573cad3, same binary).
 if captured("faultgate"):
     v = verdicts("faultgate")
-    check("faultgate: ALL GREEN", any("KV-HOST-CONTRACT-FAULT GATE: ALL GREEN" in l for l in v), f"{len(v)} lines")
-    check("faultgate: no FAIL line", not any(l.strip().startswith("FAIL:") for l in v))
-    ev = ROOT / "faultgate" / "ev"
+    bad = [l.strip() for l in v if l.strip().startswith("FAIL:")]
+    check("faultgate (first sitting): exactly the two matcher assertions failed, nothing about the unwind", len(bad) == 2 and all("a clean demote with a D2H receipt follows the refusal" in l for l in bad) and any("KV-HOST-CONTRACT-FAULT GATE: 2 FAILURE(S)" in l for l in v), " | ".join(bad))
+else:
+    check("faultgate first sitting present", False)
+if captured("faultgate-fix"):
+    v = verdicts("faultgate-fix")
+    check("faultgate-fix: ALL GREEN", any("KV-HOST-CONTRACT-FAULT GATE: ALL GREEN" in l for l in v), f"{len(v)} lines")
+    check("faultgate-fix: no FAIL line", not any(l.strip().startswith("FAIL:") for l in v))
+    check("faultgate-fix: ran the same day-16 binary on the matcher-fix tree", binary in text(cdir("faultgate-fix") / "command.log") and "75573cad3" in text(cdir("faultgate-fix") / "command.log"))
+    ev = ROOT / "faultgate-fix" / "ev"
     for cell, kind, seq in (("presubmit", "producer fence", 1), ("postpublish", "receipt", 2)):
         log = ev / f"{cell}-server.log"
         check(f"faultgate {cell}: one injected demote refusal then a receipt seq={seq}", count(log, rf"demote failed \(tier D2H {kind} refused: injected failure") == 1 and count(log, rf"contracts door D2H receipt: ticket issuer=\d+ seq={seq} ") == 1)
@@ -324,16 +344,20 @@ if captured("faultgate"):
             d2h = [int(RECEIPT.search(l).group(2)) for l in body if RECEIPT.search(l)]
             check("faultgate promote-postpublish: the aborted ticket's sequence number is consumed (the next tickets skip it: retired and acknowledged, nothing leaked)", len(set(seqs + d2h)) == len(seqs + d2h) and max(seqs + d2h) == len(seqs + d2h) + 1, f"h2d={seqs} d2h={d2h}")
 else:
-    check("faultgate cell present", False)
+    check("faultgate-fix cell present", False)
 
 print("== WC pair cell (OFF vs ON demote and promote wall times, N=5 per arm per order, one lock hold)")
+# The first sitting (`wc-pair`) was refused before any boot by the cell script's own `local` line (`label:
+# unbound variable` under set -u); kept as the record. The cell ran as `wc-pair2`.
 if captured("wc-pair"):
+    check("wc-pair (first sitting): refused before any boot by the script's unbound variable, no server booted", "label: unbound variable" in text(cdir("wc-pair") / "command.log") and not (ROOT / "wc-pair" / "ev" / "o1-off-server.log").exists())
+if captured("wc-pair2"):
     import subprocess
-    r = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "wc-pair.py"), str(cdir("wc-pair"))], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "wc-pair.py"), str(cdir("wc-pair2"))], capture_output=True, text=True)
     print("\n".join("    " + l for l in r.stdout.splitlines()))
-    check("wc-pair: replay PASS", r.returncode == 0 and "WC PAIR REPLAY: PASS" in r.stdout)
+    check("wc-pair2: replay PASS", r.returncode == 0 and "WC PAIR REPLAY: PASS" in r.stdout)
 else:
-    check("wc-pair cell present", False)
+    check("wc-pair2 cell present", False)
 
 print()
 print("DAY16 REPLAY:", "PASS" if not fails else f"{len(fails)} FAILURE(S): " + "; ".join(fails))
