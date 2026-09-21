@@ -144,17 +144,27 @@ chk() { # NAME CMD...
 }
 absent() { ! grep -q "$1" "$2"; }
 count_eq() { [ "$(grep -c "$1" "$2")" -eq "$3" ]; }
-after() { # $1 first-pattern $2 second-pattern $3 log: the first match of $2 comes after the first match of $1
+after() { # $1 literal $2 regex $3 log: the first match of regex $2 comes after the first line containing literal $1
     python3 - "$1" "$2" "$3" <<'PY'
 import re, sys
 a, b, log = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = open(log, errors="replace").read().splitlines()
-ia = next((i for i, l in enumerate(lines) if re.search(a, l)), None)
+ia = next((i for i, l in enumerate(lines) if a in l), None)
 ib = next((i for i, l in enumerate(lines) if re.search(b, l)), None)
 sys.exit(0 if ia is not None and ib is not None and ib > ia else 1)
 PY
 }
-has_choice() { python3 -c "import json,sys; sys.exit(0 if json.load(open('$1'))['choices'][0]['text'] else 1)"; }
+three_served() { # $1 evidence prefix: r1..r3 each carry a non-empty completion
+    python3 - "$1" <<'PY'
+import json, sys
+p = sys.argv[1]
+sys.exit(0 if all(json.load(open(f"{p}-r{i}.json"))["choices"][0]["text"] for i in (1, 2, 3)) else 1)
+PY
+}
+no_extra_refusal() { # $1 log: no host-tier refusal line beyond the injected one
+    [ "$(grep -cE '\[prefix-host\] (demote refused|promote refused|REFUSED|.*\(contracts door\): )' "$1")" -eq 0 ]
+}
+not_leaked() { ! grep -q 'Capacity' "$1" && ! grep -q 'leaked' "$1"; }
 
 cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     local name=$1 fault=$2 kind=$3 seq=$4 log="$EV/$1-server.log"
@@ -164,15 +174,15 @@ cell() { # $1 name $2 fault $3 refused-kind $4 expected next-receipt seq
     req "$P_B" "$EV/$name-r2.json"
     req "$P_C" "$EV/$name-r3.json"
     stop
-    chk "$name: three completions served" bash -c "has_choice '$EV/$name-r1.json' && has_choice '$EV/$name-r2.json' && has_choice '$EV/$name-r3.json'"
+    chk "$name: three completions served" three_served "$EV/$name"
     chk "$name: door ON with the transfer engine" grep -q "contracts door ON (MEMRA_KV_HOST_CONTRACTS=1).*KV plane D2H through the transfer engine" "$log"
     chk "$name: exactly one typed injected refusal, the $kind" count_eq "demote failed (tier D2H $kind refused: injected failure (MEMRA_KV_HOST_FAULT=$fault)); nothing demoted" "$log" 1
     chk "$name: the next demote completes with a D2H contract receipt after the refusal" after "demote failed (tier D2H $kind refused: injected" "contracts door D2H receipt: ticket issuer=[0-9]+ seq=$seq .* require=ok" "$log"
     chk "$name: the next demote publishes" after "demote failed (tier D2H $kind refused: injected" "\\[prefix-host\\] demote: " "$log"
     chk "$name: the tier never latched off" absent "TIER DISABLED" "$log"
     chk "$name: no entry was dropped as not whole (no quarantine)" absent "no longer whole" "$log"
-    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" bash -c "! grep -q 'Capacity' '$log' && ! grep -q 'leaked' '$log'"
-    chk "$name: no host-tier refusal line beyond the injected one" bash -c "[ \"\$(grep -cE '\\[prefix-host\\] (demote refused|promote refused|REFUSED|.*\\(contracts door\\): )' '$log')\" -eq 0 ]"
+    chk "$name: no ticket leaked (no Capacity refusal, no leaked wording)" not_leaked "$log"
+    chk "$name: no host-tier refusal line beyond the injected one" no_extra_refusal "$log"
 }
 
 cell presubmit contract-presubmit "producer fence" 1

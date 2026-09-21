@@ -10,7 +10,7 @@ nvidia-smi --query-gpu=name,power.limit,power.max_limit,driver_version --format=
 log() { echo "$(date -u +%FT%TZ) $*" >> $R/driver.log; }
 run() { local name=$1; shift; log "$name start"; bash $R/run-cell.sh "$name" "$@"; local rc=$?; log "$name rc=$rc"; }
 log "start binary $(sha256sum $R/bins/memra-server | cut -c1-16) source $(cat $R/build/source.txt)"
-mkdir -p $R/gputests
+# The collector creates its own --out; the cell writes its lock proof into it.
 run gputests 3000 1 -- bash $R/gputests-cell.sh @COLLECTOR_LOCK_FD@
 run faultgate 1800 1 -- bash $R/faultgate-cell.sh @COLLECTOR_LOCK_FD@ 256
 for arm in off on; do
