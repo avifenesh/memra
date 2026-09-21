@@ -5,13 +5,17 @@
 #   flag   : memra-server with `--experts-via-tier` on its argv (the day-18 shape; must now be refused)
 #   envon  : memra-server without the flag, MEMRA_KV_HOST_CONTRACTS=1 (the door as an environment variable)
 #   envbad : memra-server without the flag, MEMRA_KV_HOST_CONTRACTS=on (the documented parse refusal)
-# Environment (set by the driver, never hosts or ids): D19_R receipts root, D19_BINS binary dir, D19_TREE
-# worktree, D19_ART artifact, D19_LOCK the rig lock path, D19_PORT server port, D19_MOE_ENV extra env.
-# usage: day19-cell.sh serverdoor19 <lockfd>
+# Cell serverdoor19b (pre-registered after serverdoor19's result, DAY19.md): the same three arms with a host
+# tier budget in every arm (MEMRA_KV_HOST_MB=$D19_HOST_MB), the shape the door's ON boot line needs.
+# Environment (set by the driver, never hosts or ids): D19_R receipts root, D19_OUT the collector's --out dir
+# (ev/ lands inside it; serverdoor19 wrote ev/ under $D19_R/<cell>/ and it was relocated by hand), D19_BINS
+# binary dir, D19_TREE worktree, D19_ART artifact, D19_LOCK the rig lock path, D19_PORT server port,
+# D19_MOE_ENV extra env, D19_HOST_MB the host tier budget (serverdoor19b only).
+# usage: day19-cell.sh serverdoor19|serverdoor19b <lockfd>
 set -uo pipefail
 cell=$1; fd=$2
 : "${D19_R:?}" "${D19_BINS:?}" "${D19_TREE:?}" "${D19_LOCK:?}" "${D19_ART:?}" "${D19_PORT:?}"
-EV=$D19_R/$cell/ev
+EV=${D19_OUT:-$D19_R/$cell}/ev
 mkdir -p "$EV"
 cd "$D19_TREE" || exit 1
 python3 tools/tier-lock-proof.py --fd "$fd" --lock "$D19_LOCK" --owner collector > "$EV/LOCK.json"
@@ -20,7 +24,11 @@ sha256sum "$D19_BINS/memra-server" | tee "$EV/binary.sha256"
 sha256sum "$D19_ART" | tee "$EV/artifact.sha256"
 mark() { printf '%s\t%s\n' "$(date -u +%FT%T.%3NZ)" "$1" >> "$EV/marks.tsv"; }
 : > "$EV/marks.tsv"
-[ "$cell" = serverdoor19 ] || { echo "unknown cell $cell"; exit 2; }
+case $cell in
+serverdoor19) HOST_ENV=() ;;
+serverdoor19b) : "${D19_HOST_MB:?}"; HOST_ENV=("MEMRA_KV_HOST_MB=$D19_HOST_MB") ;;
+*) echo "unknown cell $cell"; exit 2 ;;
+esac
 . tools/port-guard.sh
 memra_port_guard day19-serverdoor "$D19_PORT" D19_PORT || exit 1
 if curl -s --max-time 1 "http://127.0.0.1:$D19_PORT/v1/models" >/dev/null 2>&1; then
@@ -36,7 +44,7 @@ boot() {
     [ "$door" != "-" ] && denv=("MEMRA_KV_HOST_CONTRACTS=$door")
     # shellcheck disable=SC2086
     env CUDA_VISIBLE_DEVICES=0 MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$D19_ART" "MEMRA_ADDR=127.0.0.1:$D19_PORT" \
-        MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 ${D19_MOE_ENV:-} "${denv[@]}" "$D19_BINS/memra-server" "$@" >"$log" 2>&1 &
+        MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 ${D19_MOE_ENV:-} "${HOST_ENV[@]}" "${denv[@]}" "$D19_BINS/memra-server" "$@" >"$log" 2>&1 &
     local pid=$!
     local ready=0
     for _ in $(seq 1 240); do
@@ -68,4 +76,4 @@ PYEOF
 boot flag   -  --experts-via-tier
 boot envon  1
 boot envbad on
-echo "serverdoor19 cell done: flag rc=$(cat "$EV/flag.exit") envon rc=$(cat "$EV/envon.exit") envbad rc=$(cat "$EV/envbad.exit")"
+echo "$cell cell done: flag rc=$(cat "$EV/flag.exit") envon rc=$(cat "$EV/envon.exit") envbad rc=$(cat "$EV/envbad.exit")"

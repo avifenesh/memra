@@ -60,7 +60,7 @@ def arm(ev, label):
 
 def main(cell):
     ev = cell / "ev"
-    print(f"== serverdoor19: {cell}")
+    print(f"== {cell.name}: {cell}")
     cap = cell / "command.capture.json"
     if check(cap.exists(), "command.capture.json present"):
         c = json.loads(cap.read_text())
@@ -94,7 +94,7 @@ def main(cell):
             f"envon_request_ok={on['req']} envon_door_line={on_line} envon_exit={on['rc']} envbad_exit={bad['rc']} "
             f"envbad_refused={bad_line} envbad_ready={bad['ready']} -> {verdict}")
     print(line)
-    print(f"DAY19 REPLAY serverdoor19: {'PASS' if all(checks) else 'FAIL'} ({len(checks)} checks)")
+    print(f"DAY19 REPLAY {cell.name}: {'PASS' if all(checks) else 'FAIL'} ({len(checks)} checks)")
     return 0 if all(checks) else 1
 
 

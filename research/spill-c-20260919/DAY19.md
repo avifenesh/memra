@@ -229,3 +229,52 @@ under the read-only artifact dir by the brief's layout; a drafter export directo
 so whether one is staged there is unknown to this lane (not inspected). No gate boots a DFlash drafter
 on the card today (`HOSTPREFIX-DOOR.md`), so even with the artifact the cell needs the gate to grow a
 drafter arm first. No cell fits today; nothing run.
+
+## Cell `serverdoor19` result (local RTX 5090, replay `DAY19 REPLAY serverdoor19-retry4: FAIL (16 checks)`)
+
+`rtx5090-day19/serverdoor19-retry4/` (attempt 4: attempts 0 to 3 found `/tmp/memra-5090.lock` held by
+another lane and slept 120 s each, `lock-retries.log`; no holder was inspected or signalled), binary
+`043cac6259…` built from `319f1ad58` (the fixed tree; `ev/tree.sha`, `ev/binary.sha256`), the Qwen3.5-9B
+NVFP4 MTP GGUF `52c9cceb…`, port behind the guard, one hold 21:05:42Z to 21:05:55Z, 56..70 C, 147 W peak.
+Verbatim: `SERVERDOOR19 rule flag_exit=2 flag_refused=True flag_booted=False flag_ready=False
+flag_door_lines=0 envon_ready=True envon_request_ok=True envon_door_line=False envon_exit=0 envbad_exit=1
+envbad_refused=True envbad_ready=False -> FAIL`. Fifteen of sixteen clauses green; the red one is `envon arm
+log carries the door ON boot line`.
+
+The flag arm is the question the lead asked, and it reads as pre-registered: the whole log is one line,
+`[server] FATAL: unknown argument "--experts-via-tier" refused at boot; accepted arguments: --version | -V |
+--gen-key <tenant> [--lane interactive|batch] [--rate-limit N] [--keys <path>] | --revoke-key <prefix>
+[--keys <path>]`, exit 2 within 2.0 s, no build identity line, never ready (day 18 on the same shape:
+`flag_refused=False flag_silently_accepted=True`, ready in 4.0 s, served). `envbad` reads as documented:
+`[server] FATAL: worker init failed: MEMRA_KV_HOST_CONTRACTS="on" refused: the host tier contracts door
+takes exactly `1` (on) or `0` (off, the default); it does not fall back to off`, exit 1, never ready.
+
+**Why the ON clause is red, from the log, not inferred.** The `envon` log line 14 is
+`[kv-host-contracts] MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot (MEMRA_KV_HOST_MB=0):
+nothing to route, no program identity built`: the door engaged and said, as its own documented no-tier
+line, that there was no host tier to arm. The day-18 `serverdoor` shape, reused verbatim, never set
+`MEMRA_KV_HOST_MB` (the door was not that cell's subject), and `worker.rs` builds the tier context only
+under `kv_host_contracts && hpx.budget > 0`, so the `[prefix-host] contracts door ON ...` line this
+clause names cannot appear on that shape. That is a shape error in this cell's pre-registration, not a
+door defect and not a matcher defect; the verdict stands as `FAIL` and the rule is not touched. The
+receipts also record one relocation: the cell wrote `ev/` under `rtx5090-day19/serverdoor19/` (the cell
+name) while the collector's capture landed in `serverdoor19-retry4/` (the retry's `--out`); `ev/` was
+moved under the capture dir by hand with no content change (`git mv`-free, untracked at the time), and
+`day19-cell.sh` now takes `D19_OUT` so the b cell writes inside the collector dir. Clippy on the touched
+crate ran on this host during the hold (21:04:34Z to 21:07:04Z, under the CPU quota); the cell reads no
+timing, the regime is in the capture.
+
+### Cell `serverdoor19b` (pre-registered here, before its run)
+
+**Question.** The same question, on the shape the door's ON line needs: with a host tier budget in every
+arm, does the flag refusal hold and does `MEMRA_KV_HOST_CONTRACTS=1` arm the tier and serve?
+
+**Shape.** `day19-cell.sh serverdoor19b`: the `serverdoor19` shape with `MEMRA_KV_HOST_MB=8192` (the
+identity gate's default, `tools/kv-host-spill-identity-gate.sh` `HOST_MB`) in all three arms; everything
+else identical (same binary, artifact, port, environment, one collector hold on `/tmp/memra-5090.lock`).
+
+**Rule.** The `serverdoor19` rule, unchanged, every clause required (`day19-replay.py`, the same file):
+PASS = `flag_refused; env_door_documented`. Expectation from source: the `envon` arm prints
+`[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): 1 model program identities, ...` after the
+model loads (one model, no vision tower, a GGUF), then serves; the other two arms read as in
+`serverdoor19`. N=1 per arm, pass/fail, no timing read.
