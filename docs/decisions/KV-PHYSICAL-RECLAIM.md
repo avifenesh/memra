@@ -9,6 +9,11 @@ and `DAY10.md` (one RTX PRO 6000 Blackwell).
 the PRO card reports `not-applicable-pooled`. B's verifier prints the 32k label with a dash; the wording here
 follows the writing rule, the content is unchanged.
 
+**G1 as of 2026-09-21 (Day 11 to 12 below):** the 32k five-cycle series printed, on one RTX PRO 6000
+Blackwell and on the local RTX 5090 Laptop GPU, verbatim
+`ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles)` under lead ruling 6. Every
+single-roundtrip 32k cell before it stays `not G1 PASS`. Still a gate-only door; nothing promoted.
+
 ## Question
 When the tiered-KV materializer demotes a prefix (D2H via `memra_engine::tier_transfer::CudaTransfers`)
 and the governor drops the device charge, does device memory actually come back?
@@ -56,7 +61,94 @@ nonzero residual is recorded with its class and bytes but does not qualify; lift
 needs a lead ruling backed by evidence on both card classes. The gate prints the raw equality field and the
 residual bytes and class (`kv_tier_gate/reclaim_contract.rs`); a pooled run publishes
 `g1_reclaim_qualified=not-applicable-pooled` and can never carry the label. (e) is a tightening, never a
-relaxation, of (a) to (d).
+relaxation, of (a) to (d). Lead ruling 6 (Day 11 to 12 below) lifts (e) for exactly one series shape.
+
+## Day 11 to 12: the residual classified by its series, and ruling 6
+
+Day 11 (`DAY11.md`, source `1566d4f81`) added `--reclaim-cycles N`: N demote/restore roundtrips in ONE
+process on ONE cache under the same tokenwise program, with the per-cycle receipt set under `cycle-<k>/`
+and the series in `reclaim-cycles.tsv` / `reclaim-cycles.txt`. Both card classes ran the 32k series with
+N=5 (`--case active --context 32768 --tiers host --same-program --kv-allocator vmm --reclaim-diagnostic
+--reclaim-cycles 5`, N=1 cell each, collector-locked, 250 ms telemetry; no timing compared between the
+cards). Bytes verbatim from `DAY11.md`:
+
+One RTX PRO 6000 Blackwell (96 GB, 600/600 W):
+
+| Cycle | Free before demote | Free after demote | Free after restore | Released chunks | Reclaim delta | Reacquired | Residual | Restore residual | (a)-(c) | per-cycle G1 line |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 85,313,847,296 | 86,217,719,808 | 85,313,847,296 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+| 2 | 85,313,847,296 | 86,217,719,808 | 85,313,847,296 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+| 3 | 85,313,847,296 | 86,217,719,808 | 85,313,847,296 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+| 4 | 85,313,847,296 | 86,217,719,808 | 85,313,847,296 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+| 5 | 85,313,847,296 | 86,217,719,808 | 85,313,847,296 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+
+RTX 5090 Laptop GPU (local development rig, `power.max_limit 175.00 W`, no frozen bundle of its own):
+
+| Cycle | Free before demote | Free after demote | Free after restore | Released chunks | Reclaim delta | Reacquired | Residual | Restore residual | (a)-(c) | per-cycle G1 line |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 8,784,248,832 | 9,688,121,344 | 8,784,248,832 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+| 2 | 8,784,248,832 | 9,688,121,344 | 8,784,248,832 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+| 3 | 8,784,248,832 | 9,688,121,344 | 8,784,248,832 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+| 4 | 8,784,248,832 | 9,688,121,344 | 8,784,248,832 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+| 5 | 8,784,248,832 | 9,688,121,344 | 8,784,248,832 | 905,969,664 | 903,872,512 | 903,872,512 | 2,097,152 | 0 | true | `false` |
+
+On both cards `free_before_drift_bytes` is 0 in every cycle, the mapped-VA probe reads
+`mapped_va_release_delta_bytes=0`, `mapped_unmap_delta_bytes=0`, `mapped_va_roundtrip_equal=true` in every
+cycle, every cycle's `restored-prefix-state.tsv` equals the suspended `prefix-state.tsv`, and the series class
+is `one-time-driver-mapping-metadata`. Day-11 verdicts, verbatim:
+
+```text
+pro-single/cycles-32768: ACTIVE-32K physical reclaim/restore bit-identical across 5 cycles, residual 2097152 B each cycle, class one-time-driver-mapping-metadata, not G1 PASS
+rtx5090/cycles-32768: ACTIVE-32K physical reclaim/restore bit-identical across 5 cycles, residual 2097152 B each cycle, class one-time-driver-mapping-metadata, not G1 PASS
+```
+
+**Lead ruling 6 (day 11, `research/spill-lead-20260919/INTEGRATION-DAY11.md`), verbatim:** "Lift tightening
+(e) for one class, under the series condition only. The decision record pre-registered the lift: 'lifting (e)
+for a specific class needs a lead ruling backed by evidence on both card classes'. Both card classes now
+carry `one-time-driver-mapping-metadata` from a 5-cycle series with drift 0. Ruling:
+`g1_reclaim_qualified=true` with a nonzero residual is allowed only when all of: the run is a
+`--reclaim-cycles N` series with N >= 5; `residual_series_class = one-time-driver-mapping-metadata`; (a) to
+(c) hold in every cycle; the restored prefix is bit-identical in every cycle; baseline drift is 0. The label
+becomes `ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, N cycles)`. A single roundtrip
+with a nonzero residual, a series shorter than 5, any other class, and any pooled run stay `not G1 PASS` /
+`false` / `not-applicable-pooled`. Criteria (a) to (d) are unchanged; (e) stays in force for every other
+shape. B day 12 lands the gate line, `verify-day12.py`, the decision-record paragraph (evidence table, this
+ruling), the TESTING.md line, and reruns the 32k series on both cards to produce the label; the label exists
+only when the rerun prints it."
+
+Implementation (day 12, `kv_tier_gate/reclaim_contract.rs::series_verdict`, `active.rs::write_cycles`, the
+gate status line; offline `research/spill-b-20260919/verify-day12.py`; CPU red arms
+`crates/memra-tier/tests/reclaim/day12.rs`): the per-cycle line is untouched; the series
+`g1_reclaim_qualified` and the printed label come from the series verdict alone; `reclaim-cycles.txt` records
+`series_min_cycles=5` and `series_label` (the label, or `not-printed`). The `K` tag follows the committed
+context, so a 16k series cannot print `32K`. Criteria (a) to (d) are unchanged and tightening (e) stays in
+force for every other shape: a single roundtrip with a nonzero residual, a series shorter than 5, any other
+class, a drifting baseline, a differing restore and any pooled run stay `false` / `not-applicable-pooled`.
+
+**Lead ruling 7 (8k cycles control), open item.** The 8k series control refused on both cards in cycle 1,
+after the full prefill, inside the mapped-VA probe (`KvPlane::probe_demoted_va_release`): for the small 8k
+planes (K 5 granules, V 3) the driver returned a different address when asked to re-reserve the original
+base, the probe freed the stray reservation and refused, as designed, verbatim
+`REFUSED: diagnostic could not re-reserve original VMM address` (PRO twice, laptop once; deterministic).
+Fail-closed: no token executed against the suspended cache, no `ACTIVE.txt`, no cycle row. No probe or CLI
+change. The 8k evidence stays the single-roundtrip `ACTIVE-8K G1 PASS` with residual 0 on both cards (day 10
+PRO, day 9 rented RTX 5090). Revisited only if the door is promoted at decide-by.
+
+**Day 12 rerun (`DAY12.md`, gate source `c7dd20cc5`, N=1 cell per card, no timing compared).** Both cards
+repeated the day-11 bytes exactly: free before demote, after demote and after restore identical to the tables
+above in every cycle (PRO 85,313,847,296 / 86,217,719,808 / 85,313,847,296; laptop 8,784,248,832 /
+9,688,121,344 / 8,784,248,832), released 905,969,664 B, residual 2,097,152 B, restore residual 0, drift 0,
+restored prefix bit-identical in every cycle, class `one-time-driver-mapping-metadata`, series
+`g1_reclaim_qualified=true`. Printed status line on both cards, verbatim:
+
+```text
+ACTIVE-32K G1 PASS (classified one-time-driver-mapping-metadata, 5 cycles) committed=32768 generated=128
+```
+
+The PRO continuation matches the frozen target-card bundle; the laptop card has no frozen bundle of its own
+(the 128 generated tokens match the rented RTX 5090 day-6 bundle, logits and state differ), so its
+continuation identity is in-process only. The per-cycle `g1_reclaim_qualified` column is `false` in every
+cycle on both cards: the lift is the series verdict, nothing else.
 
 ## Scope
 The gate constructs the cache directly with VMM planes (`Cache::new_with_allocator(…, KvAllocator::Vmm)`;

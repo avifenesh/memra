@@ -1,12 +1,12 @@
 //! Day-ten CPU cells for the experts-via-tier budget door: the pure GPU slot budget,
 //! the typed refusal, and the gate binaries' argv parse. No CUDA, no Engine.
 use super::engine_bridge::{
-    ExpertBankBudget, ExpertBankRefusal, expert_bank_cli, gpu_bank_budget, gpu_bank_slots,
-    gpu_slot_bytes, host_bank_budget, refusal_reason,
+    ExpertBankBudget, ExpertBankRefusal, SLOT_TAIL_PAD_BYTES, expert_bank_cli, gpu_bank_budget,
+    gpu_bank_slots, gpu_slot_bytes, host_bank_budget, refusal_reason,
 };
 
 const RECORD: u64 = 860_160;
-const SLOT: u64 = RECORD + 8;
+const SLOT: u64 = RECORD + SLOT_TAIL_PAD_BYTES as u64;
 const MINIMUM: u64 = 8 * SLOT;
 const HARD: u64 = 64 * 1024 * 1024 * 1024;
 
@@ -174,6 +174,30 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         ])),
         Err("--expert-bank-gpu-bytes given more than once".to_owned())
     );
-    // A look-alike prefix is not the flag.
-    assert!(expert_bank_cli(argv(&["--experts-via-tier", "--expert-bank-gpu-bytesx=1"])).is_err());
+    // A key that merely starts with a flag name is a usage error, never a silent ignore
+    // and never the flag it resembles.
+    for junk in [
+        "--expert-bank-gpu-bytesx=1",
+        "--expert-bank-host-bytes-x=1",
+        "--expert-bank-gpu-byte=1",
+        "--expert-bank-gpu-bytes-",
+        "--experts-via-tier=1",
+        "--experts-via-tiers",
+    ] {
+        let err = expert_bank_cli(argv(&["--experts-via-tier", junk])).unwrap_err();
+        assert!(
+            err.contains("unknown expert bank flag") || err == "--experts-via-tier takes no value",
+            "{junk}: {err}"
+        );
+        assert!(!err.contains("given more than once"), "{junk}: {err}");
+    }
+    assert_eq!(
+        expert_bank_cli(argv(&["--experts-via-tier", "--expert-bank-host-bytes-x=1"])),
+        Err("unknown expert bank flag \"--expert-bank-host-bytes-x\"; expected \
+             --experts-via-tier, --expert-bank-host-bytes=<bytes> or --expert-bank-gpu-bytes=<bytes>"
+            .to_owned())
+    );
+    // The exact key still parses next to a look-alike-free argv, and the slot pad is shared.
+    assert_eq!(SLOT_TAIL_PAD_BYTES, 8);
+    assert_eq!(gpu_slot_bytes(RECORD), Some(RECORD + 8));
 }

@@ -154,7 +154,9 @@ impl Default for ExpertBankBudget {
 }
 
 /// The only installer error the gate binaries map to the refusal token contract
-/// (final stderr line `REFUSED: <reason>`, exit 2). Every other error stays a failure.
+/// (final stderr line `REFUSED: <reason>`, exit 2): a budget the bank cannot hold, or an
+/// expert catalog the plan and tensor contract cannot bind for the artifact. Every other
+/// error stays a failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExpertBankRefusal(pub String);
 impl std::fmt::Display for ExpertBankRefusal {
@@ -171,38 +173,47 @@ pub fn refusal_reason<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<
 }
 
 /// Parse the door and its budgets from argv. `Ok(None)` when the door is absent;
-/// a budget flag without `--experts-via-tier`, a malformed or repeated value, or a
-/// bare flag is a usage error (a failure, not a refusal).
+/// a budget flag without `--experts-via-tier`, a malformed or repeated value, a bare
+/// flag, or a key that merely starts with a flag name is a usage error (a failure, not
+/// a refusal). Keys match exactly: `--expert-bank-host-bytes-x=1` is not the host flag.
 pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     args: I,
 ) -> std::result::Result<Option<ExpertBankBudget>, String> {
     const DOOR: &str = "--experts-via-tier";
     const HOST: &str = "--expert-bank-host-bytes";
     const GPU: &str = "--expert-bank-gpu-bytes";
+    const FAMILY: &str = "--expert-bank-";
     let mut door = false;
     let mut host = None;
     let mut gpu = None;
     for arg in args {
-        if arg == DOOR {
-            door = true;
-            continue;
-        }
-        let (name, slot) = if arg.starts_with(HOST) {
-            (HOST, &mut host)
-        } else if arg.starts_with(GPU) {
-            (GPU, &mut gpu)
-        } else {
-            continue;
+        let (key, value) = match arg.split_once('=') {
+            Some((key, value)) => (key, Some(value)),
+            None => (arg.as_str(), None),
         };
-        let value = arg
-            .strip_prefix(name)
-            .and_then(|rest| rest.strip_prefix('='))
-            .ok_or_else(|| format!("{name} expects {name}=<bytes>"))?;
+        let slot = match key {
+            DOOR => {
+                if value.is_some() {
+                    return Err(format!("{DOOR} takes no value"));
+                }
+                door = true;
+                continue;
+            }
+            HOST => &mut host,
+            GPU => &mut gpu,
+            _ if key.starts_with(FAMILY) || key.starts_with(DOOR) => {
+                return Err(format!(
+                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes> or {GPU}=<bytes>"
+                ));
+            }
+            _ => continue,
+        };
+        let value = value.ok_or_else(|| format!("{key} expects {key}=<bytes>"))?;
         let bytes = value
             .parse::<u64>()
-            .map_err(|_| format!("{name} expects an unsigned byte count, got {value:?}"))?;
+            .map_err(|_| format!("{key} expects an unsigned byte count, got {value:?}"))?;
         if slot.replace(bytes).is_some() {
-            return Err(format!("{name} given more than once"));
+            return Err(format!("{key} given more than once"));
         }
     }
     if !door {
@@ -232,10 +243,16 @@ pub fn host_bank_budget(
     })
 }
 
+/// Tail pad `MoeSlotCache` allocates after every slot: wide expert dots may issue an
+/// aligned read past the final block. One definition for the native slot sizing
+/// (`moe_cache.rs` imports it) and for the door's budget arithmetic below; it lives here
+/// because the tier bank tests compile this file verbatim.
+pub const SLOT_TAIL_PAD_BYTES: usize = 8;
+
 /// Bytes one native GPU slot costs for a record of `max_record` bytes: the record
-/// plus the eight-byte tail pad `MoeSlotCache` allocates for aligned reads.
+/// plus `SLOT_TAIL_PAD_BYTES`.
 pub fn gpu_slot_bytes(max_record: u64) -> Option<u64> {
-    max_record.checked_add(8)
+    max_record.checked_add(SLOT_TAIL_PAD_BYTES as u64)
 }
 
 /// Qualification-only GPU slot budget for the door. `hard_bytes` is the machine hard
