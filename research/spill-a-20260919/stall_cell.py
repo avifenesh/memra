@@ -31,7 +31,7 @@ WORDS = ("river stone maple copper harbor signal ladder winter garden meadow anc
          "delta ember falcon granite hollow island jasper kettle lantern marble nickel orchid pepper "
          "quartz ribbon saddle timber umber velvet walnut yellow zephyr basket candle dagger engine "
          "fabric gutter hammer ingot jacket kernel locket magnet needle oyster pillar quiver rocket "
-         "socket tablet uplink vessel window yonder zenith almond bridge cobalt dinghy").split()
+         "socket tablet uplink vessel window yonder zenith almond bridge cobalt dinghy pewter").split()
 assert len(WORDS) == 64
 
 P_A = ("You are indexing the survey logs of a coastal tide-gauge network. For each of the twelve "
