@@ -1032,6 +1032,52 @@ re-ran on the merged tree (`integ27-cpu-battery-merged615/`): fmt, memra-server 
 only on the battery's own summary whitespace (stripped); local 5090 serve-smoke `serve-smoke: 0 failed`
 (`integ27-serve-smoke-5090-merged615/`).
 
+## integ28 (`lane/spill-integ28-20260922`): C day 20, memra#365 (the DFlash prefill tap bounded)
+Lane tip merged: C `f41ccd874` on main `8e94a480b` (#619), clean. Engine change in `crates/memra-engine/src/dflash.rs`
+(the standalone qwen entry `generate_spec_dspark` primes through the existing serving walker `prime_dflash_taps` with
+its one 4,096-row chunk sink plus the 256-row carry, instead of allocating a whole-prompt tap sink and holding the
+monolithic prime's whole-prompt hiddens; the carry copy's `expect` becomes a typed refusal when a row would be read
+before the trunk wrote it or beyond the chunk the trunk wrote; one CPU test on the chunk bookkeeping over thirteen
+prompt lengths) and a receipt line in `dspark_q38_gate.rs`. No kernel, value, flag, dependency or serving-path change;
+the serving cold and resume paths were already bounded by #370.
+
+**Census (DAY20, before any change).** Tap = `n_taps x hidden` f32 per prompt token = 102,400 bytes on the 27B with
+the five-tap q38 DFlash2 export; `131,070 x 102,400 = 13,421,568,000`, the issue's number exactly; written per tapped
+layer per prime chunk by `HybridModel::dflash_tap`, read once by drafter ingestion in 256-row windows in prompt order,
+freed after ingestion. The whole-prompt sink survived only in the standalone entry points (`generate_spec_dspark`,
+and `generate_spec_dflash` capped at 2,048 rows by its window assert); the qwen one also held the monolithic prime's
+whole-prompt hiddens (2.68 GB at 131k).
+
+**Before, verbatim** (local RTX 5090 Laptop GPU, `tapladder20`, `dspark_q38_gate`, 27B NVFP4/Q5K plus q38 DFlash2,
+ngen 32, `MEMRA_ALLOC_TRACE=1`): 8,194 tokens `EXACT`, `[alloc-trace] 839065600 bytes from
+crates/memra-engine/src/dflash.rs:3977`, `acceptance 28/28`, `spec_sha256=72cf1985...3162ef22`, peak 21,607 MiB;
+16,382 `EXACT`, tap `1677516800`, `28/28`, `0d6449b2...f047492e`, peak 22,759; 32,759: tap `3354521600` allocated,
+then `[alloc-trace] 100663296 bytes from crates/memra-engine/src/lib.rs:33856` and `Error:
+DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")` (the GDN scan transient starved by the resident tap);
+65,507: `[alloc-trace] 6707916800 bytes from crates/memra-engine/src/dflash.rs:3977` then the same OOM (the tap
+itself); 131,004: the gate's plain control refused first (`hybrid_forward.rs:6578`), before any DFlash allocation.
+
+**After, verbatim** (`tapladder20b`, same rungs, `DAY20 REPLAY tapladder20b: PASS (9 checks) -> identity; bounded`):
+shared rungs same `spec_sha256`, `spec_len=32`, `acceptance 28/28`, `EXACT`; `[dflash-taps] base=0 rows=8194
+max_chunk_rows=4098 chunk_tap_bytes=419635200 carry_bytes=26214400 former_full_tap_bytes=839065600`, `rows=16382 ...
+chunk_tap_bytes=419430400 ... former_full_tap_bytes=1677516800`; 32,759 and 65,507 now `EXACT`
+(`chunk_tap_bytes=419430400 carry_bytes=26214400`, former `3354521600` and `6707916800`), peaks 22,215 and 23,609 MiB
+where the before died at 23,961 and 23,958; 131,004 refuses in the plain control as before (the named resource moved,
+as pre-registered). Gates on the changed binary: `test result: ok. 57 passed`, clippy `-D warnings`,
+`SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, `A4 CONTINUATION GATE: PASS`. Lead reading on the one-program law: the
+standalone entry moved from the monolithic prime to the chunked serving walker, and the two shared rungs read the
+same `spec_sha256` and acceptance on both sides, which is the identity proof the law asks for at those lengths; the
+gate's identical digests are the receipt. Named, not done: the 131k rung needs a control that fits this card; no
+before-side `[dflash-oracle]` digest existed for the standalone path (today's are the baseline); not run on the target
+card (device-independent bookkeeping). memra#365 comment posted; the issue's serving 128k and 262k cells stay with
+#370 and #377; the issue stays open for those.
+
+Battery (`integration-day12/integ28-cpu-battery/`, CPUQuota 1200 percent): fmt, portable suites, memra-server suite,
+clippy, censuses, collector pytest, engine CPU lib tests, engine clippy `-D warnings`, marker census, workflow keys,
+perf board, diff-check: rc=0; C's replay first ran without its arguments (rc=1, my invocation), then with the
+documented before and after evidence dirs and the five rung word counts: `DAY20 REPLAY tapladder20b: PASS (9 checks)
+-> identity; bounded`. Local 5090 `tools/serve-smoke.sh`: `serve-smoke: 0 failed`.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

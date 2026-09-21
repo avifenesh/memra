@@ -229,7 +229,21 @@ fn apply_tap_batch_op(
             source,
             destination,
         } => {
-            let taps = taps.expect("copy requires a live chunk sink");
+            // A copy reads the chunk the trunk just wrote; refuse by name if there is no
+            // live chunk sink or the source lies past the rows it holds (a row read before
+            // it is written), instead of panicking or reading a stale row.
+            let Some(taps) = taps else {
+                return Err("DFlash tap carry: copy requested with no live chunk sink (a tap row would be read before the trunk wrote it)".into());
+            };
+            if source.end * width > taps.len() {
+                return Err(format!(
+                    "DFlash tap carry: copy of rows {}..{} exceeds the {}-row chunk sink the trunk wrote",
+                    source.start,
+                    source.end,
+                    taps.len() / width.max(1)
+                )
+                .into());
+            }
             e.copy_view_into(
                 batch,
                 destination * width,
@@ -3970,18 +3984,34 @@ impl crate::hybrid::HybridModel {
         );
         let mut cache = Cache::new(e, &self.cfg, max_ctx)?;
 
-        // ---- prime with taps armed (chunked prime writes at chunk offsets via sink.base) ----
+        // ---- prime with taps armed: the serving walker (memra#365, lane/spill-c day 20) ----
+        // One trunk-chunk sink plus the 256-row carry, every chunk's tap rows ingested before
+        // the next chunk is primed (`prime_dflash_taps`, the path #370 bounded for serving).
+        // The former whole-prompt sink (`tp x n_taps x n_embd` f32: 13,421,568,000 bytes at
+        // 131,070 tokens on the 27B) and the monolithic prime's `tp x n_embd` hiddens are gone.
+        // Same chunk grid (one `prime_cache` call per `prime_chunk_ranges` range, each a
+        // single internal chunk with the request-absolute `seq_end`), same 256-row ingest
+        // partition at the same absolute positions: the tap values, the draft KV and the
+        // stream are bit-identical to the whole-buffer path. No split, no boundary capture
+        // (standalone), GDN chunking untouched.
         let tp = prompt.len();
-        cache.dflash_taps = Some(DflashTapSink {
-            layer_ids: c.target_layer_ids.clone(),
-            buf: e.uninit(tp * n_taps * n_embd)?,
-            hidden: n_embd,
-            t: tp,
-            base: 0,
-            origin: 0,
-        });
         let t_prime = std::time::Instant::now();
-        let (logits, _h_seed, _hiddens) = self.prime_cache(e, prompt, &mut cache, 0)?;
+        let mut dkv = DflashKv::new(e, &draft.cfg, max_ctx)?;
+        let mut oracle = crate::alloc_trace_on().then(DflashPrimeOracle::default);
+        let mut boundary: Option<crate::spec::SpecBoundaryCapture> = None;
+        let logits = self.prime_dflash_taps(
+            e,
+            draft,
+            &mut cache,
+            &mut dkv,
+            prompt,
+            None,
+            &mut boundary,
+            oracle.as_mut(),
+        )?;
+        if let Some(oracle) = oracle {
+            oracle.finish(e, tp, &logits, None)?;
+        }
         // Boundary token: greedy takes the argmax (byte contract); sampled draws it from
         // the request's own filtered target through the session Philox stream — the same
         // shipped composition the frspec route uses (sample_check arm 9 oracles it).
@@ -3996,23 +4026,6 @@ impl crate::hybrid::HybridModel {
             )?,
             None => crate::forward::argmax(&logits) as u32,
         };
-        let mut dkv = DflashKv::new(e, &draft.cfg, max_ctx)?;
-        {
-            let taps = cache.dflash_taps.take().unwrap();
-            let n_taps_h = n_taps * n_embd;
-            let mut r0 = 0usize;
-            while r0 < tp {
-                let t_c = (tp - r0).min(256);
-                let tv = e.view(&taps.buf, tp * n_taps_h);
-                let win = tv.slice(r0 * n_taps_h..(r0 + t_c) * n_taps_h);
-                let mut chunk = e.uninit(t_c * n_taps_h)?;
-                e.copy_view_into(&mut chunk, 0, &win, t_c * n_taps_h)?;
-                let f = draft.ctx_features(e, &chunk, t_c)?;
-                let pos_c: Vec<i32> = ((r0 as i32)..(r0 + t_c) as i32).collect();
-                draft.ingest_ctx(e, &mut dkv, &f, &pos_c, t_c)?;
-                r0 += t_c;
-            }
-        }
         let mut ctx_len = tp;
         e.stream().synchronize()?;
         crate::PRIME_NANOS.store(
@@ -7876,6 +7889,82 @@ mod dflash_tap_oracle_tests {
                     }
                 }
             }
+        }
+    }
+
+    /// The standalone entry point's bookkeeping (memra#365, day 20): every Copy reads only
+    /// rows of the chunk the trunk just wrote, at most 255 rows survive a chunk edge (in the
+    /// carry, never in a chunk sink), and the ingested batches are exactly the whole-buffer
+    /// path's `(0..tp).chunks(256)` in order, so the drafter sees the same rows in the same
+    /// batches at the same absolute positions.
+    #[test]
+    fn standalone_prime_consumes_each_chunk_before_the_next_and_keeps_the_256_row_partition() {
+        fn grid(tp: usize) -> Vec<(usize, usize)> {
+            // the single-device serial grid: 4096-row chunks, a sub-16 tail folded into the last
+            let (mut ranges, mut start) = (Vec::new(), 0usize);
+            while start < tp {
+                let mut end = (start + 4096).min(tp);
+                if tp - end > 0 && tp - end < 16 {
+                    end = tp;
+                }
+                ranges.push((start, end));
+                start = end;
+            }
+            ranges
+        }
+        for tp in [
+            16, 255, 256, 257, 4096, 4097, 4111, 4112, 8192, 8194, 16382, 32759, 65507,
+        ] {
+            let mut carry = TapBatchCarry::new(tp, 0);
+            let mut ingested: Vec<std::ops::Range<usize>> = Vec::new();
+            let mut written_rows = 0usize;
+            for (start, end) in grid(tp) {
+                let rows = end - start;
+                let mut copied_from_this_chunk = 0usize;
+                carry
+                    .chunk(rows, |op| -> Result<(), ()> {
+                        match op {
+                            TapBatchOp::Copy { source, .. } => {
+                                // never past the rows the trunk wrote for THIS chunk
+                                assert!(
+                                    source.end <= rows,
+                                    "tp={tp} chunk {start}..{end} copy {source:?}"
+                                );
+                                copied_from_this_chunk += source.len();
+                            }
+                            TapBatchOp::Ingest(positions) => {
+                                // only rows already copied can be ingested
+                                assert!(positions.end <= start + copied_from_this_chunk);
+                                ingested.push(positions);
+                            }
+                        }
+                        Ok(())
+                    })
+                    .unwrap();
+                written_rows += rows;
+                // the whole chunk was consumed into the carry before the next chunk is primed;
+                // what survives the edge is the carry's pending rows, under one batch
+                assert_eq!(copied_from_this_chunk, rows, "tp={tp} chunk {start}..{end}");
+                assert!(carry.pending < 256);
+                let ingested_rows: usize = ingested.iter().map(|r| r.len()).sum();
+                assert_eq!(ingested_rows + carry.pending, written_rows);
+            }
+            carry
+                .flush(|op| -> Result<(), ()> {
+                    match op {
+                        TapBatchOp::Ingest(positions) => ingested.push(positions),
+                        TapBatchOp::Copy { .. } => panic!("flush copies nothing"),
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            let expected: Vec<std::ops::Range<usize>> = (0..tp)
+                .step_by(256)
+                .map(|r0| r0..(r0 + 256).min(tp))
+                .collect();
+            assert_eq!(ingested, expected, "tp={tp}");
+            assert_eq!(carry.next_position, tp);
+            assert_eq!(carry.pending, 0);
         }
     }
 
