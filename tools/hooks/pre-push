@@ -242,6 +242,20 @@ else
     printf '%s\n' "$docs_census_out" | sed 's/^docs-registry-census: /    /'
 fi
 
+# ---- conflict-marker census (2026-09-21) ----
+# Twice in one day a hand-resolved merge left a diff3 base marker (`||||||| parent of ...`) in
+# research/INDEX.md on main (#604, #614), and once in research/tune-data/perf-ci.jsonl; the next
+# lane's union resolve read the INDEX one as a hunk base and silently dropped the neighbouring row
+# (#607, restored in #609). `git diff --check` sees a marker only inside a diff; this census sees
+# the tracked tree (source, docs, data; receipt logs and raw dirs excluded). Sub-second,
+# unconditional, no skip switch. Teeth: tools/test_conflict_markers.sh.
+if grep -q '^\[workspace\.package\]' Cargo.toml 2>/dev/null; then
+    if ! bash tools/check-conflict-markers.sh; then
+        echo "pre-push: REFUSED: a tracked source, docs or data file carries a merge-conflict marker line." >&2
+        exit 1
+    fi
+fi
+
 # ---- workflow-file census (2026-09-21) ----
 # Same WHEN-lesson again, for the workflow files themselves. On 2026-09-21 two merged PRs
 # (#592, #590) each added a ci.yml job named portable-suites; each PR's CI was green on its

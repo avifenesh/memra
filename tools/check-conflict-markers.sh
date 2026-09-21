@@ -7,7 +7,8 @@
 # thing to notice. `git diff --check` only sees a marker inside a diff; this census sees the
 # tree. All four marker kinds are refused: `<<<<<<< `, `=======`, `>>>>>>> `, `||||||| `.
 # Scope: tracked files with source/doc suffixes; receipt logs and raw dirs are excluded because
-# a receipt may legitimately capture a diff. No skip switch: a tree with a marker in a source or
+# a receipt may legitimately capture a diff. perf-ci.jsonl (a data file the perf gate parses) is
+# in scope: #604 left a marker line in it too. No skip switch: a tree with a marker in a source or
 # registry file has no emergency in which pushing it is right. Teeth: tools/test_conflict_markers.sh.
 # usage: tools/check-conflict-markers.sh [repo_dir]   (exit 0 clean, 1 markers found)
 set -u
