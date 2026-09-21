@@ -1015,9 +1015,12 @@ fold: `tools/portable-suites.sh` is the one executor, `ci.yml` and `local-ci.sh`
 (`--locked` and `RUST_TEST_THREADS=8` folded in from #590), `tools/ci-portable.sh` only forwards
 to it, and arm 3 of the teeth asserts exactly one `portable-suites` job, no live `cargo test`
 on the three crates outside the wrapper, and a forward that runs no cargo. The workflow files
-themselves are censused by `tools/check-workflow-keys.py` (strict loader; `yaml.safe_load` keeps
-the last duplicate silently) in `tools/hooks/pre-push` and the `ci.yml` `gates` job, teeth
-`tools/test_workflow_keys.sh`. Record: `research/spill-d-20260919/DAY14.md`; the hosted CI map is
+themselves are censused by `tools/check-workflow-keys.py` (a standard-library walker over
+block-style YAML, its scope stated in its docstring; `yaml.safe_load` keeps the last duplicate
+silently, and PyYAML is not assumed on every interpreter, so the hook cannot fail for a missing
+dependency) in `tools/hooks/pre-push` (exit 1 is a duplicate, exit 2 is "cannot answer", both
+refuse) and the `ci.yml` `gates` job, teeth `tools/test_workflow_keys.sh` including an arm that
+shadows `yaml` with a package that raises `ImportError`. Record: `research/spill-d-20260919/DAY14.md`; the hosted CI map is
 `docs/CI.md`.
 Conformance schedules drive explicit completion/cancellation/retirement, original
 item indices, namespace and epoch refusal, opaque bytes, accounting and borrowed

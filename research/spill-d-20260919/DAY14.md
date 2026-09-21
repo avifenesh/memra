@@ -266,3 +266,59 @@ timing claim, no default, flag default, numeric program or support state changed
 `wrapper-raw.log` banked verbatim and pinned in the boundary allowlist like day 13's raw logs,
 `guard-on-main-34ed99dfc.log`, `rerun/`). Scratch `/tmp/spill-d-day14/` removed at close.
 About 3.5 agent-hours against the 4-hour budget.
+
+## 7. Addendum: PR #601 (integ18) review, one finding fixed on the lane
+
+**The census assumed PyYAML.** `tools/check-workflow-keys.py` did `import yaml` at module scope
+and the hook arm is unconditional, so on an interpreter without PyYAML every push was refused
+with the duplicate-key message printed over a `ModuleNotFoundError`, and the `gates` step had no
+install line. This repo does not assume PyYAML (`tools/test_public_boundary.py`, the
+comment-stripped wiring assertion, says why). Fix, the preferred route: the checker is now a
+standard-library walker over block-style YAML. A key is the text before the first `:` followed by
+a space or end of line, at its indentation after any `- ` indicators, quoted keys unquoted;
+mapping scopes are tracked by column (a shallower key closes deeper scopes, a `- ` item closes
+the previous item's scope at equal indentation); a block scalar (`|`, `>`, indicators, optional
+comment) swallows every deeper line, so `run: |` bodies yield no key; full-line comments, document
+markers, directives and blanks are skipped; flow sequences are values. Scope stated in the
+docstring and enforced as exit 2, "cannot answer", never green: flow mappings, complex keys,
+merge keys, anchors/aliases/tags in plain key position, tab indentation. The hook now branches
+on the status: exit 1 prints the duplicate-key refusal, anything else prints "the workflow-file
+census could not answer (exit N)" with the scope pointer; both refuse the push. The `gates`
+step needs no install line.
+
+Cross-check against a strict PyYAML loader on this rig (PyYAML present here, so it can serve as
+the oracle) over all 8 tracked `.yml`/`.yaml` files: the first run agreed on 7, the difference
+being `- "*": openai` in a non-workflow registry file, where the walker unquoted the key before
+its alias check and refused a legal quoted key as "cannot answer". Fixed (the indicator check
+applies to the plain form only), 8 of 8 agree, and the constructs arm now carries a quoted `"*"`
+key. Main's own file at `34ed99dfc`, with and without PyYAML on the interpreter
+(`day14/review/guard-on-main-34ed99dfc.log`): `duplicate mapping key 'portable-suites' at line
+401 column 3 (first at line 206)`, rc=1 both times.
+
+Teeth (`tools/test_workflow_keys.sh`, `day14/review/teeth-workflow-keys.log`): the same fifteen
+verdicts run twice, once as the interpreter is and once with a fake `yaml` package that raises
+`ImportError` first on `PYTHONPATH`, plus the `safe_load` control (run only where PyYAML exists,
+announced as skipped otherwise; the checker needs none) and a proof that the shadow really
+raises. Verbatim tail:
+
+```
+ok   no-PyYAML: duplicate job key reds
+ok   no-PyYAML: the refusal names the key, its line and column and the first line
+ok   no-PyYAML: duplicate nested key (two run: in one step) reds
+ok   no-PyYAML: duplicate key inside with: reds
+ok   no-PyYAML: the with: refusal names line 11 column 11
+ok   no-PyYAML: clean file greens
+ok   no-PyYAML: the green names the jobs
+ok   no-PyYAML: block scalars, sibling mappings, comments, flow sequences and quoted keys (one is "*") green
+ok   no-PyYAML: the constructs file lists its two jobs
+ok   no-PyYAML: a flow mapping is refused as cannot-answer (exit 2, never green)
+ok   no-PyYAML: the cannot-answer names the line and the construct
+ok   no-PyYAML: empty workflow directory reds (vacuity)
+ok   no-PyYAML: the tree's own .github/workflows greens
+ok   no-PyYAML: no traceback, no import error in any verdict
+ok   the shadow package raises on import yaml (the no-PyYAML arm is real)
+test_workflow_keys: 30 ok, 0 FAIL
+```
+
+Docs: `docs/CI.md` and `docs/TESTING.md` say "standard-library walker" and name the two exit
+classes. The battery of section 4 ran again after the fix (`day14/review/battery.log`).
