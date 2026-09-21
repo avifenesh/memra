@@ -1,0 +1,23 @@
+9221ab327befeedbc3be118b6c20e7cf0e281c06727a0b2e045558b9790645a6  /root/spill-receipts/c-day17/bins/libmemra-cpu-experts.so
+cd12c468f5417d297c35477cbe8cd4f78c953d82b4e78f78f120a12f2ed8a7db  /root/spill-receipts/c-day17/bins/cpu_native_check
+0b55f7b39b26ae58b5830ebe695656f5b3962b95
+6.8.0-139-generic
+ok: barrier
+ok: barrier has barrier: primaries complete, alternates held: inflight_signed=3 expected=3
+ok: barrier has extra projection admitted=0 expected=0
+ok: barrier has barrier: drained after the retry landed: inflight_signed=0 expected=0
+ok: barrier has BARRIER_OK
+ok: failure
+ok: failure has failure: alternate half failed with EIO, sentinel read entered: inflight_signed=1 expected=1
+ok: failure has failure: drained after the retry landed: inflight_signed=0 expected=0
+ok: failure has FAILURE_PATH_OK
+ok: parity
+ok: parity has parity: three single-job reads held: inflight_signed=3 expected=3
+ok: parity has parity: drained: inflight_signed=0 expected=0
+ok: parity has PARITY_OK
+cpu expert prefetch accounting tests: ALL GREEN
+ABI v2 symbols, production MoE, and non-finite/subnormal checks: PASS
+memra native CPU quant check: ALL GREEN
+[memra-cpu-cache] hits=12 misses=15 hit_rate=44.44% read_GB=0.000 resident_GB=0.000
+[memra-cpu-profile] calls=46 prepare=0.000074s io=0.000021s insert=0.000004s compute=0.001273s read_projections=12 read_GB=0.000 stage_entry=0.000179s stage_cached=0.000353s stage_missing=0.000081s stage_accum=0.000015s prefetch_projections=3 prefetch_GB=0.000
+cpubank cell rc=0

@@ -1,0 +1,72 @@
+arena pair cell: evidence research/spill-c-20260919/pro-single-day17/arena-pair/ev, collector capture arena-pair
+
+o1-page: 6 demotes, 5 promotes, arena boot line absent
+  raw demote ms (r2..r7):  [38.2, 42.6, 41.5, 6.1, 6.9, 6.0]
+  raw promote ms (r3..r7): [47.1, 46.0, 10.8, 11.4, 10.5]  inline demote ms: [42.6, 41.5, 6.1, 6.9, 6.0]
+  demote  (r2..r6): median 38.2 ms (N=5, min 6.1, max 42.6)
+  promote (r3..r7): median 11.4 ms (N=5, min 10.5, max 47.1)
+  promote minus inline demote: median 4.5 ms (N=5, min 4.5, max 4.7)
+  entries: 64 tok/159.9 MB
+
+o1-arena: 6 demotes, 5 promotes, arena boot line present
+  raw demote ms (r2..r7):  [3.6, 6.2, 6.2, 6.2, 6.2, 6.1]
+  raw promote ms (r3..r7): [6.6, 6.6, 6.6, 6.6, 6.6]  inline demote ms: [6.2, 6.2, 6.2, 6.2, 6.1]
+  demote  (r2..r6): median 6.2 ms (N=5, min 3.6, max 6.2)
+  promote (r3..r7): median 6.6 ms (N=5, min 6.6, max 6.6)
+  promote minus inline demote: median 0.4 ms (N=5, min 0.4, max 0.5)
+  entries: 64 tok/159.9 MB
+
+o2-arena: 6 demotes, 5 promotes, arena boot line present
+  raw demote ms (r2..r7):  [3.6, 6.2, 6.2, 6.2, 6.2, 6.2]
+  raw promote ms (r3..r7): [6.7, 6.7, 6.7, 6.6, 6.7]  inline demote ms: [6.2, 6.2, 6.2, 6.2, 6.2]
+  demote  (r2..r6): median 6.2 ms (N=5, min 3.6, max 6.2)
+  promote (r3..r7): median 6.7 ms (N=5, min 6.6, max 6.7)
+  promote minus inline demote: median 0.5 ms (N=5, min 0.4, max 0.5)
+  entries: 64 tok/159.9 MB
+
+o2-page: 6 demotes, 5 promotes, arena boot line absent
+  raw demote ms (r2..r7):  [37.9, 42.5, 41.9, 6.0, 6.7, 6.1]
+  raw promote ms (r3..r7): [47.0, 46.3, 10.5, 11.2, 10.5]  inline demote ms: [42.5, 41.9, 6.0, 6.7, 6.1]
+  demote  (r2..r6): median 37.9 ms (N=5, min 6.0, max 42.5)
+  promote (r3..r7): median 11.2 ms (N=5, min 10.5, max 47.0)
+  promote minus inline demote: median 4.5 ms (N=5, min 4.4, max 4.5)
+  entries: 64 tok/159.9 MB
+
+pooled PAGE (o1-page + o2-page):
+  demote (r2..r6):  median 38.0 ms (N=10, min 6.0, max 42.6)
+  promote (r3..r7): median 11.3 ms (N=10, min 10.5, max 47.1)
+  promote minus inline demote: median 4.5 ms (N=10, min 4.4, max 4.7)
+  steady-state demote (r5..r7): median 6.1 ms (N=6, min 6.0, max 6.9)
+
+pooled ARENA (o1-arena + o2-arena):
+  demote (r2..r6):  median 6.2 ms (N=10, min 3.6, max 6.2)
+  promote (r3..r7): median 6.6 ms (N=10, min 6.6, max 6.7)
+  promote minus inline demote: median 0.4 ms (N=10, min 0.4, max 0.5)
+  steady-state demote (r5..r7): median 6.2 ms (N=6, min 6.1, max 6.2)
+
+first-touch step o1-page: median(r2..r4) - median(r5..r7) = 35.4 ms
+first-touch step o1-arena: median(r2..r4) - median(r5..r7) = 0.0 ms
+first-touch step o2-arena: median(r2..r4) - median(r5..r7) = 0.0 ms
+first-touch step o2-page: median(r2..r4) - median(r5..r7) = 35.8 ms
+telemetry: 201 samples at 250 ms; temperature 33..51 C; power draw max 493 W (limit 600.00 W); SM clock 180..2422 MHz
+window: 2026-09-21T16:20:10.027Z .. 2026-09-21T16:21:00.182Z (50s, one lock hold)
+  ok: o1-page: 6 demotes and 5 promotes
+  ok: o1-page: arena boot line absent as the arm requires
+  ok: o1-page: no forbidden wording ['TIER DISABLED', 'refused', 'WARNING', 'arena reserve failed', 'VERIFY FAILED', 'leaked']
+  ok: o1-page: every promote had an inline demote in its window
+  ok: o1-arena: 6 demotes and 5 promotes
+  ok: o1-arena: arena boot line present as the arm requires
+  ok: o1-arena: no forbidden wording ['TIER DISABLED', 'refused', 'WARNING', 'arena reserve failed', 'VERIFY FAILED', 'leaked']
+  ok: o1-arena: every promote had an inline demote in its window
+  ok: o2-arena: 6 demotes and 5 promotes
+  ok: o2-arena: arena boot line present as the arm requires
+  ok: o2-arena: no forbidden wording ['TIER DISABLED', 'refused', 'WARNING', 'arena reserve failed', 'VERIFY FAILED', 'leaked']
+  ok: o2-arena: every promote had an inline demote in its window
+  ok: o2-page: 6 demotes and 5 promotes
+  ok: o2-page: arena boot line absent as the arm requires
+  ok: o2-page: no forbidden wording ['TIER DISABLED', 'refused', 'WARNING', 'arena reserve failed', 'VERIFY FAILED', 'leaked']
+  ok: o2-page: every promote had an inline demote in its window
+  ok: identity: identical texts and cached_tokens r3..r7 across the four boots
+  ok: demote byte counts equal across arms
+ARENA-PAIR rule first_touch_page_o1=35.4 first_touch_page_o2=35.8 first_touch_arena_o1=0.0 first_touch_arena_o2=0.0 steady_demote_page=6.1 steady_demote_arena=6.2 demote_page=38.0 demote_arena=6.2 promote_page=11.3 promote_arena=6.6 promote_excl_page=4.5 promote_excl_arena=0.4 N=5/arm/order pooled=10 orders=2 window=50s temp_c=33..51 power_max_w=493 power_limit_w=600.00 W identity=ok integrity=ok -> arena_first_touch_absent; arena_not_slower
+ARENA PAIR REPLAY: PASS (18 checks)

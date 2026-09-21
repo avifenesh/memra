@@ -15,8 +15,9 @@ by anything here; every cell is `executed-not-qualified`. Nothing here is a supp
 `MEMRA_RELEASE_QUALIFICATION_MODE=development`, as the brief directs. Verbatim from the hook:
 `UNQUALIFIED DEVELOPMENT: refs/heads/lane/spill-c-20260919 at 035773c1b1722b7f61f671cd2fa7bed55bbf2aeb;
 no GPU qualification claimed` then `pre-push: skip recorded in .../.git/memra-gate-skips.log`; the same
-shape at `0b55f7b39b26ae58b5830ebe695656f5b3962b95`. The day-16 tip that the two earlier refusals left
-unpushed (`bea6bd2ff`) went out inside the first push.
+shape at `0b55f7b39b26ae58b5830ebe695656f5b3962b95`, at `0222d24c4b6ec70b68b90fb35c2c6812e4fccac8` (the arena
+pre-registration, pushed before the run) and at the day-docs tip after this section. The day-16 tip that
+the two earlier refusals left unpushed (`bea6bd2ff`) went out inside the first push.
 
 ## memra#586: the CPU mirrored prefetch double-decrement (`0b55f7b39`)
 
@@ -115,3 +116,104 @@ available against the 32 GiB margin), default spec environment, `MEMRA_KV_HOST_V
 per order, N=10 pooled, one card, one window, `executed-not-qualified`. Budget: about 2 agent-hours
 including the replay; if the cell cannot run in that budget, this pre-registration and the harness stand
 and say so.
+
+## The arena cell: results (`pro-single-day17/arena-pair/`, replay `arena-pair.py`: `ARENA PAIR REPLAY: PASS (18 checks)`)
+
+One collector lock hold (50 s; the card was free, no wait), four boots `o1-page`, `o1-arena`, `o2-arena`,
+`o2-page`, seven requests each, binary `6489c4f8...` built from `0b55f7b39` (the pre-registration commit
+`0222d24c4` changed no code), the model page-cached (8 s boots), `MEMRA_KV_HOST_VERIFY` unset, the door
+never set. Regime over the window (201 samples at 250 ms, `command.gpu.csv`): temperature 33 to 51 C,
+power draw at most 493 W under the 600 W limit, SM clock 180 (idle between boots) to 2422 MHz. The arena
+boots reserved 8 GiB in `reserve_ms=1317.569` and `1320.227` (`fill_ms=0.000`), after the headroom lines
+(`MemAvailable` about 89.7 GB against the 32 GiB margin). Collector `--validate` rc=0
+(`arena-pair-validate.log`). `executed-not-qualified`.
+
+| Arm | demotes r2..r7 (ms) | promotes r3..r7 (ms) | first-touch step |
+|---|---|---|---|
+| o1-page | 38.2, 42.6, 41.5, 6.1, 6.9, 6.0 | 47.1, 46.0, 10.8, 11.4, 10.5 | 35.4 |
+| o1-arena | 3.6, 6.2, 6.2, 6.2, 6.2, 6.1 | 6.6, 6.6, 6.6, 6.6, 6.6 | 0.0 |
+| o2-arena | 3.6, 6.2, 6.2, 6.2, 6.2, 6.2 | 6.7, 6.7, 6.7, 6.6, 6.7 | 0.0 |
+| o2-page | 37.9, 42.5, 41.9, 6.0, 6.7, 6.1 | 47.0, 46.3, 10.5, 11.2, 10.5 | 35.8 |
+
+| Line | pooled PAGE (N=10) | pooled ARENA (N=10) |
+|---|---|---|
+| `demote:` r2..r6 | median 38.0 (6.0 to 42.6) | median 6.2 (3.6 to 6.2) |
+| steady-state demote r5..r7 (N=6) | 6.1 (6.0 to 6.9) | 6.2 (6.1 to 6.2) |
+| `promote:` r3..r7 (the window contains the inline demote) | 11.3 (10.5 to 47.1) | 6.6 (6.6 to 6.7) |
+| promote minus its inline demote | 4.5 (4.4 to 4.7) | 0.4 (0.4 to 0.5) |
+
+The two orders agree to within 0.4 ms on every position. Identity: r3..r7 response texts and
+`cached_tokens` identical across the four boots; demote byte counts equal (`64 tok/159.9 MB`; the entries
+are 64 tokens today, day 16's were 89 and 86, main's #602 moved both capture sites onto the 32-token grid);
+no `TIER DISABLED`, `refused`, `WARNING`, `VERIFY FAILED` or `leaked` in any log; the arena boot line present
+in the arena boots only.
+
+Verdict, verbatim from the replay of the pre-registered rule:
+
+`ARENA-PAIR rule first_touch_page_o1=35.4 first_touch_page_o2=35.8 first_touch_arena_o1=0.0 first_touch_arena_o2=0.0 steady_demote_page=6.1 steady_demote_arena=6.2 demote_page=38.0 demote_arena=6.2 promote_page=11.3 promote_arena=6.6 promote_excl_page=4.5 promote_excl_arena=0.4 N=5/arm/order pooled=10 orders=2 window=50s temp_c=33..51 power_max_w=493 power_limit_w=600.00 W identity=ok integrity=ok -> arena_first_touch_absent; arena_not_slower`
+
+Observations, stated as observations:
+
+1. **The first-touch step is the fresh pinned region.** Under the arena both boots show `0.0` (every
+   demote from r3 on is 6.2 ms and r2 is 3.6); under the pageable tier both boots show the day-16 step
+   (35.4 and 35.8 ms on r2..r4). That confirms day 16's attribution: `PinnedHostBuf::new` page-locks and
+   zero-fills a fresh 160 MB region per demote until the tier recycles one (from r5), while the arena
+   pinned its 8 GiB once at boot (1.3 s, `fill_ms=0`). The cost moved, it did not vanish: 35 ms times
+   three demotes against 1.3 s of boot for this budget.
+2. **Steady-state demote is equal.** 6.1 against 6.2 ms (r5..r7, N=6 each): the D2H into a recycled
+   pinned buffer and into an arena slice cost the same on this card; the pageable tier reaches the arena's
+   speed once it recycles.
+3. **The promote's own share is 0.4 ms under the arena against 4.5 ms pageable.** The two arms run
+   different promote programs (the arena's whole-image lease path against `plane_up`'s per-plane
+   `alloc_u8` plus `htod_u8_into`), and the OFF pageable 4.5 ms was read on day 16 as allocations plus an
+   asynchronous launch whose DMA completes in the next demote's window. Which side of that the arena
+   saves is a census item for the review, not a claim here.
+4. **r2 under the arena is 3.6 ms, r3..r7 are 6.2.** The first demote of each arena boot is faster than the
+   rest by 2.6 ms in both orders; unexplained, N=1 per boot, recorded.
+
+For the decide-by review: the arena is the cheaper host shape on the target card by the first-touch step
+only (about 35 ms on each of the first three demotes per boot, a per-fresh-region cost the pageable tier
+stops paying once it recycles), and by 4 ms on the promote's own share whose mechanism is not established
+here; its steady-state demote is equal. Whether that prices a lease handoff to route the arena under the
+door is the lead's call; the door's own measured cost with write-combined destinations (130 ms per entry
+at demote, `WC-DESTINATIONS.md`) is superseded on this card class by lane A's cached default and is owed
+again below.
+
+## CPU bank on the target rig's host (`pro-single-day17/cpubank/`, pass/fail, not timed)
+
+Through the collector for the lock proof and the record (`--rig pro-single --external-lock`, validate
+rc=0): `cpu expert prefetch accounting tests: ALL GREEN` (barrier, failure, parity; source fixture on the
+root filesystem, mirror on `/dev/shm`, kernel `6.8.0-139-generic`, tree `0b55f7b39`) and `memra native CPU
+quant check: ALL GREEN` (`cpu_native_check` `cd12c468...` against the companion `9221ab32...` built there
+with the production flags, `detached prefetch (annex promote + bit-identity): PASS`). No GPU cell exists for
+the companion in `tier-battery.py`; this is the CPU bank on the target rig's host, nothing more.
+
+## The WC decision item, closed by pointer (task 3)
+
+Lane A day 14 decided the allocation flag this lane's `WC-DESTINATIONS.md` asked for:
+`docs/decisions/PINNED-DESTINATIONS.md` (lead ruling 23), `PinnedKind::for_device` in `tier_transfer.rs`,
+`Cached` on the RTX PRO 6000 Blackwell class (day-13 receipt, bind hash 77.6 against 1711 ms at 160 MiB,
+D2H not above at every pair), `WriteCombined` on the RTX 5090 class (inconclusive under the rule as
+pre-registered) and every unrecognized name; resolved once in `CudaTransfers::new`; no environment
+variable; `alloc_host_kind` is the gate's seam. `HOSTPREFIX-DOOR.md` Status and `WC-DESTINATIONS.md` now
+point there and mark the day-16 pair as the write-combined cost on that card class, kept as the record.
+What the door's decide-by review still owes, named in both: the same pair cell (demote and promote lines
+OFF against ON, N=5 per arm per order, both orders, one lock hold) on a binary carrying `for_device`, so
+the door's two demote-side hashes and one promote-side hash run over cacheable memory, and the hash-speed
+micro-cell that splits the remaining delta between the hashes and the ticket lifecycle. No new engine flag,
+no engine change for this item.
+
+## Local battery on the final tree (`day17-local/final-*.log`) and effort
+
+No Rust changed today; `cargo fmt --all -- --check` clean; `tools/check-flags.sh` 865 runtime names, none
+uncovered (no new `MEMRA_*` read: the fixture's knobs are existing companion names, set, not read; the
+test-only directories are positional arguments, not variables); `python3 tools/check-public-boundary.py
+check` 582 grandfathered, 0 new; `tools/docs-registry-census.sh` clean (58 tables, 905 rows); `git diff
+--check` clean; the em-dash scan over the day's prose and scripts finds none (the three hits in
+`docs/TESTING.md` are pre-existing lines 429, 432 and 637, not today's paragraph); `shellcheck -x` clean on
+`tools/test_cpu_expert_prefetch.sh`; `ci.yml` parses with no duplicate mapping keys after the new step.
+Collector `--validate` rc=0 on both day-17 cells. Local runs of the fixture and the companion build ran
+under `systemd-run --user --scope -p CPUQuota=1200% -p MemoryMax=28G`; no local GPU run today.
+
+Effort: about 1.5 agent-hours for the day against the 4-hour budget (the arena cell, pre-registration to
+replay, about 35 minutes of it: the card was free and the model page-cached).
